@@ -1,0 +1,175 @@
+parameters:
+  - name: updateIterationCount
+    displayName: "Number of updates to test"
+    type: number
+    default: 1
+
+  - name: rollbackTesting
+    displayName: "Run rollback test"
+    type: boolean
+    default: true
+
+  - name: workers
+    displayName: "Number of workers to use"
+    type: number
+    default: 1
+
+  - name: updateCheckTimeoutInMinutes
+    displayName: "Timeout for checking runtime OS deployment in minutes"
+    type: number
+    default: 25
+
+  - name: verboseLogging
+    displayName: "Enable verbose logging"
+    type: boolean
+    default: false
+
+  - name: platform
+    displayName: Test platform
+    type: string
+    values:
+      - qemu
+      - azure
+
+  - name: pool
+    displayName: Agent pool
+    type: string
+    default: "trident-ubuntu-1es-pool-eastus2"
+
+jobs:
+  - job: UpdateTesting_${{ parameters.platform }}
+    displayName: Update Testing - ${{ parameters.platform }}
+    timeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
+    pool:
+      type: linux
+      name: ${{ parameters.pool }}
+      hostArchitecture: amd64
+    strategy:
+      parallel: ${{ parameters.workers }}
+
+    variables:
+      tridentSourceDirectory: $(Build.SourcesDirectory)
+      ob_outputDirectory: $(tridentSourceDirectory)/deployment_logs_${{ parameters.platform }}
+      ob_artifactBaseName: "update-testing-${{ parameters.platform }}-$(System.JobPositionInPhase)"
+      IMAGE_DEFINITION: "trident-vm-verity-testimage-$(System.DefinitionId)"
+      TEST_RESOURCE_GROUP: validation-$(Build.BuildId)
+      SUBSCRIPTION: 04cdc145-a4f9-42d4-9868-c46d23d0c63f # CoreOS_Mariner_BMP_Staging
+
+    steps:
+      - task: DownloadPipelineArtifact@2
+        inputs:
+          buildType: current
+          artifactName: image-${{ parameters.platform }}-base
+          targetPath: "$(Build.ArtifactStagingDirectory)/"
+        displayName: Download Base Image
+
+      - task: DownloadPipelineArtifact@2
+        inputs:
+          buildType: current
+          artifactName: image-${{ parameters.platform }}-update-a
+          targetPath: "$(Build.ArtifactStagingDirectory)/update-a"
+        displayName: Download Update Image A
+
+      - task: DownloadPipelineArtifact@2
+        inputs:
+          buildType: current
+          artifactName: image-${{ parameters.platform }}-update-b
+          targetPath: "$(Build.ArtifactStagingDirectory)/update-b"
+        displayName: Download Update Image B
+
+      - task: DownloadPipelineArtifact@2
+        inputs:
+          buildType: current
+          artifactName: ssh-keys
+          targetPath: "$(Build.ArtifactStagingDirectory)/ssh"
+        displayName: Download SSH Keys
+
+      - bash: |
+          set -eux
+          cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* ~/.ssh/
+          chmod -R 700 ~/.ssh/
+          mkdir -p $(ob_outputDirectory)
+        displayName: Set up SSH Keys and setup output directory
+
+      # Publish the base image only for the Azure platform
+      - ${{ if eq(parameters.platform, 'Azure') }}:
+          - bash: |
+              set -eux
+              az login --identity
+              ./scripts/loop-update/publish-sig-image.sh
+            displayName: Publish Base Image
+            env:
+              ARTIFACTS: $(Build.ArtifactStagingDirectory)
+              IMAGE_DEFINITION: $(IMAGE_DEFINITION)
+              SUBSCRIPTION: $(SUBSCRIPTION)
+              STORAGE_ACCOUNT: "tridentazureimages"
+              AZCOPY_AUTO_LOGIN_TYPE: "MSI"
+
+      - bash: ./scripts/loop-update/deploy-vm.sh
+        displayName: "Deploy VM"
+        env:
+          VERBOSE: ${{ parameters.verboseLogging }}
+          ARTIFACTS: $(Build.ArtifactStagingDirectory)
+          OUTPUT: $(ob_outputDirectory)
+          TEST_RESOURCE_GROUP: $(TEST_RESOURCE_GROUP)
+          IMAGE_DEFINITION: $(IMAGE_DEFINITION)
+          TEST_PLATFORM: ${{ parameters.platform }}
+          SUBSCRIPTION: $(SUBSCRIPTION)
+        timeoutInMinutes: 5
+
+      - bash: ./scripts/loop-update/check-deployment.sh
+        displayName: "Check that Trident can adopt the deployment"
+        env:
+          TEST_PLATFORM: ${{ parameters.platform }}
+
+      - bash: ./scripts/loop-update/loop-update.sh
+        env:
+          ARTIFACTS: $(Build.ArtifactStagingDirectory)
+          OUTPUT: $(ob_outputDirectory)
+          VERBOSE: ${{ parameters.verboseLogging }}
+          RETRY_COUNT: ${{ parameters.updateIterationCount }}
+          EXPECTED_VOLUME: "volume-b"
+          ROLLBACK: "false"
+          TEST_RESOURCE_GROUP: $(TEST_RESOURCE_GROUP)
+          TEST_PLATFORM: ${{ parameters.platform }}
+        displayName: "Check that Trident can perform A/B update"
+        condition: succeeded()
+
+      # E2E rollback test: Trigger an A/B update back into runtime OS A, then cause a rollback
+      # by triggering an artificial reboot. Then, check that the firmware performed a rollback
+      # into B correctly. Finally, trigger two A/B updates, the first one using the same Host
+      # Configuration, and validate that they succeed. Rollback testing will only be run when
+      # the rollbackTesting parameter is true. The scaling test logic will set it to false.
+
+      - bash: ./scripts/loop-update/loop-update.sh
+        env:
+          ARTIFACTS: $(Build.ArtifactStagingDirectory)
+          OUTPUT: $(ob_outputDirectory)
+          VERBOSE: ${{ parameters.verboseLogging }}
+          RETRY_COUNT: 3
+          EXPECTED_VOLUME: "volume-b"
+          ROLLBACK: "true"
+          TEST_RESOURCE_GROUP: $(TEST_RESOURCE_GROUP)
+          TEST_PLATFORM: ${{ parameters.platform }}
+        displayName: "Check that Trident can roll back and perform A/B update after"
+        condition: and(succeeded(), eq(${{ parameters.rollbackTesting }}, true))
+
+      # TODO add more e2e tests here (Task 8813)
+
+      - bash: |
+          set -eux
+          ./scripts/loop-update/fetch-logs.sh $(ob_outputDirectory)/
+
+          ./scripts/loop-update/cleanup-vm.sh
+
+          if [ "$TEST_PLATFORM" == "qemu" ]; then
+              mkdir -p $(ob_outputDirectory)
+              sudo zstd -T0 $(Build.ArtifactStagingDirectory)/booted.qcow2
+              sudo mv $(Build.ArtifactStagingDirectory)/booted.qcow2.zst $(ob_outputDirectory)/
+          fi
+        workingDirectory: $(tridentSourceDirectory)
+        env:
+          TEST_RESOURCE_GROUP: $(TEST_RESOURCE_GROUP)
+          TEST_PLATFORM: ${{ parameters.platform }}
+        condition: failed()
+        displayName: "Publish OS disk"

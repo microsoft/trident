@@ -17,6 +17,10 @@ parameters:
     displayName: "Make target for the image"
     default: ""
 
+  - name: baseimgType
+    type: string
+    displayName: "Base image type"
+
   - name: previewContainerImageBuildId
     displayName: "Build Id of the pipeline run, default will select latest successful run from pipeline 2116 ([AMD64-6-OneBranch]-Prod-BuildImages) with tag 3.0-preview"
     type: string
@@ -28,13 +32,11 @@ parameters:
     default: "3.0"
 
 jobs:
-  - job: PrepareImage_${{ parameters.label }}
+  - job: PrepareImage_${{ replace(parameters.label, '-', '_') }}
     displayName: Prepare Image ${{ parameters.label }}
     timeoutInMinutes: 15
     pool:
       type: linux
-    dependsOn:
-      - PrepareSSHKeys
 
     variables:
       ob_outputDirectory: $(Build.SourcesDirectory)/out
@@ -79,4 +81,4 @@ jobs:
           baseimgVersion: $(baseimgVersion)
           baseimgAzureLinuxVersion: ${{ parameters.baseimgAzlVersion }}
           downloadTrident: false
-          baseimgType: qemu_guest
+          baseimgType: ${{ parameters.baseimgType }}

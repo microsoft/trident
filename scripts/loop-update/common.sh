@@ -7,13 +7,36 @@ VM_SERIAL_LOG=${VM_SERIAL_LOG:-/tmp/$VM_NAME.log}
 VERBOSE=${VERBOSE:-False}
 OUTPUT=${OUTPUT:-}
 
+ALIAS=${ALIAS:-`whoami`}
+
+SUBSCRIPTION=${SUBSCRIPTION:-b8a0db63-c5fa-4198-8e2a-f9d6ff52465e} # CoreOS_ECF_Kubernetes_dev
+IMAGE_DEFINITION=${IMAGE_DEFINITION:-trident-vm-verity-azure-testimage}
+RESOURCE_GROUP=${RESOURCE_GROUP:-$ALIAS-trident-rg}
+PUBLISH_LOCATION=${PUBLISH_LOCATION:-eastus2}
+GALLERY_RESOURCE_GROUP=${GALLERY_RESOURCE_GROUP:-$RESOURCE_GROUP}
+STORAGE_ACCOUNT=${STORAGE_ACCOUNT:-${ALIAS}storage}
+GALLERY_NAME=${GALLERY_NAME:-${ALIAS}_trident_gallery}
+PUBLISHER=${PUBLISHER:-$ALIAS}
+OFFER=${OFFER:-trident-vm-verity-azure-offer}
+export AZCOPY_AUTO_LOGIN_TYPE=${AZCOPY_AUTO_LOGIN_TYPE:-AZCLI}
+TEST_RESOURCE_GROUP=${TEST_RESOURCE_GROUP:-$RESOURCE_GROUP-test}
+TEST_VM_SIZE=${TEST_VM_SIZE:-Standard_DS1_v2}
+SSH_PUBLIC_KEY_PATH=${SSH_PUBLIC_KEY_PATH:-~/.ssh/id_rsa.pub}
+
 # Third parent of this script
 TRIDENT_SOURCE_DIRECTORY=$(dirname $(dirname $(dirname $(realpath $0))))
 SSH_USER=testuser
 
+UPDATE_PORT_A=8000
+UPDATE_PORT_B=8001
+
 function getIp() {
-    while [ `sudo virsh domifaddr $VM_NAME | grep -c "ipv4"` -eq 0 ]; do sleep 1; done
-    sudo virsh domifaddr $VM_NAME | grep ipv4 | awk '{print $4}' | cut -d'/' -f1
+    if [ "$TEST_PLATFORM" == "qemu" ]; then
+        while [ `sudo virsh domifaddr $VM_NAME | grep -c "ipv4"` -eq 0 ]; do sleep 1; done
+        sudo virsh domifaddr $VM_NAME | grep ipv4 | awk '{print $4}' | cut -d'/' -f1
+    elif [ "$TEST_PLATFORM" == "azure" ]; then
+        az vm show -d -g $TEST_RESOURCE_GROUP -n $VM_NAME --query publicIps -o tsv
+    fi
 }
 
 function sshCommand() {
@@ -35,6 +58,20 @@ function sshCommand() {
         -o UserKnownHostsFile=/dev/null \
         $SSH_USER@$VM_IP \
         "$COMMAND"
+}
+
+function sshProxyPort() {
+    local PORT=$1
+
+    ssh \
+        -R $PORT:localhost:$PORT -N \
+        -o BatchMode=yes \
+        -o ConnectTimeout=10 \
+        -o ServerAliveCountMax=3 \
+        -o ServerAliveInterval=5 \
+        -o StrictHostKeyChecking=no \
+        -o UserKnownHostsFile=/dev/null \
+        $SSH_USER@$VM_IP &
 }
 
 function adoError() {
@@ -89,7 +126,9 @@ function validateRollback() {
 }
 
 function truncateLog() {
-    sudo truncate -s 0 "$VM_SERIAL_LOG"
+    if sudo virsh dominfo $VM_NAME > /dev/null; then
+        sudo truncate -s 0 "$VM_SERIAL_LOG"
+    fi
 }
 
 function waitForLogin() {
@@ -128,4 +167,59 @@ function waitForLogin() {
         exit $WAIT_FOR_LOGIN_EXITCODE
     fi
     set -e
+}
+
+function getLatestVersion() {
+  local G_RG_NAME=$1
+  local G_NAME=$2
+  local I_NAME=$3
+
+  # TODO improve the sorting
+  az sig image-version list -g $G_RG_NAME -r $G_NAME -i $I_NAME --query '[].name' -o tsv | sort -t "." -k1,1n -k2,2n -k3,3n | tail -1
+}
+
+function getImageVersion() {
+    local OP=${1:-}
+    if [ -z "${BUILD_BUILDNUMBER:-}" ]; then
+        image_version=$(getLatestVersion $GALLERY_RESOURCE_GROUP $GALLERY_NAME $IMAGE_DEFINITION)
+        if [ -z $image_version ]; then
+            image_version=0.0.1
+        else
+            if [ "$OP" == "increment" ]; then
+                # Increment the semver version
+                image_version=$(echo $image_version | awk -F. '{print $1"."$2"."$3+1}')
+            fi
+        fi
+    else
+        image_version="0.$BUILD_BUILDID.$SYSTEM_JOBATTEMPT"
+    fi
+
+    echo $image_version
+}
+
+function resizeImage() {
+    local IMAGE_PATH=$1
+    # VHD images on Azure must have a virtual size aligned to 1MB. https://learn.microsoft.com/en-us/azure/virtual-machines/linux/create-upload-generic#resize-vhds
+    raw_file="resize.raw"
+    sudo qemu-img convert -f vpc -O raw $IMAGE_PATH $raw_file
+    MB=$((1024*1024))
+    size=$(qemu-img info -f raw --output json "$raw_file" | \
+    gawk 'match($0, /"virtual-size": ([0-9]+),/, val) {print val[1]}')
+
+    rounded_size=$(((($size+$MB-1)/$MB)*$MB))
+
+    echo "Rounded Size = $rounded_size"
+
+    sudo qemu-img resize $raw_file $rounded_size
+
+    sudo qemu-img convert -f raw -o subformat=fixed,force_size -O vpc $raw_file $IMAGE_PATH
+}
+
+function killUpdateServer() {
+    local UPDATE_PORT=$1
+
+    if lsof -ti tcp:${UPDATE_PORT}; then
+        log "Process already running on the trident update server port: '${UPDATE_PORT}'. Killing process '$(lsof -ti tcp:${UPDATE_PORT})'."
+        kill -9 $(lsof -ti tcp:${UPDATE_PORT}) > /dev/null 2>&1 || true
+    fi
 }

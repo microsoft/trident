@@ -7,11 +7,20 @@ if [ "$OUTPUT" != "" ]; then
     mkdir -p $OUTPUT
 fi
 
+# When ROLLBACK is set to true, the script will trigger a rollback scenario
+# during the first update iteration. The rollback scenario will ensure that post
+# rebooting into the updated OS, the OS will reboot again, thus letting the
+# firmware boot back into the original OS, as the update was never completed
+# successfully, since Trident did not run post reboot to certify the update.
+ROLLBACK=${ROLLBACK:-false}
+
+killUpdateServer $UPDATE_PORT_A
+killUpdateServer $UPDATE_PORT_B
+
 pushd $ARTIFACTS/update-a
-killall python3 || true
-python3 -m http.server 8000 &
+python3 -m http.server $UPDATE_PORT_A &
 cd ../update-b
-python3 -m http.server 8001 &
+python3 -m http.server $UPDATE_PORT_B &
 popd
 
 EXPECTED_VOLUME=${EXPECTED_VOLUME:-volume-b}
@@ -29,23 +38,26 @@ RETRY_COUNT=${RETRY_COUNT:-20}
 
 VM_IP=`getIp`
 
+sshCommand "sudo sed -i 's/192.168.122.1/localhost/' /var/lib/trident/update-config.yaml"
 sshCommand "sudo cp /var/lib/trident/update-config.yaml /var/lib/trident/update-config2.yaml && sudo sed -i 's/8000/8001/' /var/lib/trident/update-config2.yaml"
 
 for i in $(seq 1 $RETRY_COUNT); do
 
-    # For every 10th update, reboot the VM to ensure that we can handle reboots
-    if [ $((i % 10)) -eq 0 ]; then
-        echo ""
-        echo "***************************"
-        echo "** Rebooting VM          **"
-        echo "***************************"
-        echo ""
+    if [ "$TEST_PLATFORM" == "qemu" ]; then
+        # For every 10th update, reboot the VM to ensure that we can handle reboots
+        if [ $((i % 10)) -eq 0 ]; then
+            echo ""
+            echo "***************************"
+            echo "** Rebooting VM          **"
+            echo "***************************"
+            echo ""
 
-        truncateLog
-        sudo virsh shutdown $VM_NAME
-        until [ `sudo virsh list | grep -c $VM_NAME` -eq 0 ]; do sleep 1; done
-        sudo virsh start $VM_NAME
-        waitForLogin $i
+            truncateLog
+            sudo virsh shutdown $VM_NAME
+            until [ `sudo virsh list | grep -c $VM_NAME` -eq 0 ]; do sleep 1; done
+            sudo virsh start $VM_NAME
+            waitForLogin $i
+        fi
     fi
 
     echo ""
@@ -59,6 +71,9 @@ for i in $(seq 1 $RETRY_COUNT); do
     if [ $VERBOSE == True ]; then
         LOGGING="-v INFO"
     fi
+
+    sshProxyPort $UPDATE_PORT_A
+    sshProxyPort $UPDATE_PORT_B
 
     # Masking errors as we want to report the specific failure if it happens
     set +e
@@ -123,7 +138,24 @@ for i in $(seq 1 $RETRY_COUNT); do
         LOGGING="-v"
     fi
 
-    waitForLogin $i
+    if [ "$TEST_PLATFORM" == "qemu" ]; then
+        waitForLogin $i
+    elif [ "$TEST_PLATFORM" == "azure" ]; then
+        sleep 15
+        SUCCESS=false
+        for j in $(seq 1 10); do
+            if sshCommand hostname; then
+                SUCCESS=true
+                break
+            fi
+            sleep 5
+        done
+        if [ "$SUCCESS" == false ]; then
+            echo "VM did not come back up after update"
+            adoError "VM did not come back up after update for iteration $i"
+            exit 1
+        fi
+    fi
     set -e
 
     # Check that Trident updated correctly

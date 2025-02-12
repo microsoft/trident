@@ -26,7 +26,7 @@ parameters:
     displayName: "Number of updates to test"
     type: number
     default: 1
-  
+
   - name: rollbackTesting
     displayName: "Run rollback test"
     type: boolean
@@ -47,149 +47,116 @@ parameters:
     type: boolean
     default: false
 
+  - name: includeAzure
+    displayName: "Include Azure testing"
+    type: boolean
+    default: false
+
 stages:
-  - stage: BuildImages
-    displayName: Build Base and Update Images
+  - stage: PrepareSSHKeys
+    displayName: Prepare SSH Keys
+    jobs:
+      - template: generate-ssh-keys.yml
+
+  - stage: BuildImagesQemu
+    displayName: Build Base and Update Images for QEMU
     dependsOn:
+      - PrepareSSHKeys
       - ${{ if eq(parameters.testingRun, true) }}:
           - DownloadTestingElements
       - ${{ else }}:
           - GetTridentBinaries_rpms
 
     jobs:
-      - template: generate-ssh-keys.yml
-
       - template: build-image.yml
         parameters:
           baseimgBuildType: ${{ parameters.baseimgBuildType }}
-          label: "Base"
+          label: "qemu-base"
           makeTarget: "build/trident-vm-verity-testimage.qcow2"
+          baseimgType: qemu_guest
           baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
           previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
 
       - template: build-image.yml
         parameters:
           baseimgBuildType: ${{ parameters.baseimgBuildType }}
-          label: "UpdateA"
+          label: "qemu-update-a"
           makeTarget: "trident-vm-verity-testimage"
+          baseimgType: qemu_guest
           baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
           previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
 
       - template: build-image.yml
         parameters:
           baseimgBuildType: ${{ parameters.baseimgBuildType }}
-          label: "UpdateB"
+          label: "qemu-update-b"
           makeTarget: "trident-vm-verity-testimage"
+          baseimgType: qemu_guest
           baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
           previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+
+  - ${{ if eq(parameters.includeAzure, true) }}:
+    - stage: BuildImagesAzure
+      displayName: Build Base and Update Images for Azure
+      dependsOn:
+        - PrepareSSHKeys
+        - ${{ if eq(parameters.testingRun, true) }}:
+            - DownloadTestingElements
+        - ${{ else }}:
+            - GetTridentBinaries_rpms
+
+      jobs:
+        - template: build-image.yml
+          parameters:
+            baseimgBuildType: ${{ parameters.baseimgBuildType }}
+            label: "azure-base"
+            makeTarget: "build/trident-vm-verity-azure-testimage.vhd"
+            baseimgType: core_selinux
+            baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+            previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+
+        - template: build-image.yml
+          parameters:
+            baseimgBuildType: ${{ parameters.baseimgBuildType }}
+            label: "azure-update-a"
+            makeTarget: "trident-vm-verity-azure-testimage"
+            baseimgType: core_selinux
+            baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+            previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+
+        - template: build-image.yml
+          parameters:
+            baseimgBuildType: ${{ parameters.baseimgBuildType }}
+            label: "azure-update-b"
+            makeTarget: "trident-vm-verity-azure-testimage"
+            baseimgType: core_selinux
+            baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+            previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
 
   - stage: ServicingTesting
     displayName: Servicing Testing
     dependsOn:
-      - BuildImages
+      - BuildImagesQemu
+      - ${{ if eq(parameters.includeAzure, true) }}:
+        - BuildImagesAzure
 
     jobs:
-      - job: UpdateTesting
-        displayName: Update Testing
-        timeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
-        pool:
-          type: linux
-          name: trident-ubuntu-1es-pool-eastus2
-          hostArchitecture: amd64
-        strategy:
-          parallel: ${{ parameters.workers }}
+      - template: testing-template.yml
+        parameters:
+          updateIterationCount: ${{ parameters.updateIterationCount }}
+          rollbackTesting: ${{ parameters.rollbackTesting }}
+          workers: ${{ parameters.workers }}
+          updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
+          verboseLogging: ${{ parameters.verboseLogging }}
+          platform: qemu
 
-        variables:
-          tridentSourceDirectory: $(Build.SourcesDirectory)
-          ob_outputDirectory: $(tridentSourceDirectory)/deployment_logs
-          ob_artifactBaseName: "update-testing-$(System.JobPositionInPhase)"
-
-        steps:
-          - task: DownloadPipelineArtifact@2
-            inputs:
-              buildType: current
-              artifactName: image-Base
-              targetPath: "$(Build.ArtifactStagingDirectory)/"
-            displayName: Download Base Image
-
-          - task: DownloadPipelineArtifact@2
-            inputs:
-              buildType: current
-              artifactName: image-UpdateA
-              targetPath: "$(Build.ArtifactStagingDirectory)/update-a"
-            displayName: Download Update Image A
-
-          - task: DownloadPipelineArtifact@2
-            inputs:
-              buildType: current
-              artifactName: image-UpdateB
-              targetPath: "$(Build.ArtifactStagingDirectory)/update-b"
-            displayName: Download Update Image B
-
-          - task: DownloadPipelineArtifact@2
-            inputs:
-              buildType: current
-              artifactName: ssh-keys
-              targetPath: "$(Build.ArtifactStagingDirectory)/ssh"
-            displayName: Download SSH Keys
-
-          - bash: |
-              set -eux
-              cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* ~/.ssh/
-              chmod -R 700 ~/.ssh/
-              mkdir -p $(ob_outputDirectory)
-            displayName: Set up SSH Keys and setup output directory
-
-          - bash: ./scripts/loop-update/deploy-vm.sh
-            displayName: "Deploy VM"
-            env:
-              VERBOSE: ${{ parameters.verboseLogging }}
-              ARTIFACTS: $(Build.ArtifactStagingDirectory)
-              OUTPUT: $(ob_outputDirectory)
-            timeoutInMinutes: 5
-
-          - bash: ./scripts/loop-update/check-deployment.sh
-            displayName: "Check that Trident can adopt the deployment"
-
-          - bash: ./scripts/loop-update/loop-update.sh
-            env:
-              ARTIFACTS: $(Build.ArtifactStagingDirectory)
-              OUTPUT: $(ob_outputDirectory)
-              VERBOSE: ${{ parameters.verboseLogging }}
-              RETRY_COUNT: ${{ parameters.updateIterationCount }}
-              EXPECTED_VOLUME: "volume-b"
-              ROLLBACK: "false"
-            displayName: "Check that Trident can perform A/B update"
-            condition: succeeded()
-
-          # E2E rollback test: Trigger an A/B update back into runtime OS A, then cause a rollback
-          # by triggering an artificial reboot. Then, check that the firmware performed a rollback
-          # into B correctly. Finally, trigger two A/B updates, the first one using the same Host
-          # Configuration, and validate that they succeed. Rollback testing will only be run when
-          # the rollbackTesting parameter is true. The scaling test logic will set it to false.
-
-          - bash: ./scripts/loop-update/loop-update.sh
-            env:
-              ARTIFACTS: $(Build.ArtifactStagingDirectory)
-              OUTPUT: $(ob_outputDirectory)
-              VERBOSE: ${{ parameters.verboseLogging }}
-              RETRY_COUNT: 3
-              EXPECTED_VOLUME: "volume-b"
-              ROLLBACK: "true"
-            displayName: "Check that Trident can roll back and perform A/B update after"
-            condition: and(succeeded(), eq(${{ parameters.rollbackTesting }}, true))
-
-          # TODO add more e2e tests here (Task 8813)
-
-          - bash: |
-              set -eux
-              ./scripts/loop-update/fetch-logs.sh $(ob_outputDirectory)/
-
-              . ./scripts/loop-update/common.sh
-              sudo virsh shutdown $VM_NAME
-              mkdir -p $(ob_outputDirectory)
-              sudo zstd -T0 $(Build.ArtifactStagingDirectory)/booted.qcow2
-              sudo mv $(Build.ArtifactStagingDirectory)/booted.qcow2.zst $(ob_outputDirectory)/
-            workingDirectory: $(tridentSourceDirectory)
-            condition: failed()
-            displayName: "Publish OS disk"
+      - ${{ if eq(parameters.includeAzure, true) }}:
+        - template: testing-template.yml
+          parameters:
+            updateIterationCount: ${{ parameters.updateIterationCount }}
+            rollbackTesting: ${{ parameters.rollbackTesting }}
+            workers: ${{ parameters.workers }}
+            updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
+            verboseLogging: ${{ parameters.verboseLogging }}
+            platform: azure
+            pool: trident-ubuntu-official-1es-pool-eastus2

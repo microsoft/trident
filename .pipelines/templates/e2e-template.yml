@@ -35,6 +35,11 @@ parameters:
     type: boolean
     default: false
 
+  - name: includeAzure
+    displayName: "Include Azure testing"
+    type: boolean
+    default: false
+
 stages:
   # Trident Build/Download
   - template: stages/trident_rpms/trident-stage.yml
@@ -130,6 +135,7 @@ stages:
     parameters:
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
       previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+      includeAzure: ${{ parameters.includeAzure }}
 
   # TESTING stages for PRERELEASE
   - ${{ if eq(parameters.stageType, 'pre') }}:
