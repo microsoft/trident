@@ -437,97 +437,29 @@ mod tests {
 mod functional_test {
     use super::*;
 
-    use std::fs;
-
-    use const_format::formatcp;
-
     use pytest_gen::functional_test;
     use trident_api::constants::MOUNT_OPTION_READ_ONLY;
 
     use crate::{
         files,
         filesystems::MountFileSystemType,
-        grub::GrubConfig,
         mount::{self, MountGuard},
-        partition_types::DiscoverablePartitionType,
-        repart::{RepartEmptyMode, RepartPartitionEntry, SystemdRepartInvoker},
         testutils::{
-            image,
-            repart::{OS_DISK_DEVICE_PATH, TEST_DISK_DEVICE_PATH},
-            verity::{
-                self, VerityGuard, VERITY_ROOT_BOOT_IMAGE_PATH, VERITY_ROOT_DATA_IMAGE_PATH,
-                VERITY_ROOT_HASH_IMAGE_PATH,
-            },
+            repart::OS_DISK_DEVICE_PATH,
+            verity::{self, VerityGuard},
         },
-        udevadm,
     };
 
     #[functional_test(feature = "helpers")]
     fn test_open_and_close() {
-        verity::check_verity_images();
-
-        let block_device_path = Path::new(TEST_DISK_DEVICE_PATH);
-
-        image::stream_zstd(Path::new(VERITY_ROOT_BOOT_IMAGE_PATH), block_device_path).unwrap();
-
-        let root_hash = {
-            let boot_mount_dir = tempfile::tempdir().unwrap();
-            // Mount image to temp dir
-            mount::mount(
-                block_device_path,
-                boot_mount_dir.path(),
-                MountFileSystemType::Ext4,
-                &[],
-            )
-            .unwrap();
-
-            // Create a mount guard that will automatically unmount when it goes out of scope
-            let _mount_guard = MountGuard {
-                mount_dir: boot_mount_dir.path(),
-            };
-
-            let mut grub_config =
-                GrubConfig::read(boot_mount_dir.path().join("grub2/grub.cfg")).unwrap();
-            grub_config
-                .read_linux_command_line_argument("roothash")
-                .unwrap()
-        };
-
-        let repart = SystemdRepartInvoker::new(block_device_path, RepartEmptyMode::Force)
-            .with_partition_entries(vec![
-                RepartPartitionEntry {
-                    id: "root".to_string(),
-                    partition_type: DiscoverablePartitionType::Root,
-                    label: None,
-                    size_min_bytes: Some(1024 * 1024 * 1024),
-                    size_max_bytes: None,
-                },
-                RepartPartitionEntry {
-                    id: "root-verity".to_string(),
-                    partition_type: DiscoverablePartitionType::RootVerity,
-                    label: None,
-                    // When min==max==None, it's a grow partition
-                    size_min_bytes: None,
-                    size_max_bytes: None,
-                },
-            ]);
-
-        repart.execute().unwrap();
-        udevadm::settle().unwrap();
-
-        let verity_data_path = Path::new(VERITY_ROOT_DATA_IMAGE_PATH);
-        let verity_data_block_device_path = Path::new(formatcp!("{TEST_DISK_DEVICE_PATH}1"));
-        image::stream_zstd(verity_data_path, verity_data_block_device_path).unwrap();
-        let verity_hash_path = Path::new(VERITY_ROOT_HASH_IMAGE_PATH);
-        let verity_hash_block_device_path = Path::new(formatcp!("{TEST_DISK_DEVICE_PATH}2"));
-        image::stream_zstd(verity_hash_path, verity_hash_block_device_path).unwrap();
+        let verity_vol = verity::setup_verity_volumes();
 
         // bad hash
         assert!(
             open(
-                verity_data_block_device_path,
+                &verity_vol.data_volume,
                 "verity-test",
-                verity_hash_block_device_path,
+                &verity_vol.hash_volume,
                 "foobar",
             )
             .unwrap_err()
@@ -543,22 +475,22 @@ mod functional_test {
             hash_block_size: 4096,
             hash_name: "sha256".to_string(),
             salt: "".to_string(), // salt is not deterministic
-            data_device_path: verity_data_block_device_path.to_owned(),
+            data_device_path: verity_vol.data_volume.to_owned(),
             size: "".to_string(), // size is not deterministic
             mode: "readonly".to_string(),
-            hash_device_path: verity_hash_block_device_path.to_owned(),
+            hash_device_path: verity_vol.hash_volume.to_owned(),
             hash_offset: "8 sectors".to_string(),
-            root_hash: root_hash.clone(),
+            root_hash: verity_vol.root_hash.clone(),
             flags: None,
         };
 
         {
             // good hash
             open(
-                verity_data_block_device_path,
+                &verity_vol.data_volume,
                 "verity-test",
-                verity_hash_block_device_path,
-                root_hash.as_str(),
+                &verity_vol.hash_volume,
+                &verity_vol.root_hash,
             )
             .unwrap();
             let _verityguard = VerityGuard {
@@ -584,8 +516,14 @@ mod functional_test {
                     mount_dir: verity_mount_dir.path(),
                 };
 
-                assert!(verity_mount_dir.path().join("etc").exists());
-                fs::read_to_string(verity_mount_dir.path().join("etc/hostname")).unwrap();
+                // Assert that all expected files exist!
+                for file in &verity_vol.file_list {
+                    assert!(
+                        verity_mount_dir.path().join(file).exists(),
+                        "File '{}' does not exist",
+                        file.display()
+                    );
+                }
             }
         }
 
@@ -595,7 +533,7 @@ mod functional_test {
             let root_mount_dir = tempfile::tempdir().unwrap();
             // Mount image to temp dir
             mount::mount(
-                verity_data_block_device_path,
+                &verity_vol.data_volume,
                 root_mount_dir.path(),
                 MountFileSystemType::Ext4,
                 &[],
@@ -617,10 +555,10 @@ mod functional_test {
 
         {
             open(
-                verity_data_block_device_path,
+                &verity_vol.data_volume,
                 "verity-test",
-                verity_hash_block_device_path,
-                root_hash.as_str(),
+                &verity_vol.hash_volume,
+                &verity_vol.root_hash,
             )
             .unwrap();
             let _verityguard = VerityGuard {
@@ -692,19 +630,14 @@ mod functional_test {
             .contains("stdout:\nCommand failed with code -1 (wrong or missing parameters).\n\n\nstderr:\nDevice /etc/passwd is not a valid VERITY device.\n\n")
         );
 
-        verity::check_verity_images();
-        image::stream_zstd(
-            Path::new(VERITY_ROOT_HASH_IMAGE_PATH),
-            Path::new(TEST_DISK_DEVICE_PATH),
-        )
-        .unwrap();
+        let verity_vol = verity::setup_verity_volumes();
 
         // data device is not a block device
         assert!(
             open(
                 Path::new("/etc/passwd"),
                 "foobar",
-                Path::new(TEST_DISK_DEVICE_PATH),
+                &verity_vol.hash_volume,
                 "foobar",
             )
             .unwrap_err()

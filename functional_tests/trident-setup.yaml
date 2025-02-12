@@ -1,3 +1,6 @@
+image:
+  url: http://NETLAUNCH_HOST_ADDRESS/files/regular.cosi
+  sha384: ignored
 trident:
   selfUpgrade: true
 os:
@@ -20,17 +23,6 @@ scripts:
   postConfigure:
     - content: 'echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/wheel'
       name: wheel
-      runOn:
-        - clean-install
-    - content: |
-        mkdir -p /data
-        cd /data
-        curl -O http://NETLAUNCH_HOST_ADDRESS/files/esp.rawzst
-        curl -O http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst
-        curl -O http://NETLAUNCH_HOST_ADDRESS/files/verity_boot.rawzst
-        curl -O http://NETLAUNCH_HOST_ADDRESS/files/verity_root.rawzst
-        curl -O http://NETLAUNCH_HOST_ADDRESS/files/verity_roothash.rawzst
-      name: download-images
       runOn:
         - clean-install
 storage:
@@ -63,20 +55,14 @@ storage:
     - type: vfat
       deviceId: esp
       source:
-        type: esp-image
-        format: raw-zst
-        sha256: ignored
-        url: http://NETLAUNCH_HOST_ADDRESS/files/esp.rawzst
+        type: os-image
       mountPoint:
         path: /boot/efi
         options: umask=0077
     - type: ext4
       deviceId: root
       source:
-        type: image
-        format: raw-zst
-        sha256: ignored
-        url: http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst
+        type: os-image
       mountPoint: /
     - type: ext4
       deviceId: trident

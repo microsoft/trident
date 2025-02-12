@@ -867,9 +867,9 @@ mod functional_test {
 
     use trident_api::{
         config::{
-            self, AbUpdate, AbVolumePair, Disk, FileSystemType, HostConfiguration, Image,
-            ImageFormat, ImageSha256, InternalMountPoint, MountOptions, MountPoint, Partition,
-            PartitionType, VerityFileSystem,
+            self, AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, FileSystemType,
+            HostConfiguration, Image, ImageFormat, ImageSha256, InternalMountPoint, MountOptions,
+            MountPoint, Partition, PartitionType, VerityFileSystem,
         },
         constants::MOUNT_OPTION_READ_ONLY,
         status::AbVolumeSelection,
@@ -1245,7 +1245,7 @@ mod functional_test {
             .contains("stdout:\n/dev/mapper/root is inactive.\n\n"));
 
         // Test case #3: Since the verity device is not yet active, we should get an error.
-        let expected_root_hash = verity::setup_verity_volumes();
+        let verity_vol = verity::setup_verity_volumes();
 
         let verity_device_path = Path::new("/dev/mapper/root");
         if verity_device_path.exists() {
@@ -1255,8 +1255,8 @@ mod functional_test {
         ctx.partition_paths = btreemap! {
             "os".into() => PathBuf::from(TEST_DISK_DEVICE_PATH),
             "boot".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
-            "root-data-a".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
-            "root-hash-a".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+            "root-data-a".into() => verity_vol.data_volume.clone(),
+            "root-hash-a".into() => verity_vol.hash_volume.clone(),
             "boot2".into() => PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}1")),
             "root-data-b".into() => PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}2")),
             "root-hash-b".into() => PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}3")),
@@ -1272,10 +1272,10 @@ mod functional_test {
 
         // Test case #4: Returns the path to the verity device, once it is open.
         veritysetup::open(
-            formatcp!("{TEST_DISK_DEVICE_PATH}3"),
+            &verity_vol.data_volume,
             "root",
-            formatcp!("{TEST_DISK_DEVICE_PATH}2"),
-            &expected_root_hash,
+            &verity_vol.hash_volume,
+            &verity_vol.root_hash,
         )
         .unwrap();
         let _verityguard = VerityGuard {
@@ -1509,20 +1509,29 @@ mod functional_test {
                 .to_string(),
             "Volume A is active, but active volume in Host Status is set to Volume B"
         );
+    }
 
-        // Test case #10: Set up verity devices to test a scenario where root is an A/B volume on
+    #[functional_test]
+    fn test_validate_active_volume_verity() {
+        let mut ctx = EngineContext {
+            ab_active_volume: Some(AbVolumeSelection::VolumeA),
+            servicing_type: ServicingType::AbUpdate,
+            ..Default::default()
+        };
+
+        // Test case #1: Set up verity devices to test a scenario where root is an A/B volume on
         // verity.
-        let expected_root_hash = verity::setup_verity_volumes();
+        let verity_vol = verity::setup_verity_volumes();
 
         let verity_device_path = Path::new("/dev/mapper/root");
         if verity_device_path.exists() {
             veritysetup::close("root").unwrap();
         }
         veritysetup::open(
-            formatcp!("{TEST_DISK_DEVICE_PATH}1"), // Data device path
+            &verity_vol.data_volume, // Data device path
             "root",
-            formatcp!("{TEST_DISK_DEVICE_PATH}2"), // Hash device path
-            &expected_root_hash,
+            &verity_vol.hash_volume, // Hash device path
+            &verity_vol.root_hash,
         )
         .unwrap();
         let _verityguard = VerityGuard {
@@ -1533,10 +1542,10 @@ mod functional_test {
         ctx.partition_paths = btreemap! {
             "os".into() => PathBuf::from(TEST_DISK_DEVICE_PATH),
             "boot".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}5")),
-            "root-data-a".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
-            "root-hash-a".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
-            "root-data-b".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
-            "root-hash-b".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
+            "root-data-a".into() => verity_vol.data_volume.clone(),
+            "root-hash-a".into() => verity_vol.hash_volume.clone(),
+            "root-data-b".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
+            "root-hash-b".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}5")),
             "root".into() => PathBuf::from("/dev/mapper/root"),
         };
         ctx.spec.storage.disks.push(Disk {
@@ -1631,9 +1640,11 @@ mod functional_test {
         ctx.storage_graph = ctx.spec.storage.build_graph().unwrap();
 
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
-        validate_active_volume(&ctx, PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1"))).unwrap();
+        ctx.spec.storage.populate_internal();
 
-        // Test case #11: Remove the old verity API and add a verity device configuration.
+        validate_active_volume(&ctx, PathBuf::from("/dev/mapper/root")).unwrap();
+
+        // Test case #2: Remove the old verity API and add a verity device configuration.
         // Should still correctly return.
         ctx.spec.storage.internal_verity = vec![];
         ctx.spec.storage.verity_filesystems = vec![];
@@ -1645,7 +1656,18 @@ mod functional_test {
             ..Default::default()
         }];
 
-        validate_active_volume(&ctx, PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1"))).unwrap();
+        ctx.spec.storage.filesystems = vec![FileSystem {
+            device_id: Some("root".into()),
+            mount_point: Some(MountPoint {
+                path: ROOT_MOUNT_POINT_PATH.into(),
+                options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
+            }),
+            fs_type: FileSystemType::Ext4,
+            source: FileSystemSource::OsImage,
+        }];
+        ctx.spec.storage.populate_internal();
+
+        validate_active_volume(&ctx, PathBuf::from("/dev/mapper/root")).unwrap();
     }
 
     #[functional_test]

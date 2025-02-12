@@ -250,7 +250,7 @@ build-functional-test-cc: .cargo/config
 		cargo build --target-dir $(TRIDENT_COVERAGE_TARGET) --lib --tests --features functional-test --all
 
 .PHONY: functional-test
-functional-test: bin/trident-mos.iso bin/trident artifacts/osmodifier artifacts/test-image/*.rawzst bin/netlaunch
+functional-test: bin/trident-mos.iso bin/trident artifacts/osmodifier artifacts/test-image/regular.cosi bin/netlaunch
 	cp $(PLATFORM_TESTS_PATH)/tools/marinerhci_test_tools/node_interface.py functional_tests/
 	cp $(PLATFORM_TESTS_PATH)/tools/marinerhci_test_tools/ssh_node.py functional_tests/
 	cp bin/trident artifacts/test-image/
@@ -597,10 +597,4 @@ recreate-verity-images: bin/trident-rpms.tar.gz
 	$(MAKE) -C $(TEST_IMAGES_PATH) copy-trident-rpms
 	$(MAKE) -C $(TEST_IMAGES_PATH) trident-verity-testimage
 	make copy-runtime-partition-images
-
-artifacts/test-image/verity.cosi: bin/mkcosi artifacts/test-image/verity_*.rawzst
-	sudo bin/mkcosi build verity artifacts/test-image artifacts/test-image/verity.cosi
-
-artifacts/test-image/regular.cosi: bin/mkcosi artifacts/test-image/root.rawzst
-	sudo bin/mkcosi build regular artifacts/test-image artifacts/test-image/regular.cosi
 

@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::{bail, Context, Error};
 use const_format::formatcp;
-use log::debug;
+use log::{debug, trace};
 use sys_mount::{Mount, MountFlags, UnmountFlags};
 use tempfile::TempDir;
 
@@ -39,6 +39,7 @@ fn setup_root_verity_device(
 ) -> Result<(), Error> {
     // Extract the root hash from GRUB config
     let root_hash = get_root_verity_root_hash(ctx)?;
+    trace!("Root verity roothash: {}", root_hash);
 
     // Get the verity data and hash device paths from the engine context
     let (verity_data_path, verity_hash_path) = get_verity_device_paths(ctx, root_verity_device)?;
@@ -77,11 +78,13 @@ fn setup_root_verity_device(
 fn get_root_verity_root_hash(ctx: &EngineContext) -> Result<String, Error> {
     // When available, extract information from the OS image.
     if let Some(os_img) = ctx.image.as_ref() {
+        trace!("Getting root verity root hash from OS image");
         get_root_verity_root_hash_osimage(os_img).context(format!(
             "Failed to get root hash from OS image '{}'",
             os_img.source()
         ))
     } else {
+        trace!("Falling back to GRUB config to get root verity root hash");
         get_root_verity_root_hash_grub(ctx)
     }
 }
@@ -150,9 +153,11 @@ pub(super) fn setup_verity_devices(ctx: &EngineContext) -> Result<(), Error> {
     // is tied to the root volume
     if let Some(root_verity_device) = ctx.spec.storage.internal_verity.first() {
         // Prefer old verity API for now.
+        trace!("Setting up root verity device using old API");
         setup_root_verity_device(ctx, root_verity_device)?;
     } else if let Some(verity_device) = ctx.spec.storage.verity.first() {
         // Failback to new verity API.
+        trace!("Setting up root verity device using new API");
         setup_root_verity_device(ctx, verity_device)?;
     }
 
@@ -350,7 +355,7 @@ mod functional_test {
 
     #[functional_test]
     fn test_get_root_verity_root_hash_grub() {
-        let expected_root_hash = verity::setup_verity_volumes();
+        let (boot_dev, verity_vol) = verity::setup_root_verity_boot_partition();
 
         let ctx = EngineContext {
             spec: HostConfiguration {
@@ -397,7 +402,7 @@ mod functional_test {
             },
             partition_paths: btreemap! {
                 "sdb".to_owned() => PathBuf::from(TEST_DISK_DEVICE_PATH),
-                "boot".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+                "boot".to_owned() => boot_dev.clone(),
                 "root".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
                 "root-verity".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
             },
@@ -406,7 +411,7 @@ mod functional_test {
 
         assert_eq!(
             get_root_verity_root_hash_grub(&ctx).unwrap(),
-            expected_root_hash
+            verity_vol.root_hash,
         );
 
         // test failure on missing boot partition in config/status
@@ -445,7 +450,7 @@ mod functional_test {
         {
             let mount_dir = tempfile::tempdir().unwrap();
             mount::mount(
-                Path::new(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+                &boot_dev,
                 mount_dir.path(),
                 MountFileSystemType::Ext4,
                 &["defaults".into()],
@@ -470,7 +475,7 @@ mod functional_test {
 
     #[functional_test]
     fn test_setup_root_verity_device() {
-        let _expected_root_hash = verity::setup_verity_volumes();
+        let (boot_dev, verity_vol) = verity::setup_verity_volumes_with_boot();
 
         let verity_device_path = Path::new(DEV_MAPPER_PATH).join("root_new");
         if verity_device_path.exists() {
@@ -536,9 +541,9 @@ mod functional_test {
             },
             partition_paths: btreemap! {
                 "sdb".to_owned() => PathBuf::from(TEST_DISK_DEVICE_PATH),
-                "boot".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
-                "root-hash".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
-                "root".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
+                "boot".to_owned() => boot_dev,
+                "root-hash".to_owned() => verity_vol.hash_volume.clone(),
+                "root".to_owned() => verity_vol.data_volume.clone(),
                 "overlay".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
             },
             ..Default::default()
@@ -589,6 +594,12 @@ mod functional_test {
 
     #[functional_test]
     fn test_setup_verity_devices() {
+        env_logger::builder()
+            .filter_level(log::LevelFilter::Trace)
+            .is_test(true)
+            .try_init()
+            .ok();
+
         // test no verity devices
         let ctx = EngineContext::default();
         setup_verity_devices(&ctx).unwrap();
@@ -596,7 +607,7 @@ mod functional_test {
         assert!(ctx.partition_paths.is_empty());
 
         // test root verity device
-        let _expected_root_hash = verity::setup_verity_volumes();
+        let (boot_dev, verity_vol) = verity::setup_verity_volumes_with_boot();
 
         let verity_device_path = Path::new(DEV_MAPPER_PATH).join("root_new");
         if verity_device_path.exists() {
@@ -662,9 +673,9 @@ mod functional_test {
             },
             partition_paths: btreemap! {
                 "sdb".to_owned() => PathBuf::from(TEST_DISK_DEVICE_PATH),
-                "boot".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
-                "root-hash".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
-                "root".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
+                "boot".to_owned() => boot_dev.clone(),
+                "root-hash".to_owned() => verity_vol.hash_volume.clone(),
+                "root".to_owned() => verity_vol.data_volume.clone(),
                 "overlay".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
             },
             ..Default::default()
@@ -718,7 +729,14 @@ mod functional_test {
 
     #[functional_test]
     fn test_stop_pre_existing_verity_devices() {
-        verity::setup_verity_volumes();
+        env_logger::builder()
+            .filter_level(log::LevelFilter::Trace)
+            .is_test(true)
+            .try_init()
+            .ok();
+
+        let verity_vol = verity::setup_verity_volumes();
+
         let ctx_golden = EngineContext {
             spec: HostConfiguration {
                 storage: Storage {
@@ -777,22 +795,23 @@ mod functional_test {
             partition_paths: btreemap! {
                 "foo".to_owned() => PathBuf::from(TEST_DISK_DEVICE_PATH),
                 "boot".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
-                "root-hash".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
-                "root".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
+                "root-hash".to_owned() => verity_vol.hash_volume.clone(),
+                "root".to_owned() => verity_vol.data_volume.clone(),
                 "overlay".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
             },
             ..Default::default()
         };
 
         // nothing mounted
-        let verity_root_path = Path::new(DEV_MAPPER_PATH).join("root_new");
+        let verity_dev_name = "root_new";
+        let verity_root_path = Path::new(DEV_MAPPER_PATH).join(verity_dev_name);
         assert!(!verity_root_path.exists());
         stop_pre_existing_verity_devices(&ctx_golden.spec).unwrap();
 
         // root verity opened
         {
             let ctx = ctx_golden.clone();
-            setup_verity_devices(&ctx).unwrap();
+            let _guard = verity_vol.open_verity(verity_dev_name);
             assert!(verity_root_path.exists());
             stop_pre_existing_verity_devices(&ctx.spec).unwrap();
             assert!(!verity_root_path.exists());
@@ -801,7 +820,8 @@ mod functional_test {
         // root verity opened & mounted
         {
             let ctx = ctx_golden.clone();
-            setup_verity_devices(&ctx).unwrap();
+            let _guard = verity_vol.open_verity(verity_dev_name);
+
             assert!(verity_root_path.exists());
             let mount_dir = tempfile::tempdir().unwrap();
             mount::mount(

@@ -538,7 +538,7 @@ mod functional_test {
             .try_init();
         info!("Set up logging in tests!");
 
-        let _expected_root_hash = verity::setup_verity_volumes();
+        let (boot_dev, verity_vol) = verity::setup_root_verity_boot_partition();
 
         // no change
         {
@@ -548,7 +548,7 @@ mod functional_test {
             let boot_path = mount_dir.path().join("boot");
             files::create_dirs(&boot_path).unwrap();
             mount::mount(
-                Path::new(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+                &boot_dev,
                 &boot_path,
                 MountFileSystemType::Ext4,
                 &["defaults".into()],
@@ -629,9 +629,9 @@ mod functional_test {
             },
             partition_paths: btreemap! {
                 "sdb".to_owned() => PathBuf::from(TEST_DISK_DEVICE_PATH),
-                "boot".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
-                "root-hash".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
-                "root".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
+                "boot".to_owned() => boot_dev.clone(),
+                "root-hash".to_owned() => verity_vol.hash_volume.clone(),
+                "root".to_owned() => verity_vol.data_volume.clone(),
                 "overlay".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
             },
             ..Default::default()
@@ -642,7 +642,7 @@ mod functional_test {
             let boot_path = mount_dir.path().join("boot");
             files::create_dirs(&boot_path).unwrap();
             mount::mount(
-                Path::new(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+                &boot_dev,
                 &boot_path,
                 MountFileSystemType::Ext4,
                 &["defaults".into()],
@@ -665,13 +665,13 @@ mod functional_test {
                 grub_config
                     .read_linux_command_line_argument("systemd.verity_root_data")
                     .unwrap(),
-                formatcp!("{TEST_DISK_DEVICE_PATH}3")
+                verity_vol.data_volume.display().to_string()
             );
             assert_eq!(
                 grub_config
                     .read_linux_command_line_argument("systemd.verity_root_hash")
                     .unwrap(),
-                formatcp!("{TEST_DISK_DEVICE_PATH}2")
+                verity_vol.hash_volume.display().to_string()
             );
             assert_eq!(
                 grub_config
@@ -687,7 +687,7 @@ mod functional_test {
             let boot_path = mount_dir.path().join("boot");
             files::create_dirs(&boot_path).unwrap();
             mount::mount(
-                Path::new(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+                &boot_dev,
                 &boot_path,
                 MountFileSystemType::Ext4,
                 &["defaults".into()],

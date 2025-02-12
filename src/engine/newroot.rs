@@ -474,25 +474,28 @@ mod functional_test {
 
     use std::{
         fs::{self, File},
-        io::{Read, Write},
+        io::Write,
         path::{Path, PathBuf},
         str::FromStr,
     };
 
-    use const_format::formatcp;
     use maplit::btreemap;
+    use path::join_relative;
     use tempfile::{NamedTempFile, TempDir};
 
     use osutils::{
         dependencies::Dependency,
         filesystems::MkfsFileSystemType,
         findmnt::FindMnt,
-        hashing_reader::HashingReader256,
-        image_streamer, mkfs, mountpoint,
+        mkfs, mountpoint,
         partition_types::DiscoverablePartitionType,
         repart::{RepartEmptyMode, RepartPartitionEntry, SystemdRepartInvoker},
-        testutils::repart::{
-            self, CDROM_DEVICE_PATH, CDROM_MOUNT_PATH, OS_DISK_DEVICE_PATH, TEST_DISK_DEVICE_PATH,
+        testutils::{
+            repart::{
+                self, CDROM_DEVICE_PATH, CDROM_MOUNT_PATH, OS_DISK_DEVICE_PATH,
+                TEST_DISK_DEVICE_PATH,
+            },
+            tmp_mount,
         },
         udevadm,
     };
@@ -501,7 +504,7 @@ mod functional_test {
         config::{
             self, Disk, FileSystemType, HostConfiguration, Partition, PartitionSize, PartitionType,
         },
-        constants::MOUNT_OPTION_READ_ONLY,
+        constants::{ESP_RELATIVE_MOUNT_POINT_PATH, MOUNT_OPTION_READ_ONLY},
         error::ErrorKind,
     };
 
@@ -570,6 +573,17 @@ mod functional_test {
 
         let root_mount_dir = tempfile::tempdir().unwrap();
 
+        // Partition test drive
+        let partition_definition = repart::generate_partition_definition_esp_generic();
+        let disk_bus_path = PathBuf::from(TEST_DISK_DEVICE_PATH);
+        let repart = SystemdRepartInvoker::new(disk_bus_path, RepartEmptyMode::Force)
+            .with_partition_entries(partition_definition.clone());
+        let repart_result = repart.execute().unwrap();
+        udevadm::settle().unwrap();
+
+        let esp_dev = &repart_result[0].node;
+        let root_dev = &repart_result[1].node;
+
         let ctx = EngineContext {
             spec: HostConfiguration {
                 storage: config::Storage {
@@ -610,41 +624,29 @@ mod functional_test {
             },
             partition_paths: btreemap! {
                 "os".into() => PathBuf::from(TEST_DISK_DEVICE_PATH),
-                "esp".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
-                "root".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"))
+                "esp".into() => esp_dev.to_owned(),
+                "root".into() => root_dev.to_owned(),
             },
             ..Default::default()
         };
 
-        // Partition test drive
-        let partition_definition = repart::generate_partition_definition_esp_generic();
-        let disk_bus_path = PathBuf::from(TEST_DISK_DEVICE_PATH);
-        let repart = SystemdRepartInvoker::new(disk_bus_path, RepartEmptyMode::Force)
-            .with_partition_entries(partition_definition.clone());
-        let _ = repart.execute().unwrap();
-        udevadm::settle().unwrap();
+        // Fake file to create in a location where a bootloader would be installed
+        let mock_bootloader_path = "EFI/BOOT/bootx64.efi";
 
-        // Image partitions on /dev/sdb
-        let stream: Box<dyn Read> = Box::new(
-            File::open("/data/esp.rawzst")
-                .context("Failed to open esp image")
-                .unwrap(),
-        );
-        image_streamer::stream_zstd(
-            HashingReader256::new(stream),
-            Path::new(format!("{TEST_DISK_DEVICE_PATH}1").as_str()),
-        )
-        .unwrap();
-        let stream: Box<dyn Read> = Box::new(
-            File::open("/data/root.rawzst")
-                .context("Failed to open root image")
-                .unwrap(),
-        );
-        image_streamer::stream_zstd(
-            HashingReader256::new(stream),
-            Path::new(format!("{TEST_DISK_DEVICE_PATH}2").as_str()),
-        )
-        .unwrap();
+        // Set up fake ESP and root partitions
+        mkfs::run(esp_dev, MkfsFileSystemType::Vfat).unwrap();
+        tmp_mount::mount(esp_dev, MountFileSystemType::Vfat, &[], |mount_dir| {
+            files::create_file(mount_dir.join(mock_bootloader_path)).unwrap();
+        });
+
+        mkfs::run(root_dev, MkfsFileSystemType::Ext4).unwrap();
+        tmp_mount::mount(root_dev, MountFileSystemType::Ext4, &[], |mount_dir| {
+            ["/boot/efi", "/etc", "/usr", "/bin", "/lib"]
+                .into_iter()
+                .for_each(|dir| {
+                    files::create_dirs(join_relative(mount_dir, dir)).unwrap();
+                });
+        });
 
         // Test recursive mounting
         let mut newroot_mount2 = NewrootMount::new(root_mount_dir.path().to_owned());
@@ -654,7 +656,8 @@ mod functional_test {
 
         assert!(root_mount_dir
             .path()
-            .join("boot/efi/EFI/BOOT/bootx64.efi")
+            .join(ESP_RELATIVE_MOUNT_POINT_PATH)
+            .join(mock_bootloader_path)
             .exists());
         newroot_mount2.unmount_all().unwrap();
         assert!(!root_mount_dir.path().join("boot").exists());

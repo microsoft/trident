@@ -29,7 +29,7 @@ class RunnerTool:
     def run(self, module_name, test_name=None, parallel: bool = False) -> None:
         # For some reason, passing RUST_BACKTRACE=1 here works, while passing it
         # via the `update_envs` parameter in `execute()` does not.
-        cmd = f"RUST_BACKTRACE=1 tests/{module_name}"
+        cmd = f"RUST_BACKTRACE=1 tests/{module_name} --exact"
         if not parallel:
             cmd += " --test-threads 1"
         if test_name:
