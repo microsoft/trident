@@ -592,7 +592,7 @@ pub(super) fn deploy_esp_from_os_image(
     trace!("Deploying ESP from OS image");
 
     let os_image = ctx
-        .os_image
+        .image
         .as_ref()
         .context("OS image is required to deploy ESP from OS image")?;
 

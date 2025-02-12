@@ -238,7 +238,7 @@ pub(super) fn validate_verity_compatibility(
     ctx: &EngineContext,
     new_root: &Path,
 ) -> Result<bool, Error> {
-    let root_verity_in_image = if let Some(os_img) = ctx.os_image.as_ref() {
+    let root_verity_in_image = if let Some(os_img) = ctx.image.as_ref() {
         // Prefer checking the OS image for verity configuration when possible.
         os_img
             .root_filesystem()

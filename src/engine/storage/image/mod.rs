@@ -298,7 +298,7 @@ fn deploy_os_image(ctx: &EngineContext, host_config: &HostConfiguration) -> Resu
 
     // If there are no filesystems sourced from the OS image, return early
     if filesystems_from_os_image.is_empty() {
-        if ctx.os_image.is_none() {
+        if ctx.image.is_none() {
             // We don't have any filesystems sourced from the OS image nor an OS
             // image, this is fine. This most likely means that the host
             // configuration is using the old images API.
@@ -310,7 +310,7 @@ fn deploy_os_image(ctx: &EngineContext, host_config: &HostConfiguration) -> Resu
 
     // If we have filesystems sourced from the OS image, ensure that the OS
     // image is available.
-    let os_img = ctx.os_image.as_ref().context("OS image is not available")?;
+    let os_img = ctx.image.as_ref().context("OS image is not available")?;
 
     // TODO: MOVE THIS TO THE VALIDATE FUNCTION (#9826)
     // Get the available mount points

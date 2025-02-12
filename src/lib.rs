@@ -420,7 +420,7 @@ impl Trident {
             partition_paths: host_status.partition_paths.clone(),
             disk_uuids: host_status.disk_uuids.clone(),
             install_index: host_status.install_index,
-            os_image: None,
+            image: None,
             storage_graph: engine::build_storage_graph(&host_config.storage)?, // Build storage graph
         };
 

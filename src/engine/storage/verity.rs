@@ -76,7 +76,7 @@ fn setup_root_verity_device(
 /// Get the root verity root hash.
 fn get_root_verity_root_hash(ctx: &EngineContext) -> Result<String, Error> {
     // When available, extract information from the OS image.
-    if let Some(os_img) = ctx.os_image.as_ref() {
+    if let Some(os_img) = ctx.image.as_ref() {
         get_root_verity_root_hash_osimage(os_img).context(format!(
             "Failed to get root hash from OS image '{}'",
             os_img.source()

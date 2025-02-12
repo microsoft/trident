@@ -56,7 +56,7 @@ fn check_fs_match(a: FileSystemType, b: OsImageFileSystemType) -> bool {
 /// - ESP image never has verity enabled
 /// - There is enough space to copy over the ESP image into /tmp
 pub fn validate_host_config(ctx: &EngineContext) -> Result<(), TridentError> {
-    let Some(os_image) = &ctx.os_image else {
+    let Some(os_image) = &ctx.image else {
         return Ok(());
     };
 

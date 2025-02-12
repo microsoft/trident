@@ -727,7 +727,7 @@ mod tests {
             },
             // Set active volume to A
             ab_active_volume: Some(AbVolumeSelection::VolumeA),
-            os_image: Some(os_image),
+            image: Some(os_image),
             ..Default::default()
         };
         assert_eq!(

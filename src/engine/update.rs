@@ -62,7 +62,7 @@ pub(crate) fn update(
         ab_active_volume: state.host_status().ab_active_volume,
         disk_uuids: state.host_status().disk_uuids.clone(),
         install_index: state.host_status().install_index,
-        os_image: osimage::load_os_image(&command.host_config)?,
+        image: osimage::load_os_image(&command.host_config)?,
         storage_graph: engine::build_storage_graph(&host_config.storage)?, // Build storage graph
     };
 
@@ -303,7 +303,7 @@ pub(crate) fn finalize_update(
         partition_paths: state.host_status().partition_paths.clone(),
         disk_uuids: state.host_status().disk_uuids.clone(),
         install_index: state.host_status().install_index,
-        os_image: None, // Not used in finalize_update
+        image: None, // Not used in finalize_update
         storage_graph: engine::build_storage_graph(&state.host_status().spec.storage)?, // Build storage graph
     };
 

@@ -45,7 +45,7 @@ pub struct EngineContext {
 
     /// The OS image that Trident is using to service the host.
     #[allow(dead_code)]
-    pub os_image: Option<OsImage>,
+    pub image: Option<OsImage>,
 
     /// The storage graph representing the storage configuration of the host.
     #[allow(dead_code)]

@@ -36,7 +36,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
         partition_paths: datastore.host_status().partition_paths.clone(),
         disk_uuids: datastore.host_status().disk_uuids.clone(),
         install_index: datastore.host_status().install_index,
-        os_image: None, // Not used for boot validation logic
+        image: None, // Not used for boot validation logic
         storage_graph: engine::build_storage_graph(&datastore.host_status().spec.storage)?, // Build storage graph
     };
 
