@@ -37,6 +37,35 @@ parameters:
     default: "trident-ubuntu-1es-pool-eastus2"
 
 jobs:
+  - ${{ if eq(parameters.platform, 'azure') }}:
+    - job: PublishAzureImage
+      displayName: Publish Azure Image
+      timeoutInMinutes: 20
+      pool:
+        type: linux
+        name: ${{ parameters.pool }}
+        hostArchitecture: amd64
+      variables:
+        ob_outputDirectory: $(Build.SourcesDirectory)/logs
+      steps:
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            buildType: current
+            artifactName: image-${{ parameters.platform }}-base
+            targetPath: "$(Build.ArtifactStagingDirectory)/"
+          displayName: Download Base Image
+        - bash: |
+            set -eux
+            az login --identity
+            ./scripts/loop-update/publish-sig-image.sh
+          displayName: Publish Base Image
+          env:
+            ARTIFACTS: $(Build.ArtifactStagingDirectory)
+            IMAGE_DEFINITION: $(IMAGE_DEFINITION)
+            SUBSCRIPTION: $(SUBSCRIPTION)
+            STORAGE_ACCOUNT: "tridentazureimages"
+            AZCOPY_AUTO_LOGIN_TYPE: "MSI"
+
   - job: UpdateTesting_${{ parameters.platform }}
     displayName: Update Testing - ${{ parameters.platform }}
     timeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
@@ -46,6 +75,9 @@ jobs:
       hostArchitecture: amd64
     strategy:
       parallel: ${{ parameters.workers }}
+    dependsOn:
+      - ${{ if eq(parameters.platform, 'azure') }}:
+          - PublishAzureImage
 
     variables:
       tridentSourceDirectory: $(Build.SourcesDirectory)
@@ -56,12 +88,13 @@ jobs:
       SUBSCRIPTION: 04cdc145-a4f9-42d4-9868-c46d23d0c63f # CoreOS_Mariner_BMP_Staging
 
     steps:
-      - task: DownloadPipelineArtifact@2
-        inputs:
-          buildType: current
-          artifactName: image-${{ parameters.platform }}-base
-          targetPath: "$(Build.ArtifactStagingDirectory)/"
-        displayName: Download Base Image
+      - ${{ if eq(parameters.platform, 'qemu') }}:
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            buildType: current
+            artifactName: image-${{ parameters.platform }}-base
+            targetPath: "$(Build.ArtifactStagingDirectory)/"
+          displayName: Download Base Image
 
       - task: DownloadPipelineArtifact@2
         inputs:
@@ -91,21 +124,12 @@ jobs:
           mkdir -p $(ob_outputDirectory)
         displayName: Set up SSH Keys and setup output directory
 
-      # Publish the base image only for the Azure platform
-      - ${{ if eq(parameters.platform, 'Azure') }}:
-          - bash: |
-              set -eux
-              az login --identity
-              ./scripts/loop-update/publish-sig-image.sh
-            displayName: Publish Base Image
-            env:
-              ARTIFACTS: $(Build.ArtifactStagingDirectory)
-              IMAGE_DEFINITION: $(IMAGE_DEFINITION)
-              SUBSCRIPTION: $(SUBSCRIPTION)
-              STORAGE_ACCOUNT: "tridentazureimages"
-              AZCOPY_AUTO_LOGIN_TYPE: "MSI"
-
-      - bash: ./scripts/loop-update/deploy-vm.sh
+      - bash: |
+          set -eux
+          if [ "$TEST_PLATFORM" == "azure" ]; then
+            az login --identity
+          fi
+          ./scripts/loop-update/deploy-vm.sh
         displayName: "Deploy VM"
         env:
           VERBOSE: ${{ parameters.verboseLogging }}

@@ -37,6 +37,14 @@ parameters:
     type: boolean
     default: false
 
+schedules:
+  - cron: "0 8 * * *" # 1 am PST
+    displayName: Daily build
+    always: true
+    branches:
+      include:
+        - main
+
 trigger: none
 
 variables:
@@ -93,7 +101,7 @@ resources:
         - "3.0-preview"
 
 extends:
-  template: v2/OneBranch.NonOfficial.CrossPlat.yml@templates
+  template: v2/OneBranch.Official.CrossPlat.yml@templates
   parameters:
     globalSdl: # https://aka.ms/obpipelines/sdl
       tsa:
@@ -123,3 +131,4 @@ extends:
           baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
           numberOfUpdateIterations: ${{ parameters.numberOfUpdateIterations }}
           forceTridentRebuild: ${{ parameters.forceTridentRebuild }}
+          includeAzure: true

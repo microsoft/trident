@@ -52,6 +52,11 @@ parameters:
     type: boolean
     default: false
 
+  - name: includeAzure
+    displayName: "Include Azure testing"
+    type: boolean
+    default: false
+
 stages:
   # Trident Build/Download
   - template: stages/trident_rpms/trident-stage.yml
@@ -75,3 +80,4 @@ stages:
       verboseLogging: ${{ parameters.verboseLogging }}
       previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
       baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+      includeAzure: ${{ parameters.includeAzure }}
