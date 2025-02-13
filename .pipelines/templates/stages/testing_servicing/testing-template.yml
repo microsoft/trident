@@ -60,9 +60,9 @@ jobs:
             ./scripts/loop-update/publish-sig-image.sh
           displayName: Publish Base Image
           env:
+            SUBSCRIPTION: 04cdc145-a4f9-42d4-9868-c46d23d0c63f # CoreOS_Mariner_BMP_Staging
+            IMAGE_DEFINITION: "trident-vm-verity-testimage-$(System.DefinitionId)"
             ARTIFACTS: $(Build.ArtifactStagingDirectory)
-            IMAGE_DEFINITION: $(IMAGE_DEFINITION)
-            SUBSCRIPTION: $(SUBSCRIPTION)
             STORAGE_ACCOUNT: "tridentazureimages"
             AZCOPY_AUTO_LOGIN_TYPE: "MSI"
 
@@ -195,5 +195,6 @@ jobs:
         env:
           TEST_RESOURCE_GROUP: $(TEST_RESOURCE_GROUP)
           TEST_PLATFORM: ${{ parameters.platform }}
+          SUBSCRIPTION: $(SUBSCRIPTION)
         condition: failed()
         displayName: "Publish OS disk"
