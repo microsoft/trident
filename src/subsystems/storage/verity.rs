@@ -137,15 +137,36 @@ fn get_verity_overlay_device_path(ctx: &EngineContext) -> Result<PathBuf, Error>
     ))
 }
 
-/// Update the root data, hash and overlay davice paths in the GRUB config,
-/// along with the overlay configuration.
+/// Perform necessary configuration for dm-verity.
 #[tracing::instrument(name = "verity_configuration", skip_all)]
 pub(super) fn configure(ctx: &EngineContext, root_mount_path: &Path) -> Result<(), Error> {
     if !ctx.spec.storage.has_verity_device() {
         return Ok(());
     }
 
-    info!("Updating root verity configuration in GRUB config");
+    match OsRelease::read_root(root_mount_path)
+        .context("Failed to determine the Linux distribution of the new OS")?
+        .get_distro()
+    {
+        Distro::AzureLinux(AzureLinuxRelease::AzL2) => {
+            configure_root_verity_grub_azl2(ctx, root_mount_path)
+        }
+
+        // In Azure Linux 3.0 Trident relies on OSModifier to update the GRUB config.
+        Distro::AzureLinux(AzureLinuxRelease::AzL3) => Ok(()),
+
+        distro => {
+            bail!("Unsupported Linux distribution for verity setup: '{distro:?}'")
+        }
+    }
+}
+
+/// Updates the GRUB config with root verity info for Azure Linux 2.0.
+fn configure_root_verity_grub_azl2(
+    ctx: &EngineContext,
+    root_mount_path: &Path,
+) -> Result<(), Error> {
+    info!("Updating root verity configuration in GRUB config for Azure Linux 2.0");
 
     // We currently only support a single verity device, which is the root
     let verity_device = &ctx
@@ -182,52 +203,34 @@ pub(super) fn configure(ctx: &EngineContext, root_mount_path: &Path) -> Result<(
         volume_value
     );
 
-    match OsRelease::read_root(root_mount_path)
-        .context("Failed to determine the Linux distribution of the new OS")?
-        .get_distro()
-    {
-        Distro::AzureLinux(AzureLinuxRelease::AzL2) => {
-            info!("Updating GRUB config for Azure Linux 2.0");
-            // Update the root data device path
-            grub_config.update_linux_command_line_argument(
-                KARG_VERITY_ROOT_DATA_DEV,
-                verity_data_path.to_str().context(format!(
-                    "Failed to convert verity root data path '{}' to string",
-                    verity_data_path.display()
-                ))?,
-            )?;
+    debug!("Updating GRUB config for Azure Linux 2.0");
+    // Update the root data device path
+    grub_config.update_linux_command_line_argument(
+        KARG_VERITY_ROOT_DATA_DEV,
+        verity_data_path.to_str().context(format!(
+            "Failed to convert verity root data path '{}' to string",
+            verity_data_path.display()
+        ))?,
+    )?;
 
-            // Update the root hash device path
-            grub_config.update_linux_command_line_argument(
-                KARG_VERITY_ROOT_HASH_DEV,
-                verity_hash_path.to_str().context(format!(
-                    "Failed to convert verity root hash path '{}' to string",
-                    verity_hash_path.display()
-                ))?,
-            )?;
+    // Update the root hash device path
+    grub_config.update_linux_command_line_argument(
+        KARG_VERITY_ROOT_HASH_DEV,
+        verity_hash_path.to_str().context(format!(
+            "Failed to convert verity root hash path '{}' to string",
+            verity_hash_path.display()
+        ))?,
+    )?;
 
-            // Update the overlay configuration
-            if grub_config.contains_linux_command_line_argument(KARG_OVERLAYS)? {
-                grub_config.update_linux_command_line_argument(KARG_OVERLAYS, &overlays_value)?;
-            } else {
-                grub_config.append_linux_command_line_argument(KARG_OVERLAYS, &overlays_value)?;
-            }
+    // Update the overlay configuration
+    if grub_config.contains_linux_command_line_argument(KARG_OVERLAYS)? {
+        grub_config.update_linux_command_line_argument(KARG_OVERLAYS, &overlays_value)?;
+    } else {
+        grub_config.append_linux_command_line_argument(KARG_OVERLAYS, &overlays_value)?;
+    }
 
-            // Write down updated GRUB config
-            grub_config
-                .write()
-                .context("Failed to update GRUB config")?;
-        }
-
-        // In Azure Linux 3.0 Trident relies on OSModifier to update the GRUB config.
-        Distro::AzureLinux(AzureLinuxRelease::AzL3) => {}
-
-        distro => {
-            bail!("Unsupported Linux distribution for verity setup: '{distro:?}'")
-        }
-    };
-
-    Ok(())
+    // Write down updated GRUB config
+    grub_config.write().context("Failed to update GRUB config")
 }
 
 /// Ensures that the Host Config and the provided image have matching verity
