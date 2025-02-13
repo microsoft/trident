@@ -112,6 +112,10 @@ impl StorageGraphBuilder {
         trace!("Checking partition type homogeneity");
         partition::check_partition_types(&graph)?;
 
+        // Check that verity devices have congruent partition types
+        trace!("Checking verity partition types");
+        partition::check_verity_partition_types(&graph)?;
+
         // Check RAID levels
         trace!("Checking RAID levels");
         raid::check_raid_levels(&graph)?;

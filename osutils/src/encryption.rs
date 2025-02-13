@@ -7,6 +7,8 @@ use std::{
 use anyhow::{Context, Error};
 use enumflags2::BitFlags;
 
+use trident_api::constants::LUKS_HEADER_SIZE_IN_MIB;
+
 use crate::{dependencies::Dependency, pcr::Pcr};
 
 /// Cipher specification string for the LUKS2 data segment.
@@ -18,9 +20,6 @@ pub const DEV_RANDOM_PATH: &str = "/dev/random";
 
 /// Key size in bits, limited by the cipher specification.
 pub const KEY_SIZE: &str = "512";
-
-/// Reduction in data device size when LUKS2 encryption is initialized.
-const LUKS_HEADER_SIZE_IN_MIB: usize = 16;
 
 /// Size of the temporary recovery key file in bytes.
 const TMP_RECOVERY_KEY_SIZE: usize = 64;

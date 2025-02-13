@@ -193,6 +193,18 @@ pub enum StorageGraphBuildError {
         body: String,
     },
 
+    #[error(
+        "Verity device '{node_id}' has a data device with partition type '{data_dev_partition_type}', \
+        which expects the hash device partition type to be '{expected_type}', but the type is \
+        '{hash_dev_partition_type}'."
+    )]
+    InvalidVerityHashPartitionType {
+        node_id: String,
+        data_dev_partition_type: PartitionType,
+        expected_type: PartitionType,
+        hash_dev_partition_type: PartitionType,
+    },
+
     #[error("Mount point location '{0}' is not an absolute path")]
     MountPointPathNotAbsolute(String),
 

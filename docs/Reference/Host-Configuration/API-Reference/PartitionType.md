@@ -39,7 +39,7 @@ x64: `4F68BCE3-E8CD-4DB1-96E7-FBCAF984B709`
 | Type           | `string` |
 | Value          | `swap`   |
 
-### Root partition with dm-verity enabled
+### Root verity hash partition
 
 x64: `2c7357ed-ebd2-46d9-aec1-23d437ec2bf5`
 

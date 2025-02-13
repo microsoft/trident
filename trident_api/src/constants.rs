@@ -134,6 +134,11 @@ pub const VAR_TMP_PATH: &str = "/var/tmp";
 /// /proc/mdstat path
 pub const MDSTAT_PATH: &str = "/proc/mdstat";
 
+// OS/System Constants
+
+/// Reduction in data device size when LUKS2 encryption is initialized.
+pub const LUKS_HEADER_SIZE_IN_MIB: u32 = 16;
+
 // Azure Linux Specific Constants
 
 /// Azure Linux Install ID Prefix

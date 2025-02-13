@@ -4,16 +4,19 @@ use petgraph::{
     Direction,
 };
 
-use crate::config::{
-    host::storage::storage_graph::{
-        containers::{BlkDevAttrList, PathAllowBlockList},
-        error::StorageGraphBuildError,
-        graph::{NodeIndex, StoragePetgraph},
-        node::StorageGraphNode,
-        references::{ReferenceKind, SpecialReferenceKind},
-        types::HostConfigBlockDevice,
+use crate::{
+    config::{
+        host::storage::storage_graph::{
+            containers::{BlkDevAttrList, PathAllowBlockList},
+            error::StorageGraphBuildError,
+            graph::{NodeIndex, StoragePetgraph},
+            node::StorageGraphNode,
+            references::{ReferenceKind, SpecialReferenceKind},
+            types::HostConfigBlockDevice,
+        },
+        Partition, PartitionSize,
     },
-    Partition, PartitionSize,
+    storage_graph::{graph, node::BlockDevice},
 };
 
 impl SpecialReferenceKind {
@@ -46,7 +49,6 @@ pub(super) fn check_partition_size_homogeneity(
         explore_tree_partitions(
             graph,
             node_idx,
-            node,
             &|part| part.size,
             &|_, _| Ok(()),
             &|node, attr_list| {
@@ -97,7 +99,6 @@ pub(super) fn check_partition_types(graph: &StoragePetgraph) -> Result<(), Stora
         let partition_types = explore_tree_partitions(
             graph,
             node_idx,
-            node,
             &|part| part.partition_type,
             &|special_kind, attr_list| {
                 // Check if we care about checking partition types at this level.
@@ -216,6 +217,99 @@ pub(super) fn check_partition_types(graph: &StoragePetgraph) -> Result<(), Stora
     Ok(())
 }
 
+/// Checks that all verity devices have congruent data and hash partition types.
+///
+/// Congruency in this context means that the hash partition type matches the
+/// expected hash partition type for the corresponding data partition type.
+///
+/// E.g.: If the data partition type is `root`, then the hash partition type
+/// must be `root-verity`. If the data partition type is `usr`, then the hash
+/// partition type must be `usr-verity`.
+pub(super) fn check_verity_partition_types(
+    graph: &StoragePetgraph,
+) -> Result<(), StorageGraphBuildError> {
+    for (idx, node) in graph.node_references() {
+        // Filter out non-verity devices.
+        let StorageGraphNode::BlockDevice(BlockDevice {
+            host_config_ref: HostConfigBlockDevice::VerityDevice(dev),
+            ..
+        }) = node
+        else {
+            continue;
+        };
+
+        let data_device_idx =
+            graph::find_special_reference(graph, idx, SpecialReferenceKind::VerityDataDevice)
+                .ok_or_else(|| StorageGraphBuildError::InternalError {
+                    body: format!(
+                        "Verity device '{}' does not have a data device reference.",
+                        dev.name
+                    ),
+                })?;
+
+        let hash_device_idx =
+            graph::find_special_reference(graph, idx, SpecialReferenceKind::VerityHashDevice)
+                .ok_or_else(|| StorageGraphBuildError::InternalError {
+                    body: format!(
+                        "Verity device '{}' does not have a hash device reference.",
+                        dev.name
+                    ),
+                })?;
+
+        // Get the partition types of the data and hash devices.
+        let data_dev_partition_type = *explore_tree_partitions(
+            graph,
+            data_device_idx,
+            &|part| part.partition_type,
+            &|_, _| Ok(()),
+            &|_, _| Ok(()),
+        )?
+        .get_homogeneous()
+        .ok_or_else(|| StorageGraphBuildError::InternalError {
+            body: format!(
+                "Verity device '{}' does not have a homogeneous data device partition type.",
+                dev.name
+            ),
+        })?;
+
+        let hash_dev_partition_type = *explore_tree_partitions(
+            graph,
+            hash_device_idx,
+            &|part| part.partition_type,
+            &|_, _| Ok(()),
+            &|_, _| Ok(()),
+        )?
+        .get_homogeneous()
+        .ok_or_else(|| StorageGraphBuildError::InternalError {
+            body: format!(
+                "Verity device '{}' does not have a homogeneous hash device partition type.",
+                dev.name
+            ),
+        })?;
+
+        let expected_hash_partition_type =
+            data_dev_partition_type.to_verity().ok_or_else(|| {
+                StorageGraphBuildError::InternalError {
+                    body: format!(
+                        "Data device '{}' of verity device '{}' has an invalid partition type '{}' which does not support verity.",
+                        dev.name, dev.name, data_dev_partition_type
+                    ),
+                }
+            })?;
+
+        if hash_dev_partition_type != expected_hash_partition_type {
+            return Err(StorageGraphBuildError::InvalidVerityHashPartitionType {
+                node_id: dev.name.clone(),
+                data_dev_partition_type,
+                hash_dev_partition_type,
+                expected_type: expected_hash_partition_type,
+            });
+        }
+    }
+
+    Ok(())
+}
+
 /// Recursively explores the graph as a tree to extract partition attributes for
 /// a given node.
 ///
@@ -263,7 +357,6 @@ pub(super) fn check_partition_types(graph: &StoragePetgraph) -> Result<(), Stora
 fn explore_tree_partitions<'a, T>(
     graph: &'a StoragePetgraph,
     node_idx: NodeIndex,
-    node: &'a StorageGraphNode,
     extractor: &impl Fn(&Partition) -> T,
     special_edge_check: &impl Fn(
         SpecialReferenceKind,
@@ -274,7 +367,9 @@ fn explore_tree_partitions<'a, T>(
         &BlkDevAttrList<'a, T>,
     ) -> Result<(), StorageGraphBuildError>,
 ) -> Result<BlkDevAttrList<'a, T>, StorageGraphBuildError> {
+    let node = &graph[node_idx];
     trace!("Exploring node: {}", node.describe());
+
     // Base cases
     if let StorageGraphNode::BlockDevice(dev) = node {
         match &dev.host_config_ref {
@@ -318,7 +413,6 @@ fn explore_tree_partitions<'a, T>(
         let edge_attr_list = explore_tree_partitions(
             graph,
             dependency_idx,
-            dependency_node,
             extractor,
             special_edge_check,
             node_check,

@@ -88,7 +88,7 @@ pub enum PartitionType {
     /// `0657fd6d-a4ab-43c4-84e5-0933c84b4f4f`
     Swap,
 
-    /// # Root partition with dm-verity enabled
+    /// # Root verity hash partition
     ///
     /// x64: `2c7357ed-ebd2-46d9-aec1-23d437ec2bf5`
     RootVerity,
@@ -229,6 +229,16 @@ impl Display for PartitionSize {
 impl From<u64> for PartitionSize {
     fn from(v: u64) -> Self {
         PartitionSize::Fixed(v.into())
+    }
+}
+
+impl PartitionSize {
+    /// Returns the size of the partition in bytes.
+    pub fn to_bytes(&self) -> Option<u64> {
+        match self {
+            PartitionSize::Fixed(size) => Some(size.bytes()),
+            PartitionSize::Grow => None,
+        }
     }
 }
 
