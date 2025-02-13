@@ -40,7 +40,7 @@ parameters:
   - name: updateCheckTimeoutInMinutes
     displayName: "Timeout for checking runtime OS deployment in minutes"
     type: number
-    default: 25
+    default: 30
 
   - name: verboseLogging
     displayName: "Enable verbose logging"
