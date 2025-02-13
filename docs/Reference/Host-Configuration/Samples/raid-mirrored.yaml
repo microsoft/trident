@@ -75,6 +75,8 @@ storage:
       options: defaults
   - deviceId: trident
     type: ext4
+    source:
+      type: new
     mountPoint:
       path: /var/lib/trident
       options: defaults

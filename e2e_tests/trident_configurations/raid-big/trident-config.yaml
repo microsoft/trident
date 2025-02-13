@@ -34,18 +34,15 @@ storage:
   filesystems:
     - deviceId: root-a
       type: ext4
-      source:
-        type: os-image
       mountPoint: /
     - deviceId: esp1
       type: vfat
-      source:
-        type: os-image
       mountPoint:
         path: /boot/efi
         options: umask=0077
     - deviceId: trident
       type: ext4
+      source: new
       mountPoint: /var/lib/trident
 scripts:
   postConfigure:

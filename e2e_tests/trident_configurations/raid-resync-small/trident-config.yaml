@@ -79,26 +79,26 @@ storage:
   filesystems:
     - deviceId: trident
       type: ext4
+      source: new
       mountPoint: /var/lib/trident
     - deviceId: root
       type: ext4
-      source:
-        type: os-image
       mountPoint: /
     - deviceId: home
       type: ext4
+      source: new
       mountPoint: /home
     - deviceId: swap1
       type: swap
+      source: new
     - deviceId: esp1
       type: vfat
-      source:
-        type: os-image
       mountPoint:
         path: /boot/efi
         options: umask=0077
     - deviceId: swap2
       type: swap
+      source: new
 scripts:
   postProvision:
     - name: sample-provision-script

@@ -77,18 +77,26 @@ storage:
       options: defaults
   - deviceId: trident
     type: ext4
+    source:
+      type: new
     mountPoint:
       path: /var/lib/trident
       options: defaults
   - deviceId: swap
     type: swap
+    source:
+      type: new
   - deviceId: srv
     type: ext4
+    source:
+      type: new
     mountPoint:
       path: /srv
       options: defaults
   - deviceId: some_raid
     type: ext4
+    source:
+      type: new
     mountPoint:
       path: /mnt/raid
       options: defaults

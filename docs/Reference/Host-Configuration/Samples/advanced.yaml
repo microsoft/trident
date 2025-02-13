@@ -225,18 +225,26 @@ storage:
       options: defaults
   - deviceId: trident
     type: ext4
+    source:
+      type: new
     mountPoint:
       path: /var/lib/trident
       options: defaults
   - deviceId: trident-overlay
     type: ext4
+    source:
+      type: new
     mountPoint:
       path: /var/lib/trident-overlay
       options: defaults
   - deviceId: swap1
     type: swap
+    source:
+      type: new
   - deviceId: swap2
     type: swap
+    source:
+      type: new
   - deviceId: var
     type: ext4
     source:
@@ -249,6 +257,8 @@ storage:
       options: defaults
   - deviceId: home
     type: ext4
+    source:
+      type: new
     mountPoint:
       path: /home
       options: defaults

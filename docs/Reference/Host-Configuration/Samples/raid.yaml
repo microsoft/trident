@@ -70,8 +70,12 @@ storage:
       options: defaults
   - deviceId: swap1
     type: swap
+    source:
+      type: new
   - deviceId: swap2
     type: swap
+    source:
+      type: new
 scripts:
   postConfigure:
   - name: wheel

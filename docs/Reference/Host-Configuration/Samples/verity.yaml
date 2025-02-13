@@ -56,11 +56,15 @@ storage:
       options: defaults
   - deviceId: trident
     type: ext4
+    source:
+      type: new
     mountPoint:
       path: /var/lib/trident
       options: defaults
   - deviceId: trident-overlay
     type: ext4
+    source:
+      type: new
     mountPoint:
       path: /var/lib/trident-overlay
       options: defaults
@@ -76,6 +80,8 @@ storage:
       options: defaults
   - deviceId: home
     type: ext4
+    source:
+      type: new
     mountPoint:
       path: /home
       options: defaults

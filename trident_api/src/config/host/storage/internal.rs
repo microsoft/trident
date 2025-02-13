@@ -161,7 +161,7 @@ mod tests {
             filesystems: vec![FileSystem {
                 device_id: Some("/dev/sda1".to_string()),
                 fs_type: FileSystemType::Ext4,
-                source: FileSystemSource::Create,
+                source: FileSystemSource::New,
                 mount_point: Some(MountPoint {
                     path: PathBuf::from("/mnt/data"),
                     options: MountOptions::defaults(),
@@ -214,7 +214,7 @@ mod tests {
             filesystems: vec![FileSystem {
                 device_id: Some("/dev/sda1".to_string()),
                 fs_type: FileSystemType::Swap,
-                source: FileSystemSource::Create,
+                source: FileSystemSource::New,
                 mount_point: None,
             }],
             ..Default::default()
@@ -241,7 +241,7 @@ mod tests {
             filesystems: vec![FileSystem {
                 device_id: None,
                 fs_type: FileSystemType::Tmpfs,
-                source: FileSystemSource::Create,
+                source: FileSystemSource::New,
                 mount_point: Some(MountPoint {
                     path: PathBuf::from("/tmp"),
                     options: MountOptions::defaults(),
@@ -271,7 +271,7 @@ mod tests {
             filesystems: vec![FileSystem {
                 device_id: None,
                 fs_type: FileSystemType::Overlay,
-                source: FileSystemSource::Create,
+                source: FileSystemSource::New,
                 mount_point: Some(MountPoint {
                     path: PathBuf::from("/usr/path/data"),
                     options: MountOptions::new(

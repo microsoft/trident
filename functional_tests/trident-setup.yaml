@@ -66,6 +66,8 @@ storage:
       mountPoint: /
     - type: ext4
       deviceId: trident
+      source: new
       mountPoint: /var/lib/trident
     - type: swap
       deviceId: swap
+      source: new

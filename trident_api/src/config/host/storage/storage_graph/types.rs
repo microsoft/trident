@@ -158,7 +158,7 @@ bitflags::bitflags! {
 /// Enum for simple representation of a filesystem source
 pub enum FileSystemSourceKind {
     /// Create a new file system.
-    Create,
+    New,
 
     /// Use an existing file system from a partition image.
     Image,

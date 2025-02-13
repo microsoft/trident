@@ -53,8 +53,12 @@ storage:
       options: defaults
   - deviceId: swap
     type: swap
+    source:
+      type: new
   - deviceId: srv
     type: ext4
+    source:
+      type: new
     mountPoint:
       path: /srv
       options: defaults

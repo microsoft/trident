@@ -4,10 +4,9 @@ use std::{
     str::FromStr,
 };
 
-use serde::{Deserialize, Serialize};
-
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 use crate::{is_default, BlockDeviceId};
 
@@ -27,10 +26,20 @@ pub struct FileSystem {
 
     /// The source of the file system.
     ///
-    /// If not specified, a new filesystem will be created.
+    /// If not specified, this field will default to OS image.
     ///
-    /// When making a `swap` filesystem the field must be skipped.
-    #[serde(default, skip_serializing_if = "is_default")]
+    /// When making a `swap` filesystem the field must be set to `new`.
+    #[serde(
+        default,
+        skip_serializing_if = "is_default",
+        deserialize_with = "crate::primitives::shortcuts::string_or_struct"
+    )]
+    #[cfg_attr(
+        feature = "schemars",
+        schemars(
+            schema_with = "crate::primitives::shortcuts::string_or_struct_schema::<FileSystemSource>"
+        )
+    )]
     pub source: FileSystemSource,
 
     /// The mount point of the file system.
@@ -82,11 +91,10 @@ pub struct VerityFileSystem {
 #[serde(rename_all = "kebab-case", deny_unknown_fields, tag = "type")]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub enum FileSystemSource {
-    /// # Create
+    /// # New
     ///
     /// Create a new file system.
-    #[default]
-    Create,
+    New,
 
     /// # Image
     ///
@@ -107,9 +115,23 @@ pub enum FileSystemSource {
 
     /// # OS Image
     ///
-    /// Not officially part of the API yet.
+    /// Use an existing file system from an OS image.
+    #[default]
     #[cfg_attr(feature = "schemars", schemars(skip))]
     OsImage,
+}
+
+impl FromStr for FileSystemSource {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "image" => Ok(Self::OsImage),
+            "new" => Ok(Self::New),
+            "adopted" => Ok(Self::Adopted),
+            _ => Err(format!("Invalid file system source: {}", s)),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -310,7 +332,7 @@ impl FileSystem {
                 "src",
                 Some(
                     match &self.source {
-                        FileSystemSource::Create => "new",
+                        FileSystemSource::New => "new",
                         FileSystemSource::Adopted => "adopted",
                         FileSystemSource::Image(_) => "image",
                         FileSystemSource::EspImage(_) => "esp-image",
@@ -368,9 +390,7 @@ impl FileSystemSource {
     pub fn is_old_api(&self) -> bool {
         match self {
             FileSystemSource::Image(_) | FileSystemSource::EspImage(_) => true,
-            FileSystemSource::Create | FileSystemSource::Adopted | FileSystemSource::OsImage => {
-                false
-            }
+            FileSystemSource::New | FileSystemSource::Adopted | FileSystemSource::OsImage => false,
         }
     }
 }

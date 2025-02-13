@@ -28,18 +28,15 @@ storage:
   filesystems:
     - deviceId: web
       type: ext4
+      source: new
       mountPoint: /web
     - deviceId: esp
       type: vfat
-      source:
-        type: os-image
       mountPoint:
         path: /boot/efi
         options: umask=0077
     - deviceId: root
       type: ext4
-      source:
-        type: os-image
       mountPoint: /
 scripts:
   postConfigure:

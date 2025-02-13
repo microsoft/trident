@@ -945,7 +945,7 @@ mod tests {
                 FileSystem {
                     device_id: Some("srv".into()),
                     fs_type: FileSystemType::Ext4,
-                    source: FileSystemSource::Create,
+                    source: FileSystemSource::New,
                     mount_point: Some(MountPoint {
                         path: PathBuf::from("/srv"),
                         options: MountOptions::empty(),
@@ -954,7 +954,7 @@ mod tests {
                 FileSystem {
                     device_id: Some("overlay".into()),
                     fs_type: FileSystemType::Ext4,
-                    source: FileSystemSource::Create,
+                    source: FileSystemSource::New,
                     mount_point: Some(MountPoint {
                         path: PathBuf::from(TRIDENT_OVERLAY_PATH),
                         options: MountOptions::empty(),
@@ -963,7 +963,7 @@ mod tests {
                 FileSystem {
                     device_id: Some("mnt".into()),
                     fs_type: FileSystemType::Ext4,
-                    source: FileSystemSource::Create,
+                    source: FileSystemSource::New,
                     mount_point: Some(MountPoint {
                         path: PathBuf::from("/mnt"),
                         options: MountOptions::empty(),
@@ -972,7 +972,7 @@ mod tests {
                 FileSystem {
                     device_id: Some("var".into()),
                     fs_type: FileSystemType::Ext4,
-                    source: FileSystemSource::Create,
+                    source: FileSystemSource::New,
                     mount_point: Some(MountPoint {
                         path: PathBuf::from("/var"),
                         options: MountOptions::empty(),
@@ -1717,7 +1717,7 @@ mod tests {
         storage.filesystems.push(FileSystem {
             device_id: Some("alt".to_owned()),
             fs_type: FileSystemType::Ext4,
-            source: FileSystemSource::Create,
+            source: FileSystemSource::New,
             mount_point: Some(MountPoint {
                 path: PathBuf::from("/alt"),
                 options: MountOptions::empty(),
@@ -2137,7 +2137,7 @@ mod tests {
         storage.filesystems.push(FileSystem {
             device_id: Some("alt".to_owned()),
             fs_type: FileSystemType::Ext4,
-            source: FileSystemSource::Create,
+            source: FileSystemSource::New,
             mount_point: Some(MountPoint {
                 path: PathBuf::from("/alt"),
                 options: MountOptions::empty(),
@@ -2171,7 +2171,7 @@ mod tests {
         storage.filesystems.push(FileSystem {
             device_id: Some("srv-enc".to_owned()),
             fs_type: FileSystemType::Ext4,
-            source: FileSystemSource::Create,
+            source: FileSystemSource::New,
             mount_point: Some(MountPoint {
                 path: PathBuf::from("/mnt/some-mount-point"),
                 options: MountOptions::empty(),
@@ -2471,7 +2471,7 @@ mod tests {
         let mut storage: Storage = get_verity_storage();
 
         // Change the boot fs to create instead of image
-        storage.filesystems[1].source = FileSystemSource::Create;
+        storage.filesystems[1].source = FileSystemSource::New;
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
@@ -2588,7 +2588,7 @@ mod tests {
                 FileSystem {
                     device_id: Some("var".into()),
                     fs_type: FileSystemType::Ext4,
-                    source: FileSystemSource::Create,
+                    source: FileSystemSource::New,
                     mount_point: Some(MountPoint {
                         path: PathBuf::from("/var"),
                         options: MountOptions::empty(),
@@ -2759,7 +2759,7 @@ mod tests {
         host_config.storage.filesystems.push(FileSystem {
             device_id: Some("part2".to_owned()),
             fs_type: FileSystemType::Ext4,
-            source: FileSystemSource::Create,
+            source: FileSystemSource::New,
             mount_point: Some(MountPoint {
                 path: PathBuf::from(ROOT_MOUNT_POINT_PATH).join("boot"),
                 options: MountOptions::empty(),
@@ -2919,7 +2919,7 @@ mod tests {
                         FileSystem {
                             device_id: Some("root".into()),
                             fs_type: FileSystemType::Ext4,
-                            source: FileSystemSource::Create,
+                            source: FileSystemSource::New,
                             mount_point: Some(MountPoint {
                                 path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                                 options: MountOptions::empty(),
@@ -2928,7 +2928,7 @@ mod tests {
                         FileSystem {
                             device_id: Some("boot".into()),
                             fs_type: FileSystemType::Ext4,
-                            source: FileSystemSource::Create,
+                            source: FileSystemSource::New,
                             mount_point: Some(MountPoint {
                                 path: PathBuf::from(BOOT_MOUNT_POINT_PATH),
                                 options: MountOptions::empty(),
@@ -2937,7 +2937,7 @@ mod tests {
                         FileSystem {
                             device_id: Some("efi".into()),
                             fs_type: FileSystemType::Vfat,
-                            source: FileSystemSource::Create,
+                            source: FileSystemSource::New,
                             mount_point: Some(MountPoint {
                                 path: PathBuf::from(ESP_MOUNT_POINT_PATH),
                                 options: MountOptions::empty(),
@@ -3067,7 +3067,7 @@ mod tests {
         let esp2 = FileSystem {
             device_id: Some("esp2".to_owned()),
             fs_type: FileSystemType::Vfat,
-            source: FileSystemSource::Create,
+            source: FileSystemSource::New,
             mount_point: Some(MountPoint {
                 path: PathBuf::from("/esp2"),
                 options: MountOptions::empty(),

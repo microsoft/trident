@@ -293,12 +293,16 @@
           "string_shortcut": true
         },
         "source": {
-          "description": "The source of the file system.\n\nIf not specified, a new filesystem will be created.\n\nWhen making a `swap` filesystem the field must be skipped.",
-          "allOf": [
+          "description": "The source of the file system.\n\nIf not specified, this field will default to OS image.\n\nWhen making a `swap` filesystem the field must be set to `new`.",
+          "oneOf": [
             {
               "$ref": "#/definitions/FileSystemSource"
+            },
+            {
+              "type": "string"
             }
-          ]
+          ],
+          "string_shortcut": true
         },
         "type": {
           "description": "The file system type.",
@@ -314,7 +318,7 @@
     "FileSystemSource": {
       "oneOf": [
         {
-          "title": "Create",
+          "title": "New",
           "description": "Create a new file system.",
           "type": "object",
           "required": [
@@ -324,7 +328,7 @@
             "type": {
               "type": "string",
               "enum": [
-                "create"
+                "new"
               ]
             }
           },

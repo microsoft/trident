@@ -20,13 +20,9 @@ storage:
   filesystems:
     - deviceId: root
       type: ext4
-      source:
-        type: os-image
       mountPoint: /
     - deviceId: esp
       type: vfat
-      source:
-        type: os-image
       mountPoint:
         path: /boot/efi
         options: umask=0077

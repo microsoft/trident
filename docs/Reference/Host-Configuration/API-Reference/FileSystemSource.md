@@ -8,7 +8,7 @@
 
 ## Variants
 
-### Create
+### New
 
 Create a new file system.
 
@@ -23,7 +23,7 @@ Create a new file system.
 | Characteristic | Value    |
 | -------------- | -------- |
 | Type           | `string` |
-| Value          | `create` |
+| Value          | `new`    |
 
 ### Image
 

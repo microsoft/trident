@@ -41,12 +41,13 @@ It can be provided as an object for more control over the mount options, or as a
 
 The source of the file system.
 
-If not specified, a new filesystem will be created.
+If not specified, this field will default to OS image.
 
-When making a `swap` filesystem the field must be skipped.
+When making a `swap` filesystem the field must be set to `new`.
 
 | Characteristic | Value                                     |
 | -------------- | ----------------------------------------- |
 | Type           | `FileSystemSource`                        |
 | Link           | [FileSystemSource](./FileSystemSource.md) |
+| Shorthand      | `string`                                  |
 

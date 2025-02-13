@@ -233,7 +233,7 @@ fn test_filesystem_incompatible_source() {
     let fs2 = FileSystem {
         device_id: Some("partition".into()),
         fs_type: FileSystemType::Other,
-        source: FileSystemSource::Create,
+        source: FileSystemSource::New,
         mount_point: None,
     };
     let mut builder = builder_base.clone();
@@ -243,7 +243,7 @@ fn test_filesystem_incompatible_source() {
         builder.build().unwrap_err(),
         StorageGraphBuildError::FilesystemIncompatibleSource {
             fs_desc: "src:new, type:other, dev:partition".to_string(),
-            fs_source: FileSystemSourceKind::Create,
+            fs_source: FileSystemSourceKind::New,
             fs_compatible_sources: ItemList(vec![
                 FileSystemSourceKind::Image,
                 FileSystemSourceKind::OsImage
@@ -267,7 +267,7 @@ fn test_filesystem_incompatible_source() {
         StorageGraphBuildError::FilesystemIncompatibleSource {
             fs_desc: "src:os-image, type:swap, dev:partition".into(),
             fs_source: FileSystemSourceKind::OsImage,
-            fs_compatible_sources: ItemList(vec![FileSystemSourceKind::Create])
+            fs_compatible_sources: ItemList(vec![FileSystemSourceKind::New])
         }
     );
 }
@@ -302,7 +302,7 @@ fn test_filesystem_missing_mp() {
     let mut fs = FileSystem {
         device_id: None,
         fs_type: FileSystemType::Tmpfs,
-        source: FileSystemSource::Create,
+        source: FileSystemSource::New,
         mount_point: None,
     };
     let mut builder = StorageGraphBuilder::default();
@@ -335,7 +335,7 @@ fn test_unexpected_blkdev_id() {
     let fs = FileSystem {
         device_id: Some("partition".into()),
         fs_type: FileSystemType::Tmpfs,
-        source: FileSystemSource::Create,
+        source: FileSystemSource::New,
         mount_point: Some(MountPoint {
             path: ROOT_MOUNT_POINT_PATH.into(),
             options: MountOptions::defaults(),

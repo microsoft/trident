@@ -239,7 +239,7 @@ mod tests {
                             options: MountOptions::defaults(),
                         }),
                         fs_type: FileSystemType::Ext4,
-                        source: FileSystemSource::Create,
+                        source: FileSystemSource::New,
                     },
                     FileSystem {
                         device_id: Some("bar".into()),
@@ -248,7 +248,7 @@ mod tests {
                             options: MountOptions::defaults(),
                         }),
                         fs_type: FileSystemType::Ext4,
-                        source: FileSystemSource::Create,
+                        source: FileSystemSource::New,
                     },
                 ],
                 ..Default::default()
@@ -269,7 +269,7 @@ mod tests {
                             options: MountOptions::defaults(),
                         }),
                         fs_type: FileSystemType::Ext4,
-                        source: FileSystemSource::Create,
+                        source: FileSystemSource::New,
                     },
                     FileSystem {
                         device_id: Some("bar".into()),
@@ -278,7 +278,7 @@ mod tests {
                             options: MountOptions::defaults(),
                         }),
                         fs_type: FileSystemType::Ext4,
-                        source: FileSystemSource::Create,
+                        source: FileSystemSource::New,
                     },
                 ],
                 ab_update: Some(AbUpdate {
@@ -306,7 +306,7 @@ mod tests {
                             options: MountOptions::defaults(),
                         }),
                         fs_type: FileSystemType::Ext4,
-                        source: FileSystemSource::Create,
+                        source: FileSystemSource::New,
                     },
                     FileSystem {
                         device_id: Some("bar".into()),
@@ -315,7 +315,7 @@ mod tests {
                             options: MountOptions::defaults(),
                         }),
                         fs_type: FileSystemType::Ext4,
-                        source: FileSystemSource::Create,
+                        source: FileSystemSource::New,
                     },
                 ],
                 ab_update: Some(AbUpdate {
@@ -347,7 +347,7 @@ mod tests {
                             options: MountOptions::defaults(),
                         }),
                         fs_type: FileSystemType::Ext4,
-                        source: FileSystemSource::Create,
+                        source: FileSystemSource::New,
                     },
                     FileSystem {
                         device_id: Some("bar".into()),
@@ -356,7 +356,7 @@ mod tests {
                             options: MountOptions::defaults(),
                         }),
                         fs_type: FileSystemType::Ext4,
-                        source: FileSystemSource::Create,
+                        source: FileSystemSource::New,
                     },
                 ],
                 ab_update: Some(AbUpdate {

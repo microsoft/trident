@@ -14,7 +14,7 @@ use super::{
 impl From<&FileSystemSource> for FileSystemSourceKind {
     fn from(source: &FileSystemSource) -> Self {
         match source {
-            FileSystemSource::Create => Self::Create,
+            FileSystemSource::New => Self::New,
             FileSystemSource::Image(_) => Self::Image,
             FileSystemSource::Adopted => Self::Adopted,
             FileSystemSource::EspImage(_) => Self::EspBundle,
@@ -112,7 +112,7 @@ impl From<&FileSystem> for BlkDevReferrerKind {
             match &fs.source {
                 // If we're creating a filesystem, then it's a regular
                 // filesystem referrer.
-                FileSystemSource::Create => BlkDevReferrerKind::FileSystem,
+                FileSystemSource::New => BlkDevReferrerKind::FileSystem,
 
                 // If we're adopting a filesystem, then it's an adopted
                 // filesystem referrer.

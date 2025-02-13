@@ -316,13 +316,13 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             path: "/var/lib/trident".into(),
                             options: MountOptions::defaults(),
                         }),
-                        source: FileSystemSource::Create,
+                        source: FileSystemSource::New,
                     },
                     FileSystem {
                         device_id: Some("swap".into()),
                         fs_type: FileSystemType::Swap,
                         mount_point: None,
-                        source: FileSystemSource::Create,
+                        source: FileSystemSource::New,
                     },
                     FileSystem {
                         device_id: Some("srv".into()),
@@ -331,7 +331,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             path: "/srv".into(),
                             options: MountOptions::defaults(),
                         }),
-                        source: FileSystemSource::Create,
+                        source: FileSystemSource::New,
                     },
                     FileSystem {
                         device_id: Some("some_raid".into()),
@@ -340,7 +340,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             path: "/mnt/raid".into(),
                             options: MountOptions::defaults(),
                         }),
-                        source: FileSystemSource::Create,
+                        source: FileSystemSource::New,
                     },
                 ],
                 ab_update: Some(AbUpdate {
@@ -505,7 +505,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     FileSystem {
                         device_id: Some("trident".into()),
                         fs_type: FileSystemType::Ext4,
-                        source: FileSystemSource::Create,
+                        source: FileSystemSource::New,
                         mount_point: Some(MountPoint {
                             path: "/var/lib/trident".into(),
                             options: MountOptions::defaults(),
@@ -514,7 +514,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     FileSystem {
                         device_id: Some("trident-overlay".into()),
                         fs_type: FileSystemType::Ext4,
-                        source: FileSystemSource::Create,
+                        source: FileSystemSource::New,
                         mount_point: Some(MountPoint {
                             path: "/var/lib/trident-overlay".into(),
                             options: MountOptions::defaults(),
@@ -539,7 +539,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     FileSystem {
                         device_id: Some("home".into()),
                         fs_type: FileSystemType::Ext4,
-                        source: FileSystemSource::Create,
+                        source: FileSystemSource::New,
                         mount_point: Some(MountPoint {
                             path: "/home".into(),
                             options: MountOptions::defaults(),
@@ -955,7 +955,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     FileSystem {
                         device_id: Some("trident".into()),
                         fs_type: FileSystemType::Ext4,
-                        source: FileSystemSource::Create,
+                        source: FileSystemSource::New,
                         mount_point: Some(MountPoint {
                             path: "/var/lib/trident".into(),
                             options: MountOptions::defaults(),
@@ -964,7 +964,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     FileSystem {
                         device_id: Some("trident-overlay".into()),
                         fs_type: FileSystemType::Ext4,
-                        source: FileSystemSource::Create,
+                        source: FileSystemSource::New,
                         mount_point: Some(MountPoint {
                             path: "/var/lib/trident-overlay".into(),
                             options: MountOptions::defaults(),
@@ -973,13 +973,13 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     FileSystem {
                         device_id: Some("swap1".into()),
                         fs_type: FileSystemType::Swap,
-                        source: FileSystemSource::Create,
+                        source: FileSystemSource::New,
                         mount_point: None,
                     },
                     FileSystem {
                         device_id: Some("swap2".into()),
                         fs_type: FileSystemType::Swap,
-                        source: FileSystemSource::Create,
+                        source: FileSystemSource::New,
                         mount_point: None,
                     },
                     FileSystem {
@@ -1001,7 +1001,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     FileSystem {
                         device_id: Some("home".into()),
                         fs_type: FileSystemType::Ext4,
-                        source: FileSystemSource::Create,
+                        source: FileSystemSource::New,
                         mount_point: Some(MountPoint {
                             path: "/home".into(),
                             options: MountOptions::defaults(),
@@ -1197,13 +1197,13 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                         FileSystem {
                             device_id: Some("swap1".into()),
                             fs_type: FileSystemType::Swap,
-                            source: FileSystemSource::Create,
+                            source: FileSystemSource::New,
                             mount_point: None,
                         },
                         FileSystem {
                             device_id: Some("swap2".into()),
                             fs_type: FileSystemType::Swap,
-                            source: FileSystemSource::Create,
+                            source: FileSystemSource::New,
                             mount_point: None,
                         },
                     ],
@@ -1353,7 +1353,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                         FileSystem {
                             device_id: Some("swap".into()),
                             fs_type: FileSystemType::Swap,
-                            source: FileSystemSource::Create,
+                            source: FileSystemSource::New,
                             mount_point: None,
                         },
                         FileSystem {
@@ -1363,7 +1363,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 path: "/srv".into(),
                                 options: MountOptions::defaults(),
                             }),
-                            source: FileSystemSource::Create,
+                            source: FileSystemSource::New,
                         },
                     ],
                     ..Default::default()
@@ -1540,7 +1540,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 path: "/var/lib/trident".into(),
                                 options: MountOptions::defaults(),
                             }),
-                            source: FileSystemSource::Create,
+                            source: FileSystemSource::New,
                         },
                     ],
                     ..Default::default()

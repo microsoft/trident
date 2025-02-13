@@ -136,13 +136,13 @@ impl FileSystemType {
     pub fn valid_sources(&self) -> ItemList<FileSystemSourceKind> {
         match self {
             Self::Ext4 | Self::Xfs | Self::Ntfs => ItemList(vec![
-                FileSystemSourceKind::Create,
+                FileSystemSourceKind::New,
                 FileSystemSourceKind::Image,
                 FileSystemSourceKind::Adopted,
                 FileSystemSourceKind::OsImage,
             ]),
             Self::Vfat => ItemList(vec![
-                FileSystemSourceKind::Create,
+                FileSystemSourceKind::New,
                 FileSystemSourceKind::Image,
                 FileSystemSourceKind::Adopted,
                 FileSystemSourceKind::EspBundle,
@@ -153,9 +153,7 @@ impl FileSystemType {
                 FileSystemSourceKind::OsImage,
             ]),
             Self::Iso9660 | Self::Auto => ItemList(vec![FileSystemSourceKind::Adopted]),
-            Self::Swap | Self::Tmpfs | Self::Overlay => {
-                ItemList(vec![FileSystemSourceKind::Create])
-            }
+            Self::Swap | Self::Tmpfs | Self::Overlay => ItemList(vec![FileSystemSourceKind::New]),
         }
     }
 

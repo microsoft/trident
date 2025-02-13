@@ -74,7 +74,7 @@ impl StorageGraph {
                 | FileSystemSource::EspImage(_)
                 | FileSystemSource::OsImage => VolumeStatus::PresentAndBackedByImage,
                 FileSystemSource::Adopted => VolumeStatus::PresentAndBackedByAdoptedFs,
-                FileSystemSource::Create => VolumeStatus::PresentButNotBackedByImage,
+                FileSystemSource::New => VolumeStatus::PresentButNotBackedByImage,
             }
         } else if self
             .inner
@@ -181,7 +181,7 @@ mod tests {
             fs_type: FileSystemType::Ext4,
             device_id: Some("fs1".into()),
             mount_point: Some(MountPoint::from_str("/mnt/fs1").unwrap()),
-            source: FileSystemSource::Create,
+            source: FileSystemSource::New,
         });
         let _ = graph.inner.add_node(fs_node);
 
@@ -194,7 +194,7 @@ mod tests {
             fs_type: FileSystemType::Ext4,
             device_id: Some("rootfs".into()),
             mount_point: Some(MountPoint::from_str(ROOT_MOUNT_POINT_PATH).unwrap()),
-            source: FileSystemSource::Create,
+            source: FileSystemSource::New,
         });
         let root_fs_node_idx = graph.inner.add_node(root_fs_node.clone());
 
@@ -289,7 +289,7 @@ mod tests {
             fs_type: FileSystemType::Ext4,
             device_id: Some("rootfs".into()),
             mount_point: Some(MountPoint::from_str(ROOT_MOUNT_POINT_PATH).unwrap()),
-            source: FileSystemSource::Create,
+            source: FileSystemSource::New,
         });
         let _ = graph.inner.add_node(root_fs_node.clone());
 
@@ -307,7 +307,7 @@ mod tests {
             fs_type: FileSystemType::Ext4,
             device_id: Some(block_dev_id.into()),
             mount_point: Some(MountPoint::from_str(ROOT_MOUNT_POINT_PATH).unwrap()),
-            source: FileSystemSource::Create,
+            source: FileSystemSource::New,
         });
 
         let root_fs_node_idx = graph.inner.add_node(root_fs_node.clone());
@@ -386,7 +386,7 @@ mod tests {
                 fs_type: FileSystemType::Ext4,
                 device_id: Some(dev_id.into()),
                 mount_point: Some(MountPoint::from_str(ROOT_MOUNT_POINT_PATH).unwrap()),
-                source: FileSystemSource::Create,
+                source: FileSystemSource::New,
             }));
 
         // Add an edge from the partition to the filesystem.

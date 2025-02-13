@@ -141,16 +141,16 @@ block device.
 
 Depending on the type of a filesystem, they may have different source types.
 
-| Filesystem Type | Valid Source Type                       |
-| --------------- | --------------------------------------- |
-| ext4            | create or image or adopted              |
-| xfs             | create or image or adopted              |
-| vfat            | create or image or adopted or esp-image |
-| ntfs            | create or image or adopted              |
-| swap            | create                                  |
-| tmpfs           | create                                  |
-| auto            | adopted                                 |
-| other           | image                                   |
+| Filesystem Type | Valid Source Type                    |
+| --------------- | ------------------------------------ |
+| ext4            | new or image or adopted              |
+| xfs             | new or image or adopted              |
+| vfat            | new or image or adopted or esp-image |
+| ntfs            | new or image or adopted              |
+| swap            | new                                  |
+| tmpfs           | new                                  |
+| auto            | adopted                              |
+| other           | image                                |
 
 ## Filesystem Mounting
 

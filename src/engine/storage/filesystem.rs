@@ -60,8 +60,8 @@ fn block_devices_needing_fs_creation(
 
         // Filter to the filesystems matching any of the specified criteria:
         if !match (&fs.source, ctx.servicing_type) {
-            // The filesystem source is 'Create'.
-            (FileSystemSource::Create, _) => true,
+            // The filesystem source is 'New'.
+            (FileSystemSource::New, _) => true,
 
             // The filesystem source is 'EspImage' AND servicing type is
             // CleanInstall.
@@ -240,7 +240,7 @@ mod tests {
                                 options: MountOptions::defaults(),
                             }),
                             fs_type: FileSystemType::Ext4,
-                            source: FileSystemSource::Create,
+                            source: FileSystemSource::New,
                         },
                     ],
                     ab_update: Some(config::AbUpdate {
@@ -346,7 +346,7 @@ mod tests {
                                 options: MountOptions::defaults(),
                             }),
                             fs_type: FileSystemType::Ext4,
-                            source: FileSystemSource::Create,
+                            source: FileSystemSource::New,
                         },
                     ],
                     ab_update: Some(config::AbUpdate {
@@ -380,7 +380,7 @@ mod tests {
         ctx_ab_update.spec.storage.filesystems[1] = FileSystem {
             device_id: Some("root".into()),
             fs_type: FileSystemType::Ext4,
-            source: FileSystemSource::Create,
+            source: FileSystemSource::New,
             mount_point: Some(MountPoint {
                 path: PathBuf::from("/"),
                 options: MountOptions::empty(),

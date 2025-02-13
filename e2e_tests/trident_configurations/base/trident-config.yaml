@@ -37,23 +37,22 @@ storage:
   filesystems:
     - deviceId: swap
       type: swap
+      source: new
     - deviceId: trident
       type: ext4
+      source: new
       mountPoint: /var/lib/trident
     - deviceId: home
       type: ext4
+      source: new
       mountPoint: /home
     - deviceId: esp
       type: vfat
-      source:
-        type: os-image
       mountPoint:
         path: /boot/efi
         options: umask=0077
     - deviceId: root
       type: ext4
-      source:
-        type: os-image
       mountPoint: /
 scripts:
   postConfigure:

@@ -100,7 +100,7 @@ pub fn translate(input: &ParsedData, hc: &mut HostConfiguration, errors: &mut Ve
                     sha256: ImageSha256::Ignored,
                     format: ImageFormat::RawZst,
                 }),
-                None => FileSystemSource::Create,
+                None => FileSystemSource::New,
             },
             mount_point: match part.mntpoint {
                 PartitionMount::Path(ref s) => Some(MountPoint {
