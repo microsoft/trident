@@ -43,4 +43,4 @@ stages:
           baseimgBuildType: ${{ parameters.baseimgBuildType }}
           previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
           # Only perform Azure testing from official pipelines, as only those have access to the Azure subscription.
-          includeAzure: ${{ or(eq(parameters.targetStage, 'pre'), eq(parameters.targetStage, 'pre')) }} 
+          includeAzure: ${{ or(eq(parameters.targetStage, 'pre'), eq(parameters.targetStage, 'ci')) }} 

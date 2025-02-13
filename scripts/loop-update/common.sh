@@ -218,8 +218,12 @@ function resizeImage() {
 function killUpdateServer() {
     local UPDATE_PORT=$1
 
-    if lsof -ti tcp:${UPDATE_PORT}; then
-        log "Process already running on the trident update server port: '${UPDATE_PORT}'. Killing process '$(lsof -ti tcp:${UPDATE_PORT})'."
-        kill -9 $(lsof -ti tcp:${UPDATE_PORT}) > /dev/null 2>&1 || true
+    set +e
+    KILL_PID=$(lsof -ti tcp:${UPDATE_PORT})
+    PROCESS_FOUND=$?
+    set -e
+    if [ $PROCESS_FOUND -eq 0 ]; then
+        echo "Process already running on the trident update server port: '${UPDATE_PORT}'. Killing process '$KILL_PID'."
+        kill -9 $KILL_PID > /dev/null 2>&1 || true
     fi
 }
