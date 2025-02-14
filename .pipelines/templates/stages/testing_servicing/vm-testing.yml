@@ -52,6 +52,20 @@ parameters:
     type: boolean
     default: false
 
+  - name: micBuildType
+    displayName: MIC Build Type
+    type: string
+    values:
+    - dev
+    - preview
+    - release
+    default: release
+
+  - name: micVersion
+    displayName: MIC Version
+    type: string
+    default: "*.*.*"
+
 stages:
   - stage: PrepareSSHKeys
     displayName: Prepare SSH Keys
@@ -76,6 +90,8 @@ stages:
           baseimgType: qemu_guest
           baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
           previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+          micBuildType: ${{ parameters.micBuildType }}
+          micVersion: ${{ parameters.micVersion }}
 
       - template: build-image.yml
         parameters:
@@ -85,6 +101,8 @@ stages:
           baseimgType: qemu_guest
           baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
           previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+          micBuildType: ${{ parameters.micBuildType }}
+          micVersion: ${{ parameters.micVersion }}
 
       - template: build-image.yml
         parameters:
@@ -94,6 +112,8 @@ stages:
           baseimgType: qemu_guest
           baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
           previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+          micBuildType: ${{ parameters.micBuildType }}
+          micVersion: ${{ parameters.micVersion }}
 
   - ${{ if eq(parameters.includeAzure, true) }}:
     - stage: BuildImagesAzure
@@ -114,6 +134,8 @@ stages:
             baseimgType: core_selinux
             baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
             previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+            micBuildType: ${{ parameters.micBuildType }}
+            micVersion: ${{ parameters.micVersion }}
 
         - template: build-image.yml
           parameters:
@@ -123,6 +145,8 @@ stages:
             baseimgType: core_selinux
             baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
             previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+            micBuildType: ${{ parameters.micBuildType }}
+            micVersion: ${{ parameters.micVersion }}
 
         - template: build-image.yml
           parameters:
@@ -132,6 +156,8 @@ stages:
             baseimgType: core_selinux
             baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
             previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+            micBuildType: ${{ parameters.micBuildType }}
+            micVersion: ${{ parameters.micVersion }}
 
   - stage: ServicingTesting
     displayName: Servicing Testing

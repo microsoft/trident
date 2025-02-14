@@ -31,6 +31,20 @@ parameters:
     type: string
     default: "3.0"
 
+  - name: micBuildType
+    displayName: MIC Build Type
+    type: string
+    values:
+    - dev
+    - preview
+    - release
+    default: release
+
+  - name: micVersion
+    displayName: MIC Version
+    type: string
+    default: "*.*.*"
+
 jobs:
   - job: PrepareImage_${{ replace(parameters.label, '-', '_') }}
     displayName: Prepare Image ${{ parameters.label }}
@@ -41,8 +55,6 @@ jobs:
     variables:
       ob_outputDirectory: $(Build.SourcesDirectory)/out
       ob_artifactBaseName: "image-${{ parameters.label }}"
-      MIC_BUILD_TYPE: "release"
-      MIC_VERSION: "*.*.*"
 
     steps:
       - task: DownloadPipelineArtifact@2
@@ -75,8 +87,8 @@ jobs:
           target: ${{ parameters.makeTarget }}
           outputDirectory: "$(ob_outputDirectory)"
           testImagesRepo: test-images
-          micBuildType: ${{ variables.MIC_BUILD_TYPE }}
-          micVersion: ${{ variables.MIC_VERSION }}
+          micBuildType: ${{ parameters.micBuildType }}
+          micVersion: ${{ parameters.micVersion }}
           baseimgBuildType: ${{ parameters.baseimgBuildType }}
           baseimgVersion: $(baseimgVersion)
           baseimgAzureLinuxVersion: ${{ parameters.baseimgAzlVersion }}

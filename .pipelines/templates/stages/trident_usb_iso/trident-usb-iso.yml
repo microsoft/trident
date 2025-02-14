@@ -17,6 +17,20 @@ parameters:
     type: string
     default: "3.0"
 
+  - name: micBuildType
+    displayName: MIC Build Type
+    type: string
+    values:
+    - dev
+    - preview
+    - release
+    default: release
+
+  - name: micVersion
+    displayName: MIC Version
+    type: string
+    default: "*.*.*"
+
 stages:
 - stage: TridentTestImg_azl_installer
   displayName: Build azl-installer
@@ -34,8 +48,6 @@ stages:
     variables:
       ob_outputDirectory: $(Pipeline.Workspace)/s/test-images/output
       ob_artifactBaseName: azl-installer
-      MIC_BUILD_TYPE: "release"
-      MIC_VERSION: "*.*.*"
 
     steps:
     - checkout: test-images
@@ -88,8 +100,8 @@ stages:
         target: build/azl-installer.iso
         outputDirectory: ${{ variables.ob_outputDirectory }}
         testImagesRepo: test-images
-        micBuildType: ${{ variables.MIC_BUILD_TYPE }}
-        micVersion: ${{ variables.MIC_VERSION }}
+        micBuildType: ${{ parameters.micBuildType }}
+        micVersion: ${{ parameters.micVersion }}
         baseimgBuildType: ${{ parameters.baseimgBuildType }}
         baseimgVersion: $(baseimgVersion)
         baseimgAzureLinuxVersion: ${{ parameters.baseimgAzlVersion }}

@@ -40,6 +40,21 @@ parameters:
     type: boolean
     default: false
 
+  - name: micBuildType
+    displayName: MIC Build Type
+    type: string
+    values:
+    - dev
+    - preview
+    - release
+    default: release
+
+  - name: micVersion
+    displayName: MIC Version
+    type: string
+    default: "*.*.*"
+
+
 stages:
   # Trident Build/Download
   - template: stages/trident_rpms/trident-stage.yml
@@ -72,6 +87,8 @@ stages:
       outputArtifactName: trident-installer-testimage
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
       previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+      micBuildType: ${{ parameters.micBuildType }}
+      micVersion: ${{ parameters.micVersion }}
 
   # Build Trident installer ISO (container)
   - template: stages/build_image/trident-testimg.yml
@@ -81,6 +98,8 @@ stages:
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
       previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
       runtimeEnv: "container"
+      micBuildType: ${{ parameters.micBuildType }}
+      micVersion: ${{ parameters.micVersion }}
 
   # Build Trident test image (regular)
   - template: stages/build_image/trident-testimg.yml
@@ -90,6 +109,8 @@ stages:
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
       previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
       mkcosiTemplate: "regular"
+      micBuildType: ${{ parameters.micBuildType }}
+      micVersion: ${{ parameters.micVersion }}
 
   # Build Trident test image (container)
   - template: stages/build_image/trident-testimg.yml
@@ -100,6 +121,8 @@ stages:
       previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
       runtimeEnv: "container"
       mkcosiTemplate: "regular"
+      micBuildType: ${{ parameters.micBuildType }}
+      micVersion: ${{ parameters.micVersion }}
 
   # Build Trident test image (verity)
   - template: stages/build_image/trident-testimg.yml
@@ -109,6 +132,8 @@ stages:
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
       previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
       mkcosiTemplate: "verity"
+      micBuildType: ${{ parameters.micBuildType }}
+      micVersion: ${{ parameters.micVersion }}
 
   - ${{ if or(parameters.forceTridentRebuild, eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci')) }}:
       # Build USB-ISO
@@ -116,6 +141,8 @@ stages:
         parameters:
           baseimgBuildType: ${{ parameters.baseimgBuildType }}
           previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+          micBuildType: ${{ parameters.micBuildType }}
+          micVersion: ${{ parameters.micVersion }}
   - ${{ else }}:
       # Download USB-ISO from previous
       - template: stages/download_staged/download-staged.yml
@@ -136,6 +163,8 @@ stages:
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
       previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
       includeAzure: ${{ parameters.includeAzure }}
+      micBuildType: ${{ parameters.micBuildType }}
+      micVersion: ${{ parameters.micVersion }}
 
   # TESTING stages for PRERELEASE
   - ${{ if eq(parameters.stageType, 'pre') }}:
