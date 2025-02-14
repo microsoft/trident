@@ -75,9 +75,6 @@ for i in $(seq 1 $RETRY_COUNT); do
     sshProxyPort $UPDATE_PORT_A
     sshProxyPort $UPDATE_PORT_B
 
-    # Masking errors as we want to report the specific failure if it happens
-    set +e
-
     # If this is a rollback scenario, inject the script to trigger rollback into UPDATE_CONFIG
     if [ "$ROLLBACK" == "true" ] && [ $i -eq 1 ]; then
         TRIGGER_ROLLBACK_SCRIPT=.pipelines/templates/stages/testing_common/scripts/trigger-rollback.sh
@@ -113,13 +110,18 @@ for i in $(seq 1 $RETRY_COUNT); do
     fi
 
     sshCommand "sudo cat $UPDATE_CONFIG"
+
+    # Masking errors as we want to report the specific failure if it happens
+    set +e
+
     sshCommand "sudo trident run $LOGGING -c $UPDATE_CONFIG --allowed-operations stage"
+    STAGE_RESULT=$?
 
     if [ "$OUTPUT" != "" ]; then
         scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $SSH_USER@$VM_IP:/var/log/trident-full.log $OUTPUT/staged-trident-full-$i.log
     fi
 
-    if [ $? -ne 0 ]; then
+    if [ $STAGE_RESULT -ne 0 ]; then
         echo "Failed to stage update"
         adoError "Failed to stage update for iteration $i"
         exit 1
