@@ -1,17 +1,17 @@
 use std::{
     collections::HashSet,
+    fs,
     path::{Path, PathBuf},
 };
 
 use anyhow::{bail, Context, Error};
 use const_format::formatcp;
 use log::{debug, trace};
+use regex::Regex;
 use sys_mount::{Mount, MountFlags, UnmountFlags};
 use tempfile::TempDir;
 
-use osutils::{
-    block_devices, filesystems::MountFileSystemType, grub::GrubConfig, lsblk, mount, veritysetup,
-};
+use osutils::{block_devices, filesystems::MountFileSystemType, lsblk, mount, veritysetup};
 use trident_api::{
     config::{self, HostConfiguration},
     constants::{BOOT_MOUNT_POINT_PATH, DEV_MAPPER_PATH, GRUB2_CONFIG_FILENAME, GRUB2_DIRECTORY},
@@ -139,9 +139,46 @@ fn get_root_verity_root_hash_grub(ctx: &EngineContext) -> Result<String, Error> 
         )?;
 
     // Extract the root hash from the GRUB config
-    let mut grub_config = GrubConfig::read(boot_mount_dir.path().join(GRUB_CONFIG_PATH))?;
-    grub_config.check_linux_command_line_count()?;
-    let root_hash = grub_config.read_linux_command_line_argument(KARG_VERITY_ROOT_HASH)?;
+    let grub_cfg_path = boot_mount_dir.path().join(GRUB_CONFIG_PATH);
+    trace!("Reading GRUB config from '{}'", grub_cfg_path.display());
+    let grub_cfg = fs::read_to_string(&grub_cfg_path).with_context(|| {
+        format!(
+            "Failed to read GRUB config from '{}'",
+            grub_cfg_path.display()
+        )
+    })?;
+
+    let roothash_regex = Regex::new(formatcp!(
+        r"(?m)^\s*linux\s.* {}=([a-zA-Z0-9]+)",
+        KARG_VERITY_ROOT_HASH
+    ))
+    .unwrap();
+
+    let captured_roothash = roothash_regex
+        .captures_iter(&grub_cfg)
+        .map(|c| c[1].to_string())
+        .collect::<Vec<_>>();
+
+    trace!(
+        "Captured {} instance(s) of roothash",
+        captured_roothash.len()
+    );
+
+    if captured_roothash.is_empty() {
+        bail!(
+            "Failed to find 'roothash' on linux command line in '{}'",
+            grub_cfg_path.display()
+        );
+    }
+
+    // Assert that all captured roothashes are the same
+    let root_hash = captured_roothash[0].clone();
+    if captured_roothash.iter().any(|h| h != &root_hash) {
+        bail!(
+            "Multiple roothash values found in GRUB config: {:?}",
+            captured_roothash
+        )
+    }
 
     Ok(root_hash)
 }
@@ -340,6 +377,7 @@ mod functional_test {
     use osutils::{
         files,
         filesystems::MountFileSystemType,
+        grub::GrubConfig,
         mount::{self, MountGuard},
         mountpoint,
         testutils::{
