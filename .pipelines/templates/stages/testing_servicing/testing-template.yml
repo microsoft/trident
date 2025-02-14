@@ -63,7 +63,9 @@ jobs:
             SUBSCRIPTION: 04cdc145-a4f9-42d4-9868-c46d23d0c63f # CoreOS_Mariner_BMP_Staging
             IMAGE_DEFINITION: "trident-vm-verity-testimage-$(System.DefinitionId)"
             ARTIFACTS: $(Build.ArtifactStagingDirectory)
-            STORAGE_ACCOUNT: "tridentazureimages"
+            STORAGE_ACCOUNT: "azlinuxbmpstaging"
+            RESOURCE_GROUP: "azlinux_bmp_staging"
+            PUBLISH_LOCATION: "eastus"
             AZCOPY_AUTO_LOGIN_TYPE: "MSI"
 
   - job: UpdateTesting_${{ parameters.platform }}
@@ -86,6 +88,7 @@ jobs:
       IMAGE_DEFINITION: "trident-vm-verity-testimage-$(System.DefinitionId)"
       TEST_RESOURCE_GROUP: validation-$(Build.BuildId)
       SUBSCRIPTION: 04cdc145-a4f9-42d4-9868-c46d23d0c63f # CoreOS_Mariner_BMP_Staging
+      PUBLISH_LOCATION: "eastus"
 
     steps:
       - ${{ if eq(parameters.platform, 'qemu') }}:
@@ -139,6 +142,7 @@ jobs:
           IMAGE_DEFINITION: $(IMAGE_DEFINITION)
           TEST_PLATFORM: ${{ parameters.platform }}
           SUBSCRIPTION: $(SUBSCRIPTION)
+          PUBLISH_LOCATION: $(PUBLISH_LOCATION)
         timeoutInMinutes: 5
 
       - bash: ./scripts/loop-update/check-deployment.sh

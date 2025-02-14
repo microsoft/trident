@@ -45,5 +45,6 @@ az sig image-version create \
   --gallery-image-definition "$IMAGE_DEFINITION" \
   --gallery-image-version "$IMAGE_VERSION" \
   --target-regions "$PUBLISH_LOCATION" \
+  --location "$PUBLISH_LOCATION" \
   --os-vhd-storage-account "$STORAGE_ACCOUNT_RESOURCE_ID" \
   --os-vhd-uri "$STORAGE_BLOB_ENDPOINT"

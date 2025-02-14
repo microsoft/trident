@@ -37,13 +37,14 @@ elif [ "$TEST_PLATFORM" == "azure" ]; then
 
     VERSION=`getImageVersion`
     az vm create \
-        -g "$TEST_RESOURCE_GROUP" \
-        -n "$VM_NAME" \
+        --resource-group "$TEST_RESOURCE_GROUP" \
+        --name "$VM_NAME" \
         --size "$TEST_VM_SIZE" \
         --os-disk-size-gb 60 \
         --admin-username "$SSH_USER" \
         --ssh-key-values "$SSH_PUBLIC_KEY_PATH" \
-        --image "/subscriptions/$SUBSCRIPTION/resourceGroups/$GALLERY_RESOURCE_GROUP/providers/Microsoft.Compute/galleries/$GALLERY_NAME/images/$IMAGE_DEFINITION/versions/$VERSION" -l "$PUBLISH_LOCATION"
+        --image "/subscriptions/$SUBSCRIPTION/resourceGroups/$GALLERY_RESOURCE_GROUP/providers/Microsoft.Compute/galleries/$GALLERY_NAME/images/$IMAGE_DEFINITION/versions/$VERSION" \
+        --location "$PUBLISH_LOCATION"
     az vm boot-diagnostics enable --name "$VM_NAME" -g "$TEST_RESOURCE_GROUP"
 
     VM_IP=`az vm show -d -g "$TEST_RESOURCE_GROUP" -n "$VM_NAME" --query publicIps -o tsv`

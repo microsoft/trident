@@ -51,10 +51,10 @@ fi
 
 # Ensure the "build_target" image-definition exists
 # Note: We publish only the VHD from the secure-prod the SIG
-IMAGE_DEFINITION_EXISTS="$(az sig image-definition list -r "$GALLERY_NAME" -g "$RESOURCE_GROUP" | grep "name" | grep -c "$IMAGE_DEFINITION" || :;)" # the "|| :;" prevents grep from halting the script when it finds no matches and exits with exit code 1
+IMAGE_DEFINITION_EXISTS="$(az sig image-definition list -r "$GALLERY_NAME" -g "$GALLERY_RESOURCE_GROUP" | grep "name" | grep -c "$IMAGE_DEFINITION" || :;)" # the "|| :;" prevents grep from halting the script when it finds no matches and exits with exit code 1
 if [[ "$IMAGE_DEFINITION_EXISTS" -eq 0 ]]; then
     echo "Could not find image-definition '$IMAGE_DEFINITION'. Creating definition '$IMAGE_DEFINITION' in gallery '$GALLERY_NAME'..."
-    az sig image-definition create -i "$IMAGE_DEFINITION" --publisher "$PUBLISHER" --offer "$OFFER" --sku "$IMAGE_DEFINITION" -r "$GALLERY_NAME" -g "$RESOURCE_GROUP" --os-type Linux
+    az sig image-definition create -i "$IMAGE_DEFINITION" --publisher "$PUBLISHER" --offer "$OFFER" --sku "$IMAGE_DEFINITION" -r "$GALLERY_NAME" -g "$GALLERY_RESOURCE_GROUP" --os-type Linux
 fi
 
 if ! which azcopy; then
