@@ -19,6 +19,16 @@ export IMAGE_PATH="${IMAGE_PATH:-$ARTIFACTS/trident-vm-verity-azure-testimage.vh
 
 IMAGE_VERSION="`getImageVersion increment`"
 echo using image version $IMAGE_VERSION
+
+if az sig image-version show \
+  --resource-group "$GALLERY_RESOURCE_GROUP" \
+  --gallery-name "$GALLERY_NAME" \
+  --gallery-image-definition "$IMAGE_DEFINITION" \
+  --gallery-image-version "$IMAGE_VERSION"; then
+    echo "Image version $IMAGE_VERSION already exists. Exiting..."
+    exit 0
+fi
+
 STORAGE_BLOB_NAME="${CURRENT_DATE##+(0)}.${CURRENT_TIME##+(0)}-$IMAGE_VERSION.vhd"
 STORAGE_BLOB_ENDPOINT="$STORAGE_ACCOUNT_URL/$STORAGE_CONTAINER_NAME/$STORAGE_BLOB_NAME"
 

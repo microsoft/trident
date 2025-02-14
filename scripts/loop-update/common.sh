@@ -191,7 +191,7 @@ function getImageVersion() {
             fi
         fi
     else
-        image_version="0.$BUILD_BUILDID.$SYSTEM_JOBATTEMPT"
+        image_version="0.0.$BUILD_BUILDID"
     fi
 
     echo $image_version
