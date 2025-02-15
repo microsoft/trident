@@ -50,15 +50,31 @@ pub(super) fn ab_update_required(ctx: &EngineContext) -> Result<bool, TridentErr
     match (&ctx.spec_old.image, &ctx.spec.image) {
         // If OS image is not requested in the new spec, no update is needed.
         (None, None) => Ok(false),
-        // Return an error if the old spec didn't request an OS image but the new spec does.
+
         (None, Some(_)) => {
-            // Return an error if the old spec requests an OS image but the new spec does not.
-            Err(TridentError::new(InvalidInputError::from(
-                HostConfigurationDynamicValidationError::DeployOsImageAfterPartitionImages,
-            )))
+            if ctx
+                .spec_old
+                .storage
+                .filesystems
+                .iter()
+                .any(|fs| fs.source.is_old_api())
+            {
+                // Return an error if the old spec was provisioned with
+                // partition images, but the new spec is an OS image.
+                Err(TridentError::new(InvalidInputError::from(
+                    HostConfigurationDynamicValidationError::DeployOsImageAfterPartitionImages,
+                )))
+            } else {
+                // If the old spec is NOT using the old API, but did not get
+                // an OS image, then, this is most likely an offline-init's
+                // first update.
+                Ok(true)
+            }
         }
+
         // If OS image is requested in both specs, compare the URLs.
         (Some(old_os_image), Some(new_os_image)) => Ok(old_os_image.url != new_os_image.url),
+
         (Some(_), None) => {
             // Return an error if the old spec requests an OS image but the new spec does not.
             Err(TridentError::new(InvalidInputError::from(
