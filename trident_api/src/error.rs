@@ -201,9 +201,9 @@ pub enum InvalidInputError {
     RootVerityMismatch { hc_verity_status: bool },
 
     #[error(
-        "SELinux is enabled in the Host Configuration, but SELinux could not be found on the image"
+        "SELinux is enabled in the Host Configuration, but SELinux could not be found on the image: {0}"
     )]
-    SelinuxEnabledButNotFound,
+    SelinuxEnabledButNotFound(String),
 
     #[error("Failed to translate kickstart")]
     TranslateKickstart,
