@@ -5,11 +5,12 @@ use std::{
 
 use log::{debug, error, trace, warn};
 
-use osutils::df;
+use osutils::{df, lsblk};
 use trident_api::{
     config::{FileSystemSource, FileSystemType, HostConfiguration},
-    error::{InternalError, InvalidInputError, ReportError, TridentError},
+    error::{InternalError, InvalidInputError, ReportError, ServicingError, TridentError},
     primitives::bytes::ByteCount,
+    status::{AbVolumeSelection, ServicingType},
 };
 
 use crate::{
@@ -62,6 +63,9 @@ pub fn validate_host_config(ctx: &EngineContext) -> Result<(), TridentError> {
 
     debug!("Validating Host Configuration filesystems against OS image");
     validate_filesystems(os_image, &ctx.spec)?;
+
+    debug!("Validating uniqueness of OS image filesystem UUIDs");
+    validate_filesystem_uniqueness(os_image, ctx)?;
 
     debug!("Validating Host Configuration root verity configuration against OS image");
     validate_root_verity_match(os_image, &ctx.spec)?;
@@ -148,6 +152,77 @@ fn validate_filesystems(
         }));
     }
 
+    Ok(())
+}
+
+/// Validates that all filesystems within an OS image have unique FS UUIDs. Additionally, validates
+/// that A/B volume pairs have distinct FS UUIDs.
+fn validate_filesystem_uniqueness(
+    os_image: &OsImage,
+    ctx: &EngineContext,
+) -> Result<(), TridentError> {
+    // Check that there are no shared filesystem UUIDs in current set of images
+    let mut current_fs_uuids = HashSet::new();
+    for fs in os_image.filesystems() {
+        if !current_fs_uuids.insert(fs.fs_uuid.clone()) {
+            return Err(TridentError::new(InvalidInputError::DuplicateFsUuid {
+                uuid: fs.fs_uuid.to_string(),
+            }));
+        }
+    }
+
+    // For A/B Update, check that no A/B volumes share filesystem UUIDs
+    if ctx.servicing_type == ServicingType::AbUpdate {
+        if let Some(ab) = &ctx.spec.storage.ab_update {
+            for pair in ab.volume_pairs.iter() {
+                if let Some(mp_info) = ctx.spec.storage.device_id_to_mount_point_info(&pair.id) {
+                    if let Some(os_image_fs) = os_image
+                        .filesystems()
+                        .find(|f| f.mount_point == *mp_info.mount_point.path)
+                    {
+                        let inactive_volume_fs_uuid = os_image_fs.fs_uuid;
+
+                        // Get the filesystem UUID for the currently active volume
+                        let block_device_path =
+                            if Some(AbVolumeSelection::VolumeA) == ctx.ab_active_volume {
+                                ctx.get_block_device_path(&pair.volume_a_id).structured(
+                                    ServicingError::GetBlockDevicePath {
+                                        device_id: pair.id.to_string(),
+                                    },
+                                )?
+                            } else {
+                                ctx.get_block_device_path(&pair.volume_b_id).structured(
+                                    ServicingError::GetBlockDevicePath {
+                                        device_id: pair.id.to_string(),
+                                    },
+                                )?
+                            };
+
+                        let output = lsblk::get(block_device_path).structured(
+                            ServicingError::GetDeviceInformation {
+                                device_id: pair.volume_a_id.clone(),
+                            },
+                        )?;
+
+                        if let Some(active_volume_fs_uuid) = output.fsuuid {
+                            trace!("Checking A/B volume pair '{}'. Found active volume filesystem UUID '{active_volume_fs_uuid}'\
+                                    and inactive volume filesystem UUID '{inactive_volume_fs_uuid}'", pair.id);
+                            if active_volume_fs_uuid == inactive_volume_fs_uuid {
+                                return Err(TridentError::new(
+                                    InvalidInputError::DuplicateFsUuidAbUpdate {
+                                        pair_id: pair.id.to_string(),
+                                        uuid: inactive_volume_fs_uuid.to_string(),
+                                    },
+                                ));
+                            }
+                        } else {
+                            warn!("Could not find filesystem UUID for active volume of A/B volume pair '{}'", pair.id);
+                        }
+                    }
+                };
+            }
+        }
+    }
     Ok(())
 }
 

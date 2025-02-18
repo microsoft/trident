@@ -8,7 +8,9 @@ use anyhow::Error;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use osutils::{arch::SystemArchitecture, partition_types::DiscoverablePartitionType};
+use osutils::{
+    arch::SystemArchitecture, osuuid::OsUuid, partition_types::DiscoverablePartitionType,
+};
 use trident_api::{constants::ROOT_MOUNT_POINT_PATH, primitives::hash::Sha384Hash};
 
 mod cosi;
@@ -109,6 +111,7 @@ impl OsImage {
 pub struct OsImageFileSystem<'a> {
     pub mount_point: PathBuf,
     pub fs_type: OsImageFileSystemType,
+    pub fs_uuid: OsUuid,
     pub part_type: DiscoverablePartitionType,
     pub image_file: OsImageFile<'a>,
     pub verity: Option<OsImageVerityHash<'a>>,

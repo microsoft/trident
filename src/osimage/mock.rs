@@ -112,6 +112,7 @@ impl MockOsImage {
             Ok(OsImageFileSystem {
                 mount_point: esp_img.mount_point.clone(),
                 fs_type: esp_img.fs_type,
+                fs_uuid: esp_img.fs_uuid.clone(),
                 part_type: esp_img.part_type,
                 image_file: mock_os_image_file(),
                 verity: esp_img.verity.as_ref().map(|verity| OsImageVerityHash {
@@ -132,6 +133,7 @@ impl MockOsImage {
             .map(|image| OsImageFileSystem {
                 mount_point: image.mount_point.clone(),
                 fs_type: image.fs_type,
+                fs_uuid: image.fs_uuid.clone(),
                 part_type: image.part_type,
                 image_file: mock_os_image_file(),
                 verity: image.verity.as_ref().map(|verity| OsImageVerityHash {

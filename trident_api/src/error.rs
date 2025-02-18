@@ -135,6 +135,12 @@ pub enum InvalidInputError {
     #[error("Failed to initialize clean install as host is already provisioned")]
     CleanInstallOnProvisionedHost,
 
+    #[error("Image is corrupt: multiple partitions have be assigned the same FS UUID: {uuid}")]
+    DuplicateFsUuid { uuid: String },
+
+    #[error("A/B volume pair {pair_id} contains duplicate FS UUID: {uuid}. A/B update must not reuse the already installed image.")]
+    DuplicateFsUuidAbUpdate { pair_id: String, uuid: String },
+
     #[error("Failed to get a unique Host Configuration source from local Trident config")]
     GetHostConfigurationSource,
 
@@ -235,6 +241,9 @@ pub enum ServicingError {
 
     #[error("Failed to generate Netplan config")]
     GenerateNetplanConfig,
+
+    #[error("Failed to get information for device {device_id} via lsblk")]
+    GetDeviceInformation { device_id: String },
 
     #[error("Failed to check if the boot entry '{boot_entry}' exists via efibootmgr")]
     BootEntryCheck { boot_entry: String },

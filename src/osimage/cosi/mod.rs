@@ -110,6 +110,7 @@ fn cosi_image_to_os_image_filesystem<'a>(
     OsImageFileSystem {
         mount_point: image.mount_point,
         fs_type: image.fs_type,
+        fs_uuid: image.fs_uuid,
         part_type: image.part_type,
         image_file: OsImageFile {
             compressed_size: image.file.compressed_size,

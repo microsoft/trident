@@ -587,6 +587,15 @@ impl Storage {
             }))
     }
 
+    /// Get a MountPointInfo instance for the device corresponding to the given device_id.
+    pub fn device_id_to_mount_point_info(
+        &self,
+        device_id: &BlockDeviceId,
+    ) -> Option<MountPointInfo<'_>> {
+        self.mount_point_info()
+            .find(|mp| mp.device_id == Some(device_id))
+    }
+
     /// Get a MountPointInfo instance for the mount point that is holding the
     /// given path.
     pub fn path_to_mount_point_info(&self, path: impl AsRef<Path>) -> Option<MountPointInfo<'_>> {

@@ -29,6 +29,10 @@ pub struct BlockDevice {
     /// Filesystem size
     pub fssize: Option<ByteCount>,
 
+    /// Filesystem UUID
+    #[serde(rename = "uuid")]
+    pub fsuuid: Option<OsUuid>,
+
     /// Partition table UUID
     pub ptuuid: Option<OsUuid>,
 
@@ -760,6 +764,7 @@ mod tests {
             name: "/dev/sda".into(),
             fstype: None,
             fssize: None,
+            fsuuid: None,
             ptuuid: Some("a8dbca6f-77a6-485c-8c67-b653758a8928".into()),
             part_uuid: None,
             size: 17179869184,
@@ -771,6 +776,7 @@ mod tests {
                     name: "/dev/sda1".into(),
                     fstype: Some("vfat".into()),
                     fssize: Some(ByteCount(52293632)),
+                    fsuuid: Some(OsUuid::Relaxed("C19C-752D".to_string())),
                     ptuuid: None,
                     part_uuid: Some("24d90361-7b1f-47db-b5bb-7d3893ac6ab0".into()),
                     size: 52428800,
@@ -786,6 +792,7 @@ mod tests {
                     name: "/dev/sda2".into(),
                     fstype: Some("ext4".into()),
                     fssize: Some(ByteCount(5264343040)),
+                    fsuuid: Some("278a7e61-8212-4c84-8103-c8b2fd299670".into()),
                     ptuuid: None,
                     part_uuid: Some("13fe614e-f738-4025-bc7f-8c71a3b8242a".into()),
                     size: 5368709120,
@@ -801,6 +808,7 @@ mod tests {
                     name: "/dev/sda3".into(),
                     fstype: None,
                     fssize: None,
+                    fsuuid: None,
                     ptuuid: None,
                     part_uuid: Some("8fa573dd-b810-4aa0-bdc6-736e157cf9be".into()),
                     size: 2147483648,
@@ -816,6 +824,7 @@ mod tests {
                     name: "/dev/sda4".into(),
                     fstype: Some("swap".into()),
                     fssize: None,
+                    fsuuid: Some("fdb10022-0907-411c-b0a6-9847c8d2b32e".into()),
                     ptuuid: None,
                     part_uuid: Some("84dfeee4-7225-4379-ac73-b4a20c0a178d".into()),
                     size: 2147483648,
@@ -831,6 +840,7 @@ mod tests {
                     name: "/dev/sda5".into(),
                     fstype: Some("ext4".into()),
                     fssize: Some(ByteCount(92500992)),
+                    fsuuid: Some("bd7cd9c1-3a16-4c75-a429-7540eb7f0c60".into()),
                     ptuuid: None,
                     part_uuid: Some("60c8f863-0857-47c4-b427-ba44654c93fe".into()),
                     size: 104857600,

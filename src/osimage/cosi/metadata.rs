@@ -122,7 +122,6 @@ pub(crate) struct Image {
     #[serde(deserialize_with = "display_fs_type_field_name")]
     pub fs_type: OsImageFileSystemType,
 
-    #[allow(dead_code)]
     pub fs_uuid: OsUuid,
 
     pub part_type: DiscoverablePartitionType,

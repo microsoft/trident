@@ -44,7 +44,7 @@ needed to be imaged. This design requires the user to manage multiple files in
 all stages:
 
 - Creation: Users need to create multiple files, one per partition. (Done
-  through MIC).
+  through PRISM).
 - Configuration: Users need to specify the paths to the multiple files in the
   Trident Host Configuration.
 - Distribution: Users need to make sure all the images are available to Trident
@@ -76,7 +76,7 @@ This document adheres to [RFC2119: Key words for use in RFCs to Indicate
 
 COSI should:
 
-- Provide a one-file solution for users of MIC and Trident.
+- Provide a one-file solution for users of PRISM and Trident.
 - Be a portable and relatively trivial format.
 - Contain all the images required to install a Linux OS
   with Trident.
@@ -154,26 +154,27 @@ be used by Trident.
 | `image`      | [ImageFile](#imagefile-object)       | Yes      | Details of the image file in the tarball. |
 | `mountPoint` | string                               | Yes      | The mount point of the partition.         |
 | `fsType`     | string                               | Yes      | The filesystem type of the partition. [1] |
-| `fsUuid`     | string                               | Yes      | The UUID of the filesystem.               |
-| `partType`   | UUID (string, case insensitive)      | Yes      | The GPT partition type. [2] [3] [4]       |
+| `fsUuid`     | string                               | Yes      | The UUID of the filesystem. [2]           |
+| `partType`   | UUID (string, case insensitive)      | Yes      | The GPT partition type. [3] [4] [5]       |
 | `verity`     | [VerityConfig](#verityconfig-object) | No       | The verity metadata of the partition.     |
 
 _Notes:_
 
-- **[1]** It MUST use the name recognized by the kernel. For example, `ext4` for
-    ext4 filesystems, `vfat` for FAT32 filesystems, etc.
+- **[1]** It MUST use the name recognized by the kernel. For example, `ext4` for ext4 filesystems,
+    `vfat` for FAT32 filesystems, etc.
 
-- **[2]** It MUST be a UUID defined by the [Discoverable
-    Partition Specification
-    (DPS)](https://uapi-group.org/specifications/specs/discoverable_partitions_specification/)
-    when the applicable type exists in the DPS. Other partition types MAY be
-    used for types not defined in DPS (e.g. Windows partitions).
+- **[2]** It MUST be unique across all filesystems in the COSI tarball. Additionally, volumes in an
+  A/B volume pair MUST have unique filesystem UUIDs.
+- **[3]** It MUST be a UUID defined by the [Discoverable Partition Specification
+    (DPS)](https://uapi-group.org/specifications/specs/discoverable_partitions_specification/) when
+    the applicable type exists in the DPS. Other partition types MAY be used for types not defined
+    in DPS (e.g. Windows partitions).
 
-- **[3]** The EFI Sytem Partition (ESP) MUST be identified with the UUID
-    established by the DPS: `c12a7328-f81f-11d2-ba4b-00a0c93ec93b`.
+- **[4]** The EFI Sytem Partition (ESP) MUST be identified with the UUID established by the DPS:
+    `c12a7328-f81f-11d2-ba4b-00a0c93ec93b`.
 
-- **[4]** Should default to `0fc63daf-8483-4772-8e79-3d69d8477de4` (Generic
-    Linux Data) if the partition type cannot be determined.
+- **[5]** Should default to `0fc63daf-8483-4772-8e79-3d69d8477de4` (Generic Linux Data) if the
+    partition type cannot be determined.
 
 ##### `VerityConfig` Object
 
