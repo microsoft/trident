@@ -90,12 +90,12 @@ jobs:
 
     steps:
       - ${{ if eq(parameters.platform, 'qemu') }}:
-        - task: DownloadPipelineArtifact@2
-          inputs:
-            buildType: current
-            artifactName: image-${{ parameters.platform }}-base
-            targetPath: "$(Build.ArtifactStagingDirectory)/"
-          displayName: Download Base Image
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              buildType: current
+              artifactName: image-${{ parameters.platform }}-base
+              targetPath: "$(Build.ArtifactStagingDirectory)/"
+            displayName: Download Base Image
 
       - task: DownloadPipelineArtifact@2
         inputs:
@@ -118,8 +118,18 @@ jobs:
           targetPath: "$(Build.ArtifactStagingDirectory)/ssh"
         displayName: Download SSH Keys
 
+      - task: DownloadPipelineArtifact@2
+        displayName: "Download go-tools"
+        inputs:
+          buildType: current
+          artifactName: "go-tools"
+          patterns: |
+            netlisten
+          targetPath: "$(Build.ArtifactStagingDirectory)/bin"
+
       - bash: |
           set -eux
+          chmod +x $(Build.ArtifactStagingDirectory)/bin/netlisten
           cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* ~/.ssh/
           chmod -R 700 ~/.ssh/
           mkdir -p $(ob_outputDirectory)

@@ -104,7 +104,7 @@ stages:
   # Build Trident test image (regular)
   - template: stages/build_image/trident-testimg.yml
     parameters:
-      imageName: trident-testimage
+      imageName: build/trident-testimage.cosi
       outputArtifactName: trident-testimage
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
       previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
@@ -115,7 +115,7 @@ stages:
   # Build Trident test image (container)
   - template: stages/build_image/trident-testimg.yml
     parameters:
-      imageName: trident-container-testimage
+      imageName: build/trident-container-testimage.cosi
       outputArtifactName: trident-container-testimage
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
       previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
@@ -127,7 +127,7 @@ stages:
   # Build Trident test image (verity)
   - template: stages/build_image/trident-testimg.yml
     parameters:
-      imageName: trident-verity-testimage
+      imageName: build/trident-verity-testimage.cosi
       outputArtifactName: trident-verity-testimage
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
       previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}

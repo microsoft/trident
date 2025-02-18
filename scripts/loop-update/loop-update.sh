@@ -17,11 +17,28 @@ ROLLBACK=${ROLLBACK:-false}
 killUpdateServer $UPDATE_PORT_A
 killUpdateServer $UPDATE_PORT_B
 
-pushd $ARTIFACTS/update-a
-python3 -m http.server $UPDATE_PORT_A &
-cd ../update-b
-python3 -m http.server $UPDATE_PORT_B &
-popd
+ls -l $ARTIFACTS/update-a
+ls -l $ARTIFACTS/update-b
+
+COSI_FILES=$(find $ARTIFACTS/update-a -type f -name '*.cosi')
+COSI_FILES_COUNT=$(echo $COSI_FILES | wc -l)
+
+if [ $COSI_FILES_COUNT -lt 1 ]; then
+    echo "COSI file not found!"
+    exit 1
+elif [ $COSI_FILES_COUNT -gt 1 ]; then
+    echo "Multiple COSI files found:"
+    echo $COSI_FILES
+    exit 1
+else
+    echo "COSI file found: $COSI_FILES"
+fi
+
+COSI_FILE=$(echo $COSI_FILES | head -1)
+COSI_FILE=$(basename $COSI_FILE)
+
+$ARTIFACTS/bin/netlisten -p $UPDATE_PORT_A -s $ARTIFACTS/update-a --force-color --full-logstream logstream-full-update-a.log &
+$ARTIFACTS/bin/netlisten -p $UPDATE_PORT_B -s $ARTIFACTS/update-b --force-color --full-logstream logstream-full-update-a.log &
 
 EXPECTED_VOLUME=${EXPECTED_VOLUME:-volume-b}
 UPDATE_CONFIG=/var/lib/trident/update-config.yaml
@@ -38,7 +55,11 @@ RETRY_COUNT=${RETRY_COUNT:-20}
 
 VM_IP=`getIp`
 
+# Update the update-config.yaml file with the COSI file and host address address
+# of the http server
+sshCommand "sudo sed -i 's!verity.cosi!files/$COSI_FILE!' /var/lib/trident/update-config.yaml"
 sshCommand "sudo sed -i 's/192.168.122.1/localhost/' /var/lib/trident/update-config.yaml"
+
 sshCommand "sudo cp /var/lib/trident/update-config.yaml /var/lib/trident/update-config2.yaml && sudo sed -i 's/8000/8001/' /var/lib/trident/update-config2.yaml"
 
 for i in $(seq 1 $RETRY_COUNT); do

@@ -53,9 +53,9 @@ stages:
   - stage: TridentTestImg_${{ replace(parameters.outputArtifactName, '-', '_') }}
     displayName: Build ${{ parameters.outputArtifactName }}
     dependsOn:
-      - BuildingTools
       - ${{ if eq(parameters.runtimeEnv, 'host') }}:
           - GetTridentBinaries_rpms
+      - ${{ else }}: []
 
     jobs:
       - job: BuildTridentTestImg
@@ -94,42 +94,3 @@ stages:
               baseimgVersion: $(baseimgVersion)
               baseimgAzureLinuxVersion: ${{ variables.BASEIMG_AZURE_LINUX_VERSION }}
               downloadTrident: false
-
-          - ${{ if ne(parameters.mkcosiTemplate, 'none') }}:
-              - task: DownloadPipelineArtifact@2
-                displayName: "Download mkcosi"
-                inputs:
-                  buildType: current
-                  artifactName: "go-tools"
-                  patterns: |
-                    mkcosi
-                  targetPath: "$(Build.SourcesDirectory)/bin/"
-              - bash: |
-                  set -eux
-
-                  echo "Existing images:"
-                  ls -alh ${{ variables.ob_outputDirectory }}
-
-                  INPUT_DIR="${{ variables.ob_outputDirectory }}"
-
-                  # Unfortunately, we use different names locally than in
-                  # pipelines for verity partition files, so we must do 
-                  # some renames.
-                  if [ "${{parameters.mkcosiTemplate }}" = "verity" ]; then
-                    temp_dir=$(mktemp -d)
-                    cp $INPUT_DIR/esp.raw.zst       $temp_dir/verity_esp.raw.zst
-                    cp $INPUT_DIR/boot.raw.zst      $temp_dir/verity_boot.raw.zst
-                    cp $INPUT_DIR/root.raw.zst      $temp_dir/verity_root.raw.zst
-                    cp $INPUT_DIR/root-hash.raw.zst $temp_dir/verity_roothash.raw.zst
-                    cp $INPUT_DIR/var.raw.zst       $temp_dir/verity_var.raw.zst
-                    INPUT_DIR="$temp_dir"
-                  fi
-
-                  chmod +x $(Build.SourcesDirectory)/bin/mkcosi
-
-                  sudo $(Build.SourcesDirectory)/bin/mkcosi build ${{ parameters.mkcosiTemplate }} \
-                      $INPUT_DIR \
-                      ${{ variables.ob_outputDirectory }}/${{ parameters.imageName }}.cosi \
-                      --extension raw.zst \
-                      --force-color
-                displayName: "Build ${{ parameters.imageName }}.cosi"

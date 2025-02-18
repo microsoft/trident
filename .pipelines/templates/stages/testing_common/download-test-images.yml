@@ -101,21 +101,11 @@ steps:
 
       # If testImageDir is not an empty string, rename the Trident test images
       if [ -n "${{ parameters.testImageDir }}" ]; then
-        mv "${{ parameters.testImageDir }}/esp.raw.zst" "${{ parameters.targetDirectory }}/esp.rawzst"
-        mv "${{ parameters.testImageDir }}/root.raw.zst" "${{ parameters.targetDirectory }}/root.rawzst"
-
         mv "${{ parameters.testImageDir }}/${{ parameters.tridentTestImage }}.cosi" "${{ parameters.targetDirectory }}/regular.cosi"
       fi
 
       # If testImageDirVerity is not an empty string, rename the Trident verity test images
       if [ -n "${{ parameters.testImageDirVerity }}" ]; then
-        # Verity image for functional testing and e2e testing
-        mv "${{ parameters.testImageDirVerity }}/esp.raw.zst" "${{ parameters.targetDirectory }}/verity_esp.rawzst"
-        mv "${{ parameters.testImageDirVerity }}/boot.raw.zst" "${{ parameters.targetDirectory }}/verity_boot.rawzst"
-        mv "${{ parameters.testImageDirVerity }}/root.raw.zst" "${{ parameters.targetDirectory }}/verity_root.rawzst"
-        mv "${{ parameters.testImageDirVerity }}/root-hash.raw.zst" "${{ parameters.targetDirectory }}/verity_roothash.rawzst"
-        mv "${{ parameters.testImageDirVerity }}/var.raw.zst" "${{ parameters.targetDirectory }}/verity_var.rawzst"
-
         mv "${{ parameters.testImageDirVerity }}/${{ parameters.tridentTestImageVerity }}.cosi" "${{ parameters.targetDirectory }}/verity.cosi"
       fi
 

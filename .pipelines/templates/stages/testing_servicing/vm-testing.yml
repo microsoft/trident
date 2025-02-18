@@ -56,9 +56,9 @@ parameters:
     displayName: MIC Build Type
     type: string
     values:
-    - dev
-    - preview
-    - release
+      - dev
+      - preview
+      - release
     default: release
 
   - name: micVersion
@@ -97,7 +97,7 @@ stages:
         parameters:
           baseimgBuildType: ${{ parameters.baseimgBuildType }}
           label: "qemu-update-a"
-          makeTarget: "trident-vm-verity-testimage"
+          makeTarget: "build/trident-vm-verity-testimage.cosi"
           baseimgType: qemu_guest
           baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
           previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
@@ -108,7 +108,7 @@ stages:
         parameters:
           baseimgBuildType: ${{ parameters.baseimgBuildType }}
           label: "qemu-update-b"
-          makeTarget: "trident-vm-verity-testimage"
+          makeTarget: "build/trident-vm-verity-testimage.cosi"
           baseimgType: qemu_guest
           baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
           previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
@@ -116,55 +116,56 @@ stages:
           micVersion: ${{ parameters.micVersion }}
 
   - ${{ if eq(parameters.includeAzure, true) }}:
-    - stage: BuildImagesAzure
-      displayName: Build Base and Update Images for Azure
-      dependsOn:
-        - PrepareSSHKeys
-        - ${{ if eq(parameters.testingRun, true) }}:
-            - DownloadTestingElements
-        - ${{ else }}:
-            - GetTridentBinaries_rpms
+      - stage: BuildImagesAzure
+        displayName: Build Base and Update Images for Azure
+        dependsOn:
+          - PrepareSSHKeys
+          - ${{ if eq(parameters.testingRun, true) }}:
+              - DownloadTestingElements
+          - ${{ else }}:
+              - GetTridentBinaries_rpms
 
-      jobs:
-        - template: build-image.yml
-          parameters:
-            baseimgBuildType: ${{ parameters.baseimgBuildType }}
-            label: "azure-base"
-            makeTarget: "build/trident-vm-verity-azure-testimage.vhd"
-            baseimgType: core_selinux
-            baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-            previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
-            micBuildType: ${{ parameters.micBuildType }}
-            micVersion: ${{ parameters.micVersion }}
+        jobs:
+          - template: build-image.yml
+            parameters:
+              baseimgBuildType: ${{ parameters.baseimgBuildType }}
+              label: "azure-base"
+              makeTarget: "build/trident-vm-verity-azure-testimage.vhd"
+              baseimgType: core_selinux
+              baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+              previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+              micBuildType: ${{ parameters.micBuildType }}
+              micVersion: ${{ parameters.micVersion }}
 
-        - template: build-image.yml
-          parameters:
-            baseimgBuildType: ${{ parameters.baseimgBuildType }}
-            label: "azure-update-a"
-            makeTarget: "trident-vm-verity-azure-testimage"
-            baseimgType: core_selinux
-            baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-            previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
-            micBuildType: ${{ parameters.micBuildType }}
-            micVersion: ${{ parameters.micVersion }}
+          - template: build-image.yml
+            parameters:
+              baseimgBuildType: ${{ parameters.baseimgBuildType }}
+              label: "azure-update-a"
+              makeTarget: "build/trident-vm-verity-azure-testimage.cosi"
+              baseimgType: core_selinux
+              baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+              previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+              micBuildType: ${{ parameters.micBuildType }}
+              micVersion: ${{ parameters.micVersion }}
 
-        - template: build-image.yml
-          parameters:
-            baseimgBuildType: ${{ parameters.baseimgBuildType }}
-            label: "azure-update-b"
-            makeTarget: "trident-vm-verity-azure-testimage"
-            baseimgType: core_selinux
-            baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-            previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
-            micBuildType: ${{ parameters.micBuildType }}
-            micVersion: ${{ parameters.micVersion }}
+          - template: build-image.yml
+            parameters:
+              baseimgBuildType: ${{ parameters.baseimgBuildType }}
+              label: "azure-update-b"
+              makeTarget: "build/trident-vm-verity-azure-testimage.cosi"
+              baseimgType: core_selinux
+              baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+              previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+              micBuildType: ${{ parameters.micBuildType }}
+              micVersion: ${{ parameters.micVersion }}
 
   - stage: ServicingTesting
     displayName: Servicing Testing
     dependsOn:
       - BuildImagesQemu
+      - BuildingTools
       - ${{ if eq(parameters.includeAzure, true) }}:
-        - BuildImagesAzure
+          - BuildImagesAzure
 
     jobs:
       - template: testing-template.yml
@@ -177,12 +178,12 @@ stages:
           platform: qemu
 
       - ${{ if eq(parameters.includeAzure, true) }}:
-        - template: testing-template.yml
-          parameters:
-            updateIterationCount: ${{ parameters.updateIterationCount }}
-            rollbackTesting: ${{ parameters.rollbackTesting }}
-            workers: ${{ parameters.workers }}
-            updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
-            verboseLogging: ${{ parameters.verboseLogging }}
-            platform: azure
-            pool: trident-ubuntu-official-1es-pool-eastus2
+          - template: testing-template.yml
+            parameters:
+              updateIterationCount: ${{ parameters.updateIterationCount }}
+              rollbackTesting: ${{ parameters.rollbackTesting }}
+              workers: ${{ parameters.workers }}
+              updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
+              verboseLogging: ${{ parameters.verboseLogging }}
+              platform: azure
+              pool: trident-ubuntu-official-1es-pool-eastus2
