@@ -388,8 +388,10 @@ run-netlaunch-sample: build-api-docs
 	yq '.os.users += [{"name": "$(shell whoami)", "sshPublicKeys": ["$(shell cat ~/.ssh/id_rsa.pub)"], "sshMode": "key-only", "secondaryGroups": ["wheel"]}] | (.. | select(tag == "!!str")) |= sub("file:///trident_cdrom/data", "http://NETLAUNCH_HOST_ADDRESS/files") | del(.storage.encryption.recoveryKeyUrl) | (.storage.filesystems[] | select(has("source")) | .source).sha256 = "ignored" | .storage.verityFilesystems[].dataImage.sha256 = "ignored" | .storage.verityFilesystems[].hashImage.sha256 = "ignored"' docs/Reference/Host-Configuration/Samples/$(HOST_CONFIG) > $(TMP)
 	TRIDENT_CONFIG=$(TMP) make run-netlaunch
 
-.PHONY: download-runtime-partition-images
-download-runtime-partition-images:
+# Downloads regular, verity, and container COSI images from the latest successful
+# pipeline run. The images are downloaded to ./artifacts/test-image.
+.PHONY: download-runtime-images
+download-runtime-images:
 	$(eval BRANCH ?= main)
 	$(eval RUN_ID ?= $(shell az pipelines runs list \
 		--org "https://dev.azure.com/mariner-org" \
@@ -413,19 +415,12 @@ download-runtime-partition-images:
 #   Clean & create artifacts dir
 	rm -rf ./artifacts/test-image
 	mkdir -p ./artifacts/test-image
-#	Extract partition images. The version is dropped and the extension is changed
-#	to .rawzst in case the files are inserted into the ISO filesystem
-# 	instead of the initrd.
-	for file in $(DOWNLOAD_DIR)/*.raw.zst; do \
-		name=$$(basename $$file | cut -d'.' -f1); \
-		mv $$file ./artifacts/test-image/$$name.rawzst; \
-	done
-#	Move COSI image
+#	Move regular COSI image
 	mv $(DOWNLOAD_DIR)/*.cosi ./artifacts/test-image/regular.cosi
 #	Clean temp dir
 	rm -rf $(DOWNLOAD_DIR)
 
-# Get verity images
+# Get verity image
 	$(eval DOWNLOAD_DIR := $(shell mktemp -d))
 	az pipelines runs artifact download \
 		--org 'https://dev.azure.com/mariner-org' \
@@ -434,20 +429,12 @@ download-runtime-partition-images:
 		--path $(DOWNLOAD_DIR) \
 		--artifact-name 'trident-verity-testimage'
 
-#	Extract partition images. The version is dropped and the extension is changed
-#	to .rawzst in case the files are inserted into the ISO filesystem
-# 	instead of the initrd.
-	for file in $(DOWNLOAD_DIR)/*.raw.zst; do \
-		name=$$(basename $$file | cut -d'.' -f1); \
-		mv $$file ./artifacts/test-image/verity_$$name.rawzst; \
-	done
-	mv ./artifacts/test-image/verity_root-hash.rawzst ./artifacts/test-image/verity_roothash.rawzst
-#	Move COSI image
+#	Move verity COSI image
 	mv $(DOWNLOAD_DIR)/*.cosi ./artifacts/test-image/verity.cosi
 #	Clean temp dir
 	rm -rf $(DOWNLOAD_DIR)
 
-# Get container images
+# Get container image
 	$(eval DOWNLOAD_DIR := $(shell mktemp -d))
 	az pipelines runs artifact download \
 		--org 'https://dev.azure.com/mariner-org' \
@@ -456,14 +443,7 @@ download-runtime-partition-images:
 		--path $(DOWNLOAD_DIR) \
 		--artifact-name 'trident-container-testimage'
 
-#	Extract partition images. The version is dropped and the extension is changed
-#	to .rawzst in case the files are inserted into the ISO filesystem
-# 	instead of the initrd.
-	for file in $(DOWNLOAD_DIR)/*.raw.zst; do \
-		name=$$(basename $$file | cut -d'.' -f1); \
-		mv $$file ./artifacts/test-image/container_$$name.rawzst; \
-	done
-#	Move COSI image
+#	Move container COSI image
 	mv $(DOWNLOAD_DIR)/*.cosi ./artifacts/test-image/container.cosi
 #	Clean temp dir
 	rm -rf $(DOWNLOAD_DIR)
@@ -507,8 +487,10 @@ artifacts/trident-container-installer-testimage.iso:
 	$(MAKE) download-trident-container-installer-iso; \
 	ls -l artifacts/trident-container-installer-testimage.iso
 
-.PHONY: copy-runtime-partition-images
-copy-runtime-partition-images: $(TEST_IMAGES_PATH)/build/trident-testimage/*.raw.zst $(TEST_IMAGES_PATH)/build/trident-verity-testimage/*.raw.zst
+# Copies locally built runtime images from ../test-images/build to ./artifacts/test-image.
+# Expects that both the regular and verity Trident test images have been built.
+.PHONY: copy-runtime-images
+copy-runtime-images: $(TEST_IMAGES_PATH)/build/trident-testimage/*.cosi $(TEST_IMAGES_PATH)/build/trident-verity-testimage/*.cosi
 	@test -d $(TEST_IMAGES_PATH) || { \
 		echo "$(TEST_IMAGES_PATH) not found"; \
 		exit 1; \
@@ -521,26 +503,23 @@ copy-runtime-partition-images: $(TEST_IMAGES_PATH)/build/trident-testimage/*.raw
 		echo "$(TEST_IMAGES_PATH)/build/trident-verity-testimage not found"; \
 		exit 1; \
 	}
+
 	@rm -rf ./artifacts/test-image
 	@mkdir -p ./artifacts/test-image
-	@for file in $(TEST_IMAGES_PATH)/build/trident-testimage/*.raw.zst; do \
-		name=$$(basename $$file | cut -d'.' -f1); \
-		cp $$file ./artifacts/test-image/$$name.rawzst; \
-		echo "Copied $$file to ./artifacts/test-image/$$name.rawzst"; \
-	done
-	@for file in $(TEST_IMAGES_PATH)/build/trident-verity-testimage/*.raw.zst; do \
-		name=$$(basename $$file | cut -d'.' -f1); \
-		cp $$file ./artifacts/test-image/verity_$$name.rawzst; \
-		echo "Copied $$file to ./artifacts/test-image/verity_$$name.rawzst"; \
-	done
-	mv ./artifacts/test-image/verity_root-hash.rawzst ./artifacts/test-image/verity_roothash.rawzst
-	@for file in $(TEST_IMAGES_PATH)/build/trident-container-testimage/*.raw.zst; do \
-		name=$$(basename $$file | cut -d'.' -f1); \
-		cp $$file ./artifacts/test-image/container_$$name.rawzst; \
-		echo "Copied $$file to ./artifacts/test-image/container_$$name.rawzst"; \
+
+#	Copy all COSI images from trident-testimage
+	@for file in $(TEST_IMAGES_PATH)/build/trident-testimage/*.cosi; do \
+		cp $$file ./artifacts/test-image/$$(basename $$file); \
+		echo "Copied $$file to ./artifacts/test-image/$$(basename $$file)"; \
 	done
 
-# Uses the simple e2e test to set up a starter host config
+#	Copy all COSI images from trident-verity-testimage
+	@for file in $(TEST_IMAGES_PATH)/build/trident-verity-testimage/*.cosi; do \
+		cp $$file ./artifacts/test-image/$$(basename $$file); \
+		echo "Copied $$file to ./artifacts/test-image/$$(basename $$file)"; \
+	done
+
+# Uses the simple E2E test to set up a starter Host Configuration
 .PHONY: starter-configuration
 starter-configuration:
 	@mkdir -p $$(dirname $(TRIDENT_CONFIG))
@@ -592,9 +571,9 @@ bin/trident-mos.iso: artifacts/baremetal.vhdx artifacts/imagecustomizer systemd/
 			--config-file trident-mos/iso.yaml \
 			--output-image-format iso
 
-.PHONY: recreate-verity-images
-recreate-verity-images: bin/trident-rpms.tar.gz
+.PHONY: recreate-verity-image
+recreate-verity-image: bin/trident-rpms.tar.gz
 	$(MAKE) -C $(TEST_IMAGES_PATH) copy-trident-rpms
 	$(MAKE) -C $(TEST_IMAGES_PATH) trident-verity-testimage
-	make copy-runtime-partition-images
+	make copy-runtime-images
 
