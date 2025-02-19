@@ -174,7 +174,10 @@ pub enum InvalidInputError {
         actual: &'static str,
     },
 
-    #[error("Provided '{hc_fs_type}' filesystem type at '{mount_point}' in Host Configuration, but found '{os_img_fs_type}' filesystem type in the OS image")]
+    #[error(
+        "Provided '{hc_fs_type}' filesystem type at '{mount_point}' in Host Configuration, \
+        but found '{os_img_fs_type}' filesystem type in the OS image"
+    )]
     MismatchedFsType {
         mount_point: String,
         hc_fs_type: String,
@@ -244,6 +247,9 @@ pub enum ServicingError {
 
     #[error("Failed to get information for device {device_id} via lsblk")]
     GetDeviceInformation { device_id: String },
+
+    #[error("Failed to get the root A/B volume pair '{device_id}'")]
+    GetRootAbVolumePair { device_id: String },
 
     #[error("Failed to check if the boot entry '{boot_entry}' exists via efibootmgr")]
     BootEntryCheck { boot_entry: String },
@@ -391,6 +397,9 @@ pub enum ServicingError {
     #[error("Failed to resolve disks to device paths")]
     GetResolvedDisks,
 
+    #[error("Failed to get the root block device id")]
+    GetRootBlockDeviceId,
+
     #[error("Failed to get mount point info for root with path '{root_path}'")]
     GetRootMountPointInfo { root_path: String },
 
@@ -451,6 +460,16 @@ pub enum ServicingError {
     #[error("Failed to remove crypttab at path '{crypttab_path}'")]
     RemoveCrypttab { crypttab_path: String },
 
+    #[error(
+        "Failed to match current root device path '{root_device_path}' to either \
+    root volume A path '{root_volume_a_path}' or B path '{root_volume_b_path}'"
+    )]
+    RootDevicePathAbActiveVolumeMismatch {
+        root_device_path: String,
+        root_volume_a_path: String,
+        root_volume_b_path: String,
+    },
+
     #[error("Failed to run pre-servicing script '{script_name}'")]
     RunPreServicingScript { script_name: String },
 
@@ -472,6 +491,12 @@ pub enum ServicingError {
     #[error("Failed to start network")]
     StartNetwork,
 
+    #[error("Volume {active_volume} is active but active volume in Host Status is set to {hs_active_volume}")]
+    ValidateAbActiveVolume {
+        active_volume: String,
+        hs_active_volume: String,
+    },
+
     #[error("Trident rebuild-raid validation failed")]
     ValidateRebuildRaid,
 
@@ -492,9 +517,6 @@ pub enum ServicingError {
 
     #[error("Failed to write Netplan config")]
     WriteNetplanConfig,
-
-    #[error("Failed to validate A/B active volume in Host Status")]
-    ValidateAbActiveVolume,
 }
 
 /// Identifies errors that occur when interacting with a misconfigured datastore.

@@ -3,8 +3,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use anyhow::{Context, Error};
+use log::{debug, trace};
+
 use trident_api::{
-    config::HostConfiguration,
+    config::{HostConfiguration, VerityDevice},
     constants::ROOT_MOUNT_POINT_PATH,
     status::{AbVolumeSelection, ServicingType},
     storage_graph::graph::StorageGraph,
@@ -12,6 +15,16 @@ use trident_api::{
 };
 
 use crate::osimage::OsImage;
+
+/// Helper struct to consolidate the info on the A/B volume pair. Contains the paths and block
+/// device IDs for both volumes.
+#[derive(Debug, PartialEq)]
+pub(crate) struct AbVolumePairInfo {
+    pub volume_a_path: PathBuf,
+    pub volume_b_path: PathBuf,
+    pub volume_a_id: BlockDeviceId,
+    pub volume_b_id: BlockDeviceId,
+}
 
 #[cfg_attr(any(test, feature = "functional-test"), derive(Clone, Default))]
 pub struct EngineContext {
@@ -75,7 +88,7 @@ impl EngineContext {
         }
     }
 
-    /// Returns a reference to the Partition object within an AB volume pair that corresponds to the
+    /// Returns a reference to `Partition` within the A/B volume pair that corresponds to the
     /// update partition, or the one to be updated.
     #[cfg(feature = "sysupdate")]
     pub fn get_ab_update_volume_partition(
@@ -104,7 +117,15 @@ impl EngineContext {
         None
     }
 
-    /// Using the / mount point, figure out what should be used as a root block device.
+    /// Using the `/` mount point, fetches the root block device ID.
+    pub(super) fn get_root_block_device_id(&self) -> Option<BlockDeviceId> {
+        self.spec
+            .storage
+            .path_to_mount_point(Path::new(ROOT_MOUNT_POINT_PATH))
+            .map(|m| m.target_id.clone())
+    }
+
+    /// Using the `/` mount point, fetches the root block device path.
     pub(super) fn get_root_block_device_path(&self) -> Option<PathBuf> {
         self.spec
             .storage
@@ -114,8 +135,8 @@ impl EngineContext {
 
     /// Returns the path of the block device with id `block_device_id`.
     ///
-    /// If the volume is part of an A/B Volume Pair this returns the update volume (i.e. the one that
-    /// isn't active).
+    /// If the volume is part of an A/B volume pair, this function returns the update volume, i.e.
+    /// the one that isn't active.
     pub(crate) fn get_block_device_path(&self, block_device_id: &BlockDeviceId) -> Option<PathBuf> {
         if let Some(partition_path) = self.partition_paths.get(block_device_id) {
             return Some(partition_path.clone());
@@ -162,7 +183,7 @@ impl EngineContext {
             .and_then(|child_block_device_id| self.get_block_device_path(child_block_device_id))
     }
 
-    /// Returns the block device id for the update volume from the given A/B Volume Pair.
+    /// Returns the block device id for the update volume from the given A/B volume pair.
     pub(super) fn get_ab_volume_block_device_id(
         &self,
         block_device_id: &BlockDeviceId,
@@ -183,13 +204,91 @@ impl EngineContext {
         }
         None
     }
+
+    /// Returns A/B volume pair info based on a given block device ID.
+    pub(crate) fn get_ab_volume_pair(
+        &self,
+        device_id: &BlockDeviceId,
+    ) -> Result<AbVolumePairInfo, Error> {
+        let ab_volume_pair = self
+            .spec
+            .storage
+            .ab_update
+            .as_ref()
+            .context("No A/B update configuration found")?
+            .volume_pairs
+            .iter()
+            .find(|p| &p.id == device_id)
+            .context(format!(
+                "No volume pair for block device ID '{}' found",
+                device_id
+            ))?;
+
+        debug!(
+            "A/B volume pair with block device ID '{}': {:?}",
+            device_id, ab_volume_pair
+        );
+
+        let volume_a_path = self
+            .get_block_device_path(&ab_volume_pair.volume_a_id)
+            .context(format!(
+                "Failed to get block device path for volume A with ID '{}'",
+                ab_volume_pair.volume_a_id
+            ))?;
+        let volume_b_path = self
+            .get_block_device_path(&ab_volume_pair.volume_b_id)
+            .context(format!(
+                "Failed to get block device path for volume B with ID '{}'",
+                ab_volume_pair.volume_b_id
+            ))?;
+
+        Ok(AbVolumePairInfo {
+            volume_a_path,
+            volume_b_path,
+            volume_a_id: ab_volume_pair.volume_a_id.clone(),
+            volume_b_id: ab_volume_pair.volume_b_id.clone(),
+        })
+    }
+
+    /// Returns the configuration for the verity device for the given block device ID.
+    ///
+    /// TODO: Remove old verity API.
+    pub(crate) fn get_verity_config(
+        &self,
+        device_id: &BlockDeviceId,
+    ) -> Result<VerityDevice, Error> {
+        // Prefer old API: Try to get the config from internal_verity first. Then, check the new API
+        let verity_device_config = self
+            .spec
+            .storage
+            .internal_verity
+            .iter()
+            .chain(self.spec.storage.verity.iter())
+            .find(|vd| &vd.id == device_id)
+            .cloned()
+            .context(format!(
+                "Failed to find configuration for verity device '{}'",
+                device_id
+            ))?;
+
+        trace!(
+            "Config for verity device '{}': {:?}",
+            device_id,
+            verity_device_config
+        );
+
+        Ok(verity_device_config)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    use const_format::formatcp;
     use maplit::btreemap;
+
+    use osutils::testutils::repart::TEST_DISK_DEVICE_PATH;
 
     use trident_api::config::{
         self, AbUpdate, AbVolumePair, Disk, FileSystemType, Partition, PartitionType,
@@ -249,8 +348,8 @@ mod tests {
         );
     }
 
-    /// Validates that the `get_block_device_for_update` function works as expected for
-    /// disks, partitions and ab volumes.
+    /// Validates that get_block_device_for_update() works as expected for disks, partitions, and
+    /// A/B volumes.
     #[test]
     fn test_get_block_device_for_update() {
         let mut ctx = EngineContext {
@@ -357,6 +456,156 @@ mod tests {
         assert_eq!(
             ctx.get_ab_volume_block_device_id(&"non-existent".to_owned()),
             None
+        );
+    }
+
+    /// Validates that get_ab_volume_pair() correctly returns the A/B volume pair.
+    #[test]
+    fn test_get_ab_volume_pair() {
+        let mut ctx = EngineContext {
+            ab_active_volume: Some(AbVolumeSelection::VolumeA),
+            spec: HostConfiguration {
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        // Test case #1: If there is no A/B update configuration provided, returns an error.
+        assert_eq!(
+            ctx.get_ab_volume_pair(&"root".to_owned())
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            "No A/B update configuration found"
+        );
+
+        ctx.spec.storage.ab_update = Some(AbUpdate {
+            volume_pairs: vec![AbVolumePair {
+                id: "root".to_string(),
+                volume_a_id: "root-a".to_string(),
+                volume_b_id: "root-b".to_string(),
+            }],
+        });
+
+        // Test case #2: If an A/B volume pair with the given ID does not exist, returns an error.
+        assert_eq!(
+            ctx.get_ab_volume_pair(&"non-existent".to_owned())
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            "No volume pair for block device ID 'non-existent' found"
+        );
+
+        // Test case #3.1: If there are no block devices defined, returns an error.
+        assert_eq!(
+            ctx.get_ab_volume_pair(&"root".to_owned())
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            "Failed to get block device path for volume A with ID 'root-a'"
+        );
+
+        ctx.partition_paths.insert(
+            "root-a".to_string(),
+            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+        );
+
+        // Test case #3.2: If there are no block devices defined, returns an error.
+        assert_eq!(
+            ctx.get_ab_volume_pair(&"root".to_owned())
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            "Failed to get block device path for volume B with ID 'root-b'"
+        );
+
+        ctx.partition_paths.insert(
+            "root-b".to_string(),
+            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+        );
+
+        // Test case #4: When information is complete, returns the volume pair paths.
+        assert_eq!(
+            ctx.get_ab_volume_pair(&"root".to_string()).unwrap(),
+            AbVolumePairInfo {
+                volume_a_path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+                volume_b_path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+                volume_a_id: "root-a".to_string(),
+                volume_b_id: "root-b".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn test_get_verity_config() {
+        let mut ctx = EngineContext {
+            spec: HostConfiguration {
+                storage: config::Storage {
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        // Test case #0: If there is no internal verity device configuration, returns an error.
+        assert_eq!(
+            ctx.get_verity_config(&"root".to_owned())
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            "Failed to find configuration for verity device 'root'"
+        );
+
+        // Test case #1. Add an internal verity device config and ensure it is returned.
+        ctx.spec.storage.internal_verity = vec![VerityDevice {
+            id: "root".to_string(),
+            name: "root".to_string(),
+            data_device_id: "root-data".to_string(),
+            hash_device_id: "root-hash".to_string(),
+            ..Default::default()
+        }];
+
+        assert_eq!(
+            ctx.get_verity_config(&"root".to_owned()).unwrap(),
+            VerityDevice {
+                id: "root".to_string(),
+                name: "root".to_string(),
+                data_device_id: "root-data".to_string(),
+                hash_device_id: "root-hash".to_string(),
+                ..Default::default()
+            }
+        );
+
+        // Test case #2: Requesting config for a non-existent device should return an error.
+        assert_eq!(
+            ctx.get_verity_config(&"non-existent".to_owned())
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            "Failed to find configuration for verity device 'non-existent'"
+        );
+
+        // Test case #3: If there is no internal verity device configuration, check for a verity
+        // device configuration (new API) and ensure it is returned.
+        ctx.spec.storage.internal_verity = vec![];
+        ctx.spec.storage.verity = vec![VerityDevice {
+            id: "root".to_string(),
+            name: "root".to_string(),
+            data_device_id: "root-data".to_string(),
+            hash_device_id: "root-hash".to_string(),
+            ..Default::default()
+        }];
+
+        assert_eq!(
+            ctx.get_verity_config(&"root".to_owned()).unwrap(),
+            VerityDevice {
+                id: "root".to_string(),
+                name: "root".to_string(),
+                data_device_id: "root-data".to_string(),
+                hash_device_id: "root-hash".to_string(),
+                ..Default::default()
+            }
         );
     }
 }

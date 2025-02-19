@@ -24,7 +24,7 @@ pub(crate) fn from_mountpoints(
 }
 
 fn entry_from_mountpoint(
-    hs: &EngineContext,
+    ctx: &EngineContext,
     mp: &InternalMountPoint,
 ) -> Result<TabFileEntry, Error> {
     Ok(match mp.filesystem {
@@ -35,7 +35,7 @@ fn entry_from_mountpoint(
         // Now, for all the types that *do* require a block device:
         fs_type => {
             // Try to look up the block device
-            let device = hs.get_block_device_path(&mp.target_id).context(format!(
+            let device = ctx.get_block_device_path(&mp.target_id).context(format!(
                 "Failed to find block device with id {}",
                 mp.target_id
             ))?;

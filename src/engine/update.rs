@@ -4,7 +4,7 @@ use log::{debug, info, warn};
 #[cfg(feature = "grpc-dangerous")]
 use tokio::sync::mpsc;
 
-use osutils::{block_devices, chroot, container, path::join_relative};
+use osutils::{chroot, container, path::join_relative};
 use trident_api::{
     constants::{internal_params::NO_TRANSITION, ESP_MOUNT_POINT_PATH},
     error::{
@@ -74,9 +74,7 @@ pub(crate) fn update(
             ctx.ab_active_volume
                 .map_or("None".to_string(), |v| v.to_string())
         );
-        let root_device_path = block_devices::get_root_device_path()?;
-        rollback::validate_active_volume(&ctx, root_device_path)
-            .structured(ServicingError::ValidateAbActiveVolume)?;
+        rollback::validate_ab_active_volume(&ctx)?;
     }
 
     debug!("Determining servicing type of required update");
