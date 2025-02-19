@@ -202,18 +202,25 @@ scripts:
     - name: rerun-trident
       runOn: [clean-install]
       content: systemd-run --property=After=trident.service --no-block systemctl start trident.service
+    - name: rerun-trident-container
+      runOn: [clean-install]
+      content: systemd-run --property=After=trident-container.service --no-block systemctl start trident-container.service
     - name: mount-var
       runOn: [all]
       content: mkdir -p $TARGET_ROOT/tmp/var && mount --bind /var $TARGET_ROOT/tmp/var
+    - name: noop-fail-for-second-run
+      runOn: [all]
+      content: |
+        if [ -f /etc/trident/config.yaml ]; then
+          sed -i 's|echo fail-on-first-run|echo no op; exit 0;|' /etc/trident/config.yaml
+        fi
   postConfigure:
     - name: fail-on-the-first-run
       runOn: [all]
       content: |
         trap "umount /tmp/var" EXIT
-        if [ ! -f "/tmp/var/already-run" ]; then
-          touch "/tmp/var/already-run"
-          exit 1
-        fi
+        echo fail-on-first-run
+        exit 1
     - name: overlay
       runOn:
         - clean-install

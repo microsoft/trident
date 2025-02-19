@@ -92,7 +92,7 @@ virtualMachine:
       - raid-mirrored
       - raid-small
       - raid-resync-small
-      # - rerun                # TODO(9767): Re-enabled once the issue is fixed
+      - rerun
       - simple
       - verity
       - verity-raid
@@ -105,7 +105,7 @@ virtualMachine:
       - raid-mirrored
       - raid-small
       - raid-resync-small
-      # - rerun                # TODO(9767): Re-enabled once the issue is fixed
+      - rerun
       - simple
       - verity
       - verity-raid
@@ -114,7 +114,7 @@ virtualMachine:
       - combined
       - raid-mirrored
       - raid-resync-small
-      # - rerun                # TODO(9767): Re-enabled once the issue is fixed
+      - rerun
       - simple
       - verity-raid
     validation:
@@ -126,7 +126,7 @@ virtualMachine:
       - raid-mirrored
       - raid-small
       - raid-resync-small
-      # - rerun                # TODO(9767): Re-enabled once the issue is fixed
+      - rerun
       - simple
       - verity
       - verity-raid
