@@ -33,6 +33,8 @@ pipeline_metadata_map: Dict[str, PipelineMetadata] = {
     ),
     "testing": PipelineMetadata(id=3262),
     "tester": PipelineMetadata(id=3210),
+    "scale": PipelineMetadata(id=4217),
+    "scale-offical": PipelineMetadata(id=4465),
 }
 
 parser = argparse.ArgumentParser(description="Preview a pipeline run")

@@ -58,6 +58,9 @@ parameters:
     default: false
 
 stages:
+  # Build tools (Go stuff)
+  - template: stages/building_tools/building-tools.yml
+
   # Trident Build/Download
   - template: stages/trident_rpms/trident-stage.yml
     parameters:

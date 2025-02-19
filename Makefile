@@ -37,6 +37,8 @@ endif
 	./scripts/test-pipeline rel -q $(BRANCH_FLAG)
 	./scripts/test-pipeline testing -q $(BRANCH_FLAG)
 	./scripts/test-pipeline tester -q $(BRANCH_FLAG)
+	./scripts/test-pipeline scale -q $(BRANCH_FLAG)
+	./scripts/test-pipeline scale-offical -q $(BRANCH_FLAG)
 
 # Local override of the cargo config to avoid having to go through the registry
 .cargo/config: .cargo/config.toml
