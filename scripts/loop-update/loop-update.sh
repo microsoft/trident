@@ -96,6 +96,12 @@ for i in $(seq 1 $RETRY_COUNT); do
     sshProxyPort $UPDATE_PORT_A
     sshProxyPort $UPDATE_PORT_B
 
+    if sshCommand "ls /var/crash/*"; then
+        echo "Crash files found on host"
+        adoError "Crash files found on host during iteration $i"
+        exit 1
+    fi
+
     # If this is a rollback scenario, inject the script to trigger rollback into UPDATE_CONFIG
     if [ "$ROLLBACK" == "true" ] && [ $i -eq 1 ]; then
         TRIGGER_ROLLBACK_SCRIPT=.pipelines/templates/stages/testing_common/scripts/trigger-rollback.sh

@@ -25,7 +25,23 @@ scpDownloadFile() {
     local SRC=$1
     local DEST=$2
 
-    scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $SSH_USER@$VM_IP:$SRC $DEST
+    scp -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $SSH_USER@$VM_IP:$SRC $DEST
+}
+
+downloadCrashdumps() {
+    local DEST="$1"
+
+    local CRASHDUMP_DIR=/var/crash
+
+    if sshCommand "ls $CRASHDUMP_DIR/*"; then
+        echo "Crash files found on host"
+        sshCommand "sudo mv $CRASHDUMP_DIR/* /tmp/crash && sudo chmod -R 644 /tmp/crash && sudo chmod +x /tmp/crash"
+        scpDownloadFile "/tmp/crash/*" "$DEST/"
+        tail -n 50 "$DEST/vmcore-dmesg.txt"
+    else
+        echo "No crash files found on host"
+    fi
 }
 
 downloadJournalLog $1/journal.log
+downloadCrashdumps $1/
