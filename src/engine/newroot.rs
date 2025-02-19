@@ -6,11 +6,11 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{bail, Context, Error};
+use anyhow::{bail, ensure, Context, Error};
 use log::{debug, error, trace, warn};
 use sys_mount::{MountBuilder, MountFlags};
 
-use osutils::{files, filesystems::MountFileSystemType, lsblk, mount, path};
+use osutils::{files, filesystems::MountFileSystemType, findmnt::FindMnt, lsblk, mount, path};
 use trident_api::{
     config::{FileSystemType, HostConfiguration, InternalMountPoint},
     constants::{
@@ -201,7 +201,7 @@ impl NewrootMount {
                     target_path.display()
                 );
 
-                mount::ensure_mount_directory(&target_path).context(format!(
+                prepare_mount_directory(&target_path).with_context(||format!(
                     "Failed to prepare mount directory for block device '{}'",
                     mp.target_id
                 ))?;
@@ -329,7 +329,13 @@ fn mount_points_map(host_config: &HostConfiguration) -> BTreeMap<&Path, &Interna
 /// Returns the path where the newroot should be mounted.
 fn get_new_root_path() -> PathBuf {
     let mut new_root_path = Path::new(UPDATE_ROOT_PATH);
-    if mount::ensure_mount_directory(new_root_path).is_err() {
+    if let Err(e) = prepare_mount_directory(new_root_path) {
+        debug!(
+            "Failed to prepare new root mount directory at '{}'. Error: {}.",
+            new_root_path.display(),
+            e
+        );
+        debug!("Falling back to '{}'", UPDATE_ROOT_FALLBACK_PATH);
         new_root_path = Path::new(UPDATE_ROOT_FALLBACK_PATH);
     }
     new_root_path.to_owned()
@@ -391,11 +397,101 @@ fn do_bind_mount(source: &Path, target: &Path, flags: MountFlags) -> Result<(), 
     Ok(())
 }
 
+/// Verify that target_path is not within a read-only directory or mounted filesystem.
+fn verify_write_access(target_path: &Path) -> Result<(), Error> {
+    // TODO (TASK 11038): Use InvalidMountDirectoryPath from InvalidInputError instead of current error handling
+
+    // Check if the target path is within a read-only directory
+    let mut existing_ancestor = target_path.parent().with_context(|| {
+        format!(
+            "The target path {} has no parent directory to be built into",
+            target_path.display()
+        )
+    })?;
+    // Find the first existing parent directory
+    while !existing_ancestor.exists() {
+        existing_ancestor = existing_ancestor.parent().with_context(|| {
+            format!(
+                "The target path {} has no existent parent directory to be built into",
+                target_path.display()
+            )
+        })?;
+    }
+    // Check if the existing parent directory is read-only
+    if fs::metadata(existing_ancestor)
+        .with_context(|| {
+            format!(
+                "Failed to get metadata for '{}'",
+                existing_ancestor.display()
+            )
+        })?
+        .permissions()
+        .readonly()
+    {
+        bail!(format!(
+            "Failed to create directory '{}' for mount path because the \
+            parent directory '{}' is read-only.",
+            target_path.display(),
+            existing_ancestor.display()
+        ));
+    }
+
+    // Check if the target path is within a read-only mounted filesystem
+    let metadata = FindMnt::run()
+        .context("Failed to get current mount points")?
+        .root()
+        .context("Failed to get root mount point")?;
+    // Fail in case the target path is within a read-only mounted filesystem
+    if let Some(mount_point) = metadata.find_mount_point_for_path(target_path) {
+        if mount_point.options.contains("ro") && target_path != mount_point.target {
+            bail!(format!(
+                "Failed to create the directory '{}' because the mount path \
+                        is within a read-only mounted filesystem at '{}'.",
+                target_path.display(),
+                mount_point.target.display()
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+/// Verify that target_path is suitable for a mount point. If the directory does
+/// not exist, ensure it can be created and then attempt to do so with a warning.
+fn prepare_mount_directory(target_path: &Path) -> Result<(), Error> {
+    if target_path.exists() {
+        ensure!(
+            target_path.is_dir(),
+            "Mount path '{}' is not a directory",
+            target_path.display()
+        );
+        // Check if the directory is empty
+        if let Ok(entries) = fs::read_dir(target_path) {
+            ensure!(
+                entries.count() == 0,
+                "Mount path '{}' is not empty",
+                target_path.display()
+            );
+        }
+        Ok(())
+    } else {
+        warn!(
+            "Mount target: '{}' does not exist. Attempting to create it.",
+            target_path.display()
+        );
+        verify_write_access(target_path)?;
+        files::create_dirs(target_path)
+            .with_context(|| format!("Failed to create mount path '{}'", target_path.display()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    use std::path::PathBuf;
+    use std::{fs::File, path::PathBuf};
+
+    use tempfile::TempDir;
 
     use trident_api::config::{FileSystemType, HostConfiguration, InternalMountPoint, Storage};
 
@@ -462,6 +558,74 @@ mod tests {
         let newroot_mount = NewrootMount::new(newroot_path.to_owned());
 
         assert_eq!(newroot_mount.path(), newroot_path, "Newroot path mismatch");
+    }
+
+    #[test]
+    fn test_prepare_mount_directory() {
+        let temp_mount_dir = TempDir::new().unwrap();
+
+        // Test case 1: Prepare a directory that exists and is empty
+        prepare_mount_directory(temp_mount_dir.path()).unwrap();
+
+        // Test case 2: Prepare a directory that does not exist
+        let temp_mount_point_dir = temp_mount_dir.path().join("temp_dir");
+        prepare_mount_directory(&temp_mount_point_dir).unwrap();
+        assert!(temp_mount_point_dir.exists());
+
+        // Test case 3: Prepare a directory that exists and is not empty
+        assert_eq!(
+            prepare_mount_directory(temp_mount_dir.path())
+                .unwrap_err()
+                .to_string(),
+            format!(
+                "Mount path '{}' is not empty",
+                temp_mount_dir.path().display()
+            )
+        );
+
+        // Test case 4: Prepare a file path does not work
+        let temp_mount_point_file = temp_mount_dir.path().join("temp_file");
+        File::create(&temp_mount_point_file).unwrap();
+        assert_eq!(
+            prepare_mount_directory(&temp_mount_point_file)
+                .unwrap_err()
+                .to_string(),
+            format!(
+                "Mount path '{}' is not a directory",
+                temp_mount_point_file.display()
+            )
+        );
+
+        // Test case 5: Prepare a directory with no existent parent directory
+        let non_valid_path = PathBuf::from("non_existent_dir/new_dir");
+        assert_eq!(
+            prepare_mount_directory(&non_valid_path)
+                .unwrap_err()
+                .to_string(),
+            format!(
+                "The target path {} has no existent parent directory to be built into",
+                non_valid_path.display()
+            )
+        );
+
+        // Test case 6: Prepare a directory inside a read-only directory
+        let mut permissions_temp_mount_dir =
+            fs::metadata(temp_mount_dir.path()).unwrap().permissions();
+        // Set the permissions for parent directory to read-only
+        permissions_temp_mount_dir.set_readonly(true);
+        fs::set_permissions(temp_mount_dir.path(), permissions_temp_mount_dir).unwrap();
+        // Target path within read-only directory
+        let temp_in_ro = temp_mount_dir.path().join("new_dir_in_ro");
+        assert_eq!(
+            prepare_mount_directory(&temp_in_ro)
+                .unwrap_err()
+                .to_string(),
+            format!(
+                "Failed to create directory '{}' for mount path because the parent directory '{}' is read-only.",
+                temp_in_ro.display(),
+                temp_mount_dir.path().display()
+            )
+        );
     }
 }
 
@@ -1056,5 +1220,41 @@ mod functional_test {
 
         let root_mount = FindMnt::run().unwrap().root().unwrap();
         assert!(!root_mount.contains_mountpoint(&temp_mount_path));
+    }
+
+    /// Attempt to prepare a directory within a read-only mounted filesystem
+    #[functional_test(feature = "engine", negative = true)]
+    fn test_prepare_mount_directory_ro() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // CDROM device to be mounted for testing
+        let device = Path::new(CDROM_DEVICE_PATH);
+
+        // Target path for the mount
+        let mount_point = temp_dir.path().join("mount_point");
+        fs::create_dir_all(&mount_point).unwrap();
+
+        // Mount the CDROM device and attempt to prepare a directory inside the read-only mount
+        tmp_mount::mount(
+            device,
+            MountFileSystemType::Iso9660,
+            &["ro".into()],
+            |mount_dir| {
+                // Target path within the read-only mount
+                let target_path = mount_dir.join("test_dir");
+
+                assert_eq!(
+                    prepare_mount_directory(&target_path)
+                        .unwrap_err()
+                        .to_string(),
+                    format!(
+                        "Failed to create the directory '{}' because the mount path \
+                        is within a read-only mounted filesystem at '{}'.",
+                        target_path.display(),
+                        mount_dir.display()
+                    )
+                );
+            },
+        );
     }
 }
