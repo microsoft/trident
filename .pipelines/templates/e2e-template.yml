@@ -54,6 +54,15 @@ parameters:
     type: string
     default: "*.*.*"
 
+  - name: "bmE2eTestRuntimes"
+    displayName: "BM e2e test runtimes to run"
+    type: string
+    default: host
+    values:
+      - none
+      - host
+      - container
+      - both
 
 stages:
   # Trident Build/Download
@@ -177,11 +186,23 @@ stages:
           buildPurpose: "daily"
           runtimeEnv: "host"
 
-      # BM Testing (host, daily)
-      - template: stages/testing_baremetal/baremetal-testing.yml
-        parameters:
-          buildPurpose: "daily"
-          runtimeEnv: "host"
+      - ${{ if or(eq(parameters.bmE2eTestRuntimes, 'host'), eq(parameters.bmE2eTestRuntimes, 'both')) }}:
+        # BM Testing (host, daily)
+        - template: stages/testing_baremetal/baremetal-testing.yml
+          parameters:
+            buildPurpose: "daily"
+            runtimeEnv: "host"
+
+      - ${{ if or(eq(parameters.bmE2eTestRuntimes, 'container'), eq(parameters.bmE2eTestRuntimes, 'both')) }}:
+        # BM Testing (container, daily), iff bmE2eTestRuntimes=container|both.  if 'both'
+        # use 'extraDependsOn' to ensure that baremetal-testing calls do not execute in 
+        # parallel.
+        - template: stages/testing_baremetal/baremetal-testing.yml
+          parameters:
+            buildPurpose: "daily"
+            runtimeEnv: "container"
+            ${{ if eq(parameters.bmE2eTestRuntimes, 'both') }}:
+              extraDependsOn: "BaremetalDeploymentTesting_host"
 
       # VM Testing (container, daily)
       - template: stages/testing_vm/netlaunch-testing.yml

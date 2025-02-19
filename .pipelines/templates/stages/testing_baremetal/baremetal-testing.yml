@@ -25,20 +25,28 @@ parameters:
       - host
       - container
 
+  - name: extraDependsOn
+    type: string
+    default: ""
+
 stages:
   - stage: BaremetalDeploymentTesting_${{ parameters.runtimeEnv }}
     displayName: Baremetal Deployment Testing ${{ parameters.runtimeEnv }}
     dependsOn:
+      - ${{ if ne(parameters.extraDependsOn, '') }}:
+          - ${{ parameters.extraDependsOn }}
       - ${{ if eq(parameters.testingRun, true) }}:
           - DownloadTestingElements
       - ${{ else }}:
           - BuildingTools
-          - TridentTestImg_trident_verity_testimage
           - ${{ if eq(parameters.runtimeEnv, 'container') }}:
               - BuildTridentContainerImage
               - TridentTestImg_trident_container_installer_testimage
               - TridentTestImg_trident_container_testimage
+              - TridentTestImg_trident_verity_testimage
+              # - TridentTestImg_trident_container_verity_testimage
           - ${{ else }}:
+              - TridentTestImg_trident_verity_testimage
               - TridentTestImg_trident_installer_testimage
               - TridentTestImg_trident_testimage
 
@@ -98,6 +106,24 @@ stages:
           - name: NETLAUNCH_PORT
             value: 4000
 
+          - name: INSTALLER_ISO_NAME
+            ${{ if eq(parameters.runtimeEnv, 'container') }}:
+              value: "trident-container-installer-testimage"
+            ${{ else }}:
+              value: "trident-installer-testimage"
+
+          - name: IMAGE_NAME
+            ${{ if eq(parameters.runtimeEnv, 'container') }}:
+              value: "trident-container-testimage"
+            ${{ else }}:
+              value: "trident-testimage"
+
+          - name: VERITY_IMAGE_NAME
+            # ${{ if eq(parameters.runtimeEnv, 'container') }}:
+            #   value: "trident-container-verity-testimage"
+            # ${{ else }}:
+            value: "trident-verity-testimage"
+
           - group: baremetal_controller
 
         steps:
@@ -137,6 +163,12 @@ stages:
 
           # Download all test images
           - template: ../testing_common/download-test-images.yml
+            parameters:
+              installerISO: ${{ variables.INSTALLER_ISO_NAME }}
+              tridentTestImage: ${{ variables.IMAGE_NAME }}
+              tridentTestImageVerity: ${{ variables.VERITY_IMAGE_NAME }}
+              ${{ if eq(parameters.runtimeEnv, 'container') }}:
+                downloadTridentContainer: true
 
           - bash: |
               set -xe
@@ -194,7 +226,7 @@ stages:
               fi
 
               ./bin/netlaunch \
-                  --iso $(TRIDENT_SOURCE_DIR)/artifacts/iso/trident-installer-testimage.iso \
+                  --iso $(TRIDENT_SOURCE_DIR)/artifacts/iso/${{ variables.INSTALLER_ISO_NAME }}.iso \
                   --config $(TRIDENT_SOURCE_DIR)/baremetal-netlaunch.yaml \
                   --trident $(TRIDENT_CONFIG_FILE) \
                   --servefolder ./artifacts/test-image \
@@ -254,3 +286,4 @@ stages:
               hostIp: ${{ variables.BAREMETAL_OAM_IP }}
               tridentConfigPath: $(TRIDENT_CONFIG_PATH)
               netlistenPort: ${{ variables.NETLAUNCH_PORT }}
+              runtimeEnv: ${{ parameters.runtimeEnv }}

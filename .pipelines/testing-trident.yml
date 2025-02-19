@@ -40,10 +40,15 @@ parameters:
     default: false
     displayName: E2E tests Virtual Machines Container
 
-  - name: runDeploymentBM
+  - name: runDeploymentBMHost
     type: boolean
     default: false
     displayName: E2E tests Bare Metal Host
+
+  - name: runDeploymentBMContainer
+    type: boolean
+    default: false
+    displayName: E2E tests Bare Metal Container
 
   - name: runFunctionalTests
     type: boolean
@@ -124,6 +129,7 @@ extends:
           tridentPipelineRunId: ${{ parameters.tridentPipelineRunId }}
           runDeploymentVMHost: ${{ parameters.runDeploymentVMHost }}
           runDeploymentVMContainer: ${{ parameters.runDeploymentVMContainer }}
-          runDeploymentBM: ${{ parameters.runDeploymentBM }}
+          runDeploymentBMHost: ${{ parameters.runDeploymentBMHost }}
+          runDeploymentBMContainer: ${{ parameters.runDeploymentBMContainer }}
           runFunctionalTests: ${{ parameters.runFunctionalTests }}
           runServicingTests: ${{ parameters.runServicingTests }}

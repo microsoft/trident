@@ -24,10 +24,15 @@ parameters:
     default: false
     displayName: E2E tests Virtual Machines Container
 
-  - name: runDeploymentBM
+  - name: runDeploymentBMHost
     type: boolean
     default: false
     displayName: E2E tests Bare Metal Host
+
+  - name: runDeploymentBMContainer
+    type: boolean
+    default: false
+    displayName: E2E tests Bare Metal Container
 
   - name: runFunctionalTests
     type: boolean
@@ -66,11 +71,18 @@ stages:
           runtimeEnv: "container"
           testingRun: true
 
-  - ${{ if parameters.runDeploymentBM }}:
+  - ${{ if parameters.runDeploymentBMHost }}:
       - template: stages/testing_baremetal/baremetal-testing.yml
         parameters:
           buildPurpose: "validation"
           runtimeEnv: "host"
+          testingRun: true
+
+  - ${{ if parameters.runDeploymentBMContainer }}:
+      - template: stages/testing_baremetal/baremetal-testing.yml
+        parameters:
+          buildPurpose: "validation"
+          runtimeEnv: "container"
           testingRun: true
 
   - ${{ if parameters.runFunctionalTests }}:

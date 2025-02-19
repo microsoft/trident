@@ -174,7 +174,7 @@ steps:
       set +x
       echo "##vso[task.setvariable variable=version]$new_version"
       echo "##vso[task.setvariable variable=abActiveVolume]volume-b"
-    timeoutInMinutes: 5
+    timeoutInMinutes: 15
     workingDirectory: $(Build.SourcesDirectory)
     displayName: "Stage and finalize A/B update into runtime OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
@@ -267,7 +267,7 @@ steps:
       set +x
       echo "##vso[task.setvariable variable=version]$new_version"
       echo "##vso[task.setvariable variable=abActiveVolume]volume-a"
-    timeoutInMinutes: 5
+    timeoutInMinutes: 15
     workingDirectory: $(Build.SourcesDirectory)
     displayName: "Stage and finalize A/B update into runtime OS A"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))

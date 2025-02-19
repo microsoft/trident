@@ -20,6 +20,7 @@ parameters:
     type: string
     default: trident-verity-testimage
     values:
+      - trident-container-verity-testimage
       - trident-verity-testimage
 
   - name: downloadTridentContainer

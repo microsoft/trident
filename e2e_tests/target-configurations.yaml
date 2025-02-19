@@ -28,6 +28,33 @@ bareMetal:
       - simple
       - verity
       - verity-raid
+  container:
+    daily:
+      - base
+      - combined
+      # - encrypted-partition  # TODO(9768): Re-enabled once the issue is fixed
+      # - encrypted-raid       # TODO(9768): Re-enabled once the issue is fixed
+      # - encrypted-swap       # TODO(9768): Re-enabled once the issue is fixed
+      - raid-mirrored
+      - raid-small
+      - raid-resync-small
+      # - rerun                # TODO(9767): Re-enabled once the issue is fixed
+      - simple
+      - verity
+      - verity-raid
+    validation:
+      - base
+      - combined
+      # - encrypted-partition  # TODO(9768): Re-enabled once the issue is fixed
+      # - encrypted-raid       # TODO(9768): Re-enabled once the issue is fixed
+      # - encrypted-swap       # TODO(9768): Re-enabled once the issue is fixed
+      - raid-mirrored
+      - raid-small
+      - raid-resync-small
+      # - rerun                # TODO(9767): Re-enabled once the issue is fixed
+      - simple
+      - verity
+      - verity-raid
 virtualMachine:
   host:
     daily:
