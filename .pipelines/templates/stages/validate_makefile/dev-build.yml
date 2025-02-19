@@ -46,3 +46,9 @@ stages:
             workingDirectory: $(Build.SourcesDirectory)
             env:
               AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
+
+          - script: cargo install --locked cargo-deny@0.16.1
+            displayName: Install cargo-deny
+
+          - script: cargo deny --all-features --workspace check licenses
+            displayName: Check licenses
