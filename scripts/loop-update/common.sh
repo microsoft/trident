@@ -240,7 +240,9 @@ function ensureAzureAccess() {
         sleep 5
     done
     echo "MSAL token cache client ids: "
-    cat ~/.azure/msal_token_cache.json | grep client_id
+    set +e
+    ls ~/.azure
+    set -e
     
     echo "Signed in user id: "
     az ad signed-in-user show --query id -o tsv
