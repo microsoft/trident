@@ -238,7 +238,7 @@ function ensureAzureAccess() {
         fi
         echo "Managed identity does not have access to the subscription, retrying..."
         sleep 5
-    fi
+    done
     echo "MSAL token cache client ids: "
     cat ~/.azure/msal_token_cache.json | grep client_id
     
