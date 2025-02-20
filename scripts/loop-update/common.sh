@@ -238,12 +238,11 @@ function ensureAzureAccess() {
         fi
         echo "Managed identity does not have access to the subscription, retrying..."
         sleep 5
+        az login --identity
     done
-    echo "MSAL token cache client ids: "
     set +e
     ls ~/.azure
+    echo "azureProfile.json: "
+    cat ~/.azure/azureProfile.json
     set -e
-    
-    echo "Signed in user id: "
-    az ad signed-in-user show --query id -o tsv
 }
