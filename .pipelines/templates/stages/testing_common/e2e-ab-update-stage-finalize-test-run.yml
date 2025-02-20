@@ -77,7 +77,7 @@ steps:
           --keys-file-path ${{ parameters.sshKeyPath }} \
           --destination-directory $(destinationDirectory) \
           --trident-config $(tridentConfigFile) \
-          --runtime-env $(runtimeEnv) \
+          --runtime-env ${{ parameters.runtimeEnv }} \
           --version $(version) \
           --stage-ab-update
     timeoutInMinutes: 5
@@ -96,7 +96,7 @@ steps:
           --capture=no \
           --junit-xml=${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_A_$(System.JobAttempt).junit.xml \
           --host ${{ parameters.hostIp }} \
-          --runtime-env $(runtimeEnv) \
+          --runtime-env ${{ parameters.runtimeEnv }} \
           --configuration ${{ parameters.tridentConfigPath }} \
           --ab-active-volume $(abActiveVolume)
     timeoutInMinutes: 10
@@ -130,7 +130,7 @@ steps:
           --keys-file-path ${{ parameters.sshKeyPath }} \
           --destination-directory $(destinationDirectory) \
           --trident-config $(tridentConfigFile) \
-          --runtime-env $(runtimeEnv) \
+          --runtime-env ${{ parameters.runtimeEnv }} \
           --version $(version) \
           --finalize-ab-update
 
@@ -155,7 +155,7 @@ steps:
           "${{ parameters.sshKeyPath }}" \
           "${{ parameters.userName }}" \
           "${{ parameters.hostIp }}" \
-          "$(runtimeEnv)"
+          "${{ parameters.runtimeEnv }}"
     displayName: "Check SSH connection after booting into runtime OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
@@ -180,7 +180,7 @@ steps:
           --capture=no \
           --junit-xml=${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_stage_finalize_ab_update_B_$(System.JobAttempt).junit.xml \
           --host ${{ parameters.hostIp }} \
-          --runtime-env $(runtimeEnv) \
+          --runtime-env ${{ parameters.runtimeEnv }} \
           --configuration ${{ parameters.tridentConfigPath }} \
           --ab-active-volume $(abActiveVolume)
     timeoutInMinutes: 5

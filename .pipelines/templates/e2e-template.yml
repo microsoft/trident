@@ -144,6 +144,16 @@ stages:
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
 
+  - template: stages/build_image/trident-testimg.yml
+    parameters:
+      imageName: build/trident-container-verity-testimage.cosi
+      outputArtifactName: trident-container-verity-testimage
+      baseimgBuildType: ${{ parameters.baseimgBuildType }}
+      previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+      mkcosiTemplate: "verity"
+      micBuildType: ${{ parameters.micBuildType }}
+      micVersion: ${{ parameters.micVersion }}
+
   - ${{ if or(parameters.forceTridentRebuild, eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci')) }}:
       # Build USB-ISO
       - template: stages/trident_usb_iso/trident-usb-iso.yml

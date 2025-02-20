@@ -83,6 +83,7 @@ stages:
               ${{ if eq(parameters.runtimeEnv, 'container') }}:
                 installerISO: trident-container-installer-testimage
                 tridentTestImage: trident-container-testimage
+                tridentTestImageVerity: trident-container-verity-testimage
                 downloadTridentContainer: true
               ${{ else }}: {}
 

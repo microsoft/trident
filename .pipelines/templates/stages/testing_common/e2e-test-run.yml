@@ -93,19 +93,6 @@ steps:
     displayName: "Check if Trident config requires verity runtime OS images"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
-  # TODO: Remove after trident-container-verity-testimage is being used for E2E tests (Task #9652).
-  - bash: |
-      set -eu
-      verityRequired=$(sudo yq e '.storage.verity != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
-      if [ "$verityRequired" == "true" ]; then
-        echo "Trident is running from the Runtime OS on the host (verity not enabled for container)."
-        echo "##vso[task.setvariable variable=runtimeEnv]host"
-      else
-        echo "Runtime environment is the same for Provisioning OS and Runtime OS."
-        echo "##vso[task.setvariable variable=runtimeEnv]${{ parameters.runtimeEnv }}"
-      fi
-    displayName: "Define Trident runtime environment"
-
   - bash: |
       set -eux
       chmod +x $(Build.SourcesDirectory)/.pipelines/templates/stages/testing_common/scripts/check-ssh-connection.sh
@@ -113,7 +100,7 @@ steps:
           "${{ parameters.sshKeyPath }}" \
           "${{ parameters.userName }}" \
           "${{ parameters.hostIp }}" \
-          "$(runtimeEnv)"
+          "${{ parameters.runtimeEnv }}"
     displayName: "Check SSH connection"
 
   - bash: |
@@ -123,7 +110,7 @@ steps:
           --capture=no \
           --junit-xml=${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_clean_install_$(System.JobAttempt).junit.xml \
           --host ${{ parameters.hostIp }} \
-          --runtime-env $(runtimeEnv) \
+          --runtime-env ${{ parameters.runtimeEnv }} \
           --configuration ${{ parameters.tridentConfigPath }}
     timeoutInMinutes: 5
     workingDirectory: $(Build.SourcesDirectory)/e2e_tests
@@ -164,7 +151,7 @@ steps:
           --destination-directory $(destinationDirectory) \
           --trident-config $(tridentConfigFile) \
           --version $(version) \
-          --runtime-env $(runtimeEnv) \
+          --runtime-env ${{ parameters.runtimeEnv }} \
           --stage-ab-update \
           --finalize-ab-update
 
@@ -189,7 +176,7 @@ steps:
           "${{ parameters.sshKeyPath }}" \
           "${{ parameters.userName }}" \
           "${{ parameters.hostIp }}" \
-          "$(runtimeEnv)"
+          "${{ parameters.runtimeEnv }}"
     displayName: "Check SSH connection after booting into runtime OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
@@ -215,7 +202,7 @@ steps:
           --capture=no \
           --junit-xml=${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_B_$(System.JobAttempt).junit.xml \
           --host ${{ parameters.hostIp }} \
-          --runtime-env $(runtimeEnv) \
+          --runtime-env ${{ parameters.runtimeEnv }} \
           --configuration ${{ parameters.tridentConfigPath }} \
           --ab-active-volume $(abActiveVolume)
     timeoutInMinutes: 5
@@ -257,7 +244,7 @@ steps:
           --destination-directory $(destinationDirectory) \
           --trident-config $(tridentConfigFile) \
           --version $(version) \
-          --runtime-env $(runtimeEnv) \
+          --runtime-env ${{ parameters.runtimeEnv }} \
           --stage-ab-update \
           --finalize-ab-update
 
@@ -282,7 +269,7 @@ steps:
           "${{ parameters.sshKeyPath }}" \
           "${{ parameters.userName }}" \
           "${{ parameters.hostIp }}" \
-          "$(runtimeEnv)"
+          "${{ parameters.runtimeEnv }}"
     displayName: "Check SSH connection after booting into runtime OS A"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
@@ -307,7 +294,7 @@ steps:
           --capture=no \
           --junit-xml=${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_A_$(System.JobAttempt).junit.xml \
           --host ${{ parameters.hostIp }} \
-          --runtime-env $(runtimeEnv) \
+          --runtime-env ${{ parameters.runtimeEnv }} \
           --configuration ${{ parameters.tridentConfigPath }} \
           --ab-active-volume $(abActiveVolume)
     timeoutInMinutes: 5

@@ -171,7 +171,7 @@ stages:
               artifactName: "trident-testimage"
               targetPath: $(ob_outputDirectory)
 
-      - job: TridentVeritTestimage
+      - job: TridentVerityTestimage
         displayName: "Download trident-verity-testimage"
         timeoutInMinutes: 10
         pool:
@@ -192,6 +192,29 @@ stages:
               runId: ${{ parameters.tridentPipelineRunId }}
               allowFailedBuilds: ${{ parameters.allowFailedBuilds }}
               artifactName: "trident-verity-testimage"
+              targetPath: $(ob_outputDirectory)
+
+      - job: TridentContainerVerityTestimage
+        displayName: "Download trident-container-verity-testimage"
+        timeoutInMinutes: 10
+        pool:
+          type: linux
+
+        variables:
+          ob_outputDirectory: $(Build.SourcesDirectory)/build
+          ob_artifactBaseName: "trident-container-verity-testimage"
+
+        steps:
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              source: specific
+              project: "ECF"
+              definition: ${{ parameters.definition }}
+              runVersion: ${{ parameters.runVersion }}
+              branchName: "refs/heads/${{ parameters.branch }}"
+              runId: ${{ parameters.tridentPipelineRunId }}
+              allowFailedBuilds: ${{ parameters.allowFailedBuilds }}
+              artifactName: "trident-container-verity-testimage"
               targetPath: $(ob_outputDirectory)
 
       - job: Gotools

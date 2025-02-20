@@ -77,14 +77,18 @@ def connection(request):
     ssh_connection.run("hostname")
 
     if runtime_env == "container":
-        # Disable SELinux:
-        docker_permission = "setenforce 0"
-        ssh_connection.run(
-            f"sudo {docker_permission}"
-        )  # TODO: Re-enable SELinux (#9508).
+        getenforce_result = ssh_connection.run("sudo getenforce")
+        # The getenforce command returns Enforcing, Permissive, or Disabled ...
+        # disable if selinux is not already.
+        if not "Disabled" in getenforce_result.stdout:
+            # Disable SELinux:
+            docker_permission = "setenforce 0"
+            ssh_connection.run(
+                f"sudo {docker_permission}"
+            )  # TODO: Re-enable SELinx (#9508).
         # Load Docker Image
         load_container = f"docker load --input {DOCKER_IMAGE_PATH}"
-        ssh_connection.run(f"sudo {docker_permission}")
+        ssh_connection.run(f"sudo {load_container}")
 
     yield ssh_connection
     ssh_connection.close()

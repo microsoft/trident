@@ -149,25 +149,12 @@ steps:
       displayName: "Collect Serial Log of the VM"
       condition: eq(variables['TEST_REBUILD_RAID'], 'True')  
 
-  # TODO: Remove after trident-container-verity-testimage is being used for E2E tests (Task #9652). 
-  - bash: |
-      set -eu
-      verityRequired=$(sudo yq e '.storage.verity != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
-      if [ "$verityRequired" == "true" ]; then
-        echo "Trident is running from the Runtime OS on the host (verity not enabled for container)."
-        echo "##vso[task.setvariable variable=runtimeEnv]host"
-      else
-        echo "Runtime environment is the same for Provisioning OS and Runtime OS."
-        echo "##vso[task.setvariable variable=runtimeEnv]${{ parameters.runtimeEnv }}"
-      fi
-    displayName: "Define Trident runtime environment"
-
   - bash: |
       $(Build.SourcesDirectory)/.pipelines/templates/stages/testing_common/scripts/check-ssh-connection.sh \
           "${{ parameters.sshKeyPath }}" \
           "${{ parameters.userName }}" \
           "${{ parameters.hostIp }}" \
-          "$(runtimeEnv)"
+          "${{ parameters.runtimeEnv }}"
     displayName: "Check SSH connection after restarting"
     condition: eq(variables['TEST_REBUILD_RAID'], 'True')
 
@@ -179,7 +166,7 @@ steps:
           --ip-address ${{ parameters.hostIp }} \
           --user-name ${{ parameters.userName }} \
           --keys-file-path ${{ parameters.sshKeyPath }} \
-          --runtime-env $(runtimeEnv) \
+          --runtime-env ${{ parameters.runtimeEnv }} \
           --trident-config $tridentRebuildRaidConfigFile \
     timeoutInMinutes: 5
     workingDirectory: $(Build.SourcesDirectory)

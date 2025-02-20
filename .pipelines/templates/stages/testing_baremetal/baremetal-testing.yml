@@ -119,10 +119,10 @@ stages:
               value: "trident-testimage"
 
           - name: VERITY_IMAGE_NAME
-            # ${{ if eq(parameters.runtimeEnv, 'container') }}:
-            #   value: "trident-container-verity-testimage"
-            # ${{ else }}:
-            value: "trident-verity-testimage"
+            ${{ if eq(parameters.runtimeEnv, 'container') }}:
+              value: "trident-container-verity-testimage"
+            ${{ else }}:
+              value: "trident-verity-testimage"
 
           - group: baremetal_controller
 
