@@ -40,6 +40,14 @@ endif
 	./scripts/test-pipeline scale -q $(BRANCH_FLAG)
 	./scripts/test-pipeline scale-offical -q $(BRANCH_FLAG)
 
+.PHONY: check-sh
+check-sh:
+	$(eval DETECTED_SH_FILES := $(shell find . -name '*.sh'))
+	@for shfile in $(DETECTED_SH_FILES); do \
+		echo "Validating $$shfile"; \
+		bash -n $$shfile || exit 1; \
+	done
+
 # Local override of the cargo config to avoid having to go through the registry
 .cargo/config: .cargo/config.toml
 	@cp $< $@

@@ -41,6 +41,13 @@ stages:
           - script: |
               set -eux
 
+              make check-sh
+            displayName: "Validate sh files in repo"
+            workingDirectory: $(Build.SourcesDirectory)
+
+          - script: |
+              set -eux
+
               make check-pipelines BRANCH=$(Build.SourceBranch)
             displayName: "Validating pipeline templates work"
             workingDirectory: $(Build.SourcesDirectory)
