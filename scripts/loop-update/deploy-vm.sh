@@ -29,6 +29,11 @@ if [ "$TEST_PLATFORM" == "qemu" ]; then
 elif [ "$TEST_PLATFORM" == "azure" ]; then
     az account set -s "$SUBSCRIPTION"
 
+    # Ensure access when running in Azure DevOps, since this has not been
+    # working reliably in the past
+    if [ ! -z "${BUILD_BUILDNUMBER:-}" ]; then
+        ensureAzureAccess
+    fi
     if [ "`az group exists -n "$TEST_RESOURCE_GROUP"`" == "true" ]; then
         az group delete -n "$TEST_RESOURCE_GROUP" -y
     fi

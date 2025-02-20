@@ -16,6 +16,11 @@ if [ -z "${IMAGE_DEFINITION:-}" ]; then
     echo "IMAGE_DEFINITION is not set. Exiting..."
     exit 1
 fi
+# Ensure access when running in Azure DevOps, since this has not been
+# working reliably in the past
+if [ ! -z "${BUILD_BUILDNUMBER:-}" ]; then
+    ensureAzureAccess
+fi
 
 if [ "`az group exists -n "$RESOURCE_GROUP"`" == "false" ]; then
     az group create -n "$RESOURCE_GROUP" -l "$PUBLISH_LOCATION"

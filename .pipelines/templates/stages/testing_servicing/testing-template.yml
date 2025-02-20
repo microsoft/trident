@@ -202,6 +202,9 @@ jobs:
               sudo zstd -T0 $(Build.ArtifactStagingDirectory)/booted.qcow2
               sudo mv $(Build.ArtifactStagingDirectory)/booted.qcow2.zst $(ob_outputDirectory)/
           fi
+          # TODO: use
+          # https://learn.microsoft.com/en-us/azure/virtual-machines/linux/download-vhd?tabs=azure-cli
+          # for Azure images
         workingDirectory: $(tridentSourceDirectory)
         env:
           TEST_RESOURCE_GROUP: $(TEST_RESOURCE_GROUP)

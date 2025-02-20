@@ -227,3 +227,21 @@ function killUpdateServer() {
         kill -9 $KILL_PID > /dev/null 2>&1 || true
     fi
 }
+
+function ensureAzureAccess() {
+    # Ensure the managed identity has access to the subscription
+    # 1cd7f210-4327-4ef9-b33f-f64d342cc431 is trident-servicing-test managed
+    # identity, assigned to the pool
+    for i in {1..10}; do
+        if az role assignment list --assignee 1cd7f210-4327-4ef9-b33f-f64d342cc431 --scope "/subscriptions/$SUBSCRIPTION" | grep -q "Contributor"; then
+            break;
+        fi
+        echo "Managed identity does not have access to the subscription, retrying..."
+        sleep 5
+    fi
+    echo "MSAL token cache client ids: "
+    cat ~/.azure/msal_token_cache.json | grep client_id
+    
+    echo "Signed in user id: "
+    az ad signed-in-user show --query id -o tsv
+}
