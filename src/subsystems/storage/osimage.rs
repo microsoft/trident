@@ -8,6 +8,7 @@ use log::{debug, error, trace, warn};
 use osutils::{df, lsblk};
 use trident_api::{
     config::{FileSystemSource, FileSystemType, HostConfiguration},
+    constants::internal_params::DISABLE_FS_BLOCK_DEVICE_SIZE_CHECK,
     error::{InternalError, InvalidInputError, ReportError, ServicingError, TridentError},
     primitives::bytes::ByteCount,
     status::{AbVolumeSelection, ServicingType},
@@ -72,6 +73,15 @@ pub fn validate_host_config(ctx: &EngineContext) -> Result<(), TridentError> {
 
     debug!("Validating ESP image in OS image");
     validate_esp(os_image)?;
+
+    if !ctx
+        .spec
+        .internal_params
+        .get_flag(DISABLE_FS_BLOCK_DEVICE_SIZE_CHECK)
+    {
+        debug!("Validating filesystems in OS image fit in their corresponding block devices");
+        validate_filesystem_blkdev_fit(os_image, ctx)?;
+    };
 
     Ok(())
 }
@@ -300,6 +310,63 @@ fn validate_esp(os_image: &OsImage) -> Result<(), TridentError> {
         );
     }
 
+    Ok(())
+}
+
+/// Validates the sizes of filesystems.
+///
+/// This function checks that each filesystem in the OS image fits in its corresponding block device.
+fn validate_filesystem_blkdev_fit(
+    os_image: &OsImage,
+    ctx: &EngineContext,
+) -> Result<(), TridentError> {
+    let graph = &ctx.storage_graph;
+    // Iterate through each filesystem in the image
+    for fs in os_image.filesystems() {
+        // Find corresponding filesystem in Host Configuration by matching on mount point
+        let hc_fs = ctx
+            .spec
+            .storage
+            .filesystems
+            .iter()
+            .find(|hc_fs| {
+                hc_fs
+                    .mount_point
+                    .as_ref()
+                    .map_or(false, |mp| mp.path == fs.mount_point)
+            })
+            // We should never get here because of the checks in validate_filesystems()
+            // i.e. Every mount point in the image should match to a mount point in the HC
+            .structured(InternalError::GetMountPointForOsImage)?;
+        let Some(device_id) = &hc_fs.device_id else {
+            return Err(TridentError::new(InternalError::Internal(
+                "Failed to retrieve device id for filesystem.",
+            )));
+        };
+        let fs_size = fs.image_file.uncompressed_size;
+        trace!("The size of the filesystem associated with block device '{device_id}' is {fs_size} bytes.");
+
+        let Some(blkdev_size) = graph.block_device_size(device_id) else {
+            debug!("Could not find the size of the block device with id '{device_id}'. Block device may not have a fixed size.");
+            continue;
+        };
+        trace!("The size of the block device with id '{device_id}' is {blkdev_size} bytes.");
+
+        debug!(
+            "Found filesystem with size {} and block device with size {} for device '{device_id}'",
+            ByteCount::from(fs_size).to_human_readable_approx(),
+            ByteCount::from(blkdev_size).to_human_readable_approx()
+        );
+
+        if fs_size > blkdev_size {
+            return Err(TridentError::new(
+                InvalidInputError::FilesystemSizeExceedsBlockDevice {
+                    device_id: device_id.to_string(),
+                    min_size: fs_size,
+                },
+            ));
+        };
+    }
     Ok(())
 }
 

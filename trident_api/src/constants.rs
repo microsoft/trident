@@ -155,6 +155,9 @@ pub const MOUNT_OPTION_READ_ONLY: &str = "ro";
 
 /// Internal-only overrides
 pub mod internal_params {
+    /// Disable check that filesystem size does not exceed the size of its block device.
+    pub const DISABLE_FS_BLOCK_DEVICE_SIZE_CHECK: &str = "disableFsBlockDeviceSizeCheck";
+
     /// Disable check for grub-noprefix
     pub const DISABLE_GRUB_NOPREFIX_CHECK: &str = "disableGrubNoprefixCheck";
 

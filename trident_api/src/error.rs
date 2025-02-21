@@ -135,6 +135,12 @@ pub enum InvalidInputError {
     #[error("Failed to initialize clean install as host is already provisioned")]
     CleanInstallOnProvisionedHost,
 
+    #[error(
+        "Filesystem size exceeds underlying block device's size for device '{device_id}'. \
+        The filesystem requires at least {min_size} bytes on the block device."
+    )]
+    FilesystemSizeExceedsBlockDevice { device_id: String, min_size: u64 },
+
     #[error("Image is corrupt: multiple partitions have be assigned the same FS UUID: {uuid}")]
     DuplicateFsUuid { uuid: String },
 
@@ -241,15 +247,6 @@ pub enum ServicingError {
         root_device_path: String,
         expected_device_path: String,
     },
-
-    #[error("Failed to generate Netplan config")]
-    GenerateNetplanConfig,
-
-    #[error("Failed to get information for device {device_id} via lsblk")]
-    GetDeviceInformation { device_id: String },
-
-    #[error("Failed to get the root A/B volume pair '{device_id}'")]
-    GetRootAbVolumePair { device_id: String },
 
     #[error("Failed to check if the boot entry '{boot_entry}' exists via efibootmgr")]
     BootEntryCheck { boot_entry: String },
@@ -373,11 +370,17 @@ pub enum ServicingError {
     #[error("Failed to generate fstab at path '{fstab_path}'")]
     GenerateFstab { fstab_path: String },
 
+    #[error("Failed to generate Netplan config")]
+    GenerateNetplanConfig,
+
     #[error("Failed to generate recovery key file '{key_file}'")]
     GenerateRecoveryKeyFile { key_file: String },
 
     #[error("Failed to get block device path for device '{device_id}'")]
     GetBlockDevicePath { device_id: String },
+
+    #[error("Failed to get information for device {device_id} via lsblk")]
+    GetDeviceInformation { device_id: String },
 
     #[error("Failed to get the disks to rebuild")]
     GetDisksToRebuild,
@@ -396,6 +399,9 @@ pub enum ServicingError {
 
     #[error("Failed to resolve disks to device paths")]
     GetResolvedDisks,
+
+    #[error("Failed to get the root A/B volume pair '{device_id}'")]
+    GetRootAbVolumePair { device_id: String },
 
     #[error("Failed to get the root block device id")]
     GetRootBlockDeviceId,
