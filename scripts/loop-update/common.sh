@@ -229,20 +229,23 @@ function killUpdateServer() {
 }
 
 function ensureAzureAccess() {
+    local RESOURCE_GROUP=$1
+
     # Ensure the managed identity has access to the subscription
     # 1cd7f210-4327-4ef9-b33f-f64d342cc431 is trident-servicing-test managed
     # identity, assigned to the pool
     for i in {1..10}; do
-        if az role assignment list --assignee 1cd7f210-4327-4ef9-b33f-f64d342cc431 --scope "/subscriptions/$SUBSCRIPTION" | grep -q "Contributor"; then
-            break;
+        set +e
+        EXISTS=az group exists -n "$RESOURCE_GROUP"
+        RESULT=$?
+        set -e
+        # If the check did not fail and actually returned a value, we should
+        # have access
+        if [ $RESULT -eq 0 ] && [ ! -z "$EXISTS" ]; then
+            break
         fi
         echo "Managed identity does not have access to the subscription, retrying..."
         sleep 5
         az login --identity
     done
-    set +e
-    ls ~/.azure
-    echo "azureProfile.json: "
-    cat ~/.azure/azureProfile.json
-    set -e
 }

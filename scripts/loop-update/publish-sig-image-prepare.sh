@@ -19,7 +19,7 @@ fi
 # Ensure access when running in Azure DevOps, since this has not been
 # working reliably in the past
 if [ ! -z "${BUILD_BUILDNUMBER:-}" ]; then
-    ensureAzureAccess
+    ensureAzureAccess "$RESOURCE_GROUP"
 fi
 
 if [ "`az group exists -n "$RESOURCE_GROUP"`" == "false" ]; then

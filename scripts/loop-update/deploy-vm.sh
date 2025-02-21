@@ -32,7 +32,7 @@ elif [ "$TEST_PLATFORM" == "azure" ]; then
     # Ensure access when running in Azure DevOps, since this has not been
     # working reliably in the past
     if [ ! -z "${BUILD_BUILDNUMBER:-}" ]; then
-        ensureAzureAccess
+        ensureAzureAccess "$TEST_RESOURCE_GROUP"
     fi
     if [ "`az group exists -n "$TEST_RESOURCE_GROUP"`" == "true" ]; then
         az group delete -n "$TEST_RESOURCE_GROUP" -y
