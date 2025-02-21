@@ -236,7 +236,7 @@ function ensureAzureAccess() {
     # identity, assigned to the pool
     for i in {1..10}; do
         set +e
-        EXISTS=az group exists -n "$RESOURCE_GROUP"
+        EXISTS=`az group exists -n "$RESOURCE_GROUP"`
         RESULT=$?
         set -e
         # If the check did not fail and actually returned a value, we should
@@ -248,4 +248,9 @@ function ensureAzureAccess() {
         sleep 5
         az login --identity
     done
+    if [ "$EXISTS" != "true" ]; then
+        echo "Managed identity does not have access to the subscription"
+        adoError "Managed identity does not have access to the subscription"
+        exit 1
+    fi
 }
