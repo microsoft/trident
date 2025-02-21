@@ -9,6 +9,7 @@ bareMetal:
       - encrypted-raid
       - encrypted-swap
       - memory-constraint-combined
+      - misc
       - raid-mirrored
       - rerun
       - simple
@@ -23,6 +24,7 @@ bareMetal:
       - encrypted-raid
       - encrypted-swap
       - memory-constraint-combined
+      - misc
       - raid-mirrored
       - rerun
       - simple
@@ -35,10 +37,11 @@ bareMetal:
       # - encrypted-partition  # TODO(9768): Re-enabled once the issue is fixed
       # - encrypted-raid       # TODO(9768): Re-enabled once the issue is fixed
       # - encrypted-swap       # TODO(9768): Re-enabled once the issue is fixed
+      - misc
       - raid-mirrored
       - raid-small
       - raid-resync-small
-      # - rerun                # TODO(9767): Re-enabled once the issue is fixed
+      - rerun
       - simple
       - verity
       - verity-raid
@@ -48,10 +51,11 @@ bareMetal:
       # - encrypted-partition  # TODO(9768): Re-enabled once the issue is fixed
       # - encrypted-raid       # TODO(9768): Re-enabled once the issue is fixed
       # - encrypted-swap       # TODO(9768): Re-enabled once the issue is fixed
+      - misc
       - raid-mirrored
       - raid-small
       - raid-resync-small
-      # - rerun                # TODO(9767): Re-enabled once the issue is fixed
+      - rerun
       - simple
       - verity
       - verity-raid
@@ -102,6 +106,7 @@ virtualMachine:
       - encrypted-raid
       - encrypted-swap
       - memory-constraint-combined
+      - misc
       - raid-mirrored
       - raid-small
       - raid-resync-small
@@ -116,6 +121,7 @@ virtualMachine:
       # - encrypted-partition  # TODO(9768): Re-enabled once the issue is fixed
       # - encrypted-raid       # TODO(9768): Re-enabled once the issue is fixed
       # - encrypted-swap       # TODO(9768): Re-enabled once the issue is fixed
+      - misc
       - raid-mirrored
       - raid-small
       - raid-resync-small
@@ -129,6 +135,7 @@ virtualMachine:
       # - encrypted-partition  # TODO(9768): Re-enabled once the issue is fixed
       # - encrypted-raid       # TODO(9768): Re-enabled once the issue is fixed
       # - encrypted-swap       # TODO(9768): Re-enabled once the issue is fixed
+      - misc
       - raid-mirrored
       - raid-small
       - raid-resync-small
@@ -150,6 +157,7 @@ virtualMachine:
       # - encrypted-partition  # TODO(9768): Re-enabled once the issue is fixed
       # - encrypted-raid       # TODO(9768): Re-enabled once the issue is fixed
       # - encrypted-swap       # TODO(9768): Re-enabled once the issue is fixed
+      - misc
       - raid-mirrored
       - raid-small
       - raid-resync-small

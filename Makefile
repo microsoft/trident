@@ -458,6 +458,20 @@ download-runtime-images:
 #	Clean temp dir
 	rm -rf $(DOWNLOAD_DIR)
 
+# Get trident container 
+	$(eval DOWNLOAD_DIR := $(shell mktemp -d))
+	az pipelines runs artifact download \
+		--org 'https://dev.azure.com/mariner-org' \
+		--project "ECF" \
+		--run-id $(RUN_ID) \
+		--path $(DOWNLOAD_DIR) \
+		--artifact-name 'trident-docker-image'
+
+#	Move container tar.gz image
+	mv $(DOWNLOAD_DIR)/trident-container.tar.gz ./artifacts/test-image/trident-container.tar.gz
+#	Clean temp dir
+	rm -rf $(DOWNLOAD_DIR)
+
 .PHONY: download-trident-installer-iso
 download-trident-installer-iso:
 ifndef RUN_ID
