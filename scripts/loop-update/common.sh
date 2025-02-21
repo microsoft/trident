@@ -228,17 +228,44 @@ function killUpdateServer() {
     fi
 }
 
+function logAssignedRoles() {
+    # Log the managed identity roles on the subscription
+    # 1cd7f210-4327-4ef9-b33f-f64d342cc431 is trident-servicing-test managed
+    # identity, assigned to the pool
+    set +e
+    echo "Assigned roles: `az role assignment list --assignee 1cd7f210-4327-4ef9-b33f-f64d342cc431 --scope "/subscriptions/$SUBSCRIPTION"`" 1>&2
+    set -e
+}
+
+function azCommand() {
+    local COMMAND="$@"
+
+    set +e
+    # Capture the output, so we only print it once
+    OUTPUT=`az $COMMAND`
+    RESULT=$?
+    logAssignedRoles
+    set -e
+    if [ $RESULT -ne 0 ]; then
+        # Only for pipelines
+        if [ ! -z "${BUILD_BUILDNUMBER:-}" ]; then
+            az login --identity > /dev/null
+        fi
+        az $COMMAND
+    else 
+        echo -n $OUTPUT
+    fi
+}
+
 function ensureAzureAccess() {
     local RESOURCE_GROUP=$1
 
-    # Ensure the managed identity has access to the subscription
-    # 1cd7f210-4327-4ef9-b33f-f64d342cc431 is trident-servicing-test managed
-    # identity, assigned to the pool
     for i in {1..10}; do
         set +e
         EXISTS=`az group exists -n "$RESOURCE_GROUP"`
         RESULT=$?
         set -e
+        logAssignedRoles
         # If the check did not fail and actually returned a value, we should
         # have access
         if [ $RESULT -eq 0 ] && [ ! -z "$EXISTS" ]; then

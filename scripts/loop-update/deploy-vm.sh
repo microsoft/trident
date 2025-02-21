@@ -34,14 +34,14 @@ elif [ "$TEST_PLATFORM" == "azure" ]; then
     if [ ! -z "${BUILD_BUILDNUMBER:-}" ]; then
         ensureAzureAccess "$TEST_RESOURCE_GROUP"
     fi
-    if [ "`az group exists -n "$TEST_RESOURCE_GROUP"`" == "true" ]; then
-        az group delete -n "$TEST_RESOURCE_GROUP" -y
+    if [ "`azCommand group exists -n "$TEST_RESOURCE_GROUP"`" == "true" ]; then
+        azCommand group delete -n "$TEST_RESOURCE_GROUP" -y
     fi
 
-    az group create -n "$TEST_RESOURCE_GROUP" -l "$PUBLISH_LOCATION" --tags creationTime=$(date +%s)
+    azCommand group create -n "$TEST_RESOURCE_GROUP" -l "$PUBLISH_LOCATION" --tags creationTime=$(date +%s)
 
     VERSION=`getImageVersion`
-    az vm create \
+    azCommand vm create \
         --resource-group "$TEST_RESOURCE_GROUP" \
         --name "$VM_NAME" \
         --size "$TEST_VM_SIZE" \
@@ -50,10 +50,10 @@ elif [ "$TEST_PLATFORM" == "azure" ]; then
         --ssh-key-values "$SSH_PUBLIC_KEY_PATH" \
         --image "/subscriptions/$SUBSCRIPTION/resourceGroups/$GALLERY_RESOURCE_GROUP/providers/Microsoft.Compute/galleries/$GALLERY_NAME/images/$IMAGE_DEFINITION/versions/$VERSION" \
         --location "$PUBLISH_LOCATION"
-    az vm boot-diagnostics enable --name "$VM_NAME" -g "$TEST_RESOURCE_GROUP"
+    azCommand vm boot-diagnostics enable --name "$VM_NAME" -g "$TEST_RESOURCE_GROUP"
 
-    VM_IP=`az vm show -d -g "$TEST_RESOURCE_GROUP" -n "$VM_NAME" --query publicIps -o tsv`
+    VM_IP=`azCommand vm show -d -g "$TEST_RESOURCE_GROUP" -n "$VM_NAME" --query publicIps -o tsv`
 
     # Use az cli to confirm the VM deployment status is successful
-    while [ "`az vm show -d -g "$TEST_RESOURCE_GROUP" -n "$VM_NAME" --query provisioningState -o tsv`" != "Succeeded" ]; do sleep 1; done
+    while [ "`azCommand vm show -d -g "$TEST_RESOURCE_GROUP" -n "$VM_NAME" --query provisioningState -o tsv`" != "Succeeded" ]; do sleep 1; done
 fi

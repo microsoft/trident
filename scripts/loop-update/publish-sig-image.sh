@@ -20,7 +20,7 @@ export IMAGE_PATH="${IMAGE_PATH:-$ARTIFACTS/trident-vm-verity-azure-testimage.vh
 IMAGE_VERSION="`getImageVersion increment`"
 echo using image version $IMAGE_VERSION
 
-if az sig image-version show \
+if azCommand sig image-version show \
   --resource-group "$GALLERY_RESOURCE_GROUP" \
   --gallery-name "$GALLERY_NAME" \
   --gallery-image-definition "$IMAGE_DEFINITION" \
@@ -39,7 +39,7 @@ resizeImage "$IMAGE_PATH"
 azcopy copy "$IMAGE_PATH" "$STORAGE_BLOB_ENDPOINT"
 
 # Create Image Version from storage account blob
-az sig image-version create \
+azCommand sig image-version create \
   --resource-group "$GALLERY_RESOURCE_GROUP" \
   --gallery-name "$GALLERY_NAME" \
   --gallery-image-definition "$IMAGE_DEFINITION" \

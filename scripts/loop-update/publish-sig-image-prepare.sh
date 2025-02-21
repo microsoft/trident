@@ -22,44 +22,44 @@ if [ ! -z "${BUILD_BUILDNUMBER:-}" ]; then
     ensureAzureAccess "$RESOURCE_GROUP"
 fi
 
-if [ "`az group exists -n "$RESOURCE_GROUP"`" == "false" ]; then
-    az group create -n "$RESOURCE_GROUP" -l "$PUBLISH_LOCATION"
+if [ "`azCommand group exists -n "$RESOURCE_GROUP"`" == "false" ]; then
+    azCommand group create -n "$RESOURCE_GROUP" -l "$PUBLISH_LOCATION"
 fi
-if [ "`az group exists -n "$GALLERY_RESOURCE_GROUP"`" == "false" ]; then
-    az group create -n "$GALLERY_RESOURCE_GROUP" -l "$PUBLISH_LOCATION"
+if [ "`azCommand group exists -n "$GALLERY_RESOURCE_GROUP"`" == "false" ]; then
+    azCommand group create -n "$GALLERY_RESOURCE_GROUP" -l "$PUBLISH_LOCATION"
 fi
 
 # Ensure STORAGE_ACCOUNT exists and the managed identity has access
 STORAGE_ACCOUNT_RESOURCE_ID="/subscriptions/$SUBSCRIPTION/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.Storage/storageAccounts/$STORAGE_ACCOUNT"
-if ! az storage account show --ids "$STORAGE_ACCOUNT_RESOURCE_ID"; then
+if ! azCommand storage account show --ids "$STORAGE_ACCOUNT_RESOURCE_ID"; then
     echo "Could not find storage account '$STORAGE_ACCOUNT' in the expected location. Creating the storage account."
 
-    if [ "`az storage account check-name --name "$STORAGE_ACCOUNT" --query nameAvailable`" == "false" ]; then
+    if [ "`azCommand storage account check-name --name "$STORAGE_ACCOUNT" --query nameAvailable`" == "false" ]; then
         echo "Storage account name $STORAGE_ACCOUNT is not available"
         exit 1
     fi
-    az storage account create -g "$RESOURCE_GROUP" -n "$STORAGE_ACCOUNT" -l "$PUBLISH_LOCATION" --allow-shared-key-access false
+    azCommand storage account create -g "$RESOURCE_GROUP" -n "$STORAGE_ACCOUNT" -l "$PUBLISH_LOCATION" --allow-shared-key-access false
 fi
 
 # Ensure "build_target" storage container exists
-CONTAINER_EXISTS="$(az storage container exists --account-name "$STORAGE_ACCOUNT" --name "$STORAGE_CONTAINER_NAME" --auth-mode login | jq .exists)"
+CONTAINER_EXISTS="$(azCommand storage container exists --account-name "$STORAGE_ACCOUNT" --name "$STORAGE_CONTAINER_NAME" --auth-mode login | jq .exists)"
 if [[ "$CONTAINER_EXISTS" != "true" ]]; then
     echo "Could not find container '$STORAGE_CONTAINER_NAME'. Creating container '$STORAGE_CONTAINER_NAME' in storage account '$STORAGE_ACCOUNT'..."
-    az storage container create --account-name "$STORAGE_ACCOUNT" --name "$STORAGE_CONTAINER_NAME" --auth-mode login
+    azCommand storage container create --account-name "$STORAGE_ACCOUNT" --name "$STORAGE_CONTAINER_NAME" --auth-mode login
 fi
 
 # Ensure STEAMBOAT_GALLERY_NAME exists
-if ! az sig show -r "$GALLERY_NAME" -g "$GALLERY_RESOURCE_GROUP"; then
+if ! azCommand sig show -r "$GALLERY_NAME" -g "$GALLERY_RESOURCE_GROUP"; then
     echo "Could not find image gallery '$GALLERY_NAME' in resource group '$GALLERY_RESOURCE_GROUP'. Creating the gallery."
-    az sig create -g "$GALLERY_RESOURCE_GROUP" -r "$GALLERY_NAME" -l "$PUBLISH_LOCATION"
+    azCommand sig create -g "$GALLERY_RESOURCE_GROUP" -r "$GALLERY_NAME" -l "$PUBLISH_LOCATION"
 fi
 
 # Ensure the "build_target" image-definition exists
 # Note: We publish only the VHD from the secure-prod the SIG
-IMAGE_DEFINITION_EXISTS="$(az sig image-definition list -r "$GALLERY_NAME" -g "$GALLERY_RESOURCE_GROUP" | grep "name" | grep -c "$IMAGE_DEFINITION" || :;)" # the "|| :;" prevents grep from halting the script when it finds no matches and exits with exit code 1
+IMAGE_DEFINITION_EXISTS="$(azCommand sig image-definition list -r "$GALLERY_NAME" -g "$GALLERY_RESOURCE_GROUP" | grep "name" | grep -c "$IMAGE_DEFINITION" || :;)" # the "|| :;" prevents grep from halting the script when it finds no matches and exits with exit code 1
 if [[ "$IMAGE_DEFINITION_EXISTS" -eq 0 ]]; then
     echo "Could not find image-definition '$IMAGE_DEFINITION'. Creating definition '$IMAGE_DEFINITION' in gallery '$GALLERY_NAME'..."
-    az sig image-definition create -i "$IMAGE_DEFINITION" --publisher "$PUBLISHER" --offer "$OFFER" --sku "$IMAGE_DEFINITION" -r "$GALLERY_NAME" -g "$GALLERY_RESOURCE_GROUP" --os-type Linux
+    azCommand sig image-definition create -i "$IMAGE_DEFINITION" --publisher "$PUBLISHER" --offer "$OFFER" --sku "$IMAGE_DEFINITION" -r "$GALLERY_NAME" -g "$GALLERY_RESOURCE_GROUP" --os-type Linux
 fi
 
 if ! which azcopy; then
