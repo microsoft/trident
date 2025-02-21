@@ -260,6 +260,7 @@ function azCommand() {
 function ensureAzureAccess() {
     local RESOURCE_GROUP=$1
 
+    SUCCESS=0
     for i in {1..10}; do
         set +e
         EXISTS=`az group exists -n "$RESOURCE_GROUP"`
@@ -269,13 +270,14 @@ function ensureAzureAccess() {
         # If the check did not fail and actually returned a value, we should
         # have access
         if [ $RESULT -eq 0 ] && [ ! -z "$EXISTS" ]; then
+            SUCCESS=1
             break
         fi
         echo "Managed identity does not have access to the subscription, retrying..."
         sleep 5
         az login --identity
     done
-    if [ "$EXISTS" != "true" ]; then
+    if [ $SUCCESS -eq 0 ]; then
         echo "Managed identity does not have access to the subscription"
         adoError "Managed identity does not have access to the subscription"
         exit 1
