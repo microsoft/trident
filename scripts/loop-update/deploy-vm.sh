@@ -16,7 +16,8 @@ if [ "$TEST_PLATFORM" == "qemu" ]; then
         --import \
         --disk "$ARTIFACTS/booted.qcow2,bus=sata" \
         --network default \
-        --boot uefi,loader=/usr/share/OVMF/OVMF_CODE_4M.fd,loader_secure=no \
+        --machine q35 \
+        --boot uefi,loader=/usr/share/OVMF/OVMF_CODE_4M.fd,loader_secure=yes \
         --noautoconsole \
         --serial "file,path=$VM_SERIAL_LOG"
 
@@ -49,7 +50,10 @@ elif [ "$TEST_PLATFORM" == "azure" ]; then
         --admin-username "$SSH_USER" \
         --ssh-key-values "$SSH_PUBLIC_KEY_PATH" \
         --image "/subscriptions/$SUBSCRIPTION/resourceGroups/$GALLERY_RESOURCE_GROUP/providers/Microsoft.Compute/galleries/$GALLERY_NAME/images/$IMAGE_DEFINITION/versions/$VERSION" \
-        --location "$PUBLISH_LOCATION"
+        --location "$PUBLISH_LOCATION" \
+        --security-type TrustedLaunch \
+        --enable-secure-boot true \
+        --enable-vtpm true
     azCommand vm boot-diagnostics enable --name "$VM_NAME" -g "$TEST_RESOURCE_GROUP"
 
     VM_IP=`azCommand vm show -d -g "$TEST_RESOURCE_GROUP" -n "$VM_NAME" --query publicIps -o tsv`
