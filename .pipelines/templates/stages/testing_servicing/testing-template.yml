@@ -85,7 +85,7 @@ jobs:
       ob_outputDirectory: $(tridentSourceDirectory)/deployment_logs_${{ parameters.platform }}
       ob_artifactBaseName: "update-testing-${{ parameters.platform }}-$(System.JobPositionInPhase)"
       IMAGE_DEFINITION: "trident-vm-verity-testimage-$(System.DefinitionId)"
-      TEST_RESOURCE_GROUP: validation-$(Build.BuildId)
+      TEST_RESOURCE_GROUP: trident-vm-servicing-validation-$(Build.BuildId)-$(System.JobPositionInPhase)
       SUBSCRIPTION: 04cdc145-a4f9-42d4-9868-c46d23d0c63f # CoreOS_Mariner_BMP_Staging
 
     steps:
