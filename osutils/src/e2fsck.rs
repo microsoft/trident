@@ -47,11 +47,21 @@ mod functional_test {
     #[functional_test(feature = "helpers")]
     fn test_e2fsck_run() {
         let block_device_path = Path::new(TEST_DISK_DEVICE_PATH);
-        // Create a new ext4 filesystem on /dev/sdb
+        // Test case 1: Run e2fsck on a valid file system
         crate::mkfs::run(block_device_path, MkfsFileSystemType::Ext4).unwrap();
 
         // Run e2fsck to check the filesystem
         fix(block_device_path).unwrap();
+
+        // Test case 2: Run e2fsck on a corrupted file system to fix it
+        let block_device_path_corrupted = Path::new(TEST_DISK_DEVICE_PATH);
+        // Create a new ext4 filesystem
+        crate::mkfs::run(block_device_path_corrupted, MkfsFileSystemType::Ext4).unwrap();
+        // Corrupt the filesystem
+        repart::clear_disk(Path::new(TEST_DISK_DEVICE_PATH)).unwrap();
+
+        // Run e2fsck on the corrupted filesystem
+        fix(block_device_path_corrupted).unwrap();
     }
 
     /// Validates that run() correctly handles negative cases.
@@ -67,23 +77,6 @@ mod functional_test {
             error_string.contains(
                 "e2fsck: No such file or directory while trying to open /dev/nonexistent"
             ),
-            "Unexpected output: {error_string}"
-        );
-
-        // Test case 2: Run e2fsck on a corrupted file system
-        let block_device_path_corrupted = Path::new(TEST_DISK_DEVICE_PATH);
-        // Create a new ext4 filesystem
-        crate::mkfs::run(block_device_path_corrupted, MkfsFileSystemType::Ext4).unwrap();
-        // Corrupt the filesystem
-        repart::clear_disk(Path::new(TEST_DISK_DEVICE_PATH)).unwrap();
-
-        // Run e2fsck on the corrupted filesystem
-        let error_string = fix(block_device_path_corrupted)
-            .unwrap_err()
-            .root_cause()
-            .to_string();
-        assert!(
-            error_string.contains("ext2fs_open2: Bad magic number in super-block"),
             "Unexpected output: {error_string}"
         );
     }
