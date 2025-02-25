@@ -6,13 +6,19 @@ use crate::dependencies::Dependency;
 
 /// Runs e2fsck on the file system on the block device to fix errors.
 pub fn fix(block_device_path: &Path) -> Result<(), Error> {
-    Dependency::E2fsck
+    let output = Dependency::E2fsck
         .cmd()
         .arg("-f")
         .arg("-y")
         .arg(block_device_path)
-        .run_and_check()
-        .context("Failed to execute e2fsck")
+        .output()?;
+
+    // Output code 1 indicates that the file system had errors but they were corrected.
+    if output.code() == Some(1) {
+        return Ok(());
+    }
+
+    output.check().context("Failed to execute e2fsck")
 }
 
 /// Runs e2fsck on the file system on the block device to check for errors.
