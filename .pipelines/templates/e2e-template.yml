@@ -184,6 +184,7 @@ stages:
       includeAzure: ${{ parameters.includeAzure }}
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
+      verboseLogging: true
 
   # TESTING stages for PRERELEASE
   - ${{ if eq(parameters.stageType, 'pre') }}:
