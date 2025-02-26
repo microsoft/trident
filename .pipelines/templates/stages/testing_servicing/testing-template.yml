@@ -193,16 +193,6 @@ jobs:
 
       - bash: |
           set -eux
-          ./scripts/loop-update/cleanup-vm.sh
-        displayName: "Cleanup VM"
-        workingDirectory: $(tridentSourceDirectory)
-        env:
-          TEST_RESOURCE_GROUP: $(TEST_RESOURCE_GROUP)
-          TEST_PLATFORM: ${{ parameters.platform }}
-          SUBSCRIPTION: $(SUBSCRIPTION)
-
-      - bash: |
-          set -eux
           ./scripts/loop-update/fetch-logs.sh $(ob_outputDirectory)/
 
           ./scripts/loop-update/cleanup-vm.sh
@@ -222,3 +212,14 @@ jobs:
           SUBSCRIPTION: $(SUBSCRIPTION)
         condition: failed()
         displayName: "Publish OS disk"
+
+      - bash: |
+          set -eux
+          ./scripts/loop-update/cleanup-vm.sh
+        displayName: "Cleanup VM"
+        workingDirectory: $(tridentSourceDirectory)
+        condition: always()
+        env:
+          TEST_RESOURCE_GROUP: $(TEST_RESOURCE_GROUP)
+          TEST_PLATFORM: ${{ parameters.platform }}
+          SUBSCRIPTION: $(SUBSCRIPTION)
