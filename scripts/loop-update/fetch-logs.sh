@@ -3,8 +3,6 @@ set -euo pipefail
 
 . $(dirname $0)/common.sh
 
-VM_IP=`getIp`
-
 downloadJournalLog() {
     local DEST=$1
 
@@ -42,6 +40,23 @@ downloadCrashdumps() {
         echo "No crash files found on host"
     fi
 }
+
+downloadAzureSerialLog() {
+    local DEST="$1"
+
+    az vm boot-diagnostics get-boot-log --name "$VM_NAME" --resource-group "$TEST_RESOURCE_GROUP" | sed 's/\\r\\n/\n/g' > "$DEST"
+}
+
+if [ "$TEST_PLATFORM" == "azure" ]; then
+    downloadAzureSerialLog $1/serial.log
+    if [ $VERBOSE == True ]; then
+        cat $1/serial.log
+    else
+        echo "Serial log saved to $1/serial.log"
+    fi
+fi
+
+VM_IP=`getIp`
 
 downloadJournalLog $1/journal.log
 downloadCrashdumps $1/

@@ -53,11 +53,21 @@ elif [ "$TEST_PLATFORM" == "azure" ]; then
         --location "$PUBLISH_LOCATION" \
         --security-type TrustedLaunch \
         --enable-secure-boot true \
-        --enable-vtpm true
-    azCommand vm boot-diagnostics enable --name "$VM_NAME" -g "$TEST_RESOURCE_GROUP"
+        --enable-vtpm true \
+        --no-wait
 
-    VM_IP=`azCommand vm show -d -g "$TEST_RESOURCE_GROUP" -n "$VM_NAME" --query publicIps -o tsv`
+    # Attempt to enable the boot diagnostics early on
+    while ! azCommand vm boot-diagnostics enable --name "$VM_NAME" -g "$TEST_RESOURCE_GROUP"; do
+        sleep 1
+    done
+
+    # Wait for the boot diagnostics to be available
+    while azCommand vm boot-diagnostics get-boot-log --name "$VM_NAME" --resource-group "$TEST_RESOURCE_GROUP" | grep "<Error><Code>BlobNotFound</Code><Message>"; do
+        sleep 5
+    done
 
     # Use az cli to confirm the VM deployment status is successful
     while [ "`azCommand vm show -d -g "$TEST_RESOURCE_GROUP" -n "$VM_NAME" --query provisioningState -o tsv`" != "Succeeded" ]; do sleep 1; done
+
+    VM_IP=`azCommand vm show -d -g "$TEST_RESOURCE_GROUP" -n "$VM_NAME" --query publicIps -o tsv`
 fi
