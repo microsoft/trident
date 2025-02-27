@@ -5,6 +5,7 @@ parameters:
     default: ci
     values:
       - pr-e2e
+      - pr-e2e-azure
       - ci
       - pre
       - rel
@@ -80,7 +81,7 @@ stages:
   - template: stages/building_tools/building-tools.yml
 
   # Makefile validation, only for CI and PR-E2E
-  - ${{ if or(eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e')) }}:
+  - ${{ if or(eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'pr-e2e-azure')) }}:
       - template: stages/validate_makefile/dev-build.yml
 
   # Build Trident container image
@@ -154,7 +155,7 @@ stages:
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
 
-  - ${{ if or(parameters.forceTridentRebuild, eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci')) }}:
+  - ${{ if or(parameters.forceTridentRebuild, eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e-azure')) }}:
       # Build USB-ISO
       - template: stages/trident_usb_iso/trident-usb-iso.yml
         parameters:
@@ -206,7 +207,7 @@ stages:
 
       - ${{ if or(eq(parameters.bmE2eTestRuntimes, 'container'), eq(parameters.bmE2eTestRuntimes, 'both')) }}:
         # BM Testing (container, daily), iff bmE2eTestRuntimes=container|both.  if 'both'
-        # use 'extraDependsOn' to ensure that baremetal-testing calls do not execute in 
+        # use 'extraDependsOn' to ensure that baremetal-testing calls do not execute in
         # parallel.
         - template: stages/testing_baremetal/baremetal-testing.yml
           parameters:

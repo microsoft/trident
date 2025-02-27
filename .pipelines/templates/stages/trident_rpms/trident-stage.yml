@@ -5,6 +5,7 @@ parameters:
     values:
       - pr
       - pr-e2e
+      - pr-e2e-azure
       - ci
       - pre
       - rel
@@ -37,7 +38,7 @@ parameters:
     default: false
 
 stages:
-  - ${{ if or(parameters.forceTridentRebuild, eq(parameters.stageType, 'pr'), eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci')) }}:
+  - ${{ if or(parameters.forceTridentRebuild, eq(parameters.stageType, 'pr'), eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e-azure')) }}:
       - template: build-source.yml
         parameters:
           tridentArtifactName: ${{ parameters.tridentArtifactName }}

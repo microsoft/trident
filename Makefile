@@ -32,6 +32,7 @@ ifdef BRANCH
 endif
 	./scripts/test-pipeline pr -q $(BRANCH_FLAG)
 	./scripts/test-pipeline pr-e2e -q $(BRANCH_FLAG)
+	./scripts/test-pipeline pr-e2e-azure -q $(BRANCH_FLAG)
 	./scripts/test-pipeline ci -q $(BRANCH_FLAG)
 	./scripts/test-pipeline pre -q $(BRANCH_FLAG)
 	./scripts/test-pipeline rel -q $(BRANCH_FLAG)
@@ -458,7 +459,7 @@ download-runtime-images:
 #	Clean temp dir
 	rm -rf $(DOWNLOAD_DIR)
 
-# Get trident container 
+# Get trident container
 	$(eval DOWNLOAD_DIR := $(shell mktemp -d))
 	az pipelines runs artifact download \
 		--org 'https://dev.azure.com/mariner-org' \

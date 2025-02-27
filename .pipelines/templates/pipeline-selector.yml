@@ -11,10 +11,11 @@ parameters:
     values:
       - "pr"
       - "pr-e2e"
+      - "pr-e2e-azure"
       - "ci"
       - "pre"
     displayName: "Stage to run"
-  
+
   - name: baseimgBuildType
     displayName: Base Image build type
     type: string
@@ -43,4 +44,4 @@ stages:
           baseimgBuildType: ${{ parameters.baseimgBuildType }}
           previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
           # Only perform Azure testing from official pipelines, as only those have access to the Azure subscription.
-          includeAzure: ${{ or(eq(parameters.targetStage, 'pre'), eq(parameters.targetStage, 'ci')) }} 
+          includeAzure: ${{ or(eq(parameters.targetStage, 'pre'), eq(parameters.targetStage, 'ci'), eq(parameters.targetStage, 'pr-e2e-azure')) }}

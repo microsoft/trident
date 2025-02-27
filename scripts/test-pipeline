@@ -25,6 +25,7 @@ class PipelineMetadata:
 pipeline_metadata_map: Dict[str, PipelineMetadata] = {
     "pr": PipelineMetadata(id=2113),
     "pr-e2e": PipelineMetadata(id=2195),
+    "pr-e2e-azure": PipelineMetadata(id=4524),
     "ci": PipelineMetadata(id=3371),
     "pre": PipelineMetadata(id=2648),
     "rel": PipelineMetadata(

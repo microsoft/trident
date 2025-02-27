@@ -1,0 +1,69 @@
+#################################################################################
+#                               OneBranch Pipelines                             #
+# This pipeline was created by EasyStart from a sample located at:              #
+#   https://aka.ms/obpipelines/easystart/samples                                #
+# Documentation:  https://aka.ms/obpipelines                                    #
+# Yaml Schema:    https://aka.ms/obpipelines/yaml/schema                        #
+# Retail Tasks:   https://aka.ms/obpipelines/tasks                              #
+# Support:        https://aka.ms/onebranchsup                                   #
+#################################################################################
+
+trigger: none
+
+resources:
+  repositories:
+    - repository: templates
+      type: git
+      name: OneBranch.Pipelines/GovernedTemplates
+      ref: refs/heads/main
+
+    - repository: argus-toolkit
+      type: git
+      name: argus-toolkit
+      ref: refs/heads/main
+
+    - repository: platform-tests
+      type: git
+      name: platform-tests
+
+    - repository: test-images
+      type: git
+      name: test-images
+      ref: refs/heads/main
+
+    - repository: platform-pipelines
+      type: git
+      name: platform-pipelines
+      ref: refs/heads/main
+
+    - repository: platform-telemetry
+      name: platform-telemetry
+      type: git
+      ref: refs/heads/main
+
+variables:
+  - group: bot # added for access to dom0 RPMs
+
+extends:
+  template: v2/OneBranch.NonOfficial.CrossPlat.yml@templates # https://aka.ms/obpipelines/templates
+  parameters:
+    globalSdl: # https://aka.ms/obpipelines/sdl
+      # tsa:
+      #  enabled: true # SDL results of non-official builds aren't uploaded to TSA by default.
+      credscan:
+        suppressionsFile: $(Build.SourcesDirectory)\.config\CredScanSuppressions.json
+      policheck:
+        break: true # always break the build on policheck issues. You can disable it by setting to 'false'
+      # suppression:
+      #   suppressionFile: $(Build.SourcesDirectory)\.gdn\global.gdnsuppress
+      cg:
+        alertWarningLevel: Medium
+    featureFlags:
+      runOnHost: true
+      EnableCDPxPAT: false
+
+    stages:
+      - template: templates/pipeline-selector.yml
+        parameters:
+          targetStage: pr-e2e-azure
+          blockPublishing: true
