@@ -44,6 +44,20 @@ scripts:
       runOn:
         - clean-install
       content: echo "testing-user ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/testing-user
+    - name: add-selinux-module
+      runOn:
+        - clean-install
+      content: |
+        #!/bin/sh
+        # Create SELinux policy file
+        cat <<EOF > custom-lvm.cil
+        ; Allow lvm_t access to semaphores of the initrc_t type
+        (allow lvm_t initrc_t (sem (associate unix_read read unix_write write)))
+        EOF
+
+        # Apply the SELinux policy
+        semodule -i custom-lvm.cil
+        echo "Added"
 os:
   selinux:
     mode: enforcing

@@ -34,9 +34,9 @@ bareMetal:
     daily:
       - base
       - combined
-      # - encrypted-partition  # TODO(9768): Re-enabled once the issue is fixed
-      # - encrypted-raid       # TODO(9768): Re-enabled once the issue is fixed
-      # - encrypted-swap       # TODO(9768): Re-enabled once the issue is fixed
+      - encrypted-partition
+      - encrypted-raid
+      - encrypted-swap
       - misc
       - raid-mirrored
       - raid-small
@@ -48,9 +48,9 @@ bareMetal:
     validation:
       - base
       - combined
-      # - encrypted-partition  # TODO(9768): Re-enabled once the issue is fixed
-      # - encrypted-raid       # TODO(9768): Re-enabled once the issue is fixed
-      # - encrypted-swap       # TODO(9768): Re-enabled once the issue is fixed
+      - encrypted-partition
+      - encrypted-raid
+      - encrypted-swap
       - misc
       - raid-mirrored
       - raid-small
@@ -118,9 +118,9 @@ virtualMachine:
     daily:
       - base
       - combined
-      # - encrypted-partition  # TODO(9768): Re-enabled once the issue is fixed
-      # - encrypted-raid       # TODO(9768): Re-enabled once the issue is fixed
-      # - encrypted-swap       # TODO(9768): Re-enabled once the issue is fixed
+      - encrypted-partition
+      - encrypted-raid
+      - encrypted-swap
       - misc
       - raid-mirrored
       - raid-small
@@ -132,9 +132,9 @@ virtualMachine:
     post_merge:
       - base
       - combined
-      # - encrypted-partition  # TODO(9768): Re-enabled once the issue is fixed
-      # - encrypted-raid       # TODO(9768): Re-enabled once the issue is fixed
-      # - encrypted-swap       # TODO(9768): Re-enabled once the issue is fixed
+      - encrypted-partition
+      - encrypted-raid
+      - encrypted-swap
       - misc
       - raid-mirrored
       - raid-small
@@ -146,6 +146,9 @@ virtualMachine:
     pullrequest:
       - base
       - combined
+      - encrypted-partition
+      - encrypted-raid
+      - encrypted-swap
       - raid-mirrored
       - raid-resync-small
       - rerun
@@ -154,9 +157,9 @@ virtualMachine:
     validation:
       - base
       - combined
-      # - encrypted-partition  # TODO(9768): Re-enabled once the issue is fixed
-      # - encrypted-raid       # TODO(9768): Re-enabled once the issue is fixed
-      # - encrypted-swap       # TODO(9768): Re-enabled once the issue is fixed
+      - encrypted-partition
+      - encrypted-raid
+      - encrypted-swap
       - misc
       - raid-mirrored
       - raid-small
