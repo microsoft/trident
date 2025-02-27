@@ -525,6 +525,15 @@ impl Trident {
         datastore: &mut DataStore,
         mut cmd: HostUpdateCommand,
     ) -> Result<(), TridentError> {
+        // The storage section is optional for updates if COSI is in use.
+        if datastore.is_persistent()
+            && cmd.host_config.image.is_some()
+            && cmd.host_config.storage == Default::default()
+        {
+            debug!("Storage section not specified in Host Configuration, using current storage configuration");
+            cmd.host_config.storage = datastore.host_status().spec.storage.clone();
+        }
+
         cmd.host_config
             .validate()
             .map_err(Into::into)
