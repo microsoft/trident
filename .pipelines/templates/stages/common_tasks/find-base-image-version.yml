@@ -3,6 +3,7 @@ parameters:
     displayName: Base Image build type
     type: string
     values:
+      - dev
       - preview
       - release
     default: "release"
@@ -12,6 +13,18 @@ parameters:
     type: string
 
 steps:
+  - ${{ if eq(parameters.baseimgBuildType, 'dev') }}:
+    - script: |
+        set -eux
+        baseimgVersion="*.*.*"
+        if [[ "${{ parameters.previewContainerImageBuildId }}" != "latestFromBranch" ]]; then
+          baseimgVersion="${{ parameters.previewContainerImageBuildId }}"
+        fi
+
+        set +x
+        echo "##vso[task.setvariable variable=baseimgVersion]$baseimgVersion"
+      name: SetBaseImageVersion
+      displayName: Set Base Image version variable for dev
   - ${{ if eq(parameters.baseimgBuildType, 'release') }}:
     - script: |
         set -eux
@@ -20,8 +33,8 @@ steps:
         set +x
         echo "##vso[task.setvariable variable=baseimgVersion]$baseimgVersion"
       name: SetBaseImageVersion
-      displayName: Set Base Image version variable
-  - ${{ else }}:
+      displayName: Set Base Image version variable for release
+  - ${{ if eq(parameters.baseimgBuildType, 'preview') }}:
     - task: DownloadPipelineArtifact@2
       displayName: "Download version-full.config from Prod-BuildImages"
       inputs:
@@ -44,4 +57,4 @@ steps:
         set +x
         echo "##vso[task.setvariable variable=baseimgVersion]$baseimgVersion"
       name: SetBaseImageVersion
-      displayName: Set Base Image version variable
+      displayName: Set Base Image version variable for preview

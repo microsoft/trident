@@ -10,13 +10,20 @@ parameters:
   - name: previewContainerImageArm64BuildId
     displayName: "Build Id of the pipeline run, default will select latest successful run from pipeline 2117 ([ARM64-6-OneBranch]-Prod-BuildImages) with tag 3.0-preview"
     type: string
+  - name: buildType
+    displayName: "Pick build type, select 'dev' to pull images and rpms from specified build, select preview to find preview version from specified build and pull images and rpms from feeds and packages.microsoft.com"
+    type: string
+    default: dev
+    values:
+    - dev
+    - preview
 
 stages:
     - template: e2e-template.yml
       parameters:
         stageType: pre
         blockPublishing: true
-        baseimgBuildType: preview
+        baseimgBuildType: ${{ parameters.buildType }}
         previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
         previewContainerImageArm64BuildId: ${{ parameters.previewContainerImageArm64BuildId }}
         forceTridentRebuild: true

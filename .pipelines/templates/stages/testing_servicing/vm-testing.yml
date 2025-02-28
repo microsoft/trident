@@ -8,6 +8,7 @@ parameters:
     displayName: Base Image build type
     type: string
     values:
+      - dev
       - preview
       - release
     default: "release"
