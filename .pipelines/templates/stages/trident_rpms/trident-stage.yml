@@ -9,6 +9,7 @@ parameters:
       - ci
       - pre
       - rel
+      - full-validation
 
   - name: codeCoverage
     type: boolean

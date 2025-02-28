@@ -13,9 +13,8 @@ parameters:
     default: "daily"
     values:
       - daily
-      - pullrequest
-      - post_merge
       - validation
+      - weekly
 
   - name: runtimeEnv
     displayName: "Runtime environment (host vs container)"

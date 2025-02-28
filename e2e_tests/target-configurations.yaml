@@ -3,6 +3,11 @@ bareMetal:
     daily:
       - base
       - combined
+      - encrypted-partition
+      - encrypted-raid
+    validation:
+      - base
+      - combined
       - raid-big
       - raid-resync-small
       - encrypted-partition
@@ -15,7 +20,7 @@ bareMetal:
       - simple
       - verity
       - verity-raid
-    validation:
+    weekly:
       - base
       - combined
       - raid-big
@@ -46,6 +51,20 @@ bareMetal:
       - verity
       - verity-raid
     validation:
+      - base
+      - combined
+      - encrypted-partition
+      - encrypted-raid
+      - encrypted-swap
+      - misc
+      - raid-mirrored
+      - raid-small
+      - raid-resync-small
+      - rerun
+      - simple
+      - verity
+      - verity-raid
+    weekly:
       - base
       - combined
       - encrypted-partition
@@ -114,6 +133,21 @@ virtualMachine:
       - simple
       - verity
       - verity-raid
+    weekly:
+      - base
+      - combined
+      - encrypted-partition
+      - encrypted-raid
+      - encrypted-swap
+      - memory-constraint-combined
+      - misc
+      - raid-mirrored
+      - raid-small
+      - raid-resync-small
+      - rerun
+      - simple
+      - verity
+      - verity-raid
   container:
     daily:
       - base
@@ -155,6 +189,20 @@ virtualMachine:
       - simple
       - verity-raid
     validation:
+      - base
+      - combined
+      - encrypted-partition
+      - encrypted-raid
+      - encrypted-swap
+      - misc
+      - raid-mirrored
+      - raid-small
+      - raid-resync-small
+      - rerun
+      - simple
+      - verity
+      - verity-raid
+    weekly:
       - base
       - combined
       - encrypted-partition

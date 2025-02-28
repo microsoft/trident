@@ -14,6 +14,7 @@ parameters:
     values:
       - pre
       - rel
+      - full-validation
 
   - name: specificVersion
     type: string
@@ -42,7 +43,7 @@ stages:
 
           # Set the download artifact suffix to be that of the *previous* stage
           - name: downloadArtifactSuffix
-            ${{ if eq(parameters.stageType, 'pre') }}:
+            ${{ if or(eq(parameters.stageType, 'pre'), eq(parameters.stageType, 'full-validation')) }}:
               value: ${{ variables.stage_ci_suffix }}
             ${{ if eq(parameters.stageType, 'rel') }}:
               value: ${{ variables.stage_pre_suffix }}

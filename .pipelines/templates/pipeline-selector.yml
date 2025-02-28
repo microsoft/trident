@@ -14,6 +14,7 @@ parameters:
       - "pr-e2e-azure"
       - "ci"
       - "pre"
+      - "full-validation"
     displayName: "Stage to run"
 
   - name: baseimgBuildType

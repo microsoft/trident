@@ -7,6 +7,7 @@ parameters:
       - pullrequest
       - post_merge
       - validation
+      - weekly
 
   - name: tridentConfigurationName
     type: string

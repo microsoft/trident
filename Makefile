@@ -30,6 +30,8 @@ check-pipelines:
 ifdef BRANCH
 	$(eval BRANCH_FLAG := -b $(BRANCH))
 endif
+	./scripts/test-pipeline prism-cicd -q $(BRANCH_FLAG)
+	./scripts/test-pipeline azl-cicd -q $(BRANCH_FLAG)
 	./scripts/test-pipeline pr -q $(BRANCH_FLAG)
 	./scripts/test-pipeline pr-e2e -q $(BRANCH_FLAG)
 	./scripts/test-pipeline pr-e2e-azure -q $(BRANCH_FLAG)
@@ -39,7 +41,8 @@ endif
 	./scripts/test-pipeline testing -q $(BRANCH_FLAG)
 	./scripts/test-pipeline tester -q $(BRANCH_FLAG)
 	./scripts/test-pipeline scale -q $(BRANCH_FLAG)
-	./scripts/test-pipeline scale-offical -q $(BRANCH_FLAG)
+	./scripts/test-pipeline scale-official -q $(BRANCH_FLAG)
+	./scripts/test-pipeline full-validation -q $(BRANCH_FLAG)
 
 .PHONY: check-sh
 check-sh:

@@ -35,7 +35,16 @@ pipeline_metadata_map: Dict[str, PipelineMetadata] = {
     "testing": PipelineMetadata(id=3262),
     "tester": PipelineMetadata(id=3210),
     "scale": PipelineMetadata(id=4217),
-    "scale-offical": PipelineMetadata(id=4465),
+    "scale-official": PipelineMetadata(id=4465),
+    "azl-cicd": PipelineMetadata(
+        id=4358,
+        parameters={
+            "previewContainerImageBuildId": "730139",
+            "previewContainerImageArm64BuildId": "730138",
+        },
+    ),
+    "prism-cicd": PipelineMetadata(id=4482),
+    "full-validation": PipelineMetadata(id=4500),
 }
 
 parser = argparse.ArgumentParser(description="Preview a pipeline run")

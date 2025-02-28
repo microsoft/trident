@@ -5,8 +5,8 @@ parameters:
     default: false
 
 schedules:
-  - cron: "0 8 * * 0-5" # Every day at midnight except Saturday
-    displayName: Daily build
+  - cron: "0 8 * * 6" # Saturday at midnight
+    displayName: Full Baremetal E2E Tests
     always: true
     branches:
       include:
@@ -81,4 +81,4 @@ extends:
     stages:
       - template: templates/pipeline-selector.yml
         parameters:
-          targetStage: pre
+          targetStage: 'full-validation'
