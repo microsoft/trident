@@ -37,8 +37,13 @@ fi
 COSI_FILE=$(echo $COSI_FILES | head -1)
 COSI_FILE=$(basename $COSI_FILE)
 
-$ARTIFACTS/bin/netlisten -p $UPDATE_PORT_A -s $ARTIFACTS/update-a --force-color --full-logstream logstream-full-update-a.log &
-$ARTIFACTS/bin/netlisten -p $UPDATE_PORT_B -s $ARTIFACTS/update-b --force-color --full-logstream logstream-full-update-a.log &
+if ! [ -f bin/netlisten ]; then
+    echo "netlisten not found!"
+    exit 1
+fi
+
+bin/netlisten -p $UPDATE_PORT_A -s $ARTIFACTS/update-a --force-color --full-logstream logstream-full-update-a.log &
+bin/netlisten -p $UPDATE_PORT_B -s $ARTIFACTS/update-b --force-color --full-logstream logstream-full-update-a.log &
 
 EXPECTED_VOLUME=${EXPECTED_VOLUME:-volume-b}
 UPDATE_CONFIG=/var/lib/trident/update-config.yaml

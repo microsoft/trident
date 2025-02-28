@@ -125,11 +125,11 @@ jobs:
           artifactName: "go-tools"
           patterns: |
             netlisten
-          targetPath: "$(Build.ArtifactStagingDirectory)/bin"
+          targetPath: "$(tridentSourceDirectory)/bin"
 
       - bash: |
           set -eux
-          chmod +x $(Build.ArtifactStagingDirectory)/bin/netlisten
+          chmod +x $(tridentSourceDirectory)/bin/netlisten
           cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* ~/.ssh/
           chmod -R 700 ~/.ssh/
           mkdir -p $(ob_outputDirectory)

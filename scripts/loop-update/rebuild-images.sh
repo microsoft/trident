@@ -17,7 +17,7 @@ make -C ../test-images build/trident-vm-verity$SUFFIX-testimage.$EXTENSION
 cp ../test-images/build/trident-vm-verity$SUFFIX-testimage.$EXTENSION $ARTIFACTS/trident-vm-verity$SUFFIX-testimage.$EXTENSION
 
 make -C ../test-images trident-vm-verity$SUFFIX-testimage
-cp ../test-images/build/trident-vm-verity$SUFFIX-testimage/* $ARTIFACTS/update-a/
+mv ../test-images/build/trident-vm-verity$SUFFIX-testimage.cosi $ARTIFACTS/update-a/
 
 make -C ../test-images trident-vm-verity$SUFFIX-testimage
-cp ../test-images/build/trident-vm-verity$SUFFIX-testimage/* $ARTIFACTS/update-b/
+cp ../test-images/build/trident-vm-verity$SUFFIX-testimage.cosi $ARTIFACTS/update-b/
