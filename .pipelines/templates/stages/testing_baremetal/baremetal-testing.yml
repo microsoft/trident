@@ -100,7 +100,7 @@ stages:
             value: $(Build.SourcesDirectory)/deployment_logs
 
           - name: ob_artifactBaseName
-            value: $(TRIDENT_CONFIGURATION_NAME)_baremetal_deployment_log_$(System.JobAttempt)
+            value: $(TRIDENT_CONFIGURATION_NAME)_baremetal_${{ parameters.runtimeEnv }}_deployment_log_$(System.JobAttempt)
 
           - name: NETLAUNCH_PORT
             value: 4000
