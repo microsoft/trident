@@ -82,6 +82,14 @@ function adoError() {
     set -x
 }
 
+function adoWarning() {
+    local MESSAGE=$1
+
+    set +x
+    echo "##vso[task.logissue type=warning]$MESSAGE"
+    set -x
+}
+
 function checkActiveVolume() {
     local VOLUME=$1
     local ITERATION=$2
@@ -249,6 +257,7 @@ function azCommand() {
     if [ $RESULT -ne 0 ]; then
         # Only for pipelines
         if [ ! -z "${BUILD_BUILDNUMBER:-}" ]; then
+            adoWarning "Managed identity does not have access to the subscription (command '$COMMAND' exit code is $RESULT), retrying..."
             az login --identity > /dev/null
         fi
         az $COMMAND
