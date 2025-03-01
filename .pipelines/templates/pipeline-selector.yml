@@ -25,7 +25,7 @@ parameters:
       - release
     default: "release"
 
-  - name: previewContainerImageBuildId
+  - name: baseImagePipelineBuildId
     type: string
     default: "latestFromBranch"
 
@@ -43,6 +43,6 @@ stages:
           stageType: ${{ parameters.targetStage }}
           blockPublishing: ${{ parameters.blockPublishing }}
           baseimgBuildType: ${{ parameters.baseimgBuildType }}
-          previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+          baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
           # Only perform Azure testing from official pipelines, as only those have access to the Azure subscription.
           includeAzure: ${{ or(eq(parameters.targetStage, 'pre'), eq(parameters.targetStage, 'ci'), eq(parameters.targetStage, 'pr-e2e-azure')) }}

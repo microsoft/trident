@@ -8,7 +8,7 @@ parameters:
       - release
     default: "release"
 
-  - name: previewContainerImageBuildId
+  - name: baseImagePipelineBuildId
     displayName: "Build Id of the pipeline run, default will select latest successful run from pipeline 2116 ([AMD64-6-OneBranch]-Prod-BuildImages) with tag 3.0-preview"
     type: string
 
@@ -17,8 +17,8 @@ steps:
     - script: |
         set -eux
         baseimgVersion="*.*.*"
-        if [[ "${{ parameters.previewContainerImageBuildId }}" != "latestFromBranch" ]]; then
-          baseimgVersion="${{ parameters.previewContainerImageBuildId }}"
+        if [[ "${{ parameters.baseImagePipelineBuildId }}" != "latestFromBranch" ]]; then
+          baseimgVersion="${{ parameters.baseImagePipelineBuildId }}"
         fi
 
         set +x
@@ -43,7 +43,7 @@ steps:
         pipeline: "[AMD64-6-OneBranch]-Prod-BuildImages"
         runVersion: specific
         branchName: "refs/heads/master"
-        runId: ${{ parameters.previewContainerImageBuildId }}
+        runId: ${{ parameters.baseImagePipelineBuildId }}
         tags: "3.0-preview"
         artifactName: "drop_build_rpms_build"
         patterns: "**/build-config/version-full.config"

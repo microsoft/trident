@@ -20,11 +20,11 @@ parameters:
       - release
     default: "release"
 
-  - name: previewContainerImageBuildId
+  - name: baseImagePipelineBuildId
     type: string
     default: "latestFromBranch"
 
-  - name: previewContainerImageArm64BuildId
+  - name: baseImageArm64PipelineBuildId
     type: string
     default: "latestFromBranch"
 
@@ -65,8 +65,8 @@ stages:
       tridentArtifactName: trident-binaries
       codeCoverage: false
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
-      previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
-      previewContainerImageArm64BuildId: ${{ parameters.previewContainerImageArm64BuildId }}
+      baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
+      baseImageArm64PipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
       forceTridentRebuild: ${{ parameters.forceTridentRebuild }}
 
   # Build tools (Go stuff)
@@ -80,7 +80,7 @@ stages:
   - template: stages/build_docker_image/trident-container.yml
     parameters:
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
-      previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+      baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
 
   # Build Trident installer ISO (host)
   - template: stages/build_image/trident-testimg.yml
@@ -88,7 +88,7 @@ stages:
       imageName: build/trident-installer-testimage.iso
       outputArtifactName: trident-installer-testimage
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
-      previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+      baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
 
@@ -98,7 +98,7 @@ stages:
       imageName: build/trident-container-installer-testimage.iso
       outputArtifactName: trident-container-installer-testimage
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
-      previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+      baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
       runtimeEnv: "container"
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
@@ -109,7 +109,7 @@ stages:
       imageName: build/trident-testimage.cosi
       outputArtifactName: trident-testimage
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
-      previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+      baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
       mkcosiTemplate: "regular"
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
@@ -120,7 +120,7 @@ stages:
       imageName: build/trident-container-testimage.cosi
       outputArtifactName: trident-container-testimage
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
-      previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+      baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
       runtimeEnv: "container"
       mkcosiTemplate: "regular"
       micBuildType: ${{ parameters.micBuildType }}
@@ -132,7 +132,7 @@ stages:
       imageName: build/trident-verity-testimage.cosi
       outputArtifactName: trident-verity-testimage
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
-      previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+      baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
       mkcosiTemplate: "verity"
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
@@ -142,7 +142,7 @@ stages:
       imageName: build/trident-container-verity-testimage.cosi
       outputArtifactName: trident-container-verity-testimage
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
-      previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+      baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
       mkcosiTemplate: "verity"
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
@@ -152,7 +152,7 @@ stages:
       - template: stages/trident_usb_iso/trident-usb-iso.yml
         parameters:
           baseimgBuildType: ${{ parameters.baseimgBuildType }}
-          previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+          baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
   - ${{ else }}:
@@ -173,7 +173,7 @@ stages:
   - template: stages/testing_servicing/vm-testing.yml
     parameters:
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
-      previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+      baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
       includeAzure: ${{ parameters.includeAzure }}
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}

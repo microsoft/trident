@@ -9,7 +9,7 @@ parameters:
     default: "[AMD64-6-OneBranch]-Prod-BuildImages"
     displayName: Name of preview container pipeline
 
-  - name: previewContainerImageBuildId
+  - name: baseImagePipelineBuildId
     type: string
     default: ""
     displayName: Build Id of the pipeline run
@@ -33,7 +33,7 @@ steps:
       pipeline: ${{ parameters.previewContainerPipeline }}
       runVersion: ${{ parameters.runVersion }}
       branchName: "refs/heads/master"
-      runId: ${{ parameters.previewContainerImageBuildId }}
+      runId: ${{ parameters.baseImagePipelineBuildId }}
       tags: "3.0-preview"
       artifactName: "drop_build_rpms_build"
       patterns: "**/build-artifacts/container_base/core-*.tar.gz"

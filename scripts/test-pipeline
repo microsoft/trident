@@ -39,8 +39,8 @@ pipeline_metadata_map: Dict[str, PipelineMetadata] = {
     "azl-cicd": PipelineMetadata(
         id=4358,
         parameters={
-            "previewContainerImageBuildId": "730139",
-            "previewContainerImageArm64BuildId": "730138",
+            "baseImagePipelineBuildId": "730139",
+            "baseImageArm64PipelineBuildId": "730138",
         },
     ),
     "prism-cicd": PipelineMetadata(id=4482),

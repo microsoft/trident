@@ -27,11 +27,11 @@ parameters:
       - release
     default: "release"
 
-  - name: previewContainerImageBuildId
+  - name: baseImagePipelineBuildId
     type: string
     default: "latestFromBranch"
 
-  - name: previewContainerImageArm64BuildId
+  - name: baseImageArm64PipelineBuildId
     type: string
     default: "latestFromBranch"
 
@@ -46,8 +46,8 @@ stages:
           tridentArtifactName: ${{ parameters.tridentArtifactName }}
           codeCoverage: ${{ parameters.codeCoverage }}
           baseimgBuildType: ${{ parameters.baseimgBuildType }}
-          previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
-          previewContainerImageArm64BuildId: ${{ parameters.previewContainerImageArm64BuildId }}
+          baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
+          baseImageArm64PipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
 
   - ${{ else }}:
       - template: ../download_staged/download-staged.yml

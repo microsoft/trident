@@ -8,7 +8,7 @@ parameters:
       - release
     default: "release"
 
-  - name: previewContainerImageBuildId
+  - name: baseImagePipelineBuildId
     type: string
     default: "latestFromBranch"
 
@@ -47,11 +47,11 @@ steps:
           dockerfilePath: $(Build.SourcesDirectory)/Dockerfile.full
           dockerBuildContext: $(Build.SourcesDirectory)
           previewContainerPipeline: ${{ parameters.previewContainerPipeline }}
-          ${{ if eq(parameters.previewContainerImageBuildId, 'latestFromBranch') }}:
-            runVersion: ${{ parameters.previewContainerImageBuildId }}
+          ${{ if eq(parameters.baseImagePipelineBuildId, 'latestFromBranch') }}:
+            runVersion: ${{ parameters.baseImagePipelineBuildId }}
           ${{ else }}:
             runVersion: specific
-            previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+            baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
 
   - script: |
       set -eux

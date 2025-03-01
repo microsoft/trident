@@ -13,7 +13,7 @@ parameters:
       - release
     default: "release"
 
-  - name: previewContainerImageBuildId
+  - name: baseImagePipelineBuildId
     displayName: "Build Id of the pipeline run, default will select latest successful run from pipeline 2116 ([AMD64-6-OneBranch]-Prod-BuildImages) with tag 3.0-preview"
     type: string
     default: "latestFromBranch"
@@ -90,7 +90,7 @@ stages:
           makeTarget: "build/trident-vm-verity-testimage.qcow2"
           baseimgType: qemu_guest
           baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-          previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+          baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
 
@@ -101,7 +101,7 @@ stages:
           makeTarget: "build/trident-vm-verity-testimage.cosi"
           baseimgType: qemu_guest
           baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-          previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+          baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
 
@@ -112,7 +112,7 @@ stages:
           makeTarget: "build/trident-vm-verity-testimage.cosi"
           baseimgType: qemu_guest
           baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-          previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+          baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
 
@@ -134,7 +134,7 @@ stages:
               makeTarget: "build/trident-vm-verity-azure-testimage.vhd"
               baseimgType: core_selinux
               baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-              previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+              baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
               micBuildType: ${{ parameters.micBuildType }}
               micVersion: ${{ parameters.micVersion }}
 
@@ -145,7 +145,7 @@ stages:
               makeTarget: "build/trident-vm-verity-azure-testimage.cosi"
               baseimgType: core_selinux
               baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-              previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+              baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
               micBuildType: ${{ parameters.micBuildType }}
               micVersion: ${{ parameters.micVersion }}
 
@@ -156,7 +156,7 @@ stages:
               makeTarget: "build/trident-vm-verity-azure-testimage.cosi"
               baseimgType: core_selinux
               baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-              previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+              baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
               micBuildType: ${{ parameters.micBuildType }}
               micVersion: ${{ parameters.micVersion }}
 

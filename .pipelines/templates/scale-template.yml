@@ -17,12 +17,12 @@ parameters:
       - release
     default: "release"
 
-  - name: previewContainerImageBuildId
+  - name: baseImagePipelineBuildId
     displayName: "Build Id of the pipeline run, default will select latest successful run from pipeline 2116 ([AMD64-6-OneBranch]-Prod-BuildImages) with tag 3.0-preview"
     type: string
     default: "latestFromBranch"
 
-  - name: previewContainerImageArm64BuildId
+  - name: baseImageArm64PipelineBuildId
     displayName: "Build Id of the pipeline run, default will select latest successful run from pipeline 2117 ([ARM64-6-OneBranch]-Prod-BuildImages) with tag 3.0-preview"
     type: string
     default: "latestFromBranch"
@@ -68,8 +68,8 @@ stages:
       tridentArtifactName: trident-binaries
       codeCoverage: false
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
-      previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
-      previewContainerImageArm64BuildId: ${{ parameters.previewContainerImageArm64BuildId }}
+      baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
+      baseImageArm64PipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
       forceTridentRebuild: ${{ or(eq(parameters.forceTridentRebuild, true), eq(parameters.baseimgBuildType, 'preview')) }}
 
   # Test Servicing on VMs
@@ -81,6 +81,6 @@ stages:
       workers: ${{ parameters.numberOfWorkers }}
       updateCheckTimeoutInMinutes: 200 # Generally need less than a minute per update, so with buffer, this should be updateIterationCount * 2
       verboseLogging: ${{ parameters.verboseLogging }}
-      previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+      baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
       baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
       includeAzure: ${{ parameters.includeAzure }}

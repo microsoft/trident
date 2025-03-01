@@ -15,11 +15,11 @@ parameters:
       - release
     default: "release"
 
-  - name: previewContainerImageBuildId
+  - name: baseImagePipelineBuildId
     type: string
     default: "latestFromBranch"
 
-  - name: previewContainerImageArm64BuildId
+  - name: baseImageArm64PipelineBuildId
     type: string
     default: "latestFromBranch"
 
@@ -92,7 +92,7 @@ stages:
           - template: release.yml
             parameters:
               baseimgBuildType: ${{ parameters.baseimgBuildType }}
-              previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+              baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
               previewContainerPipeline: "[AMD64-6-OneBranch]-Prod-BuildImages"
 
       - job: BuildTridentARM64
@@ -117,7 +117,7 @@ stages:
           - template: release.yml
             parameters:
               baseimgBuildType: ${{ parameters.baseimgBuildType }}
-              previewContainerImageBuildId: ${{ parameters.previewContainerImageArm64BuildId }}
+              baseImagePipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
               previewContainerPipeline: "[ARM64-6-OneBranch]-Prod-BuildImages"
 
       - job: BuildTrident2
