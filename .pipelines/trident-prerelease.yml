@@ -5,7 +5,7 @@ parameters:
     default: false
 
 schedules:
-  - cron: "0 8 * * 0-5" # Every day at midnight except Saturday
+  - cron: "0 4 * * 1-6" # Every day at 8PM PST except Saturday (4AM UTC !Sunday ==> 8PM PST !Saturday)
     displayName: Daily build
     always: true
     branches:
