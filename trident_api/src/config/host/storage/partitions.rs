@@ -27,7 +27,7 @@ pub struct Partition {
     /// The type of the partition.
     ///
     /// As defined by the [Discoverable Partitions Specification](https://uapi-group.org/specifications/specs/discoverable_partitions_specification/).
-    #[serde(rename = "type")]
+    #[serde(default, rename = "type")]
     #[cfg_attr(
         feature = "schemars",
         schemars(schema_with = "unit_enum_with_untagged_variant::<PartitionType, Uuid>")
@@ -166,6 +166,11 @@ impl PartitionType {
     pub fn to_verity(&self) -> Option<Self> {
         match self {
             Self::Root => Some(PartitionType::RootVerity),
+
+            // We permit the use of the generic Linux partition type for verity
+            // partitions because it is the default type.
+            Self::LinuxGeneric => Some(Self::LinuxGeneric),
+
             Self::RootVerity
             | Self::Esp
             | Self::Swap
@@ -173,7 +178,6 @@ impl PartitionType {
             | Self::Var
             | Self::Usr
             | Self::Tmp
-            | Self::LinuxGeneric
             | Self::Srv
             | Self::Xbootldr
             | Self::Unknown(_) => None,

@@ -30,7 +30,7 @@ Size of the partition.
 | Type           | `PartitionSize`                     |
 | Link           | [PartitionSize](./PartitionSize.md) |
 
-### `type` **<span style="color:orange;">(required)</span>**
+### `type` (optional)
 
 The type of the partition.
 
@@ -39,5 +39,6 @@ As defined by the [Discoverable Partitions Specification](https://uapi-group.org
 | Characteristic | Value                               |
 | -------------- | ----------------------------------- |
 | Type           | `PartitionType`                     |
+| Default        | `"linux-generic"`                   |
 | Link           | [PartitionType](./PartitionType.md) |
 

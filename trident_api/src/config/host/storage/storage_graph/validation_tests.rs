@@ -7,6 +7,8 @@
 // - StorageGraphBuildError::ReferrerForbiddenSharing
 // - StorageGraphBuildError::PartitionTypeMismatchSpecial
 
+use std::path::Path;
+
 use super::{
     builder::StorageGraphBuilder,
     error::StorageGraphBuildError,
@@ -23,6 +25,7 @@ use crate::{
     constants::{ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
     storage_graph::{
         containers::ItemList,
+        rules::expected_partition_type,
         types::{BlkDevKind, FileSystemSourceKind},
     },
 };
@@ -816,6 +819,51 @@ fn test_unique_field_constraint_error() {
     );
 }
 
+#[test]
+fn test_esp_enforce_partition_type() {
+    // Test success case
+    let mut builder = StorageGraphBuilder::default();
+
+    let mut partition = Partition {
+        id: "partition".into(),
+        size: PartitionSize::Fixed(4096.into()),
+        // Correct type for ESP
+        partition_type: PartitionType::Esp,
+    };
+    builder.add_node((&partition).into());
+
+    let fs = FileSystem {
+        device_id: Some("partition".into()),
+        fs_type: FileSystemType::Vfat,
+        source: FileSystemSource::OsImage,
+        mount_point: Some(MountPoint {
+            path: ESP_MOUNT_POINT_PATH.into(),
+            options: MountOptions::defaults(),
+        }),
+    };
+    builder.add_node((&fs).into());
+    builder.build().unwrap();
+
+    // Test failure case
+    let mut builder = StorageGraphBuilder::default();
+    // Incorrect type for ESP
+    partition.partition_type = PartitionType::LinuxGeneric;
+
+    builder.add_node((&partition).into());
+    builder.add_node((&fs).into());
+
+    assert_eq!(
+        builder.build().unwrap_err(),
+        StorageGraphBuildError::InvalidPartitionType {
+            node_identifier: StorageGraphNode::from(&fs).identifier(),
+            kind: BlkDevReferrerKind::FileSystemOsImage,
+            partition_id: "partition".into(),
+            partition_type: PartitionType::LinuxGeneric,
+            valid_types: expected_partition_type(Path::new(ESP_MOUNT_POINT_PATH))
+        }
+    );
+}
+
 mod verity {
     use super::*;
 
@@ -935,7 +983,7 @@ mod verity {
         let part1 = Partition {
             id: "part1".into(),
             size: PartitionSize::Fixed(4096.into()),
-            partition_type: PartitionType::LinuxGeneric,
+            partition_type: PartitionType::Home,
         };
         builder.add_node((&part1).into());
 
@@ -975,7 +1023,7 @@ mod verity {
                 node_identifier: vfs_node.identifier(),
                 kind: vfs_node.referrer_kind(),
                 partition_id: "part1".into(),
-                partition_type: PartitionType::LinuxGeneric,
+                partition_type: PartitionType::Home,
                 valid_types: SpecialReferenceKind::VerityDataDevice
                     .allowed_partition_types()
                     .unwrap(),
@@ -997,7 +1045,7 @@ mod verity {
         let part2 = Partition {
             id: "part2".into(),
             size: PartitionSize::Fixed(4096.into()),
-            partition_type: PartitionType::LinuxGeneric,
+            partition_type: PartitionType::Usr,
         };
         builder.add_node((&part2).into());
 
@@ -1030,7 +1078,7 @@ mod verity {
                 node_identifier: vfs_node.identifier(),
                 kind: vfs_node.referrer_kind(),
                 partition_id: "part2".into(),
-                partition_type: PartitionType::LinuxGeneric,
+                partition_type: PartitionType::Usr,
                 valid_types: SpecialReferenceKind::VerityHashDevice
                     .allowed_partition_types()
                     .unwrap(),

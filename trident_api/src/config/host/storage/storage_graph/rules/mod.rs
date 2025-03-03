@@ -10,13 +10,19 @@
 //!
 //! The rules are declared roughly in the order they are evaluated.
 
-use std::{os::unix::ffi::OsStrExt, path::PathBuf};
+use std::{
+    os::unix::ffi::OsStrExt,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{bail, ensure, Error};
 
-use crate::config::{
-    FileSystemType, HostConfigurationStaticValidationError, Partition, PartitionSize,
-    PartitionType, RaidLevel,
+use crate::{
+    config::{
+        FileSystemType, HostConfigurationStaticValidationError, Partition, PartitionSize,
+        PartitionType, RaidLevel,
+    },
+    constants::ESP_MOUNT_POINT_PATH,
 };
 
 use super::{
@@ -475,7 +481,11 @@ impl BlkDevReferrerKind {
             Self::FileSystemEsp => AllowBlockList::Allow(vec![PartitionType::Esp]),
             Self::FilesystemVerity | Self::VerityDevice => {
                 // TODO: Add usr when it's supported.
-                AllowBlockList::Allow(vec![PartitionType::Root, PartitionType::RootVerity])
+                AllowBlockList::Allow(vec![
+                    PartitionType::Root,
+                    PartitionType::RootVerity,
+                    PartitionType::LinuxGeneric,
+                ])
             }
             Self::FileSystemOsImage => AllowBlockList::Any,
         }
@@ -489,10 +499,25 @@ impl SpecialReferenceKind {
     /// all underlying partition types.
     pub fn allowed_partition_types(&self) -> Option<AllowBlockList<PartitionType>> {
         match self {
-            Self::VerityDataDevice => Some(AllowBlockList::Allow(vec![PartitionType::Root])),
-            Self::VerityHashDevice => Some(AllowBlockList::Allow(vec![PartitionType::RootVerity])),
+            Self::VerityDataDevice => Some(AllowBlockList::Allow(vec![
+                PartitionType::Root,
+                PartitionType::LinuxGeneric,
+            ])),
+            Self::VerityHashDevice => Some(AllowBlockList::Allow(vec![
+                PartitionType::RootVerity,
+                PartitionType::LinuxGeneric,
+            ])),
         }
     }
+}
+
+/// Returns the expected partition type for a given mount point, if any.
+pub fn expected_partition_type(mount_point: &Path) -> AllowBlockList<PartitionType> {
+    if mount_point == Path::new(ESP_MOUNT_POINT_PATH) {
+        return AllowBlockList::new_allow([PartitionType::Esp]);
+    }
+
+    AllowBlockList::Any
 }
 
 impl PartitionType {

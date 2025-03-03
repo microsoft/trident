@@ -799,8 +799,7 @@
       "type": "object",
       "required": [
         "id",
-        "size",
-        "type"
+        "size"
       ],
       "properties": {
         "id": {
@@ -818,6 +817,7 @@
         },
         "type": {
           "description": "The type of the partition.\n\nAs defined by the [Discoverable Partitions Specification](https://uapi-group.org/specifications/specs/discoverable_partitions_specification/).",
+          "default": "linux-generic",
           "allOf": [
             {
               "$ref": "#/definitions/PartitionType"

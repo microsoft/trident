@@ -11,41 +11,30 @@ storage:
           type: esp
           size: 1G
         - id: boot
-          type: xbootldr
           size: 200M
         - id: root-data-1
-          type: root
           size: 4G
         - id: root-hash-1
-          type: root-verity
           size: 1G
         - id: trident
-          type: linux-generic
           size: 500M
         - id: trident-overlay-1
-          type: linux-generic
           size: 100M
         - id: home
-          type: linux-generic
           size: 100M
         - id: var
-          type: linux-generic
           size: 1G
         - id: run
-          type: linux-generic
           size: 1G
     - id: disk2
       device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
       partitionTableType: gpt
       partitions:
         - id: root-data-2
-          type: root
           size: 4G
         - id: root-hash-2
-          type: root-verity
           size: 1G
         - id: trident-overlay-2
-          type: linux-generic
           size: 100M
   raid:
     software:

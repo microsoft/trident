@@ -220,10 +220,10 @@ Some referrers only support specific underlying partitions types.
 | raid-array         | any                                                        |
 | ab-volume          | any                                                        |
 | encrypted-volume   | any type except 'esp' or 'root' or 'root-verity' or 'home' |
-| verity-device      | 'root' or 'root-verity'                                    |
+| verity-device      | 'root' or 'root-verity' or 'linux-generic'                 |
 | filesystem         | any type except 'esp'                                      |
 | filesystem-esp     | 'esp'                                                      |
-| filesystem-verity  | 'root' or 'root-verity'                                    |
+| filesystem-verity  | 'root' or 'root-verity' or 'linux-generic'                 |
 | filesystem-adopted | any type except 'esp'                                      |
 
 ## Allowed RAID Levels
@@ -278,4 +278,5 @@ Types that are not listed are not valid for verity.
 | Partition Type | Matching Hash Partition |
 | -------------- | ----------------------- |
 | root           | root-verity             |
+| linux-generic  | linux-generic           |
 

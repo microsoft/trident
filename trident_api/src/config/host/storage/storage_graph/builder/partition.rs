@@ -16,7 +16,9 @@ use crate::{
         },
         Partition, PartitionSize,
     },
-    storage_graph::{graph, node::BlockDevice},
+    storage_graph::{
+        containers::AllowBlockList, graph, node::BlockDevice, rules::expected_partition_type,
+    },
 };
 
 impl SpecialReferenceKind {
@@ -96,6 +98,15 @@ pub(super) fn check_partition_types(graph: &StoragePetgraph) -> Result<(), Stora
             node.describe()
         );
 
+        // If this is a filesystem with a mount point, get the expected partition
+        // type for the filesystem's mount point, if any. Otherwise, allow any
+        // partition type.
+        let expected_partition_type = node
+            .as_filesystem()
+            .and_then(|fs| fs.mount_point.as_ref())
+            .map(|mntp| expected_partition_type(&mntp.path))
+            .unwrap_or(AllowBlockList::Any);
+
         let partition_types = explore_tree_partitions(
             graph,
             node_idx,
@@ -149,19 +160,28 @@ pub(super) fn check_partition_types(graph: &StoragePetgraph) -> Result<(), Stora
 
                 // Get allowed types for the node.
                 let allowed_types = node.referrer_kind().allowed_partition_types();
+
                 // Ensure all partitions have valid types.
                 attr_list.iter().try_for_each(|attr| {
-                    if allowed_types.contains(attr.value) {
-                        return Ok(());
+                    if !expected_partition_type.contains(attr.value) {
+                        Err(StorageGraphBuildError::InvalidPartitionType {
+                            node_identifier: node.identifier(),
+                            kind: node.referrer_kind(),
+                            partition_id: attr.id.clone(),
+                            partition_type: attr.value,
+                            valid_types: expected_partition_type.clone(),
+                        })
+                    } else if !allowed_types.contains(attr.value) {
+                        Err(StorageGraphBuildError::InvalidPartitionType {
+                            node_identifier: node.identifier(),
+                            kind: node.referrer_kind(),
+                            partition_id: attr.id.clone(),
+                            partition_type: attr.value,
+                            valid_types: allowed_types.clone(),
+                        })
+                    } else {
+                        Ok(())
                     }
-
-                    Err(StorageGraphBuildError::InvalidPartitionType {
-                        node_identifier: node.identifier(),
-                        kind: node.referrer_kind(),
-                        partition_id: attr.id.clone(),
-                        partition_type: attr.value,
-                        valid_types: allowed_types.clone(),
-                    })
                 })?;
 
                 Ok(())
