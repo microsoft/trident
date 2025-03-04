@@ -48,6 +48,9 @@ stages:
   - template: stages/download_artifacts/get-artifacts.yml
     parameters:
       definition: ${{ parameters.definition }}
+      servicingImages: ${{ parameters.runServicingTests }}
+      hostImages: ${{ or(parameters.runDeploymentVMHost, parameters.runDeploymentBMHost, parameters.runFunctionalTests) }}
+      containerImages: ${{ or(parameters.runDeploymentVMContainer, parameters.runDeploymentBMContainer) }}
       ${{ if eq(parameters.tridentPipelineRunId, 'latestFromBranch') }}:
         runVersion: latestFromBranch
         branch: ${{ parameters.branch }}
@@ -95,3 +98,5 @@ stages:
       - template: stages/testing_servicing/vm-testing.yml
         parameters:
           testingRun: true
+          verboseLogging: true
+          includeAzure: false # To test in Azure please use trident-pr-e2e-azure pipeline

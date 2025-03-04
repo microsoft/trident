@@ -42,8 +42,7 @@ stages:
               - BuildTridentContainerImage
               - TridentTestImg_trident_container_installer_testimage
               - TridentTestImg_trident_container_testimage
-              - TridentTestImg_trident_verity_testimage
-              # - TridentTestImg_trident_container_verity_testimage
+              - TridentTestImg_trident_container_verity_testimage
           - ${{ else }}:
               - TridentTestImg_trident_verity_testimage
               - TridentTestImg_trident_installer_testimage

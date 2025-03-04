@@ -19,9 +19,9 @@ stages:
           - DownloadTestingElements
       - ${{ else }}:
           - BuildingTools
+          - TridentTestImg_trident_installer_testimage
           - TridentTestImg_trident_testimage
           - TridentTestImg_trident_verity_testimage
-          - TridentTestImg_trident_container_installer_testimage
 
     jobs:
       - job: FunctionalTests
@@ -46,7 +46,7 @@ stages:
             parameters:
               action: override
 
-          # Download all test images
+          # Download all test images for host
           - template: ../testing_common/download-test-images.yml
 
           - template: ../testing_vm/netlaunch-prep.yml

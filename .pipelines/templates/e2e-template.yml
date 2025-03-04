@@ -47,9 +47,9 @@ parameters:
     displayName: MIC Build Type
     type: string
     values:
-    - dev
-    - preview
-    - release
+      - dev
+      - preview
+      - release
     default: release
 
   - name: micVersion
@@ -126,7 +126,7 @@ stages:
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
 
-  # Build Trident test image (verity)
+  # Build Trident test image for verity (host)
   - template: stages/build_image/trident-testimg.yml
     parameters:
       imageName: build/trident-verity-testimage.cosi
@@ -137,12 +137,14 @@ stages:
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
 
+  # Build Trident test image for verity (container)
   - template: stages/build_image/trident-testimg.yml
     parameters:
       imageName: build/trident-container-verity-testimage.cosi
       outputArtifactName: trident-container-verity-testimage
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
       baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
+      runtimeEnv: "container"
       mkcosiTemplate: "verity"
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}

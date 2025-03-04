@@ -68,71 +68,25 @@ parameters:
     default: "*.*.*"
 
 stages:
-  - stage: PrepareSSHKeys
-    displayName: Prepare SSH Keys
-    jobs:
-      - template: generate-ssh-keys.yml
+  - ${{ if eq(parameters.testingRun, false) }}:
+      - stage: PrepareSSHKeys
+        displayName: Prepare SSH Keys
+        jobs:
+          - template: generate-ssh-keys.yml
 
-  - stage: BuildImagesQemu
-    displayName: Build Base and Update Images for QEMU
-    dependsOn:
-      - PrepareSSHKeys
-      - ${{ if eq(parameters.testingRun, true) }}:
-          - DownloadTestingElements
-      - ${{ else }}:
-          - GetTridentBinaries_rpms
-
-    jobs:
-      - template: build-image.yml
-        parameters:
-          baseimgBuildType: ${{ parameters.baseimgBuildType }}
-          label: "qemu-base"
-          makeTarget: "build/trident-vm-verity-testimage.qcow2"
-          baseimgType: qemu_guest
-          baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-          baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
-          micBuildType: ${{ parameters.micBuildType }}
-          micVersion: ${{ parameters.micVersion }}
-
-      - template: build-image.yml
-        parameters:
-          baseimgBuildType: ${{ parameters.baseimgBuildType }}
-          label: "qemu-update-a"
-          makeTarget: "build/trident-vm-verity-testimage.cosi"
-          baseimgType: qemu_guest
-          baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-          baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
-          micBuildType: ${{ parameters.micBuildType }}
-          micVersion: ${{ parameters.micVersion }}
-
-      - template: build-image.yml
-        parameters:
-          baseimgBuildType: ${{ parameters.baseimgBuildType }}
-          label: "qemu-update-b"
-          makeTarget: "build/trident-vm-verity-testimage.cosi"
-          baseimgType: qemu_guest
-          baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-          baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
-          micBuildType: ${{ parameters.micBuildType }}
-          micVersion: ${{ parameters.micVersion }}
-
-  - ${{ if eq(parameters.includeAzure, true) }}:
-      - stage: BuildImagesAzure
-        displayName: Build Base and Update Images for Azure
+      - stage: BuildImagesQemu
+        displayName: Build Base and Update Images for QEMU
         dependsOn:
           - PrepareSSHKeys
-          - ${{ if eq(parameters.testingRun, true) }}:
-              - DownloadTestingElements
-          - ${{ else }}:
-              - GetTridentBinaries_rpms
+          - GetTridentBinaries_rpms
 
         jobs:
           - template: build-image.yml
             parameters:
               baseimgBuildType: ${{ parameters.baseimgBuildType }}
-              label: "azure-base"
-              makeTarget: "build/trident-vm-verity-azure-testimage.vhd"
-              baseimgType: core_selinux
+              label: "qemu-base"
+              makeTarget: "build/trident-vm-verity-testimage.qcow2"
+              baseimgType: qemu_guest
               baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
               baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
               micBuildType: ${{ parameters.micBuildType }}
@@ -141,9 +95,9 @@ stages:
           - template: build-image.yml
             parameters:
               baseimgBuildType: ${{ parameters.baseimgBuildType }}
-              label: "azure-update-a"
-              makeTarget: "build/trident-vm-verity-azure-testimage.cosi"
-              baseimgType: core_selinux
+              label: "qemu-update-a"
+              makeTarget: "build/trident-vm-verity-testimage.cosi"
+              baseimgType: qemu_guest
               baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
               baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
               micBuildType: ${{ parameters.micBuildType }}
@@ -152,21 +106,65 @@ stages:
           - template: build-image.yml
             parameters:
               baseimgBuildType: ${{ parameters.baseimgBuildType }}
-              label: "azure-update-b"
-              makeTarget: "build/trident-vm-verity-azure-testimage.cosi"
-              baseimgType: core_selinux
+              label: "qemu-update-b"
+              makeTarget: "build/trident-vm-verity-testimage.cosi"
+              baseimgType: qemu_guest
               baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
               baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
               micBuildType: ${{ parameters.micBuildType }}
               micVersion: ${{ parameters.micVersion }}
+
+      - ${{ if eq(parameters.includeAzure, true) }}:
+          - stage: BuildImagesAzure
+            displayName: Build Base and Update Images for Azure
+            dependsOn:
+              - PrepareSSHKeys
+              - GetTridentBinaries_rpms
+
+            jobs:
+              - template: build-image.yml
+                parameters:
+                  baseimgBuildType: ${{ parameters.baseimgBuildType }}
+                  label: "azure-base"
+                  makeTarget: "build/trident-vm-verity-azure-testimage.vhd"
+                  baseimgType: core_selinux
+                  baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+                  baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
+                  micBuildType: ${{ parameters.micBuildType }}
+                  micVersion: ${{ parameters.micVersion }}
+
+              - template: build-image.yml
+                parameters:
+                  baseimgBuildType: ${{ parameters.baseimgBuildType }}
+                  label: "azure-update-a"
+                  makeTarget: "build/trident-vm-verity-azure-testimage.cosi"
+                  baseimgType: core_selinux
+                  baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+                  baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
+                  micBuildType: ${{ parameters.micBuildType }}
+                  micVersion: ${{ parameters.micVersion }}
+
+              - template: build-image.yml
+                parameters:
+                  baseimgBuildType: ${{ parameters.baseimgBuildType }}
+                  label: "azure-update-b"
+                  makeTarget: "build/trident-vm-verity-azure-testimage.cosi"
+                  baseimgType: core_selinux
+                  baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+                  baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
+                  micBuildType: ${{ parameters.micBuildType }}
+                  micVersion: ${{ parameters.micVersion }}
 
   - stage: ServicingTesting
     displayName: Servicing Testing
     dependsOn:
-      - BuildImagesQemu
-      - BuildingTools
-      - ${{ if eq(parameters.includeAzure, true) }}:
-          - BuildImagesAzure
+      - ${{ if eq(parameters.testingRun, true) }}:
+          - DownloadTestingElements
+      - ${{ else }}:
+          - BuildImagesQemu
+          - BuildingTools
+          - ${{ if eq(parameters.includeAzure, true) }}:
+              - BuildImagesAzure
 
     jobs:
       - template: testing-template.yml
