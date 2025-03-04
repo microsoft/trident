@@ -3,12 +3,13 @@ use std::{
     path::Path,
 };
 
+use const_format::formatcp;
 use log::{debug, error, trace, warn};
 
 use osutils::{df, lsblk};
 use trident_api::{
     config::{FileSystemSource, FileSystemType, HostConfiguration},
-    constants::internal_params::DISABLE_FS_BLOCK_DEVICE_SIZE_CHECK,
+    constants::{internal_params::DISABLE_FS_BLOCK_DEVICE_SIZE_CHECK, BOOT_MOUNT_POINT_PATH},
     error::{InternalError, InvalidInputError, ReportError, ServicingError, TridentError},
     primitives::bytes::ByteCount,
     status::{AbVolumeSelection, ServicingType},
@@ -73,6 +74,9 @@ pub fn validate_host_config(ctx: &EngineContext) -> Result<(), TridentError> {
 
     debug!("Validating ESP image in OS image");
     validate_esp(os_image)?;
+
+    debug!("Validating filesystem mounted at or containing /boot");
+    ensure_boot_is_ext4(os_image)?;
 
     if !ctx
         .spec
@@ -313,6 +317,31 @@ fn validate_esp(os_image: &OsImage) -> Result<(), TridentError> {
     Ok(())
 }
 
+/// Ensures that /boot is on a filesystem of type Ext4.
+fn ensure_boot_is_ext4(os_image: &OsImage) -> Result<(), TridentError> {
+    // Find the filesystem containing /boot, if one exists
+    let boot_fs = os_image
+        .path_to_filesystem(Path::new(BOOT_MOUNT_POINT_PATH))
+        .structured(InternalError::Internal(formatcp!(
+            "Could not find filesystem containing {BOOT_MOUNT_POINT_PATH}",
+        )))?;
+
+    // Ensure that the filesystem containing /boot is of type Ext4. While it is
+    // expected that all filesystems on an OS image should have a filesystem
+    // UUID, at this time we can ensure that Trident is able to find and
+    // handle only Ext4 filesystem UUIDs.
+    if boot_fs.fs_type != OsImageFileSystemType::Ext4 {
+        return Err(TridentError::new(
+            InvalidInputError::UnsupportedBootFileSystemType {
+                mount_point: boot_fs.mount_point.display().to_string(),
+                fs_type: boot_fs.fs_type.to_string(),
+            },
+        ));
+    }
+
+    Ok(())
+}
+
 /// Validates the sizes of filesystems.
 ///
 /// This function checks that each filesystem in the OS image fits in its corresponding block device.
@@ -480,6 +509,38 @@ mod tests {
             err.kind(),
             &ErrorKind::InvalidInput(InvalidInputError::UnexpectedVerityOnEsp)
         );
+    }
+
+    #[test]
+    fn test_ensure_boot_is_ext4() {
+        // Generate mock OS image
+        let mut mock_image = MockOsImage {
+            source: Url::parse(OSIMAGE_DUMMY_SOURCE).unwrap(),
+            os_arch: SystemArchitecture::X86,
+            os_release: OsRelease::default(),
+            images: vec![MockImage {
+                mount_point: PathBuf::from(BOOT_MOUNT_POINT_PATH),
+                fs_type: OsImageFileSystemType::Vfat,
+                fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
+                part_type: DiscoverablePartitionType::Xbootldr,
+                verity: None,
+            }],
+        };
+
+        // Expect validation to fail
+        let err = ensure_boot_is_ext4(&OsImage::mock(mock_image.clone())).unwrap_err();
+        assert_eq!(
+            err.kind(),
+            &ErrorKind::InvalidInput(InvalidInputError::UnsupportedBootFileSystemType {
+                mount_point: "/boot".to_string(),
+                fs_type: "vfat".to_string()
+            })
+        );
+
+        mock_image.images[0].fs_type = OsImageFileSystemType::Ext4;
+
+        // Expect validation to succeed
+        ensure_boot_is_ext4(&OsImage::mock(mock_image)).unwrap();
     }
 
     #[test]

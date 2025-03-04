@@ -226,6 +226,12 @@ pub enum InvalidInputError {
     #[error("Found verity hash on ESP image. ESP filesystem should never have verity enabled.")]
     UnexpectedVerityOnEsp,
 
+    #[error("Unsupported filesystem type for filesystem mounted at '{mount_point}': {fs_type}. Filesystem mounted at '{mount_point}' must be of type Ext4.")]
+    UnsupportedBootFileSystemType {
+        mount_point: String,
+        fs_type: String,
+    },
+
     #[error("Filesystem at '{mount_point}' of type '{fs_type}' in OS Image is not being used by the provided Host Configuration")]
     UnusedOsImageFilesystem {
         mount_point: String,

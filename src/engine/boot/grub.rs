@@ -13,7 +13,7 @@ use osutils::{
     osrelease,
 };
 use trident_api::{
-    config::{FileSystemType, Selinux, SelinuxMode},
+    config::{Selinux, SelinuxMode},
     constants::{
         BOOT_MOUNT_POINT_PATH, ESP_EFI_DIRECTORY, ESP_MOUNT_POINT_PATH, GRUB2_CONFIG_FILENAME,
         GRUB2_CONFIG_RELATIVE_PATH, ROOT_MOUNT_POINT_PATH, TRIDENT_OVERLAY_LOWER_RELATIVE_PATH,
@@ -79,16 +79,6 @@ pub(super) fn update_configs(ctx: &EngineContext, os_modifier_path: &Path) -> Re
         .storage
         .path_to_mount_point(Path::new(BOOT_MOUNT_POINT_PATH))
         .context("Failed to find mount point for boot block device")?;
-    // get_filesystem_uuid expects a filesystem that uses UUIDs, so limiting to
-    // ext4 for now
-    // TODO: improve supported filesystems validation in API: https://dev.azure.com/mariner-org/ECF/_workitems/edit/6853
-    if boot_mount_point.filesystem != FileSystemType::Ext4 {
-        bail!(
-            "Unsupported filesystem type for block device '{}': {}",
-            boot_mount_point.target_id,
-            boot_mount_point.filesystem
-        );
-    }
 
     let boot_block_device_id = &boot_mount_point.target_id;
     let boot_block_device_path = ctx
@@ -412,8 +402,8 @@ pub(crate) mod functional_test {
     use pytest_gen::functional_test;
     use trident_api::{
         config::{
-            self, AbUpdate, AbVolumePair, Disk, HostConfiguration, InternalMountPoint, Partition,
-            PartitionType, RaidLevel, SoftwareRaidArray,
+            self, AbUpdate, AbVolumePair, Disk, FileSystemType, HostConfiguration,
+            InternalMountPoint, Partition, PartitionType, RaidLevel, SoftwareRaidArray,
         },
         status::ServicingType,
     };
@@ -681,7 +671,7 @@ pub(crate) mod functional_test {
     /// This functions tests update_grub by setting up root on a standalone partition.
     fn test_update_grub_root_standalone_partition() {
         test_execute_and_resulting_layout(false, false);
-        let mut ctx = EngineContext {
+        let ctx = EngineContext {
             // These are required to get the update install ID
             servicing_type: ServicingType::CleanInstall,
 
@@ -706,7 +696,7 @@ pub(crate) mod functional_test {
                     }],
                     internal_mount_points: vec![
                         InternalMountPoint {
-                            path: PathBuf::from("/boot"),
+                            path: PathBuf::from("/esp"),
                             target_id: "boot".to_owned(),
                             filesystem: FileSystemType::Vfat,
                             options: vec![],
@@ -732,26 +722,6 @@ pub(crate) mod functional_test {
 
         let root_device_path = PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"));
         mkfs::run(&root_device_path, MkfsFileSystemType::Ext4).unwrap();
-
-        // fail on unsupported filesystem
-        assert_eq!(
-            update_configs(&ctx, Path::new(OS_MODIFIER_BINARY_PATH))
-                .unwrap_err()
-                .to_string(),
-            "Unsupported filesystem type for block device 'boot': vfat"
-        );
-
-        // original test
-        ctx.spec.storage.internal_mount_points.remove(0);
-        ctx.spec
-            .storage
-            .internal_mount_points
-            .push(InternalMountPoint {
-                path: PathBuf::from("/esp"),
-                target_id: "boot".to_owned(),
-                filesystem: FileSystemType::Vfat,
-                options: vec![],
-            });
 
         update_configs(&ctx, Path::new(OS_MODIFIER_BINARY_PATH)).unwrap();
     }
