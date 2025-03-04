@@ -407,13 +407,10 @@ fn validate_host_config_delta(
     host_status_spec.trident = Default::default();
     host_config_to_compare.trident = Default::default();
 
-    // Skip checking the old API for mount points and internal verity devices as
-    // they haven't been populated in the host configuration for rebuild-raid.
+    // Skip checking the old API for mount points as they haven't been populated
+    // in the host configuration for rebuild-raid.
     host_status_spec.storage.internal_mount_points = Default::default();
     host_config_to_compare.storage.internal_mount_points = Default::default();
-
-    host_status_spec.storage.internal_verity = Default::default();
-    host_config_to_compare.storage.internal_verity = Default::default();
 
     if host_status_spec != host_config_to_compare {
         bail!("We do not support the updated host configuration for the Trident rebuild-raid process. The configuration must match the original host configuration used during host provisioning.");

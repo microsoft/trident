@@ -867,7 +867,10 @@ fn test_esp_enforce_partition_type() {
 mod verity {
     use super::*;
 
-    use crate::{config::VerityFileSystem, storage_graph::references::SpecialReferenceKind};
+    use crate::{
+        config::VerityDevice, constants::MOUNT_OPTION_READ_ONLY,
+        storage_graph::references::SpecialReferenceKind,
+    };
 
     #[test]
     fn test_verity_homogeneous_targets() {
@@ -887,27 +890,14 @@ mod verity {
         };
         builder.add_node((&part2).into());
 
-        let vfs = VerityFileSystem {
+        let verity_dev = VerityDevice {
+            id: "verity_dev".into(),
             data_device_id: "part1".into(),
             hash_device_id: "part2".into(),
-            fs_type: FileSystemType::Ext4,
-            data_image: Image {
-                url: "http://image".into(),
-                sha256: ImageSha256::Checksum("checksum".into()),
-                format: ImageFormat::RawZst,
-            },
-            hash_image: Image {
-                url: "http://image".into(),
-                sha256: ImageSha256::Checksum("checksum".into()),
-                format: ImageFormat::RawZst,
-            },
             name: "verity".into(),
-            mount_point: MountPoint {
-                path: ROOT_MOUNT_POINT_PATH.into(),
-                options: MountOptions::empty(),
-            },
+            ..Default::default()
         };
-        builder.add_node((&vfs).into());
+        builder.add_node((&verity_dev).into());
 
         builder.build().unwrap();
     }
@@ -945,33 +935,20 @@ mod verity {
         };
         builder.add_node((&raid).into());
 
-        let vfs = VerityFileSystem {
+        let verity_dev = VerityDevice {
+            id: "verity_dev".into(),
             data_device_id: "raid".into(),
             hash_device_id: "part3".into(),
-            fs_type: FileSystemType::Ext4,
-            data_image: Image {
-                url: "http://image".into(),
-                sha256: ImageSha256::Checksum("checksum".into()),
-                format: ImageFormat::RawZst,
-            },
-            hash_image: Image {
-                url: "http://image".into(),
-                sha256: ImageSha256::Checksum("checksum".into()),
-                format: ImageFormat::RawZst,
-            },
             name: "verity".into(),
-            mount_point: MountPoint {
-                path: ROOT_MOUNT_POINT_PATH.into(),
-                options: MountOptions::empty(),
-            },
+            ..Default::default()
         };
-        builder.add_node((&vfs).into());
+        builder.add_node((&verity_dev).into());
 
         assert_eq!(
             builder.build().unwrap_err(),
             StorageGraphBuildError::ReferenceKindMismatch {
-                node_identifier: StorageGraphNode::from(&vfs).identifier(),
-                kind: BlkDevReferrerKind::FilesystemVerity,
+                node_identifier: StorageGraphNode::from(&verity_dev).identifier(),
+                kind: BlkDevReferrerKind::VerityDevice,
             }
         );
     }
@@ -994,27 +971,14 @@ mod verity {
         };
         builder.add_node((&part2).into());
 
-        let vfs = VerityFileSystem {
+        let verity_dev = VerityDevice {
+            id: "verity_dev".into(),
             data_device_id: "part1".into(),
             hash_device_id: "part2".into(),
-            fs_type: FileSystemType::Ext4,
-            data_image: Image {
-                url: "http://image".into(),
-                sha256: ImageSha256::Checksum("checksum".into()),
-                format: ImageFormat::RawZst,
-            },
-            hash_image: Image {
-                url: "http://image".into(),
-                sha256: ImageSha256::Checksum("checksum".into()),
-                format: ImageFormat::RawZst,
-            },
             name: "verity".into(),
-            mount_point: MountPoint {
-                path: ROOT_MOUNT_POINT_PATH.into(),
-                options: MountOptions::empty(),
-            },
+            ..Default::default()
         };
-        let vfs_node = StorageGraphNode::from(&vfs);
+        let vfs_node = StorageGraphNode::from(&verity_dev);
         builder.add_node(vfs_node.clone());
 
         assert_eq!(
@@ -1049,27 +1013,14 @@ mod verity {
         };
         builder.add_node((&part2).into());
 
-        let vfs = VerityFileSystem {
+        let verity_dev = VerityDevice {
+            id: "verity_dev".into(),
             data_device_id: "part1".into(),
             hash_device_id: "part2".into(),
-            fs_type: FileSystemType::Ext4,
-            data_image: Image {
-                url: "http://image".into(),
-                sha256: ImageSha256::Checksum("checksum".into()),
-                format: ImageFormat::RawZst,
-            },
-            hash_image: Image {
-                url: "http://image".into(),
-                sha256: ImageSha256::Checksum("checksum".into()),
-                format: ImageFormat::RawZst,
-            },
             name: "verity".into(),
-            mount_point: MountPoint {
-                path: ROOT_MOUNT_POINT_PATH.into(),
-                options: MountOptions::empty(),
-            },
+            ..Default::default()
         };
-        let vfs_node = StorageGraphNode::from(&vfs);
+        let vfs_node = StorageGraphNode::from(&verity_dev);
         builder.add_node(vfs_node.clone());
 
         assert_eq!(
@@ -1104,33 +1055,33 @@ mod verity {
         };
         builder.add_node((&part2).into());
 
-        let vfs = VerityFileSystem {
+        let verity_dev = VerityDevice {
+            id: "verity".into(),
             data_device_id: "part1".into(),
             hash_device_id: "part2".into(),
-            fs_type: FileSystemType::Ntfs, // Only Ext4 and Xfs are supported
-            data_image: Image {
-                url: "http://image".into(),
-                sha256: ImageSha256::Checksum("checksum".into()),
-                format: ImageFormat::RawZst,
-            },
-            hash_image: Image {
-                url: "http://image".into(),
-                sha256: ImageSha256::Checksum("checksum".into()),
-                format: ImageFormat::RawZst,
-            },
             name: "verity".into(),
-            mount_point: MountPoint {
-                path: ROOT_MOUNT_POINT_PATH.into(),
-                options: MountOptions::empty(),
-            },
+            ..Default::default()
         };
-        builder.add_node((&vfs).into());
+
+        builder.add_node((&verity_dev).into());
+
+        let root_fs = FileSystem {
+            device_id: Some("verity".into()),
+            fs_type: FileSystemType::Ntfs, // Only Ext4 and Xfs are supported
+            source: FileSystemSource::OsImage,
+            mount_point: Some(MountPoint {
+                path: ROOT_MOUNT_POINT_PATH.into(),
+                options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
+            }),
+        };
+
+        builder.add_node((&root_fs).into());
 
         assert_eq!(
             builder.build().unwrap_err(),
-            StorageGraphBuildError::VerityFileSystemUnsupportedType {
-                name: "verity".into(),
-                fs_type: FileSystemType::Ntfs
+            StorageGraphBuildError::FilesystemVerityIncompatible {
+                fs_desc: root_fs.description(),
+                fs_type: FileSystemType::Ntfs,
             }
         );
     }
@@ -1153,27 +1104,15 @@ mod verity {
         };
         builder.add_node((&part2).into());
 
-        let vfs = VerityFileSystem {
+        let verity_dev1 = VerityDevice {
+            id: "verity1".into(),
             data_device_id: "part1".into(),
             hash_device_id: "part2".into(),
-            fs_type: FileSystemType::Ext4,
-            data_image: Image {
-                url: "http://image".into(),
-                sha256: ImageSha256::Checksum("checksum".into()),
-                format: ImageFormat::RawZst,
-            },
-            hash_image: Image {
-                url: "http://image".into(),
-                sha256: ImageSha256::Checksum("checksum".into()),
-                format: ImageFormat::RawZst,
-            },
-            name: "verity".into(), // Duplicated name
-            mount_point: MountPoint {
-                path: ROOT_MOUNT_POINT_PATH.into(),
-                options: MountOptions::empty(),
-            },
+            name: "verity".into(),
+            ..Default::default()
         };
-        builder.add_node((&vfs).into());
+
+        builder.add_node((&verity_dev1).into());
 
         let part3 = Partition {
             id: "part3".into(),
@@ -1189,33 +1128,25 @@ mod verity {
         };
         builder.add_node((&part4).into());
 
-        let vfs2 = VerityFileSystem {
+        let verity_dev2 = VerityDevice {
+            id: "verity2".into(),
             data_device_id: "part3".into(),
             hash_device_id: "part4".into(),
-            fs_type: FileSystemType::Ext4,
-            data_image: Image {
-                url: "http://image".into(),
-                sha256: ImageSha256::Checksum("checksum".into()),
-                format: ImageFormat::RawZst,
-            },
-            hash_image: Image {
-                url: "http://image".into(),
-                sha256: ImageSha256::Checksum("checksum".into()),
-                format: ImageFormat::RawZst,
-            },
-            name: "verity".into(), // Duplicated name
-            mount_point: MountPoint {
-                path: "/mount/".into(),
-                options: MountOptions::empty(),
-            },
+            name: "verity".into(),
+            ..Default::default()
         };
-        builder.add_node((&vfs2).into());
+
+        builder.add_node((&verity_dev2).into());
 
         assert_eq!(
             builder.build().unwrap_err(),
-            StorageGraphBuildError::VerityFilesystemDuplicateName {
-                name: "verity".into()
-            }
+            StorageGraphBuildError::UniqueFieldConstraintError {
+                node_id: "verity2".into(),
+                other_id: "verity1".into(),
+                kind: BlkDevKind::VerityDevice,
+                field_name: "name".into(),
+                value: "verity".into(),
+            },
         );
     }
 
@@ -1226,33 +1157,21 @@ mod verity {
         let partition = generic_partition();
         builder.add_node((&partition).into());
 
-        let vfs = VerityFileSystem {
+        let verity_dev = VerityDevice {
+            id: "verity".into(),
             data_device_id: "partition".into(),
             hash_device_id: "nonexistent-hash-partition".into(),
-            fs_type: FileSystemType::Ext4,
-            data_image: Image {
-                url: "http://image".into(),
-                sha256: ImageSha256::Checksum("checksum".into()),
-                format: ImageFormat::RawZst,
-            },
-            hash_image: Image {
-                url: "http://image".into(),
-                sha256: ImageSha256::Checksum("checksum".into()),
-                format: ImageFormat::RawZst,
-            },
-            name: "verity".into(), // Duplicated name
-            mount_point: MountPoint {
-                path: ROOT_MOUNT_POINT_PATH.into(),
-                options: MountOptions::empty(),
-            },
+            name: "verity".into(),
+            ..Default::default()
         };
-        builder.add_node((&vfs).into());
+
+        builder.add_node((&verity_dev).into());
 
         assert_eq!(
             builder.build().unwrap_err(),
             StorageGraphBuildError::NonExistentReference {
-                node_identifier: StorageGraphNode::from(&vfs).identifier(),
-                kind: BlkDevReferrerKind::FilesystemVerity,
+                node_identifier: StorageGraphNode::from(&verity_dev).identifier(),
+                kind: BlkDevReferrerKind::VerityDevice,
                 target_id: "nonexistent-hash-partition".into()
             }
         );

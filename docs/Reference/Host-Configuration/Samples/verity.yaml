@@ -15,7 +15,7 @@ storage:
     - id: boot
       type: xbootldr
       size: 512M
-    - id: root
+    - id: root-data
       type: root
       size: 8G
     - id: root-hash
@@ -85,22 +85,17 @@ storage:
     mountPoint:
       path: /home
       options: defaults
-  verityFilesystems:
-  - name: root
-    dataDeviceId: root
-    hashDeviceId: root-hash
-    dataImage:
-      url: file:///trident_cdrom/data/verity_root.rawzst
-      sha256: c2ce64662fbe2fa0b30a878c11aac71cb9f1ef27f59a157362ccc0881df47293
-      format: raw-zst
-    hashImage:
-      url: file:///trident_cdrom/data/verity_roothash.rawzst
-      sha256: e875214b5ba8aac92203b72dbf0f78d673a16bd3c2a6f3577bcf4ed5d7c903af
-      format: raw-zst
+  - deviceId: root
     type: ext4
     mountPoint:
       path: /
       options: ro
+  verity:
+  - id: root
+    name: root
+    dataDeviceId: root-data
+    hashDeviceId: root-hash
+    corruptionOption: io-error
 scripts:
   postConfigure:
   - name: rw-overlay

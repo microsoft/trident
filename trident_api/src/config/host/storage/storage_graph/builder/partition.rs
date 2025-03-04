@@ -193,7 +193,6 @@ pub(super) fn check_partition_types(graph: &StoragePetgraph) -> Result<(), Stora
             StorageGraphNode::FileSystem(fs) => {
                 fs.mount_point.as_ref().map(|mntp| mntp.path.as_path())
             }
-            StorageGraphNode::VerityFileSystem(vfs) => Some(vfs.mount_point.path.as_path()),
             _ => None,
         };
 

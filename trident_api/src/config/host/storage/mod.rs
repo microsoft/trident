@@ -33,7 +33,7 @@ pub mod verity;
 use self::{
     disks::Disk,
     encryption::Encryption,
-    filesystem::{FileSystem, FileSystemSource, MountPointInfo, VerityFileSystem},
+    filesystem::{FileSystem, FileSystemSource, MountPointInfo},
     imaging::{AbUpdate, Image},
     internal::InternalMountPoint,
     partitions::Partition,
@@ -73,12 +73,7 @@ pub struct Storage {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub filesystems: Vec<FileSystem>,
 
-    /// Verity filesystems in this host.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub verity_filesystems: Vec<VerityFileSystem>,
-
-    /// New API for Verity block devices.
-    #[cfg_attr(feature = "schemars", schemars(skip))]
+    /// Verity device configuration.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub verity: Vec<VerityDevice>,
 
@@ -87,20 +82,12 @@ pub struct Storage {
     /// Used internally by Trident-Core.
     #[serde(skip)]
     pub internal_mount_points: Vec<InternalMountPoint>,
-
-    /// Old API for verity devices.
-    ///
-    /// Used internally by Trident-Core.
-    #[serde(skip)]
-    pub internal_verity: Vec<VerityDevice>,
 }
 
 impl Storage {
     /// Returns whether this storage configuration is using verity.
     pub fn has_verity_device(&self) -> bool {
         !self.verity.is_empty()
-            || !self.internal_verity.is_empty()
-            || !self.verity_filesystems.is_empty()
     }
 
     /// Returns the verity device with the given ID, if it exists.
@@ -166,10 +153,6 @@ impl Storage {
             builder.add_node(fs.into());
         }
 
-        for vfs in &self.verity_filesystems {
-            builder.add_node(vfs.into());
-        }
-
         // Try to build the graph
         builder.build()
     }
@@ -181,7 +164,7 @@ impl Storage {
     pub fn validate(
         &self,
         require_root_mount_point: bool,
-    ) -> Result<(), HostConfigurationStaticValidationError> {
+    ) -> Result<StorageGraph, HostConfigurationStaticValidationError> {
         // Check basic constraints
 
         self.validate_image_urls()?;
@@ -190,16 +173,11 @@ impl Storage {
             encryption.validate()?;
         }
 
-        // Check that the new and old APIs are not used at the same time!
-        if !self.verity_filesystems.is_empty() && !self.internal_verity.is_empty() {
-            return Err(HostConfigurationStaticValidationError::VerityApiMixed);
-        }
-
         // Build the storage graph
         let graph = self.build_graph()?;
 
         // Generic function to validate the presence of a volume
-        let validate_volume_presence = move |path: &'_ Path| validate_volume_presence(&graph, path);
+        let validate_volume_presence = |path: &'_ Path| validate_volume_presence(&graph, path);
 
         // If storage configuration is requested, then
         if *self != Storage::default() {
@@ -213,20 +191,14 @@ impl Storage {
         //  - Storage configuration is requested
         //  - Other subsystems require root mount point
         //  - Verity filesystems are present
-        if require_root_mount_point
-            || *self != Storage::default()
-            || !self.verity_filesystems.is_empty()
-        {
+        if require_root_mount_point || *self != Storage::default() || !self.verity.is_empty() {
             validate_volume_presence(Path::new(ROOT_MOUNT_POINT_PATH))?;
         }
 
-        // Validation of old verity filesystems API
-        self.validate_verity_filesystems(&validate_volume_presence)?;
+        // Validation of verity devices
+        self.validate_verity_devices(validate_volume_presence)?;
 
-        // Validation of new verity devices API
-        self.validate_verity_devices(&validate_volume_presence)?;
-
-        Ok(())
+        Ok(graph)
     }
 
     /// Validate all Image.urls in HostConfiguration.Storage.Filesystems and
@@ -242,10 +214,6 @@ impl Storage {
                 FileSystemSource::EspImage(img) => all_images.push(img.clone()),
                 _ => {}
             }
-        }
-        for vfs in self.verity_filesystems.iter() {
-            all_images.push(vfs.data_image.clone());
-            all_images.push(vfs.hash_image.clone());
         }
 
         all_images
@@ -438,153 +406,16 @@ impl Storage {
         Ok(())
     }
 
-    /// Validates the verity filesystem configuration.
-    fn validate_verity_filesystems(
-        &self,
-        validate_volume_presence: impl Fn(&Path) -> Result<(), HostConfigurationStaticValidationError>,
-    ) -> Result<(), HostConfigurationStaticValidationError> {
-        // Return early if no verity filesystems are present
-        if self.verity_filesystems.is_empty() {
-            trace!("No verity filesystems found in the host configuration, skipping validation");
-            return Ok(());
-        }
-
-        trace!("Validating verity filesystems in the host configuration");
-
-        // Verity is only supported for root volume, verify the input is not
-        // asking for something else
-        if self.verity_filesystems.len() > 1 {
-            return Err(HostConfigurationStaticValidationError::UnsupportedVerityDevices);
-        }
-
-        // Get the root verity fs
-        let vfs = &self.verity_filesystems[0];
-
-        // Ensure the verity fs is mounted at root
-        if vfs.mount_point.path != Path::new(ROOT_MOUNT_POINT_PATH) {
-            return Err(HostConfigurationStaticValidationError::UnsupportedVerityDevices);
-        }
-
-        // If root verity is required, we also require dedicated /boot
-        // partition, as we otherwise cannot modify grub configuration and
-        // kernel command line.
-        validate_volume_presence(Path::new(BOOT_MOUNT_POINT_PATH))?;
-
-        // For root verity, we also require an overlay for /etc, so that we can
-        // inject configuration generated by Trident. This overlay needs to be
-        // stored on a separate partition, as the root partition is read-only.
-        // For the initial release, we are not exposing configuration of this
-        // overlay backing partition to user, but instead, we will expect
-        // /var/lib/trident-overlay to be present and use it as the backing
-        // partition for the overlay. /var/lib/trident-overlay needs to be
-        // backed by an A/B update volume pair and not reside on a read-only
-        // volume.
-        let overlay_support_mount_point =
-            self.path_to_mount_point_info(TRIDENT_OVERLAY_PATH).ok_or(
-                HostConfigurationStaticValidationError::ExpectedMountPointNotFound {
-                    mount_point_path: TRIDENT_OVERLAY_PATH.into(),
-                },
-            )?;
-
-        // Make sure the overlay is backed by a block device
-        let overlay_block_device_id = overlay_support_mount_point.device_id.ok_or(
-            HostConfigurationStaticValidationError::MountPointNotBackedByBlockDevice {
-                mount_point_path: TRIDENT_OVERLAY_PATH.into(),
-            },
-        )?;
-
-        // If some ab_update is present, the overlay must be also on an A/B volume.
-        if let Some(ab_update) = &self.ab_update {
-            if !ab_update
-                .volume_pairs
-                .iter()
-                .any(|p| p.id == *overlay_block_device_id)
-            {
-                return Err(
-                    HostConfigurationStaticValidationError::MountPointNotBackedByAbUpdateVolumePair {
-                        mount_point_path: TRIDENT_OVERLAY_PATH.into(),
-                    },
-                );
-            }
-        }
-
-        // Ensure the overlay is not on a read-only volume
-        if overlay_support_mount_point
-            .mount_point
-            .options
-            .contains(MOUNT_OPTION_READ_ONLY)
-        {
-            return Err(
-                HostConfigurationStaticValidationError::OverlayOnReadOnlyVolume {
-                    overlay_path: TRIDENT_OVERLAY_PATH.into(),
-                    mount_point_path: overlay_support_mount_point
-                        .mount_point
-                        .path
-                        .to_string_lossy()
-                        .to_string(),
-                },
-            );
-        }
-
-        // Ensure the overlay is not on a verity protected volume
-        if self
-            .verity_filesystems
-            .iter()
-            .any(|v| v.data_device_id.as_str() == overlay_block_device_id)
-        {
-            return Err(
-                HostConfigurationStaticValidationError::OverlayOnVerityProtectedVolume {
-                    overlay_path: TRIDENT_OVERLAY_PATH.into(),
-                    mount_point_path: overlay_support_mount_point
-                        .mount_point
-                        .path
-                        .to_string_lossy()
-                        .to_string(),
-                },
-            );
-        }
-
-        // Ensure the root verity fs name is set to 'root', as that is what the dracut verity
-        // module expects.
-        if vfs.name != "root" {
-            return Err(
-                HostConfigurationStaticValidationError::RootVerityDeviceNameInvalid {
-                    device_name: vfs.name.clone(),
-                },
-            );
-        }
-
-        // Ensure the root verity device is mounted read-only at /.
-        if !vfs.mount_point.options.contains(MOUNT_OPTION_READ_ONLY) {
-            return Err(
-                HostConfigurationStaticValidationError::VerityDeviceMountedReadWrite {
-                    device_name: vfs.name.clone(),
-                    mount_point_path: vfs.mount_point.path.to_string_lossy().to_string(),
-                },
-            );
-        }
-
-        Ok(())
-    }
-
     /// Get an iterator over all the mount points in the storage configuration.
     pub fn mount_point_info(&self) -> impl Iterator<Item = MountPointInfo<'_>> {
-        self.filesystems
-            .iter()
-            .filter_map(|fs| {
-                fs.mount_point.as_ref().map(|mp| MountPointInfo {
-                    mount_point: mp,
-                    fs_type: fs.fs_type,
-                    is_verity: false,
-                    device_id: fs.device_id.as_ref(),
-                })
+        self.filesystems.iter().filter_map(|fs| {
+            fs.mount_point.as_ref().map(|mp| MountPointInfo {
+                mount_point: mp,
+                fs_type: fs.fs_type,
+                is_verity: false,
+                device_id: fs.device_id.as_ref(),
             })
-            .chain(self.verity_filesystems.iter().map(|vfs| MountPointInfo {
-                mount_point: &vfs.mount_point,
-                fs_type: vfs.fs_type,
-                is_verity: true,
-                device_id: Some(&vfs.data_device_id),
-            }))
+        })
     }
 
     /// Get a MountPointInfo instance for the device corresponding to the given device_id.
@@ -643,30 +474,11 @@ impl Storage {
             None => true,
         };
 
-        let mut images = self
-            .filesystems
+        self.filesystems
             .iter()
             .filter_map(|fs| fs.device_id.clone().zip(fs.source.image().cloned()))
             .filter(|(device_id, _)| apply_filter(device_id))
-            .collect::<Vec<_>>();
-
-        let verity_images = self
-            .verity_filesystems
-            .iter()
-            .flat_map(|vf| {
-                let mut imgs = vec![];
-                if apply_filter(&vf.data_device_id) {
-                    imgs.push((vf.data_device_id.clone(), vf.data_image.clone()));
-                }
-                if apply_filter(&vf.hash_device_id) {
-                    imgs.push((vf.hash_device_id.clone(), vf.hash_image.clone()));
-                }
-                imgs
-            })
-            .collect::<Vec<_>>();
-
-        images.extend(verity_images);
-        images
+            .collect::<Vec<_>>()
     }
 
     /// Returns a list of tuples (device ID, image) that represent all images on the block devices,
@@ -1008,26 +820,22 @@ mod tests {
             .filesystems
             .retain(|fs| fs.device_id != Some("root".into()));
         storage.ab_update = None;
-        storage.verity_filesystems = vec![VerityFileSystem {
+        storage.verity = vec![VerityDevice {
+            id: "root".into(),
             name: "root".into(),
             data_device_id: "root-a".into(),
             hash_device_id: "root-a-verity".into(),
-            data_image: Image {
-                url: "file:///root.raw.zst".into(),
-                sha256: ImageSha256::Ignored,
-                format: ImageFormat::RawZst,
-            },
-            hash_image: Image {
-                url: "file:///root-verity.raw.zst".into(),
-                sha256: ImageSha256::Ignored,
-                format: ImageFormat::RawZst,
-            },
+            ..Default::default()
+        }];
+        storage.filesystems.push(FileSystem {
+            device_id: Some("root".into()),
             fs_type: FileSystemType::Ext4,
-            mount_point: MountPoint {
+            source: FileSystemSource::OsImage,
+            mount_point: Some(MountPoint {
                 path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                 options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
-            },
-        }];
+            }),
+        });
 
         storage
     }
@@ -2449,7 +2257,13 @@ mod tests {
         let mut storage: Storage = get_verity_storage();
 
         // Remove "ro" from the mount options
-        storage.verity_filesystems[0].mount_point.options = MountOptions::empty();
+        storage
+            .filesystems
+            .iter_mut()
+            .filter_map(|fs| fs.mount_point.as_mut())
+            .find(|mp| mp.path == Path::new(ROOT_MOUNT_POINT_PATH))
+            .unwrap()
+            .options = MountOptions::empty();
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
@@ -2465,7 +2279,7 @@ mod tests {
         let mut storage: Storage = get_verity_storage();
 
         // Swap the name
-        storage.verity_filesystems[0].name = "verity-root-a".into();
+        storage.verity[0].name = "verity-root-a".into();
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
@@ -3237,32 +3051,6 @@ mod tests {
                     mount_point: None,
                 },
             ],
-            verity_filesystems: vec![
-                VerityFileSystem {
-                    data_image: valid_http_image.clone(),
-                    hash_image: valid_http_image.clone(),
-                    name: "a".to_string(),
-                    data_device_id: "a".to_string(),
-                    hash_device_id: "a".to_string(),
-                    fs_type: FileSystemType::Ext4,
-                    mount_point: MountPoint {
-                        path: "mp".to_string().into(),
-                        options: MountOptions::new("opt"),
-                    },
-                },
-                VerityFileSystem {
-                    data_image: valid_local_image.clone(),
-                    hash_image: valid_local_image.clone(),
-                    name: "a".to_string(),
-                    data_device_id: "a".to_string(),
-                    hash_device_id: "a".to_string(),
-                    fs_type: FileSystemType::Ext4,
-                    mount_point: MountPoint {
-                        path: "mp".to_string().into(),
-                        options: MountOptions::new("opt"),
-                    },
-                },
-            ],
             ..Default::default()
         };
         // Check when ALL images/espimage are valid
@@ -3283,22 +3071,6 @@ mod tests {
             }
             assert_eq!(
                 storage_clone.validate_image_urls().unwrap_err(),
-                expected_error
-            );
-        }
-        // Check that any invalid image in verity_filesystems will signal failure
-        for i in 0..storage.verity_filesystems.len() {
-            let mut storage_data_image_test = storage.clone();
-            storage_data_image_test.verity_filesystems[i].data_image = schemeless_image.clone();
-            assert_eq!(
-                storage_data_image_test.validate_image_urls().unwrap_err(),
-                expected_error
-            );
-
-            let mut storage_hash_image_test = storage.clone();
-            storage_hash_image_test.verity_filesystems[i].hash_image = schemeless_image.clone();
-            assert_eq!(
-                storage_hash_image_test.validate_image_urls().unwrap_err(),
                 expected_error
             );
         }

@@ -15,10 +15,10 @@ use osutils::{
 use trident_api::{
     config::{self, InternalMountPoint, VerityDevice},
     constants::{
-        BOOT_RELATIVE_MOUNT_POINT_PATH, GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH,
-        GRUB2_DIRECTORY, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH,
-        TRIDENT_OVERLAY_LOWER_RELATIVE_PATH, TRIDENT_OVERLAY_PATH,
-        TRIDENT_OVERLAY_UPPER_RELATIVE_PATH, TRIDENT_OVERLAY_WORK_RELATIVE_PATH,
+        BOOT_RELATIVE_MOUNT_POINT_PATH, GRUB2_CONFIG_FILENAME, GRUB2_DIRECTORY,
+        MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH, TRIDENT_OVERLAY_LOWER_RELATIVE_PATH,
+        TRIDENT_OVERLAY_PATH, TRIDENT_OVERLAY_UPPER_RELATIVE_PATH,
+        TRIDENT_OVERLAY_WORK_RELATIVE_PATH,
     },
 };
 
@@ -26,9 +26,6 @@ use crate::engine::EngineContext;
 
 /// GRUB config path relative to the `/boot` directory.
 const GRUB_CONFIG_PATH: &str = formatcp!("{}/{}", GRUB2_DIRECTORY, GRUB2_CONFIG_FILENAME);
-
-/// Indicates to dracut whether to activate verity. This is a boolean value.
-const KARG_VERITY_ENABLED: &str = "rd.systemd.verity";
 
 /// Points to a block device with root volume data.
 const KARG_VERITY_ROOT_DATA_DEV: &str = "systemd.verity_root_data";
@@ -38,23 +35,6 @@ const KARG_VERITY_ROOT_HASH_DEV: &str = "systemd.verity_root_hash";
 
 /// Holds a comma-separated list of overlayfs paths.
 const KARG_OVERLAYS: &str = "rd.overlayfs";
-
-/// Checks if verity is enabled in the GRUB config.
-pub(super) fn check_verity_enabled(grub_config_path: &Path) -> Result<bool, Error> {
-    debug!(
-        "Reading GRUB config at path '{}'",
-        grub_config_path.display(),
-    );
-    let mut grub_config = GrubConfig::read(grub_config_path)?;
-
-    if !grub_config.contains_linux_command_line_argument(KARG_VERITY_ENABLED)? {
-        return Ok(false);
-    }
-
-    let verity_value = grub_config.read_linux_command_line_argument(KARG_VERITY_ENABLED)?;
-
-    Ok(verity_value == "1" || verity_value == "yes")
-}
 
 /// Create read-only /etc/ overlay mount point representation.
 pub(super) fn create_etc_overlay_mount_point() -> InternalMountPoint {
@@ -172,9 +152,8 @@ fn configure_root_verity_grub_azl2(
     let verity_device = &ctx
         .spec
         .storage
-        .internal_verity
+        .verity
         .first()
-        .or(ctx.spec.storage.verity.first())
         .context("No verity device found")?;
 
     let mut grub_config = GrubConfig::read(
@@ -237,10 +216,7 @@ fn configure_root_verity_grub_azl2(
 /// configurations. Returns whether verity is enabled, or error if there is some
 /// indication of misconfiguration (e.g. images are verity enabled, but HC is
 /// not and vice-versa).
-pub(super) fn validate_verity_compatibility(
-    ctx: &EngineContext,
-    new_root: &Path,
-) -> Result<bool, Error> {
+pub(super) fn validate_verity_compatibility(ctx: &EngineContext) -> Result<bool, Error> {
     let root_verity_in_image = if let Some(os_img) = ctx.image.as_ref() {
         // Prefer checking the OS image for verity configuration when possible.
         os_img
@@ -254,8 +230,7 @@ pub(super) fn validate_verity_compatibility(
             .verity
             .is_some()
     } else {
-        // Fall back to the GRUB config when the OS image is not available.
-        check_verity_enabled(&new_root.join(GRUB2_CONFIG_RELATIVE_PATH))?
+        bail!("No OS image provided to validate verity compatibility")
     };
 
     match (root_verity_in_image, ctx.spec.storage.has_verity_device()) {
@@ -274,7 +249,7 @@ pub(super) fn validate_verity_compatibility(
 mod tests {
     use super::*;
 
-    use std::{fs, path::PathBuf, str::FromStr};
+    use std::{path::PathBuf, str::FromStr};
 
     use maplit::btreemap;
 
@@ -283,33 +258,6 @@ mod tests {
     use trident_api::config::{
         Disk, FileSystemType, Partition, PartitionSize, PartitionType, Storage,
     };
-
-    fn get_original_grub_content() -> &'static str {
-        indoc::indoc! {r#"
-            set timeout=0
-            set bootprefix=/boot
-            search -n -u 9e6a9d2c-b7fe-4359-ac45-18b505e29d8b -s
-
-            load_env -f $bootprefix/mariner.cfg
-            if [ -f  $bootprefix/systemd.cfg ]; then
-                    load_env -f $bootprefix/systemd.cfg
-            else
-                    set systemd_cmdline=net.ifnames=0
-            fi
-            if [ -f $bootprefix/grub2/grubenv ]; then
-                    load_env -f $bootprefix/grub2/grubenv
-            fi
-
-            set rootdevice=PARTUUID=29f8eed2-3c85-4da0-b32e-480e54379766
-
-            menuentry "CBL-Mariner" {
-                    linux $bootprefix/$mariner_linux   rd.auto=1 root=$rootdevice $mariner_cmdline lockdown=integrity sysctl.kernel.unprivileged_bpf_disabled=1 $systemd_cmdline console=tty0 console=ttyS0 $kernelopts
-                    if [ -f $bootprefix/$mariner_initrd ]; then
-                            initrd $bootprefix/$mariner_initrd
-                    fi
-            }"#
-        }
-    }
 
     #[test]
     fn test_create_etc_overlay_mount_point() {
@@ -326,53 +274,6 @@ mod tests {
                 ],
                 target_id: "".into()
             }
-        );
-    }
-
-    #[test]
-    fn test_check_verity_enabled() {
-        let original_content_grub_boot = get_original_grub_content();
-        let grub_config_file = tempfile::NamedTempFile::new().unwrap();
-        fs::write(grub_config_file.path(), original_content_grub_boot).unwrap();
-
-        assert!(!check_verity_enabled(grub_config_file.path()).unwrap());
-
-        let mut grub_config = GrubConfig::read(grub_config_file.path()).unwrap();
-        grub_config
-            .append_linux_command_line_argument(KARG_VERITY_ENABLED, "1")
-            .unwrap();
-        grub_config.write().unwrap();
-
-        assert!(check_verity_enabled(grub_config_file.path()).unwrap());
-
-        grub_config
-            .append_linux_command_line_argument(KARG_VERITY_ENABLED, "0")
-            .unwrap();
-        grub_config.write().unwrap();
-
-        assert!(!check_verity_enabled(grub_config_file.path()).unwrap());
-
-        grub_config
-            .append_linux_command_line_argument(KARG_VERITY_ENABLED, "yes")
-            .unwrap();
-        grub_config.write().unwrap();
-
-        assert!(check_verity_enabled(grub_config_file.path()).unwrap());
-
-        grub_config
-            .append_linux_command_line_argument(KARG_VERITY_ENABLED, "no")
-            .unwrap();
-        grub_config.write().unwrap();
-
-        assert!(!check_verity_enabled(grub_config_file.path()).unwrap());
-
-        // test non-existing input
-        assert_eq!(
-            check_verity_enabled(Path::new("/non-existing"))
-                .unwrap_err()
-                .root_cause()
-                .to_string(),
-            "GRUB config does not exist at path: '/non-existing'"
         );
     }
 
@@ -414,7 +315,7 @@ mod tests {
                         target_id: "overlay".to_string(),
                         options: vec!["defaults".to_string()],
                     }],
-                    internal_verity: vec![VerityDevice {
+                    verity: vec![VerityDevice {
                         id: "root-verity".into(),
                         name: "root".into(),
                         data_device_id: "root".into(),
@@ -435,7 +336,7 @@ mod tests {
         };
 
         let (verity_data_path, verity_hash_path) =
-            get_verity_device_paths(&ctx, &ctx.spec.storage.internal_verity[0]).unwrap();
+            get_verity_device_paths(&ctx, &ctx.spec.storage.verity[0]).unwrap();
         let overlay_device_path = get_verity_overlay_device_path(&ctx).unwrap();
         assert_eq!(verity_data_path, PathBuf::from("/dev/sdb2"));
         assert_eq!(verity_hash_path, PathBuf::from("/dev/sdb3"));
@@ -460,14 +361,14 @@ mod tests {
         ctx_no_verity_data
             .spec
             .storage
-            .internal_verity
+            .verity
             .get_mut(0)
             .unwrap()
             .data_device_id = "non-existing".into();
         assert_eq!(
             get_verity_device_paths(
                 &ctx_no_verity_data,
-                &ctx_no_verity_data.spec.storage.internal_verity[0]
+                &ctx_no_verity_data.spec.storage.verity[0]
             )
             .unwrap_err()
             .to_string(),
@@ -479,14 +380,14 @@ mod tests {
         ctx_no_verity_hash
             .spec
             .storage
-            .internal_verity
+            .verity
             .get_mut(0)
             .unwrap()
             .hash_device_id = "non-existing".into();
         assert_eq!(
             get_verity_device_paths(
                 &ctx_no_verity_hash,
-                &ctx_no_verity_hash.spec.storage.internal_verity[0]
+                &ctx_no_verity_hash.spec.storage.verity[0]
             )
             .unwrap_err()
             .to_string(),
@@ -619,7 +520,7 @@ mod functional_test {
                             options: vec!["defaults".to_string()],
                         },
                     ],
-                    internal_verity: vec![VerityDevice {
+                    verity: vec![VerityDevice {
                         id: "root-verity".into(),
                         name: "root".into(),
                         data_device_id: "root".into(),

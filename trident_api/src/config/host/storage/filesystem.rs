@@ -60,33 +60,6 @@ pub struct FileSystem {
     pub mount_point: Option<MountPoint>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[cfg_attr(feature = "schemars", derive(JsonSchema))]
-pub struct VerityFileSystem {
-    /// Name of the verity device, used for the device mapper name
-    pub name: String,
-
-    /// The ID of the block device to associate with the file system.
-    pub data_device_id: BlockDeviceId,
-
-    /// The ID of the block device containing the hash.
-    pub hash_device_id: BlockDeviceId,
-
-    /// The image to use for the data device.
-    pub data_image: Image,
-
-    /// The image to use for the hash device.
-    pub hash_image: Image,
-
-    /// The file system type.
-    #[serde(rename = "type")]
-    pub fs_type: FileSystemType,
-
-    /// The mount point of the file system.
-    pub mount_point: MountPoint,
-}
-
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields, tag = "type")]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
@@ -354,16 +327,6 @@ impl FileSystem {
         .filter_map(|(k, v)| v.map(|v| format!("{}:{}", k, v)))
         .collect::<Vec<_>>()
         .join(", ")
-    }
-}
-
-impl VerityFileSystem {
-    /// Provide a quick description of the verity filesystem.
-    pub fn description(&self) -> String {
-        format!(
-            "'{}' on devices data: '{}', hash: '{}'",
-            self.name, self.data_device_id, self.hash_device_id
-        )
     }
 }
 

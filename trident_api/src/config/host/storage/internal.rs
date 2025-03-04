@@ -2,11 +2,7 @@ use std::path::PathBuf;
 
 use log::trace;
 
-use crate::{
-    config::{FileSystemType, VerityDevice},
-    misc::IdGenerator,
-    BlockDeviceId,
-};
+use crate::{config::FileSystemType, BlockDeviceId};
 
 use super::Storage;
 
@@ -46,13 +42,10 @@ impl Storage {
     /// This function assumes that the storage configuration has been validated.
     ///
     /// The function will populate:
-    /// - `images` with the images to be written to the block devices
-    /// - `mount_points` with the mount points to be created
-    /// - `verity` with the verity devices to be created
+    /// - `internal_mount_points` with the mount points to be created
     ///
     /// Based on the external API fields:
     /// - `filesystems`
-    /// - `verity_filesystems`
     pub fn populate_internal(&mut self) {
         // Clear any previous internal configuration
         self.internal_mount_points.clear();
@@ -80,28 +73,6 @@ impl Storage {
             }
         });
 
-        let mut verity_id_gen = IdGenerator::new("verity");
-
-        // Next, go over all verity filesystems
-        for vfs in self.verity_filesystems.iter() {
-            let verity_device_id = verity_id_gen.next_id();
-
-            self.internal_verity.push(VerityDevice {
-                id: verity_device_id.clone(),
-                name: vfs.name.clone(),
-                data_device_id: vfs.data_device_id.clone(),
-                hash_device_id: vfs.hash_device_id.clone(),
-                ..Default::default()
-            });
-
-            self.internal_mount_points.push(InternalMountPoint {
-                path: vfs.mount_point.path.clone(),
-                filesystem: vfs.fs_type,
-                options: vfs.mount_point.options.to_string_vec(),
-                target_id: verity_device_id,
-            });
-        }
-
         trace!(
             "Internal mount point configuration:\n{:#?}",
             self.internal_mount_points
@@ -113,8 +84,7 @@ impl Storage {
 mod tests {
     use crate::{
         config::{
-            FileSystem, FileSystemSource, Image, ImageFormat, ImageSha256, MountOptions,
-            MountPoint, VerityFileSystem,
+            FileSystem, FileSystemSource, Image, ImageFormat, ImageSha256, MountOptions, MountPoint,
         },
         constants::SWAP_MOUNT_POINT,
     };
@@ -151,8 +121,6 @@ mod tests {
                 target_id: "/dev/sda1".to_string(),
             }]
         );
-
-        assert!(storage.verity_filesystems.is_empty());
     }
 
     #[test]
@@ -181,8 +149,6 @@ mod tests {
                 target_id: "/dev/sda1".to_string(),
             }]
         );
-
-        assert!(storage.verity_filesystems.is_empty());
     }
 
     #[test]
@@ -204,8 +170,6 @@ mod tests {
         storage.populate_internal();
 
         assert!(storage.internal_mount_points.is_empty());
-
-        assert!(storage.verity_filesystems.is_empty());
     }
 
     #[test]
@@ -231,8 +195,6 @@ mod tests {
                 target_id: "/dev/sda1".to_string(),
             }]
         );
-
-        assert!(storage.verity_filesystems.is_empty());
     }
 
     #[test]
@@ -261,8 +223,6 @@ mod tests {
                 target_id: "".into(),
             }]
         );
-
-        assert!(storage.verity_filesystems.is_empty());
     }
 
     #[test]
@@ -295,58 +255,6 @@ mod tests {
                     "upperdir=/mnt/data-overlay".into(),
                 ],
                 target_id: "".to_string(),
-            }]
-        );
-
-        assert!(storage.verity_filesystems.is_empty());
-    }
-
-    #[test]
-    fn test_populate_verity() {
-        let mut storage = Storage {
-            verity_filesystems: vec![VerityFileSystem {
-                name: "my-verity-device".to_string(),
-                data_device_id: "/dev/sda1".to_string(),
-                hash_device_id: "/dev/sda2".to_string(),
-                data_image: Image {
-                    url: "file:///path/to/data/image".to_string(),
-                    sha256: ImageSha256::Checksum("aaaa".into()),
-                    format: ImageFormat::RawZst,
-                },
-                hash_image: Image {
-                    url: "file:///path/to/hash/image".to_string(),
-                    sha256: ImageSha256::Ignored,
-                    format: ImageFormat::RawZst,
-                },
-                fs_type: FileSystemType::Ext4,
-                mount_point: MountPoint {
-                    path: PathBuf::from("/"),
-                    options: MountOptions::defaults(),
-                },
-            }],
-            ..Default::default()
-        };
-
-        storage.populate_internal();
-
-        assert_eq!(
-            storage.internal_mount_points,
-            vec![InternalMountPoint {
-                path: PathBuf::from("/"),
-                filesystem: FileSystemType::Ext4,
-                options: vec!["defaults".to_string()],
-                target_id: "verity-0".to_string(),
-            }]
-        );
-
-        assert_eq!(
-            storage.internal_verity,
-            vec![VerityDevice {
-                id: "verity-0".to_string(),
-                name: "my-verity-device".to_string(),
-                data_device_id: "/dev/sda1".to_string(),
-                hash_device_id: "/dev/sda2".to_string(),
-                ..Default::default()
             }]
         );
     }

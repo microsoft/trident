@@ -200,7 +200,6 @@ impl BlkDevReferrerKind {
             Self::FileSystem => ValidCardinality::new_at_most(1),
             Self::FileSystemEsp => ValidCardinality::new_exact(1),
             Self::FileSystemAdopted => ValidCardinality::new_exact(1),
-            Self::FilesystemVerity => ValidCardinality::new_exact(2),
             Self::FileSystemOsImage => ValidCardinality::new_exact(1),
         }
     }
@@ -229,7 +228,7 @@ impl BlkDevReferrerKind {
                     | BlkDevKindFlag::RaidArray
             }
             Self::FileSystemAdopted => BlkDevKindFlag::AdoptedPartition,
-            Self::VerityDevice | Self::FilesystemVerity => {
+            Self::VerityDevice => {
                 BlkDevKindFlag::Partition | BlkDevKindFlag::RaidArray | BlkDevKindFlag::ABVolume
             }
         }
@@ -273,7 +272,6 @@ impl BlkDevReferrerKind {
             | Self::FileSystem
             | Self::FileSystemEsp
             | Self::FileSystemAdopted
-            | Self::FilesystemVerity
             | Self::FileSystemOsImage => BlkDevReferrerKindFlag::empty(),
         }
     }
@@ -289,11 +287,7 @@ impl BlkDevReferrerKind {
             Self::None => false,
 
             // These should always have homogeneous reference kinds.
-            Self::RaidArray
-            | Self::ABVolume
-            | Self::EncryptedVolume
-            | Self::VerityDevice
-            | Self::FilesystemVerity => true,
+            Self::RaidArray | Self::ABVolume | Self::EncryptedVolume | Self::VerityDevice => true,
 
             // These only have one target, so enforcing this is meaningless.
             Self::FileSystem
@@ -400,7 +394,7 @@ impl BlkDevReferrerKind {
             Self::ABVolume => true,
 
             // Verity allows for data and hash devices to have different sizes.
-            Self::VerityDevice | Self::FilesystemVerity => false,
+            Self::VerityDevice => false,
 
             // These don't really care about partition sizes.
             Self::EncryptedVolume
@@ -424,7 +418,7 @@ impl BlkDevReferrerKind {
             Self::RaidArray | Self::ABVolume => true,
 
             // Verity devices *expect* heterogeneous partition types.
-            Self::FilesystemVerity | Self::VerityDevice => false,
+            Self::VerityDevice => false,
 
             // These care about having all underlying partitions be of the same
             // type.
@@ -479,7 +473,7 @@ impl BlkDevReferrerKind {
                 AllowBlockList::Block(vec![PartitionType::Esp])
             }
             Self::FileSystemEsp => AllowBlockList::Allow(vec![PartitionType::Esp]),
-            Self::FilesystemVerity | Self::VerityDevice => {
+            Self::VerityDevice => {
                 // TODO: Add usr when it's supported.
                 AllowBlockList::Allow(vec![
                     PartitionType::Root,
@@ -587,7 +581,6 @@ impl BlkDevReferrerKind {
             | Self::FileSystem
             | Self::FileSystemEsp
             | Self::FileSystemAdopted
-            | Self::FilesystemVerity
             | Self::FileSystemOsImage => (),
         }
 

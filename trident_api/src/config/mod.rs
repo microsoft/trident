@@ -19,7 +19,6 @@ pub use host::{
         encryption::{EncryptedVolume, Encryption},
         filesystem::{
             FileSystem, FileSystemSource, FileSystemType, MountOptions, MountPoint, MountPointInfo,
-            VerityFileSystem,
         },
         internal::InternalMountPoint,
         partitions::{AdoptedPartition, Partition, PartitionSize, PartitionType},

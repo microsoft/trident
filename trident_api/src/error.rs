@@ -418,9 +418,6 @@ pub enum ServicingError {
     #[error("Failed to get block device path of root verity data device")]
     GetRootVerityDataDevPath,
 
-    #[error("Failed to get configuration for root verity device")]
-    GetRootVerityDeviceConfig,
-
     #[error("Failed to get SELINUX")]
     GetSelinuxMode,
 

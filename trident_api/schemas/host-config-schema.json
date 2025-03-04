@@ -498,38 +498,6 @@
         }
       ]
     },
-    "Image": {
-      "description": "Per image configuration.",
-      "type": "object",
-      "required": [
-        "format",
-        "sha256",
-        "url"
-      ],
-      "properties": {
-        "format": {
-          "description": "The format of the image.",
-          "allOf": [
-            {
-              "$ref": "#/definitions/ImageFormat"
-            }
-          ]
-        },
-        "sha256": {
-          "description": "The SHA256 checksum of the compressed image.\n\nThe hash is computed over the compressed contents of the image, not the uncompressed output that will be written to the block device. This value is used to verify the integrity of the image.",
-          "allOf": [
-            {
-              "$ref": "#/definitions/ImageSha256"
-            }
-          ]
-        },
-        "url": {
-          "description": "The URL of the image.\n\nSupported schemes are: `file`, `http`, and `https`.",
-          "type": "string"
-        }
-      },
-      "additionalProperties": false
-    },
     "ImageFormat": {
       "description": "Image format.",
       "oneOf": [
@@ -1362,11 +1330,11 @@
             }
           ]
         },
-        "verityFilesystems": {
-          "description": "Verity filesystems in this host.",
+        "verity": {
+          "description": "Verity device configuration.",
           "type": "array",
           "items": {
-            "$ref": "#/definitions/VerityFileSystem"
+            "$ref": "#/definitions/VerityDevice"
           }
         }
       },
@@ -1472,61 +1440,76 @@
       },
       "additionalProperties": false
     },
-    "VerityFileSystem": {
+    "VerityCorruptionOption": {
+      "description": "Corruption option for verity.",
+      "oneOf": [
+        {
+          "title": "IO-Error",
+          "description": "Fails the I/O operation with an I/O error.",
+          "type": "string",
+          "enum": [
+            "io-error"
+          ]
+        },
+        {
+          "title": "Ignore",
+          "description": "Ignores the corruption and continues operation.",
+          "type": "string",
+          "enum": [
+            "ignore"
+          ]
+        },
+        {
+          "title": "Panic",
+          "description": "Causes the system to panic (print errors) and then try restarting.",
+          "type": "string",
+          "enum": [
+            "panic"
+          ]
+        },
+        {
+          "title": "Restart",
+          "description": "Attempts to restart the system.",
+          "type": "string",
+          "enum": [
+            "restart"
+          ]
+        }
+      ]
+    },
+    "VerityDevice": {
+      "description": "Verity device configuration.",
       "type": "object",
       "required": [
         "dataDeviceId",
-        "dataImage",
         "hashDeviceId",
-        "hashImage",
-        "mountPoint",
-        "name",
-        "type"
+        "id",
+        "name"
       ],
       "properties": {
-        "dataDeviceId": {
-          "description": "The ID of the block device to associate with the file system.",
-          "type": "string"
-        },
-        "dataImage": {
-          "description": "The image to use for the data device.",
+        "corruptionOption": {
+          "default": "io-error",
           "allOf": [
             {
-              "$ref": "#/definitions/Image"
+              "$ref": "#/definitions/VerityCorruptionOption"
             }
           ]
+        },
+        "dataDeviceId": {
+          "description": "The ID of the partition to use as the verity data partition.",
+          "type": "string"
         },
         "hashDeviceId": {
-          "description": "The ID of the block device containing the hash.",
+          "description": "The ID of the partition to use as the verity hash partition.",
           "type": "string"
         },
-        "hashImage": {
-          "description": "The image to use for the hash device.",
-          "allOf": [
-            {
-              "$ref": "#/definitions/Image"
-            }
-          ]
-        },
-        "mountPoint": {
-          "description": "The mount point of the file system.",
-          "allOf": [
-            {
-              "$ref": "#/definitions/MountPoint"
-            }
-          ]
+        "id": {
+          "description": "Block device id of the verity device.",
+          "type": "string"
         },
         "name": {
-          "description": "Name of the verity device, used for the device mapper name",
+          "description": "Name of the verity device, used for the device mapper name.\n\nThe value must be \"root\" for root partition \"/\".",
           "type": "string"
-        },
-        "type": {
-          "description": "The file system type.",
-          "allOf": [
-            {
-              "$ref": "#/definitions/FileSystemType"
-            }
-          ]
         }
       },
       "additionalProperties": false

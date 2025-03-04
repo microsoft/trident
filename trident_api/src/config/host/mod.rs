@@ -1,15 +1,10 @@
-use std::path::Path;
-
 use log::warn;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 
-use crate::{
-    constants::{MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
-    is_default,
-};
+use crate::is_default;
 
 pub(crate) mod error;
 pub(crate) mod harpoon;
@@ -90,7 +85,7 @@ impl HostConfiguration {
             || self.scripts != Scripts::default()
             || self.os != Os::default()
             || self.os.network.is_some();
-        self.storage.validate(require_root_mount_point)?;
+        let graph = self.storage.validate(require_root_mount_point)?;
         self.os.validate()?;
         self.scripts.validate()?;
         self.management_os.validate()?;
@@ -98,12 +93,7 @@ impl HostConfiguration {
 
         // If self-upgrade is requested, ensure that root is not a RO verity filesystem b/c Trident
         // will not be able to copy itself into the FS.
-        if self.trident.self_upgrade
-            && self.storage.verity_filesystems.iter().any(|v| {
-                v.mount_point.path == Path::new(ROOT_MOUNT_POINT_PATH)
-                    && v.mount_point.options.contains(MOUNT_OPTION_READ_ONLY)
-            })
-        {
+        if self.trident.self_upgrade && graph.root_fs_is_verity() {
             return Err(HostConfigurationStaticValidationError::SelfUpgradeOnReadOnlyRootVerityFs);
         }
 
@@ -116,7 +106,7 @@ impl HostConfiguration {
     fn validate_selinux_mode(&self) -> Result<(), HostConfigurationStaticValidationError> {
         // If SELinux is in `enforcing` mode, ensure that verity filesystems are not used. Warn if
         // SELinux is in `permissive` mode.
-        if !self.storage.verity_filesystems.is_empty() {
+        if !self.storage.verity.is_empty() {
             match self.os.selinux.mode {
                 Some(SelinuxMode::Enforcing) => {
                     return Err(
@@ -215,13 +205,16 @@ impl HostConfiguration {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use crate::{
         config::{
-            AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, FileSystemType, Image,
-            ImageFormat, ImageSha256, MountOptions, MountPoint, Partition, PartitionTableType,
-            PartitionType, VerityFileSystem,
+            AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, FileSystemType,
+            MountOptions, MountPoint, Partition, PartitionTableType, PartitionType, VerityDevice,
         },
-        constants::TRIDENT_DATASTORE_PATH_DEFAULT,
+        constants::{
+            MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH, TRIDENT_DATASTORE_PATH_DEFAULT,
+        },
     };
 
     use super::*;
@@ -392,7 +385,7 @@ mod tests {
                     partition_table_type: PartitionTableType::Gpt,
                     partitions: vec![
                         Partition {
-                            id: "root".to_string(),
+                            id: "root-data".to_string(),
                             partition_type: PartitionType::Root,
                             size: 0x200000000.into(), // 8GiB
                         },
@@ -404,31 +397,21 @@ mod tests {
                     ],
                     adopted_partitions: vec![],
                 }],
-                verity_filesystems: vec![VerityFileSystem {
-                    name: "root".into(),
+                verity: vec![VerityDevice {
+                    id: "root".into(),
                     data_device_id: "root".into(),
                     hash_device_id: "root-hash".into(),
-                    data_image: Image {
-                        url: "file:///trident_cdrom/data/verity_root.rawzst".into(),
-                        sha256: ImageSha256::Checksum(
-                            "c2ce64662fbe2fa0b30a878c11aac71cb9f1ef27f59a157362ccc0881df47293"
-                                .into(),
-                        ),
-                        format: ImageFormat::RawZst,
-                    },
-                    hash_image: Image {
-                        url: "file:///trident_cdrom/data/verity_roothash.rawzst".into(),
-                        sha256: ImageSha256::Checksum(
-                            "e875214b5ba8aac92203b72dbf0f78d673a16bd3c2a6f3577bcf4ed5d7c903af"
-                                .into(),
-                        ),
-                        format: ImageFormat::RawZst,
-                    },
+                    name: "root".into(),
+                    ..Default::default()
+                }],
+                filesystems: vec![FileSystem {
+                    device_id: Some("root".into()),
                     fs_type: FileSystemType::Ext4,
-                    mount_point: MountPoint {
-                        path: "/".into(),
+                    source: FileSystemSource::New,
+                    mount_point: Some(MountPoint {
+                        path: ROOT_MOUNT_POINT_PATH.into(),
                         options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
-                    },
+                    }),
                 }],
                 ..Default::default()
             },

@@ -1,15 +1,12 @@
 use std::{collections::BTreeSet, path::Path};
 
-use petgraph::visit::{Dfs, IntoNodeReferences, Walker};
+use petgraph::visit::IntoNodeReferences;
 
-use crate::{
-    config::{
-        host::storage::storage_graph::{
-            error::StorageGraphBuildError, graph::StoragePetgraph, types::FileSystemSourceKind,
-        },
-        FileSystem, VerityFileSystem,
+use crate::config::{
+    host::storage::storage_graph::{
+        error::StorageGraphBuildError, graph::StoragePetgraph, types::FileSystemSourceKind,
     },
-    storage_graph::{graph::NodeIndex, types::BlkDevKind},
+    FileSystem,
 };
 
 /// Checks all basic properties of filesystems and ensures mount points are unique.
@@ -37,32 +34,14 @@ pub(super) fn check_filesystems(graph: &StoragePetgraph) -> Result<(), StorageGr
     };
 
     // Iterate over all nodes that are filesystems and check their mount points.
-    for (node_idx, node) in graph.node_references() {
+    for (_, node) in graph.node_references() {
         let Some(fs) = node.as_filesystem() else {
             continue;
         };
 
         check_filesystem(fs)?;
-        check_filesystem_supports_verity(graph, node_idx, fs)?;
         if let Some(mount_point) = &fs.mount_point {
             check_insert_mount_point(&mount_point.path)?;
-        }
-    }
-
-    let mut unique_verity_names = BTreeSet::new();
-
-    // Iterate over all nodes that are verity filesystems and check their mount points.
-    for vfs in graph
-        .node_weights()
-        .filter_map(|n| n.as_verity_filesystem())
-    {
-        check_verity_filesystem(vfs)?;
-        check_insert_mount_point(&vfs.mount_point.path)?;
-
-        if !unique_verity_names.insert(vfs.name.clone()) {
-            return Err(StorageGraphBuildError::VerityFilesystemDuplicateName {
-                name: vfs.name.clone(),
-            });
         }
     }
 
@@ -117,40 +96,6 @@ fn check_filesystem(fs: &FileSystem) -> Result<(), StorageGraphBuildError> {
                 fs_compatible_sources,
             });
         }
-    }
-
-    Ok(())
-}
-
-/// Checks all basic properties of a single verity filesystem.
-fn check_verity_filesystem(vfs: &VerityFileSystem) -> Result<(), StorageGraphBuildError> {
-    if !vfs.fs_type.supports_verity() {
-        return Err(StorageGraphBuildError::VerityFileSystemUnsupportedType {
-            name: vfs.name.clone(),
-            fs_type: vfs.fs_type,
-        });
-    }
-
-    Ok(())
-}
-
-/// Checks whether a filesystem supports verity.
-fn check_filesystem_supports_verity(
-    graph: &StoragePetgraph,
-    node_idx: NodeIndex,
-    fs: &FileSystem,
-) -> Result<(), StorageGraphBuildError> {
-    // Check if any node under the filesystem node is a verity device. If so,
-    // ensure that the FS type supports verity.
-    if Dfs::new(graph, node_idx)
-        .iter(graph)
-        .any(|dep_idx| graph[dep_idx].device_kind() == BlkDevKind::VerityDevice)
-        && !fs.fs_type.supports_verity()
-    {
-        return Err(StorageGraphBuildError::FilesystemVerityIncompatible {
-            fs_desc: fs.description(),
-            fs_type: fs.fs_type,
-        });
     }
 
     Ok(())

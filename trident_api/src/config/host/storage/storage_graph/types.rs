@@ -124,9 +124,6 @@ pub enum BlkDevReferrerKind {
     /// An ESP/EFI filesystem
     FileSystemEsp,
 
-    /// A verity filesystem
-    FilesystemVerity,
-
     /// An adopted filesystem
     FileSystemAdopted,
 }
@@ -145,8 +142,7 @@ bitflags::bitflags! {
         const FileSystem = 1 << 4;
         const FileSystemOsImage = 1 << 5;
         const FileSystemEsp = 1 << 6;
-        const FileSystemVerity = 1 << 7;
-        const FileSystemAdopted = 1 << 8;
+        const FileSystemAdopted = 1 << 7;
 
         // Groups:
         // Example:
@@ -291,7 +287,6 @@ impl BlkDevReferrerKind {
             Self::FileSystem => BlkDevReferrerKindFlag::FileSystem,
             Self::FileSystemEsp => BlkDevReferrerKindFlag::FileSystemEsp,
             Self::FileSystemAdopted => BlkDevReferrerKindFlag::FileSystemAdopted,
-            Self::FilesystemVerity => BlkDevReferrerKindFlag::FileSystemVerity,
             Self::FileSystemOsImage => BlkDevReferrerKindFlag::FileSystemOsImage,
         }
     }
@@ -348,7 +343,6 @@ impl BitFlagsBackingEnumVec<BlkDevReferrerKind> for BlkDevReferrerKindFlag {
                 BlkDevReferrerKindFlag::FileSystem => BlkDevReferrerKind::FileSystem,
                 BlkDevReferrerKindFlag::FileSystemEsp => BlkDevReferrerKind::FileSystemEsp,
                 BlkDevReferrerKindFlag::FileSystemAdopted => BlkDevReferrerKind::FileSystemAdopted,
-                BlkDevReferrerKindFlag::FileSystemVerity => BlkDevReferrerKind::FilesystemVerity,
                 BlkDevReferrerKindFlag::FileSystemOsImage => BlkDevReferrerKind::FileSystemOsImage,
                 _ => unreachable!("Invalid referrer kind flag: {:?}", kind),
             })

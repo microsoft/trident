@@ -49,7 +49,6 @@ impl Display for BlkDevReferrerKind {
             Self::FileSystem => write!(f, "filesystem"),
             Self::FileSystemEsp => write!(f, "filesystem-esp"),
             Self::FileSystemAdopted => write!(f, "filesystem-adopted"),
-            Self::FilesystemVerity => write!(f, "filesystem-verity"),
             Self::FileSystemOsImage => write!(f, "filesystem-os-image"),
         }
     }

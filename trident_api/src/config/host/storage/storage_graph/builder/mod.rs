@@ -104,6 +104,9 @@ impl StorageGraphBuilder {
         trace!("Checking dependency kind homogeneity");
         relationships::check_dependency_kind_homogeneity(&graph)?;
 
+        // Check that all filesystems on verity devices have correct types
+        relationships::check_filesystems_on_verity(&graph)?;
+
         // Check partition size homogeneity
         trace!("Checking partition size homogeneity");
         partition::check_partition_size_homogeneity(&graph)?;

@@ -165,11 +165,9 @@ impl Subsystem for StorageSubsystem {
     }
 
     fn provision(&mut self, ctx: &EngineContext, mount_point: &Path) -> Result<(), TridentError> {
-        if verity::validate_verity_compatibility(ctx, mount_point).structured(
-            InvalidInputError::from(
-                HostConfigurationDynamicValidationError::DmVerityMisconfiguration,
-            ),
-        )? {
+        if verity::validate_verity_compatibility(ctx).structured(InvalidInputError::from(
+            HostConfigurationDynamicValidationError::DmVerityMisconfiguration,
+        ))? {
             debug!("Verity devices are compatible with the current system");
             if ctx.servicing_type == ServicingType::CleanInstall {
                 verity::create_machine_id(mount_point)
@@ -317,7 +315,6 @@ mod tests {
                     }],
                     ..Default::default()
                 },
-                internal_verity: vec![],
                 internal_mount_points: vec![InternalMountPoint {
                     filesystem: FileSystemType::Ext4,
                     options: vec![],
@@ -469,7 +466,7 @@ mod tests {
         let expected_contents = "/part1 / ext4 defaults 0 1\noverlay /etc overlay lowerdir=/etc,upperdir=/var/lib/trident-overlay/etc/upper,workdir=/var/lib/trident-overlay/etc/work,ro 0 2\n";
 
         let mut hc = get_host_config(&temp_tabfile);
-        hc.storage.internal_verity = vec![config::VerityDevice::default()];
+        hc.storage.verity = vec![config::VerityDevice::default()];
 
         generate_fstab(
             &EngineContext {

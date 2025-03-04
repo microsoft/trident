@@ -30,7 +30,6 @@ pub struct MockOsImage {
 
     pub os_arch: SystemArchitecture,
 
-    #[allow(dead_code)]
     pub os_release: OsRelease,
 
     pub images: Vec<MockImage>,
@@ -43,7 +42,6 @@ pub struct MockImage {
 
     pub fs_type: OsImageFileSystemType,
 
-    #[allow(dead_code)]
     pub fs_uuid: OsUuid,
 
     pub part_type: DiscoverablePartitionType,
@@ -102,7 +100,6 @@ impl MockOsImage {
     }
 
     /// Returns the ESP filesystem image.
-    #[allow(dead_code)]
     pub fn esp_filesystem(&self) -> Result<OsImageFileSystem, Error> {
         if let Some(esp_img) = self
             .images
@@ -144,7 +141,6 @@ impl MockOsImage {
     }
 
     /// Returns the OS architecture of the image.
-    #[allow(dead_code)]
     pub fn architecture(&self) -> SystemArchitecture {
         self.os_arch
     }

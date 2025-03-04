@@ -10,7 +10,6 @@ Encryption
 FileSystem
 FileSystemSource
 FileSystemType
-Image
 ImageFormat
 ImageSha256
 ImageSha384
@@ -39,4 +38,5 @@ SshMode
 Storage
 Trident
 User
-VerityFileSystem
+VerityCorruptionOption
+VerityDevice

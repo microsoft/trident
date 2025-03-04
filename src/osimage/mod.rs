@@ -14,7 +14,15 @@ use osutils::{
 use trident_api::{constants::ROOT_MOUNT_POINT_PATH, primitives::hash::Sha384Hash};
 
 mod cosi;
-#[cfg(test)]
+
+/// Os Image mocking module. This module contains the mock implementation of an
+/// OS image for testing purposes. It should not be tied to the specifics of any
+/// one OS image implementation.
+///
+/// allow(dead_code) is used to suppress warnings about unused code in this
+/// module because different tests may use different capabilities.
+#[cfg(any(test, feature = "functional-test"))]
+#[allow(dead_code)]
 pub(crate) mod mock;
 
 use cosi::Cosi;

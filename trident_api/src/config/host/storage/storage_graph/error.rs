@@ -21,9 +21,6 @@ use super::{
 fn pretty_node_id(node_identifier: &NodeIdentifier) -> String {
     match node_identifier {
         NodeIdentifier::BlockDevice(id) => format!("'{}'", id),
-        NodeIdentifier::VerityFileSystem(id) => {
-            format!("verity fs '{}'", id)
-        }
         NodeIdentifier::FileSystem(fs) => format!("filesystem [{}]", fs),
     }
 }
@@ -300,17 +297,5 @@ pub enum StorageGraphBuildError {
         kind: BlkDevKind,
         field_name: String,
         value: String,
-    },
-
-    #[error("Verity filesystem name '{name}' is used more than once")]
-    VerityFilesystemDuplicateName { name: String },
-
-    #[error(
-        "Verity filesystem '{name}' is using an unsupported filesystem type \
-            '{fs_type}'"
-    )]
-    VerityFileSystemUnsupportedType {
-        name: String,
-        fs_type: FileSystemType,
     },
 }

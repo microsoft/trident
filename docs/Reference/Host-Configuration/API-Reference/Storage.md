@@ -67,9 +67,9 @@ RAID configuration.
 | Type           | `Raid`            |
 | Link           | [Raid](./Raid.md) |
 
-### `verityFilesystems` (optional)
+### `verity` (optional)
 
-Verity filesystems in this host.
+Verity device configuration.
 
 | Characteristic | Value   |
 | -------------- | ------- |
@@ -77,8 +77,8 @@ Verity filesystems in this host.
 
 - Items of the array must have the type:
 
-   | Characteristic | Value                                     |
-   | -------------- | ----------------------------------------- |
-   | Type           | `VerityFileSystem`                        |
-   | Link           | [VerityFileSystem](./VerityFileSystem.md) |
+   | Characteristic | Value                             |
+   | -------------- | --------------------------------- |
+   | Type           | `VerityDevice`                    |
+   | Link           | [VerityDevice](./VerityDevice.md) |
 

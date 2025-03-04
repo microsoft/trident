@@ -162,16 +162,6 @@ impl EngineContext {
         if let Some(verity) = self
             .spec
             .storage
-            .internal_verity
-            .iter()
-            .find(|v| &v.id == block_device_id)
-        {
-            return Some(verity.device_path());
-        }
-
-        if let Some(verity) = self
-            .spec
-            .storage
             .verity
             .iter()
             .find(|v| &v.id == block_device_id)
@@ -251,19 +241,15 @@ impl EngineContext {
     }
 
     /// Returns the configuration for the verity device for the given block device ID.
-    ///
-    /// TODO: Remove old verity API.
     pub(crate) fn get_verity_config(
         &self,
         device_id: &BlockDeviceId,
     ) -> Result<VerityDevice, Error> {
-        // Prefer old API: Try to get the config from internal_verity first. Then, check the new API
         let verity_device_config = self
             .spec
             .storage
-            .internal_verity
+            .verity
             .iter()
-            .chain(self.spec.storage.verity.iter())
             .find(|vd| &vd.id == device_id)
             .cloned()
             .context(format!(
@@ -557,8 +543,8 @@ mod tests {
             "Failed to find configuration for verity device 'root'"
         );
 
-        // Test case #1. Add an internal verity device config and ensure it is returned.
-        ctx.spec.storage.internal_verity = vec![VerityDevice {
+        // Test case #1. Add a verity device config and ensure it is returned.
+        ctx.spec.storage.verity = vec![VerityDevice {
             id: "root".to_string(),
             name: "root".to_string(),
             data_device_id: "root-data".to_string(),
@@ -584,28 +570,6 @@ mod tests {
                 .root_cause()
                 .to_string(),
             "Failed to find configuration for verity device 'non-existent'"
-        );
-
-        // Test case #3: If there is no internal verity device configuration, check for a verity
-        // device configuration (new API) and ensure it is returned.
-        ctx.spec.storage.internal_verity = vec![];
-        ctx.spec.storage.verity = vec![VerityDevice {
-            id: "root".to_string(),
-            name: "root".to_string(),
-            data_device_id: "root-data".to_string(),
-            hash_device_id: "root-hash".to_string(),
-            ..Default::default()
-        }];
-
-        assert_eq!(
-            ctx.get_verity_config(&"root".to_owned()).unwrap(),
-            VerityDevice {
-                id: "root".to_string(),
-                name: "root".to_string(),
-                data_device_id: "root-data".to_string(),
-                hash_device_id: "root-hash".to_string(),
-                ..Default::default()
-            }
         );
     }
 }

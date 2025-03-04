@@ -1,9 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    config::{FileSystem, VerityFileSystem},
-    BlockDeviceId,
-};
+use crate::{config::FileSystem, BlockDeviceId};
 
 use super::{
     references::{SpecialReferenceKind, StorageReference},
@@ -20,7 +17,6 @@ pub struct BlockDevice {
 pub enum StorageGraphNode {
     BlockDevice(BlockDevice),
     FileSystem(FileSystem),
-    VerityFileSystem(VerityFileSystem),
 }
 
 impl StorageGraphNode {
@@ -37,17 +33,11 @@ impl StorageGraphNode {
         Self::FileSystem(fs)
     }
 
-    /// Creates a new verity filesystem node.
-    pub fn new_verity_filesystem(verity_fs: VerityFileSystem) -> Self {
-        Self::VerityFileSystem(verity_fs)
-    }
-
     /// Returns a user friendly identifier of the node.
     pub fn identifier(&self) -> NodeIdentifier {
         match self {
             Self::BlockDevice(dev) => NodeIdentifier::from(dev),
             Self::FileSystem(fs) => NodeIdentifier::from(fs),
-            Self::VerityFileSystem(verity_fs) => NodeIdentifier::from(verity_fs),
         }
     }
 
@@ -66,7 +56,6 @@ impl StorageGraphNode {
         match self {
             Self::BlockDevice(dev) => format!("block device '{}'", dev.id),
             Self::FileSystem(fs) => format!("filesystem [{}]", fs.description()),
-            Self::VerityFileSystem(verity_fs) => format!("verity filesystem '{}'", verity_fs.name),
         }
     }
 
@@ -74,7 +63,7 @@ impl StorageGraphNode {
     pub fn id(&self) -> Option<&BlockDeviceId> {
         match self {
             Self::BlockDevice(dev) => Some(&dev.id),
-            Self::FileSystem(_) | Self::VerityFileSystem(_) => None,
+            Self::FileSystem(_) => None,
         }
     }
 
@@ -95,19 +84,11 @@ impl StorageGraphNode {
         }
     }
 
-    /// Returns the inner verity filesystem, if this node is a verity filesystem.
-    pub fn as_verity_filesystem(&self) -> Option<&VerityFileSystem> {
-        match self {
-            Self::VerityFileSystem(fs) => Some(fs),
-            _ => None,
-        }
-    }
-
     /// Returns the kind of block device this node represents.
     pub fn device_kind(&self) -> BlkDevKind {
         match self {
             Self::BlockDevice(dev) => dev.kind(),
-            Self::FileSystem(_) | Self::VerityFileSystem(_) => BlkDevKind::None,
+            Self::FileSystem(_) => BlkDevKind::None,
         }
     }
 
@@ -116,7 +97,6 @@ impl StorageGraphNode {
         match self {
             Self::BlockDevice(dev) => dev.host_config_ref.referrer_kind(),
             Self::FileSystem(fs) => (fs).into(),
-            Self::VerityFileSystem(_) => BlkDevReferrerKind::FilesystemVerity,
         }
     }
 
@@ -160,18 +140,6 @@ impl StorageGraphNode {
                 .map(StorageReference::new_regular)
                 .into_iter()
                 .collect(),
-            Self::VerityFileSystem(verity_fs) => {
-                vec![
-                    StorageReference::new_special(
-                        SpecialReferenceKind::VerityDataDevice,
-                        &verity_fs.data_device_id,
-                    ),
-                    StorageReference::new_special(
-                        SpecialReferenceKind::VerityHashDevice,
-                        &verity_fs.hash_device_id,
-                    ),
-                ]
-            }
         }
     }
 }
@@ -181,18 +149,11 @@ impl StorageGraphNode {
 pub enum NodeIdentifier {
     BlockDevice(String),
     FileSystem(String),
-    VerityFileSystem(String),
 }
 
 impl From<&FileSystem> for NodeIdentifier {
     fn from(fs: &FileSystem) -> Self {
         Self::FileSystem(fs.description())
-    }
-}
-
-impl From<&VerityFileSystem> for NodeIdentifier {
-    fn from(fs: &VerityFileSystem) -> Self {
-        Self::VerityFileSystem(fs.name.clone())
     }
 }
 
@@ -210,10 +171,6 @@ impl NodeIdentifier {
 
     pub fn filesystem(id: &str) -> Self {
         Self::FileSystem(id.to_string())
-    }
-
-    pub fn verity_filesystem(id: &str) -> Self {
-        Self::VerityFileSystem(id.to_string())
     }
 }
 

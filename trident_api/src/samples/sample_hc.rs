@@ -15,9 +15,9 @@ use crate::{
         FileSystemSource, FileSystemType, HostConfiguration, Image, ImageFormat, ImageSha256,
         MountOptions, MountPoint, Os, Partition, PartitionTableType, PartitionType, Raid,
         RaidLevel, Script, ScriptSource, Scripts, Services, ServicingTypeSelection,
-        SoftwareRaidArray, SshMode, Storage, User, VerityFileSystem,
+        SoftwareRaidArray, SshMode, Storage, User, VerityDevice,
     },
-    constants::{self, MOUNT_OPTION_READ_ONLY},
+    constants::{self, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
 };
 
 pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfiguration), Error> {
@@ -437,7 +437,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             size: 0x20000000.into(), // 512MiB
                         },
                         Partition {
-                            id: "root".to_string(),
+                            id: "root-data".to_string(),
                             partition_type: PartitionType::Root,
                             size: 0x200000000.into(), // 8GiB
                         },
@@ -545,32 +545,22 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             options: MountOptions::defaults(),
                         }),
                     },
+                    FileSystem {
+                        device_id: Some("root".into()),
+                        fs_type: FileSystemType::Ext4,
+                        source: FileSystemSource::OsImage,
+                        mount_point: Some(MountPoint {
+                            path: ROOT_MOUNT_POINT_PATH.into(),
+                            options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
+                        }),
+                    }
                 ],
-                verity_filesystems: vec![VerityFileSystem {
-                    name: "root".into(),
-                    data_device_id: "root".into(),
+                verity: vec![VerityDevice {
+                    id: "root".into(),
+                    data_device_id: "root-data".into(),
                     hash_device_id: "root-hash".into(),
-                    data_image: Image {
-                        url: "file:///trident_cdrom/data/verity_root.rawzst".into(),
-                        sha256: ImageSha256::Checksum(
-                            "c2ce64662fbe2fa0b30a878c11aac71cb9f1ef27f59a157362ccc0881df47293"
-                                .into(),
-                        ),
-                        format: ImageFormat::RawZst,
-                    },
-                    hash_image: Image {
-                        url: "file:///trident_cdrom/data/verity_roothash.rawzst".into(),
-                        sha256: ImageSha256::Checksum(
-                            "e875214b5ba8aac92203b72dbf0f78d673a16bd3c2a6f3577bcf4ed5d7c903af"
-                                .into(),
-                        ),
-                        format: ImageFormat::RawZst,
-                    },
-                    fs_type: FileSystemType::Ext4,
-                    mount_point: MountPoint {
-                        path: constants::ROOT_MOUNT_POINT_PATH.into(),
-                        options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
-                    },
+                    name: "root".into(),
+                    ..Default::default()
                 }],
                 ..Default::default()
             },
@@ -649,12 +639,12 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 size: 0x20000000.into(), // 512MiB
                             },
                             Partition {
-                                id: "root-a1".to_string(),
+                                id: "root-data-a1".to_string(),
                                 partition_type: PartitionType::Root,
                                 size: 0x100000000.into(), // 4GiB
                             },
                             Partition {
-                                id: "root-b1".to_string(),
+                                id: "root-data-b1".to_string(),
                                 partition_type: PartitionType::Root,
                                 size: 0x100000000.into(), // 4GiB
                             },
@@ -727,12 +717,12 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 size: 0x20000000.into(), // 512MiB
                             },
                             Partition {
-                                id: "root-a2".to_string(),
+                                id: "root-data-a2".to_string(),
                                 partition_type: PartitionType::Root,
                                 size: 0x100000000.into(), // 4GiB
                             },
                             Partition {
-                                id: "root-b2".to_string(),
+                                id: "root-data-b2".to_string(),
                                 partition_type: PartitionType::Root,
                                 size: 0x100000000.into(), // 4GiB
                             },
@@ -802,16 +792,16 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             devices: vec!["boot-b1".to_string(), "boot-b2".to_string()],
                         },
                         SoftwareRaidArray {
-                            id: "root-a".to_string(),
-                            name: "root-a".to_string(),
+                            id: "root-data-a".to_string(),
+                            name: "root-data-a".to_string(),
                             level: RaidLevel::Raid1,
-                            devices: vec!["root-a1".to_string(), "root-a2".to_string()],
+                            devices: vec!["root-data-a1".to_string(), "root-data-a2".to_string()],
                         },
                         SoftwareRaidArray {
-                            id: "root-b".to_string(),
-                            name: "root-b".to_string(),
+                            id: "root-data-b".to_string(),
+                            name: "root-data-b".to_string(),
                             level: RaidLevel::Raid1,
-                            devices: vec!["root-b1".to_string(), "root-b2".to_string()],
+                            devices: vec!["root-data-b1".to_string(), "root-data-b2".to_string()],
                         },
                         SoftwareRaidArray {
                             id: "root-hash-a".to_string(),
@@ -885,9 +875,9 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             volume_b_id: "boot-b".into(),
                         },
                         AbVolumePair {
-                            id: "root".into(),
-                            volume_a_id: "root-a".into(),
-                            volume_b_id: "root-b".into(),
+                            id: "root-data".into(),
+                            volume_a_id: "root-data-a".into(),
+                            volume_b_id: "root-data-b".into(),
                         },
                         AbVolumePair {
                             id: "root-hash".into(),
@@ -1007,32 +997,22 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             options: MountOptions::defaults(),
                         }),
                     },
+                    FileSystem {
+                        device_id: Some("root".into()),
+                        fs_type: FileSystemType::Ext4,
+                        source: FileSystemSource::OsImage,
+                        mount_point: Some(MountPoint {
+                            path: ROOT_MOUNT_POINT_PATH.into(),
+                            options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
+                        }),
+                    }
                 ],
-                verity_filesystems: vec![VerityFileSystem {
-                    name: "root".into(),
-                    data_device_id: "root".into(),
+                verity: vec![VerityDevice {
+                    id: "root".into(),
+                    data_device_id: "root-data".into(),
                     hash_device_id: "root-hash".into(),
-                    data_image: Image {
-                        url: "file:///trident_cdrom/data/verity_root.rawzst".into(),
-                        sha256: ImageSha256::Checksum(
-                            "c2ce64662fbe2fa0b30a878c11aac71cb9f1ef27f59a157362ccc0881df47293"
-                                .into(),
-                        ),
-                        format: ImageFormat::RawZst,
-                    },
-                    hash_image: Image {
-                        url: "file:///trident_cdrom/data/verity_roothash.rawzst".into(),
-                        sha256: ImageSha256::Checksum(
-                            "e875214b5ba8aac92203b72dbf0f78d673a16bd3c2a6f3577bcf4ed5d7c903af"
-                                .into(),
-                        ),
-                        format: ImageFormat::RawZst,
-                    },
-                    fs_type: FileSystemType::Ext4,
-                    mount_point: MountPoint {
-                        path: constants::ROOT_MOUNT_POINT_PATH.into(),
-                        options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
-                    },
+                    name: "root".into(),
+                    ..Default::default()
                 }],
                 ..Default::default()
             },
@@ -1623,7 +1603,7 @@ mod tests {
         assert!(&host_configuration.storage.encryption.is_none());
         assert_eq!(host_configuration.storage.raid.software.len(), 0);
         assert_eq!(host_configuration.storage.filesystems.len(), 2);
-        assert_eq!(host_configuration.storage.verity_filesystems.len(), 0);
+        assert_eq!(host_configuration.storage.verity.len(), 0);
         assert!(host_configuration.storage.ab_update.is_none());
         assert!(host_configuration.os.network.is_none());
         assert_eq!(host_configuration.os.users.len(), 0);
@@ -1637,7 +1617,7 @@ mod tests {
         assert!(&host_configuration.storage.encryption.is_none());
         assert_eq!(host_configuration.storage.raid.software.len(), 0);
         assert_eq!(host_configuration.storage.filesystems.len(), 2);
-        assert_eq!(host_configuration.storage.verity_filesystems.len(), 0);
+        assert_eq!(host_configuration.storage.verity.len(), 0);
         assert!(host_configuration.storage.ab_update.is_none());
         assert!(host_configuration.os.network.is_some());
         assert_eq!(host_configuration.os.users.len(), 1);
@@ -1656,7 +1636,7 @@ mod tests {
 
         assert_eq!(host_configuration.storage.raid.software.len(), 1);
         assert_eq!(host_configuration.storage.filesystems.len(), 6);
-        assert_eq!(host_configuration.storage.verity_filesystems.len(), 0);
+        assert_eq!(host_configuration.storage.verity.len(), 0);
         assert!(host_configuration.storage.ab_update.is_some());
         assert!(host_configuration.os.network.is_some());
         assert_eq!(host_configuration.os.users.len(), 1);
@@ -1669,8 +1649,8 @@ mod tests {
         assert_eq!(host_configuration.storage.disks.len(), 1);
         assert!(host_configuration.storage.encryption.is_none());
         assert_eq!(host_configuration.storage.raid.software.len(), 0);
-        assert_eq!(host_configuration.storage.filesystems.len(), 6);
-        assert_eq!(host_configuration.storage.verity_filesystems.len(), 1);
+        assert_eq!(host_configuration.storage.filesystems.len(), 7);
+        assert_eq!(host_configuration.storage.verity.len(), 1);
         assert!(host_configuration.storage.ab_update.is_none());
         assert!(host_configuration.os.network.is_some());
         assert_eq!(host_configuration.os.users.len(), 1);
@@ -1688,8 +1668,8 @@ mod tests {
         }
 
         assert_eq!(host_configuration.storage.raid.software.len(), 12);
-        assert_eq!(host_configuration.storage.filesystems.len(), 9);
-        assert_eq!(host_configuration.storage.verity_filesystems.len(), 1);
+        assert_eq!(host_configuration.storage.filesystems.len(), 10);
+        assert_eq!(host_configuration.storage.verity.len(), 1);
         assert!(host_configuration.storage.ab_update.is_some());
         assert!(host_configuration.os.network.is_some());
         assert_eq!(host_configuration.os.users.len(), 1);
@@ -1704,7 +1684,7 @@ mod tests {
         assert!(host_configuration.storage.encryption.is_none());
         assert_eq!(host_configuration.storage.raid.software.len(), 1);
         assert_eq!(host_configuration.storage.filesystems.len(), 5);
-        assert_eq!(host_configuration.storage.verity_filesystems.len(), 0);
+        assert_eq!(host_configuration.storage.verity.len(), 0);
         assert!(host_configuration.storage.ab_update.is_none());
         assert!(host_configuration.os.network.is_some());
         assert_eq!(host_configuration.os.users.len(), 1);
@@ -1723,7 +1703,7 @@ mod tests {
 
         assert_eq!(host_configuration.storage.raid.software.len(), 0);
         assert_eq!(host_configuration.storage.filesystems.len(), 4);
-        assert_eq!(host_configuration.storage.verity_filesystems.len(), 0);
+        assert_eq!(host_configuration.storage.verity.len(), 0);
         assert!(host_configuration.storage.ab_update.is_none());
         assert!(host_configuration.os.network.is_some());
         assert_eq!(host_configuration.os.users.len(), 1);
@@ -1738,7 +1718,7 @@ mod tests {
         assert!(host_configuration.storage.encryption.is_none());
         assert_eq!(host_configuration.storage.raid.software.len(), 3);
         assert_eq!(host_configuration.storage.filesystems.len(), 3);
-        assert_eq!(host_configuration.storage.verity_filesystems.len(), 0);
+        assert_eq!(host_configuration.storage.verity.len(), 0);
         assert!(host_configuration.storage.ab_update.is_none());
         assert!(host_configuration.os.network.is_some());
         assert_eq!(host_configuration.os.users.len(), 1);

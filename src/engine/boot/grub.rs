@@ -150,9 +150,8 @@ pub(super) fn update_configs(ctx: &EngineContext, os_modifier_path: &Path) -> Re
         let verity = ctx
             .spec
             .storage
-            .internal_verity
+            .verity
             .iter()
-            .chain(ctx.spec.storage.verity.iter())
             .find(|device| device.id == *root_device_id)
             .map(|verity_device| {
                 let (verity_data_path, verity_hash_path) =

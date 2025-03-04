@@ -37,8 +37,8 @@ impl StorageGraph {
     /// filesystem.
     #[allow(dead_code)]
     fn root_fs_node(&self) -> Option<(NodeIndex, &StorageGraphNode)> {
-        // Iterate over all nodes. Find the first filesystem or verity
-        // filesystem node that is mounted on the root mount point.
+        // Iterate over all nodes. Find the first filesystem node that is
+        // mounted on the root mount point.
         self.inner.node_references().find(|(_, node)| {
             // Go over all filesystems.
             node.as_filesystem().map_or(false, |fs| {
@@ -47,12 +47,6 @@ impl StorageGraph {
                     .as_ref()
                     .map_or(false, |mp| mp.path == Path::new(ROOT_MOUNT_POINT_PATH))
             })
-            // OR, go over all verity filesystems.
-            || node
-                .as_verity_filesystem()
-                .map_or(false, |vfs| {
-                    // Check if the verity filesystem is the root filesystem.
-                    vfs.mount_point.path == Path::new(ROOT_MOUNT_POINT_PATH)})
         })
     }
 
@@ -85,13 +79,6 @@ impl StorageGraph {
                 FileSystemSource::Adopted => VolumeStatus::PresentAndBackedByAdoptedFs,
                 FileSystemSource::New => VolumeStatus::PresentButNotBackedByImage,
             }
-        } else if self
-            .inner
-            .node_weights()
-            .filter_map(|node| node.as_verity_filesystem())
-            .any(|vfs| vfs.mount_point.path == mnt_point.as_ref())
-        {
-            VolumeStatus::PresentAndBackedByImage
         } else {
             VolumeStatus::NotPresent
         }
@@ -100,14 +87,9 @@ impl StorageGraph {
     /// Returns whether the root filesystem is on a verity device.
     #[allow(dead_code)]
     pub fn root_fs_is_verity(&self) -> bool {
-        let Some((rootfs_idx, root_fs_node)) = self.root_fs_node() else {
+        let Some((rootfs_idx, _)) = self.root_fs_node() else {
             return false;
         };
-
-        // Return true for verity filesystems, nothing else to check.
-        if root_fs_node.as_verity_filesystem().is_some() {
-            return true;
-        }
 
         // Check if the root filesystem is directly on a verity device.
         self.inner
@@ -281,9 +263,8 @@ mod tests {
     use crate::{
         config::{
             AbUpdate, AbVolumePair, AdoptedPartition, Disk, EncryptedVolume, Encryption,
-            FileSystem, FileSystemType, Image, ImageFormat, ImageSha256, MountPoint, Partition,
-            PartitionSize, PartitionType, Raid, SoftwareRaidArray, Storage, VerityDevice,
-            VerityFileSystem,
+            FileSystem, FileSystemType, MountPoint, Partition, PartitionSize, PartitionType, Raid,
+            SoftwareRaidArray, Storage, VerityDevice,
         },
         storage_graph::{
             node::BlockDevice, references::SpecialReferenceKind, types::HostConfigBlockDevice,
@@ -331,91 +312,13 @@ mod tests {
 
         // Assert that the root filesystem is not found when it is removed.
         assert_eq!(graph.root_fs_node(), None);
-
-        // Add a verity filesystem node that is the root filesystem.
-        let verity_fs_node = StorageGraphNode::VerityFileSystem(VerityFileSystem {
-            name: "rootfs".into(),
-            data_device_id: "data".into(),
-            hash_device_id: "hash".into(),
-            data_image: Image {
-                url: "http://example.com/data.img".into(),
-                sha256: ImageSha256::Ignored,
-                format: ImageFormat::RawZst,
-            },
-            hash_image: Image {
-                url: "http://example.com/hash.img".into(),
-                sha256: ImageSha256::Ignored,
-                format: ImageFormat::RawZst,
-            },
-            fs_type: FileSystemType::Ext4,
-            mount_point: MountPoint::from_str(ROOT_MOUNT_POINT_PATH).unwrap(),
-        });
-        let verity_fs_node_idx = graph.inner.add_node(verity_fs_node.clone());
-
-        // Assert that the root filesystem is found when it is the only verity
-        // filesystem node.
-        assert_eq!(
-            graph.root_fs_node(),
-            Some((verity_fs_node_idx, &verity_fs_node))
-        );
-
-        // Remove the verity filesystem node.
-        graph.inner.remove_node(verity_fs_node_idx);
-
-        // Assert that the root filesystem is not found when it is removed.
-        assert_eq!(graph.root_fs_node(), None);
     }
 
     #[test]
     fn test_root_fs_is_verity() {
-        let mut graph = StorageGraph::default();
+        let graph = StorageGraph::default();
 
         // Assert that the root filesystem is not on a verity device in an empty graph.
-        assert!(!graph.root_fs_is_verity());
-
-        // ==== VERITY FS ====
-
-        // Add a verity filesystem node that is the root filesystem.
-        let verity_fs_node = StorageGraphNode::VerityFileSystem(VerityFileSystem {
-            name: "rootfs".into(),
-            data_device_id: "data".into(),
-            hash_device_id: "hash".into(),
-            data_image: Image {
-                url: "http://example.com/data.img".into(),
-                sha256: ImageSha256::Ignored,
-                format: ImageFormat::RawZst,
-            },
-            hash_image: Image {
-                url: "http://example.com/hash.img".into(),
-                sha256: ImageSha256::Ignored,
-                format: ImageFormat::RawZst,
-            },
-            fs_type: FileSystemType::Ext4,
-            mount_point: MountPoint::from_str(ROOT_MOUNT_POINT_PATH).unwrap(),
-        });
-        let verity_fs_node_idx = graph.inner.add_node(verity_fs_node.clone());
-
-        // Assert that the root filesystem is on a verity device when it is the only
-        // verity filesystem node.
-        assert!(graph.root_fs_is_verity());
-
-        // Remove the verity filesystem node.
-        graph.inner.remove_node(verity_fs_node_idx);
-
-        // Assert that the root filesystem is not on a verity device when it is removed.
-        assert!(!graph.root_fs_is_verity());
-
-        // Add a filesystem node that is the root filesystem.
-        let root_fs_node = StorageGraphNode::FileSystem(FileSystem {
-            fs_type: FileSystemType::Ext4,
-            device_id: Some("rootfs".into()),
-            mount_point: Some(MountPoint::from_str(ROOT_MOUNT_POINT_PATH).unwrap()),
-            source: FileSystemSource::New,
-        });
-        let _ = graph.inner.add_node(root_fs_node.clone());
-
-        // Assert that the root filesystem is not on a verity device when it is the
-        // only filesystem node.
         assert!(!graph.root_fs_is_verity());
 
         // ==== Verity Dev ====

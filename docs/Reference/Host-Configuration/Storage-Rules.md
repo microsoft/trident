@@ -51,7 +51,6 @@ configuration, along with their descriptions.
 | verity-device      | A verity device       |
 | filesystem         | A regular filesystem  |
 | filesystem-esp     | An ESP/EFI filesystem |
-| filesystem-verity  | A verity filesystem   |
 | filesystem-adopted | An adopted filesystem |
 
 ## Reference Validity
@@ -72,7 +71,6 @@ reference a block device of a certain type.
 | verity-device      | Yes  | No   | Yes       | No                | Yes        | Yes       | No               | No            |
 | filesystem         | Yes  | No   | Yes       | No                | Yes        | Yes       | Yes              | Yes           |
 | filesystem-esp     | Yes  | No   | Yes       | Yes               | Yes        | No        | No               | No            |
-| filesystem-verity  | Yes  | No   | Yes       | No                | Yes        | Yes       | No               | No            |
 | filesystem-adopted | Yes  | No   | No        | Yes               | No         | No        | No               | No            |
 
 ## Reference Count
@@ -88,7 +86,6 @@ shows valid reference counts for each referrer type.
 | verity-device      | 2   | 2   |
 | filesystem         | 0   | 1   |
 | filesystem-esp     | 1   | 1   |
-| filesystem-verity  | 2   | 2   |
 | filesystem-adopted | 1   | 1   |
 
 ## Reference Sharing
@@ -104,7 +101,6 @@ the rules for sharing references in the storage configuration.
 | verity-device      | (none)              |
 | filesystem         | (none)              |
 | filesystem-esp     | (none)              |
-| filesystem-verity  | (none)              |
 | filesystem-adopted | (none)              |
 
 ## Unique Field Value Constraints
@@ -191,7 +187,6 @@ The following referrers require that all referenced devices are of the same type
 - ab-volume
 - encrypted-volume
 - verity-device
-- filesystem-verity
 
 ## Homogeneous Partition Types
 
@@ -223,7 +218,6 @@ Some referrers only support specific underlying partitions types.
 | verity-device      | 'root' or 'root-verity' or 'linux-generic'                 |
 | filesystem         | any type except 'esp'                                      |
 | filesystem-esp     | 'esp'                                                      |
-| filesystem-verity  | 'root' or 'root-verity' or 'linux-generic'                 |
 | filesystem-adopted | any type except 'esp'                                      |
 
 ## Allowed RAID Levels
@@ -238,7 +232,6 @@ Some referrers are limited to specific RAID levels within the available supporte
 | verity-device      | any                    |
 | filesystem         | any                    |
 | filesystem-esp     | 'raid1'                |
-| filesystem-verity  | any                    |
 | filesystem-adopted | No allowed RAID levels |
 
 ## Partition Type Valid Mounting Paths

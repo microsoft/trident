@@ -206,9 +206,15 @@ fn get_expected_root_device_path(ctx: &EngineContext) -> Result<PathBuf, Trident
         // get_block_device_path(), which is called eventually, already has the logic for
         // determining the update volume, i.e. volume we expect to have booted from, getting the
         // block device path of the verity data device is sufficient.
-        let root_verity_device_config = ctx
-            .get_verity_config(&root_device_id)
-            .structured(ServicingError::GetRootVerityDeviceConfig)?;
+        let root_verity_device_config = ctx.get_verity_config(&root_device_id).structured(
+            // This should never happen. At this point we know the root device
+            // is a verity device and we've already found the BlockDeviceId of
+            // the verity device, so this search MUST always succeed, otherwise
+            // the graph is severely corrupted.
+            InternalError::Internal(
+                "Graph is invalid: verity config for root device could not be found.",
+            ),
+        )?;
 
         let (verity_data_path, _) =
             verity::get_verity_device_paths(ctx, &root_verity_device_config)
@@ -324,9 +330,15 @@ fn validate_ab_active_volume_internal(
         debug!("Root is a verity device");
 
         // If root is a verity device, need to first fetch the device ID of the data device
-        let verity_device_config = ctx
-            .get_verity_config(&root_device_id)
-            .structured(ServicingError::GetRootVerityDeviceConfig)?;
+        let verity_device_config = ctx.get_verity_config(&root_device_id).structured(
+            // This should never happen. At this point we know the root device
+            // is a verity device and we've already found the BlockDeviceId of
+            // the verity device, so this search MUST always succeed, otherwise
+            // the graph is severely corrupted.
+            InternalError::Internal(
+                "Graph is invalid: verity config for root device could not be found.",
+            ),
+        )?;
 
         // Fetch the A/B volume pair for the verity data device
         let volume_pair = ctx
@@ -467,11 +479,10 @@ mod tests {
 
     use trident_api::{
         config::{
-            AbUpdate, AbVolumePair, Disk, FileSystemType, Image, ImageFormat, ImageSha256,
+            AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, FileSystemType,
             InternalMountPoint, MountOptions, MountPoint, Partition, PartitionType, VerityDevice,
-            VerityFileSystem,
         },
-        constants::{MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
+        constants::MOUNT_OPTION_READ_ONLY,
         error::ErrorKind,
         status::AbVolumeSelection,
     };
@@ -661,41 +672,8 @@ mod tests {
             },
         ];
 
-        // Add verity file systems per old API
-        // TODO: Remove old verity API!
-        ctx.spec.storage.verity_filesystems = vec![VerityFileSystem {
-            name: "root".to_string(),
-            data_device_id: "root-data".to_string(),
-            hash_device_id: "root-hash".to_string(),
-            data_image: Image {
-                url: "http://example.com/root-data.img".to_string(),
-                sha256: ImageSha256::Ignored,
-                format: ImageFormat::RawZst,
-            },
-            hash_image: Image {
-                url: "http://example.com/root-hash.img".to_string(),
-                sha256: ImageSha256::Ignored,
-                format: ImageFormat::RawZst,
-            },
-            fs_type: FileSystemType::Ext4,
-            mount_point: MountPoint {
-                path: ROOT_MOUNT_POINT_PATH.into(),
-                options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
-            },
-        }];
-
-        // Build storage graph
-        ctx.storage_graph = ctx.spec.storage.build_graph().unwrap();
-
-        // Test case #0: If no internal verity devices defined, should return an error
-        assert_eq!(
-            get_expected_root_device_path(&ctx).unwrap_err().kind(),
-            &ErrorKind::Servicing(ServicingError::GetRootVerityDeviceConfig)
-        );
-
-        // Test case #1. Add an internal verity device configuration. Should now correctly return
-        // the expected root device path of 'root-data-a', since servicing type is CleanInstall.
-        ctx.spec.storage.internal_verity = vec![VerityDevice {
+        // Add verity dev
+        ctx.spec.storage.verity = vec![VerityDevice {
             id: "root".into(),
             name: "root".into(),
             data_device_id: "root-data".into(),
@@ -703,6 +681,22 @@ mod tests {
             ..Default::default()
         }];
 
+        // Add root FS
+        ctx.spec.storage.filesystems = vec![FileSystem {
+            device_id: Some("root".into()),
+            mount_point: Some(MountPoint {
+                path: PathBuf::from("/"),
+                options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
+            }),
+            fs_type: FileSystemType::Ext4,
+            source: FileSystemSource::OsImage,
+        }];
+
+        // Build storage graph
+        ctx.storage_graph = ctx.spec.storage.build_graph().unwrap();
+
+        // Test case #1. Should correctly return the expected root device path
+        // of 'root-data-a', since servicing type is CleanInstall.
         assert_eq!(
             get_expected_root_device_path(&ctx).unwrap(),
             PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"))
@@ -721,22 +715,6 @@ mod tests {
         // Test case #3. Change active volume to VolumeB and validate that the expected root device
         // path is now the verity data device path of 'root-data-a'.
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
-        assert_eq!(
-            get_expected_root_device_path(&ctx).unwrap(),
-            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"))
-        );
-
-        // Test case #4. Remove internal verity device configuration and add a verity device
-        // configuration. Should still correctly return.
-        ctx.spec.storage.internal_verity = vec![];
-        ctx.spec.storage.verity = vec![VerityDevice {
-            id: "root".into(),
-            name: "root".into(),
-            data_device_id: "root-data".into(),
-            hash_device_id: "root-hash".into(),
-            ..Default::default()
-        }];
-
         assert_eq!(
             get_expected_root_device_path(&ctx).unwrap(),
             PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"))
@@ -764,8 +742,8 @@ mod functional_test {
     use trident_api::{
         config::{
             self, AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, FileSystemType,
-            HostConfiguration, Image, ImageFormat, ImageSha256, InternalMountPoint, MountOptions,
-            MountPoint, Partition, PartitionType, VerityDevice, VerityFileSystem,
+            HostConfiguration, InternalMountPoint, MountOptions, MountPoint, Partition,
+            PartitionType, VerityDevice,
         },
         constants::{MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
         error::ErrorKind,
@@ -1044,53 +1022,12 @@ mod functional_test {
             ],
         });
 
-        // Add verity file systems per old API.
-        // TODO: Remove old verity API!
-        ctx.spec.storage.verity_filesystems = vec![VerityFileSystem {
-            name: "root".to_string(),
-            data_device_id: "root-data".to_string(),
-            hash_device_id: "root-hash".to_string(),
-            data_image: Image {
-                url: "http://example.com/root-data.img".to_string(),
-                sha256: ImageSha256::Ignored,
-                format: ImageFormat::RawZst,
-            },
-            hash_image: Image {
-                url: "http://example.com/root-hash.img".to_string(),
-                sha256: ImageSha256::Ignored,
-                format: ImageFormat::RawZst,
-            },
-            fs_type: FileSystemType::Ext4,
-            mount_point: MountPoint {
-                path: ROOT_MOUNT_POINT_PATH.into(),
-                options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
-            },
-        }];
-        ctx.spec.storage.internal_verity = vec![VerityDevice {
+        // Add a verity device
+        ctx.spec.storage.verity = vec![VerityDevice {
             id: "root".to_string(),
             name: "root".to_string(),
             data_device_id: "root-data".to_string(),
             hash_device_id: "root-hash".to_string(),
-            ..Default::default()
-        }];
-
-        // Build storage graph to validate
-        ctx.storage_graph = ctx.spec.storage.build_graph().unwrap();
-
-        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
-        ctx.spec.storage.populate_internal();
-
-        validate_ab_active_volume_internal(&ctx, PathBuf::from("/dev/mapper/root")).unwrap();
-
-        // Test case #2: Remove the old verity API and add a verity device configuration.
-        // Should still correctly return.
-        ctx.spec.storage.internal_verity = vec![];
-        ctx.spec.storage.verity_filesystems = vec![];
-        ctx.spec.storage.verity = vec![VerityDevice {
-            id: "root".into(),
-            name: "root".into(),
-            data_device_id: "root-data".into(),
-            hash_device_id: "root-hash".into(),
             ..Default::default()
         }];
 
@@ -1103,6 +1040,11 @@ mod functional_test {
             fs_type: FileSystemType::Ext4,
             source: FileSystemSource::OsImage,
         }];
+
+        // Build storage graph to validate
+        ctx.storage_graph = ctx.spec.storage.build_graph().unwrap();
+
+        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
         ctx.spec.storage.populate_internal();
 
         validate_ab_active_volume_internal(&ctx, PathBuf::from("/dev/mapper/root")).unwrap();
@@ -1132,7 +1074,7 @@ mod functional_test {
         );
 
         // Test case #1. Add an internal verity device config and ensure it is returned.
-        ctx.spec.storage.internal_verity = vec![VerityDevice {
+        ctx.spec.storage.verity = vec![VerityDevice {
             id: "root".to_string(),
             name: "root".to_string(),
             data_device_id: "root-data".to_string(),
@@ -1249,22 +1191,6 @@ mod functional_test {
 
         ctx.spec.storage.ab_update.as_mut().unwrap().volume_pairs[0].volume_b_id =
             "root-data-a".to_string();
-
-        assert_eq!(
-            get_verity_data_device_path(&ctx, &"root".to_owned()).unwrap(),
-            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3"))
-        );
-
-        // Test case #6: Remove the internal verity device configuration and add a verity device
-        // configuration. Should still correctly return.
-        ctx.spec.storage.internal_verity = vec![];
-        ctx.spec.storage.verity = vec![VerityDevice {
-            id: "root".into(),
-            name: "root".into(),
-            data_device_id: "root-data".into(),
-            hash_device_id: "root-hash".into(),
-            ..Default::default()
-        }];
 
         assert_eq!(
             get_verity_data_device_path(&ctx, &"root".to_owned()).unwrap(),

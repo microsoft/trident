@@ -164,10 +164,6 @@ impl NewrootMount {
             }
         }
 
-        for verity in &host_config.storage.internal_verity {
-            block_device_paths.insert(verity.id.clone(), verity.temporary_device_path());
-        }
-
         for verity in &host_config.storage.verity {
             block_device_paths.insert(verity.id.clone(), verity.temporary_device_path());
         }

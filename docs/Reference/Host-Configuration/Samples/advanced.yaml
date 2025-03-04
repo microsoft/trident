@@ -18,10 +18,10 @@ storage:
     - id: boot-b1
       type: xbootldr
       size: 512M
-    - id: root-a1
+    - id: root-data-a1
       type: root
       size: 4G
-    - id: root-b1
+    - id: root-data-b1
       type: root
       size: 4G
     - id: root-hash-a1
@@ -64,10 +64,10 @@ storage:
     - id: boot-b2
       type: xbootldr
       size: 512M
-    - id: root-a2
+    - id: root-data-a2
       type: root
       size: 4G
-    - id: root-b2
+    - id: root-data-b2
       type: root
       size: 4G
     - id: root-hash-a2
@@ -117,18 +117,18 @@ storage:
       devices:
       - boot-b1
       - boot-b2
-    - id: root-a
-      name: root-a
+    - id: root-data-a
+      name: root-data-a
       level: raid1
       devices:
-      - root-a1
-      - root-a2
-    - id: root-b
-      name: root-b
+      - root-data-a1
+      - root-data-a2
+    - id: root-data-b
+      name: root-data-b
       level: raid1
       devices:
-      - root-b1
-      - root-b2
+      - root-data-b1
+      - root-data-b2
     - id: root-hash-a
       name: root-hash-a
       level: raid1
@@ -183,9 +183,9 @@ storage:
     - id: boot
       volumeAId: boot-a
       volumeBId: boot-b
-    - id: root
-      volumeAId: root-a
-      volumeBId: root-b
+    - id: root-data
+      volumeAId: root-data-a
+      volumeBId: root-data-b
     - id: root-hash
       volumeAId: root-hash-a
       volumeBId: root-hash-b
@@ -262,22 +262,17 @@ storage:
     mountPoint:
       path: /home
       options: defaults
-  verityFilesystems:
-  - name: root
-    dataDeviceId: root
-    hashDeviceId: root-hash
-    dataImage:
-      url: file:///trident_cdrom/data/verity_root.rawzst
-      sha256: c2ce64662fbe2fa0b30a878c11aac71cb9f1ef27f59a157362ccc0881df47293
-      format: raw-zst
-    hashImage:
-      url: file:///trident_cdrom/data/verity_roothash.rawzst
-      sha256: e875214b5ba8aac92203b72dbf0f78d673a16bd3c2a6f3577bcf4ed5d7c903af
-      format: raw-zst
+  - deviceId: root
     type: ext4
     mountPoint:
       path: /
       options: ro
+  verity:
+  - id: root
+    name: root
+    dataDeviceId: root-data
+    hashDeviceId: root-hash
+    corruptionOption: io-error
 scripts:
   postConfigure:
   - name: rw-overlay
