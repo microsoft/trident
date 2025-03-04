@@ -150,10 +150,10 @@ steps:
       condition: eq(variables['TEST_REBUILD_RAID'], 'True')  
 
   - bash: |
-      $(Build.SourcesDirectory)/.pipelines/templates/stages/testing_common/scripts/check-ssh-connection.sh \
+      $(Build.SourcesDirectory)/bin/storm-trident helper check-ssh \
           "${{ parameters.sshKeyPath }}" \
-          "${{ parameters.userName }}" \
           "${{ parameters.hostIp }}" \
+          "${{ parameters.userName }}" \
           "${{ parameters.runtimeEnv }}"
     displayName: "Check SSH connection after restarting"
     condition: eq(variables['TEST_REBUILD_RAID'], 'True')

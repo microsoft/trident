@@ -88,6 +88,7 @@ steps:
         netlaunch
         netlisten
         mkcosi
+        storm-trident
       targetPath: "${{ parameters.toolsDirectory }}"
 
   - bash: |
@@ -96,6 +97,7 @@ steps:
       # Set tools to be executable
       chmod +x ${{ parameters.toolsDirectory }}/net*
       chmod +x ${{ parameters.toolsDirectory }}/mkcosi
+      chmod +x ${{ parameters.toolsDirectory }}/storm-trident
 
       # Create the target directory
       mkdir -p "${{ parameters.targetDirectory }}"
