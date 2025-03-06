@@ -173,11 +173,9 @@ mod tests {
     use trident_api::{
         config::{
             AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, FileSystemType,
-            HostConfiguration, Image, ImageFormat, ImageSha256, ImageSha384, MountOptions,
-            MountPoint, OsImage as OsImageConfig, Partition, PartitionType,
-            Storage as StorageConfig,
+            HostConfiguration, ImageSha384, MountOptions, MountPoint, OsImage as OsImageConfig,
+            Partition, PartitionType, Storage as StorageConfig,
         },
-        error::ErrorKind,
         status::{AbVolumeSelection, ServicingType},
     };
 
@@ -188,437 +186,9 @@ mod tests {
 
     const OSIMAGE_DUMMY_SOURCE: &str = "http://example/osimage";
 
-    /// Validates that the logic in validate_host_config() is correct.
-    #[test]
-    fn test_validate_host_config_image() {
-        // Initialize a engine context
-        let mut ctx = EngineContext {
-            servicing_type: ServicingType::NoActiveServicing,
-            spec_old: HostConfiguration {
-                storage: StorageConfig {
-                    disks: vec![Disk {
-                        id: "os".to_owned(),
-                        device: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        partitions: vec![
-                            Partition {
-                                id: "esp".to_string(),
-                                partition_type: PartitionType::Esp,
-                                size: 100.into(),
-                            },
-                            Partition {
-                                id: "root-a".to_string(),
-                                partition_type: PartitionType::Root,
-                                size: 100.into(),
-                            },
-                            Partition {
-                                id: "root-b".to_string(),
-                                partition_type: PartitionType::Root,
-                                size: 100.into(),
-                            },
-                            Partition {
-                                id: "trident".to_string(),
-                                partition_type: PartitionType::LinuxGeneric,
-                                size: 100.into(),
-                            },
-                        ],
-                        ..Default::default()
-                    }],
-                    filesystems: vec![
-                        FileSystem {
-                            device_id: Some("esp".into()),
-                            fs_type: FileSystemType::Vfat,
-                            source: FileSystemSource::EspImage(Image {
-                                url: "http://example.com/esp_2.img".to_string(),
-                                sha256: ImageSha256::Checksum("esp_sha256_2".into()),
-                                format: ImageFormat::RawZst,
-                            }),
-                            mount_point: Some(MountPoint {
-                                path: PathBuf::from("/esp"),
-                                options: MountOptions::empty(),
-                            }),
-                        },
-                        FileSystem {
-                            device_id: Some("root".into()),
-                            fs_type: FileSystemType::Vfat,
-                            source: FileSystemSource::Image(Image {
-                                url: "http://example.com/root_2.img".to_string(),
-                                sha256: ImageSha256::Checksum("root_sha256_2".into()),
-                                format: ImageFormat::RawZst,
-                            }),
-                            mount_point: Some(MountPoint {
-                                path: PathBuf::from("/"),
-                                options: MountOptions::empty(),
-                            }),
-                        },
-                        FileSystem {
-                            device_id: Some("trident".into()),
-                            fs_type: FileSystemType::Vfat,
-                            source: FileSystemSource::Image(Image {
-                                url: "http://example.com/trident_1.img".to_string(),
-                                sha256: ImageSha256::Checksum("trident_sha256_1".into()),
-                                format: ImageFormat::RawZst,
-                            }),
-                            mount_point: None,
-                        },
-                    ],
-                    ab_update: Some(AbUpdate {
-                        volume_pairs: vec![AbVolumePair {
-                            id: "root".to_string(),
-                            volume_a_id: "root-a".to_string(),
-                            volume_b_id: "root-b".to_string(),
-                        }],
-                    }),
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            partition_paths: btreemap! {
-                "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
-                "esp".into() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                "root-a".into() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                "root-b".into() => PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                "trident".into() => PathBuf::from("/dev/disk/by-partlabel/osp4"),
-            },
-            ..Default::default()
-        };
-
-        ctx.spec = ctx.spec_old.clone();
-        if let FileSystemSource::Image(Image { ref mut sha256, .. }) =
-            ctx.spec.storage.filesystems[0].source
-        {
-            *sha256 = ImageSha256::Checksum("new_sha256".into());
-        }
-        if let FileSystemSource::Image(Image { ref mut sha256, .. }) =
-            ctx.spec.storage.filesystems[1].source
-        {
-            *sha256 = ImageSha256::Checksum("new_sha256".into());
-        }
-
-        // Test case 0. Running validate_host_config() when the planned servicing type is
-        // CleanInstall should always return ((Ok)) since there is no validation logic.
-        ctx.servicing_type = ServicingType::CleanInstall;
-        validate_host_config(&ctx).unwrap();
-
-        // Test case 1. Running validate_host_config() when only update of the ESP partition and
-        // A/B volume pair images is requested during A/B update should return ((Ok)).
-        // Update servicing state to Provisioned for consistency.
-        ctx.servicing_type = ServicingType::AbUpdate;
-        validate_host_config(&ctx).unwrap();
-
-        // Test case 2. Running validate_host_config() when update of a standalone volume 'trident'
-        // is requested during A/B update should return an error.
-        // Update URL and sha256sum of 'trident' image in Host Configuration.
-        ctx.spec.storage.filesystems[2].source = FileSystemSource::Image(Image {
-            url: "http://example.com/trident_2.img".to_string(),
-            sha256: ImageSha256::Checksum("trident_sha256_2".into()),
-            format: ImageFormat::RawZst,
-        });
-        validate_host_config(&ctx).unwrap_err();
-    }
-
-    /// Validates that the logic in ab_update_required() and get_updated_images() is correct.
-    /// TODO: Remove this test once we fully migrate to COSI.
-    #[test]
-    fn test_ab_update_required_and_get_updated_images() {
-        // Initialize a Host Configuration
-        let host_config = HostConfiguration {
-            storage: StorageConfig {
-                disks: vec![Disk {
-                    id: "os".to_owned(),
-                    device: PathBuf::from("/dev/disk/by-bus/foobar"),
-                    partitions: vec![
-                        Partition {
-                            id: "esp".to_string(),
-                            partition_type: PartitionType::Esp,
-                            size: 100.into(),
-                        },
-                        Partition {
-                            id: "root-a".to_string(),
-                            partition_type: PartitionType::Root,
-                            size: 100.into(),
-                        },
-                        Partition {
-                            id: "root-b".to_string(),
-                            partition_type: PartitionType::Root,
-                            size: 100.into(),
-                        },
-                        Partition {
-                            id: "trident".to_string(),
-                            partition_type: PartitionType::LinuxGeneric,
-                            size: 100.into(),
-                        },
-                    ],
-                    ..Default::default()
-                }],
-                filesystems: vec![
-                    FileSystem {
-                        device_id: Some("esp".into()),
-                        fs_type: FileSystemType::Vfat,
-                        source: FileSystemSource::EspImage(Image {
-                            url: "http://example.com/esp_1.img".to_string(),
-                            sha256: ImageSha256::Checksum("esp_sha256_1".into()),
-                            format: ImageFormat::RawZst,
-                        }),
-                        mount_point: Some(MountPoint {
-                            path: PathBuf::from("/esp"),
-                            options: MountOptions::empty(),
-                        }),
-                    },
-                    FileSystem {
-                        device_id: Some("root".into()),
-                        fs_type: FileSystemType::Vfat,
-                        source: FileSystemSource::Image(Image {
-                            url: "http://example.com/root_1.img".to_string(),
-                            sha256: ImageSha256::Checksum("root_sha256_1".into()),
-                            format: ImageFormat::RawZst,
-                        }),
-                        mount_point: Some(MountPoint {
-                            path: PathBuf::from("/"),
-                            options: MountOptions::empty(),
-                        }),
-                    },
-                    FileSystem {
-                        device_id: Some("trident".into()),
-                        fs_type: FileSystemType::Vfat,
-                        source: FileSystemSource::Image(Image {
-                            url: "http://example.com/trident_1.img".to_string(),
-                            sha256: ImageSha256::Checksum("trident_sha256_1".into()),
-                            format: ImageFormat::RawZst,
-                        }),
-                        mount_point: None,
-                    },
-                ],
-                ab_update: Some(AbUpdate {
-                    volume_pairs: vec![AbVolumePair {
-                        id: "root".to_string(),
-                        volume_a_id: "root-a".to_string(),
-                        volume_b_id: "root-b".to_string(),
-                    }],
-                }),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        // Initialize an engine context object with spec matching the Host Configuration
-        let mut ctx = EngineContext {
-            servicing_type: ServicingType::NoActiveServicing,
-            spec: host_config.clone(),
-            spec_old: host_config,
-            partition_paths: btreemap! {
-                "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
-                "esp".into() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                "root-a".into() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                "root-b".into() => PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                "trident".into() => PathBuf::from("/dev/disk/by-partlabel/osp4"),
-            },
-            // Set active volume to A
-            ab_active_volume: Some(AbVolumeSelection::VolumeA),
-            ..Default::default()
-        };
-
-        // Test case 1. Running ab_update_required() when images are the same in engine context and host
-        // configuration should return false.
-        assert!(!ab_update_required(&ctx).unwrap());
-        // Running get_updated_images() should return an empty list.
-        assert!(get_updated_images(
-            ctx.spec_old.storage.get_images(),
-            ctx.spec.storage.get_images()
-        )
-        .is_empty());
-
-        // Test case 2. Running ab_update_required() when the URL of the ESP image in the host
-        // configuration is different from that in the engine context should return true.
-        ctx.spec.storage.filesystems[0].source = FileSystemSource::EspImage(Image {
-            url: "http://example.com/esp_2.img".to_string(),
-            sha256: ImageSha256::Checksum("esp_sha256_1".into()),
-            format: ImageFormat::RawZst,
-        });
-        assert!(ab_update_required(&ctx).unwrap());
-        // Running get_updated_images() should return the 'esp' image.
-        assert_eq!(
-            get_updated_images(
-                ctx.spec_old.storage.get_esp_images(),
-                ctx.spec.storage.get_esp_images()
-            ),
-            vec![(
-                "esp".to_string(),
-                Image {
-                    url: "http://example.com/esp_2.img".to_string(),
-                    sha256: ImageSha256::Checksum("esp_sha256_1".into()),
-                    format: ImageFormat::RawZst,
-                }
-            )]
-        );
-
-        // Test case 3. Running ab_update_required() when the sha256sum of the ESP image in the host
-        // configuration is different from that in the engine context should return true.
-        ctx.spec.storage.filesystems[0].source = FileSystemSource::EspImage(Image {
-            url: "http://example.com/esp_1.img".to_string(),
-            sha256: ImageSha256::Checksum("esp_sha256_2".into()),
-            format: ImageFormat::RawZst,
-        });
-        assert!(ab_update_required(&ctx).unwrap());
-        // Running get_updated_images() for ESP only should return the 'esp' image.
-        assert_eq!(
-            get_updated_images(
-                ctx.spec_old.storage.get_esp_images(),
-                ctx.spec.storage.get_esp_images()
-            ),
-            vec![(
-                "esp".to_string(),
-                Image {
-                    url: "http://example.com/esp_1.img".to_string(),
-                    sha256: ImageSha256::Checksum("esp_sha256_2".into()),
-                    format: ImageFormat::RawZst,
-                }
-            )]
-        );
-        // But running get_updated_images() for all non-ESP images should return an empty list.
-        assert!(get_updated_images(
-            ctx.spec_old.storage.get_images(),
-            ctx.spec.storage.get_images()
-        )
-        .is_empty());
-
-        // Test case 4. Running ab_update_required() when the URL of the root image in the host
-        // configuration is different from that in the engine context should return true.
-        ctx.spec.storage.filesystems[1].source = FileSystemSource::Image(Image {
-            url: "http://example.com/root_2.img".to_string(),
-            sha256: ImageSha256::Checksum("root_sha256_2".into()),
-            format: ImageFormat::RawZst,
-        });
-        assert!(ab_update_required(&ctx).unwrap());
-        // Running get_updated_images() for all non-ESP images should return the 'root' image.
-        assert_eq!(
-            get_updated_images(
-                ctx.spec_old.storage.get_images(),
-                ctx.spec.storage.get_images()
-            ),
-            vec![(
-                "root".to_string(),
-                Image {
-                    url: "http://example.com/root_2.img".to_string(),
-                    sha256: ImageSha256::Checksum("root_sha256_2".into()),
-                    format: ImageFormat::RawZst,
-                }
-            )]
-        );
-        // But running get_updated_images() for all images should return both the 'esp' and 'root'
-        // images.
-        let mut all_images = ctx.spec.storage.get_images();
-        all_images.extend(ctx.spec.storage.get_esp_images());
-        // Assert length of the returned list
-        assert_eq!(
-            get_updated_images(ctx.spec_old.storage.get_images(), all_images.clone()).len(),
-            2
-        );
-        // Assert it contains both the 'esp' and 'root' images
-        assert!(
-            get_updated_images(ctx.spec_old.storage.get_images(), all_images.clone()).contains(&(
-                "esp".to_string(),
-                Image {
-                    url: "http://example.com/esp_1.img".to_string(),
-                    sha256: ImageSha256::Checksum("esp_sha256_2".into()),
-                    format: ImageFormat::RawZst,
-                }
-            ))
-        );
-        assert!(
-            get_updated_images(ctx.spec_old.storage.get_images(), all_images).contains(&(
-                "root".to_string(),
-                Image {
-                    url: "http://example.com/root_2.img".to_string(),
-                    sha256: ImageSha256::Checksum("root_sha256_2".into()),
-                    format: ImageFormat::RawZst,
-                }
-            ))
-        );
-    }
-
     /// Validates that the logic in ab_update_required() is correct when OS image is used.
     #[test]
     fn test_ab_update_required_os_image() {
-        // Initialize a Host Configuration without COSI, with partition images
-        let hc_partition_images = HostConfiguration {
-            storage: StorageConfig {
-                disks: vec![Disk {
-                    id: "os".to_owned(),
-                    device: PathBuf::from("/dev/disk/by-bus/foobar"),
-                    partitions: vec![
-                        Partition {
-                            id: "esp".to_string(),
-                            partition_type: PartitionType::Esp,
-                            size: 100.into(),
-                        },
-                        Partition {
-                            id: "root-a".to_string(),
-                            partition_type: PartitionType::Root,
-                            size: 100.into(),
-                        },
-                        Partition {
-                            id: "root-b".to_string(),
-                            partition_type: PartitionType::Root,
-                            size: 100.into(),
-                        },
-                        Partition {
-                            id: "trident".to_string(),
-                            partition_type: PartitionType::LinuxGeneric,
-                            size: 100.into(),
-                        },
-                    ],
-                    ..Default::default()
-                }],
-                filesystems: vec![
-                    FileSystem {
-                        device_id: Some("esp".into()),
-                        fs_type: FileSystemType::Vfat,
-                        source: FileSystemSource::EspImage(Image {
-                            url: "http://example.com/esp_1.img".to_string(),
-                            sha256: ImageSha256::Checksum("esp_sha256_1".into()),
-                            format: ImageFormat::RawZst,
-                        }),
-                        mount_point: Some(MountPoint {
-                            path: PathBuf::from("/esp"),
-                            options: MountOptions::empty(),
-                        }),
-                    },
-                    FileSystem {
-                        device_id: Some("root".into()),
-                        fs_type: FileSystemType::Vfat,
-                        source: FileSystemSource::Image(Image {
-                            url: "http://example.com/root_1.img".to_string(),
-                            sha256: ImageSha256::Checksum("root_sha256_1".into()),
-                            format: ImageFormat::RawZst,
-                        }),
-                        mount_point: Some(MountPoint {
-                            path: PathBuf::from("/"),
-                            options: MountOptions::empty(),
-                        }),
-                    },
-                    FileSystem {
-                        device_id: Some("trident".into()),
-                        fs_type: FileSystemType::Vfat,
-                        source: FileSystemSource::Image(Image {
-                            url: "http://example.com/trident_1.img".to_string(),
-                            sha256: ImageSha256::Checksum("trident_sha256_1".into()),
-                            format: ImageFormat::RawZst,
-                        }),
-                        mount_point: None,
-                    },
-                ],
-                ab_update: Some(AbUpdate {
-                    volume_pairs: vec![AbVolumePair {
-                        id: "root".to_string(),
-                        volume_a_id: "root-a".to_string(),
-                        volume_b_id: "root-b".to_string(),
-                    }],
-                }),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
         // Initialize a Host Configuration with COSI enabled and OS image provided
         let hc_os_image = HostConfiguration {
             image: Some(OsImageConfig {
@@ -657,24 +227,16 @@ mod tests {
                     FileSystem {
                         device_id: Some("esp".into()),
                         fs_type: FileSystemType::Vfat,
-                        source: FileSystemSource::EspImage(Image {
-                            url: "http://example.com/esp_1.img".to_string(),
-                            sha256: ImageSha256::Checksum("esp_sha256_1".into()),
-                            format: ImageFormat::RawZst,
-                        }),
+                        source: FileSystemSource::OsImage,
                         mount_point: Some(MountPoint {
-                            path: PathBuf::from("/esp"),
+                            path: PathBuf::from("/boot/efi"),
                             options: MountOptions::empty(),
                         }),
                     },
                     FileSystem {
                         device_id: Some("root".into()),
                         fs_type: FileSystemType::Vfat,
-                        source: FileSystemSource::Image(Image {
-                            url: "http://example.com/root_1.img".to_string(),
-                            sha256: ImageSha256::Checksum("root_sha256_1".into()),
-                            format: ImageFormat::RawZst,
-                        }),
+                        source: FileSystemSource::OsImage,
                         mount_point: Some(MountPoint {
                             path: PathBuf::from("/"),
                             options: MountOptions::empty(),
@@ -683,11 +245,7 @@ mod tests {
                     FileSystem {
                         device_id: Some("trident".into()),
                         fs_type: FileSystemType::Vfat,
-                        source: FileSystemSource::Image(Image {
-                            url: "http://example.com/trident_1.img".to_string(),
-                            sha256: ImageSha256::Checksum("trident_sha256_1".into()),
-                            format: ImageFormat::RawZst,
-                        }),
+                        source: FileSystemSource::OsImage,
                         mount_point: None,
                     },
                 ],
@@ -727,13 +285,11 @@ mod tests {
                 .collect(),
         });
 
-        // Test case #1: If Trident previously deployed partition images, but the new Host
-        // Configuration requests an OS image, return an error.
-        // TODO: Remove once we fully migrate to COSI.
+        // Test case #1: If OS image has not changed, return false.
         let mut ctx = EngineContext {
             servicing_type: ServicingType::NoActiveServicing,
             spec: hc_os_image.clone(),
-            spec_old: hc_partition_images.clone(),
+            spec_old: hc_os_image.clone(),
             partition_paths: btreemap! {
                 "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
                 "esp".into() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
@@ -746,30 +302,9 @@ mod tests {
             image: Some(os_image),
             ..Default::default()
         };
-        assert_eq!(
-            ab_update_required(&ctx).unwrap_err().kind(),
-            &ErrorKind::InvalidInput(InvalidInputError::from(
-                HostConfigurationDynamicValidationError::DeployOsImageAfterPartitionImages,
-            ))
-        );
-
-        // Test case #2: If Trident previously deployed an OS image, but the new Host Configuration
-        // requests a different OS image, return an error.
-        // TODO: Remove once we fully migrate to COSI.
-        ctx.spec_old = hc_os_image.clone();
-        ctx.spec = hc_partition_images.clone();
-        assert_eq!(
-            ab_update_required(&ctx).unwrap_err().kind(),
-            &ErrorKind::InvalidInput(InvalidInputError::from(
-                HostConfigurationDynamicValidationError::DeployPartitionImagesAfterOsImage,
-            ))
-        );
-
-        // Test case #3: If OS image has not changed, return false.
-        ctx.spec = hc_os_image.clone();
         assert!(!ab_update_required(&ctx).unwrap());
 
-        // Test case #4: If OS image has changed, return true.
+        // Test case #2: If OS image has changed, return true.
         let mut hc_os_image_updated = hc_os_image.clone();
         // Update OS image URL
         hc_os_image_updated.image = Some(OsImageConfig {

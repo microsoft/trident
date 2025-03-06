@@ -83,9 +83,7 @@ impl Storage {
 #[cfg(test)]
 mod tests {
     use crate::{
-        config::{
-            FileSystem, FileSystemSource, Image, ImageFormat, ImageSha256, MountOptions, MountPoint,
-        },
+        config::{FileSystem, FileSystemSource, MountOptions, MountPoint},
         constants::SWAP_MOUNT_POINT,
     };
 
@@ -97,11 +95,7 @@ mod tests {
             filesystems: vec![FileSystem {
                 device_id: Some("/dev/sda1".to_string()),
                 fs_type: FileSystemType::Ext4,
-                source: FileSystemSource::Image(Image {
-                    url: "file:///path/to/image".to_string(),
-                    sha256: ImageSha256::Ignored,
-                    format: ImageFormat::RawZst,
-                }),
+                source: FileSystemSource::OsImage,
                 mount_point: Some(MountPoint {
                     path: PathBuf::from("/mnt/data"),
                     options: MountOptions::defaults(),
@@ -157,11 +151,7 @@ mod tests {
             filesystems: vec![FileSystem {
                 device_id: Some("/dev/sda1".to_string()),
                 fs_type: FileSystemType::Ext4,
-                source: FileSystemSource::Image(Image {
-                    url: "file:///path/to/image".to_string(),
-                    sha256: ImageSha256::Ignored,
-                    format: ImageFormat::RawZst,
-                }),
+                source: FileSystemSource::OsImage,
                 mount_point: None,
             }],
             ..Default::default()

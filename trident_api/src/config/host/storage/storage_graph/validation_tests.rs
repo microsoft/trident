@@ -19,8 +19,8 @@ use super::{
 use crate::{
     config::{
         AbVolumePair, AdoptedPartition, Disk, EncryptedVolume, FileSystem, FileSystemSource,
-        FileSystemType, Image, ImageFormat, ImageSha256, MountOptions, MountPoint, Partition,
-        PartitionSize, PartitionTableType, PartitionType, RaidLevel, SoftwareRaidArray,
+        FileSystemType, MountOptions, MountPoint, Partition, PartitionSize, PartitionTableType,
+        PartitionType, RaidLevel, SoftwareRaidArray,
     },
     constants::{ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
     storage_graph::{
@@ -93,11 +93,7 @@ fn test_basic_graph() {
     let fs = FileSystem {
         device_id: Some("partition6".into()),
         fs_type: FileSystemType::Ext4,
-        source: FileSystemSource::Image(Image {
-            url: "http://image".into(),
-            sha256: ImageSha256::Checksum("checksum".into()),
-            format: ImageFormat::RawZst,
-        }),
+        source: FileSystemSource::OsImage,
         mount_point: Some(MountPoint {
             path: ROOT_MOUNT_POINT_PATH.into(),
             options: MountOptions::empty(),
@@ -217,11 +213,7 @@ fn test_filesystem_incompatible_source() {
     let fs1 = FileSystem {
         device_id: Some("partition".into()),
         fs_type: FileSystemType::Ext4,
-        source: FileSystemSource::Image(Image {
-            url: "http://image".into(),
-            sha256: ImageSha256::Checksum("checksum".into()),
-            format: ImageFormat::RawZst,
-        }),
+        source: FileSystemSource::OsImage,
         mount_point: Some(MountPoint {
             path: ROOT_MOUNT_POINT_PATH.into(),
             options: MountOptions::empty(),
@@ -650,64 +642,6 @@ fn test_invalid_sizes() {
             node_id: "partition_zero".into(),
             kind: BlkDevKind::Partition,
             body: "Partition size must be a non-zero multiple of 4096 bytes.".into()
-        }
-    );
-}
-
-#[test]
-fn test_invalid_raid_level() {
-    let mut builder = StorageGraphBuilder::default();
-
-    let part1 = Partition {
-        id: "partition1".into(),
-        partition_type: PartitionType::Esp,
-        size: PartitionSize::Fixed(4096.into()),
-    };
-    builder.add_node((&part1).into());
-
-    let part2 = Partition {
-        id: "partition2".into(),
-        partition_type: PartitionType::Esp,
-        size: PartitionSize::Fixed(4096.into()),
-    };
-    builder.add_node((&part2).into());
-
-    let raid_array = SoftwareRaidArray {
-        id: "raid_array".into(),
-        name: "md0".into(),
-        devices: vec!["partition1".into(), "partition2".into()],
-        level: RaidLevel::Raid5,
-    };
-    builder.add_node((&raid_array).into());
-
-    // The referrer kind of FileSystemSource::EspImage(_) is BlkDevReferrerKind::FileSystemEsp
-    // Any block device with BlkDevReferrerKind::FileSystemEsp, can only refer to a RAID array with
-    // raid level 1
-    let fs = FileSystem {
-        device_id: Some("raid_array".into()),
-        fs_type: FileSystemType::Vfat,
-        source: FileSystemSource::EspImage(Image {
-            url: "http://image".into(),
-            sha256: ImageSha256::Checksum("checksum".into()),
-            format: ImageFormat::RawZst,
-        }),
-        mount_point: Some(MountPoint {
-            path: ESP_MOUNT_POINT_PATH.into(),
-            options: MountOptions::defaults(),
-        }),
-    };
-    builder.add_node((&fs).into());
-
-    assert_eq!(
-        builder.build().unwrap_err(),
-        StorageGraphBuildError::InvalidRaidlevel {
-            node_identifier: StorageGraphNode::from(&fs).identifier(),
-            kind: BlkDevReferrerKind::FileSystemEsp,
-            raid_id: "raid_array".into(),
-            raid_level: RaidLevel::Raid5,
-            valid_levels: BlkDevReferrerKind::FileSystemEsp
-                .allowed_raid_levels()
-                .unwrap()
         }
     );
 }

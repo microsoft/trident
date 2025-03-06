@@ -165,8 +165,8 @@ mod tests {
     use trident_api::{
         config::{
             self, AdoptedPartition, Disk, FileSystem, FileSystemSource, FileSystemType,
-            HostConfiguration, Image, ImageFormat, ImageSha256, MountOptions, MountPoint,
-            Partition, PartitionType, Storage as StorageConfig,
+            HostConfiguration, MountOptions, MountPoint, Partition, PartitionType,
+            Storage as StorageConfig,
         },
         status::AbVolumeSelection,
     };
@@ -210,24 +210,16 @@ mod tests {
                         FileSystem {
                             device_id: Some("esp".into()),
                             fs_type: FileSystemType::Vfat,
-                            source: FileSystemSource::EspImage(Image {
-                                url: "http://example.com/esp_1.img".to_string(),
-                                sha256: ImageSha256::Checksum("esp_sha256_1".into()),
-                                format: ImageFormat::RawZst,
-                            }),
+                            source: FileSystemSource::OsImage,
                             mount_point: Some(MountPoint {
-                                path: PathBuf::from("/esp"),
+                                path: PathBuf::from("/boot/efi"),
                                 options: MountOptions::empty(),
                             }),
                         },
                         FileSystem {
                             device_id: Some("root".into()),
                             fs_type: FileSystemType::Ext4,
-                            source: FileSystemSource::Image(Image {
-                                url: "http://example.com/root_1.img".to_string(),
-                                sha256: ImageSha256::Checksum("root_sha256_1".into()),
-                                format: ImageFormat::RawZst,
-                            }),
+                            source: FileSystemSource::OsImage,
                             mount_point: Some(MountPoint {
                                 path: PathBuf::from("/"),
                                 options: MountOptions::empty(),
@@ -316,11 +308,7 @@ mod tests {
                         FileSystem {
                             device_id: Some("esp".into()),
                             fs_type: FileSystemType::Vfat,
-                            source: FileSystemSource::EspImage(Image {
-                                url: "http://example.com/esp_2.img".to_string(),
-                                sha256: ImageSha256::Checksum("esp_sha256_2".into()),
-                                format: ImageFormat::RawZst,
-                            }),
+                            source: FileSystemSource::OsImage,
                             mount_point: Some(MountPoint {
                                 path: PathBuf::from("/esp"),
                                 options: MountOptions::empty(),
@@ -329,11 +317,7 @@ mod tests {
                         FileSystem {
                             device_id: Some("root".into()),
                             fs_type: FileSystemType::Ext4,
-                            source: FileSystemSource::Image(Image {
-                                url: "http://example.com/root_2.img".to_string(),
-                                sha256: ImageSha256::Checksum("root_sha256_2".into()),
-                                format: ImageFormat::RawZst,
-                            }),
+                            source: FileSystemSource::OsImage,
                             mount_point: Some(MountPoint {
                                 path: PathBuf::from("/"),
                                 options: MountOptions::empty(),
@@ -429,24 +413,16 @@ mod tests {
                         FileSystem {
                             device_id: Some("esp".into()),
                             fs_type: FileSystemType::Vfat,
-                            source: FileSystemSource::EspImage(Image {
-                                url: "http://example.com/esp_2.img".to_string(),
-                                sha256: ImageSha256::Checksum("esp_sha256_2".into()),
-                                format: ImageFormat::RawZst,
-                            }),
+                            source: FileSystemSource::OsImage,
                             mount_point: Some(MountPoint {
-                                path: PathBuf::from("/esp"),
+                                path: PathBuf::from("/boot/efi"),
                                 options: MountOptions::empty(),
                             }),
                         },
                         FileSystem {
                             device_id: Some("root-b".into()),
                             fs_type: FileSystemType::Ext4,
-                            source: FileSystemSource::Image(Image {
-                                url: "http://example.com/root_2.img".to_string(),
-                                sha256: ImageSha256::Checksum("root_sha256_2".into()),
-                                format: ImageFormat::RawZst,
-                            }),
+                            source: FileSystemSource::OsImage,
                             mount_point: Some(MountPoint {
                                 path: PathBuf::from("/"),
                                 options: MountOptions::empty(),

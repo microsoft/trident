@@ -645,12 +645,14 @@ mod tests {
     };
     use trident_api::{
         config::{
-            self, AbUpdate, Disk, FileSystemType, HostConfiguration, MountOptions, MountPoint,
-            Partition, PartitionSize, PartitionType,
+            AbUpdate, Disk, FileSystem, FileSystemSource, FileSystemType, HostConfiguration,
+            ImageSha384, MountOptions, MountPoint, OsImage, Partition, PartitionSize,
+            PartitionType, Raid, SoftwareRaidArray, Storage,
         },
         error::ErrorKind,
         status::{AbVolumeSelection, ServicingType},
     };
+    use url::Url;
 
     use super::*;
     use boot::get_update_esp_dir_name;
@@ -662,7 +664,7 @@ mod tests {
     fn test_get_label_and_path() {
         let mut ctx = EngineContext {
             spec: HostConfiguration {
-                storage: config::Storage {
+                storage: Storage {
                     ab_update: Some(AbUpdate {
                         volume_pairs: Vec::new(),
                     }),
@@ -754,13 +756,13 @@ mod tests {
     pub(crate) fn get_esp_on_raid_ctx() -> EngineContext {
         EngineContext {
             spec: HostConfiguration {
-                storage: config::Storage {
-                    filesystems: vec![config::FileSystem {
-                        source: config::FileSystemSource::EspImage(config::Image {
-                            url: "http://example.com/esp.img".to_string(),
-                            sha256: config::ImageSha256::Ignored,
-                            format: config::ImageFormat::RawZst,
-                        }),
+                image: Some(OsImage {
+                    url: Url::parse("file:///path/to/image").unwrap(),
+                    sha384: ImageSha384::Ignored,
+                }),
+                storage: Storage {
+                    filesystems: vec![FileSystem {
+                        source: FileSystemSource::OsImage,
                         device_id: Some("esp".to_string()),
                         fs_type: FileSystemType::Vfat,
                         mount_point: Some(MountPoint {
@@ -785,11 +787,11 @@ mod tests {
                         ],
                         ..Default::default()
                     }],
-                    raid: config::Raid {
-                        software: vec![config::SoftwareRaidArray {
+                    raid: Raid {
+                        software: vec![SoftwareRaidArray {
                             id: "esp".into(),
                             name: "esp".to_string(),
-                            level: config::RaidLevel::Raid1,
+                            level: RaidLevel::Raid1,
                             devices: vec!["esp1".into(), "esp2".into()],
                         }],
                         sync_timeout: Some(180),
@@ -806,13 +808,13 @@ mod tests {
     pub(crate) fn get_esp_on_partition() -> EngineContext {
         EngineContext {
             spec: HostConfiguration {
-                storage: config::Storage {
-                    filesystems: vec![config::FileSystem {
-                        source: config::FileSystemSource::EspImage(config::Image {
-                            url: "http://example.com/esp.img".to_string(),
-                            sha256: config::ImageSha256::Ignored,
-                            format: config::ImageFormat::RawZst,
-                        }),
+                image: Some(OsImage {
+                    url: Url::parse("file:///path/to/image").unwrap(),
+                    sha384: ImageSha384::Ignored,
+                }),
+                storage: Storage {
+                    filesystems: vec![FileSystem {
+                        source: FileSystemSource::OsImage,
                         device_id: Some("esp".to_string()),
                         fs_type: FileSystemType::Vfat,
                         mount_point: Some(MountPoint {
@@ -857,7 +859,7 @@ mod tests {
         assert_eq!(esp_device_metadata, esp_meta_data_vec);
 
         // Test case where ESP RAID level is not RAID1
-        ctx.spec.storage.raid.software[0].level = config::RaidLevel::Raid0;
+        ctx.spec.storage.raid.software[0].level = RaidLevel::Raid0;
 
         assert_eq!(
             parse_esp_metadata(&ctx, esp_device_info)
@@ -885,7 +887,7 @@ mod tests {
     fn test_get_entry_labels() {
         let mut ctx = EngineContext {
             spec: HostConfiguration {
-                storage: config::Storage {
+                storage: Storage {
                     ab_update: Some(AbUpdate {
                         volume_pairs: vec![],
                     }),
@@ -938,9 +940,10 @@ mod functional_test {
     use pytest_gen::functional_test;
 
     use trident_api::config::{
-        self, Disk, FileSystemType, HostConfiguration, MountOptions, MountPoint, Partition,
-        PartitionSize, PartitionType,
+        self, Disk, FileSystemType, HostConfiguration, ImageSha384, MountOptions, MountPoint,
+        OsImage, Partition, PartitionSize, PartitionType,
     };
+    use url::Url;
 
     use crate::engine::storage::partitioning;
     use crate::engine::EngineContext;
@@ -1313,13 +1316,13 @@ mod functional_test {
     fn get_esp_on_raid_ctx() -> EngineContext {
         EngineContext {
             spec: HostConfiguration {
+                image: Some(OsImage {
+                    url: Url::parse("file:///path/to/image").unwrap(),
+                    sha384: ImageSha384::Ignored,
+                }),
                 storage: trident_api::config::Storage {
                     filesystems: vec![config::FileSystem {
-                        source: config::FileSystemSource::EspImage(config::Image {
-                            url: "http://example.com/esp.img".to_string(),
-                            sha256: config::ImageSha256::Ignored,
-                            format: config::ImageFormat::RawZst,
-                        }),
+                        source: config::FileSystemSource::OsImage,
                         device_id: Some("esp".to_string()),
                         fs_type: FileSystemType::Vfat,
                         mount_point: Some(MountPoint {

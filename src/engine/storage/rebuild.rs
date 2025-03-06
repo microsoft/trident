@@ -439,8 +439,8 @@ mod tests {
     use osutils::testutils::repart::TEST_DISK_DEVICE_PATH;
     use trident_api::{
         config::{
-            Disk, FileSystemSource, FileSystemType, Image, ImageFormat, ImageSha256, MountOptions,
-            MountPoint, Partition, PartitionSize, PartitionType, RaidLevel, Storage,
+            Disk, FileSystemSource, FileSystemType, MountOptions, MountPoint, Partition,
+            PartitionSize, PartitionType, RaidLevel, Storage,
         },
         status::ServicingState,
     };
@@ -776,11 +776,7 @@ mod tests {
             .push(trident_api::config::FileSystem {
                 device_id: Some("disk2part1".to_string()),
                 fs_type: FileSystemType::Ext4,
-                source: FileSystemSource::Image(Image {
-                    url: "http://example.com/root_1.img".to_string(),
-                    sha256: ImageSha256::Checksum("root_sha256_1".into()),
-                    format: ImageFormat::RawZst,
-                }),
+                source: FileSystemSource::OsImage,
                 mount_point: Some(MountPoint {
                     path: PathBuf::from("/"),
                     options: MountOptions::empty(),
@@ -842,11 +838,7 @@ mod tests {
             .push(trident_api::config::FileSystem {
                 device_id: Some("disk2part3".to_string()),
                 fs_type: FileSystemType::Vfat,
-                source: FileSystemSource::EspImage(Image {
-                    url: "http://example.com/esp_2.img".to_string(),
-                    sha256: ImageSha256::Checksum("esp_sha256_2".into()),
-                    format: ImageFormat::RawZst,
-                }),
+                source: FileSystemSource::OsImage,
                 mount_point: Some(MountPoint {
                     path: PathBuf::from("/esp"),
                     options: MountOptions::empty(),

@@ -5,9 +5,8 @@ use std::{
 
 use trident_api::{
     config::{
-        Disk, FileSystem, FileSystemSource, FileSystemType, HostConfiguration, Image, ImageFormat,
-        ImageSha256, MountOptions, MountPoint, Partition, PartitionSize, PartitionTableType,
-        PartitionType,
+        Disk, FileSystem, FileSystemSource, FileSystemType, HostConfiguration, MountOptions,
+        MountPoint, Partition, PartitionSize, PartitionTableType, PartitionType,
     },
     misc::IdGenerator,
 };
@@ -95,11 +94,7 @@ pub fn translate(input: &ParsedData, hc: &mut HostConfiguration, errors: &mut Ve
             // TODO(5989): Figure out how to bridge the gap between how kickstart
             // handles images and how Trident handles them
             source: match part.image.as_ref() {
-                Some(img) => FileSystemSource::Image(Image {
-                    url: img.clone(),
-                    sha256: ImageSha256::Ignored,
-                    format: ImageFormat::RawZst,
-                }),
+                Some(_) => FileSystemSource::OsImage,
                 None => FileSystemSource::New,
             },
             mount_point: match part.mntpoint {
