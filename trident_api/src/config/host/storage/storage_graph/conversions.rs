@@ -1,8 +1,13 @@
 // //! Conversions from config types to BlkDevNode
 
-use crate::config::{
-    AbVolumePair, AdoptedPartition, Disk, EncryptedVolume, FileSystem, FileSystemSource, Partition,
-    SoftwareRaidArray, VerityDevice,
+use std::path::Path;
+
+use crate::{
+    config::{
+        AbVolumePair, AdoptedPartition, Disk, EncryptedVolume, FileSystem, FileSystemSource,
+        Partition, SoftwareRaidArray, VerityDevice,
+    },
+    constants::ESP_MOUNT_POINT_PATH,
 };
 
 use super::{
@@ -118,8 +123,21 @@ impl From<&FileSystem> for BlkDevReferrerKind {
                 // If it's an image, then it is a filesystem referrer.
                 FileSystemSource::Image(_) => BlkDevReferrerKind::FileSystem,
 
-                // If it's an OS image, then it is an OS image filesystem referrer.
-                FileSystemSource::OsImage => BlkDevReferrerKind::FileSystemOsImage,
+                // If it's an OS image, then check the mount point...
+                FileSystemSource::OsImage => {
+                    if fs
+                        .mount_point
+                        .as_ref()
+                        .is_some_and(|mp| mp.path == Path::new(ESP_MOUNT_POINT_PATH))
+                    {
+                        // If the mount point is the ESP mount point, then it's an
+                        // ESP filesystem referrer.
+                        BlkDevReferrerKind::FileSystemEsp
+                    } else {
+                        // Otherwise, it's a regular OS image filesystem referrer.
+                        BlkDevReferrerKind::FileSystemOsImage
+                    }
+                }
             }
         } else {
             // Filesystems that do not require a block device are not referrers.

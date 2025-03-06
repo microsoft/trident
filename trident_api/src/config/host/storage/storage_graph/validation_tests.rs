@@ -790,7 +790,7 @@ fn test_esp_enforce_partition_type() {
         builder.build().unwrap_err(),
         StorageGraphBuildError::InvalidPartitionType {
             node_identifier: StorageGraphNode::from(&fs).identifier(),
-            kind: BlkDevReferrerKind::FileSystemOsImage,
+            kind: BlkDevReferrerKind::FileSystemEsp,
             partition_id: "partition".into(),
             partition_type: PartitionType::LinuxGeneric,
             valid_types: expected_partition_type(Path::new(ESP_MOUNT_POINT_PATH))
