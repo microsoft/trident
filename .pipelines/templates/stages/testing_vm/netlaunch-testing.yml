@@ -36,6 +36,7 @@ stages:
               - TridentTestImg_trident_container_testimage
               - TridentTestImg_trident_container_verity_testimage
           - ${{ else }}:
+              - TridentTestImg_trident_split_installer_testimage
               - TridentTestImg_trident_installer_testimage
               - TridentTestImg_trident_testimage
               - TridentTestImg_trident_verity_testimage
@@ -66,9 +67,15 @@ stages:
           argusToolkitSourceDirectory: $(Build.SourcesDirectory)/argus-toolkit
 
           ${{ if eq(parameters.runtimeEnv, 'container') }}:
-            installerISO: trident-container-installer-testimage.iso
+            installerISOName: trident-container-installer-testimage
+            testImageName: trident-container-testimage
+            verityTestImageName: trident-container-verity-testimage
+            downloadTridentContainer: true
           ${{ else }}:
-            installerISO: trident-installer-testimage.iso
+            installerISOName: trident-installer-testimage
+            testImageName: trident-testimage
+            verityTestImageName: trident-verity-testimage
+            downloadTridentContainer: false
 
           ob_outputDirectory: $(tridentSourceDirectory)/deployment_logs
           ob_artifactBaseName: $(tridentConfigurationName)_${{ parameters.runtimeEnv }}_deployment_log_$(System.JobAttempt)
@@ -76,18 +83,24 @@ stages:
           netlaunchPort: 4000
 
         steps:
+          - bash: |
+              if [ ${{ variables['tridentConfigurationName'] }} == 'split' ]; then
+                splitInstallerIsoName="trident-split-installer-testimage"
+                echo "setting variable.installerISOName to $splitInstallerIsoName"
+                echo "##vso[task.setvariable variable=installerISOName]$splitInstallerIsoName"
+              fi
+            displayName: Special handle for split test
+
           - checkout: argus-toolkit
             fetchDepth: 1
 
           # Download all test images
           - template: ../testing_common/download-test-images.yml
             parameters:
-              ${{ if eq(parameters.runtimeEnv, 'container') }}:
-                installerISO: trident-container-installer-testimage
-                tridentTestImage: trident-container-testimage
-                tridentTestImageVerity: trident-container-verity-testimage
-                downloadTridentContainer: true
-              ${{ else }}: {}
+              installerISO: $(installerISOName)
+              tridentTestImage: ${{ variables.testImageName }}
+              tridentTestImageVerity: ${{ variables.verityTestImageName }}
+              downloadTridentContainer: ${{ variables.downloadTridentContainer }}
 
           - template: netlaunch-prep.yml
 
@@ -122,7 +135,7 @@ stages:
               fi
 
               ./bin/netlaunch \
-                  --iso ./artifacts/iso/$(installerISO) \
+                  --iso ./artifacts/iso/$(installerISOName).iso \
                   --config $(argusToolkitSourceDirectory)/vm-netlaunch.yaml \
                   --trident $(tridentConfigPath)/trident-config.yaml \
                   --servefolder ./artifacts/test-image \
@@ -130,10 +143,11 @@ stages:
                   --trace-file $(tridentSourceDirectory)/trident-clean-install-metrics.jsonl \
                   --force-color \
                   --full-logstream logstream-full.log \
+                  --wait-for-provisioned-state \
                   --port ${{variables.netlaunchPort}} 2>&1 | tee ./clean-install-deployment.log
-            timeoutInMinutes: 13
             workingDirectory: $(tridentSourceDirectory)
             displayName: "Run netlaunch for testing"
+            timeoutInMinutes: 15
 
           - template: ../testing_common/display-deployment-logs.yml
             parameters:

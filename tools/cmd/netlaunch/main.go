@@ -69,6 +69,7 @@ var (
 	maxFailures         uint
 	traceFile           string
 	forceColor          bool
+	waitForProvisioned  bool
 )
 
 var backgroundLogstreamFull string
@@ -386,8 +387,22 @@ func listen_loop(terminate <-chan bool, result <-chan phonehome.PhoneHomeResult)
 				// If we failed, increment the failure count.
 				failureCount++
 			default:
-				// For everything else, return the exit code.
-				return result.ExitCode()
+				if !waitForProvisioned {
+					// First successful phonehome message should return the exit code.
+					return result.ExitCode()
+				}
+
+				var hostStatus map[string]interface{}
+				err := yaml.Unmarshal([]byte(result.HostStatus), &hostStatus)
+				if err != nil {
+					log.Info("Failed to parse phonehome Host Status: %v", err)
+					// Increment the failure count.
+					failureCount++
+				} else if hostStatus["servicingState"] == "provisioned" {
+					// Only phonehome message with provisioned servicingState should
+					// return the exit code.
+					return result.ExitCode()
+				}
 			}
 
 			// Check if we've exceeded the maximum number of failures.
@@ -409,6 +424,7 @@ func init() {
 	rootCmd.PersistentFlags().UintVarP(&maxFailures, "max-failures", "e", 0, "Maximum number of failures allowed before terminating. Default 0: no failures are tolerated.")
 	rootCmd.PersistentFlags().StringVarP(&traceFile, "trace-file", "m", "", "File for writing metrics collected from Trident.")
 	rootCmd.PersistentFlags().StringVarP(&backgroundLogstreamFull, "full-logstream", "b", "logstream-full.log", "File to write full logstream output to. (Requires -l)")
+	rootCmd.PersistentFlags().BoolVarP(&waitForProvisioned, "wait-for-provisioned-state", "", false, "Wait for Host Status servicingState to be 'provisioned'")
 	rootCmd.PersistentFlags().BoolVarP(&forceColor, "force-color", "", false, "Force colored output.")
 	rootCmd.Flags().StringVarP(&iso, "iso", "i", "", "ISO for Netlaunch testing.")
 	rootCmd.MarkFlagRequired("iso-template")

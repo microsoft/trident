@@ -92,6 +92,16 @@ stages:
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
 
+  # Build Trident split (stage and finalize separated) installer ISO (host)
+  - template: stages/build_image/trident-testimg.yml
+    parameters:
+      imageName: build/trident-split-installer-testimage.iso
+      outputArtifactName: trident-split-installer-testimage
+      baseimgBuildType: ${{ parameters.baseimgBuildType }}
+      baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
+      micBuildType: ${{ parameters.micBuildType }}
+      micVersion: ${{ parameters.micVersion }}
+
   # Build Trident installer ISO (container)
   - template: stages/build_image/trident-testimg.yml
     parameters:

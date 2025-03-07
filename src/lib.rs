@@ -294,6 +294,7 @@ impl Trident {
         // command.
         if let Some(local_host_config) = self.host_config.clone() {
             debug!("Applying Host Configuration from local config");
+            debug!("Allowed operations: {:?}", allowed_operations);
             sender
                 .blocking_send(HostUpdateCommand {
                     allowed_operations,

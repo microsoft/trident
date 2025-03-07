@@ -290,6 +290,30 @@ stages:
                   artifactName: $(ob_artifactBaseName)
                   targetPath: $(ob_outputDirectory)
 
+          - job: TridentSplitInstallerTestimage
+            displayName: Download trident-split-installer-testimage
+            timeoutInMinutes: 10
+            pool:
+              type: linux
+
+            variables:
+              ob_outputDirectory: $(Build.SourcesDirectory)/build
+              ob_artifactBaseName: "trident-split-installer-testimage"
+
+            steps:
+              - task: DownloadPipelineArtifact@2
+                displayName: "Download split-installer-iso/installer.iso"
+                inputs:
+                  source: specific
+                  project: "ECF"
+                  definition: ${{ parameters.definition }}
+                  runVersion: ${{ parameters.runVersion }}
+                  branchName: "refs/heads/${{ parameters.branch }}"
+                  runId: ${{ parameters.tridentPipelineRunId }}
+                  allowFailedBuilds: ${{ parameters.allowFailedBuilds }}
+                  artifactName: $(ob_artifactBaseName)
+                  targetPath: $(ob_outputDirectory)
+
           - job: TridentTestimage
             displayName: "Download trident-testimage"
             timeoutInMinutes: 10

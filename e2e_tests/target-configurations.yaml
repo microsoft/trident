@@ -4,7 +4,7 @@ bareMetal:
       - base
       - combined
       - encrypted-partition
-      - encrypted-raid
+      - split
     validation:
       - base
       - combined
@@ -18,6 +18,7 @@ bareMetal:
       - raid-mirrored
       - rerun
       - simple
+      - split
       - verity
       - verity-raid
     weekly:
@@ -33,6 +34,7 @@ bareMetal:
       - raid-mirrored
       - rerun
       - simple
+      - split
       - verity
       - verity-raid
   container:
@@ -93,6 +95,7 @@ virtualMachine:
       - raid-resync-small
       - rerun
       - simple
+      - split
       - verity
       - verity-raid
     post_merge:
@@ -108,6 +111,7 @@ virtualMachine:
       - raid-resync-small
       - rerun
       - simple
+      - split
       - verity
       - verity-raid
     pullrequest:
@@ -117,6 +121,7 @@ virtualMachine:
       - raid-resync-small
       - rerun
       - simple
+      - split
       - verity-raid
     validation:
       - base
@@ -131,6 +136,7 @@ virtualMachine:
       - raid-resync-small
       - rerun
       - simple
+      - split
       - verity
       - verity-raid
     weekly:
@@ -146,6 +152,7 @@ virtualMachine:
       - raid-resync-small
       - rerun
       - simple
+      - split
       - verity
       - verity-raid
   container:
