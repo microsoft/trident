@@ -1,4 +1,5 @@
 use std::{
+    ffi::OsStr,
     fs::File,
     io::{BufRead, BufReader},
     path::Path,
@@ -8,11 +9,15 @@ use std::{
 use anyhow::{bail, Context, Error};
 
 use log::warn;
-use osutils::dependencies::{Dependency, DependencyResultExt};
+use osutils::{
+    dependencies::{Dependency, DependencyResultExt},
+    filesystems::KnownFilesystemTypes,
+    findmnt::FindMnt,
+};
 use trident_api::{
-    config::{FileSystemType, HostConfigurationDynamicValidationError, MountPoint, SelinuxMode},
+    config::{HostConfigurationDynamicValidationError, SelinuxMode},
     constants::{MOUNT_OPTION_READ_ONLY, SELINUX_CONFIG},
-    error::{InvalidInputError, ReportError, ServicingError, TridentError},
+    error::{InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::ServicingType,
 };
 
@@ -131,7 +136,7 @@ impl Subsystem for SelinuxSubsystem {
             }
         }
 
-        perform_relabel(ctx)
+        perform_relabel().message("Failed to perform SELinux relabeling")
     }
 }
 
@@ -181,26 +186,28 @@ fn calculate_final_selinux_state(
 }
 
 /// Runs the setfiles command to relabel the required filesystems.
-fn perform_relabel(ctx: &EngineContext) -> Result<(), TridentError> {
+fn perform_relabel() -> Result<(), TridentError> {
     let selinux_type =
         get_selinux_type(SELINUX_CONFIG).structured(ServicingError::GetSelinuxType)?;
 
-    // Get the mount points for all filesystems, except for vfat and NTFS. These two FS
+    // Get the mount points for all (real) filesystems, except for vfat and NTFS. These two FS
     // types cannot be used in conjunction with SELinux, so the setfiles command will be
     // skipped for them.
-    let mount_paths: Vec<&MountPoint> = ctx
-        .spec
-        .storage
-        .filesystems
-        .iter()
+    let root = FindMnt::run_real()
+        .structured(ServicingError::GetMountPointsInfo)?
+        .root()
+        .structured(ServicingError::GetMountPointsInfo)
+        .message("Failed to get root mount point info")?;
+    let mount_paths: Vec<&OsStr> = root
+        .traverse_depth()
+        .into_iter()
         // Filter out vfat and NTFS filesystems
-        .filter(|filesystem| {
-            filesystem.fs_type != FileSystemType::Vfat && filesystem.fs_type != FileSystemType::Ntfs
+        .filter(|mp| {
+            mp.fstype != KnownFilesystemTypes::Vfat && mp.fstype != KnownFilesystemTypes::Ntfs
         })
-        // Filter out filesystems that are not mounted
-        .filter_map(|filesystem| filesystem.mount_point.as_ref())
         // Filter out read-only mount points
         .filter(|mp| !mp.options.contains(MOUNT_OPTION_READ_ONLY))
+        .map(|mp| mp.target.as_os_str())
         .collect();
 
     Dependency::Setfiles
@@ -211,11 +218,7 @@ fn perform_relabel(ctx: &EngineContext) -> Result<(), TridentError> {
                 .join(selinux_type)
                 .join("contexts/files/file_contexts"),
         )
-        .args(
-            mount_paths
-                .iter()
-                .map(|mount_point| mount_point.path.as_os_str()),
-        )
+        .args(mount_paths)
         .run_and_check()
         .message("Failed to run setfiles command")
 }

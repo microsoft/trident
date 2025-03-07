@@ -397,6 +397,9 @@ pub enum ServicingError {
     #[error("Failed to get the label and path for the EFI boot loader of the A/B update volume")]
     GetLabelandPath,
 
+    #[error("Failed to get current mount points info with findmnt")]
+    GetMountPointsInfo,
+
     #[error("Failed to get the partition number of '{part_uuid_path}' in the disk '{disk_path}'")]
     GetPartitionNumber {
         disk_path: String,
@@ -411,9 +414,6 @@ pub enum ServicingError {
 
     #[error("Failed to get the root block device id")]
     GetRootBlockDeviceId,
-
-    #[error("Failed to get mount point info for root with path '{root_path}'")]
-    GetRootMountPointInfo { root_path: String },
 
     #[error("Failed to get block device path of root verity data device")]
     GetRootVerityDataDevPath,

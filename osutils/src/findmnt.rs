@@ -72,7 +72,10 @@ use serde::Deserialize;
 
 use trident_api::{config::MountOptions, constants::ROOT_MOUNT_POINT_PATH};
 
-use crate::dependencies::{Command, Dependency};
+use crate::{
+    dependencies::{Command, Dependency},
+    filesystems::KnownFilesystemTypes,
+};
 
 /// String representation of the unbindable propagation type.
 pub const PROPAGATION_UNBINDABLE: &str = "unbindable";
@@ -80,7 +83,7 @@ pub const PROPAGATION_UNBINDABLE: &str = "unbindable";
 /// String with a comma-separated list of columns to be used with `findmnt
 /// --json -o` to output the columns that can be deserialized into a
 /// `MountpointMetadata` structure.
-pub const FINDMNT_COLUMNS: &str = "id,target,source,fsroot,options,propagation";
+pub const FINDMNT_COLUMNS: &str = "id,target,source,fsroot,fstype,options,propagation";
 
 /// Represents the output of `findmnt --json` as a Rust structure.
 #[derive(Debug, Deserialize)]
@@ -110,6 +113,9 @@ pub struct MountpointMetadata {
 
     /// Filesystem root.
     pub fsroot: PathBuf,
+
+    /// Filesystem type.
+    pub fstype: KnownFilesystemTypes,
 
     /// Options.
     pub options: MountOptions,
@@ -334,6 +340,10 @@ mod tests {
     fn sample_json_null_source() -> &'static str {
         // Sample output of `findmnt` from a scenario with containerd and tardev-snapshotter, where
         // the source of the overlay mount is reported as `null`.
+        //
+        // Command:
+        // findmnt --json -o "AVAIL,FREQ,FSROOT,FSTYPE,FS-OPTIONS,ID,LABEL,MAJ:MIN,OPTIONS,OPT-FIELDS,PARENT,PARTLABEL,PARTUUID,PASSNO,PROPAGATION,SIZE,SOURCE,TARGET,TID,USED,USE%,UUID,VFS-OPTIONS"
+        // Note: null sources have been artificially injected on some overlayfs
         include_str!("test_files/findmnt-null-source.json")
     }
 

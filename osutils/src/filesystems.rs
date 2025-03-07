@@ -2,7 +2,38 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use anyhow::{bail, Error};
 
+use serde::Deserialize;
 use trident_api::config::FileSystemType;
+
+/// File system types for `findmnt`
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum KnownFilesystemTypes {
+    Ext4,
+    Ext3,
+    Ext2,
+    Cramfs,
+    Squashfs,
+    Vfat,
+    Msdos,
+    Exfat,
+    Iso9660,
+    Ntfs,
+    Btrfs,
+    Xfs,
+    Tmpfs,
+    Swap,
+    Overlay,
+    Auto,
+    #[serde(untagged)]
+    Other(String),
+}
+
+impl Default for KnownFilesystemTypes {
+    fn default() -> Self {
+        KnownFilesystemTypes::Other(String::new())
+    }
+}
 
 /// File system types for `mount`
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
