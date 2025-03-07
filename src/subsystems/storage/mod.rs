@@ -9,7 +9,6 @@ use log::{debug, error, trace, warn};
 use osutils::lsblk;
 use trident_api::{
     config::HostConfigurationDynamicValidationError,
-    constants::ROOT_MOUNT_POINT_PATH,
     error::{
         InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt,
         UnsupportedConfigurationError,
@@ -190,10 +189,6 @@ impl Subsystem for StorageSubsystem {
 
         // Persist on reboots
         raid::configure(ctx).structured(ServicingError::CreateMdadmConf)?;
-
-        // Update paths for root verity devices in GRUB configs
-        verity::configure(ctx, Path::new(ROOT_MOUNT_POINT_PATH))
-            .structured(ServicingError::UpdateGrubConfigsAfterVerityCreation)?;
 
         Ok(())
     }

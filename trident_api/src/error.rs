@@ -518,9 +518,6 @@ pub enum ServicingError {
     #[error("Failed to update GRUB configs")]
     UpdateGrubConfigs,
 
-    #[error("Failed to update GRUB configs after verity creation")]
-    UpdateGrubConfigsAfterVerityCreation,
-
     #[error("Failed to write an additional file '{file_name}'")]
     WriteAdditionalFile { file_name: String },
 
