@@ -13,7 +13,7 @@ pub use host::{
         KernelCommandLine, ManagementOs, Os, Selinux, SelinuxMode,
     },
     scripts::{Script, ScriptSource, Scripts, ServicingTypeSelection},
-    storage::imaging::{AbUpdate, AbVolumePair, Image, ImageFormat, ImageSha256},
+    storage::abupdate::{AbUpdate, AbVolumePair},
     storage::{
         disks::{Disk, PartitionTableType},
         encryption::{EncryptedVolume, Encryption},

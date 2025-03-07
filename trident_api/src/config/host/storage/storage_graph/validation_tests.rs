@@ -237,12 +237,9 @@ fn test_filesystem_incompatible_source() {
     assert_eq!(
         builder.build().unwrap_err(),
         StorageGraphBuildError::FilesystemIncompatibleSource {
-            fs_desc: "src:new, type:other, dev:partition".to_string(),
+            fs_desc: fs2.description(),
             fs_source: FileSystemSourceKind::New,
-            fs_compatible_sources: ItemList(vec![
-                FileSystemSourceKind::Image,
-                FileSystemSourceKind::OsImage
-            ])
+            fs_compatible_sources: fs2.fs_type.valid_sources()
         }
     );
 

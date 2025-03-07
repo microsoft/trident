@@ -116,7 +116,7 @@ pub enum BlkDevReferrerKind {
     VerityDevice,
 
     /// A regular filesystem
-    FileSystem,
+    FileSystemNew,
 
     /// A filesystem from an OS image
     FileSystemOsImage,
@@ -139,7 +139,7 @@ bitflags::bitflags! {
         const ABVolume = 1 << 1;
         const EncryptedVolume = 1 << 2;
         const VerityDevice = 1 << 3;
-        const FileSystem = 1 << 4;
+        const FileSystemNew = 1 << 4;
         const FileSystemOsImage = 1 << 5;
         const FileSystemEsp = 1 << 6;
         const FileSystemAdopted = 1 << 7;
@@ -156,14 +156,8 @@ pub enum FileSystemSourceKind {
     /// Create a new file system.
     New,
 
-    /// Use an existing file system from a partition image.
-    Image,
-
     /// Filesystem from an adopted block device.
     Adopted,
-
-    /// Use an existing file system from an ESP image.
-    EspBundle,
 
     /// Use an existing file system from an OS Image.
     OsImage,
@@ -284,7 +278,7 @@ impl BlkDevReferrerKind {
             Self::ABVolume => BlkDevReferrerKindFlag::ABVolume,
             Self::EncryptedVolume => BlkDevReferrerKindFlag::EncryptedVolume,
             Self::VerityDevice => BlkDevReferrerKindFlag::VerityDevice,
-            Self::FileSystem => BlkDevReferrerKindFlag::FileSystem,
+            Self::FileSystemNew => BlkDevReferrerKindFlag::FileSystemNew,
             Self::FileSystemEsp => BlkDevReferrerKindFlag::FileSystemEsp,
             Self::FileSystemAdopted => BlkDevReferrerKindFlag::FileSystemAdopted,
             Self::FileSystemOsImage => BlkDevReferrerKindFlag::FileSystemOsImage,
@@ -340,7 +334,7 @@ impl BitFlagsBackingEnumVec<BlkDevReferrerKind> for BlkDevReferrerKindFlag {
                 BlkDevReferrerKindFlag::ABVolume => BlkDevReferrerKind::ABVolume,
                 BlkDevReferrerKindFlag::VerityDevice => BlkDevReferrerKind::VerityDevice,
                 BlkDevReferrerKindFlag::EncryptedVolume => BlkDevReferrerKind::EncryptedVolume,
-                BlkDevReferrerKindFlag::FileSystem => BlkDevReferrerKind::FileSystem,
+                BlkDevReferrerKindFlag::FileSystemNew => BlkDevReferrerKind::FileSystemNew,
                 BlkDevReferrerKindFlag::FileSystemEsp => BlkDevReferrerKind::FileSystemEsp,
                 BlkDevReferrerKindFlag::FileSystemAdopted => BlkDevReferrerKind::FileSystemAdopted,
                 BlkDevReferrerKindFlag::FileSystemOsImage => BlkDevReferrerKind::FileSystemOsImage,

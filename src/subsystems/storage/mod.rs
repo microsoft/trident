@@ -29,7 +29,6 @@ mod verity;
 
 use tabfile::DEFAULT_FSTAB_PATH;
 
-const IMAGE_SUBSYSTEM_NAME: &str = "image";
 const ENCRYPTION_SUBSYSTEM_NAME: &str = "encryption";
 const OSIMAGE_SUBSYSTEM_NAME: &str = "osimage";
 
@@ -134,10 +133,6 @@ impl Subsystem for StorageSubsystem {
 
         // TODO: validate that block devices naming is consistent with the current state
         // https://dev.azure.com/mariner-org/ECF/_workitems/edit/7322/
-
-        image::validate_host_config(ctx).message(format!(
-            "Step 'Validate' failed for subsystem '{IMAGE_SUBSYSTEM_NAME}'"
-        ))?;
 
         encryption::validate_host_config(&ctx.spec).message(format!(
             "Step 'Validate' failed for subsystem '{ENCRYPTION_SUBSYSTEM_NAME}'"

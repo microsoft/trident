@@ -63,10 +63,6 @@ fn block_devices_needing_fs_creation(
             // The filesystem source is 'New'.
             (FileSystemSource::New, _) => true,
 
-            // The filesystem source is 'EspImage' AND servicing type is
-            // CleanInstall.
-            (FileSystemSource::EspImage(_), ServicingType::CleanInstall) => true,
-
             // The filesystem source is `OsImage` AND servicing type is
             // CleanInstall AND the mount point is the ESP location.
             (FileSystemSource::OsImage, ServicingType::CleanInstall) => fs

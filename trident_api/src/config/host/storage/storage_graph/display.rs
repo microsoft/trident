@@ -15,9 +15,7 @@ impl Display for FileSystemSourceKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::New => write!(f, "new"),
-            Self::Image => write!(f, "image"),
             Self::Adopted => write!(f, "adopted"),
-            Self::EspBundle => write!(f, "esp-image"),
             Self::OsImage => write!(f, "os-image"),
         }
     }
@@ -46,7 +44,7 @@ impl Display for BlkDevReferrerKind {
             Self::ABVolume => write!(f, "ab-volume"),
             Self::EncryptedVolume => write!(f, "encrypted-volume"),
             Self::VerityDevice => write!(f, "verity-device"),
-            Self::FileSystem => write!(f, "filesystem"),
+            Self::FileSystemNew => write!(f, "filesystem-new"),
             Self::FileSystemEsp => write!(f, "filesystem-esp"),
             Self::FileSystemAdopted => write!(f, "filesystem-adopted"),
             Self::FileSystemOsImage => write!(f, "filesystem-os-image"),

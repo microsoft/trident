@@ -14,125 +14,24 @@ Create a new file system.
 
 | Characteristic | Value    |
 | -------------- | -------- |
-| Type           | `object` |
-
-### Properties
-
-#### `type` **<span style="color:orange;">(required)</span>**
-
-| Characteristic | Value    |
-| -------------- | -------- |
 | Type           | `string` |
 | Value          | `new`    |
-
-### Image
-
-Use an existing file system from a partition image. **Cannot** be used for ESP/EFI partitions.
-
-| Characteristic | Value    |
-| -------------- | -------- |
-| Type           | `object` |
-
-### Properties
-
-#### `format` **<span style="color:orange;">(required)</span>**
-
-The format of the image.
-
-| Characteristic | Value                           |
-| -------------- | ------------------------------- |
-| Type           | `ImageFormat`                   |
-| Link           | [ImageFormat](./ImageFormat.md) |
-
-#### `sha256` **<span style="color:orange;">(required)</span>**
-
-The SHA256 checksum of the compressed image.
-
-The hash is computed over the compressed contents of the image, not the uncompressed output that will be written to the block device. This value is used to verify the integrity of the image.
-
-| Characteristic | Value                           |
-| -------------- | ------------------------------- |
-| Type           | `ImageSha256`                   |
-| Link           | [ImageSha256](./ImageSha256.md) |
-
-#### `type` **<span style="color:orange;">(required)</span>**
-
-| Characteristic | Value    |
-| -------------- | -------- |
-| Type           | `string` |
-| Value          | `image`  |
-
-#### `url` **<span style="color:orange;">(required)</span>**
-
-The URL of the image.
-
-Supported schemes are: `file`, `http`, and `https`.
-
-| Characteristic | Value    |
-| -------------- | -------- |
-| Type           | `string` |
-
-### ESP Image
-
-Use an existing file system from an ESP image. Can **only** be used for ESP/EFI partitions.
-
-| Characteristic | Value    |
-| -------------- | -------- |
-| Type           | `object` |
-
-### Properties
-
-#### `format` **<span style="color:orange;">(required)</span>**
-
-The format of the image.
-
-| Characteristic | Value                           |
-| -------------- | ------------------------------- |
-| Type           | `ImageFormat`                   |
-| Link           | [ImageFormat](./ImageFormat.md) |
-
-#### `sha256` **<span style="color:orange;">(required)</span>**
-
-The SHA256 checksum of the compressed image.
-
-The hash is computed over the compressed contents of the image, not the uncompressed output that will be written to the block device. This value is used to verify the integrity of the image.
-
-| Characteristic | Value                           |
-| -------------- | ------------------------------- |
-| Type           | `ImageSha256`                   |
-| Link           | [ImageSha256](./ImageSha256.md) |
-
-#### `type` **<span style="color:orange;">(required)</span>**
-
-| Characteristic | Value       |
-| -------------- | ----------- |
-| Type           | `string`    |
-| Value          | `esp-image` |
-
-#### `url` **<span style="color:orange;">(required)</span>**
-
-The URL of the image.
-
-Supported schemes are: `file`, `http`, and `https`.
-
-| Characteristic | Value    |
-| -------------- | -------- |
-| Type           | `string` |
 
 ### Adopted
 
 Use an existing file system from an adopted partition.
 
-| Characteristic | Value    |
-| -------------- | -------- |
-| Type           | `object` |
-
-### Properties
-
-#### `type` **<span style="color:orange;">(required)</span>**
-
 | Characteristic | Value     |
 | -------------- | --------- |
 | Type           | `string`  |
 | Value          | `adopted` |
+
+### OS Image
+
+Use an existing file system from an OS image.
+
+| Characteristic | Value      |
+| -------------- | ---------- |
+| Type           | `string`   |
+| Value          | `os-image` |
 

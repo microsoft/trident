@@ -54,15 +54,11 @@ storage:
   filesystems:
     - type: vfat
       deviceId: esp
-      source:
-        type: os-image
       mountPoint:
         path: /boot/efi
         options: umask=0077
     - type: ext4
       deviceId: root
-      source:
-        type: os-image
       mountPoint: /
     - type: ext4
       deviceId: trident

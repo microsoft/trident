@@ -20,9 +20,7 @@ impl From<&FileSystemSource> for FileSystemSourceKind {
     fn from(source: &FileSystemSource) -> Self {
         match source {
             FileSystemSource::New => Self::New,
-            FileSystemSource::Image(_) => Self::Image,
             FileSystemSource::Adopted => Self::Adopted,
-            FileSystemSource::EspImage(_) => Self::EspBundle,
             FileSystemSource::OsImage => Self::OsImage,
         }
     }
@@ -110,18 +108,11 @@ impl From<&FileSystem> for BlkDevReferrerKind {
             match &fs.source {
                 // If we're creating a filesystem, then it's a regular
                 // filesystem referrer.
-                FileSystemSource::New => BlkDevReferrerKind::FileSystem,
+                FileSystemSource::New => BlkDevReferrerKind::FileSystemNew,
 
                 // If we're adopting a filesystem, then it's an adopted
                 // filesystem referrer.
                 FileSystemSource::Adopted => BlkDevReferrerKind::FileSystemAdopted,
-
-                // If we're creating a filesystem from an ESP bundle, then it's
-                // an ESP filesystem referrer.
-                FileSystemSource::EspImage(_) => BlkDevReferrerKind::FileSystemEsp,
-
-                // If it's an image, then it is a filesystem referrer.
-                FileSystemSource::Image(_) => BlkDevReferrerKind::FileSystem,
 
                 // If it's an OS image, then check the mount point...
                 FileSystemSource::OsImage => {

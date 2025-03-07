@@ -1,12 +1,8 @@
-use std::collections::HashMap;
-
 use log::debug;
 
 use trident_api::{
-    config::{HostConfigurationDynamicValidationError, Image},
+    config::HostConfigurationDynamicValidationError,
     error::{InvalidInputError, TridentError},
-    status::ServicingType,
-    BlockDeviceId,
 };
 
 use crate::engine::EngineContext;
@@ -22,29 +18,6 @@ use crate::engine::EngineContext;
 /// for OS images. Related ADO task:
 /// https://dev.azure.com/mariner-org/ECF/_workitems/edit/10845.
 pub(super) fn ab_update_required(ctx: &EngineContext) -> Result<bool, TridentError> {
-    // First, check if the images have been updated
-    let old_images = ctx
-        .spec_old
-        .storage
-        .get_ab_volume_pair_images()
-        .into_iter()
-        .chain(ctx.spec_old.storage.get_esp_images())
-        .collect();
-    let new_images = ctx
-        .spec
-        .storage
-        .get_ab_volume_pair_images()
-        .into_iter()
-        .chain(ctx.spec.storage.get_esp_images())
-        .collect();
-    let ab_update_needed = !get_updated_images(old_images, new_images).is_empty();
-
-    // If the images have been updated, return immediately
-    if ab_update_needed {
-        debug!("Partition images have been updated: A/B update is required");
-        return Ok(ab_update_needed);
-    }
-
     debug!("Checking OS image to determine if an A/B update is required");
     // Otherwise, continue checking OS images
     match (&ctx.spec_old.image, &ctx.spec.image) {
@@ -52,24 +25,8 @@ pub(super) fn ab_update_required(ctx: &EngineContext) -> Result<bool, TridentErr
         (None, None) => Ok(false),
 
         (None, Some(_)) => {
-            if ctx
-                .spec_old
-                .storage
-                .filesystems
-                .iter()
-                .any(|fs| fs.source.is_old_api())
-            {
-                // Return an error if the old spec was provisioned with
-                // partition images, but the new spec is an OS image.
-                Err(TridentError::new(InvalidInputError::from(
-                    HostConfigurationDynamicValidationError::DeployOsImageAfterPartitionImages,
-                )))
-            } else {
-                // If the old spec is NOT using the old API, but did not get
-                // an OS image, then, this is most likely an offline-init's
-                // first update.
-                Ok(true)
-            }
+            // This is most likely an offline-init's first update.
+            Ok(true)
         }
 
         // If OS image is requested in both specs, compare the URLs.
@@ -82,77 +39,6 @@ pub(super) fn ab_update_required(ctx: &EngineContext) -> Result<bool, TridentErr
             )))
         }
     }
-}
-
-/// Returns the images that need to be updated.
-///
-/// The images are compared between the old images and the new images. If an image is found in the
-/// new images that is not in the old images, or if the image is found in both but the URL or SHA256
-/// checksum has changed, the image is added to the list of images to be updated.
-pub(crate) fn get_updated_images(
-    old_images: Vec<(BlockDeviceId, Image)>,
-    mut new_images: Vec<(BlockDeviceId, Image)>,
-) -> Vec<(BlockDeviceId, Image)> {
-    let old_images: HashMap<String, Image> = old_images.into_iter().collect();
-    new_images.retain(|(device_id, image)| {
-        if let Some(old_image) = old_images.get(device_id) {
-            old_image.url != image.url || old_image.sha256 != image.sha256
-        } else {
-            true
-        }
-    });
-    new_images
-}
-
-/// Validates that the new Host Configuration in `ctx.spec` requests deployment only of images that
-/// can be deployed.
-///
-/// This function is called during A/B update to ensure that the Host Configuration does not request
-/// Trident to re-deploy images on standalone volumes that are shared between A and B, such as
-/// /var/lib/trident.
-pub(super) fn validate_host_config(ctx: &EngineContext) -> Result<(), TridentError> {
-    if ctx.servicing_type == ServicingType::AbUpdate {
-        // Get lists of all old and new images.
-        let old_images = ctx
-            .spec_old
-            .storage
-            .get_images()
-            .into_iter()
-            .chain(ctx.spec_old.storage.get_esp_images())
-            .collect();
-        let new_images = ctx
-            .spec
-            .storage
-            .get_images()
-            .into_iter()
-            .chain(ctx.spec.storage.get_esp_images())
-            .collect();
-
-        // Filter only those images that have been updated.
-        let updated_images = get_updated_images(old_images, new_images);
-
-        // Iterate over the updated images and ensure that they only target A/B volume pairs or ESP
-        // partitions. If an image targets a standalone block device, return an error.
-        for (device_id, _) in updated_images {
-            // Get lists of ESP images and A/B volume pair images
-            let esp_images = ctx.spec.storage.get_esp_images();
-            let ab_volume_pair_images = ctx.spec.storage.get_ab_volume_pair_images();
-
-            // If the device ID is not found in the list of ESP images or A/B volume pair images, return
-            // an error
-            if !esp_images.iter().any(|(id, _)| id == &device_id)
-                && !ab_volume_pair_images.iter().any(|(id, _)| id == &device_id)
-            {
-                return Err(TridentError::new(InvalidInputError::from(
-                    HostConfigurationDynamicValidationError::ImageUpdateOnStandaloneBlockDevice {
-                        device_id: device_id.clone(),
-                    },
-                )));
-            }
-        }
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]

@@ -143,21 +143,15 @@ impl FileSystemType {
         match self {
             Self::Ext4 | Self::Xfs | Self::Ntfs => ItemList(vec![
                 FileSystemSourceKind::New,
-                FileSystemSourceKind::Image,
                 FileSystemSourceKind::Adopted,
                 FileSystemSourceKind::OsImage,
             ]),
             Self::Vfat => ItemList(vec![
                 FileSystemSourceKind::New,
-                FileSystemSourceKind::Image,
                 FileSystemSourceKind::Adopted,
-                FileSystemSourceKind::EspBundle,
                 FileSystemSourceKind::OsImage,
             ]),
-            Self::Other => ItemList(vec![
-                FileSystemSourceKind::Image,
-                FileSystemSourceKind::OsImage,
-            ]),
+            Self::Other => ItemList(vec![FileSystemSourceKind::OsImage]),
             Self::Iso9660 | Self::Auto => ItemList(vec![FileSystemSourceKind::Adopted]),
             Self::Swap | Self::Tmpfs | Self::Overlay => ItemList(vec![FileSystemSourceKind::New]),
         }
@@ -197,7 +191,7 @@ impl BlkDevReferrerKind {
             Self::ABVolume => ValidCardinality::new_exact(2),
             Self::EncryptedVolume => ValidCardinality::new_exact(1),
             Self::VerityDevice => ValidCardinality::new_exact(2),
-            Self::FileSystem => ValidCardinality::new_at_most(1),
+            Self::FileSystemNew => ValidCardinality::new_at_most(1),
             Self::FileSystemEsp => ValidCardinality::new_exact(1),
             Self::FileSystemAdopted => ValidCardinality::new_exact(1),
             Self::FileSystemOsImage => ValidCardinality::new_exact(1),
@@ -215,7 +209,7 @@ impl BlkDevReferrerKind {
                     | BlkDevKindFlag::EncryptedVolume
             }
             Self::EncryptedVolume => BlkDevKindFlag::Partition | BlkDevKindFlag::RaidArray,
-            Self::FileSystem | Self::FileSystemOsImage => {
+            Self::FileSystemNew | Self::FileSystemOsImage => {
                 BlkDevKindFlag::Partition
                     | BlkDevKindFlag::RaidArray
                     | BlkDevKindFlag::EncryptedVolume
@@ -269,7 +263,7 @@ impl BlkDevReferrerKind {
             | Self::ABVolume
             | Self::EncryptedVolume
             | Self::VerityDevice
-            | Self::FileSystem
+            | Self::FileSystemNew
             | Self::FileSystemEsp
             | Self::FileSystemAdopted
             | Self::FileSystemOsImage => BlkDevReferrerKindFlag::empty(),
@@ -290,7 +284,7 @@ impl BlkDevReferrerKind {
             Self::RaidArray | Self::ABVolume | Self::EncryptedVolume | Self::VerityDevice => true,
 
             // These only have one target, so enforcing this is meaningless.
-            Self::FileSystem
+            Self::FileSystemNew
             | Self::FileSystemEsp
             | Self::FileSystemAdopted
             | Self::FileSystemOsImage => false,
@@ -398,7 +392,7 @@ impl BlkDevReferrerKind {
 
             // These don't really care about partition sizes.
             Self::EncryptedVolume
-            | Self::FileSystem
+            | Self::FileSystemNew
             | Self::FileSystemEsp
             | Self::FileSystemAdopted
             | Self::FileSystemOsImage => false,
@@ -423,7 +417,7 @@ impl BlkDevReferrerKind {
             // These care about having all underlying partitions be of the same
             // type.
             Self::EncryptedVolume
-            | Self::FileSystem
+            | Self::FileSystemNew
             | Self::FileSystemEsp
             | Self::FileSystemAdopted
             | Self::FileSystemOsImage => true,
@@ -469,7 +463,7 @@ impl BlkDevReferrerKind {
                 // is completed.
                 PartitionType::Home,
             ]),
-            Self::FileSystem | Self::FileSystemAdopted => {
+            Self::FileSystemNew | Self::FileSystemAdopted => {
                 AllowBlockList::Block(vec![PartitionType::Esp])
             }
             Self::FileSystemEsp => AllowBlockList::Allow(vec![PartitionType::Esp]),
@@ -578,7 +572,7 @@ impl BlkDevReferrerKind {
             | Self::ABVolume
             | Self::EncryptedVolume
             | Self::VerityDevice
-            | Self::FileSystem
+            | Self::FileSystemNew
             | Self::FileSystemEsp
             | Self::FileSystemAdopted
             | Self::FileSystemOsImage => (),

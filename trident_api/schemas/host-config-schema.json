@@ -294,15 +294,11 @@
         },
         "source": {
           "description": "The source of the file system.\n\nIf not specified, this field will default to OS image.\n\nWhen making a `swap` filesystem the field must be set to `new`.",
-          "oneOf": [
+          "allOf": [
             {
               "$ref": "#/definitions/FileSystemSource"
-            },
-            {
-              "type": "string"
             }
-          ],
-          "string_shortcut": true
+          ]
         },
         "type": {
           "description": "The file system type.",
@@ -320,116 +316,26 @@
         {
           "title": "New",
           "description": "Create a new file system.",
-          "type": "object",
-          "required": [
-            "type"
-          ],
-          "properties": {
-            "type": {
-              "type": "string",
-              "enum": [
-                "new"
-              ]
-            }
-          },
-          "additionalProperties": false
-        },
-        {
-          "title": "Image",
-          "description": "Use an existing file system from a partition image. **Cannot** be used for ESP/EFI partitions.",
-          "type": "object",
-          "required": [
-            "format",
-            "sha256",
-            "type",
-            "url"
-          ],
-          "properties": {
-            "format": {
-              "description": "The format of the image.",
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ImageFormat"
-                }
-              ]
-            },
-            "sha256": {
-              "description": "The SHA256 checksum of the compressed image.\n\nThe hash is computed over the compressed contents of the image, not the uncompressed output that will be written to the block device. This value is used to verify the integrity of the image.",
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ImageSha256"
-                }
-              ]
-            },
-            "type": {
-              "type": "string",
-              "enum": [
-                "image"
-              ]
-            },
-            "url": {
-              "description": "The URL of the image.\n\nSupported schemes are: `file`, `http`, and `https`.",
-              "type": "string"
-            }
-          },
-          "additionalProperties": false
-        },
-        {
-          "title": "ESP Image",
-          "description": "Use an existing file system from an ESP image. Can **only** be used for ESP/EFI partitions.",
-          "type": "object",
-          "required": [
-            "format",
-            "sha256",
-            "type",
-            "url"
-          ],
-          "properties": {
-            "format": {
-              "description": "The format of the image.",
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ImageFormat"
-                }
-              ]
-            },
-            "sha256": {
-              "description": "The SHA256 checksum of the compressed image.\n\nThe hash is computed over the compressed contents of the image, not the uncompressed output that will be written to the block device. This value is used to verify the integrity of the image.",
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ImageSha256"
-                }
-              ]
-            },
-            "type": {
-              "type": "string",
-              "enum": [
-                "esp-image"
-              ]
-            },
-            "url": {
-              "description": "The URL of the image.\n\nSupported schemes are: `file`, `http`, and `https`.",
-              "type": "string"
-            }
-          },
-          "additionalProperties": false
+          "type": "string",
+          "enum": [
+            "new"
+          ]
         },
         {
           "title": "Adopted",
           "description": "Use an existing file system from an adopted partition.",
-          "type": "object",
-          "required": [
-            "type"
-          ],
-          "properties": {
-            "type": {
-              "type": "string",
-              "enum": [
-                "adopted"
-              ]
-            }
-          },
-          "additionalProperties": false
+          "type": "string",
+          "enum": [
+            "adopted"
+          ]
+        },
+        {
+          "title": "OS Image",
+          "description": "Use an existing file system from an OS image.",
+          "type": "string",
+          "enum": [
+            "os-image"
+          ]
         }
       ]
     },
@@ -495,38 +401,6 @@
           "enum": [
             "other"
           ]
-        }
-      ]
-    },
-    "ImageFormat": {
-      "description": "Image format.",
-      "oneOf": [
-        {
-          "title": "Raw Zstd Compressed",
-          "description": "Raw filesystem image with zstd compression.",
-          "type": "string",
-          "enum": [
-            "raw-zst"
-          ]
-        }
-      ]
-    },
-    "ImageSha256": {
-      "description": "Image SHA256 checksum.",
-      "oneOf": [
-        {
-          "title": "Ignored",
-          "description": "You can pass `ignored` to skip the checksum verification.",
-          "type": "string",
-          "enum": [
-            "ignored"
-          ]
-        },
-        {
-          "title": "Checksum",
-          "description": "The SHA256 checksum of the image.\n\n*Details:*\n\nThe Sha256Hash is a 64-character hexadecimal string.",
-          "type": "string",
-          "format": "[a-fA-F0-9]64"
         }
       ]
     },

@@ -10,8 +10,6 @@ Encryption
 FileSystem
 FileSystemSource
 FileSystemType
-ImageFormat
-ImageSha256
 ImageSha384
 KernelCommandLine
 LoadMode

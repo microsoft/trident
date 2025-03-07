@@ -49,5 +49,4 @@ When making a `swap` filesystem the field must be set to `new`.
 | -------------- | ----------------------------------------- |
 | Type           | `FileSystemSource`                        |
 | Link           | [FileSystemSource](./FileSystemSource.md) |
-| Shorthand      | `string`                                  |
 

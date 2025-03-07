@@ -5,7 +5,6 @@ use std::{
 
 use log::trace;
 use serde::{Deserialize, Serialize};
-use url::Url;
 
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
@@ -20,10 +19,10 @@ use crate::{
 
 use super::error::HostConfigurationStaticValidationError;
 
+pub mod abupdate;
 pub mod disks;
 pub mod encryption;
 pub mod filesystem;
-pub mod imaging;
 pub mod internal;
 pub mod partitions;
 pub mod raid;
@@ -31,10 +30,10 @@ pub mod storage_graph;
 pub mod verity;
 
 use self::{
+    abupdate::AbUpdate,
     disks::Disk,
     encryption::Encryption,
-    filesystem::{FileSystem, FileSystemSource, MountPointInfo},
-    imaging::{AbUpdate, Image},
+    filesystem::{FileSystem, MountPointInfo},
     internal::InternalMountPoint,
     partitions::Partition,
     raid::Raid,
@@ -167,8 +166,6 @@ impl Storage {
     ) -> Result<StorageGraph, HostConfigurationStaticValidationError> {
         // Check basic constraints
 
-        self.validate_image_urls()?;
-
         if let Some(encryption) = &self.encryption {
             encryption.validate()?;
         }
@@ -199,39 +196,6 @@ impl Storage {
         self.validate_verity_devices(validate_volume_presence)?;
 
         Ok(graph)
-    }
-
-    /// Validate all Image.urls in HostConfiguration.Storage.Filesystems and
-    /// HostConfiguration.Storage.VerityFileSystems.
-    ///
-    /// This function is called by validate() and returns an error if any Image.url
-    /// provided is incorrect or specifies an unsupported scheme.
-    fn validate_image_urls(&self) -> Result<(), HostConfigurationStaticValidationError> {
-        let mut all_images = vec![];
-        for fs in self.filesystems.iter() {
-            match &fs.source {
-                FileSystemSource::Image(img) => all_images.push(img.clone()),
-                FileSystemSource::EspImage(img) => all_images.push(img.clone()),
-                _ => {}
-            }
-        }
-
-        all_images
-            .into_iter()
-            .try_for_each(|img| match Url::parse(img.url.as_str()) {
-                Err(e) => Err(HostConfigurationStaticValidationError::InvalidSourceUrl {
-                    url: img.url.clone(),
-                    explanation: e.to_string(),
-                }),
-                Ok(url) => match url.scheme() {
-                    "http" | "https" | "file" => Ok(()),
-                    _ => Err(
-                        HostConfigurationStaticValidationError::UnsupportedSourceUrlScheme {
-                            url_scheme: url.scheme().to_string(),
-                        },
-                    ),
-                },
-            })
     }
 
     /// Checks that mountpoints that are expected to be writable are mounted as
@@ -461,63 +425,12 @@ impl Storage {
         })
     }
 
-    /// Returns a list of tuples (device ID, image) that represent images to be deployed onto the
-    /// block devices. Takes in an optional filter function that determines which images to
-    /// include.
-    pub fn get_images_from_filesystems(
-        &self,
-        filter: Option<impl Fn(&BlockDeviceId) -> bool>,
-    ) -> Vec<(BlockDeviceId, Image)> {
-        // If no filter is provided, include all images
-        let apply_filter = |device_id: &BlockDeviceId| match &filter {
-            Some(f) => f(device_id),
-            None => true,
-        };
-
-        self.filesystems
-            .iter()
-            .filter_map(|fs| fs.device_id.clone().zip(fs.source.image().cloned()))
-            .filter(|(device_id, _)| apply_filter(device_id))
-            .collect::<Vec<_>>()
-    }
-
-    /// Returns a list of tuples (device ID, image) that represent all images on the block devices,
-    /// excluding ESP partitions. This includes images on A/B volume pairs and standalone volumes.
-    pub fn get_images(&self) -> Vec<(BlockDeviceId, Image)> {
-        self.get_images_from_filesystems(None::<fn(&BlockDeviceId) -> bool>)
-    }
-
     /// Returns a list of block device IDs that correspond to the A/B volume pairs.
     pub fn get_ab_volume_pair_ids(&self) -> HashSet<&BlockDeviceId> {
         self.ab_update
             .as_ref()
             .map(|ab| ab.volume_pairs.iter().map(|p| &p.id).collect())
             .unwrap_or_default()
-    }
-
-    /// Returns a list of tuples (device ID, image) that represent images that need to be deployed onto
-    /// A/B volume pairs, based on the host configuration.
-    pub fn get_ab_volume_pair_images(&self) -> Vec<(BlockDeviceId, Image)> {
-        let ab_volume_pair_ids: HashSet<_> = self.get_ab_volume_pair_ids();
-
-        // Return early if there are no A/B volume pairs
-        if ab_volume_pair_ids.is_empty() {
-            return vec![];
-        }
-
-        // Call get_images_from_filesystems() with a filter that includes only A/B volume pair IDs
-        self.get_images_from_filesystems(Some(|device_id: &_| {
-            ab_volume_pair_ids.contains(device_id)
-        }))
-    }
-
-    /// Returns a list of tuples (device ID, image) that represent the ESP images on the ESP
-    /// partitions.
-    pub fn get_esp_images(&self) -> Vec<(BlockDeviceId, Image)> {
-        self.filesystems
-            .iter()
-            .filter_map(|fs| fs.device_id.clone().zip(fs.source.esp_image().cloned()))
-            .collect::<Vec<_>>()
     }
 
     /// INTERNAL FUNCTION!
@@ -616,7 +529,7 @@ mod tests {
         node::NodeIdentifier,
         types::{BlkDevKind, BlkDevReferrerKind},
     };
-    use url::{ParseError, Url};
+    use url::Url;
 
     use crate::{
         config::HostConfiguration,
@@ -624,10 +537,10 @@ mod tests {
     };
 
     use self::{
+        abupdate::AbVolumePair,
         disks::PartitionTableType,
         encryption::EncryptedVolume,
         filesystem::{FileSystemSource, FileSystemType, MountOptions, MountPoint},
-        imaging::{AbVolumePair, Image, ImageFormat, ImageSha256},
         partitions::{PartitionSize, PartitionType},
         raid::{RaidLevel, SoftwareRaidArray},
     };
@@ -727,11 +640,7 @@ mod tests {
                 FileSystem {
                     device_id: Some("esp".to_owned()),
                     fs_type: FileSystemType::Vfat,
-                    source: FileSystemSource::EspImage(Image {
-                        url: "file:///esp.raw.zst".to_owned(),
-                        sha256: ImageSha256::Ignored,
-                        format: ImageFormat::RawZst,
-                    }),
+                    source: FileSystemSource::OsImage,
                     mount_point: Some(MountPoint {
                         path: PathBuf::from(ESP_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
@@ -740,11 +649,7 @@ mod tests {
                 FileSystem {
                     device_id: Some("boot".into()),
                     fs_type: FileSystemType::Ext4,
-                    source: FileSystemSource::Image(Image {
-                        url: "file:///boot.raw.zst".to_owned(),
-                        sha256: ImageSha256::Ignored,
-                        format: ImageFormat::RawZst,
-                    }),
+                    source: FileSystemSource::OsImage,
                     mount_point: Some(MountPoint {
                         path: PathBuf::from(BOOT_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
@@ -753,11 +658,7 @@ mod tests {
                 FileSystem {
                     device_id: Some("root".into()),
                     fs_type: FileSystemType::Ext4,
-                    source: FileSystemSource::Image(Image {
-                        url: "file:///root.raw.zst".to_owned(),
-                        sha256: ImageSha256::Ignored,
-                        format: ImageFormat::RawZst,
-                    }),
+                    source: FileSystemSource::OsImage,
                     mount_point: Some(MountPoint {
                         path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
@@ -958,11 +859,7 @@ mod tests {
                 FileSystem {
                     device_id: Some("disk1-partition1".to_string()),
                     fs_type: FileSystemType::Vfat,
-                    source: FileSystemSource::EspImage(Image {
-                        url: "http://example.com/image".to_string(),
-                        sha256: ImageSha256::Ignored,
-                        format: ImageFormat::RawZst,
-                    }),
+                    source: FileSystemSource::OsImage,
                     mount_point: Some(MountPoint {
                         path: PathBuf::from(ESP_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
@@ -971,11 +868,7 @@ mod tests {
                 FileSystem {
                     device_id: Some("disk1-partition2".to_string()),
                     fs_type: FileSystemType::Ext4,
-                    source: FileSystemSource::Image(Image {
-                        url: "http://example.com/image".to_string(),
-                        sha256: ImageSha256::Ignored,
-                        format: ImageFormat::RawZst,
-                    }),
+                    source: FileSystemSource::OsImage,
                     mount_point: Some(MountPoint {
                         path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
@@ -988,7 +881,7 @@ mod tests {
 
         let mount_volume_pair = Storage {
             ab_update: Some(AbUpdate {
-                volume_pairs: vec![imaging::AbVolumePair {
+                volume_pairs: vec![abupdate::AbVolumePair {
                     id: "ab-update-volume-pair".to_string(),
                     volume_a_id: "disk1-partition2".to_string(),
                     volume_b_id: "disk2-partition2".to_string(),
@@ -998,11 +891,7 @@ mod tests {
                 FileSystem {
                     device_id: Some("ab-update-volume-pair".to_string()),
                     fs_type: FileSystemType::Ext4,
-                    source: FileSystemSource::Image(Image {
-                        url: "http://example.com/image".to_string(),
-                        sha256: ImageSha256::Ignored,
-                        format: ImageFormat::RawZst,
-                    }),
+                    source: FileSystemSource::OsImage,
                     mount_point: Some(MountPoint {
                         path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
@@ -1011,11 +900,7 @@ mod tests {
                 FileSystem {
                     device_id: Some("disk1-partition1".to_string()),
                     fs_type: FileSystemType::Vfat,
-                    source: FileSystemSource::EspImage(Image {
-                        url: "http://example.com/image".to_string(),
-                        sha256: ImageSha256::Ignored,
-                        format: ImageFormat::RawZst,
-                    }),
+                    source: FileSystemSource::OsImage,
                     mount_point: Some(MountPoint {
                         path: PathBuf::from(ESP_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
@@ -1028,7 +913,7 @@ mod tests {
 
         let bad_volume_pair = Storage {
             ab_update: Some(AbUpdate {
-                volume_pairs: vec![imaging::AbVolumePair {
+                volume_pairs: vec![abupdate::AbVolumePair {
                     id: "ab-update-volume-pair".to_string(),
                     volume_a_id: "disk1-partition1".to_string(),
                     volume_b_id: "disk1-partition1".to_string(),
@@ -1049,7 +934,7 @@ mod tests {
 
         let bad_volume_pair_id = Storage {
             ab_update: Some(AbUpdate {
-                volume_pairs: vec![imaging::AbVolumePair {
+                volume_pairs: vec![abupdate::AbVolumePair {
                     id: "disk1".to_string(),
                     volume_a_id: "disk1-partition2".to_string(),
                     volume_b_id: "disk2-partition2".to_string(),
@@ -1068,11 +953,7 @@ mod tests {
             filesystems: vec![FileSystem {
                 device_id: Some("disk99".to_string()),
                 fs_type: FileSystemType::Ext4,
-                source: FileSystemSource::Image(Image {
-                    url: "http://example.com/image".to_string(),
-                    sha256: ImageSha256::Ignored,
-                    format: ImageFormat::RawZst,
-                }),
+                source: FileSystemSource::OsImage,
                 mount_point: Some(MountPoint {
                     path: PathBuf::from("/some/path"),
                     options: MountOptions::empty(),
@@ -1085,7 +966,7 @@ mod tests {
             HostConfigurationStaticValidationError::InvalidStorageGraph(
                 StorageGraphBuildError::NonExistentReference {
                     node_identifier: NodeIdentifier::from(&bad_filesystem_target.filesystems[0]),
-                    kind: BlkDevReferrerKind::FileSystem,
+                    kind: BlkDevReferrerKind::FileSystemOsImage,
                     target_id: "disk99".into(),
                 }
             )
@@ -1149,11 +1030,7 @@ mod tests {
                 FileSystem {
                     device_id: Some("part1".to_owned()),
                     fs_type: FileSystemType::Vfat,
-                    source: FileSystemSource::EspImage(Image {
-                        url: "https://some/url".to_owned(),
-                        sha256: imaging::ImageSha256::Checksum("".into()),
-                        format: ImageFormat::RawZst,
-                    }),
+                    source: FileSystemSource::OsImage,
                     mount_point: Some(MountPoint {
                         path: PathBuf::from(ESP_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
@@ -1162,11 +1039,7 @@ mod tests {
                 FileSystem {
                     device_id: Some("ab1".to_owned()),
                     fs_type: FileSystemType::Ext4,
-                    source: FileSystemSource::Image(Image {
-                        url: "https://some/url".to_owned(),
-                        sha256: imaging::ImageSha256::Checksum("".into()),
-                        format: ImageFormat::RawZst,
-                    }),
+                    source: FileSystemSource::OsImage,
                     mount_point: Some(MountPoint {
                         path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
@@ -2002,8 +1875,8 @@ mod tests {
                     target_id: "srv-enc".into(),
                     target_kind: BlkDevKind::Partition,
                     referrer_a_id: NodeIdentifier::from(storage.filesystems.last().unwrap()),
-                    referrer_a_kind: BlkDevReferrerKind::FileSystem,
-                    referrer_a_valid_sharing_peers: BlkDevReferrerKind::FileSystem
+                    referrer_a_kind: BlkDevReferrerKind::FileSystemNew,
+                    referrer_a_valid_sharing_peers: BlkDevReferrerKind::FileSystemNew
                         .valid_sharing_peers(),
                     referrer_b_id: NodeIdentifier::block_device("srv"),
                     referrer_b_kind: BlkDevReferrerKind::EncryptedVolume,
@@ -2206,27 +2079,6 @@ mod tests {
         );
     }
 
-    /// Image must be an A/B update volume pair if format is raw-lzma
-    #[test]
-    #[cfg(feature = "sysupdate")]
-    fn test_validate_image_raw_lzma_ab_update_volume_pair_pass() {
-        let mut storage: Storage = get_storage();
-
-        // Change the image format to raw-lzma in the root filesystem
-        storage
-            .filesystems
-            .iter_mut()
-            .find(|fs| fs.device_id == Some("root".into()))
-            .unwrap()
-            .source = FileSystemSource::Image(Image {
-            url: "file:///root.raw.lzma".into(),
-            sha256: ImageSha256::Ignored,
-            format: ImageFormat::RawLzma,
-        });
-
-        storage.validate(true).unwrap();
-    }
-
     /// Images can target encrypted volumes
     #[test]
     fn test_validate_image_target_id_encryption_pass() {
@@ -2238,11 +2090,7 @@ mod tests {
             .iter_mut()
             .find(|fs| fs.device_id == Some("srv".into()))
             .unwrap()
-            .source = FileSystemSource::Image(Image {
-            url: "file:///srv.raw.zst".to_owned(),
-            sha256: ImageSha256::Ignored,
-            format: ImageFormat::RawZst,
-        });
+            .source = FileSystemSource::OsImage;
 
         storage.validate(true).unwrap();
     }
@@ -2383,11 +2231,7 @@ mod tests {
         let mut storage = Storage {
             filesystems: vec![
                 FileSystem {
-                    source: FileSystemSource::EspImage(Image {
-                        url: "http://example.com/esp.img".to_string(),
-                        sha256: ImageSha256::Ignored,
-                        format: ImageFormat::RawZst,
-                    }),
+                    source: FileSystemSource::OsImage,
                     device_id: Some("esp".to_string()),
                     fs_type: FileSystemType::Vfat,
                     mount_point: Some(MountPoint {
@@ -2398,11 +2242,7 @@ mod tests {
                 FileSystem {
                     device_id: Some("root".into()),
                     fs_type: FileSystemType::Ext4,
-                    source: FileSystemSource::Image(Image {
-                        url: "file:///root.raw.zst".to_owned(),
-                        sha256: ImageSha256::Ignored,
-                        format: ImageFormat::RawZst,
-                    }),
+                    source: FileSystemSource::OsImage,
                     mount_point: Some(MountPoint {
                         path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
@@ -2550,11 +2390,7 @@ mod tests {
                 filesystems: vec![FileSystem {
                     device_id: Some("part1".to_owned()),
                     fs_type: FileSystemType::Vfat,
-                    source: FileSystemSource::EspImage(Image {
-                        url: "".to_owned(),
-                        sha256: ImageSha256::Ignored,
-                        format: ImageFormat::RawZst,
-                    }),
+                    source: FileSystemSource::OsImage,
                     mount_point: Some(MountPoint {
                         path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
@@ -2654,11 +2490,7 @@ mod tests {
                     FileSystem {
                         device_id: Some("esp".into()),
                         fs_type: FileSystemType::Vfat,
-                        source: FileSystemSource::EspImage(Image {
-                            url: "http://example.com/esp_1.img".to_string(),
-                            sha256: ImageSha256::Checksum("esp_sha256_1".into()),
-                            format: ImageFormat::RawZst,
-                        }),
+                        source: FileSystemSource::OsImage,
                         mount_point: Some(MountPoint {
                             path: PathBuf::from("/esp"),
                             options: MountOptions::empty(),
@@ -2667,11 +2499,7 @@ mod tests {
                     FileSystem {
                         device_id: Some("root".into()),
                         fs_type: FileSystemType::Vfat,
-                        source: FileSystemSource::Image(Image {
-                            url: "http://example.com/root_1.img".to_string(),
-                            sha256: ImageSha256::Checksum("root_sha256_1".into()),
-                            format: ImageFormat::RawZst,
-                        }),
+                        source: FileSystemSource::OsImage,
                         mount_point: Some(MountPoint {
                             path: PathBuf::from("/"),
                             options: MountOptions::empty(),
@@ -2680,11 +2508,7 @@ mod tests {
                     FileSystem {
                         device_id: Some("trident".into()),
                         fs_type: FileSystemType::Vfat,
-                        source: FileSystemSource::Image(Image {
-                            url: "http://example.com/trident_1.img".to_string(),
-                            sha256: ImageSha256::Checksum("trident_sha256_1".into()),
-                            format: ImageFormat::RawZst,
-                        }),
+                        source: FileSystemSource::OsImage,
                         mount_point: None,
                     },
                 ],
@@ -2827,284 +2651,5 @@ mod tests {
         test_fn(&host_config, "/boot/efi/", 2, "");
         test_fn(&host_config, "/boot/efi/foobar", 2, "foobar");
         test_fn(&host_config, "/boot/efi/foobar/", 2, "foobar");
-    }
-
-    /// Validates that get_esp_images() correctly returns a list of images associated with the ESP
-    /// filesystems.
-    #[test]
-    fn test_get_esp_images() {
-        // Initialize a basic Storage object.
-        let mut storage: Storage = get_storage();
-
-        // Test case #1: Validate that get_esp_images() correctly returns 'esp'.
-        let esp_images = storage.get_esp_images();
-        assert_eq!(esp_images.len(), 1);
-        // Create a tuple of 'esp' and the associated Image object.
-        let expected_image = Image {
-            url: "file:///esp.raw.zst".to_string(),
-            sha256: ImageSha256::Ignored,
-            format: ImageFormat::RawZst,
-        };
-        let expected_tuple = ("esp".to_string(), expected_image.clone());
-        // Add the tuple to a list.
-        let expected_list = vec![expected_tuple.clone()];
-        // Compare the list with esp_images.
-        assert_eq!(esp_images, expected_list);
-
-        // Test case #2: Add another ESP filesystem and confirm that get_esp_images() now returns
-        // both 'esp' and 'esp1'.
-        // Create a new ESP filesystem.
-        let esp1 = FileSystem {
-            device_id: Some("esp1".to_owned()),
-            fs_type: FileSystemType::Vfat,
-            source: FileSystemSource::EspImage(Image {
-                url: "file:///esp1.raw.zst".to_owned(),
-                sha256: ImageSha256::Ignored,
-                format: ImageFormat::RawZst,
-            }),
-            mount_point: Some(MountPoint {
-                path: PathBuf::from("/esp1"),
-                options: MountOptions::empty(),
-            }),
-        };
-        // Add the new ESP filesystem to the storage object.
-        storage.filesystems.push(esp1);
-        // Call get_esp_images() and confirm that it returns both 'esp' and 'esp1'.
-        let esp_images = storage.get_esp_images();
-        assert_eq!(esp_images.len(), 2);
-        // Create a tuple of 'esp1' and the associated Image object.
-        let expected_image1 = Image {
-            url: "file:///esp1.raw.zst".to_string(),
-            sha256: ImageSha256::Ignored,
-            format: ImageFormat::RawZst,
-        };
-        let expected_tuple1 = ("esp1".to_string(), expected_image1.clone());
-        // Add the tuple to a list.
-        let expected_list1 = vec![expected_tuple.clone(), expected_tuple1.clone()];
-        // Compare the list with esp_images.
-        assert_eq!(esp_images, expected_list1);
-
-        // Test case #3: Add a new ESP filesystem without an associated Image object and confirm
-        // that get_esp_images() still returns both 'esp' and 'esp1'.
-        // Create a new ESP filesystem without an associated Image object.
-        let esp2 = FileSystem {
-            device_id: Some("esp2".to_owned()),
-            fs_type: FileSystemType::Vfat,
-            source: FileSystemSource::New,
-            mount_point: Some(MountPoint {
-                path: PathBuf::from("/esp2"),
-                options: MountOptions::empty(),
-            }),
-        };
-        // Add the new ESP filesystem to the storage object.
-        storage.filesystems.push(esp2);
-        // Call get_esp_images() and confirm that it still returns both 'esp' and 'esp1'.
-        let esp_images = storage.get_esp_images();
-        assert_eq!(esp_images.len(), 2);
-        assert_eq!(esp_images, expected_list1);
-
-        // Test case #4: Remove all ESP filesystems and confirm that get_esp_images() returns an empty list.
-        // Remove all ESP filesystems from the storage object.
-        storage.filesystems.retain(|fs| {
-            fs.device_id != Some("esp".to_owned()) && fs.device_id != Some("esp1".to_owned())
-        });
-        // Call get_esp_images() and confirm that it returns an empty list.
-        let esp_images = storage.get_esp_images();
-        assert_eq!(esp_images.len(), 0);
-    }
-
-    /// Validates that get_images_from_filesystems() correctly returns a list of images associated
-    /// with the filesystems, based on an optional filter.
-    #[test]
-    fn test_get_images_from_filesystems() {
-        // Initialize a basic Storage object.
-        let storage: Storage = get_storage();
-
-        // Test case #1: Validate that get_images_from_filesystems() correctly returns all images
-        // for non-ESP volumes when no filter is applied. This can be confirmed by calling
-        // get_images().
-        let all_images = storage.get_images_from_filesystems(None::<fn(&BlockDeviceId) -> bool>);
-        let expected_images = vec![
-            (
-                "boot".to_string(),
-                Image {
-                    url: "file:///boot.raw.zst".to_owned(),
-                    sha256: ImageSha256::Ignored,
-                    format: ImageFormat::RawZst,
-                },
-            ),
-            (
-                "root".to_string(),
-                Image {
-                    url: "file:///root.raw.zst".to_owned(),
-                    sha256: ImageSha256::Ignored,
-                    format: ImageFormat::RawZst,
-                },
-            ),
-        ];
-        assert_eq!(all_images.len(), 2);
-        assert_eq!(all_images, expected_images);
-
-        // Test case #2: Validate that get_images_from_filesystems() correctly returns when a
-        // filter is applied on device_id.
-        let root_images =
-            storage.get_images_from_filesystems(Some(|device_id: &_| device_id == "root"));
-        assert_eq!(root_images.len(), 1);
-        assert_eq!(
-            root_images,
-            vec![(
-                "root".to_string(),
-                Image {
-                    url: "file:///root.raw.zst".to_owned(),
-                    sha256: ImageSha256::Ignored,
-                    format: ImageFormat::RawZst,
-                },
-            ),]
-        );
-
-        // Test case #3: Validate that get_images_from_filesystems() correctly returns an empty
-        // list when the filter does not match any filesystems.
-        let no_images =
-            storage.get_images_from_filesystems(Some(|device_id: &_| device_id == "non-existent"));
-        assert_eq!(no_images.len(), 0);
-
-        // Test case #4: Validate that get_images_from_filesystems() correctly returns image 'root'
-        // when the filter is applied to select only A/B volumes. This can be confirmed by calling
-        // get_ab_volume_pair_images() and get_ab_volume_pair_ids().
-        let ab_volume_pair_images = storage.get_ab_volume_pair_images();
-        assert_eq!(root_images.len(), 1);
-        assert_eq!(
-            ab_volume_pair_images,
-            vec![(
-                "root".to_string(),
-                Image {
-                    url: "file:///root.raw.zst".to_owned(),
-                    sha256: ImageSha256::Ignored,
-                    format: ImageFormat::RawZst,
-                },
-            ),]
-        );
-        let ab_volume_pair_ids = storage.get_ab_volume_pair_ids();
-        assert_eq!(ab_volume_pair_ids.len(), 1);
-        assert_eq!(
-            ab_volume_pair_ids,
-            HashSet::from_iter(vec![&"root".to_string()])
-        );
-
-        // Test case #5: Validates that when ab_update is None, get_ab_volume_pair_images() and
-        // get_ab_volume_pair_ids() should return an empty list.
-        let mut storage_no_ab_update: Storage = get_storage();
-        storage_no_ab_update.ab_update = None;
-        let ab_volume_pair_images = storage_no_ab_update.get_ab_volume_pair_images();
-        assert_eq!(ab_volume_pair_images.len(), 0);
-        let ab_volume_pair_ids = storage_no_ab_update.get_ab_volume_pair_ids();
-        assert_eq!(ab_volume_pair_ids.len(), 0);
-    }
-
-    /// Validates that the logic in validate_host_config() is correct.
-    #[test]
-    fn test_validate_host_config_image_urls() {
-        let valid_http_image = Image {
-            url: "http://example.com/esp_2.img".to_string(),
-            sha256: ImageSha256::Checksum("valid_http_image".into()),
-            format: ImageFormat::RawZst,
-        };
-        let valid_local_image = Image {
-            url: "file:///tmp/esp_2.img".to_string(),
-            sha256: ImageSha256::Checksum("valid_local_image".into()),
-            format: ImageFormat::RawZst,
-        };
-        let schemeless_image = Image {
-            url: "/tmp/esp_2.img".to_string(),
-            sha256: ImageSha256::Checksum("schemeless_image".into()),
-            format: ImageFormat::RawZst,
-        };
-        let expected_error = HostConfigurationStaticValidationError::InvalidSourceUrl {
-            url: schemeless_image.url.clone(),
-            explanation: ParseError::RelativeUrlWithoutBase.to_string(),
-        };
-
-        let storage = Storage {
-            filesystems: vec![
-                FileSystem {
-                    source: FileSystemSource::EspImage(valid_http_image.clone()),
-                    device_id: None,
-                    fs_type: FileSystemType::Vfat,
-                    mount_point: None,
-                },
-                FileSystem {
-                    source: FileSystemSource::EspImage(valid_local_image.clone()),
-                    device_id: None,
-                    fs_type: FileSystemType::Vfat,
-                    mount_point: None,
-                },
-                FileSystem {
-                    source: FileSystemSource::Image(valid_http_image.clone()),
-                    device_id: None,
-                    fs_type: FileSystemType::Vfat,
-                    mount_point: None,
-                },
-                FileSystem {
-                    source: FileSystemSource::Image(valid_local_image.clone()),
-                    device_id: None,
-                    fs_type: FileSystemType::Vfat,
-                    mount_point: None,
-                },
-            ],
-            ..Default::default()
-        };
-        // Check when ALL images/espimage are valid
-        storage.validate_image_urls().unwrap();
-        // Check that any invalid image in filesystems will signal failure
-        for i in 0..storage.filesystems.len() {
-            let mut storage_clone = storage.clone();
-            match storage_clone.filesystems[i].source {
-                FileSystemSource::EspImage(_) => {
-                    storage_clone.filesystems[i].source =
-                        FileSystemSource::EspImage(schemeless_image.clone())
-                }
-                FileSystemSource::Image(_) => {
-                    storage_clone.filesystems[i].source =
-                        FileSystemSource::Image(schemeless_image.clone())
-                }
-                _ => {}
-            }
-            assert_eq!(
-                storage_clone.validate_image_urls().unwrap_err(),
-                expected_error
-            );
-        }
-    }
-
-    #[test]
-    fn test_validate_host_configuration_url() {
-        let mut schemaless_storage: Storage = get_storage();
-        schemaless_storage.filesystems[0].source = FileSystemSource::EspImage(Image {
-            url: "/tmp/trident.img".to_string(),
-            sha256: ImageSha256::Checksum("trident_sha256_2_image_test".into()),
-            format: ImageFormat::RawZst,
-        });
-
-        assert_eq!(
-            schemaless_storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidSourceUrl {
-                url: "/tmp/trident.img".to_string(),
-                explanation: "relative URL without a base".to_string(),
-            }
-        );
-
-        let mut unknownschema_storage: Storage = get_storage();
-        unknownschema_storage.filesystems[0].source = FileSystemSource::EspImage(Image {
-            url: "foo://tmp/trident.img".to_string(),
-            sha256: ImageSha256::Checksum("trident_sha256_2_image_test".into()),
-            format: ImageFormat::RawZst,
-        });
-
-        assert_eq!(
-            unknownschema_storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::UnsupportedSourceUrlScheme {
-                url_scheme: "foo".to_string(),
-            }
-        );
     }
 }

@@ -70,17 +70,6 @@ pub struct HostConfiguration {
 
 impl HostConfiguration {
     pub fn validate(&self) -> Result<(), HostConfigurationStaticValidationError> {
-        // Check that COSI and partition images are not used at the same time
-        if self
-            .storage
-            .filesystems
-            .iter()
-            .any(|fs| fs.source.is_old_api())
-            && self.image.is_some()
-        {
-            return Err(HostConfigurationStaticValidationError::ImageApiMixed);
-        }
-
         let require_root_mount_point = self.trident != Trident::default()
             || self.scripts != Scripts::default()
             || self.os != Os::default()

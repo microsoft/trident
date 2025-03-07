@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Error};
-use log::{debug, trace};
+use log::debug;
 
 use osutils::{
     block_devices,
@@ -447,31 +447,13 @@ fn get_entry_number(entry_label: &str) -> Result<String, TridentError> {
 
 /// Returns the ESP partition device id from Engine Context
 fn get_esp_device_id(ctx: &EngineContext) -> Result<BlockDeviceId, Error> {
-    Ok(
-        // We need to check for the OS Image manually because the COSI image is
-        // not re-read for finalize, so ctx.image is None.
-        if ctx.spec.image.is_some() {
-            // There is an OS Image, therefore the only means we have to identify the ESP is through
-            // the mount point.
-            trace!("Using ESP mount point to identify ESP device ID");
-            ctx.spec
-                .storage
-                .esp_filesystem()
-                .map(|(id, _)| id)
-                .context("Host Configuration does not contain an ESP filesystem.")?
-                .clone()
-        } else {
-            // TODO: Remove this branch once COSI is fully implemented.
-            trace!("Using ESP image to identify ESP device ID");
-            ctx.spec
-                .storage
-                .filesystems
-                .iter()
-                .find_map(|fs| fs.source.esp_image().and(fs.device_id.as_ref()))
-                .context("Host Configuration does not contain an ESP filesystem.")?
-                .clone()
-        },
-    )
+    Ok(ctx
+        .spec
+        .storage
+        .esp_filesystem()
+        .map(|(id, _)| id)
+        .context("Host Configuration does not contain an ESP filesystem.")?
+        .clone())
 }
 
 /// Gets the EFI System Partition (ESP) device IDs and the path of the disks containing the ESP

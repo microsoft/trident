@@ -12,19 +12,25 @@ use crate::{
     config::{
         host::os::{KernelCommandLine, Selinux, SelinuxMode},
         AbUpdate, AbVolumePair, AdditionalFile, Disk, EncryptedVolume, Encryption, FileSystem,
-        FileSystemSource, FileSystemType, HostConfiguration, Image, ImageFormat, ImageSha256,
-        MountOptions, MountPoint, Os, Partition, PartitionTableType, PartitionType, Raid,
-        RaidLevel, Script, ScriptSource, Scripts, Services, ServicingTypeSelection,
-        SoftwareRaidArray, SshMode, Storage, User, VerityDevice,
+        FileSystemSource, FileSystemType, HostConfiguration, ImageSha384, MountOptions, MountPoint,
+        Os, OsImage, Partition, PartitionTableType, PartitionType, Raid, RaidLevel, Script,
+        ScriptSource, Scripts, Services, ServicingTypeSelection, SoftwareRaidArray, SshMode,
+        Storage, User, VerityDevice,
     },
     constants::{self, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
 };
+
+const SAMPLE_SHA384: &str = "ec9a9aa23f02b30f4ec6a168b9bc24733b652eeab4f8abc243630666a5e34cea1667c34313a13ec1564ac4871b80112f";
 
 pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfiguration), Error> {
     let sample = match name {
         "basic" => (
             "Basic sample with a bootable deployment.",
             HostConfiguration {
+                image: Some(OsImage {
+                    url: Url::parse("file:///path/to/image.cosi").unwrap(),
+                    sha384: ImageSha384::Checksum(SAMPLE_SHA384.into()),
+                }),
                 storage: Storage {
                     disks: vec![Disk {
                         id: "os".to_string(),
@@ -52,14 +58,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             path: constants::ESP_MOUNT_POINT_PATH.into(),
                             options: MountOptions::new("umask=0077"),
                         }),
-                        source: FileSystemSource::EspImage(Image {
-                            url: "file:///trident_cdrom/data/esp.rawzst".into(),
-                            sha256: ImageSha256::Checksum(
-                                "e15853875ce26f8fb8090177821240a889e21ac0c5acee75c5a060401bbdf0ae"
-                                    .into(),
-                            ),
-                            format: ImageFormat::RawZst,
-                        }),
+                        source: FileSystemSource::OsImage,
                     },
                     FileSystem {
                         device_id: Some("root".into()),
@@ -68,14 +67,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             path: constants::ROOT_MOUNT_POINT_PATH.into(),
                             options: MountOptions::defaults(),
                         }),
-                        source: FileSystemSource::Image(Image {
-                            url: "file:///trident_cdrom/data/root.rawzst".into(),
-                            sha256: ImageSha256::Checksum(
-                                "c2ce64662fbe2fa0b30a878c11aac71cb9f1ef27f59a157362ccc0881df47293"
-                                    .into(),
-                            ),
-                            format: ImageFormat::RawZst,
-                        }),
+                        source: FileSystemSource::OsImage,
                     },
                 ],
                     ..Default::default()
@@ -86,6 +78,10 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
         "simple" => (
             "Simple sample showcasing OS config of networking, users, additional files and customer scripts.",
             HostConfiguration {
+                image: Some(OsImage {
+                    url: Url::parse("file:///path/to/image.cosi").unwrap(),
+                    sha384: ImageSha384::Checksum(SAMPLE_SHA384.into()),
+                }),
             storage: Storage {
                 disks: vec![Disk {
                     id: "os".to_string(),
@@ -113,14 +109,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             path: constants::ESP_MOUNT_POINT_PATH.into(),
                             options: MountOptions::new("umask=0077"),
                         }),
-                        source: FileSystemSource::EspImage(Image {
-                            url: "file:///trident_cdrom/data/esp.rawzst".into(),
-                            sha256: ImageSha256::Checksum(
-                                "e15853875ce26f8fb8090177821240a889e21ac0c5acee75c5a060401bbdf0ae"
-                                    .into(),
-                            ),
-                            format: ImageFormat::RawZst,
-                        }),
+                        source: FileSystemSource::OsImage,
                     },
                     FileSystem {
                         device_id: Some("root".into()),
@@ -129,14 +118,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             path: constants::ROOT_MOUNT_POINT_PATH.into(),
                             options: MountOptions::defaults(),
                         }),
-                        source: FileSystemSource::Image(Image {
-                            url: "file:///trident_cdrom/data/root.rawzst".into(),
-                            sha256: ImageSha256::Checksum(
-                                "c2ce64662fbe2fa0b30a878c11aac71cb9f1ef27f59a157362ccc0881df47293"
-                                    .into(),
-                            ),
-                            format: ImageFormat::RawZst,
-                        }),
+                        source: FileSystemSource::OsImage,
                     },
                 ],
                 ..Default::default()
@@ -210,6 +192,10 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
         "base" => (
             "Base sample config showcasing raid, encryption and A/B update.",
             HostConfiguration {
+                image: Some(OsImage {
+                    url: Url::parse("file:///path/to/image.cosi").unwrap(),
+                    sha384: ImageSha384::Checksum(SAMPLE_SHA384.into()),
+                }),
             storage: Storage {
                 disks: vec![Disk {
                     id: "os".to_string(),
@@ -284,14 +270,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             path: constants::ESP_MOUNT_POINT_PATH.into(),
                             options: MountOptions::new("umask=0077"),
                         }),
-                        source: FileSystemSource::EspImage(Image {
-                            url: "file:///trident_cdrom/data/esp.rawzst".into(),
-                            sha256: ImageSha256::Checksum(
-                                "e15853875ce26f8fb8090177821240a889e21ac0c5acee75c5a060401bbdf0ae"
-                                    .into(),
-                            ),
-                            format: ImageFormat::RawZst,
-                        }),
+                        source: FileSystemSource::OsImage,
                     },
                     FileSystem {
                         device_id: Some("root".into()),
@@ -300,14 +279,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             path: constants::ROOT_MOUNT_POINT_PATH.into(),
                             options: MountOptions::defaults(),
                         }),
-                        source: FileSystemSource::Image(Image {
-                            url: "file:///trident_cdrom/data/root.rawzst".into(),
-                            sha256: ImageSha256::Checksum(
-                                "c2ce64662fbe2fa0b30a878c11aac71cb9f1ef27f59a157362ccc0881df47293"
-                                    .into(),
-                            ),
-                            format: ImageFormat::RawZst,
-                        }),
+                        source: FileSystemSource::OsImage,
                     },
                     FileSystem {
                         device_id: Some("trident".into()),
@@ -420,6 +392,10 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
         "verity" => (
             "Verity sample showcasing usage of dm-verity.",
             HostConfiguration {
+                image: Some(OsImage {
+                    url: Url::parse("file:///path/to/verity_image.cosi").unwrap(),
+                    sha384: ImageSha384::Checksum(SAMPLE_SHA384.into()),
+                }),
             storage: Storage {
                 disks: vec![Disk {
                     id: "os".to_string(),
@@ -477,14 +453,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             path: constants::ESP_MOUNT_POINT_PATH.into(),
                             options: MountOptions::new("umask=0077"),
                         }),
-                        source: FileSystemSource::EspImage(Image {
-                            url: "file:///trident_cdrom/data/verity_esp.rawzst".into(),
-                            sha256: ImageSha256::Checksum(
-                                "e15853875ce26f8fb8090177821240a889e21ac0c5acee75c5a060401bbdf0ae"
-                                    .into(),
-                            ),
-                            format: ImageFormat::RawZst,
-                        }),
+                        source: FileSystemSource::OsImage,
                     },
                     FileSystem {
                         device_id: Some("boot".into()),
@@ -493,14 +462,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             path: constants::BOOT_MOUNT_POINT_PATH.into(),
                             options: MountOptions::defaults(),
                         }),
-                        source: FileSystemSource::Image(Image {
-                            url: "file:///trident_cdrom/data/verity_boot.rawzst".into(),
-                            sha256: ImageSha256::Checksum(
-                                "b8170f4c46eab33f641e7e102a573d7ef6d8b27dc912b5ecfb033e82f1fff52a"
-                                    .into(),
-                            ),
-                            format: ImageFormat::RawZst,
-                        }),
+                        source: FileSystemSource::OsImage,
                     },
                     FileSystem {
                         device_id: Some("trident".into()),
@@ -523,14 +485,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     FileSystem {
                         device_id: Some("var".into()),
                         fs_type: FileSystemType::Ext4,
-                        source: FileSystemSource::Image(Image{
-                            url: "file:///trident_cdrom/data/verity_var.rawzst".into(),
-                            sha256: ImageSha256::Checksum(
-                                "1876c8c3921570a22d48f0c30e6509ed594cf7c22a2c26a718aadcc901194585"
-                                    .into(),
-                            ),
-                            format: ImageFormat::RawZst,
-                        }),
+                        source: FileSystemSource::OsImage,
                         mount_point: Some(MountPoint {
                             path: "/var".into(),
                             options: MountOptions::defaults(),
@@ -616,6 +571,10 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
         "advanced" => (
             "Advanced sample showcasing combination of RAID, encryption, dm-verity and A/B update.",
             HostConfiguration {
+                image: Some(OsImage {
+                    url: Url::parse("file:///path/to/verity_image.cosi").unwrap(),
+                    sha384: ImageSha384::Checksum(SAMPLE_SHA384.into()),
+                }),
             storage: Storage {
                 disks: vec![
                     Disk {
@@ -904,27 +863,13 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             path: constants::ESP_MOUNT_POINT_PATH.into(),
                             options: MountOptions::new("umask=0077"),
                         }),
-                        source: FileSystemSource::EspImage(Image {
-                            url: "file:///trident_cdrom/data/verity_esp.rawzst".into(),
-                            sha256: ImageSha256::Checksum(
-                                "e15853875ce26f8fb8090177821240a889e21ac0c5acee75c5a060401bbdf0ae"
-                                    .into(),
-                            ),
-                            format: ImageFormat::RawZst,
-                        }),
+                        source: FileSystemSource::OsImage,
                     },
                     FileSystem {
                         device_id: Some("esp2".into()),
                         fs_type: FileSystemType::Vfat,
                         mount_point: None,
-                        source: FileSystemSource::EspImage(Image {
-                            url: "file:///trident_cdrom/data/verity_esp.rawzst".into(),
-                            sha256: ImageSha256::Checksum(
-                                "e15853875ce26f8fb8090177821240a889e21ac0c5acee75c5a060401bbdf0ae"
-                                    .into(),
-                            ),
-                            format: ImageFormat::RawZst,
-                        }),
+                        source: FileSystemSource::OsImage,
                     },
                     FileSystem {
                         device_id: Some("boot".into()),
@@ -933,14 +878,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             path: constants::BOOT_MOUNT_POINT_PATH.into(),
                             options: MountOptions::defaults(),
                         }),
-                        source: FileSystemSource::Image(Image {
-                            url: "file:///trident_cdrom/data/verity_boot.rawzst".into(),
-                            sha256: ImageSha256::Checksum(
-                                "b8170f4c46eab33f641e7e102a573d7ef6d8b27dc912b5ecfb033e82f1fff52a"
-                                    .into(),
-                            ),
-                            format: ImageFormat::RawZst,
-                        }),
+                        source: FileSystemSource::OsImage,
                     },
                     FileSystem {
                         device_id: Some("trident".into()),
@@ -975,14 +913,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     FileSystem {
                         device_id: Some("var".into()),
                         fs_type: FileSystemType::Ext4,
-                        source: FileSystemSource::Image(Image {
-                            url: "file:///trident_cdrom/data/verity_var.rawzst".into(),
-                            sha256: ImageSha256::Checksum(
-                                "1876c8c3921570a22d48f0c30e6509ed594cf7c22a2c26a718aadcc901194585"
-                                    .into(),
-                            ),
-                            format: ImageFormat::RawZst,
-                        }),
+                        source: FileSystemSource::OsImage,
                         mount_point: Some(MountPoint {
                             path: "/var".into(),
                             options: MountOptions::defaults(),
@@ -1068,6 +999,10 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
         "raid" => (
             "RAID sample showcasing usage of RAID.",
             HostConfiguration {
+                image: Some(OsImage {
+                    url: Url::parse("file:///path/to/image.cosi").unwrap(),
+                    sha384: ImageSha384::Checksum(SAMPLE_SHA384.into()),
+                }),
                 storage: Storage {
                     disks: vec![
                         Disk {
@@ -1136,27 +1071,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 path: constants::ESP_MOUNT_POINT_PATH.into(),
                                 options: MountOptions::new("umask=0077"),
                             }),
-                            source: FileSystemSource::EspImage(Image {
-                                url: "file:///trident_cdrom/data/esp.rawzst".into(),
-                                sha256: ImageSha256::Checksum(
-                                    "e15853875ce26f8fb8090177821240a889e21ac0c5acee75c5a060401bbdf0ae"
-                                        .into(),
-                                ),
-                                format: ImageFormat::RawZst,
-                            }),
-                        },
-                        FileSystem {
-                            device_id: Some("esp2".into()),
-                            fs_type: FileSystemType::Vfat,
-                            mount_point: None,
-                            source: FileSystemSource::EspImage(Image {
-                                url: "file:///trident_cdrom/data/esp.rawzst".into(),
-                                sha256: ImageSha256::Checksum(
-                                    "e15853875ce26f8fb8090177821240a889e21ac0c5acee75c5a060401bbdf0ae"
-                                        .into(),
-                                ),
-                                format: ImageFormat::RawZst,
-                            }),
+                            source: FileSystemSource::OsImage,
                         },
                         FileSystem {
                             device_id: Some("root".into()),
@@ -1165,14 +1080,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 path: constants::ROOT_MOUNT_POINT_PATH.into(),
                                 options: MountOptions::defaults(),
                             }),
-                            source: FileSystemSource::Image(Image {
-                                url: "file:///trident_cdrom/data/root.rawzst".into(),
-                                sha256: ImageSha256::Checksum(
-                                    "c2ce64662fbe2fa0b30a878c11aac71cb9f1ef27f59a157362ccc0881df47293"
-                                        .into(),
-                                ),
-                                format: ImageFormat::RawZst,
-                            }),
+                            source: FileSystemSource::OsImage,
                         },
                         FileSystem {
                             device_id: Some("swap1".into()),
@@ -1249,6 +1157,10 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
         "encryption" => (
             "Encryption sample showcasing usage of encryption",
             HostConfiguration {
+                image: Some(OsImage {
+                    url: Url::parse("file:///path/to/image.cosi").unwrap(),
+                    sha384: ImageSha384::Checksum(SAMPLE_SHA384.into()),
+                }),
                 storage: Storage {
                     disks: vec![
                         Disk {
@@ -1305,14 +1217,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 path: constants::ESP_MOUNT_POINT_PATH.into(),
                                 options: MountOptions::new("umask=0077"),
                             }),
-                            source: FileSystemSource::EspImage(Image {
-                                url: "file:///trident_cdrom/data/esp.rawzst".into(),
-                                sha256: ImageSha256::Checksum(
-                                    "e15853875ce26f8fb8090177821240a889e21ac0c5acee75c5a060401bbdf0ae"
-                                        .into(),
-                                ),
-                                format: ImageFormat::RawZst,
-                            }),
+                            source: FileSystemSource::OsImage,
                         },
                         FileSystem {
                             device_id: Some("root".into()),
@@ -1321,14 +1226,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 path: constants::ROOT_MOUNT_POINT_PATH.into(),
                                 options: MountOptions::defaults(),
                             }),
-                            source: FileSystemSource::Image(Image {
-                                url: "file:///trident_cdrom/data/root.rawzst".into(),
-                                sha256: ImageSha256::Checksum(
-                                    "c2ce64662fbe2fa0b30a878c11aac71cb9f1ef27f59a157362ccc0881df47293"
-                                        .into(),
-                                ),
-                                format: ImageFormat::RawZst,
-                            }),
+                            source: FileSystemSource::OsImage,
                         },
                         FileSystem {
                             device_id: Some("swap".into()),
@@ -1408,6 +1306,10 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
         "raid-mirrored" => (
             "Example of RAID mirroring demonstrating the use of RAID1 on ESP, root, and Trident.",
             HostConfiguration {
+                image: Some(OsImage {
+                    url: Url::parse("file:///path/to/image.cosi").unwrap(),
+                    sha384: ImageSha384::Checksum(SAMPLE_SHA384.into()),
+                }),
                 storage: Storage {
                     disks: vec![
                         Disk {
@@ -1488,14 +1390,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 path: constants::ESP_MOUNT_POINT_PATH.into(),
                                 options: MountOptions::new("umask=0077"),
                             }),
-                            source: FileSystemSource::EspImage(Image {
-                                url: "file:///trident_cdrom/data/esp.rawzst".into(),
-                                sha256: ImageSha256::Checksum(
-                                    "e15853875ce26f8fb8090177821240a889e21ac0c5acee75c5a060401bbdf0ae"
-                                        .into(),
-                                ),
-                                format: ImageFormat::RawZst,
-                            }),
+                            source: FileSystemSource::OsImage,
                         },
                         FileSystem {
                             device_id: Some("root".into()),
@@ -1504,14 +1399,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 path: constants::ROOT_MOUNT_POINT_PATH.into(),
                                 options: MountOptions::defaults(),
                             }),
-                            source: FileSystemSource::Image(Image {
-                                url: "file:///trident_cdrom/data/root.rawzst".into(),
-                                sha256: ImageSha256::Checksum(
-                                    "c2ce64662fbe2fa0b30a878c11aac71cb9f1ef27f59a157362ccc0881df47293"
-                                        .into(),
-                                ),
-                                format: ImageFormat::RawZst,
-                            }),
+                            source: FileSystemSource::OsImage,
                         },
                         FileSystem {
                             device_id: Some("trident".into()),
@@ -1683,7 +1571,7 @@ mod tests {
 
         assert!(host_configuration.storage.encryption.is_none());
         assert_eq!(host_configuration.storage.raid.software.len(), 1);
-        assert_eq!(host_configuration.storage.filesystems.len(), 5);
+        assert_eq!(host_configuration.storage.filesystems.len(), 4);
         assert_eq!(host_configuration.storage.verity.len(), 0);
         assert!(host_configuration.storage.ab_update.is_none());
         assert!(host_configuration.os.network.is_some());

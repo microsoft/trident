@@ -1,23 +1,14 @@
 use std::{
     collections::{HashMap, HashSet},
-    fs::File,
-    io::Read,
     path::Path,
-    time::Duration,
 };
 
 use anyhow::{bail, ensure, Context, Error};
 use log::{debug, info, trace, warn};
-use reqwest::Url;
-use stream_image::{exponential_backoff_get, GET_MAX_RETRIES, GET_TIMEOUT_SECS};
 
-use osutils::{
-    e2fsck,
-    hashing_reader::{HashingReader256, HashingReader384},
-    image_streamer, lsblk, resize2fs,
-};
+use osutils::{e2fsck, hashing_reader::HashingReader384, image_streamer, lsblk, resize2fs};
 use trident_api::{
-    config::{FileSystemSource, HostConfiguration, ImageFormat, ImageSha256},
+    config::{FileSystemSource, HostConfiguration},
     constants::{ESP_MOUNT_POINT_PATH, MOUNT_OPTION_READ_ONLY},
     error::{ReportError, ServicingError, TridentError},
     status::ServicingType,
@@ -25,198 +16,6 @@ use trident_api::{
 };
 
 use crate::{engine::EngineContext, osimage::OsImageFile};
-
-pub(crate) mod stream_image;
-#[cfg(feature = "sysupdate")]
-mod systemd_sysupdate;
-
-/// Deploys images onto block devices that are not ESP partitions, as ESP image deployments are
-/// handled separately by the boot subsystem.
-///
-/// Depending on the image format, Trident will use different strategies to deploy the image:
-/// 1. If image is a local file or an HTTP file published in RawZstd format, Trident will use a
-///    HashingReader to write the bytes to the target block device.
-/// 2. If image is a local file or an HTTP file published in RawLzma format, Trident will run
-///    systemd-sysupdate.rs to download the image, if needed, and write it to the block device. The
-///    block device has to be a part of an A/B volume pair backed by partition block device. This is
-///    b/c sysupdate can only operate if there are 2+ copies of the partition type as the partition
-///    to be updated.
-/// 3. TODO: If image is an HTTP file published as an OCI Artifact, ImageFormat OciArtifact,
-///    Trident will download the image from Azure container registry and pass it to
-///    systemd-sysupdate.rs. ADO task: https://dev.azure.com/mariner-org/ECF/_workitems/edit/5503/.
-///
-/// This function is called by the provision() function in the image subsystem and returns an error
-/// if the image cannot be downloaded or deployed correctly.
-fn deploy_images(ctx: &EngineContext, host_config: &HostConfiguration) -> Result<(), Error> {
-    // 1. During clean install, Trident will deploy images onto all non-ESP block devices here.
-    // This includes A/B volume pairs and other standalone block devices that are not ESP.
-    // 2. During A/B update, Trident will assume that all A/B volume pair and ESP images have been
-    // updated in the Host Configuration. Here, Trident will deploy images onto the A/B volume
-    // pairs.
-    let images_to_deploy = match ctx.servicing_type {
-        ServicingType::CleanInstall => host_config.storage.get_images(),
-        ServicingType::AbUpdate => host_config.storage.get_ab_volume_pair_images(),
-        _ => bail!(
-            "Servicing type cannot be '{:?}' as images must be deployed during clean install or A/B update",
-            ctx.servicing_type
-        ),
-    };
-
-    for (device_id, image) in images_to_deploy {
-        // Validate that block device exists
-        let block_device_path = ctx
-            .get_block_device_path(&device_id)
-            .context(format!("No block device with id '{}' found", device_id))?;
-
-        // Parse the URL to determine the download strategy
-        let image_url =
-            Url::parse(&image.url).context(format!("Failed to parse image URL '{}'", image.url))?;
-
-        let stream: Box<dyn Read> = match image_url.scheme() {
-            "file" => Box::new(
-                File::open(image_url.path())
-                    .with_context(|| format!("Failed to open '{}'", image_url))?,
-            ),
-            "http" | "https" => {
-                // For remote files, perform a blocking GET request
-                exponential_backoff_get(
-                    &image_url,
-                    GET_MAX_RETRIES,
-                    Duration::from_secs(GET_TIMEOUT_SECS),
-                )
-                .context(format!(
-                    "Failed to fetch image for device id '{}'",
-                    device_id
-                ))?
-            }
-            "oci" => {
-                // TODO: Need to implement downloading images as OCI artifacts from Azure container
-                // registry and passing them to sysupdate. This functionality will be implemented in
-                // download_oci.rs. After the artifact is downloaded locally, Trident will evoke
-                // systemd-sysupdate.rs to install the image, providing 2 extra arg-s:
-                // 1. local_update_dir, which is a TempDir object pointing to a local directory
-                // containing the update image,
-                // 2. local_update_file, which is a String representing the name of the image file
-                // downloaded by Trident so that sysupdate can operate on it.
-                //
-                // Related ADO task:
-                // https://dev.azure.com/mariner-org/ECF/_workitems/edit/5503/.
-                bail!("Downloading images as OCI artifacts from Azure container registry is not implemented")
-            }
-            _ => bail!("Unsupported URL scheme"),
-        };
-
-        match image.format {
-            ImageFormat::RawZst => {
-                info!(
-                    "Initializing '{device_id}': writing image from '{}'",
-                    image.url
-                );
-
-                // Initialize HashingReader instance on stream
-                let stream = HashingReader256::new(stream);
-
-                let computed_sha256 = image_streamer::stream_zstd(stream, &block_device_path)?;
-
-                // If SHA256 is ignored, log message and skip hash validation; otherwise, ensure computed
-                // SHA256 matches SHA256 in HostConfig
-                match image.sha256 {
-                    ImageSha256::Ignored => {
-                        warn!("Ignoring SHA256 for image from '{}'", image_url);
-                    }
-                    ImageSha256::Checksum(ref expected_sha256) => {
-                        if computed_sha256 != expected_sha256.as_str() {
-                            bail!(
-                                "SHA256 mismatch for disk image {}: expected {}, got {}",
-                                image_url,
-                                expected_sha256,
-                                computed_sha256
-                            );
-                        }
-                    }
-                }
-
-                // If the image has ext* filesystem and is not to be mounted read-only,
-                // resize the filesystem. For now, we determine the filesystem by looking at
-                // the corresponding mountpoint.
-                let mount_point = ctx
-                    .spec
-                    .storage
-                    .internal_mount_points
-                    .iter()
-                    .find(|mp| mp.target_id == device_id);
-                if let Some(mount_point) = mount_point {
-                    if mount_point.filesystem.is_ext()
-                        && !mount_point.options.contains(&MOUNT_OPTION_READ_ONLY.into())
-                    {
-                        // TODO investigate if we stop doing the check, tracked by https://dev.azure.com/mariner-org/ECF/_workitems/edit/7218
-                        debug!("Checking filesystem on block device '{}'", &device_id);
-                        e2fsck::fix(&block_device_path).context(format!(
-                            "Failed to check filesystem on block device '{}'",
-                            &device_id
-                        ))?;
-                        debug!("Resizing filesystem on block device '{}'", &device_id);
-                        resize_ext_fs(&block_device_path).context(format!(
-                            "Failed to resize filesystem on block device '{}'",
-                            &device_id
-                        ))?;
-                    }
-                }
-            }
-            #[cfg(feature = "sysupdate")]
-            ImageFormat::RawLzma => {
-                if image_url.scheme() == "file" {
-                    // Fetch directory and filename from image URL
-                    let (directory, filename, _computed_sha256) =
-                        systemd_sysupdate::get_local_image(&image_url, &image)?;
-                    // Run helper func systemd_sysupdate::deploy() to execute A/B update; since image is
-                    // local, pass directory and file name as arg-s
-                    systemd_sysupdate::deploy(
-                        &image,
-                        &device_id,
-                        ctx,
-                        Some(&directory),
-                        Some(&filename),
-                    )
-                    .context(format!(
-                        "Failed to deploy image {} via sysupdate",
-                        image.url
-                    ))?;
-                } else if image_url.scheme() == "http" || image_url.scheme() == "https" {
-                    // If image is of format RawLzma AND target-id corresponds to an A/B volume pair,
-                    // use systemd-sysupdate.rs to write to the partition.
-                    //
-                    // TODO: Instead of delegating the download of the payload and hash verification to
-                    // systemd-sysupdate, do it from Trident, to support more format types and avoid
-                    // the SHA256SUMS overhead for the user. Related ADO task:
-                    // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6175.
-
-                    // Determine if target-id corresponds to an A/B volume pair; if helper
-                    // func returns None, then set bool to false
-                    let targets_ab_volume_pair =
-                        ctx.get_ab_update_volume_partition(&device_id).is_some();
-
-                    // If image is of format RawLzma but target-id does NOT
-                    // correspond to an A/B volume pair, report an error
-                    if !targets_ab_volume_pair {
-                        bail!("Block device with id {} is not part of an A/B volume pair, so image in raw lzma format cannot be written to it.\nRaw lzma is not supported for block devices that do not correspond to A/B volume pairs",
-                                    &device_id)
-                    }
-                    // Run helper func systemd_sysupdate::deploy() to execute A/B update; directory and file
-                    // name arg-s are None to communicate that update image is published via URL,
-                    // not locally
-                    systemd_sysupdate::deploy(&image, &device_id, ctx, None, None).context(
-                        format!("Failed to deploy image {} via sysupdate", image.url),
-                    )?;
-                } else {
-                    bail!("Unsupported URL scheme")
-                };
-            }
-        }
-    }
-
-    Ok(())
-}
 
 /// Resizes ext2/ext3/ext4 filesystem on the given block device to the maximum
 /// size of the underlying block device.
@@ -232,7 +31,6 @@ pub(super) fn provision(
     ctx: &EngineContext,
     host_config: &HostConfiguration,
 ) -> Result<(), TridentError> {
-    deploy_images(ctx, host_config).structured(ServicingError::DeployImages)?;
     deploy_os_image(ctx, host_config).structured(ServicingError::DeployImages)?;
 
     Ok(())

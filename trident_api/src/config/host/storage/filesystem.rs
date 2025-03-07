@@ -10,8 +10,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::{is_default, BlockDeviceId};
 
-use super::imaging::Image;
-
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
@@ -29,17 +27,7 @@ pub struct FileSystem {
     /// If not specified, this field will default to OS image.
     ///
     /// When making a `swap` filesystem the field must be set to `new`.
-    #[serde(
-        default,
-        skip_serializing_if = "is_default",
-        deserialize_with = "crate::primitives::shortcuts::string_or_struct"
-    )]
-    #[cfg_attr(
-        feature = "schemars",
-        schemars(
-            schema_with = "crate::primitives::shortcuts::string_or_struct_schema::<FileSystemSource>"
-        )
-    )]
+    #[serde(default, skip_serializing_if = "is_default")]
     pub source: FileSystemSource,
 
     /// The mount point of the file system.
@@ -61,25 +49,13 @@ pub struct FileSystem {
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields, tag = "type")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub enum FileSystemSource {
     /// # New
     ///
     /// Create a new file system.
     New,
-
-    /// # Image
-    ///
-    /// Use an existing file system from a partition image. **Cannot** be used
-    /// for ESP/EFI partitions.
-    Image(Image),
-
-    /// # ESP Image
-    ///
-    /// Use an existing file system from an ESP image. Can **only** be used for
-    /// ESP/EFI partitions.
-    EspImage(Image),
 
     /// # Adopted
     ///
@@ -90,21 +66,7 @@ pub enum FileSystemSource {
     ///
     /// Use an existing file system from an OS image.
     #[default]
-    #[cfg_attr(feature = "schemars", schemars(skip))]
     OsImage,
-}
-
-impl FromStr for FileSystemSource {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "image" => Ok(Self::OsImage),
-            "new" => Ok(Self::New),
-            "adopted" => Ok(Self::Adopted),
-            _ => Err(format!("Invalid file system source: {}", s)),
-        }
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -307,8 +269,6 @@ impl FileSystem {
                     match &self.source {
                         FileSystemSource::New => "new",
                         FileSystemSource::Adopted => "adopted",
-                        FileSystemSource::Image(_) => "image",
-                        FileSystemSource::EspImage(_) => "esp-image",
                         FileSystemSource::OsImage => "os-image",
                     }
                     .to_owned(),
@@ -327,33 +287,5 @@ impl FileSystem {
         .filter_map(|(k, v)| v.map(|v| format!("{}:{}", k, v)))
         .collect::<Vec<_>>()
         .join(", ")
-    }
-}
-
-impl FileSystemSource {
-    /// Returns the image associated with the filesystem source, if any.
-    pub fn image(&self) -> Option<&Image> {
-        match self {
-            Self::Image(image) => Some(image),
-            _ => None,
-        }
-    }
-
-    /// Returns the ESP image associated with the filesystem source, if any.
-    pub fn esp_image(&self) -> Option<&Image> {
-        match self {
-            Self::EspImage(image) => Some(image),
-            _ => None,
-        }
-    }
-
-    /// Returns whether the given filesystem source belongs to the old API.
-    ///
-    /// TODO: REMOVE WHEN THE OLD API IS REMOVED!!
-    pub fn is_old_api(&self) -> bool {
-        match self {
-            FileSystemSource::Image(_) | FileSystemSource::EspImage(_) => true,
-            FileSystemSource::New | FileSystemSource::Adopted | FileSystemSource::OsImage => false,
-        }
     }
 }

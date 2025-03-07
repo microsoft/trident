@@ -14,17 +14,6 @@ use crate::osimage::OsImage;
 pub(super) fn load_os_image(
     host_config: &HostConfiguration,
 ) -> Result<Option<OsImage>, TridentError> {
-    // Skip when using the old API
-    if host_config
-        .storage
-        .filesystems
-        .iter()
-        .any(|fs| fs.source.is_old_api())
-    {
-        debug!("Skipping OS image loading because the old API is being used");
-        return Ok(None);
-    }
-
     let Some(os_image_source) = &host_config.image else {
         return Err(TridentError::new(InvalidInputError::MissingOsImage));
     };

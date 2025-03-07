@@ -1,25 +1,23 @@
 use std::{
-    fs::{self, File},
+    fs::{self},
     io::Read,
     path::{Path, PathBuf},
-    time::Duration,
 };
 
 use anyhow::{bail, ensure, Context, Error};
-use log::{debug, info, trace, warn};
+use log::{debug, trace};
 use reqwest::Url;
 use tempfile::{NamedTempFile, TempDir};
 
 use osutils::{
     arch::SystemArchitecture,
     filesystems::MountFileSystemType,
-    hashing_reader::{HashingReader, HashingReader256, HashingReader384},
+    hashing_reader::{HashingReader, HashingReader384},
     image_streamer,
     mount::{self, MountGuard},
     path::join_relative,
 };
 use trident_api::{
-    config::{Image, ImageFormat, ImageSha256},
     constants::{
         internal_params::{DISABLE_GRUB_NOPREFIX_CHECK, ENABLE_UKI_SUPPORT},
         ESP_MOUNT_POINT_PATH,
@@ -34,70 +32,8 @@ use crate::engine::{
         EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY, ESP_RELATIVE_MOUNT_POINT_PATH,
         GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH,
     },
-    storage::image::stream_image::{self, GET_MAX_RETRIES, GET_TIMEOUT_SECS},
     EngineContext,
 };
-
-/// Performs file-based update of stand-alone ESP volume by copying three boot files into the
-/// correct dir:
-/// 1. If volume A is currently active, place in /boot/efi/EFI/azlinuxB,
-/// 2. If volume B is currently active, place in /boot/efi/EFI/azlinuxA,
-/// 3. If no volume is active, i.e. Trident is doing CleanInstall, place in /boot/efi/EFI/azlinuxA.
-///
-/// The func takes the following arguments:
-/// 1. image_url: &Url, which is the URL of the image to be downloaded,
-/// 2. image: &Image, which is the Image object from HostConfig,
-/// 3. device_id: &BlockDeviceId, which is the ID of the ESP volume,
-/// 4. ctx: &mut EngineContext, which is the EngineContext object,
-/// 5. is_local: bool, which is a boolean indicating whether the image is a local file or not.
-/// 6. mount_point: &Path, which is the path to the mount point of the ESP volume.
-///
-/// Local image and dir it's mounted to are temp, so they're automatically removed from the FS
-/// after function returns.
-fn copy_file_artifacts_from_api_image(
-    image_url: &Url,
-    image: &Image,
-    ctx: &EngineContext,
-    is_local: bool,
-    mount_point: &Path,
-) -> Result<(), Error> {
-    // Check whether image_url is local or remote
-    let stream: Box<dyn Read> = if is_local {
-        // For local files, open the file at the given path
-        Box::new(File::open(image_url.path()).context(format!("Failed to open {}", image_url))?)
-    } else {
-        // For remote files, perform a blocking GET request
-        stream_image::exponential_backoff_get(
-            image_url,
-            GET_MAX_RETRIES,
-            Duration::from_secs(GET_TIMEOUT_SECS),
-        )
-        .context("Failed to fetch image for ESP volume")?
-    };
-
-    let (temp_file, computed_sha256) = load_raw_image(image_url, HashingReader256::new(stream))
-        .context("Failed to load raw image")?;
-
-    // If SHA256 is ignored, log message and skip hash validation; otherwise, ensure computed
-    // SHA256 matches SHA256 in HostConfig
-    match image.sha256 {
-        ImageSha256::Ignored => {
-            warn!("Ignoring SHA256 for image from '{}'", image_url);
-        }
-        ImageSha256::Checksum(ref expected_sha256) => {
-            if computed_sha256 != expected_sha256.as_str() {
-                bail!(
-                    "SHA256 mismatch for disk image {}: expected {}, got {}",
-                    image_url,
-                    expected_sha256,
-                    computed_sha256
-                );
-            }
-        }
-    }
-
-    copy_file_artifacts(temp_file.path(), ctx, mount_point)
-}
 
 /// Takes in a reader to the raw zstd-compressed ESP image and decompresses it
 /// into a temporary file. Returns a tuple containing the temporary file and the
@@ -514,76 +450,6 @@ fn find_first_available_install_index(esp_efi_path: &Path) -> Result<usize, Trid
         .0)
 }
 
-/// Performs file-based deployment of ESP images.
-pub(super) fn deploy_esp_images(ctx: &EngineContext, mount_point: &Path) -> Result<(), Error> {
-    // Fetch the list of ESP images that need to be deployed onto ESP partitions
-    for (device_id, image) in &ctx.spec.storage.get_esp_images() {
-        debug!(
-            "Deploying ESP image onto ESP partition with ID '{}'",
-            &device_id
-        );
-
-        // Parse the URL to determine the download strategy
-        let image_url = Url::parse(image.url.as_str())
-            .context(format!("Failed to parse image URL '{}'", image.url))?;
-
-        // Only need to perform file-based deployment of ESP if image is in format RawZstd b/c
-        // RawLzma requires a normal (block-based) deployment of ESP
-        if image.format == ImageFormat::RawZst {
-            info!(
-                "Performing file-based deployment of ESP image onto ESP partition '{}'",
-                &device_id
-            );
-
-            debug!(
-                "Deploying ESP image at URL '{}' onto ESP partition '{}'",
-                image.url, device_id
-            );
-
-            if image_url.scheme() == "file" {
-                // 5th arg is true to communicate that image is a local file, i.e.,  is_local
-                // will be set to true
-                copy_file_artifacts_from_api_image(
-                    &image_url,
-                    image,
-                    ctx,
-                    true,
-                    mount_point,
-                )
-                .context(format!(
-                    "Failed to deploy image at URL '{}' onto ESP partition with id '{}' via direct streaming",
-                    image.url, device_id
-                ))?;
-            } else if image_url.scheme() == "http" || image_url.scheme() == "https" {
-                // 5th arg is false to communicate that image is a local file, i.e., is_local will
-                // be set to false
-                copy_file_artifacts_from_api_image(
-                    &image_url,
-                    image,
-                    ctx,
-                    false,
-                    mount_point,
-                )
-                .context(format!(
-                    "Failed to deploy image at URL '{}' onto ESP partition with id '{}' via direct streaming",
-                    image.url, device_id
-                ))?;
-            } else if image_url.scheme() == "oci" {
-                bail!("Downloading images as OCI artifacts from Azure container registry is not implemented")
-            } else {
-                bail!("Unsupported URL scheme")
-            }
-        } else {
-            bail!(
-                "Unsupported image format for ESP partition with id '{}': {:?}",
-                &device_id,
-                image.format
-            );
-        }
-    }
-    Ok(())
-}
-
 /// Performs file-based deployment of ESP images from the OS image.
 pub(super) fn deploy_esp_from_os_image(
     ctx: &EngineContext,
@@ -627,6 +493,7 @@ mod tests {
 
     use std::io::Write;
 
+    use fs::File;
     use trident_api::{
         constants::GRUB2_RELATIVE_PATH,
         status::{AbVolumeSelection, ServicingType},

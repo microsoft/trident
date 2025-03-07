@@ -49,7 +49,7 @@ configuration, along with their descriptions.
 | ab-volume          | An A/B volume         |
 | encrypted-volume   | An encrypted volume   |
 | verity-device      | A verity device       |
-| filesystem         | A regular filesystem  |
+| filesystem-new     | A regular filesystem  |
 | filesystem-esp     | An ESP/EFI filesystem |
 | filesystem-adopted | An adopted filesystem |
 
@@ -69,7 +69,7 @@ reference a block device of a certain type.
 | ab-volume          | Yes  | No   | Yes       | No                | Yes        | No        | Yes              | No            |
 | encrypted-volume   | Yes  | No   | Yes       | No                | Yes        | No        | No               | No            |
 | verity-device      | Yes  | No   | Yes       | No                | Yes        | Yes       | No               | No            |
-| filesystem         | Yes  | No   | Yes       | No                | Yes        | Yes       | Yes              | Yes           |
+| filesystem-new     | Yes  | No   | Yes       | No                | Yes        | Yes       | Yes              | Yes           |
 | filesystem-esp     | Yes  | No   | Yes       | Yes               | Yes        | No        | No               | No            |
 | filesystem-adopted | Yes  | No   | No        | Yes               | No         | No        | No               | No            |
 
@@ -84,7 +84,7 @@ shows valid reference counts for each referrer type.
 | ab-volume          | 2   | 2   |
 | encrypted-volume   | 1   | 1   |
 | verity-device      | 2   | 2   |
-| filesystem         | 0   | 1   |
+| filesystem-new     | 0   | 1   |
 | filesystem-esp     | 1   | 1   |
 | filesystem-adopted | 1   | 1   |
 
@@ -99,7 +99,7 @@ the rules for sharing references in the storage configuration.
 | ab-volume          | (none)              |
 | encrypted-volume   | (none)              |
 | verity-device      | (none)              |
-| filesystem         | (none)              |
+| filesystem-new     | (none)              |
 | filesystem-esp     | (none)              |
 | filesystem-adopted | (none)              |
 
@@ -137,16 +137,16 @@ block device.
 
 Depending on the type of a filesystem, they may have different source types.
 
-| Filesystem Type | Valid Source Type                    |
-| --------------- | ------------------------------------ |
-| ext4            | new or image or adopted              |
-| xfs             | new or image or adopted              |
-| vfat            | new or image or adopted or esp-image |
-| ntfs            | new or image or adopted              |
-| swap            | new                                  |
-| tmpfs           | new                                  |
-| auto            | adopted                              |
-| other           | image                                |
+| Filesystem Type | Valid Source Type |
+| --------------- | ----------------- |
+| ext4            | new or adopted    |
+| xfs             | new or adopted    |
+| vfat            | new or adopted    |
+| ntfs            | new or adopted    |
+| swap            | new               |
+| tmpfs           | new               |
+| auto            | adopted           |
+| other           |                   |
 
 ## Filesystem Mounting
 
@@ -195,7 +195,7 @@ The following referrers require that all underlying partitions are of the same t
 - raid-array
 - ab-volume
 - encrypted-volume
-- filesystem
+- filesystem-new
 - filesystem-esp
 - filesystem-adopted
 
@@ -216,7 +216,7 @@ Some referrers only support specific underlying partitions types.
 | ab-volume          | any                                                        |
 | encrypted-volume   | any type except 'esp' or 'root' or 'root-verity' or 'home' |
 | verity-device      | 'root' or 'root-verity' or 'linux-generic'                 |
-| filesystem         | any type except 'esp'                                      |
+| filesystem-new     | any type except 'esp'                                      |
 | filesystem-esp     | 'esp'                                                      |
 | filesystem-adopted | any type except 'esp'                                      |
 
@@ -230,7 +230,7 @@ Some referrers are limited to specific RAID levels within the available supporte
 | ab-volume          | any                    |
 | encrypted-volume   | any                    |
 | verity-device      | any                    |
-| filesystem         | any                    |
+| filesystem-new     | any                    |
 | filesystem-esp     | 'raid1'                |
 | filesystem-adopted | No allowed RAID levels |
 

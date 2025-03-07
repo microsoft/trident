@@ -88,35 +88,6 @@ impl EngineContext {
         }
     }
 
-    /// Returns a reference to `Partition` within the A/B volume pair that corresponds to the
-    /// update partition, or the one to be updated.
-    #[cfg(feature = "sysupdate")]
-    pub fn get_ab_update_volume_partition(
-        &self,
-        block_device_id: &BlockDeviceId,
-    ) -> Option<&trident_api::config::Partition> {
-        if let Some(ab_update) = self.spec.storage.ab_update.as_ref() {
-            let ab_volume = ab_update
-                .volume_pairs
-                .iter()
-                .find(|v| &v.id == block_device_id);
-            if let Some(v) = ab_volume {
-                return self
-                    .get_ab_update_volume()
-                    .and_then(|selection| match selection {
-                        AbVolumeSelection::VolumeA => {
-                            self.spec.storage.get_partition(&v.volume_a_id)
-                        }
-                        AbVolumeSelection::VolumeB => {
-                            self.spec.storage.get_partition(&v.volume_b_id)
-                        }
-                    });
-            }
-        }
-
-        None
-    }
-
     /// Using the `/` mount point, fetches the root block device ID.
     pub(super) fn get_root_block_device_id(&self) -> Option<BlockDeviceId> {
         self.spec

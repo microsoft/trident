@@ -36,52 +36,34 @@ storage:
   filesystems:
   - deviceId: esp
     type: vfat
-    source:
-      type: esp-image
-      url: file:///trident_cdrom/data/verity_esp.rawzst
-      sha256: e15853875ce26f8fb8090177821240a889e21ac0c5acee75c5a060401bbdf0ae
-      format: raw-zst
     mountPoint:
       path: /boot/efi
       options: umask=0077
   - deviceId: boot
     type: ext4
-    source:
-      type: image
-      url: file:///trident_cdrom/data/verity_boot.rawzst
-      sha256: b8170f4c46eab33f641e7e102a573d7ef6d8b27dc912b5ecfb033e82f1fff52a
-      format: raw-zst
     mountPoint:
       path: /boot
       options: defaults
   - deviceId: trident
     type: ext4
-    source:
-      type: new
+    source: new
     mountPoint:
       path: /var/lib/trident
       options: defaults
   - deviceId: trident-overlay
     type: ext4
-    source:
-      type: new
+    source: new
     mountPoint:
       path: /var/lib/trident-overlay
       options: defaults
   - deviceId: var
     type: ext4
-    source:
-      type: image
-      url: file:///trident_cdrom/data/verity_var.rawzst
-      sha256: 1876c8c3921570a22d48f0c30e6509ed594cf7c22a2c26a718aadcc901194585
-      format: raw-zst
     mountPoint:
       path: /var
       options: defaults
   - deviceId: home
     type: ext4
-    source:
-      type: new
+    source: new
     mountPoint:
       path: /home
       options: defaults
@@ -120,3 +102,6 @@ os:
   additionalFiles:
   - destination: /var/config-script.sh
     content: 'echo ''Running from newly deployed chroot: $SAMPLE_VARIABLE'''
+image:
+  url: file:///path/to/verity_image.cosi
+  sha384: ec9a9aa23f02b30f4ec6a168b9bc24733b652eeab4f8abc243630666a5e34cea1667c34313a13ec1564ac4871b80112f
