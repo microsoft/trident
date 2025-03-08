@@ -197,7 +197,7 @@ impl NewrootMount {
                     target_path.display()
                 );
 
-                prepare_mount_directory(&target_path).with_context(||format!(
+                prepare_mount_directory(&target_path, false).with_context(||format!(
                     "Failed to prepare mount directory for block device '{}'",
                     mp.target_id
                 ))?;
@@ -325,7 +325,7 @@ fn mount_points_map(host_config: &HostConfiguration) -> BTreeMap<&Path, &Interna
 /// Returns the path where the newroot should be mounted.
 fn get_new_root_path() -> PathBuf {
     let mut new_root_path = Path::new(UPDATE_ROOT_PATH);
-    if let Err(e) = prepare_mount_directory(new_root_path) {
+    if let Err(e) = prepare_mount_directory(new_root_path, true) {
         debug!(
             "Failed to prepare new root mount directory at '{}'. Error: {}.",
             new_root_path.display(),
@@ -454,7 +454,7 @@ fn verify_write_access(target_path: &Path) -> Result<(), Error> {
 
 /// Verify that target_path is suitable for a mount point. If the directory does
 /// not exist, ensure it can be created and then attempt to do so with a warning.
-fn prepare_mount_directory(target_path: &Path) -> Result<(), Error> {
+fn prepare_mount_directory(target_path: &Path, is_newroot: bool) -> Result<(), Error> {
     if target_path.exists() {
         ensure!(
             target_path.is_dir(),
@@ -471,10 +471,12 @@ fn prepare_mount_directory(target_path: &Path) -> Result<(), Error> {
         }
         Ok(())
     } else {
-        warn!(
-            "Mount target: '{}' does not exist. Attempting to create it.",
-            target_path.display()
-        );
+        if !is_newroot {
+            warn!(
+                "Mount target: '{}' does not exist. Attempting to create it.",
+                target_path.display()
+            );
+        }
         verify_write_access(target_path)?;
         files::create_dirs(target_path)
             .with_context(|| format!("Failed to create mount path '{}'", target_path.display()))
@@ -561,16 +563,16 @@ mod tests {
         let temp_mount_dir = TempDir::new().unwrap();
 
         // Test case 1: Prepare a directory that exists and is empty
-        prepare_mount_directory(temp_mount_dir.path()).unwrap();
+        prepare_mount_directory(temp_mount_dir.path(), true).unwrap();
 
         // Test case 2: Prepare a directory that does not exist
         let temp_mount_point_dir = temp_mount_dir.path().join("temp_dir");
-        prepare_mount_directory(&temp_mount_point_dir).unwrap();
+        prepare_mount_directory(&temp_mount_point_dir, true).unwrap();
         assert!(temp_mount_point_dir.exists());
 
         // Test case 3: Prepare a directory that exists and is not empty
         assert_eq!(
-            prepare_mount_directory(temp_mount_dir.path())
+            prepare_mount_directory(temp_mount_dir.path(), false)
                 .unwrap_err()
                 .to_string(),
             format!(
@@ -583,7 +585,7 @@ mod tests {
         let temp_mount_point_file = temp_mount_dir.path().join("temp_file");
         File::create(&temp_mount_point_file).unwrap();
         assert_eq!(
-            prepare_mount_directory(&temp_mount_point_file)
+            prepare_mount_directory(&temp_mount_point_file, false)
                 .unwrap_err()
                 .to_string(),
             format!(
@@ -595,7 +597,7 @@ mod tests {
         // Test case 5: Prepare a directory with no existent parent directory
         let non_valid_path = PathBuf::from("non_existent_dir/new_dir");
         assert_eq!(
-            prepare_mount_directory(&non_valid_path)
+            prepare_mount_directory(&non_valid_path, false)
                 .unwrap_err()
                 .to_string(),
             format!(
@@ -613,7 +615,7 @@ mod tests {
         // Target path within read-only directory
         let temp_in_ro = temp_mount_dir.path().join("new_dir_in_ro");
         assert_eq!(
-            prepare_mount_directory(&temp_in_ro)
+            prepare_mount_directory(&temp_in_ro, false)
                 .unwrap_err()
                 .to_string(),
             format!(
@@ -1240,7 +1242,7 @@ mod functional_test {
                 let target_path = mount_dir.join("test_dir");
 
                 assert_eq!(
-                    prepare_mount_directory(&target_path)
+                    prepare_mount_directory(&target_path, false)
                         .unwrap_err()
                         .to_string(),
                     format!(
