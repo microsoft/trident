@@ -9,7 +9,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    constants::{ESP_EFI_DIRECTORY, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
+    constants::{ESP_MOUNT_POINT_PATH, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
     is_default, BlockDeviceId,
 };
 
@@ -296,7 +296,7 @@ impl FileSystem {
     /// determined by its mount point path.
     pub fn is_esp(&self) -> bool {
         self.mount_point_path()
-            .is_some_and(|mpp| mpp == Path::new(ESP_EFI_DIRECTORY))
+            .is_some_and(|mpp| mpp == Path::new(ESP_MOUNT_POINT_PATH))
     }
 
     /// Returns whether the filesystem is the root filesystem, as determined by
@@ -316,5 +316,60 @@ impl FileSystem {
     /// Returns the path of the mount point, if it exists.
     pub fn mount_point_path(&self) -> Option<&Path> {
         self.mount_point.as_ref().map(|mp| mp.path.as_ref())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_filesystem_mount_point_path() {
+        let mut fs = FileSystem {
+            device_id: Some("device_id".to_string()),
+            fs_type: FileSystemType::Ext4,
+            source: FileSystemSource::Image,
+            mount_point: None,
+        };
+        assert_eq!(fs.mount_point_path(), None);
+
+        fs.mount_point = Some(MountPoint {
+            path: PathBuf::from("/mnt"),
+            options: MountOptions::new("defaults"),
+        });
+        assert_eq!(fs.mount_point_path(), Some(Path::new("/mnt")));
+        assert!(!fs.is_esp());
+        assert!(!fs.is_root());
+        assert!(!fs.is_read_only());
+
+        fs.mount_point = Some(MountPoint {
+            path: PathBuf::from("/boot/efi"),
+            options: MountOptions::new("defaults"),
+        });
+        assert_eq!(fs.mount_point_path(), Some(Path::new(ESP_MOUNT_POINT_PATH)));
+        assert!(fs.is_esp());
+        assert!(!fs.is_root());
+        assert!(!fs.is_read_only());
+
+        fs.mount_point = Some(MountPoint {
+            path: PathBuf::from("/"),
+            options: MountOptions::new("defaults"),
+        });
+        assert_eq!(
+            fs.mount_point_path(),
+            Some(Path::new(ROOT_MOUNT_POINT_PATH))
+        );
+        assert!(!fs.is_esp());
+        assert!(fs.is_root());
+        assert!(!fs.is_read_only());
+
+        fs.mount_point = Some(MountPoint {
+            path: PathBuf::from("/mnt"),
+            options: MountOptions::new("ro"),
+        });
+        assert_eq!(fs.mount_point_path(), Some(Path::new("/mnt")));
+        assert!(!fs.is_esp());
+        assert!(!fs.is_root());
+        assert!(fs.is_read_only());
     }
 }
