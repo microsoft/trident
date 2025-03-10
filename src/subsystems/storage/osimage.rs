@@ -111,7 +111,7 @@ fn validate_filesystems(
         .storage
         .filesystems
         .iter()
-        .filter(|fs| fs.source == FileSystemSource::OsImage)
+        .filter(|fs| fs.source == FileSystemSource::Image)
         .map(|fs| {
             let mount_point = fs
                 .mount_point
@@ -433,7 +433,7 @@ mod tests {
                     .map(|(path, fs_type)| FileSystem {
                         device_id: Some("dev".into()),
                         fs_type,
-                        source: FileSystemSource::OsImage,
+                        source: FileSystemSource::Image,
                         mount_point: Some(MountPoint::from_str(path).unwrap()),
                     })
                     .collect::<Vec<_>>(),

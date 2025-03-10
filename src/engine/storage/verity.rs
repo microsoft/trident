@@ -12,7 +12,7 @@ use trident_api::{
     constants::DEV_MAPPER_PATH,
 };
 
-use crate::{engine::EngineContext, osimage::OsImage};
+use crate::engine::EngineContext;
 
 use super::raid;
 
@@ -64,29 +64,21 @@ fn setup_root_verity_device(
 
 /// Get the root verity root hash.
 fn get_root_verity_root_hash(ctx: &EngineContext) -> Result<String, Error> {
-    // When available, extract information from the OS image.
-    if let Some(os_img) = ctx.image.as_ref() {
-        trace!("Getting root verity root hash from OS image");
-        get_root_verity_root_hash_osimage(os_img).context(format!(
-            "Failed to get root hash from OS image '{}'",
-            os_img.source()
-        ))
-    } else {
-        bail!("OS image is not available");
-    }
-}
+    // Extract information from the OS image.
+    let Some(os_img) = ctx.image.as_ref() else {
+        bail!("Image is not available");
+    };
 
-/// Get the root verity root hash from the OS image.
-fn get_root_verity_root_hash_osimage(os_img: &OsImage) -> Result<String, Error> {
+    trace!("Getting root verity root hash from OS image");
     let root_fs = os_img
         .root_filesystem()
         .context("Failed to get root filesystem from OS image")?;
 
-    if let Some(verity) = root_fs.verity.as_ref() {
-        Ok(verity.roothash.clone())
-    } else {
+    let Some(verity) = root_fs.verity.as_ref() else {
         bail!("Root filesystem in OS image is not verity enabled");
-    }
+    };
+
+    Ok(verity.roothash.clone())
 }
 
 /// Setup verity devices; currently, only the root verity device is supported.
@@ -218,7 +210,7 @@ mod tests {
 
     use crate::osimage::{
         mock::{MockImage, MockOsImage},
-        OsImageFileSystemType,
+        OsImage, OsImageFileSystemType,
     };
 
     #[test]
@@ -228,7 +220,7 @@ mod tests {
     }
 
     #[test]
-    fn test_get_root_verity_root_hash_osimage() {
+    fn test_get_root_verity_root_hash() {
         let expected_root_hash = "sample-roothash";
         let mut mock = MockOsImage::new().with_image(MockImage::new(
             ROOT_MOUNT_POINT_PATH,
@@ -237,8 +229,13 @@ mod tests {
             Some(expected_root_hash),
         ));
 
+        let as_ctx = |mock: &MockOsImage| EngineContext {
+            image: Some(OsImage::mock(mock.clone())),
+            ..Default::default()
+        };
+
         assert_eq!(
-            get_root_verity_root_hash_osimage(&OsImage::mock(mock.clone())).unwrap(),
+            get_root_verity_root_hash(&as_ctx(&mock)).unwrap(),
             expected_root_hash,
             "Root hash does not match expected"
         );
@@ -246,7 +243,7 @@ mod tests {
         // test failure when root filesystem is not verity enabled
         mock.images[0].verity = None;
         assert_eq!(
-            get_root_verity_root_hash_osimage(&OsImage::mock(mock.clone()))
+            get_root_verity_root_hash(&as_ctx(&mock))
                 .unwrap_err()
                 .to_string(),
             "Root filesystem in OS image is not verity enabled",
@@ -256,7 +253,7 @@ mod tests {
         // test failure when root filesystem is not found
         mock.images.clear();
         assert_eq!(
-            get_root_verity_root_hash_osimage(&OsImage::mock(mock.clone()))
+            get_root_verity_root_hash(&as_ctx(&mock))
                 .unwrap_err()
                 .to_string(),
             "Failed to get root filesystem from OS image",
@@ -268,10 +265,6 @@ mod tests {
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
-    use crate::osimage::{
-        mock::{MockImage, MockOsImage},
-        OsImageFileSystemType,
-    };
 
     use super::*;
 
@@ -294,6 +287,11 @@ mod functional_test {
     use trident_api::{
         config::{Disk, FileSystemType, Partition, PartitionType, Storage},
         constants::{MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
+    };
+
+    use crate::osimage::{
+        mock::{MockImage, MockOsImage},
+        OsImage, OsImageFileSystemType,
     };
 
     #[functional_test]

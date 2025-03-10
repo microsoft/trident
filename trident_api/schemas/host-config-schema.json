@@ -330,11 +330,11 @@
           ]
         },
         {
-          "title": "OS Image",
-          "description": "Use an existing file system from an OS image.",
+          "title": "Image",
+          "description": "Use an existing file system from an image.",
           "type": "string",
           "enum": [
-            "os-image"
+            "image"
           ]
         }
       ]

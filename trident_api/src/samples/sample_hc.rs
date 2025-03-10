@@ -58,7 +58,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             path: constants::ESP_MOUNT_POINT_PATH.into(),
                             options: MountOptions::new("umask=0077"),
                         }),
-                        source: FileSystemSource::OsImage,
+                        source: FileSystemSource::Image,
                     },
                     FileSystem {
                         device_id: Some("root".into()),
@@ -67,7 +67,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             path: constants::ROOT_MOUNT_POINT_PATH.into(),
                             options: MountOptions::defaults(),
                         }),
-                        source: FileSystemSource::OsImage,
+                        source: FileSystemSource::Image,
                     },
                 ],
                     ..Default::default()
@@ -109,7 +109,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             path: constants::ESP_MOUNT_POINT_PATH.into(),
                             options: MountOptions::new("umask=0077"),
                         }),
-                        source: FileSystemSource::OsImage,
+                        source: FileSystemSource::Image,
                     },
                     FileSystem {
                         device_id: Some("root".into()),
@@ -118,7 +118,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             path: constants::ROOT_MOUNT_POINT_PATH.into(),
                             options: MountOptions::defaults(),
                         }),
-                        source: FileSystemSource::OsImage,
+                        source: FileSystemSource::Image,
                     },
                 ],
                 ..Default::default()
@@ -270,7 +270,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             path: constants::ESP_MOUNT_POINT_PATH.into(),
                             options: MountOptions::new("umask=0077"),
                         }),
-                        source: FileSystemSource::OsImage,
+                        source: FileSystemSource::Image,
                     },
                     FileSystem {
                         device_id: Some("root".into()),
@@ -279,7 +279,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             path: constants::ROOT_MOUNT_POINT_PATH.into(),
                             options: MountOptions::defaults(),
                         }),
-                        source: FileSystemSource::OsImage,
+                        source: FileSystemSource::Image,
                     },
                     FileSystem {
                         device_id: Some("trident".into()),
@@ -453,7 +453,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             path: constants::ESP_MOUNT_POINT_PATH.into(),
                             options: MountOptions::new("umask=0077"),
                         }),
-                        source: FileSystemSource::OsImage,
+                        source: FileSystemSource::Image,
                     },
                     FileSystem {
                         device_id: Some("boot".into()),
@@ -462,7 +462,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             path: constants::BOOT_MOUNT_POINT_PATH.into(),
                             options: MountOptions::defaults(),
                         }),
-                        source: FileSystemSource::OsImage,
+                        source: FileSystemSource::Image,
                     },
                     FileSystem {
                         device_id: Some("trident".into()),
@@ -485,7 +485,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     FileSystem {
                         device_id: Some("var".into()),
                         fs_type: FileSystemType::Ext4,
-                        source: FileSystemSource::OsImage,
+                        source: FileSystemSource::Image,
                         mount_point: Some(MountPoint {
                             path: "/var".into(),
                             options: MountOptions::defaults(),
@@ -503,7 +503,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     FileSystem {
                         device_id: Some("root".into()),
                         fs_type: FileSystemType::Ext4,
-                        source: FileSystemSource::OsImage,
+                        source: FileSystemSource::Image,
                         mount_point: Some(MountPoint {
                             path: ROOT_MOUNT_POINT_PATH.into(),
                             options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
@@ -863,13 +863,13 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             path: constants::ESP_MOUNT_POINT_PATH.into(),
                             options: MountOptions::new("umask=0077"),
                         }),
-                        source: FileSystemSource::OsImage,
+                        source: FileSystemSource::Image,
                     },
                     FileSystem {
                         device_id: Some("esp2".into()),
                         fs_type: FileSystemType::Vfat,
                         mount_point: None,
-                        source: FileSystemSource::OsImage,
+                        source: FileSystemSource::Image,
                     },
                     FileSystem {
                         device_id: Some("boot".into()),
@@ -878,7 +878,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             path: constants::BOOT_MOUNT_POINT_PATH.into(),
                             options: MountOptions::defaults(),
                         }),
-                        source: FileSystemSource::OsImage,
+                        source: FileSystemSource::Image,
                     },
                     FileSystem {
                         device_id: Some("trident".into()),
@@ -913,7 +913,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     FileSystem {
                         device_id: Some("var".into()),
                         fs_type: FileSystemType::Ext4,
-                        source: FileSystemSource::OsImage,
+                        source: FileSystemSource::Image,
                         mount_point: Some(MountPoint {
                             path: "/var".into(),
                             options: MountOptions::defaults(),
@@ -931,7 +931,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     FileSystem {
                         device_id: Some("root".into()),
                         fs_type: FileSystemType::Ext4,
-                        source: FileSystemSource::OsImage,
+                        source: FileSystemSource::Image,
                         mount_point: Some(MountPoint {
                             path: ROOT_MOUNT_POINT_PATH.into(),
                             options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
@@ -1071,7 +1071,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 path: constants::ESP_MOUNT_POINT_PATH.into(),
                                 options: MountOptions::new("umask=0077"),
                             }),
-                            source: FileSystemSource::OsImage,
+                            source: FileSystemSource::Image,
                         },
                         FileSystem {
                             device_id: Some("root".into()),
@@ -1080,7 +1080,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 path: constants::ROOT_MOUNT_POINT_PATH.into(),
                                 options: MountOptions::defaults(),
                             }),
-                            source: FileSystemSource::OsImage,
+                            source: FileSystemSource::Image,
                         },
                         FileSystem {
                             device_id: Some("swap1".into()),
@@ -1217,7 +1217,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 path: constants::ESP_MOUNT_POINT_PATH.into(),
                                 options: MountOptions::new("umask=0077"),
                             }),
-                            source: FileSystemSource::OsImage,
+                            source: FileSystemSource::Image,
                         },
                         FileSystem {
                             device_id: Some("root".into()),
@@ -1226,7 +1226,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 path: constants::ROOT_MOUNT_POINT_PATH.into(),
                                 options: MountOptions::defaults(),
                             }),
-                            source: FileSystemSource::OsImage,
+                            source: FileSystemSource::Image,
                         },
                         FileSystem {
                             device_id: Some("swap".into()),
@@ -1390,7 +1390,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 path: constants::ESP_MOUNT_POINT_PATH.into(),
                                 options: MountOptions::new("umask=0077"),
                             }),
-                            source: FileSystemSource::OsImage,
+                            source: FileSystemSource::Image,
                         },
                         FileSystem {
                             device_id: Some("root".into()),
@@ -1399,7 +1399,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 path: constants::ROOT_MOUNT_POINT_PATH.into(),
                                 options: MountOptions::defaults(),
                             }),
-                            source: FileSystemSource::OsImage,
+                            source: FileSystemSource::Image,
                         },
                         FileSystem {
                             device_id: Some("trident".into()),

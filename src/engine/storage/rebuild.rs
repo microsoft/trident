@@ -776,7 +776,7 @@ mod tests {
             .push(trident_api::config::FileSystem {
                 device_id: Some("disk2part1".to_string()),
                 fs_type: FileSystemType::Ext4,
-                source: FileSystemSource::OsImage,
+                source: FileSystemSource::Image,
                 mount_point: Some(MountPoint {
                     path: PathBuf::from("/"),
                     options: MountOptions::empty(),
@@ -838,7 +838,7 @@ mod tests {
             .push(trident_api::config::FileSystem {
                 device_id: Some("disk2part3".to_string()),
                 fs_type: FileSystemType::Vfat,
-                source: FileSystemSource::OsImage,
+                source: FileSystemSource::Image,
                 mount_point: Some(MountPoint {
                     path: PathBuf::from("/esp"),
                     options: MountOptions::empty(),

@@ -21,7 +21,6 @@ pub mod verity;
 
 use super::EngineContext;
 
-const IMAGE_SUBSYSTEM_NAME: &str = "image";
 const ENCRYPTION_SUBSYSTEM_NAME: &str = "encryption";
 
 #[tracing::instrument(skip_all)]
@@ -62,9 +61,8 @@ pub(super) fn close_pre_existing_devices(ctx: &EngineContext) -> Result<(), Trid
 pub(super) fn initialize_block_devices(ctx: &EngineContext) -> Result<(), TridentError> {
     trace!("Mount points: {:?}", ctx.spec.storage.internal_mount_points);
 
-    image::provision(ctx, &ctx.spec).message(format!(
-        "Step 'Provision' failed for subsystem '{IMAGE_SUBSYSTEM_NAME}'"
-    ))?;
+    image::deploy_images(ctx).structured(ServicingError::DeployImages)?;
+
     filesystem::create_filesystems(ctx).structured(ServicingError::CreateFilesystems)?;
 
     // Assumes that images are already in place (data and hash), so that it can

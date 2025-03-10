@@ -93,7 +93,7 @@ fn test_basic_graph() {
     let fs = FileSystem {
         device_id: Some("partition6".into()),
         fs_type: FileSystemType::Ext4,
-        source: FileSystemSource::OsImage,
+        source: FileSystemSource::Image,
         mount_point: Some(MountPoint {
             path: ROOT_MOUNT_POINT_PATH.into(),
             options: MountOptions::empty(),
@@ -138,7 +138,7 @@ fn test_duplicate_mountpoint() {
     let fs1 = FileSystem {
         device_id: Some("partition".into()),
         fs_type: FileSystemType::Ext4,
-        source: FileSystemSource::OsImage,
+        source: FileSystemSource::Image,
         mount_point: Some(MountPoint {
             path: ROOT_MOUNT_POINT_PATH.into(),
             options: MountOptions::defaults(),
@@ -213,7 +213,7 @@ fn test_filesystem_incompatible_source() {
     let fs1 = FileSystem {
         device_id: Some("partition".into()),
         fs_type: FileSystemType::Ext4,
-        source: FileSystemSource::OsImage,
+        source: FileSystemSource::Image,
         mount_point: Some(MountPoint {
             path: ROOT_MOUNT_POINT_PATH.into(),
             options: MountOptions::empty(),
@@ -248,7 +248,7 @@ fn test_filesystem_incompatible_source() {
     let fs3 = FileSystem {
         device_id: Some("partition".into()),
         fs_type: FileSystemType::Swap,
-        source: FileSystemSource::OsImage,
+        source: FileSystemSource::Image,
         mount_point: None,
     };
     let mut builder = builder_base.clone();
@@ -257,8 +257,8 @@ fn test_filesystem_incompatible_source() {
     assert_eq!(
         builder.build().unwrap_err(),
         StorageGraphBuildError::FilesystemIncompatibleSource {
-            fs_desc: "src:os-image, type:swap, dev:partition".into(),
-            fs_source: FileSystemSourceKind::OsImage,
+            fs_desc: fs3.description(),
+            fs_source: FileSystemSourceKind::Image,
             fs_compatible_sources: ItemList(vec![FileSystemSourceKind::New])
         }
     );
@@ -271,7 +271,7 @@ fn test_filesystem_missing_blkdev_id() {
     let fs = FileSystem {
         device_id: None,
         fs_type: FileSystemType::Vfat,
-        source: FileSystemSource::OsImage,
+        source: FileSystemSource::Image,
         mount_point: Some(MountPoint {
             path: ROOT_MOUNT_POINT_PATH.into(),
             options: MountOptions::empty(),
@@ -283,7 +283,7 @@ fn test_filesystem_missing_blkdev_id() {
     assert_eq!(
         builder.build().unwrap_err(),
         StorageGraphBuildError::FilesystemMissingBlockDeviceId {
-            fs_desc: "src:os-image, type:vfat, mnt:/".into()
+            fs_desc: fs.description()
         },
     );
 }
@@ -302,7 +302,7 @@ fn test_filesystem_missing_mp() {
     assert_eq!(
         builder.build().unwrap_err(),
         StorageGraphBuildError::FilesystemMissingMountPoint {
-            fs_desc: "src:new, type:tmpfs".into()
+            fs_desc: fs.description()
         }
     );
 
@@ -337,7 +337,7 @@ fn test_unexpected_blkdev_id() {
     assert_eq!(
         builder.build().unwrap_err(),
         StorageGraphBuildError::FilesystemUnexpectedBlockDeviceId {
-            fs_desc: "src:new, type:tmpfs, dev:partition, mnt:/".into()
+            fs_desc: fs.description()
         }
     );
 }
@@ -353,7 +353,7 @@ fn test_unexpected_mp() {
     let fs = FileSystem {
         device_id: Some("partition".into()),
         fs_type: FileSystemType::Swap,
-        source: FileSystemSource::OsImage,
+        source: FileSystemSource::Image,
         mount_point: Some(MountPoint {
             path: ROOT_MOUNT_POINT_PATH.into(),
             options: MountOptions::empty(),
@@ -363,7 +363,7 @@ fn test_unexpected_mp() {
     assert_eq!(
         builder.build().unwrap_err(),
         StorageGraphBuildError::FilesystemUnexpectedMountPoint {
-            fs_desc: "src:os-image, type:swap, dev:partition, mnt:/".into(),
+            fs_desc: fs.description(),
             fs_type: FileSystemType::Swap
         }
     );
@@ -653,7 +653,7 @@ fn test_mount_point_path_not_absolute() {
     let fs = FileSystem {
         device_id: Some("partition".into()),
         fs_type: FileSystemType::Ext4,
-        source: FileSystemSource::OsImage,
+        source: FileSystemSource::Image,
         mount_point: Some(MountPoint {
             path: "not/absolute".into(),
             options: MountOptions::defaults(),
@@ -674,7 +674,7 @@ fn test_nonexistent_ref() {
     let fs = FileSystem {
         device_id: Some("partition".into()),
         fs_type: FileSystemType::Ext4,
-        source: FileSystemSource::OsImage,
+        source: FileSystemSource::Image,
         mount_point: Some(MountPoint {
             path: ROOT_MOUNT_POINT_PATH.into(),
             options: MountOptions::empty(),
@@ -686,7 +686,7 @@ fn test_nonexistent_ref() {
         builder.build().unwrap_err(),
         StorageGraphBuildError::NonExistentReference {
             node_identifier: StorageGraphNode::from(&fs).identifier(),
-            kind: BlkDevReferrerKind::FileSystemOsImage,
+            kind: BlkDevReferrerKind::FileSystemImage,
             target_id: "partition".into()
         }
     );
@@ -766,7 +766,7 @@ fn test_esp_enforce_partition_type() {
     let fs = FileSystem {
         device_id: Some("partition".into()),
         fs_type: FileSystemType::Vfat,
-        source: FileSystemSource::OsImage,
+        source: FileSystemSource::Image,
         mount_point: Some(MountPoint {
             path: ESP_MOUNT_POINT_PATH.into(),
             options: MountOptions::defaults(),
@@ -999,7 +999,7 @@ mod verity {
         let root_fs = FileSystem {
             device_id: Some("verity".into()),
             fs_type: FileSystemType::Ntfs, // Only Ext4 and Xfs are supported
-            source: FileSystemSource::OsImage,
+            source: FileSystemSource::Image,
             mount_point: Some(MountPoint {
                 path: ROOT_MOUNT_POINT_PATH.into(),
                 options: MountOptions::new(MOUNT_OPTION_READ_ONLY),

@@ -144,14 +144,14 @@ impl FileSystemType {
             Self::Ext4 | Self::Xfs | Self::Ntfs => ItemList(vec![
                 FileSystemSourceKind::New,
                 FileSystemSourceKind::Adopted,
-                FileSystemSourceKind::OsImage,
+                FileSystemSourceKind::Image,
             ]),
             Self::Vfat => ItemList(vec![
                 FileSystemSourceKind::New,
                 FileSystemSourceKind::Adopted,
-                FileSystemSourceKind::OsImage,
+                FileSystemSourceKind::Image,
             ]),
-            Self::Other => ItemList(vec![FileSystemSourceKind::OsImage]),
+            Self::Other => ItemList(vec![FileSystemSourceKind::Image]),
             Self::Iso9660 | Self::Auto => ItemList(vec![FileSystemSourceKind::Adopted]),
             Self::Swap | Self::Tmpfs | Self::Overlay => ItemList(vec![FileSystemSourceKind::New]),
         }
@@ -194,7 +194,7 @@ impl BlkDevReferrerKind {
             Self::FileSystemNew => ValidCardinality::new_at_most(1),
             Self::FileSystemEsp => ValidCardinality::new_exact(1),
             Self::FileSystemAdopted => ValidCardinality::new_exact(1),
-            Self::FileSystemOsImage => ValidCardinality::new_exact(1),
+            Self::FileSystemImage => ValidCardinality::new_exact(1),
         }
     }
 
@@ -209,7 +209,7 @@ impl BlkDevReferrerKind {
                     | BlkDevKindFlag::EncryptedVolume
             }
             Self::EncryptedVolume => BlkDevKindFlag::Partition | BlkDevKindFlag::RaidArray,
-            Self::FileSystemNew | Self::FileSystemOsImage => {
+            Self::FileSystemNew | Self::FileSystemImage => {
                 BlkDevKindFlag::Partition
                     | BlkDevKindFlag::RaidArray
                     | BlkDevKindFlag::EncryptedVolume
@@ -266,7 +266,7 @@ impl BlkDevReferrerKind {
             | Self::FileSystemNew
             | Self::FileSystemEsp
             | Self::FileSystemAdopted
-            | Self::FileSystemOsImage => BlkDevReferrerKindFlag::empty(),
+            | Self::FileSystemImage => BlkDevReferrerKindFlag::empty(),
         }
     }
 
@@ -287,7 +287,7 @@ impl BlkDevReferrerKind {
             Self::FileSystemNew
             | Self::FileSystemEsp
             | Self::FileSystemAdopted
-            | Self::FileSystemOsImage => false,
+            | Self::FileSystemImage => false,
         }
     }
 }
@@ -395,7 +395,7 @@ impl BlkDevReferrerKind {
             | Self::FileSystemNew
             | Self::FileSystemEsp
             | Self::FileSystemAdopted
-            | Self::FileSystemOsImage => false,
+            | Self::FileSystemImage => false,
         }
     }
 
@@ -420,7 +420,7 @@ impl BlkDevReferrerKind {
             | Self::FileSystemNew
             | Self::FileSystemEsp
             | Self::FileSystemAdopted
-            | Self::FileSystemOsImage => true,
+            | Self::FileSystemImage => true,
         }
     }
 }
@@ -475,7 +475,7 @@ impl BlkDevReferrerKind {
                     PartitionType::LinuxGeneric,
                 ])
             }
-            Self::FileSystemOsImage => AllowBlockList::Any,
+            Self::FileSystemImage => AllowBlockList::Any,
         }
     }
 }
@@ -575,7 +575,7 @@ impl BlkDevReferrerKind {
             | Self::FileSystemNew
             | Self::FileSystemEsp
             | Self::FileSystemAdopted
-            | Self::FileSystemOsImage => (),
+            | Self::FileSystemImage => (),
         }
 
         Ok(())

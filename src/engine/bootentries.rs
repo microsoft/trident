@@ -744,7 +744,7 @@ mod tests {
                 }),
                 storage: Storage {
                     filesystems: vec![FileSystem {
-                        source: FileSystemSource::OsImage,
+                        source: FileSystemSource::Image,
                         device_id: Some("esp".to_string()),
                         fs_type: FileSystemType::Vfat,
                         mount_point: Some(MountPoint {
@@ -796,7 +796,7 @@ mod tests {
                 }),
                 storage: Storage {
                     filesystems: vec![FileSystem {
-                        source: FileSystemSource::OsImage,
+                        source: FileSystemSource::Image,
                         device_id: Some("esp".to_string()),
                         fs_type: FileSystemType::Vfat,
                         mount_point: Some(MountPoint {
@@ -1304,7 +1304,7 @@ mod functional_test {
                 }),
                 storage: trident_api::config::Storage {
                     filesystems: vec![config::FileSystem {
-                        source: config::FileSystemSource::OsImage,
+                        source: config::FileSystemSource::Image,
                         device_id: Some("esp".to_string()),
                         fs_type: FileSystemType::Vfat,
                         mount_point: Some(MountPoint {

@@ -65,7 +65,7 @@ fn block_devices_needing_fs_creation(
 
             // The filesystem source is `OsImage` AND servicing type is
             // CleanInstall AND the mount point is the ESP location.
-            (FileSystemSource::OsImage, ServicingType::CleanInstall) => fs
+            (FileSystemSource::Image, ServicingType::CleanInstall) => fs
                 .mount_point
                 .as_ref()
                 .is_some_and(|mp| mp.path == Path::new(ESP_MOUNT_POINT_PATH)),
@@ -206,7 +206,7 @@ mod tests {
                         FileSystem {
                             device_id: Some("esp".into()),
                             fs_type: FileSystemType::Vfat,
-                            source: FileSystemSource::OsImage,
+                            source: FileSystemSource::Image,
                             mount_point: Some(MountPoint {
                                 path: PathBuf::from("/boot/efi"),
                                 options: MountOptions::empty(),
@@ -215,7 +215,7 @@ mod tests {
                         FileSystem {
                             device_id: Some("root".into()),
                             fs_type: FileSystemType::Ext4,
-                            source: FileSystemSource::OsImage,
+                            source: FileSystemSource::Image,
                             mount_point: Some(MountPoint {
                                 path: PathBuf::from("/"),
                                 options: MountOptions::empty(),
@@ -304,7 +304,7 @@ mod tests {
                         FileSystem {
                             device_id: Some("esp".into()),
                             fs_type: FileSystemType::Vfat,
-                            source: FileSystemSource::OsImage,
+                            source: FileSystemSource::Image,
                             mount_point: Some(MountPoint {
                                 path: PathBuf::from("/esp"),
                                 options: MountOptions::empty(),
@@ -313,7 +313,7 @@ mod tests {
                         FileSystem {
                             device_id: Some("root".into()),
                             fs_type: FileSystemType::Ext4,
-                            source: FileSystemSource::OsImage,
+                            source: FileSystemSource::Image,
                             mount_point: Some(MountPoint {
                                 path: PathBuf::from("/"),
                                 options: MountOptions::empty(),
@@ -409,7 +409,7 @@ mod tests {
                         FileSystem {
                             device_id: Some("esp".into()),
                             fs_type: FileSystemType::Vfat,
-                            source: FileSystemSource::OsImage,
+                            source: FileSystemSource::Image,
                             mount_point: Some(MountPoint {
                                 path: PathBuf::from("/boot/efi"),
                                 options: MountOptions::empty(),
@@ -418,7 +418,7 @@ mod tests {
                         FileSystem {
                             device_id: Some("root-b".into()),
                             fs_type: FileSystemType::Ext4,
-                            source: FileSystemSource::OsImage,
+                            source: FileSystemSource::Image,
                             mount_point: Some(MountPoint {
                                 path: PathBuf::from("/"),
                                 options: MountOptions::empty(),

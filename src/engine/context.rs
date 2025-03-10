@@ -57,11 +57,9 @@ pub struct EngineContext {
     pub install_index: usize,
 
     /// The OS image that Trident is using to service the host.
-    #[allow(dead_code)]
     pub image: Option<OsImage>,
 
     /// The storage graph representing the storage configuration of the host.
-    #[allow(dead_code)]
     pub storage_graph: StorageGraph,
 }
 impl EngineContext {

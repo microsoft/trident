@@ -73,7 +73,7 @@ impl StorageGraph {
             })
         {
             match filesystem.source {
-                FileSystemSource::OsImage => VolumeStatus::PresentAndBackedByImage,
+                FileSystemSource::Image => VolumeStatus::PresentAndBackedByImage,
                 FileSystemSource::Adopted => VolumeStatus::PresentAndBackedByAdoptedFs,
                 FileSystemSource::New => VolumeStatus::PresentButNotBackedByImage,
             }

@@ -16,7 +16,7 @@ impl Display for FileSystemSourceKind {
         match self {
             Self::New => write!(f, "new"),
             Self::Adopted => write!(f, "adopted"),
-            Self::OsImage => write!(f, "os-image"),
+            Self::Image => write!(f, "image"),
         }
     }
 }
@@ -47,7 +47,7 @@ impl Display for BlkDevReferrerKind {
             Self::FileSystemNew => write!(f, "filesystem-new"),
             Self::FileSystemEsp => write!(f, "filesystem-esp"),
             Self::FileSystemAdopted => write!(f, "filesystem-adopted"),
-            Self::FileSystemOsImage => write!(f, "filesystem-os-image"),
+            Self::FileSystemImage => write!(f, "filesystem-image"),
         }
     }
 }

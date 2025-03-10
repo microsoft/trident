@@ -115,11 +115,11 @@ pub enum BlkDevReferrerKind {
     /// A verity device
     VerityDevice,
 
-    /// A regular filesystem
+    /// A new filesystem
     FileSystemNew,
 
-    /// A filesystem from an OS image
-    FileSystemOsImage,
+    /// A filesystem from an image
+    FileSystemImage,
 
     /// An ESP/EFI filesystem
     FileSystemEsp,
@@ -140,7 +140,7 @@ bitflags::bitflags! {
         const EncryptedVolume = 1 << 2;
         const VerityDevice = 1 << 3;
         const FileSystemNew = 1 << 4;
-        const FileSystemOsImage = 1 << 5;
+        const FileSystemImage = 1 << 5;
         const FileSystemEsp = 1 << 6;
         const FileSystemAdopted = 1 << 7;
 
@@ -160,7 +160,7 @@ pub enum FileSystemSourceKind {
     Adopted,
 
     /// Use an existing file system from an OS Image.
-    OsImage,
+    Image,
 }
 
 impl HostConfigBlockDevice {
@@ -281,7 +281,7 @@ impl BlkDevReferrerKind {
             Self::FileSystemNew => BlkDevReferrerKindFlag::FileSystemNew,
             Self::FileSystemEsp => BlkDevReferrerKindFlag::FileSystemEsp,
             Self::FileSystemAdopted => BlkDevReferrerKindFlag::FileSystemAdopted,
-            Self::FileSystemOsImage => BlkDevReferrerKindFlag::FileSystemOsImage,
+            Self::FileSystemImage => BlkDevReferrerKindFlag::FileSystemImage,
         }
     }
 }
@@ -337,7 +337,7 @@ impl BitFlagsBackingEnumVec<BlkDevReferrerKind> for BlkDevReferrerKindFlag {
                 BlkDevReferrerKindFlag::FileSystemNew => BlkDevReferrerKind::FileSystemNew,
                 BlkDevReferrerKindFlag::FileSystemEsp => BlkDevReferrerKind::FileSystemEsp,
                 BlkDevReferrerKindFlag::FileSystemAdopted => BlkDevReferrerKind::FileSystemAdopted,
-                BlkDevReferrerKindFlag::FileSystemOsImage => BlkDevReferrerKind::FileSystemOsImage,
+                BlkDevReferrerKindFlag::FileSystemImage => BlkDevReferrerKind::FileSystemImage,
                 _ => unreachable!("Invalid referrer kind flag: {:?}", kind),
             })
             .collect()

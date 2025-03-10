@@ -95,7 +95,7 @@ mod tests {
             filesystems: vec![FileSystem {
                 device_id: Some("/dev/sda1".to_string()),
                 fs_type: FileSystemType::Ext4,
-                source: FileSystemSource::OsImage,
+                source: FileSystemSource::Image,
                 mount_point: Some(MountPoint {
                     path: PathBuf::from("/mnt/data"),
                     options: MountOptions::defaults(),
@@ -151,7 +151,7 @@ mod tests {
             filesystems: vec![FileSystem {
                 device_id: Some("/dev/sda1".to_string()),
                 fs_type: FileSystemType::Ext4,
-                source: FileSystemSource::OsImage,
+                source: FileSystemSource::Image,
                 mount_point: None,
             }],
             ..Default::default()

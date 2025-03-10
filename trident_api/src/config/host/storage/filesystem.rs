@@ -1,6 +1,6 @@
 use std::{
     fmt::{Display, Formatter},
-    path::PathBuf,
+    path::{Path, PathBuf},
     str::FromStr,
 };
 
@@ -8,7 +8,10 @@ use std::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::{is_default, BlockDeviceId};
+use crate::{
+    constants::{ESP_EFI_DIRECTORY, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
+    is_default, BlockDeviceId,
+};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -62,11 +65,11 @@ pub enum FileSystemSource {
     /// Use an existing file system from an adopted partition.
     Adopted,
 
-    /// # OS Image
+    /// # Image
     ///
-    /// Use an existing file system from an OS image.
+    /// Use an existing file system from an image.
     #[default]
-    OsImage,
+    Image,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -269,7 +272,7 @@ impl FileSystem {
                     match &self.source {
                         FileSystemSource::New => "new",
                         FileSystemSource::Adopted => "adopted",
-                        FileSystemSource::OsImage => "os-image",
+                        FileSystemSource::Image => "image",
                     }
                     .to_owned(),
                 ),
@@ -287,5 +290,31 @@ impl FileSystem {
         .filter_map(|(k, v)| v.map(|v| format!("{}:{}", k, v)))
         .collect::<Vec<_>>()
         .join(", ")
+    }
+
+    /// Returns whether the filesystem is the EFI System Partition (ESP), as
+    /// determined by its mount point path.
+    pub fn is_esp(&self) -> bool {
+        self.mount_point_path()
+            .is_some_and(|mpp| mpp == Path::new(ESP_EFI_DIRECTORY))
+    }
+
+    /// Returns whether the filesystem is the root filesystem, as determined by
+    /// its mount point path.
+    pub fn is_root(&self) -> bool {
+        self.mount_point_path()
+            .is_some_and(|mpp| mpp == Path::new(ROOT_MOUNT_POINT_PATH))
+    }
+
+    /// Returns whether the filesystem's mount options include the `ro` option.
+    pub fn is_read_only(&self) -> bool {
+        self.mount_point
+            .as_ref()
+            .map_or(false, |mp| mp.options.contains(MOUNT_OPTION_READ_ONLY))
+    }
+
+    /// Returns the path of the mount point, if it exists.
+    pub fn mount_point_path(&self) -> Option<&Path> {
+        self.mount_point.as_ref().map(|mp| mp.path.as_ref())
     }
 }

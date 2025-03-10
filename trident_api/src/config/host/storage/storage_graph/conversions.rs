@@ -21,7 +21,7 @@ impl From<&FileSystemSource> for FileSystemSourceKind {
         match source {
             FileSystemSource::New => Self::New,
             FileSystemSource::Adopted => Self::Adopted,
-            FileSystemSource::OsImage => Self::OsImage,
+            FileSystemSource::Image => Self::Image,
         }
     }
 }
@@ -115,7 +115,7 @@ impl From<&FileSystem> for BlkDevReferrerKind {
                 FileSystemSource::Adopted => BlkDevReferrerKind::FileSystemAdopted,
 
                 // If it's an OS image, then check the mount point...
-                FileSystemSource::OsImage => {
+                FileSystemSource::Image => {
                     if fs
                         .mount_point
                         .as_ref()
@@ -126,7 +126,7 @@ impl From<&FileSystem> for BlkDevReferrerKind {
                         BlkDevReferrerKind::FileSystemEsp
                     } else {
                         // Otherwise, it's a regular OS image filesystem referrer.
-                        BlkDevReferrerKind::FileSystemOsImage
+                        BlkDevReferrerKind::FileSystemImage
                     }
                 }
             }

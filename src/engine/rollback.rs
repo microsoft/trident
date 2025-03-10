@@ -689,7 +689,7 @@ mod tests {
                 options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
             }),
             fs_type: FileSystemType::Ext4,
-            source: FileSystemSource::OsImage,
+            source: FileSystemSource::Image,
         }];
 
         // Build storage graph
@@ -1038,7 +1038,7 @@ mod functional_test {
                 options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
             }),
             fs_type: FileSystemType::Ext4,
-            source: FileSystemSource::OsImage,
+            source: FileSystemSource::Image,
         }];
 
         // Build storage graph to validate

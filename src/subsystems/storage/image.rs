@@ -113,7 +113,7 @@ mod tests {
                     FileSystem {
                         device_id: Some("esp".into()),
                         fs_type: FileSystemType::Vfat,
-                        source: FileSystemSource::OsImage,
+                        source: FileSystemSource::Image,
                         mount_point: Some(MountPoint {
                             path: PathBuf::from("/boot/efi"),
                             options: MountOptions::empty(),
@@ -122,7 +122,7 @@ mod tests {
                     FileSystem {
                         device_id: Some("root".into()),
                         fs_type: FileSystemType::Vfat,
-                        source: FileSystemSource::OsImage,
+                        source: FileSystemSource::Image,
                         mount_point: Some(MountPoint {
                             path: PathBuf::from("/"),
                             options: MountOptions::empty(),
@@ -131,7 +131,7 @@ mod tests {
                     FileSystem {
                         device_id: Some("trident".into()),
                         fs_type: FileSystemType::Vfat,
-                        source: FileSystemSource::OsImage,
+                        source: FileSystemSource::Image,
                         mount_point: None,
                     },
                 ],

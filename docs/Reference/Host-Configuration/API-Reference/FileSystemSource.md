@@ -26,12 +26,12 @@ Use an existing file system from an adopted partition.
 | Type           | `string`  |
 | Value          | `adopted` |
 
-### OS Image
+### Image
 
-Use an existing file system from an OS image.
+Use an existing file system from an image.
 
-| Characteristic | Value      |
-| -------------- | ---------- |
-| Type           | `string`   |
-| Value          | `os-image` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+| Value          | `image`  |
 

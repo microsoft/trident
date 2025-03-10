@@ -8,107 +8,29 @@ use log::{debug, info, trace, warn};
 
 use osutils::{e2fsck, hashing_reader::HashingReader384, image_streamer, lsblk, resize2fs};
 use trident_api::{
-    config::{FileSystemSource, HostConfiguration},
-    constants::{ESP_MOUNT_POINT_PATH, MOUNT_OPTION_READ_ONLY},
-    error::{ReportError, ServicingError, TridentError},
+    config::{FileSystem, FileSystemSource},
     status::ServicingType,
     BlockDeviceId,
 };
 
 use crate::{engine::EngineContext, osimage::OsImageFile};
 
-/// Resizes ext2/ext3/ext4 filesystem on the given block device to the maximum
-/// size of the underlying block device.
-fn resize_ext_fs(block_device_path: &Path) -> Result<(), Error> {
-    resize2fs::run(block_device_path).context(format!(
-        "Failed to resize partition on block device at path '{}'",
-        block_device_path.display()
-    ))
-}
-
-#[tracing::instrument(name = "image_provision", skip_all)]
-pub(super) fn provision(
-    ctx: &EngineContext,
-    host_config: &HostConfiguration,
-) -> Result<(), TridentError> {
-    deploy_os_image(ctx, host_config).structured(ServicingError::DeployImages)?;
-
-    Ok(())
-}
-
 /// Deploys all the filesystem images sourced from the OS Image to the
 /// corresponding block devices.
-fn deploy_os_image(ctx: &EngineContext, host_config: &HostConfiguration) -> Result<(), Error> {
+#[tracing::instrument(name = "image_provision", skip_all)]
+pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), Error> {
     // Get the filesystems that are sourced from the OS image
-    let filesystems_from_os_image = {
-        let mut fs_list = Vec::new();
+    let fs_from_img =
+        filesystems_from_image(ctx).context("Failed to get filesystems sourced from the image")?;
 
-        for filesystem in host_config.storage.filesystems.iter() {
-            if filesystem.source != FileSystemSource::OsImage {
-                // Skip everything that is not sourced from the OS image.
-                continue;
-            }
-
-            let device_id = filesystem.device_id.as_ref().with_context(|| {
-                format!(
-                    "Filesystem [{}] is sourced from an OS Image, but does not reference a block device.",
-                    filesystem.description()
-                )
-            })?;
-
-            let mount_point = filesystem.mount_point.as_ref().with_context(|| {
-                format!(
-                    "Filesystem [{}] is sourced from an OS Image, but does not have a mount point.",
-                    filesystem.description(),
-                )
-            })?;
-
-            if mount_point.path == Path::new(ESP_MOUNT_POINT_PATH) {
-                debug!(
-                    "Skipping deployment of filesystem [{}] sourced from OS Image, as it is the ESP.",
-                    filesystem.description()
-                );
-                continue;
-            }
-
-            // If we're executing A/B update, Trident will only re-deploy images onto the A/B
-            // volume pairs
-            if ctx.servicing_type == ServicingType::AbUpdate
-                && !ctx
-                    .storage_graph
-                    .has_ab_capabilities(device_id)
-                    .with_context(|| {
-                        format!("Failed to find device '{device_id}' in storage graph")
-                    })?
-            {
-                debug!(
-                    "Skipping deployment of filesystem [{}] sourced from OS Image, as it is not part of an A/B volume pair.",
-                    filesystem.description()
-                );
-                continue;
-            }
-
-            fs_list.push((device_id, mount_point, filesystem.fs_type));
-        }
-
-        fs_list
-    };
-
-    // If there are no filesystems sourced from the OS image, return early
-    if filesystems_from_os_image.is_empty() {
-        if ctx.image.is_none() {
-            // We don't have any filesystems sourced from the OS image nor an OS
-            // image, this is fine. This most likely means that the host
-            // configuration is using the old images API.
-            return Ok(());
-        } else {
-            bail!("OS image is available, but no filesystems are sourced from it.");
-        }
+    // If there are no filesystems sourced from the image, we have nothing to deploy?
+    if fs_from_img.is_empty() {
+        bail!("Image is available, but no filesystems are sourced from it.");
     }
 
     // If we have filesystems sourced from the OS image, ensure that the OS
     // image is available.
-    let os_img = ctx.image.as_ref().context("OS image is not available")?;
+    let os_img = ctx.image.as_ref().context("Image is not available")?;
 
     // TODO: MOVE THIS TO THE VALIDATE FUNCTION (#9826)
     // Get the available mount points
@@ -116,11 +38,11 @@ fn deploy_os_image(ctx: &EngineContext, host_config: &HostConfiguration) -> Resu
 
     // Iterate over the filesystems sourced from the OS image and ensure that the
     // mount points are available
-    for (device_id, mp, _) in filesystems_from_os_image.iter() {
-        if !available_mount_points.contains(mp.path.as_path()) {
+    for (device_id, mpp, _) in fs_from_img.iter() {
+        if !available_mount_points.contains(mpp) {
             bail!(
                 "Mount point '{}' for device '{}' is not available in the OS image",
-                mp.path.display(),
+                mpp.display(),
                 device_id
             );
         }
@@ -132,10 +54,10 @@ fn deploy_os_image(ctx: &EngineContext, host_config: &HostConfiguration) -> Resu
         .collect::<HashMap<_, _>>();
 
     // Now, deploy the filesystems sourced from the OS image
-    for (id, mp, fs_type) in filesystems_from_os_image {
-        let image = images.get(&mp.path).context(format!(
+    for (id, mpp, fs) in fs_from_img {
+        let image = images.get(mpp).context(format!(
             "Internal error: No image found for mount point '{}' in the OS image",
-            mp.path.display()
+            mpp.display()
         ))?;
 
         // Check if this ID is a verity device, if so, we must explore the graph
@@ -183,12 +105,10 @@ fn deploy_os_image(ctx: &EngineContext, host_config: &HostConfiguration) -> Resu
             );
 
             // Determine if/how the filesystem should be resized.
-            let resize = if mp.options.contains(MOUNT_OPTION_READ_ONLY) {
+            let resize = if fs.is_read_only() || !fs.fs_type.is_ext() {
                 FileSystemResize::NoResize
-            } else if fs_type.is_ext() {
-                FileSystemResize::Ext
             } else {
-                FileSystemResize::NoResize
+                FileSystemResize::Ext
             };
 
             deploy_os_image_file(ctx, id, &image.image_file, resize)?;
@@ -196,6 +116,76 @@ fn deploy_os_image(ctx: &EngineContext, host_config: &HostConfiguration) -> Resu
     }
 
     Ok(())
+}
+
+/// Scans the host configuration and the image in the engine context to find
+/// filesystems sourced from the image. Returns a list of tuples containing
+/// the block device ID, mount point path, and filesystem type for each filesystem
+/// sourced from the OS image.
+///
+/// On A/B update, only filesystems that are part of an A/B volume pair are
+/// returned.
+fn filesystems_from_image(
+    ctx: &EngineContext,
+) -> Result<Vec<(&BlockDeviceId, &Path, &FileSystem)>, Error> {
+    let mut fs_list = Vec::new();
+
+    for filesystem in ctx.spec.storage.filesystems.iter() {
+        if filesystem.source != FileSystemSource::Image {
+            // Skip everything that is not sourced from the OS image.
+            continue;
+        }
+
+        if filesystem.is_esp() {
+            debug!(
+                "Skipping deployment of filesystem [{}] sourced from OS Image, as it is the ESP.",
+                filesystem.description()
+            );
+            continue;
+        }
+
+        let device_id = filesystem.device_id.as_ref().with_context(|| {
+                format!(
+                    "Filesystem [{}] is sourced from an OS Image, but does not reference a block device.",
+                    filesystem.description()
+                )
+            })?;
+
+        let mount_point_path = filesystem.mount_point_path().with_context(|| {
+            format!(
+                "Filesystem [{}] is sourced from an OS Image, but does not have a mount point.",
+                filesystem.description(),
+            )
+        })?;
+
+        // If we're executing A/B update, Trident will only re-deploy images onto the A/B
+        // volume pairs
+        if ctx.servicing_type == ServicingType::AbUpdate
+            && !ctx
+                .storage_graph
+                .has_ab_capabilities(device_id)
+                .with_context(|| format!("Failed to find device '{device_id}' in storage graph"))?
+        {
+            debug!(
+                    "Skipping deployment of filesystem [{}] sourced from OS Image, as it is not part of an A/B volume pair.",
+                    filesystem.description()
+                );
+            continue;
+        }
+
+        fs_list.push((device_id, mount_point_path, filesystem));
+    }
+
+    Ok(fs_list)
+}
+
+/// Resizes ext2/ext3/ext4 filesystem on the given block device to the maximum
+/// size of the underlying block device.
+fn resize_ext_fs(block_device_path: &Path) -> Result<(), Error> {
+    resize2fs::run(block_device_path).context(format!(
+        "Failed to resize partition on block device at path '{}'",
+        block_device_path.display()
+    ))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

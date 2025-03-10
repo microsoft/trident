@@ -94,7 +94,7 @@ pub fn translate(input: &ParsedData, hc: &mut HostConfiguration, errors: &mut Ve
             // TODO(5989): Figure out how to bridge the gap between how kickstart
             // handles images and how Trident handles them
             source: match part.image.as_ref() {
-                Some(_) => FileSystemSource::OsImage,
+                Some(_) => FileSystemSource::Image,
                 None => FileSystemSource::New,
             },
             mount_point: match part.mntpoint {

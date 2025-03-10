@@ -14,7 +14,8 @@ pub(super) fn referrer_description_table() -> RuleDefinition {
             referrer_kind
                 .get_variant_docs()
                 .unwrap_or("No description available")
-                .to_string(),
+                .replace("\n\n", "<br>")
+                .replace("\n", " "),
         ]);
     }
 
@@ -29,7 +30,7 @@ pub(super) fn valid_targets_table() -> RuleDefinition {
     let dev_kinds = get_devices();
 
     let mut table = MdTable::new(
-        vec!["Referrer \\ Device".to_owned()]
+        vec!["Referrer ╲ Device".to_owned()]
             .into_iter()
             .chain(dev_kinds.iter().map(|k| k.to_string())),
     );
@@ -169,7 +170,7 @@ pub(super) fn allowed_raid_levels() -> RuleDefinition {
             referrer_kind.to_string(),
             referrer_kind
                 .allowed_raid_levels()
-                .map_or("No allowed RAID levels".to_string(), |levels| {
+                .map_or("May not refer to a RAID array".to_string(), |levels| {
                     levels.to_string()
                 }),
         ]);

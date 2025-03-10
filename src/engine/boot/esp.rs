@@ -1,5 +1,5 @@
 use std::{
-    fs::{self},
+    fs,
     io::Read,
     path::{Path, PathBuf},
 };
@@ -451,10 +451,7 @@ fn find_first_available_install_index(esp_efi_path: &Path) -> Result<usize, Trid
 }
 
 /// Performs file-based deployment of ESP images from the OS image.
-pub(super) fn deploy_esp_from_os_image(
-    ctx: &EngineContext,
-    mount_point: &Path,
-) -> Result<(), Error> {
+pub(super) fn deploy_esp(ctx: &EngineContext, mount_point: &Path) -> Result<(), Error> {
     trace!("Deploying ESP from OS image");
 
     let os_image = ctx
