@@ -91,7 +91,7 @@ impl CosiMetadata {
         let esp_image = matches[0];
 
         trace!(
-            "Found ESP filesystem image at '{}':   {:#?}"
+            "Found ESP filesystem image at '{}':   {:#?}",
             esp_image.mount_point.display(),
             esp_image
         );
