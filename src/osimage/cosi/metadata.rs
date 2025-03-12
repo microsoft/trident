@@ -57,7 +57,7 @@ pub(crate) struct CosiMetadata {
     /// The unique ID of this COSI file.
     #[allow(dead_code)]
     #[serde(default)]
-    pub id: Option<Uuid>,@--
+    pub id: Option<Uuid>,
 }
 
 impl CosiMetadata {
@@ -91,7 +91,7 @@ impl CosiMetadata {
         let esp_image = matches[0];
 
         trace!(
-            "Found ESP filesystem image at '{}': {:#?}",
+            "Found ESP filesystem image at '{}':  {:#?}",
             esp_image.mount_point.display(),
             esp_image
         );
