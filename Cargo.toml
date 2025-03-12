@@ -47,6 +47,7 @@ tracing-subscriber = { version = "0.3.19", features = ["json"] }
 url = { version = "2.5.4", features = ["serde"] }
 uuid = { version = "1.11.0", features = ["v4", "serde"] }
 
+sysdefs = { path = "sysdefs" }
 osutils = { path = "osutils" }
 setsail = { path = "setsail", optional = true }
 trident_api = { path = "trident_api" }
@@ -103,4 +104,5 @@ members = [
     "pytest",
     "pytest_gen",
     "harpoon",
+    "sysdefs",
 ]

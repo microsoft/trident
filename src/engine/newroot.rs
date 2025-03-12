@@ -650,7 +650,6 @@ mod functional_test {
         filesystems::MkfsFileSystemType,
         findmnt::FindMnt,
         mkfs, mountpoint,
-        partition_types::DiscoverablePartitionType,
         repart::{RepartEmptyMode, RepartPartitionEntry, SystemdRepartInvoker},
         testutils::{
             repart::{
@@ -662,6 +661,7 @@ mod functional_test {
         udevadm,
     };
     use pytest_gen::functional_test;
+    use sysdefs::partition_types::DiscoverablePartitionType;
     use trident_api::{
         config::{
             self, Disk, FileSystemType, HostConfiguration, Partition, PartitionSize, PartitionType,

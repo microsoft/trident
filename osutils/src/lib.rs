@@ -1,4 +1,3 @@
-pub mod arch;
 pub mod blkid;
 pub mod block_devices;
 pub mod chroot;
@@ -29,11 +28,8 @@ pub mod mountpoint;
 pub mod netplan;
 pub mod osmodifier;
 pub mod osrelease;
-pub mod osuuid;
 pub mod overlay;
-pub mod partition_types;
 pub mod path;
-pub mod pcr;
 pub mod repart;
 pub mod resize2fs;
 pub mod scripts;

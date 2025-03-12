@@ -2,7 +2,7 @@ use std::fmt::Write;
 
 use log::{debug, info};
 
-use osutils::arch::SystemArchitecture;
+use sysdefs::arch::SystemArchitecture;
 use trident_api::{
     config::HostConfiguration,
     error::{InvalidInputError, ReportError, TridentError},

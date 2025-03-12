@@ -10,13 +10,13 @@ use reqwest::Url;
 use tempfile::{NamedTempFile, TempDir};
 
 use osutils::{
-    arch::SystemArchitecture,
     filesystems::MountFileSystemType,
     hashing_reader::{HashingReader, HashingReader384},
     image_streamer,
     mount::{self, MountGuard},
     path::join_relative,
 };
+use sysdefs::arch::SystemArchitecture;
 use trident_api::{
     constants::{
         internal_params::{DISABLE_GRUB_NOPREFIX_CHECK, ENABLE_UKI_SUPPORT},

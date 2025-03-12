@@ -51,9 +51,9 @@ mod tests {
     use url::Url;
     use uuid::Uuid;
 
-    use osutils::{
-        arch::SystemArchitecture, osrelease::OsRelease, osuuid::OsUuid,
-        partition_types::DiscoverablePartitionType,
+    use osutils::osrelease::OsRelease;
+    use sysdefs::{
+        arch::SystemArchitecture, osuuid::OsUuid, partition_types::DiscoverablePartitionType,
     };
 
     use trident_api::{

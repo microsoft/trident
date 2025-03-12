@@ -8,7 +8,7 @@ use anyhow::Error;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use osutils::{
+use sysdefs::{
     arch::SystemArchitecture, osuuid::OsUuid, partition_types::DiscoverablePartitionType,
 };
 use trident_api::{constants::ROOT_MOUNT_POINT_PATH, primitives::hash::Sha384Hash};

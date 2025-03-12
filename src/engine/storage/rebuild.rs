@@ -6,10 +6,9 @@ use uuid::Uuid;
 
 use osutils::{
     block_devices::{self, ResolvedDisk},
-    mdadm,
-    osuuid::OsUuid,
-    sfdisk,
+    mdadm, sfdisk,
 };
+use sysdefs::osuuid::OsUuid;
 use trident_api::{
     config::HostConfiguration,
     status::{HostStatus, ServicingState},

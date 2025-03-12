@@ -15,8 +15,8 @@ use osutils::{
     dependencies::{Dependency, DependencyResultExt},
     encryption,
     lsblk::{self, BlockDeviceType},
-    pcr::Pcr,
 };
+use sysdefs::tpm2::Pcr;
 use trident_api::{
     config::{HostConfiguration, HostConfigurationStaticValidationError, Partition, PartitionSize},
     constants::internal_params::{NO_CLOSE_ENCRYPTED_VOLUMES, REENCRYPT_ON_CLEAN_INSTALL},

@@ -40,9 +40,9 @@ mod functional_test {
     use sys_mount::{MountFlags, UnmountFlags};
 
     use pytest_gen::functional_test;
+    use sysdefs::partition_types::DiscoverablePartitionType;
 
     use crate::{
-        partition_types::DiscoverablePartitionType,
         repart::{RepartEmptyMode, RepartPartitionEntry, SystemdRepartInvoker},
         testutils::repart::{self, TEST_DISK_DEVICE_PATH},
         udevadm,

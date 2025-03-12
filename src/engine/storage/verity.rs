@@ -205,7 +205,7 @@ pub fn stop_pre_existing_verity_devices(host_config: &HostConfiguration) -> Resu
 mod tests {
     use super::*;
 
-    use osutils::partition_types::DiscoverablePartitionType;
+    use sysdefs::partition_types::DiscoverablePartitionType;
     use trident_api::constants::ROOT_MOUNT_POINT_PATH;
 
     use crate::osimage::{
@@ -277,13 +277,13 @@ mod functional_test {
         filesystems::MountFileSystemType,
         mount::{self, MountGuard},
         mountpoint,
-        partition_types::DiscoverablePartitionType,
         testutils::{
             repart::TEST_DISK_DEVICE_PATH,
             verity::{self, VerityGuard},
         },
     };
     use pytest_gen::functional_test;
+    use sysdefs::partition_types::DiscoverablePartitionType;
     use trident_api::{
         config::{Disk, FileSystemType, Partition, PartitionType, Storage},
         constants::{MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},

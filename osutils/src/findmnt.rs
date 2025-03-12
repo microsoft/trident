@@ -70,12 +70,10 @@ use std::{
 use anyhow::Context;
 use serde::Deserialize;
 
+use sysdefs::filesystems::KnownFilesystemType;
 use trident_api::{config::MountOptions, constants::ROOT_MOUNT_POINT_PATH};
 
-use crate::{
-    dependencies::{Command, Dependency},
-    filesystems::KnownFilesystemTypes,
-};
+use crate::dependencies::{Command, Dependency};
 
 /// String representation of the unbindable propagation type.
 pub const PROPAGATION_UNBINDABLE: &str = "unbindable";
@@ -95,7 +93,7 @@ pub struct FindMnt {
 /// in `FINDMNT_COLUMNS`. The `children` field contains all mounts under this
 /// filesystem and it is added automatically by `findmnt` when the `--json` flag
 /// is used.
-#[derive(Debug, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub struct MountpointMetadata {
     /// Mount ID.
@@ -115,7 +113,7 @@ pub struct MountpointMetadata {
     pub fsroot: PathBuf,
 
     /// Filesystem type.
-    pub fstype: KnownFilesystemTypes,
+    pub fstype: KnownFilesystemType,
 
     /// Options.
     pub options: MountOptions,
@@ -232,7 +230,7 @@ impl MountpointMetadata {
     ///
     /// Represented by the structure:
     ///
-    /// ```rust
+    /// ```ignore
     /// use std::path::PathBuf;
     /// use osutils::findmnt::MountpointMetadata;
     ///
@@ -241,11 +239,11 @@ impl MountpointMetadata {
     ///     children: vec![
     ///         MountpointMetadata {
     ///             target: PathBuf::from("/a/b"),
-    ///             ..Default::default()
+    ///             // ...
     ///         },
     ///         MountpointMetadata {
     ///             target: PathBuf::from("/a/c"),
-    ///             ..Default::default()
+    ///             // ...
     ///         },
     ///     ],
     ///     ..Default::default()

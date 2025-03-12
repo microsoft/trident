@@ -9,7 +9,7 @@ use log::{debug, trace};
 use tar::Archive;
 use url::Url;
 
-use osutils::arch::SystemArchitecture;
+use sysdefs::arch::SystemArchitecture;
 
 mod metadata;
 mod reader;
@@ -338,9 +338,8 @@ mod tests {
     use trident_api::primitives::hash::Sha384Hash;
     use uuid::Uuid;
 
-    use osutils::{
-        osrelease::OsRelease, osuuid::OsUuid, partition_types::DiscoverablePartitionType,
-    };
+    use osutils::osrelease::OsRelease;
+    use sysdefs::{osuuid::OsUuid, partition_types::DiscoverablePartitionType};
 
     use crate::osimage::OsImageFileSystemType;
 

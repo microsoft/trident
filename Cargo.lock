@@ -872,6 +872,7 @@ dependencies = [
  "serde_json",
  "serde_path_to_error",
  "sha2",
+ "sysdefs",
  "thiserror",
  "url",
  "uuid",
@@ -1628,6 +1629,7 @@ dependencies = [
  "strum",
  "strum_macros",
  "sys-mount",
+ "sysdefs",
  "tempfile",
  "thiserror",
  "trident_api",
@@ -2551,6 +2553,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sysdefs"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "enumflags2",
+ "serde",
+ "strum",
+ "strum_macros",
+ "uuid",
+]
+
+[[package]]
 name = "sysinfo"
 version = "0.30.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2931,6 +2945,7 @@ dependencies = [
  "strum",
  "strum_macros",
  "sys-mount",
+ "sysdefs",
  "sysinfo",
  "tar",
  "tempfile",

@@ -21,6 +21,7 @@ thiserror = "1.0.59"
 url = { version = "2.5.0", features = ["serde"] }
 uuid = { version = "1.8.0", features = ["v4", "serde"] }
 
+sysdefs = { path = "../sysdefs" }
 osutils = { path = "../osutils" }
 
 [dev-dependencies]

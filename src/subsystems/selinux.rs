@@ -7,13 +7,13 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
-
 use log::warn;
+
 use osutils::{
     dependencies::{Dependency, DependencyResultExt},
-    filesystems::KnownFilesystemTypes,
     findmnt::FindMnt,
 };
+use sysdefs::filesystems::KnownFilesystemType;
 use trident_api::{
     config::{HostConfigurationDynamicValidationError, SelinuxMode},
     constants::{MOUNT_OPTION_READ_ONLY, SELINUX_CONFIG},
@@ -203,7 +203,7 @@ fn perform_relabel() -> Result<(), TridentError> {
         .into_iter()
         // Filter out vfat and NTFS filesystems
         .filter(|mp| {
-            mp.fstype != KnownFilesystemTypes::Vfat && mp.fstype != KnownFilesystemTypes::Ntfs
+            mp.fstype != KnownFilesystemType::Vfat && mp.fstype != KnownFilesystemType::Ntfs
         })
         // Filter out read-only mount points
         .filter(|mp| !mp.options.contains(MOUNT_OPTION_READ_ONLY))

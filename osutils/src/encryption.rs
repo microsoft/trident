@@ -7,9 +7,10 @@ use std::{
 use anyhow::{Context, Error};
 use enumflags2::BitFlags;
 
+use sysdefs::tpm2::Pcr;
 use trident_api::constants::LUKS_HEADER_SIZE_IN_MIB;
 
-use crate::{dependencies::Dependency, pcr::Pcr};
+use crate::dependencies::Dependency;
 
 /// Cipher specification string for the LUKS2 data segment.
 pub const CIPHER: &str = "aes-xts-plain64";
@@ -291,11 +292,11 @@ mod functional_test {
     use tempfile::NamedTempFile;
 
     use pytest_gen::functional_test;
+    use sysdefs::partition_types::DiscoverablePartitionType;
 
     use crate::{
         filesystems::MkfsFileSystemType,
         mkfs,
-        partition_types::DiscoverablePartitionType,
         repart::{RepartEmptyMode, RepartPartitionEntry, SystemdRepartInvoker},
         testutils::repart::{self, TEST_DISK_DEVICE_PATH},
         udevadm,

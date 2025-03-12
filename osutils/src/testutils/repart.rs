@@ -2,10 +2,9 @@ use std::path::Path;
 
 use anyhow::Error;
 
-use crate::{
-    dependencies::Dependency, partition_types::DiscoverablePartitionType,
-    repart::RepartPartitionEntry,
-};
+use sysdefs::partition_types::DiscoverablePartitionType;
+
+use crate::{dependencies::Dependency, repart::RepartPartitionEntry};
 
 pub const DISK_SIZE: u64 = 16 * 1024 * 1024 * 1024; // 16 GiB
 pub const PART1_SIZE: u64 = 50 * 1024 * 1024; // 50 MiB

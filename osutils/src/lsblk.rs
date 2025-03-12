@@ -6,9 +6,10 @@ use std::{
 use anyhow::{bail, Context, Error};
 use serde::{Deserialize, Serialize};
 
+use sysdefs::osuuid::OsUuid;
 use trident_api::primitives::bytes::ByteCount;
 
-use crate::{dependencies::Dependency, osuuid::OsUuid};
+use crate::dependencies::Dependency;
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
 pub struct LsBlkOutput {

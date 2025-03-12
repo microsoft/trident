@@ -9,7 +9,6 @@ use log::{debug, error, info, trace};
 use osutils::{
     block_devices::{self, ResolvedDisk},
     lsblk,
-    partition_types::DiscoverablePartitionType,
     repart::{
         RepartActivity, RepartEmptyMode, RepartPartition, RepartPartitionEntry,
         SystemdRepartInvoker,
@@ -17,6 +16,7 @@ use osutils::{
     sfdisk::{SfDisk, SfPartition},
     udevadm,
 };
+use sysdefs::partition_types::DiscoverablePartitionType;
 use trident_api::{
     config::{AdoptedPartition, Disk, HostConfiguration, PartitionSize, PartitionType, Storage},
     BlockDeviceId,

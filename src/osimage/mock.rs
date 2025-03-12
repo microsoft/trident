@@ -6,13 +6,13 @@ use std::{
 use anyhow::Error;
 use serde::Deserialize;
 use url::Url;
+use uuid::Uuid;
 
-use osutils::{
-    arch::SystemArchitecture, osrelease::OsRelease, osuuid::OsUuid,
-    partition_types::DiscoverablePartitionType,
+use osutils::osrelease::OsRelease;
+use sysdefs::{
+    arch::SystemArchitecture, osuuid::OsUuid, partition_types::DiscoverablePartitionType,
 };
 use trident_api::primitives::hash::Sha384Hash;
-use uuid::Uuid;
 
 use super::{OsImageFile, OsImageFileSystem, OsImageFileSystemType, OsImageVerityHash};
 

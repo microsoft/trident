@@ -5,7 +5,8 @@ use quick_xml::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use osutils::{arch::SystemArchitecture, osrelease::OsRelease};
+use osutils::osrelease::OsRelease;
+use sysdefs::arch::SystemArchitecture;
 
 use crate::{error::HarpoonError, IdSource};
 

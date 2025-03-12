@@ -9,7 +9,9 @@ use log::trace;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::{dependencies::Dependency, partition_types::DiscoverablePartitionType};
+use sysdefs::partition_types::DiscoverablePartitionType;
+
+use crate::dependencies::Dependency;
 
 /// Representation of a partition created by `systemd-repart`.
 #[derive(Debug, Deserialize)]

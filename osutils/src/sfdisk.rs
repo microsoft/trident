@@ -3,7 +3,9 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Error};
 use serde::Deserialize;
 
-use crate::{dependencies::Dependency, osuuid::OsUuid, partition_types::DiscoverablePartitionType};
+use sysdefs::{osuuid::OsUuid, partition_types::DiscoverablePartitionType};
+
+use crate::dependencies::Dependency;
 
 #[derive(Debug, PartialEq, Deserialize)]
 struct SfdiskOutput {
