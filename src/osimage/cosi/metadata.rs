@@ -57,7 +57,7 @@ pub(crate) struct CosiMetadata {
     /// The unique ID of this COSI file.
     #[allow(dead_code)]
     #[serde(default)]
-    pub id: Option<Uuid>,
+    pub id: Option<Uuid>,@
 }
 
 impl CosiMetadata {
