@@ -1,5 +1,4 @@
 use std::{
-    ffi::OsStr,
     fs::File,
     io::{BufRead, BufReader},
     path::Path,
@@ -9,19 +8,24 @@ use std::{
 use anyhow::{bail, Context, Error};
 use log::warn;
 
-use osutils::{
-    dependencies::{Dependency, DependencyResultExt},
-    findmnt::FindMnt,
-};
-use sysdefs::filesystems::KnownFilesystemType;
+use osutils::dependencies::{Dependency, DependencyResultExt};
+
 use trident_api::{
-    config::{HostConfigurationDynamicValidationError, SelinuxMode},
+    config::{FileSystemType, HostConfigurationDynamicValidationError, SelinuxMode},
     constants::{MOUNT_OPTION_READ_ONLY, SELINUX_CONFIG},
-    error::{InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt},
+    error::{InvalidInputError, ReportError, ServicingError, TridentError},
     status::ServicingType,
 };
 
 use crate::engine::{EngineContext, Subsystem};
+
+/// List of filesystems that support SELinux. Based on
+/// https://wiki.gentoo.org/wiki/SELinux/FAQ#Can_I_use_SELinux_with_any_file_system.3F
+///
+/// For simplicity and stability only the intersection of that set and the set
+/// of filesystems allowed in the API is included in this list.
+const SELINUX_SUPPORTED_FILESYSTEMS: &[FileSystemType] =
+    &[FileSystemType::Ext4, FileSystemType::Xfs];
 
 /// Gets the SELinux type from the SELinux config file.
 fn get_selinux_type(selinux_config_path: impl AsRef<Path>) -> Result<String, Error> {
@@ -66,6 +70,7 @@ fn get_selinux_mode(selinux_config_path: impl AsRef<Path>) -> Result<SelinuxMode
 
 #[derive(Default)]
 pub struct SelinuxSubsystem;
+
 impl Subsystem for SelinuxSubsystem {
     fn name(&self) -> &'static str {
         "selinux"
@@ -136,7 +141,7 @@ impl Subsystem for SelinuxSubsystem {
             }
         }
 
-        perform_relabel().message("Failed to perform SELinux relabeling")
+        perform_relabel(ctx)
     }
 }
 
@@ -186,29 +191,9 @@ fn calculate_final_selinux_state(
 }
 
 /// Runs the setfiles command to relabel the required filesystems.
-fn perform_relabel() -> Result<(), TridentError> {
+fn perform_relabel(ctx: &EngineContext) -> Result<(), TridentError> {
     let selinux_type =
         get_selinux_type(SELINUX_CONFIG).structured(ServicingError::GetSelinuxType)?;
-
-    // Get the mount points for all (real) filesystems, except for vfat and NTFS. These two FS
-    // types cannot be used in conjunction with SELinux, so the setfiles command will be
-    // skipped for them.
-    let root = FindMnt::run_real()
-        .structured(ServicingError::GetMountPointsInfo)?
-        .root()
-        .structured(ServicingError::GetMountPointsInfo)
-        .message("Failed to get root mount point info")?;
-    let mount_paths: Vec<&OsStr> = root
-        .traverse_depth()
-        .into_iter()
-        // Filter out vfat and NTFS filesystems
-        .filter(|mp| {
-            mp.fstype != KnownFilesystemType::Vfat && mp.fstype != KnownFilesystemType::Ntfs
-        })
-        // Filter out read-only mount points
-        .filter(|mp| !mp.options.contains(MOUNT_OPTION_READ_ONLY))
-        .map(|mp| mp.target.as_os_str())
-        .collect();
 
     Dependency::Setfiles
         .cmd()
@@ -218,18 +203,127 @@ fn perform_relabel() -> Result<(), TridentError> {
                 .join(selinux_type)
                 .join("contexts/files/file_contexts"),
         )
-        .args(mount_paths)
+        .args(filesystems_to_relabel(ctx))
         .run_and_check()
         .message("Failed to run setfiles command")
+}
+
+/// Returns a list of mount points of the filesystems that need to be relabeled.
+///
+/// This function reads the filesystems from the Host Configuration and filters
+/// them based on the following criteria:
+///
+/// - The filesystem supports SELinux.
+/// - The filesystem is mounted.
+/// - The filesystem is not read-only.
+///
+fn filesystems_to_relabel(ctx: &EngineContext) -> Vec<&Path> {
+    let mut out = Vec::new();
+
+    for filesystem in &ctx.spec.storage.filesystems {
+        // Filter to ONLY filesystems that support SELinux
+        if !SELINUX_SUPPORTED_FILESYSTEMS.contains(&filesystem.fs_type) {
+            continue;
+        }
+
+        // Only consider mounted filesystems
+        let Some(mount_point) = &filesystem.mount_point else {
+            continue;
+        };
+
+        // Skip read-only filesystems
+        if mount_point.options.contains(MOUNT_OPTION_READ_ONLY) {
+            continue;
+        }
+
+        out.push(mount_point.path.as_path());
+    }
+
+    out
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    use std::io::Write;
+    use std::{io::Write, path::PathBuf};
 
+    use strum::IntoEnumIterator;
     use tempfile::NamedTempFile;
+
+    use trident_api::config::{FileSystem, MountOptions, MountPoint};
+
+    #[test]
+    fn test_filesystems_to_relabel() {
+        let mut ctx = EngineContext::default();
+
+        // Empty filesystems
+        assert_eq!(filesystems_to_relabel(&ctx), Vec::<&Path>::new());
+
+        // Filesystem with supported type
+        let good_mtp: &str = "/mnt/thing1";
+        let good_fs = FileSystem {
+            device_id: Some("sda1".into()),
+            fs_type: FileSystemType::Ext4,
+            mount_point: Some(MountPoint::from_str(good_mtp).unwrap()),
+            source: Default::default(),
+        };
+
+        let reset = |ctx: &mut EngineContext| {
+            ctx.spec.storage.filesystems = vec![good_fs.clone()];
+        };
+
+        // Filesystem with supported type
+        reset(&mut ctx);
+
+        assert_eq!(filesystems_to_relabel(&ctx), vec![Path::new(good_mtp)]);
+
+        // Filesystem with unsupported type (NTFS)
+        reset(&mut ctx);
+        ctx.spec.storage.filesystems[0].fs_type = FileSystemType::Ntfs;
+
+        assert_eq!(filesystems_to_relabel(&ctx), Vec::<&Path>::new());
+
+        // Filesystem with read-only mount point
+        reset(&mut ctx);
+        ctx.spec.storage.filesystems[0].mount_point = Some(MountPoint {
+            path: good_mtp.into(),
+            options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
+        });
+
+        assert_eq!(filesystems_to_relabel(&ctx), Vec::<&Path>::new());
+
+        // Filesystem with no mount point
+        reset(&mut ctx);
+        ctx.spec.storage.filesystems[0].mount_point = None;
+
+        assert_eq!(filesystems_to_relabel(&ctx), Vec::<&Path>::new());
+
+        // Check all filesystem types to make sure we only get the ones that
+        // support SELinux!
+
+        let mut expected = Vec::new();
+        ctx.spec.storage.filesystems = FileSystemType::iter()
+            .enumerate()
+            .map(|(i, fs_type)| {
+                let mtp_path = format!("/mnt/thing{}", i);
+
+                // If this filesystem supports SELinux, add it to the expected list.
+                if SELINUX_SUPPORTED_FILESYSTEMS.contains(&fs_type) {
+                    expected.push(PathBuf::from(&mtp_path));
+                }
+
+                FileSystem {
+                    device_id: Some(format!("sda{}", i)),
+                    fs_type,
+                    mount_point: Some(MountPoint::from_str(&mtp_path).unwrap()),
+                    source: Default::default(),
+                }
+            })
+            .collect();
+
+        assert_eq!(filesystems_to_relabel(&ctx), expected);
+    }
 
     #[test]
     fn test_get_selinux_mode_success_enforcing() {

@@ -340,7 +340,10 @@ mod tests {
         // the source of the overlay mount is reported as `null`.
         //
         // Command:
-        // findmnt --json -o "AVAIL,FREQ,FSROOT,FSTYPE,FS-OPTIONS,ID,LABEL,MAJ:MIN,OPTIONS,OPT-FIELDS,PARENT,PARTLABEL,PARTUUID,PASSNO,PROPAGATION,SIZE,SOURCE,TARGET,TID,USED,USE%,UUID,VFS-OPTIONS"
+        // findmnt --json -o "AVAIL,FREQ,FSROOT,FSTYPE,FS-OPTIONS,ID,LABEL,"\
+        // "MAJ:MIN,OPTIONS,OPT-FIELDS,PARENT,PARTLABEL,PARTUUID,PASSNO,"\
+        // "PROPAGATION,SIZE,SOURCE,TARGET,TID,USED,USE%,UUID,VFS-OPTIONS"
+        //
         // Note: null sources have been artificially injected on some overlayfs
         include_str!("test_files/findmnt-null-source.json")
     }

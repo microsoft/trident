@@ -6,7 +6,9 @@ use std::{
 
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
+
 use serde::{Deserialize, Serialize};
+use strum_macros::EnumIter;
 
 use crate::{
     constants::{ESP_MOUNT_POINT_PATH, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
@@ -151,10 +153,9 @@ impl Default for MountOptions {
 }
 
 /// File system types.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, EnumIter)]
 #[serde(rename_all = "lowercase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
-#[cfg_attr(feature = "documentation", derive(strum_macros::EnumIter))]
 pub enum FileSystemType {
     /// # Ext4 file system
     Ext4,
