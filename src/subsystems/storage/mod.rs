@@ -9,6 +9,7 @@ use log::{debug, error, trace, warn};
 use osutils::lsblk;
 use trident_api::{
     config::HostConfigurationDynamicValidationError,
+    constants::internal_params::RELAXED_COSI_VALIDATION,
     error::{
         InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt,
         UnsupportedConfigurationError,
@@ -134,12 +135,22 @@ impl Subsystem for StorageSubsystem {
         // https://dev.azure.com/mariner-org/ECF/_workitems/edit/7322/
 
         encryption::validate_host_config(&ctx.spec).message(format!(
-            "Step 'Validate' failed for subsystem '{ENCRYPTION_SUBSYSTEM_NAME}'"
+            "Step 'Validate' failed for subunit '{ENCRYPTION_SUBSYSTEM_NAME}'"
         ))?;
 
-        osimage::validate_host_config(ctx).message(format!(
-            "Step 'Validate' failed for subsystem '{OSIMAGE_SUBSYSTEM_NAME}'"
-        ))?;
+        if let Err(err) = osimage::validate_host_config(ctx).message(format!(
+            "Step 'Validate' failed for subunit '{OSIMAGE_SUBSYSTEM_NAME}'"
+        )) {
+            if ctx.spec.internal_params.get_flag(RELAXED_COSI_VALIDATION) {
+                warn!(
+                    "COSI validation failed, but '{RELAXED_COSI_VALIDATION}' is set. \
+                    Continuing. Error: {}",
+                    err.kind().to_string()
+                );
+            } else {
+                return Err(err);
+            }
+        }
 
         Ok(())
     }
@@ -184,7 +195,7 @@ impl Subsystem for StorageSubsystem {
         // is located
 
         encryption::configure(ctx).message(format!(
-            "Step 'Configure' failed for subsystem '{ENCRYPTION_SUBSYSTEM_NAME}'"
+            "Step 'Configure' failed for subunit '{ENCRYPTION_SUBSYSTEM_NAME}'"
         ))?;
 
         // Persist on reboots

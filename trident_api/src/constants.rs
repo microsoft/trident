@@ -195,4 +195,7 @@ pub mod internal_params {
 
     /// Mount a writable overlay for /etc for the hooks subsystem.
     pub const WRITABLE_ETC_OVERLAY_HOOKS: &str = "writableEtcOverlayHooks";
+
+    /// Relax COSI filesystem match checks.
+    pub const RELAXED_COSI_VALIDATION: &str = "relaxedCosiValidation";
 }
