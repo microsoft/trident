@@ -109,8 +109,7 @@ impl FileSystemType {
             | Self::Ntfs
             | Self::Iso9660
             | Self::Swap
-            | Self::Auto
-            | Self::Other => true,
+            | Self::Auto => true,
             Self::Tmpfs | Self::Overlay => false,
         }
     }
@@ -126,7 +125,7 @@ impl FileSystemType {
             | Self::Tmpfs
             | Self::Overlay
             | Self::Auto => true,
-            Self::Swap | Self::Other => false,
+            Self::Swap => false,
         }
     }
 
@@ -151,7 +150,6 @@ impl FileSystemType {
                 FileSystemSourceKind::Adopted,
                 FileSystemSourceKind::Image,
             ]),
-            Self::Other => ItemList(vec![FileSystemSourceKind::Image]),
             Self::Iso9660 | Self::Auto => ItemList(vec![FileSystemSourceKind::Adopted]),
             Self::Swap | Self::Tmpfs | Self::Overlay => ItemList(vec![FileSystemSourceKind::New]),
         }
@@ -173,8 +171,7 @@ impl FileSystemType {
             | Self::Ntfs
             | Self::Tmpfs
             | Self::Overlay
-            | Self::Auto
-            | Self::Other => false,
+            | Self::Auto => false,
         }
     }
 }

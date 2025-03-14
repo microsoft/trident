@@ -224,26 +224,6 @@ fn test_filesystem_incompatible_source() {
     builder.build().unwrap();
 
     // Should fail
-    // FileSystemType::Other is only compatible with source types Image and OsImage
-    let fs2 = FileSystem {
-        device_id: Some("partition".into()),
-        fs_type: FileSystemType::Other,
-        source: FileSystemSource::New,
-        mount_point: None,
-    };
-    let mut builder = builder_base.clone();
-    builder.add_node((&fs2).into());
-
-    assert_eq!(
-        builder.build().unwrap_err(),
-        StorageGraphBuildError::FilesystemIncompatibleSource {
-            fs_desc: fs2.description(),
-            fs_source: FileSystemSourceKind::New,
-            fs_compatible_sources: fs2.fs_type.valid_sources()
-        }
-    );
-
-    // Should fail
     // FileSystemType::Swap is only compatible with source type Create
     let fs3 = FileSystem {
         device_id: Some("partition".into()),

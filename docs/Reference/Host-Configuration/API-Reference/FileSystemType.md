@@ -65,12 +65,3 @@ Passed to `mount` to automatically detect the filesystem type. ONLY supported fo
 | Type           | `string` |
 | Value          | `auto`   |
 
-### Other
-
-Used for any other arbitrary data from an image or for filesystems not supported by Trident or Linux.
-
-| Characteristic | Value    |
-| -------------- | -------- |
-| Type           | `string` |
-| Value          | `other`  |
-

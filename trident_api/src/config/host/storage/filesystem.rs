@@ -187,12 +187,6 @@ pub enum FileSystemType {
     /// supported for adopted partitions.
     Auto,
 
-    /// # Other
-    ///
-    /// Used for any other arbitrary data from an image or for filesystems not
-    /// supported by Trident or Linux.
-    Other,
-
     /// # Overlay file system
     ///
     /// Used internally but currently not exposed in the API.
@@ -240,8 +234,7 @@ impl FileSystemType {
             | Self::Tmpfs
             | Self::Overlay
             | Self::Iso9660
-            | Self::Auto
-            | Self::Other => false,
+            | Self::Auto => false,
         }
     }
 

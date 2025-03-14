@@ -1,5 +1,7 @@
 use serde::Deserialize;
 
+/// Superset of all known filesystem types that can be created, adopted, or
+/// sourced from an image with Trident.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum KnownFilesystemType {

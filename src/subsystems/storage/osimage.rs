@@ -40,9 +40,8 @@ fn check_fs_match(a: FileSystemType, b: OsImageFileSystemType) -> bool {
             | FileSystemType::Xfs,
             _,
         ) => false,
-        // Host Configuration filesystem types Other, Swap, Tmpfs, and Overlay
-        // do not map to any OS image filesystem types
-        (FileSystemType::Other, _) => false,
+        // Host Configuration filesystem types Swap, Tmpfs, and Overlay do not
+        // map to any OS image filesystem types
         (FileSystemType::Swap, _) => false,
         (FileSystemType::Tmpfs, _) => false,
         (FileSystemType::Overlay, _) => false,
@@ -834,10 +833,6 @@ mod tests {
         ));
 
         // Check failure
-        assert!(!check_fs_match(
-            FileSystemType::Other,
-            OsImageFileSystemType::Vfat
-        ));
         assert!(!check_fs_match(
             FileSystemType::Swap,
             OsImageFileSystemType::Ntfs

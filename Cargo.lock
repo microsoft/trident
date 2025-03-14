@@ -2982,6 +2982,7 @@ dependencies = [
  "serde_yaml",
  "strum",
  "strum_macros",
+ "sysdefs",
  "thiserror",
  "url",
  "uuid",

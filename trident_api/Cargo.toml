@@ -28,6 +28,8 @@ schemars = { version = "0.8.21", optional = true, features = ["url", "uuid1"] }
 serde_json = { version = "1.0.133", optional = true }
 indoc = { version = "2.0.5", optional = true }
 
+sysdefs = { path = "../sysdefs" }
+
 [dev-dependencies]
 indoc = "2.0.5"
 maplit = "1.0.2"
