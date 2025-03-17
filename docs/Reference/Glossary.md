@@ -1,4 +1,17 @@
-[[_TOC_]]
+- [A/B Update](#ab-update)
+- [A/B Volume Pair](#ab-volume-pair)
+- [Block Device](#block-device)
+- [Clean Install](#clean-install)
+- [Dualboot](#dualboot)
+- [Execroot](#execroot)
+- [Install](#install)
+- [Multiboot](#multiboot)
+- [Newroot](#newroot)
+- [Servicing](#servicing)
+- [Servicing Type](#servicing-type)
+- [Unformatted Partition](#unformatted-partition)
+- [Terms to Define](#terms-to-define)
+
 
 # A/B Update
 
@@ -67,7 +80,7 @@ root.
 
 # Install
 
-A full deployment of an Azure Linux made with Trident.
+A full deployment of a Azure Linux made with Trident.
 
 The install encompasses the entire OS, including the bootloader, the kernel, the
 initramfs, the root filesystem, all [A/B Volume Pairs](#ab-volume-pair),
@@ -103,3 +116,11 @@ update](#ab-update).
 An unformatted partition is a partition on a storage device that has been
 created but does not yet contain a filesystem. It is not associated with any
 filesystem, verity-filesystem, RAID array, or encryption volume.
+
+
+# Terms to Define
+
+- Operation
+- Stage
+- State
+- Step

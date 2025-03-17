@@ -27,7 +27,7 @@ This component only handles `%ksappend <file>` directives.
 The parser itself resembles the principles of pykickstart, which makes sense
 because they both parse the same thing.
 
-The setsail parser is made to mostly behave in the same ways as pykicksatart.
+The setsail parser is made to mostly behave in the same ways as pykickstart.
 This means an error in pykickstart is expected to be an error here, and a
 something that works/is allowed in pykickstart should be here too.
 
