@@ -220,7 +220,7 @@ fn perform_relabel(ctx: &EngineContext) -> Result<(), TridentError> {
 fn filesystems_to_relabel(ctx: &EngineContext) -> Vec<&Path> {
     let mut out = Vec::new();
 
-    for filesystem in &ctx.spec.storage.filesystems {
+    for filesystem in ctx.filesystems() {
         // Filter to ONLY filesystems that support SELinux
         if !SELINUX_SUPPORTED_FILESYSTEMS.contains(&filesystem.fs_type) {
             continue;

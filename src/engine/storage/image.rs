@@ -1,19 +1,17 @@
 use std::{
-    collections::{HashMap, HashSet},
-    path::Path,
+    collections::HashMap,
+    path::{Path, PathBuf},
 };
 
 use anyhow::{bail, ensure, Context, Error};
 use log::{debug, info, trace, warn};
 
 use osutils::{e2fsck, hashing_reader::HashingReader384, image_streamer, lsblk, resize2fs};
-use trident_api::{
-    config::{FileSystem, FileSystemSource},
-    status::ServicingType,
-    BlockDeviceId,
-};
+use trident_api::{config::FileSystemSource, status::ServicingType, BlockDeviceId};
 
-use crate::{engine::EngineContext, osimage::OsImageFile};
+use crate::{
+    engine::context::filesystem::FileSystemData, engine::EngineContext, osimage::OsImageFile,
+};
 
 /// Deploys all the filesystem images sourced from the OS Image to the
 /// corresponding block devices.
@@ -32,22 +30,6 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), Error> {
     // image is available.
     let os_img = ctx.image.as_ref().context("Image is not available")?;
 
-    // TODO: MOVE THIS TO THE VALIDATE FUNCTION (#9826)
-    // Get the available mount points
-    let available_mount_points = os_img.available_mount_points().collect::<HashSet<_>>();
-
-    // Iterate over the filesystems sourced from the OS image and ensure that the
-    // mount points are available
-    for (device_id, mpp, _) in fs_from_img.iter() {
-        if !available_mount_points.contains(mpp) {
-            bail!(
-                "Mount point '{}' for device '{}' is not available in the OS image",
-                mpp.display(),
-                device_id
-            );
-        }
-    }
-
     let images = os_img
         .filesystems()
         .map(|fs| (fs.mount_point.to_owned(), fs))
@@ -55,14 +37,14 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), Error> {
 
     // Now, deploy the filesystems sourced from the OS image
     for (id, mpp, fs) in fs_from_img {
-        let image = images.get(mpp).context(format!(
+        let image = images.get(mpp.as_path()).context(format!(
             "Internal error: No image found for mount point '{}' in the OS image",
             mpp.display()
         ))?;
 
         // Check if this ID is a verity device, if so, we must explore the graph
         // to obtain the underlying devices.
-        if let Some(verity_device) = ctx.spec.storage.verity_device(id) {
+        if let Some(verity_device) = ctx.spec.storage.verity_device(&id) {
             let Some(image_file_verity) = image.verity.as_ref() else {
                 bail!(
                     "Attempt to deploy a filesystem image sourced from the OS image to a verity \
@@ -111,7 +93,7 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), Error> {
                 FileSystemResize::Ext
             };
 
-            deploy_os_image_file(ctx, id, &image.image_file, resize)?;
+            deploy_os_image_file(ctx, &id, &image.image_file, resize)?;
         }
     }
 
@@ -127,10 +109,10 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), Error> {
 /// returned.
 fn filesystems_from_image(
     ctx: &EngineContext,
-) -> Result<Vec<(&BlockDeviceId, &Path, &FileSystem)>, Error> {
+) -> Result<Vec<(BlockDeviceId, PathBuf, FileSystemData<'_>)>, Error> {
     let mut fs_list = Vec::new();
 
-    for filesystem in ctx.spec.storage.filesystems.iter() {
+    for filesystem in ctx.filesystems() {
         if filesystem.source != FileSystemSource::Image {
             // Skip everything that is not sourced from the OS image.
             continue;
@@ -144,7 +126,7 @@ fn filesystems_from_image(
             continue;
         }
 
-        let device_id = filesystem.device_id.as_ref().with_context(|| {
+        let device_id = filesystem.device_id.with_context(|| {
                 format!(
                     "Filesystem [{}] is sourced from an OS Image, but does not reference a block device.",
                     filesystem.description()
@@ -173,7 +155,11 @@ fn filesystems_from_image(
             continue;
         }
 
-        fs_list.push((device_id, mount_point_path, filesystem));
+        fs_list.push((
+            device_id.clone(),
+            mount_point_path.to_path_buf(),
+            filesystem,
+        ));
     }
 
     Ok(fs_list)

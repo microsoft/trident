@@ -47,7 +47,7 @@ fn block_devices_needing_fs_creation(
     // a list of block device IDs and filesystem types.
     let mut block_devices = Vec::new();
 
-    for fs in ctx.spec.storage.filesystems.iter() {
+    for fs in ctx.filesystems() {
         // Filter to only filesystems with a block deviceid.
         let Some(device_id) = fs.device_id.as_ref() else {
             continue;

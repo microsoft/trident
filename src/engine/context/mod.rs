@@ -17,7 +17,7 @@ use trident_api::{
 use crate::osimage::OsImage;
 
 #[allow(dead_code)]
-mod filesystem;
+pub mod filesystem;
 
 /// Helper struct to consolidate the info on the A/B volume pair. Contains the paths and block
 /// device IDs for both volumes.
