@@ -11,8 +11,8 @@ type BaseScenario = core.BaseScenario
 type Helper = core.Helper
 type BaseHelper = core.BaseHelper
 
-type Context = core.ScenarioContext
-type HelperContext = core.HelperContext
+type Context = core.RunnableContext
+type SetupCleanupContext = core.SetupCleanupContext
 
 type TestCase = core.TestCase
 

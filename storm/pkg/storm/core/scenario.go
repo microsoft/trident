@@ -1,8 +1,7 @@
 package core
 
 type Scenario interface {
-	Named
-	Argumented
+	ArgumentedSetupCleanupRunnable
 
 	// Tags associated with the scenario, the implementation should ensure that
 	// the tags are unique.
@@ -14,19 +13,6 @@ type Scenario interface {
 
 	// List of all stages that include this scenario.
 	StagePaths() []string
-
-	// Returns a pointer to an instance of a kong-annotated struct to parse
-	// additional command line arguments into.
-	Args() any
-
-	// Setup - This is called before the scenario is run.
-	Setup(ScenarioContext) error
-
-	// Run the scenario
-	Run(ScenarioContext) error
-
-	// Cleanup - This is called after the scenario is run.
-	Cleanup(ScenarioContext) error
 }
 
 // BaseScenario is a partial implementation of the Scenario interface. It is
@@ -51,10 +37,10 @@ func (s BaseScenario) Args() any {
 	return nil
 }
 
-func (s BaseScenario) Setup(ScenarioContext) error {
+func (s BaseScenario) Setup(SetupCleanupContext) error {
 	return nil
 }
 
-func (s BaseScenario) Cleanup(ScenarioContext) error {
+func (s BaseScenario) Cleanup(SetupCleanupContext) error {
 	return nil
 }

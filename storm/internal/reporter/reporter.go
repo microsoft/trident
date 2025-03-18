@@ -2,144 +2,143 @@ package reporter
 
 import (
 	"fmt"
-	"storm/pkg/storm/core"
-	"strings"
-	"time"
+	"storm/internal/devops"
+	"storm/internal/testmgr"
 
-	"golang.org/x/term"
+	"github.com/fatih/color"
+	"github.com/sirupsen/logrus"
 )
 
-type StormTestManager struct {
-	suite     core.SuiteContext
-	startTime time.Time
-	testCases []*TestCase
+type TestReporter struct {
+	summary     TestSummary
+	testManager *testmgr.StormTestManager
+	devops      bool
+	log         *logrus.Logger
+	colorize    bool
 }
 
-type testSummary struct {
-	total   int
-	passed  int
-	failed  int
-	skipped int
-}
-
-func NewStormTestManager(suite core.SuiteContext) StormTestManager {
-	return StormTestManager{
-		suite:     suite,
-		startTime: time.Now(),
-		testCases: make([]*TestCase, 0),
+func NewTestReporter(testManager *testmgr.StormTestManager) *TestReporter {
+	// Force colors :D
+	color.NoColor = false
+	return &TestReporter{
+		summary:     newSummaryFromTestManager(testManager),
+		testManager: testManager,
+		devops:      testManager.Suite().AzureDevops(),
+		log:         testManager.Suite().Logger(),
+		colorize:    true,
 	}
 }
 
-func (r *StormTestManager) NewTestCase(name string) core.TestCase {
-	if len(r.testCases) > 0 {
-		lastTestCase := r.testCases[len(r.testCases)-1]
-		// Implicitly pass the last test case
-		lastTestCase.Pass()
-	}
-
-	textCase := newTestCase(name, uint(len(r.testCases)), r)
-
-	r.testCases = append(r.testCases, textCase)
-	return textCase
+func (tr *TestReporter) Summary() TestSummary {
+	return tr.summary
 }
 
-// Closes the reporter and attaches any error to the last test case if it is
-// still running.
-//
-// When error is nil, it is ignored.
-func (r *StormTestManager) Close(err error) {
-	r.suite.Logger().Debug("Closing reporter")
-	if len(r.testCases) == 0 {
-		return
+func (tr *TestReporter) PrintReport() {
+	tr.printShortReport()
+	tr.printFailureReport()
+	tr.printFinalResult()
+}
+
+func (tr *TestReporter) ExitError() error {
+	if tr.summary.Status() == TestStatusOk {
+		return nil
 	}
 
-	// Get the last test case and check if it is still running. If so, it means
-	// the test case was not explicitly marked as passed or failed.
-	// Depending on the error, this could mean:
-	// - err is nil: the test is an implicit pass
-	// - err is not nil: the test did not finish correctly because of an error
-	lastTestCase := r.testCases[len(r.testCases)-1]
-	if lastTestCase.isRunning() {
-		if err != nil {
-			lastTestCase.Error(err)
-		} else {
-			lastTestCase.Pass()
+	return fmt.Errorf("%s:%s: %s",
+		tr.testManager.Runnable().RunnableType().String(),
+		tr.testManager.Runnable().Name(),
+		tr.summary.Status().String(),
+	)
+}
+
+// Print a simple list of all test cases and their status.
+func (tr *TestReporter) printShortReport() {
+	printSeparatorWithTitle(fmt.Sprintf(
+		"SUMMARY of %s::%s::%s",
+		tr.testManager.Suite().Name(),
+		tr.testManager.Runnable().RunnableType().String(),
+		tr.testManager.Runnable().Name(),
+	))
+
+	for _, testCase := range tr.testManager.TestCases() {
+		status := testCase.Status()
+		statusStr := testCase.Status().String()
+		if tr.colorize {
+			statusStr = testCaseStatusColor(status)
+		}
+
+		fmt.Printf(
+			"  %s: %s\n",
+			testCase.Name(),
+			statusStr,
+		)
+	}
+
+	// Logs devops messages in a separate section
+	if tr.devops && tr.summary.Status().IsBad() {
+		printSeparatorWithTitle("DEVOPS LOG")
+		for _, testCase := range tr.testManager.TestCases() {
+			status := testCase.Status()
+			if !status.IsBad() {
+				continue
+			}
+			devops.LogError("%s::%s::%s::%s -> %s",
+				tr.testManager.Suite().Name(),
+				tr.testManager.Runnable().RunnableType().String(),
+				tr.testManager.Runnable().Name(),
+				testCase.Name(),
+				status.String(),
+			)
 		}
 	}
+
 }
 
-func (r *StormTestManager) summary() testSummary {
-	var summary testSummary
-
-	for _, testCase := range r.testCases {
-		summary.total++
-		switch testCase.status {
-		case TestCaseStatusPassed:
-			summary.passed++
-		case TestCaseStatusFailed:
-			summary.failed++
-		case TestCaseStatusSkipped:
-			summary.skipped++
-		default:
-			panic("Invalid test case status")
-		}
+func (tr *TestReporter) printFinalResult() {
+	statusStr := tr.summary.Status().String()
+	if tr.colorize {
+		statusStr = tr.summary.Status().StringColor()
 	}
 
-	return summary
+	printSeparatorWithTitle("RESULT")
+	fmt.Printf("%s: %s\n", statusStr, tr.summary.Summary())
 }
 
-func (r *StormTestManager) PrintReport() error {
-	summary := r.summary()
-
-	if summary.total == 0 {
-		return fmt.Errorf("no test cases were run")
-	}
-
-	width, _, err := term.GetSize(0)
-	if err != nil {
-		width = 80
-	}
-
-	for _, testCase := range r.testCases {
-		if testCase.passed() {
+func (tr *TestReporter) printFailureReport() {
+	for i, testCase := range tr.testManager.TestCases() {
+		status := testCase.Status()
+		if status.Passed() {
 			continue
 		}
 
-		fmt.Println(strings.Repeat("-", width))
+		if i == 0 {
+			printSeparatorWithTitle("FAILURE REPORT")
+		} else {
+			printSeparator()
+		}
+
+		statusStr := testCase.Status().String()
+		if tr.colorize {
+			statusStr = testCaseStatusColor(status)
+		}
+
 		fmt.Printf(
 			"Test case: '%s' status: %s; collected logs:\n",
-			testCase.name,
-			testCase.status.String(),
+			testCase.Name(),
+			statusStr,
 		)
-		for _, log := range testCase.logLines() {
-			fmt.Println("    ", log)
+
+		for _, log := range testCase.LogLines() {
+			lines := simpleWordWrap(log, termWidth()-8)
+			for i, line := range lines {
+				if i == 0 {
+					fmt.Printf("    ")
+				} else {
+					fmt.Printf("        ")
+				}
+
+				fmt.Println(line)
+			}
 		}
 	}
-
-	var status = "ok"
-	if summary.failed > 0 {
-		status = "failed"
-	}
-
-	fmt.Println(strings.Repeat("-", width))
-	fmt.Printf(
-		"TEST RESULT: %s. %d total; %d failed; %d skipped; %d passed\n",
-		status,
-		summary.total,
-		summary.failed,
-		summary.skipped,
-		summary.passed,
-	)
-
-	return nil
-}
-
-func (r *StormTestManager) ExitError() error {
-	summary := r.summary()
-
-	if summary.failed > 0 {
-		return fmt.Errorf("test suite finished with %d failed test cases", summary.failed)
-	}
-
-	return nil
 }

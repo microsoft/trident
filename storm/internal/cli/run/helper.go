@@ -1,6 +1,7 @@
 package run
 
 import (
+	"storm/internal/runner"
 	"storm/pkg/storm/core"
 
 	"github.com/sirupsen/logrus"
@@ -12,8 +13,17 @@ type HelperCmd struct {
 }
 
 type HelperRunnerContext struct {
+	name     string
 	logger   *logrus.Logger
 	reporter core.TestCaseCreator
+}
+
+func (rc *HelperRunnerContext) Name() string {
+	return rc.name
+}
+
+func (rc *HelperRunnerContext) RunnableType() core.RunnableType {
+	return core.RunnableTypeHelper
 }
 
 func (rc *HelperRunnerContext) Logger() *logrus.Logger {
@@ -30,17 +40,5 @@ func (cmd *HelperCmd) Run(suite core.SuiteContext) error {
 
 	helper := suite.Helper(cmd.Helper)
 
-	return runTestRunnable(
-		suite,
-		helper,
-		cmd.HelperArgs,
-		cmd.Helper,
-		runnableKindHelper,
-		func(testManager core.TestCaseCreator) error {
-			return helper.Run(&HelperRunnerContext{
-				logger:   log,
-				reporter: testManager,
-			})
-		},
-	)
+	return runner.RunRunnable(suite, helper, cmd.HelperArgs)
 }

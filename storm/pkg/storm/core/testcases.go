@@ -31,6 +31,11 @@ type TestCase interface {
 	// runtime.Goexit().
 	Skip(reason string)
 
+	// Skip this test case and continue the test case. Implementations will not
+	// stop execution. This is useful for test cases that are not mandatory to
+	// pass.
+	SkipAndContinue(reason string)
+
 	// Get the test case run time
 	RunTime() time.Duration
 }

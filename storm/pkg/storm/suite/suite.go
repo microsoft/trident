@@ -12,11 +12,12 @@ import (
 )
 
 type StormSuite struct {
-	name      string
-	scenarios []core.Scenario
-	ctx       *kong.Context
-	Log       *logrus.Logger
-	helpers   []core.Helper
+	name        string
+	scenarios   []core.Scenario
+	ctx         *kong.Context
+	Log         *logrus.Logger
+	helpers     []core.Helper
+	azureDevops bool
 }
 
 func CreateSuite(name string) StormSuite {
@@ -31,10 +32,11 @@ func CreateSuite(name string) StormSuite {
 	logger.Infof("Creating suite '%s'", name)
 
 	return StormSuite{
-		name:      name,
-		scenarios: make([]core.Scenario, 0),
-		ctx:       ctx,
-		Log:       logger,
+		name:        name,
+		scenarios:   make([]core.Scenario, 0),
+		ctx:         ctx,
+		Log:         logger,
+		azureDevops: global.AzureDevops,
 	}
 }
 
@@ -47,7 +49,9 @@ func (s *StormSuite) Run() {
 	s.Log.Infof("Running suite '%s' - %d scenarios, %d helpers collected.", s.name, len(s.scenarios), len(s.helpers))
 	s.ctx.BindTo(s, (*core.SuiteContext)(nil))
 	err := s.ctx.Run()
-	s.ctx.FatalIfErrorf(err)
+
+	// This call will end the program!
+	s.reportExitStatus(err)
 }
 
 // Adds a scenario to the suite
@@ -118,4 +122,8 @@ func (s *StormSuite) Helper(name string) core.Helper {
 
 func (s *StormSuite) Logger() *logrus.Logger {
 	return s.Log
+}
+
+func (s *StormSuite) AzureDevops() bool {
+	return s.azureDevops
 }

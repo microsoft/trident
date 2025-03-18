@@ -11,7 +11,8 @@ import (
 )
 
 type GlobalOpts struct {
-	Verbosity log.Level `short:"v" help:"Set log level" default:"info"`
+	Verbosity   log.Level `short:"v" help:"Set log level" default:"info"`
+	AzureDevops bool      `short:"a" help:"Enable Azure DevOps integration" env:"TF_BUILD"`
 }
 
 type cli struct {

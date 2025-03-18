@@ -1,6 +1,7 @@
 package run
 
 import (
+	"storm/internal/runner"
 	"storm/pkg/storm/core"
 
 	"github.com/sirupsen/logrus"
@@ -12,8 +13,17 @@ type ScenarioCmd struct {
 }
 
 type ScenarioRunnerContext struct {
+	name     string
 	logger   *logrus.Logger
 	reporter core.TestCaseCreator
+}
+
+func (rc *ScenarioRunnerContext) Name() string {
+	return rc.name
+}
+
+func (rc *ScenarioRunnerContext) RunnableType() core.RunnableType {
+	return core.RunnableTypeScenario
 }
 
 func (rc *ScenarioRunnerContext) Logger() *logrus.Logger {
@@ -30,17 +40,5 @@ func (cmd *ScenarioCmd) Run(suite core.SuiteContext) error {
 
 	scenario := suite.Scenario(cmd.Scenario)
 
-	return runTestRunnable(
-		suite,
-		scenario,
-		cmd.ScenarioArgs,
-		cmd.Scenario,
-		runnableKindScenario,
-		func(testManager core.TestCaseCreator) error {
-			return scenario.Run(&ScenarioRunnerContext{
-				logger:   log,
-				reporter: testManager,
-			})
-		},
-	)
+	return runner.RunRunnable(suite, scenario, cmd.ScenarioArgs)
 }

@@ -1,10 +1,7 @@
 package core
 
 type Helper interface {
-	Named
-	Argumented
-	// Run the helper
-	Run(HelperContext) error
+	ArgumentedRunnable
 }
 
 // BaseHelper is a partial implementation of the Helper interface. It is

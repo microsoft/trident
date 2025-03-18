@@ -18,16 +18,7 @@ type SuiteContext interface {
 	// Returns a helper by name, will exit with an error if the helper is
 	// not found.
 	Helper(name string) Helper
-}
 
-type ScenarioContext interface {
-	LoggerProvider
-
-	TestCaseCreator
-}
-
-type HelperContext interface {
-	LoggerProvider
-
-	TestCaseCreator
+	// Returns whether the suite has Azure DevOps integration enabled
+	AzureDevops() bool
 }
