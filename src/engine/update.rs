@@ -215,7 +215,7 @@ fn stage_update(
         debug!("Preparing storage to mount new root");
 
         // Close any pre-existing verity devices
-        verity::stop_pre_existing_verity_devices(&ctx.spec)
+        verity::stop_trident_servicing_devices(&ctx.spec)
             .structured(ServicingError::CleanupVerity)?;
 
         storage::initialize_block_devices(&ctx)?;

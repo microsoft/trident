@@ -263,9 +263,10 @@ pub(crate) mod functional_test {
     use crate::{engine::storage::raid, OS_MODIFIER_BINARY_PATH};
 
     use osutils::{
+        block_devices,
         filesystems::MkfsFileSystemType,
         lsblk::{self, BlockDevice, BlockDeviceType, PartitionTableType},
-        mkfs,
+        mdadm, mkfs,
         repart::{RepartEmptyMode, SystemdRepartInvoker},
         testutils::repart::{
             self, DISK_SIZE, PART1_SIZE, PART2_SIZE, PART3_SIZE, TEST_DISK_DEVICE_PATH,
@@ -455,6 +456,10 @@ pub(crate) mod functional_test {
     #[functional_test(feature = "helpers")]
     /// This functions tests update_grub by setting up root on a raid array.
     fn test_update_grub_root_raided() {
+        env_logger::builder()
+            .filter_level(log::LevelFilter::Trace)
+            .try_init()
+            .ok();
         test_execute_and_resulting_layout(true, false);
 
         let mut ctx = EngineContext {
@@ -513,7 +518,10 @@ pub(crate) mod functional_test {
             root_device_path.as_path(),
         );
         // Unmount and stop the raid array
-        raid::unmount_and_stop(&root_device_path).unwrap();
+        block_devices::unmount_all_mount_points(&root_device_path).unwrap();
+        mdadm::stop(&root_device_path).unwrap();
+
+        repart::clear_disk(TEST_DISK_DEVICE_PATH).unwrap();
         result.unwrap();
     }
 

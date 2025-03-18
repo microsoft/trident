@@ -134,6 +134,11 @@ pub const VAR_TMP_PATH: &str = "/var/tmp";
 /// /proc/mdstat path
 pub const MDSTAT_PATH: &str = "/proc/mdstat";
 
+// Verity related constants
+
+/// Root verity device name.
+pub const ROOT_VERITY_DEVICE_NAME: &str = "root";
+
 // OS/System Constants
 
 /// Reduction in data device size when LUKS2 encryption is initialized.

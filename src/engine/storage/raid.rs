@@ -6,7 +6,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::{bail, Context, Error};
+use anyhow::{anyhow, bail, Context, Error};
 use log::{debug, info, trace, warn};
 use serde::{Deserialize, Serialize};
 use strum_macros::{Display, EnumString};
@@ -18,7 +18,9 @@ use trident_api::{
     BlockDeviceId,
 };
 
-use crate::engine::EngineContext;
+use crate::engine::{storage::common::SetRelationship, EngineContext};
+
+use super::common;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Hash, Eq, PartialEq, Display, EnumString)]
 #[serde(rename_all = "kebab-case")]
@@ -140,10 +142,19 @@ pub(super) fn stop_pre_existing_raid_arrays(host_config: &HostConfiguration) -> 
         return Ok(());
     }
 
-    let trident_disks = super::get_hostconfig_disk_paths(host_config)
-        .context("Failed to get disks defined in Host Configuration")?;
+    // Resolve disks in the HC to their /dev/... paths.
+    let hc_disks = block_devices::get_resolved_disks(host_config)
+        .context("Failed to resolved disks in the Host Configuration to their device paths.")?
+        .iter()
+        .map(|rd| rd.dev_path.to_owned())
+        .collect::<HashSet<_>>();
 
     for raid_array in mdadm_detail {
+        debug!(
+            "Attempting to stop RAID array: {}",
+            raid_array.raid_path.display()
+        );
+
         let raid_device_resolved_path = raid_array
             .raid_path
             .clone()
@@ -151,39 +162,32 @@ pub(super) fn stop_pre_existing_raid_arrays(host_config: &HostConfiguration) -> 
             .context("Failed to get existing RAID device resolved path")?;
 
         let raid_disks = get_raid_disks_internal(&raid_array)?;
-        if block_devices::can_stop_pre_existing_device(
-            &raid_disks,
-            &trident_disks.iter().cloned().collect::<HashSet<_>>(),
-        )
-        .context(format!(
-            "Failed to stop RAID array '{}'",
-            raid_array.raid_path.display()
-        ))? {
-            unmount_and_stop(&raid_device_resolved_path)?;
+
+        // Get what the set of raid disks is in relation to the set of disks in the Host Configuration.
+        match common::subset_check(&raid_disks, &hc_disks) {
+            SetRelationship::Disjoint => {
+                debug!("No overlap between the RAID disks and the disks in the Host Configuration, device will not be stopped.");
+                continue;
+            }
+            SetRelationship::Overlap => {
+                return Err(anyhow!(
+                "A device has underlying disks that are not part of Host Configuration. Used disks: {:?}, Host Configuration disks: {:?}",
+                raid_array, hc_disks,
+            )).context(format!("Could not stop RAID array '{}'.", raid_array.raid_path.display()));
+            }
+            SetRelationship::Subset => {
+                debug!("RAID disks are a subset of the disks in the Host Configuration, stopping device.");
+            }
         }
+
+        block_devices::unmount_all_mount_points(&raid_device_resolved_path).context(format!(
+            "Failed to unmount all mount points for RAID array '{}'",
+            raid_device_resolved_path.display()
+        ))?;
+
+        debug!("Stopping RAID array '{}'", raid_array.raid_path.display(),);
+        mdadm::stop(raid_device_resolved_path).context("Failed to stop RAID array")?;
     }
-
-    Ok(())
-}
-
-pub fn unmount_and_stop(raid_path: &Path) -> Result<(), Error> {
-    debug!("Unmounting RAID array: {:?}", raid_path);
-    let mut umount_command = Dependency::Umount.cmd();
-    umount_command.arg(raid_path);
-
-    let output = umount_command
-        .output()
-        .context("Failed to unmount RAID array")?;
-
-    if !output.error_output().is_empty() {
-        let stderr_str = output.error_output();
-
-        // Error code 32 means there was a mount faliure (device not mounted)
-        if !stderr_str.contains("not mounted") || output.code() != Some(32) {
-            bail!("Failed to unmount: {:?}", raid_path);
-        }
-    }
-    mdadm::stop(raid_path).context("Failed to stop RAID array")?;
 
     Ok(())
 }

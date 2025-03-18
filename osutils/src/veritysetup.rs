@@ -63,6 +63,19 @@ pub struct VeritySetupStatus {
     pub flags: Option<String>,
 }
 
+impl VeritySetupStatus {
+    // Returns an iterator over the members of the verity device. The data
+    // device is always the first member, and the hash device is always the
+    // second member.
+    pub fn members(&self) -> impl Iterator<Item = &Path> {
+        [
+            self.data_device_path.as_path(),
+            self.hash_device_path.as_path(),
+        ]
+        .into_iter()
+    }
+}
+
 fn parse_veritysetup_status_output(output: &str) -> Result<VeritySetupStatus, Error> {
     // Skip the first line, which has human readable status
     let lines = output.lines().skip(1);
@@ -209,6 +222,31 @@ pub fn close(device_name: &str) -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_verity_setup_status_members() {
+        let status = VeritySetupStatus {
+            type_: Default::default(),
+            status: Default::default(),
+            hash_type: Default::default(),
+            data_block_size: Default::default(),
+            hash_block_size: Default::default(),
+            hash_name: Default::default(),
+            salt: Default::default(),
+            data_device_path: "/dev/sda3".into(),
+            size: Default::default(),
+            mode: Default::default(),
+            hash_device_path: "/dev/sda4".into(),
+            hash_offset: Default::default(),
+            root_hash: Default::default(),
+            flags: Default::default(),
+        };
+
+        let members = status.members().collect::<Vec<_>>();
+        assert_eq!(members.len(), 2);
+        assert_eq!(members[0], Path::new("/dev/sda3"));
+        assert_eq!(members[1], Path::new("/dev/sda4"));
+    }
 
     #[test]
     fn test_parse_veritysetup_status_output() {

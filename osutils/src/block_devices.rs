@@ -1,11 +1,10 @@
 use std::{
-    collections::HashSet,
     fs,
     path::{Path, PathBuf},
 };
 
 use anyhow::{bail, ensure, Context, Error};
-use log::debug;
+use log::{debug, trace};
 
 use trident_api::{
     config::{Disk, HostConfiguration},
@@ -128,33 +127,6 @@ pub fn get_disk_for_partition(partition: impl AsRef<Path>) -> Result<PathBuf, Er
     ))
 }
 
-/// Check if a device can be stopped. A device can be stopped if it only uses
-/// disks that are part of the Host Configuration.
-///
-/// Returns true if the device can be stopped, false if it should not be
-/// touched. Returns an error if the device has underlying disks some of which
-/// are part of HC and some are not.
-pub fn can_stop_pre_existing_device(
-    used_disks: &HashSet<PathBuf>,
-    hc_disks: &HashSet<PathBuf>,
-) -> Result<bool, Error> {
-    let symmetric_diff: HashSet<_> = used_disks.symmetric_difference(hc_disks).cloned().collect();
-
-    if used_disks.is_disjoint(hc_disks) {
-        // Device does not have any of its underlying disks mentioned in HostConfig, we should not touch it
-        Ok(false)
-    } else if symmetric_diff.is_empty() || used_disks.is_subset(hc_disks) {
-        // Device's underlying disks are all part of HostConfig, we can unmount and stop the RAID
-        return Ok(true);
-    } else {
-        // Device has underlying disks that are not part of HostConfig, we cannot touch it, abort
-        bail!(
-            "A device has underlying disks that are not part of Host Configuration. Used disks: {:?}, Host Configuration disks: {:?}",
-            used_disks, hc_disks
-        );
-    }
-}
-
 /// Force kernel to re-read the partition table of a disk with partx.
 ///
 /// This function has no built in safety checking. The path must be:
@@ -229,37 +201,41 @@ pub fn get_root_device_path() -> Result<PathBuf, TridentError> {
     Ok(root_device_path)
 }
 
+/// Unmounts all mount points associated with a given block device.
+pub fn unmount_all_mount_points(block_device: impl AsRef<Path>) -> Result<(), Error> {
+    trace!(
+        "Unmounting all mount points for block device '{}'",
+        block_device.as_ref().display()
+    );
+
+    // Get the mount points for the block device
+    let mount_points = lsblk::get(block_device.as_ref())
+        .with_context(|| {
+            format!(
+                "Failed to get mount points for block device '{}'",
+                block_device.as_ref().display()
+            )
+        })?
+        .mountpoints;
+
+    // Attempt to unmount each mount point
+    for mount_point in mount_points {
+        // Unmount the mount point
+        Dependency::Umount
+            .cmd()
+            .arg(&mount_point)
+            .run_and_check()
+            .with_context(|| {
+                format!("Failed to unmount mount point '{}'", mount_point.display())
+            })?;
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_can_stop_pre_existing_device() -> Result<(), Error> {
-        let raid_disks: HashSet<PathBuf> = ["/dev/sda".into(), "/dev/sdb".into()].into();
-        let trident_disks: HashSet<PathBuf> = ["/dev/sda".into(), "/dev/sdb".into()].into();
-        let trident_disks2: HashSet<PathBuf> = ["/dev/sdb".into(), "/dev/sdc".into()].into();
-        let trident_disks3: HashSet<PathBuf> = ["/dev/sdc".into(), "/dev/sdd".into()].into();
-        let trident_disks4: HashSet<PathBuf> =
-            ["/dev/sda".into(), "/dev/sdb".into(), "/dev/sdc".into()].into();
-
-        // No overlapping disks, should not touch
-        let overlap = can_stop_pre_existing_device(&raid_disks, &trident_disks3)?;
-        assert!(!overlap);
-
-        // Fully overlapping disks, should stop
-        let overlap = can_stop_pre_existing_device(&raid_disks, &trident_disks)?;
-        assert!(overlap);
-
-        // Partially overlapping disks, cannot touch, error.
-        let overlap = can_stop_pre_existing_device(&raid_disks, &trident_disks2);
-        assert!(overlap.is_err());
-
-        // Trident disks are a superset of RAID disks, we can stop
-        let overlap = can_stop_pre_existing_device(&raid_disks, &trident_disks4)?;
-        assert!(overlap);
-
-        Ok(())
-    }
 
     #[test]
     fn test_find_symlink_for_target() {
@@ -320,6 +296,15 @@ mod functional_test {
 
     use pytest_gen::functional_test;
 
+    use crate::{
+        files,
+        filesystems::{MkfsFileSystemType, MountFileSystemType},
+        mkfs, mount,
+        repart::{RepartEmptyMode, SystemdRepartInvoker},
+        testutils::repart::{self, TEST_DISK_DEVICE_PATH},
+        udevadm,
+    };
+
     #[functional_test]
     fn test_get_disk_for_partition() {
         let partition = Path::new("/dev/sda1");
@@ -362,5 +347,60 @@ mod functional_test {
             get_root_device_path().unwrap().to_str().unwrap(),
             "/dev/sda2"
         );
+    }
+
+    #[functional_test]
+    fn test_unmount_all_mount_points() {
+        let parts = repart::generate_partition_definition_esp_root_generic();
+
+        let parts = SystemdRepartInvoker::new(TEST_DISK_DEVICE_PATH, RepartEmptyMode::Force)
+            .with_partition_entries(parts)
+            .execute()
+            .unwrap();
+
+        udevadm::settle().unwrap();
+
+        // Ensure no mount points exist before starting
+        for part in parts.iter() {
+            let blkdev = lsblk::get(&part.node).unwrap();
+            assert_eq!(blkdev.mountpoints, Vec::<PathBuf>::new());
+        }
+
+        // Mount points to create per partition
+        let mount_point_count = [1, 2, 3];
+        assert_eq!(mount_point_count.len(), parts.len());
+
+        let mut index = 0;
+        // Create mount points for each partition
+        for (part, mntp_count) in parts.iter().zip(mount_point_count.into_iter()) {
+            // Create a filesystem on the partition
+            mkfs::run(&part.node, MkfsFileSystemType::Ext4).unwrap();
+
+            // Set the path for the mount point
+
+            for _ in 0..mntp_count {
+                let path = Path::new("/mnt").join("test").join(index.to_string());
+                index += 1;
+
+                files::create_dirs(&path).unwrap();
+
+                mount::mount(&part.node, &path, MountFileSystemType::Ext4, &[]).unwrap();
+            }
+
+            // Check that the mount points were created
+            let blkdev = lsblk::get(&part.node).unwrap();
+            assert_eq!(blkdev.mountpoints.len(), mntp_count);
+        }
+
+        // Unmount all mount points
+        for part in parts.iter() {
+            unmount_all_mount_points(&part.node).unwrap();
+        }
+
+        // Check that all mount points were unmounted
+        for part in parts.iter() {
+            let blkdev = lsblk::get(&part.node).unwrap();
+            assert_eq!(blkdev.mountpoints, Vec::<PathBuf>::new());
+        }
     }
 }

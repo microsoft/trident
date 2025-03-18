@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Error};
-use log::{debug, error, info};
+use log::{error, trace};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
@@ -16,7 +16,7 @@ pub fn create(
     level: &RaidLevel,
     device_paths: Vec<PathBuf>,
 ) -> Result<(), Error> {
-    info!("Creating RAID array '{}'", &raid_path.display());
+    trace!("Creating RAID array '{}'", &raid_path.display());
 
     let mut mdadm_command = Dependency::Mdadm.cmd();
 
@@ -42,7 +42,7 @@ pub fn create(
 }
 
 pub fn examine() -> Result<String, Error> {
-    info!("Examining RAID arrays");
+    trace!("Examining RAID arrays");
 
     let mut mdadm_command = Dependency::Mdadm.cmd();
     mdadm_command.arg("--examine").arg("--scan");
@@ -53,7 +53,7 @@ pub fn examine() -> Result<String, Error> {
 }
 
 pub fn stop(raid_array_name: impl AsRef<Path>) -> Result<(), Error> {
-    info!(
+    trace!(
         "Stopping RAID array: {}",
         raid_array_name.as_ref().display()
     );
@@ -92,7 +92,7 @@ pub fn stop(raid_array_name: impl AsRef<Path>) -> Result<(), Error> {
 /// This function uses `mdadm --add` to add the specified device to the given RAID array.
 ///
 pub fn add(raid_path: impl AsRef<Path>, device: impl AsRef<Path>) -> Result<(), Error> {
-    info!(
+    trace!(
         "Adding RAID device '{}' to '{}'",
         device.as_ref().display(),
         raid_path.as_ref().display()
@@ -113,7 +113,7 @@ pub fn add(raid_path: impl AsRef<Path>, device: impl AsRef<Path>) -> Result<(), 
 /// the given RAID array.
 ///
 pub fn fail(raid_path: impl AsRef<Path>, device: impl AsRef<Path>) -> Result<(), Error> {
-    info!(
+    trace!(
         "Marking RAID device '{}' as failed for '{}'",
         device.as_ref().display(),
         raid_path.as_ref().display()
@@ -134,7 +134,7 @@ pub fn fail(raid_path: impl AsRef<Path>, device: impl AsRef<Path>) -> Result<(),
 /// given RAID array.
 ///
 pub fn remove(raid_path: impl AsRef<Path>, device: impl AsRef<Path>) -> Result<(), Error> {
-    info!(
+    trace!(
         "Removing RAID device: '{}' from '{}'",
         device.as_ref().display(),
         raid_path.as_ref().display()
@@ -158,7 +158,7 @@ pub struct MdadmDetail {
 }
 
 pub fn details() -> Result<Vec<MdadmDetail>, Error> {
-    debug!("Getting details for all RAID arrays");
+    trace!("Getting details for all RAID arrays");
 
     let mut mdadm_command = Dependency::Mdadm.cmd();
     mdadm_command.arg("--detail").arg("--scan").arg("--verbose");
@@ -171,7 +171,7 @@ pub fn details() -> Result<Vec<MdadmDetail>, Error> {
 }
 
 pub fn detail(raid_array: &Path) -> Result<MdadmDetail, Error> {
-    debug!("Getting RAID array details for '{}'", raid_array.display());
+    trace!("Getting RAID array details for '{}'", raid_array.display());
 
     let mut mdadm_command = Dependency::Mdadm.cmd();
     mdadm_command

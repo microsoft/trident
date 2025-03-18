@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{ffi::OsString, path::Path};
 
 use anyhow::Error;
 
@@ -175,11 +175,17 @@ pub fn generate_partition_definition_esp_root_raid_single_disk_unequal() -> Vec<
     ]
 }
 
-pub fn clear_disk(disk_path: &Path) -> Result<(), Error> {
+/// Runs `dd` to clear the first 1 MiB of the disk with zeros.
+/// It effectively clears the partition table and the first 1 MiB of the disk.
+pub fn clear_disk(disk_path: impl AsRef<Path>) -> Result<(), Error> {
     Dependency::Dd
         .cmd()
         .arg("if=/dev/zero")
-        .arg(format!("of={}", disk_path.to_string_lossy()))
+        .arg({
+            let mut base = OsString::from("of=");
+            base.push(disk_path.as_ref());
+            base
+        })
         .arg("bs=1M")
         .arg("count=1")
         .run_and_check()?;

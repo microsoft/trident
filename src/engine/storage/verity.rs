@@ -3,16 +3,19 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{bail, Context, Error};
+use anyhow::{anyhow, bail, Context, Error};
 use log::{debug, trace};
 
-use osutils::{block_devices, lsblk, mount, veritysetup};
+use osutils::{block_devices, veritysetup};
 use trident_api::{
     config::{self, HostConfiguration},
-    constants::DEV_MAPPER_PATH,
+    constants::{DEV_MAPPER_PATH, ROOT_VERITY_DEVICE_NAME},
 };
 
-use crate::engine::EngineContext;
+use crate::engine::{
+    storage::common::{self, SetRelationship},
+    EngineContext,
+};
 
 use super::raid;
 
@@ -117,18 +120,34 @@ pub fn get_verity_device_paths(
     Ok((verity_data_path, verity_hash_path))
 }
 
+/// Looks for verity devices created by Trident during servicing and stops them.
+///
+/// This specifically targets root verity devices (named `root_new`) and usr
+/// verity devices (named `usr_new`).
 #[tracing::instrument(skip_all)]
-pub fn stop_pre_existing_verity_devices(host_config: &HostConfiguration) -> Result<(), Error> {
+pub fn stop_trident_servicing_devices(host_config: &HostConfiguration) -> Result<(), Error> {
     // If no verity module is loaded, there are no verity devices to stop
     if !Path::new("/sys/module/dm_verity").exists() {
         return Ok(());
     }
 
+    // Close the root verity device
+    stop_verity_device(
+        host_config,
+        &get_updated_device_name(ROOT_VERITY_DEVICE_NAME),
+    )?;
+
+    Ok(())
+}
+
+/// Stops a specific verity device.
+fn stop_verity_device(
+    host_config: &HostConfiguration,
+    verity_device_name: &str,
+) -> Result<(), Error> {
     debug!("Attempting to stop pre-existing verity devices");
 
-    // Compose path of the root verity device for the updated volume
-    let updated_device_name = get_updated_device_name("root");
-    let root_verity_device_path = Path::new(DEV_MAPPER_PATH).join(&updated_device_name);
+    let root_verity_device_path = Path::new(DEV_MAPPER_PATH).join(verity_device_name);
 
     // Check if the root verity device is present
     if !root_verity_device_path.exists() {
@@ -137,66 +156,68 @@ pub fn stop_pre_existing_verity_devices(host_config: &HostConfiguration) -> Resu
 
     veritysetup::is_present().context("Unable to deactivate pre-existing dm-verity volumes.")?;
 
-    let root_verity_device_status = veritysetup::status(&updated_device_name)
+    let root_verity_device_status = veritysetup::status(verity_device_name)
         .context("Failed to get status of root verity device")?;
-    let hc_disks = super::get_hostconfig_disk_paths(host_config)
-        .context("Failed to get disks defined in Host Configuration")?;
-    let verity_disks = [
-        root_verity_device_status.data_device_path,
-        root_verity_device_status.hash_device_path,
-    ]
-    .map(|device_path| {
-        if let Ok(disk_path) = block_devices::get_disk_for_partition(&device_path) {
-            [disk_path.canonicalize().context(format!(
-                "Failed to find the device path '{:?}'",
-                device_path
-            ))]
-            .into_iter()
-            .collect::<Result<Vec<PathBuf>, Error>>()
-        } else if let Ok(disk_paths) = raid::get_raid_disks(&device_path) {
-            Ok(disk_paths.into_iter().collect::<Vec<_>>())
-        } else {
-            bail!(
-                "Failed to find the disk path for the device path '{:?}'",
-                device_path
-            )
-        }
-    })
-    .into_iter()
-    .collect::<Result<Vec<Vec<PathBuf>>, Error>>()
-    .context("Failed to get verity disks")?
-    .into_iter()
-    .flatten()
-    .collect::<HashSet<_>>();
 
-    if block_devices::can_stop_pre_existing_device(
-        &verity_disks,
-        &hc_disks.iter().cloned().collect::<HashSet<_>>(),
-    )
-    .context(format!(
-        "Failed to stop verity device '{}'",
-        root_verity_device_path.display()
-    ))? {
-        let block_device = lsblk::get(&root_verity_device_path)?;
-        debug!(
-            "Unmounting any mounted partitions on verity device '{}'",
-            root_verity_device_path.display()
-        );
-        let mount_points = block_device.mountpoints;
-        if !mount_points.is_empty() {
-            for mount_point in mount_points.iter() {
-                mount::umount(mount_point, true)?;
+    // Resolve disks in the HC to their /dev/... paths.
+    let hc_disks = block_devices::get_resolved_disks(host_config)
+        .context("Failed to resolved disks in the Host Configuration to their device paths.")?
+        .iter()
+        .map(|rd| rd.dev_path.to_owned())
+        .collect::<HashSet<_>>();
+
+    // Get the /dev/... paths of the disks that are used to store the verity members.
+    let verity_disks = {
+        let mut disks = HashSet::new();
+        for verity_member in root_verity_device_status.members() {
+            if let Ok(disk_path) = block_devices::get_disk_for_partition(verity_member) {
+                let canonical_disk_path = disk_path
+                    .canonicalize()
+                    .context(format!("Failed to find the device path '{:?}'", disk_path))?;
+                disks.insert(canonical_disk_path);
+            } else if let Ok(disk_paths) = raid::get_raid_disks(verity_member) {
+                disks.extend(disk_paths);
+            } else {
+                bail!(
+                    "Failed to find the disk path for the device path '{:?}'",
+                    verity_member
+                )
             }
         }
-        debug!(
-            "Deactivating verity device '{}'",
-            root_verity_device_path.display()
-        );
-        veritysetup::close(&updated_device_name).context(format!(
-            "Failed to close root verity device '{}'",
-            updated_device_name
-        ))?;
+
+        disks
+    };
+
+    // Get what the set of verity disks is in relation to the set of disks in the Host Configuration.
+    match common::subset_check(&verity_disks, &hc_disks) {
+        SetRelationship::Disjoint => {
+            debug!("No overlap between the verity disks and the disks in the Host Configuration, device will not be stopped.");
+            return Ok(());
+        }
+        SetRelationship::Overlap => {
+            return Err(anyhow!(
+                "A device has underlying disks that are not part of Host Configuration. Used disks: {:?}, Host Configuration disks: {:?}",
+                verity_disks, hc_disks,
+            )).context("Could not stop verity device.");
+        }
+        SetRelationship::Subset => {
+            debug!("Verity disks are a subset of the disks in the Host Configuration, stopping device.");
+        }
     }
+
+    block_devices::unmount_all_mount_points(&root_verity_device_path).context(format!(
+        "Failed to unmount all mount points for verity device '{}'",
+        root_verity_device_path.display()
+    ))?;
+
+    debug!(
+        "Closing verity device '{}'",
+        root_verity_device_path.display()
+    );
+    veritysetup::close(verity_device_name).context(format!(
+        "Failed to close root verity device '{}'",
+        verity_device_name
+    ))?;
 
     Ok(())
 }
@@ -619,14 +640,14 @@ mod functional_test {
         let verity_dev_name = "root_new";
         let verity_root_path = Path::new(DEV_MAPPER_PATH).join(verity_dev_name);
         assert!(!verity_root_path.exists());
-        stop_pre_existing_verity_devices(&ctx_golden.spec).unwrap();
+        stop_trident_servicing_devices(&ctx_golden.spec).unwrap();
 
         // root verity opened
         {
             let ctx = ctx_golden.clone();
             let _guard = verity_vol.open_verity(verity_dev_name);
             assert!(verity_root_path.exists());
-            stop_pre_existing_verity_devices(&ctx.spec).unwrap();
+            stop_trident_servicing_devices(&ctx.spec).unwrap();
             assert!(!verity_root_path.exists());
         }
 
@@ -649,7 +670,7 @@ mod functional_test {
             let _mount_guard = MountGuard {
                 mount_dir: mount_dir.path(),
             };
-            stop_pre_existing_verity_devices(&ctx.spec).unwrap();
+            stop_trident_servicing_devices(&ctx.spec).unwrap();
             assert!(!mountpoint::check_is_mountpoint(mount_dir.path()).unwrap());
             assert!(!verity_root_path.exists());
         }

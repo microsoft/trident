@@ -1,16 +1,14 @@
-use std::path::PathBuf;
-
-use anyhow::{Context, Error};
 use log::{debug, info, trace, warn};
 
 use osutils::{e2fsck, hashing_reader::compute_file_hash};
 use trident_api::{
-    config::{FileSystemType, HostConfiguration},
+    config::FileSystemType,
     constants::internal_params::PRE_REBOOT_CHECKS,
     error::{ReportError, ServicingError, TridentError, TridentResultExt},
     status::HostStatus,
 };
 
+mod common;
 mod encryption;
 mod filesystem;
 pub mod image;
@@ -48,8 +46,7 @@ pub(super) fn close_pre_existing_devices(ctx: &EngineContext) -> Result<(), Trid
 
     // Close verity devices and encrypted volumes before stopping RAID
     // arrays, as both can sit on top of RAID arrays.
-    verity::stop_pre_existing_verity_devices(&ctx.spec)
-        .structured(ServicingError::CleanupVerity)?;
+    verity::stop_trident_servicing_devices(&ctx.spec).structured(ServicingError::CleanupVerity)?;
     encryption::close_pre_existing_encrypted_volumes(&ctx.spec)
         .structured(ServicingError::CleanupEncryption)?;
     raid::stop_pre_existing_raid_arrays(&ctx.spec).structured(ServicingError::CleanupRaid)?;
@@ -59,8 +56,6 @@ pub(super) fn close_pre_existing_devices(ctx: &EngineContext) -> Result<(), Trid
 
 #[tracing::instrument(skip_all)]
 pub(super) fn initialize_block_devices(ctx: &EngineContext) -> Result<(), TridentError> {
-    trace!("Mount points: {:?}", ctx.spec.storage.internal_mount_points);
-
     image::deploy_images(ctx).structured(ServicingError::DeployImages)?;
 
     filesystem::create_filesystems(ctx).structured(ServicingError::CreateFilesystems)?;
@@ -118,80 +113,6 @@ pub(super) fn check_block_devices(host_status: &HostStatus) {
             "Block device '{id}' (path '{}' -> '{}'): Size = {length} bytes, sha384 = {sha384}{fsck_status}",
             path.display(),
             canonical.display(),
-        );
-    }
-}
-
-/// Get the canonicalized paths of all disks in a Host Configuration
-fn get_hostconfig_disk_paths(host_config: &HostConfiguration) -> Result<Vec<PathBuf>, Error> {
-    host_config
-        .storage
-        .disks
-        .iter()
-        .map(|disk| {
-            disk.device
-                .canonicalize()
-                .with_context(|| format!("failed to get canonicalized path for disk: {}", disk.id))
-        })
-        .collect()
-}
-
-#[cfg(feature = "functional-test")]
-#[cfg_attr(not(test), allow(unused_imports, dead_code))]
-mod functional_test {
-    use super::*;
-
-    use osutils::testutils::repart::{OS_DISK_DEVICE_PATH, TEST_DISK_DEVICE_PATH};
-    use pytest_gen::functional_test;
-    use trident_api::config::{Disk, Storage};
-
-    #[functional_test]
-    fn test_get_hostconfig_disk_paths() {
-        let host_config = HostConfiguration {
-            storage: Storage {
-                disks: vec![
-                    Disk {
-                        id: "disk1".to_owned(),
-                        device: "/dev/sda".into(),
-                        ..Default::default()
-                    },
-                    Disk {
-                        id: "disk2".to_owned(),
-                        device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-3".into(),
-                        ..Default::default()
-                    },
-                ],
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        let disks = get_hostconfig_disk_paths(&host_config).unwrap();
-        assert_eq!(
-            disks,
-            vec![
-                PathBuf::from(OS_DISK_DEVICE_PATH),
-                PathBuf::from(TEST_DISK_DEVICE_PATH)
-            ]
-        );
-
-        // fail on missing disk
-        let host_config = HostConfiguration {
-            storage: Storage {
-                disks: vec![Disk {
-                    id: "disk1".to_owned(),
-                    device: "/dev/sdc".into(),
-                    ..Default::default()
-                }],
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        assert_eq!(
-            get_hostconfig_disk_paths(&host_config)
-                .unwrap_err()
-                .to_string(),
-            "failed to get canonicalized path for disk: disk1"
         );
     }
 }
