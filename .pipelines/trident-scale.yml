@@ -27,6 +27,11 @@ parameters:
     type: string
     default: "3.0"
 
+  - name: numberOfWorkers
+    displayName: Number of worker to run tests on (max of 256)
+    type: number
+    default: 256
+
   - name: numberOfUpdateIterations
     displayName: Number of times each worker invokes A/B Update
     type: number
@@ -121,5 +126,8 @@ extends:
           baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
           baseImageArm64PipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
           baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+          numberOfWorkers: ${{ parameters.numberOfWorkers }}
           numberOfUpdateIterations: ${{ parameters.numberOfUpdateIterations }}
           forceTridentRebuild: ${{ parameters.forceTridentRebuild }}
+          includeQemu: true
+          includeAzure: false

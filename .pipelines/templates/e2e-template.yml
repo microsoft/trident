@@ -186,6 +186,7 @@ stages:
     parameters:
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
       baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
+      includeQemu: true
       includeAzure: ${{ parameters.includeAzure }}
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}

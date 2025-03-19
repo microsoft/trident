@@ -99,4 +99,5 @@ stages:
         parameters:
           testingRun: true
           verboseLogging: true
+          includeQemu: true
           includeAzure: false # To test in Azure please use trident-pr-e2e-azure pipeline

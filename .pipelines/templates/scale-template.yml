@@ -52,6 +52,11 @@ parameters:
     type: boolean
     default: false
 
+  - name: includeQemu
+    displayName: "Include qemu testing"
+    type: boolean
+    default: false
+
   - name: includeAzure
     displayName: "Include Azure testing"
     type: boolean
@@ -83,4 +88,5 @@ stages:
       verboseLogging: ${{ parameters.verboseLogging }}
       baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
       baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+      includeQemu: ${{ parameters.includeQemu }}
       includeAzure: ${{ parameters.includeAzure }}

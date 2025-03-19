@@ -48,6 +48,11 @@ parameters:
     type: boolean
     default: false
 
+  - name: includeQemu
+    displayName: "Include qemu testing"
+    type: boolean
+    default: false
+
   - name: includeAzure
     displayName: "Include Azure testing"
     type: boolean
@@ -74,45 +79,46 @@ stages:
         jobs:
           - template: generate-ssh-keys.yml
 
-      - stage: BuildImagesQemu
-        displayName: Build Base and Update Images for QEMU
-        dependsOn:
-          - PrepareSSHKeys
-          - GetTridentBinaries_rpms
+      - ${{ if eq(parameters.includeQemu, true) }}:
+        - stage: BuildImagesQemu
+          displayName: Build Base and Update Images for QEMU
+          dependsOn:
+            - PrepareSSHKeys
+            - GetTridentBinaries_rpms
 
-        jobs:
-          - template: build-image.yml
-            parameters:
-              baseimgBuildType: ${{ parameters.baseimgBuildType }}
-              label: "qemu-base"
-              makeTarget: "build/trident-vm-verity-testimage.qcow2"
-              baseimgType: qemu_guest
-              baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-              baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
-              micBuildType: ${{ parameters.micBuildType }}
-              micVersion: ${{ parameters.micVersion }}
+          jobs:
+            - template: build-image.yml
+              parameters:
+                baseimgBuildType: ${{ parameters.baseimgBuildType }}
+                label: "qemu-base"
+                makeTarget: "build/trident-vm-verity-testimage.qcow2"
+                baseimgType: qemu_guest
+                baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+                baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
+                micBuildType: ${{ parameters.micBuildType }}
+                micVersion: ${{ parameters.micVersion }}
 
-          - template: build-image.yml
-            parameters:
-              baseimgBuildType: ${{ parameters.baseimgBuildType }}
-              label: "qemu-update-a"
-              makeTarget: "build/trident-vm-verity-testimage.cosi"
-              baseimgType: qemu_guest
-              baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-              baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
-              micBuildType: ${{ parameters.micBuildType }}
-              micVersion: ${{ parameters.micVersion }}
+            - template: build-image.yml
+              parameters:
+                baseimgBuildType: ${{ parameters.baseimgBuildType }}
+                label: "qemu-update-a"
+                makeTarget: "build/trident-vm-verity-testimage.cosi"
+                baseimgType: qemu_guest
+                baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+                baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
+                micBuildType: ${{ parameters.micBuildType }}
+                micVersion: ${{ parameters.micVersion }}
 
-          - template: build-image.yml
-            parameters:
-              baseimgBuildType: ${{ parameters.baseimgBuildType }}
-              label: "qemu-update-b"
-              makeTarget: "build/trident-vm-verity-testimage.cosi"
-              baseimgType: qemu_guest
-              baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-              baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
-              micBuildType: ${{ parameters.micBuildType }}
-              micVersion: ${{ parameters.micVersion }}
+            - template: build-image.yml
+              parameters:
+                baseimgBuildType: ${{ parameters.baseimgBuildType }}
+                label: "qemu-update-b"
+                makeTarget: "build/trident-vm-verity-testimage.cosi"
+                baseimgType: qemu_guest
+                baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+                baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
+                micBuildType: ${{ parameters.micBuildType }}
+                micVersion: ${{ parameters.micVersion }}
 
       - ${{ if eq(parameters.includeAzure, true) }}:
           - stage: BuildImagesAzure
@@ -161,20 +167,22 @@ stages:
       - ${{ if eq(parameters.testingRun, true) }}:
           - DownloadTestingElements
       - ${{ else }}:
-          - BuildImagesQemu
           - BuildingTools
+          - ${{ if eq(parameters.includeQemu, true) }}:
+              - BuildImagesQemu
           - ${{ if eq(parameters.includeAzure, true) }}:
               - BuildImagesAzure
 
     jobs:
-      - template: testing-template.yml
-        parameters:
-          updateIterationCount: ${{ parameters.updateIterationCount }}
-          rollbackTesting: ${{ parameters.rollbackTesting }}
-          workers: ${{ parameters.workers }}
-          updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
-          verboseLogging: ${{ parameters.verboseLogging }}
-          platform: qemu
+      - ${{ if eq(parameters.includeQemu, true) }}:
+          - template: testing-template.yml
+            parameters:
+              updateIterationCount: ${{ parameters.updateIterationCount }}
+              rollbackTesting: ${{ parameters.rollbackTesting }}
+              workers: ${{ parameters.workers }}
+              updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
+              verboseLogging: ${{ parameters.verboseLogging }}
+              platform: qemu
 
       - ${{ if eq(parameters.includeAzure, true) }}:
           - template: testing-template.yml

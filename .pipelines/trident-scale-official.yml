@@ -27,6 +27,11 @@ parameters:
     type: string
     default: "3.0"
 
+  - name: numberOfWorkers
+    displayName: Number of worker to run tests on (max of 256)
+    type: number
+    default: 256
+
   - name: numberOfUpdateIterations
     displayName: Number of times each worker invokes A/B Update
     type: number
@@ -36,6 +41,16 @@ parameters:
     displayName: "Force trident rebuild rather than downloading previously built."
     type: boolean
     default: false
+
+  - name: runQemuTests
+    displayName: "Run qemu scale tests"
+    type: boolean
+    default: true
+
+  - name: runAzureTests
+    displayName: "Run azure scale tests"
+    type: boolean
+    default: true
 
 schedules:
   - cron: "0 8 * * *" # 1 am PST
@@ -129,6 +144,8 @@ extends:
           baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
           baseImageArm64PipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
           baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+          numberOfWorkers: ${{ parameters.numberOfWorkers }}
           numberOfUpdateIterations: ${{ parameters.numberOfUpdateIterations }}
           forceTridentRebuild: ${{ parameters.forceTridentRebuild }}
-          includeAzure: true
+          includeQemu: ${{ parameters.runQemuTests }}
+          includeAzure: ${{ parameters.runAzureTests }}
