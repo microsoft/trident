@@ -230,6 +230,7 @@ fn validate_filesystem_uniqueness(
     ctx: &EngineContext,
 ) -> Result<(), TridentError> {
     // Check that there are no shared filesystem UUIDs in current set of images
+    // Note: purposefully do not check ESP filesystem here
     let mut current_fs_uuids = HashSet::new();
     for fs in os_image.filesystems() {
         if !current_fs_uuids.insert(fs.fs_uuid.clone()) {
@@ -598,6 +599,57 @@ mod tests {
             )))),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn test_validate_filesystem_uniqueness_clean_install() {
+        // Scenario 1 (failure): Duplicate FSUUIDs found in same image
+        let mut mock_image = MockOsImage {
+            source: Url::parse(OSIMAGE_DUMMY_SOURCE).unwrap(),
+            os_arch: SystemArchitecture::X86,
+            os_release: OsRelease::default(),
+            images: vec![
+                MockImage {
+                    mount_point: PathBuf::from("/trident"),
+                    fs_type: OsImageFileSystemType::Ext4,
+                    fs_uuid: OsUuid::Uuid(
+                        Uuid::parse_str("a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8").unwrap(),
+                    ),
+                    part_type: DiscoverablePartitionType::LinuxGeneric,
+                    verity: None,
+                },
+                MockImage {
+                    mount_point: PathBuf::from(ROOT_MOUNT_POINT_PATH),
+                    fs_type: OsImageFileSystemType::Ext4,
+                    fs_uuid: OsUuid::Uuid(
+                        Uuid::parse_str("a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8").unwrap(),
+                    ),
+                    part_type: DiscoverablePartitionType::Root,
+                    verity: None,
+                },
+            ],
+        };
+        let os_image = OsImage::mock(mock_image.clone());
+        let mut ctx = EngineContext {
+            servicing_type: ServicingType::CleanInstall,
+            image: Some(os_image.clone()),
+            ..Default::default()
+        };
+
+        let err = validate_filesystem_uniqueness(&os_image, &ctx).unwrap_err();
+        assert_eq!(
+            err.kind(),
+            &ErrorKind::InvalidInput(InvalidInputError::DuplicateFsUuid {
+                uuid: "a1a2a3a4-b1b2-c1c2-d1d2-d3d4d5d6d7d8".to_string(),
+            })
+        );
+
+        // Scenario 2 (success): Unique FSUUIDs
+        mock_image.images[0].fs_uuid =
+            OsUuid::Uuid(Uuid::parse_str("a1a1a1a1b1b1c1c1d1d1d1d1d1d1d1d1").unwrap());
+        let os_image = OsImage::mock(mock_image.clone());
+        ctx.image = Some(os_image.clone());
+        validate_filesystem_uniqueness(&os_image, &ctx).unwrap();
     }
 
     #[test]
@@ -1004,5 +1056,109 @@ mod tests {
             FileSystemType::Overlay,
             OsImageFileSystemType::Ext2
         ));
+    }
+}
+
+#[cfg(feature = "functional-test")]
+#[cfg_attr(not(test), allow(unused_imports, dead_code))]
+mod functional_test {
+    use super::*;
+
+    use std::{path::PathBuf, str::FromStr};
+
+    use maplit::btreemap;
+    use url::Url;
+    use uuid::Uuid;
+
+    use osutils::{
+        filesystems::MkfsFileSystemType,
+        mkfs,
+        osrelease::OsRelease,
+        testutils::repart::{self, TEST_DISK_DEVICE_PATH},
+    };
+    use pytest_gen::functional_test;
+    use sysdefs::{
+        arch::SystemArchitecture, osuuid::OsUuid, partition_types::DiscoverablePartitionType,
+    };
+    use trident_api::{
+        config::{AbUpdate, AbVolumePair, FileSystem, MountPoint, Storage},
+        error::ErrorKind,
+    };
+
+    use crate::osimage::mock::{MockImage, MockOsImage};
+
+    #[functional_test]
+    fn test_validate_filesystem_uniqueness_update() {
+        repart::clear_disk(Path::new(TEST_DISK_DEVICE_PATH)).unwrap();
+        mkfs::run(Path::new(TEST_DISK_DEVICE_PATH), MkfsFileSystemType::Ext4).unwrap();
+        let root_block_device = lsblk::get(Path::new(TEST_DISK_DEVICE_PATH)).unwrap();
+
+        // Make sure filesystem was created
+        assert_eq!(
+            root_block_device.fstype.as_ref().unwrap(),
+            "ext4",
+            "Filesystem type on /dev/sdb is not ext4"
+        );
+
+        // Scenario 1 (failure): Same image used during A/B update (simulated by
+        // same FSUUID as in current disk), resulting in duplicate FSUUIDs
+        let mut mock_image = MockOsImage {
+            source: Url::parse("http://example/osimage").unwrap(),
+            os_arch: SystemArchitecture::X86,
+            os_release: OsRelease::default(),
+            images: vec![MockImage {
+                mount_point: PathBuf::from("/"),
+                fs_type: OsImageFileSystemType::Ext4,
+                fs_uuid: root_block_device.fsuuid.clone().unwrap(),
+                part_type: DiscoverablePartitionType::Root,
+                verity: None,
+            }],
+        };
+        let os_image = OsImage::mock(mock_image.clone());
+        let mut ctx = EngineContext {
+            servicing_type: ServicingType::AbUpdate,
+            spec: HostConfiguration {
+                storage: Storage {
+                    filesystems: vec![FileSystem {
+                        device_id: Some("root".into()),
+                        fs_type: FileSystemType::Ext4,
+                        source: FileSystemSource::Image,
+                        mount_point: Some(MountPoint::from_str("/").unwrap()),
+                    }],
+                    ab_update: Some(AbUpdate {
+                        volume_pairs: vec![AbVolumePair {
+                            id: "root".to_string(),
+                            volume_a_id: "root-a".to_string(),
+                            volume_b_id: "root-b".to_string(),
+                        }],
+                    }),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            image: Some(os_image.clone()),
+            ab_active_volume: Some(AbVolumeSelection::VolumeA),
+            partition_paths: btreemap! {
+                "root-a".into() => PathBuf::from(TEST_DISK_DEVICE_PATH),
+            },
+            ..Default::default()
+        };
+        let err = validate_filesystem_uniqueness(&os_image, &ctx).unwrap_err();
+        assert_eq!(
+            err.kind(),
+            &ErrorKind::InvalidInput(InvalidInputError::DuplicateFsUuidAbUpdate {
+                pair_id: "root".to_string(),
+                uuid: root_block_device.fsuuid.unwrap().to_string(),
+            })
+        );
+
+        // Scenario 2 (success): distinct OS image with distinct FSUUID
+        mock_image.images[0].fs_uuid = OsUuid::Uuid(Uuid::new_v4());
+        let os_image_new = OsImage::mock(mock_image);
+        ctx.image = Some(os_image_new.clone());
+        validate_filesystem_uniqueness(&os_image_new, &ctx).unwrap();
+
+        // Clean up
+        repart::clear_disk(Path::new(TEST_DISK_DEVICE_PATH)).unwrap();
     }
 }
