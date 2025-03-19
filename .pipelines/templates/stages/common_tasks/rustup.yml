@@ -9,7 +9,7 @@ steps:
       # URL of an Azure Artifacts feed configured with a crates.io upstream. Must be within the current ADO collection.
       # NOTE: Azure Artifacts support for Rust is not yet public, but it is enabled for internal ADO organizations.
       # https://learn.microsoft.com/en-us/azure/devops/artifacts/how-to/set-up-upstream-sources?view=azure-devops
-      cratesIoFeedOverride: sparse+https://pkgs.dev.azure.com/mariner-org/ECF/_packaging/crates.io/Cargo/index/
+      cratesIoFeedOverride: sparse+https://pkgs.dev.azure.com/mariner-org/ECF/_packaging/BMP_PublicPackages/Cargo/index/
       # URL of an Azure Artifacts NuGet feed configured with the mscodehub Rust feed as an upstream.
       # * The feed must be within the current ADO collection.
       # * The CI account, usually "Project Collection Build Service (org-name)", must have at least "Collaborator" permission.

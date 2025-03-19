@@ -3,41 +3,23 @@ parameters:
     type: string
     default: .cargo/config.toml
 
-  # The action parameter is used to determine whether to authenticate with the
-  # Cargo registry or to override the existing authentication.
-  - name: action
-    type: string
-    default: "authenticate"
-    values:
-      - authenticate
-      - override
-
 steps:
-  - ${{ if eq(parameters.action, 'authenticate') }}:
-      - task: CargoAuthenticate@0
-        displayName: "Authenticate with Cargo"
-        inputs:
-          configFile: ${{ parameters.cargoConfigPath }}
+  - task: CargoAuthenticate@0
+    displayName: "Authenticate with Cargo"
+    inputs:
+      configFile: ${{ parameters.cargoConfigPath }}
 
-      # The cargo:token credential provider is needed for older versions of cargo to
-      # read the environment variable produced by CargoAuthenticate@0.
-      - script: |
-          set -eux
-          cat << EOF >> ${{ parameters.cargoConfigPath }}
-          [registry]
-          global-credential-providers = ["cargo:token"]
-          EOF
+  # The cargo:token credential provider is needed for older versions of cargo to
+  # read the environment variable produced by CargoAuthenticate@0.
+  - script: |
+      set -eux
+      cat << EOF >> ${{ parameters.cargoConfigPath }}
+      [registry]
+      global-credential-providers = ["cargo:token"]
+      EOF
 
-          cat ${{ parameters.cargoConfigPath }}
+      cat ${{ parameters.cargoConfigPath }}
 
-          set +x
-          echo CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN=${CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN:0:20}...
-        displayName: "Add global-credential-providers to Cargo config"
-
-  - ${{ if eq(parameters.action, 'override') }}:
-      # Remove the replace directive from the Cargo config file.
-      - script: |
-          set -eux
-          sed -i '/replace-with = "BMP_PublicPackages"/d' ${{ parameters.cargoConfigPath }}
-          cat ${{ parameters.cargoConfigPath }}
-        displayName: "Remove replace directive from Cargo config"
+      set +x
+      echo CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN=${CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN:0:20}...
+    displayName: "Add global-credential-providers to Cargo config"

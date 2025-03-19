@@ -43,8 +43,6 @@ stages:
             fetchDepth: 1
 
           - template: ../common_tasks/cargo-auth.yml
-            parameters:
-              action: override
 
           # Download all test images for host
           - template: ../testing_common/download-test-images.yml

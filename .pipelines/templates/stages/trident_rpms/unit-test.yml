@@ -5,7 +5,7 @@ steps:
 
   - script: |
       set -eux
-      cargo install cargo-nextest --locked --version 0.9.67
+      cargo install cargo-nextest --locked --version 0.9.85
       # Exclude pytest_gen as Mariner Rust is currently failing to build it. See
       # for more details: https://dev.azure.com/mariner-org/ECF/_workitems/edit/6517
       cargo nextest run --workspace --exclude pytest_gen --profile ci

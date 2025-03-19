@@ -39,6 +39,8 @@ steps:
   - script: |
       make validate-api-schema
     displayName: Validate Trident API Schema
+    env:
+      OVERRIDE_RUST_FEED: false
 
   - script: cargo check --locked 2>&1
     displayName: Check Debug

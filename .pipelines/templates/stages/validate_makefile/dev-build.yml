@@ -23,12 +23,8 @@ stages:
             displayName: Install native dependencies
             retryCountOnTaskFailure: 3
 
-          - task: CargoAuthenticate@0
-            displayName: "Authenticate with Cargo"
-            inputs:
-              configFile: .cargo/config.toml
-
           - template: ../common_tasks/rustup.yml
+          - template: ../common_tasks/cargo-auth.yml
 
           - bash: |
               set -eux
@@ -37,6 +33,8 @@ stages:
               make bin/trident-rpms.tar.gz
               make docker-build
             displayName: Invoke make
+            env:
+              OVERRIDE_RUST_FEED: false
 
           - script: |
               set -eux
@@ -44,6 +42,8 @@ stages:
               make check-sh
             displayName: "Validate sh files in repo"
             workingDirectory: $(Build.SourcesDirectory)
+            env:
+              OVERRIDE_RUST_FEED: false
 
           - script: |
               set -eux
@@ -53,6 +53,7 @@ stages:
             workingDirectory: $(Build.SourcesDirectory)
             env:
               AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
+              OVERRIDE_RUST_FEED: false
 
           - script: cargo install --locked cargo-deny@0.16.1
             displayName: Install cargo-deny

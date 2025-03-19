@@ -12,6 +12,8 @@ HOST_CONFIG ?= base.yaml
 
 NETLAUNCH_CONFIG ?= input/netlaunch.yaml
 
+OVERRIDE_RUST_FEED ?= true
+
 .PHONY: all
 all: format check test build-api-docs bin/trident-rpms-azl2.tar.gz bin/trident-rpms-azl3.tar.gz docker-build build-functional-test coverage validate-configs generate-mermaid-diagrams
 
@@ -54,8 +56,11 @@ check-sh:
 
 # Local override of the cargo config to avoid having to go through the registry
 .cargo/config: .cargo/config.toml
-	@cp $< $@
-	@sed -i 's|replace-with = "BMP_PublicPackages"|# &|' $@
+	@cp $< $@; \
+	if [ "$(OVERRIDE_RUST_FEED)" = "true" ]; then \
+		echo 'Use override of Makefile rust feed'; \
+		sed -i 's|replace-with = "BMP_PublicPackages"|# &|' $@; \
+	fi
 	@echo "NOTICE: Created local .cargo/config file."
 
 .PHONY: build

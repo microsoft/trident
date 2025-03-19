@@ -50,9 +50,9 @@ stages:
             value: "$(Build.SourcesDirectory)/trident/out"
 
         steps:
+          # need newer rust for cargo-nextest, use rustup.yml to install
+          - template: ../common_tasks/rustup.yml
           - template: ../common_tasks/cargo-auth.yml
-            parameters:
-              action: override
           - template: unit-test.yml
 
       - job: Coverage
@@ -66,8 +66,6 @@ stages:
 
         steps:
           - template: ../common_tasks/cargo-auth.yml
-            parameters:
-              action: override
           - template: ../common_tasks/coverage.yml
             parameters:
               codeCoverageBaseline: 70 # Unit tests
@@ -135,8 +133,7 @@ stages:
               buildType: auto
 
         steps:
+          - template: ../common_tasks/rustup.yml
           - template: ../common_tasks/cargo-auth.yml
-            parameters:
-              action: override
           - template: ../common_tasks/build-osmodifier.yml
           - template: release2.yml
