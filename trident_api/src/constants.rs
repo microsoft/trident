@@ -203,4 +203,7 @@ pub mod internal_params {
 
     /// Relax COSI filesystem match checks.
     pub const RELAXED_COSI_VALIDATION: &str = "relaxedCosiValidation";
+
+    /// Allow unused images in a COSI file.
+    pub const ALLOW_UNUSED_FILESYSTEMS_IN_COSI: &str = "allowUnusedFilesystems";
 }

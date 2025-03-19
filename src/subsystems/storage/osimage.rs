@@ -9,8 +9,14 @@ use log::{debug, error, trace, warn};
 use osutils::{df, lsblk};
 use trident_api::{
     config::{FileSystemSource, FileSystemType, HostConfiguration},
-    constants::{internal_params::DISABLE_FS_BLOCK_DEVICE_SIZE_CHECK, BOOT_MOUNT_POINT_PATH},
-    error::{InternalError, InvalidInputError, ReportError, ServicingError, TridentError},
+    constants::{
+        internal_params::{ALLOW_UNUSED_FILESYSTEMS_IN_COSI, DISABLE_FS_BLOCK_DEVICE_SIZE_CHECK},
+        BOOT_MOUNT_POINT_PATH,
+    },
+    error::{
+        InternalError, InvalidInputError, ReportError, ServicingError, TridentError,
+        TridentResultExt,
+    },
     primitives::bytes::ByteCount,
     status::{AbVolumeSelection, ServicingType},
 };
@@ -63,7 +69,7 @@ pub fn validate_host_config(ctx: &EngineContext) -> Result<(), TridentError> {
     };
 
     debug!("Validating Host Configuration filesystems against OS image");
-    validate_filesystems(os_image, &ctx.spec)?;
+    validate_filesystems(os_image, ctx)?;
 
     debug!("Validating uniqueness of OS image filesystem UUIDs");
     validate_filesystem_uniqueness(os_image, ctx)?;
@@ -91,10 +97,7 @@ pub fn validate_host_config(ctx: &EngineContext) -> Result<(), TridentError> {
 
 /// Validates that all OS Image filesystems are used, and that all applicable Host Configuration
 /// filesystems can be satisfied by the OS image.
-fn validate_filesystems(
-    os_image: &OsImage,
-    host_config: &HostConfiguration,
-) -> Result<(), TridentError> {
+fn validate_filesystems(os_image: &OsImage, ctx: &EngineContext) -> Result<(), TridentError> {
     // Populate hashmap with filesystems from OS image
     let all_os_image_filesystems = os_image
         .filesystems()
@@ -105,8 +108,9 @@ fn validate_filesystems(
         .map(|fs| (fs.mount_point.as_path(), fs.fs_type))
         .collect::<HashMap<&Path, OsImageFileSystemType>>();
 
-    // Populate hashmap with filesystems from Host Configuration
-    let hc_filesystems_map = host_config
+    // Populate hashmap with ALL filesystems from Host Configuration
+    let all_hc_filesystems_map = ctx
+        .spec
         .storage
         .filesystems
         .iter()
@@ -116,20 +120,38 @@ fn validate_filesystems(
                 .mount_point
                 .as_ref()
                 .map(|mp| mp.path.as_path())
-                .structured(InternalError::GetMountPointForOsImage)?;
-            Ok((mount_point, fs.fs_type))
+                .structured(InternalError::GetMountPointForFilesystemFromImage(
+                    fs.description(),
+                ))?;
+            let device_id = fs.device_id.as_ref().structured(
+                InternalError::GetDeviceIdForFilesystemFromImage(fs.description()),
+            )?;
+            Ok((mount_point, (fs, device_id)))
         })
         .collect::<Result<HashMap<_, _>, TridentError>>()?;
 
     // Create sets of mount points to check for missing or unused filesystems
     let os_image_filesystems_set = os_image_filesystems_map.keys().collect::<HashSet<_>>();
-    let hc_filesystems_set = hc_filesystems_map.keys().collect::<HashSet<_>>();
+    let all_hc_filesystems_set = all_hc_filesystems_map.keys().collect::<HashSet<_>>();
 
-    // Check that all filesystems in OS image are present in Host Config
-    if let Some(not_found_in_hc) = os_image_filesystems_set
-        .difference(&hc_filesystems_set)
-        .next()
-    {
+    // Check that all filesystems in OS image are present in Host Config.
+    // Because we are comparing against _all_ filesystems sourced from an image,
+    // we should rarely hit this, if ever. It most likely means that the user
+    // missed a filesystems in the HC.
+    for not_found_in_hc in os_image_filesystems_set.difference(&all_hc_filesystems_set) {
+        if ctx
+            .spec
+            .internal_params
+            .get_flag(ALLOW_UNUSED_FILESYSTEMS_IN_COSI)
+        {
+            warn!(
+                "Filesystem '{}' in OS image is not used in Host Configuration, but \
+                '{ALLOW_UNUSED_FILESYSTEMS_IN_COSI}' is set, continuing.",
+                not_found_in_hc.display()
+            );
+            continue;
+        }
+
         return Err(TridentError::new(
             InvalidInputError::UnusedOsImageFilesystem {
                 mount_point: not_found_in_hc.display().to_string(),
@@ -138,29 +160,62 @@ fn validate_filesystems(
         ));
     }
 
-    // Check that all filesystems in Host Config are present in OS image
-    if let Some(not_found_in_os_img) = hc_filesystems_set
+    // Get a list of all filesystems we ACTUALLY require for this specific servicing operation.
+    let required_hc_filesystems_map = all_hc_filesystems_map
+        .into_iter()
+        .filter(|(_, (fs, device_id))| {
+            // We ALWAYS require ESP to be present in the OS image.
+            if fs.is_esp() {
+                return true;
+            }
+
+            // If we are doing an A/B update, discard all filesystems that are NOT on AB-capable devices.
+            if ctx.servicing_type == ServicingType::AbUpdate
+                && !ctx
+                    .storage_graph
+                    .has_ab_capabilities(device_id)
+                    .unwrap_or(false)
+            {
+                return false;
+            }
+
+            true
+        })
+        .collect::<HashMap<_, _>>();
+
+    let required_hc_filesystems_set = required_hc_filesystems_map.keys().collect::<HashSet<_>>();
+
+    // Check that all required filesystems are present in OS image
+    if let Some(not_found_in_os_img) = required_hc_filesystems_set
         .difference(&os_image_filesystems_set)
         .next()
     {
         return Err(TridentError::new(
             InvalidInputError::MissingOsImageFilesystem {
                 mount_point: not_found_in_os_img.display().to_string(),
-                fs_type: hc_filesystems_map[*not_found_in_os_img].to_string(),
+                fs_type: required_hc_filesystems_map[*not_found_in_os_img]
+                    .0
+                    .fs_type
+                    .to_string(),
             },
         ));
     }
 
-    // Check for mismatched filesystems, i.e. mount point exists in both OS image and Host
-    // Configuration but filesystem type differs
-    if let Some((mount_point, hc_fs_type)) =
-        hc_filesystems_map.iter().find(|(mount_point, hc_fs_type)| {
-            !check_fs_match(**hc_fs_type, os_image_filesystems_map[*mount_point])
-        })
+    // TODO: remove this check once we stop requiring FS type in the API for
+    // filesystems coming from images.
+    //
+    // Check for mismatched filesystems, i.e. mount point exists in both OS
+    // image and Host Configuration but filesystem type differs
+    if let Some((mount_point, (fs, _))) =
+        required_hc_filesystems_map
+            .iter()
+            .find(|(mount_point, (fs, _))| {
+                !check_fs_match(fs.fs_type, os_image_filesystems_map[*mount_point])
+            })
     {
         return Err(TridentError::new(InvalidInputError::MismatchedFsType {
             mount_point: mount_point.display().to_string(),
-            hc_fs_type: hc_fs_type.to_string(),
+            hc_fs_type: fs.fs_type.to_string(),
             os_img_fs_type: os_image_filesystems_map[*mount_point].to_string(),
         }));
     }
@@ -365,12 +420,25 @@ fn validate_filesystem_blkdev_fit(
             })
             // We should never get here because of the checks in validate_filesystems()
             // i.e. Every mount point in the image should match to a mount point in the HC
-            .structured(InternalError::GetMountPointForOsImage)?;
-        let Some(device_id) = &hc_fs.device_id else {
-            return Err(TridentError::new(InternalError::Internal(
-                "Failed to retrieve device id for filesystem.",
-            )));
-        };
+            .structured(InternalError::Internal(
+                "Failed to find previously seen filesystem in the Host Configuration.",
+            ))
+            .message(format!(
+                "Missing filesystem mounted at '{}'",
+                fs.mount_point.display()
+            ))?;
+
+        let device_id = &hc_fs
+            .device_id
+            .as_ref()
+            .structured(InternalError::Internal(
+                "Failed to retrieve deviceId for filesystem sourced from image.",
+            ))
+            .message(format!(
+                "Filesystem [{}] is missing a deviceId.",
+                hc_fs.description(),
+            ))?;
+
         let fs_size = fs.image_file.uncompressed_size;
         trace!("The size of the filesystem associated with block device '{device_id}' is {fs_size} bytes.");
 
@@ -378,6 +446,7 @@ fn validate_filesystem_blkdev_fit(
             debug!("Could not find the size of the block device with id '{device_id}'. Block device may not have a fixed size.");
             continue;
         };
+
         trace!("The size of the block device with id '{device_id}' is {blkdev_size} bytes.");
 
         debug!(
@@ -403,6 +472,7 @@ mod tests {
     use super::*;
 
     use std::{path::PathBuf, str::FromStr};
+
     use url::Url;
     use uuid::Uuid;
 
@@ -411,9 +481,13 @@ mod tests {
         arch::SystemArchitecture, osuuid::OsUuid, partition_types::DiscoverablePartitionType,
     };
     use trident_api::{
-        config::{FileSystem, FileSystemSource, FileSystemType, MountPoint, Storage, VerityDevice},
+        config::{
+            AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, FileSystemType,
+            MountOptions, MountPoint, Partition, PartitionSize, Storage, VerityDevice,
+        },
         constants::{ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
         error::ErrorKind,
+        misc::IdGenerator,
     };
 
     use crate::osimage::{
@@ -423,21 +497,105 @@ mod tests {
 
     const OSIMAGE_DUMMY_SOURCE: &str = "http://example/osimage";
 
-    fn generate_test_host_config(
-        fs: impl Iterator<Item = (&'static str, FileSystemType)>,
-    ) -> HostConfiguration {
-        HostConfiguration {
+    /// Generates a simple test context for clean install servicing type.
+    ///
+    /// The context includes:
+    /// - A mock OS image.
+    /// - A mock Host Configuration.
+    /// - A built storage graph.
+    fn generate_test_context<'a, 'b>(
+        hc_data: impl Iterator<Item = &'a (impl AsRef<Path> + 'a, FileSystemType)>,
+        img_data: impl Iterator<Item = &'b (impl AsRef<Path> + 'b, OsImageFileSystemType)>,
+    ) -> EngineContext {
+        let hc_data = hc_data.map(|(a, b)| (a, *b, false)).collect::<Vec<_>>();
+        let mut ctx = generate_test_context_ab_update(hc_data.iter(), img_data);
+        ctx.servicing_type = ServicingType::CleanInstall;
+        ctx.ab_active_volume = None;
+        ctx
+    }
+
+    /// Generates a test context for A/B update servicing type.
+    ///
+    /// Same as `generate_test_context`, but with the addition of a new bool parameter
+    /// `on_ab` on the HC data iterator. This parameter indicates whether the filesystem
+    /// should be on an A/B volume pair or not.
+    fn generate_test_context_ab_update<'a, 'b>(
+        hc_data: impl Iterator<Item = &'a (impl AsRef<Path> + 'a, FileSystemType, bool)>,
+        img_data: impl Iterator<Item = &'b (impl AsRef<Path> + 'b, OsImageFileSystemType)>,
+    ) -> EngineContext {
+        let mut partitions = Vec::new();
+        let mut filesystems = Vec::new();
+        let mut volume_pairs = Vec::new();
+
+        let mut part_id_gen = IdGenerator::new("part");
+        let mut abvol_id_gen = IdGenerator::new("abvol");
+
+        let mut pushpart = || {
+            let part_id = part_id_gen.next_id();
+            partitions.push(Partition {
+                id: part_id.clone(),
+                size: PartitionSize::from_str("1G").unwrap(),
+                partition_type: Default::default(),
+            });
+            part_id
+        };
+
+        for (mnt, fs_type, on_ab) in hc_data {
+            let device_id = if *on_ab {
+                let part_a = pushpart();
+                let part_b = pushpart();
+                let abvol_id = abvol_id_gen.next_id();
+                volume_pairs.push(AbVolumePair {
+                    id: abvol_id.clone(),
+                    volume_a_id: part_a,
+                    volume_b_id: part_b,
+                });
+                abvol_id
+            } else {
+                pushpart()
+            };
+
+            filesystems.push(FileSystem {
+                device_id: Some(device_id),
+                fs_type: *fs_type,
+                source: FileSystemSource::Image,
+                mount_point: Some(MountPoint {
+                    path: mnt.as_ref().to_path_buf(),
+                    options: MountOptions::defaults(),
+                }),
+            });
+        }
+
+        let hc = HostConfiguration {
             storage: Storage {
-                filesystems: fs
-                    .map(|(path, fs_type)| FileSystem {
-                        device_id: Some("dev".into()),
-                        fs_type,
-                        source: FileSystemSource::Image,
-                        mount_point: Some(MountPoint::from_str(path).unwrap()),
-                    })
-                    .collect::<Vec<_>>(),
+                disks: vec![Disk {
+                    id: "disk0".into(),
+                    device: "/dev/sda".into(),
+                    partitions,
+                    ..Default::default()
+                }],
+                filesystems,
+                ab_update: Some(AbUpdate { volume_pairs }),
                 ..Default::default()
             },
+            ..Default::default()
+        };
+
+        EngineContext {
+            storage_graph: hc.storage.build_graph().unwrap(),
+            servicing_type: ServicingType::AbUpdate,
+            ab_active_volume: Some(AbVolumeSelection::VolumeA),
+            spec: hc,
+            image: Some(OsImage::mock(MockOsImage::new().with_images(img_data.map(
+                |(path, fs_type)| {
+                    MockImage::new(
+                        path,
+                        *fs_type,
+                        DiscoverablePartitionType::LinuxGeneric,
+                        None::<&str>,
+                    )
+                },
+            )))),
             ..Default::default()
         }
     }
@@ -631,81 +789,50 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_host_config_success() {
-        let mock_entries = [
-            ("/image/path/A", "ext4", FileSystemType::Ext4),
-            ("/image/path/B", "ext4", FileSystemType::Ext4),
-        ]
-        .into_iter();
+    fn test_validate_host_config_clean_install() {
+        let hc_entries = [
+            ("/mnt/path/A", FileSystemType::Ext4),
+            ("/mnt/path/B", FileSystemType::Ext4),
+        ];
 
-        // Generate mock OS image
-        let os_image = OsImage::mock(MockOsImage {
-            source: Url::parse(OSIMAGE_DUMMY_SOURCE).unwrap(),
-            os_arch: SystemArchitecture::X86,
-            os_release: OsRelease::default(),
-            images: mock_entries
-                .clone()
-                .map(|(path, fs_type, _)| MockImage {
-                    mount_point: PathBuf::from(path),
-                    fs_type: serde_json::from_str(&format!("\"{}\"", fs_type)).unwrap(),
-                    fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
-                    part_type: DiscoverablePartitionType::LinuxGeneric,
-                    verity: None,
-                })
-                .collect(),
-        });
+        let img_entries = [
+            ("/mnt/path/A", OsImageFileSystemType::Ext4),
+            ("/mnt/path/B", OsImageFileSystemType::Ext4),
+        ];
 
         // Generate HC from mock entries
-        let host_config =
-            generate_test_host_config(mock_entries.map(|(path, _, fs_type)| (path, fs_type)));
+        let ctx = generate_test_context(hc_entries.iter(), img_entries.iter());
+        let img = ctx.image.as_ref().unwrap();
 
         // Test that validation passes
-        validate_filesystems(&os_image, &host_config).unwrap();
+        validate_filesystems(img, &ctx).unwrap();
     }
 
     /// This test checks the scenario where there are more filesystems listed in the OS image than
     /// there are in the Host Configuration
     #[test]
     fn test_validate_host_config_failure_unused() {
-        let mock_entries_os_image = [
-            ("/image/path/A", "ext4"),
-            ("/image/path/B", "ext4"),
-            ("/unused/image/C", "ext4"),
-        ]
-        .into_iter();
+        let hc_entries = [
+            ("/mnt/path/A", FileSystemType::Ext4),
+            ("/mnt/path/B", FileSystemType::Ext4),
+        ];
 
-        // Generate mock OS image
-        let os_image = OsImage::mock(MockOsImage {
-            source: Url::parse(OSIMAGE_DUMMY_SOURCE).unwrap(),
-            os_arch: SystemArchitecture::X86,
-            os_release: OsRelease::default(),
-            images: mock_entries_os_image
-                .clone()
-                .map(|(path, fs_type)| MockImage {
-                    mount_point: PathBuf::from(path),
-                    fs_type: serde_json::from_str(&format!("\"{}\"", fs_type)).unwrap(),
-                    fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
-                    part_type: DiscoverablePartitionType::LinuxGeneric,
-                    verity: None,
-                })
-                .collect(),
-        });
+        let img_entries = [
+            ("/mnt/path/A", OsImageFileSystemType::Ext4),
+            ("/mnt/path/B", OsImageFileSystemType::Ext4),
+            ("/mnt/unused/C", OsImageFileSystemType::Ext4),
+        ];
 
-        let mock_entries_hc = [
-            ("/image/path/A", FileSystemType::Ext4),
-            ("/image/path/B", FileSystemType::Ext4),
-        ]
-        .into_iter();
-
-        // Generate Engine Context and Host Configuration
-        let host_config = generate_test_host_config(mock_entries_hc);
+        // Generate HC from mock entries
+        let ctx = generate_test_context(hc_entries.iter(), img_entries.iter());
+        let img = ctx.image.as_ref().unwrap();
 
         // Test that validation does not pass
-        let validation_err = validate_filesystems(&os_image, &host_config).unwrap_err();
+        let validation_err = validate_filesystems(img, &ctx).unwrap_err();
         assert_eq!(
             validation_err.kind(),
             &ErrorKind::InvalidInput(InvalidInputError::UnusedOsImageFilesystem {
-                mount_point: "/unused/image/C".to_string(),
+                mount_point: "/mnt/unused/C".to_string(),
                 fs_type: "ext4".to_string()
             }),
             "Expected UnusedOsImageFilesystem error"
@@ -716,43 +843,28 @@ mod tests {
     /// the Host Configuration
     #[test]
     fn test_validate_host_config_failure_mismatch() {
-        let mock_entries_os_image =
-            [("/image/path/A", "ext4"), ("/image/path/B", "ext4")].into_iter();
+        let hc_entries = [
+            ("/mnt/path/A", FileSystemType::Ext4),
+            ("/mnt/path/B", FileSystemType::Xfs),
+        ];
 
-        // Generate mock OS image
-        let os_image = OsImage::mock(MockOsImage {
-            source: Url::parse(OSIMAGE_DUMMY_SOURCE).unwrap(),
-            os_arch: SystemArchitecture::X86,
-            os_release: OsRelease::default(),
-            images: mock_entries_os_image
-                .clone()
-                .map(|(path, fs_type)| MockImage {
-                    mount_point: PathBuf::from(path),
-                    fs_type: serde_json::from_str(&format!("\"{}\"", fs_type)).unwrap(),
-                    fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
-                    part_type: DiscoverablePartitionType::LinuxGeneric,
-                    verity: None,
-                })
-                .collect(),
-        });
+        let img_entries = [
+            ("/mnt/path/A", OsImageFileSystemType::Ext4),
+            ("/mnt/path/B", OsImageFileSystemType::Vfat),
+        ];
 
-        let mock_entries_hc = [
-            ("/image/path/A", FileSystemType::Ext4),
-            ("/image/path/B", FileSystemType::Vfat),
-        ]
-        .into_iter();
-
-        // Generate Engine Context and Host Configuration
-        let host_config = generate_test_host_config(mock_entries_hc);
+        // Generate HC from mock entries
+        let ctx = generate_test_context(hc_entries.iter(), img_entries.iter());
+        let img = ctx.image.as_ref().unwrap();
 
         // Test that validation does not pass
-        let validation_err = validate_filesystems(&os_image, &host_config).unwrap_err();
+        let validation_err = validate_filesystems(img, &ctx).unwrap_err();
         assert_eq!(
             validation_err.kind(),
             &ErrorKind::InvalidInput(InvalidInputError::MismatchedFsType {
-                mount_point: "/image/path/B".to_string(),
-                hc_fs_type: "vfat".to_string(),
-                os_img_fs_type: "ext4".to_string()
+                mount_point: "/mnt/path/B".to_string(),
+                hc_fs_type: "xfs".to_string(),
+                os_img_fs_type: "vfat".to_string()
             }),
             "Expected MismatchedFsType error"
         )
@@ -762,46 +874,93 @@ mod tests {
     /// the OS image
     #[test]
     fn test_validate_host_config_failure_missing() {
-        let mock_entries_os_image =
-            [("/image/path/A", "ext4"), ("/image/path/B", "ext4")].into_iter();
+        let hc_entries = [
+            ("/mnt/path/A", FileSystemType::Ext4),
+            ("/mnt/path/B", FileSystemType::Ext4),
+            ("/mnt/path/C", FileSystemType::Ext4),
+        ];
 
-        // Generate mock OS image
-        let os_image = OsImage::mock(MockOsImage {
-            source: Url::parse(OSIMAGE_DUMMY_SOURCE).unwrap(),
-            os_arch: SystemArchitecture::X86,
-            os_release: OsRelease::default(),
-            images: mock_entries_os_image
-                .clone()
-                .map(|(path, fs_type)| MockImage {
-                    mount_point: PathBuf::from(path),
-                    fs_type: serde_json::from_str(&format!("\"{}\"", fs_type)).unwrap(),
-                    fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
-                    part_type: DiscoverablePartitionType::LinuxGeneric,
-                    verity: None,
-                })
-                .collect(),
-        });
+        let img_entries = [
+            ("/mnt/path/A", OsImageFileSystemType::Ext4),
+            ("/mnt/path/B", OsImageFileSystemType::Ext4),
+        ];
 
-        let mock_entries_hc = [
-            ("/image/path/A", FileSystemType::Ext4),
-            ("/image/path/B", FileSystemType::Ext4),
-            ("/image/path/C", FileSystemType::Ext4),
-        ]
-        .into_iter();
-
-        // Generate Engine Context and Host Configuration
-        let host_config = generate_test_host_config(mock_entries_hc);
+        // Generate HC from mock entries
+        let ctx = generate_test_context(hc_entries.iter(), img_entries.iter());
+        let img = ctx.image.as_ref().unwrap();
 
         // Test that validation does not pass
-        let validation_err = validate_filesystems(&os_image, &host_config).unwrap_err();
+        let validation_err = validate_filesystems(img, &ctx).unwrap_err();
         assert_eq!(
             validation_err.kind(),
             &ErrorKind::InvalidInput(InvalidInputError::MissingOsImageFilesystem {
-                mount_point: "/image/path/C".to_string(),
+                mount_point: "/mnt/path/C".to_string(),
                 fs_type: "ext4".to_string()
             }),
             "Expected MissingOsImageFilesystem error"
         )
+    }
+
+    #[test]
+    fn test_validate_host_config_abupdate() {
+        let hc_entries = [
+            // These are on ab volumes, therefore expected to exist in the image.
+            ("/mnt/path/A", FileSystemType::Ext4, true),
+            ("/mnt/path/B", FileSystemType::Ext4, true),
+            // These are NOT on ab volumes, therefore not expected to exist in the image.
+            ("/mnt/path/C", FileSystemType::Ext4, false),
+            ("/mnt/path/D", FileSystemType::Ext4, false),
+            ("/mnt/path/E", FileSystemType::Ext4, false),
+        ];
+
+        let img_entries = [
+            ("/mnt/path/A", OsImageFileSystemType::Ext4),
+            ("/mnt/path/B", OsImageFileSystemType::Ext4),
+            // This one is not required, but its presence should be ok.
+            ("/mnt/path/C", OsImageFileSystemType::Ext4),
+        ];
+
+        // Generate HC from mock entries
+        let ctx = generate_test_context_ab_update(hc_entries.iter(), img_entries.iter());
+        let img = ctx.image.as_ref().unwrap();
+
+        // Test that validation passes
+        validate_filesystems(img, &ctx).unwrap();
+    }
+
+    #[test]
+    fn test_validate_host_config_abupdate_failure_unused() {
+        let hc_entries = [
+            // These are on ab volumes, therefore expected to exist in the image.
+            ("/mnt/path/A", FileSystemType::Ext4, true),
+            ("/mnt/path/B", FileSystemType::Ext4, true),
+            // These are NOT on ab volumes, therefore not expected to exist in the image.
+            ("/mnt/path/C", FileSystemType::Ext4, false),
+            ("/mnt/path/D", FileSystemType::Ext4, false),
+            ("/mnt/path/E", FileSystemType::Ext4, false),
+        ];
+
+        let img_entries = [
+            ("/mnt/path/A", OsImageFileSystemType::Ext4),
+            ("/mnt/path/B", OsImageFileSystemType::Ext4),
+            // This one should still cause a failure!
+            ("/mnt/unused/C", OsImageFileSystemType::Ext4),
+        ];
+
+        // Generate HC from mock entries
+        let ctx = generate_test_context_ab_update(hc_entries.iter(), img_entries.iter());
+        let img = ctx.image.as_ref().unwrap();
+
+        // Test that validation does not pass
+        let validation_err = validate_filesystems(img, &ctx).unwrap_err();
+        assert_eq!(
+            validation_err.kind(),
+            &ErrorKind::InvalidInput(InvalidInputError::UnusedOsImageFilesystem {
+                mount_point: "/mnt/unused/C".to_string(),
+                fs_type: "ext4".to_string()
+            }),
+            "Expected UnusedOsImageFilesystem error"
+        );
     }
 
     #[test]

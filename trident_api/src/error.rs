@@ -86,10 +86,11 @@ pub enum InternalError {
     #[error("Failed to get the ESP partition information")]
     GetEspDeviceInfo,
 
-    #[error(
-        "Failed to find mount point in Host Configuration for filesystems sourced from an OS image"
-    )]
-    GetMountPointForOsImage,
+    #[error("Failed to find mount point for filesystem [{0}] sourced from an OS image")]
+    GetMountPointForFilesystemFromImage(String),
+
+    #[error("Failed to find deviceId for filesystem [{0}] sourced from an OS image")]
+    GetDeviceIdForFilesystemFromImage(String),
 
     #[error("Failed to get root block device path")]
     GetRootBlockDevicePath,
@@ -144,7 +145,10 @@ pub enum InvalidInputError {
     #[error("Image is corrupt: multiple partitions have be assigned the same FS UUID: {uuid}")]
     DuplicateFsUuid { uuid: String },
 
-    #[error("A/B volume pair {pair_id} contains duplicate FS UUID: {uuid}. A/B update must not reuse the already installed image.")]
+    #[error(
+        "A/B volume pair {pair_id} contains duplicate FS UUID: {uuid}. A/B update must not reuse \
+        the already installed image."
+    )]
     DuplicateFsUuidAbUpdate { pair_id: String, uuid: String },
 
     #[error("Failed to get a unique Host Configuration source from local Trident config")]
@@ -193,7 +197,10 @@ pub enum InvalidInputError {
     #[error("An OS image must be provided.")]
     MissingOsImage,
 
-    #[error("Filesystem at '{mount_point}' of type '{fs_type}' in Host Configuration could not be found in the OS image")]
+    #[error(
+        "Filesystem at '{mount_point}' of type '{fs_type}' in Host Configuration could not be \
+        found in the OS image"
+    )]
     MissingOsImageFilesystem {
         mount_point: String,
         fs_type: String,
@@ -226,13 +233,20 @@ pub enum InvalidInputError {
     #[error("Found verity hash on ESP image. ESP filesystem should never have verity enabled.")]
     UnexpectedVerityOnEsp,
 
-    #[error("Unsupported filesystem type for filesystem mounted at '{mount_point}': {fs_type}. Filesystem mounted at '{mount_point}' must be of type Ext4.")]
+    #[error(
+        "Unsupported filesystem type for filesystem mounted at '{mount_point}': {fs_type}. \
+        Filesystem mounted at '{mount_point}' must be of type Ext4."
+    )]
     UnsupportedBootFileSystemType {
         mount_point: String,
         fs_type: String,
     },
 
-    #[error("Filesystem at '{mount_point}' of type '{fs_type}' in OS Image is not being used by the provided Host Configuration")]
+    #[error(
+        "Filesystem at '{mount_point}' of type '{fs_type}' in OS Image is not being used by the \
+        provided Host Configuration. This could mean that the Host COnfiguration is missing a \
+        filesystem definition."
+    )]
     UnusedOsImageFilesystem {
         mount_point: String,
         fs_type: String,
@@ -248,7 +262,10 @@ pub enum InvalidInputError {
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum ServicingError {
-    #[error("A/B update failed as host booted from '{root_device_path}' instead of the expected device '{expected_device_path}")]
+    #[error(
+        "A/B update failed as host booted from '{root_device_path}' instead of the expected device \
+        '{expected_device_path}"
+    )]
     AbUpdateRebootCheck {
         root_device_path: String,
         expected_device_path: String,
@@ -269,7 +286,10 @@ pub enum ServicingError {
     #[error("Failed to unmount special directory for chroot")]
     ChrootUnmountSpecialDir,
 
-    #[error("Clean install failed as host booted from '{root_device_path}' instead of the expected device '{expected_device_path}")]
+    #[error(
+        "Clean install failed as host booted from '{root_device_path}' instead of the expected \
+        device '{expected_device_path}"
+    )]
     CleanInstallRebootCheck {
         root_device_path: String,
         expected_device_path: String,
@@ -350,7 +370,10 @@ pub enum ServicingError {
     #[error("Failed to deploy images")]
     DeployImages,
 
-    #[error("Failed to encrypt and open block device '{device_path}' with id '{device_id}' as '{encrypted_volume_device_name}' for encrypted volume '{encrypted_volume}'")]
+    #[error(
+        "Failed to encrypt and open block device '{device_path}' with id '{device_id}' as \
+        '{encrypted_volume_device_name}' for encrypted volume '{encrypted_volume}'"
+    )]
     EncryptBlockDevice {
         device_path: String,
         device_id: String,
@@ -364,7 +387,10 @@ pub enum ServicingError {
     #[error("Failed to exit chroot")]
     ExitChroot,
 
-    #[error("Failed to find underlying block device with id '{device_id}' for encrypted volume '{encrypted_volume}'")]
+    #[error(
+        "Failed to find underlying block device with id '{device_id}' for encrypted volume \
+        '{encrypted_volume}'"
+    )]
     FindEncryptedVolumeBlockDevice {
         device_id: String,
         encrypted_volume: String,
