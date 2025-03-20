@@ -7,10 +7,11 @@ use anyhow::{bail, ensure, Context, Error};
 use log::{debug, info, trace, warn};
 
 use osutils::{e2fsck, hashing_reader::HashingReader384, image_streamer, lsblk, resize2fs};
-use trident_api::{config::FileSystemSource, status::ServicingType, BlockDeviceId};
+use trident_api::{error::TridentResultExt, status::ServicingType, BlockDeviceId};
 
 use crate::{
-    engine::context::filesystem::FileSystemData, engine::EngineContext, osimage::OsImageFile,
+    engine::{context::filesystem::FileSystemDataImage, EngineContext},
+    osimage::OsImageFile,
 };
 
 /// Deploys all the filesystem images sourced from the OS Image to the
@@ -109,16 +110,19 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), Error> {
 /// returned.
 fn filesystems_from_image(
     ctx: &EngineContext,
-) -> Result<Vec<(BlockDeviceId, PathBuf, FileSystemData<'_>)>, Error> {
+) -> Result<Vec<(BlockDeviceId, PathBuf, FileSystemDataImage<'_>)>, Error> {
     let mut fs_list = Vec::new();
 
-    for filesystem in ctx.filesystems() {
-        if filesystem.source != FileSystemSource::Image {
+    for filesystem in ctx
+        .filesystems()
+        .unstructured("Failed to get iterator of filesystems from context")?
+    {
+        let Some(img_fs) = filesystem.clone().inner_image() else {
             // Skip everything that is not sourced from the OS image.
             continue;
-        }
+        };
 
-        if filesystem.is_esp() {
+        if img_fs.is_esp() {
             debug!(
                 "Skipping deployment of filesystem [{}] sourced from OS Image, as it is the ESP.",
                 filesystem.description()
@@ -126,19 +130,9 @@ fn filesystems_from_image(
             continue;
         }
 
-        let device_id = filesystem.device_id.with_context(|| {
-                format!(
-                    "Filesystem [{}] is sourced from an OS Image, but does not reference a block device.",
-                    filesystem.description()
-                )
-            })?;
+        let device_id = img_fs.device_id;
 
-        let mount_point_path = filesystem.mount_point_path().with_context(|| {
-            format!(
-                "Filesystem [{}] is sourced from an OS Image, but does not have a mount point.",
-                filesystem.description(),
-            )
-        })?;
+        let mount_point_path = img_fs.mount_point_path();
 
         // If we're executing A/B update, Trident will only re-deploy images onto the A/B
         // volume pairs
@@ -155,11 +149,7 @@ fn filesystems_from_image(
             continue;
         }
 
-        fs_list.push((
-            device_id.clone(),
-            mount_point_path.to_path_buf(),
-            filesystem,
-        ));
+        fs_list.push((device_id.clone(), mount_point_path.to_path_buf(), img_fs));
     }
 
     Ok(fs_list)

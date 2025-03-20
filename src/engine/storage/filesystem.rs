@@ -6,13 +6,10 @@ use rayon::prelude::*;
 
 use osutils::{filesystems::MkfsFileSystemType, mkfs, mkswap};
 use trident_api::{
-    config::{FileSystemSource, FileSystemType},
-    constants::ESP_MOUNT_POINT_PATH,
-    status::ServicingType,
-    BlockDeviceId,
+    config::FileSystemType, error::TridentResultExt, status::ServicingType, BlockDeviceId,
 };
 
-use crate::engine::EngineContext;
+use crate::engine::{context::filesystem::FileSystemData, EngineContext};
 
 /// Creates clean filesystems on top of block devices that are not to be initialized with images,
 /// i.e. have the file system source 'Create'. The function also re-formats any inactive/update A/B
@@ -38,7 +35,7 @@ pub(super) fn create_filesystems(ctx: &EngineContext) -> Result<(), Error> {
 /// to have clean filesystems created on them.
 fn block_devices_needing_fs_creation(
     ctx: &EngineContext,
-) -> Result<Vec<(&BlockDeviceId, PathBuf, FileSystemType)>, Error> {
+) -> Result<Vec<(BlockDeviceId, PathBuf, FileSystemType)>, Error> {
     debug!("Determining block devices needing filesystem creation");
     // Fetch the IDs of A/B volume pairs for filtering.
     let ab_volume_pair_ids = ctx.spec.storage.get_ab_volume_pair_ids();
@@ -47,35 +44,31 @@ fn block_devices_needing_fs_creation(
     // a list of block device IDs and filesystem types.
     let mut block_devices = Vec::new();
 
-    for fs in ctx.filesystems() {
-        // Filter to only filesystems with a block deviceid.
-        let Some(device_id) = fs.device_id.as_ref() else {
-            continue;
-        };
-
-        // Filter out any filesystem targeting an adopted partition.
-        if ctx.spec.storage.is_adopted_partition(device_id) {
-            continue;
-        }
-
+    for fs in ctx
+        .filesystems()
+        .unstructured("Failed to get iterator of filesystems from context")?
+    {
         // Filter to the filesystems matching any of the specified criteria:
-        if !match (&fs.source, ctx.servicing_type) {
+        let device_id = match &fs {
             // The filesystem source is 'New'.
-            (FileSystemSource::New, _) => true,
+            FileSystemData::New(nfs) => nfs.device_id,
 
-            // The filesystem source is `OsImage` AND servicing type is
+            // The filesystem is type 'Swap'
+            FileSystemData::Swap(sfs) => sfs.device_id,
+
+            // The filesystem source is `Image` AND servicing type is
             // CleanInstall AND the mount point is the ESP location.
-            (FileSystemSource::Image, ServicingType::CleanInstall) => fs
-                .mount_point
-                .as_ref()
-                .is_some_and(|mp| mp.path == Path::new(ESP_MOUNT_POINT_PATH)),
+            FileSystemData::Image(ifs)
+                if ctx.servicing_type == ServicingType::CleanInstall && fs.is_esp() =>
+            {
+                ifs.device_id
+            }
 
-            // Otherwise, ignore the filesystem
-            _ => false,
-        } {
-            // No criteria matched, skip this filesystem.
-            continue;
-        }
+            // Otherwise, ignore and skip the filesystem.
+            // Filter out all 'Adopted' filesystems, tmpfs and overlay
+            // filesystems, and any non-ESP filesystems on an image.
+            _ => continue,
+        };
 
         // Get the block device info for the device_id
         let bd_path = ctx.get_block_device_path(device_id).with_context(|| {
@@ -117,7 +110,7 @@ fn block_devices_needing_fs_creation(
             continue;
         };
 
-        block_devices.push((effective_device_id, bd_path, fs.fs_type));
+        block_devices.push((effective_device_id.clone(), bd_path, fs.fs_type()));
     }
 
     debug!(
@@ -257,12 +250,12 @@ mod tests {
         let block_devices = block_devices_needing_fs_creation(&ctx_clean_install).unwrap();
         assert_eq!(block_devices.len(), 2);
         assert!(block_devices.contains(&(
-            &"esp".into(),
+            "esp".into(),
             PathBuf::from("/dev/disk/by-partlabel/osp1"),
             FileSystemType::Vfat
         )));
         assert!(block_devices.contains(&(
-            &"trident".into(),
+            "trident".into(),
             PathBuf::from("/dev/disk/by-partlabel/osp4"),
             FileSystemType::Ext4
         )));
@@ -369,7 +362,7 @@ mod tests {
         let block_devices = block_devices_needing_fs_creation(&ctx_ab_update).unwrap();
         assert_eq!(block_devices.len(), 1);
         assert!(block_devices.contains(&(
-            &"root-b".into(),
+            "root-b".into(),
             PathBuf::from("/dev/disk/by-partlabel/osp3"),
             FileSystemType::Ext4
         )));
