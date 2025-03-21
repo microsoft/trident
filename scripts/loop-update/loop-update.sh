@@ -146,7 +146,7 @@ for i in $(seq 1 $RETRY_COUNT); do
     # Masking errors as we want to report the specific failure if it happens
     set +e
 
-    sshCommand "sudo trident run $LOGGING -c $UPDATE_CONFIG --allowed-operations stage"
+    sshCommand "sudo trident update $LOGGING $UPDATE_CONFIG --allowed-operations stage"
     STAGE_RESULT=$?
 
     if [ "$OUTPUT" != "" ]; then
@@ -164,7 +164,7 @@ for i in $(seq 1 $RETRY_COUNT); do
     # Masking errors as the VM will be rebooting
     set +e
 
-    sshCommand "sudo trident run $LOGGING -c $UPDATE_CONFIG --allowed-operations finalize"
+    sshCommand "sudo trident update $LOGGING $UPDATE_CONFIG --allowed-operations finalize"
 
     LOGGING=""
     if [ $VERBOSE == True ]; then

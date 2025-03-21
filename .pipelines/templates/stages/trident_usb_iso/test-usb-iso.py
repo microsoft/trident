@@ -132,7 +132,7 @@ def validate_trident_usb_iso(vm_name: str, output_log_file: str):
 
         print(f"Start OS installation")
         # Open a serial console connection
-        send_command_to_vm(vm_name, "trident run", log_file_stream, output_log_file)
+        send_command_to_vm(vm_name, "trident install", log_file_stream, output_log_file)
 
         print(f"Wait while new OS is installing.")
         watch_for_usb_iso_login(

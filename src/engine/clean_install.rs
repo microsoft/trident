@@ -11,7 +11,7 @@ use tokio::sync::mpsc;
 
 use osutils::{chroot, container, mount, mountpoint, path::join_relative};
 use trident_api::{
-    config::HostConfiguration,
+    config::{HostConfiguration, Operations},
     constants::{
         internal_params::NO_TRANSITION, ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH,
         UPDATE_ROOT_PATH,
@@ -23,29 +23,24 @@ use trident_api::{
     status::{AbVolumeSelection, HostStatus, ServicingState, ServicingType},
 };
 
-#[cfg(feature = "grpc-dangerous")]
-use crate::grpc;
 use crate::{
     datastore::DataStore,
     engine::{self, boot::esp, bootentries, osimage, storage, EngineContext, SUBSYSTEMS},
     subsystems::hooks::HooksSubsystem,
-    HostUpdateCommand, SAFETY_OVERRIDE_CHECK_PATH,
+    SAFETY_OVERRIDE_CHECK_PATH,
 };
+#[cfg(feature = "grpc-dangerous")]
+use crate::{grpc, GrpcSender};
 
 use super::{NewrootMount, Subsystem};
 
 #[tracing::instrument(skip_all)]
 pub(crate) fn clean_install(
-    command: HostUpdateCommand,
+    host_config: &HostConfiguration,
     state: &mut DataStore,
+    allowed_operations: &Operations,
+    #[cfg(feature = "grpc-dangerous")] sender: &mut Option<GrpcSender>,
 ) -> Result<(), TridentError> {
-    let HostUpdateCommand {
-        ref host_config,
-        allowed_operations,
-        #[cfg(feature = "grpc-dangerous")]
-        mut sender,
-    } = command;
-
     info!("Starting clean install");
     tracing::info!(metric_name = "clean_install_start", value = true);
     let clean_install_start_time = Instant::now();
@@ -66,7 +61,7 @@ pub(crate) fn clean_install(
     // This is a safety check so that nobody accidentally formats their dev
     // machine.
     debug!("Performing safety check for clean install");
-    clean_install_safety_check(&command.host_config)?;
+    clean_install_safety_check(host_config)?;
     info!("Safety check passed");
 
     let mut subsystems = SUBSYSTEMS.lock().unwrap();
@@ -77,7 +72,7 @@ pub(crate) fn clean_install(
         state,
         host_config,
         #[cfg(feature = "grpc-dangerous")]
-        &mut sender,
+        sender,
     )?;
 
     if !allowed_operations.has_finalize() {
@@ -100,7 +95,7 @@ pub(crate) fn clean_install(
             Some(root_mount),
             Some(clean_install_start_time),
             #[cfg(feature = "grpc-dangerous")]
-            &mut sender,
+            sender,
         )?;
     }
 
@@ -261,9 +256,7 @@ pub(crate) fn finalize_clean_install(
     state: &mut DataStore,
     new_root: Option<NewrootMount>,
     clean_install_start_time: Option<Instant>,
-    #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
-        mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
-    >,
+    #[cfg(feature = "grpc-dangerous")] sender: &mut Option<GrpcSender>,
 ) -> Result<(), TridentError> {
     info!("Finalizing clean install");
 

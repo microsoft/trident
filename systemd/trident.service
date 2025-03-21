@@ -1,9 +1,9 @@
 [Unit]
 Description=Trident Agent
-After=network.target network-online.target systemd-udev-settle.service trident-network.service
+After=network.target network-online.target systemd-udev-settle.service
 
 [Service]
-ExecStart=/usr/bin/trident run --verbosity INFO
+ExecStart=trident commit --verbosity DEBUG
 Type=oneshot
 
 [Install]

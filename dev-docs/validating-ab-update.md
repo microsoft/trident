@@ -3,8 +3,8 @@
 The purpose of this document is to provide clear guidelines for developers on
 how to manually validate the A/B update flow with Trident.
 
-- [Manual A/B update validation steps](#manual-ab-update-validation-steps)
-  - [Validation Steps](#validation-steps)
+- [Manual A/B Update Validation Steps](#manual-ab-update-validation-steps)
+  - [Validation steps](#validation-steps)
   - [Staging and Finalizing A/B Update](#staging-and-finalizing-ab-update)
 
 ## Validation steps
@@ -154,7 +154,7 @@ how to manually validate the A/B update flow with Trident.
    # Copy the updated HC from input/trident-update.yaml here
 
    # Re-run Trident
-   sudo /usr/bin/trident run -v trace -c trident-update.yaml
+   sudo /usr/bin/trident update -v trace trident-update.yaml
    ```
 
 9. Confirm that the VM simulating a BM host reboots into the new runtime OS

@@ -6,7 +6,6 @@ use std::{
 use engine::{bootentries, EngineContext};
 use log::{debug, error, info, warn};
 use nix::unistd::Uid;
-use tokio::sync::mpsc::{self};
 
 use osutils::{block_devices, container, dependencies::Dependency};
 use trident_api::{
@@ -24,6 +23,9 @@ use trident_api::{
     status::ServicingState,
 };
 
+#[cfg(feature = "grpc-dangerous")]
+use grpc::GrpcSender;
+
 #[cfg(feature = "setsail")]
 use setsail::KsTranslator;
 
@@ -40,10 +42,10 @@ pub mod validation;
 #[cfg(feature = "grpc-dangerous")]
 mod grpc;
 
-use datastore::DataStore;
 use engine::{rollback, storage::rebuild};
 use harpoon_hc::HostConfigUpdate;
 
+pub use datastore::DataStore;
 pub use engine::provisioning_network;
 pub use logging::{
     background_log::BackgroundLog, logstream::Logstream, multilog::MultiLogger,
@@ -77,18 +79,6 @@ pub const TRIDENT_METRICS_FILE_PATH: &str = "/var/log/trident-metrics.jsonl";
 /// override, user can create this file on the host.
 const SAFETY_OVERRIDE_CHECK_PATH: &str = "/override-trident-safety-check";
 
-/// A command to update the Host Configuration.
-///
-/// This struct is used to communicate between the gRPC server and the main Trident thread. It
-/// includes information on the command to execute, as well as a tokio Sender which the main thread
-/// can use to stream status updates back to the gRPC client.
-struct HostUpdateCommand {
-    allowed_operations: Operations,
-    host_config: HostConfiguration,
-    #[cfg(feature = "grpc-dangerous")]
-    sender: Option<mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>>,
-}
-
 #[derive(clap::ValueEnum, Copy, Clone, Debug, Eq, PartialEq)]
 pub enum GetKind {
     Configuration,
@@ -99,9 +89,11 @@ pub enum GetKind {
 pub struct Trident {
     host_config: Option<HostConfiguration>,
     orchestrator: Option<OrchestratorConnection>,
+
+    #[cfg_attr(not(feature = "grpc-dangerous"), allow(unused))]
     grpc: Option<GrpcConfiguration>,
 
-    #[allow(unused)]
+    #[cfg_attr(not(feature = "grpc-dangerous"), allow(unused))]
     server_runtime: Option<tokio::runtime::Runtime>,
 }
 
@@ -179,6 +171,17 @@ impl Trident {
             tracestream
                 .set_server(trace_url)
                 .structured(InitializationError::ConnectToTracestream)?;
+        }
+
+        info!("Running Trident version: {}", TRIDENT_VERSION);
+        if container::is_running_in_container().message("Running in container check failed")? {
+            info!("Running Trident in a container");
+        }
+
+        if !Uid::effective().is_root() {
+            return Err(TridentError::new(
+                ExecutionEnvironmentMisconfigurationError::CheckRootPrivileges,
+            ));
         }
 
         Ok(Self {
@@ -264,131 +267,116 @@ impl Trident {
         Ok(())
     }
 
-    pub fn run(
-        &mut self,
-        datastore_path: &Path,
-        allowed_operations: Operations,
-    ) -> Result<(), TridentError> {
-        info!("Running Trident version: {}", TRIDENT_VERSION);
+    /// Listen for incoming commands from an orchestrator, and execute the first one.
+    pub fn listen(&mut self, datastore: &mut DataStore) -> Result<(), TridentError> {
+        // ONLY IF:
+        // - Harpoon support is enabled+configured AND
+        // - The host is provisioned
+        //
+        // Then query Harpoon for an updated HC.
+        harpoon_hc::try_on_harpoon_enabled(
+            &datastore.host_status().spec.clone(),
+            |harpoon_config| -> Result<(), TridentError> {
+                // We only check if the system is provisioned.
+                if datastore.host_status().servicing_state != ServicingState::Provisioned {
+                    return Ok(());
+                }
 
-        if container::is_running_in_container().unwrap_or(false) {
-            info!("Running Trident in a container");
-        }
-
-        if !Uid::effective().is_root() {
-            return Err(TridentError::new(
-                ExecutionEnvironmentMisconfigurationError::CheckRootPrivileges,
-            ));
-        }
-
-        // Open the datastore.
-        let mut datastore =
-            DataStore::open_or_create(datastore_path).message("Failed to open datastore")?;
-
-        // This creates a channel to send commands to the main trident thread. It lets us use the
-        // same logic for processing an initial provision command contained within the trident local
-        // config as for processing commands received from the gRPC endpoint.
-        let (sender, receiver) = tokio::sync::mpsc::channel(1);
-
-        // If we have a local Host Configuration source, load it and dispatch it as the first
-        // command.
-        if let Some(local_host_config) = self.host_config.clone() {
-            debug!("Applying Host Configuration from local config");
-            debug!("Allowed operations: {:?}", allowed_operations);
-            sender
-                .blocking_send(HostUpdateCommand {
-                    allowed_operations,
-                    host_config: local_host_config,
-                    #[cfg(feature = "grpc-dangerous")]
-                    sender: None,
-                })
-                .structured(InternalError::EnqueueHostUpdateCommand)?;
-        } else {
-            // Otherwise, ONLY IF:
-            // - Harpoon support is enabled+configured AND
-            // - The host is provisioned
-            //
-            // Then query Harpoon for an updated HC.
-            harpoon_hc::try_on_harpoon_enabled(
-                &datastore.host_status().spec,
-                |harpoon_config| -> Result<(), TridentError> {
-                    // We only check if the system is provisioned.
-                    if datastore.host_status().servicing_state != ServicingState::Provisioned {
-                        return Ok(());
-                    }
-
-                    info!(
+                info!(
                         "Querying server for updated Host Configuration. URL: {}, App ID: {}, Track: {}, Document Version: {}",
                         harpoon_config.url, harpoon_config.app_id, harpoon_config.track, harpoon_config.document_version
                     );
 
-                    // Call into harpoon module to get an updated HC.
-                    match harpoon_hc::query_and_fetch_host_config(harpoon_config)? {
-                        HostConfigUpdate::Updated {
-                            host_config,
-                            version,
-                        } => {
-                            info!("Server replied with new Host configuration v{version}, applying...");
-                            sender
-                                .blocking_send(HostUpdateCommand {
-                                    allowed_operations,
-                                    host_config: *host_config,
-                                    #[cfg(feature = "grpc-dangerous")]
-                                    sender: None,
-                                })
-                                .structured(InternalError::EnqueueHostUpdateCommand)?;
-                        }
-                        HostConfigUpdate::NoUpdate => {
-                            warn!("No update available. No action will be taken.");
-                        }
+                // Call into harpoon module to get an updated HC.
+                match harpoon_hc::query_and_fetch_host_config(harpoon_config)? {
+                    HostConfigUpdate::Updated {
+                        host_config,
+                        version,
+                    } => {
+                        info!("Server replied with new Host configuration v{version}, applying...");
+                        self.host_config = Some(*host_config);
+                        self.update(
+                            datastore,
+                            Operations::all(),
+                            #[cfg(feature = "grpc-dangerous")]
+                            &mut None,
+                        )?;
                     }
+                    HostConfigUpdate::NoUpdate => {
+                        warn!("No update available. No action will be taken.");
+                    }
+                }
 
-                    Ok(())
-                },
-            )?;
-        }
+                Ok(())
+            },
+        )?;
 
-        if !cfg!(feature = "grpc-dangerous") || self.grpc.is_none() {
-            // If no gRPC connection details were provided, drop the sender side of the channel.
-            // This causes the loop below will exit immediately after processing the initial command
-            // that was enqueued above.
-            drop(sender);
-        } else if let Some(_grpc) = &self.grpc {
-            #[cfg(feature = "grpc-dangerous")]
-            {
-                self.server_runtime = Some(grpc::start(_grpc, self.orchestrator.as_ref(), sender)?);
+        #[cfg(feature = "grpc-dangerous")]
+        if let Some(grpc) = &self.grpc {
+            let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
+            self.server_runtime = Some(grpc::start(grpc, self.orchestrator.as_ref(), sender)?);
+
+            if let Some((host_config, allowed_operations, sender)) = receiver.blocking_recv() {
+                self.host_config = Some(host_config);
+                self.update(datastore, allowed_operations, &mut Some(sender))?;
             }
         }
 
-        if let Err(e) = self.handle_commands(receiver, &mut datastore) {
+        Ok(())
+    }
+
+    fn execute_and_record_error<F>(
+        &mut self,
+        datastore: &mut DataStore,
+        f: F,
+    ) -> Result<(), TridentError>
+    where
+        F: FnOnce(&mut DataStore) -> Result<(), TridentError>,
+    {
+        datastore.with_host_status(|host_status| {
+            if let Some(e) = host_status.last_error.take() {
+                warn!("Previously encountered error: {e:?}");
+                info!("Clearing last error");
+            }
+        })?;
+
+        if let Err(e) = f(datastore) {
+            // Record error in datastore.
             let error = serde_yaml::to_value(&e).structured(InternalError::SerializeError)?;
             if let Err(e2) = datastore.with_host_status(|status| status.last_error = Some(error)) {
                 error!("Failed to record error in datastore: {e2:?}");
             }
 
-            return Err(e);
-        }
+            // Report error via phonehome.
+            if let Some(ref orchestrator) = self.orchestrator {
+                orchestrator.report_error(
+                    format!("{e:?}"),
+                    Some(
+                        serde_yaml::to_string(&datastore.host_status())
+                            .unwrap_or("Failed to serialize Host Status".into()),
+                    ),
+                );
+            }
 
-        if let Some(ref orchestrator) = self.orchestrator {
-            orchestrator.report_success(Some(
-                serde_yaml::to_string(&datastore.host_status())
-                    .unwrap_or("Failed to serialize Host Status".into()),
-            ))
+            // Report error to Harpoon if enabled.
+            harpoon_hc::on_harpoon_enabled_event(
+                &datastore.host_status().spec,
+                harpoon::EventType::Install,
+                harpoon::EventResult::Error,
+            );
+
+            // TODO: report gPRC error
+
+            return Err(e);
         }
         Ok(())
     }
 
     /// Rebuilds RAID devices on replaced disks on the host
-    pub fn rebuild_raid(&mut self, datastore_path: &Path) -> Result<(), TridentError> {
+    pub fn rebuild_raid(&mut self, datastore: &mut DataStore) -> Result<(), TridentError> {
         info!("Rebuilding RAID devices");
-        if !Uid::effective().is_root() {
-            return Err(TridentError::new(
-                ExecutionEnvironmentMisconfigurationError::CheckRootPrivileges,
-            ));
-        }
         let mut host_config = Default::default();
         let mut disks_to_rebuild = Vec::new();
-        let mut datastore = DataStore::open(datastore_path)?;
         let _ = datastore.with_host_status(|host_status| -> Result<(), TridentError> {
             host_config = self
                 .host_config
@@ -442,174 +430,40 @@ impl Trident {
         )
     }
 
-    fn handle_commands(
-        &mut self,
-        mut receiver: mpsc::Receiver<HostUpdateCommand>,
-        datastore: &mut DataStore,
-    ) -> Result<(), TridentError> {
-        debug!(
-            "Current servicing state: {:?}",
-            datastore.host_status().servicing_state
-        );
-
-        datastore.with_host_status(|host_status| {
-            if let Some(e) = host_status.last_error.take() {
-                warn!("Previously encountered error: {e:?}");
-                info!("Clearing last error");
-            }
-        })?;
-
-        // If host's servicing state is Finalized, need to validate that the firmware correctly
-        // booted from the updated runtime OS image.
-        if datastore.host_status().servicing_state == ServicingState::CleanInstallFinalized
-            || datastore.host_status().servicing_state == ServicingState::AbUpdateFinalized
-        {
-            let rollback_result = rollback::validate_boot(datastore).message(
-                "Failed to validate that firmware correctly booted from updated runtime OS image",
-            );
-
-            harpoon_hc::on_harpoon_enabled_event(
-                &datastore.host_status().spec,
-                harpoon::EventType::Update,
-                match rollback_result {
-                    Ok(_) => harpoon::EventResult::SuccessReboot,
-                    Err(_) => harpoon::EventResult::Error,
-                },
-            );
-
-            // Re"throw" the error if there was one.
-            rollback_result?;
-        }
-
-        // Process commands. Starting with the initial command indicated in the local config file
-        // (if any). Once that has been handled, subsequent commands are received from the gRPC
-        // endpoint.
-        while let Some(cmd) = receiver.blocking_recv() {
-            #[cfg(feature = "grpc-dangerous")]
-            let has_sender = cmd.sender.is_some();
-            #[cfg(not(feature = "grpc-dangerous"))]
-            let has_sender = false;
-
-            if let Err(e) = self.handle_command(datastore, cmd) {
-                if let Some(ref orchestrator) = self.orchestrator {
-                    orchestrator.report_error(
-                        format!("{e:?}"),
-                        Some(
-                            serde_yaml::to_string(&datastore.host_status())
-                                .unwrap_or("Failed to serialize Host Status".into()),
-                        ),
-                    );
-                }
-
-                // When harpoon is enabled, try to report an error to the server.
-                harpoon_hc::on_harpoon_enabled_event(
-                    &datastore.host_status().spec,
-                    harpoon::EventType::Install,
-                    harpoon::EventResult::Error,
-                );
-
-                if has_sender {
-                    // TODO: report the error back to the sender and then
-                    // possibly restart Trident
-                    error!("Failed to handle command: {e:?}");
-                } else {
-                    return Err(e);
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    fn handle_command(
+    pub fn install(
         &mut self,
         datastore: &mut DataStore,
-        mut cmd: HostUpdateCommand,
+        allowed_operations: Operations,
+        #[cfg(feature = "grpc-dangerous")] sender: &mut Option<GrpcSender>,
     ) -> Result<(), TridentError> {
-        // The storage section is optional for updates if COSI is in use.
-        if datastore.is_persistent()
-            && cmd.host_config.image.is_some()
-            && cmd.host_config.storage == Default::default()
-        {
-            debug!("Storage section not specified in Host Configuration, using current storage configuration");
-            cmd.host_config.storage = datastore.host_status().spec.storage.clone();
-        }
+        let mut host_config = self
+            .host_config
+            .clone()
+            .structured(InternalError::Internal(
+                "install called without host configuration set",
+            ))?;
 
-        cmd.host_config
-            .validate()
-            .map_err(Into::into)
-            .message("Invalid Host Configuration provided")?;
+        self.execute_and_record_error(datastore, |datastore| {
+            host_config
+                .validate()
+                .map_err(Into::into)
+                .message("Invalid Host Configuration provided")?;
 
-        // Populate internal fields in Host Configuration.
-        // This is needed because the external API and the internal logic use different fields.
-        // This call ensures that the internal fields are populated from the external fields.
-        cmd.host_config.populate_internal();
+            // Populate internal fields in Host Configuration.
+            // This is needed because the external API and the internal logic use different fields.
+            // This call ensures that the internal fields are populated from the external fields.
+            host_config.populate_internal();
 
-        // When running inside a container, we need access to various host
-        // paths. For now, check at least for presence of /host, which needs to
-        // point to host's /. This function will return an error if running in a
-        // container and /host is not mounted.
-        container::is_running_in_container().message("Running in container check failed")?;
-
-        // If Trident loads from a persistent datastore, firmware is booted from runtime OS
-        if datastore.is_persistent() {
-            // If HS.spec in the datastore is different from the new HC, need to both stage and
-            // finalize the update, regardless of state
-            if datastore.host_status().spec != cmd.host_config {
-                debug!("Host Configuration has been updated");
-                // If allowed operations include 'stage', start update
-                if cmd.allowed_operations.has_stage() {
-                    engine::update(cmd, datastore).message("Failed to execute an update")
-                } else {
-                    warn!("Host Configuration has been updated but allowed operations do not include 'stage'. Add 'stage' and re-run to stage the update");
-                    Ok(())
-                }
-            } else {
-                debug!("Host Configuration has not been updated");
-
-                match datastore.host_status().servicing_state {
-                    ServicingState::AbUpdateStaged => {
-                        // If an update has been previously staged, only need to finalize the update.
-                        debug!("There is an update staged on the host");
-                        if cmd.allowed_operations.has_finalize() {
-                            engine::finalize_update(
-                                datastore,
-                                ServicingType::AbUpdate,
-                                None,
-                                #[cfg(feature = "grpc-dangerous")]
-                                &mut cmd.sender,
-                            )
-                            .message("Failed to finalize update")
-                        } else {
-                            warn!("There is an update staged on the host, but allowed operations do not include 'finalize'. Add 'finalize' and re-run to finalize the update");
-                            Ok(())
-                        }
-                    }
-                    ServicingState::AbUpdateFinalized | ServicingState::Provisioned => {
-                        // Need to either re-execute the failed update OR inform the user that no update
-                        // is needed.
-                        engine::update(cmd, datastore).message("Failed to update host")
-                    }
-                    servicing_state => {
-                        Err(TridentError::new(InternalError::UnexpectedServicingState {
-                            state: servicing_state,
-                        }))
-                        .message("Failed to A/B update with same Host Configuration")
-                    }
-                }
+            if datastore.is_persistent() {
+                return Err(TridentError::new(InvalidInputError::CleanInstallOnProvisionedHost))
+                    .message("Persistent datastore found on host");
             }
-        } else {
-            // If datastore is temporary, firmware booted from prov OS, so can only do clean
-            // install.
-            //
-            // If HS.spec in the datastore is different from the new HC, need to both stage and
-            // finalize the clean install.
-            if datastore.host_status().spec != cmd.host_config {
+
+            if datastore.host_status().spec != host_config {
                 debug!("Host Configuration has been updated");
 
-                if cmd.allowed_operations.has_stage() {
-                    engine::clean_install(cmd, datastore)
-                        .message("Failed to execute a clean install")
+                if allowed_operations.has_stage() {
+                    engine::clean_install(&host_config, datastore, &allowed_operations, #[cfg(feature = "grpc-dangerous")] sender).message("Failed to execute a clean install")
                 } else {
                     warn!("Host Configuration has been updated but allowed operations do not include 'stage'. Add 'stage' and re-run to stage the clean install");
                     Ok(())
@@ -622,13 +476,13 @@ impl Trident {
                         // If a clean install has been staged on the host, only need to finalize the
                         // clean install, if requested.
                         debug!("There is a clean install staged on the host");
-                        if cmd.allowed_operations.has_finalize() {
+                        if allowed_operations.has_finalize() {
                             engine::finalize_clean_install(
                                 datastore,
                                 None,
                                 None,
                                 #[cfg(feature = "grpc-dangerous")]
-                                &mut cmd.sender,
+                                sender,
                             )
                             .message("Failed to finalize clean install")
                         } else {
@@ -639,7 +493,7 @@ impl Trident {
                     ServicingState::NotProvisioned => {
                         // Otherwise, if servicing state is NotProvisioned, need to either re-execute the
                         // failed clean install OR inform the user that no update is needed.
-                        engine::clean_install(cmd, datastore)
+                        engine::clean_install(&host_config, datastore, &allowed_operations, #[cfg(feature = "grpc-dangerous")] sender)
                             .message("Failed to execute a clean install")
                     }
                     servicing_state => {
@@ -650,7 +504,128 @@ impl Trident {
                     }
                 }
             }
+        })
+    }
+
+    pub fn update(
+        &mut self,
+        datastore: &mut DataStore,
+        allowed_operations: Operations,
+        #[cfg(feature = "grpc-dangerous")] sender: &mut Option<GrpcSender>,
+    ) -> Result<(), TridentError> {
+        let mut host_config = self
+            .host_config
+            .clone()
+            .structured(InternalError::Internal(
+                "update called without host configuration set",
+            ))?;
+
+        self.execute_and_record_error(datastore, |datastore| {
+            if !datastore.is_persistent() {
+                return Err(TridentError::new(InvalidInputError::UpdateOnUnprovisionedHost))
+                    .message("Persistent datastore not found on host");
+            }
+
+            // The storage section is optional for updates if COSI is in use.
+            if host_config.image.is_some() && host_config.storage == Default::default() {
+                debug!("Storage section not specified in Host Configuration, using current storage configuration");
+                host_config.storage = datastore.host_status().spec.storage.clone();
+            }
+
+            host_config
+                .validate()
+                .map_err(Into::into)
+                .message("Invalid Host Configuration provided")?;
+
+            // Populate internal fields in Host Configuration.
+            // This is needed because the external API and the internal logic use different fields.
+            // This call ensures that the internal fields are populated from the external fields.
+            host_config.populate_internal();
+
+            // If HS.spec in the datastore is different from the new HC, need to both stage and
+            // finalize the update, regardless of state
+            if datastore.host_status().spec != host_config {
+                debug!("Host Configuration has been updated");
+                // If allowed operations include 'stage', start update
+                if allowed_operations.has_stage() {
+                    engine::update(&host_config, datastore, &allowed_operations, #[cfg(feature = "grpc-dangerous")] sender).message("Failed to execute an update")
+                } else {
+                    warn!("Host Configuration has been updated but allowed operations do not include 'stage'. Add 'stage' and re-run to stage the update");
+                    Ok(())
+                }
+            } else {
+                debug!("Host Configuration has not been updated");
+
+                match datastore.host_status().servicing_state {
+                    ServicingState::AbUpdateStaged => {
+                        // If an update has been previously staged, only need to finalize the update.
+                        debug!("There is an update staged on the host");
+                        if allowed_operations.has_finalize() {
+                            engine::finalize_update(
+                                datastore,
+                                ServicingType::AbUpdate,
+                                None,
+                                #[cfg(feature = "grpc-dangerous")]
+                                sender,
+                            )
+                            .message("Failed to finalize update")
+                        } else {
+                            warn!("There is an update staged on the host, but allowed operations do not include 'finalize'. Add 'finalize' and re-run to finalize the update");
+                            Ok(())
+                        }
+                    }
+                    ServicingState::AbUpdateFinalized | ServicingState::Provisioned => {
+                        // Need to either re-execute the failed update OR inform the user that no update
+                        // is needed.
+                        engine::update(&host_config, datastore, &allowed_operations,#[cfg(feature = "grpc-dangerous")] sender).message("Failed to update host")
+                    }
+                    servicing_state => {
+                        Err(TridentError::new(InternalError::UnexpectedServicingState {
+                            state: servicing_state,
+                        }))
+                        .message("Failed to A/B update with same Host Configuration")
+                    }
+                }
+            }
+        })
+    }
+
+    pub fn commit(&mut self, datastore: &mut DataStore) -> Result<(), TridentError> {
+        // If host's servicing state is Finalized, need to validate that the firmware correctly
+        // booted from the updated runtime OS image.
+        if datastore.host_status().servicing_state != ServicingState::CleanInstallFinalized
+            && datastore.host_status().servicing_state != ServicingState::AbUpdateFinalized
+        {
+            info!("No update in progress, skipping commit");
+            return Ok(());
         }
+
+        let rollback_result = self.execute_and_record_error(datastore, |datastore| {
+            rollback::validate_boot(datastore).message(
+                "Failed to validate that firmware correctly booted from updated runtime OS image",
+            )
+        });
+
+        harpoon_hc::on_harpoon_enabled_event(
+            &datastore.host_status().spec,
+            harpoon::EventType::Update,
+            match rollback_result {
+                Ok(_) => harpoon::EventResult::SuccessReboot,
+                Err(_) => harpoon::EventResult::Error,
+            },
+        );
+
+        if rollback_result.is_ok() {
+            if let Some(ref orchestrator) = self.orchestrator {
+                orchestrator.report_success(Some(
+                    serde_yaml::to_string(&datastore.host_status())
+                        .unwrap_or("Failed to serialize Host Status".into()),
+                ))
+            }
+        }
+
+        // Re"throw" the error if there was one.
+        rollback_result
     }
 
     pub fn get(

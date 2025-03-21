@@ -7,16 +7,16 @@ use std::{
 
 use anyhow::{Context, Error};
 use clap::{Parser, Subcommand};
-use log::{error, info, warn, LevelFilter};
+use log::{error, info, LevelFilter};
 
 use trident::{
-    offline_init, validation, BackgroundLog, GetKind, Logstream, MultiLogger, TraceStream, Trident,
-    TRIDENT_BACKGROUND_LOG_PATH,
+    offline_init, validation, BackgroundLog, DataStore, GetKind, Logstream, MultiLogger,
+    TraceStream, Trident, TRIDENT_BACKGROUND_LOG_PATH,
 };
 use trident_api::{
     config::{HostConfigurationSource, Operation, Operations},
     constants::{AGENT_CONFIG_PATH, TRIDENT_DATASTORE_PATH_DEFAULT},
-    error::{InternalError, TridentError, TridentResultExt},
+    error::{InternalError, InvalidInputError, TridentError, TridentResultExt},
 };
 
 #[derive(Parser, Debug)]
@@ -35,18 +35,64 @@ enum AllowedOperation {
     Stage,
     Finalize,
 }
+fn to_operations(allowed_operations: &[AllowedOperation]) -> Operations {
+    let mut ops = Operations::empty();
+    for op in allowed_operations {
+        match op {
+            AllowedOperation::Stage => ops.0.insert(Operation::Stage),
+            AllowedOperation::Finalize => ops.0.insert(Operation::Finalize),
+        };
+    }
+    ops
+}
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// Apply the HostConfiguration
-    Run {
+    Install {
         /// The new configuration to apply
-        #[clap(short, long, default_value = "/etc/trident/config.yaml")]
+        #[clap(index = 1, default_value = "/etc/trident/config.yaml")]
         config: PathBuf,
 
         #[clap(long, value_delimiter = ',', num_args = 0.., default_value = "stage,finalize")]
         allowed_operations: Vec<AllowedOperation>,
 
+        /// Path to save the resulting Host Status
+        #[clap(short, long)]
+        status: Option<PathBuf>,
+
+        /// Path to save an eventual fatal error
+        #[clap(short, long)]
+        error: Option<PathBuf>,
+    },
+
+    Update {
+        /// The new configuration to apply
+        #[clap(index = 1, default_value = "/etc/trident/config.yaml")]
+        config: PathBuf,
+
+        #[clap(long, value_delimiter = ',', num_args = 0.., default_value = "stage,finalize")]
+        allowed_operations: Vec<AllowedOperation>,
+
+        /// Path to save the resulting Host Status
+        #[clap(short, long)]
+        status: Option<PathBuf>,
+
+        /// Path to save an eventual fatal error
+        #[clap(short, long)]
+        error: Option<PathBuf>,
+    },
+
+    Commit {
+        /// Path to save the resulting Host Status
+        #[clap(short, long)]
+        status: Option<PathBuf>,
+
+        /// Path to save an eventual fatal error
+        #[clap(short, long)]
+        error: Option<PathBuf>,
+    },
+
+    Listen {
         /// Path to save the resulting Host Status
         #[clap(short, long)]
         status: Option<PathBuf>,
@@ -76,7 +122,7 @@ enum Commands {
     #[clap(name = "start-network")]
     StartNetwork {
         /// The new configuration to apply
-        #[clap(short, long, default_value = "/etc/trident/config.yaml")]
+        #[clap(index = 1, default_value = "/etc/trident/config.yaml")]
         config: PathBuf,
     },
 
@@ -116,7 +162,10 @@ enum Commands {
 impl Commands {
     pub fn name(&self) -> &'static str {
         match self {
-            Commands::Run { .. } => "run",
+            Commands::Install { .. } => "install",
+            Commands::Update { .. } => "update",
+            Commands::Commit { .. } => "commit",
+            Commands::Listen { .. } => "listen",
             Commands::RebuildRaid { .. } => "rebuild-raid",
             Commands::StartNetwork { .. } => "start-network",
             Commands::Get { .. } => "get",
@@ -197,17 +246,25 @@ fn run_trident(
 
     let res = panic::catch_unwind(move || {
         match &args.command {
-            Commands::Run { status, error, .. } | Commands::RebuildRaid { status, error, .. } => {
-                let mut config_path = match &args.command {
-                    Commands::Run { config, .. } => Some(config.clone()),
+            Commands::Install { status, error, .. }
+            | Commands::Update { status, error, .. }
+            | Commands::Commit { status, error }
+            | Commands::Listen { status, error }
+            | Commands::RebuildRaid { status, error, .. } => {
+                let config_path = match &args.command {
+                    Commands::Update { config, .. } | Commands::Install { config, .. } => {
+                        Some(config.clone())
+                    }
                     Commands::RebuildRaid { config, .. } => config.clone(),
                     _ => None,
                 };
 
                 if let Some(path) = &config_path {
                     if !path.exists() {
-                        warn!("Config file '{}' does not exist. Ignoring.", path.display());
-                        config_path = None;
+                        return Err(TridentError::new(InvalidInputError::ReadInputFile {
+                            path: path.to_string_lossy().to_string(),
+                        }))
+                        .message("Config file does not exist");
                     }
                 }
 
@@ -225,22 +282,32 @@ fn run_trident(
                 // measuring Trident reboot times
                 tracing::info!(metric_name = "trident_start");
 
+                let mut datastore = DataStore::open_or_create(&agent_config.datastore)
+                    .message("Failed to open datastore")?;
+
                 // Execute the command
                 let res = match args.command {
-                    Commands::Run {
+                    Commands::Install {
                         ref allowed_operations,
                         ..
-                    } => {
-                        let mut ops = Operations::empty();
-                        if allowed_operations.contains(&AllowedOperation::Stage) {
-                            ops.0.insert(Operation::Stage);
-                        }
-                        if allowed_operations.contains(&AllowedOperation::Finalize) {
-                            ops.0.insert(Operation::Finalize);
-                        }
-                        trident.run(&agent_config.datastore, ops)
-                    }
-                    Commands::RebuildRaid { .. } => trident.rebuild_raid(&agent_config.datastore),
+                    } => trident.install(
+                        &mut datastore,
+                        to_operations(allowed_operations),
+                        #[cfg(feature = "grpc-dangerous")]
+                        &mut None,
+                    ),
+                    Commands::Update {
+                        ref allowed_operations,
+                        ..
+                    } => trident.update(
+                        &mut datastore,
+                        to_operations(allowed_operations),
+                        #[cfg(feature = "grpc-dangerous")]
+                        &mut None,
+                    ),
+                    Commands::Commit { .. } => trident.commit(&mut datastore),
+                    Commands::Listen { .. } => trident.listen(&mut datastore),
+                    Commands::RebuildRaid { .. } => trident.rebuild_raid(&mut datastore),
                     _ => Err(TridentError::internal("Invalid command")),
                 };
 
@@ -300,7 +367,10 @@ fn setup_logging(args: &Cli) -> Result<Logstream, Error> {
     // Add background logger if we're running a command that needs it
     if matches!(
         args.command,
-        Commands::Run { .. } | Commands::RebuildRaid { .. }
+        Commands::Install { .. }
+            | Commands::Update { .. }
+            | Commands::Commit { .. }
+            | Commands::RebuildRaid { .. }
     ) {
         multilogger.add_logger(BackgroundLog::new(TRIDENT_BACKGROUND_LOG_PATH).into_logger());
     }
@@ -317,7 +387,10 @@ fn setup_tracing(args: &Cli) -> Result<TraceStream, Error> {
 
     if matches!(
         args.command,
-        Commands::Run { .. } | Commands::RebuildRaid { .. }
+        Commands::Install { .. }
+            | Commands::Update { .. }
+            | Commands::Commit { .. }
+            | Commands::RebuildRaid { .. }
     ) {
         // Set up the trace sender
         let trace_sender = tracestream

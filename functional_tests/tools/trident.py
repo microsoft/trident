@@ -10,11 +10,11 @@ class TridentTool:
     def __init__(self, node: INode):
         self.node: INode = node
 
-    def run(
+    def commit(
         self,
         sudo=True,
     ) -> SshExecutableResult:
-        cmd = f"trident run --verbosity DEBUG"
+        cmd = f"trident commit --verbosity DEBUG"
 
         if sudo:
             cmd = "sudo " + cmd

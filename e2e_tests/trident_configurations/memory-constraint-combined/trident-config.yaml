@@ -200,9 +200,9 @@ scripts:
       content: |
         systemctl status trident | grep Memory
         if [ ! -f "/run/already-run" ]; then
-          echo "Setting memory limit for trident.service"
-          systemctl set-property trident.service MemoryMax=64M
-          systemd-run --property=After=trident.service --no-block systemctl start trident.service
+          echo "Setting memory limit for trident-install.service"
+          systemctl set-property trident-install.service MemoryMax=64M
+          systemd-run --property=After=trident-install.service --no-block systemctl start trident-install.service
           touch "/run/already-run"
           exit 1
         fi

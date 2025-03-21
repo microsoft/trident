@@ -14,7 +14,7 @@ pub struct DataStore {
 }
 
 impl DataStore {
-    pub(crate) fn open_or_create(path: &Path) -> Result<Self, TridentError> {
+    pub fn open_or_create(path: &Path) -> Result<Self, TridentError> {
         if path.exists() {
             return Self::open(path);
         }

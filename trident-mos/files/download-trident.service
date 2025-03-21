@@ -1,7 +1,7 @@
 [Unit]
 Description=Trident Agent
 After=network.target network-online.target
-Before=trident.service
+Before=trident-install.service
 
 [Service]
 ExecStart=/bin/bash /trident_cdrom/pre-trident-script.sh
@@ -12,4 +12,4 @@ ExecStart=/bin/chmod +x /usr/bin/osmodifier
 Type=oneshot
 
 [Install]
-WantedBy=trident.service
+WantedBy=trident-install.service

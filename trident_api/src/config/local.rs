@@ -1,5 +1,6 @@
 use std::{collections::HashSet, path::PathBuf};
 
+use maplit::hashset;
 use serde::{Deserialize, Serialize};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
@@ -52,6 +53,10 @@ impl Default for Operations {
 }
 
 impl Operations {
+    pub fn all() -> Self {
+        Self(hashset![Operation::Stage, Operation::Finalize])
+    }
+
     pub fn empty() -> Self {
         Self(HashSet::new())
     }

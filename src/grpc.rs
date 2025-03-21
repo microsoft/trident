@@ -11,22 +11,25 @@ use tonic::{transport::Server, Request, Response, Status};
 
 use osutils::dependencies::Dependency;
 use trident_api::{
+    config::HostConfiguration,
     config::{GrpcConfiguration, Operations},
     error::{InternalError, ReportError, ServicingError, TridentError},
 };
 
-use crate::{datastore::DataStore, HostUpdateCommand, OrchestratorConnection};
+use crate::{datastore::DataStore, OrchestratorConnection};
 
 pub mod protobufs {
     tonic::include_proto!("trident");
 }
 pub use protobufs::*;
 
+pub type GrpcSender = mpsc::UnboundedSender<Result<HostStatusState, tonic::Status>>;
+
 /// Implementation of the gRPC service.
 ///
 /// This struct contains a tokio Sender which it uses to enqueue commands to the main Trident
 /// thread. It also implements the gRPC service trait, which allows it to be used as a gRPC server.
-pub struct HostManagementImpl(Sender<HostUpdateCommand>);
+pub struct HostManagementImpl(Sender<(HostConfiguration, Operations, GrpcSender)>);
 
 #[tonic::async_trait]
 impl host_management_server::HostManagement for HostManagementImpl {
@@ -45,11 +48,7 @@ impl host_management_server::HostManagement for HostManagementImpl {
 
         let (tx, rx) = mpsc::unbounded_channel();
         self.0
-            .send(HostUpdateCommand {
-                allowed_operations: Operations::default(), // TODO
-                host_config,
-                sender: Some(tx),
-            })
+            .send((host_config, Operations::all(), tx))
             .await
             .context("Failed to enqueue 'HostUpdate' command to the main Trident thread")
             .map_err(|e| Status::from_error(e.into()))?;
@@ -62,7 +61,7 @@ impl host_management_server::HostManagement for HostManagementImpl {
 pub(crate) fn start(
     grpc: &GrpcConfiguration,
     orchestrator: Option<&OrchestratorConnection>,
-    sender: Sender<HostUpdateCommand>,
+    sender: Sender<(HostConfiguration, Operations, GrpcSender)>,
 ) -> Result<Runtime, TridentError> {
     // TODO: make firewall this configurable
     info!("Opening firewall");

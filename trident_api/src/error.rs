@@ -151,9 +151,6 @@ pub enum InvalidInputError {
     )]
     DuplicateFsUuidAbUpdate { pair_id: String, uuid: String },
 
-    #[error("Failed to get a unique Host Configuration source from local Trident config")]
-    GetHostConfigurationSource,
-
     #[error("Host Configuration failed dynamic validation: {inner}")]
     InvalidHostConfigurationDynamic {
         #[from]
@@ -251,6 +248,9 @@ pub enum InvalidInputError {
         mount_point: String,
         fs_type: String,
     },
+
+    #[error("Cannot update host since it is not provisioned")]
+    UpdateOnUnprovisionedHost,
 
     #[error("Failed to write to output file '{path}'")]
     WriteOutputFile { path: String },

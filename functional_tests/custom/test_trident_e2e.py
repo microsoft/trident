@@ -18,13 +18,13 @@ HostStatusSafeLoader.add_constructor("!image", HostStatusSafeLoader.accept_image
 
 @pytest.mark.functional
 @pytest.mark.core
-def test_trident_run(vm):
+def test_trident_update(vm):
     """Basic trident run validation."""
     trident = TridentTool(vm)
-    result = trident.run()
+    result = trident.commit()
     assert_that(result.exit_code).is_equal_to(0)
 
-    result = trident.run(False)
+    result = trident.commit(False)
     assert_that(result.exit_code).is_equal_to(2)
     assert_that(
         result.stderr.index("Failed to run due to missing root privileges") != -1

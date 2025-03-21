@@ -25,7 +25,7 @@ class YamlSafeLoader(yaml.SafeLoader):
         return self.construct_mapping(node)
 
 
-def trident_run_command(
+def trident_update_command(
     connection,
     runtime_env,
     stage_ab_update,
@@ -51,12 +51,12 @@ def trident_run_command(
 
     for attempt in range(MAX_RETRIES):
         try:
-            print(f"Attempt {attempt + 1}: Running Trident run command...")
+            print(f"Attempt {attempt + 1}: Running Trident update command...")
 
             # Provide -c arg, the full path to the RW Trident config.
             trident_return_code, trident_stdout, trident_stderr = trident_run(
                 connection,
-                f"run -v trace -c {trident_config_path} --allowed-operations {allowed_operations_str}",
+                f"update -v trace {trident_config_path} --allowed-operations {allowed_operations_str}",
                 runtime_env,
             )
 
@@ -80,9 +80,9 @@ def trident_run_command(
                     f"Unexpected exit code {trident_return_code}. Output: {trident_stdout + trident_stderr}"
                 )
         except Exception as e:
-            print(f"Exception during Trident run: {e}")
+            print(f"Exception during Trident update: {e}")
             raise
-    raise Exception("Maximum retries exceeded for Trident run")
+    raise Exception("Maximum retries exceeded for Trident update")
 
 
 def update_osimage_url(runtime_env, destination_directory, host_config, version):
@@ -147,7 +147,7 @@ def trigger_ab_update(
 
     # Re-run Trident and capture logs
     print("Re-running Trident to trigger A/B update", flush=True)
-    trident_run_command(
+    trident_update_command(
         connection,
         runtime_env,
         stage_ab_update,
@@ -156,8 +156,8 @@ def trigger_ab_update(
     )
     connection.close()
 
-    # For container testing, finalize the A/B update by manually triggering
-    # a Trident run on the updated Runtime OS.
+    # For container testing, commit the A/B update by manually triggering
+    # Trident on the updated Runtime OS.
     if finalize_ab_update and runtime_env == "container":
         for attempt in range(MAX_RETRIES):
             try:
@@ -170,7 +170,7 @@ def trigger_ab_update(
                 )
 
                 trident_return_code, trident_stdout, trident_stderr = trident_run(
-                    connection, f"run", runtime_env
+                    connection, f"commit", runtime_env
                 )
 
                 if trident_return_code == 0:

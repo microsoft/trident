@@ -6,6 +6,7 @@ use tokio::sync::mpsc;
 
 use osutils::{chroot, container, path::join_relative};
 use trident_api::{
+    config::{HostConfiguration, Operations},
     constants::{internal_params::NO_TRANSITION, ESP_MOUNT_POINT_PATH},
     error::{
         InternalError, InvalidInputError, ReportError, ServicingError, TridentError,
@@ -14,8 +15,6 @@ use trident_api::{
     status::{HostStatus, ServicingState, ServicingType},
 };
 
-#[cfg(feature = "grpc-dangerous")]
-use crate::grpc::{self};
 use crate::{
     datastore::DataStore,
     engine::{
@@ -24,23 +23,19 @@ use crate::{
         EngineContext, NewrootMount, SUBSYSTEMS,
     },
     subsystems::hooks::HooksSubsystem,
-    HostUpdateCommand,
 };
+#[cfg(feature = "grpc-dangerous")]
+use crate::{grpc, GrpcSender};
 
 use super::Subsystem;
 
 #[tracing::instrument(skip_all)]
 pub(crate) fn update(
-    command: HostUpdateCommand,
+    host_config: &HostConfiguration,
     state: &mut DataStore,
+    allowed_operations: &Operations,
+    #[cfg(feature = "grpc-dangerous")] sender: &mut Option<GrpcSender>,
 ) -> Result<(), TridentError> {
-    let HostUpdateCommand {
-        ref host_config,
-        allowed_operations,
-        #[cfg(feature = "grpc-dangerous")]
-        mut sender,
-    } = command;
-
     info!("Starting update");
     let mut subsystems = SUBSYSTEMS.lock().unwrap();
 
@@ -55,14 +50,14 @@ pub(crate) fn update(
     }
 
     let mut ctx = EngineContext {
-        spec: command.host_config.clone(),
+        spec: host_config.clone(),
         spec_old: state.host_status().spec.clone(),
         servicing_type: ServicingType::NoActiveServicing,
         partition_paths: state.host_status().partition_paths.clone(),
         ab_active_volume: state.host_status().ab_active_volume,
         disk_uuids: state.host_status().disk_uuids.clone(),
         install_index: state.host_status().install_index,
-        image: osimage::load_os_image(&command.host_config)?,
+        image: osimage::load_os_image(host_config)?,
         storage_graph: engine::build_storage_graph(&host_config.storage)?, // Build storage graph
     };
 
@@ -115,14 +110,14 @@ pub(crate) fn update(
         ctx,
         state,
         #[cfg(feature = "grpc-dangerous")]
-        &mut sender,
+        sender,
     )
     .message("Failed to stage update")?;
 
     // When enabled, notify Harpoon that the installation of the update has
     // finalized.
     crate::harpoon_hc::on_harpoon_enabled_event(
-        &command.host_config,
+        host_config,
         harpoon::EventType::Install,
         harpoon::EventResult::Success,
     );
@@ -145,7 +140,7 @@ pub(crate) fn update(
                     servicing_type,
                     Some(update_start_time),
                     #[cfg(feature = "grpc-dangerous")]
-                    &mut sender,
+                    sender,
                 )
                 .message("Failed to finalize update")?;
             }
@@ -157,7 +152,7 @@ pub(crate) fn update(
                 host_status.servicing_state = ServicingState::Provisioned;
             })?;
             #[cfg(feature = "grpc-dangerous")]
-            grpc::send_host_status_state(&mut sender, state)?;
+            grpc::send_host_status_state(sender, state)?;
 
             // Persist the Trident background log and metrics file to the updated runtime OS
             engine::persist_background_log_and_metrics(

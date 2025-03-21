@@ -201,7 +201,7 @@ scripts:
   postProvision:
     - name: rerun-trident
       runOn: [clean-install]
-      content: systemd-run --property=After=trident.service --no-block systemctl start trident.service
+      content: systemd-run --property=After=trident-install.service --no-block systemctl start trident-install.service
     - name: rerun-trident-container
       runOn: [clean-install]
       content: systemd-run --property=After=trident-container.service --no-block systemctl start trident-container.service
