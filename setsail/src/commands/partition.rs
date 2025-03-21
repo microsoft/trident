@@ -41,17 +41,16 @@ pub struct Partition {
     #[arg(long, group = "sizing")]
     pub grow: bool,
 
-    /// Maximum size of the partition in MiB
-    ///
-    /// Requires: `grow`
-    ///
-    /// Format: u64
+    // /// Maximum size of the partition in MiB
+    // ///
+    // /// Requires: `grow`
+    // ///
+    // /// Format: u64
     // Disabled: Having this flag leads to unexpected behavior,
     // we are keeping it unsupported for now.
     // #[arg(long)]
     // #[arg(requires = "grow")]
     // pub maxsize: Option<u64>,
-
     /// The target disk for this partition
     ///
     /// Format: String

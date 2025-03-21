@@ -41,11 +41,11 @@ impl StorageGraph {
         // mounted on the root mount point.
         self.inner.node_references().find(|(_, node)| {
             // Go over all filesystems.
-            node.as_filesystem().map_or(false, |fs| {
+            node.as_filesystem().is_some_and(|fs| {
                 // Check if the filesystem is the root filesystem.
                 fs.mount_point
                     .as_ref()
-                    .map_or(false, |mp| mp.path == Path::new(ROOT_MOUNT_POINT_PATH))
+                    .is_some_and(|mp| mp.path == Path::new(ROOT_MOUNT_POINT_PATH))
             })
         })
     }

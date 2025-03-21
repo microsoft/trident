@@ -31,7 +31,7 @@ pub struct VerityGuard<'a> {
     pub device_name: &'a str,
 }
 
-impl<'a> Drop for VerityGuard<'a> {
+impl Drop for VerityGuard<'_> {
     fn drop(&mut self) {
         // Try to close, but ignore errors
         veritysetup::close(self.device_name).ok();

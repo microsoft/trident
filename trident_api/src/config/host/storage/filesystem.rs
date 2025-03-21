@@ -304,7 +304,7 @@ impl FileSystem {
     pub fn is_read_only(&self) -> bool {
         self.mount_point
             .as_ref()
-            .map_or(false, |mp| mp.options.contains(MOUNT_OPTION_READ_ONLY))
+            .is_some_and(|mp| mp.options.contains(MOUNT_OPTION_READ_ONLY))
     }
 
     /// Returns the path of the mount point, if it exists.

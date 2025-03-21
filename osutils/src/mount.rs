@@ -76,7 +76,7 @@ pub struct MountGuard<'a> {
     pub mount_dir: &'a Path,
 }
 
-impl<'a> Drop for MountGuard<'a> {
+impl Drop for MountGuard<'_> {
     fn drop(&mut self) {
         if let Err(e) = umount(self.mount_dir, false) {
             info!(

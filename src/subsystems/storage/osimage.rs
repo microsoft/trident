@@ -417,7 +417,7 @@ fn validate_filesystem_blkdev_fit(
                 hc_fs
                     .mount_point
                     .as_ref()
-                    .map_or(false, |mp| mp.path == fs.mount_point)
+                    .is_some_and(|mp| mp.path == fs.mount_point)
             })
             // We should never get here because of the checks in validate_filesystems()
             // i.e. Every mount point in the image should match to a mount point in the HC

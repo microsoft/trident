@@ -39,6 +39,7 @@ impl EfiBootManagerOutput {
     pub fn parse_efibootmgr_output(output: &str) -> Result<Self, Error> {
         let mut boot_manager_output = EfiBootManagerOutput::default();
 
+        let re = Regex::new(r"^Boot([0-9a-fA-F]{4})(\*?) ([^\t]+)\t?").unwrap();
         for line in output.lines() {
             if line.starts_with("BootCurrent:")
                 || line.starts_with("BootNext:")
@@ -63,7 +64,6 @@ impl EfiBootManagerOutput {
                     }
                 }
             } else if line.starts_with("Boot") {
-                let re = Regex::new(r"^Boot([0-9a-fA-F]{4})(\*?) ([^\t]+)\t?").unwrap();
                 let captures = re.captures(line.trim());
                 if let Some(captures) = captures {
                     let key = captures

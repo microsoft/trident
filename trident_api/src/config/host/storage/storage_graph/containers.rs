@@ -110,7 +110,7 @@ impl<'a, T> Extend<BlkDevAttr<'a, T>> for BlkDevAttrList<'a, T> {
     }
 }
 
-impl<'a, T> BlkDevAttrList<'a, T>
+impl<T> BlkDevAttrList<'_, T>
 where
     T: PartialEq,
 {

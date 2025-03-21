@@ -212,7 +212,7 @@ impl<'a> FileSystemData<'a> {
             FileSystemData::Adopted(fs_data_adopted) => fs_data_adopted
                 .mount_point
                 .as_ref()
-                .map_or(false, |mp| mp.options.contains(MOUNT_OPTION_READ_ONLY)),
+                .is_some_and(|mp| mp.options.contains(MOUNT_OPTION_READ_ONLY)),
             FileSystemData::Image(fs_data_image) => fs_data_image
                 .mount_point
                 .options
@@ -220,7 +220,7 @@ impl<'a> FileSystemData<'a> {
             FileSystemData::New(fs_data_new) => fs_data_new
                 .mount_point
                 .as_ref()
-                .map_or(false, |mp| mp.options.contains(MOUNT_OPTION_READ_ONLY)),
+                .is_some_and(|mp| mp.options.contains(MOUNT_OPTION_READ_ONLY)),
             FileSystemData::Swap(_) => false,
             FileSystemData::Tmpfs(fs_data_tmpfs) => fs_data_tmpfs
                 .mount_point

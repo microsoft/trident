@@ -454,11 +454,7 @@ mod tests {
         // Check that each entry matches the expected data.
         for (path, data) in sample_data.iter() {
             let entry = entries.get(Path::new(path)).unwrap();
-            assert_eq!(
-                entry.size,
-                data.as_bytes().len() as u64,
-                "Incorrect entry size"
-            );
+            assert_eq!(entry.size, data.len() as u64, "Incorrect entry size");
             let read_data = cosi_file
                 .get(entry.offset as usize..(entry.offset + entry.size) as usize)
                 .unwrap();
@@ -742,7 +738,7 @@ mod tests {
             let filename = Uuid::new_v4().to_string();
             let entry = CosiEntry {
                 offset: data.position(),
-                size: file_data.as_bytes().len() as u64,
+                size: file_data.len() as u64,
             };
             entries.insert(PathBuf::from(&filename), entry);
 
@@ -751,8 +747,8 @@ mod tests {
             images.push(Image {
                 file: ImageFile {
                     path: PathBuf::from(filename),
-                    compressed_size: file_data.as_bytes().len() as u64,
-                    uncompressed_size: file_data.as_bytes().len() as u64,
+                    compressed_size: file_data.len() as u64,
+                    uncompressed_size: file_data.len() as u64,
                     sha384: Sha384Hash::from(format!("{:x}", Sha384::digest(file_data.as_bytes()))),
                     entry,
                 },

@@ -406,7 +406,7 @@ mod tests {
                         continue;
                     }
 
-                    let mode = owner_digit << 6 | group_digit << 3 | other_digit;
+                    let mode = (owner_digit << 6) | (group_digit << 3) | other_digit;
 
                     // Set the recovery key file's permissions to mode
                     let mut perms = recovery_key_file.path().metadata().unwrap().permissions();
@@ -433,7 +433,7 @@ mod tests {
                         continue;
                     }
 
-                    let mode = owner_digit << 6 | group_digit << 3 | other_digit;
+                    let mode = (owner_digit << 6) | (group_digit << 3) | other_digit;
 
                     // Set the recovery key file's permissions to mode
                     let mut perms = recovery_key_file.path().metadata().unwrap().permissions();
