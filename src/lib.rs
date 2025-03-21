@@ -411,6 +411,7 @@ impl Trident {
             install_index: host_status.install_index,
             image: None,
             storage_graph: engine::build_storage_graph(&host_config.storage)?, // Build storage graph
+            filesystems: Vec::new(), // Left empty since context does not have image
         };
 
         if ctx.ab_active_volume.is_none() {

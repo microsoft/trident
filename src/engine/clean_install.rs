@@ -179,12 +179,15 @@ fn stage_clean_install(
         install_index: 0,                    // Will be initialized later
         image: osimage::load_os_image(host_config)?,
         storage_graph: engine::build_storage_graph(&host_config.storage)?, // Build storage graph
+        filesystems: Vec::new(), // Will be populated after dynamic validation
     };
 
     // Execute pre-servicing scripts
     HooksSubsystem::default().execute_pre_servicing_scripts(&ctx)?;
 
     engine::validate_host_config(subsystems, &ctx)?;
+
+    ctx.populate_filesystems()?;
 
     // Need to re-set saved Host Status in case another clean install has been previously staged
     debug!("Clearing saved Host Status");
@@ -270,6 +273,7 @@ pub(crate) fn finalize_clean_install(
         install_index: state.host_status().install_index,
         image: None, // Not used in finalize_clean_install
         storage_graph: engine::build_storage_graph(&state.host_status().spec.storage)?, // Build storage graph
+        filesystems: Vec::new(), // Left empty since context does not have image
     };
 
     let new_root = match new_root {

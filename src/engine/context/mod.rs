@@ -4,6 +4,7 @@ use std::{
 };
 
 use anyhow::{Context, Error};
+use filesystem::FileSystemData;
 use log::{debug, trace};
 
 use trident_api::{
@@ -64,6 +65,9 @@ pub struct EngineContext {
 
     /// The storage graph representing the storage configuration of the host.
     pub storage_graph: StorageGraph,
+
+    /// All of the filesystems in the system.
+    pub filesystems: Vec<FileSystemData>,
 }
 impl EngineContext {
     /// Returns the update volume selection for all A/B volume pairs. The update volume is the one

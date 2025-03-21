@@ -220,7 +220,7 @@ fn perform_relabel(ctx: &EngineContext) -> Result<(), TridentError> {
 fn filesystems_to_relabel(ctx: &EngineContext) -> Result<Vec<PathBuf>, TridentError> {
     let mut out = Vec::new();
 
-    for filesystem in ctx.filesystems()? {
+    for filesystem in &ctx.filesystems {
         // Filter to ONLY filesystems that support SELinux
         if !SELINUX_SUPPORTED_FILESYSTEMS.contains(&filesystem.fs_type()) {
             continue;
@@ -259,7 +259,7 @@ mod tests {
     #[test]
     fn test_filesystems_to_relabel() {
         let mut ctx = EngineContext::default();
-
+        ctx.populate_filesystems().unwrap();
         // Empty filesystems
         assert_eq!(filesystems_to_relabel(&ctx).unwrap(), Vec::<&Path>::new());
 
@@ -278,7 +278,7 @@ mod tests {
 
         // Filesystem with supported type
         reset(&mut ctx);
-
+        ctx.populate_filesystems().unwrap();
         assert_eq!(
             filesystems_to_relabel(&ctx).unwrap(),
             vec![Path::new(good_mtp)]
@@ -287,7 +287,7 @@ mod tests {
         // Filesystem with unsupported type (NTFS)
         reset(&mut ctx);
         ctx.spec.storage.filesystems[0].fs_type = FileSystemType::Ntfs;
-
+        ctx.populate_filesystems().unwrap();
         assert_eq!(filesystems_to_relabel(&ctx).unwrap(), Vec::<&Path>::new());
 
         // Filesystem with read-only mount point
@@ -296,14 +296,14 @@ mod tests {
             path: good_mtp.into(),
             options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
         });
-
+        ctx.populate_filesystems().unwrap();
         assert_eq!(filesystems_to_relabel(&ctx).unwrap(), Vec::<&Path>::new());
 
         // Filesystem with no mount point
         reset(&mut ctx);
         ctx.spec.storage.filesystems[0].mount_point = None;
         ctx.spec.storage.filesystems[0].source = FileSystemSource::New;
-
+        ctx.populate_filesystems().unwrap();
         assert_eq!(filesystems_to_relabel(&ctx).unwrap(), Vec::<&Path>::new());
 
         // Check all filesystem types to make sure we only get the ones that
@@ -328,7 +328,7 @@ mod tests {
                 }
             })
             .collect();
-
+        ctx.populate_filesystems().unwrap();
         assert_eq!(filesystems_to_relabel(&ctx).unwrap(), expected);
     }
 

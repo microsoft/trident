@@ -7,7 +7,7 @@ use anyhow::{bail, ensure, Context, Error};
 use log::{debug, info, trace, warn};
 
 use osutils::{e2fsck, hashing_reader::HashingReader384, image_streamer, lsblk, resize2fs};
-use trident_api::{error::TridentResultExt, status::ServicingType, BlockDeviceId};
+use trident_api::{status::ServicingType, BlockDeviceId};
 
 use crate::{
     engine::{context::filesystem::FileSystemDataImage, EngineContext},
@@ -110,14 +110,11 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), Error> {
 /// returned.
 fn filesystems_from_image(
     ctx: &EngineContext,
-) -> Result<Vec<(BlockDeviceId, PathBuf, FileSystemDataImage<'_>)>, Error> {
+) -> Result<Vec<(BlockDeviceId, PathBuf, &FileSystemDataImage)>, Error> {
     let mut fs_list = Vec::new();
 
-    for filesystem in ctx
-        .filesystems()
-        .unstructured("Failed to get iterator of filesystems from context")?
-    {
-        let Some(img_fs) = filesystem.clone().inner_image() else {
+    for filesystem in &ctx.filesystems {
+        let Some(img_fs) = filesystem.as_image() else {
             // Skip everything that is not sourced from the OS image.
             continue;
         };
@@ -130,7 +127,7 @@ fn filesystems_from_image(
             continue;
         }
 
-        let device_id = img_fs.device_id;
+        let device_id = &img_fs.device_id;
 
         let mount_point_path = img_fs.mount_point_path();
 

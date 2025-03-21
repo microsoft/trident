@@ -5,9 +5,7 @@ use log::{debug, info, trace};
 use rayon::prelude::*;
 
 use osutils::{filesystems::MkfsFileSystemType, mkfs, mkswap};
-use trident_api::{
-    config::FileSystemType, error::TridentResultExt, status::ServicingType, BlockDeviceId,
-};
+use trident_api::{config::FileSystemType, status::ServicingType, BlockDeviceId};
 
 use crate::engine::{context::filesystem::FileSystemData, EngineContext};
 
@@ -44,24 +42,21 @@ fn block_devices_needing_fs_creation(
     // a list of block device IDs and filesystem types.
     let mut block_devices = Vec::new();
 
-    for fs in ctx
-        .filesystems()
-        .unstructured("Failed to get iterator of filesystems from context")?
-    {
+    for fs in &ctx.filesystems {
         // Filter to the filesystems matching any of the specified criteria:
         let device_id = match &fs {
             // The filesystem source is 'New'.
-            FileSystemData::New(nfs) => nfs.device_id,
+            FileSystemData::New(nfs) => &nfs.device_id,
 
             // The filesystem is type 'Swap'
-            FileSystemData::Swap(sfs) => sfs.device_id,
+            FileSystemData::Swap(sfs) => &sfs.device_id,
 
             // The filesystem source is `Image` AND servicing type is
             // CleanInstall AND the mount point is the ESP location.
             FileSystemData::Image(ifs)
                 if ctx.servicing_type == ServicingType::CleanInstall && fs.is_esp() =>
             {
-                ifs.device_id
+                &ifs.device_id
             }
 
             // Otherwise, ignore and skip the filesystem.
@@ -164,7 +159,7 @@ mod tests {
     /// devices that need to have clean filesystems created on them.
     #[test]
     fn test_block_devices_needing_fs_creation() {
-        let ctx_clean_install = EngineContext {
+        let mut ctx_clean_install = EngineContext {
             servicing_type: ServicingType::CleanInstall,
             spec: HostConfiguration {
                 storage: StorageConfig {
@@ -244,6 +239,7 @@ mod tests {
             },
             ..Default::default()
         };
+        ctx_clean_install.populate_filesystems().unwrap();
 
         // Test case 1: On clean install, need to initialize the ESP partition and the standalone
         // volume 'trident'.
@@ -343,6 +339,7 @@ mod tests {
             ab_active_volume: Some(AbVolumeSelection::VolumeA),
             ..Default::default()
         };
+        ctx_ab_update.populate_filesystems().unwrap();
         assert!(block_devices_needing_fs_creation(&ctx_ab_update)
             .unwrap()
             .is_empty());
@@ -359,6 +356,7 @@ mod tests {
                 options: MountOptions::empty(),
             }),
         };
+        ctx_ab_update.populate_filesystems().unwrap();
         let block_devices = block_devices_needing_fs_creation(&ctx_ab_update).unwrap();
         assert_eq!(block_devices.len(), 1);
         assert!(block_devices.contains(&(

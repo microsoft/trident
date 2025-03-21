@@ -59,6 +59,7 @@ pub(crate) fn update(
         install_index: state.host_status().install_index,
         image: osimage::load_os_image(host_config)?,
         storage_graph: engine::build_storage_graph(&host_config.storage)?, // Build storage graph
+        filesystems: Vec::new(), // Will be populated after dynamic validation
     };
 
     // Before starting an update servicing, need to validate that the active volume is set
@@ -96,6 +97,8 @@ pub(crate) fn update(
     HooksSubsystem::default().execute_pre_servicing_scripts(&ctx)?;
 
     engine::validate_host_config(&subsystems, &ctx)?;
+
+    ctx.populate_filesystems()?;
 
     let update_start_time = Instant::now();
     tracing::info!(
@@ -298,6 +301,7 @@ pub(crate) fn finalize_update(
         install_index: state.host_status().install_index,
         image: None, // Not used in finalize_update
         storage_graph: engine::build_storage_graph(&state.host_status().spec.storage)?, // Build storage graph
+        filesystems: Vec::new(), // Left empty since context does not have image
     };
 
     let esp_path = if container::is_running_in_container()
