@@ -31,11 +31,12 @@ The mount point of the file system.
 
 It can be provided as an object for more control over the mount options, or as a just a string when `defaults` is sufficient.
 
-| Characteristic | Value                         |
-| -------------- | ----------------------------- |
-| Type           | `MountPoint`                  |
-| Link           | [MountPoint](./MountPoint.md) |
-| Shorthand      | `string`                      |
+| Characteristic   | Value                         |
+| ---------------- | ----------------------------- |
+| Type             | `MountPoint`                  |
+| Link             | [MountPoint](./MountPoint.md) |
+| Shorthand Type   | `string`                      |
+| Shorthand Format | `path`                        |
 
 ### `source` (optional)
 

@@ -59,6 +59,9 @@ pub(crate) struct SchemaNodeModel {
 
     /// The object that this node is based on.
     pub(crate) object: SchemaObject,
+
+    /// Description of the string shorthand format.
+    pub(crate) string_shortcut_format: Option<String>,
 }
 
 /// The kind of node that can be created by schemars.
@@ -293,12 +296,7 @@ impl TryFrom<SchemaObject> for SchemaNodeModel {
                                 NodeKind::DefinitionReference
                             } else if subschemas.one_of.as_ref().is_some_and(|l| !l.is_empty()) {
                                 // Check for a custom extension that indicates a map with a string shortcut.
-                                if schema
-                                    .extensions
-                                    .get(STRING_SHORTCUT_EXTENSION)
-                                    .and_then(|v| v.as_bool())
-                                    .unwrap_or_default()
-                                {
+                                if schema.extensions.contains_key(STRING_SHORTCUT_EXTENSION) {
                                     let one_of = subschemas.one_of.as_ref().unwrap();
                                     ensure!(
                                         (2..=3).contains(&one_of.len()),
@@ -365,6 +363,10 @@ impl TryFrom<SchemaObject> for SchemaNodeModel {
             write_only: schema.metadata().write_only,
             format: schema.format.clone(),
             kind,
+            string_shortcut_format: schema
+                .extensions
+                .get(STRING_SHORTCUT_EXTENSION)
+                .and_then(|v| v.as_str().map(|s| s.to_owned())),
             object: schema,
         })
     }

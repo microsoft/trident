@@ -36,6 +36,8 @@ mod schema_helpers {
         JsonSchema,
     };
 
+    pub(crate) const BLOCK_DEVICE_ID_FORMAT: &str = "Block Device ID";
+
     pub(crate) fn schema_generator() -> SchemaGenerator {
         SchemaSettings::draft07()
             .with(|s| {
@@ -47,7 +49,7 @@ mod schema_helpers {
 
     pub(crate) fn block_device_id_schema(gen: &mut SchemaGenerator) -> Schema {
         let mut schema = gen.subschema_for::<String>().into_object();
-        schema.format = Some("Block Device ID".to_owned());
+        schema.format = Some(BLOCK_DEVICE_ID_FORMAT.to_owned());
         Schema::Object(schema)
     }
 

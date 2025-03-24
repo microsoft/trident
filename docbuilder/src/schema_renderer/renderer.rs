@@ -338,7 +338,9 @@ impl NodeRenderer {
             NodeKind::String => self.section_customize_string(node, context, characteristics),
             NodeKind::Array => self.section_customize_array(node, context, characteristics),
             NodeKind::Boolean => self.section_customize_boolean(node, context, characteristics),
-            NodeKind::Reference => self.section_customize_reference(node, context, characteristics),
+            NodeKind::Reference => {
+                self.section_customize_reference(&node, context, characteristics)
+            }
             NodeKind::Null => self.section_customize_null(node, context, characteristics),
             NodeKind::Object => self.section_customize_object(node, context, characteristics),
             NodeKind::WrapperEnum(_) => {
@@ -603,7 +605,7 @@ impl NodeRenderer {
 
     fn section_customize_reference(
         &self,
-        node: SchemaNodeModel,
+        node: &SchemaNodeModel,
         _: &mut TeraCxt,
         characteristics: &mut Characteristics,
     ) -> Result<(), Error> {
@@ -665,8 +667,12 @@ impl NodeRenderer {
         ctx: &mut TeraCxt,
         characteristics: &mut Characteristics,
     ) -> Result<(), Error> {
-        self.section_customize_reference(node, ctx, characteristics)?;
-        characteristics.push("Shorthand", "string");
+        self.section_customize_reference(&node, ctx, characteristics)?;
+        characteristics.push("Shorthand Type", "string");
+        if let Some(shortcut_format) = &node.string_shortcut_format {
+            characteristics.push("Shorthand Format", shortcut_format);
+        }
+
         Ok(())
     }
 }

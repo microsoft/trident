@@ -97,6 +97,13 @@ impl FromStr for MountPoint {
     }
 }
 
+#[cfg(feature = "schemars")]
+impl crate::primitives::shortcuts::StringOrStructMetadata for MountPoint {
+    fn shorthand_format() -> &'static str {
+        "path"
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(transparent)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]

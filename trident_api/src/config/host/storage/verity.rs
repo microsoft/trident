@@ -7,6 +7,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{constants::DEV_MAPPER_PATH, BlockDeviceId};
 
+#[cfg(feature = "schemars")]
+use crate::schema_helpers::block_device_id_schema;
+
 /// Verity device configuration.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -21,9 +24,11 @@ pub struct VerityDevice {
     pub name: String,
 
     /// The ID of the partition to use as the verity data partition.
+    #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
     pub data_device_id: BlockDeviceId,
 
     /// The ID of the partition to use as the verity hash partition.
+    #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
     pub hash_device_id: BlockDeviceId,
 
     // Specifies how a mismatch between the hash and the data partition is handled.

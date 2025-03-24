@@ -27,33 +27,31 @@ Documentation about the rules used to validate the storage configuration.
 This table lists all the different kinds of block devices that exist in the
 configuration, along with their descriptions.
 
-| Block device kind | Description                                                                  |
-| ----------------- | ---------------------------------------------------------------------------- |
-| none              | Represents a 'null device' i.e. something that is not really a block device. |
-| disk              | A disk                                                                       |
-| partition         | A new physical partition                                                     |
-| adopted-partition | An existing physical partition that is being adopted                         |
-| raid-array        | A RAID array                                                                 |
-| ab-volume         | An A/B volume                                                                |
-| encrypted-volume  | An encrypted volume                                                          |
-| verity-device     | A verity device                                                              |
+| Block device kind | Description                                          |
+| ----------------- | ---------------------------------------------------- |
+| disk              | A disk                                               |
+| partition         | A new physical partition                             |
+| adopted-partition | An existing physical partition that is being adopted |
+| raid-array        | A RAID array                                         |
+| ab-volume         | An A/B volume                                        |
+| encrypted-volume  | An encrypted volume                                  |
+| verity-device     | A verity device                                      |
 
 ## Referrer Description
 
 This table lists all the different kinds of referrers that exist in the
 configuration, along with their descriptions.
 
-| Referrer kind      | Description                                                                                                                                                                                                  |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| none               | Represents a 'null referrer', i.e. an entity that does not refer to any block device.<br>E.g. Block devices that do not refer to any other block devices, such as disks, partitions, and adopted partitions. |
-| raid-array         | A RAID array                                                                                                                                                                                                 |
-| ab-volume          | An A/B volume                                                                                                                                                                                                |
-| encrypted-volume   | An encrypted volume                                                                                                                                                                                          |
-| verity-device      | A verity device                                                                                                                                                                                              |
-| filesystem-new     | A new filesystem                                                                                                                                                                                             |
-| filesystem-image   | A filesystem from an image                                                                                                                                                                                   |
-| filesystem-esp     | An ESP/EFI filesystem                                                                                                                                                                                        |
-| filesystem-adopted | An adopted filesystem                                                                                                                                                                                        |
+| Referrer kind      | Description                |
+| ------------------ | -------------------------- |
+| raid-array         | A RAID array               |
+| ab-volume          | An A/B volume              |
+| encrypted-volume   | An encrypted volume        |
+| verity-device      | A verity device            |
+| filesystem-new     | A new filesystem           |
+| filesystem-image   | A filesystem from an image |
+| filesystem-esp     | An ESP/EFI filesystem      |
+| filesystem-adopted | An adopted filesystem      |
 
 ## Reference Validity
 
@@ -65,17 +63,16 @@ that can be referenced.
 A single cell in the table represents whether a referrer of a certain type can
 reference a block device of a certain type.
 
-| Referrer ╲ Device   | none | disk | partition | adopted-partition | raid-array | ab-volume | encrypted-volume | verity-device |
-| ------------------- | ---- | ---- | --------- | ----------------- | ---------- | --------- | ---------------- | ------------- |
-| none                | Yes  | No   | No        | No                | No         | No        | No               | No            |
-| raid-array          | Yes  | No   | Yes       | No                | No         | No        | No               | No            |
-| ab-volume           | Yes  | No   | Yes       | No                | Yes        | No        | Yes              | No            |
-| encrypted-volume    | Yes  | No   | Yes       | No                | Yes        | No        | No               | No            |
-| verity-device       | Yes  | No   | Yes       | No                | Yes        | Yes       | No               | No            |
-| filesystem-new      | Yes  | No   | Yes       | No                | Yes        | Yes       | Yes              | Yes           |
-| filesystem-image    | Yes  | No   | Yes       | No                | Yes        | Yes       | Yes              | Yes           |
-| filesystem-esp      | Yes  | No   | Yes       | Yes               | Yes        | No        | No               | No            |
-| filesystem-adopted  | Yes  | No   | No        | Yes               | No         | No        | No               | No            |
+| Referrer ╲ Device   | disk | partition | adopted-partition | raid-array | ab-volume | encrypted-volume | verity-device |
+| ------------------- | ---- | --------- | ----------------- | ---------- | --------- | ---------------- | ------------- |
+| raid-array          | No   | Yes       | No                | No         | No        | No               | No            |
+| ab-volume           | No   | Yes       | No                | Yes        | No        | Yes              | No            |
+| encrypted-volume    | No   | Yes       | No                | Yes        | No        | No               | No            |
+| verity-device       | No   | Yes       | No                | Yes        | Yes       | No               | No            |
+| filesystem-new      | No   | Yes       | No                | Yes        | Yes       | Yes              | Yes           |
+| filesystem-image    | No   | Yes       | No                | Yes        | Yes       | Yes              | Yes           |
+| filesystem-esp      | No   | Yes       | Yes               | Yes        | No        | No               | No            |
+| filesystem-adopted  | No   | No        | Yes               | No         | No        | No               | No            |
 
 ## Reference Count
 
@@ -84,7 +81,6 @@ shows valid reference counts for each referrer type.
 
 | Referrer type      | Min | Max |
 | ------------------ | --- | --- |
-| none               | 0   | 0   |
 | raid-array         | 2   | ∞   |
 | ab-volume          | 2   | 2   |
 | encrypted-volume   | 1   | 1   |
@@ -101,7 +97,6 @@ the rules for sharing references in the storage configuration.
 
 | Referrer type      | Valid sharing peers |
 | ------------------ | ------------------- |
-| none               | (none)              |
 | raid-array         | (none)              |
 | ab-volume          | (none)              |
 | encrypted-volume   | (none)              |
@@ -217,7 +212,6 @@ Some referrers only support specific underlying partitions types.
 
 | Referrer type      | Allowed partition types                                    |
 | ------------------ | ---------------------------------------------------------- |
-| none               | any                                                        |
 | raid-array         | any                                                        |
 | ab-volume          | any                                                        |
 | encrypted-volume   | any type except 'esp' or 'root' or 'root-verity' or 'home' |
@@ -233,7 +227,6 @@ Some referrers may only refer to RAID arrays with certain RAID levels.
 
 | Referrer type      | Allowed RAID levels           |
 | ------------------ | ----------------------------- |
-| none               | May not refer to a RAID array |
 | raid-array         | May not refer to a RAID array |
 | ab-volume          | any                           |
 | encrypted-volume   | any                           |

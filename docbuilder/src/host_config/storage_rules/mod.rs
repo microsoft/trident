@@ -29,6 +29,8 @@ mod referrers;
 fn get_referrers() -> Vec<BlkDevReferrerKind> {
     BlkDevReferrerKind::iter()
         .filter(|k| k.document())
+        // Filter the none referrer!
+        .filter(|k| k != &BlkDevReferrerKind::None)
         .collect::<Vec<_>>()
 }
 
@@ -37,6 +39,8 @@ fn get_referrers() -> Vec<BlkDevReferrerKind> {
 fn get_devices() -> Vec<BlkDevKind> {
     BlkDevKind::iter()
         .filter(|d| d.document())
+        // Filter the none device!
+        .filter(|d| d != &BlkDevKind::None)
         .collect::<Vec<_>>()
 }
 

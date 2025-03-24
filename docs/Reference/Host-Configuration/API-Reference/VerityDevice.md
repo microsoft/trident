@@ -14,17 +14,19 @@ Verity device configuration.
 
 The ID of the partition to use as the verity data partition.
 
-| Characteristic | Value    |
-| -------------- | -------- |
-| Type           | `string` |
+| Characteristic | Value             |
+| -------------- | ----------------- |
+| Type           | `string`          |
+| Format         | `Block Device ID` |
 
 ### `hashDeviceId` **<span style="color:orange;">(required)</span>**
 
 The ID of the partition to use as the verity hash partition.
 
-| Characteristic | Value    |
-| -------------- | -------- |
-| Type           | `string` |
+| Characteristic | Value             |
+| -------------- | ----------------- |
+| Type           | `string`          |
+| Format         | `Block Device ID` |
 
 ### `id` **<span style="color:orange;">(required)</span>**
 

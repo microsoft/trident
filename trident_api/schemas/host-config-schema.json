@@ -290,7 +290,7 @@
             }
           ],
           "nullable": true,
-          "string_shortcut": true
+          "string_shortcut": "path"
         },
         "source": {
           "description": "The source of the file system.\n\nIf not specified, this field will default to OS image.\n\nWhen making a `swap` filesystem the field must be set to `new`.",
@@ -1363,11 +1363,13 @@
         },
         "dataDeviceId": {
           "description": "The ID of the partition to use as the verity data partition.",
-          "type": "string"
+          "type": "string",
+          "format": "Block Device ID"
         },
         "hashDeviceId": {
           "description": "The ID of the partition to use as the verity hash partition.",
-          "type": "string"
+          "type": "string",
+          "format": "Block Device ID"
         },
         "id": {
           "description": "Block device id of the verity device.",
