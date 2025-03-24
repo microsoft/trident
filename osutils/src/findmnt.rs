@@ -70,7 +70,7 @@ use std::{
 use anyhow::Context;
 use serde::Deserialize;
 
-use sysdefs::filesystems::KnownFilesystemType;
+use sysdefs::filesystems::KernelFilesystemType;
 use trident_api::{config::MountOptions, constants::ROOT_MOUNT_POINT_PATH};
 
 use crate::dependencies::{Command, Dependency};
@@ -113,7 +113,7 @@ pub struct MountpointMetadata {
     pub fsroot: PathBuf,
 
     /// Filesystem type.
-    pub fstype: KnownFilesystemType,
+    pub fstype: KernelFilesystemType,
 
     /// Options.
     pub options: MountOptions,

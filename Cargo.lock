@@ -2559,6 +2559,7 @@ dependencies = [
  "anyhow",
  "enumflags2",
  "serde",
+ "serde_json",
  "strum",
  "strum_macros",
  "uuid",
