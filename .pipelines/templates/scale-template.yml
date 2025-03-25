@@ -62,6 +62,11 @@ parameters:
     type: boolean
     default: false
 
+  - name: includeUKI
+    displayName: "Include UKI testing"
+    type: boolean
+    default: false
+
 stages:
   # Build tools (Go stuff)
   - template: stages/building_tools/building-tools.yml
@@ -90,3 +95,4 @@ stages:
       baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
       includeQemu: ${{ parameters.includeQemu }}
       includeAzure: ${{ parameters.includeAzure }}
+      includeUKI: ${{ parameters.includeUKI }}

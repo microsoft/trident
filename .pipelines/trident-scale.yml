@@ -131,3 +131,4 @@ extends:
           forceTridentRebuild: ${{ parameters.forceTridentRebuild }}
           includeQemu: true
           includeAzure: false
+          includeUKI: true

@@ -56,6 +56,7 @@ function sshCommand() {
         -o ServerAliveInterval=5 \
         -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null \
+        -i ../test-images/build/id_rsa \
         $SSH_USER@$VM_IP \
         "$COMMAND"
 }
@@ -71,6 +72,7 @@ function sshProxyPort() {
         -o ServerAliveInterval=5 \
         -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null \
+        -i ../test-images/build/id_rsa \
         $SSH_USER@$VM_IP &
 }
 

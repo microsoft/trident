@@ -20,8 +20,8 @@ killUpdateServer $UPDATE_PORT_B
 ls -l $ARTIFACTS/update-a
 ls -l $ARTIFACTS/update-b
 
-COSI_FILES=$(find $ARTIFACTS/update-a -type f -name '*.cosi')
-COSI_FILES_COUNT=$(echo $COSI_FILES | wc -l)
+COSI_FILES="$(find $ARTIFACTS/update-a -type f -name '*.cosi')"
+COSI_FILES_COUNT=$(echo "$COSI_FILES" | wc -l)
 
 if [ $COSI_FILES_COUNT -lt 1 ]; then
     echo "COSI file not found!"

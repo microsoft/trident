@@ -52,6 +52,11 @@ parameters:
     type: boolean
     default: true
 
+  - name: runUKITests
+    displayName: "Run UKI scale tests"
+    type: boolean
+    default: true
+
 schedules:
   - cron: "0 8 * * *" # 1 am PST
     displayName: Daily build
@@ -149,3 +154,4 @@ extends:
           forceTridentRebuild: ${{ parameters.forceTridentRebuild }}
           includeQemu: ${{ parameters.runQemuTests }}
           includeAzure: ${{ parameters.runAzureTests }}
+          includeUKI: ${{ parameters.runUKITests }}

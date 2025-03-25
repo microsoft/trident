@@ -31,6 +31,14 @@ parameters:
       - qemu
       - azure
 
+  - name: flavor
+    displayName: Image flavor
+    type: string
+    values:
+      - qemu
+      - azure
+      - uki
+
   - name: pool
     displayName: Agent pool
     type: string
@@ -67,8 +75,8 @@ jobs:
             RESOURCE_GROUP: "azlinux_bmp_staging_eastus2"
             AZCOPY_AUTO_LOGIN_TYPE: "MSI"
 
-  - job: UpdateTesting_${{ parameters.platform }}
-    displayName: Update Testing - ${{ parameters.platform }}
+  - job: UpdateTesting_${{ parameters.flavor }}
+    displayName: Update Testing - ${{ parameters.flavor }}
     timeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
     pool:
       type: linux
@@ -82,8 +90,8 @@ jobs:
 
     variables:
       tridentSourceDirectory: $(Build.SourcesDirectory)
-      ob_outputDirectory: $(tridentSourceDirectory)/deployment_logs_${{ parameters.platform }}
-      ob_artifactBaseName: "update-testing-${{ parameters.platform }}-$(System.JobPositionInPhase)"
+      ob_outputDirectory: $(tridentSourceDirectory)/deployment_logs_${{ parameters.flavor }}
+      ob_artifactBaseName: "update-testing-${{ parameters.flavor }}-$(System.JobPositionInPhase)"
       IMAGE_DEFINITION: "trident-vm-verity-testimage-$(System.DefinitionId)"
       TEST_RESOURCE_GROUP: trident-vm-servicing-validation-$(Build.BuildId)-$(System.JobPositionInPhase)
       SUBSCRIPTION: 04cdc145-a4f9-42d4-9868-c46d23d0c63f # CoreOS_Mariner_BMP_Staging
@@ -93,21 +101,21 @@ jobs:
           - task: DownloadPipelineArtifact@2
             inputs:
               buildType: current
-              artifactName: image-${{ parameters.platform }}-base
+              artifactName: image-${{ parameters.flavor }}-base
               targetPath: "$(Build.ArtifactStagingDirectory)/"
             displayName: Download Base Image
 
       - task: DownloadPipelineArtifact@2
         inputs:
           buildType: current
-          artifactName: image-${{ parameters.platform }}-update-a
+          artifactName: image-${{ parameters.flavor }}-update-a
           targetPath: "$(Build.ArtifactStagingDirectory)/update-a"
         displayName: Download Update Image A
 
       - task: DownloadPipelineArtifact@2
         inputs:
           buildType: current
-          artifactName: image-${{ parameters.platform }}-update-b
+          artifactName: image-${{ parameters.flavor }}-update-b
           targetPath: "$(Build.ArtifactStagingDirectory)/update-b"
         displayName: Download Update Image B
 
@@ -150,6 +158,7 @@ jobs:
           IMAGE_DEFINITION: $(IMAGE_DEFINITION)
           TEST_PLATFORM: ${{ parameters.platform }}
           SUBSCRIPTION: $(SUBSCRIPTION)
+          SECURE_BOOT: ${{ ne(parameters.flavor, 'uki') }}
         timeoutInMinutes: 5
 
       - bash: ./scripts/loop-update/check-deployment.sh
@@ -176,18 +185,20 @@ jobs:
       # Configuration, and validate that they succeed. Rollback testing will only be run when
       # the rollbackTesting parameter is true. The scaling test logic will set it to false.
 
-      - bash: ./scripts/loop-update/loop-update.sh
-        env:
-          ARTIFACTS: $(Build.ArtifactStagingDirectory)
-          OUTPUT: $(ob_outputDirectory)
-          VERBOSE: ${{ parameters.verboseLogging }}
-          RETRY_COUNT: 3
-          EXPECTED_VOLUME: "volume-b"
-          ROLLBACK: "true"
-          TEST_RESOURCE_GROUP: $(TEST_RESOURCE_GROUP)
-          TEST_PLATFORM: ${{ parameters.platform }}
-        displayName: "Check that Trident can roll back and perform A/B update after"
-        condition: and(succeeded(), eq(${{ parameters.rollbackTesting }}, true))
+      # TODO: reenable as part of https://dev.azure.com/mariner-org/ECF/_workitems/edit/10624
+      - ${{ if ne(parameters.flavor, 'uki') }}:
+        - bash: ./scripts/loop-update/loop-update.sh
+          env:
+            ARTIFACTS: $(Build.ArtifactStagingDirectory)
+            OUTPUT: $(ob_outputDirectory)
+            VERBOSE: ${{ parameters.verboseLogging }}
+            RETRY_COUNT: 3
+            EXPECTED_VOLUME: "volume-b"
+            ROLLBACK: "true"
+            TEST_RESOURCE_GROUP: $(TEST_RESOURCE_GROUP)
+            TEST_PLATFORM: ${{ parameters.platform }}
+          displayName: "Check that Trident can roll back and perform A/B update after"
+          condition: and(succeeded(), eq(${{ parameters.rollbackTesting }}, true))
 
       # TODO add more e2e tests here (Task 8813)
 

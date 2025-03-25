@@ -23,7 +23,7 @@ scpDownloadFile() {
     local SRC=$1
     local DEST=$2
 
-    scp -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $SSH_USER@$VM_IP:$SRC $DEST
+    scp -i ../test-images/build/id_rsa -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $SSH_USER@$VM_IP:$SRC $DEST
 }
 
 downloadCrashdumps() {

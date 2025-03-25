@@ -46,6 +46,11 @@ parameters:
     type: string
     default: "*.*.*"
 
+  - name: useStagedSshKeys
+    displayName: "Use staged SSH keys"
+    type: boolean
+    default: false
+
 jobs:
   - job: PrepareImage_${{ replace(parameters.label, '-', '_') }}
     displayName: Prepare Image ${{ parameters.label }}
@@ -72,12 +77,6 @@ jobs:
           targetPath: "$(Build.ArtifactStagingDirectory)/ssh"
         displayName: Download SSH Keys
 
-      - bash: |
-          set -eux
-          cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* ~/.ssh/
-          mkdir -p $(ob_outputDirectory)
-        displayName: Set up SSH Keys
-
       - template: ../common_tasks/find-base-image-version.yml
         parameters:
           baseimgBuildType: ${{ parameters.baseimgBuildType }}
@@ -95,3 +94,4 @@ jobs:
           baseimgAzureLinuxVersion: ${{ parameters.baseimgAzlVersion }}
           downloadTrident: false
           baseimgType: ${{ parameters.baseimgType }}
+          useStagedSshKeys: ${{ parameters.useStagedSshKeys }}

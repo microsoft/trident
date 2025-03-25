@@ -6,7 +6,30 @@ set -euo pipefail
 if [ "$TEST_PLATFORM" == "qemu" ]; then
     virsh destroy "$VM_NAME" || true
     virsh undefine "$VM_NAME" --nvram || true
-    cp "$ARTIFACTS/trident-vm-verity-testimage.qcow2" "$ARTIFACTS/booted.qcow2"
+
+    IMAGE_FILES="$(find $ARTIFACTS -type f -name 'trident-vm-*-testimage.qcow2')"
+    IMAGE_FILES_COUNT=$(echo "$IMAGE_FILES" | wc -l)
+
+    if [ $IMAGE_FILES_COUNT -lt 1 ]; then
+        echo "Image file not found!"
+        exit 1
+    elif [ $IMAGE_FILES_COUNT -gt 1 ]; then
+        echo "Multiple image files found:"
+        echo $IMAGE_FILES
+        exit 1
+    else
+        echo "Image file found: $IMAGE_FILES"
+    fi
+
+    IMAGE_FILE=$(echo $IMAGE_FILES | head -1)
+
+    BOOT_IMAGE="$ARTIFACTS/booted.qcow2"
+    cp "$IMAGE_FILE" "$BOOT_IMAGE"
+
+    BOOT_CONFIG="--machine q35 --boot uefi,loader_secure=yes"
+    if [ "${SECURE_BOOT:-}" == "False" ]; then
+        BOOT_CONFIG="--boot uefi,loader_secure=no"
+    fi
 
     sudo virt-install \
         --name "$VM_NAME" \
@@ -14,10 +37,9 @@ if [ "$TEST_PLATFORM" == "qemu" ]; then
         --vcpus 2 \
         --os-variant generic \
         --import \
-        --disk "$ARTIFACTS/booted.qcow2,bus=sata" \
+        --disk "$BOOT_IMAGE,bus=sata" \
         --network default \
-        --machine q35 \
-        --boot uefi,loader=/usr/share/OVMF/OVMF_CODE_4M.fd,loader_secure=yes \
+        $BOOT_CONFIG \
         --noautoconsole \
         --serial "file,path=$VM_SERIAL_LOG"
 
