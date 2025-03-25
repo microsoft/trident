@@ -19,7 +19,7 @@ The file system type.
 
 ### `deviceId` (optional)
 
-The ID of the block device to associate with the file system.
+The ID of the block device on which to place this filesystem.
 
 | Characteristic | Value    |
 | -------------- | -------- |

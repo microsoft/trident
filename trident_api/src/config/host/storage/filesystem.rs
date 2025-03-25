@@ -19,7 +19,7 @@ use crate::{
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct FileSystem {
-    /// The ID of the block device to associate with the file system.
+    /// The ID of the block device on which to place this filesystem.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub device_id: Option<BlockDeviceId>,
 

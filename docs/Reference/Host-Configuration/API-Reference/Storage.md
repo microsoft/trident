@@ -67,6 +67,23 @@ RAID configuration.
 | Type           | `Raid`            |
 | Link           | [Raid](./Raid.md) |
 
+### `swap` (optional)
+
+Swap device configuration.
+
+| Characteristic | Value   |
+| -------------- | ------- |
+| Type           | `array` |
+
+- Items of the array must have the type:
+
+   | Characteristic   | Value                         |
+   | ---------------- | ----------------------------- |
+   | Type             | `SwapDevice`                  |
+   | Link             | [SwapDevice](./SwapDevice.md) |
+   | Shorthand Type   | `string`                      |
+   | Shorthand Format | `Block Device ID`             |
+
 ### `verity` (optional)
 
 Verity device configuration.

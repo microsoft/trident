@@ -133,6 +133,9 @@ impl StorageGraphNode {
                         ),
                     ]
                 }
+                HostConfigBlockDevice::SwapDevice(swap_dev) => {
+                    vec![StorageReference::new_regular(&swap_dev.device_id)]
+                }
             },
             Self::FileSystem(fs) => fs
                 .device_id

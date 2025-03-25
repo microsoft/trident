@@ -84,7 +84,6 @@ where
     deserializer.deserialize_option(OptStringOrStruct(PhantomData))
 }
 
-#[allow(dead_code)]
 pub(crate) fn vec_string_or_struct<'de, T, D>(deserializer: D) -> Result<Vec<T>, D::Error>
 where
     T: Deserialize<'de> + FromStr,
@@ -199,7 +198,6 @@ where
     schema.into()
 }
 
-#[allow(dead_code)]
 #[cfg(feature = "schemars")]
 pub(crate) fn vec_string_or_struct_schema<T>(
     generator: &mut schemars::gen::SchemaGenerator,

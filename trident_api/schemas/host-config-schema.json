@@ -272,7 +272,7 @@
       ],
       "properties": {
         "deviceId": {
-          "description": "The ID of the block device to associate with the file system.",
+          "description": "The ID of the block device on which to place this filesystem.",
           "type": "string",
           "nullable": true
         },
@@ -1196,12 +1196,49 @@
             }
           ]
         },
+        "swap": {
+          "description": "Swap device configuration.",
+          "type": "array",
+          "oneOf": [
+            {
+              "$ref": "#/definitions/SwapDevice"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/definitions/SwapDevice"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "string_shortcut": "Block Device ID"
+          }
+        },
         "verity": {
           "description": "Verity device configuration.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/VerityDevice"
           }
+        }
+      },
+      "additionalProperties": false
+    },
+    "SwapDevice": {
+      "type": "object",
+      "required": [
+        "deviceId"
+      ],
+      "properties": {
+        "deviceId": {
+          "description": "The ID of the block device to use for this swap device.",
+          "type": "string",
+          "format": "Block Device ID"
         }
       },
       "additionalProperties": false

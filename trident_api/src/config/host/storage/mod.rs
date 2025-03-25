@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
+use swap::SwapDevice;
 
 use crate::{
     constants::{
@@ -27,6 +28,7 @@ pub mod internal;
 pub mod partitions;
 pub mod raid;
 pub mod storage_graph;
+pub mod swap;
 pub mod verity;
 
 use self::{
@@ -75,6 +77,20 @@ pub struct Storage {
     /// Verity device configuration.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub verity: Vec<VerityDevice>,
+
+    /// Swap device configuration.
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        deserialize_with = "crate::primitives::shortcuts::vec_string_or_struct"
+    )]
+    #[cfg_attr(
+        feature = "schemars",
+        schemars(
+            schema_with = "crate::primitives::shortcuts::vec_string_or_struct_schema::<SwapDevice>"
+        )
+    )]
+    pub swap: Vec<SwapDevice>,
 
     /// Old API for mount points.
     ///

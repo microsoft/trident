@@ -90,6 +90,7 @@ impl HostConfigBlockDevice {
             Self::ABVolume(_) => (),
             Self::EncryptedVolume(_) => (),
             Self::VerityDevice(_) => (),
+            Self::SwapDevice(_) => (),
         }
 
         Ok(())
@@ -188,6 +189,8 @@ impl BlkDevReferrerKind {
             Self::ABVolume => ValidCardinality::new_exact(2),
             Self::EncryptedVolume => ValidCardinality::new_exact(1),
             Self::VerityDevice => ValidCardinality::new_exact(2),
+            Self::SwapDevice => ValidCardinality::new_exact(1),
+
             Self::FileSystemNew => ValidCardinality::new_at_most(1),
             Self::FileSystemEsp => ValidCardinality::new_exact(1),
             Self::FileSystemAdopted => ValidCardinality::new_exact(1),
@@ -222,6 +225,7 @@ impl BlkDevReferrerKind {
             Self::VerityDevice => {
                 BlkDevKindFlag::Partition | BlkDevKindFlag::RaidArray | BlkDevKindFlag::ABVolume
             }
+            Self::SwapDevice => BlkDevKindFlag::Partition | BlkDevKindFlag::EncryptedVolume,
         }
     }
 }
@@ -260,6 +264,7 @@ impl BlkDevReferrerKind {
             | Self::ABVolume
             | Self::EncryptedVolume
             | Self::VerityDevice
+            | Self::SwapDevice
             | Self::FileSystemNew
             | Self::FileSystemEsp
             | Self::FileSystemAdopted
@@ -278,7 +283,11 @@ impl BlkDevReferrerKind {
             Self::None => false,
 
             // These should always have homogeneous reference kinds.
-            Self::RaidArray | Self::ABVolume | Self::EncryptedVolume | Self::VerityDevice => true,
+            Self::RaidArray
+            | Self::ABVolume
+            | Self::EncryptedVolume
+            | Self::VerityDevice
+            | Self::SwapDevice => true,
 
             // These only have one target, so enforcing this is meaningless.
             Self::FileSystemNew
@@ -364,6 +373,7 @@ impl BlkDevKind {
                     Ok(Some(blkdev.unwrap_verity_device()?.name.as_bytes()))
                 }),
             )]),
+            Self::SwapDevice => None,
         }
     }
 }
@@ -389,6 +399,7 @@ impl BlkDevReferrerKind {
 
             // These don't really care about partition sizes.
             Self::EncryptedVolume
+            | Self::SwapDevice
             | Self::FileSystemNew
             | Self::FileSystemEsp
             | Self::FileSystemAdopted
@@ -414,6 +425,7 @@ impl BlkDevReferrerKind {
             // These care about having all underlying partitions be of the same
             // type.
             Self::EncryptedVolume
+            | Self::SwapDevice
             | Self::FileSystemNew
             | Self::FileSystemEsp
             | Self::FileSystemAdopted
@@ -473,6 +485,7 @@ impl BlkDevReferrerKind {
                 ])
             }
             Self::FileSystemImage => AllowBlockList::Any,
+            Self::SwapDevice => AllowBlockList::Allow(vec![PartitionType::Swap]),
         }
     }
 }
@@ -569,6 +582,7 @@ impl BlkDevReferrerKind {
             | Self::ABVolume
             | Self::EncryptedVolume
             | Self::VerityDevice
+            | Self::SwapDevice
             | Self::FileSystemNew
             | Self::FileSystemEsp
             | Self::FileSystemAdopted

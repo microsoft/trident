@@ -34,6 +34,7 @@ ServicingTypeSelection
 SoftwareRaidArray
 SshMode
 Storage
+SwapDevice
 Trident
 User
 VerityCorruptionOption

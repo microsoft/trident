@@ -23,6 +23,7 @@ pub use host::{
         internal::InternalMountPoint,
         partitions::{AdoptedPartition, Partition, PartitionSize, PartitionType},
         raid::{Raid, RaidLevel, SoftwareRaidArray},
+        swap::SwapDevice,
         verity::VerityDevice,
         Storage,
     },

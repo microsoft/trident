@@ -32,6 +32,7 @@ impl Display for BlkDevKind {
             Self::ABVolume => write!(f, "ab-volume"),
             Self::EncryptedVolume => write!(f, "encrypted-volume"),
             Self::VerityDevice => write!(f, "verity-device"),
+            Self::SwapDevice => write!(f, "swap-device"),
         }
     }
 }
@@ -44,6 +45,7 @@ impl Display for BlkDevReferrerKind {
             Self::ABVolume => write!(f, "ab-volume"),
             Self::EncryptedVolume => write!(f, "encrypted-volume"),
             Self::VerityDevice => write!(f, "verity-device"),
+            Self::SwapDevice => write!(f, "swap-device"),
             Self::FileSystemNew => write!(f, "filesystem-new"),
             Self::FileSystemEsp => write!(f, "filesystem-esp"),
             Self::FileSystemAdopted => write!(f, "filesystem-adopted"),
