@@ -23,7 +23,7 @@ use trident_api::{
 #[clap(version = trident::TRIDENT_VERSION)]
 struct Cli {
     /// Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
-    #[arg(global = true, short, long, default_value_t = LevelFilter::Info)]
+    #[arg(global = true, short, long, default_value_t = LevelFilter::Debug)]
     verbosity: LevelFilter,
 
     #[clap(subcommand)]

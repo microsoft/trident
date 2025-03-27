@@ -7,7 +7,7 @@ Requires=docker.service
 ExecStartPre=/bin/bash /trident_cdrom/pre-trident-script.sh
 ExecStartPre=/bin/bash -c "set -e; if ! docker image ls | grep -q 'trident/trident'; then curl $(grep -oP '^\s*phonehome: \\K.*(?=phonehome)' /etc/trident/config.yaml)files/trident-container.tar.gz -o /trident-container.tar.gz -f; fi"
 ExecStartPre=/bin/bash -c "set -e; if ! docker image ls | grep -q 'trident/trident'; then docker load --input /trident-container.tar.gz; fi"
-ExecStart=docker run --privileged -v /etc/trident:/etc/trident -v /run/initramfs/live:/trident_cdrom -v /var/lib/trident:/var/lib/trident -v /:/host -v /dev:/dev -v /run:/run -v /sys:/sys --pid host trident/trident:latest run --verbosity INFO
+ExecStart=docker run --privileged -v /etc/trident:/etc/trident -v /run/initramfs/live:/trident_cdrom -v /var/lib/trident:/var/lib/trident -v /:/host -v /dev:/dev -v /run:/run -v /sys:/sys --pid host trident/trident:latest run
 Type=oneshot
 
 [Install]

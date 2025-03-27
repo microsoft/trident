@@ -95,7 +95,7 @@ for i in $(seq 1 $RETRY_COUNT); do
     truncateLog
     LOGGING="-v WARN"
     if [ $VERBOSE == True ]; then
-        LOGGING="-v INFO"
+        LOGGING="-v DEBUG"
     fi
 
     sshProxyPort $UPDATE_PORT_A

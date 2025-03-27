@@ -4,7 +4,7 @@ After=network.target network-online.target systemd-udev-settle.service trident-n
 ConditionPathExists=/etc/trident/config.yaml
 
 [Service]
-ExecStart=trident install --verbosity DEBUG
+ExecStart=trident install
 Type=oneshot
 
 [Install]

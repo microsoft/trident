@@ -5,7 +5,7 @@ StartLimitInterval=200
 StartLimitBurst=5
 
 [Service]
-ExecStart=/usr/bin/trident start-network --verbosity INFO
+ExecStart=/usr/bin/trident start-network
 Type=oneshot
 Restart=on-failure
 RestartSec=5s
