@@ -159,6 +159,15 @@ impl Default for MountOptions {
     }
 }
 
+impl<T> From<T> for MountOptions
+where
+    T: Into<String>,
+{
+    fn from(options: T) -> Self {
+        MountOptions::new(options)
+    }
+}
+
 /// File system types.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, EnumIter)]
 #[serde(rename_all = "lowercase", deny_unknown_fields)]

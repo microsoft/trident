@@ -51,7 +51,7 @@ pub mod storage;
 mod etc_overlay;
 
 pub(crate) use clean_install::{clean_install, finalize_clean_install};
-pub(crate) use context::EngineContext;
+pub(crate) use context::{filesystem, EngineContext};
 pub use newroot::NewrootMount;
 pub(crate) use update::{finalize_update, update};
 

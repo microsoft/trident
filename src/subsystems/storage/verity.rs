@@ -1,38 +1,29 @@
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::{fs, path::Path};
 
 use anyhow::{bail, Context, Error};
 use log::debug;
 
-use osutils::dependencies::Dependency;
-use trident_api::{
-    config::{self, InternalMountPoint},
-    constants::{
-        MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH, TRIDENT_OVERLAY_LOWER_RELATIVE_PATH,
-        TRIDENT_OVERLAY_PATH, TRIDENT_OVERLAY_UPPER_RELATIVE_PATH,
-        TRIDENT_OVERLAY_WORK_RELATIVE_PATH,
-    },
+use osutils::{dependencies::Dependency, tabfile::TabFileEntry};
+use trident_api::constants::{
+    MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH, TRIDENT_OVERLAY_LOWER_RELATIVE_PATH,
+    TRIDENT_OVERLAY_PATH, TRIDENT_OVERLAY_UPPER_RELATIVE_PATH, TRIDENT_OVERLAY_WORK_RELATIVE_PATH,
 };
 
 use crate::engine::EngineContext;
 
 /// Create read-only /etc/ overlay mount point representation.
-pub(super) fn create_etc_overlay_mount_point() -> InternalMountPoint {
+pub(super) fn create_etc_overlay_mount_point() -> TabFileEntry {
     // inject the /etc overlay used for verity setups
     debug!("Creating /etc overlay mount point for verity setups");
-    InternalMountPoint {
-        filesystem: config::FileSystemType::Overlay,
-        options: vec![
-            format!("lowerdir=/{TRIDENT_OVERLAY_LOWER_RELATIVE_PATH}"),
-            format!("upperdir={TRIDENT_OVERLAY_PATH}/{TRIDENT_OVERLAY_UPPER_RELATIVE_PATH}"),
-            format!("workdir={TRIDENT_OVERLAY_PATH}/{TRIDENT_OVERLAY_WORK_RELATIVE_PATH}"),
-            MOUNT_OPTION_READ_ONLY.to_owned(),
-        ],
-        target_id: "".to_owned(),
-        path: PathBuf::from(ROOT_MOUNT_POINT_PATH).join(TRIDENT_OVERLAY_LOWER_RELATIVE_PATH),
-    }
+    TabFileEntry::new_overlay(
+        Path::new(ROOT_MOUNT_POINT_PATH).join(TRIDENT_OVERLAY_LOWER_RELATIVE_PATH),
+    )
+    .with_options(vec![
+        format!("lowerdir=/{TRIDENT_OVERLAY_LOWER_RELATIVE_PATH}"),
+        format!("upperdir={TRIDENT_OVERLAY_PATH}/{TRIDENT_OVERLAY_UPPER_RELATIVE_PATH}"),
+        format!("workdir={TRIDENT_OVERLAY_PATH}/{TRIDENT_OVERLAY_WORK_RELATIVE_PATH}"),
+        MOUNT_OPTION_READ_ONLY.to_owned(),
+    ])
 }
 
 pub(super) fn create_machine_id(new_root_path: &Path) -> Result<(), Error> {
@@ -91,25 +82,26 @@ pub(super) fn validate_verity_compatibility(ctx: &EngineContext) -> Result<bool,
 mod tests {
     use super::*;
 
-    use std::path::PathBuf;
-
-    use trident_api::config::FileSystemType;
+    use osutils::tabfile::{TabDevice, TabMountPoint};
+    use sysdefs::filesystems::NodevFilesystemType;
 
     #[test]
     fn test_create_etc_overlay_mount_point() {
         assert_eq!(
             create_etc_overlay_mount_point(),
-            InternalMountPoint {
-                path: PathBuf::from("/etc"),
-                filesystem: FileSystemType::Overlay,
+            TabFileEntry {
+                device: TabDevice::Overlay,
+                mount_point: TabMountPoint::Path(
+                    Path::new(ROOT_MOUNT_POINT_PATH).join(TRIDENT_OVERLAY_LOWER_RELATIVE_PATH)
+                ),
+                fs_type: NodevFilesystemType::Overlay.into(),
                 options: vec![
                     "lowerdir=/etc".into(),
                     "upperdir=/var/lib/trident-overlay/etc/upper".into(),
                     "workdir=/var/lib/trident-overlay/etc/work".into(),
                     MOUNT_OPTION_READ_ONLY.into()
                 ],
-                target_id: "".into()
-            }
+            },
         );
     }
 }

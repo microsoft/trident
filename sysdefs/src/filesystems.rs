@@ -11,6 +11,17 @@ pub enum KernelFilesystemType {
     Other(String),
 }
 
+impl KernelFilesystemType {
+    /// Returns the kernel name of the filesystem type.
+    pub fn name(&self) -> &str {
+        match self {
+            KernelFilesystemType::Real(fs) => fs.into(),
+            KernelFilesystemType::Nodev(fs) => fs.into(),
+            KernelFilesystemType::Other(fs) => fs,
+        }
+    }
+}
+
 impl From<RealFilesystemType> for KernelFilesystemType {
     fn from(fs: RealFilesystemType) -> Self {
         KernelFilesystemType::Real(fs)

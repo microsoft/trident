@@ -2,6 +2,7 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use anyhow::{bail, Error};
 
+use sysdefs::filesystems::{KernelFilesystemType, NodevFilesystemType, RealFilesystemType};
 use trident_api::config::FileSystemType;
 
 /// File system types for `mount`
@@ -31,19 +32,11 @@ pub enum MkfsFileSystemType {
 }
 
 /// File system types for fstab file
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TabFileSystemType {
+    Kernel(KernelFilesystemType),
     Auto,
-    Ext2,
-    Ext3,
-    Ext4,
-    Xfs,
-    Vfat,
-    Ntfs,
-    Iso9660,
-    Tmpfs,
     Swap,
-    Overlay,
 }
 
 impl MountFileSystemType {
@@ -123,32 +116,37 @@ impl Display for MkfsFileSystemType {
     }
 }
 
+/// Anything that can be turned into a `KernelFilesystemType` can be turned into
+/// a `TabFileSystemType`.
+impl<T> From<T> for TabFileSystemType
+where
+    T: Into<KernelFilesystemType>,
+{
+    fn from(fs: T) -> Self {
+        Self::Kernel(fs.into())
+    }
+}
+
 impl TabFileSystemType {
-    pub fn name(self) -> &'static str {
+    // Returns the name of the filesystem type as consumed by fstab.
+    pub fn name(&self) -> &str {
         match self {
             Self::Auto => "auto",
-            Self::Ext2 => "ext2",
-            Self::Ext3 => "ext3",
-            Self::Ext4 => "ext4",
-            Self::Xfs => "xfs",
-            Self::Vfat => "vfat",
-            Self::Ntfs => "ntfs",
-            Self::Iso9660 => "iso9660",
-            Self::Tmpfs => "tmpfs",
-            Self::Overlay => "overlay",
-            TabFileSystemType::Swap => "swap",
+            Self::Swap => "swap",
+            Self::Kernel(fs) => fs.name(),
         }
     }
 
+    /// Converts a `FileSystemType` from the API into a `TabFileSystemType`.
     pub fn from_api_type(api_type: FileSystemType) -> Result<Self, Error> {
         Ok(match api_type {
-            FileSystemType::Ext4 => Self::Ext4,
-            FileSystemType::Xfs => Self::Xfs,
-            FileSystemType::Vfat => Self::Vfat,
-            FileSystemType::Ntfs => Self::Ntfs,
-            FileSystemType::Iso9660 => Self::Iso9660,
-            FileSystemType::Tmpfs => Self::Tmpfs,
-            FileSystemType::Overlay => Self::Overlay,
+            FileSystemType::Ext4 => RealFilesystemType::Ext4.into(),
+            FileSystemType::Xfs => RealFilesystemType::Xfs.into(),
+            FileSystemType::Vfat => RealFilesystemType::Vfat.into(),
+            FileSystemType::Ntfs => RealFilesystemType::Ntfs.into(),
+            FileSystemType::Iso9660 => RealFilesystemType::Iso9660.into(),
+            FileSystemType::Tmpfs => NodevFilesystemType::Tmpfs.into(),
+            FileSystemType::Overlay => NodevFilesystemType::Overlay.into(),
             FileSystemType::Auto => Self::Auto,
         })
     }

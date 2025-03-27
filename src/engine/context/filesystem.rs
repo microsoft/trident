@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use derive_more::From;
+
 use trident_api::{
     config::{FileSystem, FileSystemSource, FileSystemType, MountPoint},
     constants::{ESP_MOUNT_POINT_PATH, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
@@ -9,7 +11,7 @@ use trident_api::{
 
 use crate::engine::EngineContext;
 
-#[derive(Clone)]
+#[derive(Clone, From)]
 pub enum FileSystemData {
     Image(FileSystemDataImage),
     New(FileSystemDataNew),

@@ -3,8 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{Context, Error};
-use log::{debug, error, trace, warn};
+use log::{debug, error, warn};
 
 use osutils::lsblk;
 use trident_api::{
@@ -21,13 +20,11 @@ use trident_api::{
 use crate::engine::{EngineContext, Subsystem};
 
 mod encryption;
+mod fstab;
 mod image;
 mod osimage;
 mod raid;
-mod tabfile;
 mod verity;
-
-use tabfile::DEFAULT_FSTAB_PATH;
 
 const ENCRYPTION_SUBSYSTEM_NAME: &str = "encryption";
 const OSIMAGE_SUBSYSTEM_NAME: &str = "osimage";
@@ -185,9 +182,9 @@ impl Subsystem for StorageSubsystem {
 
     #[tracing::instrument(name = "storage_configuration", skip_all)]
     fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
-        generate_fstab(ctx, Path::new(tabfile::DEFAULT_FSTAB_PATH)).structured(
+        fstab::generate_fstab(ctx, Path::new(fstab::DEFAULT_FSTAB_PATH)).structured(
             ServicingError::GenerateFstab {
-                fstab_path: tabfile::DEFAULT_FSTAB_PATH.to_string(),
+                fstab_path: fstab::DEFAULT_FSTAB_PATH.to_string(),
             },
         )?;
 
@@ -205,24 +202,6 @@ impl Subsystem for StorageSubsystem {
     }
 }
 
-/// Create a tabfile that captures all the desired as per the spec in engine context.
-fn generate_fstab(ctx: &EngineContext, path: &Path) -> Result<(), Error> {
-    let mut mount_points = ctx.spec.storage.internal_mount_points.clone();
-    if ctx.spec.storage.has_verity_device() {
-        mount_points.push(verity::create_etc_overlay_mount_point());
-    }
-    let fstab = tabfile::from_mountpoints(ctx, &mount_points)
-        .context("Failed to serialize mount point configuration for the target OS")?;
-
-    fstab
-        .write(path)
-        .context(format!("Failed to write {}", DEFAULT_FSTAB_PATH))?;
-
-    trace!("Wrote '{}', contents: '{:?}'", DEFAULT_FSTAB_PATH, fstab);
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -233,12 +212,11 @@ mod tests {
         str::FromStr,
     };
 
-    use maplit::btreemap;
     use tempfile::NamedTempFile;
 
     use trident_api::{
         config::{
-            self, Disk as DiskConfig, FileSystemType, HostConfiguration, InternalMountPoint,
+            Disk as DiskConfig, FileSystemType, HostConfiguration, InternalMountPoint,
             Partition as PartitionConfig, PartitionSize, PartitionType, Raid, RaidLevel,
             SoftwareRaidArray, Storage as StorageConfig,
         },
@@ -265,7 +243,8 @@ mod tests {
         recovery_key_file
     }
 
-    fn get_host_config(recovery_key_file: &tempfile::NamedTempFile) -> HostConfiguration {
+    /// Produces a baseline Host Config with ab, encryption, and raid.
+    pub(super) fn get_host_config(recovery_key_file: &Path) -> HostConfiguration {
         HostConfiguration {
             storage: StorageConfig {
                 disks: vec![
@@ -330,9 +309,7 @@ mod tests {
                     }],
                 }),
                 encryption: Some(trident_api::config::Encryption {
-                    recovery_key_url: Some(
-                        url::Url::from_file_path(recovery_key_file.path()).unwrap(),
-                    ),
+                    recovery_key_url: Some(url::Url::from_file_path(recovery_key_file).unwrap()),
                     volumes: vec![trident_api::config::EncryptedVolume {
                         id: "enc1".to_owned(),
                         device_name: "luks-enc".to_owned(),
@@ -350,7 +327,7 @@ mod tests {
     fn test_validate_host_config_pass() {
         let mut ctx = get_ctx();
         let recovery_key_file = get_recovery_key_file();
-        ctx.spec = get_host_config(&recovery_key_file);
+        ctx.spec = get_host_config(recovery_key_file.path());
 
         StorageSubsystem.validate_host_config(&ctx).unwrap();
     }
@@ -361,7 +338,7 @@ mod tests {
     fn test_validate_host_config_invalid_disk_device_path_fail() {
         let mut ctx = get_ctx();
         let recovery_key_file = get_recovery_key_file();
-        ctx.spec = get_host_config(&recovery_key_file);
+        ctx.spec = get_host_config(recovery_key_file.path());
 
         ctx.spec.storage.disks.get_mut(0).unwrap().device = "/tmp".into();
 
@@ -384,7 +361,7 @@ mod tests {
     fn tests_validate_host_config_duplicate_disk_path_fail() {
         let mut ctx = get_ctx();
         let recovery_key_file = get_recovery_key_file();
-        ctx.spec = get_host_config(&recovery_key_file);
+        ctx.spec = get_host_config(recovery_key_file.path());
 
         ctx.spec.storage.disks.get_mut(0).unwrap().device = "/dev".into();
 
@@ -408,7 +385,7 @@ mod tests {
     fn test_validate_host_config_encryption_invalid_fail() {
         let mut ctx = get_ctx();
         let recovery_key_file = get_recovery_key_file();
-        ctx.spec = get_host_config(&recovery_key_file);
+        ctx.spec = get_host_config(recovery_key_file.path());
 
         // Delete the recovery key file to make the encryption configuration invalid.
         fs::remove_file(recovery_key_file.path()).unwrap();
@@ -423,67 +400,6 @@ mod tests {
                     path: recovery_key_file.path().to_string_lossy().to_string(),
                 }
             })
-        );
-    }
-
-    #[test]
-    fn test_generate_fstab() {
-        let expected_contents = "/part1 / ext4 defaults 0 1\n";
-        let temp_tabfile = tempfile::NamedTempFile::new().unwrap();
-        // passing dummy file
-        assert_eq!(
-            generate_fstab(
-                &EngineContext {
-                    spec: get_host_config(&temp_tabfile),
-                    ..Default::default()
-                },
-                temp_tabfile.path(),
-            )
-            .unwrap_err()
-            .root_cause()
-            .to_string(),
-            "Failed to find block device with id part1"
-        );
-
-        generate_fstab(
-            &EngineContext {
-                spec: get_host_config(&temp_tabfile),
-                partition_paths: btreemap! {
-                    "part1".into() => PathBuf::from("/part1"),
-                },
-                ..Default::default()
-            },
-            temp_tabfile.path(),
-        )
-        .unwrap();
-
-        assert_eq!(
-            fs::read_to_string(temp_tabfile.path()).unwrap(),
-            expected_contents,
-        );
-
-        // test with verity enabled
-
-        let expected_contents = "/part1 / ext4 defaults 0 1\noverlay /etc overlay lowerdir=/etc,upperdir=/var/lib/trident-overlay/etc/upper,workdir=/var/lib/trident-overlay/etc/work,ro 0 2\n";
-
-        let mut hc = get_host_config(&temp_tabfile);
-        hc.storage.verity = vec![config::VerityDevice::default()];
-
-        generate_fstab(
-            &EngineContext {
-                spec: hc,
-                partition_paths: btreemap! {
-                    "part1".into() => PathBuf::from("/part1"),
-                },
-                ..Default::default()
-            },
-            temp_tabfile.path(),
-        )
-        .unwrap();
-
-        assert_eq!(
-            fs::read_to_string(temp_tabfile.path()).unwrap(),
-            expected_contents,
         );
     }
 }

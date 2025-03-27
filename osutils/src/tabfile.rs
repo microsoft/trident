@@ -6,6 +6,7 @@ use std::{
 use anyhow::{bail, Context, Error};
 use serde_json::Value;
 
+use sysdefs::filesystems::NodevFilesystemType;
 use trident_api::constants::ROOT_MOUNT_POINT_PATH;
 
 use crate::{dependencies::Dependency, filesystems::TabFileSystemType};
@@ -84,7 +85,7 @@ impl TabFileEntry {
         Self {
             device: TabDevice::Tmpfs,
             mount_point: TabMountPoint::Path(mount_point.into()),
-            fs_type: TabFileSystemType::Tmpfs,
+            fs_type: NodevFilesystemType::Tmpfs.into(),
             options: Vec::new(),
         }
     }
@@ -94,7 +95,7 @@ impl TabFileEntry {
         Self {
             device: TabDevice::Overlay,
             mount_point: TabMountPoint::Path(mount_point.into()),
-            fs_type: TabFileSystemType::Overlay,
+            fs_type: NodevFilesystemType::Overlay.into(),
             options: Vec::new(),
         }
     }
