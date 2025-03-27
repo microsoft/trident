@@ -4,7 +4,7 @@ use osutils::{
     filesystems::TabFileSystemType,
     tabfile::{TabFile, TabFileEntry},
 };
-use trident_api::config::{FileSystemType, InternalMountPoint};
+use trident_api::config::{FileSystemType, InternalMountPoint, SwapDevice};
 
 use crate::engine::EngineContext;
 
@@ -15,12 +15,34 @@ pub(crate) fn from_mountpoints(
     mount_points: &[InternalMountPoint],
 ) -> Result<TabFile, Error> {
     // Generate a list of entries for the tab file
-    let entries = mount_points
+    let mut entries = mount_points
         .iter()
         .map(|mp| entry_from_mountpoint(ctx, mp))
         .collect::<Result<Vec<_>, _>>()?;
 
+    let swap_entries = ctx
+        .spec
+        .storage
+        .swap
+        .iter()
+        .map(|swap| entry_from_swap(ctx, swap))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // Add the swap entries to the list of entries
+    entries.extend(swap_entries);
+
     Ok(TabFile { entries })
+}
+
+fn entry_from_swap(ctx: &EngineContext, swap: &SwapDevice) -> Result<TabFileEntry, Error> {
+    // Look up the block device
+    let device = ctx.get_block_device_path(&swap.device_id).context(format!(
+        "Failed to find block device with id {}",
+        swap.device_id
+    ))?;
+
+    // Create the entry
+    Ok(TabFileEntry::new_swap(device))
 }
 
 fn entry_from_mountpoint(
@@ -41,15 +63,11 @@ fn entry_from_mountpoint(
             ))?;
 
             // Create the entry according to the file system type
-            match fs_type {
-                FileSystemType::Swap => TabFileEntry::new_swap(device),
-                _ => TabFileEntry::new_path(
-                    device,
-                    &mp.path,
-                    TabFileSystemType::from_api_type(fs_type)
-                        .context("Invalid file system type")?,
-                ),
-            }
+            TabFileEntry::new_path(
+                device,
+                &mp.path,
+                TabFileSystemType::from_api_type(fs_type).context("Invalid file system type")?,
+            )
         }
     }
     .with_options(mp.options.clone()))
@@ -61,7 +79,6 @@ mod tests {
 
     use std::{path::PathBuf, str::FromStr};
 
-    use indoc::indoc;
     use maplit::btreemap;
 
     use trident_api::{
@@ -69,9 +86,25 @@ mod tests {
             Disk, FileSystemType, HostConfiguration, Partition, PartitionSize, PartitionTableType,
             PartitionType, Storage,
         },
-        constants::{self, MOUNT_OPTION_READ_ONLY, SWAP_MOUNT_POINT},
+        constants::{self, MOUNT_OPTION_READ_ONLY},
         status::ServicingType,
     };
+
+    #[test]
+    fn test_entry_from_swap() {
+        let ctx = get_ctx();
+
+        assert_eq!(
+            entry_from_swap(
+                &ctx,
+                &SwapDevice {
+                    device_id: "swap".to_owned(),
+                },
+            )
+            .unwrap(),
+            TabFileEntry::new_swap(PathBuf::from("/dev/disk/by-partlabel/swap"))
+        );
+    }
 
     fn get_ctx() -> EngineContext {
         EngineContext {
@@ -146,26 +179,6 @@ mod tests {
     }
 
     #[test]
-    fn test_entry_from_mountpoint_swap() {
-        let ctx = get_ctx();
-
-        assert_eq!(
-            entry_from_mountpoint(
-                &ctx,
-                &InternalMountPoint {
-                    path: PathBuf::from(SWAP_MOUNT_POINT),
-                    filesystem: FileSystemType::Swap,
-                    options: vec!["sw".to_owned()],
-                    target_id: "swap".to_owned(),
-                },
-            )
-            .unwrap(),
-            TabFileEntry::new_swap(PathBuf::from("/dev/disk/by-partlabel/swap"))
-                .with_options(vec!["sw".into()])
-        );
-    }
-
-    #[test]
     fn test_entry_from_mountpoint_tmpfs() {
         let ctx = get_ctx();
 
@@ -215,12 +228,21 @@ mod tests {
 
     #[test]
     fn test_from_mount_points() {
-        let expected_fstab = indoc! {r#"
-            /dev/disk/by-partlabel/osp1 /boot/efi vfat umask=0077 0 2
-            /dev/disk/by-partlabel/osp2 / ext4 errors=remount-ro 0 1
-            /dev/disk/by-partlabel/osp3 /home ext4 defaults,x-systemd.makefs 0 2
-            /dev/disk/by-partlabel/swap none swap sw 0 0
-        "#};
+        /// Produces the expected fstab with an optional component added before swap.
+        fn expected_fstab(extra: Option<&str>) -> String {
+            [
+                "/dev/disk/by-partlabel/osp1 /boot/efi vfat umask=0077 0 2",
+                "/dev/disk/by-partlabel/osp2 / ext4 errors=remount-ro 0 1",
+                "/dev/disk/by-partlabel/osp3 /home ext4 defaults,x-systemd.makefs 0 2",
+            ]
+            .into_iter()
+            .chain(
+                extra
+                    .into_iter()
+                    .chain(["/dev/disk/by-partlabel/swap none swap defaults 0 0"]),
+            )
+            .fold(String::new(), |acc, item| acc + item + "\n")
+        }
 
         let host_config = HostConfiguration {
             storage: Storage {
@@ -271,13 +293,10 @@ mod tests {
                         options: vec!["defaults".to_owned(), "x-systemd.makefs".to_owned()],
                         target_id: "home".to_owned(),
                     },
-                    InternalMountPoint {
-                        path: PathBuf::from(SWAP_MOUNT_POINT),
-                        filesystem: FileSystemType::Swap,
-                        options: vec!["sw".to_owned()],
-                        target_id: "swap".to_owned(),
-                    },
                 ],
+                swap: vec![SwapDevice {
+                    device_id: "swap".to_owned(),
+                }],
                 ..Default::default()
             },
             ..Default::default()
@@ -300,7 +319,7 @@ mod tests {
             from_mountpoints(&ctx, &host_config.storage.internal_mount_points)
                 .unwrap()
                 .render(),
-            expected_fstab
+            expected_fstab(None)
         );
 
         let mut mount_points = host_config.storage.internal_mount_points;
@@ -315,10 +334,10 @@ mod tests {
             target_id: "".to_owned(),
         });
         assert_eq!(
-            from_mountpoints(&ctx, &mount_points)
-                .unwrap()
-                .render(),
-            format!("{expected_fstab}overlay /foo overlay lowerdir=/mnt,upperdir=/mnt/newroot,workdir=/mnt/work 0 2\n")
+            from_mountpoints(&ctx, &mount_points).unwrap().render(),
+            expected_fstab(Some(
+                "overlay /foo overlay lowerdir=/mnt,upperdir=/mnt/newroot,workdir=/mnt/work 0 2"
+            ))
         );
     }
 }

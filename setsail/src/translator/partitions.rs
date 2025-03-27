@@ -6,7 +6,7 @@ use std::{
 use trident_api::{
     config::{
         Disk, FileSystem, FileSystemSource, FileSystemType, HostConfiguration, MountOptions,
-        MountPoint, Partition, PartitionSize, PartitionTableType, PartitionType,
+        MountPoint, Partition, PartitionSize, PartitionTableType, PartitionType, SwapDevice,
     },
     misc::IdGenerator,
 };
@@ -26,6 +26,9 @@ pub fn translate(input: &ParsedData, hc: &mut HostConfiguration, errors: &mut Ve
 
     // List of all filesystems
     let mut filesystems: Vec<FileSystem> = Vec::new();
+
+    // List of all swap devices
+    let mut swap_devices: Vec<SwapDevice> = Vec::new();
 
     // Go over all parsed partitions
     for part in input.partitions.iter() {
@@ -88,9 +91,32 @@ pub fn translate(input: &ParsedData, hc: &mut HostConfiguration, errors: &mut Ve
             },
         });
 
+        if let PartitionMount::Swap = part.mntpoint {
+            swap_devices.push(SwapDevice {
+                device_id: partition_id.clone(),
+            });
+
+            // We don't need to add a filesystem for swap partitions
+            continue;
+        }
+
+        let fs_type = match part.fstype {
+            FsType::Ext4 => FileSystemType::Ext4,
+            FsType::Vfat => FileSystemType::Vfat,
+            FsType::Efi => FileSystemType::Vfat,
+            FsType::Swap => {
+                // This should get caught by the swap check above, so this should never happen!
+                errors.push(SetsailError::new_translation(
+                    part.line.clone(),
+                    "Swap partitions should not have a filesystem".to_string(),
+                ));
+                continue;
+            }
+        };
+
         filesystems.push(FileSystem {
             device_id: Some(partition_id.clone()),
-            fs_type: part.fstype.into(),
+            fs_type,
             // TODO(5989): Figure out how to bridge the gap between how kickstart
             // handles images and how Trident handles them
             source: match part.image.as_ref() {
@@ -116,17 +142,6 @@ pub fn translate(input: &ParsedData, hc: &mut HostConfiguration, errors: &mut Ve
 
     hc.storage.disks = disks.into_values().collect();
     hc.storage.filesystems = filesystems;
-}
-
-impl From<FsType> for FileSystemType {
-    fn from(value: FsType) -> Self {
-        match value {
-            FsType::Ext4 => FileSystemType::Ext4,
-            FsType::Vfat => FileSystemType::Vfat,
-            FsType::Efi => FileSystemType::Vfat,
-            FsType::Swap => FileSystemType::Swap,
-        }
-    }
 }
 
 fn path_to_partition_type(value: &Path) -> PartitionType {

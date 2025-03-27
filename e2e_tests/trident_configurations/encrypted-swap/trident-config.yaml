@@ -26,9 +26,6 @@ storage:
         deviceName: swap
         deviceId: swap-e
   filesystems:
-    - deviceId: swap
-      type: swap
-      source: new
     - deviceId: esp
       type: vfat
       mountPoint:
@@ -37,6 +34,8 @@ storage:
     - deviceId: root
       type: ext4
       mountPoint: /
+  swap:
+    - swap
 scripts:
   postConfigure:
     - name: testing-privilege

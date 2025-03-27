@@ -47,10 +47,8 @@ pub(super) fn can_be_mounted() -> RuleDefinition {
             {
                 if fs.must_have_mountpoint() {
                     "Required"
-                } else if fs.can_have_mountpoint() {
-                    "Optional"
                 } else {
-                    "Not Supported"
+                    "Optional"
                 }
             }
             .to_owned(),

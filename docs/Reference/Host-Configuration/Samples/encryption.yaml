@@ -41,15 +41,14 @@ storage:
     mountPoint:
       path: /
       options: defaults
-  - deviceId: swap
-    type: swap
-    source: new
   - deviceId: srv
     type: ext4
     source: new
     mountPoint:
       path: /srv
       options: defaults
+  swap:
+  - deviceId: swap
 scripts:
   postConfigure:
   - name: wheel

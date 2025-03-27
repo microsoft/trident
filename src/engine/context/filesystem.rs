@@ -14,7 +14,6 @@ pub enum FileSystemData {
     Image(FileSystemDataImage),
     New(FileSystemDataNew),
     Adopted(FileSystemDataAdopted),
-    Swap(FileSystemDataSwap),
     Tmpfs(FileSystemDataTmpfs),
     Overlay(FileSystemDataOverlay),
 }
@@ -83,17 +82,6 @@ pub struct FileSystemDataOverlay {
     pub mount_point: MountPoint,
 }
 
-/// FileSystemData struct for Swap filesystems.
-///
-/// Swap filesystems cannot have a mount point.
-#[derive(Clone)]
-pub struct FileSystemDataSwap {
-    /// The id of the block device associated with this filesystem.
-    ///
-    /// Note: device_id is required for Swap filesystems.
-    pub device_id: BlockDeviceId,
-}
-
 impl FileSystemData {
     /// Because filesystems don't have IDs that can uniquely identify them, this
     /// function can be used to create a description of the specific filesystem
@@ -108,7 +96,6 @@ impl FileSystemData {
                         FileSystemData::Adopted(_) => "adopted",
                         FileSystemData::Image(_) => "image",
                         FileSystemData::Tmpfs(_) => "new",
-                        FileSystemData::Swap(_) => "new",
                         FileSystemData::Overlay(_) => "new",
                     }
                     .to_owned(),
@@ -177,7 +164,6 @@ impl FileSystemData {
             FileSystemData::New(fs_data_new) => {
                 fs_data_new.mount_point.as_ref().map(|mp| mp.path.as_ref())
             }
-            FileSystemData::Swap(_) => None,
             FileSystemData::Tmpfs(fs_data_tmpfs) => Some(&fs_data_tmpfs.mount_point.path),
             FileSystemData::Overlay(fs_data_overlay) => Some(&fs_data_overlay.mount_point.path),
         }
@@ -189,7 +175,6 @@ impl FileSystemData {
             FileSystemData::Adopted(fs_data_adopted) => fs_data_adopted.fs_type,
             FileSystemData::Image(fs_data_image) => fs_data_image.fs_type,
             FileSystemData::New(fs_data_new) => fs_data_new.fs_type,
-            FileSystemData::Swap(_) => FileSystemType::Swap,
             FileSystemData::Tmpfs(_) => FileSystemType::Tmpfs,
             FileSystemData::Overlay(_) => FileSystemType::Overlay,
         }
@@ -201,7 +186,6 @@ impl FileSystemData {
             FileSystemData::Adopted(fs_data_adopted) => Some(&fs_data_adopted.device_id),
             FileSystemData::Image(fs_data_image) => Some(&fs_data_image.device_id),
             FileSystemData::New(fs_data_new) => Some(&fs_data_new.device_id),
-            FileSystemData::Swap(fs_data_swap) => Some(&fs_data_swap.device_id),
             FileSystemData::Tmpfs(_) | FileSystemData::Overlay(_) => None,
         }
     }
@@ -221,7 +205,6 @@ impl FileSystemData {
                 .mount_point
                 .as_ref()
                 .is_some_and(|mp| mp.options.contains(MOUNT_OPTION_READ_ONLY)),
-            FileSystemData::Swap(_) => false,
             FileSystemData::Tmpfs(fs_data_tmpfs) => fs_data_tmpfs
                 .mount_point
                 .options
@@ -316,11 +299,6 @@ impl<'a> TryFrom<&'a FileSystem> for FileSystemData {
                 ))?,
             })),
             FileSystemSource::New => match fs.fs_type {
-                FileSystemType::Swap => Ok(FileSystemData::Swap(FileSystemDataSwap {
-                    device_id: fs.device_id.clone().structured(InternalError::Internal(
-                        "Expected device id for New filesystem but found none",
-                    ))?,
-                })),
                 FileSystemType::Tmpfs => Ok(FileSystemData::Tmpfs(FileSystemDataTmpfs {
                     mount_point: fs.mount_point.clone().structured(InternalError::Internal(
                         "Expected mount point for Tmpfs filesystem but found none",

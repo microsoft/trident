@@ -180,9 +180,6 @@ pub enum FileSystemType {
     /// [Limitations of NTFS](/docs/Explanation/Limitations-Of-NTFS.md)
     Ntfs,
 
-    /// # Swap partition
-    Swap,
-
     /// # Tmpfs
     ///
     /// [Kernel documentation](https://www.kernel.org/doc/html/latest/filesystems/tmpfs.html)
@@ -237,7 +234,6 @@ impl FileSystemType {
             Self::Xfs
             | Self::Vfat
             | Self::Ntfs
-            | Self::Swap
             | Self::Tmpfs
             | Self::Overlay
             | Self::Iso9660

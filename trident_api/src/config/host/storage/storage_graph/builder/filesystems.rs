@@ -70,15 +70,7 @@ fn check_filesystem(fs: &FileSystem) -> Result<(), StorageGraphBuildError> {
         }
     }
 
-    if fs.mount_point.is_some() {
-        // Check if this filesystem can have a mount point.
-        if !fs.fs_type.can_have_mountpoint() {
-            return Err(StorageGraphBuildError::FilesystemUnexpectedMountPoint {
-                fs_desc: fs.description(),
-                fs_type: fs.fs_type,
-            });
-        }
-    } else if fs.fs_type.must_have_mountpoint() {
+    if fs.mount_point.is_none() && fs.fs_type.must_have_mountpoint() {
         // This filesystem must have a mount point, but none was provided.
         return Err(StorageGraphBuildError::FilesystemMissingMountPoint {
             fs_desc: fs.description(),

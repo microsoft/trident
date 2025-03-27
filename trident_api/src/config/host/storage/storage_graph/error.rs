@@ -79,12 +79,6 @@ pub enum StorageGraphBuildError {
     #[error("Filesystem [{fs_desc}] should not reference a block device")]
     FilesystemUnexpectedBlockDeviceId { fs_desc: String },
 
-    #[error("Filesystem [{fs_desc}] of type '{fs_type}' must not have a mount point")]
-    FilesystemUnexpectedMountPoint {
-        fs_desc: String,
-        fs_type: FileSystemType,
-    },
-
     #[error(
         "Filesystem [{fs_desc}] is placed on top of a verity device, but filesystems of type \
         '{fs_type}' cannot be used with verity."

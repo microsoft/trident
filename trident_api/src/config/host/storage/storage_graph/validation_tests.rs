@@ -224,10 +224,10 @@ fn test_filesystem_incompatible_source() {
     builder.build().unwrap();
 
     // Should fail
-    // FileSystemType::Swap is only compatible with source type Create
+    // FileSystemType::Auto is only compatible with source type Adopted
     let fs3 = FileSystem {
         device_id: Some("partition".into()),
-        fs_type: FileSystemType::Swap,
+        fs_type: FileSystemType::Auto,
         source: FileSystemSource::Image,
         mount_point: None,
     };
@@ -239,7 +239,7 @@ fn test_filesystem_incompatible_source() {
         StorageGraphBuildError::FilesystemIncompatibleSource {
             fs_desc: fs3.description(),
             fs_source: FileSystemSourceKind::Image,
-            fs_compatible_sources: ItemList(vec![FileSystemSourceKind::New])
+            fs_compatible_sources: ItemList(vec![FileSystemSourceKind::Adopted])
         }
     );
 }
@@ -318,33 +318,6 @@ fn test_unexpected_blkdev_id() {
         builder.build().unwrap_err(),
         StorageGraphBuildError::FilesystemUnexpectedBlockDeviceId {
             fs_desc: fs.description()
-        }
-    );
-}
-
-#[test]
-fn test_unexpected_mp() {
-    let mut builder = StorageGraphBuilder::default();
-
-    let partition = generic_partition();
-    builder.add_node((&partition).into());
-
-    // FileSystemType::Swap should not have a mount point
-    let fs = FileSystem {
-        device_id: Some("partition".into()),
-        fs_type: FileSystemType::Swap,
-        source: FileSystemSource::Image,
-        mount_point: Some(MountPoint {
-            path: ROOT_MOUNT_POINT_PATH.into(),
-            options: MountOptions::empty(),
-        }),
-    };
-    builder.add_node((&fs).into());
-    assert_eq!(
-        builder.build().unwrap_err(),
-        StorageGraphBuildError::FilesystemUnexpectedMountPoint {
-            fs_desc: fs.description(),
-            fs_type: FileSystemType::Swap
         }
     );
 }

@@ -220,12 +220,6 @@ storage:
     mountPoint:
       path: /var/lib/trident-overlay
       options: defaults
-  - deviceId: swap1
-    type: swap
-    source: new
-  - deviceId: swap2
-    type: swap
-    source: new
   - deviceId: var
     type: ext4
     mountPoint:
@@ -248,6 +242,9 @@ storage:
     dataDeviceId: root-data
     hashDeviceId: root-hash
     corruptionOption: io-error
+  swap:
+  - deviceId: swap1
+  - deviceId: swap2
 scripts:
   postConfigure:
   - name: rw-overlay

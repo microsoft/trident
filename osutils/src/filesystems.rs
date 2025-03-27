@@ -72,9 +72,6 @@ impl MountFileSystemType {
             FileSystemType::Iso9660 => Self::Iso9660,
             FileSystemType::Tmpfs => Self::Tmpfs,
             FileSystemType::Overlay => Self::Overlay,
-            FileSystemType::Swap => {
-                bail!("'{api_type}' filesystem type cannot be used for mounting")
-            }
         })
     }
 }
@@ -110,8 +107,7 @@ impl MkfsFileSystemType {
             FileSystemType::Xfs => Self::Xfs,
             FileSystemType::Vfat => Self::Vfat,
             FileSystemType::Ntfs => Self::Ntfs,
-            FileSystemType::Swap
-            | FileSystemType::Iso9660
+            FileSystemType::Iso9660
             | FileSystemType::Tmpfs
             | FileSystemType::Overlay
             | FileSystemType::Auto => {
@@ -153,7 +149,6 @@ impl TabFileSystemType {
             FileSystemType::Iso9660 => Self::Iso9660,
             FileSystemType::Tmpfs => Self::Tmpfs,
             FileSystemType::Overlay => Self::Overlay,
-            FileSystemType::Swap => Self::Swap,
             FileSystemType::Auto => Self::Auto,
         })
     }

@@ -4,7 +4,7 @@ use anyhow::{Context, Error};
 use log::{debug, info, trace};
 use rayon::prelude::*;
 
-use osutils::{filesystems::MkfsFileSystemType, mkfs, mkswap};
+use osutils::{filesystems::MkfsFileSystemType, mkfs};
 use trident_api::{config::FileSystemType, status::ServicingType, BlockDeviceId};
 
 use crate::engine::{context::filesystem::FileSystemData, EngineContext};
@@ -47,9 +47,6 @@ fn block_devices_needing_fs_creation(
         let device_id = match &fs {
             // The filesystem source is 'New'.
             FileSystemData::New(nfs) => &nfs.device_id,
-
-            // The filesystem is type 'Swap'
-            FileSystemData::Swap(sfs) => &sfs.device_id,
 
             // The filesystem source is `Image` AND servicing type is
             // CleanInstall AND the mount point is the ESP location.
@@ -126,16 +123,13 @@ fn create_filesystem_on_block_device(
         "Creating '{filesystem}' filesystem on block device {:?}",
         device_path
     );
-    if filesystem == FileSystemType::Swap {
-        mkswap::run(device_path).context("Failed to create swap space")
-    } else {
-        mkfs::run(
-            device_path,
-            MkfsFileSystemType::from_api_type(filesystem)
-                .context("Swap should be handled separately")?,
-        )
-        .context("Failed to create filesystem")
-    }
+
+    mkfs::run(
+        device_path,
+        MkfsFileSystemType::from_api_type(filesystem)
+            .context("Swap should be handled separately")?,
+    )
+    .context("Failed to create filesystem")
 }
 
 #[cfg(test)]

@@ -104,38 +104,16 @@ impl FileSystemType {
     /// If false, the filesystem type must not have a block device ID.
     pub fn expects_block_device_id(&self) -> bool {
         match self {
-            Self::Ext4
-            | Self::Xfs
-            | Self::Vfat
-            | Self::Ntfs
-            | Self::Iso9660
-            | Self::Swap
-            | Self::Auto => true,
+            Self::Ext4 | Self::Xfs | Self::Vfat | Self::Ntfs | Self::Iso9660 | Self::Auto => true,
             Self::Tmpfs | Self::Overlay => false,
         }
     }
 
-    /// Returns whether a filesystem type can have a mountpoint.
-    pub fn can_have_mountpoint(&self) -> bool {
-        match self {
-            Self::Ext4
-            | Self::Xfs
-            | Self::Vfat
-            | Self::Ntfs
-            | Self::Iso9660
-            | Self::Tmpfs
-            | Self::Overlay
-            | Self::Auto => true,
-            Self::Swap => false,
-        }
-    }
-
-    /// Returns whether a filesystem type must have a mountpoint.
+    /// Returns whether a filesystem type must have a mount point.
     pub fn must_have_mountpoint(&self) -> bool {
-        // Something that does not have a block device and can have a
-        // mountpoint, must have a mountpoint. Today this covers only Tmpfs and
-        // Overlay. These NEED to be mounted otherwise they don't really exist.
-        !self.expects_block_device_id() && self.can_have_mountpoint()
+        // Nodev filesystems REQUIRE a mount point to exist. Today this covers
+        // only Tmpfs and overlay.
+        !self.expects_block_device_id()
     }
 
     /// Returns the valid sources for a filesystem type.
@@ -152,27 +130,17 @@ impl FileSystemType {
                 FileSystemSourceKind::Image,
             ]),
             Self::Iso9660 | Self::Auto => ItemList(vec![FileSystemSourceKind::Adopted]),
-            Self::Swap | Self::Tmpfs | Self::Overlay => ItemList(vec![FileSystemSourceKind::New]),
+            Self::Tmpfs | Self::Overlay => ItemList(vec![FileSystemSourceKind::New]),
         }
     }
 
     /// Returns whether a filesystem type can be used with verity.
     pub fn supports_verity(&self) -> bool {
-        // If a filesystem cannot be mounted, by default it cannot be used with
-        // verity.
-        if !self.can_have_mountpoint() {
-            return false;
-        }
-
         match self {
             Self::Ext4 | Self::Xfs => true,
-            Self::Vfat
-            | Self::Iso9660
-            | Self::Swap
-            | Self::Ntfs
-            | Self::Tmpfs
-            | Self::Overlay
-            | Self::Auto => false,
+            Self::Vfat | Self::Iso9660 | Self::Ntfs | Self::Tmpfs | Self::Overlay | Self::Auto => {
+                false
+            }
         }
     }
 }

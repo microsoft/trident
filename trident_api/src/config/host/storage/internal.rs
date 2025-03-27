@@ -61,15 +61,6 @@ impl Storage {
                     options: mp.options.to_string_vec(),
                     target_id: device_id.to_string(),
                 });
-            // In the new API swap partitions don't have mount points, so we
-            // have to fill them in.
-            } else if fs.fs_type == FileSystemType::Swap {
-                self.internal_mount_points.push(InternalMountPoint {
-                    path: PathBuf::from(crate::constants::SWAP_MOUNT_POINT),
-                    filesystem: FileSystemType::Swap,
-                    options: vec!["sw".to_string()],
-                    target_id: device_id.to_string(),
-                });
             }
         });
 
@@ -82,10 +73,7 @@ impl Storage {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        config::{FileSystem, FileSystemSource, MountOptions, MountPoint},
-        constants::SWAP_MOUNT_POINT,
-    };
+    use crate::config::{FileSystem, FileSystemSource, MountOptions, MountPoint};
 
     use super::*;
 
@@ -160,31 +148,6 @@ mod tests {
         storage.populate_internal();
 
         assert!(storage.internal_mount_points.is_empty());
-    }
-
-    #[test]
-    fn test_populate_internal_swap() {
-        let mut storage = Storage {
-            filesystems: vec![FileSystem {
-                device_id: Some("/dev/sda1".to_string()),
-                fs_type: FileSystemType::Swap,
-                source: FileSystemSource::New,
-                mount_point: None,
-            }],
-            ..Default::default()
-        };
-
-        storage.populate_internal();
-
-        assert_eq!(
-            storage.internal_mount_points,
-            vec![InternalMountPoint {
-                path: PathBuf::from(SWAP_MOUNT_POINT),
-                filesystem: FileSystemType::Swap,
-                options: vec!["sw".to_string()],
-                target_id: "/dev/sda1".to_string(),
-            }]
-        );
     }
 
     #[test]

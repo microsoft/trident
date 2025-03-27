@@ -136,7 +136,6 @@ block device.
 | xfs             | Yes                  |
 | vfat            | Yes                  |
 | ntfs            | Yes                  |
-| swap            | Yes                  |
 | tmpfs           | No                   |
 | auto            | Yes                  |
 
@@ -150,7 +149,6 @@ Depending on the type of a filesystem, they may have different source types.
 | xfs             | new or adopted or image |
 | vfat            | new or adopted or image |
 | ntfs            | new or adopted or image |
-| swap            | new                     |
 | tmpfs           | new                     |
 | auto            | adopted                 |
 
@@ -159,15 +157,14 @@ Depending on the type of a filesystem, they may have different source types.
 Depending on the type of a filesystem, they may or may not have a mount point
 configured.
 
-| Filesystem Type | Mount Point   |
-| --------------- | ------------- |
-| ext4            | Optional      |
-| xfs             | Optional      |
-| vfat            | Optional      |
-| ntfs            | Optional      |
-| swap            | Not Supported |
-| tmpfs           | Required      |
-| auto            | Optional      |
+| Filesystem Type | Mount Point |
+| --------------- | ----------- |
+| ext4            | Optional    |
+| xfs             | Optional    |
+| vfat            | Optional    |
+| ntfs            | Optional    |
+| tmpfs           | Required    |
+| auto            | Optional    |
 
 ## Filesystem Verity Support
 
@@ -179,7 +176,6 @@ Depending on the type of a filesystem, they may or may not be used for verity.
 | xfs             | Yes             |
 | vfat            | No              |
 | ntfs            | No              |
-| swap            | No              |
 | tmpfs           | No              |
 | auto            | No              |
 

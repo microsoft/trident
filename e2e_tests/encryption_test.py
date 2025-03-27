@@ -22,6 +22,27 @@ def get_filesystem(hostConfiguration: dict, fsId: str) -> typing.Optional[dict]:
     return None
 
 
+def get_swap(hostConfiguration: dict, devId: str) -> typing.Optional[dict]:
+    """Gets the swap device associated with the provided device id, if any."""
+
+    for swap in hostConfiguration["storage"].get("swap", []):
+        if isinstance(swap, str) and swap == devId:
+            return {"deviceId": devId}
+        elif isinstance(swap, dict) and swap["deviceId"] == devId:
+            return swap
+
+    return None
+
+
+def get_active_swaps(connection: fabric.Connection) -> typing.Set[str]:
+    active = sudo(
+        connection,
+        "swapon --show=NAME --raw --bytes --noheadings | xargs -I @ readlink -f @",
+    )
+
+    return set(active.splitlines())
+
+
 def get_child_ab_update_volume_pair(
     hostConfiguration: dict, cryptId: str
 ) -> typing.Tuple[typing.Optional[dict], bool]:
@@ -584,24 +605,32 @@ def check_crypt_device(
         )
         check_exists(conn, mpPath)
         check_findmnt(conn, mpPath, cryptDevicePath, isInUse)
+    elif swap := get_swap(hostConfiguration, cryptId) is not None:
+        swaps = get_active_swaps(conn)
+        real_path = sudo(conn, f"readlink -f {cryptDevicePath}")
+        assert (
+            real_path in swaps,
+            f"Expected '{real_path}' to be in active swaps: {swaps}",
+        )
     else:
         fs = get_filesystem(hostConfiguration, cryptId)
         assert (
             fs is not None
         ), f"Expected filesystem for encryption volume {cryptId} when it has no child ab update volume pair"
-        if "mountPoint" in fs:
-            mpPath = (
-                fs["mountPoint"]
-                if isinstance(fs["mountPoint"], str)
-                else fs["mountPoint"]["path"]
-            )
-            check_exists(conn, mpPath)
-            check_findmnt(conn, mpPath, cryptDevicePath, isInUse)
-        else:
-            swap = fs["type"] == "swap"
-            assert (
-                swap
-            ), f"Expected filesystem of encryption volume {cryptId} to be swap type when it has no mount point, got {fs['type']}"
+
+        assert (
+            "mountPoint" in fs,
+            f"Expected filesystem of encryption volume {cryptId} to be mounted",
+        )
+
+        mpPath = (
+            fs["mountPoint"]
+            if isinstance(fs["mountPoint"], str)
+            else fs["mountPoint"]["path"]
+        )
+
+        check_exists(conn, mpPath)
+        check_findmnt(conn, mpPath, cryptDevicePath, isInUse)
 
     check_exists(conn, cryptDevicePath)
     check_cryptsetup_status(conn, cryptDevName, isInUse)

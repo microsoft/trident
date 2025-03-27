@@ -40,13 +40,6 @@ Using NTFS on Linux comes with some limitations. For more information, see: [Lim
 | Type           | `string` |
 | Value          | `ntfs`   |
 
-### Swap partition
-
-| Characteristic | Value    |
-| -------------- | -------- |
-| Type           | `string` |
-| Value          | `swap`   |
-
 ### Tmpfs
 
 [Kernel documentation](https://www.kernel.org/doc/html/latest/filesystems/tmpfs.html)

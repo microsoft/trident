@@ -349,6 +349,9 @@ pub enum ServicingError {
     #[error("Failed to create temporary recovery key file")]
     CreateRecoveryKeyFile,
 
+    #[error("Failed to create swap space")]
+    CreateSwap,
+
     #[error("Failed to create Trident config file")]
     CreateTridentConfig,
 

@@ -37,6 +37,7 @@ fn check_fs_match(a: FileSystemType, b: OsImageFileSystemType) -> bool {
         (FileSystemType::Ntfs, OsImageFileSystemType::Ntfs) => true,
         (FileSystemType::Iso9660, OsImageFileSystemType::Iso9660) => true,
         (FileSystemType::Xfs, OsImageFileSystemType::Xfs) => true,
+
         // Any mis-matching should be considered a failure
         (
             FileSystemType::Ext4
@@ -46,9 +47,9 @@ fn check_fs_match(a: FileSystemType, b: OsImageFileSystemType) -> bool {
             | FileSystemType::Xfs,
             _,
         ) => false,
+
         // Host Configuration filesystem types Swap, Tmpfs, and Overlay do not
         // map to any OS image filesystem types
-        (FileSystemType::Swap, _) => false,
         (FileSystemType::Tmpfs, _) => false,
         (FileSystemType::Overlay, _) => false,
     }
@@ -1044,10 +1045,6 @@ mod tests {
         ));
 
         // Check failure
-        assert!(!check_fs_match(
-            FileSystemType::Swap,
-            OsImageFileSystemType::Ntfs
-        ));
         assert!(!check_fs_match(
             FileSystemType::Tmpfs,
             OsImageFileSystemType::Msdos

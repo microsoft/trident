@@ -15,7 +15,7 @@ use crate::{
         FileSystemSource, FileSystemType, HostConfiguration, ImageSha384, MountOptions, MountPoint,
         Os, OsImage, Partition, PartitionTableType, PartitionType, Raid, RaidLevel, Script,
         ScriptSource, Scripts, Services, ServicingTypeSelection, SoftwareRaidArray, SshMode,
-        Storage, User, VerityDevice,
+        Storage, SwapDevice, User, VerityDevice,
     },
     constants::{self, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
 };
@@ -291,12 +291,6 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                         source: FileSystemSource::New,
                     },
                     FileSystem {
-                        device_id: Some("swap".into()),
-                        fs_type: FileSystemType::Swap,
-                        mount_point: None,
-                        source: FileSystemSource::New,
-                    },
-                    FileSystem {
                         device_id: Some("srv".into()),
                         fs_type: FileSystemType::Ext4,
                         mount_point: Some(MountPoint {
@@ -322,6 +316,9 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                         volume_b_id: "root-b".into(),
                     }],
                 }),
+                swap: vec![SwapDevice {
+                    device_id: "swap".into(),
+                }],
                 ..Default::default()
             },
             os: Os {
@@ -899,18 +896,6 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                         }),
                     },
                     FileSystem {
-                        device_id: Some("swap1".into()),
-                        fs_type: FileSystemType::Swap,
-                        source: FileSystemSource::New,
-                        mount_point: None,
-                    },
-                    FileSystem {
-                        device_id: Some("swap2".into()),
-                        fs_type: FileSystemType::Swap,
-                        source: FileSystemSource::New,
-                        mount_point: None,
-                    },
-                    FileSystem {
                         device_id: Some("var".into()),
                         fs_type: FileSystemType::Ext4,
                         source: FileSystemSource::Image,
@@ -945,6 +930,14 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     name: "root".into(),
                     ..Default::default()
                 }],
+                swap: vec![
+                    SwapDevice {
+                        device_id: "swap1".into(),
+                    },
+                    SwapDevice {
+                        device_id: "swap2".into(),
+                    },
+                ],
                 ..Default::default()
             },
             os: Os {
@@ -1082,19 +1075,12 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             }),
                             source: FileSystemSource::Image,
                         },
-                        FileSystem {
-                            device_id: Some("swap1".into()),
-                            fs_type: FileSystemType::Swap,
-                            source: FileSystemSource::New,
-                            mount_point: None,
-                        },
-                        FileSystem {
-                            device_id: Some("swap2".into()),
-                            fs_type: FileSystemType::Swap,
-                            source: FileSystemSource::New,
-                            mount_point: None,
-                        },
                     ],
+                    swap: vec![SwapDevice {
+                        device_id: "swap1".into(),
+                    }, SwapDevice {
+                        device_id: "swap2".into(),
+                    }],
                     ..Default::default()
                 },
                 os: Os {
@@ -1229,12 +1215,6 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             source: FileSystemSource::Image,
                         },
                         FileSystem {
-                            device_id: Some("swap".into()),
-                            fs_type: FileSystemType::Swap,
-                            source: FileSystemSource::New,
-                            mount_point: None,
-                        },
-                        FileSystem {
                             device_id: Some("srv".into()),
                             fs_type: FileSystemType::Ext4,
                             mount_point: Some(MountPoint {
@@ -1244,6 +1224,9 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             source: FileSystemSource::New,
                         },
                     ],
+                    swap: vec![SwapDevice {
+                        device_id: "swap".into(),
+                    }],
                     ..Default::default()
                 },
                 os: Os {
@@ -1523,7 +1506,7 @@ mod tests {
         }
 
         assert_eq!(host_configuration.storage.raid.software.len(), 1);
-        assert_eq!(host_configuration.storage.filesystems.len(), 6);
+        assert_eq!(host_configuration.storage.filesystems.len(), 5);
         assert_eq!(host_configuration.storage.verity.len(), 0);
         assert!(host_configuration.storage.ab_update.is_some());
         assert!(host_configuration.os.network.is_some());
@@ -1556,7 +1539,7 @@ mod tests {
         }
 
         assert_eq!(host_configuration.storage.raid.software.len(), 12);
-        assert_eq!(host_configuration.storage.filesystems.len(), 10);
+        assert_eq!(host_configuration.storage.filesystems.len(), 8);
         assert_eq!(host_configuration.storage.verity.len(), 1);
         assert!(host_configuration.storage.ab_update.is_some());
         assert!(host_configuration.os.network.is_some());
@@ -1571,7 +1554,7 @@ mod tests {
 
         assert!(host_configuration.storage.encryption.is_none());
         assert_eq!(host_configuration.storage.raid.software.len(), 1);
-        assert_eq!(host_configuration.storage.filesystems.len(), 4);
+        assert_eq!(host_configuration.storage.filesystems.len(), 2);
         assert_eq!(host_configuration.storage.verity.len(), 0);
         assert!(host_configuration.storage.ab_update.is_none());
         assert!(host_configuration.os.network.is_some());
@@ -1590,7 +1573,7 @@ mod tests {
         }
 
         assert_eq!(host_configuration.storage.raid.software.len(), 0);
-        assert_eq!(host_configuration.storage.filesystems.len(), 4);
+        assert_eq!(host_configuration.storage.filesystems.len(), 3);
         assert_eq!(host_configuration.storage.verity.len(), 0);
         assert!(host_configuration.storage.ab_update.is_none());
         assert!(host_configuration.os.network.is_some());

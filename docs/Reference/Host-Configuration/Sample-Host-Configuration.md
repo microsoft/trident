@@ -71,9 +71,6 @@ storage:
     mountPoint:
       path: /var/lib/trident
       options: defaults
-  - deviceId: swap
-    type: swap
-    source: new
   - deviceId: srv
     type: ext4
     source: new
@@ -86,6 +83,8 @@ storage:
     mountPoint:
       path: /mnt/raid
       options: defaults
+  swap:
+  - deviceId: swap
 scripts:
   preServicing:
   - name: sample-pre-servicing-script

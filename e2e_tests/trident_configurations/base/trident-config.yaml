@@ -35,9 +35,6 @@ storage:
         volumeAId: root-a
         volumeBId: root-b
   filesystems:
-    - deviceId: swap
-      type: swap
-      source: new
     - deviceId: trident
       type: ext4
       source: new
@@ -54,6 +51,8 @@ storage:
     - deviceId: root
       type: ext4
       mountPoint: /
+  swap:
+    - swap
 scripts:
   postConfigure:
     - name: testing-privilege

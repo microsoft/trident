@@ -51,12 +51,9 @@ storage:
     mountPoint:
       path: /
       options: defaults
+  swap:
   - deviceId: swap1
-    type: swap
-    source: new
   - deviceId: swap2
-    type: swap
-    source: new
 scripts:
   postConfigure:
   - name: wheel

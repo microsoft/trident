@@ -15,6 +15,7 @@ pub mod image;
 pub mod partitioning;
 pub mod raid;
 pub mod rebuild;
+mod swap;
 pub mod verity;
 
 use super::EngineContext;
@@ -56,9 +57,14 @@ pub(super) fn close_pre_existing_devices(ctx: &EngineContext) -> Result<(), Trid
 
 #[tracing::instrument(skip_all)]
 pub(super) fn initialize_block_devices(ctx: &EngineContext) -> Result<(), TridentError> {
+    // Deploy images on block devices as specified in the configuration.
     image::deploy_images(ctx).structured(ServicingError::DeployImages)?;
 
+    // Create filesystems on block devices as specified in the configuration.
     filesystem::create_filesystems(ctx).structured(ServicingError::CreateFilesystems)?;
+
+    // Create swap spaces on block devices as specified in the configuration.
+    swap::create_swap(ctx).structured(ServicingError::CreateSwap)?;
 
     // Assumes that images are already in place (data and hash), so that it can
     // assemble the verity devices.

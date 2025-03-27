@@ -372,13 +372,6 @@
           ]
         },
         {
-          "title": "Swap partition",
-          "type": "string",
-          "enum": [
-            "swap"
-          ]
-        },
-        {
           "title": "Tmpfs",
           "description": "[Kernel documentation](https://www.kernel.org/doc/html/latest/filesystems/tmpfs.html)",
           "type": "string",

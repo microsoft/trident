@@ -88,17 +88,14 @@ storage:
       type: ext4
       source: new
       mountPoint: /home
-    - deviceId: swap1
-      type: swap
-      source: new
     - deviceId: esp1
       type: vfat
       mountPoint:
         path: /boot/efi
         options: umask=0077
-    - deviceId: swap2
-      type: swap
-      source: new
+  swap:
+    - swap1
+    - swap2
 scripts:
   postProvision:
     - name: sample-provision-script
