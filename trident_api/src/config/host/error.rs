@@ -102,8 +102,11 @@ pub enum HostConfigurationStaticValidationError {
     #[error("Path '{path}' must be absolute")]
     PathNotAbsolute { path: String },
 
-    #[error("Root verity device name '{device_name}' is invalid, must be 'root'")]
-    RootVerityDeviceNameInvalid { device_name: String },
+    #[error("Verity device name '{device_name}' is invalid, must be '{expected}'.")]
+    VerityDeviceNameInvalid {
+        device_name: String,
+        expected: String,
+    },
 
     #[error("Cannot request self-upgrade of Trident when a read-only verity filesystem is mounted at '/'")]
     SelfUpgradeOnReadOnlyRootVerityFs,

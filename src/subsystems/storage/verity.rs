@@ -1,6 +1,6 @@
 use std::{fs, path::Path};
 
-use anyhow::{bail, Context, Error};
+use anyhow::{Context, Error};
 use log::debug;
 
 use osutils::{dependencies::Dependency, tabfile::TabFileEntry};
@@ -8,8 +8,6 @@ use trident_api::constants::{
     MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH, TRIDENT_OVERLAY_LOWER_RELATIVE_PATH,
     TRIDENT_OVERLAY_PATH, TRIDENT_OVERLAY_UPPER_RELATIVE_PATH, TRIDENT_OVERLAY_WORK_RELATIVE_PATH,
 };
-
-use crate::engine::EngineContext;
 
 /// Create read-only /etc/ overlay mount point representation.
 pub(super) fn create_etc_overlay_mount_point() -> TabFileEntry {
@@ -43,39 +41,6 @@ pub(super) fn create_machine_id(new_root_path: &Path) -> Result<(), Error> {
         .context("Failed to generate machine-id")?;
 
     Ok(())
-}
-
-/// Ensures that the Host Config and the provided image have matching verity
-/// configurations. Returns whether verity is enabled, or error if there is some
-/// indication of misconfiguration (e.g. images are verity enabled, but HC is
-/// not and vice-versa).
-pub(super) fn validate_verity_compatibility(ctx: &EngineContext) -> Result<bool, Error> {
-    let root_verity_in_image = if let Some(os_img) = ctx.image.as_ref() {
-        // Prefer checking the OS image for verity configuration when possible.
-        os_img
-            .root_filesystem()
-            .with_context(|| {
-                format!(
-                    "Failed to get root filesystem from OS image '{}'",
-                    os_img.source()
-                )
-            })?
-            .verity
-            .is_some()
-    } else {
-        bail!("No OS image provided to validate verity compatibility")
-    };
-
-    match (root_verity_in_image, ctx.spec.storage.has_verity_device()) {
-        // Image has verity but HC doesn't.
-        (true, false) => bail!("Verity is enabled for the root image, but no verity definition is present in the Host Configuration"),
-
-        // Image doesn't have verity but HC does.
-        (false, true) => bail!("Verity is not enabled for the root image, but a verity definition is present in the Host Configuration"),
-
-        // Verity and HC are in sync, return their state.
-        _ => Ok(root_verity_in_image),
-    }
 }
 
 #[cfg(test)]

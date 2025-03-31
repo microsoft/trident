@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 
-use crate::is_default;
+use crate::{is_default, storage_graph::graph::StorageGraph};
 
 pub(crate) mod error;
 pub(crate) mod harpoon;
@@ -80,35 +80,42 @@ impl HostConfiguration {
         self.management_os.validate()?;
         self.trident.validate()?;
 
-        // If self-upgrade is requested, ensure that root is not a RO verity filesystem b/c Trident
-        // will not be able to copy itself into the FS.
-        if self.trident.self_upgrade && graph.root_fs_is_verity() {
-            return Err(HostConfigurationStaticValidationError::SelfUpgradeOnReadOnlyRootVerityFs);
-        }
+        self.validate_root_verity_config(&graph)?;
 
-        self.validate_selinux_mode()?;
         self.validate_datastore_location()?;
 
         Ok(())
     }
 
-    fn validate_selinux_mode(&self) -> Result<(), HostConfigurationStaticValidationError> {
-        // If SELinux is in `enforcing` mode, ensure that verity filesystems are not used. Warn if
-        // SELinux is in `permissive` mode.
-        if !self.storage.verity.is_empty() {
-            match self.os.selinux.mode {
-                Some(SelinuxMode::Enforcing) => {
-                    return Err(
-                        HostConfigurationStaticValidationError::VerityAndSelinuxUnsupported {
-                            selinux_mode: SelinuxMode::Enforcing.to_string(),
-                        },
-                    );
-                }
-                Some(SelinuxMode::Permissive) => {
-                    warn!("The use of SELinux with verity is not supported. SELinux mode is currently set to '{}', but should be 'disabled'.", SelinuxMode::Permissive.to_string());
-                }
-                _ => {}
+    /// Performs extra checks required when using root-verity.
+    fn validate_root_verity_config(
+        &self,
+        graph: &StorageGraph,
+    ) -> Result<(), HostConfigurationStaticValidationError> {
+        if !graph.root_fs_is_verity() {
+            return Ok(());
+        }
+
+        // If self-upgrade is requested, ensure that root is not a RO verity filesystem b/c Trident
+        // will not be able to copy itself into the FS.
+        if self.trident.self_upgrade {
+            return Err(HostConfigurationStaticValidationError::SelfUpgradeOnReadOnlyRootVerityFs);
+        }
+
+        // If SELinux is in `enforcing` mode, produce an error. Warn if SELinux
+        // is in `permissive` mode.
+        match self.os.selinux.mode {
+            Some(SelinuxMode::Enforcing) => {
+                return Err(
+                    HostConfigurationStaticValidationError::VerityAndSelinuxUnsupported {
+                        selinux_mode: SelinuxMode::Enforcing.to_string(),
+                    },
+                );
             }
+            Some(SelinuxMode::Permissive) => {
+                warn!("The use of SELinux with verity is not supported. SELinux mode is currently set to '{}', but should be 'disabled'.", SelinuxMode::Permissive.to_string());
+            }
+            _ => {}
         }
 
         Ok(())
@@ -365,7 +372,14 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_selinux_mode() {
+    fn test_validate_root_verity_config() {
+        // Empty host config
+        let hc = HostConfiguration::default();
+        let graph = hc.storage.build_graph().unwrap();
+        hc.validate_root_verity_config(&graph)
+            .expect("Empty host config should not return an error");
+
+        // Host config with root-verity
         let mut host_config = HostConfiguration {
             storage: Storage {
                 disks: vec![Disk {
@@ -388,7 +402,7 @@ mod tests {
                 }],
                 verity: vec![VerityDevice {
                     id: "root".into(),
-                    data_device_id: "root".into(),
+                    data_device_id: "root-data".into(),
                     hash_device_id: "root-hash".into(),
                     name: "root".into(),
                     ..Default::default()
@@ -407,9 +421,11 @@ mod tests {
             ..Default::default()
         };
 
+        let graph = host_config.storage.build_graph().unwrap();
+
         // Check that 'enforcing' mode returns an error
         host_config.os.selinux.mode = Some(SelinuxMode::Enforcing);
-        let validation_error = host_config.validate_selinux_mode().unwrap_err();
+        let validation_error = host_config.validate_root_verity_config(&graph).unwrap_err();
         assert_eq!(
             validation_error,
             HostConfigurationStaticValidationError::VerityAndSelinuxUnsupported {
@@ -420,10 +436,10 @@ mod tests {
 
         // Check that 'permissive' mode does not return an error
         host_config.os.selinux.mode = Some(SelinuxMode::Permissive);
-        host_config.validate_selinux_mode().unwrap();
+        host_config.validate_root_verity_config(&graph).unwrap();
 
         // Check that 'disabled' mode does not return an error
         host_config.os.selinux.mode = Some(SelinuxMode::Disabled);
-        host_config.validate_selinux_mode().unwrap();
+        host_config.validate_root_verity_config(&graph).unwrap();
     }
 }

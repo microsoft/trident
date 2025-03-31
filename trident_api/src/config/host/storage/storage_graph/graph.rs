@@ -4,19 +4,19 @@ use anyhow::{Context, Error};
 use petgraph::{
     csr::DefaultIx,
     graph::NodeIndex as PetgraphNodeIndex,
-    visit::{Dfs, EdgeRef, IntoNodeReferences, Walker},
+    visit::{Dfs, EdgeRef, IntoNodeReferences, Reversed, Walker},
     Directed, Direction, Graph,
 };
 
 use crate::{
-    config::{FileSystemSource, RaidLevel},
+    config::{FileSystem, FileSystemSource, RaidLevel, VerityDevice},
     constants::{LUKS_HEADER_SIZE_IN_MIB, ROOT_MOUNT_POINT_PATH},
     storage_graph::references::SpecialReferenceKind,
     BlockDeviceId,
 };
 
 use super::{
-    node::StorageGraphNode,
+    node::{BlockDevice, StorageGraphNode},
     references::ReferenceKind,
     types::{BlkDevKind, HostConfigBlockDevice},
 };
@@ -33,21 +33,28 @@ pub struct StorageGraph {
 }
 
 impl StorageGraph {
-    /// Returns the node idex and a reference to the node of the root
-    /// filesystem.
-    #[allow(dead_code)]
-    fn root_fs_node(&self) -> Option<(NodeIndex, &StorageGraphNode)> {
+    /// Returns the node index and a reference to the node of the filesystem mounted at the exact given path.
+    fn filesystem_node_by_mount_point(
+        &self,
+        mount_point: impl AsRef<Path>,
+    ) -> Option<(NodeIndex, &StorageGraphNode)> {
         // Iterate over all nodes. Find the first filesystem node that is
-        // mounted on the root mount point.
+        // mounted on the given path.
         self.inner.node_references().find(|(_, node)| {
             // Go over all filesystems.
             node.as_filesystem().is_some_and(|fs| {
                 // Check if the filesystem is the root filesystem.
                 fs.mount_point
                     .as_ref()
-                    .is_some_and(|mp| mp.path == Path::new(ROOT_MOUNT_POINT_PATH))
+                    .is_some_and(|mp| mp.path == mount_point.as_ref())
             })
         })
+    }
+
+    /// Returns the node idex and a reference to the node of the root
+    /// filesystem.
+    fn root_fs_node(&self) -> Option<(NodeIndex, &StorageGraphNode)> {
+        self.filesystem_node_by_mount_point(ROOT_MOUNT_POINT_PATH)
     }
 
     /// Returns the node index and a reference to the node with the given block device id.
@@ -83,16 +90,35 @@ impl StorageGraph {
     }
 
     /// Returns whether the root filesystem is on a verity device.
-    #[allow(dead_code)]
     pub fn root_fs_is_verity(&self) -> bool {
         let Some((rootfs_idx, _)) = self.root_fs_node() else {
             return false;
         };
 
-        // Check if the root filesystem is directly on a verity device.
-        self.inner
-            .neighbors_directed(rootfs_idx, Direction::Outgoing)
-            .any(|neighbor_idx| self.inner[neighbor_idx].device_kind() == BlkDevKind::VerityDevice)
+        self.backing_verity_device(rootfs_idx).is_some()
+    }
+
+    /// Returns the first verity device found in the graph under the given node
+    /// index in a DFS traversal, if any. Because the graph rules make it
+    /// impossible to have multiple verity devices under the same node, this
+    /// function, in practice, is a way to tell if a node is using verity and if
+    /// so, get the verity device.
+    fn backing_verity_device(&self, node_idx: NodeIndex) -> Option<(NodeIndex, &VerityDevice)> {
+        Dfs::new(&self.inner, node_idx)
+            .iter(&self.inner)
+            .filter_map(|idx| {
+                // When the node is a verity device, extract it and return it.
+                let StorageGraphNode::BlockDevice(BlockDevice {
+                    host_config_ref: HostConfigBlockDevice::VerityDevice(dev),
+                    ..
+                }) = &self.inner[idx]
+                else {
+                    return None;
+                };
+
+                Some((idx, dev))
+            })
+            .next()
     }
 
     /// Returns whether the block device with the given ID has dependents.
@@ -131,6 +157,47 @@ impl StorageGraph {
     pub fn block_device_size(&self, node_id: &BlockDeviceId) -> Option<u64> {
         let (idx, _) = self.node_by_id(node_id)?;
         block_device_size(&self.inner, idx)
+    }
+
+    /// Returns the filesystem places on this block device, if any.
+    pub fn filesystem_on_device(&self, node_id: &BlockDeviceId) -> Option<&FileSystem> {
+        let (idx, _) = self.node_by_id(node_id)?;
+
+        // Create a "reversed" graph to explore the incoming edges, then get a
+        // list of filesystems ON this device.
+        let reversed = Reversed(&self.inner);
+        let filesystems = Dfs::new(&reversed, idx)
+            .iter(&reversed)
+            .filter_map(|idx| self.inner[idx].as_filesystem())
+            .collect::<Vec<_>>();
+
+        // The list should really have at most one filesystem, so anything else
+        // is a None for now.
+        if filesystems.len() == 1 {
+            Some(filesystems[0])
+        } else {
+            None
+        }
+    }
+
+    /// Returns an iterator over all filesystems that are placed on verity devices.
+    pub fn filesystems_on_verity(&self) -> impl Iterator<Item = &FileSystem> {
+        self.inner.node_references().filter_map(|(idx, node)| {
+            // Ensure this node is a filesystem
+            let fs = node.as_filesystem()?;
+
+            // Ensure this filesystem is on a verity device
+            self.backing_verity_device(idx).and(Some(fs))
+        })
+    }
+
+    /// Returns the verity device, if any, on which the given filesystem is placed.
+    pub fn verity_device_for_filesystem(
+        &self,
+        mount_path: impl AsRef<Path>,
+    ) -> Option<&VerityDevice> {
+        let (fs_idx, _) = self.filesystem_node_by_mount_point(mount_path)?;
+        self.backing_verity_device(fs_idx).map(|(_, dev)| dev)
     }
 }
 
@@ -274,6 +341,76 @@ mod tests {
             node::BlockDevice, references::SpecialReferenceKind, types::HostConfigBlockDevice,
         },
     };
+
+    #[test]
+    fn test_filesystems_on_verity() {
+        let mut graph = StorageGraph::default();
+
+        // Assert that nothing is found in an emptry graph.
+        assert_eq!(graph.filesystems_on_verity().next(), None);
+
+        // Add a filesystem node that is not on a verity device.
+        let fs = FileSystem {
+            fs_type: FileSystemType::Ext4,
+            device_id: Some("fs1".into()),
+            mount_point: Some(MountPoint::from_str("/mnt/fs1").unwrap()),
+            source: FileSystemSource::New,
+        };
+        let fs_node_idx = graph.inner.add_node((&fs).into());
+
+        // Assert that nothing is found in an emptry graph.
+        assert_eq!(graph.filesystems_on_verity().next(), None);
+
+        // Add a verity device to back the filesystem.
+        let verity_dev = VerityDevice {
+            id: "fs1".into(),
+            name: "myVerityDevice".into(),
+            data_device_id: "data".into(),
+            hash_device_id: "hash".into(),
+            ..Default::default()
+        };
+        let backing_node_idx = graph.inner.add_node((&verity_dev).into());
+
+        // Add an edge from the partition to the filesystem.
+        graph
+            .inner
+            .add_edge(fs_node_idx, backing_node_idx, ReferenceKind::Regular);
+
+        // Assert that the filesystem is found when it is on a verity device.
+        assert_eq!(graph.filesystems_on_verity().collect::<Vec<_>>(), vec![&fs]);
+
+        // Add a new filesystem node that is not on a verity device.
+        let fs2 = FileSystem {
+            fs_type: FileSystemType::Ext4,
+            device_id: Some("fs2".into()),
+            mount_point: Some(MountPoint::from_str("/mnt/fs2").unwrap()),
+            source: FileSystemSource::New,
+        };
+        let fs2_node_idx = graph.inner.add_node((&fs2).into());
+
+        // Assert the result is the same.
+        assert_eq!(graph.filesystems_on_verity().collect::<Vec<_>>(), vec![&fs]);
+
+        // Add a verity device to back the new filesystem.
+        let verity_dev2 = VerityDevice {
+            id: "fs2".into(),
+            name: "myVerityDevice2".into(),
+            data_device_id: "data2".into(),
+            hash_device_id: "hash2".into(),
+            ..Default::default()
+        };
+        let backing_node_idx2 = graph.inner.add_node((&verity_dev2).into());
+        // Add an edge from the partition to the filesystem.
+        graph
+            .inner
+            .add_edge(fs2_node_idx, backing_node_idx2, ReferenceKind::Regular);
+
+        // Assert that the filesystem is found when it is on a verity device.
+        assert_eq!(
+            graph.filesystems_on_verity().collect::<Vec<_>>(),
+            vec![&fs, &fs2]
+        );
+    }
 
     #[test]
     fn test_root_fs_node() {

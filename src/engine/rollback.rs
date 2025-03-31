@@ -453,10 +453,21 @@ fn get_verity_data_device_path(
     ))?;
 
     // Run veritysetup to get the data device path
-    let verity_status = veritysetup::status(&verity_device_config.name).context(format!(
-        "Failed to get verity status for device '{}'",
-        verity_device_config.name
-    ))?;
+    let verity_status = veritysetup::status(&verity_device_config.name)
+        .with_context(|| {
+            format!(
+                "Failed to get verity status for device '{}'",
+                verity_device_config.name
+            )
+        })?
+        .active()
+        .with_context(|| {
+            format!(
+                "Verity device '{}' is not active.",
+                verity_device_config.name
+            )
+        })?;
+
     trace!(
         "Verity status for verity device '{}' with block device ID '{}': {:?}",
         verity_device_config.name,
@@ -730,14 +741,14 @@ mod functional_test {
 
     use pytest_gen::functional_test;
 
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
 
     use const_format::formatcp;
     use maplit::btreemap;
 
     use osutils::testutils::{
         repart::{OS_DISK_DEVICE_PATH, TEST_DISK_DEVICE_PATH},
-        verity::{self, VerityGuard},
+        verity::{self},
     };
 
     use trident_api::{
@@ -939,21 +950,12 @@ mod functional_test {
         // Test case #1: Set up verity devices to test a scenario where root is an A/B volume on
         // verity.
         let verity_vol = verity::setup_verity_volumes();
+        let verity_dev = verity_vol.verity_device("root");
 
-        let verity_device_path = Path::new("/dev/mapper/root");
-        if verity_device_path.exists() {
-            veritysetup::close("root").unwrap();
-        }
-        veritysetup::open(
-            &verity_vol.data_volume, // Data device path
-            "root",
-            &verity_vol.hash_volume, // Hash device path
-            &verity_vol.root_hash,
-        )
-        .unwrap();
-        let _verityguard = VerityGuard {
-            device_name: "root",
-        };
+        // Close the device if it is open
+        verity_dev.close().unwrap();
+
+        let _verityguard = verity_dev.open_with_guard();
 
         // Add partitions
         ctx.partition_paths = btreemap! {
@@ -1137,19 +1139,19 @@ mod functional_test {
 
         // Test case #2: Returns an error if the verity device is not active.
         let _ = veritysetup::close("root");
-        assert!(get_verity_data_device_path(&ctx, &"root".to_owned())
-            .unwrap_err()
-            .root_cause()
-            .to_string()
-            .contains("stdout:\n/dev/mapper/root is inactive.\n\n"));
+        assert_eq!(
+            get_verity_data_device_path(&ctx, &"root".to_owned())
+                .unwrap_err()
+                .to_string(),
+            "Verity device 'root' is not active.",
+        );
 
         // Test case #3: Since the verity device is not yet active, we should get an error.
         let verity_vol = verity::setup_verity_volumes();
+        let verity_dev = verity_vol.verity_device("root");
 
-        let verity_device_path = Path::new("/dev/mapper/root");
-        if verity_device_path.exists() {
-            veritysetup::close("root").unwrap();
-        }
+        // Close the device if it is open
+        verity_dev.close().unwrap();
 
         ctx.partition_paths = btreemap! {
             "os".into() => PathBuf::from(TEST_DISK_DEVICE_PATH),
@@ -1163,23 +1165,15 @@ mod functional_test {
         };
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
 
-        assert!(get_verity_data_device_path(&ctx, &"root".to_owned())
-            .unwrap_err()
-            .root_cause()
-            .to_string()
-            .contains("stdout:\n/dev/mapper/root is inactive.\n\n"));
+        assert_eq!(
+            get_verity_data_device_path(&ctx, &"root".to_owned())
+                .unwrap_err()
+                .to_string(),
+            "Verity device 'root' is not active."
+        );
 
         // Test case #4: Returns the path to the verity device, once it is open.
-        veritysetup::open(
-            &verity_vol.data_volume,
-            "root",
-            &verity_vol.hash_volume,
-            &verity_vol.root_hash,
-        )
-        .unwrap();
-        let _verityguard = VerityGuard {
-            device_name: "root",
-        };
+        let _verityguard = verity_dev.open_with_guard();
 
         assert_eq!(
             get_verity_data_device_path(&ctx, &"root".to_owned()).unwrap(),

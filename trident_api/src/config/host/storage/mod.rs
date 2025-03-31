@@ -13,7 +13,7 @@ use swap::SwapDevice;
 use crate::{
     constants::{
         BOOT_MOUNT_POINT_PATH, ESP_MOUNT_POINT_PATH, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH,
-        TRIDENT_OVERLAY_PATH, VAR_TMP_PATH,
+        ROOT_VERITY_DEVICE_NAME, TRIDENT_OVERLAY_PATH, VAR_TMP_PATH,
     },
     is_default, BlockDeviceId,
 };
@@ -100,11 +100,6 @@ pub struct Storage {
 }
 
 impl Storage {
-    /// Returns whether this storage configuration is using verity.
-    pub fn has_verity_device(&self) -> bool {
-        !self.verity.is_empty()
-    }
-
     /// Returns the verity device with the given ID, if it exists.
     pub fn verity_device(&self, device_id: &BlockDeviceId) -> Option<&VerityDevice> {
         self.verity.iter().find(|v| &v.id == device_id)
@@ -189,13 +184,10 @@ impl Storage {
         // Build the storage graph
         let graph = self.build_graph()?;
 
-        // Generic function to validate the presence of a volume
-        let validate_volume_presence = |path: &'_ Path| validate_volume_presence(&graph, path);
-
         // If storage configuration is requested, then
         if *self != Storage::default() {
             // ESP volume must be present, to update Grub configuration
-            validate_volume_presence(Path::new(ESP_MOUNT_POINT_PATH))?;
+            validate_volume_presence(&graph, ESP_MOUNT_POINT_PATH)?;
             // /var/tmp must not be on a read-only volume
             self.validate_writable_mount_points()?;
         }
@@ -205,11 +197,11 @@ impl Storage {
         //  - Other subsystems require root mount point
         //  - Verity filesystems are present
         if require_root_mount_point || *self != Storage::default() || !self.verity.is_empty() {
-            validate_volume_presence(Path::new(ROOT_MOUNT_POINT_PATH))?;
+            validate_volume_presence(&graph, ROOT_MOUNT_POINT_PATH)?;
         }
 
         // Validation of verity devices
-        self.validate_verity_devices(validate_volume_presence)?;
+        self.validate_verity_devices(&graph)?;
 
         Ok(graph)
     }
@@ -245,7 +237,7 @@ impl Storage {
     /// Validates the verity device configuration.
     fn validate_verity_devices(
         &self,
-        validate_volume_presence: impl Fn(&Path) -> Result<(), HostConfigurationStaticValidationError>,
+        graph: &StorageGraph,
     ) -> Result<(), HostConfigurationStaticValidationError> {
         // Return early if no verity devices are present
         if self.verity.is_empty() {
@@ -256,30 +248,51 @@ impl Storage {
         trace!("Validating verity devices in the host configuration");
 
         // Verity is only supported for root volume, verify the input is not
-        // asking for something else
+        // asking for something else.
         if self.verity.len() > 1 {
             return Err(HostConfigurationStaticValidationError::UnsupportedVerityDevices);
         }
 
-        // Get the root verity device
+        // Get the root verity device.
         let verity_device = &self.verity[0];
 
-        // Get the root mount point
-        let root_mount_point = self.path_to_mount_point_info(ROOT_MOUNT_POINT_PATH).ok_or(
-            HostConfigurationStaticValidationError::ExpectedMountPointNotFound {
-                mount_point_path: ROOT_MOUNT_POINT_PATH.into(),
-            },
-        )?;
+        // Get the filesystem placed on that device. We expect exactly one.
+        let fs_on_verity = graph
+            .filesystem_on_device(&verity_device.id)
+            .ok_or(HostConfigurationStaticValidationError::UnsupportedVerityDevices)?;
 
-        // Ensure the verity device is the backing for the root mount point
-        if Some(&verity_device.id) != root_mount_point.device_id {
+        // Ensure the filesystem is mounted.
+        let Some(mount_point) = fs_on_verity.mount_point.as_ref() else {
             return Err(HostConfigurationStaticValidationError::UnsupportedVerityDevices);
+        };
+
+        // Ensure the filesystem is mounted read-only.
+        if !mount_point.options.contains(MOUNT_OPTION_READ_ONLY) {
+            return Err(
+                HostConfigurationStaticValidationError::VerityDeviceMountedReadWrite {
+                    device_name: verity_device.name.clone(),
+                    mount_point_path: mount_point.path.to_string_lossy().to_string(),
+                },
+            );
         }
 
-        // If root verity is required, we also require dedicated /boot
+        // Now check the verity type...
+        if mount_point.path == Path::new(ROOT_MOUNT_POINT_PATH) {
+            self.validate_root_verity(graph, verity_device)
+        } else {
+            Err(HostConfigurationStaticValidationError::UnsupportedVerityDevices)
+        }
+    }
+
+    fn validate_root_verity(
+        &self,
+        graph: &StorageGraph,
+        verity_device: &VerityDevice,
+    ) -> Result<(), HostConfigurationStaticValidationError> {
+        // If root verity is requested, we also require dedicated /boot
         // partition, as we otherwise cannot modify grub configuration and
         // kernel command line.
-        validate_volume_presence(Path::new(BOOT_MOUNT_POINT_PATH))?;
+        validate_volume_presence(graph, BOOT_MOUNT_POINT_PATH)?;
 
         // For root verity, we also require an overlay for /etc, so that we can
         // inject configuration generated by Trident. This overlay needs to be
@@ -357,28 +370,11 @@ impl Storage {
 
         // Ensure the root verity fs name is set to 'root', as that is what the dracut verity
         // module expects.
-        if verity_device.name != "root" {
+        if verity_device.name != ROOT_VERITY_DEVICE_NAME {
             return Err(
-                HostConfigurationStaticValidationError::RootVerityDeviceNameInvalid {
+                HostConfigurationStaticValidationError::VerityDeviceNameInvalid {
                     device_name: verity_device.name.clone(),
-                },
-            );
-        }
-
-        // Ensure the root verity device is mounted read-only at /.
-        if !root_mount_point
-            .mount_point
-            .options
-            .contains(MOUNT_OPTION_READ_ONLY)
-        {
-            return Err(
-                HostConfigurationStaticValidationError::VerityDeviceMountedReadWrite {
-                    device_name: verity_device.name.clone(),
-                    mount_point_path: root_mount_point
-                        .mount_point
-                        .path
-                        .to_string_lossy()
-                        .to_string(),
+                    expected: ROOT_VERITY_DEVICE_NAME.into(),
                 },
             );
         }
@@ -2147,8 +2143,9 @@ mod tests {
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::RootVerityDeviceNameInvalid {
-                device_name: "verity-root-a".into()
+            HostConfigurationStaticValidationError::VerityDeviceNameInvalid {
+                device_name: "verity-root-a".into(),
+                expected: "root".into(),
             }
         );
     }

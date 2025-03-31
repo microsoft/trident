@@ -19,24 +19,14 @@ use crate::{
     filesystems::{MkfsFileSystemType, MountFileSystemType},
     mkfs,
     repart::{RepartEmptyMode, SystemdRepartInvoker},
-    udevadm, veritysetup,
+    udevadm,
+    veritysetup::VerityDevice,
 };
 
 use super::{
     repart::{self, TEST_DISK_DEVICE_PATH},
     tmp_mount,
 };
-
-pub struct VerityGuard<'a> {
-    pub device_name: &'a str,
-}
-
-impl Drop for VerityGuard<'_> {
-    fn drop(&mut self) {
-        // Try to close, but ignore errors
-        veritysetup::close(self.device_name).ok();
-    }
-}
 
 /// Generates a random alphanumeric string of length 32.
 fn gen_random_string() -> String {
@@ -55,11 +45,14 @@ pub struct TestVerityVolume {
 }
 
 impl TestVerityVolume {
-    /// Opens the verity volume and returns a VerityGuard.
-    pub fn open_verity<'a>(&self, name: &'a str) -> VerityGuard<'a> {
-        veritysetup::open(&self.data_volume, name, &self.hash_volume, &self.root_hash).unwrap();
-
-        VerityGuard { device_name: name }
+    /// Return an instance of VerityDevice based on the test volume with the given name.
+    pub fn verity_device(&self, name: impl Into<String>) -> VerityDevice {
+        VerityDevice::new(
+            name.into(),
+            &self.data_volume,
+            &self.hash_volume,
+            &self.root_hash,
+        )
     }
 }
 

@@ -254,10 +254,9 @@ fn provision(
     ctx: &EngineContext,
     new_root_path: &Path,
 ) -> Result<(), TridentError> {
-    // If verity is present, it means that we are currently doing root
-    // verity. For now, we can assume that /etc is readonly, so we setup
+    // In root-verity, we can assume that /etc is readonly, so we setup
     // a writable overlay for it.
-    let use_overlay = ctx.spec.storage.has_verity_device();
+    let use_overlay = ctx.storage_graph.root_fs_is_verity();
 
     info!("Starting step 'Provision'");
     for subsystem in subsystems {
@@ -301,7 +300,7 @@ fn configure(
     // a writable overlay for it.
     let use_overlay = (ctx.servicing_type == ServicingType::CleanInstall
         || ctx.servicing_type == ServicingType::AbUpdate)
-        && ctx.spec.storage.has_verity_device();
+        && ctx.storage_graph.root_fs_is_verity();
 
     info!("Starting step 'Configure'");
     for subsystem in subsystems {

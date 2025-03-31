@@ -156,7 +156,7 @@ impl DiscoverablePartitionType {
             DiscoverablePartitionType::RootAmd64 => "root-x86-64",
             DiscoverablePartitionType::RootAmd64Verity => "root-x86-64-verity",
             DiscoverablePartitionType::RootAmd64VeritySig => "root-x86-64-verity-sig",
-            DiscoverablePartitionType::UsrAmd64 => "usr-86-64",
+            DiscoverablePartitionType::UsrAmd64 => "usr-x86-64",
             DiscoverablePartitionType::UsrAmd64Verity => "usr-x86-64-verity",
             DiscoverablePartitionType::UsrAmd64VeritySig => "usr-x86-64-verity-sig",
 
@@ -196,7 +196,7 @@ impl DiscoverablePartitionType {
             "root-x86-64" => DiscoverablePartitionType::RootAmd64,
             "root-x86-64-verity" => DiscoverablePartitionType::RootAmd64Verity,
             "root-x86-64-verity-sig" => DiscoverablePartitionType::RootAmd64VeritySig,
-            "usr-86-64" => DiscoverablePartitionType::UsrAmd64,
+            "usr-x86-64" => DiscoverablePartitionType::UsrAmd64,
             "usr-x86-64-verity" => DiscoverablePartitionType::UsrAmd64Verity,
             "usr-x86-64-verity-sig" => DiscoverablePartitionType::UsrAmd64VeritySig,
 

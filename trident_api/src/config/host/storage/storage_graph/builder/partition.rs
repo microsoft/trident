@@ -134,12 +134,13 @@ pub(super) fn check_partition_types(graph: &StoragePetgraph) -> Result<(), Stora
                             return Ok(());
                         }
 
-                        Err(StorageGraphBuildError::InvalidPartitionType {
+                        Err(StorageGraphBuildError::InvalidPartitionTypeSpecial {
                             node_identifier: node.identifier(),
                             kind: node.referrer_kind(),
                             partition_id: attr.id.clone(),
                             partition_type: attr.value,
                             valid_types: allowed_types.clone(),
+                            special_ref_kind: special_kind,
                         })
                     })?;
                 }

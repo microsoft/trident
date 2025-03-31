@@ -1,5 +1,6 @@
 use std::{
     borrow::Cow,
+    collections::BTreeSet,
     fmt::{Debug, Write},
     panic::Location,
 };
@@ -213,11 +214,15 @@ pub enum InvalidInputError {
     ReadInputFile { path: String },
 
     #[error(
-        "Root verity configuration in OS Image does not match Host Configuration. Expected OS \
-        Image to {}have root verity enabled.", 
-        if *hc_verity_status { "" } else { "not " }
+        "Host configuration requires the following filesystems to be placed on verity devices: {}\
+        but the OS image provides verity data for the following filesystems: {}",
+        stringify_iterable(hc_verity_fs.iter()),
+        stringify_iterable(img_verity_fs.iter())
     )]
-    RootVerityMismatch { hc_verity_status: bool },
+    VerityMismatch {
+        hc_verity_fs: BTreeSet<String>,
+        img_verity_fs: BTreeSet<String>,
+    },
 
     #[error(
         "SELinux is enabled in the Host Configuration, but SELinux could not be found on the image: {0}"
@@ -816,12 +821,47 @@ impl Debug for TridentError {
     }
 }
 
+fn stringify_iterable(iterable: impl Iterator<Item = impl AsRef<str>>) -> String {
+    let full = iterable.collect::<Vec<_>>();
+    if full.is_empty() {
+        return String::from("(none)");
+    }
+
+    full.iter()
+        .map(|s| s.as_ref())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 #[cfg(test)]
 mod tests {
     use anyhow::Context;
     use serde_yaml::Value;
 
     use super::*;
+
+    #[test]
+    fn test_stringify_iterable() {
+        // Test with str
+        let mut iterable = vec!["a", "b", "c"];
+        assert_eq!(stringify_iterable(iterable.iter()), "a, b, c");
+
+        iterable.clear();
+        assert_eq!(stringify_iterable(iterable.iter()), "(none)");
+
+        iterable.push("a");
+        assert_eq!(stringify_iterable(iterable.iter()), "a");
+
+        // Test with String
+        let mut iterable = vec!["a".to_owned(), "b".to_owned(), "c".to_owned()];
+        assert_eq!(stringify_iterable(iterable.iter()), "a, b, c");
+
+        iterable.clear();
+        assert_eq!(stringify_iterable(iterable.iter()), "(none)");
+
+        iterable.push("a".to_owned());
+        assert_eq!(stringify_iterable(iterable.iter()), "a");
+    }
 
     #[test]
     fn test_error_serialize() {

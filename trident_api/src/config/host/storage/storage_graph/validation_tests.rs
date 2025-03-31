@@ -867,7 +867,7 @@ mod verity {
 
         assert_eq!(
             builder.build().unwrap_err(),
-            StorageGraphBuildError::InvalidPartitionType {
+            StorageGraphBuildError::InvalidPartitionTypeSpecial {
                 node_identifier: vfs_node.identifier(),
                 kind: vfs_node.referrer_kind(),
                 partition_id: "part1".into(),
@@ -875,6 +875,7 @@ mod verity {
                 valid_types: SpecialReferenceKind::VerityDataDevice
                     .allowed_partition_types()
                     .unwrap(),
+                special_ref_kind: SpecialReferenceKind::VerityDataDevice,
             }
         );
     }
@@ -909,7 +910,7 @@ mod verity {
 
         assert_eq!(
             builder.build().unwrap_err(),
-            StorageGraphBuildError::InvalidPartitionType {
+            StorageGraphBuildError::InvalidPartitionTypeSpecial {
                 node_identifier: vfs_node.identifier(),
                 kind: vfs_node.referrer_kind(),
                 partition_id: "part2".into(),
@@ -917,6 +918,7 @@ mod verity {
                 valid_types: SpecialReferenceKind::VerityHashDevice
                     .allowed_partition_types()
                     .unwrap(),
+                special_ref_kind: SpecialReferenceKind::VerityHashDevice,
             }
         );
     }

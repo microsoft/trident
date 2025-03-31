@@ -6,9 +6,13 @@ use std::{
 use anyhow::{anyhow, bail, Context, Error};
 use log::{debug, trace};
 
-use osutils::{block_devices, veritysetup};
+use osutils::{
+    block_devices,
+    dependencies::Dependency,
+    veritysetup::{self, VerityDevice as VerityDeviceUtils},
+};
 use trident_api::{
-    config::{self, HostConfiguration},
+    config::{HostConfiguration, VerityDevice},
     constants::{DEV_MAPPER_PATH, ROOT_VERITY_DEVICE_NAME},
 };
 
@@ -21,48 +25,6 @@ use super::raid;
 
 pub(crate) fn get_updated_device_name(device_name: &str) -> String {
     format!("{}_new", device_name)
-}
-
-/// Setup the root verity device.
-fn setup_root_verity_device(
-    ctx: &EngineContext,
-    root_verity_device: &config::VerityDevice,
-) -> Result<(), Error> {
-    // Extract the root hash from GRUB config
-    let root_hash = get_root_verity_root_hash(ctx)?;
-    trace!("Root verity roothash: {}", root_hash);
-
-    // Get the verity data and hash device paths from the engine context
-    let (verity_data_path, verity_hash_path) = get_verity_device_paths(ctx, root_verity_device)?;
-
-    let updated_device_name = get_updated_device_name(&root_verity_device.name);
-
-    // Setup the verity device
-    veritysetup::open(
-        verity_data_path,
-        updated_device_name.as_str(),
-        verity_hash_path,
-        root_hash.as_str(),
-    )?;
-
-    let status = veritysetup::status(updated_device_name.as_str());
-    match status {
-        Err(e) => {
-            veritysetup::close(updated_device_name.as_str())?;
-            return Err(e);
-        }
-        Ok(status) => {
-            if status.status != "verified" {
-                veritysetup::close(updated_device_name.as_str())?;
-                return Err(anyhow::anyhow!(
-                    "Failed to activate verity device '{}', status: '{}'",
-                    root_verity_device.name,
-                    status.status
-                ));
-            }
-        }
-    }
-    Ok(())
 }
 
 /// Get the root verity root hash.
@@ -84,16 +46,36 @@ fn get_root_verity_root_hash(ctx: &EngineContext) -> Result<String, Error> {
     Ok(verity.roothash.clone())
 }
 
-/// Setup verity devices; currently, only the root verity device is supported.
+/// Setup verity devices.
+///
+/// Assumes that images are already in place (data and hash), so that it can
+/// assemble the verity devices.
 #[tracing::instrument(skip_all)]
 pub(super) fn setup_verity_devices(ctx: &EngineContext) -> Result<(), Error> {
-    // Validated from API there is only one verity device at the moment and it
-    // is tied to the root volume
-    if let Some(verity_device) = ctx.spec.storage.verity.first() {
-        setup_root_verity_device(ctx, verity_device)?;
-    }
+    // Validated from API there is only ONE verity device
+    let Some(verity_device) = ctx.spec.storage.verity.first() else {
+        return Ok(());
+    };
 
-    Ok(())
+    // Get the verity data and hash device paths from the engine context
+    let (data_dev, hash_dev) = get_verity_device_paths(ctx, verity_device)?;
+    let update_name = get_updated_device_name(&verity_device.name);
+
+    if ctx.storage_graph.root_fs_is_verity() {
+        // Set up root verity device
+        let root_hash = get_root_verity_root_hash(ctx)?;
+        trace!(
+            "Setting up verity device for root filesystem with root hash '{}'",
+            root_hash
+        );
+
+        VerityDeviceUtils::new(update_name, data_dev, hash_dev, root_hash).open()
+    } else {
+        bail!(
+            "Verity device '{}' is not on a supported filesystem.",
+            verity_device.name
+        );
+    }
 }
 
 /// Get the verity data and hash paths.
@@ -101,7 +83,7 @@ pub(super) fn setup_verity_devices(ctx: &EngineContext) -> Result<(), Error> {
 /// Verity data and hash devices are fetched from the engine context.
 pub fn get_verity_device_paths(
     ctx: &EngineContext,
-    verity_device: &config::VerityDevice,
+    verity_device: &VerityDevice,
 ) -> Result<(PathBuf, PathBuf), Error> {
     let verity_data_path = ctx
         .get_block_device_path(&verity_device.data_device_id)
@@ -147,17 +129,27 @@ fn stop_verity_device(
 ) -> Result<(), Error> {
     debug!("Attempting to stop pre-existing verity devices");
 
-    let root_verity_device_path = Path::new(DEV_MAPPER_PATH).join(verity_device_name);
+    let verity_device_path = Path::new(DEV_MAPPER_PATH).join(verity_device_name);
 
     // Check if the root verity device is present
-    if !root_verity_device_path.exists() {
+    if !verity_device_path.exists() {
         return Ok(());
     }
 
-    veritysetup::is_present().context("Unable to deactivate pre-existing dm-verity volumes.")?;
+    // Check if the veritysetup command is available
+    if !Dependency::Veritysetup.exists() {
+        bail!("Veritysetup is not installed");
+    }
 
     let root_verity_device_status = veritysetup::status(verity_device_name)
-        .context("Failed to get status of root verity device")?;
+        .context("Failed to get status of root verity device")?
+        .active()
+        .with_context(|| {
+            format!(
+                "Verity device '{}' is not active",
+                verity_device_path.display()
+            )
+        })?;
 
     // Resolve disks in the HC to their /dev/... paths.
     let hc_disks = block_devices::get_resolved_disks(host_config)
@@ -205,15 +197,12 @@ fn stop_verity_device(
         }
     }
 
-    block_devices::unmount_all_mount_points(&root_verity_device_path).context(format!(
+    block_devices::unmount_all_mount_points(&verity_device_path).context(format!(
         "Failed to unmount all mount points for verity device '{}'",
-        root_verity_device_path.display()
+        verity_device_path.display()
     ))?;
 
-    debug!(
-        "Closing verity device '{}'",
-        root_verity_device_path.display()
-    );
+    debug!("Closing verity device '{}'", verity_device_path.display());
     veritysetup::close(verity_device_name).context(format!(
         "Failed to close root verity device '{}'",
         verity_device_name
@@ -300,135 +289,24 @@ mod functional_test {
         mountpoint,
         testutils::{
             repart::TEST_DISK_DEVICE_PATH,
-            verity::{self, VerityGuard},
+            verity::{self},
         },
+        veritysetup::VerityDeviceGuard,
     };
     use pytest_gen::functional_test;
     use sysdefs::partition_types::DiscoverablePartitionType;
     use trident_api::{
-        config::{Disk, FileSystemType, Partition, PartitionType, Storage},
+        config::{
+            Disk, FileSystem, FileSystemSource, FileSystemType, InternalMountPoint, Partition,
+            PartitionType, Storage, VerityDevice,
+        },
         constants::{MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
     };
 
     use crate::osimage::{
         mock::{MockImage, MockOsImage},
-        OsImage, OsImageFileSystemType,
+        OsImageFileSystemType,
     };
-
-    #[functional_test]
-    fn test_setup_root_verity_device() {
-        let (boot_dev, verity_vol) = verity::setup_verity_volumes_with_boot();
-
-        let verity_device_path = Path::new(DEV_MAPPER_PATH).join("root_new");
-        if verity_device_path.exists() {
-            veritysetup::close("root_new").unwrap();
-        }
-
-        assert!(!verity_device_path.exists());
-
-        let ctx = EngineContext {
-            spec: HostConfiguration {
-                storage: Storage {
-                    disks: vec![Disk {
-                        id: "sdb".to_string(),
-                        device: PathBuf::from(TEST_DISK_DEVICE_PATH),
-                        partitions: vec![
-                            Partition {
-                                id: "boot".to_string(),
-                                partition_type: PartitionType::Xbootldr,
-                                size: 100.into(),
-                            },
-                            Partition {
-                                id: "root-hash".to_string(),
-                                partition_type: PartitionType::RootVerity,
-                                size: 100.into(),
-                            },
-                            Partition {
-                                id: "root".to_string(),
-                                partition_type: PartitionType::Root,
-                                size: 100.into(),
-                            },
-                            Partition {
-                                id: "overlay".to_string(),
-                                partition_type: PartitionType::LinuxGeneric,
-                                size: 100.into(),
-                            },
-                        ],
-                        ..Default::default()
-                    }],
-                    internal_mount_points: vec![
-                        config::InternalMountPoint {
-                            path: PathBuf::from("/var/lib/trident-overlay"),
-                            filesystem: FileSystemType::Ext4,
-                            target_id: "overlay".to_string(),
-                            options: vec!["defaults".to_string()],
-                        },
-                        config::InternalMountPoint {
-                            path: PathBuf::from("/boot"),
-                            filesystem: FileSystemType::Ext4,
-                            target_id: "boot".to_string(),
-                            options: vec!["defaults".to_string()],
-                        },
-                    ],
-                    verity: vec![config::VerityDevice {
-                        id: "root-verity".into(),
-                        name: "root".into(),
-                        data_device_id: "root".into(),
-                        hash_device_id: "root-hash".into(),
-                        ..Default::default()
-                    }],
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            partition_paths: btreemap! {
-                "sdb".to_owned() => PathBuf::from(TEST_DISK_DEVICE_PATH),
-                "boot".to_owned() => boot_dev,
-                "root-hash".to_owned() => verity_vol.hash_volume.clone(),
-                "root".to_owned() => verity_vol.data_volume.clone(),
-                "overlay".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
-            },
-            image: Some(OsImage::mock(MockOsImage::new().with_image(
-                MockImage::new(
-                    ROOT_MOUNT_POINT_PATH,
-                    OsImageFileSystemType::Ext4,
-                    DiscoverablePartitionType::Root,
-                    Some(verity_vol.root_hash.clone()),
-                ),
-            ))),
-            ..Default::default()
-        };
-
-        {
-            setup_root_verity_device(&ctx, &ctx.spec.storage.verity[0]).unwrap();
-            let _verityguard = VerityGuard {
-                device_name: "root_new",
-            };
-            assert!(verity_device_path.exists());
-        }
-
-        // test failure when root hash is not matching
-        let mut ctx = ctx.clone();
-        let bad_hash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-
-        assert_ne!(bad_hash, verity_vol.root_hash, "Root hash should not match");
-        ctx.image = Some(OsImage::mock(MockOsImage::new().with_image(
-            MockImage::new(
-                ROOT_MOUNT_POINT_PATH,
-                OsImageFileSystemType::Ext4,
-                DiscoverablePartitionType::Root,
-                Some(bad_hash.to_string()),
-            ),
-        )));
-
-        assert_eq!(
-            setup_root_verity_device(&ctx, &ctx.spec.storage.verity[0])
-                .unwrap_err()
-                .to_string(),
-            "Failed to activate verity device 'root', status: 'corrupted'"
-        );
-        assert!(!verity_device_path.exists());
-    }
 
     #[functional_test]
     fn test_setup_verity_devices() {
@@ -446,119 +324,121 @@ mod functional_test {
 
         // test root verity device
         let (boot_dev, verity_vol) = verity::setup_verity_volumes_with_boot();
+        let verity_dev = verity_vol.verity_device("root_new");
 
-        let verity_device_path = Path::new(DEV_MAPPER_PATH).join("root_new");
-        if verity_device_path.exists() {
-            veritysetup::close("root_new").unwrap();
-        }
+        // Close the verity device if it exists
+        verity_dev.close().unwrap();
 
-        assert!(!verity_device_path.exists());
-
-        let ctx_golden = EngineContext {
-            spec: HostConfiguration {
-                storage: Storage {
-                    disks: vec![Disk {
-                        id: "sdb".to_string(),
-                        device: PathBuf::from(TEST_DISK_DEVICE_PATH),
-                        partitions: vec![
-                            Partition {
-                                id: "boot".to_string(),
-                                partition_type: PartitionType::Xbootldr,
-                                size: 100.into(),
-                            },
-                            Partition {
-                                id: "root-hash".to_string(),
-                                partition_type: PartitionType::RootVerity,
-                                size: 100.into(),
-                            },
-                            Partition {
-                                id: "root".to_string(),
-                                partition_type: PartitionType::Root,
-                                size: 100.into(),
-                            },
-                            Partition {
-                                id: "overlay".to_string(),
-                                partition_type: PartitionType::LinuxGeneric,
-                                size: 100.into(),
-                            },
-                        ],
-                        ..Default::default()
-                    }],
-                    internal_mount_points: vec![
-                        config::InternalMountPoint {
-                            path: PathBuf::from("/var/lib/trident-overlay"),
-                            filesystem: FileSystemType::Ext4,
-                            target_id: "overlay".to_string(),
-                            options: vec!["defaults".to_string()],
+        let hc = HostConfiguration {
+            storage: Storage {
+                disks: vec![Disk {
+                    id: "sdb".to_string(),
+                    device: PathBuf::from(TEST_DISK_DEVICE_PATH),
+                    partitions: vec![
+                        Partition {
+                            id: "boot".to_string(),
+                            partition_type: PartitionType::Xbootldr,
+                            size: 4096.into(),
                         },
-                        config::InternalMountPoint {
-                            path: PathBuf::from("/boot"),
-                            filesystem: FileSystemType::Ext4,
-                            target_id: "boot".to_string(),
-                            options: vec!["defaults".to_string()],
+                        Partition {
+                            id: "root-hash".to_string(),
+                            partition_type: PartitionType::RootVerity,
+                            size: 4096.into(),
+                        },
+                        Partition {
+                            id: "root-data".to_string(),
+                            partition_type: PartitionType::Root,
+                            size: 4096.into(),
+                        },
+                        Partition {
+                            id: "overlay".to_string(),
+                            partition_type: PartitionType::LinuxGeneric,
+                            size: 4096.into(),
                         },
                     ],
-                    verity: vec![config::VerityDevice {
-                        id: "root-verity".into(),
-                        name: "root".into(),
-                        data_device_id: "root".into(),
-                        hash_device_id: "root-hash".into(),
-                        ..Default::default()
-                    }],
                     ..Default::default()
-                },
+                }],
+                verity: vec![VerityDevice {
+                    id: "root".into(),
+                    name: "root".into(),
+                    data_device_id: "root-data".into(),
+                    hash_device_id: "root-hash".into(),
+                    ..Default::default()
+                }],
+                filesystems: vec![
+                    FileSystem {
+                        device_id: Some("root".to_string()),
+                        mount_point: Some(ROOT_MOUNT_POINT_PATH.into()),
+                        fs_type: FileSystemType::Ext4,
+                        source: FileSystemSource::Image,
+                    },
+                    FileSystem {
+                        device_id: Some("boot".to_string()),
+                        mount_point: Some("/boot".into()),
+                        fs_type: FileSystemType::Ext4,
+                        source: FileSystemSource::Image,
+                    },
+                    FileSystem {
+                        device_id: Some("overlay".to_string()),
+                        mount_point: Some("/var/lib/trident-overlay".into()),
+                        fs_type: FileSystemType::Ext4,
+                        source: FileSystemSource::New,
+                    },
+                ],
                 ..Default::default()
             },
-            partition_paths: btreemap! {
-                "sdb".to_owned() => PathBuf::from(TEST_DISK_DEVICE_PATH),
-                "boot".to_owned() => boot_dev.clone(),
-                "root-hash".to_owned() => verity_vol.hash_volume.clone(),
-                "root".to_owned() => verity_vol.data_volume.clone(),
-                "overlay".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
-            },
-            image: Some(OsImage::mock(MockOsImage::new().with_image(
-                MockImage::new(
-                    ROOT_MOUNT_POINT_PATH,
-                    OsImageFileSystemType::Ext4,
-                    DiscoverablePartitionType::Root,
-                    Some(verity_vol.root_hash.clone()),
-                ),
-            ))),
             ..Default::default()
         };
+
+        let ctx_golden = EngineContext::default()
+            .with_spec(hc)
+            .with_image(MockOsImage::new().with_image(MockImage::new(
+                ROOT_MOUNT_POINT_PATH,
+                OsImageFileSystemType::Ext4,
+                DiscoverablePartitionType::Root,
+                Some(verity_vol.root_hash.clone()),
+            )))
+            .with_partition_paths(
+                [
+                    ("sdb", PathBuf::from(TEST_DISK_DEVICE_PATH)),
+                    ("boot", boot_dev),
+                    ("root-hash", verity_vol.hash_volume.clone()),
+                    ("root-data", verity_vol.data_volume.clone()),
+                    (
+                        "overlay",
+                        PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
+                    ),
+                ]
+                .into_iter(),
+            );
 
         {
             let ctx = ctx_golden.clone();
             setup_verity_devices(&ctx).unwrap();
-            let _verityguard = VerityGuard {
-                device_name: "root_new",
-            };
-            assert!(verity_device_path.exists());
-            assert_eq!(ctx.partition_paths.len(), 5);
+            let _verityguard = VerityDeviceGuard::new("root_new");
+            assert!(verity_dev.is_active().unwrap());
         }
 
         // test failure when root hash is not matching
-        let mut ctx = ctx_golden.clone();
         let bad_hash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-
         assert_ne!(bad_hash, verity_vol.root_hash, "Root hash should not match");
 
-        ctx.image = Some(OsImage::mock(MockOsImage::new().with_image(
-            MockImage::new(
+        let ctx = ctx_golden
+            .clone()
+            .with_image(MockOsImage::new().with_image(MockImage::new(
                 ROOT_MOUNT_POINT_PATH,
                 OsImageFileSystemType::Ext4,
                 DiscoverablePartitionType::Root,
                 Some(bad_hash.to_string()),
-            ),
-        )));
+            )));
 
         assert_eq!(
             setup_verity_devices(&ctx).unwrap_err().to_string(),
-            "Failed to activate verity device 'root', status: 'corrupted'"
+            "Failed to activate verity device 'root_new', status: 'corrupted'"
         );
-        assert!(!verity_device_path.exists());
-        assert_eq!(ctx.partition_paths.len(), 5);
-        assert_eq!(ctx.partition_paths, ctx_golden.partition_paths);
+
+        // Failure should close the device!
+        assert!(!verity_dev.is_active().unwrap());
     }
 
     #[functional_test]
@@ -602,20 +482,20 @@ mod functional_test {
                         ..Default::default()
                     }],
                     internal_mount_points: vec![
-                        config::InternalMountPoint {
+                        InternalMountPoint {
                             path: PathBuf::from("/var/lib/trident-overlay"),
                             filesystem: FileSystemType::Ext4,
                             target_id: "overlay".to_string(),
                             options: vec!["defaults".to_string()],
                         },
-                        config::InternalMountPoint {
+                        InternalMountPoint {
                             path: PathBuf::from("/boot"),
                             filesystem: FileSystemType::Ext4,
                             target_id: "boot".to_string(),
                             options: vec!["defaults".to_string()],
                         },
                     ],
-                    verity: vec![config::VerityDevice {
+                    verity: vec![VerityDevice {
                         id: "root-verity".into(),
                         name: "root".into(),
                         data_device_id: "root".into(),
@@ -637,29 +517,26 @@ mod functional_test {
         };
 
         // nothing mounted
-        let verity_dev_name = "root_new";
-        let verity_root_path = Path::new(DEV_MAPPER_PATH).join(verity_dev_name);
-        assert!(!verity_root_path.exists());
+        let verity_device = verity_vol.verity_device("root_new");
+        assert!(!verity_device.is_active().unwrap());
         stop_trident_servicing_devices(&ctx_golden.spec).unwrap();
 
         // root verity opened
         {
-            let ctx = ctx_golden.clone();
-            let _guard = verity_vol.open_verity(verity_dev_name);
-            assert!(verity_root_path.exists());
-            stop_trident_servicing_devices(&ctx.spec).unwrap();
-            assert!(!verity_root_path.exists());
+            let _guard = verity_device.open_with_guard().unwrap();
+            assert!(verity_device.is_active().unwrap());
+            stop_trident_servicing_devices(&ctx_golden.spec).unwrap();
+            assert!(!verity_device.is_active().unwrap());
         }
 
         // root verity opened & mounted
         {
-            let ctx = ctx_golden.clone();
-            let _guard = verity_vol.open_verity(verity_dev_name);
+            let _guard = verity_device.open_with_guard().unwrap();
 
-            assert!(verity_root_path.exists());
+            assert!(verity_device.is_active().unwrap());
             let mount_dir = tempfile::tempdir().unwrap();
             mount::mount(
-                &verity_root_path,
+                verity_device.device_path(),
                 mount_dir.path(),
                 MountFileSystemType::Ext4,
                 &["defaults".into(), MOUNT_OPTION_READ_ONLY.into()],
@@ -670,9 +547,10 @@ mod functional_test {
             let _mount_guard = MountGuard {
                 mount_dir: mount_dir.path(),
             };
-            stop_trident_servicing_devices(&ctx.spec).unwrap();
+
+            stop_trident_servicing_devices(&ctx_golden.spec).unwrap();
             assert!(!mountpoint::check_is_mountpoint(mount_dir.path()).unwrap());
-            assert!(!verity_root_path.exists());
+            assert!(!verity_device.is_active().unwrap());
         }
 
         // TODO add across disks test

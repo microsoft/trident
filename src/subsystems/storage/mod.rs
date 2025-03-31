@@ -167,14 +167,11 @@ impl Subsystem for StorageSubsystem {
     }
 
     fn provision(&mut self, ctx: &EngineContext, mount_point: &Path) -> Result<(), TridentError> {
-        if verity::validate_verity_compatibility(ctx).structured(InvalidInputError::from(
-            HostConfigurationDynamicValidationError::DmVerityMisconfiguration,
-        ))? {
-            debug!("Verity devices are compatible with the current system");
-            if ctx.servicing_type == ServicingType::CleanInstall {
-                verity::create_machine_id(mount_point)
-                    .structured(ServicingError::CreateMachineId)?;
-            }
+        if ctx.servicing_type == ServicingType::CleanInstall
+            && ctx.storage_graph.root_fs_is_verity()
+        {
+            debug!("Root verity is enabled, setting up machine-id");
+            verity::create_machine_id(mount_point).structured(ServicingError::CreateMachineId)?;
         }
 
         Ok(())
@@ -216,15 +213,15 @@ mod tests {
 
     use trident_api::{
         config::{
-            Disk as DiskConfig, FileSystemType, HostConfiguration, InternalMountPoint,
+            Disk as DiskConfig, FileSystem, FileSystemType, HostConfiguration, MountPoint,
             Partition as PartitionConfig, PartitionSize, PartitionType, Raid, RaidLevel,
             SoftwareRaidArray, Storage as StorageConfig,
         },
-        constants::ROOT_MOUNT_POINT_PATH,
         error::ErrorKind,
     };
 
     use osutils::encryption;
+    use url::Url;
 
     fn get_ctx() -> EngineContext {
         EngineContext {
@@ -282,6 +279,16 @@ mod tests {
                                 partition_type: PartitionType::Srv,
                                 size: PartitionSize::from_str("1G").unwrap(),
                             },
+                            PartitionConfig {
+                                id: "data".to_owned(),
+                                partition_type: PartitionType::LinuxGeneric,
+                                size: PartitionSize::from_str("1M").unwrap(),
+                            },
+                            PartitionConfig {
+                                id: "hash".to_owned(),
+                                partition_type: PartitionType::LinuxGeneric,
+                                size: PartitionSize::from_str("1M").unwrap(),
+                            },
                         ],
                         ..Default::default()
                     },
@@ -295,11 +302,11 @@ mod tests {
                     }],
                     ..Default::default()
                 },
-                internal_mount_points: vec![InternalMountPoint {
-                    filesystem: FileSystemType::Ext4,
-                    options: vec![],
-                    target_id: "part1".to_owned(),
-                    path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
+                filesystems: vec![FileSystem {
+                    device_id: Some("part1".to_owned()),
+                    fs_type: FileSystemType::Ext4,
+                    source: Default::default(),
+                    mount_point: Some(MountPoint::from_str("/").unwrap()),
                 }],
                 ab_update: Some(trident_api::config::AbUpdate {
                     volume_pairs: vec![trident_api::config::AbVolumePair {
@@ -309,7 +316,7 @@ mod tests {
                     }],
                 }),
                 encryption: Some(trident_api::config::Encryption {
-                    recovery_key_url: Some(url::Url::from_file_path(recovery_key_file).unwrap()),
+                    recovery_key_url: Some(Url::from_file_path(recovery_key_file).unwrap()),
                     volumes: vec![trident_api::config::EncryptedVolume {
                         id: "enc1".to_owned(),
                         device_name: "luks-enc".to_owned(),

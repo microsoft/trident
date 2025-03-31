@@ -20,6 +20,9 @@ use crate::osimage::OsImage;
 #[allow(dead_code)]
 pub mod filesystem;
 
+#[cfg(test)]
+mod test_utils;
+
 /// Helper struct to consolidate the info on the A/B volume pair. Contains the paths and block
 /// device IDs for both volumes.
 #[derive(Debug, PartialEq)]

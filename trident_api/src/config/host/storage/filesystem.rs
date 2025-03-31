@@ -86,14 +86,35 @@ pub struct MountPoint {
     pub options: MountOptions,
 }
 
+impl<T> From<T> for MountPoint
+where
+    T: Into<PathBuf>,
+{
+    fn from(value: T) -> Self {
+        MountPoint {
+            path: value.into(),
+            options: MountOptions::defaults(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod aaa {
+    use super::*;
+
+    #[test]
+    fn test_mount_point_from_str() {
+        let mount_point: MountPoint = "/mnt".into();
+        assert_eq!(mount_point.path, PathBuf::from("/mnt"));
+        assert_eq!(mount_point.options, MountOptions::defaults());
+    }
+}
+
 impl FromStr for MountPoint {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(MountPoint {
-            path: PathBuf::from(s),
-            options: MountOptions::defaults(),
-        })
+        Ok(s.into())
     }
 }
 

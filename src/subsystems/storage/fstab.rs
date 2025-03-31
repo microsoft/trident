@@ -32,7 +32,7 @@ pub(super) fn generate_fstab(ctx: &EngineContext, output_path: &Path) -> Result<
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    if ctx.spec.storage.has_verity_device() {
+    if ctx.storage_graph.root_fs_is_verity() {
         entries.push(verity::create_etc_overlay_mount_point());
     }
 

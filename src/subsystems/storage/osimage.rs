@@ -8,7 +8,7 @@ use log::{debug, error, trace, warn};
 
 use osutils::{df, lsblk};
 use trident_api::{
-    config::{FileSystemSource, FileSystemType, HostConfiguration},
+    config::{FileSystemSource, FileSystemType},
     constants::{
         internal_params::{ALLOW_UNUSED_FILESYSTEMS_IN_COSI, DISABLE_FS_BLOCK_DEVICE_SIZE_CHECK},
         BOOT_MOUNT_POINT_PATH,
@@ -19,6 +19,7 @@ use trident_api::{
     },
     primitives::bytes::ByteCount,
     status::{AbVolumeSelection, ServicingType},
+    storage_graph::graph::StorageGraph,
 };
 
 use crate::{
@@ -75,8 +76,8 @@ pub fn validate_host_config(ctx: &EngineContext) -> Result<(), TridentError> {
     debug!("Validating uniqueness of OS image filesystem UUIDs");
     validate_filesystem_uniqueness(os_image, ctx)?;
 
-    debug!("Validating Host Configuration root verity configuration against OS image");
-    validate_root_verity_match(os_image, &ctx.spec)?;
+    debug!("Validating Host Configuration verity configuration against OS image");
+    validate_verity_match(os_image, &ctx.storage_graph)?;
 
     debug!("Validating ESP image in OS image");
     validate_esp(os_image)?;
@@ -296,36 +297,44 @@ fn validate_filesystem_uniqueness(
     Ok(())
 }
 
-/// Validates that the OS Image and the HC match in terms of root verity configuration.
+/// Validates that the OS Image and the HC match in terms of verity configuration.
 ///
-/// Either both must have root verity enabled or both must have it disabled.
-fn validate_root_verity_match(
+/// The set of verity filesystems provided by the image must exactly match the set of verity
+/// filesystems provided by the HC. This function will return an error if the two sets do not match.
+fn validate_verity_match(
     os_image: &OsImage,
-    host_config: &HostConfiguration,
+    storage_graph: &StorageGraph,
 ) -> Result<(), TridentError> {
-    // We validate that the OsImage has a root filesystem in previous validation steps.
-    let Some(root_fs) = os_image.root_filesystem() else {
-        trace!("No root filesystem found in OS image, skipping root verity validation");
-        return Ok(());
-    };
+    // Get a list of all the mount points with verity in the image. We can
+    // collect into a hash set because the mount points should already be
+    // unique.
+    let img_verity_mount_points = os_image
+        .filesystems()
+        .filter(|fs| fs.has_verity())
+        .map(|fs| fs.mount_point)
+        .collect::<HashSet<_>>();
 
-    let hc_verity_status = host_config.storage.has_verity_device();
+    // Now we get the same for the HC.
+    let hc_verity_mount_points = storage_graph
+        .filesystems_on_verity()
+        .filter_map(|fs| fs.mount_point.as_ref().map(|mp| mp.path.clone()))
+        .collect::<HashSet<_>>();
 
-    if hc_verity_status == root_fs.has_verity() {
-        trace!(
-            "Root verity status matches between OS image and Host Configuration: {}",
-            if hc_verity_status {
-                "enabled"
-            } else {
-                "disabled"
-            }
-        );
-        Ok(())
-    } else {
-        Err(TridentError::new(InvalidInputError::RootVerityMismatch {
-            hc_verity_status,
-        }))
+    // Now we can compare the two sets.
+    if img_verity_mount_points != hc_verity_mount_points {
+        return Err(TridentError::new(InvalidInputError::VerityMismatch {
+            hc_verity_fs: hc_verity_mount_points
+                .into_iter()
+                .map(|mp| mp.to_string_lossy().to_string())
+                .collect(),
+            img_verity_fs: img_verity_mount_points
+                .into_iter()
+                .map(|mp| mp.to_string_lossy().to_string())
+                .collect(),
+        }));
     }
+
+    Ok(())
 }
 
 /// Validates ESP image.
@@ -473,7 +482,7 @@ fn validate_filesystem_blkdev_fit(
 mod tests {
     use super::*;
 
-    use std::{path::PathBuf, str::FromStr};
+    use std::{collections::BTreeSet, path::PathBuf, str::FromStr};
 
     use url::Url;
     use uuid::Uuid;
@@ -485,7 +494,8 @@ mod tests {
     use trident_api::{
         config::{
             AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, FileSystemType,
-            MountOptions, MountPoint, Partition, PartitionSize, Storage, VerityDevice,
+            HostConfiguration, MountOptions, MountPoint, Partition, PartitionSize, Storage,
+            VerityDevice,
         },
         constants::{ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
         error::ErrorKind,
@@ -754,90 +764,196 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_root_verity_match() {
+    fn test_validate_verity_match_no_verity() {
         // Generate mock OS image
-        let mock_image = MockOsImage {
-            source: Url::parse(OSIMAGE_DUMMY_SOURCE).unwrap(),
-            os_arch: SystemArchitecture::X86,
-            os_release: OsRelease::default(),
-            images: vec![
-                MockImage {
-                    mount_point: PathBuf::from(ESP_MOUNT_POINT_PATH),
-                    fs_type: OsImageFileSystemType::Vfat,
-                    fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
-                    part_type: DiscoverablePartitionType::Esp,
-                    verity: None,
-                },
-                MockImage {
-                    mount_point: PathBuf::from(ROOT_MOUNT_POINT_PATH),
-                    fs_type: OsImageFileSystemType::Ext4,
-                    fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
-                    part_type: DiscoverablePartitionType::Root,
-                    verity: Some(MockVerity {
-                        roothash: "mock-roothash".to_string(),
-                    }),
-                },
-            ],
-        };
+        let mock_image = OsImage::mock(MockOsImage::new().with_image(MockImage::new(
+            ROOT_MOUNT_POINT_PATH,
+            OsImageFileSystemType::Ext4,
+            DiscoverablePartitionType::LinuxGeneric,
+            None::<&str>,
+        )));
 
-        // Create an OS image with root verity disabled
-        let os_image_no_verity = OsImage::mock({
-            let mut mock_image_clone = mock_image.clone();
-            mock_image_clone.images[1].verity = None;
-            mock_image_clone
-        });
-
-        // Create an OS image with root verity enabled
-        let os_image_verity = OsImage::mock(mock_image);
-
-        // HC with root verity enabled
-        let host_config_verity = HostConfiguration {
-            storage: Storage {
-                verity: vec![VerityDevice::default()],
+        let graph = Storage {
+            disks: vec![Disk {
+                device: "/dev/sda".into(),
+                partitions: vec![
+                    Partition {
+                        id: "data".into(),
+                        partition_type: Default::default(),
+                        size: PartitionSize::from_str("1G").unwrap(),
+                    },
+                    Partition {
+                        id: "hash".into(),
+                        partition_type: Default::default(),
+                        size: PartitionSize::from_str("1G").unwrap(),
+                    },
+                ],
                 ..Default::default()
-            },
+            }],
+            filesystems: vec![FileSystem {
+                device_id: Some("data".into()),
+                fs_type: FileSystemType::Ext4,
+                source: FileSystemSource::Image,
+                mount_point: Some(MountPoint::from_str(ROOT_MOUNT_POINT_PATH).unwrap()),
+            }],
             ..Default::default()
-        };
+        }
+        .build_graph()
+        .unwrap();
 
-        // HC with root verity disabled
-        let host_config_no_verity = HostConfiguration::default();
+        validate_verity_match(&mock_image, &graph).unwrap();
+    }
 
-        // Test root verity:
-        // OS Image: enabled
-        // HC: enabled
-        // Expected: OK
-        validate_root_verity_match(&os_image_verity, &host_config_verity).unwrap();
+    #[test]
+    fn test_validate_verity_match_with_verity() {
+        // Generate mock OS image
+        let mock_image = OsImage::mock(MockOsImage::new().with_image(MockImage::new(
+            ROOT_MOUNT_POINT_PATH,
+            OsImageFileSystemType::Ext4,
+            DiscoverablePartitionType::LinuxGeneric,
+            Some("roothash"),
+        )));
 
-        // Test root verity:
-        // OS Image: disabled
-        // HC: disabled
-        // Expected: OK
-        validate_root_verity_match(&os_image_no_verity, &host_config_no_verity).unwrap();
+        let graph = Storage {
+            disks: vec![Disk {
+                device: "/dev/sda".into(),
+                partitions: vec![
+                    Partition {
+                        id: "data".into(),
+                        partition_type: Default::default(),
+                        size: PartitionSize::from_str("1G").unwrap(),
+                    },
+                    Partition {
+                        id: "hash".into(),
+                        partition_type: Default::default(),
+                        size: PartitionSize::from_str("1G").unwrap(),
+                    },
+                ],
+                ..Default::default()
+            }],
+            verity: vec![VerityDevice {
+                id: "verity".into(),
+                name: "verity".into(),
+                data_device_id: "data".into(),
+                hash_device_id: "hash".into(),
+                ..Default::default()
+            }],
+            filesystems: vec![FileSystem {
+                device_id: Some("verity".into()),
+                fs_type: FileSystemType::Ext4,
+                source: FileSystemSource::Image,
+                mount_point: Some(MountPoint::from_str(ROOT_MOUNT_POINT_PATH).unwrap()),
+            }],
+            ..Default::default()
+        }
+        .build_graph()
+        .unwrap();
 
-        // Test root verity:
-        // OS Image: enabled
-        // HC: disabled
-        // Expected: Err
-        let err = validate_root_verity_match(&os_image_verity, &host_config_no_verity).unwrap_err();
+        validate_verity_match(&mock_image, &graph).unwrap();
+    }
+
+    #[test]
+    fn test_validate_verity_match_with_mismatch_img() {
+        // Generate mock OS image
+        let mock_image = OsImage::mock(MockOsImage::new().with_image(MockImage::new(
+            ROOT_MOUNT_POINT_PATH,
+            OsImageFileSystemType::Ext4,
+            DiscoverablePartitionType::LinuxGeneric,
+            None::<&str>,
+        )));
+
+        let graph = Storage {
+            disks: vec![Disk {
+                device: "/dev/sda".into(),
+                partitions: vec![
+                    Partition {
+                        id: "data".into(),
+                        partition_type: Default::default(),
+                        size: PartitionSize::from_str("1G").unwrap(),
+                    },
+                    Partition {
+                        id: "hash".into(),
+                        partition_type: Default::default(),
+                        size: PartitionSize::from_str("1G").unwrap(),
+                    },
+                ],
+                ..Default::default()
+            }],
+            verity: vec![VerityDevice {
+                id: "verity".into(),
+                name: "verity".into(),
+                data_device_id: "data".into(),
+                hash_device_id: "hash".into(),
+                ..Default::default()
+            }],
+            filesystems: vec![FileSystem {
+                device_id: Some("verity".into()),
+                fs_type: FileSystemType::Ext4,
+                source: FileSystemSource::Image,
+                mount_point: Some(MountPoint::from_str(ROOT_MOUNT_POINT_PATH).unwrap()),
+            }],
+            ..Default::default()
+        }
+        .build_graph()
+        .unwrap();
+
         assert_eq!(
-            err.kind(),
-            &ErrorKind::InvalidInput(InvalidInputError::RootVerityMismatch {
-                hc_verity_status: false
-            }),
-            "Expected RootVerityMismatch error"
+            validate_verity_match(&mock_image, &graph)
+                .unwrap_err()
+                .kind(),
+            &ErrorKind::InvalidInput(InvalidInputError::VerityMismatch {
+                hc_verity_fs: ["/".to_string()].into_iter().collect(),
+                img_verity_fs: BTreeSet::new(),
+            })
         );
+    }
 
-        // Test root verity:
-        // OS Image: disabled
-        // HC: enabled
-        // Expected: Err
-        let err = validate_root_verity_match(&os_image_no_verity, &host_config_verity).unwrap_err();
+    #[test]
+    fn test_validate_verity_match_with_mismatch_hc() {
+        // Generate mock OS image
+        let mock_image = OsImage::mock(MockOsImage::new().with_image(MockImage::new(
+            ROOT_MOUNT_POINT_PATH,
+            OsImageFileSystemType::Ext4,
+            DiscoverablePartitionType::LinuxGeneric,
+            Some("verity-hash"),
+        )));
+
+        let graph = Storage {
+            disks: vec![Disk {
+                device: "/dev/sda".into(),
+                partitions: vec![
+                    Partition {
+                        id: "data".into(),
+                        partition_type: Default::default(),
+                        size: PartitionSize::from_str("1G").unwrap(),
+                    },
+                    Partition {
+                        id: "hash".into(),
+                        partition_type: Default::default(),
+                        size: PartitionSize::from_str("1G").unwrap(),
+                    },
+                ],
+                ..Default::default()
+            }],
+            filesystems: vec![FileSystem {
+                device_id: Some("data".into()),
+                fs_type: FileSystemType::Ext4,
+                source: FileSystemSource::Image,
+                mount_point: Some(MountPoint::from_str(ROOT_MOUNT_POINT_PATH).unwrap()),
+            }],
+            ..Default::default()
+        }
+        .build_graph()
+        .unwrap();
+
         assert_eq!(
-            err.kind(),
-            &ErrorKind::InvalidInput(InvalidInputError::RootVerityMismatch {
-                hc_verity_status: true
-            }),
-            "Expected RootVerityMismatch error"
+            validate_verity_match(&mock_image, &graph)
+                .unwrap_err()
+                .kind(),
+            &ErrorKind::InvalidInput(InvalidInputError::VerityMismatch {
+                hc_verity_fs: BTreeSet::new(),
+                img_verity_fs: ["/".to_string()].into_iter().collect(),
+            })
         );
     }
 
@@ -1078,7 +1194,7 @@ mod functional_test {
         arch::SystemArchitecture, osuuid::OsUuid, partition_types::DiscoverablePartitionType,
     };
     use trident_api::{
-        config::{AbUpdate, AbVolumePair, FileSystem, MountPoint, Storage},
+        config::{AbUpdate, AbVolumePair, FileSystem, HostConfiguration, MountPoint, Storage},
         error::ErrorKind,
     };
 
