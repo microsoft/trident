@@ -108,6 +108,12 @@ pub enum PartitionType {
     /// x64: `8484680c-9521-48c6-9c11-b0720656f69e`
     Usr,
 
+    /// # Usr verity hash partition (NOT ENABLED YET!)
+    ///
+    /// x64: `77ff5f63-e7b6-4633-acf4-1565b864c0e6`
+    #[serde(skip)]
+    UsrVerity,
+
     /// # Tmp partition
     ///
     /// `7ec6f557-3bc5-4aca-b293-16ef5df639d1`
@@ -154,6 +160,7 @@ impl PartitionType {
             PartitionType::Home => "home",
             PartitionType::Var => "var",
             PartitionType::Usr => "usr",
+            PartitionType::UsrVerity => "usr-verity",
             PartitionType::Tmp => "tmp",
             PartitionType::LinuxGeneric => "linux-generic",
             PartitionType::Srv => "srv",
@@ -166,17 +173,18 @@ impl PartitionType {
     pub fn to_verity(&self) -> Option<Self> {
         match self {
             Self::Root => Some(PartitionType::RootVerity),
+            Self::Usr => Some(PartitionType::UsrVerity),
 
             // We permit the use of the generic Linux partition type for verity
             // partitions because it is the default type.
             Self::LinuxGeneric => Some(Self::LinuxGeneric),
 
             Self::RootVerity
+            | Self::UsrVerity
             | Self::Esp
             | Self::Swap
             | Self::Home
             | Self::Var
-            | Self::Usr
             | Self::Tmp
             | Self::Srv
             | Self::Xbootldr

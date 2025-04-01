@@ -10,7 +10,7 @@ use petgraph::{
 
 use crate::{
     config::{FileSystem, FileSystemSource, RaidLevel, VerityDevice},
-    constants::{LUKS_HEADER_SIZE_IN_MIB, ROOT_MOUNT_POINT_PATH},
+    constants::{LUKS_HEADER_SIZE_IN_MIB, ROOT_MOUNT_POINT_PATH, USR_MOUNT_POINT_PATH},
     storage_graph::references::SpecialReferenceKind,
     BlockDeviceId,
 };
@@ -96,6 +96,15 @@ impl StorageGraph {
         };
 
         self.backing_verity_device(rootfs_idx).is_some()
+    }
+
+    /// Returns whether the usr filesystem is on a verity device.
+    pub fn usr_fs_is_verity(&self) -> bool {
+        let Some((usrfs_idx, _)) = self.filesystem_node_by_mount_point(USR_MOUNT_POINT_PATH) else {
+            return false;
+        };
+
+        self.backing_verity_device(usrfs_idx).is_some()
     }
 
     /// Returns the first verity device found in the graph under the given node

@@ -3,7 +3,7 @@ use std::{
     path::Path,
 };
 
-use log::trace;
+use log::{error, trace};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "schemars")]
@@ -13,7 +13,8 @@ use swap::SwapDevice;
 use crate::{
     constants::{
         BOOT_MOUNT_POINT_PATH, ESP_MOUNT_POINT_PATH, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH,
-        ROOT_VERITY_DEVICE_NAME, TRIDENT_OVERLAY_PATH, VAR_TMP_PATH,
+        ROOT_VERITY_DEVICE_NAME, TRIDENT_OVERLAY_PATH, USR_MOUNT_POINT_PATH,
+        USR_VERITY_DEVICE_NAME, VAR_TMP_PATH,
     },
     is_default, BlockDeviceId,
 };
@@ -279,6 +280,8 @@ impl Storage {
         // Now check the verity type...
         if mount_point.path == Path::new(ROOT_MOUNT_POINT_PATH) {
             self.validate_root_verity(graph, verity_device)
+        } else if mount_point.path == Path::new(USR_MOUNT_POINT_PATH) {
+            self.validate_usr_verity(verity_device)
         } else {
             Err(HostConfigurationStaticValidationError::UnsupportedVerityDevices)
         }
@@ -380,6 +383,26 @@ impl Storage {
         }
 
         Ok(())
+    }
+
+    fn validate_usr_verity(
+        &self,
+        verity_device: &VerityDevice,
+    ) -> Result<(), HostConfigurationStaticValidationError> {
+        // Ensure the usr verity fs name is set to 'usr', for consistency with
+        // the root verity deviceROOT_VERITY_DEVICE_NAME
+        if verity_device.name != USR_VERITY_DEVICE_NAME {
+            return Err(
+                HostConfigurationStaticValidationError::VerityDeviceNameInvalid {
+                    device_name: verity_device.name.clone(),
+                    expected: USR_VERITY_DEVICE_NAME.into(),
+                },
+            );
+        }
+
+        // MANUALLY BLOCK USR VERITY FOR NOW!
+        error!("usr verity is not supported yet!");
+        Err(HostConfigurationStaticValidationError::UnsupportedVerityDevices)
     }
 
     /// Get an iterator over all the mount points in the storage configuration.
@@ -2664,5 +2687,40 @@ mod tests {
         test_fn(&host_config, "/boot/efi/", 2, "");
         test_fn(&host_config, "/boot/efi/foobar", 2, "foobar");
         test_fn(&host_config, "/boot/efi/foobar/", 2, "foobar");
+    }
+
+    #[test]
+    fn test_validate_usr_verity() {
+        // Ok
+        // Currently the "passing" state is an error.
+        assert_eq!(
+            Storage::default()
+                .validate_usr_verity(&VerityDevice {
+                    id: "usr".into(),
+                    name: "usr".into(),
+                    data_device_id: "some-data-device".into(),
+                    hash_device_id: "some-hash-device".into(),
+                    ..Default::default()
+                })
+                .unwrap_err(),
+            HostConfigurationStaticValidationError::UnsupportedVerityDevices
+        );
+
+        // Bad name
+        assert_eq!(
+            Storage::default()
+                .validate_usr_verity(&VerityDevice {
+                    id: "usr".into(),
+                    name: "usr-foo".into(),
+                    data_device_id: "some-data-device".into(),
+                    hash_device_id: "some-hash-device".into(),
+                    ..Default::default()
+                })
+                .unwrap_err(),
+            HostConfigurationStaticValidationError::VerityDeviceNameInvalid {
+                device_name: "usr-foo".into(),
+                expected: "usr".into(),
+            }
+        );
     }
 }

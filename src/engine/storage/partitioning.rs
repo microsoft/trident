@@ -431,6 +431,7 @@ fn config_part_type_into_discoverable(part_type: PartitionType) -> DiscoverableP
         PartitionType::Swap => DiscoverablePartitionType::Swap,
         PartitionType::Tmp => DiscoverablePartitionType::Tmp,
         PartitionType::Usr => DiscoverablePartitionType::Usr,
+        PartitionType::UsrVerity => DiscoverablePartitionType::UsrVerity,
         PartitionType::Var => DiscoverablePartitionType::Var,
         PartitionType::Xbootldr => DiscoverablePartitionType::Xbootldr,
         PartitionType::Unknown(uuid) => DiscoverablePartitionType::from_uuid(&uuid),

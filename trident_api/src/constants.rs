@@ -78,6 +78,9 @@ pub const ROOT_MOUNT_POINT_PATH: &str = "/";
 /// updated OS (from runtime OS).
 pub const UPDATE_ROOT_PATH: &str = "/mnt/newroot";
 
+/// Absolute path to /usr directory.
+pub const USR_MOUNT_POINT_PATH: &str = "/usr";
+
 /// Boot volume relative mount point path (boot) relative to the root mount point.
 pub const BOOT_RELATIVE_MOUNT_POINT_PATH: &str = BOOT_DIRECTORY;
 
@@ -138,6 +141,9 @@ pub const MDSTAT_PATH: &str = "/proc/mdstat";
 
 /// Root verity device name.
 pub const ROOT_VERITY_DEVICE_NAME: &str = "root";
+
+/// Usr verity device name.
+pub const USR_VERITY_DEVICE_NAME: &str = "usr";
 
 // OS/System Constants
 

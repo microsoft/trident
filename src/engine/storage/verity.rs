@@ -13,7 +13,9 @@ use osutils::{
 };
 use trident_api::{
     config::{HostConfiguration, VerityDevice},
-    constants::{DEV_MAPPER_PATH, ROOT_VERITY_DEVICE_NAME},
+    constants::{
+        DEV_MAPPER_PATH, ROOT_VERITY_DEVICE_NAME, USR_MOUNT_POINT_PATH, USR_VERITY_DEVICE_NAME,
+    },
 };
 
 use crate::engine::{
@@ -46,6 +48,26 @@ fn get_root_verity_root_hash(ctx: &EngineContext) -> Result<String, Error> {
     Ok(verity.roothash.clone())
 }
 
+/// Get the root verity root hash.
+fn get_usr_verity_root_hash(ctx: &EngineContext) -> Result<String, Error> {
+    // Extract information from the OS image.
+    let Some(os_img) = ctx.image.as_ref() else {
+        bail!("Image is not available");
+    };
+
+    trace!("Getting usr verity root hash from OS image");
+    let usr_fs = os_img
+        .filesystems()
+        .find(|fs| fs.mount_point == Path::new(USR_MOUNT_POINT_PATH))
+        .context("Failed to get usr filesystem from OS image")?;
+
+    let Some(verity) = usr_fs.verity.as_ref() else {
+        bail!("usr filesystem in OS image is not verity enabled");
+    };
+
+    Ok(verity.roothash.clone())
+}
+
 /// Setup verity devices.
 ///
 /// Assumes that images are already in place (data and hash), so that it can
@@ -61,21 +83,28 @@ pub(super) fn setup_verity_devices(ctx: &EngineContext) -> Result<(), Error> {
     let (data_dev, hash_dev) = get_verity_device_paths(ctx, verity_device)?;
     let update_name = get_updated_device_name(&verity_device.name);
 
-    if ctx.storage_graph.root_fs_is_verity() {
-        // Set up root verity device
-        let root_hash = get_root_verity_root_hash(ctx)?;
-        trace!(
-            "Setting up verity device for root filesystem with root hash '{}'",
-            root_hash
+    let root_hash = if ctx.storage_graph.root_fs_is_verity() {
+        debug!(
+            "Setting up verity device '{}' for root filesystem",
+            verity_device.id
         );
 
-        VerityDeviceUtils::new(update_name, data_dev, hash_dev, root_hash).open()
+        get_root_verity_root_hash(ctx)?
+    } else if ctx.storage_graph.usr_fs_is_verity() {
+        debug!(
+            "Setting up verity device '{}' for usr filesystem",
+            verity_device.id
+        );
+
+        get_usr_verity_root_hash(ctx)?
     } else {
         bail!(
             "Verity device '{}' is not on a supported filesystem.",
             verity_device.name
         );
-    }
+    };
+
+    VerityDeviceUtils::new(update_name, data_dev, hash_dev, root_hash).open()
 }
 
 /// Get the verity data and hash paths.
@@ -117,6 +146,11 @@ pub fn stop_trident_servicing_devices(host_config: &HostConfiguration) -> Result
     stop_verity_device(
         host_config,
         &get_updated_device_name(ROOT_VERITY_DEVICE_NAME),
+    )?;
+    // Close the usr verity device
+    stop_verity_device(
+        host_config,
+        &get_updated_device_name(USR_VERITY_DEVICE_NAME),
     )?;
 
     Ok(())
@@ -227,6 +261,48 @@ mod tests {
     fn test_get_updated_device_name() {
         assert_eq!(get_updated_device_name("root"), "root_new");
         assert_eq!(get_updated_device_name("foo"), "foo_new");
+    }
+
+    #[test]
+    fn test_get_usr_verity_root_hash() {
+        let expected_root_hash = "sample-roothash";
+        let mut mock = MockOsImage::new().with_image(MockImage::new(
+            USR_MOUNT_POINT_PATH,
+            OsImageFileSystemType::Ext4,
+            DiscoverablePartitionType::Root,
+            Some(expected_root_hash),
+        ));
+
+        let as_ctx = |mock: &MockOsImage| EngineContext {
+            image: Some(OsImage::mock(mock.clone())),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            get_usr_verity_root_hash(&as_ctx(&mock)).unwrap(),
+            expected_root_hash,
+            "Root hash does not match expected"
+        );
+
+        // test failure when root filesystem is not verity enabled
+        mock.images[0].verity = None;
+        assert_eq!(
+            get_usr_verity_root_hash(&as_ctx(&mock))
+                .unwrap_err()
+                .to_string(),
+            "usr filesystem in OS image is not verity enabled",
+            "Got unexpected error"
+        );
+
+        // test failure when root filesystem is not found
+        mock.images.clear();
+        assert_eq!(
+            get_usr_verity_root_hash(&as_ctx(&mock))
+                .unwrap_err()
+                .to_string(),
+            "Failed to get usr filesystem from OS image",
+            "Got unexpected error"
+        );
     }
 
     #[test]

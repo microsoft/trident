@@ -449,6 +449,8 @@ impl BlkDevReferrerKind {
                 AllowBlockList::Allow(vec![
                     PartitionType::Root,
                     PartitionType::RootVerity,
+                    PartitionType::Usr,
+                    PartitionType::UsrVerity,
                     PartitionType::LinuxGeneric,
                 ])
             }
@@ -467,10 +469,12 @@ impl SpecialReferenceKind {
         match self {
             Self::VerityDataDevice => Some(AllowBlockList::Allow(vec![
                 PartitionType::Root,
+                PartitionType::Usr,
                 PartitionType::LinuxGeneric,
             ])),
             Self::VerityHashDevice => Some(AllowBlockList::Allow(vec![
                 PartitionType::RootVerity,
+                PartitionType::UsrVerity,
                 PartitionType::LinuxGeneric,
             ])),
         }
@@ -499,6 +503,7 @@ impl PartitionType {
             Self::Swap => AllowBlockList::None,
             Self::Tmp => AllowBlockList::new_allow(["/var/tmp"]),
             Self::Usr => AllowBlockList::new_allow(["/usr"]),
+            Self::UsrVerity => AllowBlockList::None,
             Self::Var => AllowBlockList::new_allow(["/var"]),
             Self::Xbootldr => AllowBlockList::new_allow(["/boot"]),
             Self::Unknown(_) => AllowBlockList::Any,
