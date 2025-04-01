@@ -1,8 +1,8 @@
 use serde::{de::value::Error, forward_to_deserialize_any, Deserialize, Deserializer, Serialize};
-use strum_macros::{EnumIs, EnumIter, IntoStaticStr};
+use strum_macros::{EnumIs, EnumIter, EnumTryAs, IntoStaticStr};
 
 /// Superset of all filesystem types recognized by the kernel.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, EnumIs)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, EnumIs, EnumTryAs)]
 #[serde(untagged)]
 pub enum KernelFilesystemType {
     Real(RealFilesystemType),
@@ -244,6 +244,25 @@ mod tests {
         assert_eq!(
             kfs,
             KernelFilesystemType::Nodev(NodevFilesystemType::Overlay)
+        );
+
+        // Test try_as_* derived methods
+        assert_eq!(
+            KernelFilesystemType::Real(RealFilesystemType::Ext4).try_as_real(),
+            Some(RealFilesystemType::Ext4)
+        );
+        assert_eq!(
+            KernelFilesystemType::Real(RealFilesystemType::Ext4).try_as_nodev(),
+            None
+        );
+
+        assert_eq!(
+            KernelFilesystemType::Nodev(NodevFilesystemType::Tmpfs).try_as_nodev(),
+            Some(NodevFilesystemType::Tmpfs)
+        );
+        assert_eq!(
+            KernelFilesystemType::Nodev(NodevFilesystemType::Tmpfs).try_as_real(),
+            None
         );
     }
 }

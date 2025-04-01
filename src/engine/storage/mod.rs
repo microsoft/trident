@@ -1,8 +1,8 @@
 use log::{debug, info, trace, warn};
 
-use osutils::{e2fsck, hashing_reader::compute_file_hash};
+use osutils::{e2fsck, hashing_reader::compute_file_hash, lsblk};
+use sysdefs::filesystems::{KernelFilesystemType, RealFilesystemType};
 use trident_api::{
-    config::FileSystemType,
     constants::internal_params::PRE_REBOOT_CHECKS,
     error::{ReportError, ServicingError, TridentError, TridentResultExt},
     status::HostStatus,
@@ -96,16 +96,20 @@ pub(super) fn check_block_devices(host_status: &HostStatus) {
             continue;
         };
 
-        let fs_type = host_status
-            .spec
-            .storage
-            .internal_mount_points
-            .iter()
-            .find(|fs| &fs.target_id == id)
-            .map(|fs| fs.filesystem);
+        let Ok(block_device) = lsblk::get(&canonical) else {
+            warn!(
+                "Block device '{id}' (path '{}' -> '{}'): Failed to find block device information with lsblk; skipping filesystem check",
+                path.display(),
+                canonical.display()
+            );
+            continue;
+        };
 
-        let fsck_status = match fs_type {
-            Some(FileSystemType::Ext4) => {
+        let fsck_status = match block_device
+            .fstype
+            .and_then(|fs_type| KernelFilesystemType::from(fs_type.as_str()).try_as_real())
+        {
+            Some(RealFilesystemType::Ext4) => {
                 if let Err(e) = e2fsck::check(&canonical) {
                     format!(", e2fsck failed: {e:?}")
                 } else {
