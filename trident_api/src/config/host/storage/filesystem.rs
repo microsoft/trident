@@ -9,9 +9,11 @@ use schemars::JsonSchema;
 
 use serde::{Deserialize, Serialize};
 use strum_macros::EnumIter;
+use sysdefs::filesystems::{KernelFilesystemType, NodevFilesystemType, RealFilesystemType};
 
 use crate::{
     constants::{ESP_MOUNT_POINT_PATH, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
+    error::{InternalError, TridentError},
     is_default, BlockDeviceId,
 };
 
@@ -251,6 +253,50 @@ impl Display for FileSystemType {
                 .map_err(|_| std::fmt::Error)?
                 .trim()
         )
+    }
+}
+
+impl TryFrom<FileSystemType> for RealFilesystemType {
+    type Error = TridentError;
+
+    fn try_from(value: FileSystemType) -> Result<RealFilesystemType, TridentError> {
+        match value {
+            FileSystemType::Ext4 => Ok(RealFilesystemType::Ext4),
+            FileSystemType::Xfs => Ok(RealFilesystemType::Xfs),
+            FileSystemType::Vfat => Ok(RealFilesystemType::Vfat),
+            FileSystemType::Ntfs => Ok(RealFilesystemType::Ntfs),
+            FileSystemType::Iso9660 => Ok(RealFilesystemType::Iso9660),
+            FileSystemType::Tmpfs => Err(TridentError::new(InternalError::Internal(
+                "Cannot convert Tmpfs to a RealFilesystemType",
+            ))),
+            FileSystemType::Overlay => Err(TridentError::new(InternalError::Internal(
+                "Cannot convert Overlay to a RealFilesystemType",
+            ))),
+            FileSystemType::Auto => Err(TridentError::new(InternalError::Internal(
+                "Cannot convert Auto to a RealFilesystemType",
+            ))),
+        }
+    }
+}
+
+impl TryFrom<FileSystemType> for KernelFilesystemType {
+    type Error = TridentError;
+
+    fn try_from(value: FileSystemType) -> Result<KernelFilesystemType, TridentError> {
+        match value {
+            FileSystemType::Ext4 => Ok(KernelFilesystemType::Real(RealFilesystemType::Ext4)),
+            FileSystemType::Xfs => Ok(KernelFilesystemType::Real(RealFilesystemType::Xfs)),
+            FileSystemType::Vfat => Ok(KernelFilesystemType::Real(RealFilesystemType::Vfat)),
+            FileSystemType::Ntfs => Ok(KernelFilesystemType::Real(RealFilesystemType::Ntfs)),
+            FileSystemType::Tmpfs => Ok(KernelFilesystemType::Nodev(NodevFilesystemType::Tmpfs)),
+            FileSystemType::Overlay => {
+                Ok(KernelFilesystemType::Nodev(NodevFilesystemType::Overlay))
+            }
+            FileSystemType::Iso9660 => Ok(KernelFilesystemType::Real(RealFilesystemType::Iso9660)),
+            FileSystemType::Auto => Err(TridentError::new(InternalError::Internal(
+                "Cannot convert Auto to a KernelFilesystemType",
+            ))),
+        }
     }
 }
 

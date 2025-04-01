@@ -9,7 +9,8 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use sysdefs::{
-    arch::SystemArchitecture, osuuid::OsUuid, partition_types::DiscoverablePartitionType,
+    arch::SystemArchitecture, filesystems::RealFilesystemType, osuuid::OsUuid,
+    partition_types::DiscoverablePartitionType,
 };
 use trident_api::{constants::ROOT_MOUNT_POINT_PATH, primitives::hash::Sha384Hash};
 
@@ -208,6 +209,25 @@ impl Display for OsImageFileSystemType {
                 .map_err(|_| std::fmt::Error)?
                 .trim()
         )
+    }
+}
+
+impl From<OsImageFileSystemType> for RealFilesystemType {
+    fn from(value: OsImageFileSystemType) -> Self {
+        match value {
+            OsImageFileSystemType::Ext4 => Self::Ext4,
+            OsImageFileSystemType::Ext3 => Self::Ext4,
+            OsImageFileSystemType::Ext2 => Self::Ext4,
+            OsImageFileSystemType::Cramfs => Self::Cramfs,
+            OsImageFileSystemType::Squashfs => Self::Squashfs,
+            OsImageFileSystemType::Vfat => Self::Vfat,
+            OsImageFileSystemType::Msdos => Self::Msdos,
+            OsImageFileSystemType::Exfat => Self::Exfat,
+            OsImageFileSystemType::Iso9660 => Self::Iso9660,
+            OsImageFileSystemType::Ntfs => Self::Ntfs,
+            OsImageFileSystemType::Btrfs => Self::Btrfs,
+            OsImageFileSystemType::Xfs => Self::Xfs,
+        }
     }
 }
 

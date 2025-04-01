@@ -5,7 +5,7 @@ use log::{debug, info, trace};
 use rayon::prelude::*;
 
 use osutils::{filesystems::MkfsFileSystemType, mkfs};
-use trident_api::{config::FileSystemType, status::ServicingType, BlockDeviceId};
+use trident_api::{status::ServicingType, BlockDeviceId};
 
 use crate::engine::{context::filesystem::FileSystemData, EngineContext};
 
@@ -33,7 +33,7 @@ pub(super) fn create_filesystems(ctx: &EngineContext) -> Result<(), Error> {
 /// to have clean filesystems created on them.
 fn block_devices_needing_fs_creation(
     ctx: &EngineContext,
-) -> Result<Vec<(BlockDeviceId, PathBuf, FileSystemType)>, Error> {
+) -> Result<Vec<(BlockDeviceId, PathBuf, MkfsFileSystemType)>, Error> {
     debug!("Determining block devices needing filesystem creation");
     // Fetch the IDs of A/B volume pairs for filtering.
     let ab_volume_pair_ids = ctx.spec.storage.get_ab_volume_pair_ids();
@@ -44,16 +44,16 @@ fn block_devices_needing_fs_creation(
 
     for fs in &ctx.filesystems {
         // Filter to the filesystems matching any of the specified criteria:
-        let device_id = match &fs {
+        let (device_id, fs_type) = match &fs {
             // The filesystem source is 'New'.
-            FileSystemData::New(nfs) => &nfs.device_id,
+            FileSystemData::New(nfs) => (&nfs.device_id, nfs.fs_type),
 
             // The filesystem source is `Image` AND servicing type is
             // CleanInstall AND the mount point is the ESP location.
             FileSystemData::Image(ifs)
                 if ctx.servicing_type == ServicingType::CleanInstall && fs.is_esp() =>
             {
-                &ifs.device_id
+                (&ifs.device_id, ifs.fs_type)
             }
 
             // Otherwise, ignore and skip the filesystem.
@@ -102,7 +102,7 @@ fn block_devices_needing_fs_creation(
             continue;
         };
 
-        block_devices.push((effective_device_id.clone(), bd_path, fs.fs_type()));
+        block_devices.push((effective_device_id.clone(), bd_path, fs_type.try_into()?));
     }
 
     debug!(
@@ -117,29 +117,30 @@ fn block_devices_needing_fs_creation(
 /// Initialize a filesystem on the block device.
 fn create_filesystem_on_block_device(
     device_path: &Path,
-    filesystem: FileSystemType,
+    filesystem: MkfsFileSystemType,
 ) -> Result<(), Error> {
     debug!(
         "Creating '{filesystem}' filesystem on block device {:?}",
         device_path
     );
 
-    mkfs::run(
-        device_path,
-        MkfsFileSystemType::from_api_type(filesystem)
-            .context("Swap should be handled separately")?,
-    )
-    .context("Failed to create filesystem")
+    mkfs::run(device_path, filesystem).context("Failed to create filesystem")
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::osimage::{
+        mock::{MockImage, MockOsImage},
+        OsImage, OsImageFileSystemType,
+    };
+
     use super::*;
 
     use std::path::PathBuf;
 
     use maplit::btreemap;
 
+    use sysdefs::partition_types::DiscoverablePartitionType;
     use trident_api::{
         config::{
             self, AdoptedPartition, Disk, FileSystem, FileSystemSource, FileSystemType,
@@ -153,8 +154,23 @@ mod tests {
     /// devices that need to have clean filesystems created on them.
     #[test]
     fn test_block_devices_needing_fs_creation() {
+        let os_image_clean_install = MockOsImage::new().with_images(vec![
+            MockImage::new(
+                "/boot/efi",
+                OsImageFileSystemType::Vfat,
+                DiscoverablePartitionType::Esp,
+                None::<&str>,
+            ),
+            MockImage::new(
+                "/",
+                OsImageFileSystemType::Ext4,
+                DiscoverablePartitionType::Root,
+                None::<&str>,
+            ),
+        ]);
         let mut ctx_clean_install = EngineContext {
             servicing_type: ServicingType::CleanInstall,
+            image: Some(OsImage::mock(os_image_clean_install)),
             spec: HostConfiguration {
                 storage: StorageConfig {
                     disks: vec![Disk {
@@ -242,18 +258,33 @@ mod tests {
         assert!(block_devices.contains(&(
             "esp".into(),
             PathBuf::from("/dev/disk/by-partlabel/osp1"),
-            FileSystemType::Vfat
+            MkfsFileSystemType::Vfat
         )));
         assert!(block_devices.contains(&(
             "trident".into(),
             PathBuf::from("/dev/disk/by-partlabel/osp4"),
-            FileSystemType::Ext4
+            MkfsFileSystemType::Ext4
         )));
 
         // Test case 2: On A/B update, no need to initialize any FSs since all block devices either
         // have already had FSs created OR are being updated with an image.
+        let mut os_image_ab_update = MockOsImage::new().with_images(vec![
+            MockImage::new(
+                "/esp",
+                OsImageFileSystemType::Vfat,
+                DiscoverablePartitionType::Esp,
+                None::<&str>,
+            ),
+            MockImage::new(
+                "/",
+                OsImageFileSystemType::Ext4,
+                DiscoverablePartitionType::Root,
+                None::<&str>,
+            ),
+        ]);
         let mut ctx_ab_update = EngineContext {
             servicing_type: ServicingType::AbUpdate,
+            image: Some(OsImage::mock(os_image_ab_update.clone())),
             spec: HostConfiguration {
                 storage: StorageConfig {
                     disks: vec![Disk {
@@ -341,6 +372,7 @@ mod tests {
         // Test case 3: If the A/B volume pair now does not have an image requested for it, we need
         // to initialize the filesystem on the A/B volume pair.
         // Update the filesystem for 'root'
+        os_image_ab_update.images.pop(); // Remove root image
         ctx_ab_update.spec.storage.filesystems[1] = FileSystem {
             device_id: Some("root".into()),
             fs_type: FileSystemType::Ext4,
@@ -350,13 +382,14 @@ mod tests {
                 options: MountOptions::empty(),
             }),
         };
+        ctx_ab_update.image = Some(OsImage::mock(os_image_ab_update));
         ctx_ab_update.populate_filesystems().unwrap();
         let block_devices = block_devices_needing_fs_creation(&ctx_ab_update).unwrap();
         assert_eq!(block_devices.len(), 1);
         assert!(block_devices.contains(&(
             "root-b".into(),
             PathBuf::from("/dev/disk/by-partlabel/osp3"),
-            FileSystemType::Ext4
+            MkfsFileSystemType::Ext4
         )));
     }
 
@@ -455,8 +488,11 @@ mod functional_test {
         repart::clear_disk(Path::new(TEST_DISK_DEVICE_PATH)).unwrap();
 
         // Run initialize_block_device() to format to ext4 filesystem
-        create_filesystem_on_block_device(Path::new(TEST_DISK_DEVICE_PATH), FileSystemType::Ext4)
-            .unwrap();
+        create_filesystem_on_block_device(
+            Path::new(TEST_DISK_DEVICE_PATH),
+            MkfsFileSystemType::Ext4,
+        )
+        .unwrap();
 
         // Confirm that /dev/sdb has been reformatted to ext4
         let block_device = lsblk::get(Path::new(TEST_DISK_DEVICE_PATH)).unwrap();
@@ -495,7 +531,7 @@ mod functional_test {
 
         let result = create_filesystem_on_block_device(
             Path::new(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
-            FileSystemType::Ext4,
+            MkfsFileSystemType::Ext4,
         );
 
         let error_string = result.as_ref().unwrap_err().root_cause().to_string();

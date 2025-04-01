@@ -93,20 +93,33 @@ impl MkfsFileSystemType {
             Self::Ntfs => "ntfs",
         }
     }
+}
 
-    pub fn from_api_type(api_type: FileSystemType) -> Result<Self, Error> {
-        Ok(match api_type {
-            FileSystemType::Ext4 => Self::Ext4,
-            FileSystemType::Xfs => Self::Xfs,
-            FileSystemType::Vfat => Self::Vfat,
-            FileSystemType::Ntfs => Self::Ntfs,
-            FileSystemType::Iso9660
-            | FileSystemType::Tmpfs
-            | FileSystemType::Overlay
-            | FileSystemType::Auto => {
-                bail!("'{api_type}' filesystem type cannot be used for creating new filesystems")
+impl TryFrom<RealFilesystemType> for MkfsFileSystemType {
+    type Error = Error;
+
+    fn try_from(real_fs_type: RealFilesystemType) -> Result<Self, Error> {
+        match real_fs_type {
+            RealFilesystemType::Ext2 => Ok(Self::Ext2),
+            RealFilesystemType::Ext3 => Ok(Self::Ext3),
+            RealFilesystemType::Ext4 => Ok(Self::Ext4),
+            RealFilesystemType::Ntfs => Ok(Self::Ntfs),
+            RealFilesystemType::Vfat => Ok(Self::Vfat),
+            RealFilesystemType::Xfs => Ok(Self::Xfs),
+            RealFilesystemType::Btrfs
+            | RealFilesystemType::Cramfs
+            | RealFilesystemType::Exfat
+            | RealFilesystemType::Fuseblk
+            | RealFilesystemType::Iso9660
+            | RealFilesystemType::Msdos
+            | RealFilesystemType::Squashfs
+            | RealFilesystemType::Udf => {
+                bail!(
+                    "'{}' filesystem type cannot be used for creating new filesystems",
+                    real_fs_type.as_kernel().name()
+                )
             }
-        })
+        }
     }
 }
 

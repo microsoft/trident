@@ -77,22 +77,15 @@ fn entry_from_fs_data(
             ))
         }
 
-        FileSystemData::Image(ifs) => (
-            ifs.device_id,
-            TabFileSystemType::from_api_type(ifs.fs_type).context("Invalid file system type")?,
-            Some(ifs.mount_point),
-        ),
+        FileSystemData::Image(ifs) => (ifs.device_id, ifs.fs_type.into(), Some(ifs.mount_point)),
 
         FileSystemData::Adopted(afs) => (
             afs.device_id,
-            TabFileSystemType::from_api_type(afs.fs_type).context("Invalid file system type")?,
+            afs.fs_type
+                .map_or(TabFileSystemType::Auto, |fs_type| fs_type.into()),
             afs.mount_point,
         ),
-        FileSystemData::New(nfs) => (
-            nfs.device_id,
-            TabFileSystemType::from_api_type(nfs.fs_type).context("Invalid file system type")?,
-            nfs.mount_point,
-        ),
+        FileSystemData::New(nfs) => (nfs.device_id, nfs.fs_type.into(), nfs.mount_point),
     };
 
     let Some(mount_point) = mount_point else {
@@ -117,11 +110,6 @@ fn entry_from_swap(
 
 #[cfg(test)]
 mod tests {
-    use crate::engine::filesystem::{
-        FileSystemDataAdopted, FileSystemDataImage, FileSystemDataNew, FileSystemDataOverlay,
-        FileSystemDataTmpfs,
-    };
-
     use super::*;
 
     use std::{fs, path::PathBuf, str::FromStr};
@@ -129,8 +117,9 @@ mod tests {
     use anyhow::bail;
     use indoc::indoc;
     use maplit::btreemap;
+    use uuid::Uuid;
 
-    use sysdefs::filesystems::RealFilesystemType;
+    use sysdefs::{filesystems::RealFilesystemType, partition_types::DiscoverablePartitionType};
     use tempfile::NamedTempFile;
     use trident_api::{
         config::{
@@ -140,6 +129,17 @@ mod tests {
         },
         constants::{ESP_MOUNT_POINT_PATH, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
         status::ServicingType,
+    };
+
+    use crate::{
+        engine::filesystem::{
+            FileSystemDataAdopted, FileSystemDataImage, FileSystemDataNew, FileSystemDataOverlay,
+            FileSystemDataTmpfs,
+        },
+        osimage::{
+            mock::{MockImage, MockOsImage},
+            OsImage, OsImageFileSystemType,
+        },
     };
 
     fn device_finder(device_id: &BlockDeviceId) -> Result<PathBuf, Error> {
@@ -163,7 +163,7 @@ mod tests {
                         path: PathBuf::from("/boot/efi"),
                         options: MountOptions::new("umask=0077"),
                     },
-                    fs_type: FileSystemType::Vfat,
+                    fs_type: RealFilesystemType::Vfat,
                     device_id: "efi".to_owned(),
                 }
                 .into(),
@@ -186,7 +186,7 @@ mod tests {
                 device_finder,
                 FileSystemDataNew {
                     mount_point: Some(MountPoint::from_str("/mnt/data").unwrap()),
-                    fs_type: FileSystemType::Ext4,
+                    fs_type: RealFilesystemType::Ext4,
                     device_id: "os".to_owned(),
                 }
                 .into(),
@@ -209,7 +209,7 @@ mod tests {
                 device_finder,
                 FileSystemDataAdopted {
                     mount_point: Some(MountPoint::from_str("/mnt/data").unwrap()),
-                    fs_type: FileSystemType::Ext4,
+                    fs_type: Some(RealFilesystemType::Ext4),
                     device_id: "os".to_owned(),
                 }
                 .into(),
@@ -232,7 +232,7 @@ mod tests {
                 device_finder,
                 FileSystemDataAdopted {
                     mount_point: None,
-                    fs_type: FileSystemType::Ext4,
+                    fs_type: Some(RealFilesystemType::Ext4),
                     device_id: "os".to_owned(),
                 }
                 .into(),
@@ -326,7 +326,7 @@ mod tests {
                         path: PathBuf::from(ESP_MOUNT_POINT_PATH),
                         options: "umask=0077".into(),
                     },
-                    fs_type: FileSystemType::Vfat,
+                    fs_type: RealFilesystemType::Vfat,
                     device_id: "efi".to_owned(),
                 }
                 .into(),
@@ -335,7 +335,7 @@ mod tests {
                         path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                         options: "errors=remount-ro".into(),
                     },
-                    fs_type: FileSystemType::Ext4,
+                    fs_type: RealFilesystemType::Ext4,
                     device_id: "root".to_owned(),
                 }
                 .into(),
@@ -344,7 +344,7 @@ mod tests {
                         path: PathBuf::from("/home"),
                         options: "defaults,x-systemd.makefs".into(),
                     }),
-                    fs_type: FileSystemType::Ext4,
+                    fs_type: RealFilesystemType::Ext4,
                     device_id: "home".to_owned(),
                 }
                 .into(),
@@ -369,9 +369,9 @@ mod tests {
         /// Produces the expected fstab with an optional component added before swap.
         fn expected_fstab(extra: Option<&str>) -> String {
             [
+                "/dev/disk/by-partlabel/osp4 /home ext4 defaults,x-systemd.makefs 0 2",
                 "/dev/disk/by-partlabel/osp1 /boot/efi vfat umask=0077 0 2",
                 "/dev/mapper/root / ext4 ro 0 1",
-                "/dev/disk/by-partlabel/osp4 /home ext4 defaults,x-systemd.makefs 0 2",
             ]
             .into_iter()
             .chain(extra)
@@ -458,9 +458,25 @@ mod tests {
             ..Default::default()
         };
 
+        let os_image = MockOsImage::new().with_images(vec![
+            MockImage::new(
+                PathBuf::from(ROOT_MOUNT_POINT_PATH),
+                OsImageFileSystemType::Ext4,
+                DiscoverablePartitionType::Esp,
+                None::<&str>,
+            ),
+            MockImage::new(
+                PathBuf::from(ESP_MOUNT_POINT_PATH),
+                OsImageFileSystemType::Vfat,
+                DiscoverablePartitionType::Root,
+                Some(Uuid::new_v4().to_string()),
+            ),
+        ]);
+
         let mut ctx = EngineContext {
             storage_graph: hc.storage.build_graph().unwrap(),
             spec: hc,
+            image: Some(OsImage::mock(os_image)),
             servicing_type: ServicingType::CleanInstall,
             filesystems: Vec::new(), // Will be populated in populate_filesystems
             partition_paths: btreemap! {

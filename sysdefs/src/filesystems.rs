@@ -1,5 +1,5 @@
-use serde::{de::value::Error, forward_to_deserialize_any, Deserialize, Deserializer};
-use strum_macros::{EnumIs, IntoStaticStr};
+use serde::{de::value::Error, forward_to_deserialize_any, Deserialize, Deserializer, Serialize};
+use strum_macros::{EnumIs, EnumIter, IntoStaticStr};
 
 /// Superset of all filesystem types recognized by the kernel.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, EnumIs)]
@@ -41,12 +41,30 @@ impl From<&str> for KernelFilesystemType {
     }
 }
 
+impl KernelFilesystemType {
+    /// Returns true if the file system is `ext*`.
+    pub fn is_ext(&self) -> bool {
+        match self {
+            Self::Real(real_fs) => real_fs.is_ext(),
+            Self::Nodev(_) | Self::Other(_) => false,
+        }
+    }
+
+    /// Returns inner RealFilesystemType, if applicable.
+    pub fn as_real(&self) -> Option<RealFilesystemType> {
+        match self {
+            Self::Real(real_fs) => Some(*real_fs),
+            Self::Nodev(_) | Self::Other(_) => None,
+        }
+    }
+}
+
 /// List of all known real or physical filesystem types. These are types that
 /// require a block device.
 ///
 /// Essentially, things you might see in `/proc/filesystems` without the `nodev`
 /// attribute.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, IntoStaticStr)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, IntoStaticStr, EnumIter)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
 pub enum RealFilesystemType {
@@ -70,6 +88,24 @@ impl RealFilesystemType {
     pub fn as_kernel(self) -> KernelFilesystemType {
         self.into()
     }
+
+    /// Returns true if the file system is `ext*`.
+    pub fn is_ext(self) -> bool {
+        match self {
+            RealFilesystemType::Ext2 | RealFilesystemType::Ext3 | RealFilesystemType::Ext4 => true,
+            RealFilesystemType::Btrfs
+            | RealFilesystemType::Cramfs
+            | RealFilesystemType::Exfat
+            | RealFilesystemType::Fuseblk
+            | RealFilesystemType::Iso9660
+            | RealFilesystemType::Msdos
+            | RealFilesystemType::Ntfs
+            | RealFilesystemType::Squashfs
+            | RealFilesystemType::Udf
+            | RealFilesystemType::Vfat
+            | RealFilesystemType::Xfs => false,
+        }
+    }
 }
 
 /// List of all known nodev filesystem types. These are types that do NOT use a
@@ -77,7 +113,7 @@ impl RealFilesystemType {
 ///
 /// Essentially, things you might see in `/proc/filesystems` WITH the `nodev`
 /// attribute.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, IntoStaticStr)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, IntoStaticStr, EnumIter)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
 pub enum NodevFilesystemType {

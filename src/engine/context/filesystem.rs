@@ -1,15 +1,19 @@
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 use derive_more::From;
 
+use sysdefs::filesystems::{KernelFilesystemType, NodevFilesystemType, RealFilesystemType};
 use trident_api::{
     config::{FileSystem, FileSystemSource, FileSystemType, MountPoint},
     constants::{ESP_MOUNT_POINT_PATH, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
-    error::{InternalError, ReportError, TridentError},
+    error::{InternalError, ReportError, TridentError, TridentResultExt},
     BlockDeviceId,
 };
 
-use crate::engine::EngineContext;
+use crate::{engine::EngineContext, osimage::OsImageFileSystemType};
 
 #[derive(Clone, From)]
 pub enum FileSystemData {
@@ -28,7 +32,7 @@ pub struct FileSystemDataImage {
     pub mount_point: MountPoint,
 
     /// The file system type.
-    pub fs_type: FileSystemType,
+    pub fs_type: RealFilesystemType,
 
     /// The id of the block device associated with this filesystem.
     ///
@@ -42,7 +46,7 @@ pub struct FileSystemDataNew {
     pub mount_point: Option<MountPoint>,
 
     /// The file system type.
-    pub fs_type: FileSystemType,
+    pub fs_type: RealFilesystemType,
 
     /// The id of the block device associated with this filesystem.
     ///
@@ -58,7 +62,7 @@ pub struct FileSystemDataAdopted {
     pub mount_point: Option<MountPoint>,
 
     /// The file system type.
-    pub fs_type: FileSystemType,
+    pub fs_type: Option<RealFilesystemType>,
 
     /// The id of the block device associated with this filesystem.
     ///
@@ -103,7 +107,10 @@ impl FileSystemData {
                     .to_owned(),
                 ),
             ),
-            ("type", Some(self.fs_type().to_string())),
+            (
+                "type",
+                self.fs_type().map(|fs_type| fs_type.name().to_string()),
+            ),
             ("dev", self.device_id().cloned()),
             (
                 "mnt",
@@ -141,6 +148,22 @@ impl FileSystemData {
         }
     }
 
+    /// Returns the inner FileSystemDataTmpfs object, if applicable
+    pub fn as_tmpfs(&self) -> Option<&FileSystemDataTmpfs> {
+        match self {
+            FileSystemData::Tmpfs(fs_data_tmpfs) => Some(fs_data_tmpfs),
+            _ => None,
+        }
+    }
+
+    /// Returns the inner FileSystemDataOverlay object, if applicable
+    pub fn as_overlay(&self) -> Option<&FileSystemDataOverlay> {
+        match self {
+            FileSystemData::Overlay(fs_data_overlay) => Some(fs_data_overlay),
+            _ => None,
+        }
+    }
+
     /// Returns whether the filesystem is the root filesystem, as determined by
     /// its mount point path.
     pub fn is_root(&self) -> bool {
@@ -171,14 +194,17 @@ impl FileSystemData {
         }
     }
 
-    /// Returns the filesystem type.
-    pub fn fs_type(&self) -> FileSystemType {
+    /// Returns the filesystem type if one exists. This function will return
+    /// None in the case that the filesystem type is set to "Auto".
+    pub fn fs_type(&self) -> Option<KernelFilesystemType> {
         match self {
-            FileSystemData::Adopted(fs_data_adopted) => fs_data_adopted.fs_type,
-            FileSystemData::Image(fs_data_image) => fs_data_image.fs_type,
-            FileSystemData::New(fs_data_new) => fs_data_new.fs_type,
-            FileSystemData::Tmpfs(_) => FileSystemType::Tmpfs,
-            FileSystemData::Overlay(_) => FileSystemType::Overlay,
+            FileSystemData::Adopted(fs_data_adopted) => {
+                fs_data_adopted.fs_type.map(|fs_type| fs_type.as_kernel())
+            }
+            FileSystemData::Image(fs_data_image) => Some(fs_data_image.fs_type.as_kernel()),
+            FileSystemData::New(fs_data_new) => Some(fs_data_new.fs_type.as_kernel()),
+            FileSystemData::Tmpfs(_) => Some(NodevFilesystemType::Tmpfs.as_kernel()),
+            FileSystemData::Overlay(_) => Some(NodevFilesystemType::Overlay.as_kernel()),
         }
     }
 
@@ -239,19 +265,72 @@ impl FileSystemDataImage {
 
 impl EngineContext {
     /// Populate the `filesystems` field in EngineContext from all sources.
-    ///
-    /// TODO: Currently this function just takes information from the HC since
-    /// all filesystem information can be found there. However, once filesystem
-    /// type is removed for image-sourced filesystems, this function should
-    /// combine filesystems from OS image and HC.
     pub fn populate_filesystems(&mut self) -> Result<(), TridentError> {
+        // Get all New and Adopted filesystems
         self.filesystems = self
             .spec
             .storage
             .filesystems
             .iter()
+            .filter(|fs| fs.source != FileSystemSource::Image)
             .map(FileSystemData::try_from)
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Result<Vec<_>, _>>()
+            .message("Failed to create FileSystemData objects from New and Adopted filesystems in the Host Configuration")?;
+
+        let Some(image) = &self.image else {
+            // If there are no Image filesystems, we can return here
+            return Ok(());
+        };
+
+        // Create a map to get the filesystem type from the Image
+        let image_fs_map = image
+            .filesystems()
+            .chain(image.esp_filesystem())
+            .map(|fs| (fs.mount_point, fs.fs_type))
+            .collect::<HashMap<PathBuf, OsImageFileSystemType>>();
+
+        // Get all Image filesystems in the Host Configuration
+        for img_fs in self
+            .spec
+            .storage
+            .filesystems
+            .iter()
+            .filter(|fs| fs.source == FileSystemSource::Image)
+        {
+            let mount_point =
+                img_fs
+                    .mount_point
+                    .clone()
+                    .structured(InternalError::PopulateFilesystems(
+                        "Expected mount point for Image filesystem but found none".to_string(),
+                    ))?;
+            let fs_type = (*image_fs_map.get(&mount_point.path).structured(
+                InternalError::PopulateFilesystems(format!(
+                    "Failed to find filesystem type for Image filesystem mounted at {}",
+                    mount_point.path.display()
+                )),
+            )?)
+            .into();
+            let device_id =
+                img_fs
+                    .device_id
+                    .clone()
+                    .structured(InternalError::PopulateFilesystems(format!(
+                        "Expected device id for Image filesystem mounted at {} but found none",
+                        mount_point.path.display()
+                    )))?;
+
+            // Add the filesystem to EngineContext's filesystems
+            self.filesystems.push(
+                FileSystemDataImage {
+                    mount_point,
+                    fs_type,
+                    device_id,
+                }
+                .into(),
+            )
+        }
+
         Ok(())
     }
 
@@ -283,42 +362,53 @@ impl<'a> TryFrom<&'a FileSystem> for FileSystemData {
     type Error = TridentError;
 
     fn try_from(fs: &'a FileSystem) -> Result<Self, Self::Error> {
+        let mpp = fs
+            .mount_point_path()
+            .map(|path| format!(" mounted at {}", path.display()))
+            .unwrap_or("".into());
+
         match fs.source {
             FileSystemSource::Adopted => Ok(FileSystemData::Adopted(FileSystemDataAdopted {
                 mount_point: fs.mount_point.clone(),
-                fs_type: fs.fs_type,
-                device_id: fs.device_id.clone().structured(InternalError::Internal(
-                    "Expected device id for Adopted filesystem but found none",
-                ))?,
-            })),
-            FileSystemSource::Image => Ok(FileSystemData::Image(FileSystemDataImage {
-                mount_point: fs.mount_point.clone().structured(InternalError::Internal(
-                    "Expected mount point for Image filesystem but found none",
-                ))?,
-                fs_type: fs.fs_type,
-                device_id: fs.device_id.clone().structured(InternalError::Internal(
-                    "Expected device id for Image filesystem but found none",
-                ))?,
+                fs_type: fs.fs_type.try_into().ok(),
+                device_id: fs
+                    .device_id
+                    .clone()
+                    .structured(InternalError::PopulateFilesystems(format!(
+                        "Expected device id for Adopted filesystem{} but found none",
+                        mpp
+                    )))?,
             })),
             FileSystemSource::New => match fs.fs_type {
                 FileSystemType::Tmpfs => Ok(FileSystemData::Tmpfs(FileSystemDataTmpfs {
-                    mount_point: fs.mount_point.clone().structured(InternalError::Internal(
-                        "Expected mount point for Tmpfs filesystem but found none",
-                    ))?,
+                    mount_point: fs.mount_point.clone().structured(
+                        InternalError::PopulateFilesystems(
+                            "Expected mount point for Tmpfs filesystem but found none".to_string(),
+                        ),
+                    )?,
                 })),
                 FileSystemType::Overlay => Ok(FileSystemData::Overlay(FileSystemDataOverlay {
-                    mount_point: fs.mount_point.clone().structured(InternalError::Internal(
-                        "Expected mount point for Overlay filesystem but found none",
-                    ))?,
+                    mount_point: fs.mount_point.clone().structured(
+                        InternalError::PopulateFilesystems(
+                            "Expected mount point for Overlay filesystem but found none"
+                                .to_string(),
+                        ),
+                    )?,
                 })),
                 _ => Ok(FileSystemData::New(FileSystemDataNew {
                     mount_point: fs.mount_point.clone(),
-                    fs_type: fs.fs_type,
-                    device_id: fs.device_id.clone().structured(InternalError::Internal(
-                        "Expected device id for New filesystem but found none",
-                    ))?,
+                    fs_type: fs.fs_type.try_into()?,
+                    device_id: fs.device_id.clone().structured(
+                        InternalError::PopulateFilesystems(format!(
+                            "Expected device id for New filesystem{} but found none",
+                            mpp
+                        )),
+                    )?,
                 })),
             },
+            FileSystemSource::Image => Err(TridentError::new(InternalError::PopulateFilesystems(
+                "Image filesystems should be handled separately".to_string(),
+            ))),
         }
     }
 }
