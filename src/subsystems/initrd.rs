@@ -1,7 +1,7 @@
-use log::info;
+use log::{debug, info};
 
 use osutils::mkinitrd;
-use trident_api::error::TridentError;
+use trident_api::{constants::internal_params::ENABLE_UKI_SUPPORT, error::TridentError};
 
 use crate::engine::{EngineContext, Subsystem};
 
@@ -17,7 +17,12 @@ impl Subsystem for InitrdSubsystem {
     }
 
     #[tracing::instrument(name = "initrd_regeneration", skip_all)]
-    fn configure(&mut self, _ctx: &EngineContext) -> Result<(), TridentError> {
+    fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
+        if ctx.spec.internal_params.get_flag(ENABLE_UKI_SUPPORT) {
+            debug!("Skipping initrd regeneration because UKI is in use");
+            return Ok(());
+        }
+
         // We could autodetect configurations on the fly, but for more predictable
         // behavior and speedier subsequent boots, we will regenerate the host-specific initrd
         // here.

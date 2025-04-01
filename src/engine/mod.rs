@@ -285,22 +285,12 @@ fn configure(
     subsystems: &mut [Box<dyn Subsystem>],
     ctx: &EngineContext,
 ) -> Result<(), TridentError> {
-    // UKI support currently assumes root verity without a writable overlay. Many module's configure
-    // methods would fail in this case, so we skip all of them.
-    //
-    // TODO: More granular logic for which configure operations to skip. At a minimum,
-    // post-configuration scripts should still run. Additionally, errors should be generated for any
-    // customizations requested in the Host Configuration that would be skipped.
-    if ctx.spec.internal_params.get_flag(ENABLE_UKI_SUPPORT) {
-        return Ok(());
-    }
-
-    // If verity is present, it means that we are currently doing root
-    // verity. For now, we can assume that /etc is readonly, so we setup
-    // a writable overlay for it.
+    // Root verity means /etc is readonly, so in the non-UKI configuration we setup a writable
+    // overlay for it.
     let use_overlay = (ctx.servicing_type == ServicingType::CleanInstall
         || ctx.servicing_type == ServicingType::AbUpdate)
-        && ctx.storage_graph.root_fs_is_verity();
+        && ctx.storage_graph.root_fs_is_verity()
+        && !ctx.spec.internal_params.get_flag(ENABLE_UKI_SUPPORT);
 
     info!("Starting step 'Configure'");
     for subsystem in subsystems {
