@@ -49,14 +49,6 @@ impl KernelFilesystemType {
             Self::Nodev(_) | Self::Other(_) => false,
         }
     }
-
-    /// Returns inner RealFilesystemType, if applicable.
-    pub fn as_real(&self) -> Option<RealFilesystemType> {
-        match self {
-            Self::Real(real_fs) => Some(*real_fs),
-            Self::Nodev(_) | Self::Other(_) => None,
-        }
-    }
 }
 
 /// List of all known real or physical filesystem types. These are types that

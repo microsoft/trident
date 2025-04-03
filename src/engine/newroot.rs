@@ -11,8 +11,9 @@ use log::{debug, error, trace, warn};
 use sys_mount::{MountBuilder, MountFlags};
 
 use osutils::{files, filesystems::MountFileSystemType, findmnt::FindMnt, lsblk, mount, path};
+use sysdefs::filesystems::{KernelFilesystemType, RealFilesystemType};
 use trident_api::{
-    config::{FileSystemType, HostConfiguration, InternalMountPoint},
+    config::{FileSystem, HostConfiguration},
     constants::{
         NONE_MOUNT_POINT, ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_FALLBACK_PATH, UPDATE_ROOT_PATH,
     },
@@ -182,7 +183,12 @@ impl NewrootMount {
         // Mount all block devices in the newroot
         mount_points_map(host_config)
             .iter()
-            .try_for_each(|(path, mp)| {
+            .try_for_each(|(path, fs)| {
+                // target_id may be None if mounting Overlay or Tmpfs
+                let target_id = fs.device_id.as_deref().unwrap_or_default();
+                let Some(mp) = fs.mount_point.as_ref() else {
+                    return Ok(());
+                };
                 let target_path =
                     self.path()
                         .join(path.strip_prefix(ROOT_MOUNT_POINT_PATH).context(format!(
@@ -193,34 +199,36 @@ impl NewrootMount {
 
                 debug!(
                     "Mounting block device '{}' to '{}'",
-                    mp.target_id,
+                    target_id,
                     target_path.display()
                 );
 
                 prepare_mount_directory(&target_path, false).with_context(||format!(
                     "Failed to prepare mount directory for block device '{}'",
-                    mp.target_id
+                    target_id
                 ))?;
 
-                let device_path = block_device_paths.get(&mp.target_id).context(format!(
+                let device_path = block_device_paths.get(target_id).context(format!(
                     "Failed to find block device path for id '{}'",
-                    mp.target_id
+                    target_id
                 ))?;
 
                 // Check if block device is already mounted
                 let block_device = lsblk::get(device_path).with_context(|| {
-                    format!("Failed to get info about block device '{}'", mp.target_id)
+                    format!("Failed to get info about block device '{}'", target_id)
                 })?;
+
+                let fs_type = block_device.fstype.and_then(|fs_type| KernelFilesystemType::from(fs_type.as_str()).try_as_real());
 
                 // If a filesystem is of type NTFS and the device is already mounted, need to use a
                 // private bind mount instead, b/c NTFS doesn't support multiple mounts.
-                match (mp.filesystem, block_device.mountpoint) {
-                    (FileSystemType::Ntfs, Some(mp_path)) => {
+                match (should_be_bind_mounted(fs_type), block_device.mountpoint) {
+                    (true, Some(mp_path)) => {
                         // Issue a warning to inform the user that we are creating a private bind
                         // mount, instead of the "regular" mount.
                         warn!(
                             "Block device '{}' with an NTFS filesystem is already mounted at '{}', but NTFS does not support multiple mounts.\nCreating a private bind mount at '{}' instead",
-                            mp.target_id,
+                            target_id,
                             mp_path.display(),
                             target_path.display()
                         );
@@ -245,15 +253,12 @@ impl NewrootMount {
                         mount::mount(
                             device_path,
                             &target_path,
-                            MountFileSystemType::from_api_type(mp.filesystem).context(format!(
-                                "Filesystem type of block device '{}' is not valid for mounting: '{}'",
-                                mp.target_id, mp.filesystem,
-                            ))?,
-                            &mp.options,
+                            MountFileSystemType::Auto,
+                            &mp.options.to_string_vec(),
                         )
                         .context(format!(
                             "Failed to mount block device '{}' with device path '{}' to '{}'",
-                            mp.target_id,
+                            target_id,
                             device_path.display(),
                             target_path.display()
                         ))?;
@@ -311,13 +316,41 @@ impl Drop for NewrootMount {
     }
 }
 
-/// Returns an ordered map of mount points to their corresponding InternalMountPoint objects.
-fn mount_points_map(host_config: &HostConfiguration) -> BTreeMap<&Path, &InternalMountPoint> {
+/// Only NTFS should be bind mounted. Also return true for Fuseblk for cover
+/// case where lsblk reports that an NTFS filesystem has type Fuseblk.
+fn should_be_bind_mounted(fs_type: Option<RealFilesystemType>) -> bool {
+    let Some(real_fs_type) = fs_type else {
+        return false;
+    };
+    match real_fs_type {
+        RealFilesystemType::Ntfs | RealFilesystemType::Fuseblk => true,
+        RealFilesystemType::Btrfs
+        | RealFilesystemType::Cramfs
+        | RealFilesystemType::Exfat
+        | RealFilesystemType::Ext2
+        | RealFilesystemType::Ext3
+        | RealFilesystemType::Ext4
+        | RealFilesystemType::Iso9660
+        | RealFilesystemType::Msdos
+        | RealFilesystemType::Squashfs
+        | RealFilesystemType::Udf
+        | RealFilesystemType::Vfat
+        | RealFilesystemType::Xfs => false,
+    }
+}
+
+/// Returns an ordered map of mount points to their corresponding FileSystem objects.
+fn mount_points_map(host_config: &HostConfiguration) -> BTreeMap<&Path, &FileSystem> {
     host_config
         .storage
-        .internal_mount_points
+        .filesystems
         .iter()
-        .map(|mp| (&*mp.path, mp))
+        .filter_map(|fs| {
+            if let Some(mpp) = fs.mount_point_path() {
+                return Some((mpp, fs));
+            };
+            None
+        })
         .filter(|(path, _)| path.as_os_str() != NONE_MOUNT_POINT)
         .collect::<BTreeMap<_, _>>()
 }
@@ -491,42 +524,59 @@ mod tests {
 
     use tempfile::TempDir;
 
-    use trident_api::config::{FileSystemType, HostConfiguration, InternalMountPoint, Storage};
+    use trident_api::config::{
+        FileSystemSource, FileSystemType, HostConfiguration, MountOptions, MountPoint, Storage,
+    };
 
     #[test]
     fn test_mount_point_ordering() {
         let host_config = HostConfiguration {
             storage: Storage {
-                internal_mount_points: vec![
-                    InternalMountPoint {
-                        path: PathBuf::from("/mnt/boot/efi"),
-                        target_id: "sda3".to_string(),
-                        filesystem: FileSystemType::Vfat,
-                        options: vec![],
+                filesystems: vec![
+                    FileSystem {
+                        mount_point: Some(MountPoint {
+                            path: PathBuf::from("/mnt/boot/efi"),
+                            options: MountOptions::empty(),
+                        }),
+                        device_id: Some("sda3".to_string()),
+                        fs_type: FileSystemType::Vfat,
+                        source: FileSystemSource::Image,
                     },
-                    InternalMountPoint {
-                        path: PathBuf::from("/mnt"),
-                        target_id: "sda1".to_string(),
-                        filesystem: FileSystemType::Ext4,
-                        options: vec![],
+                    FileSystem {
+                        mount_point: Some(MountPoint {
+                            path: PathBuf::from("/mnt"),
+                            options: MountOptions::empty(),
+                        }),
+                        device_id: Some("sda1".to_string()),
+                        fs_type: FileSystemType::Ext4,
+                        source: FileSystemSource::Image,
                     },
-                    InternalMountPoint {
-                        path: PathBuf::from("/a"),
-                        target_id: "sda1".to_string(),
-                        filesystem: FileSystemType::Ext4,
-                        options: vec![],
+                    FileSystem {
+                        mount_point: Some(MountPoint {
+                            path: PathBuf::from("/a"),
+                            options: MountOptions::empty(),
+                        }),
+                        device_id: Some("sda1".to_string()),
+                        fs_type: FileSystemType::Ext4,
+                        source: FileSystemSource::Image,
                     },
-                    InternalMountPoint {
-                        path: PathBuf::from("/"),
-                        target_id: "sda1".to_string(),
-                        filesystem: FileSystemType::Ext4,
-                        options: vec![],
+                    FileSystem {
+                        mount_point: Some(MountPoint {
+                            path: PathBuf::from("/"),
+                            options: MountOptions::empty(),
+                        }),
+                        device_id: Some("sda1".to_string()),
+                        fs_type: FileSystemType::Ext4,
+                        source: FileSystemSource::Image,
                     },
-                    InternalMountPoint {
-                        path: PathBuf::from("/mnt/boot"),
-                        target_id: "sda2".to_string(),
-                        filesystem: FileSystemType::Ext4,
-                        options: vec![],
+                    FileSystem {
+                        mount_point: Some(MountPoint {
+                            path: PathBuf::from("/mnt/boot"),
+                            options: MountOptions::empty(),
+                        }),
+                        device_id: Some("sda2".to_string()),
+                        fs_type: FileSystemType::Ext4,
+                        source: FileSystemSource::Image,
                     },
                 ],
                 ..Default::default()
@@ -664,7 +714,8 @@ mod functional_test {
     use sysdefs::partition_types::DiscoverablePartitionType;
     use trident_api::{
         config::{
-            self, Disk, FileSystemType, HostConfiguration, Partition, PartitionSize, PartitionType,
+            self, Disk, FileSystemSource, FileSystemType, HostConfiguration, MountOptions,
+            MountPoint, Partition, PartitionSize, PartitionType,
         },
         constants::{ESP_RELATIVE_MOUNT_POINT_PATH, MOUNT_OPTION_READ_ONLY},
         error::ErrorKind,
@@ -697,11 +748,14 @@ mod functional_test {
                         }],
                         ..Default::default()
                     }],
-                    internal_mount_points: vec![config::InternalMountPoint {
-                        path: PathBuf::from("/"),
-                        target_id: "sr0".to_string(),
-                        filesystem: FileSystemType::Iso9660,
-                        options: vec![MOUNT_OPTION_READ_ONLY.into()],
+                    filesystems: vec![FileSystem {
+                        mount_point: Some(MountPoint {
+                            path: PathBuf::from("/"),
+                            options: MountOptions(MOUNT_OPTION_READ_ONLY.into()),
+                        }),
+                        device_id: Some("sr0".to_string()),
+                        fs_type: FileSystemType::Iso9660,
+                        source: FileSystemSource::Image,
                     }],
                     ..Default::default()
                 },
@@ -766,18 +820,24 @@ mod functional_test {
                         ],
                         ..Default::default()
                     }],
-                    internal_mount_points: vec![
-                        config::InternalMountPoint {
-                            path: PathBuf::from("/"),
-                            target_id: "root".to_string(),
-                            filesystem: FileSystemType::Ext4,
-                            options: vec!["defaults".into()],
+                    filesystems: vec![
+                        FileSystem {
+                            mount_point: Some(MountPoint {
+                                path: PathBuf::from("/"),
+                                options: MountOptions::default(),
+                            }),
+                            device_id: Some("root".to_string()),
+                            fs_type: FileSystemType::Ext4,
+                            source: FileSystemSource::Image,
                         },
-                        config::InternalMountPoint {
-                            path: PathBuf::from("/boot/efi"),
-                            target_id: "esp".to_string(),
-                            filesystem: FileSystemType::Vfat,
-                            options: vec!["umask=0077".into()],
+                        FileSystem {
+                            mount_point: Some(MountPoint {
+                                path: PathBuf::from("/boot/efi"),
+                                options: MountOptions("umask=0077".into()),
+                            }),
+                            device_id: Some("esp".to_string()),
+                            fs_type: FileSystemType::Vfat,
+                            source: FileSystemSource::Image,
                         },
                     ],
                     ..Default::default()
@@ -890,11 +950,14 @@ mod functional_test {
                         }],
                         ..Default::default()
                     }],
-                    internal_mount_points: vec![config::InternalMountPoint {
-                        path: PathBuf::from("foobar"),
-                        target_id: "sr0".to_string(),
-                        filesystem: FileSystemType::Iso9660,
-                        options: vec!["bad-options".into()],
+                    filesystems: vec![FileSystem {
+                        mount_point: Some(MountPoint {
+                            path: PathBuf::from("foobar"),
+                            options: MountOptions("bad-options".into()),
+                        }),
+                        device_id: Some("sr0".to_string()),
+                        fs_type: FileSystemType::Iso9660,
+                        source: FileSystemSource::Image,
                     }],
                     ..Default::default()
                 },
@@ -922,9 +985,12 @@ mod functional_test {
         );
 
         // bad root path
-        let mut value = ctx.spec.storage.internal_mount_points.remove(0);
-        value.path = PathBuf::from("/");
-        ctx.spec.storage.internal_mount_points.push(value);
+        let mut value = ctx.spec.storage.filesystems.remove(0);
+        value.mount_point = Some(MountPoint {
+            path: PathBuf::from("/"),
+            options: MountOptions("bad-options".into()),
+        });
+        ctx.spec.storage.filesystems.push(value);
         let temp_file = NamedTempFile::new().unwrap();
 
         let mut newroot_mount = NewrootMount::new(temp_file.path().to_owned());
@@ -992,11 +1058,14 @@ mod functional_test {
                         }],
                         ..Default::default()
                     }],
-                    internal_mount_points: vec![config::InternalMountPoint {
-                        path: PathBuf::from("/"),
-                        target_id: "sr0".to_string(),
-                        filesystem: FileSystemType::Iso9660,
-                        options: vec![MOUNT_OPTION_READ_ONLY.into()],
+                    filesystems: vec![FileSystem {
+                        mount_point: Some(MountPoint {
+                            path: PathBuf::from("/"),
+                            options: MountOptions(MOUNT_OPTION_READ_ONLY.into()),
+                        }),
+                        device_id: Some("sr0".to_string()),
+                        fs_type: FileSystemType::Iso9660,
+                        source: FileSystemSource::Image,
                     }],
                     ..Default::default()
                 },
@@ -1077,11 +1146,14 @@ mod functional_test {
                         }],
                         ..Default::default()
                     }],
-                    internal_mount_points: vec![config::InternalMountPoint {
-                        path: PathBuf::from("/mnt/staging"),
-                        target_id: "staging".to_string(),
-                        filesystem: FileSystemType::Ntfs,
-                        options: vec![],
+                    filesystems: vec![FileSystem {
+                        mount_point: Some(MountPoint {
+                            path: PathBuf::from("/mnt/staging"),
+                            options: MountOptions::empty(),
+                        }),
+                        device_id: Some("staging".to_string()),
+                        fs_type: FileSystemType::Ntfs,
+                        source: FileSystemSource::Image,
                     }],
                     ..Default::default()
                 },
