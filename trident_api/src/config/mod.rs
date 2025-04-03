@@ -20,7 +20,6 @@ pub use host::{
         filesystem::{
             FileSystem, FileSystemSource, FileSystemType, MountOptions, MountPoint, MountPointInfo,
         },
-        internal::InternalMountPoint,
         partitions::{AdoptedPartition, Partition, PartitionSize, PartitionType},
         raid::{Raid, RaidLevel, SoftwareRaidArray},
         swap::SwapDevice,

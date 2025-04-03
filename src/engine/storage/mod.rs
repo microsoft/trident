@@ -24,7 +24,12 @@ const ENCRYPTION_SUBSYSTEM_NAME: &str = "encryption";
 
 #[tracing::instrument(skip_all)]
 pub(super) fn create_block_devices(ctx: &mut EngineContext) -> Result<(), TridentError> {
-    trace!("Mount points: {:?}", ctx.spec.storage.internal_mount_points);
+    trace!(
+        "Mount points: {:?}",
+        ctx.mounted_filesystems()
+            .map(|fs| fs.description())
+            .collect::<Vec<_>>()
+    );
 
     debug!("Initializing block devices");
 

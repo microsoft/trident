@@ -37,7 +37,7 @@ impl DataStore {
                 path: path.to_string_lossy().into(),
             },
         })?;
-        let mut host_status: HostStatus = db
+        let host_status: HostStatus = db
             .prepare("SELECT contents FROM hoststatus ORDER BY id DESC LIMIT 1")
             .structured(ServicingError::Datastore {
                 inner: DatastoreError::InitializeDatastore,
@@ -54,8 +54,6 @@ impl DataStore {
                 inner: DatastoreError::InitializeDatastore,
             })?
             .unwrap_or_default();
-
-        host_status.spec.populate_internal();
 
         Ok(Self {
             db: Some(db),

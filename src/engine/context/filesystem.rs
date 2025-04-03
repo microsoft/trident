@@ -339,6 +339,12 @@ impl EngineContext {
         self.filesystems.clone().into_iter()
     }
 
+    /// Get only filesystems with mount points.
+    pub fn mounted_filesystems(&self) -> impl Iterator<Item = FileSystemData> {
+        self.filesystems()
+            .filter(|fs| fs.mount_point_path().is_some())
+    }
+
     /// Get the root filesystem.
     ///
     /// Note: root filesystem must be sourced from an Image.

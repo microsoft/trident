@@ -441,7 +441,7 @@ impl Trident {
         multiboot: bool,
         #[cfg(feature = "grpc-dangerous")] sender: &mut Option<GrpcSender>,
     ) -> Result<(), TridentError> {
-        let mut host_config = self
+        let host_config = self
             .host_config
             .clone()
             .structured(InternalError::Internal(
@@ -453,12 +453,6 @@ impl Trident {
                 .validate()
                 .map_err(Into::into)
                 .message("Invalid Host Configuration provided")?;
-
-            // Populate internal fields in Host Configuration. This is needed
-            // because the external API and the internal logic use different
-            // fields. This call ensures that the internal fields are populated
-            // from the external fields.
-            host_config.populate_internal();
 
             // If multiboot is requested, we need to check if the host has
             // adopted partitions, otherwise there is no reason to use
@@ -598,11 +592,6 @@ impl Trident {
                 .validate()
                 .map_err(Into::into)
                 .message("Invalid Host Configuration provided")?;
-
-            // Populate internal fields in Host Configuration.
-            // This is needed because the external API and the internal logic use different fields.
-            // This call ensures that the internal fields are populated from the external fields.
-            host_config.populate_internal();
 
             // If HS.spec in the datastore is different from the new HC, need to both stage and
             // finalize the update, regardless of state

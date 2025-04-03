@@ -1037,7 +1037,6 @@ mod functional_test {
         ctx.storage_graph = ctx.spec.storage.build_graph().unwrap();
 
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
-        ctx.spec.storage.populate_internal();
 
         validate_ab_active_volume_internal(&ctx, PathBuf::from("/dev/mapper/root")).unwrap();
     }

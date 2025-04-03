@@ -25,7 +25,6 @@ pub mod abupdate;
 pub mod disks;
 pub mod encryption;
 pub mod filesystem;
-pub mod internal;
 pub mod partitions;
 pub mod raid;
 pub mod storage_graph;
@@ -37,7 +36,6 @@ use self::{
     disks::Disk,
     encryption::Encryption,
     filesystem::{FileSystem, MountPointInfo},
-    internal::InternalMountPoint,
     partitions::Partition,
     raid::Raid,
     storage_graph::{
@@ -92,12 +90,6 @@ pub struct Storage {
         )
     )]
     pub swap: Vec<SwapDevice>,
-
-    /// Old API for mount points.
-    ///
-    /// Used internally by Trident-Core.
-    #[serde(skip)]
-    pub internal_mount_points: Vec<InternalMountPoint>,
 }
 
 impl Storage {
