@@ -17,8 +17,8 @@ use trident_api::{
         UPDATE_ROOT_PATH,
     },
     error::{
-        InitializationError, InternalError, ReportError, ServicingError, TridentError,
-        TridentResultExt,
+        InitializationError, InternalError, InvalidInputError, ReportError, ServicingError,
+        TridentError, TridentResultExt,
     },
     status::{AbVolumeSelection, HostStatus, ServicingState, ServicingType},
 };
@@ -39,6 +39,7 @@ pub(crate) fn clean_install(
     host_config: &HostConfiguration,
     state: &mut DataStore,
     allowed_operations: &Operations,
+    multiboot: bool,
     #[cfg(feature = "grpc-dangerous")] sender: &mut Option<GrpcSender>,
 ) -> Result<(), TridentError> {
     info!("Starting clean install");
@@ -61,7 +62,7 @@ pub(crate) fn clean_install(
     // This is a safety check so that nobody accidentally formats their dev
     // machine.
     debug!("Performing safety check for clean install");
-    clean_install_safety_check(host_config)?;
+    clean_install_safety_check(host_config, multiboot)?;
     info!("Safety check passed");
 
     let mut subsystems = SUBSYSTEMS.lock().unwrap();
@@ -103,7 +104,10 @@ pub(crate) fn clean_install(
 }
 
 /// Performs a safety check to ensure that the clean install can proceed.
-fn clean_install_safety_check(host_config: &HostConfiguration) -> Result<(), TridentError> {
+fn clean_install_safety_check(
+    host_config: &HostConfiguration,
+    multiboot: bool,
+) -> Result<(), TridentError> {
     // Check if Trident is running from a live image
     let cmdline =
         fs::read_to_string("/proc/cmdline").structured(InitializationError::ReadCmdline)?;
@@ -114,13 +118,16 @@ fn clean_install_safety_check(host_config: &HostConfiguration) -> Result<(), Tri
 
     warn!("Trident is running from an OS installed on persistent storage");
 
+    // To go past this point in the safety check we NEED multiboot
+    if !multiboot {
+        return Err(TridentError::new(
+            InvalidInputError::CleanInstallOnProvisionedHost,
+        ))
+        .message("Running trident from persistent storage without multiboot flag");
+    }
+
     // Check if we have adopted partitions in the host config
-    if host_config
-        .storage
-        .disks
-        .iter()
-        .any(|d| !d.adopted_partitions.is_empty())
-    {
+    if host_config.has_adopted_partitions() {
         debug!("Partitions are marked for adoption");
         return Ok(());
     }

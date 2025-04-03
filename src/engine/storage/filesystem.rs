@@ -48,10 +48,18 @@ fn block_devices_needing_fs_creation(
             // The filesystem source is 'New'.
             FileSystemData::New(nfs) => (&nfs.device_id, nfs.fs_type),
 
-            // The filesystem source is `Image` AND servicing type is
-            // CleanInstall AND the mount point is the ESP location.
+            // IF:
+            // - The filesystem source is `Image`
+            // - AND servicing type is CleanInstall
+            // - AND the mount point is the ESP location.
+            // - AND ESP is NOT on an adopted partition.
             FileSystemData::Image(ifs)
-                if ctx.servicing_type == ServicingType::CleanInstall && fs.is_esp() =>
+                if ctx.servicing_type == ServicingType::CleanInstall
+                    && fs.is_esp()
+                    && !ctx
+                        .storage_graph
+                        .is_adopted(&ifs.device_id)
+                        .unwrap_or_default() =>
             {
                 (&ifs.device_id, ifs.fs_type)
             }

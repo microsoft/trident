@@ -79,6 +79,9 @@ pub const TRIDENT_METRICS_FILE_PATH: &str = "/var/log/trident-metrics.jsonl";
 /// override, user can create this file on the host.
 const SAFETY_OVERRIDE_CHECK_PATH: &str = "/override-trident-safety-check";
 
+/// Temporary location of the datastore for multiboot install scenarios.
+const TEMPORARY_DATASTORE_PATH: &str = "/tmp/trident-datastore.sqlite";
+
 #[derive(clap::ValueEnum, Copy, Clone, Debug, Eq, PartialEq)]
 pub enum GetKind {
     Configuration,
@@ -435,6 +438,7 @@ impl Trident {
         &mut self,
         datastore: &mut DataStore,
         allowed_operations: Operations,
+        multiboot: bool,
         #[cfg(feature = "grpc-dangerous")] sender: &mut Option<GrpcSender>,
     ) -> Result<(), TridentError> {
         let mut host_config = self
@@ -450,23 +454,68 @@ impl Trident {
                 .map_err(Into::into)
                 .message("Invalid Host Configuration provided")?;
 
-            // Populate internal fields in Host Configuration.
-            // This is needed because the external API and the internal logic use different fields.
-            // This call ensures that the internal fields are populated from the external fields.
+            // Populate internal fields in Host Configuration. This is needed
+            // because the external API and the internal logic use different
+            // fields. This call ensures that the internal fields are populated
+            // from the external fields.
             host_config.populate_internal();
 
+            // If multiboot is requested, we need to check if the host has
+            // adopted partitions, otherwise there is no reason to use
+            // multiboot.
+            if multiboot && !host_config.has_adopted_partitions() {
+                return Err(TridentError::new(
+                    InvalidInputError::MultibootWithoutAdoptedPartitions,
+                ))
+                .message("Multiboot install requested but no adopted partitions found");
+            }
+
+            // Check if the datastore is persistent to know if this is a
+            // provisioned host. If the host is not provisioned, we can proceed
+            // with a clean install. If the host is provisioned, we need to
+            // check if a multiboot install was requested.
             if datastore.is_persistent() {
-                return Err(TridentError::new(InvalidInputError::CleanInstallOnProvisionedHost))
-                    .message("Persistent datastore found on host");
+                if !multiboot {
+                    // If the host IS provisioned and multiboot is NOT requested
+                    // this leads to an error as this could be an accident.
+                    return Err(TridentError::new(
+                        InvalidInputError::CleanInstallOnProvisionedHost,
+                    ))
+                    .message("Persistent datastore found on host.");
+                } else {
+                    // If the host IS provisioned and multiboot IS requested, we
+                    // need to create a temporary datastore for the new install
+                    // to avoid overwriting the existing one.
+                    debug!(
+                        "Detected a previous persistent datastore. Creating a temporary one for \
+                        multiboot install"
+                    );
+
+                    datastore.close();
+                    *datastore = DataStore::open_or_create(Path::new(TEMPORARY_DATASTORE_PATH))
+                        .message("Failed to create temporary datastore for multiboot install")?;
+                }
             }
 
             if datastore.host_status().spec != host_config {
                 debug!("Host Configuration has been updated");
 
                 if allowed_operations.has_stage() {
-                    engine::clean_install(&host_config, datastore, &allowed_operations, #[cfg(feature = "grpc-dangerous")] sender).message("Failed to execute a clean install")
+                    engine::clean_install(
+                        &host_config,
+                        datastore,
+                        &allowed_operations,
+                        multiboot,
+                        #[cfg(feature = "grpc-dangerous")]
+                        sender,
+                    )
+                    .message("Failed to execute a clean install")
                 } else {
-                    warn!("Host Configuration has been updated but allowed operations do not include 'stage'. Add 'stage' and re-run to stage the clean install");
+                    warn!(
+                        "Host Configuration has been updated but allowed operations do not include \
+                        'stage'. Add 'stage' and re-run to stage the clean install"
+                    );
+
                     Ok(())
                 }
             } else {
@@ -487,15 +536,27 @@ impl Trident {
                             )
                             .message("Failed to finalize clean install")
                         } else {
-                            debug!("There is a clean install staged on the host, but allowed operations do not include 'finalize'. Add 'finalize' and re-run to finalize the clean install");
+                            debug!(
+                                "There is a clean install staged on the host, but allowed \
+                                operations do not include 'finalize'. Add 'finalize' and re-run \
+                                to finalize the clean install"
+                            );
+
                             Ok(())
                         }
                     }
                     ServicingState::NotProvisioned => {
                         // Otherwise, if servicing state is NotProvisioned, need to either re-execute the
                         // failed clean install OR inform the user that no update is needed.
-                        engine::clean_install(&host_config, datastore, &allowed_operations, #[cfg(feature = "grpc-dangerous")] sender)
-                            .message("Failed to execute a clean install")
+                        engine::clean_install(
+                            &host_config,
+                            datastore,
+                            &allowed_operations,
+                            multiboot,
+                            #[cfg(feature = "grpc-dangerous")]
+                            sender,
+                        )
+                        .message("Failed to execute a clean install")
                     }
                     servicing_state => {
                         Err(TridentError::new(InternalError::UnexpectedServicingState {

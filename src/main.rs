@@ -63,6 +63,10 @@ enum Commands {
         /// Path to save an eventual fatal error
         #[clap(short, long)]
         error: Option<PathBuf>,
+
+        /// Allow Trident to perform a multiboot install
+        #[clap(long)]
+        multiboot: bool,
     },
 
     Update {
@@ -289,10 +293,12 @@ fn run_trident(
                 let res = match args.command {
                     Commands::Install {
                         ref allowed_operations,
+                        multiboot,
                         ..
                     } => trident.install(
                         &mut datastore,
                         to_operations(allowed_operations),
+                        multiboot,
                         #[cfg(feature = "grpc-dangerous")]
                         &mut None,
                     ),

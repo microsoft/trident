@@ -137,7 +137,10 @@ pub enum InvalidInputError {
     #[error("Allowed operations must be passed via command line, not in Host Configuration")]
     AllowedOperationsInHostConfiguration,
 
-    #[error("Failed to initialize clean install as host is already provisioned")]
+    #[error(
+        "Failed to initialize clean install as host is already provisioned. If a multiboot \
+        install was intended, re-run with the --multiboot flag"
+    )]
     CleanInstallOnProvisionedHost,
 
     #[error(
@@ -206,6 +209,12 @@ pub enum InvalidInputError {
         mount_point: String,
         fs_type: String,
     },
+
+    #[error(
+        "A multiboot install was requested, but the provided Host Configuration does not include 
+        any adopted partitions."
+    )]
+    MultibootWithoutAdoptedPartitions,
 
     #[error("Old style configuration not supported, 'hostConfiguration:' tag must be removed")]
     OldStyleConfiguration,

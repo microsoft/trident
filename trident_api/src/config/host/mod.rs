@@ -87,6 +87,14 @@ impl HostConfiguration {
         Ok(())
     }
 
+    /// Returns whether this Host Configuration has adopted partitions install.
+    pub fn has_adopted_partitions(&self) -> bool {
+        self.storage
+            .disks
+            .iter()
+            .any(|disk| !disk.adopted_partitions.is_empty())
+    }
+
     /// Performs extra checks required when using root-verity.
     fn validate_root_verity_config(
         &self,

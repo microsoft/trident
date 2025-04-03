@@ -107,6 +107,20 @@ impl StorageGraph {
         self.backing_verity_device(usrfs_idx).is_some()
     }
 
+    /// Returns whether a block device is an adopted partition OR sits on top of an
+    /// adopted partition.
+    pub fn is_adopted(&self, node_id: &BlockDeviceId) -> Option<bool> {
+        let (idx, _) = self.node_by_id(node_id)?;
+
+        // Do a DFS starting on the node to check if it, or any of its
+        // dependencies, are adopted partitions.
+        Some(
+            Dfs::new(&self.inner, idx)
+                .iter(&self.inner)
+                .any(|idx| self.inner[idx].device_kind() == BlkDevKind::AdoptedPartition),
+        )
+    }
+
     /// Returns the first verity device found in the graph under the given node
     /// index in a DFS traversal, if any. Because the graph rules make it
     /// impossible to have multiple verity devices under the same node, this
@@ -789,5 +803,52 @@ mod tests {
         storage.raid.software[0].level = RaidLevel::Raid10;
         let graph = storage.build_graph().unwrap();
         assert_eq!(graph.block_device_size(&"raid".into()), Some(s1 * 2));
+    }
+
+    #[test]
+    fn test_is_adopted() {
+        let mut graph = StorageGraph::default();
+
+        // We should receive None when the node does not exist.
+        assert_eq!(graph.is_adopted(&"non_existent".into()), None);
+
+        // Add an adopted partition node.
+        let adopted_partition_node = graph.inner.add_node(
+            (&AdoptedPartition {
+                id: "adopted".into(),
+                match_label: Some("adopted".into()),
+                match_uuid: None,
+            })
+                .into(),
+        );
+
+        // The adopted partition node should be considered adopted.
+        assert_eq!(graph.is_adopted(&"adopted".into()), Some(true));
+
+        // Add a node of arbitrary type.
+        let block_device_node = graph.inner.add_node(
+            (&AbVolumePair {
+                id: "ab-volume".into(),
+                volume_a_id: "volume-a".into(),
+                volume_b_id: "volume-b".into(),
+            })
+                .into(),
+        );
+
+        // The block device node should not be considered adopted.
+        assert_eq!(graph.is_adopted(&"ab-volume".into()), Some(false));
+
+        // Add an edge from the adopted partition to the block device.
+        // This is not allowed by the storage graph rules, but we try it for the sake of
+        // the test.
+        graph.inner.add_edge(
+            block_device_node,
+            adopted_partition_node,
+            ReferenceKind::Regular,
+        );
+
+        // The block device node should now be considered adopted, as it is on top of an
+        // adopted partition.
+        assert_eq!(graph.is_adopted(&"ab-volume".into()), Some(true));
     }
 }
