@@ -468,36 +468,18 @@ impl Storage {
             .unwrap_or_default()
     }
 
-    /// INTERNAL FUNCTION!
-    ///
-    /// Find the mount point that is holding the given path. This is useful to find
-    /// the volume on which the given absolute path is located. This version uses HC
-    /// to find the information and is useful early in the process when HS has not
-    /// yet been populated.
-    pub fn path_to_mount_point<'a>(&'a self, path: &Path) -> Option<&'a InternalMountPoint> {
-        self.internal_mount_points
+    /// Returns the filesystem which contains the given path.
+    pub fn path_to_filesystem(&self, path: impl AsRef<Path>) -> Option<&FileSystem> {
+        self.filesystems
             .iter()
-            .filter(|mp| path.starts_with(&mp.path))
-            .max_by_key(|mp| mp.path.as_os_str().len())
-    }
-
-    /// INTERNAL FUNCTION!
-    ///
-    /// Returns the mount point and relative path for a given path.
-    ///
-    /// The mount point is the closest parent directory of the path that is a
-    /// mount point. The relative path is the path relative to the mount point.
-    pub fn get_mount_point_and_relative_path<'a, 'b>(
-        &'a self,
-        path: &'b Path,
-    ) -> Option<(&'a InternalMountPoint, &'b Path)> {
-        self.internal_mount_points
-            .iter()
-            .filter(|mp| path.starts_with(&mp.path))
-            .max_by_key(|mp| mp.path.components().count())
-            .and_then(|mp| {
-                let rel_path = path.strip_prefix(&mp.path).ok()?;
-                Some((mp, rel_path))
+            .filter(|fs| {
+                fs.mount_point_path()
+                    .is_some_and(|mpp| path.as_ref().starts_with(mpp))
+            })
+            .max_by_key(|fs| {
+                fs.mount_point
+                    .as_ref()
+                    .map_or(0, |mp| mp.path.components().count())
             })
     }
 
@@ -2591,102 +2573,6 @@ mod tests {
                 .is_mount_point_for_path(&"trident".to_string(), Path::new("/trident")),
             "Block device with device_id 'trident' was incorrectly identified as mount point for /trident"
         );
-    }
-
-    #[test]
-    fn test_get_mount_point_info_and_relative_path() {
-        let host_config = {
-            let mut hc = HostConfiguration {
-                storage: Storage {
-                    filesystems: vec![
-                        FileSystem {
-                            device_id: Some("root".into()),
-                            fs_type: FileSystemType::Ext4,
-                            source: FileSystemSource::New,
-                            mount_point: Some(MountPoint {
-                                path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
-                                options: MountOptions::empty(),
-                            }),
-                        },
-                        FileSystem {
-                            device_id: Some("boot".into()),
-                            fs_type: FileSystemType::Ext4,
-                            source: FileSystemSource::New,
-                            mount_point: Some(MountPoint {
-                                path: PathBuf::from(BOOT_MOUNT_POINT_PATH),
-                                options: MountOptions::empty(),
-                            }),
-                        },
-                        FileSystem {
-                            device_id: Some("efi".into()),
-                            fs_type: FileSystemType::Vfat,
-                            source: FileSystemSource::New,
-                            mount_point: Some(MountPoint {
-                                path: PathBuf::from(ESP_MOUNT_POINT_PATH),
-                                options: MountOptions::empty(),
-                            }),
-                        },
-                    ],
-                    ..Default::default()
-                },
-                ..Default::default()
-            };
-
-            hc.populate_internal();
-            hc
-        };
-
-        fn test_fn(
-            hc: &HostConfiguration,
-            path: &'static str,
-            expected_fs_index: usize,
-            expected_rp: &str,
-        ) {
-            println!("Testing path: {}", path);
-            println!("Expected filesystem index: {}", expected_fs_index);
-            println!("Expected relative path: {}", expected_rp);
-            let expected_fs = &hc.storage.filesystems[expected_fs_index];
-
-            // First check new API functions
-            let (mpi, rp) = hc
-                .storage
-                .get_mount_point_info_and_relative_path(Path::new(path))
-                .unwrap();
-            assert_eq!(mpi.device_id, expected_fs.device_id.as_ref());
-            assert_eq!(mpi.mount_point, expected_fs.mount_point.as_ref().unwrap());
-            assert_eq!(mpi.fs_type, expected_fs.fs_type);
-            assert_eq!(rp, Path::new(expected_rp));
-
-            // Now check old internal functions
-            let (mp, rp) = hc
-                .storage
-                .get_mount_point_and_relative_path(Path::new(path))
-                .unwrap();
-            assert_eq!(
-                mp.target_id,
-                expected_fs.device_id.as_deref().unwrap_or_default()
-            );
-            assert_eq!(
-                mp.path,
-                expected_fs
-                    .mount_point
-                    .as_ref()
-                    .map(|mp| mp.path.as_path())
-                    .unwrap_or(Path::new("none"))
-            );
-            assert_eq!(mp.filesystem, expected_fs.fs_type);
-            assert_eq!(rp, Path::new(expected_rp));
-        }
-
-        test_fn(&host_config, "/", 0, "");
-        test_fn(&host_config, "/some/random/path", 0, "some/random/path");
-        test_fn(&host_config, "/boot/", 1, "");
-        test_fn(&host_config, "/boot/efi.cfg", 1, "efi.cfg");
-        test_fn(&host_config, "/boot/some/path", 1, "some/path");
-        test_fn(&host_config, "/boot/efi", 2, "");
-        test_fn(&host_config, "/boot/efi/", 2, "");
-        test_fn(&host_config, "/boot/efi/foobar", 2, "foobar");
-        test_fn(&host_config, "/boot/efi/foobar/", 2, "foobar");
     }
 
     #[test]

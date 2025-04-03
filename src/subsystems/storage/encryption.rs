@@ -197,10 +197,9 @@ mod tests {
 
     use trident_api::{
         config::{
-            Disk, EncryptedVolume, Encryption, FileSystemType, InternalMountPoint, Partition,
-            PartitionSize, PartitionType, Raid, RaidLevel, SoftwareRaidArray, Storage,
+            Disk, EncryptedVolume, Encryption, Partition, PartitionSize, PartitionType, Raid,
+            RaidLevel, SoftwareRaidArray, Storage,
         },
-        constants,
         error::ErrorKind,
     };
 
@@ -292,26 +291,6 @@ mod tests {
                 ],
                 ..Default::default()
             }],
-            internal_mount_points: vec![
-                InternalMountPoint {
-                    path: PathBuf::from("/boot/efi"),
-                    target_id: "esp".to_string(),
-                    filesystem: FileSystemType::Vfat,
-                    options: vec!["defaults".to_owned()],
-                },
-                InternalMountPoint {
-                    path: constants::ROOT_MOUNT_POINT_PATH.into(),
-                    target_id: "root".to_string(),
-                    filesystem: FileSystemType::Ext4,
-                    options: vec!["defaults".to_owned()],
-                },
-                InternalMountPoint {
-                    path: PathBuf::from("/srv"),
-                    target_id: "srv".to_string(),
-                    filesystem: FileSystemType::Ext4,
-                    options: vec!["defaults".to_owned()],
-                },
-            ],
             ab_update: None,
             encryption: Some(Encryption {
                 recovery_key_url: Some(Url::from_file_path(recovery_key_file.path()).unwrap()),

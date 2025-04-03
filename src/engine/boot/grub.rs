@@ -46,13 +46,16 @@ pub(super) fn update_configs(ctx: &EngineContext, os_modifier_path: &Path) -> Re
     }
 
     // Find the block device which holds /boot
-    let boot_mount_point = ctx
+    let boot_filesystem = ctx
         .spec
         .storage
-        .path_to_mount_point(Path::new(BOOT_MOUNT_POINT_PATH))
-        .context("Failed to find mount point for boot block device")?;
+        .path_to_filesystem(BOOT_MOUNT_POINT_PATH)
+        .context("Failed to find filesystem for boot block device")?;
 
-    let boot_block_device_id = &boot_mount_point.target_id;
+    let boot_block_device_id = &boot_filesystem
+        .device_id
+        .clone()
+        .context("Failed to get device_id for boot block device")?;
     let boot_block_device_path = ctx
         .get_block_device_path(boot_block_device_id)
         .context("Failed to find boot block device")?;
@@ -141,8 +144,8 @@ fn update_grub_config_azl3(
     let root_device_id = ctx
         .spec
         .storage
-        .path_to_mount_point(Path::new(ROOT_MOUNT_POINT_PATH))
-        .map(|m| &m.target_id)
+        .path_to_filesystem(ROOT_MOUNT_POINT_PATH)
+        .and_then(|m| m.device_id.clone())
         .context("Failed to find mount point for root block device")?;
 
     let verity = ctx
@@ -276,8 +279,9 @@ pub(crate) mod functional_test {
     use pytest_gen::functional_test;
     use trident_api::{
         config::{
-            self, AbUpdate, AbVolumePair, Disk, FileSystemType, HostConfiguration,
-            InternalMountPoint, Partition, PartitionType, RaidLevel, SoftwareRaidArray,
+            self, AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, FileSystemType,
+            HostConfiguration, MountOptions, MountPoint, Partition, PartitionType, RaidLevel,
+            SoftwareRaidArray,
         },
         status::ServicingType,
     };
@@ -530,15 +534,15 @@ pub(crate) mod functional_test {
         raid_array: &SoftwareRaidArray,
         root_device_path: &Path,
     ) -> Result<(), Error> {
-        ctx.spec
-            .storage
-            .internal_mount_points
-            .push(InternalMountPoint {
+        ctx.spec.storage.filesystems.push(FileSystem {
+            mount_point: Some(MountPoint {
                 path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
-                target_id: raid_array.id.clone(),
-                filesystem: FileSystemType::Ext4,
-                options: vec![],
-            });
+                options: MountOptions::empty(),
+            }),
+            device_id: Some(raid_array.id.clone()),
+            fs_type: FileSystemType::Ext4,
+            source: FileSystemSource::Image,
+        });
 
         ctx.partition_paths
             .insert(raid_array.id.clone(), root_device_path.to_owned());
@@ -575,18 +579,24 @@ pub(crate) mod functional_test {
                         ],
                         ..Default::default()
                     }],
-                    internal_mount_points: vec![
-                        InternalMountPoint {
-                            path: PathBuf::from("/esp"),
-                            target_id: "boot".to_owned(),
-                            filesystem: FileSystemType::Vfat,
-                            options: vec![],
+                    filesystems: vec![
+                        FileSystem {
+                            mount_point: Some(MountPoint {
+                                path: PathBuf::from("/esp"),
+                                options: MountOptions::empty(),
+                            }),
+                            device_id: Some("boot".to_owned()),
+                            fs_type: FileSystemType::Vfat,
+                            source: FileSystemSource::Image,
                         },
-                        InternalMountPoint {
-                            path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
-                            target_id: "root".to_string(),
-                            filesystem: FileSystemType::Ext4,
-                            options: vec![],
+                        FileSystem {
+                            mount_point: Some(MountPoint {
+                                path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
+                                options: MountOptions::empty(),
+                            }),
+                            device_id: Some("root".to_owned()),
+                            fs_type: FileSystemType::Ext4,
+                            source: FileSystemSource::Image,
                         },
                     ],
                     ..Default::default()
@@ -639,18 +649,24 @@ pub(crate) mod functional_test {
                         ],
                         ..Default::default()
                     }],
-                    internal_mount_points: vec![
-                        InternalMountPoint {
-                            path: PathBuf::from("/efi"),
-                            target_id: "boot".to_owned(),
-                            filesystem: FileSystemType::Vfat,
-                            options: vec![],
+                    filesystems: vec![
+                        FileSystem {
+                            mount_point: Some(MountPoint {
+                                path: PathBuf::from("/efi"),
+                                options: MountOptions::empty(),
+                            }),
+                            device_id: Some("boot".to_owned()),
+                            fs_type: FileSystemType::Vfat,
+                            source: FileSystemSource::Image,
                         },
-                        InternalMountPoint {
-                            path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
-                            target_id: "root".to_string(),
-                            filesystem: FileSystemType::Ext4,
-                            options: vec![],
+                        FileSystem {
+                            mount_point: Some(MountPoint {
+                                path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
+                                options: MountOptions::empty(),
+                            }),
+                            device_id: Some("root".to_owned()),
+                            fs_type: FileSystemType::Ext4,
+                            source: FileSystemSource::Image,
                         },
                     ],
                     ab_update: Some(AbUpdate {
@@ -705,11 +721,14 @@ pub(crate) mod functional_test {
                         ],
                         ..Default::default()
                     }],
-                    internal_mount_points: vec![InternalMountPoint {
-                        path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
-                        target_id: "root".to_string(),
-                        filesystem: FileSystemType::Ext4,
-                        options: vec![],
+                    filesystems: vec![FileSystem {
+                        mount_point: Some(MountPoint {
+                            path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
+                            options: MountOptions::empty(),
+                        }),
+                        device_id: Some("root".to_owned()),
+                        fs_type: FileSystemType::Ext4,
+                        source: FileSystemSource::Image,
                     }],
                     ..Default::default()
                 },
@@ -757,11 +776,14 @@ pub(crate) mod functional_test {
                         ],
                         ..Default::default()
                     }],
-                    internal_mount_points: vec![InternalMountPoint {
-                        path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
-                        target_id: "root".to_string(),
-                        filesystem: FileSystemType::Ext4,
-                        options: vec![],
+                    filesystems: vec![FileSystem {
+                        mount_point: Some(MountPoint {
+                            path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
+                            options: MountOptions::empty(),
+                        }),
+                        device_id: Some("root".to_owned()),
+                        fs_type: FileSystemType::Ext4,
+                        source: FileSystemSource::Image,
                     }],
                     ..Default::default()
                 },

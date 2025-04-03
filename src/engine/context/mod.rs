@@ -1,6 +1,6 @@
 use std::{
     collections::{BTreeMap, HashMap},
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 
 use anyhow::{Context, Error};
@@ -100,16 +100,14 @@ impl EngineContext {
     pub(super) fn get_root_block_device_id(&self) -> Option<BlockDeviceId> {
         self.spec
             .storage
-            .path_to_mount_point(Path::new(ROOT_MOUNT_POINT_PATH))
-            .map(|m| m.target_id.clone())
+            .path_to_filesystem(ROOT_MOUNT_POINT_PATH)
+            .and_then(|f| f.device_id.clone())
     }
 
     /// Using the `/` mount point, fetches the root block device path.
     pub(super) fn get_root_block_device_path(&self) -> Option<PathBuf> {
-        self.spec
-            .storage
-            .path_to_mount_point(Path::new(ROOT_MOUNT_POINT_PATH))
-            .and_then(|m| self.get_block_device_path(&m.target_id))
+        self.get_root_block_device_id()
+            .and_then(|id| self.get_block_device_path(&id))
     }
 
     /// Returns the path of the block device with id `block_device_id`.
@@ -256,7 +254,8 @@ mod tests {
     use osutils::testutils::repart::TEST_DISK_DEVICE_PATH;
 
     use trident_api::config::{
-        self, AbUpdate, AbVolumePair, Disk, FileSystemType, Partition, PartitionType,
+        self, AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, FileSystemType,
+        MountOptions, MountPoint, Partition, PartitionType,
     };
 
     #[test]
@@ -281,18 +280,24 @@ mod tests {
                         ],
                         ..Default::default()
                     }],
-                    internal_mount_points: vec![
-                        config::InternalMountPoint {
-                            target_id: "boot".to_owned(),
-                            filesystem: FileSystemType::Vfat,
-                            options: vec![],
-                            path: PathBuf::from("/boot"),
+                    filesystems: vec![
+                        FileSystem {
+                            device_id: Some("boot".to_owned()),
+                            fs_type: FileSystemType::Vfat,
+                            mount_point: Some(MountPoint {
+                                path: PathBuf::from("/boot"),
+                                options: MountOptions::empty(),
+                            }),
+                            source: FileSystemSource::Image,
                         },
-                        config::InternalMountPoint {
-                            target_id: "root".to_owned(),
-                            filesystem: FileSystemType::Ext4,
-                            options: vec![],
-                            path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
+                        FileSystem {
+                            device_id: Some("root".to_owned()),
+                            fs_type: FileSystemType::Ext4,
+                            mount_point: Some(MountPoint {
+                                path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
+                                options: MountOptions::empty(),
+                            }),
+                            source: FileSystemSource::Image,
                         },
                     ],
                     ..Default::default()

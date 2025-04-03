@@ -373,8 +373,8 @@ mod functional_test {
     use sysdefs::partition_types::DiscoverablePartitionType;
     use trident_api::{
         config::{
-            Disk, FileSystem, FileSystemSource, FileSystemType, InternalMountPoint, Partition,
-            PartitionType, Storage, VerityDevice,
+            Disk, FileSystem, FileSystemSource, FileSystemType, Partition, PartitionType, Storage,
+            VerityDevice,
         },
         constants::{MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
     };
@@ -557,20 +557,6 @@ mod functional_test {
                         ],
                         ..Default::default()
                     }],
-                    internal_mount_points: vec![
-                        InternalMountPoint {
-                            path: PathBuf::from("/var/lib/trident-overlay"),
-                            filesystem: FileSystemType::Ext4,
-                            target_id: "overlay".to_string(),
-                            options: vec!["defaults".to_string()],
-                        },
-                        InternalMountPoint {
-                            path: PathBuf::from("/boot"),
-                            filesystem: FileSystemType::Ext4,
-                            target_id: "boot".to_string(),
-                            options: vec!["defaults".to_string()],
-                        },
-                    ],
                     verity: vec![VerityDevice {
                         id: "root-verity".into(),
                         name: "root".into(),

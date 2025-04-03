@@ -492,7 +492,7 @@ mod tests {
     use trident_api::{
         config::{
             AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, FileSystemType,
-            InternalMountPoint, MountOptions, MountPoint, Partition, PartitionType, VerityDevice,
+            MountOptions, MountPoint, Partition, PartitionType, VerityDevice,
         },
         constants::MOUNT_OPTION_READ_ONLY,
         error::ErrorKind,
@@ -546,11 +546,14 @@ mod tests {
         );
 
         // Test case #1: If no root ID in block devices, should return an error.
-        ctx.spec.storage.internal_mount_points = vec![InternalMountPoint {
-            path: PathBuf::from("/"),
-            target_id: "root".to_string(),
-            filesystem: FileSystemType::Ext4,
-            options: vec![],
+        ctx.spec.storage.filesystems = vec![FileSystem {
+            mount_point: Some(MountPoint {
+                path: PathBuf::from("/"),
+                options: MountOptions::empty(),
+            }),
+            device_id: Some("root".to_string()),
+            fs_type: FileSystemType::Ext4,
+            source: FileSystemSource::Image,
         }];
         assert_eq!(
             get_expected_root_device_path(&ctx).unwrap_err().kind(),
@@ -668,22 +671,6 @@ mod tests {
             "trident-overlay-b".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}7")),
         };
 
-        // Add internal mount points
-        ctx.spec.storage.internal_mount_points = vec![
-            InternalMountPoint {
-                path: PathBuf::from("/"),
-                target_id: "root".to_string(),
-                filesystem: FileSystemType::Ext4,
-                options: vec![],
-            },
-            InternalMountPoint {
-                path: PathBuf::from("/var/lib/trident-overlay"),
-                target_id: "trident-overlay".to_string(),
-                filesystem: FileSystemType::Ext4,
-                options: vec![],
-            },
-        ];
-
         // Add verity dev
         ctx.spec.storage.verity = vec![VerityDevice {
             id: "root".into(),
@@ -754,8 +741,7 @@ mod functional_test {
     use trident_api::{
         config::{
             self, AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, FileSystemType,
-            HostConfiguration, InternalMountPoint, MountOptions, MountPoint, Partition,
-            PartitionType, VerityDevice,
+            HostConfiguration, MountOptions, MountPoint, Partition, PartitionType, VerityDevice,
         },
         constants::{MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
         error::ErrorKind,
@@ -809,11 +795,14 @@ mod functional_test {
             &ErrorKind::Servicing(ServicingError::GetRootBlockDeviceId)
         );
 
-        ctx.spec.storage.internal_mount_points = vec![InternalMountPoint {
-            target_id: "root".to_string(),
-            filesystem: FileSystemType::Ext4,
-            options: vec![],
-            path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
+        ctx.spec.storage.filesystems = vec![FileSystem {
+            mount_point: Some(MountPoint {
+                path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
+                options: MountOptions::empty(),
+            }),
+            device_id: Some("root".to_string()),
+            fs_type: FileSystemType::Ext4,
+            source: FileSystemSource::Image,
         }];
 
         // Test case #1: Missing A/B volume pair for root mount point.
