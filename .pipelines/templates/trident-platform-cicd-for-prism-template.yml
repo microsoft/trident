@@ -1,6 +1,6 @@
 # TRIDENT PLATFORM CICD TEMPLATE
 # This template is used by the platform-cicd-preview pipeline to
-# build and test trident deployment scenarios for a specified AZL
+# build and test Trident deployment scenarios for a specified AZL
 # preview build.
 
 parameters:

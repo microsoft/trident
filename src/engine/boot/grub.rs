@@ -99,7 +99,7 @@ fn update_grub_config_azl3(
     root_device_path: &Path,
     boot_grub_config_path: &Path,
 ) -> Result<(), Error> {
-    // For azl 3.0, we need to disable cloud-init's network configuration when trident is
+    // For azl 3.0, we need to disable cloud-init's network configuration when Trident is
     // configuring the network. This is done by setting the 'network-config' kernel parameter
     // to 'disabled'.
     if ctx.spec.os.network.is_some() {

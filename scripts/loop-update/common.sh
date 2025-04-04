@@ -233,7 +233,7 @@ function killUpdateServer() {
     PROCESS_FOUND=$?
     set -e
     if [ $PROCESS_FOUND -eq 0 ]; then
-        echo "Process already running on the trident update server port: '${UPDATE_PORT}'. Killing process '$KILL_PID'."
+        echo "Process already running on the Trident update server port: '${UPDATE_PORT}'. Killing process '$KILL_PID'."
         kill -9 $KILL_PID > /dev/null 2>&1 || true
     fi
 }

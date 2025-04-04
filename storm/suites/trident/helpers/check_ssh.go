@@ -16,7 +16,7 @@ type CheckSshHelper struct {
 		SshKeyPath string `arg:"" help:"Path to the SSH key file" type:"existingfile"`
 		Host       string `arg:"" help:"Host to check SSH connection"`
 		User       string `arg:"" help:"User to use for SSH connection"`
-		Env        string `arg:"" help:"Environment where trident is running" enum:"host,container"`
+		Env        string `arg:"" help:"Environment where Trident is running" enum:"host,container"`
 		Port       uint16 `short:"p" help:"Port to connect to" default:"22"`
 		Timeout    int    `short:"t" help:"Timeout in seconds for the first SSH connection" default:"600"`
 	}
@@ -100,7 +100,7 @@ func checkTridentService(lp storm.LoggerProvider, client *ssh.Client) error {
 	if err != nil {
 		// For some reason systemctl likes returning 3 as an exit code when we do this, so ignore. :)
 		if exitErr, ok := err.(*ssh.ExitError); !(ok && exitErr.ExitStatus() == 3) {
-			return fmt.Errorf("failed to check trident service status: %w", err)
+			return fmt.Errorf("failed to check Trident service status: %w", err)
 		}
 	}
 
@@ -109,7 +109,7 @@ func checkTridentService(lp storm.LoggerProvider, client *ssh.Client) error {
 	lp.Logger().Debugf("Trident service status:\n%s", outputStr)
 
 	if !strings.Contains(outputStr, "(code=exited, status=0/SUCCESS") {
-		return fmt.Errorf("expected to find '(code=exited, status=0/SUCCESS)' in trident service status")
+		return fmt.Errorf("expected to find '(code=exited, status=0/SUCCESS)' in Trident service status")
 	}
 
 	lp.Logger().Info("Trident service ran successfully")

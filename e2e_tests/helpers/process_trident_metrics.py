@@ -10,7 +10,7 @@ def check_trident_config_fields(host_config_file):
     with open(host_config_file, "r") as config:
         host_config_data = yaml.safe_load(config)
 
-    # Check for specific fields in the trident config
+    # Check for specific fields in the Trident config
     fields_status = {
         "raid_enabled": "raid" in host_config_data["storage"],
         "encryption_enabled": "encryption" in host_config_data["storage"],
@@ -22,8 +22,8 @@ def check_trident_config_fields(host_config_file):
 
 def process_metrics(metrics_file, fields_status):
     # Read the metrics file and update the additional fields based on which
-    # trident config fields are enabled
-    # Also add the pipeline build id and trident commit hash to the metrics
+    # Trident config fields are enabled
+    # Also add the pipeline build id and Trident commit hash to the metrics
     updated_metrics = []
     with open(metrics_file, "r") as file:
         for line in file:
@@ -62,7 +62,7 @@ def process_metrics(metrics_file, fields_status):
                 "BUILD_SOURCEVERSION", "Unknown"
             )
 
-            # Update the additional_fields based on the trident config
+            # Update the additional_fields based on the Trident config
             for key, enabled in fields_status.items():
                 if enabled:
                     metric["additional_fields"][key] = True

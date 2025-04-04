@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Takes a path to a directory containing a trident RPM and extracts the trident
+# Takes a path to a directory containing a Trident RPM and extracts the Trident
 # binary to the specified path.
 
 set -eu

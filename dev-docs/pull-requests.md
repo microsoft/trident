@@ -24,7 +24,7 @@ A pull request generally[[1]](#pr-labels) implies intent to merge code into the
 Try to keep PRs small and focused on a single issue. If you have multiple changes
 that are not related, submit them as separate PRs.
 
-**In trident, try to keep PRs focused on a single crate.** If you have changes that
+**In Trident, try to keep PRs focused on a single crate.** If you have changes that
 span multiple crates, submit them as separate PRs in order to make reviewing
 easier. Of course, **the exception is to ensure that the build works**, sometimes
 there is no way around changing things in several places.

@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-# This script is a helper to establish an SSH tunnel that can be used to do a trident deployment
+# This script is a helper to establish an SSH tunnel that can be used to do a Trident deployment
 # on a baremetal machine in the lab using netlaunch locally.
 #
 # LAB ACCESS IS REQUIRED TO RUN THIS SCRIPT!
@@ -8,7 +8,7 @@
 # It uses the Azure CLI to establish an SSH tunnel to the BMC, and then does an almost regular
 # netlaunch deployment.
 #
-# This script is intended to be run from the root of the trident repository.
+# This script is intended to be run from the root of the Trident repository.
 #
 # The script will:
 # 1. Generate a netlaunch configuration file that will be used to connect to the BMC.
@@ -157,7 +157,7 @@ netlaunch:
       sshPort: {BMC_SHH_PORT_LOCAL}
       comPort: {BMC_SERIAL_PORT}
       output:  "baremetal-serial.log"
-  # Instruct netlaunch to tell trident and the BMC to connect to this address. (The jumpbox)
+  # Instruct netlaunch to tell Trident and the BMC to connect to this address. (The jumpbox)
   announceIp: "{JUMPBOX_IP}"
   announcePort: {LISTEN_HTTP_PORT_REMOTE}
 

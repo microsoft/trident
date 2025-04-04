@@ -19,7 +19,7 @@ HostStatusSafeLoader.add_constructor("!image", HostStatusSafeLoader.accept_image
 @pytest.mark.functional
 @pytest.mark.core
 def test_trident_update(vm):
-    """Basic trident run validation."""
+    """Basic Trident run validation."""
     trident = TridentTool(vm)
     result = trident.commit()
     assert_that(result.exit_code).is_equal_to(0)

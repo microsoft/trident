@@ -33,7 +33,7 @@ stages:
           type: linux
 
         variables:
-          # Control the name of the artifact where trident binaries are stored
+          # Control the name of the artifact where Trident binaries are stored
           - name: ob_artifactBaseName
             value: ${{ parameters.artifactName }}
           - name: ob_outputDirectory

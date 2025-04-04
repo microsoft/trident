@@ -36,7 +36,7 @@ func (result *PhoneHomeResult) ExitCode() int {
 	if result.State == PhoneHomeResultSuccess {
 		return 0
 	} else if result.State == PhoneHomeResultFailure {
-		// Two is the specific error code for trident failure
+		// Two is the specific error code for Trident failure
 		return 2
 	} else {
 		// One is the generic error code

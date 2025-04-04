@@ -69,7 +69,7 @@ def main():
         "--hostconfig",
         type=str,
         required=True,
-        help="Path to the trident configuration file.",
+        help="Path to the Trident configuration file.",
     )
     parser.add_argument(
         "-r",
@@ -77,7 +77,7 @@ def main():
         type=str,
         required=True,
         choices=["host", "container"],
-        help="The runtime environment of trident (e.g., host or container).",
+        help="The runtime environment of Trident (e.g., host or container).",
     )
     args = parser.parse_args()
 

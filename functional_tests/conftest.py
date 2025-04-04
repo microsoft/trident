@@ -18,7 +18,7 @@ from .ssh_node import SshNode
 # Load class dependency plug-in
 pytest_plugins = ["functional_tests.depends"]
 
-"""Location of the trident repository."""
+"""Location of the Trident repository."""
 TRIDENT_REPO_DIR_PATH = Path(__file__).resolve().parent.parent
 
 NETLAUNCH_BIN_REL_PATH = Path("bin/netlaunch")
@@ -258,7 +258,7 @@ def fetch_code_coverage(ssh_node):
 
 
 def trident_runcmd(cmd, check=True, **kwargs):
-    """Runs a command in the trident repository directory."""
+    """Runs a command in the Trident repository directory."""
     logging.debug(f"Running command: {cmd}")
     subprocess.run(cmd, check=check, cwd=TRIDENT_REPO_DIR_PATH, **kwargs)
 

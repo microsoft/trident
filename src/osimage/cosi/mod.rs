@@ -335,11 +335,11 @@ mod tests {
     use sha2::{Digest, Sha384};
     use tar::{Builder, Header};
     use tempfile::NamedTempFile;
-    use trident_api::primitives::hash::Sha384Hash;
     use uuid::Uuid;
 
     use osutils::osrelease::OsRelease;
     use sysdefs::{osuuid::OsUuid, partition_types::DiscoverablePartitionType};
+    use trident_api::primitives::hash::Sha384Hash;
 
     use crate::osimage::OsImageFileSystemType;
 

@@ -123,7 +123,7 @@ fn clean_install_safety_check(
         return Err(TridentError::new(
             InvalidInputError::CleanInstallOnProvisionedHost,
         ))
-        .message("Running trident from persistent storage without multiboot flag");
+        .message("Running Trident from persistent storage without multiboot flag");
     }
 
     // Check if we have adopted partitions in the host config

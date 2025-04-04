@@ -181,13 +181,13 @@ pub mod internal_params {
     /// Experimental support for UKIs
     pub const ENABLE_UKI_SUPPORT: &str = "uki";
 
-    /// Block trident from closing encrypted volumes at the start of provisioning
+    /// Block Trident from closing encrypted volumes at the start of provisioning
     pub const NO_CLOSE_ENCRYPTED_VOLUMES: &str = "noCloseEncryptedVolumes";
 
-    /// Block trident from transitioning to the new OS after finalizing
+    /// Block Trident from transitioning to the new OS after finalizing
     pub const NO_TRANSITION: &str = "noTransition";
 
-    /// Force trident to wait for systemd-networkd-wait-online
+    /// Force Trident to wait for systemd-networkd-wait-online
     pub const WAIT_FOR_SYSTEMD_NETWORKD: &str = "waitForSystemdNetworkd";
 
     /// Allow configuration of orchestrator connection timeout

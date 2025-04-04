@@ -1,5 +1,4 @@
-# Path to the trident configuration file for validate and run-netlaunch
-# targets.
+# Path to the Trident configuration file for validate and run-netlaunch targets.
 TRIDENT_CONFIG ?= input/trident.yaml
 
 ARGUS_TOOLKIT_PATH ?= ../argus-toolkit
@@ -472,7 +471,7 @@ download-runtime-images:
 #	Clean temp dir
 	rm -rf $(DOWNLOAD_DIR)
 
-# Get trident container
+# Get Trident container
 	$(eval DOWNLOAD_DIR := $(shell mktemp -d))
 	az pipelines runs artifact download \
 		--org 'https://dev.azure.com/mariner-org' \

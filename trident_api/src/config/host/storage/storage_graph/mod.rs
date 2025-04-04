@@ -59,7 +59,7 @@ pub mod rules;
 pub mod display;
 
 // Errors module.
-// Public because it's used by trident to report errors.
+// Public because it's used by Trident to report errors.
 pub mod error;
 
 // Documentation-related code.

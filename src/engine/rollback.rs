@@ -4,7 +4,6 @@ use anyhow::{Context, Error};
 use log::{debug, info, trace, warn};
 
 use osutils::{block_devices, lsblk, veritysetup};
-
 use trident_api::{
     constants::internal_params::VIRTDEPLOY_BOOT_ORDER_WORKAROUND,
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
@@ -488,7 +487,6 @@ mod tests {
     use maplit::btreemap;
 
     use osutils::testutils::repart::TEST_DISK_DEVICE_PATH;
-
     use trident_api::{
         config::{
             AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, FileSystemType,

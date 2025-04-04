@@ -106,8 +106,8 @@ func patchFile(iso []byte, filename string, contents []byte) error {
 var rootCmd = &cobra.Command{
 	Use: "netlaunch",
 	Short: "Launch a BMC boot\n\n" +
-		"When a trident configuration is passed, the ISO will be patched with the trident configuration.\n" +
-		"Netlaunch supports replacing the string `NETLAUNCH_HOST_ADDRESS` in the trident configuration with the address of the netlaunch server.\n" +
+		"When a Trident configuration is passed, the ISO will be patched with the Trident configuration.\n" +
+		"Netlaunch supports replacing the string `NETLAUNCH_HOST_ADDRESS` in the Trident configuration with the address of the netlaunch server.\n" +
 		"E.g. `http://NETLAUNCH_HOST_ADDRESS/url/path` will be replaced with `http://<IP>:<port>/url/path`.",
 	PreRun: func(cmd *cobra.Command, args []string) {
 		if len(iso) == 0 {
@@ -116,9 +116,9 @@ var rootCmd = &cobra.Command{
 
 		// To enable logstream, we need either:
 		// - A specified port
-		// - A trident config file (so that we can patch in the assigned port)
+		// - A Trident config file (so that we can patch in the assigned port)
 		if logstream && listenPort == 0 && len(tridentConfigFile) == 0 {
-			log.Fatal("logstream requires a specified port or trident config file")
+			log.Fatal("logstream requires a specified port or Trident config file")
 		}
 
 		if forceColor {
@@ -166,8 +166,8 @@ var rootCmd = &cobra.Command{
 			announcePort = strings.Split(listen.Addr().String(), ":")[1]
 		}
 
-		// Do we expect trident to reach back? If so we need to listen to it.
-		// If we have a specified port, we assume that the intent is that trident will reach back.
+		// Do we expect Trident to reach back? If so we need to listen to it.
+		// If we have a specified port, we assume that the intent is that Trident will reach back.
 		enable_phonehome_listening := listenPort != 0
 
 		terminate := make(chan bool)
@@ -201,7 +201,7 @@ var rootCmd = &cobra.Command{
 			})
 		}
 
-		// If we have a trident config file, we need to patch it into the ISO.
+		// If we have a Trident config file, we need to patch it into the ISO.
 		if len(tridentConfigFile) != 0 {
 			log.Info("Using Trident config file: ", tridentConfigFile)
 			tridentConfigContents, err := os.ReadFile(tridentConfigFile)
@@ -226,12 +226,12 @@ var rootCmd = &cobra.Command{
 
 			tridentConfig, err := yaml.Marshal(trident)
 			if err != nil {
-				log.WithError(err).Fatalf("failed to marshal trident config")
+				log.WithError(err).Fatalf("failed to marshal Trident config")
 			}
 
 			err = patchFile(iso, "/etc/trident/config.yaml", tridentConfig)
 			if err != nil {
-				log.WithError(err).Fatalf("failed to patch trident config into ISO")
+				log.WithError(err).Fatalf("failed to patch Trident config into ISO")
 			}
 
 			if config.Iso.PreTridentScript != nil {
@@ -247,7 +247,7 @@ var rootCmd = &cobra.Command{
 				http.ServeContent(w, r, "provision.iso", time.Now(), bytes.NewReader(iso))
 			})
 
-			// We injected the phonehome & logstream config, so we're expecting trident to reach back
+			// We injected the phonehome & logstream config, so we're expecting Trident to reach back
 			enable_phonehome_listening = true
 		} else {
 			// Otherwise, serve the iso as-is
@@ -258,7 +258,7 @@ var rootCmd = &cobra.Command{
 			})
 		}
 
-		// If we're expecting trident to reach back, we need to listen for it.
+		// If we're expecting Trident to reach back, we need to listen for it.
 		if enable_phonehome_listening {
 			// Set up listening for phonehome
 			phonehome.SetupPhoneHomeServer(result, remoteAddressFile)

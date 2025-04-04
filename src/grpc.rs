@@ -99,9 +99,9 @@ pub(crate) fn send_host_status_state(
         sender
             .send(Ok(HostStatusState {
                 status: serde_yaml::to_string(state.host_status())
-                    .structured(trident_api::error::InternalError::SerializeHostStatus)?,
+                    .structured(InternalError::SerializeHostStatus)?,
             }))
-            .structured(trident_api::error::InternalError::SendHostStatus)?;
+            .structured(InternalError::SendHostStatus)?;
     }
     Ok(())
 }

@@ -10,9 +10,6 @@ use nix::unistd::Uid;
 use osutils::{block_devices, container, dependencies::Dependency};
 use trident_api::{
     config::{GrpcConfiguration, HostConfiguration, HostConfigurationSource, Operations},
-    status::ServicingType,
-};
-use trident_api::{
     constants::internal_params::{
         ORCHESTRATOR_CONNECTION_TIMEOUT_SECONDS, WAIT_FOR_SYSTEMD_NETWORKD,
     },
@@ -20,7 +17,7 @@ use trident_api::{
         ExecutionEnvironmentMisconfigurationError, InitializationError, InternalError,
         InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt,
     },
-    status::ServicingState,
+    status::{ServicingState, ServicingType},
 };
 
 #[cfg(feature = "grpc-dangerous")]

@@ -203,7 +203,7 @@ make download-runtime-partition-images
 If you hit errors and there is no obvious test case failure, it is possible the
 error happened during test setup. Unfortunately, the actionable test setup error
 log is not at the end, but higher up in the log, much closer to the beginning.
-Scroll up until you see a failure by virt-deploy, netlaunch or trident.
+Scroll up until you see a failure by virt-deploy, netlaunch or Trident.
 
 ### Functional Test Code Coverage
 

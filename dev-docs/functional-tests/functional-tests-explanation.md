@@ -118,7 +118,7 @@ the registered `TestCaseMetadata` objects.
 
 The `pytest` crate is responsible for iterating over all the submitted test
 cases. This happens in the `generate_functional_test_manifest()` function, which
-is called by trident's `pytest` subcommand. This subcommand is ONLY available
+is called by Trident's `pytest` subcommand. This subcommand is ONLY available
 when the `pytest-generator` cargo feature is enabled.
 
 ### Rust-Pytest Interface

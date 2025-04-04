@@ -95,11 +95,11 @@ func (tsp *TridentE2EStagePath) UnmarshalText(text []byte) error {
 	fmt.Println("Attempting to unmarshal text:", string(text))
 	parts := strings.Split(string(text), "/")
 	if len(parts) != 4 {
-		return fmt.Errorf("trident E2E Stage paths should contain 4 components: %s", text)
+		return fmt.Errorf("Trident E2E Stage paths should contain 4 components: %s", text)
 	}
 
 	if parts[0] != "e2e" {
-		return fmt.Errorf("trident E2E Stage paths should begin with 'e2e/': %s", text)
+		return fmt.Errorf("Trident E2E Stage paths should begin with 'e2e/': %s", text)
 	}
 
 	if err := tsp.Pipeline.UnmarshalText([]byte(parts[1])); err != nil {

@@ -217,7 +217,9 @@ mod tests {
     };
 
     use tempfile::NamedTempFile;
+    use url::Url;
 
+    use osutils::encryption;
     use trident_api::{
         config::{
             Disk as DiskConfig, FileSystem, FileSystemType, HostConfiguration, MountPoint,
@@ -226,9 +228,6 @@ mod tests {
         },
         error::ErrorKind,
     };
-
-    use osutils::encryption;
-    use url::Url;
 
     fn get_ctx() -> EngineContext {
         EngineContext {

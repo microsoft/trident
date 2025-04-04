@@ -491,6 +491,7 @@ mod tests {
     use std::io::Write;
 
     use fs::File;
+
     use trident_api::{
         constants::GRUB2_RELATIVE_PATH,
         status::{AbVolumeSelection, ServicingType},

@@ -25,7 +25,7 @@ def get_version(file):
 
 
 parser = argparse.ArgumentParser(
-    description="Return the new version for trident given the date and ID. Format: MAJOR.MINOR.YYYYMMDDID"
+    description="Return the new version for Trident given the date and ID. Format: MAJOR.MINOR.YYYYMMDDID"
 )
 parser.add_argument(
     "-c",
@@ -51,7 +51,7 @@ if not args.BuildNumber:
 match = re.match(r"(\d+)\.(\d+)", args.BuildNumber)
 
 if match:
-    # Check if BuildNumber is already the trident version
+    # Check if BuildNumber is already the Trident version
     version_pattern = rf"(^{version}\.)(\d{{10}})(-?.*$)"
     if re.match(version_pattern, args.BuildNumber):
         print(args.BuildNumber)

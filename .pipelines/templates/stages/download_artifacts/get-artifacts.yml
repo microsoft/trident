@@ -170,7 +170,7 @@ stages:
       # Container images:
       - ${{ if eq(parameters.containerImages, true) }}:
           - job: TridentDockerImage
-            displayName: Download trident docker image
+            displayName: Download Trident docker image
             timeoutInMinutes: 10
             pool:
               type: linux

@@ -9,13 +9,13 @@ import (
 func main() {
 	storm := storm.CreateSuite("trident")
 
-	// Add trident E2E scenarios
+	// Add Trident E2E scenarios
 	scenarios := trident.DiscoverTridentScenarios(storm.Log)
 	for _, scenario := range scenarios {
 		storm.AddScenario(scenario)
 	}
 
-	// Register trident helpers
+	// Register Trident helpers
 	for _, helper := range helpers.TRIDENT_HELPERS {
 		storm.AddHelper(helper)
 	}

@@ -130,7 +130,7 @@ impl HostConfiguration {
     }
 
     fn validate_datastore_location(&self) -> Result<(), HostConfigurationStaticValidationError> {
-        // Nothing to do if trident is disabled on the runtime OS.
+        // Nothing to do if Trident is disabled on the runtime OS.
         if self.trident.disable {
             return Ok(());
         }

@@ -19,7 +19,7 @@ logstream: http://<netlisten_address>:<port>/logstream
 ```
 
 Start the netlisten server by running `netlisten -p <port>`.
-Then start the provisioning using the patched trident config file.
+Then start the provisioning using the patched Trident config file.
 */
 package main
 

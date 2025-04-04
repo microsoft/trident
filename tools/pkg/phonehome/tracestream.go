@@ -28,7 +28,7 @@ func SetupTraceStream(filepath string) {
 		}
 	}
 
-	// Generate a UUID to group events coming in from the same trident run
+	// Generate a UUID to group events coming in from the same Trident run
 	traceID := uuid.New().String()
 
 	http.HandleFunc("/tracestream", func(w http.ResponseWriter, r *http.Request) {

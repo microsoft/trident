@@ -909,8 +909,9 @@ mod tests {
 mod functional_test {
     use super::*;
 
-    use std::iter::Iterator;
-    use std::str::FromStr;
+    use std::{iter::Iterator, str::FromStr};
+
+    use url::Url;
 
     use osutils::{
         efibootmgr::{self, EfiBootManagerOutput},
@@ -920,15 +921,12 @@ mod functional_test {
         testutils::repart::{OS_DISK_DEVICE_PATH, TEST_DISK_DEVICE_PATH},
     };
     use pytest_gen::functional_test;
-
     use trident_api::config::{
         self, Disk, FileSystemType, HostConfiguration, ImageSha384, MountOptions, MountPoint,
         OsImage, Partition, PartitionSize, PartitionType,
     };
-    use url::Url;
 
-    use crate::engine::storage::partitioning;
-    use crate::engine::EngineContext;
+    use crate::engine::{storage::partitioning, EngineContext};
 
     #[allow(dead_code)]
     fn delete_boot_next() {

@@ -2,10 +2,8 @@ use anyhow::{Context, Error};
 use log::{info, warn};
 use netplan_types::NetworkConfig;
 
-use osutils::dependencies::Dependency;
+use osutils::{dependencies::Dependency, netplan};
 use trident_api::config::HostConfiguration;
-
-use osutils::netplan;
 
 pub fn start(host_config: &HostConfiguration) -> Result<(), Error> {
     let netconf = host_config
