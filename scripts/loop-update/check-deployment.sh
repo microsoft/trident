@@ -8,7 +8,7 @@ VM_IP=`getIp`
 # Help diagnose https://dev.azure.com/mariner-org/ECF/_workitems/edit/11273 and
 # fail explicitly if multiple IPs are found
 if [ "$TEST_PLATFORM" == "qemu" ]; then
-    if [ `echo $VM_IP | wc -l` -gt 1 ]; then
+    if [ `echo $VM_IP | wc -w` -gt 1 ]; then
         echo "Multiple IPs found:"
         echo $VM_IP
         sudo virsh domifaddr $VM_NAME 

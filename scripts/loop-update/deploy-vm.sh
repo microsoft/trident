@@ -4,8 +4,9 @@ set -euo pipefail
 . $(dirname "$0")/common.sh
 
 if [ "$TEST_PLATFORM" == "qemu" ]; then
-    virsh destroy "$VM_NAME" || true
-    virsh undefine "$VM_NAME" --nvram || true
+    sudo virsh list --all
+    sudo virsh destroy "$VM_NAME" || true
+    sudo virsh undefine "$VM_NAME" --nvram || true
 
     IMAGE_FILES="$(find $ARTIFACTS -type f -name 'trident-vm-*-testimage.qcow2')"
     IMAGE_FILES_COUNT=$(echo "$IMAGE_FILES" | wc -l)
