@@ -78,12 +78,6 @@ pub enum ContainerConfigurationError {
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum InternalError {
-    #[error("Failed to enqueue 'HostUpdate' command to the main Trident thread")]
-    EnqueueHostUpdateCommand,
-
-    #[error("Failed to get datastore path from local Trident config")]
-    GetDatastorePathFromLocalTridentConfig,
-
     #[error("Failed to get the ESP partition information")]
     GetEspDeviceInfo,
 
@@ -274,8 +268,8 @@ pub enum InvalidInputError {
 }
 
 /// Identifies errors that occur during servicing and require further user investigation, to
-/// determine whether the error occurred due to an internal failure in Trident, a failure in
-/// one of its dependencies, or a system misconfiguration.
+/// determine whether the error occurred due to an internal failure in Trident, a failure in one of
+/// its dependencies, or a system misconfiguration.
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum ServicingError {
@@ -345,9 +339,6 @@ pub enum ServicingError {
     #[error("Failed to create directory '{dir}'")]
     CreateDirectory { dir: String },
 
-    #[error("Failed to create execroot directory")]
-    CreateExecrootDirectory,
-
     #[error("Failed to create filesystems")]
     CreateFilesystems,
 
@@ -368,12 +359,6 @@ pub enum ServicingError {
 
     #[error("Failed to create swap space")]
     CreateSwap,
-
-    #[error("Failed to create Trident config file")]
-    CreateTridentConfig,
-
-    #[error("Failed to create Trident config directory")]
-    CreateTridentConfigDirectory,
 
     #[error("Failed to create verity devices")]
     CreateVerity,
@@ -441,10 +426,7 @@ pub enum ServicingError {
     GetEspDeviceInfo,
 
     #[error("Failed to get the label and path for the EFI boot loader of the A/B update volume")]
-    GetLabelandPath,
-
-    #[error("Failed to get current mount points info with findmnt")]
-    GetMountPointsInfo,
+    GetLabelAndPath,
 
     #[error("Failed to get the partition number of '{part_uuid_path}' in the disk '{disk_path}'")]
     GetPartitionNumber {
@@ -469,9 +451,6 @@ pub enum ServicingError {
 
     #[error("Failed to get SELINUXTYPE")]
     GetSelinuxType,
-
-    #[error("Failed to perform kexec")]
-    Kexec,
 
     #[error("Failed to list boot entries via efibootmgr or parse them")]
     ListAndParseBootEntries,
@@ -516,8 +495,8 @@ pub enum ServicingError {
     RemoveCrypttab { crypttab_path: String },
 
     #[error(
-        "Failed to match current root device path '{root_device_path}' to either \
-    root volume A path '{root_volume_a_path}' or B path '{root_volume_b_path}'"
+        "Failed to match current root device path '{root_device_path}' to either root volume A \
+        path '{root_volume_a_path}' or B path '{root_volume_b_path}'"
     )]
     RootDevicePathAbActiveVolumeMismatch {
         root_device_path: String,
@@ -546,7 +525,10 @@ pub enum ServicingError {
     #[error("Failed to start network")]
     StartNetwork,
 
-    #[error("Volume {active_volume} is active but active volume in Host Status is set to {hs_active_volume}")]
+    #[error(
+        "Volume {active_volume} is active but active volume in Host Status is set to \
+        {hs_active_volume}"
+    )]
     ValidateAbActiveVolume {
         active_volume: String,
         hs_active_volume: String,
@@ -587,9 +569,6 @@ pub enum DatastoreError {
     #[error("Failed to open new datastore")]
     OpenDatastore,
 
-    #[error("Failed to switch datastore path to '{new_path}' as datastore is persistent")]
-    SwitchPathOnPersistentDatastore { new_path: String },
-
     #[error("Failed to write to datastore as it is closed")]
     WriteToClosedDatastore,
 
@@ -607,16 +586,12 @@ pub enum UnsupportedConfigurationError {
 
     #[error("Disk partition(s) no longer exist on system: {partition_ids:?}")]
     PartitionsRemoved { partition_ids: Vec<String> },
-
-    #[error("Failed to find dependency '{name}'")]
-    RuntimeDependencyNotFound { name: String },
 }
 
 /// Describes different categories of structured errors that can occur in Trident.
 ///
 /// Each variant of `ErrorKind` corresponds to a different category of error. The categories are
 /// intended to be meaningful to the user and assist in routing issues to the appropriate team.
-///
 #[derive(Debug, Eq, thiserror::Error, IntoStaticStr, PartialEq)]
 #[strum(serialize_all = "kebab-case")]
 pub enum ErrorKind {
@@ -637,8 +612,8 @@ pub enum ErrorKind {
     InvalidInput(#[from] InvalidInputError),
 
     /// Identifies errors that occur during servicing and require further user investigation, to
-    /// determine whether the error occurred due to an internal failure in Trident, a failure in
-    /// one of its dependencies, or a system misconfiguration.
+    /// determine whether the error occurred due to an internal failure in Trident, a failure in one
+    /// of its dependencies, or a system misconfiguration.
     #[error(transparent)]
     Servicing(#[from] ServicingError),
 

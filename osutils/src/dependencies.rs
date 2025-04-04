@@ -88,7 +88,6 @@ impl<T> DependencyResultExt<T> for Result<T, Box<DependencyError>> {
 #[derive(Debug, Clone, Copy, IntoStaticStr)]
 #[strum(serialize_all = "lowercase")]
 pub enum Dependency {
-    Bash,
     Blkid,
     Cryptsetup,
     Dd,
@@ -118,14 +117,10 @@ pub enum Dependency {
     Systemctl,
     #[strum(serialize = "systemd-cryptenroll")]
     SystemdCryptenroll,
-    #[strum(serialize = "systemd-escape")]
-    SystemdEscape,
     #[strum(serialize = "systemd-firstboot")]
     SystemdFirstboot,
     #[strum(serialize = "systemd-repart")]
     SystemdRepart,
-    #[strum(serialize = "systemd-sysupdate")]
-    SystemdSysupdate,
     Touch,
     #[strum(serialize = "tpm2_clear")]
     Tpm2Clear,
@@ -138,8 +133,6 @@ pub enum Dependency {
     Veritysetup,
     Wipefs,
     // Test dependencies
-    #[cfg(test)]
-    Cat,
     #[cfg(test)]
     DoesNotExist,
     #[cfg(test)]
@@ -158,7 +151,6 @@ impl Dependency {
     /// Gets the path for a dependency not in $PATH
     fn path_override(&self) -> Option<PathBuf> {
         Some(PathBuf::from(match self {
-            Self::SystemdSysupdate => "/lib/systemd/systemd-sysupdate",
             Self::Netplan => "/usr/sbin/netplan",
             _ => return None,
         }))

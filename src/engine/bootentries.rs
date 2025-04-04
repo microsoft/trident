@@ -50,7 +50,7 @@ pub fn create_and_update_boot_variables(
 ) -> Result<(), TridentError> {
     // Get the label and path for the EFI boot loader of the inactive A/B update volume.
     let (entry_label_new, bootloader_path_new) =
-        get_label_and_path(ctx).structured(ServicingError::GetLabelandPath)?;
+        get_label_and_path(ctx).structured(ServicingError::GetLabelAndPath)?;
 
     // Check if the boot entry already exists, if so, delete the entry and
     // remove it from the `BootOrder`.
