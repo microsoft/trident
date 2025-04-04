@@ -1,3 +1,11 @@
+#!/bin/python3
+
+# # # # # # # # # # # # # # # # # # # # #
+#             W A R N I N G             #
+#   This script is used in pipelines!   #
+#       Be careful when modifying!      #
+# # # # # # # # # # # # # # # # # # # # #
+
 import argparse
 import re
 import subprocess

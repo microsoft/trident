@@ -64,7 +64,7 @@ check-sh:
 
 .PHONY: build
 build: .cargo/config
-	$(eval TRIDENT_CARGO_VERSION := $(shell cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "trident") | .version'))
+	$(eval TRIDENT_CARGO_VERSION := $(shell python3 ./scripts/get-version.py "$(shell date +%Y%m%d).99"))
 	$(eval GIT_COMMIT := $(shell git rev-parse --short HEAD)$(shell git diff --quiet || echo '.dirty'))
 	@OPENSSL_STATIC=1 \
 		OPENSSL_LIB_DIR=$(shell dirname `whereis libssl.a | cut -d" " -f2`) \
