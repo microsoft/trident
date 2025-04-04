@@ -3,7 +3,7 @@ use std::{
     path::Path,
 };
 
-use log::{error, trace};
+use log::trace;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "schemars")]
@@ -392,9 +392,7 @@ impl Storage {
             );
         }
 
-        // MANUALLY BLOCK USR VERITY FOR NOW!
-        error!("usr verity is not supported yet!");
-        Err(HostConfigurationStaticValidationError::UnsupportedVerityDevices)
+        Ok(())
     }
 
     /// Get an iterator over all the mount points in the storage configuration.
@@ -2570,19 +2568,15 @@ mod tests {
     #[test]
     fn test_validate_usr_verity() {
         // Ok
-        // Currently the "passing" state is an error.
-        assert_eq!(
-            Storage::default()
-                .validate_usr_verity(&VerityDevice {
-                    id: "usr".into(),
-                    name: "usr".into(),
-                    data_device_id: "some-data-device".into(),
-                    hash_device_id: "some-hash-device".into(),
-                    ..Default::default()
-                })
-                .unwrap_err(),
-            HostConfigurationStaticValidationError::UnsupportedVerityDevices
-        );
+        Storage::default()
+            .validate_usr_verity(&VerityDevice {
+                id: "usr".into(),
+                name: "usr".into(),
+                data_device_id: "some-data-device".into(),
+                hash_device_id: "some-hash-device".into(),
+                ..Default::default()
+            })
+            .expect("Failed to validate usr verity device");
 
         // Bad name
         assert_eq!(

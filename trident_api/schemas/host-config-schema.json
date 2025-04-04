@@ -759,6 +759,14 @@
           ]
         },
         {
+          "title": "Usr verity hash partition (NOT ENABLED YET!)",
+          "description": "x64: `77ff5f63-e7b6-4633-acf4-1565b864c0e6`",
+          "type": "string",
+          "enum": [
+            "usr-verity"
+          ]
+        },
+        {
           "title": "Tmp partition",
           "description": "`7ec6f557-3bc5-4aca-b293-16ef5df639d1`",
           "type": "string",

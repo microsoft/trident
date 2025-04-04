@@ -111,7 +111,6 @@ pub enum PartitionType {
     /// # Usr verity hash partition (NOT ENABLED YET!)
     ///
     /// x64: `77ff5f63-e7b6-4633-acf4-1565b864c0e6`
-    #[serde(skip)]
     UsrVerity,
 
     /// # Tmp partition

@@ -75,6 +75,15 @@ x64: `8484680c-9521-48c6-9c11-b0720656f69e`
 | Type           | `string` |
 | Value          | `usr`    |
 
+### Usr verity hash partition (NOT ENABLED YET!)
+
+x64: `77ff5f63-e7b6-4633-acf4-1565b864c0e6`
+
+| Characteristic | Value        |
+| -------------- | ------------ |
+| Type           | `string`     |
+| Value          | `usr-verity` |
+
 ### Tmp partition
 
 `7ec6f557-3bc5-4aca-b293-16ef5df639d1`
