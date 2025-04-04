@@ -56,9 +56,7 @@ steps:
             set +x
             echo "##vso[task.setvariable variable=UploadMetrics]False"
             set -x
-            if [ "${{ parameters.tridentOperation }}" == "ab-update" ] && \
-             [ "${{ parameters.tridentConfigurationName }}" != "rerun" ] && \
-             [ "${{ parameters.tridentConfigurationName }}" != "memory-constraint-combined" ]; then
+            if [ "${{ parameters.tridentOperation }}" == "ab-update" ]; then
               abUpdateExists=$(sudo yq e '.storage.abUpdate != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
               if [[ "$abUpdateExists" == "true" ]]; then
                 echo "##vso[task.complete result=Failed;]"
