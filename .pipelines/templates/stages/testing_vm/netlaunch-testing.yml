@@ -146,13 +146,13 @@ stages:
                   --wait-for-provisioned-state \
                   --port ${{variables.netlaunchPort}} 2>&1 | tee ./clean-install-deployment.log
             workingDirectory: $(tridentSourceDirectory)
-            displayName: "Run netlaunch for testing"
+            displayName: "🚀 Run netlaunch for testing"
             timeoutInMinutes: 15
 
           - template: ../testing_common/display-deployment-logs.yml
             parameters:
               deploymentLogPath: $(tridentSourceDirectory)/logstream-full.log
-              displayName: "Display clean install logs"
+              displayName: "📄Display clean install logs"
 
           - bash: |
               set -ux
@@ -183,7 +183,7 @@ stages:
 
             timeoutInMinutes: 5
             condition: succeededOrFailed()
-            displayName: "Check Runtime OS deployment"
+            displayName: "📄 Check Runtime OS deployment"
 
           - bash: |
               set -eux
@@ -193,7 +193,7 @@ stages:
               ssh -o StrictHostKeyChecking=no -i $(tridentSourceDirectory)/e2e_tests/helpers/key testing-user@$HOST_IP \
                 'sudo journalctl -u trident-container.service'
             condition: eq('${{ parameters.runtimeEnv }}', 'container')
-            displayName: "Display Container logs"
+            displayName: "📄 Display Container logs"
 
           - template: ../testing_common/trident-metrics.yml
             parameters:

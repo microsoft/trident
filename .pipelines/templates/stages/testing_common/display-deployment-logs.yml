@@ -20,4 +20,4 @@ steps:
     ${{ if ne(parameters.displayName, '') }}:
       displayName: "${{ parameters.displayName }}"
     ${{ else }}:
-      displayName: "Display ${{ parameters.deploymentLogPath }}"
+      displayName: "📄 Display ${{ parameters.deploymentLogPath }}"

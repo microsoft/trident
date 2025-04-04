@@ -114,5 +114,5 @@ steps:
         "${{ parameters.kustoTableName }}" \
         "${{ parameters.kustoTableMapping }}" \
         "$(Pipeline.Workspace)/s/platform-telemetry"
-    displayName: "Upload metrics to Kusto"
+    displayName: "📈 Upload metrics to Kusto"
     condition: eq(variables['UploadMetrics'], 'True')

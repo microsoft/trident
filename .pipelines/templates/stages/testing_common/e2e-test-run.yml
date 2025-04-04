@@ -100,7 +100,7 @@ steps:
           "${{ parameters.hostIp }}" \
           "${{ parameters.userName }}" \
           "${{ parameters.runtimeEnv }}"
-    displayName: "Check SSH connection"
+    displayName: "🤝 Check SSH connection"
 
   - bash: |
       set -eux
@@ -113,7 +113,7 @@ steps:
           --configuration ${{ parameters.tridentConfigPath }}
     timeoutInMinutes: 5
     workingDirectory: $(Build.SourcesDirectory)/e2e_tests
-    displayName: "Run Trident E2E tests after clean install of runtime OS"
+    displayName: "🔬 Run Trident E2E tests after clean install of runtime OS"
 
   - task: PublishTestResults@2
     condition: succeededOrFailed()
@@ -162,7 +162,7 @@ steps:
       echo "##vso[task.setvariable variable=abActiveVolume]volume-b"
     timeoutInMinutes: 15
     workingDirectory: $(Build.SourcesDirectory)
-    displayName: "Stage and finalize A/B update into runtime OS B"
+    displayName: "🔄 Stage and finalize A/B update into runtime OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - template: ../testing_common/display-deployment-logs.yml
@@ -176,7 +176,7 @@ steps:
           "${{ parameters.hostIp }}" \
           "${{ parameters.userName }}" \
           "${{ parameters.runtimeEnv }}"
-    displayName: "Check SSH connection after booting into runtime OS B"
+    displayName: "🤝 Check SSH connection after booting into runtime OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - template: ../testing_common/trident-metrics.yml
@@ -206,7 +206,7 @@ steps:
           --ab-active-volume $(abActiveVolume)
     timeoutInMinutes: 5
     workingDirectory: $(Build.SourcesDirectory)/e2e_tests
-    displayName: "Run Trident E2E tests after A/B update into runtime OS B"
+    displayName: "🔬 Run Trident E2E tests after A/B update into runtime OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - task: PublishTestResults@2
@@ -255,7 +255,7 @@ steps:
       echo "##vso[task.setvariable variable=abActiveVolume]volume-a"
     timeoutInMinutes: 15
     workingDirectory: $(Build.SourcesDirectory)
-    displayName: "Stage and finalize A/B update into runtime OS A"
+    displayName: "🔄 Stage and finalize A/B update into runtime OS A"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - template: ../testing_common/display-deployment-logs.yml
@@ -269,7 +269,7 @@ steps:
           "${{ parameters.hostIp }}" \
           "${{ parameters.userName }}" \
           "${{ parameters.runtimeEnv }}"
-    displayName: "Check SSH connection after booting into runtime OS A"
+    displayName: "🤝 Check SSH connection after booting into runtime OS A"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - template: ../testing_common/trident-metrics.yml
@@ -298,7 +298,7 @@ steps:
           --ab-active-volume $(abActiveVolume)
     timeoutInMinutes: 5
     workingDirectory: $(Build.SourcesDirectory)/e2e_tests
-    displayName: "Run Trident E2E tests after A/B update into runtime OS A"
+    displayName: "🔬 Run Trident E2E tests after A/B update into runtime OS A"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - task: PublishTestResults@2
