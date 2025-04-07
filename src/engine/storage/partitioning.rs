@@ -223,13 +223,17 @@ fn partitioning_safety_check(disks: &Vec<ResolvedDisk>) -> Result<(), Error> {
                     disk.id
                 );
 
-                let part_info = lsblk::get(&part.node).with_context(|| {
+                let Some(part_info) = lsblk::try_get(&part.node).with_context(|| {
                     format!(
                         "Failed to retrieve information for partition '{}' on disk '{}'.",
                         part.node.display(),
                         disk.id
                     )
-                })?;
+                })? else {
+                    // The kernel is not aware of this device, therefore it
+                    // cannot have mount points. We can safely skip.
+                    return Ok(());
+                };
 
                 // Check if the partition or its children are mounted.
                 let mnt_points = part_info.get_all_mountpoints_recursive();

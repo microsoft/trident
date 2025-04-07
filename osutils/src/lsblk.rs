@@ -228,19 +228,9 @@ fn find_recursive(
     }
 }
 
-/// Retrieves detailed information about a specific block device at a
-/// given path.
-///
-/// This function executes the `lsblk` command to get detailed information
-/// about a single block device specified by its `device_path`. It returns
-/// the corresponding `BlockDevice` struct with all available details,
-/// such as size, type, and any child devices.
-///
-/// The function expects exactly one block device to match the given path.
-/// If the output contains more than one or no devices, it returns an
-/// error.
-///
-pub fn get(device_path: impl AsRef<Path>) -> Result<BlockDevice, Error> {
+/// Retrieves detailed information for a specific block device at a the
+/// specified path, if it exists.
+pub fn try_get(device_path: impl AsRef<Path>) -> Result<Option<BlockDevice>, Error> {
     let result = Dependency::Lsblk
         .cmd()
         .arg("--json")
@@ -251,9 +241,10 @@ pub fn get(device_path: impl AsRef<Path>) -> Result<BlockDevice, Error> {
         .output_and_check()
         .context("Failed to execute lsblk")?;
 
-    let parsed = parse_lsblk_output(result.as_str())?;
+    let parsed =
+        parse_lsblk_output(result.as_str()).context("Failed to parse output from lsblk")?;
 
-    if parsed.len() != 1 {
+    if parsed.len() > 1 {
         bail!(
             "Unexpected number of block devices returned for device '{}': {}",
             device_path.as_ref().display(),
@@ -261,7 +252,26 @@ pub fn get(device_path: impl AsRef<Path>) -> Result<BlockDevice, Error> {
         );
     }
 
-    Ok(parsed[0].clone())
+    Ok(parsed.into_iter().next())
+}
+
+/// Retrieves detailed information about a specific block device at a
+/// given path. It is a wrapper around `get_opt` that returns an error if
+/// no device is found.
+pub fn get(device_path: impl AsRef<Path>) -> Result<BlockDevice, Error> {
+    try_get(device_path.as_ref())
+        .with_context(|| {
+            format!(
+                "Failed to get block device information for '{}'",
+                device_path.as_ref().display()
+            )
+        })?
+        .with_context(|| {
+            format!(
+                "No block device found at '{}'",
+                device_path.as_ref().display()
+            )
+        })
 }
 
 fn parse_lsblk_output(output: &str) -> Result<Vec<BlockDevice>, Error> {
