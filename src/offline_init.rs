@@ -22,6 +22,12 @@ pub fn execute(hs_path: &Path) -> Result<(), TridentError> {
             .message("Failed to parse Host Status from YAML")?
     };
 
+    host_status
+        .spec
+        .validate()
+        .map_err(Into::into)
+        .message("The provided Host Status has an invalid Host Configuration")?;
+
     let datastore_path = host_status.spec.trident.datastore_path.clone();
 
     let mut datastore =
