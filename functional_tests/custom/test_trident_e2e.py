@@ -74,7 +74,7 @@ def test_trident_offline_initialize(vm):
     assert_that(result.exit_code).is_equal_to(0)
     vm.mkdir(working_dir)
 
-    datastore_path = f"{working_dir}/datastore.sqlite"
+    datastore_path = f"/var/lib/trident/offline/datastore.sqlite"
     vm.execute(f"echo 'DatastorePath={datastore_path}' > /etc/trident/trident.conf")
 
     # Update the datastore location
