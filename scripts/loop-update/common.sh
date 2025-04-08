@@ -50,6 +50,7 @@ function sshCommand() {
     # use the known_hosts file instead
     # UserKnownHostsFile - disable known hosts file to simplify local runs
     ssh \
+        -i $SSH_PUBLIC_KEY_PATH \
         -o BatchMode=yes \
         -o ConnectTimeout=10 \
         -o ServerAliveCountMax=3 \
@@ -65,6 +66,7 @@ function sshProxyPort() {
     local PORT=$1
 
     ssh \
+        -i $SSH_PUBLIC_KEY_PATH \
         -R $PORT:localhost:$PORT -N \
         -o BatchMode=yes \
         -o ConnectTimeout=10 \

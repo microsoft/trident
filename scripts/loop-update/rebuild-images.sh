@@ -15,6 +15,9 @@ fi
 if [ "$FLAVOR" == "uki" ]; then
     SUFFIX="-uki"
 fi
+if [ "$FLAVOR" == "usr" ]; then
+    SUFFIX="-usr"
+fi
 
 make -C ../test-images build/trident-vm-verity$SUFFIX-testimage.$EXTENSION
 cp ../test-images/build/trident-vm-verity$SUFFIX-testimage.$EXTENSION $ARTIFACTS/trident-vm-verity$SUFFIX-testimage.$EXTENSION
