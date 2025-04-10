@@ -41,6 +41,7 @@ where
     T: Copy + Clone + PartialEq + Eq + Display,
 {
     /// Returns whether the list contains the given item.
+    #[allow(dead_code)]
     pub(crate) fn contains(&self, fs_src_kind: T) -> bool {
         self.0.contains(&fs_src_kind)
     }

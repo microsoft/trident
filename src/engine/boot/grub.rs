@@ -279,9 +279,8 @@ pub(crate) mod functional_test {
     use pytest_gen::functional_test;
     use trident_api::{
         config::{
-            self, AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, FileSystemType,
-            HostConfiguration, MountOptions, MountPoint, Partition, PartitionType, RaidLevel,
-            SoftwareRaidArray,
+            self, AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, HostConfiguration,
+            MountOptions, MountPoint, Partition, PartitionType, RaidLevel, SoftwareRaidArray,
         },
         status::ServicingType,
     };
@@ -540,7 +539,6 @@ pub(crate) mod functional_test {
                 options: MountOptions::empty(),
             }),
             device_id: Some(raid_array.id.clone()),
-            fs_type: FileSystemType::Ext4,
             source: FileSystemSource::Image,
         });
 
@@ -586,7 +584,6 @@ pub(crate) mod functional_test {
                                 options: MountOptions::empty(),
                             }),
                             device_id: Some("boot".to_owned()),
-                            fs_type: FileSystemType::Vfat,
                             source: FileSystemSource::Image,
                         },
                         FileSystem {
@@ -595,7 +592,6 @@ pub(crate) mod functional_test {
                                 options: MountOptions::empty(),
                             }),
                             device_id: Some("root".to_owned()),
-                            fs_type: FileSystemType::Ext4,
                             source: FileSystemSource::Image,
                         },
                     ],
@@ -656,7 +652,6 @@ pub(crate) mod functional_test {
                                 options: MountOptions::empty(),
                             }),
                             device_id: Some("boot".to_owned()),
-                            fs_type: FileSystemType::Vfat,
                             source: FileSystemSource::Image,
                         },
                         FileSystem {
@@ -665,7 +660,6 @@ pub(crate) mod functional_test {
                                 options: MountOptions::empty(),
                             }),
                             device_id: Some("root".to_owned()),
-                            fs_type: FileSystemType::Ext4,
                             source: FileSystemSource::Image,
                         },
                     ],
@@ -727,7 +721,6 @@ pub(crate) mod functional_test {
                             options: MountOptions::empty(),
                         }),
                         device_id: Some("root".to_owned()),
-                        fs_type: FileSystemType::Ext4,
                         source: FileSystemSource::Image,
                     }],
                     ..Default::default()
@@ -782,7 +775,6 @@ pub(crate) mod functional_test {
                             options: MountOptions::empty(),
                         }),
                         device_id: Some("root".to_owned()),
-                        fs_type: FileSystemType::Ext4,
                         source: FileSystemSource::Image,
                     }],
                     ..Default::default()

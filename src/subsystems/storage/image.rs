@@ -112,7 +112,6 @@ mod tests {
                 filesystems: vec![
                     FileSystem {
                         device_id: Some("esp".into()),
-                        fs_type: FileSystemType::Vfat,
                         source: FileSystemSource::Image,
                         mount_point: Some(MountPoint {
                             path: PathBuf::from("/boot/efi"),
@@ -121,7 +120,6 @@ mod tests {
                     },
                     FileSystem {
                         device_id: Some("root".into()),
-                        fs_type: FileSystemType::Vfat,
                         source: FileSystemSource::Image,
                         mount_point: Some(MountPoint {
                             path: PathBuf::from("/"),
@@ -130,7 +128,6 @@ mod tests {
                     },
                     FileSystem {
                         device_id: Some("trident".into()),
-                        fs_type: FileSystemType::Vfat,
                         source: FileSystemSource::Image,
                         mount_point: None,
                     },

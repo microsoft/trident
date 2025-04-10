@@ -5,8 +5,8 @@ use std::{
 
 use trident_api::{
     config::{
-        Disk, FileSystem, FileSystemSource, FileSystemType, HostConfiguration, MountOptions,
-        MountPoint, Partition, PartitionSize, PartitionTableType, PartitionType, SwapDevice,
+        Disk, FileSystem, FileSystemSource, HostConfiguration, MountOptions, MountPoint,
+        NewFileSystemType, Partition, PartitionSize, PartitionTableType, PartitionType, SwapDevice,
     },
     misc::IdGenerator,
 };
@@ -101,9 +101,9 @@ pub fn translate(input: &ParsedData, hc: &mut HostConfiguration, errors: &mut Ve
         }
 
         let fs_type = match part.fstype {
-            FsType::Ext4 => FileSystemType::Ext4,
-            FsType::Vfat => FileSystemType::Vfat,
-            FsType::Efi => FileSystemType::Vfat,
+            FsType::Ext4 => NewFileSystemType::Ext4,
+            FsType::Vfat => NewFileSystemType::Vfat,
+            FsType::Efi => NewFileSystemType::Vfat,
             FsType::Swap => {
                 // This should get caught by the swap check above, so this should never happen!
                 errors.push(SetsailError::new_translation(
@@ -116,12 +116,11 @@ pub fn translate(input: &ParsedData, hc: &mut HostConfiguration, errors: &mut Ve
 
         filesystems.push(FileSystem {
             device_id: Some(partition_id.clone()),
-            fs_type,
             // TODO(5989): Figure out how to bridge the gap between how kickstart
             // handles images and how Trident handles them
             source: match part.image.as_ref() {
                 Some(_) => FileSystemSource::Image,
-                None => FileSystemSource::New,
+                None => FileSystemSource::New(fs_type),
             },
             mount_point: match part.mntpoint {
                 PartitionMount::Path(ref s) => Some(MountPoint {

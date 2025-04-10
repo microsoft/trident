@@ -9,43 +9,32 @@ use schemars::JsonSchema;
 
 use serde::{Deserialize, Serialize};
 use strum_macros::EnumIter;
+
 use sysdefs::filesystems::{KernelFilesystemType, NodevFilesystemType, RealFilesystemType};
 
 use crate::{
     constants::{ESP_MOUNT_POINT_PATH, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
     error::{InternalError, TridentError},
-    is_default, BlockDeviceId,
+    BlockDeviceId,
 };
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+use super::filesystem_types::{AdoptedFileSystemType, NewFileSystemType};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct FileSystem {
     /// The ID of the block device on which to place this filesystem.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub device_id: Option<BlockDeviceId>,
-
-    /// The file system type.
-    #[serde(rename = "type")]
-    pub fs_type: FileSystemType,
 
     /// The source of the file system.
     ///
-    /// If not specified, this field will default to OS image.
-    ///
-    /// When making a `swap` filesystem the field must be set to `new`.
-    #[serde(default, skip_serializing_if = "is_default")]
+    /// If not specified, this field will default to image.
     pub source: FileSystemSource,
 
     /// The mount point of the file system.
     ///
     /// It can be provided as an object for more control over the mount options,
     /// or as a just a string when `defaults` is sufficient.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::primitives::shortcuts::opt_string_or_struct"
-    )]
     #[cfg_attr(
         feature = "schemars",
         schemars(
@@ -55,19 +44,142 @@ pub struct FileSystem {
     pub mount_point: Option<MountPoint>,
 }
 
+pub mod fs_serde {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    use crate::is_default;
+
+    use super::{
+        AdoptedFileSystemType, FileSystem, FileSystemSource, MountPoint, NewFileSystemType,
+    };
+
+    #[derive(Deserialize, Serialize, Default, PartialEq, Eq)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    enum FileSystemSourceInterim {
+        #[default]
+        Image,
+        Adopted,
+        New,
+    }
+
+    #[derive(Deserialize, Serialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct FileSystemInterim {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        device_id: Option<String>,
+
+        #[serde(default, skip_serializing_if = "is_default")]
+        source: FileSystemSourceInterim,
+
+        #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+        fs_type: Option<String>,
+
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "crate::primitives::shortcuts::opt_string_or_struct"
+        )]
+        mount_point: Option<MountPoint>,
+    }
+
+    impl<'de> Deserialize<'de> for FileSystem {
+        fn deserialize<D>(deserializer: D) -> Result<FileSystem, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            let interim = FileSystemInterim::deserialize(deserializer)?;
+            let source = match interim.source {
+                FileSystemSourceInterim::Adopted => {
+                    FileSystemSource::Adopted(match interim.fs_type {
+                        None => AdoptedFileSystemType::default(),
+                        Some(fs_type) => AdoptedFileSystemType::try_from(fs_type).map_err(|e| {
+                            serde::de::Error::custom(format!(
+                                "Invalid adopted filesystem type: {e}"
+                            ))
+                        })?,
+                    })
+                }
+                FileSystemSourceInterim::New => FileSystemSource::New(match interim.fs_type {
+                    None => NewFileSystemType::default(),
+                    Some(fs_type) => NewFileSystemType::try_from(fs_type).map_err(|e| {
+                        serde::de::Error::custom(format!("Invalid new filesystem type: {e}"))
+                    })?,
+                }),
+                FileSystemSourceInterim::Image => {
+                    if interim.fs_type.is_some() {
+                        return Err(serde::de::Error::custom(
+                            "Filesystem type cannot be specified for image filesystems",
+                        ));
+                    }
+                    FileSystemSource::Image
+                }
+            };
+            Ok(FileSystem {
+                device_id: interim.device_id,
+                source,
+                mount_point: interim.mount_point,
+            })
+        }
+    }
+
+    impl Serialize for FileSystem {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            let interim = FileSystemInterim {
+                device_id: self.device_id.clone(),
+                source: match &self.source {
+                    FileSystemSource::Image => FileSystemSourceInterim::Image,
+                    FileSystemSource::New(_) => FileSystemSourceInterim::New,
+                    FileSystemSource::Adopted(_) => FileSystemSourceInterim::Adopted,
+                },
+                mount_point: self.mount_point.clone(),
+                fs_type: match &self.source {
+                    FileSystemSource::New(fs_type) => Some((*fs_type).into()),
+                    FileSystemSource::Adopted(fs_type) => Some((*fs_type).into()),
+                    _ => None,
+                },
+            };
+            interim.serialize(serializer)
+        }
+    }
+
+    /// Serialize a vector of `FileSystem` objects.
+    pub fn serialize<S>(filesystems: &Vec<FileSystem>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        filesystems.serialize(serializer)
+    }
+
+    /// Deserialize a vector of `FileSystem` objects.
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<FileSystem>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Vec::deserialize(deserializer)
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(
+    rename_all = "camelCase",
+    deny_unknown_fields,
+    tag = "source",
+    content = "type"
+)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub enum FileSystemSource {
     /// # New
     ///
     /// Create a new file system.
-    New,
+    New(NewFileSystemType),
 
     /// # Adopted
     ///
     /// Use an existing file system from an adopted partition.
-    Adopted,
+    Adopted(AdoptedFileSystemType),
 
     /// # Image
     ///
@@ -97,18 +209,6 @@ where
             path: value.into(),
             options: MountOptions::defaults(),
         }
-    }
-}
-
-#[cfg(test)]
-mod aaa {
-    use super::*;
-
-    #[test]
-    fn test_mount_point_from_str() {
-        let mount_point: MountPoint = "/mnt".into();
-        assert_eq!(mount_point.path, PathBuf::from("/mnt"));
-        assert_eq!(mount_point.options, MountOptions::defaults());
     }
 }
 
@@ -328,7 +428,6 @@ impl FileSystemType {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MountPointInfo<'a> {
     pub mount_point: &'a MountPoint,
-    pub fs_type: FileSystemType,
     pub is_verity: bool,
     pub device_id: Option<&'a BlockDeviceId>,
 }
@@ -343,14 +442,14 @@ impl FileSystem {
                 "src",
                 Some(
                     match &self.source {
-                        FileSystemSource::New => "new",
-                        FileSystemSource::Adopted => "adopted",
+                        FileSystemSource::New(_) => "new",
+                        FileSystemSource::Adopted(_) => "adopted",
                         FileSystemSource::Image => "image",
                     }
                     .to_owned(),
                 ),
             ),
-            ("type", Some(self.fs_type.to_string())),
+            // ("type", Some(self.fs_type.to_string())),
             ("dev", self.device_id.clone()),
             (
                 "mnt",
@@ -397,11 +496,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_mount_point_from_str() {
+        let mount_point: MountPoint = "/mnt".into();
+        assert_eq!(mount_point.path, PathBuf::from("/mnt"));
+        assert_eq!(mount_point.options, MountOptions::defaults());
+    }
+
+    #[test]
     fn test_filesystem_mount_point_path() {
         let mut fs = FileSystem {
             device_id: Some("device_id".to_string()),
-            fs_type: FileSystemType::Ext4,
-            source: FileSystemSource::Image,
+            source: Default::default(),
             mount_point: None,
         };
         assert_eq!(fs.mount_point_path(), None);

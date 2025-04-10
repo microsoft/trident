@@ -36,20 +36,16 @@ storage:
         volumeBId: root-b
   filesystems:
     - deviceId: trident
-      type: ext4
       source: new
       mountPoint: /var/lib/trident
     - deviceId: home
-      type: ext4
       source: new
       mountPoint: /home
     - deviceId: esp
-      type: vfat
       mountPoint:
         path: /boot/efi
         options: umask=0077
     - deviceId: root
-      type: ext4
       mountPoint: /
   swap:
     - swap

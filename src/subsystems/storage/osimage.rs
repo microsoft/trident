@@ -8,7 +8,7 @@ use log::{debug, error, trace, warn};
 
 use osutils::{df, lsblk};
 use trident_api::{
-    config::{FileSystemSource, FileSystemType},
+    config::FileSystemSource,
     constants::{
         internal_params::{ALLOW_UNUSED_FILESYSTEMS_IN_COSI, DISABLE_FS_BLOCK_DEVICE_SIZE_CHECK},
         BOOT_MOUNT_POINT_PATH,
@@ -28,33 +28,6 @@ use crate::{
 };
 
 use super::EngineContext;
-
-/// Checks if the filesystem types in the OS image and the Host Configuration match.
-fn check_fs_match(a: FileSystemType, b: OsImageFileSystemType) -> bool {
-    match (a, b) {
-        (FileSystemType::Auto, _) => true,
-        (FileSystemType::Ext4, OsImageFileSystemType::Ext4) => true,
-        (FileSystemType::Vfat, OsImageFileSystemType::Vfat) => true,
-        (FileSystemType::Ntfs, OsImageFileSystemType::Ntfs) => true,
-        (FileSystemType::Iso9660, OsImageFileSystemType::Iso9660) => true,
-        (FileSystemType::Xfs, OsImageFileSystemType::Xfs) => true,
-
-        // Any mis-matching should be considered a failure
-        (
-            FileSystemType::Ext4
-            | FileSystemType::Vfat
-            | FileSystemType::Ntfs
-            | FileSystemType::Iso9660
-            | FileSystemType::Xfs,
-            _,
-        ) => false,
-
-        // Host Configuration filesystem types Swap, Tmpfs, and Overlay do not
-        // map to any OS image filesystem types
-        (FileSystemType::Tmpfs, _) => false,
-        (FileSystemType::Overlay, _) => false,
-    }
-}
 
 /// Validates that the Host Configuration aligns with the OS image metadata.
 ///
@@ -105,10 +78,10 @@ fn validate_filesystems(os_image: &OsImage, ctx: &EngineContext) -> Result<(), T
         .filesystems()
         .chain(os_image.esp_filesystem())
         .collect::<Vec<_>>();
-    let os_image_filesystems_map = all_os_image_filesystems
+    let os_image_filesystems_set = all_os_image_filesystems
         .iter()
-        .map(|fs| (fs.mount_point.as_path(), fs.fs_type))
-        .collect::<HashMap<&Path, OsImageFileSystemType>>();
+        .map(|fs| fs.mount_point.as_path())
+        .collect::<HashSet<&Path>>();
 
     // Populate hashmap with ALL filesystems from Host Configuration
     let all_hc_filesystems_map = ctx
@@ -133,8 +106,11 @@ fn validate_filesystems(os_image: &OsImage, ctx: &EngineContext) -> Result<(), T
         .collect::<Result<HashMap<_, _>, TridentError>>()?;
 
     // Create sets of mount points to check for missing or unused filesystems
-    let os_image_filesystems_set = os_image_filesystems_map.keys().collect::<HashSet<_>>();
-    let all_hc_filesystems_set = all_hc_filesystems_map.keys().collect::<HashSet<_>>();
+    // let os_image_filesystems_set = os_image_filesystems_map.keys().collect::<HashSet<_>>();
+    let all_hc_filesystems_set = all_hc_filesystems_map
+        .keys()
+        .copied()
+        .collect::<HashSet<_>>();
 
     // Check that all filesystems in OS image are present in Host Config.
     // Because we are comparing against _all_ filesystems sourced from an image,
@@ -157,7 +133,6 @@ fn validate_filesystems(os_image: &OsImage, ctx: &EngineContext) -> Result<(), T
         return Err(TridentError::new(
             InvalidInputError::UnusedOsImageFilesystem {
                 mount_point: not_found_in_hc.display().to_string(),
-                fs_type: os_image_filesystems_map[*not_found_in_hc].to_string(),
             },
         ));
     }
@@ -185,7 +160,10 @@ fn validate_filesystems(os_image: &OsImage, ctx: &EngineContext) -> Result<(), T
         })
         .collect::<HashMap<_, _>>();
 
-    let required_hc_filesystems_set = required_hc_filesystems_map.keys().collect::<HashSet<_>>();
+    let required_hc_filesystems_set = required_hc_filesystems_map
+        .keys()
+        .copied()
+        .collect::<HashSet<_>>();
 
     // Check that all required filesystems are present in OS image
     if let Some(not_found_in_os_img) = required_hc_filesystems_set
@@ -195,31 +173,8 @@ fn validate_filesystems(os_image: &OsImage, ctx: &EngineContext) -> Result<(), T
         return Err(TridentError::new(
             InvalidInputError::MissingOsImageFilesystem {
                 mount_point: not_found_in_os_img.display().to_string(),
-                fs_type: required_hc_filesystems_map[*not_found_in_os_img]
-                    .0
-                    .fs_type
-                    .to_string(),
             },
         ));
-    }
-
-    // TODO: remove this check once we stop requiring FS type in the API for
-    // filesystems coming from images.
-    //
-    // Check for mismatched filesystems, i.e. mount point exists in both OS
-    // image and Host Configuration but filesystem type differs
-    if let Some((mount_point, (fs, _))) =
-        required_hc_filesystems_map
-            .iter()
-            .find(|(mount_point, (fs, _))| {
-                !check_fs_match(fs.fs_type, os_image_filesystems_map[*mount_point])
-            })
-    {
-        return Err(TridentError::new(InvalidInputError::MismatchedFsType {
-            mount_point: mount_point.display().to_string(),
-            hc_fs_type: fs.fs_type.to_string(),
-            os_img_fs_type: os_image_filesystems_map[*mount_point].to_string(),
-        }));
     }
 
     Ok(())
@@ -552,7 +507,7 @@ mod tests {
             part_id
         };
 
-        for (mnt, fs_type, on_ab) in hc_data {
+        for (mnt, _fs_type, on_ab) in hc_data {
             let device_id = if *on_ab {
                 let part_a = pushpart();
                 let part_b = pushpart();
@@ -569,7 +524,6 @@ mod tests {
 
             filesystems.push(FileSystem {
                 device_id: Some(device_id),
-                fs_type: *fs_type,
                 source: FileSystemSource::Image,
                 mount_point: Some(MountPoint {
                     path: mnt.as_ref().to_path_buf(),
@@ -792,7 +746,6 @@ mod tests {
             }],
             filesystems: vec![FileSystem {
                 device_id: Some("data".into()),
-                fs_type: FileSystemType::Ext4,
                 source: FileSystemSource::Image,
                 mount_point: Some(MountPoint::from_str(ROOT_MOUNT_POINT_PATH).unwrap()),
             }],
@@ -840,7 +793,6 @@ mod tests {
             }],
             filesystems: vec![FileSystem {
                 device_id: Some("verity".into()),
-                fs_type: FileSystemType::Ext4,
                 source: FileSystemSource::Image,
                 mount_point: Some(MountPoint::from_str(ROOT_MOUNT_POINT_PATH).unwrap()),
             }],
@@ -888,7 +840,6 @@ mod tests {
             }],
             filesystems: vec![FileSystem {
                 device_id: Some("verity".into()),
-                fs_type: FileSystemType::Ext4,
                 source: FileSystemSource::Image,
                 mount_point: Some(MountPoint::from_str(ROOT_MOUNT_POINT_PATH).unwrap()),
             }],
@@ -937,7 +888,6 @@ mod tests {
             }],
             filesystems: vec![FileSystem {
                 device_id: Some("data".into()),
-                fs_type: FileSystemType::Ext4,
                 source: FileSystemSource::Image,
                 mount_point: Some(MountPoint::from_str(ROOT_MOUNT_POINT_PATH).unwrap()),
             }],
@@ -1002,41 +952,9 @@ mod tests {
             validation_err.kind(),
             &ErrorKind::InvalidInput(InvalidInputError::UnusedOsImageFilesystem {
                 mount_point: "/mnt/unused/C".to_string(),
-                fs_type: "ext4".to_string()
             }),
             "Expected UnusedOsImageFilesystem error"
         );
-    }
-
-    /// This test checks the scenario where the filesystems on the OS image do not match those in
-    /// the Host Configuration
-    #[test]
-    fn test_validate_host_config_failure_mismatch() {
-        let hc_entries = [
-            ("/mnt/path/A", FileSystemType::Ext4),
-            ("/mnt/path/B", FileSystemType::Xfs),
-        ];
-
-        let img_entries = [
-            ("/mnt/path/A", OsImageFileSystemType::Ext4),
-            ("/mnt/path/B", OsImageFileSystemType::Vfat),
-        ];
-
-        // Generate HC from mock entries
-        let ctx = generate_test_context(hc_entries.iter(), img_entries.iter());
-        let img = ctx.image.as_ref().unwrap();
-
-        // Test that validation does not pass
-        let validation_err = validate_filesystems(img, &ctx).unwrap_err();
-        assert_eq!(
-            validation_err.kind(),
-            &ErrorKind::InvalidInput(InvalidInputError::MismatchedFsType {
-                mount_point: "/mnt/path/B".to_string(),
-                hc_fs_type: "xfs".to_string(),
-                os_img_fs_type: "vfat".to_string()
-            }),
-            "Expected MismatchedFsType error"
-        )
     }
 
     /// This test checks the scenario where a filesystem on the Host Configuration is missing from
@@ -1064,7 +982,6 @@ mod tests {
             validation_err.kind(),
             &ErrorKind::InvalidInput(InvalidInputError::MissingOsImageFilesystem {
                 mount_point: "/mnt/path/C".to_string(),
-                fs_type: "ext4".to_string()
             }),
             "Expected MissingOsImageFilesystem error"
         )
@@ -1126,49 +1043,9 @@ mod tests {
             validation_err.kind(),
             &ErrorKind::InvalidInput(InvalidInputError::UnusedOsImageFilesystem {
                 mount_point: "/mnt/unused/C".to_string(),
-                fs_type: "ext4".to_string()
             }),
             "Expected UnusedOsImageFilesystem error"
         );
-    }
-
-    #[test]
-    fn test_check_fs_match() {
-        // Check success
-        assert!(check_fs_match(
-            FileSystemType::Ext4,
-            OsImageFileSystemType::Ext4
-        ));
-        assert!(check_fs_match(
-            FileSystemType::Vfat,
-            OsImageFileSystemType::Vfat
-        ));
-        assert!(check_fs_match(
-            FileSystemType::Ntfs,
-            OsImageFileSystemType::Ntfs
-        ));
-        assert!(check_fs_match(
-            FileSystemType::Iso9660,
-            OsImageFileSystemType::Iso9660
-        ));
-        assert!(check_fs_match(
-            FileSystemType::Xfs,
-            OsImageFileSystemType::Xfs
-        ));
-        assert!(check_fs_match(
-            FileSystemType::Auto,
-            OsImageFileSystemType::Msdos
-        ));
-
-        // Check failure
-        assert!(!check_fs_match(
-            FileSystemType::Tmpfs,
-            OsImageFileSystemType::Msdos
-        ));
-        assert!(!check_fs_match(
-            FileSystemType::Overlay,
-            OsImageFileSystemType::Ext2
-        ));
     }
 }
 
@@ -1234,7 +1111,6 @@ mod functional_test {
                 storage: Storage {
                     filesystems: vec![FileSystem {
                         device_id: Some("root".into()),
-                        fs_type: FileSystemType::Ext4,
                         source: FileSystemSource::Image,
                         mount_point: Some(MountPoint::from_str("/").unwrap()),
                     }],

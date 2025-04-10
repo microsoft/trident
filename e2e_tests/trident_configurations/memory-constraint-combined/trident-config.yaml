@@ -159,36 +159,28 @@ storage:
       hashDeviceId: root-hash
   filesystems:
     - deviceId: web
-      type: ext4
       source: new
       mountPoint:
         path: /web
         options: defaults
     - deviceId: home
-      type: ext4
       source: new
       mountPoint: /home
     - deviceId: esp
-      type: vfat
       mountPoint:
         path: /boot/efi
         options: umask=0077
     - deviceId: trident-overlay
-      type: ext4
       source: new
       mountPoint: /var/lib/trident-overlay
     - deviceId: boot
-      type: ext4
       mountPoint: /boot
     - deviceId: trident
-      type: ext4
       source: new
       mountPoint: /var/lib/trident
     - deviceId: var
-      type: ext4
       mountPoint: /var
-    - type: ext4
-      deviceId: root
+    - deviceId: root
       mountPoint:
         path: /
         options: defaults,ro

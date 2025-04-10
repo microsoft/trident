@@ -14,21 +14,59 @@ Create a new file system.
 
 | Characteristic | Value    |
 | -------------- | -------- |
+| Type           | `object` |
+
+### Properties
+
+#### `source` **<span style="color:orange;">(required)</span>**
+
+| Characteristic | Value    |
+| -------------- | -------- |
 | Type           | `string` |
 | Value          | `new`    |
+
+#### `type` **<span style="color:orange;">(required)</span>**
+
+| Characteristic | Value                                       |
+| -------------- | ------------------------------------------- |
+| Type           | `NewFileSystemType`                         |
+| Link           | [NewFileSystemType](./NewFileSystemType.md) |
 
 ### Adopted
 
 Use an existing file system from an adopted partition.
+
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `object` |
+
+### Properties
+
+#### `source` **<span style="color:orange;">(required)</span>**
 
 | Characteristic | Value     |
 | -------------- | --------- |
 | Type           | `string`  |
 | Value          | `adopted` |
 
+#### `type` **<span style="color:orange;">(required)</span>**
+
+| Characteristic | Value                                               |
+| -------------- | --------------------------------------------------- |
+| Type           | `AdoptedFileSystemType`                             |
+| Link           | [AdoptedFileSystemType](./AdoptedFileSystemType.md) |
+
 ### Image
 
 Use an existing file system from an image.
+
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `object` |
+
+### Properties
+
+#### `source` **<span style="color:orange;">(required)</span>**
 
 | Characteristic | Value    |
 | -------------- | -------- |

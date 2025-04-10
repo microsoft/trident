@@ -197,42 +197,37 @@ storage:
       volumeBId: var-b
   filesystems:
   - deviceId: esp1
-    type: vfat
     mountPoint:
       path: /boot/efi
       options: umask=0077
   - deviceId: esp2
-    type: vfat
   - deviceId: boot
-    type: ext4
     mountPoint:
       path: /boot
       options: defaults
   - deviceId: trident
-    type: ext4
     source: new
+    type: ext4
     mountPoint:
       path: /var/lib/trident
       options: defaults
   - deviceId: trident-overlay
-    type: ext4
     source: new
+    type: ext4
     mountPoint:
       path: /var/lib/trident-overlay
       options: defaults
   - deviceId: var
-    type: ext4
     mountPoint:
       path: /var
       options: defaults
   - deviceId: home
-    type: ext4
     source: new
+    type: ext4
     mountPoint:
       path: /home
       options: defaults
   - deviceId: root
-    type: ext4
     mountPoint:
       path: /
       options: ro

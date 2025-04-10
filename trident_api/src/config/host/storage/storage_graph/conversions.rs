@@ -14,8 +14,8 @@ use super::{
 impl From<&FileSystemSource> for FileSystemSourceKind {
     fn from(source: &FileSystemSource) -> Self {
         match source {
-            FileSystemSource::New => Self::New,
-            FileSystemSource::Adopted => Self::Adopted,
+            FileSystemSource::New(_) => Self::New,
+            FileSystemSource::Adopted(_) => Self::Adopted,
             FileSystemSource::Image => Self::Image,
         }
     }
@@ -98,16 +98,16 @@ impl From<&FileSystem> for StorageGraphNode {
 /// Get a BlkDevReferrerKind from a FileSystem reference.
 impl From<&FileSystem> for BlkDevReferrerKind {
     fn from(fs: &FileSystem) -> Self {
-        if fs.fs_type.expects_block_device_id() {
+        if fs.source.expects_block_device_id() {
             // Filesystems that require a block device are filesystem referrers.
             match &fs.source {
                 // If we're creating a filesystem, then it's a regular
                 // filesystem referrer.
-                FileSystemSource::New => BlkDevReferrerKind::FileSystemNew,
+                FileSystemSource::New(_) => BlkDevReferrerKind::FileSystemNew,
 
                 // If we're adopting a filesystem, then it's an adopted
                 // filesystem referrer.
-                FileSystemSource::Adopted => BlkDevReferrerKind::FileSystemAdopted,
+                FileSystemSource::Adopted(_) => BlkDevReferrerKind::FileSystemAdopted,
 
                 // If it's an OS image, then check the mount point...
                 FileSystemSource::Image => {

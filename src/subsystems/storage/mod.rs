@@ -222,7 +222,7 @@ mod tests {
     use osutils::encryption;
     use trident_api::{
         config::{
-            Disk as DiskConfig, FileSystem, FileSystemType, HostConfiguration, MountPoint,
+            Disk as DiskConfig, FileSystem, HostConfiguration, MountPoint,
             Partition as PartitionConfig, PartitionSize, PartitionType, Raid, RaidLevel,
             SoftwareRaidArray, Storage as StorageConfig,
         },
@@ -310,7 +310,6 @@ mod tests {
                 },
                 filesystems: vec![FileSystem {
                     device_id: Some("part1".to_owned()),
-                    fs_type: FileSystemType::Ext4,
                     source: Default::default(),
                     mount_point: Some(MountPoint::from_str("/").unwrap()),
                 }],

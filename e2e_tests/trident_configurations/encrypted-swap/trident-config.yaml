@@ -27,12 +27,10 @@ storage:
         deviceId: swap-e
   filesystems:
     - deviceId: esp
-      type: vfat
       mountPoint:
         path: /boot/efi
         options: umask=0077
     - deviceId: root
-      type: ext4
       mountPoint: /
   swap:
     - swap

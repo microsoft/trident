@@ -25,6 +25,7 @@ pub mod abupdate;
 pub mod disks;
 pub mod encryption;
 pub mod filesystem;
+pub mod filesystem_types;
 pub mod partitions;
 pub mod raid;
 pub mod storage_graph;
@@ -70,7 +71,12 @@ pub struct Storage {
     pub ab_update: Option<AbUpdate>,
 
     /// Filesystems in this host.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        deserialize_with = "filesystem::fs_serde::deserialize",
+        serialize_with = "filesystem::fs_serde::serialize"
+    )]
     pub filesystems: Vec<FileSystem>,
 
     /// Verity device configuration.
@@ -400,7 +406,6 @@ impl Storage {
         self.filesystems.iter().filter_map(|fs| {
             fs.mount_point.as_ref().map(|mp| MountPointInfo {
                 mount_point: mp,
-                fs_type: fs.fs_type,
                 is_verity: false,
                 device_id: fs.device_id.as_ref(),
             })
@@ -547,7 +552,8 @@ mod tests {
         abupdate::AbVolumePair,
         disks::PartitionTableType,
         encryption::EncryptedVolume,
-        filesystem::{FileSystemSource, FileSystemType, MountOptions, MountPoint},
+        filesystem::{FileSystemSource, MountOptions, MountPoint},
+        filesystem_types::NewFileSystemType,
         partitions::{PartitionSize, PartitionType},
         raid::{RaidLevel, SoftwareRaidArray},
     };
@@ -646,7 +652,6 @@ mod tests {
             filesystems: vec![
                 FileSystem {
                     device_id: Some("esp".to_owned()),
-                    fs_type: FileSystemType::Vfat,
                     source: FileSystemSource::Image,
                     mount_point: Some(MountPoint {
                         path: PathBuf::from(ESP_MOUNT_POINT_PATH),
@@ -655,7 +660,6 @@ mod tests {
                 },
                 FileSystem {
                     device_id: Some("boot".into()),
-                    fs_type: FileSystemType::Ext4,
                     source: FileSystemSource::Image,
                     mount_point: Some(MountPoint {
                         path: PathBuf::from(BOOT_MOUNT_POINT_PATH),
@@ -664,7 +668,6 @@ mod tests {
                 },
                 FileSystem {
                     device_id: Some("root".into()),
-                    fs_type: FileSystemType::Ext4,
                     source: FileSystemSource::Image,
                     mount_point: Some(MountPoint {
                         path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
@@ -673,8 +676,7 @@ mod tests {
                 },
                 FileSystem {
                     device_id: Some("srv".into()),
-                    fs_type: FileSystemType::Ext4,
-                    source: FileSystemSource::New,
+                    source: FileSystemSource::New(NewFileSystemType::Ext4),
                     mount_point: Some(MountPoint {
                         path: PathBuf::from("/srv"),
                         options: MountOptions::empty(),
@@ -682,8 +684,7 @@ mod tests {
                 },
                 FileSystem {
                     device_id: Some("overlay".into()),
-                    fs_type: FileSystemType::Ext4,
-                    source: FileSystemSource::New,
+                    source: FileSystemSource::New(NewFileSystemType::Ext4),
                     mount_point: Some(MountPoint {
                         path: PathBuf::from(TRIDENT_OVERLAY_PATH),
                         options: MountOptions::empty(),
@@ -691,8 +692,7 @@ mod tests {
                 },
                 FileSystem {
                     device_id: Some("mnt".into()),
-                    fs_type: FileSystemType::Ext4,
-                    source: FileSystemSource::New,
+                    source: FileSystemSource::New(NewFileSystemType::Ext4),
                     mount_point: Some(MountPoint {
                         path: PathBuf::from("/mnt"),
                         options: MountOptions::empty(),
@@ -700,8 +700,7 @@ mod tests {
                 },
                 FileSystem {
                     device_id: Some("var".into()),
-                    fs_type: FileSystemType::Ext4,
-                    source: FileSystemSource::New,
+                    source: FileSystemSource::New(NewFileSystemType::Ext4),
                     mount_point: Some(MountPoint {
                         path: PathBuf::from("/var"),
                         options: MountOptions::empty(),
@@ -737,7 +736,6 @@ mod tests {
         }];
         storage.filesystems.push(FileSystem {
             device_id: Some("root".into()),
-            fs_type: FileSystemType::Ext4,
             source: FileSystemSource::Image,
             mount_point: Some(MountPoint {
                 path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
@@ -865,7 +863,6 @@ mod tests {
             filesystems: vec![
                 FileSystem {
                     device_id: Some("disk1-partition1".to_string()),
-                    fs_type: FileSystemType::Vfat,
                     source: FileSystemSource::Image,
                     mount_point: Some(MountPoint {
                         path: PathBuf::from(ESP_MOUNT_POINT_PATH),
@@ -874,7 +871,6 @@ mod tests {
                 },
                 FileSystem {
                     device_id: Some("disk1-partition2".to_string()),
-                    fs_type: FileSystemType::Ext4,
                     source: FileSystemSource::Image,
                     mount_point: Some(MountPoint {
                         path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
@@ -897,7 +893,6 @@ mod tests {
             filesystems: vec![
                 FileSystem {
                     device_id: Some("ab-update-volume-pair".to_string()),
-                    fs_type: FileSystemType::Ext4,
                     source: FileSystemSource::Image,
                     mount_point: Some(MountPoint {
                         path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
@@ -906,7 +901,6 @@ mod tests {
                 },
                 FileSystem {
                     device_id: Some("disk1-partition1".to_string()),
-                    fs_type: FileSystemType::Vfat,
                     source: FileSystemSource::Image,
                     mount_point: Some(MountPoint {
                         path: PathBuf::from(ESP_MOUNT_POINT_PATH),
@@ -959,7 +953,6 @@ mod tests {
         let bad_filesystem_target = Storage {
             filesystems: vec![FileSystem {
                 device_id: Some("disk99".to_string()),
-                fs_type: FileSystemType::Ext4,
                 source: FileSystemSource::Image,
                 mount_point: Some(MountPoint {
                     path: PathBuf::from("/some/path"),
@@ -1036,7 +1029,6 @@ mod tests {
             filesystems: vec![
                 FileSystem {
                     device_id: Some("part1".to_owned()),
-                    fs_type: FileSystemType::Vfat,
                     source: FileSystemSource::Image,
                     mount_point: Some(MountPoint {
                         path: PathBuf::from(ESP_MOUNT_POINT_PATH),
@@ -1045,7 +1037,6 @@ mod tests {
                 },
                 FileSystem {
                     device_id: Some("ab1".to_owned()),
-                    fs_type: FileSystemType::Ext4,
                     source: FileSystemSource::Image,
                     mount_point: Some(MountPoint {
                         path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
@@ -1413,8 +1404,7 @@ mod tests {
             });
         storage.filesystems.push(FileSystem {
             device_id: Some("alt".to_owned()),
-            fs_type: FileSystemType::Ext4,
-            source: FileSystemSource::New,
+            source: FileSystemSource::New(NewFileSystemType::Ext4),
             mount_point: Some(MountPoint {
                 path: PathBuf::from("/alt"),
                 options: MountOptions::empty(),
@@ -1833,8 +1823,7 @@ mod tests {
             });
         storage.filesystems.push(FileSystem {
             device_id: Some("alt".to_owned()),
-            fs_type: FileSystemType::Ext4,
-            source: FileSystemSource::New,
+            source: FileSystemSource::New(NewFileSystemType::Ext4),
             mount_point: Some(MountPoint {
                 path: PathBuf::from("/alt"),
                 options: MountOptions::empty(),
@@ -1867,8 +1856,7 @@ mod tests {
         // Add a new filesystem to the partition used for encryption
         storage.filesystems.push(FileSystem {
             device_id: Some("srv-enc".to_owned()),
-            fs_type: FileSystemType::Ext4,
-            source: FileSystemSource::New,
+            source: FileSystemSource::New(NewFileSystemType::Ext4),
             mount_point: Some(MountPoint {
                 path: PathBuf::from("/mnt/some-mount-point"),
                 options: MountOptions::empty(),
@@ -2150,7 +2138,7 @@ mod tests {
         let mut storage: Storage = get_verity_storage();
 
         // Change the boot fs to create instead of image
-        storage.filesystems[1].source = FileSystemSource::New;
+        storage.filesystems[1].source = FileSystemSource::New(NewFileSystemType::default());
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
@@ -2241,7 +2229,6 @@ mod tests {
                 FileSystem {
                     source: FileSystemSource::Image,
                     device_id: Some("esp".to_string()),
-                    fs_type: FileSystemType::Vfat,
                     mount_point: Some(MountPoint {
                         path: ESP_MOUNT_POINT_PATH.into(),
                         options: MountOptions::defaults(),
@@ -2249,7 +2236,6 @@ mod tests {
                 },
                 FileSystem {
                     device_id: Some("root".into()),
-                    fs_type: FileSystemType::Ext4,
                     source: FileSystemSource::Image,
                     mount_point: Some(MountPoint {
                         path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
@@ -2258,8 +2244,7 @@ mod tests {
                 },
                 FileSystem {
                     device_id: Some("var".into()),
-                    fs_type: FileSystemType::Ext4,
-                    source: FileSystemSource::New,
+                    source: FileSystemSource::New(NewFileSystemType::Ext4),
                     mount_point: Some(MountPoint {
                         path: PathBuf::from("/var"),
                         options: MountOptions::empty(),
@@ -2397,7 +2382,6 @@ mod tests {
                 },
                 filesystems: vec![FileSystem {
                     device_id: Some("part1".to_owned()),
-                    fs_type: FileSystemType::Vfat,
                     source: FileSystemSource::Image,
                     mount_point: Some(MountPoint {
                         path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
@@ -2425,8 +2409,7 @@ mod tests {
         // ensure to pick the longest prefix
         host_config.storage.filesystems.push(FileSystem {
             device_id: Some("part2".to_owned()),
-            fs_type: FileSystemType::Ext4,
-            source: FileSystemSource::New,
+            source: FileSystemSource::New(NewFileSystemType::Ext4),
             mount_point: Some(MountPoint {
                 path: PathBuf::from(ROOT_MOUNT_POINT_PATH).join("boot"),
                 options: MountOptions::empty(),
@@ -2497,7 +2480,6 @@ mod tests {
                 filesystems: vec![
                     FileSystem {
                         device_id: Some("esp".into()),
-                        fs_type: FileSystemType::Vfat,
                         source: FileSystemSource::Image,
                         mount_point: Some(MountPoint {
                             path: PathBuf::from("/esp"),
@@ -2506,7 +2488,6 @@ mod tests {
                     },
                     FileSystem {
                         device_id: Some("root".into()),
-                        fs_type: FileSystemType::Vfat,
                         source: FileSystemSource::Image,
                         mount_point: Some(MountPoint {
                             path: PathBuf::from("/"),
@@ -2515,7 +2496,6 @@ mod tests {
                     },
                     FileSystem {
                         device_id: Some("trident".into()),
-                        fs_type: FileSystemType::Vfat,
                         source: FileSystemSource::Image,
                         mount_point: None,
                     },

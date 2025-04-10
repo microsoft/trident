@@ -525,7 +525,7 @@ mod tests {
     use tempfile::TempDir;
 
     use trident_api::config::{
-        FileSystemSource, FileSystemType, HostConfiguration, MountOptions, MountPoint, Storage,
+        FileSystemSource, HostConfiguration, MountOptions, MountPoint, Storage,
     };
 
     #[test]
@@ -539,7 +539,6 @@ mod tests {
                             options: MountOptions::empty(),
                         }),
                         device_id: Some("sda3".to_string()),
-                        fs_type: FileSystemType::Vfat,
                         source: FileSystemSource::Image,
                     },
                     FileSystem {
@@ -548,7 +547,6 @@ mod tests {
                             options: MountOptions::empty(),
                         }),
                         device_id: Some("sda1".to_string()),
-                        fs_type: FileSystemType::Ext4,
                         source: FileSystemSource::Image,
                     },
                     FileSystem {
@@ -557,7 +555,6 @@ mod tests {
                             options: MountOptions::empty(),
                         }),
                         device_id: Some("sda1".to_string()),
-                        fs_type: FileSystemType::Ext4,
                         source: FileSystemSource::Image,
                     },
                     FileSystem {
@@ -566,7 +563,6 @@ mod tests {
                             options: MountOptions::empty(),
                         }),
                         device_id: Some("sda1".to_string()),
-                        fs_type: FileSystemType::Ext4,
                         source: FileSystemSource::Image,
                     },
                     FileSystem {
@@ -575,7 +571,6 @@ mod tests {
                             options: MountOptions::empty(),
                         }),
                         device_id: Some("sda2".to_string()),
-                        fs_type: FileSystemType::Ext4,
                         source: FileSystemSource::Image,
                     },
                 ],
@@ -714,8 +709,8 @@ mod functional_test {
     use sysdefs::partition_types::DiscoverablePartitionType;
     use trident_api::{
         config::{
-            self, Disk, FileSystemSource, FileSystemType, HostConfiguration, MountOptions,
-            MountPoint, Partition, PartitionSize, PartitionType,
+            self, Disk, FileSystemSource, HostConfiguration, MountOptions, MountPoint, Partition,
+            PartitionSize, PartitionType,
         },
         constants::{ESP_RELATIVE_MOUNT_POINT_PATH, MOUNT_OPTION_READ_ONLY},
         error::ErrorKind,
@@ -754,7 +749,6 @@ mod functional_test {
                             options: MountOptions(MOUNT_OPTION_READ_ONLY.into()),
                         }),
                         device_id: Some("sr0".to_string()),
-                        fs_type: FileSystemType::Iso9660,
                         source: FileSystemSource::Image,
                     }],
                     ..Default::default()
@@ -827,7 +821,6 @@ mod functional_test {
                                 options: MountOptions::default(),
                             }),
                             device_id: Some("root".to_string()),
-                            fs_type: FileSystemType::Ext4,
                             source: FileSystemSource::Image,
                         },
                         FileSystem {
@@ -836,7 +829,6 @@ mod functional_test {
                                 options: MountOptions("umask=0077".into()),
                             }),
                             device_id: Some("esp".to_string()),
-                            fs_type: FileSystemType::Vfat,
                             source: FileSystemSource::Image,
                         },
                     ],
@@ -956,7 +948,6 @@ mod functional_test {
                             options: MountOptions("bad-options".into()),
                         }),
                         device_id: Some("sr0".to_string()),
-                        fs_type: FileSystemType::Iso9660,
                         source: FileSystemSource::Image,
                     }],
                     ..Default::default()
@@ -1064,7 +1055,6 @@ mod functional_test {
                             options: MountOptions(MOUNT_OPTION_READ_ONLY.into()),
                         }),
                         device_id: Some("sr0".to_string()),
-                        fs_type: FileSystemType::Iso9660,
                         source: FileSystemSource::Image,
                     }],
                     ..Default::default()
@@ -1152,7 +1142,6 @@ mod functional_test {
                             options: MountOptions::empty(),
                         }),
                         device_id: Some("staging".to_string()),
-                        fs_type: FileSystemType::Ntfs,
                         source: FileSystemSource::Image,
                     }],
                     ..Default::default()

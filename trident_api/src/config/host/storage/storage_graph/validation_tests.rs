@@ -19,15 +19,11 @@ use super::{
 use crate::{
     config::{
         AbVolumePair, AdoptedPartition, Disk, EncryptedVolume, FileSystem, FileSystemSource,
-        FileSystemType, MountOptions, MountPoint, Partition, PartitionSize, PartitionTableType,
+        MountOptions, MountPoint, NewFileSystemType, Partition, PartitionSize, PartitionTableType,
         PartitionType, RaidLevel, SoftwareRaidArray,
     },
     constants::{ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
-    storage_graph::{
-        containers::ItemList,
-        rules::expected_partition_type,
-        types::{BlkDevKind, FileSystemSourceKind},
-    },
+    storage_graph::{rules::expected_partition_type, types::BlkDevKind},
 };
 
 // Helper function to create a generic partition used in unit tests
@@ -92,7 +88,6 @@ fn test_basic_graph() {
 
     let fs = FileSystem {
         device_id: Some("partition6".into()),
-        fs_type: FileSystemType::Ext4,
         source: FileSystemSource::Image,
         mount_point: Some(MountPoint {
             path: ROOT_MOUNT_POINT_PATH.into(),
@@ -137,7 +132,6 @@ fn test_duplicate_mountpoint() {
 
     let fs1 = FileSystem {
         device_id: Some("partition".into()),
-        fs_type: FileSystemType::Ext4,
         source: FileSystemSource::Image,
         mount_point: Some(MountPoint {
             path: ROOT_MOUNT_POINT_PATH.into(),
@@ -204,53 +198,11 @@ fn test_duplicate_member() {
 }
 
 #[test]
-fn test_filesystem_incompatible_source() {
-    let mut builder_base = StorageGraphBuilder::default();
-    let partition = generic_partition();
-    builder_base.add_node((&partition).into());
-
-    // Should pass
-    let fs1 = FileSystem {
-        device_id: Some("partition".into()),
-        fs_type: FileSystemType::Ext4,
-        source: FileSystemSource::Image,
-        mount_point: Some(MountPoint {
-            path: ROOT_MOUNT_POINT_PATH.into(),
-            options: MountOptions::empty(),
-        }),
-    };
-    let mut builder = builder_base.clone();
-    builder.add_node((&fs1).into());
-    builder.build().unwrap();
-
-    // Should fail
-    // FileSystemType::Auto is only compatible with source type Adopted
-    let fs3 = FileSystem {
-        device_id: Some("partition".into()),
-        fs_type: FileSystemType::Auto,
-        source: FileSystemSource::Image,
-        mount_point: None,
-    };
-    let mut builder = builder_base.clone();
-    builder.add_node((&fs3).into());
-
-    assert_eq!(
-        builder.build().unwrap_err(),
-        StorageGraphBuildError::FilesystemIncompatibleSource {
-            fs_desc: fs3.description(),
-            fs_source: FileSystemSourceKind::Image,
-            fs_compatible_sources: ItemList(vec![FileSystemSourceKind::Adopted])
-        }
-    );
-}
-
-#[test]
 fn test_filesystem_missing_blkdev_id() {
     let builder_base = StorageGraphBuilder::default();
 
     let fs = FileSystem {
         device_id: None,
-        fs_type: FileSystemType::Vfat,
         source: FileSystemSource::Image,
         mount_point: Some(MountPoint {
             path: ROOT_MOUNT_POINT_PATH.into(),
@@ -273,8 +225,7 @@ fn test_filesystem_missing_mp() {
     // FileSystemType::Tmpfs expects a mount point
     let mut fs = FileSystem {
         device_id: None,
-        fs_type: FileSystemType::Tmpfs,
-        source: FileSystemSource::New,
+        source: FileSystemSource::New(NewFileSystemType::Tmpfs),
         mount_point: None,
     };
     let mut builder = StorageGraphBuilder::default();
@@ -306,8 +257,7 @@ fn test_unexpected_blkdev_id() {
     // FileSystemType::Tmpfs does not expect device_id
     let fs = FileSystem {
         device_id: Some("partition".into()),
-        fs_type: FileSystemType::Tmpfs,
-        source: FileSystemSource::New,
+        source: FileSystemSource::New(NewFileSystemType::Tmpfs),
         mount_point: Some(MountPoint {
             path: ROOT_MOUNT_POINT_PATH.into(),
             options: MountOptions::defaults(),
@@ -605,7 +555,6 @@ fn test_mount_point_path_not_absolute() {
 
     let fs = FileSystem {
         device_id: Some("partition".into()),
-        fs_type: FileSystemType::Ext4,
         source: FileSystemSource::Image,
         mount_point: Some(MountPoint {
             path: "not/absolute".into(),
@@ -626,7 +575,6 @@ fn test_nonexistent_ref() {
 
     let fs = FileSystem {
         device_id: Some("partition".into()),
-        fs_type: FileSystemType::Ext4,
         source: FileSystemSource::Image,
         mount_point: Some(MountPoint {
             path: ROOT_MOUNT_POINT_PATH.into(),
@@ -718,7 +666,6 @@ fn test_esp_enforce_partition_type() {
 
     let fs = FileSystem {
         device_id: Some("partition".into()),
-        fs_type: FileSystemType::Vfat,
         source: FileSystemSource::Image,
         mount_point: Some(MountPoint {
             path: ESP_MOUNT_POINT_PATH.into(),
@@ -751,10 +698,7 @@ fn test_esp_enforce_partition_type() {
 mod verity {
     use super::*;
 
-    use crate::{
-        config::VerityDevice, constants::MOUNT_OPTION_READ_ONLY,
-        storage_graph::references::SpecialReferenceKind,
-    };
+    use crate::{config::VerityDevice, storage_graph::references::SpecialReferenceKind};
 
     #[test]
     fn test_verity_homogeneous_targets() {
@@ -919,55 +863,6 @@ mod verity {
                     .allowed_partition_types()
                     .unwrap(),
                 special_ref_kind: SpecialReferenceKind::VerityHashDevice,
-            }
-        );
-    }
-
-    #[test]
-    fn test_verity_unsupported_fs_type() {
-        let mut builder = StorageGraphBuilder::default();
-
-        let part1 = Partition {
-            id: "part1".into(),
-            size: PartitionSize::Fixed(4096.into()),
-            partition_type: PartitionType::Root,
-        };
-        builder.add_node((&part1).into());
-
-        let part2 = Partition {
-            id: "part2".into(),
-            size: PartitionSize::Fixed(4096.into()),
-            partition_type: PartitionType::RootVerity,
-        };
-        builder.add_node((&part2).into());
-
-        let verity_dev = VerityDevice {
-            id: "verity".into(),
-            data_device_id: "part1".into(),
-            hash_device_id: "part2".into(),
-            name: "verity".into(),
-            ..Default::default()
-        };
-
-        builder.add_node((&verity_dev).into());
-
-        let root_fs = FileSystem {
-            device_id: Some("verity".into()),
-            fs_type: FileSystemType::Ntfs, // Only Ext4 and Xfs are supported
-            source: FileSystemSource::Image,
-            mount_point: Some(MountPoint {
-                path: ROOT_MOUNT_POINT_PATH.into(),
-                options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
-            }),
-        };
-
-        builder.add_node((&root_fs).into());
-
-        assert_eq!(
-            builder.build().unwrap_err(),
-            StorageGraphBuildError::FilesystemVerityIncompatible {
-                fs_desc: root_fs.description(),
-                fs_type: FileSystemType::Ntfs,
             }
         );
     }

@@ -627,9 +627,9 @@ mod tests {
     };
     use trident_api::{
         config::{
-            AbUpdate, Disk, FileSystem, FileSystemSource, FileSystemType, HostConfiguration,
-            ImageSha384, MountOptions, MountPoint, OsImage, Partition, PartitionSize,
-            PartitionType, Raid, SoftwareRaidArray, Storage,
+            AbUpdate, Disk, FileSystem, FileSystemSource, HostConfiguration, ImageSha384,
+            MountOptions, MountPoint, OsImage, Partition, PartitionSize, PartitionType, Raid,
+            SoftwareRaidArray, Storage,
         },
         error::ErrorKind,
         status::{AbVolumeSelection, ServicingType},
@@ -746,7 +746,6 @@ mod tests {
                     filesystems: vec![FileSystem {
                         source: FileSystemSource::Image,
                         device_id: Some("esp".to_string()),
-                        fs_type: FileSystemType::Vfat,
                         mount_point: Some(MountPoint {
                             path: ESP_MOUNT_POINT_PATH.into(),
                             options: MountOptions::defaults(),
@@ -798,7 +797,6 @@ mod tests {
                     filesystems: vec![FileSystem {
                         source: FileSystemSource::Image,
                         device_id: Some("esp".to_string()),
-                        fs_type: FileSystemType::Vfat,
                         mount_point: Some(MountPoint {
                             path: ESP_MOUNT_POINT_PATH.into(),
                             options: MountOptions::defaults(),
@@ -922,8 +920,8 @@ mod functional_test {
     };
     use pytest_gen::functional_test;
     use trident_api::config::{
-        self, Disk, FileSystemType, HostConfiguration, ImageSha384, MountOptions, MountPoint,
-        OsImage, Partition, PartitionSize, PartitionType,
+        self, Disk, HostConfiguration, ImageSha384, MountOptions, MountPoint, OsImage, Partition,
+        PartitionSize, PartitionType,
     };
 
     use crate::engine::{storage::partitioning, EngineContext};
@@ -1304,7 +1302,6 @@ mod functional_test {
                     filesystems: vec![config::FileSystem {
                         source: config::FileSystemSource::Image,
                         device_id: Some("esp".to_string()),
-                        fs_type: FileSystemType::Vfat,
                         mount_point: Some(MountPoint {
                             path: ESP_MOUNT_POINT_PATH.into(),
                             options: MountOptions::defaults(),

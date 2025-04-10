@@ -123,9 +123,9 @@ mod tests {
     use tempfile::NamedTempFile;
     use trident_api::{
         config::{
-            Disk, FileSystem, FileSystemSource, FileSystemType, HostConfiguration, MountOptions,
-            MountPoint, Partition, PartitionSize, PartitionTableType, PartitionType, Storage,
-            VerityDevice,
+            Disk, FileSystem, FileSystemSource, HostConfiguration, MountOptions, MountPoint,
+            NewFileSystemType, Partition, PartitionSize, PartitionTableType, PartitionType,
+            Storage, VerityDevice,
         },
         constants::{ESP_MOUNT_POINT_PATH, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
         status::ServicingType,
@@ -427,7 +427,6 @@ mod tests {
                             path: PathBuf::from(ESP_MOUNT_POINT_PATH),
                             options: "umask=0077".into(),
                         }),
-                        fs_type: FileSystemType::Vfat,
                         device_id: Some("efi".into()),
                         source: FileSystemSource::Image,
                     },
@@ -436,7 +435,6 @@ mod tests {
                             path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                             options: "ro".into(),
                         }),
-                        fs_type: FileSystemType::Ext4,
                         device_id: Some("root".into()),
                         source: FileSystemSource::Image,
                     },
@@ -445,9 +443,8 @@ mod tests {
                             path: PathBuf::from("/home"),
                             options: "defaults,x-systemd.makefs".into(),
                         }),
-                        fs_type: FileSystemType::Ext4,
                         device_id: Some("home".into()),
-                        source: FileSystemSource::New,
+                        source: FileSystemSource::New(NewFileSystemType::Ext4),
                     },
                 ],
                 swap: vec![SwapDevice {

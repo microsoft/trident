@@ -254,8 +254,8 @@ mod tests {
     use osutils::testutils::repart::TEST_DISK_DEVICE_PATH;
 
     use trident_api::config::{
-        self, AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, FileSystemType,
-        MountOptions, MountPoint, Partition, PartitionType,
+        self, AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, MountOptions, MountPoint,
+        Partition, PartitionType,
     };
 
     #[test]
@@ -283,7 +283,6 @@ mod tests {
                     filesystems: vec![
                         FileSystem {
                             device_id: Some("boot".to_owned()),
-                            fs_type: FileSystemType::Vfat,
                             mount_point: Some(MountPoint {
                                 path: PathBuf::from("/boot"),
                                 options: MountOptions::empty(),
@@ -292,7 +291,6 @@ mod tests {
                         },
                         FileSystem {
                             device_id: Some("root".to_owned()),
-                            fs_type: FileSystemType::Ext4,
                             mount_point: Some(MountPoint {
                                 path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                                 options: MountOptions::empty(),

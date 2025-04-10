@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    config::{FileSystemType, PartitionType, RaidLevel},
+    config::{PartitionType, RaidLevel},
     BlockDeviceId,
 };
 
@@ -80,13 +80,10 @@ pub enum StorageGraphBuildError {
     FilesystemUnexpectedBlockDeviceId { fs_desc: String },
 
     #[error(
-        "Filesystem [{fs_desc}] is placed on top of a verity device, but filesystems of type \
-        '{fs_type}' cannot be used with verity."
+        "Filesystem [{fs_desc}] is placed on top of a verity device, but filesystems of not sourced \
+        from an Image cannot be used with verity."
     )]
-    FilesystemVerityIncompatible {
-        fs_desc: String,
-        fs_type: FileSystemType,
-    },
+    FilesystemVerityIncompatible { fs_desc: String },
 
     #[error("Internal error: {body}")]
     InternalError { body: String },

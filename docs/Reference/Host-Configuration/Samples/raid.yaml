@@ -42,12 +42,10 @@ storage:
     syncTimeout: 180
   filesystems:
   - deviceId: esp1
-    type: vfat
     mountPoint:
       path: /boot/efi
       options: umask=0077
   - deviceId: root
-    type: ext4
     mountPoint:
       path: /
       options: defaults

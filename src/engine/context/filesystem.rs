@@ -7,7 +7,7 @@ use derive_more::From;
 
 use sysdefs::filesystems::{KernelFilesystemType, NodevFilesystemType, RealFilesystemType};
 use trident_api::{
-    config::{FileSystem, FileSystemSource, FileSystemType, MountPoint},
+    config::{FileSystem, FileSystemSource, MountPoint, NewFileSystemType},
     constants::{ESP_MOUNT_POINT_PATH, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
     error::{InternalError, ReportError, TridentError, TridentResultExt},
     BlockDeviceId,
@@ -374,26 +374,27 @@ impl<'a> TryFrom<&'a FileSystem> for FileSystemData {
             .unwrap_or("".into());
 
         match fs.source {
-            FileSystemSource::Adopted => Ok(FileSystemData::Adopted(FileSystemDataAdopted {
-                mount_point: fs.mount_point.clone(),
-                fs_type: fs.fs_type.try_into().ok(),
-                device_id: fs
-                    .device_id
-                    .clone()
-                    .structured(InternalError::PopulateFilesystems(format!(
-                        "Expected device id for Adopted filesystem{} but found none",
-                        mpp
-                    )))?,
-            })),
-            FileSystemSource::New => match fs.fs_type {
-                FileSystemType::Tmpfs => Ok(FileSystemData::Tmpfs(FileSystemDataTmpfs {
+            FileSystemSource::Adopted(fs_type) => {
+                Ok(FileSystemData::Adopted(FileSystemDataAdopted {
+                    mount_point: fs.mount_point.clone(),
+                    fs_type: fs_type.try_into().ok(),
+                    device_id: fs.device_id.clone().structured(
+                        InternalError::PopulateFilesystems(format!(
+                            "Expected device id for Adopted filesystem{} but found none",
+                            mpp
+                        )),
+                    )?,
+                }))
+            }
+            FileSystemSource::New(fs_type) => match fs_type {
+                NewFileSystemType::Tmpfs => Ok(FileSystemData::Tmpfs(FileSystemDataTmpfs {
                     mount_point: fs.mount_point.clone().structured(
                         InternalError::PopulateFilesystems(
                             "Expected mount point for Tmpfs filesystem but found none".to_string(),
                         ),
                     )?,
                 })),
-                FileSystemType::Overlay => Ok(FileSystemData::Overlay(FileSystemDataOverlay {
+                NewFileSystemType::Overlay => Ok(FileSystemData::Overlay(FileSystemDataOverlay {
                     mount_point: fs.mount_point.clone().structured(
                         InternalError::PopulateFilesystems(
                             "Expected mount point for Overlay filesystem but found none"
@@ -403,7 +404,7 @@ impl<'a> TryFrom<&'a FileSystem> for FileSystemData {
                 })),
                 _ => Ok(FileSystemData::New(FileSystemDataNew {
                     mount_point: fs.mount_point.clone(),
-                    fs_type: fs.fs_type.try_into()?,
+                    fs_type: fs_type.try_into()?,
                     device_id: fs.device_id.clone().structured(
                         InternalError::PopulateFilesystems(format!(
                             "Expected device id for New filesystem{} but found none",

@@ -81,8 +81,8 @@ impl StorageGraph {
         {
             match filesystem.source {
                 FileSystemSource::Image => VolumeStatus::PresentAndBackedByImage,
-                FileSystemSource::Adopted => VolumeStatus::PresentAndBackedByAdoptedFs,
-                FileSystemSource::New => VolumeStatus::PresentButNotBackedByImage,
+                FileSystemSource::Adopted(_) => VolumeStatus::PresentAndBackedByAdoptedFs,
+                FileSystemSource::New(_) => VolumeStatus::PresentButNotBackedByImage,
             }
         } else {
             VolumeStatus::NotPresent
@@ -357,8 +357,8 @@ mod tests {
     use crate::{
         config::{
             AbUpdate, AbVolumePair, AdoptedPartition, Disk, EncryptedVolume, Encryption,
-            FileSystem, FileSystemType, MountPoint, Partition, PartitionSize, PartitionType, Raid,
-            SoftwareRaidArray, Storage, VerityDevice,
+            FileSystem, MountPoint, NewFileSystemType, Partition, PartitionSize, PartitionType,
+            Raid, SoftwareRaidArray, Storage, VerityDevice,
         },
         storage_graph::{
             node::BlockDevice, references::SpecialReferenceKind, types::HostConfigBlockDevice,
@@ -374,10 +374,9 @@ mod tests {
 
         // Add a filesystem node that is not on a verity device.
         let fs = FileSystem {
-            fs_type: FileSystemType::Ext4,
             device_id: Some("fs1".into()),
             mount_point: Some(MountPoint::from_str("/mnt/fs1").unwrap()),
-            source: FileSystemSource::New,
+            source: FileSystemSource::New(NewFileSystemType::Ext4),
         };
         let fs_node_idx = graph.inner.add_node((&fs).into());
 
@@ -404,10 +403,9 @@ mod tests {
 
         // Add a new filesystem node that is not on a verity device.
         let fs2 = FileSystem {
-            fs_type: FileSystemType::Ext4,
             device_id: Some("fs2".into()),
             mount_point: Some(MountPoint::from_str("/mnt/fs2").unwrap()),
-            source: FileSystemSource::New,
+            source: FileSystemSource::New(NewFileSystemType::Ext4),
         };
         let fs2_node_idx = graph.inner.add_node((&fs2).into());
 
@@ -444,10 +442,9 @@ mod tests {
 
         // Add a filesystem node that is not the root filesystem.
         let fs_node = StorageGraphNode::FileSystem(FileSystem {
-            fs_type: FileSystemType::Ext4,
             device_id: Some("fs1".into()),
             mount_point: Some(MountPoint::from_str("/mnt/fs1").unwrap()),
-            source: FileSystemSource::New,
+            source: FileSystemSource::New(NewFileSystemType::Ext4),
         });
         let _ = graph.inner.add_node(fs_node);
 
@@ -457,10 +454,9 @@ mod tests {
 
         // Add a filesystem node that is the root filesystem.
         let root_fs_node = StorageGraphNode::FileSystem(FileSystem {
-            fs_type: FileSystemType::Ext4,
             device_id: Some("rootfs".into()),
             mount_point: Some(MountPoint::from_str(ROOT_MOUNT_POINT_PATH).unwrap()),
-            source: FileSystemSource::New,
+            source: FileSystemSource::New(NewFileSystemType::Ext4),
         });
         let root_fs_node_idx = graph.inner.add_node(root_fs_node.clone());
 
@@ -492,10 +488,9 @@ mod tests {
 
         // Add a root filesystem node.
         let root_fs_node = StorageGraphNode::FileSystem(FileSystem {
-            fs_type: FileSystemType::Ext4,
             device_id: Some(block_dev_id.into()),
             mount_point: Some(MountPoint::from_str(ROOT_MOUNT_POINT_PATH).unwrap()),
-            source: FileSystemSource::New,
+            source: FileSystemSource::New(NewFileSystemType::Ext4),
         });
 
         let root_fs_node_idx = graph.inner.add_node(root_fs_node.clone());
@@ -571,10 +566,9 @@ mod tests {
         let fs_node_idx = graph
             .inner
             .add_node(StorageGraphNode::FileSystem(FileSystem {
-                fs_type: FileSystemType::Ext4,
                 device_id: Some(dev_id.into()),
                 mount_point: Some(MountPoint::from_str(ROOT_MOUNT_POINT_PATH).unwrap()),
-                source: FileSystemSource::New,
+                source: FileSystemSource::New(NewFileSystemType::Ext4),
             }));
 
         // Add an edge from the partition to the filesystem.

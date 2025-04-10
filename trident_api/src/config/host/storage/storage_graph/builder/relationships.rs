@@ -1,14 +1,8 @@
 use log::trace;
-use petgraph::{
-    visit::{Dfs, IntoNodeReferences, Walker},
-    Direction,
-};
+use petgraph::{visit::IntoNodeReferences, Direction};
 
-use crate::{
-    config::host::storage::storage_graph::{
-        error::StorageGraphBuildError, graph::StoragePetgraph, node::StorageGraphNode,
-    },
-    storage_graph::types::BlkDevKind,
+use crate::config::host::storage::storage_graph::{
+    error::StorageGraphBuildError, graph::StoragePetgraph, node::StorageGraphNode,
 };
 
 /// Checks all dependents for sharing compatibility.
@@ -104,30 +98,5 @@ pub(super) fn check_dependency_kind_homogeneity(
             });
         }
     }
-    Ok(())
-}
-
-/// Checks whether specific filesystem types can exist on verity nodes
-pub(super) fn check_filesystems_on_verity(
-    graph: &StoragePetgraph,
-) -> Result<(), StorageGraphBuildError> {
-    // Iterate over all nodes that are filesystems and check their mount points.
-    for (node_idx, node) in graph.node_references() {
-        let Some(fs) = node.as_filesystem() else {
-            continue;
-        };
-
-        if Dfs::new(graph, node_idx)
-            .iter(graph)
-            .any(|dep_idx| graph[dep_idx].device_kind() == BlkDevKind::VerityDevice)
-            && !fs.fs_type.supports_verity()
-        {
-            return Err(StorageGraphBuildError::FilesystemVerityIncompatible {
-                fs_desc: fs.description(),
-                fs_type: fs.fs_type,
-            });
-        }
-    }
-
     Ok(())
 }

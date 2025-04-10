@@ -52,16 +52,13 @@ storage:
           size: 100M
           type: linux-generic
   filesystems:
-    - type: vfat
-      deviceId: esp
+    - deviceId: esp
       mountPoint:
         path: /boot/efi
         options: umask=0077
-    - type: ext4
-      deviceId: root
+    - deviceId: root
       mountPoint: /
-    - type: ext4
-      deviceId: trident
+    - deviceId: trident
       source: new
       mountPoint: /var/lib/trident
   swap:

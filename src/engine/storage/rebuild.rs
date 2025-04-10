@@ -433,8 +433,8 @@ mod tests {
     use osutils::testutils::repart::TEST_DISK_DEVICE_PATH;
     use trident_api::{
         config::{
-            Disk, FileSystemSource, FileSystemType, MountOptions, MountPoint, Partition,
-            PartitionSize, PartitionType, RaidLevel, Storage,
+            Disk, FileSystemSource, MountOptions, MountPoint, Partition, PartitionSize,
+            PartitionType, RaidLevel, Storage,
         },
         status::ServicingState,
     };
@@ -769,7 +769,6 @@ mod tests {
             .filesystems
             .push(trident_api::config::FileSystem {
                 device_id: Some("disk2part1".to_string()),
-                fs_type: FileSystemType::Ext4,
                 source: FileSystemSource::Image,
                 mount_point: Some(MountPoint {
                     path: PathBuf::from("/"),
@@ -831,7 +830,6 @@ mod tests {
             .filesystems
             .push(trident_api::config::FileSystem {
                 device_id: Some("disk2part3".to_string()),
-                fs_type: FileSystemType::Vfat,
                 source: FileSystemSource::Image,
                 mount_point: Some(MountPoint {
                     path: PathBuf::from("/esp"),

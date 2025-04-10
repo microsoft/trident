@@ -210,8 +210,8 @@ mod tests {
 
     use crate::{
         config::{
-            AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, FileSystemType,
-            MountOptions, MountPoint, Partition, PartitionTableType, PartitionType, VerityDevice,
+            AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, MountOptions, MountPoint,
+            NewFileSystemType, Partition, PartitionTableType, PartitionType, VerityDevice,
         },
         constants::{
             MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH, TRIDENT_DATASTORE_PATH_DEFAULT,
@@ -232,8 +232,7 @@ mod tests {
                             path: ROOT_MOUNT_POINT_PATH.into(),
                             options: MountOptions::defaults(),
                         }),
-                        fs_type: FileSystemType::Ext4,
-                        source: FileSystemSource::New,
+                        source: FileSystemSource::New(NewFileSystemType::Ext4),
                     },
                     FileSystem {
                         device_id: Some("bar".into()),
@@ -241,8 +240,7 @@ mod tests {
                             path: "/bar".into(),
                             options: MountOptions::defaults(),
                         }),
-                        fs_type: FileSystemType::Ext4,
-                        source: FileSystemSource::New,
+                        source: FileSystemSource::New(NewFileSystemType::Ext4),
                     },
                 ],
                 ..Default::default()
@@ -262,8 +260,7 @@ mod tests {
                             path: ROOT_MOUNT_POINT_PATH.into(),
                             options: MountOptions::defaults(),
                         }),
-                        fs_type: FileSystemType::Ext4,
-                        source: FileSystemSource::New,
+                        source: FileSystemSource::New(NewFileSystemType::Ext4),
                     },
                     FileSystem {
                         device_id: Some("bar".into()),
@@ -271,8 +268,7 @@ mod tests {
                             path: "/bar".into(),
                             options: MountOptions::defaults(),
                         }),
-                        fs_type: FileSystemType::Ext4,
-                        source: FileSystemSource::New,
+                        source: FileSystemSource::New(NewFileSystemType::Ext4),
                     },
                 ],
                 ab_update: Some(AbUpdate {
@@ -299,8 +295,7 @@ mod tests {
                             path: ROOT_MOUNT_POINT_PATH.into(),
                             options: MountOptions::defaults(),
                         }),
-                        fs_type: FileSystemType::Ext4,
-                        source: FileSystemSource::New,
+                        source: FileSystemSource::New(NewFileSystemType::Ext4),
                     },
                     FileSystem {
                         device_id: Some("bar".into()),
@@ -308,8 +303,7 @@ mod tests {
                             path: "/bar".into(),
                             options: MountOptions::defaults(),
                         }),
-                        fs_type: FileSystemType::Ext4,
-                        source: FileSystemSource::New,
+                        source: FileSystemSource::New(NewFileSystemType::Ext4),
                     },
                 ],
                 ab_update: Some(AbUpdate {
@@ -340,8 +334,7 @@ mod tests {
                             path: ROOT_MOUNT_POINT_PATH.into(),
                             options: MountOptions::defaults(),
                         }),
-                        fs_type: FileSystemType::Ext4,
-                        source: FileSystemSource::New,
+                        source: FileSystemSource::New(NewFileSystemType::Ext4),
                     },
                     FileSystem {
                         device_id: Some("bar".into()),
@@ -349,8 +342,7 @@ mod tests {
                             path: "/bar".into(),
                             options: MountOptions::defaults(),
                         }),
-                        fs_type: FileSystemType::Ext4,
-                        source: FileSystemSource::New,
+                        source: FileSystemSource::New(NewFileSystemType::Ext4),
                     },
                 ],
                 ab_update: Some(AbUpdate {
@@ -414,8 +406,7 @@ mod tests {
                 }],
                 filesystems: vec![FileSystem {
                     device_id: Some("root".into()),
-                    fs_type: FileSystemType::Ext4,
-                    source: FileSystemSource::New,
+                    source: FileSystemSource::New(NewFileSystemType::Ext4),
                     mount_point: Some(MountPoint {
                         path: ROOT_MOUNT_POINT_PATH.into(),
                         options: MountOptions::new(MOUNT_OPTION_READ_ONLY),

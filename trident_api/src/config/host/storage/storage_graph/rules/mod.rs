@@ -19,8 +19,8 @@ use anyhow::{bail, ensure, Error};
 
 use crate::{
     config::{
-        FileSystemType, HostConfigurationStaticValidationError, Partition, PartitionSize,
-        PartitionType, RaidLevel,
+        FileSystemSource, FileSystemType, HostConfigurationStaticValidationError,
+        NewFileSystemType, Partition, PartitionSize, PartitionType, RaidLevel,
     },
     constants::ESP_MOUNT_POINT_PATH,
 };
@@ -142,6 +142,33 @@ impl FileSystemType {
                 false
             }
         }
+    }
+}
+
+impl FileSystemSource {
+    /// Returns whether a filesystem expects a block device ID.
+    ///
+    /// If true, the filesystem must have a block device ID.
+    /// If false, the filesystem must not have a block device ID.
+    pub fn expects_block_device_id(&self) -> bool {
+        match self {
+            Self::Image => true, // All Image filesystems must have a block device ID.
+            Self::Adopted(_) => true,
+            Self::New(
+                NewFileSystemType::Ext4
+                | NewFileSystemType::Xfs
+                | NewFileSystemType::Vfat
+                | NewFileSystemType::Ntfs,
+            ) => true,
+            Self::New(NewFileSystemType::Overlay | NewFileSystemType::Tmpfs) => false,
+        }
+    }
+
+    /// Returns whether a filesystem type must have a mount point.
+    pub fn must_have_mountpoint(&self) -> bool {
+        // Nodev filesystems REQUIRE a mount point to exist. Today this covers
+        // only Tmpfs and overlay.
+        !self.expects_block_device_id()
     }
 }
 

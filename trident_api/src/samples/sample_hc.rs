@@ -12,10 +12,10 @@ use crate::{
     config::{
         host::os::{KernelCommandLine, Selinux, SelinuxMode},
         AbUpdate, AbVolumePair, AdditionalFile, Disk, EncryptedVolume, Encryption, FileSystem,
-        FileSystemSource, FileSystemType, HostConfiguration, ImageSha384, MountOptions, MountPoint,
-        Os, OsImage, Partition, PartitionTableType, PartitionType, Raid, RaidLevel, Script,
-        ScriptSource, Scripts, Services, ServicingTypeSelection, SoftwareRaidArray, SshMode,
-        Storage, SwapDevice, User, VerityDevice,
+        FileSystemSource, HostConfiguration, ImageSha384, MountOptions, MountPoint,
+        NewFileSystemType, Os, OsImage, Partition, PartitionTableType, PartitionType, Raid,
+        RaidLevel, Script, ScriptSource, Scripts, Services, ServicingTypeSelection,
+        SoftwareRaidArray, SshMode, Storage, SwapDevice, User, VerityDevice,
     },
     constants::{self, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
 };
@@ -53,7 +53,6 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     filesystems: vec![
                     FileSystem {
                         device_id: Some("esp".into()),
-                        fs_type: FileSystemType::Vfat,
                         mount_point: Some(MountPoint {
                             path: constants::ESP_MOUNT_POINT_PATH.into(),
                             options: MountOptions::new("umask=0077"),
@@ -62,7 +61,6 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     },
                     FileSystem {
                         device_id: Some("root".into()),
-                        fs_type: FileSystemType::Ext4,
                         mount_point: Some(MountPoint {
                             path: constants::ROOT_MOUNT_POINT_PATH.into(),
                             options: MountOptions::defaults(),
@@ -104,7 +102,6 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                 filesystems: vec![
                     FileSystem {
                         device_id: Some("esp".into()),
-                        fs_type: FileSystemType::Vfat,
                         mount_point: Some(MountPoint {
                             path: constants::ESP_MOUNT_POINT_PATH.into(),
                             options: MountOptions::new("umask=0077"),
@@ -113,7 +110,6 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     },
                     FileSystem {
                         device_id: Some("root".into()),
-                        fs_type: FileSystemType::Ext4,
                         mount_point: Some(MountPoint {
                             path: constants::ROOT_MOUNT_POINT_PATH.into(),
                             options: MountOptions::defaults(),
@@ -265,7 +261,6 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                 filesystems: vec![
                     FileSystem {
                         device_id: Some("esp".into()),
-                        fs_type: FileSystemType::Vfat,
                         mount_point: Some(MountPoint {
                             path: constants::ESP_MOUNT_POINT_PATH.into(),
                             options: MountOptions::new("umask=0077"),
@@ -274,7 +269,6 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     },
                     FileSystem {
                         device_id: Some("root".into()),
-                        fs_type: FileSystemType::Ext4,
                         mount_point: Some(MountPoint {
                             path: constants::ROOT_MOUNT_POINT_PATH.into(),
                             options: MountOptions::defaults(),
@@ -283,30 +277,27 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     },
                     FileSystem {
                         device_id: Some("trident".into()),
-                        fs_type: FileSystemType::Ext4,
                         mount_point: Some(MountPoint {
                             path: "/var/lib/trident".into(),
                             options: MountOptions::defaults(),
                         }),
-                        source: FileSystemSource::New,
+                        source: FileSystemSource::New(NewFileSystemType::Ext4),
                     },
                     FileSystem {
                         device_id: Some("srv".into()),
-                        fs_type: FileSystemType::Ext4,
                         mount_point: Some(MountPoint {
                             path: "/srv".into(),
                             options: MountOptions::defaults(),
                         }),
-                        source: FileSystemSource::New,
+                        source: FileSystemSource::New(NewFileSystemType::Ext4),
                     },
                     FileSystem {
                         device_id: Some("some_raid".into()),
-                        fs_type: FileSystemType::Ext4,
                         mount_point: Some(MountPoint {
                             path: "/mnt/raid".into(),
                             options: MountOptions::defaults(),
                         }),
-                        source: FileSystemSource::New,
+                        source: FileSystemSource::New(NewFileSystemType::Ext4),
                     },
                 ],
                 ab_update: Some(AbUpdate {
@@ -445,7 +436,6 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                 filesystems: vec![
                     FileSystem {
                         device_id: Some("esp".into()),
-                        fs_type: FileSystemType::Vfat,
                         mount_point: Some(MountPoint {
                             path: constants::ESP_MOUNT_POINT_PATH.into(),
                             options: MountOptions::new("umask=0077"),
@@ -454,7 +444,6 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     },
                     FileSystem {
                         device_id: Some("boot".into()),
-                        fs_type: FileSystemType::Ext4,
                         mount_point: Some(MountPoint {
                             path: constants::BOOT_MOUNT_POINT_PATH.into(),
                             options: MountOptions::defaults(),
@@ -463,8 +452,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     },
                     FileSystem {
                         device_id: Some("trident".into()),
-                        fs_type: FileSystemType::Ext4,
-                        source: FileSystemSource::New,
+                        source: FileSystemSource::New(NewFileSystemType::Ext4),
                         mount_point: Some(MountPoint {
                             path: "/var/lib/trident".into(),
                             options: MountOptions::defaults(),
@@ -472,8 +460,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     },
                     FileSystem {
                         device_id: Some("trident-overlay".into()),
-                        fs_type: FileSystemType::Ext4,
-                        source: FileSystemSource::New,
+                        source: FileSystemSource::New(NewFileSystemType::Ext4),
                         mount_point: Some(MountPoint {
                             path: "/var/lib/trident-overlay".into(),
                             options: MountOptions::defaults(),
@@ -481,7 +468,6 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     },
                     FileSystem {
                         device_id: Some("var".into()),
-                        fs_type: FileSystemType::Ext4,
                         source: FileSystemSource::Image,
                         mount_point: Some(MountPoint {
                             path: "/var".into(),
@@ -490,8 +476,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     },
                     FileSystem {
                         device_id: Some("home".into()),
-                        fs_type: FileSystemType::Ext4,
-                        source: FileSystemSource::New,
+                        source: FileSystemSource::New(NewFileSystemType::Ext4),
                         mount_point: Some(MountPoint {
                             path: "/home".into(),
                             options: MountOptions::defaults(),
@@ -499,7 +484,6 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     },
                     FileSystem {
                         device_id: Some("root".into()),
-                        fs_type: FileSystemType::Ext4,
                         source: FileSystemSource::Image,
                         mount_point: Some(MountPoint {
                             path: ROOT_MOUNT_POINT_PATH.into(),
@@ -855,7 +839,6 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                 filesystems: vec![
                     FileSystem {
                         device_id: Some("esp1".into()),
-                        fs_type: FileSystemType::Vfat,
                         mount_point: Some(MountPoint {
                             path: constants::ESP_MOUNT_POINT_PATH.into(),
                             options: MountOptions::new("umask=0077"),
@@ -864,13 +847,11 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     },
                     FileSystem {
                         device_id: Some("esp2".into()),
-                        fs_type: FileSystemType::Vfat,
                         mount_point: None,
                         source: FileSystemSource::Image,
                     },
                     FileSystem {
                         device_id: Some("boot".into()),
-                        fs_type: FileSystemType::Ext4,
                         mount_point: Some(MountPoint {
                             path: constants::BOOT_MOUNT_POINT_PATH.into(),
                             options: MountOptions::defaults(),
@@ -879,8 +860,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     },
                     FileSystem {
                         device_id: Some("trident".into()),
-                        fs_type: FileSystemType::Ext4,
-                        source: FileSystemSource::New,
+                        source: FileSystemSource::New(NewFileSystemType::Ext4),
                         mount_point: Some(MountPoint {
                             path: "/var/lib/trident".into(),
                             options: MountOptions::defaults(),
@@ -888,8 +868,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     },
                     FileSystem {
                         device_id: Some("trident-overlay".into()),
-                        fs_type: FileSystemType::Ext4,
-                        source: FileSystemSource::New,
+                        source: FileSystemSource::New(NewFileSystemType::Ext4),
                         mount_point: Some(MountPoint {
                             path: "/var/lib/trident-overlay".into(),
                             options: MountOptions::defaults(),
@@ -897,7 +876,6 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     },
                     FileSystem {
                         device_id: Some("var".into()),
-                        fs_type: FileSystemType::Ext4,
                         source: FileSystemSource::Image,
                         mount_point: Some(MountPoint {
                             path: "/var".into(),
@@ -906,8 +884,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     },
                     FileSystem {
                         device_id: Some("home".into()),
-                        fs_type: FileSystemType::Ext4,
-                        source: FileSystemSource::New,
+                        source: FileSystemSource::New(NewFileSystemType::Ext4),
                         mount_point: Some(MountPoint {
                             path: "/home".into(),
                             options: MountOptions::defaults(),
@@ -915,7 +892,6 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     },
                     FileSystem {
                         device_id: Some("root".into()),
-                        fs_type: FileSystemType::Ext4,
                         source: FileSystemSource::Image,
                         mount_point: Some(MountPoint {
                             path: ROOT_MOUNT_POINT_PATH.into(),
@@ -1058,7 +1034,6 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     filesystems: vec![
                         FileSystem {
                             device_id: Some("esp1".into()),
-                            fs_type: FileSystemType::Vfat,
                             mount_point: Some(MountPoint {
                                 path: constants::ESP_MOUNT_POINT_PATH.into(),
                                 options: MountOptions::new("umask=0077"),
@@ -1067,7 +1042,6 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                         },
                         FileSystem {
                             device_id: Some("root".into()),
-                            fs_type: FileSystemType::Ext4,
                             mount_point: Some(MountPoint {
                                 path: constants::ROOT_MOUNT_POINT_PATH.into(),
                                 options: MountOptions::defaults(),
@@ -1197,7 +1171,6 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     filesystems: vec![
                         FileSystem {
                             device_id: Some("esp".into()),
-                            fs_type: FileSystemType::Vfat,
                             mount_point: Some(MountPoint {
                                 path: constants::ESP_MOUNT_POINT_PATH.into(),
                                 options: MountOptions::new("umask=0077"),
@@ -1206,7 +1179,6 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                         },
                         FileSystem {
                             device_id: Some("root".into()),
-                            fs_type: FileSystemType::Ext4,
                             mount_point: Some(MountPoint {
                                 path: constants::ROOT_MOUNT_POINT_PATH.into(),
                                 options: MountOptions::defaults(),
@@ -1215,12 +1187,11 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                         },
                         FileSystem {
                             device_id: Some("srv".into()),
-                            fs_type: FileSystemType::Ext4,
                             mount_point: Some(MountPoint {
                                 path: "/srv".into(),
                                 options: MountOptions::defaults(),
                             }),
-                            source: FileSystemSource::New,
+                            source: FileSystemSource::New(NewFileSystemType::Ext4),
                         },
                     ],
                     swap: vec![SwapDevice {
@@ -1367,7 +1338,6 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     filesystems: vec![
                         FileSystem {
                             device_id: Some("esp".into()),
-                            fs_type: FileSystemType::Vfat,
                             mount_point: Some(MountPoint {
                                 path: constants::ESP_MOUNT_POINT_PATH.into(),
                                 options: MountOptions::new("umask=0077"),
@@ -1376,7 +1346,6 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                         },
                         FileSystem {
                             device_id: Some("root".into()),
-                            fs_type: FileSystemType::Ext4,
                             mount_point: Some(MountPoint {
                                 path: constants::ROOT_MOUNT_POINT_PATH.into(),
                                 options: MountOptions::defaults(),
@@ -1385,12 +1354,11 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                         },
                         FileSystem {
                             device_id: Some("trident".into()),
-                            fs_type: FileSystemType::Ext4,
                             mount_point: Some(MountPoint {
                                 path: "/var/lib/trident".into(),
                                 options: MountOptions::defaults(),
                             }),
-                            source: FileSystemSource::New,
+                            source: FileSystemSource::New(NewFileSystemType::Ext4),
                         },
                     ],
                     ..Default::default()

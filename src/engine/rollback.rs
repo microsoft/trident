@@ -489,8 +489,8 @@ mod tests {
     use osutils::testutils::repart::TEST_DISK_DEVICE_PATH;
     use trident_api::{
         config::{
-            AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, FileSystemType,
-            MountOptions, MountPoint, Partition, PartitionType, VerityDevice,
+            AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, MountOptions, MountPoint,
+            Partition, PartitionType, VerityDevice,
         },
         constants::MOUNT_OPTION_READ_ONLY,
         error::ErrorKind,
@@ -550,7 +550,6 @@ mod tests {
                 options: MountOptions::empty(),
             }),
             device_id: Some("root".to_string()),
-            fs_type: FileSystemType::Ext4,
             source: FileSystemSource::Image,
         }];
         assert_eq!(
@@ -685,7 +684,6 @@ mod tests {
                 path: PathBuf::from("/"),
                 options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
             }),
-            fs_type: FileSystemType::Ext4,
             source: FileSystemSource::Image,
         }];
 
@@ -738,8 +736,8 @@ mod functional_test {
 
     use trident_api::{
         config::{
-            self, AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, FileSystemType,
-            HostConfiguration, MountOptions, MountPoint, Partition, PartitionType, VerityDevice,
+            self, AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, HostConfiguration,
+            MountOptions, MountPoint, Partition, PartitionType, VerityDevice,
         },
         constants::{MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
         error::ErrorKind,
@@ -799,7 +797,6 @@ mod functional_test {
                 options: MountOptions::empty(),
             }),
             device_id: Some("root".to_string()),
-            fs_type: FileSystemType::Ext4,
             source: FileSystemSource::Image,
         }];
 
@@ -1027,7 +1024,6 @@ mod functional_test {
                 path: ROOT_MOUNT_POINT_PATH.into(),
                 options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
             }),
-            fs_type: FileSystemType::Ext4,
             source: FileSystemSource::Image,
         }];
 

@@ -151,8 +151,8 @@ mod tests {
     use sysdefs::partition_types::DiscoverablePartitionType;
     use trident_api::{
         config::{
-            self, AdoptedPartition, Disk, FileSystem, FileSystemSource, FileSystemType,
-            HostConfiguration, MountOptions, MountPoint, Partition, PartitionType,
+            self, AdoptedPartition, Disk, FileSystem, FileSystemSource, HostConfiguration,
+            MountOptions, MountPoint, NewFileSystemType, Partition, PartitionType,
             Storage as StorageConfig,
         },
         status::AbVolumeSelection,
@@ -211,7 +211,6 @@ mod tests {
                     filesystems: vec![
                         FileSystem {
                             device_id: Some("esp".into()),
-                            fs_type: FileSystemType::Vfat,
                             source: FileSystemSource::Image,
                             mount_point: Some(MountPoint {
                                 path: PathBuf::from("/boot/efi"),
@@ -220,7 +219,6 @@ mod tests {
                         },
                         FileSystem {
                             device_id: Some("root".into()),
-                            fs_type: FileSystemType::Ext4,
                             source: FileSystemSource::Image,
                             mount_point: Some(MountPoint {
                                 path: PathBuf::from("/"),
@@ -233,8 +231,7 @@ mod tests {
                                 path: "/trident".into(),
                                 options: MountOptions::defaults(),
                             }),
-                            fs_type: FileSystemType::Ext4,
-                            source: FileSystemSource::New,
+                            source: FileSystemSource::New(NewFileSystemType::Ext4),
                         },
                     ],
                     ab_update: Some(config::AbUpdate {
@@ -325,7 +322,6 @@ mod tests {
                     filesystems: vec![
                         FileSystem {
                             device_id: Some("esp".into()),
-                            fs_type: FileSystemType::Vfat,
                             source: FileSystemSource::Image,
                             mount_point: Some(MountPoint {
                                 path: PathBuf::from("/esp"),
@@ -334,7 +330,6 @@ mod tests {
                         },
                         FileSystem {
                             device_id: Some("root".into()),
-                            fs_type: FileSystemType::Ext4,
                             source: FileSystemSource::Image,
                             mount_point: Some(MountPoint {
                                 path: PathBuf::from("/"),
@@ -347,8 +342,7 @@ mod tests {
                                 path: "/trident".into(),
                                 options: MountOptions::defaults(),
                             }),
-                            fs_type: FileSystemType::Ext4,
-                            source: FileSystemSource::New,
+                            source: FileSystemSource::New(NewFileSystemType::Ext4),
                         },
                     ],
                     ab_update: Some(config::AbUpdate {
@@ -383,8 +377,7 @@ mod tests {
         os_image_ab_update.images.pop(); // Remove root image
         ctx_ab_update.spec.storage.filesystems[1] = FileSystem {
             device_id: Some("root".into()),
-            fs_type: FileSystemType::Ext4,
-            source: FileSystemSource::New,
+            source: FileSystemSource::New(NewFileSystemType::Ext4),
             mount_point: Some(MountPoint {
                 path: PathBuf::from("/"),
                 options: MountOptions::empty(),
@@ -434,7 +427,6 @@ mod tests {
                     filesystems: vec![
                         FileSystem {
                             device_id: Some("esp".into()),
-                            fs_type: FileSystemType::Vfat,
                             source: FileSystemSource::Image,
                             mount_point: Some(MountPoint {
                                 path: PathBuf::from("/boot/efi"),
@@ -443,7 +435,6 @@ mod tests {
                         },
                         FileSystem {
                             device_id: Some("root-b".into()),
-                            fs_type: FileSystemType::Ext4,
                             source: FileSystemSource::Image,
                             mount_point: Some(MountPoint {
                                 path: PathBuf::from("/"),

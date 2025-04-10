@@ -261,7 +261,7 @@ mod tests {
     use tempfile::NamedTempFile;
 
     use trident_api::{
-        config::{FileSystem, FileSystemSource, FileSystemType, MountOptions, MountPoint},
+        config::{FileSystem, FileSystemSource, MountOptions, MountPoint, NewFileSystemType},
         constants::MOUNT_OPTION_READ_ONLY,
     };
 
@@ -284,7 +284,6 @@ mod tests {
         let good_mtp: &str = "/mnt/thing1";
         let good_fs = FileSystem {
             device_id: Some("sda1".into()),
-            fs_type: FileSystemType::Ext4,
             mount_point: Some(MountPoint::from_str(good_mtp).unwrap()),
             source: Default::default(),
         };
@@ -311,7 +310,6 @@ mod tests {
 
         // Filesystem with unsupported type (NTFS)
         reset(&mut ctx);
-        ctx.spec.storage.filesystems[0].fs_type = FileSystemType::Ntfs;
         let mut bad_img = good_img.clone();
         bad_img.images[0].fs_type = OsImageFileSystemType::Ntfs;
         ctx.image = Some(OsImage::mock(bad_img));
@@ -330,7 +328,8 @@ mod tests {
         // Filesystem with no mount point
         reset(&mut ctx);
         ctx.spec.storage.filesystems[0].mount_point = None;
-        ctx.spec.storage.filesystems[0].source = FileSystemSource::New;
+        ctx.spec.storage.filesystems[0].source =
+            FileSystemSource::New(NewFileSystemType::default());
         ctx.image = None;
         ctx.populate_filesystems().unwrap();
         assert_eq!(filesystems_to_relabel(&ctx).unwrap(), Vec::<&Path>::new());

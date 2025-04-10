@@ -54,30 +54,28 @@ storage:
       volumeBId: root-b
   filesystems:
   - deviceId: esp
-    type: vfat
     mountPoint:
       path: /boot/efi
       options: umask=0077
   - deviceId: root
-    type: ext4
     mountPoint:
       path: /
       options: defaults
   - deviceId: trident
-    type: ext4
     source: new
+    type: ext4
     mountPoint:
       path: /var/lib/trident
       options: defaults
   - deviceId: srv
-    type: ext4
     source: new
+    type: ext4
     mountPoint:
       path: /srv
       options: defaults
   - deviceId: some_raid
-    type: ext4
     source: new
+    type: ext4
     mountPoint:
       path: /mnt/raid
       options: defaults

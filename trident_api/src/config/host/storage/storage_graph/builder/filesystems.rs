@@ -3,9 +3,7 @@ use std::{collections::BTreeSet, path::Path};
 use petgraph::visit::IntoNodeReferences;
 
 use crate::config::{
-    host::storage::storage_graph::{
-        error::StorageGraphBuildError, graph::StoragePetgraph, types::FileSystemSourceKind,
-    },
+    host::storage::storage_graph::{error::StorageGraphBuildError, graph::StoragePetgraph},
     FileSystem,
 };
 
@@ -51,7 +49,7 @@ pub(super) fn check_filesystems(graph: &StoragePetgraph) -> Result<(), StorageGr
 /// Checks all basic properties of a single filesystem.
 fn check_filesystem(fs: &FileSystem) -> Result<(), StorageGraphBuildError> {
     // Check if we have a target.
-    match (fs.device_id.is_some(), fs.fs_type.expects_block_device_id()) {
+    match (fs.device_id.is_some(), fs.source.expects_block_device_id()) {
         // We have a device ID and we expect it: OK
         (true, true) => (),
         // We don't have a device ID and we don't expect it: OK
@@ -70,24 +68,11 @@ fn check_filesystem(fs: &FileSystem) -> Result<(), StorageGraphBuildError> {
         }
     }
 
-    if fs.mount_point.is_none() && fs.fs_type.must_have_mountpoint() {
+    if fs.mount_point.is_none() && fs.source.must_have_mountpoint() {
         // This filesystem must have a mount point, but none was provided.
         return Err(StorageGraphBuildError::FilesystemMissingMountPoint {
             fs_desc: fs.description(),
         });
-    }
-
-    // Check that the filesystem source is compatible with the filesystem type.
-    {
-        let fs_compatible_sources = fs.fs_type.valid_sources();
-        let fs_src_kind = FileSystemSourceKind::from(&fs.source);
-        if !fs_compatible_sources.contains(fs_src_kind) {
-            return Err(StorageGraphBuildError::FilesystemIncompatibleSource {
-                fs_desc: fs.description(),
-                fs_source: fs_src_kind,
-                fs_compatible_sources,
-            });
-        }
     }
 
     Ok(())

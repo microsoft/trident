@@ -196,13 +196,9 @@ pub enum InvalidInputError {
     MissingOsImage,
 
     #[error(
-        "Filesystem at '{mount_point}' of type '{fs_type}' in Host Configuration could not be \
-        found in the OS image"
+        "Filesystem at '{mount_point}' in Host Configuration could not be found in the OS image"
     )]
-    MissingOsImageFilesystem {
-        mount_point: String,
-        fs_type: String,
-    },
+    MissingOsImageFilesystem { mount_point: String },
 
     #[error(
         "A multiboot install was requested, but the provided Host Configuration does not include 
@@ -251,14 +247,11 @@ pub enum InvalidInputError {
     },
 
     #[error(
-        "Filesystem at '{mount_point}' of type '{fs_type}' in OS Image is not being used by the \
-        provided Host Configuration. This could mean that the Host COnfiguration is missing a \
-        filesystem definition."
+        "Filesystem at '{mount_point}' in OS Image is not being used by the provided Host \
+        Configuration. This could mean that the Host COnfiguration is missing a filesystem \
+        definition."
     )]
-    UnusedOsImageFilesystem {
-        mount_point: String,
-        fs_type: String,
-    },
+    UnusedOsImageFilesystem { mount_point: String },
 
     #[error("Cannot update host since it is not provisioned")]
     UpdateOnUnprovisionedHost,
