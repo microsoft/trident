@@ -51,7 +51,6 @@ pub enum FileSystemType {
     ///
     /// Serialization is disabled. But deserialization is enabled for use in the
     /// Display trait implementation.
-    #[serde(skip_deserializing)]
     #[cfg_attr(feature = "schemars", schemars(skip))]
     Overlay,
 
@@ -61,7 +60,6 @@ pub enum FileSystemType {
     ///
     /// Serialization is disabled. But deserialization is enabled for use in the
     /// Display trait implementation.
-    #[serde(skip_deserializing)]
     #[cfg_attr(feature = "schemars", schemars(skip))]
     Iso9660,
 }
@@ -165,10 +163,8 @@ impl FileSystemType {
 }
 
 /// New file system types.
-#[derive(
-    Serialize, Deserialize, Debug, Default, Clone, Copy, PartialEq, Eq, EnumIter, IntoStaticStr,
-)]
-#[serde(rename_all = "lowercase", deny_unknown_fields)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, EnumIter, IntoStaticStr)]
+#[strum(serialize_all = "lowercase")]
 pub enum NewFileSystemType {
     /// # Ext4 file system
     #[default]
@@ -198,7 +194,6 @@ pub enum NewFileSystemType {
     ///
     /// Serialization is disabled. But deserialization is enabled for use in the
     /// Display trait implementation.
-    #[serde(skip_deserializing)]
     Overlay,
 }
 
@@ -268,10 +263,8 @@ impl From<NewFileSystemType> for KernelFilesystemType {
 }
 
 /// Adopted file system types.
-#[derive(
-    Serialize, Deserialize, Debug, Default, Clone, Copy, PartialEq, Eq, EnumIter, IntoStaticStr,
-)]
-#[serde(rename_all = "lowercase", deny_unknown_fields)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, EnumIter, IntoStaticStr)]
+#[strum(serialize_all = "lowercase")]
 pub enum AdoptedFileSystemType {
     /// # Ext4 file system
     Ext4,
@@ -302,7 +295,6 @@ pub enum AdoptedFileSystemType {
     ///
     /// Serialization is disabled. But deserialization is enabled for use in the
     /// Display trait implementation.
-    #[serde(skip_deserializing)]
     Iso9660,
 }
 
@@ -361,5 +353,142 @@ impl TryFrom<AdoptedFileSystemType> for KernelFilesystemType {
 
     fn try_from(value: AdoptedFileSystemType) -> Result<KernelFilesystemType, TridentError> {
         Ok(RealFilesystemType::try_from(value)?.as_kernel())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_text_convert_newfstype() {
+        // Text to NewFileSystemType: Success
+        assert_eq!(
+            NewFileSystemType::try_from("ext4").unwrap(),
+            NewFileSystemType::Ext4
+        );
+        assert_eq!(
+            NewFileSystemType::try_from("tmpfs").unwrap(),
+            NewFileSystemType::Tmpfs
+        );
+        assert_eq!(
+            NewFileSystemType::try_from("xfs").unwrap(),
+            NewFileSystemType::Xfs
+        );
+        assert_eq!(
+            NewFileSystemType::try_from(String::from("overlay")).unwrap(),
+            NewFileSystemType::Overlay
+        );
+        assert_eq!(
+            NewFileSystemType::try_from(String::from("vfat")).unwrap(),
+            NewFileSystemType::Vfat
+        );
+
+        // NewFileSystemType to text: Success
+        assert_eq!(String::from(NewFileSystemType::Ext4), "ext4".to_string());
+
+        // Text to NewFileSystemType: Failure case - improper capitalization
+        assert!(NewFileSystemType::try_from("Ext4")
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid new filesystem type"));
+
+        // Text to NewFileSystemType: Failure case - nonexistent variant
+        assert!(NewFileSystemType::try_from("iso9660")
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid new filesystem type"));
+    }
+
+    #[test]
+    fn test_text_convert_adoptedfstype() {
+        // Text to AdoptedFileSystemType: Success
+        assert_eq!(
+            AdoptedFileSystemType::try_from("ext4").unwrap(),
+            AdoptedFileSystemType::Ext4
+        );
+        assert_eq!(
+            AdoptedFileSystemType::try_from("iso9660").unwrap(),
+            AdoptedFileSystemType::Iso9660
+        );
+        assert_eq!(
+            AdoptedFileSystemType::try_from("xfs").unwrap(),
+            AdoptedFileSystemType::Xfs
+        );
+        assert_eq!(
+            AdoptedFileSystemType::try_from(String::from("auto")).unwrap(),
+            AdoptedFileSystemType::Auto
+        );
+        assert_eq!(
+            AdoptedFileSystemType::try_from(String::from("vfat")).unwrap(),
+            AdoptedFileSystemType::Vfat
+        );
+
+        // AdoptedFileSystemType to text: Success
+        assert_eq!(
+            String::from(AdoptedFileSystemType::Ext4),
+            "ext4".to_string()
+        );
+
+        // Text to AdoptedFileSystemType: Failure case - improper capitalization
+        assert!(AdoptedFileSystemType::try_from("Ext4")
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid adopted filesystem type"));
+
+        // Text to AdoptedFileSystemType: Failure case - nonexistent variant
+        assert!(AdoptedFileSystemType::try_from("tmpfs")
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid adopted filesystem type"));
+    }
+
+    #[test]
+    fn test_convert_to_realfstype() {
+        // NewFileSystemType
+        assert_eq!(
+            RealFilesystemType::try_from(NewFileSystemType::Ext4).unwrap(),
+            RealFilesystemType::Ext4
+        );
+        assert_eq!(
+            RealFilesystemType::try_from(NewFileSystemType::Vfat).unwrap(),
+            RealFilesystemType::Vfat
+        );
+        RealFilesystemType::try_from(NewFileSystemType::Tmpfs).unwrap_err();
+
+        // AdoptedFileSystemType
+        assert_eq!(
+            RealFilesystemType::try_from(AdoptedFileSystemType::Ext4).unwrap(),
+            RealFilesystemType::Ext4
+        );
+        assert_eq!(
+            RealFilesystemType::try_from(AdoptedFileSystemType::Vfat).unwrap(),
+            RealFilesystemType::Vfat
+        );
+        RealFilesystemType::try_from(AdoptedFileSystemType::Auto).unwrap_err();
+    }
+
+    #[test]
+    fn test_convert_to_kernelfstype() {
+        // NewFileSystemType
+        assert_eq!(
+            KernelFilesystemType::from(NewFileSystemType::Ext4),
+            KernelFilesystemType::Real(RealFilesystemType::Ext4)
+        );
+        assert_eq!(
+            KernelFilesystemType::from(NewFileSystemType::Tmpfs),
+            KernelFilesystemType::Nodev(NodevFilesystemType::Tmpfs)
+        );
+
+        // AdoptedFileSystemType
+        assert_eq!(
+            KernelFilesystemType::try_from(AdoptedFileSystemType::Xfs).unwrap(),
+            KernelFilesystemType::Real(RealFilesystemType::Xfs)
+        );
+        assert_eq!(
+            KernelFilesystemType::try_from(AdoptedFileSystemType::Iso9660).unwrap(),
+            KernelFilesystemType::Real(RealFilesystemType::Iso9660)
+        );
+        KernelFilesystemType::try_from(AdoptedFileSystemType::Auto).unwrap_err();
     }
 }

@@ -181,7 +181,7 @@ pub mod fs_serde {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum FileSystemSource {
     /// # New
     ///
@@ -428,5 +428,267 @@ mod tests {
         assert!(!fs.is_esp());
         assert!(!fs.is_root());
         assert!(fs.is_read_only());
+    }
+
+    #[test]
+    fn test_deserialize_filesystem_image() {
+        let root_fs = FileSystem {
+            device_id: Some("root".into()),
+            source: FileSystemSource::Image,
+            mount_point: Some(MountPoint {
+                path: "/".into(),
+                options: MountOptions::defaults(),
+            }),
+        };
+
+        // Success: source unspecified
+        let yaml = r#"
+deviceId: root
+mountPoint: /
+"#;
+        let filesystem: FileSystem = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(filesystem, root_fs);
+
+        // Success: source specified
+        let yaml = r#"
+deviceId: root
+source: image
+mountPoint: /
+"#;
+        let filesystem: FileSystem = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(filesystem, root_fs);
+
+        // Failure: filesystem type specified
+        let yaml = r#"
+deviceId: root
+source: image
+type: ext4
+mountPoint: /
+"#;
+        let err = serde_yaml::from_str::<FileSystem>(yaml).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("Filesystem type cannot be specified for image filesystems"));
+    }
+
+    #[test]
+    fn test_deserialize_filesystem_new() {
+        let new_fs = FileSystem {
+            device_id: Some("trident".into()),
+            source: FileSystemSource::New(NewFileSystemType::Ext4),
+            mount_point: Some(MountPoint {
+                path: "/".into(),
+                options: MountOptions::defaults(),
+            }),
+        };
+
+        // Success: filesystem type unspecified (default to Ext4)
+        let yaml = r#"
+deviceId: trident
+source: new
+mountPoint: /
+"#;
+        let filesystem: FileSystem = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(filesystem, new_fs);
+
+        // Success: filesystem type specified
+        let yaml = r#"
+deviceId: trident
+source: new
+type: ext4
+mountPoint: /
+"#;
+        let filesystem: FileSystem = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(filesystem, new_fs);
+
+        // Failure: invalid filesystem type specified (unknown)
+        let yaml = r#"
+deviceId: trident
+source: new
+type: abcd
+mountPoint: /
+"#;
+        let err = serde_yaml::from_str::<FileSystem>(yaml).unwrap_err();
+        assert!(err.to_string().contains("unknown variant `abcd`"));
+
+        // Failure: invalid filesystem type specified (adopted)
+        let yaml = r#"
+deviceId: trident
+source: new
+type: iso9660
+mountPoint: /
+"#;
+        let err = serde_yaml::from_str::<FileSystem>(yaml).unwrap_err();
+        assert!(err.to_string().contains("Invalid new filesystem type"));
+    }
+
+    #[test]
+    fn test_deserialize_filesystem_adopted() {
+        let adopted_fs = FileSystem {
+            device_id: Some("trident".into()),
+            source: FileSystemSource::Adopted(AdoptedFileSystemType::Auto),
+            mount_point: Some(MountPoint {
+                path: "/".into(),
+                options: MountOptions::defaults(),
+            }),
+        };
+
+        // Success: filesystem type unspecified (default to Auto)
+        let yaml = r#"
+deviceId: trident
+source: adopted
+mountPoint: /
+"#;
+        let filesystem: FileSystem = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(filesystem, adopted_fs);
+
+        // Success: filesystem type specified
+        let yaml = r#"
+deviceId: trident
+source: adopted
+type: auto
+mountPoint: /
+"#;
+        let filesystem: FileSystem = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(filesystem, adopted_fs);
+
+        // Failure: invalid filesystem type specified (unknown)
+        let yaml = r#"
+deviceId: trident
+source: adopted
+type: abcd
+mountPoint: /
+"#;
+        let err = serde_yaml::from_str::<FileSystem>(yaml).unwrap_err();
+        assert!(err.to_string().contains("unknown variant `abcd`"));
+
+        // Failure: invalid filesystem type specified (new)
+        let yaml = r#"
+deviceId: trident
+source: adopted
+type: tmpfs
+mountPoint: /
+"#;
+        let err = serde_yaml::from_str::<FileSystem>(yaml).unwrap_err();
+        assert!(err.to_string().contains("Invalid adopted filesystem type"));
+
+        // Failure: invalid nesting structure
+        let yaml = r#"
+deviceId: trident
+source:
+  source: adopted
+  type: auto
+mountPoint: /
+"#;
+        serde_yaml::from_str::<FileSystem>(yaml).unwrap_err();
+    }
+
+    #[test]
+    fn test_serialize_filesystem() {
+        // Image
+        let image_yaml = r#"deviceId: root
+mountPoint:
+  path: /
+  options: defaults
+"#;
+        let image_fs = FileSystem {
+            device_id: Some("root".into()),
+            source: FileSystemSource::Image,
+            mount_point: Some(MountPoint {
+                path: "/".into(),
+                options: MountOptions::defaults(),
+            }),
+        };
+        assert_eq!(serde_yaml::to_string(&image_fs).unwrap(), image_yaml);
+
+        // New
+        let new_yaml = r#"deviceId: root
+source: new
+type: ext4
+mountPoint:
+  path: /
+  options: defaults
+"#;
+        let new_fs = FileSystem {
+            device_id: Some("root".into()),
+            source: FileSystemSource::New(NewFileSystemType::Ext4),
+            mount_point: Some(MountPoint {
+                path: "/".into(),
+                options: MountOptions::defaults(),
+            }),
+        };
+        assert_eq!(serde_yaml::to_string(&new_fs).unwrap(), new_yaml);
+
+        // Adopted
+        let adopted_yaml = r#"deviceId: root
+source: adopted
+type: auto
+mountPoint:
+  path: /
+  options: defaults
+"#;
+        let adopted_fs = FileSystem {
+            device_id: Some("root".into()),
+            source: FileSystemSource::Adopted(AdoptedFileSystemType::Auto),
+            mount_point: Some(MountPoint {
+                path: "/".into(),
+                options: MountOptions::defaults(),
+            }),
+        };
+        assert_eq!(serde_yaml::to_string(&adopted_fs).unwrap(), adopted_yaml);
+    }
+
+    #[test]
+    fn test_serde_roundtrip() {
+        fn roundtrip(dev_id: Option<String>, source: FileSystemSource, mp: Option<MountPoint>) {
+            let original = FileSystem {
+                device_id: dev_id,
+                source,
+                mount_point: mp,
+            };
+
+            let serialized_result = serde_yaml::to_string(&original).unwrap();
+            let deserialized_result =
+                serde_yaml::from_str::<FileSystem>(&serialized_result).unwrap();
+            assert_eq!(original, deserialized_result);
+        }
+
+        roundtrip(
+            Some("root".to_string()),
+            FileSystemSource::Image,
+            Some(MountPoint {
+                path: "/".into(),
+                options: MountOptions::defaults(),
+            }),
+        );
+        roundtrip(
+            Some("trident".to_string()),
+            FileSystemSource::New(NewFileSystemType::default()),
+            Some(MountPoint {
+                path: "/mnt/my-tmp".into(),
+                options: MountOptions::defaults(),
+            }),
+        );
+        roundtrip(
+            Some("trident".to_string()),
+            FileSystemSource::New(NewFileSystemType::Tmpfs),
+            Some(MountPoint {
+                path: "/mnt/my-tmp".into(),
+                options: MountOptions::empty(),
+            }),
+        );
+        roundtrip(
+            Some("trident".to_string()),
+            FileSystemSource::Adopted(AdoptedFileSystemType::default()),
+            None,
+        );
+        roundtrip(
+            Some("trident".to_string()),
+            FileSystemSource::Adopted(AdoptedFileSystemType::Iso9660),
+            Some(MountPoint {
+                path: "/mnt/custom".into(),
+                options: MountOptions::defaults(),
+            }),
+        );
     }
 }
