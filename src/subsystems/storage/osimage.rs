@@ -448,9 +448,8 @@ mod tests {
     };
     use trident_api::{
         config::{
-            AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, FileSystemType,
-            HostConfiguration, MountOptions, MountPoint, Partition, PartitionSize, Storage,
-            VerityDevice,
+            AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, HostConfiguration,
+            MountOptions, MountPoint, Partition, PartitionSize, Storage, VerityDevice,
         },
         constants::{ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
         error::ErrorKind,
@@ -471,10 +470,10 @@ mod tests {
     /// - A mock Host Configuration.
     /// - A built storage graph.
     fn generate_test_context<'a, 'b>(
-        hc_data: impl Iterator<Item = &'a (impl AsRef<Path> + 'a, FileSystemType)>,
+        hc_data: impl Iterator<Item = &'a (impl AsRef<Path> + 'a)>,
         img_data: impl Iterator<Item = &'b (impl AsRef<Path> + 'b, OsImageFileSystemType)>,
     ) -> EngineContext {
-        let hc_data = hc_data.map(|(a, b)| (a, *b, false)).collect::<Vec<_>>();
+        let hc_data = hc_data.map(|a| (a, false)).collect::<Vec<_>>();
         let mut ctx = generate_test_context_ab_update(hc_data.iter(), img_data);
         ctx.servicing_type = ServicingType::CleanInstall;
         ctx.ab_active_volume = None;
@@ -487,7 +486,7 @@ mod tests {
     /// `on_ab` on the HC data iterator. This parameter indicates whether the filesystem
     /// should be on an A/B volume pair or not.
     fn generate_test_context_ab_update<'a, 'b>(
-        hc_data: impl Iterator<Item = &'a (impl AsRef<Path> + 'a, FileSystemType, bool)>,
+        hc_data: impl Iterator<Item = &'a (impl AsRef<Path> + 'a, bool)>,
         img_data: impl Iterator<Item = &'b (impl AsRef<Path> + 'b, OsImageFileSystemType)>,
     ) -> EngineContext {
         let mut partitions = Vec::new();
@@ -507,7 +506,7 @@ mod tests {
             part_id
         };
 
-        for (mnt, _fs_type, on_ab) in hc_data {
+        for (mnt, on_ab) in hc_data {
             let device_id = if *on_ab {
                 let part_a = pushpart();
                 let part_b = pushpart();
@@ -909,10 +908,7 @@ mod tests {
 
     #[test]
     fn test_validate_host_config_clean_install() {
-        let hc_entries = [
-            ("/mnt/path/A", FileSystemType::Ext4),
-            ("/mnt/path/B", FileSystemType::Ext4),
-        ];
+        let hc_entries = ["/mnt/path/A", "/mnt/path/B"];
 
         let img_entries = [
             ("/mnt/path/A", OsImageFileSystemType::Ext4),
@@ -931,10 +927,7 @@ mod tests {
     /// there are in the Host Configuration
     #[test]
     fn test_validate_host_config_failure_unused() {
-        let hc_entries = [
-            ("/mnt/path/A", FileSystemType::Ext4),
-            ("/mnt/path/B", FileSystemType::Ext4),
-        ];
+        let hc_entries = ["/mnt/path/A", "/mnt/path/B"];
 
         let img_entries = [
             ("/mnt/path/A", OsImageFileSystemType::Ext4),
@@ -961,11 +954,7 @@ mod tests {
     /// the OS image
     #[test]
     fn test_validate_host_config_failure_missing() {
-        let hc_entries = [
-            ("/mnt/path/A", FileSystemType::Ext4),
-            ("/mnt/path/B", FileSystemType::Ext4),
-            ("/mnt/path/C", FileSystemType::Ext4),
-        ];
+        let hc_entries = ["/mnt/path/A", "/mnt/path/B", "/mnt/path/C"];
 
         let img_entries = [
             ("/mnt/path/A", OsImageFileSystemType::Ext4),
@@ -991,12 +980,12 @@ mod tests {
     fn test_validate_host_config_abupdate() {
         let hc_entries = [
             // These are on ab volumes, therefore expected to exist in the image.
-            ("/mnt/path/A", FileSystemType::Ext4, true),
-            ("/mnt/path/B", FileSystemType::Ext4, true),
+            ("/mnt/path/A", true),
+            ("/mnt/path/B", true),
             // These are NOT on ab volumes, therefore not expected to exist in the image.
-            ("/mnt/path/C", FileSystemType::Ext4, false),
-            ("/mnt/path/D", FileSystemType::Ext4, false),
-            ("/mnt/path/E", FileSystemType::Ext4, false),
+            ("/mnt/path/C", false),
+            ("/mnt/path/D", false),
+            ("/mnt/path/E", false),
         ];
 
         let img_entries = [
@@ -1018,12 +1007,12 @@ mod tests {
     fn test_validate_host_config_abupdate_failure_unused() {
         let hc_entries = [
             // These are on ab volumes, therefore expected to exist in the image.
-            ("/mnt/path/A", FileSystemType::Ext4, true),
-            ("/mnt/path/B", FileSystemType::Ext4, true),
+            ("/mnt/path/A", true),
+            ("/mnt/path/B", true),
             // These are NOT on ab volumes, therefore not expected to exist in the image.
-            ("/mnt/path/C", FileSystemType::Ext4, false),
-            ("/mnt/path/D", FileSystemType::Ext4, false),
-            ("/mnt/path/E", FileSystemType::Ext4, false),
+            ("/mnt/path/C", false),
+            ("/mnt/path/D", false),
+            ("/mnt/path/E", false),
         ];
 
         let img_entries = [

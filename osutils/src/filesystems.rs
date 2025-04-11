@@ -2,8 +2,7 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use anyhow::{bail, Error};
 
-use sysdefs::filesystems::{KernelFilesystemType, NodevFilesystemType, RealFilesystemType};
-use trident_api::config::FileSystemType;
+use sysdefs::filesystems::{KernelFilesystemType, RealFilesystemType};
 
 /// File system types for `mount`
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,19 +52,6 @@ impl MountFileSystemType {
             MountFileSystemType::Overlay => "overlay",
             MountFileSystemType::Ntfs => "ntfs",
         }
-    }
-
-    pub fn from_api_type(api_type: FileSystemType) -> Result<Self, anyhow::Error> {
-        Ok(match api_type {
-            FileSystemType::Auto => Self::Auto,
-            FileSystemType::Ext4 => Self::Ext4,
-            FileSystemType::Xfs => Self::Xfs,
-            FileSystemType::Vfat => Self::Vfat,
-            FileSystemType::Ntfs => Self::Ntfs,
-            FileSystemType::Iso9660 => Self::Iso9660,
-            FileSystemType::Tmpfs => Self::Tmpfs,
-            FileSystemType::Overlay => Self::Overlay,
-        })
     }
 }
 
@@ -148,19 +134,5 @@ impl TabFileSystemType {
             Self::Swap => "swap",
             Self::Kernel(fs) => fs.name(),
         }
-    }
-
-    /// Converts a `FileSystemType` from the API into a `TabFileSystemType`.
-    pub fn from_api_type(api_type: FileSystemType) -> Result<Self, Error> {
-        Ok(match api_type {
-            FileSystemType::Ext4 => RealFilesystemType::Ext4.into(),
-            FileSystemType::Xfs => RealFilesystemType::Xfs.into(),
-            FileSystemType::Vfat => RealFilesystemType::Vfat.into(),
-            FileSystemType::Ntfs => RealFilesystemType::Ntfs.into(),
-            FileSystemType::Iso9660 => RealFilesystemType::Iso9660.into(),
-            FileSystemType::Tmpfs => NodevFilesystemType::Tmpfs.into(),
-            FileSystemType::Overlay => NodevFilesystemType::Overlay.into(),
-            FileSystemType::Auto => Self::Auto,
-        })
     }
 }

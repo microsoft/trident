@@ -58,16 +58,16 @@ mod tests {
 
     use trident_api::{
         config::{
-            AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, FileSystemType,
-            HostConfiguration, ImageSha384, MountOptions, MountPoint, OsImage as OsImageConfig,
-            Partition, PartitionType, Storage as StorageConfig,
+            AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, HostConfiguration,
+            ImageSha384, MountOptions, MountPoint, OsImage as OsImageConfig, Partition,
+            PartitionType, Storage as StorageConfig,
         },
         status::{AbVolumeSelection, ServicingType},
     };
 
     use crate::osimage::{
         mock::{MockImage, MockOsImage},
-        OsImage,
+        OsImage, OsImageFileSystemType,
     };
 
     const OSIMAGE_DUMMY_SOURCE: &str = "http://example/osimage";
@@ -147,8 +147,8 @@ mod tests {
         // Initialize an engine context object with spec matching the Host Configuration
         // Generate mock OS image
         let mock_entries = [
-            ("/image/path/A", "ext4", FileSystemType::Ext4),
-            ("/image/path/B", "ext4", FileSystemType::Ext4),
+            ("/image/path/A", OsImageFileSystemType::Ext4),
+            ("/image/path/B", OsImageFileSystemType::Ext4),
         ]
         .into_iter();
 
@@ -158,9 +158,9 @@ mod tests {
             os_release: OsRelease::default(),
             images: mock_entries
                 .clone()
-                .map(|(path, fs_type, _)| MockImage {
+                .map(|(path, fs_type)| MockImage {
                     mount_point: PathBuf::from(path),
-                    fs_type: serde_json::from_str(&format!("\"{}\"", fs_type)).unwrap(),
+                    fs_type,
                     fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
                     part_type: DiscoverablePartitionType::LinuxGeneric,
                     verity: None,
