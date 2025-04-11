@@ -1,3 +1,6 @@
+use std::fmt::{Display, Formatter};
+
+use anyhow::bail;
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 
@@ -7,13 +10,165 @@ use sysdefs::filesystems::{KernelFilesystemType, NodevFilesystemType, RealFilesy
 
 use crate::error::{InternalError, TridentError};
 
+/// File system types.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, EnumIter)]
+#[serde(rename_all = "lowercase", deny_unknown_fields)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
+pub enum FileSystemType {
+    /// # Ext4 file system
+    Ext4,
+
+    /// # XFS file system
+    Xfs,
+
+    /// # Vfat file system
+    Vfat,
+
+    /// # NTFS file system
+    ///
+    /// Using NTFS on Linux comes with some limitations. For more information,
+    /// see:
+    /// [Limitations of NTFS](/docs/Explanation/Limitations-Of-NTFS.md)
+    Ntfs,
+
+    /// # Tmpfs
+    ///
+    /// [Kernel documentation](https://www.kernel.org/doc/html/latest/filesystems/tmpfs.html)
+    ///
+    /// Tmpfs is only valid if the filesystem `source` is `new`.
+    Tmpfs,
+
+    /// # Auto
+    ///
+    /// Passed to `mount` to automatically detect the filesystem type.
+    ///
+    /// Auto is only valid if the filesystem `source` is `adopted`.
+    Auto,
+
+    /// # Overlay file system
+    ///
+    /// Used internally but currently not exposed in the API.
+    ///
+    /// Serialization is disabled. But deserialization is enabled for use in the
+    /// Display trait implementation.
+    #[serde(skip_deserializing)]
+    #[cfg_attr(feature = "schemars", schemars(skip))]
+    Overlay,
+
+    /// # ISO9660 file system
+    ///
+    /// Used internally but currently not exposed in the API.
+    ///
+    /// Serialization is disabled. But deserialization is enabled for use in the
+    /// Display trait implementation.
+    #[serde(skip_deserializing)]
+    #[cfg_attr(feature = "schemars", schemars(skip))]
+    Iso9660,
+}
+
+impl Display for FileSystemType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            serde_yaml::to_string(self)
+                .map_err(|_| std::fmt::Error)?
+                .trim()
+        )
+    }
+}
+
+impl From<NewFileSystemType> for FileSystemType {
+    fn from(value: NewFileSystemType) -> Self {
+        match value {
+            NewFileSystemType::Ext4 => FileSystemType::Ext4,
+            NewFileSystemType::Xfs => FileSystemType::Xfs,
+            NewFileSystemType::Vfat => FileSystemType::Vfat,
+            NewFileSystemType::Ntfs => FileSystemType::Ntfs,
+            NewFileSystemType::Tmpfs => FileSystemType::Tmpfs,
+            NewFileSystemType::Overlay => FileSystemType::Overlay,
+        }
+    }
+}
+
+impl From<AdoptedFileSystemType> for FileSystemType {
+    fn from(value: AdoptedFileSystemType) -> Self {
+        match value {
+            AdoptedFileSystemType::Ext4 => FileSystemType::Ext4,
+            AdoptedFileSystemType::Xfs => FileSystemType::Xfs,
+            AdoptedFileSystemType::Vfat => FileSystemType::Vfat,
+            AdoptedFileSystemType::Ntfs => FileSystemType::Ntfs,
+            AdoptedFileSystemType::Auto => FileSystemType::Auto,
+            AdoptedFileSystemType::Iso9660 => FileSystemType::Iso9660,
+        }
+    }
+}
+
+impl TryFrom<FileSystemType> for NewFileSystemType {
+    type Error = anyhow::Error;
+
+    fn try_from(value: FileSystemType) -> Result<Self, Self::Error> {
+        match value {
+            FileSystemType::Ext4 => Ok(NewFileSystemType::Ext4),
+            FileSystemType::Xfs => Ok(NewFileSystemType::Xfs),
+            FileSystemType::Vfat => Ok(NewFileSystemType::Vfat),
+            FileSystemType::Ntfs => Ok(NewFileSystemType::Ntfs),
+            FileSystemType::Tmpfs => Ok(NewFileSystemType::Tmpfs),
+            FileSystemType::Overlay => Ok(NewFileSystemType::Overlay),
+            FileSystemType::Auto | FileSystemType::Iso9660 => {
+                bail!("'{value}' is not a valid new filesystem type")
+            }
+        }
+    }
+}
+
+impl TryFrom<FileSystemType> for AdoptedFileSystemType {
+    type Error = anyhow::Error;
+
+    fn try_from(value: FileSystemType) -> Result<Self, Self::Error> {
+        match value {
+            FileSystemType::Ext4 => Ok(AdoptedFileSystemType::Ext4),
+            FileSystemType::Xfs => Ok(AdoptedFileSystemType::Xfs),
+            FileSystemType::Vfat => Ok(AdoptedFileSystemType::Vfat),
+            FileSystemType::Ntfs => Ok(AdoptedFileSystemType::Ntfs),
+            FileSystemType::Auto => Ok(AdoptedFileSystemType::Auto),
+            FileSystemType::Iso9660 => Ok(AdoptedFileSystemType::Iso9660),
+            FileSystemType::Tmpfs | FileSystemType::Overlay => {
+                bail!("'{value}' is not a valid adopted filesystem type")
+            }
+        }
+    }
+}
+
+impl FileSystemType {
+    /// Returns true if the file system is `ext*`.
+    pub fn is_ext(&self) -> bool {
+        // Added all on purpose (no wildcards) so that we update this when we
+        // add new filesystem.
+        match self {
+            Self::Ext4 => true,
+            Self::Xfs
+            | Self::Vfat
+            | Self::Ntfs
+            | Self::Tmpfs
+            | Self::Overlay
+            | Self::Iso9660
+            | Self::Auto => false,
+        }
+    }
+
+    /// Returns whether the filesystem should appear in the rules documentation.
+    #[cfg(feature = "documentation")]
+    pub fn document(&self) -> bool {
+        !matches!(self, FileSystemType::Overlay | FileSystemType::Iso9660)
+    }
+}
+
 /// New file system types.
 #[derive(
     Serialize, Deserialize, Debug, Default, Clone, Copy, PartialEq, Eq, EnumIter, IntoStaticStr,
 )]
 #[serde(rename_all = "lowercase", deny_unknown_fields)]
-#[cfg_attr(feature = "schemars", derive(JsonSchema))]
-#[strum(serialize_all = "lowercase")]
 pub enum NewFileSystemType {
     /// # Ext4 file system
     #[default]
@@ -44,7 +199,6 @@ pub enum NewFileSystemType {
     /// Serialization is disabled. But deserialization is enabled for use in the
     /// Display trait implementation.
     #[serde(skip_deserializing)]
-    #[cfg_attr(feature = "schemars", schemars(skip))]
     Overlay,
 }
 
@@ -118,8 +272,6 @@ impl From<NewFileSystemType> for KernelFilesystemType {
     Serialize, Deserialize, Debug, Default, Clone, Copy, PartialEq, Eq, EnumIter, IntoStaticStr,
 )]
 #[serde(rename_all = "lowercase", deny_unknown_fields)]
-#[cfg_attr(feature = "schemars", derive(JsonSchema))]
-#[strum(serialize_all = "lowercase")]
 pub enum AdoptedFileSystemType {
     /// # Ext4 file system
     Ext4,
@@ -151,7 +303,6 @@ pub enum AdoptedFileSystemType {
     /// Serialization is disabled. But deserialization is enabled for use in the
     /// Display trait implementation.
     #[serde(skip_deserializing)]
-    #[cfg_attr(feature = "schemars", schemars(skip))]
     Iso9660,
 }
 

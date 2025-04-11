@@ -128,48 +128,6 @@
       },
       "additionalProperties": false
     },
-    "AdoptedFileSystemType": {
-      "description": "Adopted file system types.",
-      "oneOf": [
-        {
-          "title": "Ext4 file system",
-          "type": "string",
-          "enum": [
-            "ext4"
-          ]
-        },
-        {
-          "title": "XFS file system",
-          "type": "string",
-          "enum": [
-            "xfs"
-          ]
-        },
-        {
-          "title": "Vfat file system",
-          "type": "string",
-          "enum": [
-            "vfat"
-          ]
-        },
-        {
-          "title": "NTFS file system",
-          "description": "Using NTFS on Linux comes with some limitations. For more information, see: [Limitations of NTFS](/docs/Explanation/Limitations-Of-NTFS.md)",
-          "type": "string",
-          "enum": [
-            "ntfs"
-          ]
-        },
-        {
-          "title": "Auto",
-          "description": "Passed to `mount` to automatically detect the filesystem type. ONLY supported for adopted partitions.",
-          "type": "string",
-          "enum": [
-            "auto"
-          ]
-        }
-      ]
-    },
     "AdoptedPartition": {
       "description": "Settings to adopt a pre-existing partition.\n\nOnly ONE match criteria should be provided.",
       "type": "object",
@@ -309,17 +267,13 @@
     },
     "FileSystem": {
       "type": "object",
-      "required": [
-        "mount_point",
-        "source"
-      ],
       "properties": {
-        "device_id": {
-          "description": "The ID of the block device on which to place this filesystem.",
+        "deviceId": {
+          "description": "The ID of the block device on which to place this file system.",
           "type": "string",
-          "nullable": true
+          "format": "Block Device ID"
         },
-        "mount_point": {
+        "mountPoint": {
           "description": "The mount point of the file system.\n\nIt can be provided as an object for more control over the mount options, or as a just a string when `defaults` is sufficient.",
           "oneOf": [
             {
@@ -342,69 +296,94 @@
               "$ref": "#/definitions/FileSystemSource"
             }
           ]
+        },
+        "type": {
+          "description": "The type of the file system.\n\nFile system type must *not* be specified if the source of the file system is `image`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/FileSystemType"
+            }
+          ],
+          "nullable": true
         }
-      }
+      },
+      "additionalProperties": false
     },
     "FileSystemSource": {
       "oneOf": [
         {
           "title": "New",
           "description": "Create a new file system.",
-          "type": "object",
-          "required": [
-            "source",
-            "type"
-          ],
-          "properties": {
-            "source": {
-              "type": "string",
-              "enum": [
-                "new"
-              ]
-            },
-            "type": {
-              "$ref": "#/definitions/NewFileSystemType"
-            }
-          },
-          "additionalProperties": false
+          "type": "string",
+          "enum": [
+            "new"
+          ]
         },
         {
           "title": "Adopted",
           "description": "Use an existing file system from an adopted partition.",
-          "type": "object",
-          "required": [
-            "source",
-            "type"
-          ],
-          "properties": {
-            "source": {
-              "type": "string",
-              "enum": [
-                "adopted"
-              ]
-            },
-            "type": {
-              "$ref": "#/definitions/AdoptedFileSystemType"
-            }
-          },
-          "additionalProperties": false
+          "type": "string",
+          "enum": [
+            "adopted"
+          ]
         },
         {
           "title": "Image",
           "description": "Use an existing file system from an image.",
-          "type": "object",
-          "required": [
-            "source"
-          ],
-          "properties": {
-            "source": {
-              "type": "string",
-              "enum": [
-                "image"
-              ]
-            }
-          },
-          "additionalProperties": false
+          "type": "string",
+          "enum": [
+            "image"
+          ]
+        }
+      ]
+    },
+    "FileSystemType": {
+      "description": "File system types.",
+      "oneOf": [
+        {
+          "title": "Ext4 file system",
+          "type": "string",
+          "enum": [
+            "ext4"
+          ]
+        },
+        {
+          "title": "XFS file system",
+          "type": "string",
+          "enum": [
+            "xfs"
+          ]
+        },
+        {
+          "title": "Vfat file system",
+          "type": "string",
+          "enum": [
+            "vfat"
+          ]
+        },
+        {
+          "title": "NTFS file system",
+          "description": "Using NTFS on Linux comes with some limitations. For more information, see: [Limitations of NTFS](/docs/Explanation/Limitations-Of-NTFS.md)",
+          "type": "string",
+          "enum": [
+            "ntfs"
+          ]
+        },
+        {
+          "title": "Tmpfs",
+          "description": "[Kernel documentation](https://www.kernel.org/doc/html/latest/filesystems/tmpfs.html)\n\nTmpfs is only valid if the filesystem `source` is `new`.",
+          "type": "string",
+          "enum": [
+            "tmpfs"
+          ]
+        },
+        {
+          "title": "Auto",
+          "description": "Passed to `mount` to automatically detect the filesystem type.\n\nAuto is only valid if the filesystem `source` is `adopted`.",
+          "type": "string",
+          "enum": [
+            "auto"
+          ]
         }
       ]
     },
@@ -548,48 +527,6 @@
         }
       },
       "additionalProperties": false
-    },
-    "NewFileSystemType": {
-      "description": "New file system types.",
-      "oneOf": [
-        {
-          "title": "Ext4 file system",
-          "type": "string",
-          "enum": [
-            "ext4"
-          ]
-        },
-        {
-          "title": "XFS file system",
-          "type": "string",
-          "enum": [
-            "xfs"
-          ]
-        },
-        {
-          "title": "Vfat file system",
-          "type": "string",
-          "enum": [
-            "vfat"
-          ]
-        },
-        {
-          "title": "NTFS file system",
-          "description": "Using NTFS on Linux comes with some limitations. For more information, see: [Limitations of NTFS](/docs/Explanation/Limitations-Of-NTFS.md)",
-          "type": "string",
-          "enum": [
-            "ntfs"
-          ]
-        },
-        {
-          "title": "Tmpfs",
-          "description": "[Kernel documentation](https://www.kernel.org/doc/html/latest/filesystems/tmpfs.html)",
-          "type": "string",
-          "enum": [
-            "tmpfs"
-          ]
-        }
-      ]
     },
     "Os": {
       "description": "Configuration for the host OS.",

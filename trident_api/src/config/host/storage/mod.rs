@@ -71,12 +71,7 @@ pub struct Storage {
     pub ab_update: Option<AbUpdate>,
 
     /// Filesystems in this host.
-    #[serde(
-        default,
-        skip_serializing_if = "Vec::is_empty",
-        deserialize_with = "filesystem::fs_serde::deserialize",
-        serialize_with = "filesystem::fs_serde::serialize"
-    )]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub filesystems: Vec<FileSystem>,
 
     /// Verity device configuration.

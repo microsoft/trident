@@ -17,10 +17,8 @@ pub use host::{
     storage::{
         disks::{Disk, PartitionTableType},
         encryption::{EncryptedVolume, Encryption},
-        filesystem::{
-            FileSystem, FileSystemSource, FileSystemType, MountOptions, MountPoint, MountPointInfo,
-        },
-        filesystem_types::{AdoptedFileSystemType, NewFileSystemType},
+        filesystem::{FileSystem, FileSystemSource, MountOptions, MountPoint, MountPointInfo},
+        filesystem_types::{AdoptedFileSystemType, FileSystemType, NewFileSystemType},
         partitions::{AdoptedPartition, Partition, PartitionSize, PartitionType},
         raid::{Raid, RaidLevel, SoftwareRaidArray},
         swap::SwapDevice,

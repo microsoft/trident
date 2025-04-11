@@ -2,7 +2,6 @@ HostConfiguration
 AbUpdate
 AbVolumePair
 AdditionalFile
-AdoptedFileSystemType
 AdoptedPartition
 ByteCount
 Disk
@@ -10,13 +9,13 @@ EncryptedVolume
 Encryption
 FileSystem
 FileSystemSource
+FileSystemType
 ImageSha384
 KernelCommandLine
 LoadMode
 ManagementOs
 Module
 MountPoint
-NewFileSystemType
 Os
 OsImage
 Partition

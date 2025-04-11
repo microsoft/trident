@@ -8,7 +8,16 @@
 
 ## Properties
 
-### `mount_point` **<span style="color:orange;">(required)</span>**
+### `deviceId` (optional)
+
+The ID of the block device on which to place this file system.
+
+| Characteristic | Value             |
+| -------------- | ----------------- |
+| Type           | `string`          |
+| Format         | `Block Device ID` |
+
+### `mountPoint` (optional)
 
 The mount point of the file system.
 
@@ -21,7 +30,7 @@ It can be provided as an object for more control over the mount options, or as a
 | Shorthand Type   | `string`                      |
 | Shorthand Format | `path`                        |
 
-### `source` **<span style="color:orange;">(required)</span>**
+### `source` (optional)
 
 The source of the file system.
 
@@ -32,11 +41,14 @@ If not specified, this field will default to image.
 | Type           | `FileSystemSource`                        |
 | Link           | [FileSystemSource](./FileSystemSource.md) |
 
-### `device_id` (optional)
+### `type` (optional)
 
-The ID of the block device on which to place this filesystem.
+The type of the file system.
 
-| Characteristic | Value    |
-| -------------- | -------- |
-| Type           | `string` |
+File system type must *not* be specified if the source of the file system is `image`.
+
+| Characteristic | Value                                 |
+| -------------- | ------------------------------------- |
+| Type           | `FileSystemType`                      |
+| Link           | [FileSystemType](./FileSystemType.md) |
 

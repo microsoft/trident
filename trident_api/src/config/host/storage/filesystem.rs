@@ -1,5 +1,4 @@
 use std::{
-    fmt::{Display, Formatter},
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -8,22 +7,17 @@ use std::{
 use schemars::JsonSchema;
 
 use serde::{Deserialize, Serialize};
-use strum_macros::EnumIter;
-
-use sysdefs::filesystems::{KernelFilesystemType, NodevFilesystemType, RealFilesystemType};
 
 use crate::{
     constants::{ESP_MOUNT_POINT_PATH, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
-    error::{InternalError, TridentError},
     BlockDeviceId,
 };
 
-use super::filesystem_types::{AdoptedFileSystemType, NewFileSystemType};
+use super::filesystem_types::{AdoptedFileSystemType, FileSystemType, NewFileSystemType};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct FileSystem {
-    /// The ID of the block device on which to place this filesystem.
+    /// The ID of the block device on which to place this file system.
     pub device_id: Option<BlockDeviceId>,
 
     /// The source of the file system.
@@ -35,62 +29,103 @@ pub struct FileSystem {
     ///
     /// It can be provided as an object for more control over the mount options,
     /// or as a just a string when `defaults` is sufficient.
-    #[cfg_attr(
-        feature = "schemars",
-        schemars(
-            schema_with = "crate::primitives::shortcuts::opt_string_or_struct_schema::<MountPoint>"
-        )
-    )]
     pub mount_point: Option<MountPoint>,
 }
 
 pub mod fs_serde {
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    #[cfg(feature = "schemars")]
+    use schemars::JsonSchema;
+
+    use serde::{Deserialize, Deserializer, Serialize};
 
     use crate::is_default;
 
-    use super::{
-        AdoptedFileSystemType, FileSystem, FileSystemSource, MountPoint, NewFileSystemType,
-    };
+    #[cfg(feature = "schemars")]
+    use crate::schema_helpers::block_device_id_schema;
+
+    use super::{AdoptedFileSystemType, FileSystemType, MountPoint, NewFileSystemType};
 
     #[derive(Deserialize, Serialize, Default, PartialEq, Eq)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    enum FileSystemSourceInterim {
+    #[serde(rename_all = "kebab-case", deny_unknown_fields)]
+    #[cfg_attr(feature = "schemars", derive(JsonSchema))]
+    enum FileSystemSource {
+        /// # New
+        ///
+        /// Create a new file system.
+        New,
+
+        /// # Adopted
+        ///
+        /// Use an existing file system from an adopted partition.
+        Adopted,
+
+        /// # Image
+        ///
+        /// Use an existing file system from an image.
         #[default]
         Image,
-        Adopted,
-        New,
     }
 
     #[derive(Deserialize, Serialize)]
     #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct FileSystemInterim {
+    #[cfg_attr(feature = "schemars", derive(JsonSchema))]
+    struct FileSystem {
+        /// The ID of the block device on which to place this file system.
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
         device_id: Option<String>,
 
+        /// The source of the file system.
+        ///
+        /// If not specified, this field will default to image.
         #[serde(default, skip_serializing_if = "is_default")]
-        source: FileSystemSourceInterim,
+        source: FileSystemSource,
 
+        /// The type of the file system.
+        ///
+        /// File system type must *not* be specified if the source of the file
+        /// system is `image`.
         #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
-        fs_type: Option<String>,
+        fs_type: Option<FileSystemType>,
 
+        /// The mount point of the file system.
+        ///
+        /// It can be provided as an object for more control over the mount options,
+        /// or as a just a string when `defaults` is sufficient.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
             deserialize_with = "crate::primitives::shortcuts::opt_string_or_struct"
         )]
+        #[cfg_attr(
+            feature = "schemars",
+            schemars(
+                schema_with = "crate::primitives::shortcuts::opt_string_or_struct_schema::<MountPoint>"
+            )
+        )]
         mount_point: Option<MountPoint>,
     }
 
-    impl<'de> Deserialize<'de> for FileSystem {
-        fn deserialize<D>(deserializer: D) -> Result<FileSystem, D::Error>
+    #[cfg(feature = "schemars")]
+    impl JsonSchema for super::FileSystem {
+        fn schema_name() -> String {
+            "FileSystem".to_string()
+        }
+
+        fn json_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+            FileSystem::json_schema(gen)
+        }
+    }
+
+    impl<'de> Deserialize<'de> for super::FileSystem {
+        fn deserialize<D>(deserializer: D) -> Result<super::FileSystem, D::Error>
         where
             D: Deserializer<'de>,
         {
-            let interim = FileSystemInterim::deserialize(deserializer)?;
+            let interim = FileSystem::deserialize(deserializer)?;
             let source = match interim.source {
-                FileSystemSourceInterim::Adopted => {
-                    FileSystemSource::Adopted(match interim.fs_type {
+                FileSystemSource::Adopted => {
+                    super::FileSystemSource::Adopted(match interim.fs_type {
                         None => AdoptedFileSystemType::default(),
                         Some(fs_type) => AdoptedFileSystemType::try_from(fs_type).map_err(|e| {
                             serde::de::Error::custom(format!(
@@ -99,22 +134,22 @@ pub mod fs_serde {
                         })?,
                     })
                 }
-                FileSystemSourceInterim::New => FileSystemSource::New(match interim.fs_type {
+                FileSystemSource::New => super::FileSystemSource::New(match interim.fs_type {
                     None => NewFileSystemType::default(),
                     Some(fs_type) => NewFileSystemType::try_from(fs_type).map_err(|e| {
                         serde::de::Error::custom(format!("Invalid new filesystem type: {e}"))
                     })?,
                 }),
-                FileSystemSourceInterim::Image => {
+                FileSystemSource::Image => {
                     if interim.fs_type.is_some() {
                         return Err(serde::de::Error::custom(
                             "Filesystem type cannot be specified for image filesystems",
                         ));
                     }
-                    FileSystemSource::Image
+                    super::FileSystemSource::Image
                 }
             };
-            Ok(FileSystem {
+            Ok(super::FileSystem {
                 device_id: interim.device_id,
                 source,
                 mount_point: interim.mount_point,
@@ -122,54 +157,31 @@ pub mod fs_serde {
         }
     }
 
-    impl Serialize for FileSystem {
+    impl Serialize for super::FileSystem {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: serde::Serializer,
         {
-            let interim = FileSystemInterim {
+            let interim = FileSystem {
                 device_id: self.device_id.clone(),
                 source: match &self.source {
-                    FileSystemSource::Image => FileSystemSourceInterim::Image,
-                    FileSystemSource::New(_) => FileSystemSourceInterim::New,
-                    FileSystemSource::Adopted(_) => FileSystemSourceInterim::Adopted,
+                    super::FileSystemSource::Image => FileSystemSource::Image,
+                    super::FileSystemSource::New(_) => FileSystemSource::New,
+                    super::FileSystemSource::Adopted(_) => FileSystemSource::Adopted,
                 },
                 mount_point: self.mount_point.clone(),
                 fs_type: match &self.source {
-                    FileSystemSource::New(fs_type) => Some((*fs_type).into()),
-                    FileSystemSource::Adopted(fs_type) => Some((*fs_type).into()),
+                    super::FileSystemSource::New(fs_type) => Some((*fs_type).into()),
+                    super::FileSystemSource::Adopted(fs_type) => Some((*fs_type).into()),
                     _ => None,
                 },
             };
             interim.serialize(serializer)
         }
     }
-
-    /// Serialize a vector of `FileSystem` objects.
-    pub fn serialize<S>(filesystems: &Vec<FileSystem>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        filesystems.serialize(serializer)
-    }
-
-    /// Deserialize a vector of `FileSystem` objects.
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<FileSystem>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        Vec::deserialize(deserializer)
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[serde(
-    rename_all = "camelCase",
-    deny_unknown_fields,
-    tag = "source",
-    content = "type"
-)]
-#[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub enum FileSystemSource {
     /// # New
     ///
@@ -288,139 +300,6 @@ where
 {
     fn from(options: T) -> Self {
         MountOptions::new(options)
-    }
-}
-
-/// File system types.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, EnumIter)]
-#[serde(rename_all = "lowercase", deny_unknown_fields)]
-#[cfg_attr(feature = "schemars", derive(JsonSchema))]
-pub enum FileSystemType {
-    /// # Ext4 file system
-    Ext4,
-
-    /// # XFS file system
-    Xfs,
-
-    /// # Vfat file system
-    Vfat,
-
-    /// # NTFS file system
-    ///
-    /// Using NTFS on Linux comes with some limitations. For more information,
-    /// see:
-    /// [Limitations of NTFS](/docs/Explanation/Limitations-Of-NTFS.md)
-    Ntfs,
-
-    /// # Tmpfs
-    ///
-    /// [Kernel documentation](https://www.kernel.org/doc/html/latest/filesystems/tmpfs.html)
-    Tmpfs,
-
-    /// # Auto
-    ///
-    /// Passed to `mount` to automatically detect the filesystem type. ONLY
-    /// supported for adopted partitions.
-    Auto,
-
-    /// # Overlay file system
-    ///
-    /// Used internally but currently not exposed in the API.
-    ///
-    /// Serialization is disabled. But deserialization is enabled for use in the
-    /// Display trait implementation.
-    #[serde(skip_deserializing)]
-    #[cfg_attr(feature = "schemars", schemars(skip))]
-    Overlay,
-
-    /// # ISO9660 file system
-    ///
-    /// Used internally but currently not exposed in the API.
-    ///
-    /// Serialization is disabled. But deserialization is enabled for use in the
-    /// Display trait implementation.
-    #[serde(skip_deserializing)]
-    #[cfg_attr(feature = "schemars", schemars(skip))]
-    Iso9660,
-}
-
-impl Display for FileSystemType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            serde_yaml::to_string(self)
-                .map_err(|_| std::fmt::Error)?
-                .trim()
-        )
-    }
-}
-
-impl TryFrom<FileSystemType> for RealFilesystemType {
-    type Error = TridentError;
-
-    fn try_from(value: FileSystemType) -> Result<RealFilesystemType, TridentError> {
-        match value {
-            FileSystemType::Ext4 => Ok(RealFilesystemType::Ext4),
-            FileSystemType::Xfs => Ok(RealFilesystemType::Xfs),
-            FileSystemType::Vfat => Ok(RealFilesystemType::Vfat),
-            FileSystemType::Ntfs => Ok(RealFilesystemType::Ntfs),
-            FileSystemType::Iso9660 => Ok(RealFilesystemType::Iso9660),
-            FileSystemType::Tmpfs => Err(TridentError::new(InternalError::Internal(
-                "Cannot convert Tmpfs to a RealFilesystemType",
-            ))),
-            FileSystemType::Overlay => Err(TridentError::new(InternalError::Internal(
-                "Cannot convert Overlay to a RealFilesystemType",
-            ))),
-            FileSystemType::Auto => Err(TridentError::new(InternalError::Internal(
-                "Cannot convert Auto to a RealFilesystemType",
-            ))),
-        }
-    }
-}
-
-impl TryFrom<FileSystemType> for KernelFilesystemType {
-    type Error = TridentError;
-
-    fn try_from(value: FileSystemType) -> Result<KernelFilesystemType, TridentError> {
-        match value {
-            FileSystemType::Ext4 => Ok(KernelFilesystemType::Real(RealFilesystemType::Ext4)),
-            FileSystemType::Xfs => Ok(KernelFilesystemType::Real(RealFilesystemType::Xfs)),
-            FileSystemType::Vfat => Ok(KernelFilesystemType::Real(RealFilesystemType::Vfat)),
-            FileSystemType::Ntfs => Ok(KernelFilesystemType::Real(RealFilesystemType::Ntfs)),
-            FileSystemType::Tmpfs => Ok(KernelFilesystemType::Nodev(NodevFilesystemType::Tmpfs)),
-            FileSystemType::Overlay => {
-                Ok(KernelFilesystemType::Nodev(NodevFilesystemType::Overlay))
-            }
-            FileSystemType::Iso9660 => Ok(KernelFilesystemType::Real(RealFilesystemType::Iso9660)),
-            FileSystemType::Auto => Err(TridentError::new(InternalError::Internal(
-                "Cannot convert Auto to a KernelFilesystemType",
-            ))),
-        }
-    }
-}
-
-impl FileSystemType {
-    /// Returns true if the file system is `ext*`.
-    pub fn is_ext(&self) -> bool {
-        // Added all on purpose (no wildcards) so that we update this when we
-        // add new filesystem.
-        match self {
-            Self::Ext4 => true,
-            Self::Xfs
-            | Self::Vfat
-            | Self::Ntfs
-            | Self::Tmpfs
-            | Self::Overlay
-            | Self::Iso9660
-            | Self::Auto => false,
-        }
-    }
-
-    /// Returns whether the filesystem should appear in the rules documentation.
-    #[cfg(feature = "documentation")]
-    pub fn document(&self) -> bool {
-        !matches!(self, FileSystemType::Overlay | FileSystemType::Iso9660)
     }
 }
 
