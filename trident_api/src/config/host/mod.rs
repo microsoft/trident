@@ -85,7 +85,7 @@ impl HostConfiguration {
 
         // Gate usr-verity support behind the UKI support parameter.
         if graph.usr_fs_is_verity() && !self.internal_params.get_flag(ENABLE_UKI_SUPPORT) {
-            return Err(HostConfigurationStaticValidationError::UnsupportedVerityDevices);
+            return Err(HostConfigurationStaticValidationError::UsrVerityRequiresUkiSupport);
         }
 
         Ok(())

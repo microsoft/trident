@@ -241,8 +241,8 @@ impl Storage {
 
         trace!("Validating verity devices in the host configuration");
 
-        // Verity is only supported for root volume, verify the input is not
-        // asking for something else.
+        // Trident supports at most one verity device. Verify that no more than one device is
+        // listed.
         if self.verity.len() > 1 {
             return Err(HostConfigurationStaticValidationError::UnsupportedVerityDevices);
         }
@@ -257,7 +257,11 @@ impl Storage {
 
         // Ensure the filesystem is mounted.
         let Some(mount_point) = fs_on_verity.mount_point.as_ref() else {
-            return Err(HostConfigurationStaticValidationError::UnsupportedVerityDevices);
+            return Err(
+                HostConfigurationStaticValidationError::VerityFilesystemWithoutMountPoint {
+                    device_name: verity_device.id.clone(),
+                },
+            );
         };
 
         // Ensure the filesystem is mounted read-only.

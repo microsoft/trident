@@ -120,10 +120,16 @@ pub enum HostConfigurationStaticValidationError {
     #[error("Only one of root or usr verity device is supported, but other verity devices were requested")]
     UnsupportedVerityDevices,
 
+    #[error("In order to use usr-verity, UKI support must be enabled")]
+    UsrVerityRequiresUkiSupport,
+
     #[error(
         "SELinux mode '{selinux_mode}' is not supported with verity, must be set to 'disabled'"
     )]
     VerityAndSelinuxUnsupported { selinux_mode: String },
+
+    #[error("Verity device '{device_name}' must define a mount point.")]
+    VerityFilesystemWithoutMountPoint { device_name: String },
 
     #[error(
         "Verity device '{device_name}' is mounted read-write at '{mount_point_path}', but must \
