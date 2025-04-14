@@ -10,21 +10,22 @@ import (
 func parseExtraArguments(
 	suite core.SuiteContext,
 	argList []string,
-	runnable interface {
-		core.RunnableMetadata
-		core.ArgumentedRunnable
+	registrant interface {
+		core.TestRegistrantMetadata
+		core.Argumented
+		core.TestRegistrant
 	},
 ) error {
-	if runnable.Args() == nil {
+	if registrant.Args() == nil {
 		return nil
 	}
 
-	runnableName := runnable.Name()
-	runnableType := runnable.RunnableType()
+	runnableName := registrant.Name()
+	runnableType := registrant.RegistrantType()
 
 	// Create a new parser
 	parser, err := kong.New(
-		runnable.Args(),
+		registrant.Args(),
 		kong.Name(runnableName),
 		kong.Description(fmt.Sprintf("Arguments for %s '%s' in the '%s' suite.",
 			runnableType,

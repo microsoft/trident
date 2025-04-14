@@ -34,25 +34,30 @@ func (s *TridentE2EScenario) AddStagePath(path string) {
 	s.stagePaths = append(s.stagePaths, path)
 }
 
-func (s TridentE2EScenario) Name() string {
+func (s *TridentE2EScenario) Name() string {
 	return s.name
 }
 
-func (s TridentE2EScenario) Args() any {
+func (s *TridentE2EScenario) Args() any {
 	return &s.args
 }
 
-func (s TridentE2EScenario) Tags() []string {
+func (s *TridentE2EScenario) Tags() []string {
 	return s.tags
 }
 
-func (s TridentE2EScenario) StagePaths() []string {
+func (s *TridentE2EScenario) StagePaths() []string {
 	return s.stagePaths
 }
 
-func (s TridentE2EScenario) Run(ctx storm.Context) error {
-	ctx.Logger().Infof("Hello from '%s'!", s.Name())
-	ctx.Logger().Infof("Running stage '%s'", s.args.StagePath)
+func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {
+	r.RegisterTestCase("run", s.Run)
+	return nil
+}
+
+func (s TridentE2EScenario) Run(tc storm.TestCase) error {
+	tc.Logger().Infof("Hello from '%s'!", s.Name())
+	tc.Logger().Infof("Running stage '%s'", s.args.StagePath)
 
 	fmt.Println(s.config)
 

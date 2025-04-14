@@ -7,14 +7,14 @@ import (
 	"golang.org/x/term"
 )
 
-const SEPARATOR_CHAR = "-"
+const SEPARATOR_CHAR = "="
 
-// Returns the width of the terminal. If it cannot be determined, it returns
-// a default value of 80.
+// Returns the width of the terminal. If it cannot be determined, it returns a
+// default value of 160.
 func termWidth() int {
 	width, _, err := term.GetSize(0)
 	if err != nil {
-		return 80
+		return 160
 	}
 	return width
 }
@@ -24,10 +24,10 @@ func termWidth() int {
 //
 // Example:
 //
-//	==> MyTitle ---------------------------------------
+//	--- MyTitle ---------------------------------------
 func printSeparatorWithTitle(title string) {
 	width := termWidth()
-	preTitle := "--- "
+	preTitle := strings.Repeat(SEPARATOR_CHAR, 3) + " "
 	titleWidth := len(title) + len(preTitle)
 	separatorWidth := width - titleWidth - 1
 	if separatorWidth < 0 {
@@ -42,6 +42,11 @@ func printSeparator() {
 	fmt.Printf("%s\n", strings.Repeat(SEPARATOR_CHAR, termWidth()))
 }
 
+// Prints a separator line to the console.
+func printSeparatorChar(char string) {
+	fmt.Printf("%s\n", strings.Repeat(char, termWidth()))
+}
+
 func simpleWordWrap(text string, maxWidth int) []string {
 	lines := make([]string, 0)
 
@@ -52,16 +57,15 @@ func simpleWordWrap(text string, maxWidth int) []string {
 	for _, word := range words[1:] {
 		// Check if adding the next word exceeds the max width
 		if (len(currentLine) + len(word) + 1) > maxWidth {
+			// Finalize the current line by adding it to the list
 			lines = append(lines, currentLine)
-			currentLine = ""
-		}
-
-		// Add the word to the current line
-		if currentLine != "" {
+			// Start a new current line with the current word
+			currentLine = word
+		} else {
+			// Add the word to the current line
 			currentLine += " "
+			currentLine += word
 		}
-
-		currentLine += word
 	}
 
 	// Add the last line if it's not empty

@@ -1,45 +1,66 @@
 package testmgr
 
-import "github.com/sirupsen/logrus"
+import "github.com/fatih/color"
 
 type TestCaseStatus int
 
 const (
-	TestCaseStatusRunning TestCaseStatus = iota
+	TestCaseStatusPending TestCaseStatus = iota
+	TestCaseStatusRunning
 	TestCaseStatusPassed
 	TestCaseStatusFailed
 	TestCaseStatusSkipped
+	TestCaseStatusNotRun
 	TestCaseStatusError
 )
 
+// IsFinal returns true for all test case statuses that are considered final states.
+// This includes Passed, Failed, Skipped, and Error statuses.
+// It does not include Pending or Running statuses.
+func (tcs TestCaseStatus) IsFinal() bool {
+	return tcs == TestCaseStatusPassed ||
+		tcs == TestCaseStatusFailed ||
+		tcs == TestCaseStatusSkipped ||
+		tcs == TestCaseStatusNotRun ||
+		tcs == TestCaseStatusError
+}
+
 func (tcs TestCaseStatus) String() string {
 	switch tcs {
+	case TestCaseStatusPending:
+		return "PEND"
 	case TestCaseStatusPassed:
 		return "PASS"
 	case TestCaseStatusFailed:
 		return "FAIL"
 	case TestCaseStatusSkipped:
 		return "SKIP"
+	case TestCaseStatusNotRun:
+		return "NOTR"
 	case TestCaseStatusError:
-		return "ERROR"
+		return "ERRO"
 	default:
 		return "UNKNOWN"
 	}
 }
 
-func (tcs TestCaseStatus) logLevel() logrus.Level {
+func (tcs TestCaseStatus) ColorString() string {
 	switch tcs {
 	case TestCaseStatusPassed:
-		return logrus.InfoLevel
+		return color.GreenString(tcs.String())
 	case TestCaseStatusFailed:
-		return logrus.ErrorLevel
+		return color.RedString(tcs.String())
 	case TestCaseStatusSkipped:
-		return logrus.WarnLevel
+		return color.YellowString(tcs.String())
 	case TestCaseStatusError:
-		return logrus.ErrorLevel
+		return color.New(color.FgRed, color.Bold).Sprint(tcs.String())
 	default:
-		return logrus.InfoLevel
+		return tcs.String()
 	}
+}
+
+func (tcs TestCaseStatus) IsPending() bool {
+	return tcs == TestCaseStatusPending
 }
 
 func (tcs TestCaseStatus) IsRunning() bool {
@@ -60,6 +81,10 @@ func (tcs TestCaseStatus) Skipped() bool {
 
 func (tcs TestCaseStatus) Errored() bool {
 	return tcs == TestCaseStatusError
+}
+
+func (tcs TestCaseStatus) NotRun() bool {
+	return tcs == TestCaseStatusNotRun
 }
 
 // IsBad returns true if the test case status is either Failed or Error.

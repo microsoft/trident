@@ -1,8 +1,6 @@
 package reporter
 
 import (
-	"storm/internal/testmgr"
-
 	"github.com/fatih/color"
 )
 
@@ -37,21 +35,6 @@ func (ts TestSummaryStatus) StringColor() string {
 		return color.New(color.FgRed, color.Bold).Sprint(ts.String())
 	default:
 		return ts.String()
-	}
-}
-
-func testCaseStatusColor(status testmgr.TestCaseStatus) string {
-	switch status {
-	case testmgr.TestCaseStatusPassed:
-		return color.GreenString(status.String())
-	case testmgr.TestCaseStatusFailed:
-		return color.RedString(status.String())
-	case testmgr.TestCaseStatusSkipped:
-		return color.YellowString(status.String())
-	case testmgr.TestCaseStatusError:
-		return color.New(color.FgRed, color.Bold).Sprint(status.String())
-	default:
-		return status.String()
 	}
 }
 

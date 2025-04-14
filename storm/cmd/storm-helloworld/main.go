@@ -9,7 +9,7 @@ func main() {
 	storm := storm.CreateSuite("hello-world")
 
 	// Add hello world scenario
-	storm.AddScenario(helloworld.HelloWorldScenario{})
+	storm.AddScenario(&helloworld.HelloWorldScenario{})
 
 	// Add hello world helper
 	storm.AddHelper(&helloworld.HelloWorldHelper{})

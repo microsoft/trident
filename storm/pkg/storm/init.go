@@ -11,10 +11,11 @@ type BaseScenario = core.BaseScenario
 type Helper = core.Helper
 type BaseHelper = core.BaseHelper
 
-type Context = core.RunnableContext
 type SetupCleanupContext = core.SetupCleanupContext
 
+type TestRegistrar = core.TestRegistrar
 type TestCase = core.TestCase
+type TestCaseFunction = core.TestCaseFunction
 
 type LoggerProvider = core.LoggerProvider
 

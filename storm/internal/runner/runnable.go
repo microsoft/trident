@@ -3,16 +3,17 @@ package runner
 import "storm/pkg/storm/core"
 
 type runnableInstance struct {
-	core.ArgumentedRunnable
+	core.Argumented
+	core.TestRegistrant
 }
 
-func (ri *runnableInstance) RunnableType() core.RunnableType {
-	if _, ok := ri.ArgumentedRunnable.(core.Scenario); ok {
-		return core.RunnableTypeScenario
+func (ri *runnableInstance) RegistrantType() core.RegistrantType {
+	if _, ok := ri.TestRegistrant.(core.Scenario); ok {
+		return core.RegistrantTypeScenario
 	}
 
-	if _, ok := ri.ArgumentedRunnable.(core.Helper); ok {
-		return core.RunnableTypeHelper
+	if _, ok := ri.TestRegistrant.(core.Helper); ok {
+		return core.RegistrantTypeHelper
 	}
 
 	panic("unknown runnable type")

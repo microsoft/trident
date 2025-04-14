@@ -1,10 +1,11 @@
 package suite
 
 import (
-	"slices"
-	"storm/internal/cli"
-
 	"fmt"
+	"slices"
+
+	"storm/internal/cli"
+	"storm/internal/collector"
 	"storm/pkg/storm/core"
 
 	"github.com/alecthomas/kong"
@@ -62,6 +63,16 @@ func (s *StormSuite) AddScenario(new_scenario core.Scenario) {
 		s.Log.Fatalf("Scenario '%s' already exists", new_scenario.Name())
 	}
 
+	if err := core.ValidateEntityName(new_scenario.Name(), core.RegistrantTypeScenario.String()); err != nil {
+		s.Log.WithError(err).Fatal("Failed to create scenario")
+	}
+
+	// Check that we can collect test cases from the scenario
+	_, err := collector.CollectTestCases(new_scenario)
+	if err != nil {
+		s.Log.WithError(err).Fatalf("Failed to collect test cases from scenario '%s'", new_scenario.Name())
+	}
+
 	s.Log.Debugf("Registering scenario '%s'", new_scenario.Name())
 	s.Log.Tracef("Tags: %v", new_scenario.Tags())
 	s.Log.Tracef("Stage paths: %v", new_scenario.StagePaths())
@@ -75,6 +86,17 @@ func (s *StormSuite) AddHelper(helper core.Helper) {
 	}) {
 		s.Log.Fatalf("Helper '%s' already exists", helper.Name())
 	}
+
+	if err := core.ValidateEntityName(helper.Name(), core.RegistrantTypeHelper.String()); err != nil {
+		s.Log.WithError(err).Fatal("Failed to create helper")
+	}
+
+	// Check that we can collect test cases from the scenario
+	_, err := collector.CollectTestCases(helper)
+	if err != nil {
+		s.Log.WithError(err).Fatalf("Failed to collect test cases from helper '%s'", helper.Name())
+	}
+
 	s.Log.Debugf("Registering helper '%s'", helper.Name())
 	s.helpers = append(s.helpers, helper)
 }

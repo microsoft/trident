@@ -1,37 +1,41 @@
 package runner
 
 import (
+	"fmt"
+	"slices"
 	"storm/internal/reporter"
 	"storm/internal/testmgr"
 	"storm/pkg/storm/core"
+	"sync"
 )
 
-func RunRunnable(suite core.SuiteContext,
-	runnable core.ArgumentedRunnable,
+func RegisterAndRunTests(suite core.SuiteContext,
+	registrant interface {
+		core.Argumented
+		core.TestRegistrant
+	},
 	args []string,
 ) error {
 	// Create a new runnable instance
-	runnableInstance := &runnableInstance{
-		ArgumentedRunnable: runnable,
+	registrantInstance := &runnableInstance{
+		TestRegistrant: registrant,
+		Argumented:     registrant,
 	}
 
 	// Parse the extra arguments for the runnable
-	err := parseExtraArguments(suite, args, runnableInstance)
+	err := parseExtraArguments(suite, args, registrantInstance)
 	if err != nil {
 		return err
 	}
 
 	// Create a new test manager for the runnable
-	testMgr := testmgr.NewStormTestManager(suite, runnableInstance)
-
-	ctx := &runnableContext{
-		runnableMeta: runnableInstance,
-		logger:       suite.Logger(),
-		testCreator:  testMgr,
+	testMgr, err := testmgr.NewStormTestManager(suite, registrantInstance)
+	if err != nil {
+		return fmt.Errorf("failed to create test manager: %w", err)
 	}
 
 	// Actually run the thing
-	err = executeRunnableInner(suite, runnableInstance, testMgr, ctx)
+	err = executeTestCases(suite, registrantInstance, testMgr)
 
 	if err != nil {
 		switch err.(type) {
@@ -53,4 +57,112 @@ func RunRunnable(suite core.SuiteContext,
 	rep.PrintReport()
 
 	return rep.ExitError()
+}
+
+func executeTestCases(suite core.SuiteContext,
+	runnable interface {
+		core.TestRegistrantMetadata
+		core.TestRegistrant
+	},
+	testManager *testmgr.StormTestManager,
+) error {
+
+	ctx := &runnableContext{
+		LoggerProvider:         suite,
+		TestRegistrantMetadata: runnable,
+	}
+
+	// If the runnable implements the SetupCleanup interface, we call
+	// the setup method before running the tests.
+	if r, ok := runnable.(core.SetupCleanup); ok {
+		err := runCatchPanic(func() error { return r.Setup(ctx) })
+		if err != nil {
+			return newSetupError(runnable, err)
+		}
+	}
+
+	cleanupFuncs := make([]func(), 0)
+
+	bail := false
+
+	for _, testCase := range testManager.TestCases() {
+		if !bail {
+			suite.Logger().Infof("%s (started)", testCase.Name())
+			// Run the test case.
+			executeTestCase(testCase)
+
+			// Grab and store the cleanup functions for this test case.
+			cleanupFuncs = append(cleanupFuncs, testCase.SuiteCleanupList()...)
+
+			// Check if the test case caused a bail condition.
+			bail = testCase.IsBailCondition()
+			suite.Logger().Infof("%s %s", testCase.Name(), testCase.Status().ColorString())
+		} else {
+			testCase.MarkNotRun("dependency failure")
+		}
+
+	}
+
+	// If we have any cleanup functions, run them in reverse order.
+	slices.Reverse(cleanupFuncs)
+	for _, f := range cleanupFuncs {
+		runCatchPanic(func() error {
+			f()
+			return nil
+		})
+	}
+
+	// If the runnable implements the SetupCleanup interface, we call
+	// the Cleanup method after running the tests.
+	if r, ok := runnable.(core.SetupCleanup); ok {
+		err := runCatchPanic(func() error { return r.Cleanup(ctx) })
+		if err != nil {
+			return newCleanupError(runnable, err)
+		}
+	}
+
+	return nil
+}
+
+func executeTestCase(testCase *testmgr.TestCase) {
+	var err error
+	var wg sync.WaitGroup
+
+	// Run the runnable in a separate goroutine to so that runtime.Goexit() can
+	// be called to stop the test execution.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		err = runCatchPanic(func() error {
+			return testCase.Execute()
+		})
+	}()
+
+	// Wait for the goroutine to finish and close the test with whatever
+	// error we receive, if any.
+	wg.Wait()
+
+	if err != nil {
+		testCase.MarkError(err)
+	} else if testCase.Status().IsRunning() {
+		testCase.Pass()
+	}
+}
+
+type PanicError struct {
+	any
+}
+
+func (pe PanicError) Error() string {
+	return fmt.Sprintf("panic occurred: %v", pe.any)
+}
+
+func runCatchPanic(f func() error) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = PanicError{r}
+		}
+	}()
+
+	return f()
 }

@@ -3,51 +3,32 @@ package testmgr
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"runtime"
+	"storm/pkg/storm/core"
 	"time"
 
 	"github.com/sirupsen/logrus"
 )
 
 type TestCase struct {
-	name      string
-	index     uint
-	parent    *StormTestManager
-	startTime time.Time
-	endTime   time.Time
-	status    TestCaseStatus
-	log       *logrus.Logger
-	logBuffer bytes.Buffer
+	registrant   core.TestRegistrantMetadata
+	name         string
+	startTime    time.Time
+	endTime      time.Time
+	status       TestCaseStatus
+	reason       string
+	log          *logrus.Logger
+	logBuffer    bytes.Buffer
+	f            core.TestCaseFunction
+	suiteCleanup []func()
 }
 
-// Implementer of logrus.Hook interface to tee log messages from the test case
-// logger to the suite logger
-type testCaseLogTee struct {
-	suiteLogger *logrus.Logger
-	testCaseId  string
-}
-
-func (tee testCaseLogTee) Levels() []logrus.Level {
-	return logrus.AllLevels
-}
-
-func (tee testCaseLogTee) Fire(entry *logrus.Entry) error {
-	// Make a shallow copy so that we can modify the logger pointer
-	newEntry := tee.suiteLogger.WithFields(entry.Data)
-	newEntry.Caller = entry.Caller
-	newEntry.Log(entry.Level, fmt.Sprintf("[%s] > %s", tee.testCaseId, entry.Message))
-	return nil
-}
-
-func newTestCase(name string, index uint, parent *StormTestManager) *TestCase {
+func newTestCase(name string, f core.TestCaseFunction) *TestCase {
 	tc := &TestCase{
-		name:      name,
-		index:     index,
-		parent:    parent,
-		startTime: time.Now(),
-		status:    TestCaseStatusRunning,
-		log:       logrus.New(),
+		name:   name,
+		f:      f,
+		status: TestCaseStatusPending,
+		log:    logrus.New(),
 	}
 
 	tc.log.SetLevel(logrus.TraceLevel)
@@ -56,153 +37,142 @@ func newTestCase(name string, index uint, parent *StormTestManager) *TestCase {
 		ForceColors:      true,
 		DisableTimestamp: false,
 	})
-	tc.log.AddHook(testCaseLogTee{
-		suiteLogger: parent.suite.Logger(),
-		testCaseId:  tc.id(),
-	})
-	tc.log.SetReportCaller(true)
 
 	return tc
 }
 
-func (tc *TestCase) Status() TestCaseStatus {
-	return tc.status
-}
-
-func (tc *TestCase) id() string {
-	return fmt.Sprintf("%04d:%s", tc.index, tc.name)
-}
-
-func (tc *TestCase) isRunning() bool {
-	return tc.status == TestCaseStatusRunning
-}
-
-func (tc *TestCase) LogLines() []string {
-	rawLines := bytes.Split(tc.logBuffer.Bytes(), []byte("\n"))
-	lines := make([]string, len(rawLines))
-	for i, line := range rawLines {
-		lines[i] = string(line)
+// Executes the test case function. The returned error is guaranteed to be the
+// return of the test case function.
+func (t *TestCase) Execute() error {
+	if t.f == nil {
+		panic(fmt.Sprintf("Test case '%s' has no runnable function", t.name))
 	}
 
-	return lines
+	t.startTime = time.Now()
+	t.status = TestCaseStatusRunning
+
+	return t.f(t)
 }
 
-func (tc *TestCase) Name() string {
-	return tc.name
-}
-
-func (tc *TestCase) close(status TestCaseStatus, reason string, err error) {
-	if tc.status != TestCaseStatusRunning {
-		tc.parent.suite.
-			Logger().
-			Warnf(
-				"Attempted to close test case '%s' with status '%s', but it was already closed with status '%s'. Ignoring.",
-				tc.name,
-				status.String(),
-				tc.status.String(),
-			)
-		return
+func (t *TestCase) close(status TestCaseStatus, reason string, err error) {
+	if !status.IsFinal() {
+		panic("Attempted to close test with non-final status: " + status.String())
 	}
 
-	if status == TestCaseStatusRunning {
-		panic("cannot close test case with status running")
+	// If the current status is final, we cannot change it.
+	if t.status.IsFinal() {
+		panic(fmt.Sprintf("Test case '%s' is already closed with status '%s'", t.name, t.status.String()))
 	}
 
-	tc.status = status
-	tc.endTime = time.Now()
-
-	// Log the status to the test case logger
-	tc.Logger().SetReportCaller(false)
-	localEntry := logrus.NewEntry(tc.log)
-
-	if reason != "" {
-		localEntry = localEntry.WithField("reason", reason)
+	// If the current status is pending, we can only close it with a skipped status.
+	if t.status == TestCaseStatusPending {
+		if status != TestCaseStatusNotRun {
+			panic(fmt.Sprintf("Pending test case can only be closed with a '%s' status", TestCaseStatusNotRun.String()))
+		}
 	}
 
+	// Update the status and end time
+	t.status = status
+	t.endTime = time.Now()
+
+	// Set the reason for the test case closure
 	if err != nil {
-		localEntry = localEntry.WithError(err)
+		t.reason = err.Error()
+	} else {
+		t.reason = reason
 	}
-
-	localEntry.Log(tc.status.logLevel(), tc.status.String())
-
-	// Close this logger
-	tc.log.Out = io.Discard
-
-	// Log the status to the suite logger
-	tc.parent.suite.Logger().
-		WithField("testCase", tc.name).
-		WithField("status", tc.status.String()).
-		Logf(tc.status.logLevel(), "%s: %s", tc.Name(), tc.status.String())
 }
 
-func (tc *TestCase) Logger() *logrus.Logger {
-	return tc.log
+// Returns whether this test caused a bail condition, which means that the test
+// suite should stop. This is true if the test failed or errored out in a way
+// that does not allow for recovery.
+func (t *TestCase) IsBailCondition() bool {
+	return t.status.IsBad()
 }
 
-func (tc *TestCase) Fail(reason string) {
-	tc.close(TestCaseStatusFailed, reason, nil)
-	tc.stopTestExecution()
+// Returns the log buffer of the test case.
+func (t *TestCase) Buffer() *bytes.Buffer {
+	return &t.logBuffer
 }
 
-func (tc *TestCase) FailFromError(err error) {
-	tc.close(TestCaseStatusFailed, "", err)
-	tc.stopTestExecution()
+// Returns the reason for the test case closure.
+func (t *TestCase) Reason() string {
+	return t.reason
 }
 
-func (tc *TestCase) Pass() {
-	tc.close(TestCaseStatusPassed, "", nil)
+// Mark a pending test as skipped because of a dependency failure.
+func (t *TestCase) MarkNotRun(reason string) {
+	t.close(TestCaseStatusNotRun, reason, nil)
 }
 
-func (tc *TestCase) Error(err error) {
-	tc.close(TestCaseStatusError, "", err)
-	tc.stopTestExecution()
+// Mark a test as errored. This is used when the test case panics or returns an
+// error.
+func (t *TestCase) MarkError(err error) {
+	t.close(TestCaseStatusError, "", err)
 }
 
-func (tc *TestCase) Skip(reason string) {
-	tc.close(TestCaseStatusSkipped, reason, nil)
-	tc.stopTestExecution()
+// Retrieves the status of the test case.
+func (t *TestCase) Status() TestCaseStatus {
+	return t.status
 }
 
-func (tc *TestCase) SkipAndContinue(reason string) {
-	tc.close(TestCaseStatusSkipped, reason, nil)
+// Close this test case as passed!
+func (t *TestCase) Pass() {
+	t.close(TestCaseStatusPassed, "", nil)
 }
 
-func (tc *TestCase) RunTime() time.Duration {
-	if tc.status == TestCaseStatusRunning {
-		return time.Since(tc.startTime)
-	}
-
-	return tc.endTime.Sub(tc.startTime)
+// Return the suite-level cleanup functions registred in this test case.
+func (t *TestCase) SuiteCleanupList() []func() {
+	return t.suiteCleanup
 }
 
-// Used internally to attach an error to this test case when the test case
-// manager catches an error.
-func (tc *TestCase) markError(err error) {
-	tc.close(TestCaseStatusError, "", err)
+// storm.TestCase implementations:
+
+// SuiteCleanup implements core.TestCase.
+func (t *TestCase) SuiteCleanup(f func()) {
+	t.suiteCleanup = append(t.suiteCleanup, f)
 }
 
-// Used internally to close the test case with a passed status when the test
-// case manager is closed and no error was found.
-func (tc *TestCase) markPass() {
-	tc.close(TestCaseStatusPassed, "", nil)
+// Registrant implements core.TestCase.
+func (t *TestCase) Registrant() core.TestRegistrantMetadata {
+	return t.registrant
 }
 
-// Calls runtime.Goexit() if the test case status is not passed.
-// THIS SHOULD ONLY BE CALLED AFTER CLOSING THE TEST CASE!
-func (tc *TestCase) stopTestExecution() {
-	if tc.status == TestCaseStatusPassed {
-		// A pass should never stop the execution of the test runner!
-		return
-	}
-
-	if tc.status == TestCaseStatusRunning {
-		panic("cannot stop test case execution with status running")
-	}
-
-	tc.parent.suite.Logger().Tracef(
-		"Stopping execution of [%s] due to test case status '%s'",
-		tc.id(),
-		tc.status.String(),
-	)
+// Error implements core.TestCase.
+func (t *TestCase) Error(err error) {
+	t.close(TestCaseStatusError, "", err)
 	runtime.Goexit()
+}
+
+// Fail implements core.TestCase.
+func (t *TestCase) Fail(reason string) {
+	t.close(TestCaseStatusFailed, reason, nil)
+	runtime.Goexit()
+}
+
+// FailFromError implements core.TestCase.
+func (t *TestCase) FailFromError(err error) {
+	t.close(TestCaseStatusFailed, "", err)
+	runtime.Goexit()
+}
+
+// Skip implements core.TestCase.
+func (t *TestCase) Skip(reason string) {
+	t.close(TestCaseStatusSkipped, reason, nil)
+	runtime.Goexit()
+}
+
+// Logger implements core.TestCase.
+func (t *TestCase) Logger() *logrus.Logger {
+	return t.log
+}
+
+// Name implements core.TestCase.
+func (t *TestCase) Name() string {
+	return t.name
+}
+
+// RunTime implements core.TestCase.
+func (t *TestCase) RunTime() time.Duration {
+	return t.endTime.Sub(t.startTime)
 }

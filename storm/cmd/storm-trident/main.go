@@ -12,7 +12,7 @@ func main() {
 	// Add Trident E2E scenarios
 	scenarios := trident.DiscoverTridentScenarios(storm.Log)
 	for _, scenario := range scenarios {
-		storm.AddScenario(scenario)
+		storm.AddScenario(&scenario)
 	}
 
 	// Register Trident helpers

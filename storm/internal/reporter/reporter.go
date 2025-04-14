@@ -1,19 +1,18 @@
 package reporter
 
 import (
+	"bytes"
 	"fmt"
 	"storm/internal/devops"
 	"storm/internal/testmgr"
+	"strings"
 
 	"github.com/fatih/color"
-	"github.com/sirupsen/logrus"
 )
 
 type TestReporter struct {
 	summary     TestSummary
 	testManager *testmgr.StormTestManager
-	devops      bool
-	log         *logrus.Logger
 	colorize    bool
 }
 
@@ -23,8 +22,6 @@ func NewTestReporter(testManager *testmgr.StormTestManager) *TestReporter {
 	return &TestReporter{
 		summary:     newSummaryFromTestManager(testManager),
 		testManager: testManager,
-		devops:      testManager.Suite().AzureDevops(),
-		log:         testManager.Suite().Logger(),
 		colorize:    true,
 	}
 }
@@ -45,8 +42,8 @@ func (tr *TestReporter) ExitError() error {
 	}
 
 	return fmt.Errorf("%s:%s: %s",
-		tr.testManager.Runnable().RunnableType().String(),
-		tr.testManager.Runnable().Name(),
+		tr.testManager.Registrant().RegistrantType().String(),
+		tr.testManager.Registrant().Name(),
 		tr.summary.Status().String(),
 	)
 }
@@ -56,38 +53,60 @@ func (tr *TestReporter) printShortReport() {
 	printSeparatorWithTitle(fmt.Sprintf(
 		"SUMMARY of %s::%s::%s",
 		tr.testManager.Suite().Name(),
-		tr.testManager.Runnable().RunnableType().String(),
-		tr.testManager.Runnable().Name(),
+		tr.testManager.Registrant().RegistrantType().String(),
+		tr.testManager.Registrant().Name(),
 	))
 
+	ljust := 0
+	// Find the longest test case name
 	for _, testCase := range tr.testManager.TestCases() {
-		status := testCase.Status()
+		if len(testCase.Name()) > ljust {
+			ljust = len(testCase.Name())
+		}
+	}
+
+	for _, testCase := range tr.testManager.TestCases() {
 		statusStr := testCase.Status().String()
 		if tr.colorize {
-			statusStr = testCaseStatusColor(status)
+			statusStr = testCase.Status().ColorString()
 		}
 
+		spaces := strings.Repeat(".", max(ljust-len(testCase.Name()), 0))
+
 		fmt.Printf(
-			"  %s: %s\n",
+			"  %s%s: %s",
 			testCase.Name(),
+			spaces,
 			statusStr,
 		)
+
+		reason := testCase.Reason()
+		if reason != "" {
+			if len(reason) > 40 {
+				reason = reason[:40] + "..."
+			}
+
+			fmt.Printf(" (%s)", reason)
+		}
+
+		fmt.Println()
 	}
 
 	// Logs devops messages in a separate section
-	if tr.devops && tr.summary.Status().IsBad() {
+	if tr.testManager.Suite().AzureDevops() && tr.summary.Status().IsBad() {
 		printSeparatorWithTitle("DEVOPS LOG")
 		for _, testCase := range tr.testManager.TestCases() {
 			status := testCase.Status()
 			if !status.IsBad() {
 				continue
 			}
-			devops.LogError("%s::%s::%s::%s -> %s",
+			devops.LogError("%s::%s::%s::%s -> %s (%s)",
 				tr.testManager.Suite().Name(),
-				tr.testManager.Runnable().RunnableType().String(),
-				tr.testManager.Runnable().Name(),
+				tr.testManager.Registrant().RegistrantType().String(),
+				tr.testManager.Registrant().Name(),
 				testCase.Name(),
 				status.String(),
+				testCase.Reason(),
 			)
 		}
 	}
@@ -105,30 +124,44 @@ func (tr *TestReporter) printFinalResult() {
 }
 
 func (tr *TestReporter) printFailureReport() {
-	for i, testCase := range tr.testManager.TestCases() {
+	header := true
+	for _, testCase := range tr.testManager.TestCases() {
 		status := testCase.Status()
-		if status.Passed() {
+		if status.Passed() || status.NotRun() {
 			continue
 		}
 
-		if i == 0 {
+		if header {
 			printSeparatorWithTitle("FAILURE REPORT")
+			header = false
 		} else {
-			printSeparator()
+			printSeparatorChar("-")
 		}
 
 		statusStr := testCase.Status().String()
 		if tr.colorize {
-			statusStr = testCaseStatusColor(status)
+			statusStr = testCase.Status().ColorString()
 		}
 
+		reason := testCase.Reason()
+
 		fmt.Printf(
-			"Test case: '%s' status: %s; collected logs:\n",
+			"Test case: '%s' status: %s; reason: \"%s\"; ",
 			testCase.Name(),
 			statusStr,
+			reason,
 		)
 
-		for _, log := range testCase.LogLines() {
+		logLines := getLogLinesFromTestCase(testCase)
+
+		// Check if there are any log lines
+		if len(logLines) == 0 {
+			fmt.Println("no logs were collected.")
+		} else {
+			fmt.Println("collected logs:")
+		}
+
+		for _, log := range logLines {
 			lines := simpleWordWrap(log, termWidth()-8)
 			for i, line := range lines {
 				if i == 0 {
@@ -141,4 +174,17 @@ func (tr *TestReporter) printFailureReport() {
 			}
 		}
 	}
+}
+
+func getLogLinesFromTestCase(testCase *testmgr.TestCase) []string {
+	lines := make([]string, 0)
+	rawLines := testCase.Buffer().Bytes()
+	for _, line := range bytes.Split(rawLines, []byte("\n")) {
+		if len(line) == 0 {
+			continue
+		}
+		lines = append(lines, string(line))
+	}
+
+	return lines
 }

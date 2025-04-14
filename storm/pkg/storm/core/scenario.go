@@ -1,7 +1,9 @@
 package core
 
 type Scenario interface {
-	ArgumentedSetupCleanupRunnable
+	Argumented
+	SetupCleanup
+	TestRegistrant
 
 	// Tags associated with the scenario, the implementation should ensure that
 	// the tags are unique.
@@ -18,7 +20,7 @@ type Scenario interface {
 // BaseScenario is a partial implementation of the Scenario interface. It is
 // meant to be used for composition when not all methods of the Scenario
 // interface are needed. It does NOT provide a default implementation for the
-// Name() and Run() methods.
+// Name() and RegisterTestCases() methods.
 type BaseScenario struct{}
 
 func (s BaseScenario) Tags() []string {

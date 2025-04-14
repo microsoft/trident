@@ -14,14 +14,15 @@ import (
 
 type CheckSshHelper struct {
 	args struct {
-		SshKeyPath   string `arg:"" help:"Path to the SSH key file" type:"existingfile"`
-		Host         string `arg:"" help:"Host to check SSH connection"`
-		User         string `arg:"" help:"User to use for SSH connection"`
-		Env          string `arg:"" help:"Environment where Trident service is running" enum:"host,container,none"`
-		Port         uint16 `short:"p" help:"Port to connect to" default:"22"`
-		Timeout      int    `short:"t" help:"Timeout in seconds for the first SSH connection" default:"600"`
+		SshKeyPath        string `arg:"" help:"Path to the SSH key file" type:"existingfile"`
+		Host              string `arg:"" help:"Host to check SSH connection"`
+		User              string `arg:"" help:"User to use for SSH connection"`
+		Env               string `arg:"" help:"Environment where Trident service is running" enum:"host,container,none"`
+		Port              uint16 `short:"p" help:"Port to connect to" default:"22"`
+		Timeout           int    `short:"t" help:"Timeout in seconds for the first SSH connection" default:"600"`
 		CheckActiveVolume string `help:"Check that the indicated volume is the active one"`
 	}
+	client *ssh.Client
 }
 
 func (h CheckSshHelper) Name() string {
@@ -32,8 +33,15 @@ func (h *CheckSshHelper) Args() any {
 	return &h.args
 }
 
-func (h CheckSshHelper) Run(ctx storm.Context) error {
-	ctx.Logger().Infof("Checking SSH connection to '%s' as user '%s'", h.args.Host, h.args.User)
+func (h *CheckSshHelper) RegisterTestCases(r storm.TestRegistrar) error {
+	r.RegisterTestCase("check-ssh", h.sshDial)
+	r.RegisterTestCase("check-trident-service", h.checkTridentService)
+	r.RegisterTestCase("check-active-volume", h.checkActiveVolume)
+	return nil
+}
+
+func (h *CheckSshHelper) sshDial(tc storm.TestCase) error {
+	tc.Logger().Infof("Checking SSH connection to '%s' as user '%s'", h.args.Host, h.args.User)
 
 	private_key, err := os.ReadFile(h.args.SshKeyPath)
 	if err != nil {
@@ -55,9 +63,8 @@ func (h CheckSshHelper) Run(ctx storm.Context) error {
 	}
 
 	host := fmt.Sprintf("%s:%d", h.args.Host, h.args.Port)
-	tc := ctx.NewTestCase("SSH Dial")
 
-	client, err := utils.Retry(
+	h.client, err = utils.Retry(
 		time.Second*time.Duration(h.args.Timeout),
 		time.Second*5,
 		func(attempt int) (*ssh.Client, error) {
@@ -69,46 +76,44 @@ func (h CheckSshHelper) Run(ctx storm.Context) error {
 		// Log this as a test failure
 		tc.FailFromError(err)
 	}
-	defer client.Close()
 
-	if h.args.Env == "host" {
-		tc = ctx.NewTestCase("Check Trident Service")
-		_, err = utils.Retry(
-			time.Minute*5,
-			time.Second*5,
-			func(attempt int) (*ssh.Client, error) {
-				tc.Logger().Infof("Checking Trident service status (attempt %d)", attempt)
-				return nil, checkTridentService(tc, client)
-			},
-		)
-
-		if err != nil {
-			// Log this as a test failure
-			tc.FailFromError(err)
+	// Close the SSH client when the suite is done.
+	tc.SuiteCleanup(func() {
+		if h.client != nil {
+			h.client.Close()
 		}
+	})
+
+	return nil
+}
+
+func (h *CheckSshHelper) checkTridentService(tc storm.TestCase) error {
+	if h.args.Env != "host" {
+		tc.Skip("Trident service check is only applicable for host environment")
 	}
 
-	if h.args.CheckActiveVolume != "" {
-		tc = ctx.NewTestCase("Check Active Volume")
-		_, err = utils.Retry(
-			time.Second*5,
-			time.Second,
-			func(attempt int) (*ssh.Client, error) {
-				tc.Logger().Infof("Checking active volume (attempt %d)", attempt)
-				return nil, checkActiveVolume(tc, client, h.args.CheckActiveVolume)
-			},
-		)
+	if h.client == nil {
+		tc.Error(fmt.Errorf("SSH client is not initialized"))
+	}
 
-		if err != nil {
-			// Log this as a test failure
-			tc.FailFromError(err)
-		}
+	_, err := utils.Retry(
+		time.Minute*5,
+		time.Second*5,
+		func(attempt int) (*ssh.Client, error) {
+			tc.Logger().Infof("Checking Trident service status (attempt %d)", attempt)
+			return nil, checkTridentServiceInner(tc, h.client)
+		},
+	)
+
+	if err != nil {
+		// Log this as a test failure
+		tc.FailFromError(err)
 	}
 
 	return nil
 }
 
-func checkTridentService(lp storm.LoggerProvider, client *ssh.Client) error {
+func checkTridentServiceInner(lp storm.LoggerProvider, client *ssh.Client) error {
 	session, err := client.NewSession()
 	if err != nil {
 		return fmt.Errorf("failed to create SSH session: %w", err)
@@ -136,7 +141,29 @@ func checkTridentService(lp storm.LoggerProvider, client *ssh.Client) error {
 	return nil
 }
 
-func checkActiveVolume(lp storm.LoggerProvider, client *ssh.Client, activeVolume string) error {
+func (h *CheckSshHelper) checkActiveVolume(tc storm.TestCase) error {
+	if h.args.CheckActiveVolume == "" {
+		tc.Skip("No active volume check requested")
+	}
+
+	_, err := utils.Retry(
+		time.Second*5,
+		time.Second,
+		func(attempt int) (*ssh.Client, error) {
+			tc.Logger().Infof("Checking active volume (attempt %d)", attempt)
+			return nil, checkActiveVolumeInner(tc, h.client, h.args.CheckActiveVolume)
+		},
+	)
+
+	if err != nil {
+		// Log this as a test failure
+		tc.FailFromError(err)
+	}
+
+	return nil
+}
+
+func checkActiveVolumeInner(lp storm.LoggerProvider, client *ssh.Client, expectedActiveVolume string) error {
 	session, err := client.NewSession()
 	if err != nil {
 		return fmt.Errorf("failed to create SSH session: %w", err)
@@ -162,10 +189,11 @@ func checkActiveVolume(lp storm.LoggerProvider, client *ssh.Client, activeVolume
 	}
 	lp.Logger().Info("Host is in provisioned state")
 
-	if hostStatus["abActiveVolume"] != activeVolume {
-		return fmt.Errorf("expected active volume '%s', got '%s'", activeVolume, hostStatus["activeVolume"])
+	hsActiveVol := hostStatus["abActiveVolume"]
+	if hsActiveVol != expectedActiveVolume {
+		return fmt.Errorf("expected active volume '%s', got '%s'", expectedActiveVolume, hsActiveVol)
 	}
-	lp.Logger().Infof("Active volume is '%s'", hostStatus["activeVolume"])
+	lp.Logger().Infof("Active volume is '%s'", hsActiveVol)
 
 	return nil
 }
