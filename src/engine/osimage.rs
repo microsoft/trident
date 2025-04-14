@@ -19,7 +19,7 @@ pub(super) fn load_os_image(
     };
 
     debug!("Loading COSI file '{}'", os_image_source.url);
-    let os_image = OsImage::cosi(&os_image_source.url).structured(InvalidInputError::LoadCosi {
+    let os_image = OsImage::cosi(os_image_source).structured(InvalidInputError::LoadCosi {
         url: os_image_source.url.clone(),
     })?;
 

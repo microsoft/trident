@@ -12,7 +12,7 @@ use sysdefs::{
     arch::SystemArchitecture, filesystems::RealFilesystemType, osuuid::OsUuid,
     partition_types::DiscoverablePartitionType,
 };
-use trident_api::{constants::ROOT_MOUNT_POINT_PATH, primitives::hash::Sha384Hash};
+use trident_api::{config, constants::ROOT_MOUNT_POINT_PATH, primitives::hash::Sha384Hash};
 
 mod cosi;
 
@@ -45,8 +45,8 @@ enum OsImageInner {
 }
 
 impl OsImage {
-    pub(crate) fn cosi(url: &Url) -> Result<Self, Error> {
-        Ok(Self(OsImageInner::Cosi(Cosi::new(url)?)))
+    pub(crate) fn cosi(source: &config::OsImage) -> Result<Self, Error> {
+        Ok(Self(OsImageInner::Cosi(Cosi::new(source)?)))
     }
 
     #[cfg(test)]

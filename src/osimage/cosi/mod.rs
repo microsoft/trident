@@ -6,7 +6,9 @@ use std::{
 
 use anyhow::{bail, ensure, Context, Error};
 use log::{debug, trace};
+use osutils::hashing_reader::{HashingReader, HashingReader384};
 use tar::Archive;
+use trident_api::config::{ImageSha384, OsImage};
 use url::Url;
 
 use sysdefs::arch::SystemArchitecture;
@@ -44,12 +46,12 @@ struct CosiEntry {
 
 impl Cosi {
     /// Creates a new COSI file instance from the given source URL.
-    pub(super) fn new(source: &Url) -> Result<Self, Error> {
-        trace!("Scanning COSI file from '{}'", source);
+    pub(super) fn new(source: &OsImage) -> Result<Self, Error> {
+        trace!("Scanning COSI file from '{}'", source.url);
 
         // Create a new COSI reader factory. This will let us cleverly build
         // readers for the COSI file regardless of its location.
-        let cosi_reader = CosiReader::new(source).context("Failed to create COSI reader.")?;
+        let cosi_reader = CosiReader::new(&source.url).context("Failed to create COSI reader.")?;
 
         // Scan all entries in the COSI file by seeking to all headers in the file.
         let entries = read_entries_from_tar_archive(cosi_reader.reader()?)?;
@@ -57,10 +59,10 @@ impl Cosi {
 
         // Create a new COSI instance.
         Ok(Cosi {
-            metadata: read_cosi_metadata(&cosi_reader, &entries)
+            metadata: read_cosi_metadata(&cosi_reader, &entries, source.sha384.clone())
                 .context("Failed to read COSI file metadata.")?,
             entries,
-            source: source.clone(),
+            source: source.url.clone(),
             reader: cosi_reader,
         })
     }
@@ -199,6 +201,7 @@ fn read_entries_from_tar_archive<R: Read + Seek>(
 fn read_cosi_metadata(
     cosi_reader: &CosiReader,
     entries: &HashMap<PathBuf, CosiEntry>,
+    expected_sha384: ImageSha384,
 ) -> Result<CosiMetadata, Error> {
     trace!(
         "Retrieving metadata from COSI file from '{}'",
@@ -214,14 +217,22 @@ fn read_cosi_metadata(
         metadata_location.size
     );
 
-    let mut metadata_reader = cosi_reader
-        .section_reader(metadata_location.offset, metadata_location.size)
-        .context("Failed to create COSI metadata reader")?;
+    let mut metadata_reader = HashingReader384::new(
+        cosi_reader
+            .section_reader(metadata_location.offset, metadata_location.size)
+            .context("Failed to create COSI metadata reader")?,
+    );
 
     let mut raw_metadata = String::new();
     metadata_reader
         .read_to_string(&mut raw_metadata)
         .context("Failed to read COSI metadata")?;
+
+    if let ImageSha384::Checksum(ref sha384) = expected_sha384 {
+        if metadata_reader.hash() != sha384.as_str() {
+            bail!("COSI metadata hash does not match expected hash");
+        }
+    }
     trace!("Raw COSI metadata:\n{}", raw_metadata);
 
     // First, attempt to ONLY parse the metadata version to ensure we can read the rest.
@@ -513,6 +524,7 @@ mod tests {
                 .iter()
                 .map(|(path, _, size)| (*path, *size, dummy_hash.as_str())),
         );
+        let metadata_sha384 = format!("{:x}", Sha384::digest(sample_metadata.as_bytes()));
 
         // To mock the COSI file reader, we'll need to dump the metadata into a
         // file. It doesn't really matter what the file is as long as the
@@ -547,7 +559,12 @@ mod tests {
         .collect::<HashMap<_, _>>();
 
         // Read the metadata.
-        let metadata = read_cosi_metadata(&cosi_reader, &entries).unwrap();
+        let metadata = read_cosi_metadata(
+            &cosi_reader,
+            &entries,
+            ImageSha384::Checksum(metadata_sha384.into()),
+        )
+        .unwrap();
 
         // Now check that the images in the metadata have the correct entries.
         for (image, (path, offset, size)) in metadata.images.iter().zip(image_paths.iter()) {
@@ -607,7 +624,11 @@ mod tests {
 
         // Create a COSI instance from the temp file.
         let url = Url::from_file_path(temp_file.path()).unwrap();
-        let cosi = Cosi::new(&url).unwrap();
+        let cosi = Cosi::new(&OsImage {
+            url: url.clone(),
+            sha384: ImageSha384::Ignored,
+        })
+        .unwrap();
 
         assert_eq!(
             cosi.entries.len(),
