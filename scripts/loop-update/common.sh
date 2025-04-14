@@ -96,13 +96,7 @@ function checkActiveVolume() {
     local VOLUME=$1
     local ITERATION=$2
 
-    ACTIVE=`sshCommand "set -o pipefail; sudo systemd-run --pipe --property=After=trident.service trident get" | grep abActiveVolume | tr -d ' ' | cut -d':' -f2`
-    if [ "$ACTIVE" != $VOLUME ]; then
-        sshCommand "sudo trident get"
-        echo "Active volume is not $VOLUME, but $ACTIVE"
-        adoError "Active volume is not $VOLUME, but $ACTIVE for iteration $ITERATION"
-        exit 1
-    fi
+    bin/storm-trident helper check-ssh ~/.ssh/id_rsa $VM_IP $SSH_USER none --check-active-volume $VOLUME
 }
 
 function validateRollback() {

@@ -40,10 +40,10 @@ func (r *StormTestManager) NewTestCase(name string) core.TestCase {
 // still running.
 //
 // When error is nil, it is ignored.
-func (r *StormTestManager) Close(err error) {
+func (r *StormTestManager) Close(err error) error {
 	r.suite.Logger().Debug("Closing reporter")
 	if len(r.testCases) == 0 {
-		return
+		return err
 	}
 
 	// Get the last test case and check if it is still running. If so, it means
@@ -59,6 +59,8 @@ func (r *StormTestManager) Close(err error) {
 			lastTestCase.markPass()
 		}
 	}
+
+	return nil
 }
 
 func (r *StormTestManager) TestCases() []*TestCase {

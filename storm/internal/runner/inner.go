@@ -47,7 +47,7 @@ func executeRunnableInner(suite core.SuiteContext,
 
 	// Wait for the goroutine to finish and close the test manager with whatever
 	// error we receive, if any.
-	testManager.Close(<-errChan)
+	err := testManager.Close(<-errChan)
 
 	// If the runnable implements the SetupCleanupRunnable interface, we call
 	// the Cleanup method after running the test.
@@ -58,5 +58,5 @@ func executeRunnableInner(suite core.SuiteContext,
 		}
 	}
 
-	return nil
+	return err
 }

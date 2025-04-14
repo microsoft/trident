@@ -15,7 +15,7 @@ parameters:
     type: boolean
     default: true
 
-  - name: buildTridentStorm
+  - name: buildStormTrident
     type: boolean
     default: true
 
@@ -73,11 +73,11 @@ stages:
                 workingDirectory: $(Build.SourcesDirectory)
                 displayName: "Building mkcosi"
 
-          - ${{ if eq(parameters.buildTridentStorm, true) }}:
+          - ${{ if eq(parameters.buildStormTrident, true) }}:
               - bash: |
                   set -eux
                   make bin/storm-trident
                   mkdir -p $(ob_outputDirectory)
                   mv bin/storm-trident $(ob_outputDirectory)
                 workingDirectory: $(Build.SourcesDirectory)
-                displayName: "Building trident-storm"
+                displayName: "Building storm-trident"
