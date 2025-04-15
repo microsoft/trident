@@ -406,7 +406,7 @@ mod tests {
                 }],
                 filesystems: vec![FileSystem {
                     device_id: Some("root".into()),
-                    source: FileSystemSource::New(NewFileSystemType::Ext4),
+                    source: FileSystemSource::Image,
                     mount_point: Some(MountPoint {
                         path: ROOT_MOUNT_POINT_PATH.into(),
                         options: MountOptions::new(MOUNT_OPTION_READ_ONLY),

@@ -204,7 +204,13 @@ impl BlkDevReferrerKind {
                     | BlkDevKindFlag::EncryptedVolume
             }
             Self::EncryptedVolume => BlkDevKindFlag::Partition | BlkDevKindFlag::RaidArray,
-            Self::FileSystemNew | Self::FileSystemImage => {
+            Self::FileSystemNew => {
+                BlkDevKindFlag::Partition
+                    | BlkDevKindFlag::RaidArray
+                    | BlkDevKindFlag::EncryptedVolume
+                    | BlkDevKindFlag::ABVolume
+            }
+            Self::FileSystemImage => {
                 BlkDevKindFlag::Partition
                     | BlkDevKindFlag::RaidArray
                     | BlkDevKindFlag::EncryptedVolume

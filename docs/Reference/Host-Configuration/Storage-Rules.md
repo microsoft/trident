@@ -72,7 +72,7 @@ reference a block device of a certain type.
 | encrypted-volume    | No   | Yes       | No                | Yes        | No        | No               | No            | No          |
 | verity-device       | No   | Yes       | No                | Yes        | Yes       | No               | No            | No          |
 | swap-device         | No   | Yes       | No                | No         | No        | Yes              | No            | No          |
-| filesystem-new      | No   | Yes       | No                | Yes        | Yes       | Yes              | Yes           | No          |
+| filesystem-new      | No   | Yes       | No                | Yes        | Yes       | Yes              | No            | No          |
 | filesystem-image    | No   | Yes       | No                | Yes        | Yes       | Yes              | Yes           | No          |
 | filesystem-esp      | No   | Yes       | Yes               | Yes        | No        | No               | No            | No          |
 | filesystem-adopted  | No   | No        | Yes               | No         | No        | No               | No            | No          |
