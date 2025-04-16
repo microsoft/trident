@@ -351,7 +351,7 @@ mod tests {
                         path: mtp_path.into(),
                         options: MountOptions::empty(),
                     },
-                    fs_type,
+                    fs_type: Some(fs_type),
                     device_id: format!("dev{}", i),
                 })
             })

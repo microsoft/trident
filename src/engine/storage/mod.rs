@@ -63,7 +63,7 @@ pub(super) fn close_pre_existing_devices(ctx: &EngineContext) -> Result<(), Trid
 #[tracing::instrument(skip_all)]
 pub(super) fn initialize_block_devices(ctx: &EngineContext) -> Result<(), TridentError> {
     // Deploy images on block devices as specified in the configuration.
-    image::deploy_images(ctx).structured(ServicingError::DeployImages)?;
+    image::deploy_images(ctx)?;
 
     // Create filesystems on block devices as specified in the configuration.
     filesystem::create_filesystems(ctx).structured(ServicingError::CreateFilesystems)?;

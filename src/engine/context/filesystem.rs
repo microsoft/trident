@@ -31,8 +31,8 @@ pub struct FileSystemDataImage {
     /// Note: mount_point is required for Image filesystems.
     pub mount_point: MountPoint,
 
-    /// The file system type.
-    pub fs_type: RealFilesystemType,
+    /// The file system type, or None if the filesystem isn't included in the current image.
+    pub fs_type: Option<RealFilesystemType>,
 
     /// The id of the block device associated with this filesystem.
     ///
@@ -201,7 +201,7 @@ impl FileSystemData {
             FileSystemData::Adopted(fs_data_adopted) => {
                 fs_data_adopted.fs_type.map(|fs_type| fs_type.as_kernel())
             }
-            FileSystemData::Image(fs_data_image) => Some(fs_data_image.fs_type.as_kernel()),
+            FileSystemData::Image(fs_data_image) => fs_data_image.fs_type.map(|t| t.as_kernel()),
             FileSystemData::New(fs_data_new) => Some(fs_data_new.fs_type.as_kernel()),
             FileSystemData::Tmpfs(_) => Some(NodevFilesystemType::Tmpfs.as_kernel()),
             FileSystemData::Overlay(_) => Some(NodevFilesystemType::Overlay.as_kernel()),
@@ -304,13 +304,7 @@ impl EngineContext {
                     .structured(InternalError::PopulateFilesystems(
                         "Expected mount point for Image filesystem but found none".to_string(),
                     ))?;
-            let fs_type = (*image_fs_map.get(&mount_point.path).structured(
-                InternalError::PopulateFilesystems(format!(
-                    "Failed to find filesystem type for Image filesystem mounted at {}",
-                    mount_point.path.display()
-                )),
-            )?)
-            .into();
+            let fs_type = image_fs_map.get(&mount_point.path).copied().map(Into::into);
             let device_id =
                 img_fs
                     .device_id

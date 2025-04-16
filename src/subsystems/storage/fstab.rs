@@ -77,7 +77,13 @@ fn entry_from_fs_data(
             ))
         }
 
-        FileSystemData::Image(ifs) => (ifs.device_id, ifs.fs_type.into(), Some(ifs.mount_point)),
+        FileSystemData::Image(ifs) => (
+            ifs.device_id,
+            ifs.fs_type
+                .map(Into::into)
+                .unwrap_or(TabFileSystemType::Auto),
+            Some(ifs.mount_point),
+        ),
 
         FileSystemData::Adopted(afs) => (
             afs.device_id,
@@ -163,7 +169,7 @@ mod tests {
                         path: PathBuf::from("/boot/efi"),
                         options: MountOptions::new("umask=0077"),
                     },
-                    fs_type: RealFilesystemType::Vfat,
+                    fs_type: Some(RealFilesystemType::Vfat),
                     device_id: "efi".to_owned(),
                 }
                 .into(),
@@ -326,7 +332,7 @@ mod tests {
                         path: PathBuf::from(ESP_MOUNT_POINT_PATH),
                         options: "umask=0077".into(),
                     },
-                    fs_type: RealFilesystemType::Vfat,
+                    fs_type: Some(RealFilesystemType::Vfat),
                     device_id: "efi".to_owned(),
                 }
                 .into(),
@@ -335,7 +341,7 @@ mod tests {
                         path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                         options: "errors=remount-ro".into(),
                     },
-                    fs_type: RealFilesystemType::Ext4,
+                    fs_type: Some(RealFilesystemType::Ext4),
                     device_id: "root".to_owned(),
                 }
                 .into(),

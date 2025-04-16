@@ -61,7 +61,11 @@ fn block_devices_needing_fs_creation(
                         .is_adopted(&ifs.device_id)
                         .unwrap_or_default() =>
             {
-                (&ifs.device_id, ifs.fs_type)
+                (
+                    &ifs.device_id,
+                    ifs.fs_type
+                        .context("Filesystem doesn't have known type during clean install")?,
+                )
             }
 
             // Otherwise, ignore and skip the filesystem.
