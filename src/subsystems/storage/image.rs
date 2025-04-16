@@ -1,7 +1,7 @@
 use log::debug;
 
 use trident_api::{
-    config::HostConfigurationDynamicValidationError,
+    config::{HostConfigurationDynamicValidationError, ImageSha384},
     error::{InvalidInputError, TridentError},
 };
 
@@ -13,10 +13,6 @@ use crate::engine::EngineContext;
 /// and the URLs and SHA256 checksums are the same.
 ///
 /// TODO: Remove this logic for partition images once COSI becomes the default for GA.
-///
-/// TODO: Once hashes for OS images are introduced into Host Configuration, need to compare hashes
-/// for OS images. Related ADO task:
-/// https://dev.azure.com/mariner-org/ECF/_workitems/edit/10845.
 pub(super) fn ab_update_required(ctx: &EngineContext) -> Result<bool, TridentError> {
     debug!("Checking OS image to determine if an A/B update is required");
     // Otherwise, continue checking OS images
@@ -29,8 +25,10 @@ pub(super) fn ab_update_required(ctx: &EngineContext) -> Result<bool, TridentErr
             Ok(true)
         }
 
-        // If OS image is requested in both specs, compare the URLs.
-        (Some(old_os_image), Some(new_os_image)) => Ok(old_os_image.url != new_os_image.url),
+        // Update if the sha384 has changed (including if one is 'ignored'), or both are ignored but
+        // the URL has changed.
+        (Some(old_os_image), Some(new_os_image)) => Ok(old_os_image.sha384 != new_os_image.sha384
+            || old_os_image.sha384 == ImageSha384::Ignored && old_os_image.url != new_os_image.url),
 
         (Some(_), None) => {
             // Return an error if the old spec requests an OS image but the new spec does not.
