@@ -76,7 +76,6 @@ impl Default for Request {
                     SystemArchitecture::Amd64 => "amd64",
                     SystemArchitecture::Arm => "arm",
                     SystemArchitecture::Aarch64 => "arm64",
-                    SystemArchitecture::Other => "other",
                 },
             },
             apps: Vec::new(),
@@ -252,7 +251,6 @@ mod tests {
                 SystemArchitecture::Amd64 => "amd64",
                 SystemArchitecture::Arm => "arm",
                 SystemArchitecture::Aarch64 => "arm64",
-                SystemArchitecture::Other => "other",
             }
         );
         assert_eq!(request.apps(), &[]);

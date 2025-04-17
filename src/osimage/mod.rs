@@ -255,7 +255,7 @@ mod tests {
     #[test]
     fn test_basic_properties() {
         let source_url = Url::parse("mock://").unwrap();
-        let arch = SystemArchitecture::Other;
+        let arch = SystemArchitecture::Amd64;
         let os_release = OsRelease {
             id: Some("os-id".into()),
             name: Some("os-name".into()),

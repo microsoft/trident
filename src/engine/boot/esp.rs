@@ -227,8 +227,7 @@ fn copy_file_artifacts(
             .internal_params
             .get_flag(DISABLE_GRUB_NOPREFIX_CHECK)
     {
-        let arch =
-            current_arch_efi_str().context("Failed to get the target architecture string")?;
+        let arch = current_arch_efi_str();
         bail!("Cannot locate grub{}-noprefix.efi in the boot image. Verify if the grub2-efi-binary-noprefix package was installed on the boot image.", arch);
     }
 
@@ -274,11 +273,11 @@ fn copy_boot_files(
         ))?;
 
         // Rename grub-noprefix efi to grub efi
-        if file_name == format!("grub{}-noprefix.efi", current_arch_efi_str()?).as_str() {
+        if file_name == format!("grub{}-noprefix.efi", current_arch_efi_str()).as_str() {
             fs::rename(
                 &destination_path,
                 esp_dir
-                    .join(format!("grub{}.efi", current_arch_efi_str()?))
+                    .join(format!("grub{}.efi", current_arch_efi_str()))
                     .to_str()
                     .context("Failed to convert path to string")?,
             )
@@ -304,7 +303,7 @@ fn generate_boot_filepaths(
 ) -> Result<Vec<PathBuf>, Error> {
     let mut paths = Vec::new();
 
-    let efi_filename_ending = get_arch_efi_str(arch)?;
+    let efi_filename_ending = get_arch_efi_str(arch);
 
     // Check if grub.cfg exists in EFI_DEFAULT_BIN_RELATIVE_PATH, otherwise use GRUB2_RELATIVE_PATH
     let efi_boot_grub_path = Path::new(temp_mount_dir)
@@ -373,19 +372,18 @@ fn generate_boot_filepaths(
     Ok(paths)
 }
 
-fn current_arch_efi_str() -> Result<&'static str, Error> {
+fn current_arch_efi_str() -> &'static str {
     get_arch_efi_str(SystemArchitecture::current())
 }
 
 /// Returns the name of the given architecture for use in EFI.
-fn get_arch_efi_str(arch: SystemArchitecture) -> Result<&'static str, Error> {
-    Ok(match arch {
+fn get_arch_efi_str(arch: SystemArchitecture) -> &'static str {
+    match arch {
         SystemArchitecture::X86 => "ia32",
         SystemArchitecture::Amd64 => "x64",
         SystemArchitecture::Arm => "arm",
         SystemArchitecture::Aarch64 => "aa64",
-        SystemArchitecture::Other => bail!("Failed to generate the filename of EFI executable as the target architecture is not supported"),
-    })
+    }
 }
 
 pub fn next_install_index(mount_point: &Path) -> Result<usize, TridentError> {
@@ -511,11 +509,9 @@ mod tests {
             expected_arch = "arm";
         } else if cfg!(target_arch = "aarch64") {
             expected_arch = "aa64";
-        } else {
-            assert!(current_arch_efi_str().is_err(), "generate_arch_str() should return an error if target architecture is not supported");
         };
 
-        let generated_arch = current_arch_efi_str().unwrap();
+        let generated_arch = current_arch_efi_str();
         assert_eq!(
             generated_arch, expected_arch,
             "Architecture string does not match expected value"
