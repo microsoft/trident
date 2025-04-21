@@ -236,7 +236,6 @@ fn deploy_os_image_file(
     match fs_resize {
         // Resize an ext* filesystem
         FileSystemResize::Ext => {
-            // TODO investigate if we stop doing the check, tracked by https://dev.azure.com/mariner-org/ECF/_workitems/edit/7218
             debug!("Checking filesystem on block device '{id}'");
             e2fsck::fix(&block_device_path)
                 .context(format!("Failed to check filesystem on block device '{id}'"))?;
