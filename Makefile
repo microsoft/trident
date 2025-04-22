@@ -77,6 +77,8 @@ build: .cargo/config
 format:
 	cargo fmt
 	python3 -m black . --exclude "azure-linux-image-tools"
+	gofmt -w -s tools/
+	gofmt -w -s storm/
 
 .PHONY: test
 test: .cargo/config

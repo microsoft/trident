@@ -115,7 +115,7 @@ stages:
               sg libvirt "./virt-deploy create --mem 12 --disks 32,32"
               sg libvirt "./virt-deploy run"
             workingDirectory: $(argusToolkitSourceDirectory)
-            displayName: "Running sushy tools for testing deployment with BMC"
+            displayName: "Creating virt-deploy VM"
 
           - bash: |
               set -euxo pipefail

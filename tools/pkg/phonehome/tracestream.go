@@ -2,6 +2,7 @@ package phonehome
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 
@@ -17,15 +18,15 @@ type TraceEntry struct {
 	PlatformInfo     map[string]interface{} `json:"platform_info"`
 }
 
-func SetupTraceStream(filepath string) {
+func SetupTraceStream(filepath string) (*os.File, error) {
+	if filepath == "" {
+		return nil, nil
+	}
+
 	// Setup a file to store the trace data
-	var traceFile *os.File
-	var err error
-	if filepath != "" {
-		traceFile, err = os.Create(filepath)
-		if err != nil {
-			log.WithError(err).Fatalf("failed to create trace file")
-		}
+	traceFile, err := os.Create(filepath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create trace file: %w", err)
 	}
 
 	// Generate a UUID to group events coming in from the same Trident run
@@ -62,5 +63,13 @@ func SetupTraceStream(filepath string) {
 			log.WithError(err).Fatalf("failed to write trace data to file")
 			return
 		}
+
+		err = traceFile.Sync()
+		if err != nil {
+			log.WithError(err).Fatalf("failed to sync trace file")
+			return
+		}
 	})
+
+	return traceFile, nil
 }

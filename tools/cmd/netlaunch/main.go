@@ -170,7 +170,9 @@ var rootCmd = &cobra.Command{
 		// If we have a specified port, we assume that the intent is that Trident will reach back.
 		enable_phonehome_listening := listenPort != 0
 
-		terminate := make(chan bool)
+		terminateCtx, terminateFunc := context.WithCancel(context.Background())
+		defer terminateFunc()
+
 		result := make(chan phonehome.PhoneHomeResult)
 		server := &http.Server{}
 
@@ -254,7 +256,7 @@ var rootCmd = &cobra.Command{
 			http.HandleFunc("/provision.iso", func(w http.ResponseWriter, r *http.Request) {
 				isoLogFunc(r.RemoteAddr)
 				http.ServeContent(w, r, "provision.iso", time.Now(), bytes.NewReader(iso))
-				terminate <- true
+				terminateFunc()
 			})
 		}
 
@@ -271,7 +273,11 @@ var rootCmd = &cobra.Command{
 			defer logstreamFull.Close()
 
 			// Set up listening for tracestream
-			phonehome.SetupTraceStream(traceFile)
+			traceFile, err := phonehome.SetupTraceStream(traceFile)
+			if err != nil {
+				log.WithError(err).Fatalf("failed to setup tracestream")
+			}
+			defer traceFile.Close()
 
 		}
 
@@ -350,7 +356,7 @@ var rootCmd = &cobra.Command{
 		}
 
 		// Wait for something to happen
-		var exitCode = listen_loop(terminate, result)
+		var exitCode = phonehome.ListenLoop(terminateCtx, result, waitForProvisioned, maxFailures)
 
 		err = server.Shutdown(context.Background())
 		if err != nil {
@@ -359,59 +365,6 @@ var rootCmd = &cobra.Command{
 
 		os.Exit(exitCode)
 	},
-}
-
-// listen_loop listens for phonehome results and logs them.
-// If a result file is specified, it writes the result to that file.
-// If the result indicates that we should terminate, it returns.
-// If the terminate channel receives something, it returns.
-func listen_loop(terminate <-chan bool, result <-chan phonehome.PhoneHomeResult) int {
-	failureCount := uint(0)
-
-	// Loop forever!
-	for {
-		// Wait for something to happen
-		select {
-
-		case <-terminate:
-			// If we're told to terminate, then we're done.
-			return 0
-
-		case result := <-result:
-			// If we get a result log it.
-			result.Log()
-
-			// Check the state of the result.
-			switch result.State {
-			case phonehome.PhoneHomeResultFailure:
-				// If we failed, increment the failure count.
-				failureCount++
-			default:
-				if !waitForProvisioned {
-					// First successful phonehome message should return the exit code.
-					return result.ExitCode()
-				}
-
-				var hostStatus map[string]interface{}
-				err := yaml.Unmarshal([]byte(result.HostStatus), &hostStatus)
-				if err != nil {
-					log.Info("Failed to parse phonehome Host Status: %v", err)
-					// Increment the failure count.
-					failureCount++
-				} else if hostStatus["servicingState"] == "provisioned" {
-					// Only phonehome message with provisioned servicingState should
-					// return the exit code.
-					return result.ExitCode()
-				}
-			}
-
-			// Check if we've exceeded the maximum number of failures.
-			if failureCount > maxFailures {
-				log.Errorf("Maximum number of failures (%d) exceeded. Terminating.", maxFailures)
-				return result.ExitCode()
-			}
-		}
-	}
 }
 
 func init() {

@@ -27,6 +27,8 @@ import (
 	"argus_toolkit/pkg/phonehome"
 	"fmt"
 	"net"
+	"os/signal"
+	"syscall"
 
 	"context"
 	"net/http"
@@ -60,6 +62,20 @@ var rootCmd = &cobra.Command{
 		}
 	},
 	Run: func(cmd *cobra.Command, args []string) {
+		// Create a context that can be cancelled
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel() // Ensure resources are released
+
+		// Handle signals
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+		go func() {
+			sig := <-sigChan
+			log.WithField("signal", sig).Warn("Received signal, shutting down...")
+			cancel() // Cancel the context when a signal is received
+		}()
+
 		address := fmt.Sprintf("0.0.0.0:%d", listen_port)
 		listen, err := net.Listen("tcp4", address)
 		if err != nil {
@@ -80,7 +96,11 @@ var rootCmd = &cobra.Command{
 		defer logstreamFull.Close()
 
 		// Set up listening for tracestream
-		phonehome.SetupTraceStream(traceFile)
+		traceFile, err := phonehome.SetupTraceStream(traceFile)
+		if err != nil {
+			log.WithError(err).Fatalf("failed to set up trace stream")
+		}
+		defer traceFile.Close()
 
 		if len(serveFolder) != 0 {
 			http.Handle("/files/", http.StripPrefix("/files/", http.FileServer(http.Dir(serveFolder))))
@@ -92,22 +112,16 @@ var rootCmd = &cobra.Command{
 
 		log.Info("Waiting for phone home...")
 
-		// Wait for done signal
-		var res = <-result
-
+		// Wait for done signal.
 		// HACK: Ignore the first failure from phonehome to support the 'rerun'
-		// E2E test. It would be better to use a 'maxFailures' parameter like
-		// netlaunch does, but that's a more invasive change.
-		if res.State == phonehome.PhoneHomeResultFailure {
-			res = <-result
-		}
+		// E2E test.
+		exitCode := phonehome.ListenLoop(ctx, result, false, 1)
 
-		// Log the result
-		res.Log()
-
+		log.Info("Shutting down server...")
 		server.Shutdown(context.Background())
+		log.Info("Server shut down")
 
-		os.Exit(res.ExitCode())
+		os.Exit(exitCode)
 	},
 }
 

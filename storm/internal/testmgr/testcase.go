@@ -17,6 +17,7 @@ type TestCase struct {
 	endTime      time.Time
 	status       TestCaseStatus
 	reason       string
+	err          error
 	log          *logrus.Logger
 	logBuffer    bytes.Buffer
 	f            core.TestCaseFunction
@@ -77,6 +78,8 @@ func (t *TestCase) close(status TestCaseStatus, reason string, err error) {
 
 	// Set the reason for the test case closure
 	if err != nil {
+		// Store the error and its string representation as the reason
+		t.err = err
 		t.reason = err.Error()
 	} else {
 		t.reason = reason
@@ -98,6 +101,12 @@ func (t *TestCase) Buffer() *bytes.Buffer {
 // Returns the reason for the test case closure.
 func (t *TestCase) Reason() string {
 	return t.reason
+}
+
+// Returns the error that caused the test case to fail. This is nil if the test
+// case did not fail because of an error.
+func (t *TestCase) GetError() error {
+	return t.err
 }
 
 // Mark a pending test as skipped because of a dependency failure.

@@ -17,9 +17,9 @@ type OrchestratorMessage struct {
 }
 
 type PhoneHomeResult struct {
-	State   PhoneHomeResultState `json:"state"`
-	Message string               `json:"message"`
-	HostStatus string            `json:"host_status"`
+	State      PhoneHomeResultState `json:"state"`
+	Message    string               `json:"message"`
+	HostStatus string               `json:"host_status"`
 }
 
 func (result *PhoneHomeResult) Log() {
@@ -95,14 +95,14 @@ func SetupPhoneHomeServer(result chan<- PhoneHomeResult, remoteAddressFile strin
 
 		if message.State == string(PhoneHomeResultFailure) {
 			result <- PhoneHomeResult{
-				State:   PhoneHomeResultFailure,
-				Message: message.Message,
+				State:      PhoneHomeResultFailure,
+				Message:    message.Message,
 				HostStatus: message.Host_Status,
 			}
 		} else if message.State == string(PhoneHomeResultSuccess) {
 			result <- PhoneHomeResult{
-				State:   PhoneHomeResultSuccess,
-				Message: message.Message,
+				State:      PhoneHomeResultSuccess,
+				Message:    message.Message,
 				HostStatus: message.Host_Status,
 			}
 		} else {

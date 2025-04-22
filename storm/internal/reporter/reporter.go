@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"storm/internal/devops"
+	"storm/internal/stormerror"
 	"storm/internal/testmgr"
 	"strings"
 
@@ -124,10 +125,11 @@ func (tr *TestReporter) printFinalResult() {
 }
 
 func (tr *TestReporter) printFailureReport() {
+	isDevops := tr.testManager.Suite().AzureDevops()
 	header := true
 	for _, testCase := range tr.testManager.TestCases() {
 		status := testCase.Status()
-		if status.Passed() || status.NotRun() {
+		if !isDevops && (status.Passed() || status.NotRun()) {
 			continue
 		}
 
@@ -143,22 +145,44 @@ func (tr *TestReporter) printFailureReport() {
 			statusStr = testCase.Status().ColorString()
 		}
 
-		reason := testCase.Reason()
-
-		fmt.Printf(
-			"Test case: '%s' status: %s; reason: \"%s\"; ",
+		testCaseHeader := fmt.Sprintf(
+			"Test case: '%s' status: %s; ",
 			testCase.Name(),
 			statusStr,
-			reason,
 		)
+
+		if reason := testCase.Reason(); reason != "" {
+			testCaseHeader += fmt.Sprintf("reason: %s; ", reason)
+		}
+
+		var grp *devops.Group = nil
+		if isDevops {
+			grp = devops.OpenGroup(testCaseHeader)
+		} else {
+			fmt.Print(testCaseHeader)
+		}
+
+		panicked := false
+		if err, ok := testCase.GetError().(stormerror.PanicError); ok {
+			panicked = true
+			fmt.Printf("Stack trace:\n%s\n", err.Stack)
+		}
 
 		logLines := getLogLinesFromTestCase(testCase)
 
 		// Check if there are any log lines
 		if len(logLines) == 0 {
-			fmt.Println("no logs were collected.")
+			if panicked || isDevops {
+				fmt.Println("(No logs were collected)")
+			} else {
+				fmt.Println("no logs were collected.")
+			}
 		} else {
-			fmt.Println("collected logs:")
+			if panicked || isDevops {
+				fmt.Println("Collected logs:")
+			} else {
+				fmt.Println("collected logs:")
+			}
 		}
 
 		for _, log := range logLines {
@@ -172,6 +196,10 @@ func (tr *TestReporter) printFailureReport() {
 
 				fmt.Println(line)
 			}
+		}
+
+		if grp != nil {
+			grp.Close()
 		}
 	}
 }

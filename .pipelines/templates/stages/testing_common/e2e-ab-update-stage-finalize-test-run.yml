@@ -72,13 +72,13 @@ steps:
       if pgrep netlisten > /dev/null; then pkill netlisten; fi
       ./bin/netlisten -m $(Build.SourcesDirectory)/trident-stage-update-metrics.jsonl -p ${{ parameters.netlistenPort }}  > ./stage-ab-update-deployment.log 2>&1 &
       echo "Running script to stage A/B update..."
-      python3 $(Build.SourcesDirectory)/e2e_tests/helpers/ab_update.py \
-          --ip-address ${{ parameters.hostIp }} \
-          --user-name ${{ parameters.userName }} \
-          --keys-file-path ${{ parameters.sshKeyPath }} \
+      ./bin/storm-trident helper ab-update \
+          "${{ parameters.sshKeyPath }}" \
+          "${{ parameters.hostIp }}" \
+          "${{ parameters.userName }}" \
+          "${{ parameters.runtimeEnv }}" \
           --destination-directory $(destinationDirectory) \
           --trident-config $(tridentConfigFile) \
-          --runtime-env ${{ parameters.runtimeEnv }} \
           --version $(version) \
           --stage-ab-update
     timeoutInMinutes: 5
@@ -125,13 +125,13 @@ steps:
       if pgrep netlisten > /dev/null; then pkill netlisten; fi
       ./bin/netlisten -m $(Build.SourcesDirectory)/trident-finalize-update-metrics.jsonl -p ${{ parameters.netlistenPort }} > ./finalize-ab-update.log 2>&1 &
       echo "Running script to finalize A/B update..."
-      python3 $(Build.SourcesDirectory)/e2e_tests/helpers/ab_update.py \
-          --ip-address ${{ parameters.hostIp }} \
-          --user-name ${{ parameters.userName }} \
-          --keys-file-path ${{ parameters.sshKeyPath }} \
+      ./bin/storm-trident helper ab-update \
+          "${{ parameters.sshKeyPath }}" \
+          "${{ parameters.hostIp }}" \
+          "${{ parameters.userName }}" \
+          "${{ parameters.runtimeEnv }}" \
           --destination-directory $(destinationDirectory) \
           --trident-config $(tridentConfigFile) \
-          --runtime-env ${{ parameters.runtimeEnv }} \
           --version $(version) \
           --finalize-ab-update
 

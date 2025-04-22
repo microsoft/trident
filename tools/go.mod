@@ -1,8 +1,8 @@
 module argus_toolkit
 
-go 1.22
+go 1.23.0
 
-toolchain go1.23.0
+toolchain go1.24.2
 
 require (
 	github.com/bmc-toolbox/bmclib/v2 v2.0.1-0.20230530141715-da28e42c453f
@@ -47,11 +47,11 @@ require (
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/vishvananda/netlink v1.3.0
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/crypto v0.31.0
-	golang.org/x/exp v0.0.0-20240823005443-9b4947da3948 // indirect
-	golang.org/x/net v0.33.0 // indirect
-	golang.org/x/sys v0.28.0 // indirect
-	golang.org/x/text v0.21.0 // indirect
+	golang.org/x/crypto v0.37.0
+	golang.org/x/exp v0.0.0-20240823005443-9b4947da3948
+	golang.org/x/net v0.39.0 // indirect
+	golang.org/x/sys v0.32.0 // indirect
+	golang.org/x/text v0.24.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

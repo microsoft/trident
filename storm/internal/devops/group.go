@@ -3,11 +3,11 @@ package devops
 import "fmt"
 
 // Groups function as a stack, so we keep track of the groups in a stack.
-var groups = make([]*group, 0)
+var groups = make([]*Group, 0)
 
 // Opens a new group and adds it to the stack.
-func OpenGroup(name string) *group {
-	newGroup := &group{}
+func OpenGroup(name string) *Group {
+	newGroup := &Group{}
 	groups = append(groups, newGroup)
 	logCreateGroup(name)
 	return newGroup
@@ -21,12 +21,11 @@ func logEndGroup() {
 	fmt.Println("##[endgroup]")
 }
 
-type group struct {
-}
+type Group struct{}
 
 // Closes the group and removes all groups above it from the stack.
 // This is done by popping the stack until we reach the group we want to close.
-func (g *group) Close() {
+func (g *Group) Close() {
 	var index int = len(groups) - 1
 	for index >= 0 {
 		// Pop the last group from the stack

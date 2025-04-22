@@ -2,6 +2,7 @@ package runner
 
 import (
 	"fmt"
+	"storm/internal/stormerror"
 	"testing"
 )
 
@@ -19,7 +20,7 @@ func TestRunCatchPanic(t *testing.T) {
 			t.Errorf("expected an error, got nil")
 		}
 
-		if _, ok := err.(*PanicError); ok {
+		if _, ok := err.(*stormerror.PanicError); ok {
 			t.Errorf("expected non-panic error, got panic error")
 		}
 
@@ -36,7 +37,7 @@ func TestRunCatchPanic(t *testing.T) {
 			t.Errorf("expected an error, got nil")
 		}
 
-		pe, ok := err.(PanicError)
+		pe, ok := err.(stormerror.PanicError)
 		if !ok {
 			t.Errorf("expected panic error, got non-panic error")
 		}

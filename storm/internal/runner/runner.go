@@ -2,8 +2,10 @@ package runner
 
 import (
 	"fmt"
+	"runtime/debug"
 	"slices"
 	"storm/internal/reporter"
+	"storm/internal/stormerror"
 	"storm/internal/testmgr"
 	"storm/pkg/storm/core"
 	"sync"
@@ -149,18 +151,10 @@ func executeTestCase(testCase *testmgr.TestCase) {
 	}
 }
 
-type PanicError struct {
-	any
-}
-
-func (pe PanicError) Error() string {
-	return fmt.Sprintf("panic occurred: %v", pe.any)
-}
-
 func runCatchPanic(f func() error) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = PanicError{r}
+			err = stormerror.NewPanicError(r, debug.Stack())
 		}
 	}()
 
