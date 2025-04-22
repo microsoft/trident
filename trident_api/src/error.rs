@@ -28,6 +28,9 @@ pub enum ExecutionEnvironmentMisconfigurationError {
 
     #[error("Failed to find required binary '{binary}'")]
     MissingBinary { binary: &'static str },
+
+    #[error("Prism chroot environment not as expected")]
+    PrismChrootEnvironment,
 }
 
 /// Identifies errors that occur when Trident fails to initialize.
@@ -211,6 +214,9 @@ pub enum InvalidInputError {
 
     #[error("Failed to parse Host Configuration file from '{path}'")]
     ParseHostConfigurationFile { path: String },
+
+    #[error("Failed to parse prism history file")]
+    ParsePrismHistory,
 
     #[error("Failed to read input file '{path}'")]
     ReadInputFile { path: String },

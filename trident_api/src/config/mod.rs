@@ -22,7 +22,7 @@ pub use host::{
         partitions::{AdoptedPartition, Partition, PartitionSize, PartitionType},
         raid::{Raid, RaidLevel, SoftwareRaidArray},
         swap::SwapDevice,
-        verity::VerityDevice,
+        verity::{VerityCorruptionOption, VerityDevice},
         Storage,
     },
     trident::Trident,

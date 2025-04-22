@@ -159,7 +159,7 @@ enum Commands {
     /// Initialize Trident in offline mode
     OfflineInitialize {
         /// Path to a Host Status file
-        hs_path: PathBuf,
+        hs_path: Option<PathBuf>,
     },
 }
 
@@ -228,7 +228,7 @@ fn run_trident(
         }
 
         Commands::OfflineInitialize { hs_path } => {
-            return offline_init::execute(hs_path);
+            return offline_init::execute(hs_path.as_deref());
         }
 
         Commands::Get { kind, outfile } => {

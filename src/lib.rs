@@ -581,8 +581,10 @@ impl Trident {
 
             // The storage section is optional for updates if COSI is in use.
             if host_config.image.is_some() && host_config.storage == Default::default() {
-                debug!("Storage section not specified in Host Configuration, using current storage configuration");
                 host_config.storage = datastore.host_status().spec.storage.clone();
+                debug!("Storage section not specified in Host Configuration, using current storage configuration:\n{}",
+                    serde_yaml::to_string(&host_config.storage)
+                        .unwrap_or("Failed to serialize Storage Configuration".into()));
             }
 
             host_config
