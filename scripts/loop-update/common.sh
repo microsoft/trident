@@ -145,7 +145,7 @@ function analyzeSerialLog() {
     else
         echo "No error found in serial log"
         echo "Last line of serial log: $LAST_LINE"
-        echoError "Last line of serial log: $LAST_LINE"
+        adoError "Last line of serial log: $LAST_LINE"
     fi
 }
 
