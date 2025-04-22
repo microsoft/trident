@@ -9,7 +9,7 @@ OUTPUT=${OUTPUT:-}
 
 ALIAS=${ALIAS:-`whoami`}
 
-SUBSCRIPTION=${SUBSCRIPTION:-b8a0db63-c5fa-4198-8e2a-f9d6ff52465e} # CoreOS_ECF_Kubernetes_dev
+SUBSCRIPTION=${SUBSCRIPTION:-b8a0db63-c5fa-4198-8e2a-f9d6ff52465e} # CoreOS_AzureLinux_BMP_dev
 IMAGE_DEFINITION=${IMAGE_DEFINITION:-trident-vm-verity-azure-testimage}
 RESOURCE_GROUP=${RESOURCE_GROUP:-azlinux_bmp_dev}
 PUBLISH_LOCATION=${PUBLISH_LOCATION:-eastus2}
@@ -20,7 +20,7 @@ PUBLISHER=${PUBLISHER:-$ALIAS}
 OFFER=${OFFER:-trident-vm-verity-azure-offer}
 export AZCOPY_AUTO_LOGIN_TYPE=${AZCOPY_AUTO_LOGIN_TYPE:-AZCLI}
 TEST_RESOURCE_GROUP=${TEST_RESOURCE_GROUP:-$GALLERY_RESOURCE_GROUP-test}
-TEST_VM_SIZE=${TEST_VM_SIZE:-Standard_D2d_v5}
+TEST_VM_SIZE=${TEST_VM_SIZE:-Standard_D2ds_v5}
 SSH_PUBLIC_KEY_PATH=${SSH_PUBLIC_KEY_PATH:-~/.ssh/id_rsa.pub}
 
 # Third parent of this script
@@ -135,6 +135,20 @@ function truncateLog() {
     fi
 }
 
+function analyzeSerialLog() {
+    local LOG=$1
+
+    LAST_LINE=$(tail -n 1 $LOG)
+    if [[ $LAST_LINE == *"tpm tpm0: Operation Timed out"* ]]; then
+        echo "Error found in serial log: tpm tpm0: Operation Timed out"
+        adoError "tpm tpm0: Operation Timed out"
+    else
+        echo "No error found in serial log"
+        echo "Last line of serial log: $LAST_LINE"
+        echoError "Last line of serial log: $LAST_LINE"
+    fi
+}
+
 function waitForLogin() {
     set +e
     local ITERATION=$1
@@ -156,9 +170,10 @@ function waitForLogin() {
 
     if [ "$OUTPUT" != "" ]; then
         mkdir -p $OUTPUT
-        OUTPUT_FILENAME=serial-$ITERATION.log
+        PAD_ITERATION=$(printf "%03d" $ITERATION)
+        OUTPUT_FILENAME=$PAD_ITERATION-serial.log
         if [ "${ROLLBACK:-}" == "true" ]; then
-            OUTPUT_FILENAME=rollback-serial-$ITERATION.log
+            OUTPUT_FILENAME=$PAD_ITERATION-rollback-serial.log
         fi
         sudo cp ./serial.log $OUTPUT/$OUTPUT_FILENAME
     fi
@@ -166,6 +181,12 @@ function waitForLogin() {
     if [ $WAIT_FOR_LOGIN_EXITCODE -ne 0 ]; then
         echo "Failed to reach login prompt for the VM"
         adoError "Failed to reach login prompt for the VM for iteration $ITERATION"
+
+        analyzeSerialLog ./serial.log
+
+        if [ "$TEST_PLATFORM" == "qemu" ]; then
+            virsh dominfo $VM_NAME
+        fi
 
         df -h
         exit $WAIT_FOR_LOGIN_EXITCODE
@@ -257,7 +278,7 @@ function azCommand() {
             az login --identity > /dev/null
         fi
         az $COMMAND
-    else 
+    else
         echo -n $OUTPUT
     fi
 }

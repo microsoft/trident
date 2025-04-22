@@ -33,6 +33,7 @@ downloadCrashdumps() {
 
     if sshCommand "ls $CRASHDUMP_DIR/*"; then
         echo "Crash files found on host"
+        adoError "Crash files found on host"
         sshCommand "sudo mv $CRASHDUMP_DIR/* /tmp/crash && sudo chmod -R 644 /tmp/crash && sudo chmod +x /tmp/crash"
         scpDownloadFile "/tmp/crash/*" "$DEST/"
         tail -n 50 "$DEST/vmcore-dmesg.txt"
@@ -54,6 +55,7 @@ if [ "$TEST_PLATFORM" == "azure" ]; then
     else
         echo "Serial log saved to $1/serial.log"
     fi
+    analyzeSerialLog $1/serial.log
 fi
 
 VM_IP=`getIp`

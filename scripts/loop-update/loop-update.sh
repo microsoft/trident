@@ -150,7 +150,8 @@ for i in $(seq 1 $RETRY_COUNT); do
     STAGE_RESULT=$?
 
     if [ "$OUTPUT" != "" ]; then
-        scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $SSH_USER@$VM_IP:/var/log/trident-full.log $OUTPUT/staged-trident-full-$i.log
+        PAD_ITERATION=$(printf "%03d" $i)
+        scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $SSH_USER@$VM_IP:/var/log/trident-full.log $OUTPUT/$PAD_ITERATION-staged-trident-full.log
     fi
 
     if [ $STAGE_RESULT -ne 0 ]; then
