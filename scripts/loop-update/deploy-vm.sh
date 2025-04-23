@@ -64,6 +64,10 @@ elif [ "$TEST_PLATFORM" == "azure" ]; then
 
     azCommand group create -n "$TEST_RESOURCE_GROUP" -l "$PUBLISH_LOCATION" --tags creationTime=$(date +%s)
 
+    if [ -n "${VALIDATION_SUBNET_ID:-}" ]; then
+        SUBNET_ARG="--subnet $VALIDATION_SUBNET_ID"
+    fi
+
     VERSION=`getImageVersion`
     azCommand vm create \
         --resource-group "$TEST_RESOURCE_GROUP" \
@@ -77,7 +81,8 @@ elif [ "$TEST_PLATFORM" == "azure" ]; then
         --security-type TrustedLaunch \
         --enable-secure-boot true \
         --enable-vtpm true \
-        --no-wait
+        --no-wait \
+        $SUBNET_ARG
 
     # Attempt to enable the boot diagnostics early on
     while ! azCommand vm boot-diagnostics enable --name "$VM_NAME" -g "$TEST_RESOURCE_GROUP"; do
@@ -91,6 +96,4 @@ elif [ "$TEST_PLATFORM" == "azure" ]; then
 
     # Use az cli to confirm the VM deployment status is successful
     while [ "`azCommand vm show -d -g "$TEST_RESOURCE_GROUP" -n "$VM_NAME" --query provisioningState -o tsv`" != "Succeeded" ]; do sleep 1; done
-
-    VM_IP=`azCommand vm show -d -g "$TEST_RESOURCE_GROUP" -n "$VM_NAME" --query publicIps -o tsv`
 fi

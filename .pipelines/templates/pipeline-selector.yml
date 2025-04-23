@@ -34,6 +34,11 @@ parameters:
     default: false
     displayName: "Block publishing to artifact feed."
 
+  - name: numberOfUpdateIterations
+    displayName: Number of times each worker invokes A/B Update
+    type: number
+    default: 3
+
 stages:
   - ${{ if eq(parameters.targetStage, 'pr') }}:
       - template: pr-template.yml
@@ -46,3 +51,4 @@ stages:
           baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
           # Only perform Azure testing from official pipelines, as only those have access to the Azure subscription.
           includeAzure: ${{ or(eq(parameters.targetStage, 'pre'), eq(parameters.targetStage, 'ci'), eq(parameters.targetStage, 'pr-e2e-azure')) }}
+          numberOfUpdateIterations: ${{ parameters.numberOfUpdateIterations }}

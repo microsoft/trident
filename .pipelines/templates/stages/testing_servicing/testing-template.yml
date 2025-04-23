@@ -166,6 +166,7 @@ jobs:
           TEST_PLATFORM: ${{ parameters.platform }}
           SUBSCRIPTION: $(SUBSCRIPTION)
           SECURE_BOOT: ${{ ne(parameters.flavor, 'uki') }}
+          VALIDATION_SUBNET_ID: /subscriptions/04cdc145-a4f9-42d4-9868-c46d23d0c63f/resourceGroups/trident-vm_servicing-azure-vnet/providers/Microsoft.Network/virtualNetworks/poolpeeringvnet/subnets/default
         timeoutInMinutes: 5
 
       - bash: ./scripts/loop-update/check-deployment.sh

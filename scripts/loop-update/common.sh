@@ -35,7 +35,11 @@ function getIp() {
         while [ `sudo virsh domifaddr $VM_NAME | grep -c "ipv4"` -eq 0 ]; do sleep 1; done
         sudo virsh domifaddr $VM_NAME | grep ipv4 | awk '{print $4}' | cut -d'/' -f1
     elif [ "$TEST_PLATFORM" == "azure" ]; then
-        az vm show -d -g $TEST_RESOURCE_GROUP -n $VM_NAME --query publicIps -o tsv
+        IP_TYPE=publicIps
+        if [ ! -z "${BUILD_BUILDNUMBER:-}" ]; then
+            IP_TYPE=privateIps
+        fi
+        az vm show -d -g $TEST_RESOURCE_GROUP -n $VM_NAME --query $IP_TYPE -o tsv
     fi
 }
 

@@ -7,6 +7,11 @@
 # Retail Tasks:   https://aka.ms/obpipelines/tasks                              #
 # Support:        https://aka.ms/onebranchsup                                   #
 #################################################################################
+parameters:
+  - name: numberOfUpdateIterations
+    displayName: Number of A/B update iterations for VM servicing
+    type: number
+    default: 3
 
 trigger: none
 
@@ -67,3 +72,4 @@ extends:
         parameters:
           targetStage: pr-e2e-azure
           blockPublishing: true
+          numberOfUpdateIterations: ${{ parameters.numberOfUpdateIterations }}
