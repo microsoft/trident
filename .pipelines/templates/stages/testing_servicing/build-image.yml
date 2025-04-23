@@ -63,6 +63,11 @@ jobs:
       ob_artifactBaseName: "image-${{ parameters.label }}"
 
     steps:
+      - task: PipAuthenticate@1
+        displayName: Provision - Authenticate Pip
+        inputs:
+          artifactFeeds: 'mariner/Mariner-Pypi-Feed'
+
       - task: DownloadPipelineArtifact@2
         inputs:
           buildType: current

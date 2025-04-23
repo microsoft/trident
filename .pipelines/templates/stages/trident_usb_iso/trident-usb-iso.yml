@@ -55,6 +55,11 @@ stages:
       fetchDepth: 1
       path: s/test-images
 
+    - task: PipAuthenticate@1
+      displayName: Provision - Authenticate Pip
+      inputs:
+        artifactFeeds: 'mariner/Mariner-Pypi-Feed'
+
     - task: DownloadPipelineArtifact@2
       inputs:
         buildType: current

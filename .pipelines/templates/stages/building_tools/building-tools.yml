@@ -37,6 +37,11 @@ stages:
           ob_artifactBaseName: go-tools
 
         steps:
+          - task: PipAuthenticate@1
+            displayName: Provision - Authenticate Pip
+            inputs:
+              artifactFeeds: 'mariner/Mariner-Pypi-Feed'
+
           - ${{ if eq(parameters.buildNetlaunch, true) }}:
               - bash: |
                   set -eux

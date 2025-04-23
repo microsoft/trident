@@ -15,6 +15,11 @@ stages:
           ob_outputDirectory: $(Build.SourcesDirectory)/build
 
         steps:
+          - task: PipAuthenticate@1
+            displayName: Provision - Authenticate Pip
+            inputs:
+              artifactFeeds: 'mariner/Mariner-Pypi-Feed'
+
           - template: ../common_tasks/build-osmodifier.yml
 
           - script: |

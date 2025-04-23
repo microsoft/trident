@@ -10,6 +10,11 @@ jobs:
       ob_artifactBaseName: "ssh-keys"
 
     steps:
+      - task: PipAuthenticate@1
+        displayName: Provision - Authenticate Pip
+        inputs:
+          artifactFeeds: 'mariner/Mariner-Pypi-Feed'
+
       - bash: |
           set -eux
           mkdir -p $(ob_outputDirectory)
