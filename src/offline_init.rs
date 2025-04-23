@@ -1,6 +1,7 @@
 #![allow(unused)]
 
 use std::{
+    collections::HashSet,
     fs,
     path::{Path, PathBuf},
 };
@@ -15,6 +16,7 @@ use trident_api::{
         HostConfiguration, MountOptions, MountPoint, Partition, PartitionSize, PartitionTableType,
         PartitionType, VerityCorruptionOption, VerityDevice,
     },
+    constants::internal_params::ENABLE_UKI_SUPPORT,
     error::{
         ExecutionEnvironmentMisconfigurationError, InitializationError, InvalidInputError,
         ReportError, TridentError, TridentResultExt,
@@ -70,6 +72,7 @@ struct PrismVerity {
 }
 
 #[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct PrismStorage {
     disks: Vec<PrismDisk>,
     filesystems: Vec<PrismFileSystem>,
@@ -79,8 +82,18 @@ struct PrismStorage {
 }
 
 #[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PrismOs {
+    #[serde(default)]
+    uki: serde_json::Value,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct PrismHistoryConfig {
     storage: Option<PrismStorage>,
+    os: Option<PrismOs>,
+    preview_features: Option<Vec<String>>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -96,9 +109,14 @@ pub fn execute(hs_path: Option<&Path>) -> Result<(), TridentError> {
         let host_status_yaml = fs::read_to_string(hs_path)
             .structured(InitializationError::LoadHostStatus)
             .message(format!("Failed to read Host Status from {:?}", hs_path))?;
-        serde_yaml::from_str(&host_status_yaml)
+        let mut host_status: HostStatus = serde_yaml::from_str(&host_status_yaml)
             .structured(InitializationError::ParseHostStatus)
-            .message("Failed to parse Host Status from YAML")?
+            .message("Failed to parse Host Status from YAML")?;
+        host_status
+            .spec
+            .internal_params
+            .set_flag("injectedHostStatus".into());
+        host_status
     } else {
         let history_file_path = "/usr/share/image-customizer/history.json";
         let history_file = fs::read_to_string(history_file_path)
@@ -296,6 +314,23 @@ pub fn execute(hs_path: Option<&Path>) -> Result<(), TridentError> {
             host_config.storage.ab_update = Some(AbUpdate {
                 volume_pairs: ab_volumes,
             });
+        }
+
+        let preview_features: HashSet<_> = history
+            .iter()
+            .filter_map(|h| h.config.preview_features.as_ref())
+            .flat_map(|f| f.iter().cloned())
+            .collect();
+
+        if history
+            .iter()
+            .filter_map(|h| h.config.os.as_ref())
+            .any(|os| !os.uki.is_null())
+            || preview_features.contains("uki")
+        {
+            host_config
+                .internal_params
+                .set_flag(ENABLE_UKI_SUPPORT.into());
         }
 
         HostStatus {

@@ -53,6 +53,11 @@ impl InternalParams {
     pub fn get_flag(&self, key: impl AsRef<str>) -> bool {
         self.get(key).transpose().ok().flatten().unwrap_or(false)
     }
+
+    /// Set a key to be a boolean flag with a value of 'true'.
+    pub fn set_flag(&mut self, key: String) {
+        self.0.insert(key, true.into());
+    }
 }
 
 #[cfg(test)]
