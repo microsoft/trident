@@ -1,5 +1,6 @@
 pub mod blkid;
 pub mod block_devices;
+pub mod bootloaders;
 pub mod chroot;
 pub mod container;
 pub mod dependencies;

@@ -570,7 +570,7 @@ mod tests {
         // Scenario 1 (failure): Duplicate FSUUIDs found in same image
         let mut mock_image = MockOsImage {
             source: Url::parse(OSIMAGE_DUMMY_SOURCE).unwrap(),
-            os_arch: SystemArchitecture::X86,
+            os_arch: SystemArchitecture::Amd64,
             os_release: OsRelease::default(),
             images: vec![
                 MockImage {
@@ -621,7 +621,7 @@ mod tests {
         // Generate mock OS image
         let mock_image = MockOsImage {
             source: Url::parse(OSIMAGE_DUMMY_SOURCE).unwrap(),
-            os_arch: SystemArchitecture::X86,
+            os_arch: SystemArchitecture::Amd64,
             os_release: OsRelease::default(),
             images: vec![
                 MockImage {
@@ -652,7 +652,7 @@ mod tests {
         // Generate mock OS image
         let mock_image = MockOsImage {
             source: Url::parse(OSIMAGE_DUMMY_SOURCE).unwrap(),
-            os_arch: SystemArchitecture::X86,
+            os_arch: SystemArchitecture::Amd64,
             os_release: OsRelease::default(),
             images: vec![
                 MockImage {
@@ -689,7 +689,7 @@ mod tests {
         // Generate mock OS image
         let mut mock_image = MockOsImage {
             source: Url::parse(OSIMAGE_DUMMY_SOURCE).unwrap(),
-            os_arch: SystemArchitecture::X86,
+            os_arch: SystemArchitecture::Amd64,
             os_release: OsRelease::default(),
             images: vec![MockImage {
                 mount_point: PathBuf::from(BOOT_MOUNT_POINT_PATH),
@@ -1083,7 +1083,7 @@ mod functional_test {
         // same FSUUID as in current disk), resulting in duplicate FSUUIDs
         let mut mock_image = MockOsImage {
             source: Url::parse("http://example/osimage").unwrap(),
-            os_arch: SystemArchitecture::X86,
+            os_arch: SystemArchitecture::Amd64,
             os_release: OsRelease::default(),
             images: vec![MockImage {
                 mount_point: PathBuf::from("/"),

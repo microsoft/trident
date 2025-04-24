@@ -5,6 +5,7 @@ use log::debug;
 
 use osutils::{
     block_devices,
+    bootloaders::BootloaderExecutable,
     efibootmgr::{self, EfiBootManagerOutput},
     virt,
 };
@@ -19,8 +20,8 @@ use trident_api::{
 
 use super::{boot, EngineContext};
 
-/// Boot efi executable
-const BOOT64_EFI: &str = "bootx64.efi";
+/// Boot EFI executable
+const BOOT_EFI: &str = BootloaderExecutable::Boot.current_name();
 
 /// ESP device metadata
 #[derive(Debug, PartialEq, Clone)]
@@ -238,7 +239,7 @@ fn create_boot_entries_for_rebuilt_esp_partitions(
                             let bootloader_path = Path::new(constants::ROOT_MOUNT_POINT_PATH)
                                 .join(constants::ESP_EFI_DIRECTORY)
                                 .join(&entry_label)
-                                .join(BOOT64_EFI);
+                                .join(BOOT_EFI);
 
                             create_entry(
                                 ctx,
@@ -543,7 +544,7 @@ fn get_label_and_path(ctx: &EngineContext) -> Result<(String, PathBuf), Error> {
     let path = Path::new(constants::ROOT_MOUNT_POINT_PATH)
         .join(constants::ESP_EFI_DIRECTORY)
         .join(&esp_dir_name)
-        .join(BOOT64_EFI);
+        .join(BOOT_EFI);
 
     Ok((esp_dir_name, path))
 }
@@ -666,7 +667,7 @@ mod tests {
                 Path::new(constants::ROOT_MOUNT_POINT_PATH)
                     .join(constants::ESP_EFI_DIRECTORY)
                     .join(get_update_esp_dir_name(&ctx).unwrap())
-                    .join(BOOT64_EFI)
+                    .join(BOOT_EFI)
             )
         );
 
@@ -681,7 +682,7 @@ mod tests {
                 Path::new(constants::ROOT_MOUNT_POINT_PATH)
                     .join(constants::ESP_EFI_DIRECTORY)
                     .join(get_update_esp_dir_name(&ctx).unwrap())
-                    .join(BOOT64_EFI)
+                    .join(BOOT_EFI)
             )
         );
 
@@ -940,16 +941,16 @@ mod functional_test {
         // Create new boot manager entries for testing
         let tempdir = tempfile::tempdir().unwrap();
         // Create bootloader path
-        let bootloader_path = Path::new(r"/EFI/AZLA/bootx64.efi");
+        let bootloader_path = Path::new(r"/EFI/AZLA").join(BOOT_EFI);
         // create_boot_entry() will call is_valid_bootloader_path() to verify if file exists at
         // {tempdir}/{bootloader_path}. So, create a dummy bootloader file
-        let bootloader_file_path = join_relative(tempdir.path(), bootloader_path);
+        let bootloader_file_path = join_relative(tempdir.path(), &bootloader_path);
         create_file(bootloader_file_path).unwrap();
 
         efibootmgr::create_boot_entry(
             "TestBoot1",
             OS_DISK_DEVICE_PATH,
-            bootloader_path,
+            &bootloader_path,
             tempdir.path(),
             1,
             false,
@@ -958,7 +959,7 @@ mod functional_test {
         efibootmgr::create_boot_entry(
             "TestBoot2",
             OS_DISK_DEVICE_PATH,
-            bootloader_path,
+            &bootloader_path,
             tempdir.path(),
             2,
             false,
@@ -967,7 +968,7 @@ mod functional_test {
         efibootmgr::create_boot_entry(
             "TestBoot3",
             OS_DISK_DEVICE_PATH,
-            bootloader_path,
+            &bootloader_path,
             tempdir.path(),
             3,
             false,
@@ -1233,16 +1234,16 @@ mod functional_test {
         // Create new boot manager entries for testing
         let tempdir = tempfile::tempdir().unwrap();
         // Create bootloader path
-        let bootloader_path = Path::new(r"/EFI/AZLA/bootx64.efi");
+        let bootloader_path = Path::new(r"/EFI/AZLA").join(BOOT_EFI);
         // create_boot_entry() will call is_valid_bootloader_path() to verify if file exists at
         // {tempdir}/{bootloader_path}. So, create a dummy bootloader file
-        let bootloader_file_path = join_relative(tempdir.path(), bootloader_path);
+        let bootloader_file_path = join_relative(tempdir.path(), &bootloader_path);
         create_file(bootloader_file_path).unwrap();
 
         efibootmgr::create_boot_entry(
             boot_current_label.clone(),
             OS_DISK_DEVICE_PATH,
-            bootloader_path,
+            &bootloader_path,
             tempdir.path(),
             1,
             true,
@@ -1258,7 +1259,7 @@ mod functional_test {
         efibootmgr::create_boot_entry(
             boot_current_label.clone(),
             OS_DISK_DEVICE_PATH,
-            bootloader_path,
+            &bootloader_path,
             tempdir.path(),
             2,
             true,
@@ -1352,23 +1353,23 @@ mod functional_test {
     ) -> (Vec<String>, Vec<String>, Vec<EspDeviceMetadata>) {
         let tempdir = tempfile::tempdir().unwrap();
         // Create bootloader path
-        let bootloader_path = Path::new(r"/EFI/TESTA/bootx64.efi");
+        let bootloader_path = Path::new(r"/EFI/TESTA/").join(BOOT_EFI);
         // create_boot_entry() will call is_valid_bootloader_path() to verify if file exists at
         // {tempdir}/{bootloader_path}. So, create a dummy bootloader file
-        let bootloader_file_path = join_relative(tempdir.path(), bootloader_path);
+        let bootloader_file_path = join_relative(tempdir.path(), &bootloader_path);
         create_file(bootloader_file_path).unwrap();
 
-        let bootloader_path = Path::new(r"/EFI/TESTB/bootx64.efi");
+        let bootloader_path = Path::new(r"/EFI/TESTB").join(BOOT_EFI);
         // create_boot_entry() will call is_valid_bootloader_path() to verify if file exists at
         // {tempdir}/{bootloader_path}. So, create a dummy bootloader file
-        let bootloader_file_path = join_relative(tempdir.path(), bootloader_path);
+        let bootloader_file_path = join_relative(tempdir.path(), &bootloader_path);
         create_file(bootloader_file_path).unwrap();
 
         for label in &labels {
             efibootmgr::create_boot_entry(
                 label,
                 OS_DISK_DEVICE_PATH,
-                bootloader_path,
+                &bootloader_path,
                 tempdir.path(),
                 3,
                 false,
@@ -1378,7 +1379,7 @@ mod functional_test {
             efibootmgr::create_boot_entry(
                 label,
                 OS_DISK_DEVICE_PATH,
-                bootloader_path,
+                &bootloader_path,
                 tempdir.path(),
                 3,
                 true,
@@ -1386,9 +1387,9 @@ mod functional_test {
             .unwrap();
         }
 
-        let bootloader_path1 = Path::new(r"/boot/efi/EFI/TESTA/bootx64.efi");
+        let bootloader_path1 = Path::new(r"/boot/efi/EFI/TESTA").join(BOOT_EFI);
         create_file(bootloader_path1).unwrap();
-        let bootloader_path2 = Path::new(r"/boot/efi/EFI/TESTB/bootx64.efi");
+        let bootloader_path2 = Path::new(r"/boot/efi/EFI/TESTB").join(BOOT_EFI);
         create_file(bootloader_path2).unwrap();
 
         let bootmgr_output_initial: EfiBootManagerOutput =
@@ -1430,8 +1431,8 @@ mod functional_test {
             efibootmgr::delete_boot_entry(entry_number).unwrap();
         }
         // Delete the files created
-        let _ = std::fs::remove_file("/boot/efi/EFI/TESTA/bootx64.efi");
-        let _ = std::fs::remove_file("/boot/efi/EFI/TESTB/bootx64.efi");
+        let _ = std::fs::remove_file(Path::new("/boot/efi/EFI/TESTA").join(BOOT_EFI));
+        let _ = std::fs::remove_file(Path::new("/boot/efi/EFI/TESTB").join(BOOT_EFI));
     }
 
     #[functional_test]

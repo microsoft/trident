@@ -152,7 +152,7 @@ mod tests {
 
         let os_image = OsImage::mock(MockOsImage {
             source: Url::parse(OSIMAGE_DUMMY_SOURCE).unwrap(),
-            os_arch: SystemArchitecture::X86,
+            os_arch: SystemArchitecture::Amd64,
             os_release: OsRelease::default(),
             images: mock_entries
                 .clone()

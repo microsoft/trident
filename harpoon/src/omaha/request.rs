@@ -72,9 +72,7 @@ impl Default for Request {
                 platform: "linux",
                 version: OsRelease::read().unwrap_or_default().version,
                 architecture: match SystemArchitecture::current() {
-                    SystemArchitecture::X86 => "x86",
                     SystemArchitecture::Amd64 => "amd64",
-                    SystemArchitecture::Arm => "arm",
                     SystemArchitecture::Aarch64 => "arm64",
                 },
             },
@@ -247,9 +245,7 @@ mod tests {
         assert_eq!(
             request.os.architecture,
             match SystemArchitecture::current() {
-                SystemArchitecture::X86 => "x86",
                 SystemArchitecture::Amd64 => "amd64",
-                SystemArchitecture::Arm => "arm",
                 SystemArchitecture::Aarch64 => "arm64",
             }
         );
