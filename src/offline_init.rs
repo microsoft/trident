@@ -157,22 +157,32 @@ pub fn execute(hs_path: Option<&Path>) -> Result<(), TridentError> {
             .message("Prism history doesn't contain any disks")?
             .partitions;
         let mut host_config = HostConfiguration::default();
+
+        let mut partitions = Vec::new();
+        for partition in prism_partitions {
+            partitions.push(Partition {
+                id: partition.id.clone(),
+                partition_type: if partition.ty.as_deref() == Some("esp") {
+                    PartitionType::Esp
+                } else {
+                    PartitionType::LinuxGeneric
+                },
+                size: PartitionSize::Fixed(
+                    ByteCount::from_human_readable(&partition.size)
+                        .structured(InvalidInputError::ParsePrismHistory)
+                        .message(format!(
+                            "Failed to parse partition size '{}'",
+                            partition.size
+                        ))?,
+                ),
+            });
+        }
+
         host_config.storage.disks.push(Disk {
             id: "disk0".to_string(),
             device: "/dev/sda".into(),
             partition_table_type: PartitionTableType::Gpt,
-            partitions: prism_partitions
-                .iter()
-                .map(|partition| Partition {
-                    id: partition.id.clone(),
-                    partition_type: if partition.ty.as_deref() == Some("esp") {
-                        PartitionType::Esp
-                    } else {
-                        PartitionType::LinuxGeneric
-                    },
-                    size: PartitionSize::Fixed(ByteCount(1 << 30)),
-                })
-                .collect(),
+            partitions,
             adopted_partitions: Vec::new(),
         });
 
