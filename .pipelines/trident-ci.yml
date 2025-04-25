@@ -34,6 +34,23 @@ resources:
       type: git
       name: test-images
       ref: refs/heads/main
+      trigger:
+        batch: true
+        branches:
+          include:
+            - main
+        paths:
+          include:
+            - Makefile
+            - testimages.py
+            - builder/**
+            - platform-integration-images/**
+            - .pipelines/**/*trident*
+          exclude:
+            - platform-integration-images/mshvch-testimage/**
+            - platform-integration-images/k8s-testimage/**
+            - platform-integration-images/qemu-guest-testimage/**
+            - platform-integration-images/remote-qemu-guest-k8s-testimage/**
 
     - repository: platform-pipelines
       type: git
