@@ -4,6 +4,7 @@ use std::{
     collections::HashSet,
     fs,
     path::{Path, PathBuf},
+    str::FromStr,
 };
 
 use log::{debug, info, trace};
@@ -167,14 +168,12 @@ pub fn execute(hs_path: Option<&Path>) -> Result<(), TridentError> {
                 } else {
                     PartitionType::LinuxGeneric
                 },
-                size: PartitionSize::Fixed(
-                    ByteCount::from_human_readable(&partition.size)
-                        .structured(InvalidInputError::ParsePrismHistory)
-                        .message(format!(
-                            "Failed to parse partition size '{}'",
-                            partition.size
-                        ))?,
-                ),
+                size: PartitionSize::from_str(&partition.size)
+                    .structured(InvalidInputError::ParsePrismHistory)
+                    .message(format!(
+                        "Failed to parse partition size '{}'",
+                        partition.size
+                    ))?,
             });
         }
 
