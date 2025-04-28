@@ -82,12 +82,12 @@ pub struct KernelCommandLine {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct Selinux {
-    /// Override the SELinux mode. When not provided, no changes will be made to
-    /// the existing configuration.
+    /// Override the SELinux mode. When not provided, no changes will be made to the existing
+    /// configuration.
     ///
-    /// Note: Trident does not support the concurrent use of SELinux and verity.
-    /// If using verity, SELinux must not be enabled in the OS image or SELinux
-    /// should be explicitly set to `disabled`.
+    /// Note: Trident only supports SELinux and root verity together when running in UKI-mode.
+    /// Otherwise when using verity, SELinux must not be enabled in the OS image or SELinux should
+    /// be explicitly set to `disabled`.
     pub mode: Option<SelinuxMode>,
 }
 

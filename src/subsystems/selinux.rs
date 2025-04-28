@@ -13,7 +13,7 @@ use osutils::dependencies::{Dependency, DependencyResultExt};
 use sysdefs::filesystems::{KernelFilesystemType, RealFilesystemType};
 use trident_api::{
     config::{HostConfigurationDynamicValidationError, SelinuxMode},
-    constants::SELINUX_CONFIG,
+    constants::{internal_params::ENABLE_UKI_SUPPORT, SELINUX_CONFIG},
     error::{InvalidInputError, ReportError, ServicingError, TridentError},
     status::ServicingType,
 };
@@ -124,7 +124,9 @@ impl Subsystem for SelinuxSubsystem {
 
         // If a verity filesystem is mounted at root, ensure that SELinux is not
         // in enforcing mode and warn if it is in permissive mode
-        if ctx.storage_graph.root_fs_is_verity() {
+        if ctx.storage_graph.root_fs_is_verity()
+            && !ctx.spec.internal_params.get_flag(ENABLE_UKI_SUPPORT)
+        {
             match final_selinux_mode {
                 SelinuxMode::Enforcing => {
                     return Err(TridentError::new(InvalidInputError::from(
