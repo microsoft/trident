@@ -223,19 +223,16 @@ fn copy_file_artifacts(
             esp_uki_directory.join(format!("vmlinuz-{}-{uki_suffix}", max_index + 1)),
         )
         .context("Failed to rename UKI file")?;
-    }
-
-    // Bail if grub_noprefix.efi is not found on Azure Linux images.
-    if !grub_noprefix
-        && !ctx
-            .spec
-            .internal_params
-            .get_flag(DISABLE_GRUB_NOPREFIX_CHECK)
-    {
-        bail!(
-            "Cannot locate {} in the boot image. \
-            Verify if the grub2-efi-binary-noprefix package was installed on the booted image.",
-            GRUB_NOPREFIX_EFI
+    } else {
+        // In non-UKI mode, bail if grub_noprefix.efi is not found in the image.
+        ensure!(
+            grub_noprefix
+                || ctx
+                    .spec
+                    .internal_params
+                    .get_flag(DISABLE_GRUB_NOPREFIX_CHECK),
+            "Cannot locate {GRUB_NOPREFIX_EFI} in the boot image. \
+                Verify if the grub2-efi-binary-noprefix package was installed on the booted image.",
         );
     }
 
