@@ -48,6 +48,7 @@ fn to_operations(allowed_operations: &[AllowedOperation]) -> Operations {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
+    /// Initiate an install of Azure Linux
     Install {
         /// The new configuration to apply
         #[clap(index = 1, default_value = "/etc/trident/config.yaml")]
@@ -69,6 +70,7 @@ enum Commands {
         multiboot: bool,
     },
 
+    /// Start or continue an A/B update from an existing install
     Update {
         /// The new configuration to apply
         #[clap(index = 1, default_value = "/etc/trident/config.yaml")]
@@ -86,6 +88,7 @@ enum Commands {
         error: Option<PathBuf>,
     },
 
+    /// Detect whether an install or update succeeded, and update the boot order accordingly
     Commit {
         /// Path to save the resulting Host Status
         #[clap(short, long)]
@@ -96,6 +99,7 @@ enum Commands {
         error: Option<PathBuf>,
     },
 
+    #[clap(hide(true))]
     Listen {
         /// Path to save the resulting Host Status
         #[clap(short, long)]
@@ -123,14 +127,14 @@ enum Commands {
     },
 
     /// Configure OS networking based on Trident Configuration
-    #[clap(name = "start-network")]
+    #[clap(name = "start-network", hide(true))]
     StartNetwork {
         /// The new configuration to apply
         #[clap(index = 1, default_value = "/etc/trident/config.yaml")]
         config: PathBuf,
     },
 
-    /// Get the HostStatus
+    /// Query the current state of the system
     #[clap(name = "get")]
     Get {
         /// What data to retrieve
@@ -142,7 +146,7 @@ enum Commands {
         outfile: Option<PathBuf>,
     },
 
-    /// Validate HostConfiguration
+    /// Validate the provided Host Configuration
     ///
     /// When no options are provided, the default Trident Configuration is
     /// validated.
@@ -156,9 +160,12 @@ enum Commands {
     /// Generate Pytest wrappers for functional tests
     Pytest,
 
-    /// Initialize Trident in offline mode
+    /// Initialize for a system that wasn't installed by Trident
     OfflineInitialize {
-        /// Path to a Host Status file
+        /// Path to a Host Status file (deprecated)
+        ///
+        /// If not provided, Trident will infer one based on the state of the system and history
+        /// information left by Image Customizer.
         hs_path: Option<PathBuf>,
     },
 }
