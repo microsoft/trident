@@ -171,7 +171,7 @@ pub(super) fn provision(
 /// - `device_name`: The name of the device to be used in the crypttab.
 /// - `key_file`: The path to the key file to be used for encryption.
 /// - `encryption_type`: The type of encryption to be used. Determines whether the device should be
-///    re-encrypted in-place, or whether a new LUKS2 volume should be initialized.
+///   re-encrypted in-place, or whether a new LUKS2 volume should be initialized.
 fn encrypt_and_open_device(
     device_path: &Path,
     device_name: &String,

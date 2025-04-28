@@ -525,7 +525,7 @@ mod tests {
                     .unwrap_or_else(|| ranges[1].parse::<usize>().expect("Failed to parse end"))
                     .min(body.len() - 1);
                 trace!("Mocking range {} to {}", start, end);
-                body[start..=end].as_bytes().to_vec()
+                body.as_bytes()[start..=end].to_vec()
             })
             .expect(9)
             .create();
