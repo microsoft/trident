@@ -2,6 +2,7 @@
 set -euo pipefail
 
 . $(dirname $0)/common.sh
+OUTPUT_DIR="$1"
 
 downloadJournalLog() {
     local DEST=$1
@@ -45,20 +46,27 @@ downloadCrashdumps() {
 downloadAzureSerialLog() {
     local DEST="$1"
 
-    az vm boot-diagnostics get-boot-log --name "$VM_NAME" --resource-group "$TEST_RESOURCE_GROUP" | sed 's/\\r\\n/\n/g' > "$DEST"
+    # Output of az vm boot-diagnostics get-boot-log is not very readable, so
+    # clean it up a bit:
+    # - convert \r\n to newlines
+    # - remove empty lines
+    # - remove lines with only dashes
+    # - remove lines with only quotes
+    # - remove unicode characters
+    az vm boot-diagnostics get-boot-log --name "$VM_NAME" --resource-group "$TEST_RESOURCE_GROUP" | sed -r 's/\\r\\n/\n/g;/^"$/d;/^-+$/d;/^$/d;s/\\u[a-z0-9]{4}//g' > "$DEST"
 }
 
 if [ "$TEST_PLATFORM" == "azure" ]; then
-    downloadAzureSerialLog $1/serial.log
+    downloadAzureSerialLog $OUTPUT_DIR/serial.log
     if [ $VERBOSE == True ]; then
-        cat $1/serial.log
+        cat $OUTPUT_DIR/serial.log
     else
-        echo "Serial log saved to $1/serial.log"
+        echo "Serial log saved to $OUTPUT_DIR/serial.log"
     fi
-    analyzeSerialLog $1/serial.log
+    analyzeSerialLog $OUTPUT_DIR/serial.log
 fi
 
 VM_IP=`getIp`
 
-downloadJournalLog $1/journal.log
-downloadCrashdumps $1/
+downloadJournalLog $OUTPUT_DIR/journal.log
+downloadCrashdumps $OUTPUT_DIR/
