@@ -68,7 +68,7 @@ BMC_SHH_PORT_LOCAL = 32556
 # These are the details of the jumpbox that we will use to establish the SSH tunnel.
 JUMPBOX_SUBSCRIPTION = "f18e9c89-62a2-4c08-95cf-12d482634db4"
 JUMPBOX_RESOURCE_GROUP = "b37-westus3-labs-rg"
-JUMPBOX_NAME = "b37-westus3-arc-devjump"
+JUMPBOX_NAME = "b37-westus3-dev-azl3-arc-vm"
 JUMPBOX_IP = "10.249.132.133"
 
 BAREMETAL_MACHINE_IP = "10.8.4.50/23"
