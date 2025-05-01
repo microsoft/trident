@@ -3,6 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use cli::GetKind;
 use engine::{bootentries, EngineContext};
 use log::{debug, error, info, warn};
 use nix::unistd::Uid;
@@ -26,6 +27,7 @@ use grpc::GrpcSender;
 #[cfg(feature = "setsail")]
 use setsail::KsTranslator;
 
+pub mod cli;
 mod datastore;
 mod engine;
 mod harpoon_hc;
@@ -78,13 +80,6 @@ const SAFETY_OVERRIDE_CHECK_PATH: &str = "/override-trident-safety-check";
 
 /// Temporary location of the datastore for multiboot install scenarios.
 const TEMPORARY_DATASTORE_PATH: &str = "/tmp/trident-datastore.sqlite";
-
-#[derive(clap::ValueEnum, Copy, Clone, Debug, Eq, PartialEq)]
-pub enum GetKind {
-    Configuration,
-    Status,
-    LastError,
-}
 
 pub struct Trident {
     host_config: Option<HostConfiguration>,

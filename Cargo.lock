@@ -549,6 +549,7 @@ dependencies = [
  "setsail",
  "strum",
  "tera",
+ "trident",
  "trident_api",
 ]
 

@@ -185,13 +185,6 @@ docbuilder: .cargo/config
 	$(eval DOCBUILDER_BIN := $(DOCS_BIN_DIR)/docbuilder)
 
 
-.PHONY: setsail-docs
-setsail-docs: docbuilder
-	mkdir -p target/setsail-docs
-	$(DOCBUILDER_BIN) setsail -o target/setsail-docs
-	@echo Wrote docs to target/setsail-docs
-
-
 TRIDENT_API_HC_SCHEMA_GENERATED  := target/trident-api-docs/host-config-schema.json
 TRIDENT_API_HC_SCHEMA_CHECKED_IN := trident_api/schemas/host-config-schema.json
 
@@ -199,6 +192,7 @@ TRIDENT_API_HC_MARKDOWN_DIR := docs/Reference/Host-Configuration/API-Reference
 TRIDENT_API_HC_EXAMPLE_FILE := docs/Reference/Host-Configuration/Sample-Host-Configuration.md
 TRIDENT_API_HC_EXAMPLE_YAML := docs/Reference/Host-Configuration/sample-host-configuration.yaml
 TRIDENT_API_HC_STORAGE_RULES_FILES := docs/Reference/Host-Configuration/Storage-Rules.md
+TRIDENT_API_CLI_DOC := docs/Reference/Trident-CLI.md
 
 target/trident-api-docs:
 	mkdir -p target/trident-api-docs
@@ -226,6 +220,11 @@ build-api-docs: build-api-schema docbuilder
 
 	$(DOCBUILDER_BIN) host-config storage-rules -o $(TRIDENT_API_HC_STORAGE_RULES_FILES)
 	@echo Wrote storage rules to $(TRIDENT_API_HC_STORAGE_RULES_FILES)
+
+	$(DOCBUILDER_BIN) trident-cli -o $(TRIDENT_API_CLI_DOC)
+	@echo Wrote CLI docs to $(TRIDENT_API_CLI_DOC)
+
+
 
 # This target is meant to be used by CI to ensure that the API schema is up to date.
 # It compares the generated schema with the checked-in schema.

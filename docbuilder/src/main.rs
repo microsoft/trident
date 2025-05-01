@@ -10,6 +10,7 @@ mod host_config;
 mod markdown;
 mod schema_renderer;
 mod setsail;
+mod trident_cli;
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -24,10 +25,22 @@ enum Commands {
 
     /// Build markdown docs for Host Configuration
     HostConfig(HostConfigCli),
+
+    /// Output documentation for Trident's CLI
+    TridentCli(TridentCliOpts),
 }
 
 #[derive(Args, Debug)]
 struct SetsailOpts {
+    /// Optional output file
+    ///
+    /// If not specified, will print to stdout.
+    #[clap(short, long)]
+    output: Option<PathBuf>,
+}
+
+#[derive(Args, Debug)]
+struct TridentCliOpts {
     /// Optional output file
     ///
     /// If not specified, will print to stdout.
@@ -129,6 +142,9 @@ fn main() -> Result<(), Error> {
                 host_config::storage_rules::write(output)
             }
         },
+        Commands::TridentCli(opts) => {
+            build_tricent_cli_docs(opts).context("Failed to build CLI docs")
+        }
     }
 }
 
@@ -170,4 +186,25 @@ fn build_host_config_docs(opts: HostConfigMarkdownOpts) -> Result<(), Error> {
         },
     )
     .context("Failed to build host config docs")
+}
+
+fn build_tricent_cli_docs(opts: TridentCliOpts) -> Result<(), Error> {
+    info!("Building trident cli docs");
+
+    let docs = trident_cli::build_docs().context("Failed to build trident cli docs")?;
+
+    if let Some(output) = opts.output {
+        let parent = output.parent().context("Failed to get parent directory")?;
+        std::fs::create_dir_all(parent).context(format!(
+            "Failed to create parent directory {}",
+            parent.display()
+        ))?;
+
+        std::fs::write(&output, docs)
+            .context(format!("Failed to write to file {}", output.display()))?;
+    } else {
+        println!("{}", docs);
+    }
+
+    Ok(())
 }

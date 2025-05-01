@@ -12,6 +12,7 @@ pub(crate) struct CommandModel {
     pub about: Option<String>,
     pub usage: String,
     pub args: Vec<ArgModel>,
+    pub subcommands: Vec<CommandModel>,
 }
 
 impl CommandModel {
@@ -52,6 +53,8 @@ impl CommandModel {
                 })
                 .filter(|v| v.name != "help")
                 .collect(),
+
+            subcommands: cmd.get_subcommands().map(CommandModel::from).collect(),
         }
     }
 }

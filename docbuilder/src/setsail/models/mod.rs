@@ -1,13 +1,13 @@
-pub(super) mod arg;
-pub(super) mod command;
-pub(super) mod section;
+pub(crate) mod arg;
+pub(crate) mod command;
+pub(crate) mod section;
 
 use command::CommandModel;
 use section::SectionModel;
 use serde::Serialize;
 
 #[derive(Default, Debug, Serialize)]
-pub(super) struct DocModel {
+pub(crate) struct DocModel {
     sections: Vec<SectionModel>,
     commands: Vec<CommandModel>,
 }

@@ -1,5 +1,5 @@
 mod docbuilder;
-mod models;
+pub(crate) mod models;
 
 use docbuilder::DocBuilder;
 

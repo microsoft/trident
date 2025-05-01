@@ -24,6 +24,7 @@ tera = { version = "1.20.0" }
 
 
 setsail = { path = "../setsail" }
+trident = { path = "../" }
 trident_api = { path = "../trident_api", features = ["documentation"] }
 osutils = { path = "../osutils" }
 
