@@ -49,11 +49,11 @@ downloadAzureSerialLog() {
     # Output of az vm boot-diagnostics get-boot-log is not very readable, so
     # clean it up a bit:
     # - convert \r\n to newlines
-    # - remove empty lines
-    # - remove lines with only dashes
-    # - remove lines with only quotes
     # - remove unicode characters
-    az vm boot-diagnostics get-boot-log --name "$VM_NAME" --resource-group "$TEST_RESOURCE_GROUP" | sed -r 's/\\r\\n/\n/g;/^"$/d;/^-+$/d;/^$/d;s/\\u[a-z0-9]{4}//g' > "$DEST"
+    # - remove lines with only quotes
+    # - remove lines with only dashes
+    # - remove empty lines
+    az vm boot-diagnostics get-boot-log --name "$VM_NAME" --resource-group "$TEST_RESOURCE_GROUP" | sed -r 's/\\r\\n/\n/g;s/\\u[a-z0-9]{4}//g;/^"$/d;/^-+$/d;/^$/d' > "$DEST"
 }
 
 if [ "$TEST_PLATFORM" == "azure" ]; then
