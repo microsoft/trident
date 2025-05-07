@@ -50,11 +50,11 @@ downloadAzureSerialLog() {
     # clean it up a bit:
     # - convert \r\n to newlines
     # - remove unicode characters
-    # - remove lines with only quotes
     # - remove lines with only dashes
     # - remove empty lines
-    az vm boot-diagnostics get-boot-log --name "$VM_NAME" --resource-group "$TEST_RESOURCE_GROUP" > "$DEST.raw"
-    cat "$DEST.raw" | sed -r 's/\\r\\n/\n/g;s/\\u[a-z0-9]{4}//g;/^-+$/d;/^$/d' | sed -r '/^"$/d' > "$DEST"
+    # - remove lines with only quotes
+    az vm boot-diagnostics get-boot-log --name "$VM_NAME" --resource-group "$TEST_RESOURCE_GROUP" |
+        sed -r 's/\\r\\n/\n/g;s/\\u[a-z0-9]{4}//g;/^-+$/d;/^$/d' | sed -r '/^"$/d' > "$DEST"
 }
 
 if [ "$TEST_PLATFORM" == "azure" ]; then
