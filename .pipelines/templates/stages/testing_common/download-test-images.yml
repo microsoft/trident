@@ -113,6 +113,14 @@ steps:
       targetPath: "${{ parameters.toolsDirectory }}"
 
   - bash: |
+      # Debug log
+      echo "REGULAR IMAGES:"
+      ls -alh "${{ parameters.testImageDir }}"
+
+      echo ""
+      echo "VERITY IMAGES:"
+      ls -alh "${{ parameters.testImageDirVerity }}"
+
       set -eux
 
       # Set tools to be executable
@@ -120,18 +128,15 @@ steps:
       chmod +x ${{ parameters.toolsDirectory }}/mkcosi
       chmod +x ${{ parameters.toolsDirectory }}/storm-trident
 
-      # Create the target directory
-      mkdir -p "${{ parameters.targetDirectory }}"
-
-      # If testImageDir is not an empty string, rename the Trident test images
-      if [ -n "${{ parameters.testImageDir }}" ]; then
-        mv "${{ parameters.testImageDir }}/${{ parameters.tridentTestImage }}.cosi" "${{ parameters.targetDirectory }}/regular.cosi"
-      fi
-
-      # If testImageDirVerity is not an empty string, rename the Trident verity test images
-      if [ -n "${{ parameters.testImageDirVerity }}" ]; then
-        mv "${{ parameters.testImageDirVerity }}/${{ parameters.tridentTestImageVerity }}.cosi" "${{ parameters.targetDirectory }}/verity.cosi"
-      fi
+      # Call helper to copy and rename images!
+      ${{ parameters.toolsDirectory }}/storm-trident \
+          helper prepare-images -a -- \
+          "${{ parameters.testImageDir }}" \
+          "${{ parameters.testImageDirVerity }}" \
+          "${{ parameters.tridentTestImage }}" \
+          "${{ parameters.tridentTestImageVerity }}" \
+          "${{ parameters.targetDirectory }}" \
+          -v 4
 
       # List tools in the target directory
       ls -lh "${{ parameters.toolsDirectory }}"

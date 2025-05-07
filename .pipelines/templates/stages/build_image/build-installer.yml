@@ -27,28 +27,19 @@ parameters:
       - host
       - container
 
-  - name: mkcosiTemplate
-    type: string
-    default: "none"
-    values:
-      - none
-      - regular
-      - verity
-
   - name: micBuildType
     displayName: MIC Build Type
     type: string
     values:
-    - dev
-    - preview
-    - release
+      - dev
+      - preview
+      - release
     default: release
 
   - name: micVersion
     displayName: MIC Version
     type: string
     default: "*.*.*"
-
 
 stages:
   - stage: TridentTestImg_${{ replace(parameters.outputArtifactName, '-', '_') }}
@@ -74,7 +65,7 @@ stages:
           - task: PipAuthenticate@1
             displayName: Provision - Authenticate Pip
             inputs:
-              artifactFeeds: 'mariner/Mariner-Pypi-Feed'
+              artifactFeeds: "mariner/Mariner-Pypi-Feed"
 
           - task: DownloadPipelineArtifact@2
             inputs:
