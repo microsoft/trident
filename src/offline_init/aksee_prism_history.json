@@ -1,0 +1,408 @@
+[
+    {
+        "timestamp": "2025-05-08T01:00:36Z",
+        "toolVersion": "0.13.0",
+        "imageUuid": "7671f584-b262-15ce-9fb0-14519e97dceb",
+        "config": {
+            "input": {
+                "image": {}
+            },
+            "storage": {
+                "bootType": "efi",
+                "disks": [
+                    {
+                        "partitionTableType": "gpt",
+                        "maxSize": "17791M",
+                        "partitions": [
+                            {
+                                "id": "esp",
+                                "label": "esp",
+                                "start": "1M",
+                                "size": "8M",
+                                "type": "esp"
+                            },
+                            {
+                                "id": "boot-a",
+                                "label": "boot-a",
+                                "start": "9M",
+                                "size": "192M"
+                            },
+                            {
+                                "id": "root-a",
+                                "label": "root-a",
+                                "start": "201M",
+                                "size": "4G"
+                            },
+                            {
+                                "id": "boot-b",
+                                "label": "boot-b",
+                                "start": "4297M",
+                                "size": "192M"
+                            },
+                            {
+                                "id": "root-b",
+                                "label": "root-b",
+                                "start": "4489M",
+                                "size": "4G"
+                            },
+                            {
+                                "id": "root-hash-a",
+                                "label": "root-hash-a",
+                                "start": "8585M",
+                                "size": "256M"
+                            },
+                            {
+                                "id": "root-hash-b",
+                                "label": "root-hash-b",
+                                "start": "8841M",
+                                "size": "256M"
+                            },
+                            {
+                                "id": "trident",
+                                "label": "trident",
+                                "start": "9097M",
+                                "size": "256M"
+                            },
+                            {
+                                "id": "trident-overlay-a",
+                                "label": "trident-overlay-a",
+                                "start": "9353M",
+                                "size": "256M"
+                            },
+                            {
+                                "id": "trident-overlay-b",
+                                "label": "trident-overlay-b",
+                                "start": "9609M",
+                                "size": "256M"
+                            },
+                            {
+                                "id": "log",
+                                "label": "log",
+                                "start": "9865M",
+                                "size": "1G"
+                            },
+                            {
+                                "id": "data",
+                                "label": "data",
+                                "start": "16009M",
+                                "end": "17790M",
+                                "size": null
+                            }
+                        ]
+                    }
+                ],
+                "filesystems": [
+                    {
+                        "deviceId": "esp",
+                        "type": "fat32",
+                        "mountPoint": {
+                            "idType": "uuid",
+                            "options": "umask=0077",
+                            "path": "/boot/efi"
+                        }
+                    },
+                    {
+                        "deviceId": "boot-a",
+                        "type": "ext4",
+                        "mountPoint": {
+                            "idType": "uuid",
+                            "path": "/boot"
+                        }
+                    },
+                    {
+                        "deviceId": "rootverity",
+                        "type": "ext4",
+                        "mountPoint": {
+                            "options": "defaults,ro",
+                            "path": "/"
+                        }
+                    },
+                    {
+                        "deviceId": "boot-b",
+                        "type": "ext4"
+                    },
+                    {
+                        "deviceId": "root-b",
+                        "type": "ext4"
+                    },
+                    {
+                        "deviceId": "trident",
+                        "type": "ext4",
+                        "mountPoint": {
+                            "idType": "part-label",
+                            "path": "/var/lib/trident"
+                        }
+                    },
+                    {
+                        "deviceId": "trident-overlay-a",
+                        "type": "ext4",
+                        "mountPoint": {
+                            "idType": "part-label",
+                            "path": "/var/lib/trident-overlay"
+                        }
+                    },
+                    {
+                        "deviceId": "trident-overlay-b",
+                        "type": "ext4"
+                    },
+                    {
+                        "deviceId": "log",
+                        "type": "ext4",
+                        "mountPoint": {
+                            "idType": "part-label",
+                            "path": "/var/log"
+                        }
+                    },
+                    {
+                        "deviceId": "data",
+                        "type": "ext4",
+                        "mountPoint": {
+                            "idType": "part-label",
+                            "path": "/var"
+                        }
+                    }
+                ],
+                "verity": [
+                    {
+                        "id": "rootverity",
+                        "name": "root",
+                        "dataDeviceId": "root-a",
+                        "dataDeviceMountIdType": "part-label",
+                        "hashDeviceId": "root-hash-a",
+                        "hashDeviceMountIdType": "part-label",
+                        "corruptionOption": "ignore"
+                    }
+                ]
+            },
+            "os": {
+                "hostname": "iotedge-vm",
+                "packages": {
+                    "install": [
+                        "aziot-identity-service",
+                        "aziot-edge",
+                        "babeltrace2",
+                        "bash",
+                        "bc",
+                        "bzip2",
+                        "ca-certificates",
+                        "ca-certificates-base",
+                        "chrony",
+                        "cloud-init",
+                        "cloud-utils-growpart",
+                        "conntrack-tools",
+                        "containerd",
+                        "cpio",
+                        "cracklib-dicts",
+                        "cryptsetup",
+                        "curl",
+                        "device-mapper",
+                        "defender-iot-micro-agent-edge-os-config",
+                        "dbus",
+                        "dosfstools",
+                        "dracut",
+                        "dracut-overlayfs",
+                        "dmidecode",
+                        "dnf",
+                        "e2fsprogs",
+                        "efibootmgr",
+                        "elfutils-libelf",
+                        "expat",
+                        "eflow-proxy",
+                        "file",
+                        "filesystem",
+                        "findutils",
+                        "fio",
+                        "gdbm",
+                        "grep",
+                        "gzip",
+                        "git",
+                        "hyperv-daemons",
+                        "iana-etc",
+                        "icu",
+                        "iproute",
+                        "ipset",
+                        "iptables",
+                        "iputils",
+                        "irqbalance",
+                        "iscsi-initiator-utils",
+                        "jq",
+                        "keyutils",
+                        "libevent",
+                        "libnfsidmap",
+                        "libnvidia-container1",
+                        "libnvidia-container-tools",
+                        "libtool",
+                        "lvm2",
+                        "lsof",
+                        "nano",
+                        "ncurses-libs",
+                        "net-tools",
+                        "netplan",
+                        "nfs-utils",
+                        "nspr",
+                        "nss-libs",
+                        "nvidia-container-runtime",
+                        "nvidia-container-toolkit-base",
+                        "nvidia-container-toolkit",
+                        "opengcs",
+                        "openssh",
+                        "openssh-clients",
+                        "openssl",
+                        "procps-ng",
+                        "pkgconf",
+                        "rpcbind",
+                        "readline",
+                        "rpm",
+                        "sed",
+                        "selinux-policy",
+                        "socat",
+                        "sqlite-libs",
+                        "sudo",
+                        "systemd",
+                        "systemd-udev",
+                        "tar",
+                        "tdnf",
+                        "tdnf-plugin-repogpgcheck",
+                        "tpm2-abrmd",
+                        "tpm2-tss",
+                        "tzdata",
+                        "util-linux",
+                        "vim",
+                        "veritysetup",
+                        "wget",
+                        "which",
+                        "xz",
+                        "zlib",
+                        "trident"
+                    ]
+                },
+                "selinux": {
+                    "mode": "disabled"
+                },
+                "kernelCommandLine": {
+                    "extraCommandLine": [
+                        "rd.shell=0",
+                        "log_buf_len=1M",
+                        "ipv6.disable=1"
+                    ]
+                },
+                "additionalFiles": [
+                    {
+                        "destination": "etc/yum.repos.d/cloud-native.repo",
+                        "source": "../repos/cloud-native.repo",
+                        "sha256hash": "75237565dc573bd00afbee902f2187cedab7e644a9753d18bc9d9c9d5d5e15f8"
+                    },
+                    {
+                        "destination": "/usr/lib/systemd/system/getty@.service",
+                        "source": "configs/getty@.service",
+                        "sha256hash": "e5432ef8100b84f2a396f7744501c5de5a2811cba9e29cd70c510704cab0eca5"
+                    },
+                    {
+                        "destination": "/usr/lib/systemd/system/serial-getty@.service",
+                        "source": "configs/serial-getty@.service",
+                        "sha256hash": "92ca782e9aec3fa95b05b513ad102f3319b3aa3bae0de11e0fb3cf3f97bcb896"
+                    },
+                    {
+                        "destination": "/etc/cloud/cloud.cfg",
+                        "source": "configs/cloud-init.cfg",
+                        "sha256hash": "5238cf3b0ccda3def748a58f3d6daadf457eb959637131ff146743a391a6728e"
+                    },
+                    {
+                        "destination": "/etc/ssh/sshd_config",
+                        "source": "configs/sshd_config",
+                        "permissions": 436,
+                        "sha256hash": "3b5fa89136b71aed6010851cde85b071e0e02fbf97ddfe79b81322e2615194b7"
+                    },
+                    {
+                        "destination": "/lib/systemd/system/sshd_vsock.socket",
+                        "source": "configs/sshd_vsock.socket",
+                        "permissions": 436,
+                        "sha256hash": "5ca9f0768a981aabde6c8bfeed5687f553e5040753829c4e4b79b3dfc36039df"
+                    },
+                    {
+                        "destination": "/lib/systemd/system/sshd_vsock@.service",
+                        "source": "configs/sshd_vsock@.service",
+                        "permissions": 436,
+                        "sha256hash": "ade6b152e68138ab200734991b3d9ecfde2196465e9711fe71dcc783c9e0909a"
+                    },
+                    {
+                        "destination": "/etc/docker/daemon.json",
+                        "source": "configs/daemon.json",
+                        "sha256hash": "84439b0836c8df0bb7d44192d92275879f0fbde2d460437c14999b781b1e10c5"
+                    },
+                    {
+                        "destination": "/etc/aziot/tpmd/config.d/50-eflow.toml",
+                        "source": "configs/50-eflow.toml",
+                        "sha256hash": "00d53f167de6929408340da36dfdb79b6d3676f19afc67bdaf2dfdb62c8a15ef"
+                    },
+                    {
+                        "destination": "/etc/trident/install/host_status.yaml",
+                        "source": "configs/trident/install/host_status.yaml",
+                        "sha256hash": "d7c7aa8f0227480bff84583a626022a4fa6d7e5dee1d8488e83fc253734077df"
+                    },
+                    {
+                        "destination": "/etc/trident/config.yaml",
+                        "source": "configs/trident/config.yaml",
+                        "sha256hash": "daffb31ac8ccab85a7c33aeb6af6fb68e4b30ea461660b7edb6a107147248799"
+                    },
+                    {
+                        "destination": "/etc/trident/trident-init.sh",
+                        "source": "configs/trident/trident-init.sh",
+                        "permissions": 493,
+                        "sha256hash": "110d43a9b48ab5f3c541a227d2fa0de353e1a6edf05b292c41529c09b7b24ddc"
+                    },
+                    {
+                        "destination": "/etc/systemd/system/var-etc-mount.service",
+                        "source": "configs/services/var-etc-mount.service",
+                        "sha256hash": "f28e55de5e15dc960363a1a2da404ce120516a75a9023a50ca8eb063c1518db1"
+                    },
+                    {
+                        "destination": "/usr/local/bin/var-etc-mount.sh",
+                        "source": "configs/services/var-etc-mount.sh",
+                        "permissions": 511,
+                        "sha256hash": "69373ce99e86f37ceb7c38eb1ce85d751b9767f6b83d1df0569849e15609c2f3"
+                    }
+                ],
+                "services": {
+                    "enable": [
+                        "gcs",
+                        "sshd_vsock.socket",
+                        "var-etc-mount"
+                    ]
+                },
+                "modules": [
+                    {
+                        "name": "hv_sock",
+                        "loadMode": "always"
+                    },
+                    {
+                        "name": "ip_tables",
+                        "loadMode": "always"
+                    }
+                ],
+                "bootloader": {
+                    "resetType": "hard-reset"
+                }
+            },
+            "scripts": {
+                "postCustomization": [
+                    {
+                        "path": "configure-image-gen.sh",
+                        "sha256hash": "954d21e75d87ab238b1aa9c10c5e522eb5432da8d096dc095f99fa1c7a3cbc29"
+                    },
+                    {
+                        "path": "configure-image-post.sh",
+                        "sha256hash": "5826585a2c8c45fba3f36853be21beaddb18e0a0ecec8d943a8509d1987e3f52"
+                    },
+                    {
+                        "path": "create-rw-overlay-dirs.sh",
+                        "sha256hash": "84deef7817380aaa9cfca6c22f7ae307695aa3ed68efac7ccc96ee162567eb70"
+                    }
+                ]
+            },
+            "output": {
+                "image": {}
+            }
+        }
+    }
+]

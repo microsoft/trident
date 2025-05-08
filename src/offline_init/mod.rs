@@ -35,7 +35,7 @@ struct PrismPartition {
     #[allow(unused)]
     start: String,
     #[allow(unused)]
-    size: String,
+    size: Option<String>,
 
     #[serde(rename = "type")]
     ty: Option<String>,
@@ -134,12 +134,12 @@ fn generate_host_status(
             } else {
                 PartitionType::LinuxGeneric
             },
-            size: PartitionSize::from_str(&partition.size)
-                .structured(InvalidInputError::ParsePrismHistory)
-                .message(format!(
-                    "Failed to parse partition size '{}'",
-                    partition.size
-                ))?,
+            size: match &partition.size {
+                Some(s) => PartitionSize::from_str(s)
+                    .structured(InvalidInputError::ParsePrismHistory)
+                    .message(format!("Failed to parse partition size '{s}'"))?,
+                None => PartitionSize::Grow,
+            },
         });
     }
 
@@ -408,6 +408,9 @@ mod tests {
         assert_eq!(disk.partitions.len(), 14);
         assert_eq!(disk.partitions[0].id, "esp");
         assert_eq!(disk.partitions[1].id, "boot-a");
+
+        let _history2: Vec<PrismHistoryEntry> =
+            serde_json::from_str(include_str!("aksee_prism_history.json")).unwrap();
     }
 
     #[test]
