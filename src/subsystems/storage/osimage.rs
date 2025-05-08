@@ -424,8 +424,10 @@ fn validate_filesystem_blkdev_fit(
         if fs_size > blkdev_size {
             return Err(TridentError::new(
                 InvalidInputError::FilesystemSizeExceedsBlockDevice {
+                    mount_point: fs.mount_point.display().to_string(),
                     device_id: device_id.to_string(),
-                    min_size: fs_size,
+                    fs_size: ByteCount::from(fs_size),
+                    device_size: ByteCount::from(blkdev_size),
                 },
             ));
         };

@@ -11,6 +11,7 @@ use url::Url;
 
 use crate::{
     config::{HostConfigurationDynamicValidationError, HostConfigurationStaticValidationError},
+    primitives::bytes::ByteCount,
     status::ServicingState,
     storage_graph::error::StorageGraphBuildError,
 };
@@ -141,10 +142,16 @@ pub enum InvalidInputError {
     CleanInstallOnProvisionedHost,
 
     #[error(
-        "Filesystem size exceeds underlying block device's size for device '{device_id}'. \
-        The filesystem requires at least {min_size} bytes on the block device."
+        "Filesystem mounted at '{mount_point}' requires at least {} [{fs_size} bytes] of storage. \
+        However, the underlying block device '{device_id}' has storage size {} [{device_size} bytes].",
+        fs_size.to_human_readable_approx(), device_size.to_human_readable_approx()
     )]
-    FilesystemSizeExceedsBlockDevice { device_id: String, min_size: u64 },
+    FilesystemSizeExceedsBlockDevice {
+        device_id: String,
+        mount_point: String,
+        device_size: ByteCount,
+        fs_size: ByteCount,
+    },
 
     #[error("Image is corrupt: multiple partitions have be assigned the same FS UUID: {uuid}")]
     DuplicateFsUuid { uuid: String },
