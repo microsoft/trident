@@ -6,8 +6,8 @@ use log::{error, info, LevelFilter};
 
 use trident::{
     cli::{self, Cli, Commands, GetKind},
-    offline_init, validation, BackgroundLog, DataStore, Logstream, MultiLogger, TraceStream,
-    Trident, TRIDENT_BACKGROUND_LOG_PATH,
+    offline_init, validation, BackgroundLog, DataStore, ExitKind, Logstream, MultiLogger,
+    TraceStream, Trident, TRIDENT_BACKGROUND_LOG_PATH,
 };
 use trident_api::{
     config::HostConfigurationSource,
@@ -39,29 +39,30 @@ fn run_trident(
     mut logstream: Logstream,
     mut tracestream: TraceStream,
     args: &Cli,
-) -> Result<(), TridentError> {
+) -> Result<ExitKind, TridentError> {
     // Log version ASAP
     info!("Trident version: {}", trident::TRIDENT_VERSION);
 
     // Catch exit fast commands
     match &args.command {
         Commands::Validate { config } => {
-            return validation::validate_host_config_file(config);
+            return validation::validate_host_config_file(config).map(|()| ExitKind::Done);
         }
 
         #[cfg(feature = "pytest-generator")]
         Commands::Pytest => {
             pytest::generate_functional_test_manifest();
-            return Ok(());
+            return Ok(ExitKind::Done);
         }
 
         Commands::OfflineInitialize { hs_path } => {
-            return offline_init::execute(hs_path.as_deref());
+            return offline_init::execute(hs_path.as_deref()).map(|()| ExitKind::Done);
         }
 
         Commands::Get { kind, outfile } => {
             return Trident::get(&load_agent_config()?.datastore, outfile, *kind)
-                .message("Failed to retrieve Host Status");
+                .message("Failed to retrieve Host Status")
+                .map(|()| ExitKind::Done);
         }
 
         Commands::StartNetwork { config } => {
@@ -70,7 +71,8 @@ fn run_trident(
             logstream.disable();
             tracestream.disable();
 
-            return Trident::start_network(HostConfigurationSource::File(config.clone()));
+            return Trident::start_network(HostConfigurationSource::File(config.clone()))
+                .map(|()| ExitKind::Done);
         }
 
         _ => (),
@@ -139,9 +141,15 @@ fn run_trident(
                         #[cfg(feature = "grpc-dangerous")]
                         &mut None,
                     ),
-                    Commands::Commit { .. } => trident.commit(&mut datastore),
-                    Commands::Listen { .. } => trident.listen(&mut datastore),
-                    Commands::RebuildRaid { .. } => trident.rebuild_raid(&mut datastore),
+                    Commands::Commit { .. } => {
+                        trident.commit(&mut datastore).map(|()| ExitKind::Done)
+                    }
+                    Commands::Listen { .. } => {
+                        trident.listen(&mut datastore).map(|()| ExitKind::Done)
+                    }
+                    Commands::RebuildRaid { .. } => trident
+                        .rebuild_raid(&mut datastore)
+                        .map(|()| ExitKind::Done),
                     _ => Err(TridentError::internal("Invalid command")),
                 };
 
@@ -167,12 +175,10 @@ fn run_trident(
                     }
                 }
 
-                res.message(format!("Failed to execute '{}' command", args.command))?;
+                res.message(format!("Failed to execute '{}' command", args.command))
             }
             _ => unreachable!(),
         }
-
-        Ok(())
     });
 
     match res {
@@ -259,10 +265,18 @@ fn main() -> ExitCode {
     }
 
     // Invoke Trident
-    if let Err(e) = run_trident(logstream.unwrap(), tracestream.unwrap(), &args) {
-        error!("Trident failed: {e:?}");
-        return ExitCode::from(2);
+    match run_trident(logstream.unwrap(), tracestream.unwrap(), &args) {
+        Ok(ExitKind::Done) => {}
+        Err(e) => {
+            error!("Trident failed: {e:?}");
+            return ExitCode::from(2);
+        }
+        Ok(ExitKind::NeedsReboot) => {
+            if let Err(e) = trident::reboot() {
+                error!("Failed to reboot: {e:?}");
+                return ExitCode::from(3);
+            }
+        }
     }
-
     ExitCode::SUCCESS
 }

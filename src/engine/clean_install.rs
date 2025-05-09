@@ -27,7 +27,7 @@ use crate::{
     datastore::DataStore,
     engine::{self, boot::esp, bootentries, osimage, storage, EngineContext, SUBSYSTEMS},
     subsystems::hooks::HooksSubsystem,
-    SAFETY_OVERRIDE_CHECK_PATH,
+    ExitKind, SAFETY_OVERRIDE_CHECK_PATH,
 };
 #[cfg(feature = "grpc-dangerous")]
 use crate::{grpc, GrpcSender};
@@ -41,7 +41,7 @@ pub(crate) fn clean_install(
     allowed_operations: &Operations,
     multiboot: bool,
     #[cfg(feature = "grpc-dangerous")] sender: &mut Option<GrpcSender>,
-) -> Result<(), TridentError> {
+) -> Result<ExitKind, TridentError> {
     info!("Starting clean install");
     tracing::info!(metric_name = "clean_install_start", value = true);
     let clean_install_start_time = Instant::now();
@@ -90,6 +90,7 @@ pub(crate) fn clean_install(
 
         debug!("Unmounting '{}'", root_mount.path().display());
         root_mount.unmount_all()?;
+        Ok(ExitKind::Done)
     } else {
         finalize_clean_install(
             state,
@@ -97,10 +98,8 @@ pub(crate) fn clean_install(
             Some(clean_install_start_time),
             #[cfg(feature = "grpc-dangerous")]
             sender,
-        )?;
+        )
     }
-
-    Ok(())
 }
 
 /// Performs a safety check to ensure that the clean install can proceed.
@@ -267,7 +266,7 @@ pub(crate) fn finalize_clean_install(
     new_root: Option<NewrootMount>,
     clean_install_start_time: Option<Instant>,
     #[cfg(feature = "grpc-dangerous")] sender: &mut Option<GrpcSender>,
-) -> Result<(), TridentError> {
+) -> Result<ExitKind, TridentError> {
     info!("Finalizing clean install");
 
     let ctx = EngineContext {
@@ -343,12 +342,12 @@ pub(crate) fn finalize_clean_install(
         .internal_params
         .get_flag(NO_TRANSITION)
     {
-        engine::reboot()
+        Ok(ExitKind::NeedsReboot)
     } else {
         warn!(
             "Skipping reboot as requested by internal parameter '{}'",
             NO_TRANSITION
         );
-        Ok(())
+        Ok(ExitKind::Done)
     }
 }

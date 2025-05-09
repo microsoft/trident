@@ -45,7 +45,7 @@ use engine::{rollback, storage::rebuild};
 use harpoon_hc::HostConfigUpdate;
 
 pub use datastore::DataStore;
-pub use engine::provisioning_network;
+pub use engine::{provisioning_network, reboot};
 pub use logging::{
     background_log::BackgroundLog, logstream::Logstream, multilog::MultiLogger,
     tracestream::TraceStream,
@@ -80,6 +80,14 @@ const SAFETY_OVERRIDE_CHECK_PATH: &str = "/override-trident-safety-check";
 
 /// Temporary location of the datastore for multiboot install scenarios.
 const TEMPORARY_DATASTORE_PATH: &str = "/tmp/trident-datastore.sqlite";
+
+#[must_use]
+pub enum ExitKind {
+    /// Requested operation completed successfully.
+    Done,
+    /// Reboot is needed to complete the operation.
+    NeedsReboot,
+}
 
 pub struct Trident {
     host_config: Option<HostConfiguration>,
@@ -290,12 +298,14 @@ impl Trident {
                     } => {
                         info!("Server replied with new Host configuration v{version}, applying...");
                         self.host_config = Some(*host_config);
-                        self.update(
+                        if let ExitKind::NeedsReboot = self.update(
                             datastore,
                             Operations::all(),
                             #[cfg(feature = "grpc-dangerous")]
                             &mut None,
-                        )?;
+                        )? {
+                            reboot().message("Failed to reboot after harpoon update")?;
+                        }
                     }
                     HostConfigUpdate::NoUpdate => {
                         warn!("No update available. No action will be taken.");
@@ -313,20 +323,24 @@ impl Trident {
 
             if let Some((host_config, allowed_operations, sender)) = receiver.blocking_recv() {
                 self.host_config = Some(host_config);
-                self.update(datastore, allowed_operations, &mut Some(sender))?;
+                if let ExitKind::NeedsReboot =
+                    self.update(datastore, allowed_operations, &mut Some(sender))?
+                {
+                    reboot().message("Failed to reboot after grpc update")?;
+                }
             }
         }
 
         Ok(())
     }
 
-    fn execute_and_record_error<F>(
+    fn execute_and_record_error<F, T>(
         &mut self,
         datastore: &mut DataStore,
         f: F,
-    ) -> Result<(), TridentError>
+    ) -> Result<T, TridentError>
     where
-        F: FnOnce(&mut DataStore) -> Result<(), TridentError>,
+        F: FnOnce(&mut DataStore) -> Result<T, TridentError>,
     {
         datastore.with_host_status(|host_status| {
             if let Some(e) = host_status.last_error.take() {
@@ -335,36 +349,40 @@ impl Trident {
             }
         })?;
 
-        if let Err(e) = f(datastore) {
-            // Record error in datastore.
-            let error = serde_yaml::to_value(&e).structured(InternalError::SerializeError)?;
-            if let Err(e2) = datastore.with_host_status(|status| status.last_error = Some(error)) {
-                error!("Failed to record error in datastore: {e2:?}");
-            }
+        match f(datastore) {
+            Ok(t) => Ok(t),
+            Err(e) => {
+                // Record error in datastore.
+                let error = serde_yaml::to_value(&e).structured(InternalError::SerializeError)?;
+                if let Err(e2) =
+                    datastore.with_host_status(|status| status.last_error = Some(error))
+                {
+                    error!("Failed to record error in datastore: {e2:?}");
+                }
 
-            // Report error via phonehome.
-            if let Some(ref orchestrator) = self.orchestrator {
-                orchestrator.report_error(
-                    format!("{e:?}"),
-                    Some(
-                        serde_yaml::to_string(&datastore.host_status())
-                            .unwrap_or("Failed to serialize Host Status".into()),
-                    ),
+                // Report error via phonehome.
+                if let Some(ref orchestrator) = self.orchestrator {
+                    orchestrator.report_error(
+                        format!("{e:?}"),
+                        Some(
+                            serde_yaml::to_string(&datastore.host_status())
+                                .unwrap_or("Failed to serialize Host Status".into()),
+                        ),
+                    );
+                }
+
+                // Report error to Harpoon if enabled.
+                harpoon_hc::on_harpoon_enabled_event(
+                    &datastore.host_status().spec,
+                    harpoon::EventType::Install,
+                    harpoon::EventResult::Error,
                 );
+
+                // TODO: report gPRC error
+
+                Err(e)
             }
-
-            // Report error to Harpoon if enabled.
-            harpoon_hc::on_harpoon_enabled_event(
-                &datastore.host_status().spec,
-                harpoon::EventType::Install,
-                harpoon::EventResult::Error,
-            );
-
-            // TODO: report gPRC error
-
-            return Err(e);
         }
-        Ok(())
     }
 
     /// Rebuilds RAID devices on replaced disks on the host
@@ -432,7 +450,7 @@ impl Trident {
         allowed_operations: Operations,
         multiboot: bool,
         #[cfg(feature = "grpc-dangerous")] sender: &mut Option<GrpcSender>,
-    ) -> Result<(), TridentError> {
+    ) -> Result<ExitKind, TridentError> {
         let host_config = self
             .host_config
             .clone()
@@ -502,7 +520,7 @@ impl Trident {
                         'stage'. Add 'stage' and re-run to stage the clean install"
                     );
 
-                    Ok(())
+                    Ok(ExitKind::Done)
                 }
             } else {
                 debug!("Host Configuration has not been updated");
@@ -528,7 +546,7 @@ impl Trident {
                                 to finalize the clean install"
                             );
 
-                            Ok(())
+                            Ok(ExitKind::Done)
                         }
                     }
                     ServicingState::NotProvisioned => {
@@ -560,7 +578,7 @@ impl Trident {
         datastore: &mut DataStore,
         allowed_operations: Operations,
         #[cfg(feature = "grpc-dangerous")] sender: &mut Option<GrpcSender>,
-    ) -> Result<(), TridentError> {
+    ) -> Result<ExitKind, TridentError> {
         let mut host_config = self
             .host_config
             .clone()
@@ -596,7 +614,7 @@ impl Trident {
                     engine::update(&host_config, datastore, &allowed_operations, #[cfg(feature = "grpc-dangerous")] sender).message("Failed to execute an update")
                 } else {
                     warn!("Host Configuration has been updated but allowed operations do not include 'stage'. Add 'stage' and re-run to stage the update");
-                    Ok(())
+                    Ok(ExitKind::Done)
                 }
             } else {
                 debug!("Host Configuration has not been updated");
@@ -616,7 +634,7 @@ impl Trident {
                             .message("Failed to finalize update")
                         } else {
                             warn!("There is an update staged on the host, but allowed operations do not include 'finalize'. Add 'finalize' and re-run to finalize the update");
-                            Ok(())
+                            Ok(ExitKind::Done)
                         }
                     }
                     ServicingState::AbUpdateFinalized | ServicingState::Provisioned => {

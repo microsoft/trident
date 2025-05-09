@@ -23,6 +23,7 @@ use crate::{
         EngineContext, NewrootMount, SUBSYSTEMS,
     },
     subsystems::hooks::HooksSubsystem,
+    ExitKind,
 };
 #[cfg(feature = "grpc-dangerous")]
 use crate::{grpc, GrpcSender};
@@ -35,7 +36,7 @@ pub(crate) fn update(
     state: &mut DataStore,
     allowed_operations: &Operations,
     #[cfg(feature = "grpc-dangerous")] sender: &mut Option<GrpcSender>,
-) -> Result<(), TridentError> {
+) -> Result<ExitKind, TridentError> {
     info!("Starting update");
     let mut subsystems = SUBSYSTEMS.lock().unwrap();
 
@@ -84,7 +85,7 @@ pub(crate) fn update(
         .unwrap_or(ServicingType::NoActiveServicing); // Never None b/c select_servicing_type() returns a value
     if servicing_type == ServicingType::NoActiveServicing {
         info!("No update servicing required");
-        return Ok(());
+        return Ok(ExitKind::Done);
     }
     debug!(
         "Update of servicing type '{:?}' is required",
@@ -137,6 +138,7 @@ pub(crate) fn update(
                     None,
                     state.host_status().servicing_state,
                 );
+                Ok(ExitKind::Done)
             } else {
                 finalize_update(
                     state,
@@ -145,10 +147,8 @@ pub(crate) fn update(
                     #[cfg(feature = "grpc-dangerous")]
                     sender,
                 )
-                .message("Failed to finalize update")?;
+                .message("Failed to finalize update")
             }
-
-            Ok(())
         }
         ServicingType::NormalUpdate | ServicingType::HotPatch => {
             state.with_host_status(|host_status| {
@@ -165,7 +165,7 @@ pub(crate) fn update(
             );
 
             info!("Update of servicing type '{:?}' succeeded", servicing_type);
-            Ok(())
+            Ok(ExitKind::Done)
         }
         ServicingType::CleanInstall => Err(TridentError::new(
             InvalidInputError::CleanInstallOnProvisionedHost,
@@ -282,7 +282,7 @@ pub(crate) fn finalize_update(
     #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
-) -> Result<(), TridentError> {
+) -> Result<ExitKind, TridentError> {
     info!("Finalizing update");
 
     if servicing_type != ServicingType::AbUpdate {
@@ -345,12 +345,12 @@ pub(crate) fn finalize_update(
         .internal_params
         .get_flag(NO_TRANSITION)
     {
-        engine::reboot()
+        Ok(ExitKind::NeedsReboot)
     } else {
         warn!(
             "Skipping reboot as requested by internal parameter '{}'",
             NO_TRANSITION
         );
-        Ok(())
+        Ok(ExitKind::Done)
     }
 }
