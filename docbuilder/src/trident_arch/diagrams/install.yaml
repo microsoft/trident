@@ -1,0 +1,135 @@
+legends:
+  verb:
+    friendly: Trident Invocation Verb
+    background: "#b03e00"
+    border: "#5a1f00"
+  operation:
+    friendly: Operation
+    background: "#023c57"
+    border: "#042433"
+  subsystem:
+    friendly: Subsystem
+    background: "#4EA72E"
+    border: "#1C440D"
+  step:
+    friendly: Step
+    background: "#A02B93"
+    border: "#410C3B"
+  hook:
+    friendly: Script Hook
+    background: "#FF5757"
+    border: "#C00000"
+  system:
+    friendly: System Action
+    background: "#9c2403"
+    border: "#4d1101"
+  storage:
+    friendly: Storage Configuration
+    background: "#01523c"
+    border: "#00241a"
+  mount:
+    friendly: Mount
+    background: "#324a02"
+    border: "#1b2901"
+root:
+  - name: install
+    legend: verb
+    children:
+      - name: Static Validation
+        comment: "Context-free validation of Host Config"
+      - name: Safety Check
+      - name: Stage
+        legend: operation
+        children:
+          - name: Load COSI
+          - name: "Pre-servicing Script Hook"
+            legend: hook
+          - name: "Dynamic Validation"
+            legend: step
+          - name: Prepare
+            legend: step
+            children:
+              - name: MOS Config
+                legend: subsystem
+                comment: "Changes to current OS"
+              - name: Hooks
+                legend: subsystem
+                comment: Stage addtl. files & scripts
+          - name: Block Device Creation
+            legend: storage
+            children:
+              - name: Close pre-existing devices
+                children:
+                  - name: Close verity
+                  - name: Close Encrypted Volumes
+                  - name: Close RAID
+              - name: Create partitions
+              - name: Create RAID
+              - name: Create Encrypted Volumes
+          - name: Block Device Initialization
+            legend: storage
+            children:
+              - name: Deploy Images
+              - name: Create Filesystems
+              - name: Create swap
+              - name: Open dm-verity devices
+          - name: New OS Mount
+            legend: mount
+            children:
+              - name: Provision
+                legend: step
+                children:
+                  - name: Boot
+                    legend: subsystem
+                    comment: ESP Deployment
+                  - name: Hooks
+                    legend: subsystem
+                    children:
+                      - name: "Post-provision Script Hook"
+                        legend: hook
+              - name: |
+                  Configure
+                  (chroot)
+                legend: step
+                children:
+                  - name: Storage
+                    legend: subsystem
+                    comment: "Regenerate fstab, crypttab, mdadm.conf"
+                  - name: Boot
+                    legend: subsystem
+                    comment: "Update grub config when in use"
+                  - name: Network
+                    legend: subsystem
+                    comment: "Write network config"
+                  - name: OS Config
+                    legend: subsystem
+                    comment: Enact OS config changes
+                  - name: Hooks
+                    legend: subsystem
+                    children:
+                      - name: Post-configure Script Hook
+                        legend: hook
+                  - name: Initrd
+                    legend: subsystem
+                    comment: "Regenerate initrd when not UKI"
+                  - name: SELinux
+                    legend: subsystem
+                    comment: "Relabel filesystems when enabled"
+      - name: "Finalize"
+        legend: operation
+        children:
+          - name: "Boot Entry Configuration"
+            children:
+              - name: Insert/Update Boot Entry
+                comment: "Label depends on active volume"
+              - name: "Set Boot Order"
+                comment: "New entry is first"
+              - name: "Set NextBoot"
+          - name: Trigger Reboot
+  - name: "<System Reboot>"
+    legend: system
+  - name: "commit"
+    legend: verb
+    children:
+      - name: "Success/Rollback Detection"
+        comment: "Update is finalized on success"

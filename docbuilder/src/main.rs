@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Error};
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use log::info;
 
 use crate::schema_renderer::SchemaDocSettings;
@@ -10,6 +10,7 @@ mod host_config;
 mod markdown;
 mod schema_renderer;
 mod setsail;
+mod trident_arch;
 mod trident_cli;
 
 #[derive(Parser, Debug)]
@@ -28,6 +29,9 @@ enum Commands {
 
     /// Output documentation for Trident's CLI
     TridentCli(TridentCliOpts),
+
+    /// Output a Trident arch diagram
+    TridentArch(TridentArchOpts),
 }
 
 #[derive(Args, Debug)]
@@ -48,10 +52,29 @@ struct TridentCliOpts {
     output: Option<PathBuf>,
 }
 
-#[derive(Parser, Debug)]
+#[derive(Args, Debug)]
 struct HostConfigCli {
     #[clap(subcommand)]
     command: HostConfigCommands,
+}
+
+#[derive(Args, Debug)]
+struct TridentArchOpts {
+    /// Optional output file
+    ///
+    /// If not specified, will print to stdout.
+    #[clap(short, long)]
+    output: Option<PathBuf>,
+
+    /// Arch diagram to output
+    selected: TridentArchSelection,
+}
+
+#[derive(Debug, ValueEnum, Clone, Copy)]
+#[clap(rename_all = "kebab-case")]
+enum TridentArchSelection {
+    Install,
+    Update,
 }
 
 #[derive(Subcommand, Debug)]
@@ -145,6 +168,9 @@ fn main() -> Result<(), Error> {
         Commands::TridentCli(opts) => {
             build_tricent_cli_docs(opts).context("Failed to build CLI docs")
         }
+        Commands::TridentArch(opts) => {
+            build_trident_arch_diagram(opts).context("Failed to build arch diagram")
+        }
     }
 }
 
@@ -204,6 +230,28 @@ fn build_tricent_cli_docs(opts: TridentCliOpts) -> Result<(), Error> {
             .context(format!("Failed to write to file {}", output.display()))?;
     } else {
         println!("{}", docs);
+    }
+
+    Ok(())
+}
+
+fn build_trident_arch_diagram(opts: TridentArchOpts) -> Result<(), Error> {
+    info!("Building trident arch diagram");
+
+    let diagram = trident_arch::build_arch_diagram(opts.selected)
+        .context("Failed to build trident arch diagram")?;
+
+    if let Some(output) = opts.output {
+        let parent = output.parent().context("Failed to get parent directory")?;
+        std::fs::create_dir_all(parent).context(format!(
+            "Failed to create parent directory {}",
+            parent.display()
+        ))?;
+
+        std::fs::write(&output, diagram)
+            .context(format!("Failed to write to file {}", output.display()))?;
+    } else {
+        println!("{}", diagram);
     }
 
     Ok(())

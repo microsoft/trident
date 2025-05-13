@@ -193,6 +193,7 @@ TRIDENT_API_HC_EXAMPLE_FILE := docs/Reference/Host-Configuration/Sample-Host-Con
 TRIDENT_API_HC_EXAMPLE_YAML := docs/Reference/Host-Configuration/sample-host-configuration.yaml
 TRIDENT_API_HC_STORAGE_RULES_FILES := docs/Reference/Host-Configuration/Storage-Rules.md
 TRIDENT_API_CLI_DOC := docs/Reference/Trident-CLI.md
+TRIDENT_ARCH_INSTALL_SVG := docs/resources/trident-install.svg
 
 target/trident-api-docs:
 	mkdir -p target/trident-api-docs
@@ -223,6 +224,9 @@ build-api-docs: build-api-schema docbuilder
 
 	$(DOCBUILDER_BIN) trident-cli -o $(TRIDENT_API_CLI_DOC)
 	@echo Wrote CLI docs to $(TRIDENT_API_CLI_DOC)
+
+	$(DOCBUILDER_BIN) trident-arch install > $(TRIDENT_ARCH_INSTALL_SVG)
+	@echo Wrote install diagram to $(TRIDENT_ARCH_INSTALL_SVG)
 
 
 
@@ -299,7 +303,7 @@ generate-functional-test-manifest: .cargo/config
 
 .PHONY: validate-configs
 validate-configs: bin/trident
-	$(eval DETECTED_HC_FILES := $(shell grep -R 'storage:' . --include '*.yaml' --exclude-dir=trident-mos --exclude-dir=target --exclude-dir=dev --exclude-dir=azure-linux-image-tools -l))
+	$(eval DETECTED_HC_FILES := $(shell grep -R 'storage:' . --include '*.yaml' --exclude-dir=trident-mos --exclude-dir=target --exclude-dir=dev --exclude-dir=azure-linux-image-tools --exclude-dir=docbuilder -l))
 	@for file in $(DETECTED_HC_FILES); do \
 		echo "Validating $$file"; \
 		$< validate $$file || exit 1; \
