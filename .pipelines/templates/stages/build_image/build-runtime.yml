@@ -56,6 +56,7 @@ stages:
         variables:
           ob_outputDirectory: $(Pipeline.Workspace)/s/output
           ob_artifactBaseName: ${{ parameters.imageName }}
+          BASEIMG_AZURE_LINUX_VERSION: "3.0"
 
         steps:
           - task: PipAuthenticate@1
@@ -81,6 +82,7 @@ stages:
               imageName: ${{ parameters.imageName }}
               clones: 2
               baseimgBuildType: ${{ parameters.baseimgBuildType }}
-              baseimgVersion: ${{ variables.BASEIMG_AZURE_LINUX_VERSION }}
+              baseimgVersion: $(baseimgVersion)
+              azureLinuxVersion: ${{ variables.BASEIMG_AZURE_LINUX_VERSION }}
               micBuildType: ${{ parameters.micBuildType }}
               micVersion: ${{ parameters.micVersion }}
