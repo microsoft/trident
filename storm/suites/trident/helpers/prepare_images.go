@@ -11,19 +11,22 @@ import (
 )
 
 const (
-	COSI_EXTENSION     = "cosi"
-	REGULAR_IMAGE_NAME = "regular"
-	VERITY_IMAGE_NAME  = "verity"
+	COSI_EXTENSION              = "cosi"
+	OUTPUT_REGULAR_IMAGE_NAME   = "regular"
+	OUTPUT_VERITY_IMAGE_NAME    = "verity"
+	OUTPUT_USRVERITY_IMAGE_NAME = "usrverity"
 )
 
 type PrepareImages struct {
 	args struct {
-		RegularTestImageDir string `arg:"" help:"Directory containing the regular test images" type:"path"`
-		VerityTestImageDir  string `arg:"" help:"Directory containing the verity test images" type:"path"`
-		RegularImageName    string `arg:"" help:"Name of the regular test image"`
-		VerityImageName     string `arg:"" help:"Name of the verity test image"`
-		OutputDir           string `arg:"" help:"Directory in which to place the prepared images" type:"path"`
-		Versions            uint   `short:"v" help:"Number of versions to create of each image type" default:"1"`
+		RegularTestImageDir   string `arg:"" help:"Directory containing the regular test images" type:"path"`
+		VerityTestImageDir    string `arg:"" help:"Directory containing the verity test images" type:"path"`
+		UsrVerityTestImageDir string `arg:"" help:"Directory containing the verity test images" type:"path"`
+		RegularImageName      string `arg:"" help:"Name of the regular test image"`
+		VerityImageName       string `arg:"" help:"Name of the verity test image"`
+		UsrVerityImageName    string `arg:"" help:"Name of the verity test image"`
+		OutputDir             string `arg:"" help:"Directory in which to place the prepared images" type:"path"`
+		Versions              uint   `short:"v" help:"Number of versions to create of each image type" default:"1"`
 	}
 }
 
@@ -38,6 +41,7 @@ func (h *PrepareImages) Args() any {
 func (h *PrepareImages) RegisterTestCases(r storm.TestRegistrar) error {
 	r.RegisterTestCase("copy-regular", h.copyRegularImages)
 	r.RegisterTestCase("copy-verity", h.copyVerityImages)
+	r.RegisterTestCase("copy-usrverity", h.copyUsrVerityImages)
 	return nil
 }
 
@@ -53,7 +57,7 @@ func (h *PrepareImages) copyRegularImages(tc storm.TestCase) error {
 		h.args.OutputDir,
 		h.args.RegularImageName,
 		COSI_EXTENSION,
-		REGULAR_IMAGE_NAME,
+		OUTPUT_REGULAR_IMAGE_NAME,
 		h.args.Versions,
 	)
 }
@@ -70,7 +74,24 @@ func (h *PrepareImages) copyVerityImages(tc storm.TestCase) error {
 		h.args.OutputDir,
 		h.args.VerityImageName,
 		COSI_EXTENSION,
-		VERITY_IMAGE_NAME,
+		OUTPUT_VERITY_IMAGE_NAME,
+		h.args.Versions,
+	)
+}
+
+func (h *PrepareImages) copyUsrVerityImages(tc storm.TestCase) error {
+	// Skip test if the path doesn't exist
+	if _, err := os.Stat(h.args.UsrVerityTestImageDir); os.IsNotExist(err) {
+		tc.Skip(fmt.Sprintf("Directory %s does not exist", h.args.UsrVerityTestImageDir))
+	}
+
+	return copyImages(
+		tc.Logger(),
+		h.args.UsrVerityTestImageDir,
+		h.args.OutputDir,
+		h.args.UsrVerityImageName,
+		COSI_EXTENSION,
+		OUTPUT_USRVERITY_IMAGE_NAME,
 		h.args.Versions,
 	)
 }

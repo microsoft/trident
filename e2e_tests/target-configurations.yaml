@@ -5,6 +5,7 @@ bareMetal:
       - combined
       - encrypted-partition
       - split
+      - usr-verity
     validation:
       - base
       - combined
@@ -19,6 +20,7 @@ bareMetal:
       - rerun
       - simple
       - split
+      - usr-verity
       - verity
       - verity-raid
     weekly:
@@ -35,6 +37,7 @@ bareMetal:
       - rerun
       - simple
       - split
+      - usr-verity
       - verity
       - verity-raid
   container:
@@ -50,6 +53,7 @@ bareMetal:
       - raid-resync-small
       - rerun
       - simple
+      - usr-verity
       - verity
       - verity-raid
     validation:
@@ -64,6 +68,7 @@ bareMetal:
       - raid-resync-small
       - rerun
       - simple
+      - usr-verity
       - verity
       - verity-raid
     weekly:
@@ -78,6 +83,7 @@ bareMetal:
       - raid-resync-small
       - rerun
       - simple
+      - usr-verity
       - verity
       - verity-raid
 virtualMachine:
@@ -96,6 +102,7 @@ virtualMachine:
       - rerun
       - simple
       - split
+      - usr-verity
       - verity
       - verity-raid
     post_merge:
@@ -112,6 +119,7 @@ virtualMachine:
       - rerun
       - simple
       - split
+      - usr-verity
       - verity
       - verity-raid
     pullrequest:
@@ -122,6 +130,7 @@ virtualMachine:
       - rerun
       - simple
       - split
+      - usr-verity
       - verity-raid
     validation:
       - base
@@ -137,6 +146,7 @@ virtualMachine:
       - rerun
       - simple
       - split
+      - usr-verity
       - verity
       - verity-raid
     weekly:
@@ -153,6 +163,7 @@ virtualMachine:
       - rerun
       - simple
       - split
+      - usr-verity
       - verity
       - verity-raid
   container:
@@ -168,6 +179,7 @@ virtualMachine:
       - raid-resync-small
       - rerun
       - simple
+      - usr-verity
       - verity
       - verity-raid
     post_merge:
@@ -182,6 +194,7 @@ virtualMachine:
       - raid-resync-small
       - rerun
       - simple
+      - usr-verity
       - verity
       - verity-raid
     pullrequest:
@@ -193,6 +206,7 @@ virtualMachine:
       - raid-mirrored
       - raid-resync-small
       - rerun
+      - usr-verity
       - simple
       - verity-raid
     validation:
@@ -207,6 +221,7 @@ virtualMachine:
       - raid-resync-small
       - rerun
       - simple
+      - usr-verity
       - verity
       - verity-raid
     weekly:
@@ -221,5 +236,6 @@ virtualMachine:
       - raid-resync-small
       - rerun
       - simple
+      - usr-verity
       - verity
       - verity-raid

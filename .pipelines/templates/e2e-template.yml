@@ -156,6 +156,24 @@ stages:
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
 
+  # Build Trident test image for usr-verity (host)
+  - template: stages/build_image/build-runtime.yml
+    parameters:
+      imageName: trident-usrverity-testimage
+      baseimgBuildType: ${{ parameters.baseimgBuildType }}
+      baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
+      micBuildType: ${{ parameters.micBuildType }}
+      micVersion: ${{ parameters.micVersion }}
+
+  # Build Trident test image for usr-verity (host)
+  - template: stages/build_image/build-runtime.yml
+    parameters:
+      imageName: trident-container-usrverity-testimage
+      baseimgBuildType: ${{ parameters.baseimgBuildType }}
+      baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
+      micBuildType: ${{ parameters.micBuildType }}
+      micVersion: ${{ parameters.micVersion }}
+
   - ${{ if or(parameters.forceTridentRebuild, eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e-azure')) }}:
       # Build USB-ISO
       - template: stages/trident_usb_iso/trident-usb-iso.yml

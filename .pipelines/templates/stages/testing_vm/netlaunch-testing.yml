@@ -70,11 +70,13 @@ stages:
             installerISOName: trident-container-installer-testimage
             testImageName: trident-container-testimage
             verityTestImageName: trident-container-verity-testimage
+            usrVerityTestImageName: trident-container-usrverity-testimage
             downloadTridentContainer: true
           ${{ else }}:
             installerISOName: trident-installer-testimage
             testImageName: trident-testimage
             verityTestImageName: trident-verity-testimage
+            usrVerityTestImageName: trident-usrverity-testimage
             downloadTridentContainer: false
 
           ob_outputDirectory: $(tridentSourceDirectory)/deployment_logs
@@ -101,6 +103,7 @@ stages:
               tridentTestImage: ${{ variables.testImageName }}
               tridentTestImageVerity: ${{ variables.verityTestImageName }}
               downloadTridentContainer: ${{ variables.downloadTridentContainer }}
+              tridentTestImageUsrVerity: ${{ variables.usrVerityTestImageName }}
 
           - template: netlaunch-prep.yml
 

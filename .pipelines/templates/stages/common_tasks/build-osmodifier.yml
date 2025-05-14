@@ -1,6 +1,20 @@
 steps:
   - bash: |
       set -ex
+      if command -v tdnf; then
+        # Use msft-golang since it has latest versions supported
+        sudo tdnf remove golang -y
+        sudo tdnf install msft-golang -y
+      else
+        echo "Go Update not needed in ubuntu 22.04"
+      fi
+
+      # Verify installation
+      go version
+    displayName: "Install golang to build Image Customizer"
+    retryCountOnTaskFailure: 3
+  - bash: |
+      set -ex
       git submodule init
       git submodule update
       mkdir -p artifacts

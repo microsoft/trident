@@ -26,6 +26,14 @@ parameters:
       - trident-verity-testimage
       - trident-container-verity-testimage
 
+  - name: tridentTestImageUsrVerity
+    displayName: "Image used the verity runtime OS, source of Trident (container vs host)"
+    type: string
+    default: trident-usrverity-testimage
+    values:
+      - trident-usrverity-testimage
+      - trident-container-usrverity-testimage
+
   - name: downloadTridentContainer
     displayName: "Download Trident container"
     type: boolean
@@ -50,6 +58,10 @@ parameters:
   - name: testImageDirVerity
     type: string
     default: "$(System.ArtifactsDirectory)/verity-testimage"
+
+  - name: testImageDirUsrVerity
+    type: string
+    default: "$(System.ArtifactsDirectory)/usrverity-testimage"
 
 steps:
   - bash: |
@@ -101,6 +113,13 @@ steps:
       targetPath: "${{ parameters.testImageDirVerity }}"
 
   - task: DownloadPipelineArtifact@2
+    displayName: "Download ${{ parameters.tridentTestImageUsrVerity }}"
+    inputs:
+      buildType: current
+      artifactName: "${{ parameters.tridentTestImageUsrVerity }}"
+      targetPath: "${{ parameters.testImageDirUsrVerity }}"
+
+  - task: DownloadPipelineArtifact@2
     displayName: "Download go-tools"
     inputs:
       buildType: current
@@ -133,8 +152,10 @@ steps:
           helper prepare-images -a -- \
           "${{ parameters.testImageDir }}" \
           "${{ parameters.testImageDirVerity }}" \
+          "${{ parameters.testImageDirUsrVerity }}" \
           "${{ parameters.tridentTestImage }}" \
           "${{ parameters.tridentTestImageVerity }}" \
+          "${{ parameters.tridentTestImageUsrVerity }}" \
           "${{ parameters.targetDirectory }}" \
           -v 4
 

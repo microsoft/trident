@@ -1,0 +1,21 @@
+steps:
+  - script: |
+      echo "OS RELEASE:"
+      cat /etc/os-release
+      echo "KERNEL RELEASE:"
+      uname -r
+
+      echo ""
+      echo "Installed packages:"
+      echo "====================="
+      if command -v rpm; then
+        echo "Installed RPMs:"
+        rpm -qa
+      fi
+
+      if command -v dpkg; then
+        echo "Installed DEBs:"
+        dpkg -l
+      fi
+
+    displayName: os-release

@@ -1,0 +1,60 @@
+internalParams:
+  uki: true
+image:
+  url: http://NETLAUNCH_HOST_ADDRESS/files/usrverity.cosi
+  sha384: ignored
+trident:
+  selfUpgrade: false
+storage:
+  disks:
+    - id: os
+      device: /dev/sda
+      partitionTableType: gpt
+      partitions:
+        - id: esp
+          size: 50M
+          type: esp
+        - id: boot
+          size: 250M
+          type: xbootldr
+        - id: usr-data
+          size: 5G
+          type: usr
+        - id: usr-hash
+          size: 1G
+          type: usr-verity
+        - id: root
+          size: 5G
+          type: root
+  verity:
+    - id: usr
+      name: usr
+      dataDeviceId: usr-data
+      hashDeviceId: usr-hash
+  filesystems:
+    - deviceId: esp
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+    - deviceId: boot
+      mountPoint: /boot
+    - deviceId: root
+      mountPoint: /
+    - deviceId: usr
+      mountPoint:
+        path: /usr
+        options: ro
+os:
+  network:
+    version: 2
+    ethernets:
+      vmeths:
+        match:
+          name: enp*
+        dhcp4: true
+  users:
+    - name: testing-user
+      sshPublicKeys: []
+      secondaryGroups:
+        - wheel
+      sshMode: key-only

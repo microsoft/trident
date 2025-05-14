@@ -41,7 +41,7 @@ stages:
           - task: PipAuthenticate@1
             displayName: Provision - Authenticate Pip
             inputs:
-              artifactFeeds: 'mariner/Mariner-Pypi-Feed'
+              artifactFeeds: "mariner/Mariner-Pypi-Feed"
 
           - template: check.yml
 
@@ -58,7 +58,7 @@ stages:
           - task: PipAuthenticate@1
             displayName: Provision - Authenticate Pip
             inputs:
-              artifactFeeds: 'mariner/Mariner-Pypi-Feed'
+              artifactFeeds: "mariner/Mariner-Pypi-Feed"
 
           # need newer rust for cargo-nextest, use rustup.yml to install
           - template: ../common_tasks/rustup.yml
@@ -75,11 +75,11 @@ stages:
           ob_outputDirectory: "$(Build.SourcesDirectory)/trident/out"
 
         steps:
+          - template: ../common_tasks/os-info.yml
           - task: PipAuthenticate@1
             displayName: Provision - Authenticate Pip
             inputs:
-              artifactFeeds: 'mariner/Mariner-Pypi-Feed'
-
+              artifactFeeds: "mariner/Mariner-Pypi-Feed"
           - template: ../common_tasks/cargo-auth.yml
           - template: ../common_tasks/coverage.yml
             parameters:
@@ -100,11 +100,11 @@ stages:
               buildType: auto
 
         steps:
+          - template: ../common_tasks/os-info.yml
           - task: PipAuthenticate@1
             displayName: Provision - Authenticate Pip
             inputs:
-              artifactFeeds: 'mariner/Mariner-Pypi-Feed'
-
+              artifactFeeds: "mariner/Mariner-Pypi-Feed"
           - template: ../common_tasks/cargo-auth.yml
           - template: ../common_tasks/build-osmodifier.yml
           - template: release.yml
@@ -133,7 +133,7 @@ stages:
           - task: PipAuthenticate@1
             displayName: Provision - Authenticate Pip
             inputs:
-              artifactFeeds: 'mariner/Mariner-Pypi-Feed'
+              artifactFeeds: "mariner/Mariner-Pypi-Feed"
 
           - template: ../common_tasks/cargo-auth.yml
           - template: ../common_tasks/build-osmodifier.yml
@@ -142,28 +142,3 @@ stages:
               baseimgBuildType: ${{ parameters.baseimgBuildType }}
               baseImagePipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
               previewContainerPipeline: "[ARM64-6-OneBranch]-Prod-BuildImages"
-
-      - job: BuildTrident2
-        displayName: Build Trident 2.0 RPMs
-        pool:
-          type: linux
-
-        variables:
-          - name: ob_artifactBaseName
-            value: ${{ parameters.tridentArtifactName }}2
-          - name: ob_outputDirectory
-            value: "$(Build.SourcesDirectory)/out"
-          - template: common/setup-registries-vars-template.yaml@platform-pipelines
-            parameters:
-              buildType: auto
-
-        steps:
-          - task: PipAuthenticate@1
-            displayName: Provision - Authenticate Pip
-            inputs:
-              artifactFeeds: 'mariner/Mariner-Pypi-Feed'
-
-          - template: ../common_tasks/rustup.yml
-          - template: ../common_tasks/cargo-auth.yml
-          - template: ../common_tasks/build-osmodifier.yml
-          - template: release2.yml

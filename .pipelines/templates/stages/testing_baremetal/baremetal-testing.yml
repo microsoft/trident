@@ -122,6 +122,12 @@ stages:
             ${{ else }}:
               value: "trident-verity-testimage"
 
+          - name: USRVERITY_IMAGE_NAME
+            ${{ if eq(parameters.runtimeEnv, 'container') }}:
+              value: "trident-container-usrverity-testimage"
+            ${{ else }}:
+              value: "trident-usrverity-testimage"
+
           - group: baremetal_controller
 
         steps:
@@ -165,6 +171,7 @@ stages:
               installerISO: ${{ variables.INSTALLER_ISO_NAME }}
               tridentTestImage: ${{ variables.IMAGE_NAME }}
               tridentTestImageVerity: ${{ variables.VERITY_IMAGE_NAME }}
+              tridentTestImageUsrVerity: ${{ variables.USRVERITY_IMAGE_NAME }}
               ${{ if eq(parameters.runtimeEnv, 'container') }}:
                 downloadTridentContainer: true
 
