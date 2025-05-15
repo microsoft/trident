@@ -1,15 +1,15 @@
 package cmd
 
 import (
-	"argus_toolkit/cmd/mkcosi/builder"
-	"argus_toolkit/cmd/mkcosi/cosi"
-	"argus_toolkit/cmd/mkcosi/metadata"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"slices"
 	"strings"
+	"tridenttools/cmd/mkcosi/builder"
+	"tridenttools/cmd/mkcosi/cosi"
+	"tridenttools/cmd/mkcosi/metadata"
 
 	"github.com/google/uuid"
 	"github.com/klauspost/compress/zstd"

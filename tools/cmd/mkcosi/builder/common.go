@@ -1,8 +1,6 @@
 package builder
 
 import (
-	"argus_toolkit/cmd/mkcosi/metadata"
-	"argus_toolkit/pkg/ref"
 	"crypto/sha512"
 	_ "embed"
 	"encoding/json"
@@ -13,6 +11,8 @@ import (
 	"os/exec"
 	"path"
 	"strings"
+	"tridenttools/cmd/mkcosi/metadata"
+	"tridenttools/pkg/ref"
 
 	"github.com/google/uuid"
 	"github.com/klauspost/compress/zstd"

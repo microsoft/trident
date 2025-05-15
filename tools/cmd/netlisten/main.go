@@ -24,11 +24,11 @@ Then start the provisioning using the patched Trident config file.
 package main
 
 import (
-	"argus_toolkit/pkg/phonehome"
 	"fmt"
 	"net"
 	"os/signal"
 	"syscall"
+	"tridenttools/pkg/phonehome"
 
 	"context"
 	"net/http"

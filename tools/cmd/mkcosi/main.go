@@ -1,8 +1,8 @@
 package main
 
 import (
-	"argus_toolkit/cmd/mkcosi/builder"
-	"argus_toolkit/cmd/mkcosi/cmd"
+	"tridenttools/cmd/mkcosi/builder"
+	"tridenttools/cmd/mkcosi/cmd"
 
 	"github.com/alecthomas/kong"
 	log "github.com/sirupsen/logrus"

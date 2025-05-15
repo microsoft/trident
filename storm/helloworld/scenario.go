@@ -2,8 +2,7 @@
 package helloworld
 
 import (
-	"storm/pkg/storm"
-	"storm/pkg/storm/core"
+	"storm"
 
 	"github.com/sirupsen/logrus"
 )
@@ -17,7 +16,7 @@ func (s *HelloWorldScenario) Name() string {
 }
 
 func (h *HelloWorldScenario) RegisterTestCases(r storm.TestRegistrar) error {
-	r.RegisterTestCase("myPassingTestCase", func(tc core.TestCase) error {
+	r.RegisterTestCase("myPassingTestCase", func(tc storm.TestCase) error {
 		logrus.Info("This message will be logged in the test case!")
 
 		// Do something here!

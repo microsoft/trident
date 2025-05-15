@@ -2,7 +2,8 @@ package trident
 
 import (
 	"fmt"
-	"storm/pkg/storm"
+
+	"storm"
 
 	"github.com/sirupsen/logrus"
 )

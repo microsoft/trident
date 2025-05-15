@@ -2,11 +2,11 @@ package cosi
 
 import (
 	"archive/tar"
-	"argus_toolkit/cmd/mkcosi/metadata"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"tridenttools/cmd/mkcosi/metadata"
 
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/exp/slices"

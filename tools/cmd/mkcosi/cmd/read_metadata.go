@@ -1,9 +1,9 @@
 package cmd
 
 import (
-	"argus_toolkit/cmd/mkcosi/cosi"
 	"encoding/json"
 	"fmt"
+	"tridenttools/cmd/mkcosi/cosi"
 
 	log "github.com/sirupsen/logrus"
 )

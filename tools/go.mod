@@ -1,26 +1,37 @@
-module argus_toolkit
+module tridenttools
 
-go 1.23.0
+go 1.23.5
 
 toolchain go1.24.2
 
+replace storm => ../storm
+
+// Deal with CVE-2024-45338, CVE-2025-22870, CVE-2025-22872
+replace golang.org/x/net => golang.org/x/net v0.39.0
+
 require (
 	github.com/bmc-toolbox/bmclib/v2 v2.0.1-0.20230530141715-da28e42c453f
-	github.com/fatih/color v1.17.0
+	github.com/fatih/color v1.18.0
 	github.com/google/uuid v1.6.0
 	github.com/pkg/errors v0.9.1
+	github.com/pkg/sftp v1.13.9
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/viper v1.19.0
 	gopkg.in/yaml.v2 v2.4.0
+	storm v1.0.0
 )
 
-require github.com/vishvananda/netns v0.0.4 // indirect
+require (
+	github.com/kr/fs v0.1.0 // indirect
+	github.com/vishvananda/netns v0.0.4 // indirect
+	golang.org/x/term v0.31.0 // indirect
+)
 
 require (
 	github.com/VictorLowther/simplexml v0.0.0-20180716164440-0bff93621230 // indirect
 	github.com/VictorLowther/soap v0.0.0-20150314151524-8e36fca84b22 // indirect
-	github.com/alecthomas/kong v1.2.1
+	github.com/alecthomas/kong v1.8.1
 	github.com/bmc-toolbox/common v0.0.0-20240806132831-ba8adc6a35e3 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
@@ -53,5 +64,5 @@ require (
 	golang.org/x/sys v0.32.0 // indirect
 	golang.org/x/text v0.24.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
+	gopkg.in/yaml.v3 v3.0.1
 )

@@ -343,8 +343,8 @@ bin/mkcosi: tools/cmd/mkcosi/* tools/go.sum tools/pkg/* tools/cmd/mkcosi/**/*
 
 bin/storm-trident: $(shell find storm -type f) tools/go.sum
 	@mkdir -p bin
-	cd storm && go generate suites/trident/e2e/discover.go
-	cd storm && go build -o ../bin/storm-trident ./cmd/storm-trident/main.go
+	cd tools && go generate storm/e2e/discover.go
+	cd tools && go build -o ../bin/storm-trident ./cmd/storm-trident/main.go
 
 .PHONY: validate
 validate: $(TRIDENT_CONFIG) bin/trident

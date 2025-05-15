@@ -5,7 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"storm/pkg/storm"
+
+	"storm"
 
 	"github.com/sirupsen/logrus"
 )

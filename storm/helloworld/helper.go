@@ -2,7 +2,7 @@ package helloworld
 
 import (
 	"fmt"
-	"storm/pkg/storm"
+	"storm"
 
 	"github.com/sirupsen/logrus"
 )

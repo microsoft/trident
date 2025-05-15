@@ -4,10 +4,10 @@ Copyright © 2023 Microsoft Corporation
 package main
 
 import (
-	"argus_toolkit/pkg/netfinder"
-	"argus_toolkit/pkg/phonehome"
-	"argus_toolkit/pkg/serial"
 	"sync"
+	"tridenttools/pkg/netfinder"
+	"tridenttools/pkg/phonehome"
+	"tridenttools/pkg/serial"
 
 	"bytes"
 	"context"

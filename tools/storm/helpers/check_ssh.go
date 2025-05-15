@@ -2,13 +2,15 @@ package helpers
 
 import (
 	"fmt"
-	"storm/pkg/storm"
-	"storm/suites/trident/utils"
 	"time"
+
+	"storm"
 
 	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v3"
+
+	"tridenttools/storm/utils"
 )
 
 type CheckSshHelper struct {

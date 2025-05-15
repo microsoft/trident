@@ -1,8 +1,8 @@
 package builder
 
 import (
-	"argus_toolkit/cmd/mkcosi/metadata"
-	"argus_toolkit/pkg/ref"
+	"tridenttools/cmd/mkcosi/metadata"
+	"tridenttools/pkg/ref"
 )
 
 type BuildVerity struct {

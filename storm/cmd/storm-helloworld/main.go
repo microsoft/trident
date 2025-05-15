@@ -1,8 +1,9 @@
 package main
 
 import (
-	"storm/pkg/storm"
-	"storm/suites/helloworld"
+	"storm"
+
+	"storm/helloworld"
 )
 
 func main() {

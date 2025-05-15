@@ -2,12 +2,13 @@ package builder
 
 import (
 	"archive/tar"
-	"argus_toolkit/cmd/mkcosi/metadata"
 	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+
+	"tridenttools/cmd/mkcosi/metadata"
 
 	log "github.com/sirupsen/logrus"
 )

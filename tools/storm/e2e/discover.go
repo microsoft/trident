@@ -7,7 +7,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-//go:generate cp -r ../../../../e2e_tests/trident_configurations configurations
+//go:generate cp -r ../../../e2e_tests/trident_configurations configurations
 //go:embed configurations/*
 var content embed.FS
 

@@ -1,6 +1,6 @@
 package helpers
 
-import "storm/pkg/storm"
+import "storm"
 
 var TRIDENT_HELPERS = []storm.Helper{
 	&CheckSshHelper{},

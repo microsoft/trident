@@ -1,9 +1,9 @@
 package main
 
 import (
-	"storm/pkg/storm"
-	trident "storm/suites/trident/e2e"
-	"storm/suites/trident/helpers"
+	"storm"
+	trident "tridenttools/storm/e2e"
+	"tridenttools/storm/helpers"
 )
 
 func main() {

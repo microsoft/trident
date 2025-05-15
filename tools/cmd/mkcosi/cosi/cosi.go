@@ -1,11 +1,11 @@
 package cosi
 
 import (
-	"argus_toolkit/cmd/mkcosi/metadata"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"tridenttools/cmd/mkcosi/metadata"
 
 	log "github.com/sirupsen/logrus"
 )
