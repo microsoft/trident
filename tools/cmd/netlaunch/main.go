@@ -52,6 +52,7 @@ type NetLaunchConfig struct {
 				Output  string
 			}
 		}
+		LocalVmUuid *string
 	}
 	Iso struct {
 		PreTridentScript *string
