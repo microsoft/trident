@@ -1,7 +1,10 @@
 package runner
 
 import (
+	"bufio"
 	"fmt"
+	"io"
+	"os"
 	"runtime/debug"
 	"slices"
 	"storm/internal/reporter"
@@ -9,6 +12,8 @@ import (
 	"storm/internal/testmgr"
 	"storm/pkg/storm/core"
 	"sync"
+
+	"github.com/sirupsen/logrus"
 )
 
 func RegisterAndRunTests(suite core.SuiteContext,
@@ -17,6 +22,7 @@ func RegisterAndRunTests(suite core.SuiteContext,
 		core.TestRegistrant
 	},
 	args []string,
+	watch bool,
 ) error {
 	// Create a new runnable instance
 	registrantInstance := &runnableInstance{
@@ -37,7 +43,7 @@ func RegisterAndRunTests(suite core.SuiteContext,
 	}
 
 	// Actually run the thing
-	err = executeTestCases(suite, registrantInstance, testMgr)
+	err = executeTestCases(suite, registrantInstance, testMgr, watch)
 
 	if err != nil {
 		switch err.(type) {
@@ -67,6 +73,7 @@ func executeTestCases(suite core.SuiteContext,
 		core.TestRegistrant
 	},
 	testManager *testmgr.StormTestManager,
+	watch bool,
 ) error {
 
 	ctx := &runnableContext{
@@ -90,8 +97,24 @@ func executeTestCases(suite core.SuiteContext,
 	for _, testCase := range testManager.TestCases() {
 		if !bail {
 			suite.Logger().Infof("%s (started)", testCase.Name())
+
 			// Run the test case.
-			executeTestCase(testCase)
+			captured, err := captureOutput(func() {
+				executeTestCase(testCase)
+			}, func(w io.Writer, s string) {
+				if suite.AzureDevops() || watch {
+					fmt.Fprintf(w, "  ├ %s\n", s)
+				}
+			})
+
+			// Store the captured output in the test case.
+			testCase.SetCollectedOutput(captured)
+
+			// If we failed to collect the output, return an error. This means
+			// that we didn't even run.
+			if err != nil {
+				return fmt.Errorf("failed to capture output for '%s': %w", testCase.Name(), err)
+			}
 
 			// Grab and store the cleanup functions for this test case.
 			cleanupFuncs = append(cleanupFuncs, testCase.SuiteCleanupList()...)
@@ -135,6 +158,7 @@ func executeTestCase(testCase *testmgr.TestCase) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+
 		err = runCatchPanic(func() error {
 			return testCase.Execute()
 		})
@@ -159,4 +183,77 @@ func runCatchPanic(f func() error) (err error) {
 	}()
 
 	return f()
+}
+
+func captureOutput(f func(), forward func(io.Writer, string)) ([]string, error) {
+	oldStdout := os.Stdout
+	oldStderr := os.Stderr
+
+	rOut, wOut, err := os.Pipe()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create stdout capture pipe: %w", err)
+	}
+
+	rErr, wErr, err := os.Pipe()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create stderr capture pipe: %w", err)
+	}
+
+	os.Stdout = wOut
+	os.Stderr = wErr
+
+	logrusOutput := logrus.StandardLogger().Out
+	logrusFormatter := logrus.StandardLogger().Formatter
+	logrusLevel := logrus.StandardLogger().Level
+
+	// Logrust's standard logger is created on startup and stores a reference to
+	// the real stderr then, so our clever redirection does not work. To enable it, we
+	// need to set the output of the logger to our pipe as well.
+	logrus.SetOutput(os.Stderr)
+
+	// Trick logrus into treating our pipe as the real stderr and force it to TRACE level.
+	logrus.SetFormatter(&logrus.TextFormatter{
+		ForceColors: true,
+	})
+	logrus.SetLevel(logrus.TraceLevel)
+
+	defer func() {
+		os.Stdout = oldStdout
+		os.Stderr = oldStderr
+
+		// Restore the original logrus configuration
+		logrus.SetOutput(logrusOutput)
+		logrus.SetFormatter(logrusFormatter)
+		logrus.SetLevel(logrusLevel)
+	}()
+
+	var combinedOutput []string
+	var outMutex sync.Mutex
+	var wg sync.WaitGroup
+
+	var streamReader = func(r io.Reader, w io.Writer) {
+		defer wg.Done()
+		scanner := bufio.NewScanner(r)
+		for scanner.Scan() {
+			line := scanner.Text()
+			outMutex.Lock()
+			combinedOutput = append(combinedOutput, line)
+			outMutex.Unlock()
+			forward(w, line)
+		}
+	}
+
+	wg.Add(2)
+
+	go streamReader(rOut, oldStdout)
+	go streamReader(rErr, oldStderr)
+
+	f()
+
+	wOut.Close()
+	wErr.Close()
+
+	wg.Wait()
+
+	return combinedOutput, nil
 }

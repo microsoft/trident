@@ -2,6 +2,7 @@ package suite
 
 import (
 	"fmt"
+	"os"
 	"slices"
 
 	"storm/internal/cli"
@@ -24,11 +25,18 @@ type StormSuite struct {
 func CreateSuite(name string) StormSuite {
 	name = fmt.Sprintf("storm-%s", name)
 	ctx, global := cli.ParseCommandLine(name)
+
 	logger := logrus.New()
 	logger.SetLevel(global.Verbosity)
 	logger.SetFormatter(&logrus.TextFormatter{
 		ForceColors: true,
 	})
+
+	// Create a copy of stdErr and set it as the output for the logger. This
+	// means that regardless of any changes to os.Stderr we will still log
+	// correctly.
+	stdErrCopy := os.Stderr
+	logger.SetOutput(stdErrCopy)
 
 	logger.Infof("Creating suite '%s'", name)
 

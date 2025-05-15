@@ -3,6 +3,8 @@ package trident
 import (
 	"fmt"
 	"storm/pkg/storm"
+
+	"github.com/sirupsen/logrus"
 )
 
 type TridentE2EScenario struct {
@@ -56,8 +58,8 @@ func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {
 }
 
 func (s TridentE2EScenario) Run(tc storm.TestCase) error {
-	tc.Logger().Infof("Hello from '%s'!", s.Name())
-	tc.Logger().Infof("Running stage '%s'", s.args.StagePath)
+	logrus.Infof("Hello from '%s'!", s.Name())
+	logrus.Infof("Running stage '%s'", s.args.StagePath)
 
 	fmt.Println(s.config)
 

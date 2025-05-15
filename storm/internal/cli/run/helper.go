@@ -7,6 +7,7 @@ import (
 
 type HelperCmd struct {
 	Helper     string   `arg:"" name:"helper" help:"Name of the helper to run"`
+	Watch      bool     `short:"w" help:"Watch the output of the helper live"`
 	HelperArgs []string `arg:"" passthrough:"all" help:"Arguments to pass to the helper, you may use '--' to force passthrough." optional:""`
 }
 
@@ -16,5 +17,5 @@ func (cmd *HelperCmd) Run(suite core.SuiteContext) error {
 
 	helper := suite.Helper(cmd.Helper)
 
-	return runner.RegisterAndRunTests(suite, helper, cmd.HelperArgs)
+	return runner.RegisterAndRunTests(suite, helper, cmd.HelperArgs, cmd.Watch)
 }

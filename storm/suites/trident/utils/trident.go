@@ -82,7 +82,7 @@ func LoadTridentContainer(client *ssh.Client) error {
 	return nil
 }
 
-func CheckTridentService(client *ssh.Client, log *logrus.Logger, env TridentEnvironment, timeout time.Duration) error {
+func CheckTridentService(client *ssh.Client, env TridentEnvironment, timeout time.Duration) error {
 	if client == nil {
 		return fmt.Errorf("SSH client is nil")
 	}
@@ -101,10 +101,10 @@ func CheckTridentService(client *ssh.Client, log *logrus.Logger, env TridentEnvi
 		timeout,
 		time.Second*5,
 		func(attempt int) (*bool, error) {
-			log.Infof("Checking Trident service status (attempt %d)", attempt)
-			err := checkTridentServiceInner(log, client, serviceName)
+			logrus.Infof("Checking Trident service status (attempt %d)", attempt)
+			err := checkTridentServiceInner(client, serviceName)
 			if err != nil {
-				log.Warnf("Trident service is not in expected state: %s", err)
+				logrus.Warnf("Trident service is not in expected state: %s", err)
 				return nil, err
 			}
 
@@ -118,7 +118,7 @@ func CheckTridentService(client *ssh.Client, log *logrus.Logger, env TridentEnvi
 	return nil
 }
 
-func checkTridentServiceInner(log *logrus.Logger, client *ssh.Client, serviceName string) error {
+func checkTridentServiceInner(client *ssh.Client, serviceName string) error {
 	session, err := client.NewSession()
 	if err != nil {
 		return fmt.Errorf("failed to create SSH session: %w", err)
@@ -140,7 +140,7 @@ func checkTridentServiceInner(log *logrus.Logger, client *ssh.Client, serviceNam
 
 	outputStr := string(output)
 
-	log.Debugf("Trident service status:\n%s", outputStr)
+	logrus.Debugf("Trident service status:\n%s", outputStr)
 
 	if !strings.Contains(outputStr, "Active: inactive (dead)") {
 		return fmt.Errorf("expected to find 'Active: inactive (dead)' in Trident service status")
@@ -163,7 +163,7 @@ func checkTridentServiceInner(log *logrus.Logger, client *ssh.Client, serviceNam
 		return fmt.Errorf("expected to find '(code=exited, status=0/SUCCESS)' in Trident service status")
 	}
 
-	log.Info("Trident service ran successfully")
+	logrus.Info("Trident service ran successfully")
 
 	return nil
 }

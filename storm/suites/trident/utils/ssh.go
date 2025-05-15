@@ -160,16 +160,16 @@ func RunCommand(client *ssh.Client, command string) (*SshCmdOutput, error) {
 	return out, nil
 }
 
-func CommandOutput(client *ssh.Client, log *logrus.Logger, command string) (string, error) {
-	log.WithField("command", command).Debug("Executing command")
+func CommandOutput(client *ssh.Client, command string) (string, error) {
+	logrus.WithField("command", command).Debug("Executing command")
 	output, err := RunCommand(client, command)
 	if err != nil {
-		log.Errorf("Failed to run command: %s", err)
+		logrus.Errorf("Failed to run command: %s", err)
 		return "", fmt.Errorf("failed to run command: %w", err)
 	}
 
 	if err := output.Check(); err != nil {
-		log.Errorf("Command failed: %s", output.Report())
+		logrus.Errorf("Command failed: %s", output.Report())
 		return "", fmt.Errorf("command failed: %w", err)
 	}
 

@@ -5,8 +5,6 @@ import "time"
 type TestCase interface {
 	Named
 
-	LoggerProvider
-
 	// Returns information about the registrant that created this test case.
 	Registrant() TestRegistrantMetadata
 

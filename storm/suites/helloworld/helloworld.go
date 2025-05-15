@@ -4,6 +4,8 @@ package helloworld
 import (
 	"storm/pkg/storm"
 	"storm/pkg/storm/core"
+
+	"github.com/sirupsen/logrus"
 )
 
 type HelloWorldScenario struct {
@@ -16,7 +18,7 @@ func (s *HelloWorldScenario) Name() string {
 
 func (h *HelloWorldScenario) RegisterTestCases(r storm.TestRegistrar) error {
 	r.RegisterTestCase("myPassingTestCase", func(tc core.TestCase) error {
-		tc.Logger().Info("This message will be logged in the test case!")
+		logrus.Info("This message will be logged in the test case!")
 
 		// Do something here!
 		// ...

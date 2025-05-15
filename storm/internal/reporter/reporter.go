@@ -1,7 +1,6 @@
 package reporter
 
 import (
-	"bytes"
 	"fmt"
 	"storm/internal/devops"
 	"storm/internal/stormerror"
@@ -168,7 +167,7 @@ func (tr *TestReporter) printFailureReport() {
 			fmt.Printf("Stack trace:\n%s\n", err.Stack)
 		}
 
-		logLines := getLogLinesFromTestCase(testCase)
+		logLines := testCase.CollectedOutput()
 
 		// Check if there are any log lines
 		if len(logLines) == 0 {
@@ -202,17 +201,4 @@ func (tr *TestReporter) printFailureReport() {
 			grp.Close()
 		}
 	}
-}
-
-func getLogLinesFromTestCase(testCase *testmgr.TestCase) []string {
-	lines := make([]string, 0)
-	rawLines := testCase.Buffer().Bytes()
-	for _, line := range bytes.Split(rawLines, []byte("\n")) {
-		if len(line) == 0 {
-			continue
-		}
-		lines = append(lines, string(line))
-	}
-
-	return lines
 }

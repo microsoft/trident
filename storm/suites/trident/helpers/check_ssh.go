@@ -6,6 +6,7 @@ import (
 	"storm/suites/trident/utils"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v3"
 )
@@ -35,14 +36,14 @@ func (h *CheckSshHelper) RegisterTestCases(r storm.TestRegistrar) error {
 }
 
 func (h *CheckSshHelper) sshDial(tc storm.TestCase) error {
-	tc.Logger().Infof("Checking SSH connection to '%s' as user '%s'", h.args.Host, h.args.User)
+	logrus.Infof("Checking SSH connection to '%s' as user '%s'", h.args.Host, h.args.User)
 
 	var err error
 	h.client, err = utils.Retry(
 		time.Second*time.Duration(h.args.Timeout),
 		time.Second*5,
 		func(attempt int) (*ssh.Client, error) {
-			tc.Logger().Infof("SSH dial to '%s' (attempt %d)", h.args.SshCliSettings.FullHost(), attempt)
+			logrus.Infof("SSH dial to '%s' (attempt %d)", h.args.SshCliSettings.FullHost(), attempt)
 			return utils.OpenSshClient(h.args.SshCliSettings)
 		},
 	)
@@ -66,7 +67,7 @@ func (h *CheckSshHelper) checkTridentService(tc storm.TestCase) error {
 		tc.Skip("No Trident environment specified")
 	}
 
-	err := utils.CheckTridentService(h.client, tc.Logger(), h.args.Env, h.args.TimeoutDuration())
+	err := utils.CheckTridentService(h.client, h.args.Env, h.args.TimeoutDuration())
 	if err != nil {
 		// Log this as a test failure
 		tc.FailFromError(err)
@@ -84,8 +85,8 @@ func (h *CheckSshHelper) checkActiveVolume(tc storm.TestCase) error {
 		time.Second*5,
 		time.Second,
 		func(attempt int) (*ssh.Client, error) {
-			tc.Logger().Infof("Checking active volume (attempt %d)", attempt)
-			return nil, checkActiveVolumeInner(tc, h.client, h.args.CheckActiveVolume)
+			logrus.Infof("Checking active volume (attempt %d)", attempt)
+			return nil, checkActiveVolumeInner(h.client, h.args.CheckActiveVolume)
 		},
 	)
 
@@ -97,7 +98,7 @@ func (h *CheckSshHelper) checkActiveVolume(tc storm.TestCase) error {
 	return nil
 }
 
-func checkActiveVolumeInner(lp storm.LoggerProvider, client *ssh.Client, expectedActiveVolume string) error {
+func checkActiveVolumeInner(client *ssh.Client, expectedActiveVolume string) error {
 	session, err := client.NewSession()
 	if err != nil {
 		return fmt.Errorf("failed to create SSH session: %w", err)
@@ -111,7 +112,7 @@ func checkActiveVolumeInner(lp storm.LoggerProvider, client *ssh.Client, expecte
 
 	outputStr := string(output)
 
-	lp.Logger().Debugf("Host Status:\n%s", outputStr)
+	logrus.Debugf("Host Status:\n%s", outputStr)
 
 	hostStatus := make(map[string]interface{})
 	if err = yaml.Unmarshal([]byte(outputStr), &hostStatus); err != nil {
@@ -121,13 +122,15 @@ func checkActiveVolumeInner(lp storm.LoggerProvider, client *ssh.Client, expecte
 	if hostStatus["servicingState"] != "provisioned" {
 		return fmt.Errorf("trident state is not 'provisioned'")
 	}
-	lp.Logger().Info("Host is in provisioned state")
+
+	logrus.Info("Host is in provisioned state")
 
 	hsActiveVol := hostStatus["abActiveVolume"]
 	if hsActiveVol != expectedActiveVolume {
 		return fmt.Errorf("expected active volume '%s', got '%s'", expectedActiveVolume, hsActiveVol)
 	}
-	lp.Logger().Infof("Active volume is '%s'", hsActiveVol)
+
+	logrus.Infof("Active volume is '%s'", hsActiveVol)
 
 	return nil
 }

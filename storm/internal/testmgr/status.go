@@ -45,6 +45,7 @@ func (tcs TestCaseStatus) String() string {
 }
 
 func (tcs TestCaseStatus) ColorString() string {
+	color.NoColor = false // Force colors
 	switch tcs {
 	case TestCaseStatusPassed:
 		return color.GreenString(tcs.String())

@@ -3,6 +3,8 @@ package helloworld
 import (
 	"fmt"
 	"storm/pkg/storm"
+
+	"github.com/sirupsen/logrus"
 )
 
 // This is a simple implementation of the storm.Helper interface. It is
@@ -32,7 +34,12 @@ func (h *HelloWorldHelper) RegisterTestCases(r storm.TestRegistrar) error {
 }
 
 func (h *HelloWorldHelper) myPasssingTestCase(tc storm.TestCase) error {
-	tc.Logger().Info("This message will be logged in the test case!")
+	// It is recommended to use the logrus logger for logging in your test cases.
+	// This will be captured by storm and stored in the test case.
+	logrus.Info("This message will be captured by storm and stored in the test case!")
+
+	// If desired, you can also use the standard fmt package to print messages.
+	fmt.Println("This message will also be captured!")
 
 	// Do something here!
 	// ...
@@ -50,7 +57,7 @@ func (h *HelloWorldHelper) mySkippedTestCase(tc storm.TestCase) error {
 }
 
 func (h *HelloWorldHelper) myFailingTestCase(tc storm.TestCase) error {
-	tc.Logger().Info("This message will be shown in the failure report!")
+	logrus.Info("This message will be shown in the failure report!")
 	// A failure will stop execution of this test case here, mark it as failed,
 	// and stop execution of the entire test suite.
 	// time.Sleep(time.Second * 10)
@@ -66,7 +73,7 @@ func (h *HelloWorldHelper) myFailingTestCase(tc storm.TestCase) error {
 }
 
 func (h *HelloWorldHelper) myErrorTestCase(tc storm.TestCase) error {
-	tc.Logger().Info("This test case will never run because we fail before," +
+	logrus.Info("This test case will never run because we fail before," +
 		"but we'll use it to demonstrate error handling.")
 
 	// Storm treats failures an errors differently. Both generally imply that a

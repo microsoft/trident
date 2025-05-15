@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v3"
 )
@@ -70,14 +71,14 @@ func (h *AbUpdateHelper) getHostConfig(tc storm.TestCase) error {
 		return fmt.Errorf("failed to run trident to get host config: %w", err)
 	}
 
-	tc.Logger().Debugf("Trident stdout:\n%s", out.Stdout)
-	tc.Logger().Debugf("Trident stderr:\n%s", out.Stderr)
+	logrus.Debugf("Trident stdout:\n%s", out.Stdout)
+	logrus.Debugf("Trident stderr:\n%s", out.Stderr)
 
 	err = yaml.Unmarshal([]byte(out.Stdout), &h.config)
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal YAML: %w", err)
 	}
-	tc.Logger().Infof("Trident configuration: %v", h.config)
+	logrus.Infof("Trident configuration: %v", h.config)
 
 	return nil
 }
@@ -93,7 +94,7 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 		return fmt.Errorf("failed to get old image URL from configuration")
 	}
 
-	tc.Logger().Infof("Old image URL: %s", oldUrl)
+	logrus.Infof("Old image URL: %s", oldUrl)
 
 	base := path.Base(oldUrl)
 
@@ -110,7 +111,7 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 	newCosiPath := path.Join(h.args.DestinationDirectory, newCosiName)
 	tridentCosiPath := path.Join(h.args.Env.HostPath(), newCosiPath)
 	newUrl := fmt.Sprintf("file://%s", tridentCosiPath)
-	tc.Logger().Infof("New image URL: %s", newUrl)
+	logrus.Infof("New image URL: %s", newUrl)
 
 	// Update the image URL in the configuration
 	h.config["image"].(map[string]any)["url"] = newUrl
@@ -139,7 +140,7 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 	defer sftpClient.Close()
 
 	// Ensure the cosi file exists
-	tc.Logger().Infof("Checking if new COSI file exists at %s", newCosiPath)
+	logrus.Infof("Checking if new COSI file exists at %s", newCosiPath)
 	_, err = sftpClient.Stat(newCosiPath)
 	if err != nil {
 		fmt.Println("Yielding to the error")
@@ -179,12 +180,12 @@ func (h *AbUpdateHelper) triggerTridentUpdate(tc storm.TestCase) error {
 	allowedOperations := make([]string, 0)
 
 	if h.args.StageAbUpdate {
-		tc.Logger().Infof("Allowed operations: stage")
+		logrus.Infof("Allowed operations: stage")
 		allowedOperations = append(allowedOperations, "stage")
 	}
 
 	if h.args.FinalizeAbUpdate {
-		tc.Logger().Infof("Allowed operations: finalize")
+		logrus.Infof("Allowed operations: finalize")
 		allowedOperations = append(allowedOperations, "finalize")
 	}
 
@@ -194,41 +195,41 @@ func (h *AbUpdateHelper) triggerTridentUpdate(tc storm.TestCase) error {
 		strings.Join(allowedOperations, ","),
 	)
 
-	file, err := utils.CommandOutput(h.client, tc.Logger(), fmt.Sprintf("sudo cat %s", h.args.TridentConfig))
+	file, err := utils.CommandOutput(h.client, fmt.Sprintf("sudo cat %s", h.args.TridentConfig))
 	if err != nil {
 		return fmt.Errorf("failed to read new Host Config file: %w", err)
 	}
 
-	tc.Logger().Debugf("Trident config file:\n%s", file)
+	logrus.Debugf("Trident config file:\n%s", file)
 
 	for i := 1; ; i++ {
-		tc.Logger().Infof("Invoking Trident attempt #%d with args: %s", i, args)
+		logrus.Infof("Invoking Trident attempt #%d with args: %s", i, args)
 
 		out, err := utils.InvokeTrident(h.args.Env, h.client, args)
 		if err != nil {
 			if err, ok := err.(*ssh.ExitMissingError); ok && strings.Contains(out.Stderr, "Rebooting system") {
 				// The connection closed without an exit code, and the output contains "Rebooting system".
 				// This indicates that the host has rebooted.
-				tc.Logger().Infof("Host rebooted successfully")
+				logrus.Infof("Host rebooted successfully")
 				break
 			} else {
 				// Some unknown error occurred.
-				tc.Logger().Errorf("Failed to invoke Trident: %s; %s", err, out.Report())
+				logrus.Errorf("Failed to invoke Trident: %s; %s", err, out.Report())
 				return fmt.Errorf("failed to invoke Trident: %w", err)
 			}
 		}
 
 		if out.Status == 0 && strings.Contains(out.Stderr, "Staging of update 'AbUpdate' succeeded") {
-			tc.Logger().Infof("Staging of update 'AbUpdate' succeeded")
+			logrus.Infof("Staging of update 'AbUpdate' succeeded")
 			break
 		}
 
 		if out.Status == 2 && strings.Contains(out.Stderr, "Failed to run post-configure script 'fail-on-the-first-run'") {
-			tc.Logger().Infof("Detected intentional failure. Re-running...")
+			logrus.Infof("Detected intentional failure. Re-running...")
 			continue
 		}
 
-		tc.Logger().Errorf("Trident update failed %s", out.Report())
+		logrus.Errorf("Trident update failed %s", out.Report())
 
 		tc.Fail(fmt.Sprintf("Trident update failed with status %d", out.Status))
 	}
@@ -245,7 +246,7 @@ func (h *AbUpdateHelper) checkTridentService(tc storm.TestCase) error {
 		tc.Skip("No Trident environment specified")
 	}
 
-	tc.Logger().Infof("Waiting for the host to reboot and come back online...")
+	logrus.Infof("Waiting for the host to reboot and come back online...")
 	time.Sleep(time.Second * 10)
 
 	// Reconnect via SSH to the updated OS
@@ -253,23 +254,23 @@ func (h *AbUpdateHelper) checkTridentService(tc storm.TestCase) error {
 		h.args.TimeoutDuration(),
 		time.Second*5,
 		func(attempt int) (*bool, error) {
-			tc.Logger().Infof("SSH dial to '%s' (attempt %d)", h.args.SshCliSettings.FullHost(), attempt)
+			logrus.Infof("SSH dial to '%s' (attempt %d)", h.args.SshCliSettings.FullHost(), attempt)
 			client, err := utils.OpenSshClient(h.args.SshCliSettings)
 			if err != nil {
-				tc.Logger().Warnf("Failed to dial SSH server '%s': %s", h.args.SshCliSettings.FullHost(), err)
+				logrus.Warnf("Failed to dial SSH server '%s': %s", h.args.SshCliSettings.FullHost(), err)
 				return nil, err
 			}
 			defer client.Close()
 
-			tc.Logger().Infof("SSH dial to '%s' succeeded", h.args.SshCliSettings.FullHost())
+			logrus.Infof("SSH dial to '%s' succeeded", h.args.SshCliSettings.FullHost())
 
-			err = utils.CheckTridentService(client, tc.Logger(), h.args.Env, h.args.TimeoutDuration())
+			err = utils.CheckTridentService(client, h.args.Env, h.args.TimeoutDuration())
 			if err != nil {
-				tc.Logger().Warnf("Trident service is not in expected state: %s", err)
+				logrus.Warnf("Trident service is not in expected state: %s", err)
 				return nil, err
 			}
 
-			tc.Logger().Infof("Trident service is in expected state")
+			logrus.Infof("Trident service is in expected state")
 			return nil, nil
 		},
 	)

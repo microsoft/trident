@@ -1,27 +1,23 @@
 package testmgr
 
 import (
-	"bytes"
 	"fmt"
 	"runtime"
 	"storm/pkg/storm/core"
 	"time"
-
-	"github.com/sirupsen/logrus"
 )
 
 type TestCase struct {
-	registrant   core.TestRegistrantMetadata
-	name         string
-	startTime    time.Time
-	endTime      time.Time
-	status       TestCaseStatus
-	reason       string
-	err          error
-	log          *logrus.Logger
-	logBuffer    bytes.Buffer
-	f            core.TestCaseFunction
-	suiteCleanup []func()
+	registrant      core.TestRegistrantMetadata
+	name            string
+	startTime       time.Time
+	endTime         time.Time
+	status          TestCaseStatus
+	reason          string
+	err             error
+	collectedOutput []string
+	f               core.TestCaseFunction
+	suiteCleanup    []func()
 }
 
 func newTestCase(name string, f core.TestCaseFunction) *TestCase {
@@ -29,15 +25,7 @@ func newTestCase(name string, f core.TestCaseFunction) *TestCase {
 		name:   name,
 		f:      f,
 		status: TestCaseStatusPending,
-		log:    logrus.New(),
 	}
-
-	tc.log.SetLevel(logrus.TraceLevel)
-	tc.log.SetOutput(&tc.logBuffer)
-	tc.log.SetFormatter(&logrus.TextFormatter{
-		ForceColors:      true,
-		DisableTimestamp: false,
-	})
 
 	return tc
 }
@@ -93,9 +81,9 @@ func (t *TestCase) IsBailCondition() bool {
 	return t.status.IsBad()
 }
 
-// Returns the log buffer of the test case.
-func (t *TestCase) Buffer() *bytes.Buffer {
-	return &t.logBuffer
+// Returns the collected output of the test case.
+func (t *TestCase) CollectedOutput() []string {
+	return t.collectedOutput
 }
 
 // Returns the reason for the test case closure.
@@ -112,6 +100,10 @@ func (t *TestCase) GetError() error {
 // Mark a pending test as skipped because of a dependency failure.
 func (t *TestCase) MarkNotRun(reason string) {
 	t.close(TestCaseStatusNotRun, reason, nil)
+}
+
+func (t *TestCase) SetCollectedOutput(val []string) {
+	t.collectedOutput = val
 }
 
 // Mark a test as errored. This is used when the test case panics or returns an
@@ -169,11 +161,6 @@ func (t *TestCase) FailFromError(err error) {
 func (t *TestCase) Skip(reason string) {
 	t.close(TestCaseStatusSkipped, reason, nil)
 	runtime.Goexit()
-}
-
-// Logger implements core.TestCase.
-func (t *TestCase) Logger() *logrus.Logger {
-	return t.log
 }
 
 // Name implements core.TestCase.

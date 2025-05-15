@@ -52,7 +52,6 @@ func (h *PrepareImages) copyRegularImages(tc storm.TestCase) error {
 	}
 
 	return copyImages(
-		tc.Logger(),
 		h.args.RegularTestImageDir,
 		h.args.OutputDir,
 		h.args.RegularImageName,
@@ -69,7 +68,6 @@ func (h *PrepareImages) copyVerityImages(tc storm.TestCase) error {
 	}
 
 	return copyImages(
-		tc.Logger(),
 		h.args.VerityTestImageDir,
 		h.args.OutputDir,
 		h.args.VerityImageName,
@@ -86,7 +84,6 @@ func (h *PrepareImages) copyUsrVerityImages(tc storm.TestCase) error {
 	}
 
 	return copyImages(
-		tc.Logger(),
 		h.args.UsrVerityTestImageDir,
 		h.args.OutputDir,
 		h.args.UsrVerityImageName,
@@ -96,7 +93,7 @@ func (h *PrepareImages) copyUsrVerityImages(tc storm.TestCase) error {
 	)
 }
 
-func copyImages(log *logrus.Logger, srcDir, destDir string, imageName string, ext string, outputFilename string, versions uint) error {
+func copyImages(srcDir, destDir string, imageName string, ext string, outputFilename string, versions uint) error {
 	srcDir, err := filepath.Abs(srcDir)
 	if err != nil {
 		return fmt.Errorf("failed to get absolute path of source directory %s: %v", srcDir, err)
@@ -116,7 +113,7 @@ func copyImages(log *logrus.Logger, srcDir, destDir string, imageName string, ex
 		return fmt.Errorf("no '%s' files found in directory %s", glob, srcDir)
 	}
 
-	log.Infof("Found %d files in %s matching glob %s", len(files), srcDir, glob)
+	logrus.Infof("Found %d files in %s matching glob %s", len(files), srcDir, glob)
 
 	singleFilePattern := fmt.Sprintf("%s.%s", imageName, ext)
 	multipleFilePattern := fmt.Sprintf(`%s_(\d+).%s`, regexp.QuoteMeta(imageName), regexp.QuoteMeta(ext))
@@ -140,7 +137,7 @@ func copyImages(log *logrus.Logger, srcDir, destDir string, imageName string, ex
 
 	// Create output directory if it doesn't exist
 	if _, err := os.Stat(destDir); os.IsNotExist(err) {
-		log.Debugf("Creating directory %s", destDir)
+		logrus.Debugf("Creating directory %s", destDir)
 		err := os.MkdirAll(destDir, 0755)
 		if err != nil {
 			return fmt.Errorf("failed to create directory %s: %v", destDir, err)
@@ -158,7 +155,7 @@ func copyImages(log *logrus.Logger, srcDir, destDir string, imageName string, ex
 			newFileName = fmt.Sprintf("%s_v%d.%s", outputFilename, i+1, ext)
 		}
 
-		log.Infof("Moving file '%s' to '%s'", file, newFileName)
+		logrus.Infof("Moving file '%s' to '%s'", file, newFileName)
 
 		newFilePath := filepath.Join(destDir, newFileName)
 		err := os.Rename(file, newFilePath)
@@ -175,7 +172,7 @@ func copyImages(log *logrus.Logger, srcDir, destDir string, imageName string, ex
 		baseFile := outputFiles[v%len(outputFiles)]
 		// Create a hard link to the base file
 		newFilePath := filepath.Join(destDir, newFileName)
-		log.Infof("Linking file '%s' to '%s'", baseFile, newFilePath)
+		logrus.Infof("Linking file '%s' to '%s'", baseFile, newFilePath)
 		err := os.Link(baseFile, newFilePath)
 		if err != nil {
 			return fmt.Errorf("failed to link file %s to %s: %v", baseFile, newFilePath, err)
