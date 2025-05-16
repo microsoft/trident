@@ -38,11 +38,7 @@ stages:
             value: "$(Build.SourcesDirectory)/trident/out"
 
         steps:
-          - task: PipAuthenticate@1
-            displayName: Provision - Authenticate Pip
-            inputs:
-              artifactFeeds: "mariner/Mariner-Pypi-Feed"
-
+          - template: ../common_tasks/avoid-pypi-usage.yml
           - template: check.yml
 
       - job: TestTrident
@@ -55,11 +51,7 @@ stages:
             value: "$(Build.SourcesDirectory)/trident/out"
 
         steps:
-          - task: PipAuthenticate@1
-            displayName: Provision - Authenticate Pip
-            inputs:
-              artifactFeeds: "mariner/Mariner-Pypi-Feed"
-
+          - template: ../common_tasks/avoid-pypi-usage.yml
           # need newer rust for cargo-nextest, use rustup.yml to install
           - template: ../common_tasks/rustup.yml
           - template: ../common_tasks/cargo-auth.yml
@@ -76,10 +68,7 @@ stages:
 
         steps:
           - template: ../common_tasks/os-info.yml
-          - task: PipAuthenticate@1
-            displayName: Provision - Authenticate Pip
-            inputs:
-              artifactFeeds: "mariner/Mariner-Pypi-Feed"
+          - template: ../common_tasks/avoid-pypi-usage.yml
           - template: ../common_tasks/cargo-auth.yml
           - template: ../common_tasks/coverage.yml
             parameters:
@@ -101,10 +90,7 @@ stages:
 
         steps:
           - template: ../common_tasks/os-info.yml
-          - task: PipAuthenticate@1
-            displayName: Provision - Authenticate Pip
-            inputs:
-              artifactFeeds: "mariner/Mariner-Pypi-Feed"
+          - template: ../common_tasks/avoid-pypi-usage.yml
           - template: ../common_tasks/cargo-auth.yml
           - template: ../common_tasks/build-osmodifier.yml
           - template: release.yml
@@ -130,11 +116,7 @@ stages:
               buildType: auto
 
         steps:
-          - task: PipAuthenticate@1
-            displayName: Provision - Authenticate Pip
-            inputs:
-              artifactFeeds: "mariner/Mariner-Pypi-Feed"
-
+          - template: ../common_tasks/avoid-pypi-usage.yml
           - template: ../common_tasks/cargo-auth.yml
           - template: ../common_tasks/build-osmodifier.yml
           - template: release.yml

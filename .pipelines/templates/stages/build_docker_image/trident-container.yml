@@ -28,6 +28,8 @@ stages:
           ob_artifactBaseName: "trident-docker-image"
 
         steps:
+          - template: ../common_tasks/avoid-pypi-usage.yml
+
           - script: |
               set -eux
               mkdir -p bin/RPMS

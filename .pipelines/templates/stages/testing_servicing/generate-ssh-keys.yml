@@ -10,10 +10,7 @@ jobs:
       ob_artifactBaseName: "ssh-keys"
 
     steps:
-      - task: PipAuthenticate@1
-        displayName: Provision - Authenticate Pip
-        inputs:
-          artifactFeeds: 'mariner/Mariner-Pypi-Feed'
+      - template: ../common_tasks/avoid-pypi-usage.yml
 
       - bash: |
           set -eux

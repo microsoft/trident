@@ -1,0 +1,7 @@
+steps:
+  - task: PipAuthenticate@1
+    displayName: Provision - Authenticate Pip
+    inputs:
+      artifactFeeds: "mariner/Mariner-Pypi-Feed"
+
+  - template: common/sfi-enforce-isolation-with-etc-hosts.yaml@platform-pipelines

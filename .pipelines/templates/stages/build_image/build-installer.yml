@@ -62,10 +62,7 @@ stages:
           BASEIMG_AZURE_LINUX_VERSION: "3.0"
 
         steps:
-          - task: PipAuthenticate@1
-            displayName: Provision - Authenticate Pip
-            inputs:
-              artifactFeeds: "mariner/Mariner-Pypi-Feed"
+          - template: ../common_tasks/avoid-pypi-usage.yml
 
           - task: DownloadPipelineArtifact@2
             inputs:
