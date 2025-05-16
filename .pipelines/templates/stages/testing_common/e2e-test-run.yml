@@ -179,6 +179,18 @@ steps:
       deploymentLogPath: $(Build.SourcesDirectory)/logstream-full.log
       displayName: "📄 [TRACE] Display A/B update deployment logs for runtime OS B"
 
+  - bash: |
+      set -eux
+      ./bin/storm-trident helper boot-metrics \
+          "${{ parameters.sshKeyPath }}" \
+          "${{ parameters.hostIp }}" \
+          "${{ parameters.userName }}" \
+          "${{ parameters.runtimeEnv }}" \
+          --metrics-file $(Build.SourcesDirectory)/trident-ab-update-metrics-runtime-os-B.jsonl \
+          --metrics-operation update1
+    displayName: "Create boot metrics for booting into runtime OS B"
+    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
+
   - template: ../testing_common/trident-metrics.yml
     parameters:
       tridentSourceDirectory: $(Build.SourcesDirectory)
@@ -272,6 +284,18 @@ steps:
     parameters:
       deploymentLogPath: $(Build.SourcesDirectory)/logstream-full.log
       displayName: "📄 [TRACE] Display A/B update deployment logs for runtime OS A"
+
+  - bash: |
+      set -eux
+      ./bin/storm-trident helper boot-metrics \
+          "${{ parameters.sshKeyPath }}" \
+          "${{ parameters.hostIp }}" \
+          "${{ parameters.userName }}" \
+          "${{ parameters.runtimeEnv }}" \
+          --metrics-file $(Build.SourcesDirectory)/trident-ab-update-metrics-runtime-os-A.jsonl \
+          --metrics-operation update2
+    displayName: "Create boot metrics for booting into runtime OS A"
+    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - template: ../testing_common/trident-metrics.yml
     parameters:

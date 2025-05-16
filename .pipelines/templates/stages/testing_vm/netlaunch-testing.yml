@@ -198,6 +198,18 @@ stages:
             condition: eq('${{ parameters.runtimeEnv }}', 'container')
             displayName: "📄 Display Container logs"
 
+          - bash: |
+              set -eux
+              HOST_IP=$(jq -r '.virtualmachines[0].ip' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)
+              ./bin/storm-trident helper boot-metrics \
+                  "$(tridentSourceDirectory)/e2e_tests/helpers/key" \
+                  "$HOST_IP" \
+                  "testing-user" \
+                  "${{ parameters.runtimeEnv }}" \
+                  --metrics-file $(tridentSourceDirectory)/trident-clean-install-metrics.jsonl \
+                  --metrics-operation install
+            displayName: "Create boot metrics for booting into runtime OS"
+
           - template: ../testing_common/trident-metrics.yml
             parameters:
               tridentSourceDirectory: $(tridentSourceDirectory)
