@@ -444,7 +444,8 @@ download-runtime-images:
 	rm -rf ./artifacts/test-image
 	mkdir -p ./artifacts/test-image
 #	Move regular COSI image
-	mv $(DOWNLOAD_DIR)/*.cosi ./artifacts/test-image/regular.cosi
+	mv $(DOWNLOAD_DIR)/*_0.cosi ./artifacts/test-image/regular.cosi
+	mv $(DOWNLOAD_DIR)/*_1.cosi ./artifacts/test-image/regular2.cosi
 #	Clean temp dir
 	rm -rf $(DOWNLOAD_DIR)
 
@@ -458,7 +459,8 @@ download-runtime-images:
 		--artifact-name 'trident-verity-testimage'
 
 #	Move verity COSI image
-	mv $(DOWNLOAD_DIR)/*.cosi ./artifacts/test-image/verity.cosi
+	mv $(DOWNLOAD_DIR)/*_0.cosi ./artifacts/test-image/verity.cosi
+	mv $(DOWNLOAD_DIR)/*_1.cosi ./artifacts/test-image/verity2.cosi
 #	Clean temp dir
 	rm -rf $(DOWNLOAD_DIR)
 
@@ -472,7 +474,8 @@ download-runtime-images:
 		--artifact-name 'trident-container-testimage'
 
 #	Move container COSI image
-	mv $(DOWNLOAD_DIR)/*.cosi ./artifacts/test-image/container.cosi
+	mv $(DOWNLOAD_DIR)/*_0.cosi ./artifacts/test-image/container.cosi
+	mv $(DOWNLOAD_DIR)/*_1.cosi ./artifacts/test-image/container2.cosi
 #	Clean temp dir
 	rm -rf $(DOWNLOAD_DIR)
 
