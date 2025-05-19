@@ -278,7 +278,7 @@ stages:
                   "${{ variables.BAREMETAL_OAM_IP }}" \
                   "testing-user" \
                   "${{ parameters.runtimeEnv }}" \
-                  --metrics-file $(tridentSourceDirectory)/trident-clean-install-metrics.jsonl \
+                  --metrics-file $(TRIDENT_SOURCE_DIR)/trident-clean-install-metrics.jsonl \
                   --metrics-operation install
             displayName: "Create boot metrics for booting into runtime OS"
 
