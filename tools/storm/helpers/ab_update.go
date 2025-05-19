@@ -2,6 +2,7 @@ package helpers
 
 import (
 	"fmt"
+	"net/http"
 	"path"
 	"regexp"
 	"strings"
@@ -20,7 +21,6 @@ type AbUpdateHelper struct {
 	args struct {
 		utils.SshCliSettings `embed:""`
 		utils.EnvCliSettings `embed:""`
-		DestinationDirectory string `short:"d" required:"" help:"Read-write directory on the host that contains the runtime OS images for the A/B update."`
 		TridentConfig        string `short:"c" required:"" help:"File name of the custom read-write Trident config on the host to point Trident to."`
 		Version              string `short:"v" required:"" help:"Version of the Trident image to use for the A/B update."`
 		StageAbUpdate        bool   `short:"s" help:"Controls whether A/B update should be staged."`
@@ -98,7 +98,19 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 
 	logrus.Infof("Old image URL: %s", oldUrl)
 
+	// Extract the base name of the image URL
 	base := path.Base(oldUrl)
+	if base == "" {
+		return fmt.Errorf("failed to get base name from URL: %s", oldUrl)
+	}
+
+	// Then extract everything but the base by removing it as a suffix
+	urlPath, ok := strings.CutSuffix(oldUrl, base)
+	if !ok {
+		return fmt.Errorf("failed to remove suffix '%s' from URL '%s'", base, oldUrl)
+	}
+
+	logrus.Debugf("Base name: %s", base)
 
 	matches := regexp.MustCompile(`^(.*?)(_v\d+)?\.(.+)$`).FindStringSubmatch(base)
 
@@ -110,10 +122,16 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 	ext := matches[3]
 
 	newCosiName := fmt.Sprintf("%s_v%s.%s", name, h.args.Version, ext)
-	newCosiPath := path.Join(h.args.DestinationDirectory, newCosiName)
-	tridentCosiPath := path.Join(h.args.Env.HostPath(), newCosiPath)
-	newUrl := fmt.Sprintf("file://%s", tridentCosiPath)
+	newUrl := fmt.Sprintf("%s/%s", urlPath, newCosiName)
 	logrus.Infof("New image URL: %s", newUrl)
+
+	logrus.Infof("Checking if new image URL is accessible...")
+	err := checkUrlIsAccessible(newUrl)
+	if err != nil {
+		logrus.WithError(err).Errorf("New image URL is not accessible: %s (continuing)", newUrl)
+	} else {
+		logrus.Infof("New image URL is accessible")
+	}
 
 	// Update the image URL in the configuration
 	h.config["image"].(map[string]any)["url"] = newUrl
@@ -142,13 +160,6 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 	defer sftpClient.Close()
 
 	// Ensure the cosi file exists
-	logrus.Infof("Checking if new COSI file exists at %s", newCosiPath)
-	_, err = sftpClient.Stat(newCosiPath)
-	if err != nil {
-		fmt.Println("Yielding to the error")
-		return fmt.Errorf("failed to stat new COSI file at %s: %w", newCosiPath, err)
-	}
-
 	err = sftpClient.MkdirAll(path.Dir(h.args.TridentConfig))
 	if err != nil {
 		return fmt.Errorf("failed to create directory for new Host Config file: %w", err)
@@ -279,6 +290,18 @@ func (h *AbUpdateHelper) checkTridentService(tc storm.TestCase) error {
 	if err != nil {
 		// Log this as a test failure
 		tc.FailFromError(err)
+	}
+
+	return nil
+}
+
+func checkUrlIsAccessible(url string) error {
+	resp, err := http.Head(url)
+	if err != nil {
+		return fmt.Errorf("failed to check new image URL: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("new image URL is not accessible: %s, got HTTP code: %d", url, resp.StatusCode)
 	}
 
 	return nil

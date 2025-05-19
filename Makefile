@@ -432,6 +432,12 @@ download-runtime-images:
 		--top 1 \
 		--query '[0].id'))
 	@echo PIPELINE RUN ID: $(RUN_ID)
+
+#   Clean & create artifacts dir
+	rm -rf ./artifacts/test-image
+	mkdir -p ./artifacts/test-image
+
+# 	Get regular image
 	$(eval DOWNLOAD_DIR := $(shell mktemp -d))
 	az pipelines runs artifact download \
 		--org 'https://dev.azure.com/mariner-org' \
@@ -440,16 +446,28 @@ download-runtime-images:
 		--path $(DOWNLOAD_DIR) \
 		--artifact-name 'trident-testimage'
 
-#   Clean & create artifacts dir
-	rm -rf ./artifacts/test-image
-	mkdir -p ./artifacts/test-image
-#	Move regular COSI image
+#	Move COSI images
 	mv $(DOWNLOAD_DIR)/*_0.cosi ./artifacts/test-image/regular.cosi
-	mv $(DOWNLOAD_DIR)/*_1.cosi ./artifacts/test-image/regular2.cosi
+	mv $(DOWNLOAD_DIR)/*_1.cosi ./artifacts/test-image/regular_v2.cosi
 #	Clean temp dir
 	rm -rf $(DOWNLOAD_DIR)
 
-# Get verity image
+# 	Get usr-verity image
+	$(eval DOWNLOAD_DIR := $(shell mktemp -d))
+	az pipelines runs artifact download \
+		--org 'https://dev.azure.com/mariner-org' \
+		--project "ECF" \
+		--run-id $(RUN_ID) \
+		--path $(DOWNLOAD_DIR) \
+		--artifact-name 'trident-usrverity-testimage'
+
+#	Move COSI images
+	mv $(DOWNLOAD_DIR)/*_0.cosi ./artifacts/test-image/usrverity.cosi
+	mv $(DOWNLOAD_DIR)/*_1.cosi ./artifacts/test-image/usrverity_v2.cosi
+#	Clean temp dir
+	rm -rf $(DOWNLOAD_DIR)
+
+# 	Get root-verity image
 	$(eval DOWNLOAD_DIR := $(shell mktemp -d))
 	az pipelines runs artifact download \
 		--org 'https://dev.azure.com/mariner-org' \
@@ -458,9 +476,9 @@ download-runtime-images:
 		--path $(DOWNLOAD_DIR) \
 		--artifact-name 'trident-verity-testimage'
 
-#	Move verity COSI image
+#	Move COSI images
 	mv $(DOWNLOAD_DIR)/*_0.cosi ./artifacts/test-image/verity.cosi
-	mv $(DOWNLOAD_DIR)/*_1.cosi ./artifacts/test-image/verity2.cosi
+	mv $(DOWNLOAD_DIR)/*_1.cosi ./artifacts/test-image/verity_v2.cosi
 #	Clean temp dir
 	rm -rf $(DOWNLOAD_DIR)
 
@@ -473,9 +491,9 @@ download-runtime-images:
 		--path $(DOWNLOAD_DIR) \
 		--artifact-name 'trident-container-testimage'
 
-#	Move container COSI image
+#	Move COSI images
 	mv $(DOWNLOAD_DIR)/*_0.cosi ./artifacts/test-image/container.cosi
-	mv $(DOWNLOAD_DIR)/*_1.cosi ./artifacts/test-image/container2.cosi
+	mv $(DOWNLOAD_DIR)/*_1.cosi ./artifacts/test-image/container_v2.cosi
 #	Clean temp dir
 	rm -rf $(DOWNLOAD_DIR)
 

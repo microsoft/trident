@@ -75,25 +75,6 @@ steps:
     workingDirectory: $(Build.SourcesDirectory)/e2e_tests
     displayName: "Check if Trident config requires A/B update testing"
 
-  # Check if Trident config uses verity. If yes, we need to copy the verity COSI
-  # to a writable directory /run on the VM. Otherwise, copy the regular COSI to
-  # /abupdate.
-  - bash: |
-      set -eu
-      verityRequired=$(sudo yq e '.storage.verity != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
-      if [ "$verityRequired" == "true" ]; then
-        echo "Trident config requires verity runtime OS images"
-        echo "##vso[task.setvariable variable=verityRequired]true"
-        echo "##vso[task.setvariable variable=destinationDirectory]/run"
-      else
-        echo "Trident config does not require verity runtime OS images"
-        echo "##vso[task.setvariable variable=verityRequired]false"
-        echo "##vso[task.setvariable variable=destinationDirectory]/abupdate"
-      fi
-    workingDirectory: $(Build.SourcesDirectory)/e2e_tests
-    displayName: "Check if Trident config requires verity runtime OS images"
-    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
-
   - bash: |
       $(Build.SourcesDirectory)/bin/storm-trident helper check-ssh \
           "${{ parameters.sshKeyPath }}" \
@@ -123,20 +104,6 @@ steps:
       testRunTitle: ${{ parameters.deploymentEnvironment }}_trident_e2e_tests_${{ parameters.tridentConfigurationName }}_clean_install_$(System.JobAttempt)
     displayName: "Publish test results for clean install of runtime OS"
 
-  - bash: |
-      set -eux
-      chmod +x $(Build.SourcesDirectory)/.pipelines/templates/stages/testing_common/scripts/transfer-update-os-image.sh
-      "$(Build.SourcesDirectory)/.pipelines/templates/stages/testing_common/scripts/transfer-update-os-image.sh" \
-          "${{ parameters.sshKeyPath }}" \
-          "${{ parameters.userName }}" \
-          "${{ parameters.hostIp }}" \
-          "${{ parameters.artifactsDirectory }}" \
-          "$(destinationDirectory)" \
-          "$(version)" \
-          "$(verityRequired)"
-    displayName: "Transfer update OS image to the host for A/B update testing"
-    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
-
   # If current config requires A/B update testing, execute script to ssh into the host, update
   # images in the custom Trident config, and re-run Trident to both stage and finalize A/B update.
   - bash: |
@@ -144,6 +111,7 @@ steps:
       ./bin/netlisten --force-color \
         -m $(Build.SourcesDirectory)/trident-ab-update-metrics-runtime-os-B.jsonl \
         --full-logstream ./logstream-full.log \
+        -s "${{ parameters.artifactsDirectory }}" \
         -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-runtime-os-B.log 2>&1 &
 
       echo "Running script to stage and finalize A/B update..."
@@ -152,7 +120,6 @@ steps:
           "${{ parameters.hostIp }}" \
           "${{ parameters.userName }}" \
           "${{ parameters.runtimeEnv }}" \
-          --destination-directory $(destinationDirectory) \
           --trident-config $(tridentConfigFile) \
           --version $(version) \
           --stage-ab-update \
@@ -231,25 +198,13 @@ steps:
 
   - bash: |
       set -eux
-      "$(Build.SourcesDirectory)/.pipelines/templates/stages/testing_common/scripts/transfer-update-os-image.sh" \
-          "${{ parameters.sshKeyPath }}" \
-          "${{ parameters.userName }}" \
-          "${{ parameters.hostIp }}" \
-          "${{ parameters.artifactsDirectory }}" \
-          "$(destinationDirectory)" \
-          "$(version)" \
-          "$(verityRequired)"
-    displayName: "Transfer update OS image to the host for A/B update testing"
-    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
-
-  - bash: |
-      set -eux
       # If there is a netlisten process, kill it so there is no port clash in the instance
       if pgrep netlisten > /dev/null; then pkill netlisten; fi
 
       ./bin/netlisten --force-color \
           -m $(Build.SourcesDirectory)/trident-ab-update-metrics-runtime-os-A.jsonl \
           --full-logstream ./logstream-full.log \
+          -s "${{ parameters.artifactsDirectory }}" \
           -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-runtime-os-A.log 2>&1 &
 
       echo "Running script to stage and finalize A/B update..."
@@ -258,7 +213,6 @@ steps:
           "${{ parameters.hostIp }}" \
           "${{ parameters.userName }}" \
           "${{ parameters.runtimeEnv }}" \
-          --destination-directory $(destinationDirectory) \
           --trident-config $(tridentConfigFile) \
           --version $(version) \
           --stage-ab-update \
