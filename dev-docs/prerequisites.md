@@ -28,6 +28,7 @@
 - Install `build-essential`, `pkg-config`, `libssl-dev`, `libclang-dev`, and
   `protobuf-compiler`. E.g. `sudo apt install build-essential pkg-config
   libssl-dev libclang-dev protobuf-compiler`.
+- Install the `virt-firmware` Python package: `sudo pip3 install virt-firmware`.
 - Clone the [Trident
   repository](https://mariner-org@dev.azure.com/mariner-org/ECF/_git/trident):
   `git clone https://mariner-org@dev.azure.com/mariner-org/ECF/_git/trident`.

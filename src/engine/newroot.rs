@@ -697,10 +697,7 @@ mod functional_test {
         mkfs, mountpoint,
         repart::{RepartEmptyMode, RepartPartitionEntry, SystemdRepartInvoker},
         testutils::{
-            repart::{
-                self, CDROM_DEVICE_PATH, CDROM_MOUNT_PATH, OS_DISK_DEVICE_PATH,
-                TEST_DISK_DEVICE_PATH,
-            },
+            repart::{self, OS_DISK_DEVICE_PATH, TEST_DISK_DEVICE_PATH},
             tmp_mount,
         },
         udevadm,
@@ -718,10 +715,19 @@ mod functional_test {
 
     #[functional_test(feature = "engine")]
     fn test_mount_and_umount() {
-        // CDROM device to be mounted
-        let device = Path::new(CDROM_DEVICE_PATH);
+        let loopback = repart::make_loopback_filesystem(MkfsFileSystemType::Vfat);
+
+        let loop_device = Dependency::Losetup
+            .cmd()
+            .arg("-f")
+            .arg("--show")
+            .arg(loopback.path())
+            .output_and_check()
+            .unwrap();
+        let loop_device = loop_device.trim();
+
         // Mount point
-        let mount_point = Path::new(CDROM_MOUNT_PATH);
+        let mount_point = Path::new("/mnt/mountpoint");
 
         if mountpoint::check_is_mountpoint(mount_point).unwrap() {
             mount::umount(mount_point, false).unwrap();
@@ -757,7 +763,7 @@ mod functional_test {
             },
             partition_paths: btreemap! {
                 "os".into() => PathBuf::from("/dev/sr"),
-                "sr0".into() => PathBuf::from(CDROM_DEVICE_PATH)
+                "sr0".into() => PathBuf::from(&loop_device),
             },
             ..Default::default()
         };
@@ -767,17 +773,9 @@ mod functional_test {
             .mount_newroot_partitions(&ctx.spec, &ctx.partition_paths, AbVolumeSelection::VolumeA)
             .unwrap();
 
-        // If device is a file, fetch the name of loop device that was mounted at mount point;
-        // otherwise, use the device path itself
-        let loop_device = if device.is_file() {
-            find_loop_device(device).unwrap()
-        } else {
-            device.to_string_lossy().to_string()
-        };
-
         // Validate that the device has been successfully mounted
         assert!(
-            is_device_mounted_at(&loop_device, mount_point),
+            is_device_mounted_at(loop_device, mount_point),
             "Device not mounted at the expected mount point"
         );
 
@@ -881,7 +879,7 @@ mod functional_test {
 
         // Validate that the device has been successfully unmounted
         assert!(
-            !is_device_mounted_at(&loop_device, mount_point),
+            !is_device_mounted_at(loop_device, mount_point),
             "Device '{loop_device}' still mounted at '{}'",
             mount_point.display()
         );
@@ -926,6 +924,8 @@ mod functional_test {
 
     #[functional_test(feature = "engine", negative = true)]
     fn test_mount_failure() {
+        let loopback = repart::make_loopback_filesystem(MkfsFileSystemType::Ext4);
+
         let temp_mount_dir = TempDir::new().unwrap();
 
         // bad mount path
@@ -956,7 +956,7 @@ mod functional_test {
             },
             partition_paths: btreemap! {
                 "os".into() => PathBuf::from("/dev/sr"),
-                "sr0".into() => PathBuf::from(CDROM_DEVICE_PATH)
+                "sr0".into() => loopback.path().to_owned(),
             },
             ..Default::default()
         };
@@ -1284,19 +1284,17 @@ mod functional_test {
     /// Attempt to prepare a directory within a read-only mounted filesystem
     #[functional_test(feature = "engine", negative = true)]
     fn test_prepare_mount_directory_ro() {
-        let temp_dir = TempDir::new().unwrap();
-
-        // CDROM device to be mounted for testing
-        let device = Path::new(CDROM_DEVICE_PATH);
+        let loopback = repart::make_loopback_filesystem(MkfsFileSystemType::Vfat);
 
         // Target path for the mount
+        let temp_dir = TempDir::new().unwrap();
         let mount_point = temp_dir.path().join("mount_point");
         fs::create_dir_all(&mount_point).unwrap();
 
         // Mount the CDROM device and attempt to prepare a directory inside the read-only mount
         tmp_mount::mount(
-            device,
-            MountFileSystemType::Iso9660,
+            loopback.path(),
+            MountFileSystemType::Vfat,
             &["ro".into()],
             |mount_dir| {
                 // Target path within the read-only mount

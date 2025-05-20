@@ -100,15 +100,15 @@ mod functional_test {
     use pytest_gen::functional_test;
     use trident_api::constants::MOUNT_OPTION_READ_ONLY;
 
-    use crate::mountpoint;
+    use crate::{filesystems::MkfsFileSystemType, mkfs, mountpoint, testutils::repart};
 
     #[functional_test(feature = "helpers")]
     fn test_mount_and_umount() {
-        // CDROM device to be mounted
-        let device = Path::new("/dev/sr0");
-        // Mount point
-        let mount_point = Path::new("/mnt/cdrom");
+        let loopback = repart::make_loopback_filesystem(MkfsFileSystemType::Vfat);
+        let device = loopback.path();
 
+        // Mount point
+        let mount_point = Path::new("/mnt/tmpmount");
         if mountpoint::check_is_mountpoint(mount_point).unwrap() {
             umount(mount_point, false).unwrap();
         }
@@ -117,7 +117,7 @@ mod functional_test {
         fs::create_dir_all(mount_point).unwrap();
 
         // Test mount_file function
-        mount(device, mount_point, MountFileSystemType::Iso9660, &[]).unwrap();
+        mount(device, mount_point, MountFileSystemType::Vfat, &[]).unwrap();
 
         // If device is a file, fetch the name of loop device that was mounted at mount point;
         // otherwise, use the device path itself
@@ -145,6 +145,10 @@ mod functional_test {
 
     #[functional_test(feature = "helpers")]
     fn test_recursive_unmount() {
+        let loopback = NamedTempFile::new().unwrap();
+        loopback.as_file().set_len(1024 * 1024).unwrap();
+        mkfs::run(loopback.path(), MkfsFileSystemType::Ext4).unwrap();
+
         let tmp_mount = Path::new("/mnt/tmpfs");
         fs::create_dir_all(tmp_mount).unwrap();
         mount(
@@ -158,7 +162,7 @@ mod functional_test {
         let cdrom_mount = tmp_mount.join("cdrom");
         fs::create_dir_all(&cdrom_mount).unwrap();
         mount(
-            Path::new("/dev/sr0"),
+            loopback.path(),
             &cdrom_mount,
             MountFileSystemType::Auto,
             &[],

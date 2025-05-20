@@ -72,23 +72,6 @@ steps:
 
       - bash: |
           set -eux
-          echo "Dump the VM before boot order change."
-          until sudo virsh dumpxml virtdeploy-vm-0; do 
-              sudo virsh list
-              sleep 0.1
-          done
-          echo "Changing the boot order of the VM to boot from sda."
-          python3 $(Build.SourcesDirectory)/.pipelines/templates/stages/testing_vm/update-vm-bootorder.py
-          echo "Dump the VM after boot order change."
-          until sudo virsh dumpxml virtdeploy-vm-0; do 
-              sudo virsh list
-              sleep 0.1
-          done
-        displayName: "Change boot order"
-        condition: and(succeeded(),eq(variables['TEST_REBUILD_RAID'], 'True'))
-
-      - bash: |
-          set -eux
 
           # Name of the domain
           DOMAIN_NAME="virtdeploy-vm-0"

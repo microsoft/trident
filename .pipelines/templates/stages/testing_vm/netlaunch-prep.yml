@@ -58,6 +58,8 @@ steps:
           python3-bcrypt \
           python3-jinja2 \
           zstd
+
+      sudo pip3 install virt-firmware
     displayName: Install virt-deploy dependencies
     retryCountOnTaskFailure: 3
 
@@ -71,4 +73,23 @@ steps:
       cat << EOF > ~/.config/libvirt/libvirt.conf
       uri_default = "qemu:///system"
       EOF
+
+      sudo mkdir -p /etc/systemd/system/docker.socket.d
+      echo "[Socket]
+      SocketMode=0666" | sudo tee /etc/systemd/system/docker.socket.d/mode.conf > /dev/null
+
+      sudo mkdir -p /etc/systemd/system/libvirtd.socket.d
+      echo "[Socket]
+      SocketMode=0666" | sudo tee /etc/systemd/system/libvirtd.socket.d/mode.conf > /dev/null
+
+      sudo systemctl daemon-reload
+
+      sudo systemctl stop docker.service
+      sudo systemctl restart docker.socket
+      sudo systemctl start docker.service
+
+      sudo systemctl stop libvirtd.service
+      sudo systemctl restart libvirtd.socket
+      sudo systemctl start libvirtd.service
+
     displayName: "Configure virt-deploy"

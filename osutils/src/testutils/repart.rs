@@ -3,8 +3,11 @@ use std::{ffi::OsString, path::Path};
 use anyhow::Error;
 
 use sysdefs::partition_types::DiscoverablePartitionType;
+use tempfile::NamedTempFile;
 
-use crate::{dependencies::Dependency, repart::RepartPartitionEntry};
+use crate::{
+    dependencies::Dependency, filesystems::MkfsFileSystemType, mkfs, repart::RepartPartitionEntry,
+};
 
 pub const DISK_SIZE: u64 = 16 * 1024 * 1024 * 1024; // 16 GiB
 pub const PART1_SIZE: u64 = 50 * 1024 * 1024; // 50 MiB
@@ -15,8 +18,6 @@ pub const SIZE_100MIB: u64 = 100 * 1024 * 1024;
 
 pub const OS_DISK_DEVICE_PATH: &str = "/dev/sda";
 pub const TEST_DISK_DEVICE_PATH: &str = "/dev/sdb";
-pub const CDROM_DEVICE_PATH: &str = "/dev/sr0";
-pub const CDROM_MOUNT_PATH: &str = "/mnt/cdrom";
 
 pub fn generate_partition_definition_esp_generic() -> Vec<RepartPartitionEntry> {
     vec![
@@ -190,4 +191,12 @@ pub fn clear_disk(disk_path: impl AsRef<Path>) -> Result<(), Error> {
         .arg("count=1")
         .run_and_check()?;
     Ok(())
+}
+
+/// Generate a temporary file with the given filesystem type on it.
+pub fn make_loopback_filesystem(filesystem_type: MkfsFileSystemType) -> NamedTempFile {
+    let loopback = NamedTempFile::new().unwrap();
+    loopback.as_file().set_len(5 * 1024 * 1024).unwrap();
+    mkfs::run(loopback.path(), filesystem_type).unwrap();
+    loopback
 }

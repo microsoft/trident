@@ -8,6 +8,7 @@ import (
 	"tridenttools/pkg/netfinder"
 	"tridenttools/pkg/phonehome"
 	"tridenttools/pkg/serial"
+	"tridenttools/storm/utils"
 
 	"bytes"
 	"context"
@@ -27,6 +28,7 @@ import (
 	"gopkg.in/yaml.v2"
 
 	bmclib "github.com/bmc-toolbox/bmclib/v2"
+	"github.com/google/uuid"
 )
 
 // `MagicString` is used to locate placeholder files in the initrd. Each placeholder file will be
@@ -41,7 +43,7 @@ type NetLaunchConfig struct {
 	Netlaunch struct {
 		AnnounceIp   *string
 		AnnouncePort *uint16
-		Bmc          struct {
+		Bmc          *struct {
 			Ip            string
 			Port          *string
 			Username      string
@@ -289,65 +291,69 @@ var rootCmd = &cobra.Command{
 		// Start the HTTP server
 		go server.Serve(listen)
 		log.WithField("address", listen.Addr().String()).Info("Listening...")
-
-		if config.Netlaunch.Bmc.SerialOverSsh != nil {
-			serial, err := serial.NewSerialOverSshSession(serial.SerialOverSSHSettings{
-				Host:     config.Netlaunch.Bmc.Ip,
-				Port:     config.Netlaunch.Bmc.SerialOverSsh.SshPort,
-				Username: config.Netlaunch.Bmc.Username,
-				Password: config.Netlaunch.Bmc.Password,
-				ComPort:  config.Netlaunch.Bmc.SerialOverSsh.ComPort,
-				Output:   config.Netlaunch.Bmc.SerialOverSsh.Output,
-			})
-			if err != nil {
-				log.WithError(err).Fatalf("Failed to open serial over SSH session")
-			}
-			defer serial.Close()
-		}
-
-		// Deploy ISO to BMC
-
-		// Default to port 443
-		port := "443"
-		if config.Netlaunch.Bmc.Port != nil {
-			port = *config.Netlaunch.Bmc.Port
-		}
-
-		client := bmclib.NewClient(
-			config.Netlaunch.Bmc.Ip,
-			config.Netlaunch.Bmc.Username,
-			config.Netlaunch.Bmc.Password,
-			bmclib.WithRedfishPort(port),
-		)
-
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		defer cancel()
-
-		log.Info("Connecting to BMC")
-		client.Registry.Drivers = client.Registry.For("gofish")
-		if err := client.Open(context.Background()); err != nil {
-			log.WithError(err).Fatalf("failed to open connection to BMC")
-		}
-
-		log.Info("Shutting down machine")
-		if _, err = client.SetPowerState(ctx, "off"); err != nil {
-			log.WithError(err).Fatalf("failed to turn off machine")
-		}
-
 		iso_location := fmt.Sprintf("http://%s/provision.iso", announceAddress)
-		log.WithField("url", iso_location).Info("Setting virtual media to ISO")
-		if _, err = client.SetVirtualMedia(ctx, string(redfish.CDMediaType), iso_location); err != nil {
-			log.WithError(err).Fatalf("failed to set virtual media")
-		}
 
-		log.Info("Setting boot media")
-		if _, err = client.SetBootDevice(ctx, "cdrom", false, true); err != nil {
-			log.WithError(err).Fatalf("failed to set boot media")
-		}
+		if config.Netlaunch.LocalVmUuid != nil {
+			startLocalVm(*config.Netlaunch.LocalVmUuid, iso_location)
+		} else {
+			if config.Netlaunch.Bmc.SerialOverSsh != nil {
+				serial, err := serial.NewSerialOverSshSession(serial.SerialOverSSHSettings{
+					Host:     config.Netlaunch.Bmc.Ip,
+					Port:     config.Netlaunch.Bmc.SerialOverSsh.SshPort,
+					Username: config.Netlaunch.Bmc.Username,
+					Password: config.Netlaunch.Bmc.Password,
+					ComPort:  config.Netlaunch.Bmc.SerialOverSsh.ComPort,
+					Output:   config.Netlaunch.Bmc.SerialOverSsh.Output,
+				})
+				if err != nil {
+					log.WithError(err).Fatalf("Failed to open serial over SSH session")
+				}
+				defer serial.Close()
+			}
 
-		log.Info("Turning on machine")
-		if _, err = client.SetPowerState(ctx, "on"); err != nil {
-			log.WithError(err).Fatalf("failed to turn on machine")
+			// Deploy ISO to BMC
+
+			// Default to port 443
+			port := "443"
+			if config.Netlaunch.Bmc.Port != nil {
+				port = *config.Netlaunch.Bmc.Port
+			}
+
+			client := bmclib.NewClient(
+				config.Netlaunch.Bmc.Ip,
+				config.Netlaunch.Bmc.Username,
+				config.Netlaunch.Bmc.Password,
+				bmclib.WithRedfishPort(port),
+			)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+
+			log.Info("Connecting to BMC")
+			client.Registry.Drivers = client.Registry.For("gofish")
+			if err := client.Open(context.Background()); err != nil {
+				log.WithError(err).Fatalf("failed to open connection to BMC")
+			}
+
+			log.Info("Shutting down machine")
+			if _, err = client.SetPowerState(ctx, "off"); err != nil {
+				log.WithError(err).Fatalf("failed to turn off machine")
+			}
+
+			log.WithField("url", iso_location).Info("Setting virtual media to ISO")
+			if _, err = client.SetVirtualMedia(ctx, string(redfish.CDMediaType), iso_location); err != nil {
+				log.WithError(err).Fatalf("failed to set virtual media")
+			}
+
+			log.Info("Setting boot media")
+			if _, err = client.SetBootDevice(ctx, "cdrom", false, true); err != nil {
+				log.WithError(err).Fatalf("failed to set boot media")
+			}
+
+			log.Info("Turning on machine")
+			if _, err = client.SetPowerState(ctx, "on"); err != nil {
+				log.WithError(err).Fatalf("failed to turn on machine")
+			}
 		}
 
 		log.Info("ISO deployed!")
@@ -366,6 +372,30 @@ var rootCmd = &cobra.Command{
 
 		os.Exit(exitCode)
 	},
+}
+
+func startLocalVm(localVmUuidStr string, isoLocation string) {
+	log.Info("Using local VM")
+
+	// TODO: Parse the UUID directly when reading the config file
+	vmUuid, err := uuid.Parse(localVmUuidStr)
+	if err != nil {
+		log.WithError(err).Fatalf("failed to parse LocalVmUuid as UUID")
+	}
+
+	vm, err := utils.InitializeVm(vmUuid)
+	if err != nil {
+		log.WithError(err).Fatalf("failed to initialize VM")
+	}
+	defer vm.Disconnect()
+
+	if err = vm.SetVmHttpBootUri(isoLocation); err != nil {
+		log.WithError(err).Fatalf("failed to set VM HTTP boot URI")
+	}
+
+	if err = vm.Start(); err != nil {
+		log.WithError(err).Fatalf("failed to start VM")
+	}
 }
 
 func init() {

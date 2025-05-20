@@ -115,8 +115,8 @@ stages:
 
           - bash: |
               set -eux
-              sg libvirt "./virt-deploy create --mem 12 --disks 32,32"
-              sg libvirt "./virt-deploy run"
+              ./virt-deploy create --mem 12 --disks 32,32
+              ./virt-deploy run
             workingDirectory: $(argusToolkitSourceDirectory)
             displayName: "Creating virt-deploy VM"
 

@@ -23,9 +23,11 @@ require (
 )
 
 require (
+	github.com/digitalocean/go-libvirt v0.0.0-20250512231903-57024326652b // indirect
 	github.com/kr/fs v0.1.0 // indirect
 	github.com/vishvananda/netns v0.0.4 // indirect
-	golang.org/x/term v0.31.0 // indirect
+	golang.org/x/term v0.32.0 // indirect
+	libvirt.org/libvirt-go-xml v7.4.0+incompatible // indirect
 )
 
 require (
@@ -58,11 +60,11 @@ require (
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/vishvananda/netlink v1.3.0
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/crypto v0.37.0
+	golang.org/x/crypto v0.38.0
 	golang.org/x/exp v0.0.0-20240823005443-9b4947da3948
 	golang.org/x/net v0.39.0 // indirect
-	golang.org/x/sys v0.32.0 // indirect
-	golang.org/x/text v0.24.0 // indirect
+	golang.org/x/sys v0.33.0 // indirect
+	golang.org/x/text v0.25.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1
 )
