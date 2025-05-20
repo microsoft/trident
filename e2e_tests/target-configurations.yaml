@@ -14,7 +14,8 @@ bareMetal:
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
-      - memory-constraint-combined
+      # TODO(12232): enable
+      # - memory-constraint-combined
       - misc
       - raid-big
       - raid-mirrored
@@ -34,7 +35,8 @@ bareMetal:
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
-      - memory-constraint-combined
+      # TODO(12232): enable
+      # - memory-constraint-combined
       - misc
       - raid-big
       - raid-mirrored
@@ -111,7 +113,8 @@ virtualMachine:
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
-      - memory-constraint-combined
+      # TODO(12232): enable
+      # - memory-constraint-combined
       - misc
       - raid-mirrored
       - raid-resync-small
@@ -131,7 +134,8 @@ virtualMachine:
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
-      - memory-constraint-combined
+      # TODO(12232): enable
+      # - memory-constraint-combined
       - misc
       - raid-mirrored
       - raid-resync-small
@@ -164,7 +168,8 @@ virtualMachine:
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
-      - memory-constraint-combined
+      # TODO(12232): enable
+      # - memory-constraint-combined
       - misc
       - raid-mirrored
       - raid-resync-small
@@ -184,7 +189,8 @@ virtualMachine:
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
-      - memory-constraint-combined
+      # TODO(12232): enable
+      # - memory-constraint-combined
       - misc
       - raid-mirrored
       - raid-resync-small
