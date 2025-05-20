@@ -10,78 +10,80 @@ storage:
         - id: esp
           type: esp
           size: 1G
-        - id: boot
+        - id: boot-a
+          type: xbootldr
           size: 200M
-        - id: root-data-1
+        - id: boot-b
+          type: xbootldr
+          size: 200M
+        - id: root-data-a
+          type: root
           size: 4G
-        - id: root-hash-1
+        - id: root-data-b
+          type: root
+          size: 4G
+        - id: root-hash-a
+          type: root-verity
           size: 1G
-        - id: trident
-          size: 500M
-        - id: trident-overlay-1
-          size: 100M
+        - id: root-hash-b
+          type: root-verity
+          size: 1G
         - id: home
+          type: linux-generic
           size: 100M
+        - id: trident-overlay-a
+          type: linux-generic
+          size: 100M
+        - id: trident-overlay-b
+          type: linux-generic
+          size: 100M
+        - id: trident
+          type: linux-generic
+          size: 500M
         - id: var
-          size: 1G
-        - id: run
+          type: linux-generic
           size: 1G
     - id: disk2
       device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
       partitionTableType: gpt
-      partitions:
-        - id: root-data-2
-          size: 4G
-        - id: root-hash-2
-          size: 1G
-        - id: trident-overlay-2
-          size: 100M
-  raid:
-    software:
+      partitions: []
+  abUpdate:
+    volumePairs:
+      - id: boot
+        volumeAId: boot-a
+        volumeBId: boot-b
       - id: root-data
-        name: root-data
-        level: raid1
-        devices:
-          - root-data-1
-          - root-data-2
+        volumeAId: root-data-a
+        volumeBId: root-data-b
       - id: root-hash
-        name: root-hash
-        level: raid1
-        devices:
-          - root-hash-1
-          - root-hash-2
+        volumeAId: root-hash-a
+        volumeBId: root-hash-b
       - id: trident-overlay
-        name: trident-overlay
-        level: raid1
-        devices:
-          - trident-overlay-1
-          - trident-overlay-2
+        volumeAId: trident-overlay-a
+        volumeBId: trident-overlay-b
   verity:
     - id: root
       name: root
       dataDeviceId: root-data
       hashDeviceId: root-hash
   filesystems:
-    - deviceId: trident-overlay
-      source: new
-      mountPoint: /var/lib/trident-overlay
     - deviceId: home
       source: new
       mountPoint: /home
-    - deviceId: var
-      mountPoint: /var
+    - deviceId: esp
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+    - deviceId: trident-overlay
+      source: new
+      mountPoint: /var/lib/trident-overlay
     - deviceId: boot
       mountPoint: /boot
     - deviceId: trident
       source: new
       mountPoint: /var/lib/trident
-    - deviceId: run
-      source: new
-      mountPoint: /run
-    - deviceId: esp
-      mountPoint:
-        path: /boot/efi
-        options: umask=0077
+    - deviceId: var
+      mountPoint: /var
     - deviceId: root
       mountPoint:
         path: /

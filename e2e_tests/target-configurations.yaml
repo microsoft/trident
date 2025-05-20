@@ -2,240 +2,286 @@ bareMetal:
   host:
     daily:
       - base
-      - combined
+      # TODO(12232): enable
+      # - combined
       - encrypted-partition
       - split
       - usr-verity
     validation:
       - base
-      - combined
-      - raid-big
-      - raid-resync-small
+      # TODO(12232): enable
+      # - combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
       - memory-constraint-combined
       - misc
+      - raid-big
       - raid-mirrored
-      - rerun
+      - raid-resync-small
+      # TODO(12232): enable
+      # - rerun
+      - root-verity
       - simple
       - split
       - usr-verity
-      - verity
-      - verity-raid
+      # TODO(12232): enable
+      # - usr-verity-raid
     weekly:
       - base
-      - combined
-      - raid-big
-      - raid-resync-small
+      # TODO(12232): enable
+      # - combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
       - memory-constraint-combined
       - misc
+      - raid-big
       - raid-mirrored
-      - rerun
+      - raid-resync-small
+      # TODO(12232): enable
+      # - rerun
+      - root-verity
       - simple
       - split
       - usr-verity
-      - verity
-      - verity-raid
+      # TODO(12232): enable
+      # - usr-verity-raid
   container:
     daily:
       - base
-      - combined
+      # TODO(12232): enable
+      # - combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
       - misc
       - raid-mirrored
-      - raid-small
       - raid-resync-small
-      - rerun
+      - raid-small
+      # TODO(12232): enable
+      # - rerun
+      - root-verity
       - simple
       - usr-verity
-      - verity
-      - verity-raid
+      # TODO(12232): enable
+      # - usr-verity-raid
     validation:
       - base
-      - combined
+      # TODO(12232): enable
+      # - combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
       - misc
       - raid-mirrored
-      - raid-small
       - raid-resync-small
-      - rerun
+      - raid-small
+      # TODO(12232): enable
+      # - rerun
+      - root-verity
       - simple
       - usr-verity
-      - verity
-      - verity-raid
+      # TODO(12232): enable
+      # - usr-verity-raid
     weekly:
       - base
-      - combined
+      # TODO(12232): enable
+      # - combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
       - misc
       - raid-mirrored
-      - raid-small
       - raid-resync-small
-      - rerun
+      - raid-small
+      # TODO(12232): enable
+      # - rerun
+      - root-verity
       - simple
       - usr-verity
-      - verity
-      - verity-raid
+      # TODO(12232): enable
+      # - usr-verity-raid
 virtualMachine:
   host:
     daily:
       - base
-      - combined
+      # TODO(12232): enable
+      # - combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
       - memory-constraint-combined
-      - raid-mirrored
       - misc
-      - raid-small
+      - raid-mirrored
       - raid-resync-small
-      - rerun
+      - raid-small
+      # TODO(12232): enable
+      # - rerun
+      - root-verity
       - simple
       - split
       - usr-verity
-      - verity
-      - verity-raid
+      # TODO(12232): enable
+      # - usr-verity-raid
     post_merge:
       - base
-      - combined
+      # TODO(12232): enable
+      # - combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
       - memory-constraint-combined
-      - raid-mirrored
       - misc
-      - raid-small
+      - raid-mirrored
       - raid-resync-small
-      - rerun
+      - raid-small
+      # TODO(12232): enable
+      # - rerun
+      - root-verity
       - simple
       - split
       - usr-verity
-      - verity
-      - verity-raid
+      # TODO(12232): enable
+      # - usr-verity-raid
     pullrequest:
       - base
-      - combined
+      # TODO(12232): enable
+      # - combined
       - raid-mirrored
       - raid-resync-small
-      - rerun
+      # TODO(12232): enable
+      # - rerun
       - simple
       - split
       - usr-verity
-      - verity-raid
+      # TODO(12232): enable
+      # - usr-verity-raid
     validation:
       - base
-      - combined
+      # TODO(12232): enable
+      # - combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
       - memory-constraint-combined
       - misc
       - raid-mirrored
-      - raid-small
       - raid-resync-small
-      - rerun
+      - raid-small
+      # TODO(12232): enable
+      # - rerun
+      - root-verity
       - simple
       - split
       - usr-verity
-      - verity
-      - verity-raid
+      # TODO(12232): enable
+      # - usr-verity-raid
     weekly:
       - base
-      - combined
+      # TODO(12232): enable
+      # - combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
       - memory-constraint-combined
       - misc
       - raid-mirrored
-      - raid-small
       - raid-resync-small
-      - rerun
+      - raid-small
+      # TODO(12232): enable
+      # - rerun
+      - root-verity
       - simple
       - split
       - usr-verity
-      - verity
-      - verity-raid
+      # TODO(12232): enable
+      # - usr-verity-raid
   container:
     daily:
       - base
-      - combined
+      # TODO(12232): enable
+      # - combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
       - misc
       - raid-mirrored
-      - raid-small
       - raid-resync-small
-      - rerun
+      - raid-small
+      # TODO(12232): enable
+      # - rerun
+      - root-verity
       - simple
       - usr-verity
-      - verity
-      - verity-raid
+      # TODO(12232): enable
+      # - usr-verity-raid
     post_merge:
       - base
-      - combined
+      # TODO(12232): enable
+      # - combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
       - misc
       - raid-mirrored
-      - raid-small
       - raid-resync-small
-      - rerun
+      - raid-small
+      # TODO(12232): enable
+      # - rerun
+      - root-verity
       - simple
       - usr-verity
-      - verity
-      - verity-raid
+      # TODO(12232): enable
+      # - usr-verity-raid
     pullrequest:
       - base
-      - combined
+      # TODO(12232): enable
+      # - combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
       - raid-mirrored
       - raid-resync-small
-      - rerun
-      - usr-verity
+      # TODO(12232): enable
+      # - rerun
       - simple
-      - verity-raid
+      - usr-verity
+      # TODO(12232): enable
+      # - usr-verity-raid
     validation:
       - base
-      - combined
+      # TODO(12232): enable
+      # - combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
       - misc
       - raid-mirrored
-      - raid-small
       - raid-resync-small
-      - rerun
+      - raid-small
+      # TODO(12232): enable
+      # - rerun
+      - root-verity
       - simple
       - usr-verity
-      - verity
-      - verity-raid
+      # TODO(12232): enable
+      # - usr-verity-raid
     weekly:
       - base
-      - combined
+      # TODO(12232): enable
+      # - combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
       - misc
       - raid-mirrored
-      - raid-small
       - raid-resync-small
-      - rerun
+      - raid-small
+      # TODO(12232): enable
+      # - rerun
+      - root-verity
       - simple
       - usr-verity
-      - verity
-      - verity-raid
+      # TODO(12232): enable
+      # - usr-verity-raid

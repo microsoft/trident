@@ -12,20 +12,47 @@ storage:
       partitionTableType: gpt
       partitions:
         - id: esp
-          size: 50M
-          type: esp
-        - id: boot
-          size: 250M
-          type: xbootldr
-        - id: usr-data
-          size: 5G
-          type: usr
-        - id: usr-hash
           size: 1G
-          type: usr-verity
-        - id: root
+          type: esp
+        - id: boot-a
+          size: 250M
+        - id: boot-b
+          size: 250M
+        - id: root-a
           size: 5G
           type: root
+        - id: root-b
+          size: 5G
+          type: root
+        - id: usr-data-a
+          size: 5G
+          type: usr
+        - id: usr-data-b
+          size: 5G
+          type: usr
+        - id: usr-hash-a
+          size: 1G
+          type: usr-verity
+        - id: usr-hash-b
+          size: 1G
+          type: usr-verity
+        - id: trident
+          type: linux-generic
+          size: 1G
+  abUpdate:
+    volumePairs:
+      - id: boot
+        volumeAId: boot-a
+        volumeBId: boot-b
+      - id: root
+        volumeAId: root-a
+        volumeBId: root-b
+      - id: usr-data
+        volumeAId: usr-data-a
+        volumeBId: usr-data-b
+      - id: usr-hash
+        volumeAId: usr-hash-a
+        volumeBId: usr-hash-b
   verity:
     - id: usr
       name: usr
@@ -44,6 +71,9 @@ storage:
       mountPoint:
         path: /usr
         options: ro
+    - deviceId: trident
+      source: new
+      mountPoint: /var/lib/trident
 os:
   network:
     version: 2

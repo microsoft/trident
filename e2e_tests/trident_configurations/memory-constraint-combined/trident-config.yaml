@@ -1,5 +1,7 @@
+internalParams:
+  uki: true
 image:
-  url: http://NETLAUNCH_HOST_ADDRESS/files/verity.cosi
+  url: http://NETLAUNCH_HOST_ADDRESS/files/usrverity.cosi
   sha384: ignored
 storage:
   disks:
@@ -198,14 +200,6 @@ scripts:
           touch "/run/already-run"
           exit 1
         fi
-  postConfigure:
-    - name: overlay
-      runOn:
-        - clean-install
-        - ab-update
-      content: |
-        mkdir -p /var/lib/trident-overlay/etc-rw/upper
-        mkdir -p /var/lib/trident-overlay/etc-rw/work
 os:
   selinux:
     mode: permissive

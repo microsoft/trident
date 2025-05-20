@@ -1,5 +1,7 @@
+internalParams:
+  uki: true
 image:
-  url: http://NETLAUNCH_HOST_ADDRESS/files/verity.cosi
+  url: http://NETLAUNCH_HOST_ADDRESS/files/usrverity.cosi
   sha384: ignored
 storage:
   disks:
@@ -16,30 +18,38 @@ storage:
         - id: boot-b
           type: xbootldr
           size: 200M
-        - id: root-data-a-1
-          type: root
+        - id: root-a-1
           size: 4G
-        - id: root-data-b-1
-          type: root
+        - id: root-b-1
           size: 4G
-        - id: root-data-a-2
-          type: root
+        - id: root-a-2
           size: 4G
-        - id: root-data-b-2
-          type: root
+        - id: root-b-2
           size: 4G
-        - id: root-hash-a-1
+        - id: usr-data-a-1
+          type: root
+          size: 2G
+        - id: usr-data-b-1
+          type: root
+          size: 2G
+        - id: usr-data-a-2
+          type: root
+          size: 2G
+        - id: usr-data-b-2
+          type: root
+          size: 2G
+        - id: usr-hash-a-1
           type: root-verity
-          size: 1G
-        - id: root-hash-b-1
+          size: 256M
+        - id: usr-hash-b-1
           type: root-verity
-          size: 1G
-        - id: root-hash-a-2
+          size: 256M
+        - id: usr-hash-a-2
           type: root-verity
-          size: 1G
-        - id: root-hash-b-2
+          size: 256M
+        - id: usr-hash-b-2
           type: root-verity
-          size: 1G
+          size: 256M
         - id: web-a-e-1
           type: linux-generic
           size: 1G
@@ -52,21 +62,6 @@ storage:
         - id: web-b-e-2
           type: linux-generic
           size: 1G
-        - id: home
-          type: linux-generic
-          size: 100M
-        - id: trident-overlay-a-1
-          type: linux-generic
-          size: 100M
-        - id: trident-overlay-b-1
-          type: linux-generic
-          size: 100M
-        - id: trident-overlay-a-2
-          type: linux-generic
-          size: 100M
-        - id: trident-overlay-b-2
-          type: linux-generic
-          size: 100M
         - id: trident
           type: linux-generic
           size: 500M
@@ -87,6 +82,18 @@ storage:
         deviceId: web-b-e
   raid:
     software:
+      - id: root-a
+        name: root-a
+        level: raid1
+        devices:
+          - root-a-1
+          - root-a-2
+      - id: root-b
+        name: root-b
+        level: raid1
+        devices:
+          - root-b-1
+          - root-b-2
       - id: web-a-e
         name: web-a-e
         level: raid1
@@ -99,103 +106,72 @@ storage:
         devices:
           - web-b-e-1
           - web-b-e-2
-      - id: root-data-a
-        name: root-data-a
+      - id: usr-data-a
+        name: usr-data-a
         level: raid1
         devices:
-          - root-data-a-1
-          - root-data-a-2
-      - id: root-data-b
-        name: root-data-b
+          - usr-data-a-1
+          - usr-data-a-2
+      - id: usr-data-b
+        name: usr-data-b
         level: raid1
         devices:
-          - root-data-b-1
-          - root-data-b-2
-      - id: root-hash-a
-        name: root-hash-a
+          - usr-data-b-1
+          - usr-data-b-2
+      - id: usr-hash-a
+        name: usr-hash-a
         level: raid1
         devices:
-          - root-hash-a-1
-          - root-hash-a-2
-      - id: root-hash-b
-        name: root-hash-b
+          - usr-hash-a-1
+          - usr-hash-a-2
+      - id: usr-hash-b
+        name: usr-hash-b
         level: raid1
         devices:
-          - root-hash-b-1
-          - root-hash-b-2
-      - id: trident-overlay-a
-        name: trident-overlay-a
-        level: raid1
-        devices:
-          - trident-overlay-a-1
-          - trident-overlay-a-2
-      - id: trident-overlay-b
-        name: trident-overlay-b
-        level: raid1
-        devices:
-          - trident-overlay-b-1
-          - trident-overlay-b-2
+          - usr-hash-b-1
+          - usr-hash-b-2
   abUpdate:
     volumePairs:
       - id: boot
         volumeAId: boot-a
         volumeBId: boot-b
-      - id: root-data
-        volumeAId: root-data-a
-        volumeBId: root-data-b
-      - id: root-hash
-        volumeAId: root-hash-a
-        volumeBId: root-hash-b
-      - id: trident-overlay
-        volumeAId: trident-overlay-a
-        volumeBId: trident-overlay-b
+      - id: root
+        volumeAId: root-a
+        volumeBId: root-b
+      - id: usr-data
+        volumeAId: usr-data-a
+        volumeBId: usr-data-b
+      - id: usr-hash
+        volumeAId: usr-hash-a
+        volumeBId: usr-hash-b
       - id: web
         volumeAId: web-a
         volumeBId: web-b
   verity:
-    - id: root
-      name: root
-      dataDeviceId: root-data
-      hashDeviceId: root-hash
+    - id: usr
+      name: usr
+      dataDeviceId: usr-data
+      hashDeviceId: usr-hash
   filesystems:
-    - deviceId: web
-      source: new
-      mountPoint:
-        path: /web
-        options: defaults
-    - deviceId: home
-      source: new
-      mountPoint: /home
     - deviceId: esp
       mountPoint:
         path: /boot/efi
         options: umask=0077
-    - deviceId: trident-overlay
-      source: new
-      mountPoint: /var/lib/trident-overlay
     - deviceId: boot
       mountPoint: /boot
+    - deviceId: root
+      mountPoint: /
+    - deviceId: usr
+      mountPoint:
+        path: /usr
+        options: defaults,ro
+    - deviceId: web
+      source: new
+      mountPoint: /web
     - deviceId: trident
       source: new
       mountPoint: /var/lib/trident
-    - deviceId: var
-      mountPoint: /var
-    - deviceId: root
-      mountPoint:
-        path: /
-        options: defaults,ro
-scripts:
-  postConfigure:
-    - name: overlay
-      runOn:
-        - clean-install
-        - ab-update
-      content: |
-        mkdir -p /var/lib/trident-overlay/etc-rw/upper
-        mkdir -p /var/lib/trident-overlay/etc-rw/work
 os:
-  selinux:
-    mode: permissive
   network:
     version: 2
     ethernets:

@@ -1,0 +1,97 @@
+internalParams:
+  uki: true
+image:
+  url: http://NETLAUNCH_HOST_ADDRESS/files/usrverity.cosi
+  sha384: ignored
+storage:
+  disks:
+    - id: os
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
+      partitionTableType: gpt
+      partitions:
+        - id: esp
+          type: esp
+          size: 1G
+        - id: boot
+          size: 200M
+        - id: root-1
+          size: 4G
+        - id: usr-data-1
+          size: 2G
+        - id: usr-hash-1
+          size: 1G
+        - id: trident-1
+          size: 128M
+    - id: disk2
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
+      partitionTableType: gpt
+      partitions:
+        - id: root-2
+          size: 4G
+        - id: usr-data-2
+          size: 2G
+        - id: usr-hash-2
+          size: 1G
+        - id: trident-2
+          size: 128M
+  raid:
+    software:
+      - id: root
+        name: root
+        level: raid1
+        devices:
+          - root-1
+          - root-2
+      - id: usr-data
+        name: usr-data
+        level: raid1
+        devices:
+          - usr-data-1
+          - usr-data-2
+      - id: usr-hash
+        name: usr-hash
+        level: raid1
+        devices:
+          - usr-hash-1
+          - usr-hash-2
+      - id: trident
+        name: trident
+        level: raid1
+        devices:
+          - trident-1
+          - trident-2
+  verity:
+    - id: usr
+      name: usr
+      dataDeviceId: usr-data
+      hashDeviceId: usr-hash
+  filesystems:
+    - deviceId: esp
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+    - deviceId: boot
+      mountPoint: /boot
+    - deviceId: root
+      mountPoint: /
+    - deviceId: usr
+      mountPoint:
+        path: /usr
+        options: defaults,ro
+    - deviceId: trident
+      source: new
+      mountPoint: /var/lib/trident
+os:
+  network:
+    version: 2
+    ethernets:
+      vmeths:
+        match:
+          name: enp*
+        dhcp4: true
+  users:
+    - name: testing-user
+      sshPublicKeys: []
+      secondaryGroups:
+        - wheel
+      sshMode: key-only

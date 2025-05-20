@@ -261,7 +261,7 @@ pub enum InvalidInputError {
 
     #[error(
         "Filesystem at '{mount_point}' in OS Image is not being used by the provided Host \
-        Configuration. This could mean that the Host COnfiguration is missing a filesystem \
+        Configuration. This could mean that the Host Configuration is missing a filesystem \
         definition."
     )]
     UnusedOsImageFilesystem { mount_point: String },
