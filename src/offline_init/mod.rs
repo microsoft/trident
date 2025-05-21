@@ -75,7 +75,10 @@ struct PrismVerity {
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PrismStorage {
+    #[serde(default)]
     disks: Vec<PrismDisk>,
+
+    #[serde(default)]
     filesystems: Vec<PrismFileSystem>,
 
     #[serde(default)]
@@ -110,7 +113,7 @@ fn generate_host_status(
         .iter()
         .rev()
         .map(|entry| entry.config.storage.as_ref())
-        .find(|storage| storage.is_some())
+        .find(|storage| storage.is_some_and(|s| !s.disks.is_empty()))
         .flatten()
     else {
         return Err(TridentError::new(InvalidInputError::ParsePrismHistory))
