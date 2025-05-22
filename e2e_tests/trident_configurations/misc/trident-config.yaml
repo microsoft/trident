@@ -59,10 +59,7 @@ os:
         "option2": "value2"
   services:
     enable:
-      - sshd
       - cron
-    disable:
-      - sshd
   kernelCommandLine:
     extraCommandLine:
       - param1=value
