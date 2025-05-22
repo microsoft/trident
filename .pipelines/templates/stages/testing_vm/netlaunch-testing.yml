@@ -116,7 +116,6 @@ stages:
           - bash: |
               set -eux
               ./virt-deploy create --mem 12 --disks 32,32
-              ./virt-deploy run
             workingDirectory: $(argusToolkitSourceDirectory)
             displayName: "Creating virt-deploy VM"
 

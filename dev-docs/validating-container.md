@@ -100,7 +100,6 @@ validating an image running Trident from a container.
 
    ```bash
    ./virt-deploy create --mem 11
-   ./virt-deploy run
    ```
 
    Note that at least 11GB of RAM is necessary to run Trident in a container,

@@ -24,7 +24,6 @@ from .ssh_node import SshNode
 def create_vm(create_params):
     """Creates a VM with the given parameters, using virt-deploy."""
     argus_runcmd([ARGUS_REPO_DIR_PATH / "virt-deploy", "create"] + create_params)
-    argus_runcmd([ARGUS_REPO_DIR_PATH / "virt-deploy", "run"])
 
 
 def disable_phonehome(ssh_node: SshNode):
