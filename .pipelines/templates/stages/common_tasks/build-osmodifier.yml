@@ -6,7 +6,7 @@ steps:
         sudo tdnf remove golang -y
         sudo tdnf install msft-golang -y
       else
-        echo "Go Update not needed in ubuntu 22.04"
+        sudo snap install --classic go
       fi
 
       # Verify installation
