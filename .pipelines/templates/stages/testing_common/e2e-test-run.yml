@@ -314,3 +314,4 @@ steps:
       tridentSourceDirectory: $(Build.SourcesDirectory)
       tridentConfigPath: ${{ parameters.tridentConfigPath }}
       deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
+      tridentConfigurationName: ${{ parameters.tridentConfigurationName }}

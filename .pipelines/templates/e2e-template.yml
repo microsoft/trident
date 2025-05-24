@@ -165,10 +165,11 @@ stages:
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
 
-  # Build Trident test image for usr-verity (host)
+  # Build Trident test image for usr-verity (container)
   - template: stages/build_image/build-runtime.yml
     parameters:
       imageName: trident-container-usrverity-testimage
+      runtimeEnv: "container"
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
       baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
       micBuildType: ${{ parameters.micBuildType }}

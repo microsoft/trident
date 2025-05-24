@@ -2,36 +2,30 @@ bareMetal:
   host:
     daily:
       - base
-      # TODO(12232): enable
-      # - combined
+      # TODO(12276) re-enable: #- combined
       - encrypted-partition
       - split
       - usr-verity
     validation:
       - base
-      # TODO(12232): enable
-      # - combined
+      # TODO(12276) re-enable: #- combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
-      # TODO(12232): enable
-      # - memory-constraint-combined
+      # TODO(12276) re-enable: #- memory-constraint-combined
       - misc
       - raid-big
       - raid-mirrored
       - raid-resync-small
-      # TODO(12232): enable
-      # - rerun
+      # TODO(12276) re-enable: #- rerun
       - root-verity
       - simple
       - split
       - usr-verity
-      # TODO(12232): enable
-      # - usr-verity-raid
+      - usr-verity-raid
     weekly:
       - base
-      # TODO(12232): enable
-      # - combined
+      # TODO(12276) re-enable: #- combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
@@ -41,19 +35,16 @@ bareMetal:
       - raid-big
       - raid-mirrored
       - raid-resync-small
-      # TODO(12232): enable
-      # - rerun
+      # TODO(12276) re-enable: #- rerun
       - root-verity
       - simple
       - split
       - usr-verity
-      # TODO(12232): enable
-      # - usr-verity-raid
+      - usr-verity-raid
   container:
     daily:
       - base
-      # TODO(12232): enable
-      # - combined
+      # TODO(12276) re-enable: #- combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
@@ -61,17 +52,14 @@ bareMetal:
       - raid-mirrored
       - raid-resync-small
       - raid-small
-      # TODO(12232): enable
-      # - rerun
+      # TODO(12276) re-enable: #- rerun
       - root-verity
       - simple
       - usr-verity
-      # TODO(12232): enable
-      # - usr-verity-raid
+      - usr-verity-raid
     validation:
       - base
-      # TODO(12232): enable
-      # - combined
+      # TODO(12276) re-enable: #- combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
@@ -79,17 +67,14 @@ bareMetal:
       - raid-mirrored
       - raid-resync-small
       - raid-small
-      # TODO(12232): enable
-      # - rerun
+      # TODO(12276) re-enable: #- rerun
       - root-verity
       - simple
       - usr-verity
-      # TODO(12232): enable
-      # - usr-verity-raid
+      - usr-verity-raid
     weekly:
       - base
-      # TODO(12232): enable
-      # - combined
+      # TODO(12276) re-enable: #- combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
@@ -97,19 +82,16 @@ bareMetal:
       - raid-mirrored
       - raid-resync-small
       - raid-small
-      # TODO(12232): enable
-      # - rerun
+      # TODO(12276) re-enable: #- rerun
       - root-verity
       - simple
       - usr-verity
-      # TODO(12232): enable
-      # - usr-verity-raid
+      - usr-verity-raid
 virtualMachine:
   host:
     daily:
       - base
-      # TODO(12232): enable
-      # - combined
+      # TODO(12276) re-enable: #- combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
@@ -119,18 +101,15 @@ virtualMachine:
       - raid-mirrored
       - raid-resync-small
       - raid-small
-      # TODO(12232): enable
-      # - rerun
+      # TODO(12276) re-enable: #- rerun
       - root-verity
       - simple
       - split
       - usr-verity
-      # TODO(12232): enable
-      # - usr-verity-raid
+      - usr-verity-raid
     post_merge:
       - base
-      # TODO(12232): enable
-      # - combined
+      # TODO(12276) re-enable: #- combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
@@ -140,31 +119,25 @@ virtualMachine:
       - raid-mirrored
       - raid-resync-small
       - raid-small
-      # TODO(12232): enable
-      # - rerun
+      # TODO(12276) re-enable: #- rerun
       - root-verity
       - simple
       - split
       - usr-verity
-      # TODO(12232): enable
-      # - usr-verity-raid
+      - usr-verity-raid
     pullrequest:
       - base
-      # TODO(12232): enable
-      # - combined
+      # TODO(12276) re-enable: #- combined
       - raid-mirrored
       - raid-resync-small
-      # TODO(12232): enable
-      # - rerun
+      # TODO(12276) re-enable: #- rerun
       - simple
       - split
       - usr-verity
-      # TODO(12232): enable
-      # - usr-verity-raid
+      - usr-verity-raid
     validation:
       - base
-      # TODO(12232): enable
-      # - combined
+      # TODO(12276) re-enable: #- combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
@@ -174,18 +147,15 @@ virtualMachine:
       - raid-mirrored
       - raid-resync-small
       - raid-small
-      # TODO(12232): enable
-      # - rerun
+      # TODO(12276) re-enable: #- rerun
       - root-verity
       - simple
       - split
       - usr-verity
-      # TODO(12232): enable
-      # - usr-verity-raid
+      - usr-verity-raid
     weekly:
       - base
-      # TODO(12232): enable
-      # - combined
+      # TODO(12276) re-enable: #- combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
@@ -195,19 +165,16 @@ virtualMachine:
       - raid-mirrored
       - raid-resync-small
       - raid-small
-      # TODO(12232): enable
-      # - rerun
+      # TODO(12276) re-enable: #- rerun
       - root-verity
       - simple
       - split
       - usr-verity
-      # TODO(12232): enable
-      # - usr-verity-raid
+      - usr-verity-raid
   container:
     daily:
       - base
-      # TODO(12232): enable
-      # - combined
+      # TODO(12276) re-enable: #- combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
@@ -215,17 +182,14 @@ virtualMachine:
       - raid-mirrored
       - raid-resync-small
       - raid-small
-      # TODO(12232): enable
-      # - rerun
+      # TODO(12276) re-enable: #- rerun
       - root-verity
       - simple
       - usr-verity
-      # TODO(12232): enable
-      # - usr-verity-raid
+      - usr-verity-raid
     post_merge:
       - base
-      # TODO(12232): enable
-      # - combined
+      # TODO(12276) re-enable: #- combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
@@ -233,32 +197,26 @@ virtualMachine:
       - raid-mirrored
       - raid-resync-small
       - raid-small
-      # TODO(12232): enable
-      # - rerun
+      # TODO(12276) re-enable: #- rerun
       - root-verity
       - simple
       - usr-verity
-      # TODO(12232): enable
-      # - usr-verity-raid
+      - usr-verity-raid
     pullrequest:
       - base
-      # TODO(12232): enable
-      # - combined
+      # TODO(12276) re-enable: #- combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
       - raid-mirrored
       - raid-resync-small
-      # TODO(12232): enable
-      # - rerun
+      # TODO(12276) re-enable: #- rerun
       - simple
       - usr-verity
-      # TODO(12232): enable
-      # - usr-verity-raid
+      - usr-verity-raid
     validation:
       - base
-      # TODO(12232): enable
-      # - combined
+      # TODO(12276) re-enable: #- combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
@@ -266,17 +224,14 @@ virtualMachine:
       - raid-mirrored
       - raid-resync-small
       - raid-small
-      # TODO(12232): enable
-      # - rerun
+      # TODO(12276) re-enable: #- rerun
       - root-verity
       - simple
       - usr-verity
-      # TODO(12232): enable
-      # - usr-verity-raid
+      - usr-verity-raid
     weekly:
       - base
-      # TODO(12232): enable
-      # - combined
+      # TODO(12276) re-enable: #- combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
@@ -284,10 +239,8 @@ virtualMachine:
       - raid-mirrored
       - raid-resync-small
       - raid-small
-      # TODO(12232): enable
-      # - rerun
+      # TODO(12276) re-enable: #- rerun
       - root-verity
       - simple
       - usr-verity
-      # TODO(12232): enable
-      # - usr-verity-raid
+      - usr-verity-raid

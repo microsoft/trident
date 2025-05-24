@@ -1,10 +1,12 @@
 import argparse
+from pathlib import Path
 import sys
 import yaml
+import json
+import logging
 
-
-def format_matrix(configurations):
-    return {directory: {"configuration": directory} for directory in configurations}
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("read_target_configurations")
 
 
 def main():
@@ -17,7 +19,7 @@ def main():
     parser.add_argument(
         "-c",
         "--configurations",
-        type=str,
+        type=Path,
         required=True,
         help="File path to the YAML that contains the configurations for the E2E testing.",
     )
@@ -44,9 +46,22 @@ def main():
         choices=["host", "container"],
         help="The runtime environment of Trident (e.g., host or container).",
     )
+    parser.add_argument(
+        "--matrix-name",
+        type=str,
+        required=True,
+        help="Name of the ADO variable to write the matrix to.",
+    )
     args = parser.parse_args()
 
-    with open(args.configurations, "r") as file:
+    log.info(
+        f"Reading target configurations from '{args.configurations}' for '{args.env}' "
+        f"with purpose '{args.purpose}' and runtime environment '{args.runtimeEnv}'."
+    )
+
+    configurations_file: Path = args.configurations.absolute()
+
+    with open(configurations_file, "r") as file:
         target_configurations = yaml.safe_load(file)
 
     if args.env not in target_configurations:
@@ -61,11 +76,16 @@ def main():
         sys.exit(
             f"Build purpose {args.purpose} not found in {args.configurations} for {args.env} and {args.runtimeEnv}."
         )
-    else:
-        matrix = format_matrix(
-            target_configurations[args.env][args.runtimeEnv][args.purpose]
-        )
-        print(matrix)
+
+    configurations = target_configurations[args.env][args.runtimeEnv][args.purpose]
+
+    matrix = {name: {"configuration": name} for name in configurations}
+
+    log.info(f"Matrix:\n{json.dumps(matrix, indent=4)}")
+
+    print(
+        f"##vso[task.setvariable variable={args.matrix_name};isOutput=true]{json.dumps(matrix)}"
+    )
 
 
 if __name__ == "__main__":

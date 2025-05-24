@@ -83,6 +83,7 @@ stages:
           - name: BAREMETAL_LAB_CANARY_IP
             value: "10.8.6.1"
 
+          # Sourced from the matrix
           - name: TRIDENT_CONFIGURATION_NAME
             value: $(configuration)
 

@@ -63,7 +63,9 @@ stages:
           matrix: $[ stageDependencies.DefineTests_VM_${{ parameters.runtimeEnv }}.DefineTests.outputs['setConfigurations.matrixConfigurations'] ]
 
         variables:
+          # Sourced from the matrix
           tridentConfigurationName: $(configuration)
+
           tridentConfigPath: $(tridentSourceDirectory)/e2e_tests/trident_configurations/$(tridentConfigurationName)
 
           tridentSourceDirectory: $(Build.SourcesDirectory)
@@ -152,7 +154,7 @@ stages:
                   --port ${{variables.netlaunchPort}} 2>&1 | tee ./clean-install-deployment.log
             workingDirectory: $(tridentSourceDirectory)
             displayName: "🚀 Run netlaunch for testing"
-            timeoutInMinutes: 15
+            timeoutInMinutes: 20
 
           - template: ../testing_common/display-deployment-logs.yml
             parameters:

@@ -13,65 +13,49 @@ storage:
           type: esp
           size: 1G
         - id: boot-a
-          type: xbootldr
+          size: 200M
+        - id: boot-b
           size: 200M
         - id: root-a-1
           size: 4G
-        - id: root-a-2
-          size: 4G
         - id: root-b-1
           size: 4G
-        - id: root-b-2
-          size: 4G
-        - id: boot-b
-          type: xbootldr
-          size: 200M
         - id: usr-data-a-1
-          type: root
           size: 2G
         - id: usr-data-b-1
-          type: root
-          size: 2G
-        - id: usr-data-a-2
-          type: root
-          size: 2G
-        - id: usr-data-b-2
-          type: root
           size: 2G
         - id: usr-hash-a-1
-          type: root-verity
           size: 1G
         - id: usr-hash-b-1
-          type: root-verity
-          size: 1G
-        - id: usr-hash-a-2
-          type: root-verity
-          size: 1G
-        - id: usr-hash-b-2
-          type: root-verity
           size: 1G
         - id: home-a-e-1
-          type: linux-generic
-          size: 100M
-        - id: home-a-e-2
-          type: linux-generic
           size: 100M
         - id: home-b-e-1
-          type: linux-generic
-          size: 100M
-        - id: home-b-e-2
-          type: linux-generic
           size: 100M
         - id: trident
-          type: linux-generic
           size: 500M
         - id: srv-e
-          type: linux-generic
           size: 1G
     - id: disk2
       device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
       partitionTableType: gpt
-      partitions: []
+      partitions:
+        - id: root-a-2
+          size: 4G
+        - id: root-b-2
+          size: 4G
+        - id: usr-data-a-2
+          size: 2G
+        - id: usr-data-b-2
+          size: 2G
+        - id: usr-hash-a-2
+          size: 1G
+        - id: usr-hash-b-2
+          size: 1G
+        - id: home-a-e-2
+          size: 100M
+        - id: home-b-e-2
+          size: 100M
   raid:
     software:
       - id: usr-data-a

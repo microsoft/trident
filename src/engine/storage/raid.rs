@@ -14,7 +14,7 @@ use strum_macros::{Display, EnumString};
 use osutils::{block_devices, dependencies::Dependency, mdadm, udevadm};
 use trident_api::{
     config::{HostConfiguration, SoftwareRaidArray},
-    constants::MDSTAT_PATH,
+    constants::{internal_params::ENABLE_UKI_SUPPORT, MDSTAT_PATH},
     BlockDeviceId,
 };
 
@@ -42,8 +42,17 @@ fn create(config: SoftwareRaidArray, ctx: &EngineContext) -> Result<(), Error> {
     let device_paths = get_device_paths(ctx, devices).context("Failed to get device paths")?;
 
     info!("Initializing '{}': creating RAID array", config.id);
-    mdadm::create(&config.device_path(), &config.level, device_paths)
-        .context("Failed to create RAID array")?;
+
+    if ctx.spec.internal_params.get_flag(ENABLE_UKI_SUPPORT) {
+        // If UKI support is enabled, we need to create the RAID array with the
+        // homehost=any option to ensure that the RAID array can be opened by the
+        // runtime OS.
+        mdadm::create_homehost(&config.device_path(), &config.level, device_paths, "any")
+    } else {
+        mdadm::create(&config.device_path(), &config.level, device_paths)
+    }
+    .context("Failed to create RAID array")?;
+
     Ok(())
 }
 

@@ -11,10 +11,30 @@ use crate::{dependencies::Dependency, lsblk};
 
 pub const METADATA_VERSION: &str = "1.0";
 
+/// Creates a RAID array using `mdadm` with the specified level and devices.
 pub fn create(
     raid_path: &PathBuf,
     level: &RaidLevel,
     device_paths: Vec<PathBuf>,
+) -> Result<(), Error> {
+    create_inner(raid_path, level, device_paths, None)
+}
+
+/// Creates a RAID array using `mdadm` with the specified level, devices, and homehost.
+pub fn create_homehost(
+    raid_path: &PathBuf,
+    level: &RaidLevel,
+    device_paths: Vec<PathBuf>,
+    homehost: &str,
+) -> Result<(), Error> {
+    create_inner(raid_path, level, device_paths, Some(homehost))
+}
+
+fn create_inner(
+    raid_path: &PathBuf,
+    level: &RaidLevel,
+    device_paths: Vec<PathBuf>,
+    homehost: Option<&str>,
 ) -> Result<(), Error> {
     trace!("Creating RAID array '{}'", &raid_path.display());
 
@@ -35,6 +55,10 @@ pub fn create(
         .arg(format!("--raid-devices={}", &device_paths.len()))
         .args(&device_paths)
         .arg(format!("--metadata={METADATA_VERSION}"));
+
+    if let Some(homehost) = homehost {
+        mdadm_command.arg(format!("--homehost={}", homehost));
+    }
 
     mdadm_command
         .run_and_check()
