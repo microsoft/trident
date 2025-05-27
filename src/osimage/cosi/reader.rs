@@ -515,15 +515,17 @@ mod tests {
                     .unwrap()
                     .split('-')
                     .collect::<Vec<&str>>();
-                let start = ranges[0]
-                    .is_empty()
-                    .then_some(0)
-                    .unwrap_or_else(|| ranges[0].parse::<usize>().expect("Failed to parse start"));
-                let end = ranges[1]
-                    .is_empty()
-                    .then_some(body.len())
-                    .unwrap_or_else(|| ranges[1].parse::<usize>().expect("Failed to parse end"))
-                    .min(body.len() - 1);
+                let start = if ranges[0].is_empty() {
+                    0
+                } else {
+                    ranges[0].parse::<usize>().expect("Failed to parse start")
+                };
+                let end = if ranges[1].is_empty() {
+                    body.len()
+                } else {
+                    ranges[1].parse::<usize>().expect("Failed to parse end")
+                }
+                .min(body.len() - 1);
                 trace!("Mocking range {} to {}", start, end);
                 body.as_bytes()[start..=end].to_vec()
             })

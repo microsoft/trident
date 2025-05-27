@@ -34,6 +34,7 @@ use mock::MockOsImage;
 #[derive(Debug, Clone)]
 pub struct OsImage(OsImageInner);
 
+#[cfg_attr(test, allow(clippy::large_enum_variant))]
 #[derive(Debug, Clone)]
 enum OsImageInner {
     /// Composable OS Image (COSI)
