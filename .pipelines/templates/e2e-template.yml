@@ -88,35 +88,35 @@ stages:
       baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
 
   # Build Trident installer ISO (host)
-  - template: stages/build_image/build-installer.yml
+  - template: stages/build_image/build-runtime.yml
     parameters:
-      imageName: build/trident-installer-testimage.iso
-      outputArtifactName: trident-installer-testimage
+      imageName: trident-installer
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
       baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
+      clones: 1
 
   # Build Trident split (stage and finalize separated) installer ISO (host)
-  - template: stages/build_image/build-installer.yml
+  - template: stages/build_image/build-runtime.yml
     parameters:
-      imageName: build/trident-split-installer-testimage.iso
-      outputArtifactName: trident-split-installer-testimage
+      imageName: trident-split-installer
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
       baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
+      clones: 1
 
   # Build Trident installer ISO (container)
-  - template: stages/build_image/build-installer.yml
+  - template: stages/build_image/build-runtime.yml
     parameters:
-      imageName: build/trident-container-installer-testimage.iso
-      outputArtifactName: trident-container-installer-testimage
+      imageName: trident-container-installer
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
       baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
       runtimeEnv: "container"
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
+      clones: 1
 
   # Build Trident test image (regular)
   - template: stages/build_image/build-runtime.yml

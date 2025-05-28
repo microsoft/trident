@@ -40,12 +40,12 @@ stages:
           - BuildingTools
           - ${{ if eq(parameters.runtimeEnv, 'container') }}:
               - BuildTridentContainerImage
-              - TridentTestImg_trident_container_installer_testimage
+              - TridentTestImg_trident_container_installer
               - TridentTestImg_trident_container_testimage
               - TridentTestImg_trident_container_verity_testimage
           - ${{ else }}:
               - TridentTestImg_trident_verity_testimage
-              - TridentTestImg_trident_installer_testimage
+              - TridentTestImg_trident_installer
               - TridentTestImg_trident_testimage
 
     jobs:
@@ -107,9 +107,9 @@ stages:
 
           - name: INSTALLER_ISO_NAME
             ${{ if eq(parameters.runtimeEnv, 'container') }}:
-              value: "trident-container-installer-testimage"
+              value: "trident-container-installer"
             ${{ else }}:
-              value: "trident-installer-testimage"
+              value: "trident-installer"
 
           - name: IMAGE_NAME
             ${{ if eq(parameters.runtimeEnv, 'container') }}:

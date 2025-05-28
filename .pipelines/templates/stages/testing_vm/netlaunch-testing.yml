@@ -42,12 +42,12 @@ stages:
           - BuildingTools
           - ${{ if eq(parameters.runtimeEnv, 'container') }}:
               - BuildTridentContainerImage
-              - TridentTestImg_trident_container_installer_testimage
+              - TridentTestImg_trident_container_installer
               - TridentTestImg_trident_container_testimage
               - TridentTestImg_trident_container_verity_testimage
           - ${{ else }}:
-              - TridentTestImg_trident_split_installer_testimage
-              - TridentTestImg_trident_installer_testimage
+              - TridentTestImg_trident_split_installer
+              - TridentTestImg_trident_installer
               - TridentTestImg_trident_testimage
               - TridentTestImg_trident_verity_testimage
 
@@ -72,13 +72,13 @@ stages:
           argusToolkitSourceDirectory: $(Build.SourcesDirectory)/argus-toolkit
 
           ${{ if eq(parameters.runtimeEnv, 'container') }}:
-            installerISOName: trident-container-installer-testimage
+            installerISOName: trident-container-installer
             testImageName: trident-container-testimage
             verityTestImageName: trident-container-verity-testimage
             usrVerityTestImageName: trident-container-usrverity-testimage
             downloadTridentContainer: true
           ${{ else }}:
-            installerISOName: trident-installer-testimage
+            installerISOName: trident-installer
             testImageName: trident-testimage
             verityTestImageName: trident-verity-testimage
             usrVerityTestImageName: trident-usrverity-testimage
@@ -92,7 +92,7 @@ stages:
         steps:
           - bash: |
               if [ ${{ variables['tridentConfigurationName'] }} == 'split' ]; then
-                splitInstallerIsoName="trident-split-installer-testimage"
+                splitInstallerIsoName="trident-split-installer"
                 echo "setting variable.installerISOName to $splitInstallerIsoName"
                 echo "##vso[task.setvariable variable=installerISOName]$splitInstallerIsoName"
               fi

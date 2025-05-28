@@ -19,7 +19,7 @@ stages:
           - DownloadTestingElements
       - ${{ else }}:
           - BuildingTools
-          - TridentTestImg_trident_installer_testimage
+          - TridentTestImg_trident_installer
           - TridentTestImg_trident_testimage
           - TridentTestImg_trident_verity_testimage
 
@@ -78,7 +78,7 @@ stages:
               # rebuilding the test binaries and invoking pytest. The regular
               # target is meant for local use and does extra setup not required
               # here.
-              sg libvirt "make functional-test-core INSTALLER_ISO_PATH=./artifacts/iso/trident-installer-testimage.iso ARGUS_TOOLKIT_PATH=argus-toolkit"
+              sg libvirt "make functional-test-core INSTALLER_ISO_PATH=./artifacts/iso/trident-installer.iso ARGUS_TOOLKIT_PATH=argus-toolkit"
             displayName: Execute Functional Tests
 
           - template: ../common_tasks/coverage.yml
@@ -97,6 +97,6 @@ stages:
           - bash: |
               set -eux
 
-              sg libvirt "make patch-functional-test INSTALLER_ISO_PATH=$(System.ArtifactsDirectory)/trident-installer-testimg.iso ARGUS_TOOLKIT_PATH=argus-toolkit"
+              sg libvirt "make patch-functional-test INSTALLER_ISO_PATH=$(System.ArtifactsDirectory)/trident-installer.iso ARGUS_TOOLKIT_PATH=argus-toolkit"
             condition: and(succeeded(), eq('${{ parameters.buildPurpose }}', 'post_merge'))
             displayName: Rerun Functional Tests

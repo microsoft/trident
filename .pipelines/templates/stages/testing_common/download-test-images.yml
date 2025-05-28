@@ -2,13 +2,13 @@ parameters:
   - name: installerISO
     displayName: "Image used for the installer, source of Trident (container vs host)"
     type: string
-    default: trident-installer-testimage
+    default: trident-installer
     # Test selection is at runtime, and template parameters cannot be validated against runtime variables.
     # So, do validation in task below rather than specifying this here:
     # values:
-    #   - trident-installer-testimage
-    #   - trident-split-installer-testimage
-    #   - trident-container-installer-testimage
+    #   - trident-installer
+    #   - trident-split-installer
+    #   - trident-container-installer
 
   - name: tridentTestImage
     displayName: "Image used the runtime OS, source of Trident (container vs host)"
@@ -71,11 +71,11 @@ steps:
       # So, do validation here.
       #
       case "${{ parameters.installerISO }}" in
-          trident-installer-testimage|trident-split-installer-testimage|trident-container-installer-testimage)
+          trident-installer|trident-split-installer|trident-container-installer)
               # Valid image_type, do nothing
               ;;
           *)
-              echo "installerISO should be either 'trident-installer-testimage', 'trident-split-installer-testimage', or 'trident-container-installer-testimage'."
+              echo "installerISO should be either 'trident-installer', 'trident-split-installer', or 'trident-container-installer'."
               exit 1
               ;;
       esac

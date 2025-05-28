@@ -38,6 +38,11 @@ parameters:
     type: string
     default: "*.*.*"
 
+  - name: clones
+    displayName: "Number of clones to generate"
+    type: number
+    default: 2
+
 stages:
   - stage: TridentTestImg_${{ replace(parameters.imageName, '-', '_') }}
     displayName: Build ${{ parameters.imageName }}
@@ -77,7 +82,7 @@ stages:
           - template: .pipelines/templates/build-image.yml@test-images
             parameters:
               imageName: ${{ parameters.imageName }}
-              clones: 2
+              clones: ${{ parameters.clones }}
               baseimgBuildType: ${{ parameters.baseimgBuildType }}
               baseimgVersion: $(baseimgVersion)
               azureLinuxVersion: ${{ variables.BASEIMG_AZURE_LINUX_VERSION }}

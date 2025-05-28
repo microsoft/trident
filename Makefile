@@ -378,12 +378,12 @@ run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlau
 run-netlaunch-container-images: \
 	validate \
 	$(NETLAUNCH_CONFIG) \
-	artifacts/trident-container-installer-testimage.iso \
+	artifacts/trident-container-installer.iso \
 	artifacts/test-image/trident-container.tar.gz \
 	$(TRIDENT_CONFIG) \
 	bin/netlaunch
 	@bin/netlaunch \
-		--iso artifacts/trident-container-installer-testimage.iso \
+		--iso artifacts/trident-container-installer.iso \
 		$(if $(NETLAUNCH_PORT),--port $(NETLAUNCH_PORT)) \
 		--config $(NETLAUNCH_CONFIG) \
 		--trident $(TRIDENT_CONFIG) \
@@ -522,7 +522,7 @@ endif
 		--project "ECF" \
 		--run-id $(RUN_ID) \
 		--path artifacts/ \
-		--artifact-name 'trident-installer-testimage'
+		--artifact-name 'trident-installer'
 
 .PHONY: download-trident-container-installer-iso
 download-trident-container-installer-iso:
@@ -544,11 +544,11 @@ download-trident-container-installer-iso:
 		--project "ECF" \
 		--run-id $(RUN_ID) \
 		--path artifacts/ \
-		--artifact-name 'trident-container-installer-testimage'
+		--artifact-name 'trident-container-installer'
 
-artifacts/trident-container-installer-testimage.iso:
+artifacts/trident-container-installer.iso:
 	$(MAKE) download-trident-container-installer-iso; \
-	ls -l artifacts/trident-container-installer-testimage.iso
+	ls -l artifacts/trident-container-installer.iso
 
 # Copies locally built runtime images from ../test-images/build to ./artifacts/test-image.
 # Expects that both the regular and verity Trident test images have been built.

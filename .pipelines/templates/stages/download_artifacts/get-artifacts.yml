@@ -195,14 +195,14 @@ stages:
                   targetPath: "$(System.ArtifactsDirectory)/container/"
 
           - job: TridentContainerInstallerTestimage
-            displayName: Download trident-container-installer-testimage
+            displayName: Download trident-container-installer
             timeoutInMinutes: 10
             pool:
               type: linux
 
             variables:
               ob_outputDirectory: $(Build.SourcesDirectory)/build
-              ob_artifactBaseName: "trident-container-installer-testimage"
+              ob_artifactBaseName: "trident-container-installer"
 
             steps:
               - task: DownloadPipelineArtifact@2
@@ -267,14 +267,14 @@ stages:
       # Host images:
       - ${{ if eq(parameters.hostImages, true) }}:
           - job: TridentInstallerTestimage
-            displayName: Download trident-installer-testimage
+            displayName: Download trident-installer
             timeoutInMinutes: 10
             pool:
               type: linux
 
             variables:
               ob_outputDirectory: $(Build.SourcesDirectory)/build
-              ob_artifactBaseName: "trident-installer-testimage"
+              ob_artifactBaseName: "trident-installer"
 
             steps:
               - task: DownloadPipelineArtifact@2
@@ -291,14 +291,14 @@ stages:
                   targetPath: $(ob_outputDirectory)
 
           - job: TridentSplitInstallerTestimage
-            displayName: Download trident-split-installer-testimage
+            displayName: Download trident-split-installer
             timeoutInMinutes: 10
             pool:
               type: linux
 
             variables:
               ob_outputDirectory: $(Build.SourcesDirectory)/build
-              ob_artifactBaseName: "trident-split-installer-testimage"
+              ob_artifactBaseName: "trident-split-installer"
 
             steps:
               - task: DownloadPipelineArtifact@2
