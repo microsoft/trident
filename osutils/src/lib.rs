@@ -30,6 +30,7 @@ pub mod osmodifier;
 pub mod osrelease;
 pub mod overlay;
 pub mod path;
+pub mod pcrlock;
 pub mod repart;
 pub mod resize2fs;
 pub mod scripts;

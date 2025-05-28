@@ -119,6 +119,8 @@ pub enum Dependency {
     SystemdCryptenroll,
     #[strum(serialize = "systemd-firstboot")]
     SystemdFirstboot,
+    #[strum(serialize = "systemd-pcrlock")]
+    SystemdPcrlock,
     #[strum(serialize = "systemd-repart")]
     SystemdRepart,
     Touch,
@@ -152,6 +154,7 @@ impl Dependency {
     fn path_override(&self) -> Option<PathBuf> {
         Some(PathBuf::from(match self {
             Self::Netplan => "/usr/sbin/netplan",
+            Self::SystemdPcrlock => "/usr/lib/systemd/systemd-pcrlock",
             _ => return None,
         }))
     }

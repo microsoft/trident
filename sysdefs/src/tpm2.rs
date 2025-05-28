@@ -1,4 +1,6 @@
+use anyhow::{bail, Error};
 use enumflags2::bitflags;
+use serde::{self, Deserialize};
 
 /// Represents the Platform Configuration Registers (PCRs) in the TPM.
 #[bitflags]
@@ -44,6 +46,43 @@ impl Pcr {
     pub fn to_value(&self) -> u32 {
         (*self as u32).trailing_zeros()
     }
+
+    /// Returns the PCR for the given digit value. Needed for deserialization.
+    pub fn from_value(value: u32) -> Result<Self, Error> {
+        match value {
+            0 => Ok(Pcr::Pcr0),
+            1 => Ok(Pcr::Pcr1),
+            2 => Ok(Pcr::Pcr2),
+            3 => Ok(Pcr::Pcr3),
+            4 => Ok(Pcr::Pcr4),
+            5 => Ok(Pcr::Pcr5),
+            7 => Ok(Pcr::Pcr7),
+            9 => Ok(Pcr::Pcr9),
+            10 => Ok(Pcr::Pcr10),
+            11 => Ok(Pcr::Pcr11),
+            12 => Ok(Pcr::Pcr12),
+            13 => Ok(Pcr::Pcr13),
+            14 => Ok(Pcr::Pcr14),
+            15 => Ok(Pcr::Pcr15),
+            16 => Ok(Pcr::Pcr16),
+            23 => Ok(Pcr::Pcr23),
+            _ => bail!(
+                "Failed to convert an invalid PCR value '{}' to a Pcr",
+                value
+            ),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Pcr {
+    fn deserialize<D>(deserializer: D) -> Result<Pcr, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let val = u32::deserialize(deserializer)?;
+        Pcr::from_value(val)
+            .map_err(|_| serde::de::Error::custom(format!("Failed to deserialize PCR: {}", val)))
+    }
 }
 
 #[cfg(test)]
@@ -68,5 +107,20 @@ mod tests {
         assert_eq!(Pcr::Pcr15.to_value(), 15);
         assert_eq!(Pcr::Pcr16.to_value(), 16);
         assert_eq!(Pcr::Pcr23.to_value(), 23);
+    }
+
+    #[test]
+    fn test_from_value() {
+        // Test case #0: Convert a valid value to a PCR.
+        assert_eq!(Pcr::from_value(0).unwrap(), Pcr::Pcr0);
+        assert_eq!(Pcr::from_value(1).unwrap(), Pcr::Pcr1);
+        assert_eq!(Pcr::from_value(2).unwrap(), Pcr::Pcr2);
+        assert_eq!(Pcr::from_value(23).unwrap(), Pcr::Pcr23);
+
+        // Test case #1: Convert an invalid value to a PCR.
+        assert_eq!(
+            Pcr::from_value(31).unwrap_err().root_cause().to_string(),
+            "Failed to convert an invalid PCR value '31' to a Pcr"
+        );
     }
 }
