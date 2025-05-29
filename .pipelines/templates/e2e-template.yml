@@ -77,8 +77,8 @@ stages:
   # Build tools (Go stuff)
   - template: stages/building_tools/building-tools.yml
 
-  # Makefile validation, only for CI and PR-E2E
-  - ${{ if or(eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'pr-e2e-azure')) }}:
+  # Makefile validation, only for CI
+  - ${{ if eq(parameters.stageType, 'ci') }}:
       - template: stages/validate_makefile/dev-build.yml
 
   # Build Trident container image

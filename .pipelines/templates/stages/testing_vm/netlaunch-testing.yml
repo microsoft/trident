@@ -45,11 +45,13 @@ stages:
               - TridentTestImg_trident_container_installer
               - TridentTestImg_trident_container_testimage
               - TridentTestImg_trident_container_verity_testimage
+              - TridentTestImg_trident_container_usrverity_testimage
           - ${{ else }}:
               - TridentTestImg_trident_split_installer
               - TridentTestImg_trident_installer
               - TridentTestImg_trident_testimage
               - TridentTestImg_trident_verity_testimage
+              - TridentTestImg_trident_usrverity_testimage
 
     jobs:
       - job: Testing
