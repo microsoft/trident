@@ -19,7 +19,9 @@ use osutils::{
 use sysdefs::tpm2::Pcr;
 use trident_api::{
     config::{HostConfiguration, HostConfigurationStaticValidationError, Partition, PartitionSize},
-    constants::internal_params::{NO_CLOSE_ENCRYPTED_VOLUMES, REENCRYPT_ON_CLEAN_INSTALL},
+    constants::internal_params::{
+        NO_CLOSE_ENCRYPTED_VOLUMES, OVERRIDE_ENCRYPTION_PCRS, REENCRYPT_ON_CLEAN_INSTALL,
+    },
     error::{InvalidInputError, ReportError, ServicingError, TridentError},
     BlockDeviceId,
 };
@@ -134,20 +136,43 @@ pub(super) fn provision(
                 },
             )?;
 
+            let encryption_type = if host_config
+                .internal_params
+                .get_flag(REENCRYPT_ON_CLEAN_INSTALL)
+            {
+                EncryptionType::Reencrypt
+            } else {
+                EncryptionType::LuksFormat
+            };
+
+            let pcrs = ctx
+                .spec
+                .internal_params
+                // Extract the parameter as a `Vec<Pcr>`, which is a list of PCRs to bind the
+                // encryption key to.
+                .get::<Vec<Pcr>>(OVERRIDE_ENCRYPTION_PCRS)
+                // Get the result from under the option.
+                .transpose()
+                .structured(InvalidInputError::InvalidInternalParameter {
+                    name: OVERRIDE_ENCRYPTION_PCRS.to_string(),
+                    explanation: format!(
+                        "Failed to parse internal parameter '{}' as BitFlags<Pcr>",
+                        OVERRIDE_ENCRYPTION_PCRS
+                    ),
+                })?
+                // Convert the `Vec<Pcr>` into a `BitFlags<Pcr>`, which is a bitmask of PCRs.
+                .map(|v| BitFlags::<Pcr>::from_iter(v.into_iter()))
+                // If the internal parameter is not set, default to PCR 7.
+                .unwrap_or(Pcr::Pcr7.into());
+
             // Check if `REENCRYPT_ON_CLEAN_INSTALL` internal param is set to true; if so, re-encrypt
             // the device in-place. Otherwise, initialize a new LUKS2 volume.
             encrypt_and_open_device(
                 &device_path,
                 &ev.device_name,
                 &key_file_path,
-                if host_config
-                    .internal_params
-                    .get_flag(REENCRYPT_ON_CLEAN_INSTALL)
-                {
-                    EncryptionType::Reencrypt
-                } else {
-                    EncryptionType::LuksFormat
-                },
+                encryption_type,
+                pcrs,
             )
             .structured(ServicingError::EncryptBlockDevice {
                 device_path: device_path.to_string_lossy().to_string(),
@@ -177,6 +202,7 @@ fn encrypt_and_open_device(
     device_name: &String,
     key_file: &Path,
     encryption_type: EncryptionType,
+    pcrs: BitFlags<Pcr>,
 ) -> Result<(), Error> {
     match encryption_type {
         EncryptionType::Reencrypt => {
@@ -208,7 +234,7 @@ fn encrypt_and_open_device(
 
     // Enroll the TPM 2.0 device for the underlying device. Currently, we bind the enrollment to
     // PCR 7 by default.
-    encryption::systemd_cryptenroll(key_file, device_path, BitFlags::from(Pcr::Pcr7))?;
+    encryption::systemd_cryptenroll(key_file, device_path, pcrs)?;
 
     debug!(
         "Opening underlying encrypted device '{}' as '{}'",

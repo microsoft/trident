@@ -1,5 +1,6 @@
 internalParams:
   uki: true
+  overrideEncryptionPcrs: [0]
 image:
   url: http://NETLAUNCH_HOST_ADDRESS/files/usrverity.cosi
   sha384: ignored

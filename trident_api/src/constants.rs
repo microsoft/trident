@@ -212,4 +212,7 @@ pub mod internal_params {
 
     /// Allow unused images in a COSI file.
     pub const ALLOW_UNUSED_FILESYSTEMS_IN_COSI: &str = "allowUnusedFilesystems";
+
+    /// Overrides the default PCR registries to use when sealing encryption keys.
+    pub const OVERRIDE_ENCRYPTION_PCRS: &str = "overrideEncryptionPcrs";
 }

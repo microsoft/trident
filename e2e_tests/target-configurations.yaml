@@ -91,17 +91,16 @@ virtualMachine:
   host:
     daily:
       - base
-      # TODO(12276) re-enable: #- combined
+      - combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
-      # TODO(12232): enable
-      # - memory-constraint-combined
+      - memory-constraint-combined
       - misc
       - raid-mirrored
       - raid-resync-small
       - raid-small
-      # TODO(12276) re-enable: #- rerun
+      - rerun
       - root-verity
       - simple
       - split
@@ -109,17 +108,16 @@ virtualMachine:
       - usr-verity-raid
     post_merge:
       - base
-      # TODO(12276) re-enable: #- combined
+      - combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
-      # TODO(12232): enable
-      # - memory-constraint-combined
+      - memory-constraint-combined
       - misc
       - raid-mirrored
       - raid-resync-small
       - raid-small
-      # TODO(12276) re-enable: #- rerun
+      - rerun
       - root-verity
       - simple
       - split
@@ -127,27 +125,26 @@ virtualMachine:
       - usr-verity-raid
     pullrequest:
       - base
-      # TODO(12276) re-enable: #- combined
+      - combined
       - raid-mirrored
       - raid-resync-small
-      # TODO(12276) re-enable: #- rerun
+      - rerun
       - simple
       - split
       - usr-verity
       - usr-verity-raid
     validation:
       - base
-      # TODO(12276) re-enable: #- combined
+      - combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
-      # TODO(12232): enable
-      # - memory-constraint-combined
+      - memory-constraint-combined
       - misc
       - raid-mirrored
       - raid-resync-small
       - raid-small
-      # TODO(12276) re-enable: #- rerun
+      - rerun
       - root-verity
       - simple
       - split
@@ -155,17 +152,16 @@ virtualMachine:
       - usr-verity-raid
     weekly:
       - base
-      # TODO(12276) re-enable: #- combined
+      - combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
-      # TODO(12232): enable
-      # - memory-constraint-combined
+      - memory-constraint-combined
       - misc
       - raid-mirrored
       - raid-resync-small
       - raid-small
-      # TODO(12276) re-enable: #- rerun
+      - rerun
       - root-verity
       - simple
       - split
@@ -174,7 +170,7 @@ virtualMachine:
   container:
     daily:
       - base
-      # TODO(12276) re-enable: #- combined
+      - combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
@@ -182,14 +178,14 @@ virtualMachine:
       - raid-mirrored
       - raid-resync-small
       - raid-small
-      # TODO(12276) re-enable: #- rerun
+      - rerun
       - root-verity
       - simple
       - usr-verity
       - usr-verity-raid
     post_merge:
       - base
-      # TODO(12276) re-enable: #- combined
+      - combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
@@ -197,26 +193,26 @@ virtualMachine:
       - raid-mirrored
       - raid-resync-small
       - raid-small
-      # TODO(12276) re-enable: #- rerun
+      - rerun
       - root-verity
       - simple
       - usr-verity
       - usr-verity-raid
     pullrequest:
       - base
-      # TODO(12276) re-enable: #- combined
+      - combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
       - raid-mirrored
       - raid-resync-small
-      # TODO(12276) re-enable: #- rerun
+      - rerun
       - simple
       - usr-verity
       - usr-verity-raid
     validation:
       - base
-      # TODO(12276) re-enable: #- combined
+      - combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
@@ -224,14 +220,14 @@ virtualMachine:
       - raid-mirrored
       - raid-resync-small
       - raid-small
-      # TODO(12276) re-enable: #- rerun
+      - rerun
       - root-verity
       - simple
       - usr-verity
       - usr-verity-raid
     weekly:
       - base
-      # TODO(12276) re-enable: #- combined
+      - combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
@@ -239,7 +235,7 @@ virtualMachine:
       - raid-mirrored
       - raid-resync-small
       - raid-small
-      # TODO(12276) re-enable: #- rerun
+      - rerun
       - root-verity
       - simple
       - usr-verity

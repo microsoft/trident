@@ -470,10 +470,10 @@ def check_crypsetup_luks_dump(conn: fabric.Connection, cryptDevPath: str) -> Non
     ), f"Expected one TPM keyslot, got {len(dump['tokens'][0]['keyslots'])}"
 
     actual = dump["tokens"]["0"]["tpm2-pcrs"][0]
-    expectedInt = 7
+    expectedInt = [0, 7]
     assert (
-        actual == expectedInt
-    ), f"Expected TPM2 PCR to be {expected!r}, got {actual!r}"
+        actual in expectedInt
+    ), f"Expected TPM2 PCR to be in '{expectedInt}', got {actual}"
 
     assert (
         len(dump["tokens"]["0"]["tpm2-pcrs"]) == 1
