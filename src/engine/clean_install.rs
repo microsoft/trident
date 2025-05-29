@@ -26,6 +26,7 @@ use trident_api::{
 use crate::{
     datastore::DataStore,
     engine::{self, boot::esp, bootentries, osimage, storage, EngineContext, SUBSYSTEMS},
+    monitor_metrics,
     subsystems::hooks::HooksSubsystem,
     ExitKind, SAFETY_OVERRIDE_CHECK_PATH,
 };
@@ -172,6 +173,15 @@ fn stage_clean_install(
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
 ) -> Result<NewrootMount, TridentError> {
+    // Best effort to measure memory, CPU, and network usage during execution
+    let monitor = match monitor_metrics::MonitorMetrics::new("stage_clean_install".to_string()) {
+        Ok(monitor) => Some(monitor),
+        Err(e) => {
+            warn!("Failed to create metrics monitor: {e:?}");
+            None
+        }
+    };
+
     // Initialize a copy of the Host Status with the changes that are planned. We make a copy
     // rather than modifying the datastore's version so that we can wait until the clean install is
     // staged before committing the changes.
@@ -222,6 +232,13 @@ fn stage_clean_install(
     let result = chroot::enter_update_chroot(newroot_mount.path())
         .message("Failed to enter chroot")?
         .execute_and_exit(|| engine::configure(subsystems, &ctx));
+
+    if let Some(mut monitor) = monitor {
+        // If the monitor was created successfully, stop it after execution
+        if let Err(e) = monitor.stop() {
+            warn!("Failed to stop metrics monitor: {e:?}");
+        }
+    }
 
     if let Err(original_error) = result {
         if let Err(e) = newroot_mount.unmount_all() {

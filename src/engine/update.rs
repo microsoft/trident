@@ -22,6 +22,7 @@ use crate::{
         storage::{self, verity},
         EngineContext, NewrootMount, SUBSYSTEMS,
     },
+    monitor_metrics,
     subsystems::hooks::HooksSubsystem,
     ExitKind,
 };
@@ -207,6 +208,15 @@ fn stage_update(
         }
     }
 
+    // Best effort to measure memory, CPU, and network usage during execution
+    let monitor = match monitor_metrics::MonitorMetrics::new("stage_update".to_string()) {
+        Ok(monitor) => Some(monitor),
+        Err(e) => {
+            warn!("Failed to create metrics monitor: {e:?}");
+            None
+        }
+    };
+
     engine::prepare(subsystems, &ctx)?;
 
     if let ServicingType::AbUpdate = ctx.servicing_type {
@@ -265,6 +275,13 @@ fn stage_update(
     })?;
     #[cfg(feature = "grpc-dangerous")]
     grpc::send_host_status_state(sender, state)?;
+
+    if let Some(mut monitor) = monitor {
+        // If the monitor was created successfully, stop it after execution
+        if let Err(e) = monitor.stop() {
+            warn!("Failed to stop metrics monitor: {e:?}");
+        }
+    }
 
     info!("Staging of update '{:?}' succeeded", ctx.servicing_type);
 

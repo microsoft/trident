@@ -32,6 +32,7 @@ mod datastore;
 mod engine;
 mod harpoon_hc;
 mod logging;
+mod monitor_metrics;
 pub mod offline_init;
 mod orchestrate;
 pub mod osimage;
