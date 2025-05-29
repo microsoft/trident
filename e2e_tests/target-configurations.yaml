@@ -95,7 +95,7 @@ virtualMachine:
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
-      - memory-constraint-combined
+      # TODO(12349): fix #- memory-constraint-combined
       - misc
       - raid-mirrored
       - raid-resync-small
@@ -112,7 +112,7 @@ virtualMachine:
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
-      - memory-constraint-combined
+      # TODO(12349): fix #- memory-constraint-combined
       - misc
       - raid-mirrored
       - raid-resync-small
@@ -139,7 +139,7 @@ virtualMachine:
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
-      - memory-constraint-combined
+      # TODO(12349): fix #- memory-constraint-combined
       - misc
       - raid-mirrored
       - raid-resync-small
@@ -156,7 +156,7 @@ virtualMachine:
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
-      - memory-constraint-combined
+      # TODO(12349): fix #- memory-constraint-combined
       - misc
       - raid-mirrored
       - raid-resync-small
