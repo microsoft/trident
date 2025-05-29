@@ -264,6 +264,29 @@ stages:
                   artifactName: $(ob_artifactBaseName)
                   targetPath: $(ob_outputDirectory)
 
+          - job: TridentContainerUsrVerityTestimage
+            displayName: "Download trident-container-usrverity-testimage"
+            timeoutInMinutes: 10
+            pool:
+              type: linux
+
+            variables:
+              ob_outputDirectory: $(Build.SourcesDirectory)/build
+              ob_artifactBaseName: "trident-container-usrverity-testimage"
+
+            steps:
+              - task: DownloadPipelineArtifact@2
+                inputs:
+                  source: specific
+                  project: "ECF"
+                  definition: ${{ parameters.definition }}
+                  runVersion: ${{ parameters.runVersion }}
+                  branchName: "refs/heads/${{ parameters.branch }}"
+                  runId: ${{ parameters.tridentPipelineRunId }}
+                  allowFailedBuilds: ${{ parameters.allowFailedBuilds }}
+                  artifactName: $(ob_artifactBaseName)
+                  targetPath: $(ob_outputDirectory)
+
       # Host images:
       - ${{ if eq(parameters.hostImages, true) }}:
           - job: TridentInstallerTestimage
@@ -346,6 +369,29 @@ stages:
             variables:
               ob_outputDirectory: $(Build.SourcesDirectory)/build
               ob_artifactBaseName: "trident-verity-testimage"
+
+            steps:
+              - task: DownloadPipelineArtifact@2
+                inputs:
+                  source: specific
+                  project: "ECF"
+                  definition: ${{ parameters.definition }}
+                  runVersion: ${{ parameters.runVersion }}
+                  branchName: "refs/heads/${{ parameters.branch }}"
+                  runId: ${{ parameters.tridentPipelineRunId }}
+                  allowFailedBuilds: ${{ parameters.allowFailedBuilds }}
+                  artifactName: $(ob_artifactBaseName)
+                  targetPath: $(ob_outputDirectory)
+
+          - job: TridentUsrVerityTestimage
+            displayName: "Download trident-usrverity-testimage"
+            timeoutInMinutes: 10
+            pool:
+              type: linux
+
+            variables:
+              ob_outputDirectory: $(Build.SourcesDirectory)/build
+              ob_artifactBaseName: "trident-usrverity-testimage"
 
             steps:
               - task: DownloadPipelineArtifact@2
