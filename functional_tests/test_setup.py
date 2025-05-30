@@ -28,7 +28,7 @@ def create_vm(create_params):
 
 def disable_phonehome(ssh_node: SshNode):
     """Disables phonehome in the VM to allow faster rerunning of Trident."""
-    ssh_node.execute("sudo sed -i 's/^\s*phonehome: .*//' /etc/trident/config.yaml")
+    ssh_node.execute("sudo sed -i 's/^\\s*phonehome: .*//' /etc/trident/config.yaml")
 
 
 def prepare_hostconfig(test_dir_path: Path, ssh_pub_key: str):
