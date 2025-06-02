@@ -18,7 +18,10 @@ use trident_api::{
     BlockDeviceId,
 };
 
-use super::{boot, EngineContext};
+use super::{
+    boot::{self, uki},
+    EngineContext,
+};
 
 /// Boot EFI executable
 const BOOT_EFI: &str = BootloaderExecutable::Boot.current_name();
@@ -104,7 +107,14 @@ pub fn create_and_update_boot_variables(
     )?;
 
     // Update boot variables
-    set_boot_next_and_update_boot_order(ctx, added_entry_numbers)
+    set_boot_next_and_update_boot_order(ctx, added_entry_numbers)?;
+
+    if uki::is_staged(esp_path) {
+        let oneshot = ctx.servicing_type != ServicingType::CleanInstall;
+        uki::update_uki_boot_order(ctx, esp_path, oneshot)?;
+    }
+
+    Ok(())
 }
 
 /// Update the `BootNext` and potentially also `BootOrder`.

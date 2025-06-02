@@ -18,6 +18,7 @@ use super::EngineContext;
 
 pub(super) mod esp;
 pub(super) mod grub;
+pub(super) mod uki;
 
 pub(crate) const ESP_EXTRACTION_DIRECTORY: &str = "/tmp";
 

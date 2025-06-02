@@ -94,6 +94,7 @@ pub enum Dependency {
     Df,
     Dracut,
     E2fsck,
+    Efivar,
     Efibootmgr,
     Findmnt,
     Iptables,

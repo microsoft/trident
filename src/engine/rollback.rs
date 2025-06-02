@@ -3,9 +3,9 @@ use std::path::PathBuf;
 use anyhow::{Context, Error};
 use log::{debug, info, trace, warn};
 
-use osutils::{block_devices, lsblk, veritysetup};
+use osutils::{block_devices, efivar, lsblk, veritysetup};
 use trident_api::{
-    constants::internal_params::VIRTDEPLOY_BOOT_ORDER_WORKAROUND,
+    constants::internal_params::{ENABLE_UKI_SUPPORT, VIRTDEPLOY_BOOT_ORDER_WORKAROUND},
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::{AbVolumeSelection, ServicingState, ServicingType},
     BlockDeviceId,
@@ -66,6 +66,11 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
         {
             bootentries::persist_boot_order()
                 .message("Failed to persist boot order after reboot")?;
+        }
+
+        if ctx.spec.internal_params.get_flag(ENABLE_UKI_SUPPORT) {
+            efivar::set_default_to_current()
+                .message("Failed to set default boot entry to current")?;
         }
     } else if datastore.host_status().servicing_state == ServicingState::CleanInstallStaged
         || datastore.host_status().servicing_state == ServicingState::CleanInstallFinalized

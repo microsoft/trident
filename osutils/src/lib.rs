@@ -7,6 +7,7 @@ pub mod dependencies;
 pub mod df;
 pub mod e2fsck;
 pub mod efibootmgr;
+pub mod efivar;
 pub mod encryption;
 pub mod exe;
 pub mod files;

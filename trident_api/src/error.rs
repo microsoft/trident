@@ -395,6 +395,9 @@ pub enum ServicingError {
     #[error("Failed to enter chroot")]
     EnterChroot,
 
+    #[error("Failed to enumerate UKIs")]
+    EnumerateUkis,
+
     #[error("Failed to exit chroot")]
     ExitChroot,
 
@@ -488,6 +491,9 @@ pub enum ServicingError {
     #[error("Failed to do a read operation with efibootmgr")]
     ReadEfibootmgr,
 
+    #[error("Failed to read EFI variable '{name}'")]
+    ReadEfiVariable { name: String },
+
     #[error("Failed to read current system hostname from {path}")]
     ReadHostname { path: String },
 
@@ -528,6 +534,9 @@ pub enum ServicingError {
     #[error("Failed to run post-provision script '{script_name}'")]
     RunPostProvisionScript { script_name: String },
 
+    #[error("Failed to set EFI variable '{name}'")]
+    SetEfiVariable { name: String },
+
     #[error("Failed to set permissions on temporary recovery key file '{key_file}'")]
     SetRecoveryKeyFilePermissions { key_file: String },
 
@@ -536,6 +545,9 @@ pub enum ServicingError {
 
     #[error("Failed to start network")]
     StartNetwork,
+
+    #[error("Failed to update UKI")]
+    UpdateUki,
 
     #[error(
         "Volume {active_volume} is active but active volume in Host Status is set to \
