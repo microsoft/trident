@@ -2,7 +2,12 @@ use anyhow::{bail, Error};
 use enumflags2::bitflags;
 use serde::{self, Deserialize};
 
-/// Represents the Platform Configuration Registers (PCRs) in the TPM.
+/// Represents the Platform Configuration Registers (PCRs) in the TPM. Each PCR is associated with
+/// a digit number and a string name.
+///
+/// Currently, the PCRs modified by `systemd`` are represented, e.g. as shown in the
+/// `systemd-cryptenroll` documentation, but more might be added in the future:
+/// https://www.man7.org/linux/man-pages/man1/systemd-cryptenroll.1.html.
 #[bitflags]
 #[repr(u32)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -42,14 +47,14 @@ pub enum Pcr {
 }
 
 impl Pcr {
-    /// Returns the digit value of the PCR.
-    pub fn to_value(&self) -> u32 {
+    /// Returns the digit representation of the PCR number.
+    pub fn to_num(&self) -> u32 {
         (*self as u32).trailing_zeros()
     }
 
-    /// Returns the PCR for the given digit value. Needed for deserialization.
-    pub fn from_value(value: u32) -> Result<Self, Error> {
-        match value {
+    /// Returns the PCR for the given digit number. Needed for deserialization.
+    pub fn from_num(num: u32) -> Result<Self, Error> {
+        match num {
             0 => Ok(Pcr::Pcr0),
             1 => Ok(Pcr::Pcr1),
             2 => Ok(Pcr::Pcr2),
@@ -66,10 +71,7 @@ impl Pcr {
             15 => Ok(Pcr::Pcr15),
             16 => Ok(Pcr::Pcr16),
             23 => Ok(Pcr::Pcr23),
-            _ => bail!(
-                "Failed to convert an invalid PCR value '{}' to a Pcr",
-                value
-            ),
+            _ => bail!("Failed to convert an invalid PCR number '{}' to a Pcr", num),
         }
     }
 }
@@ -80,7 +82,7 @@ impl<'de> Deserialize<'de> for Pcr {
         D: serde::Deserializer<'de>,
     {
         let val = u32::deserialize(deserializer)?;
-        Pcr::from_value(val)
+        Pcr::from_num(val)
             .map_err(|_| serde::de::Error::custom(format!("Failed to deserialize PCR: {}", val)))
     }
 }
@@ -90,37 +92,37 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_to_value() {
-        assert_eq!(Pcr::Pcr0.to_value(), 0);
-        assert_eq!(Pcr::Pcr1.to_value(), 1);
-        assert_eq!(Pcr::Pcr2.to_value(), 2);
-        assert_eq!(Pcr::Pcr3.to_value(), 3);
-        assert_eq!(Pcr::Pcr4.to_value(), 4);
-        assert_eq!(Pcr::Pcr5.to_value(), 5);
-        assert_eq!(Pcr::Pcr7.to_value(), 7);
-        assert_eq!(Pcr::Pcr9.to_value(), 9);
-        assert_eq!(Pcr::Pcr10.to_value(), 10);
-        assert_eq!(Pcr::Pcr11.to_value(), 11);
-        assert_eq!(Pcr::Pcr12.to_value(), 12);
-        assert_eq!(Pcr::Pcr13.to_value(), 13);
-        assert_eq!(Pcr::Pcr14.to_value(), 14);
-        assert_eq!(Pcr::Pcr15.to_value(), 15);
-        assert_eq!(Pcr::Pcr16.to_value(), 16);
-        assert_eq!(Pcr::Pcr23.to_value(), 23);
+    fn test_to_num() {
+        assert_eq!(Pcr::Pcr0.to_num(), 0);
+        assert_eq!(Pcr::Pcr1.to_num(), 1);
+        assert_eq!(Pcr::Pcr2.to_num(), 2);
+        assert_eq!(Pcr::Pcr3.to_num(), 3);
+        assert_eq!(Pcr::Pcr4.to_num(), 4);
+        assert_eq!(Pcr::Pcr5.to_num(), 5);
+        assert_eq!(Pcr::Pcr7.to_num(), 7);
+        assert_eq!(Pcr::Pcr9.to_num(), 9);
+        assert_eq!(Pcr::Pcr10.to_num(), 10);
+        assert_eq!(Pcr::Pcr11.to_num(), 11);
+        assert_eq!(Pcr::Pcr12.to_num(), 12);
+        assert_eq!(Pcr::Pcr13.to_num(), 13);
+        assert_eq!(Pcr::Pcr14.to_num(), 14);
+        assert_eq!(Pcr::Pcr15.to_num(), 15);
+        assert_eq!(Pcr::Pcr16.to_num(), 16);
+        assert_eq!(Pcr::Pcr23.to_num(), 23);
     }
 
     #[test]
-    fn test_from_value() {
+    fn test_from_num() {
         // Test case #0: Convert a valid value to a PCR.
-        assert_eq!(Pcr::from_value(0).unwrap(), Pcr::Pcr0);
-        assert_eq!(Pcr::from_value(1).unwrap(), Pcr::Pcr1);
-        assert_eq!(Pcr::from_value(2).unwrap(), Pcr::Pcr2);
-        assert_eq!(Pcr::from_value(23).unwrap(), Pcr::Pcr23);
+        assert_eq!(Pcr::from_num(0).unwrap(), Pcr::Pcr0);
+        assert_eq!(Pcr::from_num(1).unwrap(), Pcr::Pcr1);
+        assert_eq!(Pcr::from_num(2).unwrap(), Pcr::Pcr2);
+        assert_eq!(Pcr::from_num(23).unwrap(), Pcr::Pcr23);
 
         // Test case #1: Convert an invalid value to a PCR.
         assert_eq!(
-            Pcr::from_value(31).unwrap_err().root_cause().to_string(),
-            "Failed to convert an invalid PCR value '31' to a Pcr"
+            Pcr::from_num(31).unwrap_err().root_cause().to_string(),
+            "Failed to convert an invalid PCR number '31' to a Pcr"
         );
     }
 }

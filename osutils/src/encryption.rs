@@ -169,7 +169,7 @@ fn to_tpm2_pcrs_arg(pcrs: BitFlags<Pcr>) -> String {
     format!(
         "--tpm2-pcrs={}",
         pcrs.iter()
-            .map(|flag| flag.to_value().to_string())
+            .map(|flag| flag.to_num().to_string())
             .collect::<Vec<_>>()
             .join("+")
     )

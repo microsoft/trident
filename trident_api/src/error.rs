@@ -416,6 +416,9 @@ pub enum ServicingError {
     #[error("Failed to generate Netplan config")]
     GenerateNetplanConfig,
 
+    #[error("Failed to generate .pcrlock file at '{pcrlock_file}'")]
+    GeneratePcrlockFile { pcrlock_file: String },
+
     #[error("Failed to generate recovery key file '{key_file}'")]
     GenerateRecoveryKeyFile { key_file: String },
 
