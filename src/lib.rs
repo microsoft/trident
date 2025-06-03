@@ -5,7 +5,7 @@ use std::{
 
 use cli::GetKind;
 use engine::{bootentries, EngineContext};
-use log::{debug, error, info, warn};
+use log::{debug, error, info, trace, warn};
 use nix::unistd::Uid;
 
 use osutils::{block_devices, container, dependencies::Dependency};
@@ -180,6 +180,12 @@ impl Trident {
         info!("Running Trident version: {}", TRIDENT_VERSION);
         if container::is_running_in_container().message("Running in container check failed")? {
             info!("Running Trident in a container");
+        }
+
+        if let Ok(selinux_context) = fs::read_to_string("/proc/self/attr/current") {
+            trace!("selinux context: Trident is running in SELinux domain '{selinux_context}'");
+        } else {
+            error!("selinux context: Failed to retrieve the SELinux context in which Trident is running");
         }
 
         if !Uid::effective().is_root() {
