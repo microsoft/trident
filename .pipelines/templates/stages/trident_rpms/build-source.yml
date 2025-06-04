@@ -56,23 +56,9 @@ stages:
           - template: ../common_tasks/rustup.yml
           - template: ../common_tasks/cargo-auth.yml
           - template: unit-test.yml
-
-      - job: Coverage
-        displayName: Evaluate Unit Test Code Coverage
-        condition: eq(${{ parameters.codeCoverage }}, true)
-        pool:
-          type: linux
-
-        variables:
-          ob_outputDirectory: "$(Build.SourcesDirectory)/trident/out"
-
-        steps:
-          - template: ../common_tasks/os-info.yml
-          - template: ../common_tasks/avoid-pypi-usage.yml
-          - template: ../common_tasks/cargo-auth.yml
-          - template: ../common_tasks/coverage.yml
             parameters:
-              codeCoverageBaseline: 70 # Unit tests
+              codeCoverage: ${{ parameters.codeCoverage }}
+              unitTestCoverageBaseline: 70 # Unit tests
 
       - job: BuildTrident
         displayName: Build Trident 3.0 RPMs
