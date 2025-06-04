@@ -6,7 +6,7 @@ use strum::IntoEnumIterator;
 use trident_api::{
     constants::{
         internal_params::ENABLE_UKI_SUPPORT, AB_VOLUME_A_NAME, AB_VOLUME_B_NAME,
-        AZURE_LINUX_INSTALL_ID_PREFIX,
+        AZURE_LINUX_INSTALL_ID_PREFIX, VAR_TMP_PATH,
     },
     error::{ReportError, ServicingError, TridentError},
     status::AbVolumeSelection,
@@ -20,7 +20,7 @@ pub(super) mod esp;
 pub(super) mod grub;
 pub(super) mod uki;
 
-pub(crate) const ESP_EXTRACTION_DIRECTORY: &str = "/tmp";
+pub(crate) const ESP_EXTRACTION_DIRECTORY: &str = VAR_TMP_PATH;
 
 #[derive(Default, Debug)]
 pub(super) struct BootSubsystem;

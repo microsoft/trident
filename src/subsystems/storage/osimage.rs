@@ -6,7 +6,7 @@ use std::{
 use const_format::formatcp;
 use log::{debug, error, trace, warn};
 
-use osutils::{df, lsblk};
+use osutils::lsblk;
 use trident_api::{
     config::FileSystemSource,
     constants::{
@@ -53,7 +53,7 @@ pub fn validate_host_config(ctx: &EngineContext) -> Result<(), TridentError> {
     validate_verity_match(os_image, &ctx.storage_graph)?;
 
     debug!("Validating ESP image in OS image");
-    validate_esp(os_image)?;
+    validate_esp(os_image, ctx)?;
 
     debug!("Validating filesystem mounted at or containing /boot");
     ensure_boot_is_ext4(os_image)?;
@@ -297,7 +297,7 @@ fn validate_verity_match(
 /// Checks that the ESP filesystem never has its verity entry populated. In addition, checks that
 /// there is enough space in /tmp to perform file-based copy of ESP image, and warns the user if not
 /// (this will not produce a fatal error).
-fn validate_esp(os_image: &OsImage) -> Result<(), TridentError> {
+fn validate_esp(os_image: &OsImage, ctx: &EngineContext) -> Result<(), TridentError> {
     let Ok(esp_img) = os_image.esp_filesystem() else {
         trace!("Unable to access ESP filesystem.");
         return Ok(());
@@ -308,11 +308,11 @@ fn validate_esp(os_image: &OsImage) -> Result<(), TridentError> {
         return Err(TridentError::new(InvalidInputError::UnexpectedVerityOnEsp));
     }
 
-    // Ensure there is enough space in /tmp to perform file-based copy of ESP image
-    let Ok(available_space) = df::available_space_in_fs(ESP_EXTRACTION_DIRECTORY) else {
+    let Some(available_space) = ctx.filesystem_block_device_size(ESP_EXTRACTION_DIRECTORY) else {
         warn!("Failed to check if there is enough space available on '{ESP_EXTRACTION_DIRECTORY}' to copy ESP image.");
         return Ok(());
     };
+
     trace!("Found {available_space} bytes of available space in {ESP_EXTRACTION_DIRECTORY}.");
 
     let esp_img_size = esp_img.image_file.uncompressed_size;
@@ -320,15 +320,15 @@ fn validate_esp(os_image: &OsImage) -> Result<(), TridentError> {
 
     if esp_img_size >= available_space {
         error!(
-            "There is not enough space to copy the ESP image into {ESP_EXTRACTION_DIRECTORY}. The \
-            uncompressed size of the ESP image is {}, while {ESP_EXTRACTION_DIRECTORY} has {} available.",
+            "There is not enough space to copy the ESP image into '{ESP_EXTRACTION_DIRECTORY}'. The \
+            uncompressed size of the ESP image is {}, while '{ESP_EXTRACTION_DIRECTORY}' has {} available.",
             ByteCount::from(esp_img_size).to_human_readable_approx(),
             ByteCount::from(available_space).to_human_readable_approx()
         );
     } else if esp_img_size >= available_space / 2 {
         warn!(
-            "There may not be enough space to copy the ESP image into {ESP_EXTRACTION_DIRECTORY}. \
-            The uncompressed size of the ESP image is {}, while {ESP_EXTRACTION_DIRECTORY} has {} available.",
+            "There may not be enough space to copy the ESP image into '{ESP_EXTRACTION_DIRECTORY}'. \
+            The uncompressed size of the ESP image is {}, while '{ESP_EXTRACTION_DIRECTORY}' has {} available.",
             ByteCount::from(esp_img_size).to_human_readable_approx(),
             ByteCount::from(available_space).to_human_readable_approx()
         );
@@ -620,39 +620,59 @@ mod tests {
 
     #[test]
     fn test_validate_esp_success() {
-        // Generate mock OS image
-        let mock_image = MockOsImage {
-            source: Url::parse(OSIMAGE_DUMMY_SOURCE).unwrap(),
-            os_arch: SystemArchitecture::Amd64,
-            os_release: OsRelease::default(),
-            images: vec![
-                MockImage {
-                    mount_point: PathBuf::from(ESP_MOUNT_POINT_PATH),
-                    fs_type: OsImageFileSystemType::Vfat,
-                    fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
-                    part_type: DiscoverablePartitionType::Esp,
-                    verity: None,
+        let ctx = EngineContext::default()
+            .with_image(MockOsImage {
+                source: Url::parse(OSIMAGE_DUMMY_SOURCE).unwrap(),
+                os_arch: SystemArchitecture::Amd64,
+                os_release: OsRelease::default(),
+                images: vec![
+                    MockImage {
+                        mount_point: PathBuf::from(ESP_MOUNT_POINT_PATH),
+                        fs_type: OsImageFileSystemType::Vfat,
+                        fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
+                        part_type: DiscoverablePartitionType::Esp,
+                        verity: None,
+                    },
+                    MockImage {
+                        mount_point: PathBuf::from(ROOT_MOUNT_POINT_PATH),
+                        fs_type: OsImageFileSystemType::Ext4,
+                        fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
+                        part_type: DiscoverablePartitionType::Root,
+                        verity: Some(MockVerity {
+                            roothash: "mock-roothash".to_string(),
+                        }),
+                    },
+                ],
+            })
+            .with_spec(HostConfiguration {
+                storage: Storage {
+                    disks: vec![Disk {
+                        id: "disk1".to_owned(),
+                        device: PathBuf::from("/dev/sda"),
+                        partitions: vec![Partition {
+                            id: "part1".to_owned(),
+                            size: 4096.into(),
+                            partition_type: Default::default(),
+                        }],
+                        ..Default::default()
+                    }],
+                    filesystems: vec![FileSystem {
+                        device_id: Some("part1".to_owned()),
+                        mount_point: Some("/data".into()),
+                        source: FileSystemSource::Image,
+                    }],
+                    ..Default::default()
                 },
-                MockImage {
-                    mount_point: PathBuf::from(ROOT_MOUNT_POINT_PATH),
-                    fs_type: OsImageFileSystemType::Ext4,
-                    fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
-                    part_type: DiscoverablePartitionType::Root,
-                    verity: Some(MockVerity {
-                        roothash: "mock-roothash".to_string(),
-                    }),
-                },
-            ],
-        };
+                ..Default::default()
+            });
 
         // Expect validation to succeed
-        validate_esp(&OsImage::mock(mock_image)).unwrap();
+        validate_esp(ctx.image.as_ref().unwrap(), &ctx).unwrap();
     }
 
     #[test]
     fn test_validate_esp_failure() {
-        // Generate mock OS image
-        let mock_image = MockOsImage {
+        let ctx = EngineContext::default().with_image(MockOsImage {
             source: Url::parse(OSIMAGE_DUMMY_SOURCE).unwrap(),
             os_arch: SystemArchitecture::Amd64,
             os_release: OsRelease::default(),
@@ -676,10 +696,10 @@ mod tests {
                     }),
                 },
             ],
-        };
+        });
 
         // Expect validation to fail
-        let err = validate_esp(&OsImage::mock(mock_image)).unwrap_err();
+        let err = validate_esp(ctx.image.as_ref().unwrap(), &ctx).unwrap_err();
         assert_eq!(
             err.kind(),
             &ErrorKind::InvalidInput(InvalidInputError::UnexpectedVerityOnEsp)

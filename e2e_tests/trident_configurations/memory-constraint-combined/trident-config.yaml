@@ -28,15 +28,15 @@ storage:
         - id: usr-data-b-1
           size: 2G
         - id: usr-hash-a-1
-          size: 500M
+          size: 256M
         - id: usr-hash-b-1
-          size: 500M
+          size: 256M
         - id: web-a-e-1
           size: 1G
         - id: web-b-e-1
           size: 1G
         - id: trident
-          size: 100M
+          size: 500M
     - id: disk2
       device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
       partitionTableType: gpt
@@ -50,9 +50,9 @@ storage:
         - id: usr-data-b-2
           size: 2G
         - id: usr-hash-a-2
-          size: 500M
+          size: 256M
         - id: usr-hash-b-2
-          size: 500M
+          size: 256M
         - id: web-a-e-2
           size: 1G
         - id: web-b-e-2
@@ -160,21 +160,22 @@ storage:
       mountPoint: /var/lib/trident
 scripts:
   preServicing:
+    # Script to restart trident with a memory limit. The last recorded peak on a clean install on June 2025 was:
+    # trident-install.service: Consumed 34.583s CPU time, 64.7M memory peak, 0B memory swap peak.
     - name: rerun-trident-with-memory-limit
       runOn:
         - clean-install
       content: |
-        systemctl status trident | grep Memory
+        set -eux
+        systemctl status trident-install.service | grep Memory
         if [ ! -f "/run/already-run" ]; then
           echo "Setting memory limit for trident-install.service"
-          systemctl set-property trident-install.service MemoryMax=64M
+          systemctl set-property trident-install.service MemoryMax=100M
           systemd-run --property=After=trident-install.service --no-block systemctl start trident-install.service
           touch "/run/already-run"
           exit 1
         fi
 os:
-  selinux:
-    mode: permissive
   network:
     version: 2
     ethernets:

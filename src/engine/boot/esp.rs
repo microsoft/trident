@@ -15,6 +15,7 @@ use osutils::{
     hashing_reader::{HashingReader, HashingReader384},
     image_streamer,
     mount::{self, MountGuard},
+    path,
 };
 use trident_api::{
     constants::internal_params::{DISABLE_GRUB_NOPREFIX_CHECK, ENABLE_UKI_SUPPORT},
@@ -36,17 +37,27 @@ const GRUB_EFI: &str = BootloaderExecutable::Grub.current_name();
 const GRUB_NOPREFIX_EFI: &str = BootloaderExecutable::GrubNoPrefix.current_name();
 
 /// Takes in a reader to the raw zstd-compressed ESP image and decompresses it
-/// into a temporary file. Returns a tuple containing the temporary file and the
-/// computed hash (SHA256 or SHA384) of the image.
+/// into a temporary file under `/<mount_point>/<ESP_EXTRACTION_DIRECTORY>`.
+/// Returns a tuple containing the temporary file and the computed hash (SHA256
+/// or SHA384) of the image.
 ///
 /// It also takes in the URL of the image to be shown in case of errors.
-fn load_raw_image<R>(source: &Url, reader: R) -> Result<(NamedTempFile, String), Error>
+fn load_raw_image<R>(
+    esp_extraction_dir: &Path,
+    source: &Url,
+    reader: R,
+) -> Result<(NamedTempFile, String), Error>
 where
     R: Read + HashingReader,
 {
     // Create a temporary file to download ESP image
-    let temp_image = NamedTempFile::new_in(ESP_EXTRACTION_DIRECTORY)
-        .context("Failed to create a temporary file")?;
+    trace!(
+        "Creating temporary file for ESP image extraction at {}",
+        esp_extraction_dir.display()
+    );
+
+    let temp_image =
+        NamedTempFile::new_in(esp_extraction_dir).context("Failed to create a temporary file")?;
     let temp_image_path = temp_image.path().to_path_buf();
 
     debug!("Extracting ESP image to {}", temp_image_path.display());
@@ -352,9 +363,18 @@ pub(super) fn deploy_esp(ctx: &EngineContext, mount_point: &Path) -> Result<(), 
         .reader()
         .context("Failed to get reader for ESP image from OS image")?;
 
-    let (temp_file, computed_sha384) =
-        load_raw_image(os_image.source(), HashingReader384::new(stream))
-            .context("Failed to load raw image")?;
+    // Extract the ESP image to a temporary file in
+    // `<newroot>/ESP_EXTRACTION_DIRECTORY`. This location is generally
+    // guaranteed to be writable and backed by a real block device, so we don't
+    // have to store a potentially large ESP image in memory.
+    let esp_extraction_dir = path::join_relative(mount_point, ESP_EXTRACTION_DIRECTORY);
+
+    let (temp_file, computed_sha384) = load_raw_image(
+        &esp_extraction_dir,
+        os_image.source(),
+        HashingReader384::new(stream),
+    )
+    .context("Failed to load raw image")?;
 
     if esp_img.image_file.sha384 != computed_sha384 {
         bail!(

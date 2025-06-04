@@ -1,6 +1,6 @@
 use std::{
     collections::{BTreeMap, HashMap},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 use anyhow::{Context, Error};
@@ -242,6 +242,19 @@ impl EngineContext {
 
         Ok(verity_device_config)
     }
+
+    /// Returns the estimated size of the block device holding the filesystem that contains the
+    /// given path. If the path is not mounted anywhere, or if the block device size cannot be
+    /// estimated, returns None.
+    pub(crate) fn filesystem_block_device_size(&self, path: impl AsRef<Path>) -> Option<u64> {
+        let device = self
+            .spec
+            .storage
+            .path_to_mount_point_info(path)
+            .and_then(|mp| mp.device_id)?;
+
+        self.storage_graph.block_device_size(device)
+    }
 }
 
 #[cfg(test)]
@@ -255,7 +268,7 @@ mod tests {
 
     use trident_api::config::{
         self, AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, MountOptions, MountPoint,
-        Partition, PartitionType,
+        Partition, PartitionType, Storage,
     };
 
     #[test]
@@ -553,5 +566,36 @@ mod tests {
                 .to_string(),
             "Failed to find configuration for verity device 'non-existent'"
         );
+    }
+
+    #[test]
+    fn test_filesystem_block_device_size() {
+        let ctx = EngineContext::default().with_spec(HostConfiguration {
+            storage: Storage {
+                disks: vec![Disk {
+                    id: "disk1".to_owned(),
+                    device: PathBuf::from("/dev/sda"),
+                    partitions: vec![Partition {
+                        id: "part1".to_owned(),
+                        size: 4096.into(),
+                        partition_type: PartitionType::Root,
+                    }],
+                    ..Default::default()
+                }],
+                filesystems: vec![FileSystem {
+                    device_id: Some("part1".to_owned()),
+                    mount_point: Some("/data".into()),
+                    source: FileSystemSource::Image,
+                }],
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+
+        assert_eq!(ctx.filesystem_block_device_size("/data"), Some(4096));
+
+        assert_eq!(ctx.filesystem_block_device_size("/data/subdir"), Some(4096));
+
+        assert_eq!(ctx.filesystem_block_device_size("/nonexistent"), None);
     }
 }

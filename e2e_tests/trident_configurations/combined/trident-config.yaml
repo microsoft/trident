@@ -20,9 +20,9 @@ storage:
           type: xbootldr
           size: 200M
         - id: root-a-1
-          size: 4G
+          size: 2G
         - id: root-b-1
-          size: 4G
+          size: 2G
         - id: usr-data-a-1
           size: 2G
         - id: usr-data-b-1
@@ -42,9 +42,9 @@ storage:
       partitionTableType: gpt
       partitions:
         - id: root-a-2
-          size: 4G
+          size: 2G
         - id: root-b-2
-          size: 4G
+          size: 2G
         - id: usr-data-a-2
           size: 2G
         - id: usr-data-b-2
@@ -79,18 +79,7 @@ storage:
         devices:
           - root-b-1
           - root-b-2
-      - id: web-a-e
-        name: web-a-e
-        level: raid1
-        devices:
-          - web-a-e-1
-          - web-a-e-2
-      - id: web-b-e
-        name: web-b-e
-        level: raid1
-        devices:
-          - web-b-e-1
-          - web-b-e-2
+
       - id: usr-data-a
         name: usr-data-a
         level: raid1
@@ -115,6 +104,19 @@ storage:
         devices:
           - usr-hash-b-1
           - usr-hash-b-2
+
+      - id: web-a-e
+        name: web-a-e
+        level: raid1
+        devices:
+          - web-a-e-1
+          - web-a-e-2
+      - id: web-b-e
+        name: web-b-e
+        level: raid1
+        devices:
+          - web-b-e-1
+          - web-b-e-2
   abUpdate:
     volumePairs:
       - id: boot
