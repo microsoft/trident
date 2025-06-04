@@ -19,3 +19,12 @@ steps:
       fi
 
     displayName: os-release
+  - script: |
+      echo "CPU Info:"
+      echo "N proc: $(nproc)"
+      lscpu
+      echo "Memory:"
+      free -h
+      echo "Disk space:"
+      df -h
+    displayName: system-info

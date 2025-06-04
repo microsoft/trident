@@ -1,0 +1,113 @@
+parameters:
+  - name: stages
+    type: stageList
+    default: []
+
+stages:
+  - ${{ each stage in parameters.stages }}:
+      - stage: ${{ stage.stage }}
+        ${{ if ne(stage.displayName, '') }}:
+          displayName: ${{ stage.displayName }}
+
+        ${{ if ne(join(stage.dependsOn, ','), '') }}:
+          dependsOn: ${{ stage.dependsOn }}
+
+        ${{ if ne(stage.condition, '') }}:
+          condition: ${{ stage.condition }}
+
+        ${{ if ne(stage.variables, '') }}:
+          variables: ${{ stage.variables }}
+
+        ${{ if ne(stage.isSkippable, '') }}:
+          isSkippable: ${{ stage.isSkippable }}
+
+        ${{ if ne(stage.lockBehavior, '') }}:
+          lockBehavior: ${{ stage.lockBehavior }}
+
+        jobs:
+          - ${{ each job in stage.jobs }}:
+              - job: ${{ job.job }}
+                ${{ if ne(job.displayName, '') }}:
+                  displayName: ${{ job.displayName }}
+
+                ${{ if and(ne(job.timeoutInMinutes, ''), gt(2880, job.timeoutInMinutes)) }}:
+                  timeoutInMinutes: ${{ job.timeoutInMinutes }}
+                ${{ else }}:
+                  timeoutInMinutes: 1440
+
+                ${{ if ne(job.condition, '') }}:
+                  condition: ${{ job.condition }}
+
+                ${{ if ne(job.strategy, '') }}:
+                  strategy: ${{ job.strategy }}
+
+                ${{ if ne(join(job.dependsOn, ','), '') }}:
+                  dependsOn: ${{ job.dependsOn }}
+
+                variables:
+                  - ${{ if ne(job.variables, '') }}:
+                      - ${{ each v in job.variables }}:
+                          - ${{ if ne(v.key, '') }}:
+                              - name: ${{ v.key }}
+                                value: ${{ v.value }}
+                          - ${{ else }}:
+                              - ${{ insert }}: ${{ v }}
+                  - name: ob_customArtifactName
+                    value: ${{ coalesce(variables.ob_artifactBaseName, format('drop_{0}_{1}', stage.stage, job.job)) }}${{ coalesce(variables.ob_artifactSuffix, '') }}
+
+                pool:
+                  name: ${{ coalesce(job.pool.name, 'trident-azl3-1es-pool-westus2') }}
+
+                  ${{ if ne(job.pool.hostArchitecture, '') }}:
+                    HostArchitecture: ${{ job.pool.hostArchitecture }}
+
+                  LinuxHostVersion:
+                    vmBuild: true
+                    distribution: mariner
+                  Host: linux
+
+                steps:
+                  - ${{ if eq(variables.ob_outputDirectory, '' ) }}:
+                      - ${{ job.job }}
+                      - "Variable ob_outputDirectory is not defined. Please check https://aka.ms/obpipelines/artifacts": error
+
+                  - checkout: self
+                    fetchDepth: 1
+                    submodules: recursive
+                    path: s
+
+                  - bash: |
+                      set -eux
+                      mkdir -p "${{ variables.ob_outputDirectory }}"
+                    displayName: "Create output directory"
+
+                  - ${{ each step in job.steps }}:
+                      - ${{ if ne(step.task, '') }}:
+                          task: ${{ step.task }}
+                        ${{ if ne(step.displayName, '') }}:
+                          displayName: ${{ step.displayName }}
+                        ${{ if ne(step.inputs, '') }}:
+                          inputs: ${{ step.inputs }}
+                        ${{ if ne(step.condition, '') }}:
+                          condition: ${{ step.condition }}
+                        ${{ if ne(step.env, '') }}:
+                          env: ${{ step.env }}
+                        ${{ if ne(step.retryCountOnTaskFailure, '') }}:
+                          retryCountOnTaskFailure: ${{ step.retryCountOnTaskFailure }}
+                        ${{ if ne(step.continueOnError, '') }}:
+                          continueOnError: ${{ step.continueOnError }}
+                        ${{ if ne(step.target, '') }}:
+                          target: ${{ step.target }}
+                        ${{ if ne(step.enabled, '') }}:
+                          enabled: ${{ step.enabled }}
+                        ${{ if ne(step.name, '') }}:
+                          name: ${{ step.name }}
+                        ${{ if ne(step.timeoutInMinutes, '') }}:
+                          timeoutInMinutes: ${{ step.timeoutInMinutes }}
+
+                      # - bash: |
+                      #     # ACTUAL:
+                      #     # ${{ convertToJson(step) }}
+
+                  - publish: ${{ variables.ob_outputDirectory }}
+                    artifact: ${{ variables.ob_customArtifactName }}
