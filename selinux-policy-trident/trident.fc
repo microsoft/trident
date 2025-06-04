@@ -1,3 +1,0 @@
-/usr/bin/trident                --      gen_context(system_u:object_r:trident_exec_t,s0)
-
-/var/lib/trident(/.*)?          gen_context(system_u:object_r:trident_var_lib_t,s0)

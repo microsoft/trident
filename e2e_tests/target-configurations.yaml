@@ -126,9 +126,6 @@ virtualMachine:
     pullrequest:
       - base
       - combined
-      # TODO(10522): Can remove encrypted-partition from pipeline when combined/rerun runs in
-      # enforcing mode
-      - encrypted-partition
       - raid-mirrored
       - raid-resync-small
       - rerun

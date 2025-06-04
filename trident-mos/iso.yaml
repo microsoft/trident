@@ -54,9 +54,6 @@ os:
       - tpm2-tools
       - veritysetup
       - vim
-      # Support for building SELinux module and debugging
-      - selinux-policy-devel
-      - setools-console
 
   additionalFiles:
     - source: files/getty@.service
@@ -69,12 +66,6 @@ os:
       destination: /usr/lib/systemd/system/trident-install.service
     - source: files/download-trident.service
       destination: /usr/lib/systemd/system/download-trident.service
-    - source: ../selinux-policy-trident/trident.if
-      destination: /usr/share/selinux/packages/trident/trident.if
-    - source: ../selinux-policy-trident/trident.fc
-      destination: /usr/share/selinux/packages/trident/trident.fc
-    - source: ../selinux-policy-trident/trident.te
-      destination: /usr/share/selinux/packages/trident/trident.te
 
   services:
     enable:
@@ -96,5 +87,4 @@ iso:
       - console=tty0
       - console=ttyS0
       - rd.luks=0
-      - selinux=1
-      - enforcing=0
+      - selinux=0
