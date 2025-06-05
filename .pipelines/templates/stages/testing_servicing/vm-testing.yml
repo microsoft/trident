@@ -96,7 +96,7 @@ stages:
               parameters:
                 baseimgBuildType: ${{ parameters.baseimgBuildType }}
                 label: "qemu-base"
-                makeTarget: "build/trident-vm-verity-testimage.qcow2"
+                makeTarget: "build/trident-vm-grub-verity-testimage.qcow2"
                 baseimgType: qemu_guest
                 baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
                 baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
@@ -108,7 +108,7 @@ stages:
               parameters:
                 baseimgBuildType: ${{ parameters.baseimgBuildType }}
                 label: "qemu-update-a"
-                makeTarget: "build/trident-vm-verity-testimage.cosi"
+                makeTarget: "build/trident-vm-grub-verity-testimage.cosi"
                 baseimgType: qemu_guest
                 baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
                 baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
@@ -120,7 +120,7 @@ stages:
               parameters:
                 baseimgBuildType: ${{ parameters.baseimgBuildType }}
                 label: "qemu-update-b"
-                makeTarget: "build/trident-vm-verity-testimage.cosi"
+                makeTarget: "build/trident-vm-grub-verity-testimage.cosi"
                 baseimgType: qemu_guest
                 baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
                 baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
@@ -140,7 +140,7 @@ stages:
                 parameters:
                   baseimgBuildType: ${{ parameters.baseimgBuildType }}
                   label: "azure-base"
-                  makeTarget: "build/trident-vm-verity-azure-testimage.vhd"
+                  makeTarget: "build/trident-vm-grub-verity-azure-testimage.vhd"
                   baseimgType: core_selinux
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
                   baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
@@ -151,7 +151,7 @@ stages:
                 parameters:
                   baseimgBuildType: ${{ parameters.baseimgBuildType }}
                   label: "azure-update-a"
-                  makeTarget: "build/trident-vm-verity-azure-testimage.cosi"
+                  makeTarget: "build/trident-vm-grub-verity-azure-testimage.cosi"
                   baseimgType: core_selinux
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
                   baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
@@ -162,7 +162,7 @@ stages:
                 parameters:
                   baseimgBuildType: ${{ parameters.baseimgBuildType }}
                   label: "azure-update-b"
-                  makeTarget: "build/trident-vm-verity-azure-testimage.cosi"
+                  makeTarget: "build/trident-vm-grub-verity-azure-testimage.cosi"
                   baseimgType: core_selinux
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
                   baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
@@ -181,7 +181,7 @@ stages:
               parameters:
                 baseimgBuildType: ${{ parameters.baseimgBuildType }}
                 label: "uki-base"
-                makeTarget: "build/trident-vm-verity-uki-testimage.qcow2"
+                makeTarget: "build/trident-vm-root-verity-testimage.qcow2"
                 baseimgType: qemu_guest
                 baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
                 baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
@@ -193,7 +193,7 @@ stages:
               parameters:
                 baseimgBuildType: ${{ parameters.baseimgBuildType }}
                 label: "uki-update-a"
-                makeTarget: "build/trident-vm-verity-uki-testimage.cosi"
+                makeTarget: "build/trident-vm-root-verity-testimage.cosi"
                 baseimgType: qemu_guest
                 baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
                 baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
@@ -205,7 +205,7 @@ stages:
               parameters:
                 baseimgBuildType: ${{ parameters.baseimgBuildType }}
                 label: "uki-update-b"
-                makeTarget: "build/trident-vm-verity-uki-testimage.cosi"
+                makeTarget: "build/trident-vm-root-verity-testimage.cosi"
                 baseimgType: qemu_guest
                 baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
                 baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
