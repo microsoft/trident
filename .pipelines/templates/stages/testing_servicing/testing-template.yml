@@ -69,7 +69,7 @@ jobs:
           displayName: Publish Base Image
           env:
             SUBSCRIPTION: 04cdc145-a4f9-42d4-9868-c46d23d0c63f # CoreOS_Mariner_BMP_Staging
-            IMAGE_DEFINITION: "trident-vm-verity-testimage-$(System.DefinitionId)"
+            IMAGE_DEFINITION: "trident-vm-grub-verity-testimage-$(System.DefinitionId)"
             ARTIFACTS: $(Build.ArtifactStagingDirectory)
             STORAGE_ACCOUNT: "azlinuxbmpstagingeastus2"
             RESOURCE_GROUP: "azlinux_bmp_staging_eastus2"
@@ -92,7 +92,7 @@ jobs:
       tridentSourceDirectory: $(Build.SourcesDirectory)
       ob_outputDirectory: $(tridentSourceDirectory)/deployment_logs_${{ parameters.flavor }}
       ob_artifactBaseName: "update-testing-${{ parameters.flavor }}-$(System.JobPositionInPhase)"
-      IMAGE_DEFINITION: "trident-vm-verity-testimage-$(System.DefinitionId)"
+      IMAGE_DEFINITION: "trident-vm-grub-verity-testimage-$(System.DefinitionId)"
       TEST_RESOURCE_GROUP: trident-vm-servicing-validation-$(Build.BuildId)-$(System.JobPositionInPhase)
       SUBSCRIPTION: 04cdc145-a4f9-42d4-9868-c46d23d0c63f # CoreOS_Mariner_BMP_Staging
 
