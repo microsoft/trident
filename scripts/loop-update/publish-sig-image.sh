@@ -15,7 +15,7 @@ STORAGE_ACCOUNT_RESOURCE_ID="/subscriptions/$SUBSCRIPTION/resourceGroups/$RESOUR
 
 export STORAGE_CONTAINER_NAME="${STORAGE_CONTAINER_NAME:-$ALIAS-test}"
 "$SCRIPTS_DIR/publish-sig-image-prepare.sh"
-export IMAGE_PATH="${IMAGE_PATH:-$ARTIFACTS/trident-vm-verity-azure-testimage.vhd}"
+export IMAGE_PATH="${IMAGE_PATH:-$ARTIFACTS/trident-vm-grub-verity-azure-testimage.vhd}"
 
 IMAGE_VERSION="`getImageVersion increment`"
 echo using image version $IMAGE_VERSION
