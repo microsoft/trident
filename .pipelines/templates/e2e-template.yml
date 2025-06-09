@@ -81,6 +81,19 @@ stages:
   - ${{ if eq(parameters.stageType, 'ci') }}:
       - template: stages/validate_makefile/dev-build.yml
 
+  # Build FT base Image, only in CI
+  - ${{ if eq(parameters.stageType, 'ci') }}:
+      # Build Trident installer ISO (host)
+      - template: stages/build_image/build-image.yml
+        parameters:
+          imageName: trident-functest
+          dependsOnTrident: false
+          baseimgBuildType: ${{ parameters.baseimgBuildType }}
+          baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
+          micBuildType: ${{ parameters.micBuildType }}
+          micVersion: ${{ parameters.micVersion }}
+          clones: 1
+
   # Build Trident container image
   - template: stages/build_docker_image/trident-container.yml
     parameters:

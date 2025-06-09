@@ -43,11 +43,15 @@ parameters:
     type: number
     default: 2
 
+  - name: dependsOnTrident
+    type: boolean
+    default: true
+
 stages:
   - stage: TridentTestImg_${{ replace(parameters.imageName, '-', '_') }}
     displayName: Build ${{ parameters.imageName }}
     dependsOn:
-      - ${{ if eq(parameters.runtimeEnv, 'host') }}:
+      - ${{ if and(eq(parameters.runtimeEnv, 'host'), parameters.dependsOnTrident) }}:
           - GetTridentBinaries_rpms
       - ${{ else }}: []
 
@@ -72,7 +76,7 @@ stages:
               artifactName: trident-binaries
               targetPath: "$(Build.ArtifactStagingDirectory)/trident"
             displayName: Download Trident RPMs
-            condition: eq('${{ parameters.runtimeEnv }}', 'host')
+            condition: and(eq('${{ parameters.runtimeEnv }}', 'host'), eq('${{ parameters.dependsOnTrident }}', true))
 
           - template: ../common_tasks/find-base-image-version.yml
             parameters:
