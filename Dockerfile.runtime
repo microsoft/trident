@@ -21,6 +21,8 @@ RUN \
     --mount=type=bind,source=./bin/RPMS,target=/trident \
     tdnf install -y \
     /trident/x86_64/trident-0*.rpm && \
+    tdnf install -y \
+    /trident/x86_64/trident-static-pcrlock-files-0*.rpm && \
     tdnf clean all
 
 ENV DOCKER_ENVIRONMENT=true

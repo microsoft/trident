@@ -8,6 +8,7 @@ COPY trident.spec .
 COPY systemd ./systemd
 COPY artifacts/osmodifier /usr/src/azl/SOURCES/osmodifier
 COPY trident-selinuxpolicies.cil /usr/src/azl/SOURCES/trident-selinuxpolicies.cil
+COPY packaging/static-pcrlock-files/ /usr/src/azl/SOURCES/static-pcrlock-files/
 
 COPY .cargo/config.toml ./.cargo/config.toml
 COPY build.rs .

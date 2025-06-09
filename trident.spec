@@ -123,6 +123,21 @@ SystemD timer for update polling with Harpoon.
 
 # ------------------------------------------------------------------------------
 
+%package static-pcrlock-files
+Summary:        Statically defined .pcrlock files
+Requires:       %{name}
+
+%description static-pcrlock-files
+Statically defined .pcrlock files for PCR-based encryption. This is a workaround needed because AZL
+3.0 fails to provide these files inside the same package as the systemd-pcrlock binary; this should
+be removed once the fix is merged in AZL 4.0.
+
+%files static-pcrlock-files
+%dir %{_sharedstatedir}/pcrlock.d
+%{_sharedstatedir}/pcrlock.d/
+
+# ------------------------------------------------------------------------------
+
 %build
 export TRIDENT_VERSION="%{trident_version}"
 cargo build --release
@@ -145,3 +160,14 @@ mkdir -p %{buildroot}/etc/%{name}
 # Copy the trident-selinuxpolicies file to /usr/share/selinux/packages/
 mkdir -p %{buildroot}%{_datadir}/selinux/packages/
 install -m 755 %{SOURCE2} %{buildroot}%{_datadir}/selinux/packages/
+
+# Copy statically defined .pcrlock files into /var/lib/pcrlock.d
+pcrlockroot="%{buildroot}%{_sharedstatedir}/pcrlock.d"
+mkdir -p "$pcrlockroot"
+(
+  cd %{_sourcedir}/static-pcrlock-files
+  find . -type f -print0 | while IFS= read -r -d '' f; do
+      mkdir -p "$pcrlockroot/$(dirname "$f")"
+      install -m 644 "$f" "$pcrlockroot/$f"
+  done
+)

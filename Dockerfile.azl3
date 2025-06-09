@@ -9,6 +9,7 @@ COPY systemd ./systemd
 COPY bin/trident ./target/release/trident
 COPY artifacts/osmodifier /usr/src/azl/SOURCES/osmodifier
 COPY trident-selinuxpolicies.cil /usr/src/azl/SOURCES/trident-selinuxpolicies.cil
+COPY packaging/static-pcrlock-files/ /usr/src/azl/SOURCES/static-pcrlock-files/
 
 ARG TRIDENT_VERSION=dev-build
 ARG RPM_VER=0.1.0
