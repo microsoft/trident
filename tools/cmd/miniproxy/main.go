@@ -8,7 +8,9 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"sync"
 
+	"github.com/dustin/go-humanize"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -29,8 +31,8 @@ func init() {
 	rootCmd.PersistentFlags().Uint16VarP(&listen_port, "listen-port", "l", 0, "Port to listen on.")
 	rootCmd.PersistentFlags().Uint16VarP(&dest_port, "forward-port", "f", 0, "Port to forward to.")
 
-	rootCmd.MarkFlagRequired("src-port")
-	rootCmd.MarkFlagRequired("dst-port")
+	rootCmd.MarkFlagRequired("listen-port")
+	rootCmd.MarkFlagRequired("forward-port")
 	log.SetLevel(log.DebugLevel)
 }
 
@@ -60,35 +62,36 @@ func run(cmd *cobra.Command, args []string) {
 	}
 }
 
-func handleConnection(source net.Conn, id uint64) {
-	log.WithField("id", id).WithField("address", source.RemoteAddr().String()).Info("Accepted connection")
-	defer source.Close()
-	dest, err := net.Dial("tcp", "localhost:"+strconv.Itoa(int(dest_port)))
+func handleConnection(client net.Conn, id uint64) {
+	log.WithField("id", id).WithField("address", client.RemoteAddr().String()).Info("Accepted connection")
+	defer client.Close()
+	server, err := net.Dial("tcp", "localhost:"+strconv.Itoa(int(dest_port)))
 	if err != nil {
 		log.WithField("id", id).WithError(err).Fatalf("Failed to connect to destination")
 	}
-	defer dest.Close()
+	defer server.Close()
 
-	log.WithField("id", id).WithField("address", dest.RemoteAddr().String()).Info("Connected to destination")
+	log.WithField("id", id).WithField("address", server.RemoteAddr().String()).Info("Connected to destination")
 
-	done := make(chan bool)
+	var wg sync.WaitGroup
+
+	wg.Add(2)
 	go func() {
-		defer source.Close()
-		defer dest.Close()
-		copied, _ := io.Copy(dest, source)
-		log.WithField("id", id).WithField("bytes", copied).Info("Done copying from src to dst")
-		done <- true
+		defer wg.Done()
+		defer client.Close()
+		defer server.Close()
+		copied, _ := io.Copy(server, client)
+		log.WithField("id", id).Infof("Done copying %s from client to server", humanize.IBytes(uint64(copied)))
 	}()
 
 	go func() {
-		defer source.Close()
-		defer dest.Close()
-		copied, _ := io.Copy(source, dest)
-		log.WithField("id", id).WithField("bytes", copied).Info("Done copying from dst to src")
-		done <- true
+		defer wg.Done()
+		defer client.Close()
+		defer server.Close()
+		copied, _ := io.Copy(client, server)
+		log.WithField("id", id).Infof("Done copying %s from server to client", humanize.IBytes(uint64(copied)))
 	}()
 
-	<-done
-	<-done
+	wg.Wait()
 	log.WithField("id", id).Info("Connection closed")
 }

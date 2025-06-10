@@ -8,38 +8,57 @@ import yaml
 import logging
 
 
+def wait_online_script(interface_name: str) -> str:
+    """
+    Generates a script to add a wait for the given network interface to be
+    online before starting the Trident service.
+    """
+    return "\n".join(
+        [
+            "set -eux",
+            f"systemctl enable systemd-networkd-wait-online@{interface_name}.service",
+            "mkdir -p /etc/systemd/system/trident.service.d",
+            "cat << EOF > /etc/systemd/system/trident.service.d/override.conf",
+            "[Unit]",
+            f"Requires=systemd-networkd-wait-online@{interface_name}.service",
+            "EOF",
+        ]
+    )
+
+
 def update_trident_host_config(
     host_configuration: str,
     oam_ip: str,
     interface_name: str,
-    oam_gateway: Optional[str] = None,
-    oam_mac: Optional[str] = None,
+    interface_mac: Optional[str] = None,
+    network_gateway: Optional[str] = None,
     use_dhcp: bool = False,
 ):
     logging.info("Updating host config section of trident.yaml")
-    logging.info("oam_ip: %s", oam_ip)
-    logging.info("oam_gateway: %s", oam_gateway)
     os = host_configuration.setdefault("os", {})
-    network = os.setdefault("network", {})
-    ethernets = network.setdefault("ethernets", {})
 
-    # Ensure that all interface dhcp4 settings are consistent
-    for ethernet in ethernets:
-        if "dhcp4" in ethernets[ethernet]:
-            ethernets[ethernet]["dhcp4"] = use_dhcp
-
-    eno_interface = ethernets.setdefault(interface_name, {})
+    main_interface = {
+        "addresses": [f"{oam_ip}/23"],
+        "dhcp4": use_dhcp,
+        "set-name": interface_name,
+    }
 
     # Temporary fix for #8837.
-    if oam_mac:
-        eno_interface["match"] = {"macaddress": oam_mac}
+    if interface_mac:
+        main_interface["match"] = {"macaddress": interface_mac}
 
-    eno_interface.setdefault("addresses", []).append(oam_ip + "/23")
-    eno_interface["dhcp4"] = use_dhcp
-    if oam_gateway:
-        eno_interface.setdefault("routes", []).append(
-            {"to": "0.0.0.0/0", "via": oam_gateway}
+    if network_gateway:
+        main_interface.setdefault("routes", []).append(
+            {"to": "0.0.0.0/0", "via": network_gateway}
         )
+
+    # Override network to only preserve the eno interface.
+    os["network"] = {
+        "version": 2,
+        "ethernets": {
+            interface_name: main_interface,
+        },
+    }
 
     logging.info("Updating os disks device in trident.yaml")
     disks = host_configuration.get("storage", {}).get("disks", [])
@@ -49,8 +68,13 @@ def update_trident_host_config(
         elif disk["id"] == "disk2":
             disk["device"] = "/dev/sdb"
 
-    internal_params = host_configuration.setdefault("internalParams", {})
-    internal_params["waitForSystemdNetworkd"] = True
+    host_configuration.setdefault("scripts", {}).setdefault("postConfigure", []).append(
+        {
+            "content": wait_online_script(interface_name),
+            "name": "wait-for-network",
+            "runOn": ["all"],
+        }
+    )
 
     logging.info(
         "Final trident_yaml content post all the updates: %s", host_configuration

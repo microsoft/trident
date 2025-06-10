@@ -10,6 +10,7 @@ replace storm => ../storm
 replace golang.org/x/net => golang.org/x/net v0.39.0
 
 require (
+	github.com/dustin/go-humanize v1.0.1
 	github.com/bmc-toolbox/bmclib/v2 v2.0.1-0.20230530141715-da28e42c453f
 	github.com/fatih/color v1.18.0
 	github.com/google/uuid v1.6.0

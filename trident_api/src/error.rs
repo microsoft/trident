@@ -381,6 +381,9 @@ pub enum ServicingError {
     #[error("Failed to deploy images")]
     DeployImages,
 
+    #[error("Failed to disable cloud-init networking")]
+    DisableCloudInitNetworking,
+
     #[error(
         "Failed to encrypt and open block device '{device_path}' with id '{device_id}' as \
         '{encrypted_volume_device_name}' for encrypted volume '{encrypted_volume}'"
