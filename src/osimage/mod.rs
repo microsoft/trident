@@ -1,10 +1,11 @@
 use std::{
-    fmt::{Display, Formatter},
+    fmt::{Display, Formatter, Write},
     io::{Error as IoError, Read},
     path::{Path, PathBuf},
 };
 
 use anyhow::Error;
+use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use url::Url;
 
@@ -12,7 +13,12 @@ use sysdefs::{
     arch::SystemArchitecture, filesystems::RealFilesystemType, osuuid::OsUuid,
     partition_types::DiscoverablePartitionType,
 };
-use trident_api::{config, constants::ROOT_MOUNT_POINT_PATH, primitives::hash::Sha384Hash};
+use trident_api::{
+    config::{self, ImageSha384},
+    constants::ROOT_MOUNT_POINT_PATH,
+    error::{InvalidInputError, ReportError, TridentError},
+    primitives::hash::Sha384Hash,
+};
 
 mod cosi;
 
@@ -53,6 +59,50 @@ impl OsImage {
     #[cfg(test)]
     pub(crate) fn mock(mock_os_image: MockOsImage) -> Self {
         Self(OsImageInner::Mock(Box::new(mock_os_image)))
+    }
+
+    /// Load the OS given the image source from the Host Configuration and either validate or
+    /// populate the associated metadata sha384 checksum.
+    pub(crate) fn load(image_source: &mut Option<config::OsImage>) -> Result<Self, TridentError> {
+        let Some(ref mut image_source) = image_source else {
+            return Err(TridentError::new(InvalidInputError::MissingOsImage));
+        };
+
+        debug!("Loading COSI file '{}'", image_source.url);
+        let os_image = OsImage::cosi(image_source).structured(InvalidInputError::LoadCosi {
+            url: image_source.url.clone(),
+        })?;
+        if image_source.sha384 == ImageSha384::Ignored {
+            image_source.sha384 = ImageSha384::Checksum(os_image.metadata_sha384());
+        }
+
+        info!(
+            "Successfully loaded OS image of type '{}' from '{}'",
+            os_image.name(),
+            os_image.source()
+        );
+
+        // Ensure the OS image architecture matches the current system architecture
+        if SystemArchitecture::current() != os_image.architecture() {
+            return Err(TridentError::new(
+                InvalidInputError::MismatchedArchitecture {
+                    expected: SystemArchitecture::current().into(),
+                    actual: os_image.architecture().into(),
+                },
+            ));
+        }
+
+        debug!(
+            "OS image provides the following mount points:\n{}",
+            os_image
+                .available_mount_points()
+                .fold(String::new(), |mut acc, p| {
+                    let _ = writeln!(acc, "  - {}", p.display());
+                    acc
+                })
+        );
+
+        Ok(os_image)
     }
 
     /// Returns the name of the OS image type.
@@ -121,6 +171,14 @@ impl OsImage {
     pub(crate) fn root_filesystem(&self) -> Option<OsImageFileSystem> {
         self.filesystems()
             .find(|fs| fs.mount_point == Path::new(ROOT_MOUNT_POINT_PATH))
+    }
+
+    pub(crate) fn metadata_sha384(&self) -> Sha384Hash {
+        match &self.0 {
+            OsImageInner::Cosi(cosi) => cosi.metadata_sha384(),
+            #[cfg(test)]
+            OsImageInner::Mock(mock) => mock.metadata_sha384(),
+        }
     }
 }
 

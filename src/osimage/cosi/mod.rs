@@ -8,7 +8,10 @@ use anyhow::{bail, ensure, Context, Error};
 use log::{debug, trace};
 use osutils::hashing_reader::{HashingReader, HashingReader384};
 use tar::Archive;
-use trident_api::config::{ImageSha384, OsImage};
+use trident_api::{
+    config::{ImageSha384, OsImage},
+    primitives::hash::Sha384Hash,
+};
 use url::Url;
 
 use sysdefs::arch::SystemArchitecture;
@@ -34,6 +37,7 @@ pub(super) struct Cosi {
     source: Url,
     entries: HashMap<PathBuf, CosiEntry>,
     metadata: CosiMetadata,
+    metadata_sha384: Sha384Hash,
     reader: CosiReader,
 }
 
@@ -57,13 +61,16 @@ impl Cosi {
         let entries = read_entries_from_tar_archive(cosi_reader.reader()?)?;
         trace!("Collected {} COSI entries", entries.len());
 
+        let (metadata, sha384) = read_cosi_metadata(&cosi_reader, &entries, source.sha384.clone())
+            .context("Failed to read COSI file metadata.")?;
+
         // Create a new COSI instance.
         Ok(Cosi {
-            metadata: read_cosi_metadata(&cosi_reader, &entries, source.sha384.clone())
-                .context("Failed to read COSI file metadata.")?,
+            metadata,
             entries,
             source: source.url.clone(),
             reader: cosi_reader,
+            metadata_sha384: sha384,
         })
     }
 
@@ -96,6 +103,10 @@ impl Cosi {
     /// Returns the architecture of the OS contained in the COSI file.
     pub(super) fn architecture(&self) -> SystemArchitecture {
         self.metadata.os_arch
+    }
+
+    pub(super) fn metadata_sha384(&self) -> Sha384Hash {
+        self.metadata_sha384.clone()
     }
 }
 
@@ -202,7 +213,7 @@ fn read_cosi_metadata(
     cosi_reader: &CosiReader,
     entries: &HashMap<PathBuf, CosiEntry>,
     expected_sha384: ImageSha384,
-) -> Result<CosiMetadata, Error> {
+) -> Result<(CosiMetadata, Sha384Hash), Error> {
     trace!(
         "Retrieving metadata from COSI file from '{}'",
         COSI_METADATA_PATH
@@ -228,9 +239,10 @@ fn read_cosi_metadata(
         .read_to_string(&mut raw_metadata)
         .context("Failed to read COSI metadata")?;
 
+    let actual_sha384 = Sha384Hash::from(metadata_reader.hash());
     if let ImageSha384::Checksum(ref sha384) = expected_sha384 {
-        if metadata_reader.hash() != sha384.as_str() {
-            bail!("COSI metadata hash does not match expected hash");
+        if actual_sha384 != *sha384 {
+            bail!("COSI metadata hash '{actual_sha384}' does not match expected hash '{sha384}'");
         }
     }
     trace!("Raw COSI metadata:\n{}", raw_metadata);
@@ -257,7 +269,7 @@ fn read_cosi_metadata(
         metadata.version.major, metadata.version.minor
     );
 
-    Ok(metadata)
+    Ok((metadata, actual_sha384))
 }
 
 /// Validates the COSI metadata version.
@@ -564,7 +576,8 @@ mod tests {
             &entries,
             ImageSha384::Checksum(metadata_sha384.into()),
         )
-        .unwrap();
+        .unwrap()
+        .0;
 
         // Now check that the images in the metadata have the correct entries.
         for (image, (path, offset, size)) in metadata.images.iter().zip(image_paths.iter()) {
@@ -793,6 +806,7 @@ mod tests {
                 images,
             },
             reader: CosiReader::Mock(data),
+            metadata_sha384: Sha384Hash::from("0".repeat(96)),
         }
     }
 
@@ -811,6 +825,7 @@ mod tests {
                 os_packages: None,
             },
             reader: CosiReader::Mock(Cursor::new(Vec::<u8>::new())),
+            metadata_sha384: Sha384Hash::from("0".repeat(96)),
         };
 
         // Weird behavior with none/multiple ESPs is primarily tested by the

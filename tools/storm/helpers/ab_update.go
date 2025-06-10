@@ -135,6 +135,7 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 
 	// Update the image URL in the configuration
 	h.config["image"].(map[string]any)["url"] = newUrl
+	h.config["image"].(map[string]any)["sha384"] = "ignored"
 
 	// Set the config to NOT self-upgrade
 	trident, ok := h.config["trident"].(map[string]any)

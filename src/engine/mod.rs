@@ -38,7 +38,6 @@ mod clean_install;
 mod context;
 mod kexec;
 mod newroot;
-mod osimage;
 pub mod provisioning_network;
 pub mod rollback;
 mod update;

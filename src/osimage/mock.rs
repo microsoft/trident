@@ -144,6 +144,10 @@ impl MockOsImage {
     pub fn architecture(&self) -> SystemArchitecture {
         self.os_arch
     }
+
+    pub fn metadata_sha384(&self) -> Sha384Hash {
+        Sha384Hash::from("0".repeat(96))
+    }
 }
 
 impl MockImage {

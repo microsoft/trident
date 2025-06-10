@@ -53,6 +53,8 @@ pub use logging::{
 };
 pub use orchestrate::OrchestratorConnection;
 
+use crate::osimage::OsImage;
+
 /// Trident version as provided by environment variables at build time
 pub const TRIDENT_VERSION: &str = match option_env!("TRIDENT_VERSION") {
     Some(v) => v,
@@ -452,7 +454,7 @@ impl Trident {
         multiboot: bool,
         #[cfg(feature = "grpc-dangerous")] sender: &mut Option<GrpcSender>,
     ) -> Result<ExitKind, TridentError> {
-        let host_config = self
+        let mut host_config = self
             .host_config
             .clone()
             .structured(InternalError::Internal(
@@ -502,6 +504,8 @@ impl Trident {
                 }
             }
 
+            let image = OsImage::load(&mut host_config.image)?;
+
             if datastore.host_status().spec != host_config {
                 debug!("Host Configuration has been updated");
 
@@ -511,6 +515,7 @@ impl Trident {
                         datastore,
                         &allowed_operations,
                         multiboot,
+                        image,
                         #[cfg(feature = "grpc-dangerous")]
                         sender,
                     )
@@ -558,6 +563,7 @@ impl Trident {
                             datastore,
                             &allowed_operations,
                             multiboot,
+                            image,
                             #[cfg(feature = "grpc-dangerous")]
                             sender,
                         )
@@ -606,13 +612,15 @@ impl Trident {
                 .map_err(Into::into)
                 .message("Invalid Host Configuration provided")?;
 
+            let image = OsImage::load(&mut host_config.image)?;
+
             // If HS.spec in the datastore is different from the new HC, need to both stage and
             // finalize the update, regardless of state
             if datastore.host_status().spec != host_config {
                 debug!("Host Configuration has been updated");
                 // If allowed operations include 'stage', start update
                 if allowed_operations.has_stage() {
-                    engine::update(&host_config, datastore, &allowed_operations, #[cfg(feature = "grpc-dangerous")] sender).message("Failed to execute an update")
+                    engine::update(&host_config, datastore, &allowed_operations, image, #[cfg(feature = "grpc-dangerous")] sender).message("Failed to execute an update")
                 } else {
                     warn!("Host Configuration has been updated but allowed operations do not include 'stage'. Add 'stage' and re-run to stage the update");
                     Ok(ExitKind::Done)
@@ -641,7 +649,7 @@ impl Trident {
                     ServicingState::AbUpdateFinalized | ServicingState::Provisioned => {
                         // Need to either re-execute the failed update OR inform the user that no update
                         // is needed.
-                        engine::update(&host_config, datastore, &allowed_operations,#[cfg(feature = "grpc-dangerous")] sender).message("Failed to update host")
+                        engine::update(&host_config, datastore, &allowed_operations, image, #[cfg(feature = "grpc-dangerous")] sender).message("Failed to update host")
                     }
                     servicing_state => {
                         Err(TridentError::new(InternalError::UnexpectedServicingState {
