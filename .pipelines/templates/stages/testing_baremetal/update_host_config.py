@@ -27,9 +27,10 @@ def wait_online_script(interface_name: str) -> str:
 
 
 def update_trident_host_config(
+    *,
     host_configuration: str,
-    oam_ip: str,
     interface_name: str,
+    interface_ip: str,
     interface_mac: Optional[str] = None,
     network_gateway: Optional[str] = None,
     use_dhcp: bool = False,
@@ -38,7 +39,7 @@ def update_trident_host_config(
     os = host_configuration.setdefault("os", {})
 
     main_interface = {
-        "addresses": [f"{oam_ip}/23"],
+        "addresses": [f"{interface_ip}/23"],
         "dhcp4": use_dhcp,
         "set-name": interface_name,
     }
@@ -114,12 +115,12 @@ def main():
         trident_yaml_content = yaml.safe_load(f)
 
     update_trident_host_config(
-        trident_yaml_content,
-        args.oam_ip,
-        args.interface_name,
-        args.oam_gateway,
-        args.oam_mac,
-        args.use_dhcp,
+        host_configuration=trident_yaml_content,
+        interface_name=args.interface_name,
+        interface_ip=args.oam_ip,
+        interface_mac=args.oam_mac,
+        network_gateway=args.oam_gateway,
+        use_dhcp=args.use_dhcp,
     )
     with open(args.trident_yaml, "w") as f:
         yaml.dump(trident_yaml_content, f, default_flow_style=False)

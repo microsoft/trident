@@ -122,7 +122,7 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 	ext := matches[3]
 
 	newCosiName := fmt.Sprintf("%s_v%s.%s", name, h.args.Version, ext)
-	newUrl := fmt.Sprintf("%s/%s", urlPath, newCosiName)
+	newUrl := fmt.Sprintf("%s%s", urlPath, newCosiName)
 	logrus.Infof("New image URL: %s", newUrl)
 
 	logrus.Infof("Checking if new image URL is accessible...")
