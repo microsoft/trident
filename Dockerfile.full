@@ -1,13 +1,15 @@
 FROM mcr.microsoft.com/azurelinux/base/core:3.0
 
-RUN tdnf install -y rpmdevtools openssl-devel clang-devel protobuf-devel rust sed ca-certificates perl build-essential
+RUN tdnf install -y rpmdevtools openssl-devel clang-devel protobuf-devel rust sed ca-certificates perl build-essential selinux-policy-devel
 
 WORKDIR /work
 
 COPY trident.spec .
 COPY systemd ./systemd
 COPY artifacts/osmodifier /usr/src/azl/SOURCES/osmodifier
-COPY trident-selinuxpolicies.cil /usr/src/azl/SOURCES/trident-selinuxpolicies.cil
+COPY selinux-policy-trident/trident.te /usr/src/azl/SOURCES/trident.te
+COPY selinux-policy-trident/trident.fc /usr/src/azl/SOURCES/trident.fc
+COPY selinux-policy-trident/trident.if /usr/src/azl/SOURCES/trident.if
 COPY packaging/static-pcrlock-files/ /usr/src/azl/SOURCES/static-pcrlock-files/
 
 COPY .cargo/config.toml ./.cargo/config.toml

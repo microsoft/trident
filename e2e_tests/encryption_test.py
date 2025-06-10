@@ -442,8 +442,18 @@ def check_crypsetup_luks_dump(conn: fabric.Connection, cryptDevPath: str) -> Non
             }
         }
     """
+    # Running this command requires additional SELinux permission for lvm_t, so temporarily switch to Permissive mode
+    # Missing permission: allow lvm_t initrc_runtime_t:dir { read }
+    enforcing = sudo(conn, "getenforce").strip() == "Enforcing"
+    if enforcing:
+        sudo(conn, "setenforce 0")
+
     stdout = sudo(conn, f"cryptsetup luksDump --dump-json-metadata {cryptDevPath}")
     dump = json.loads(stdout)
+
+    # Revert to Enforcing mode
+    if enforcing:
+        sudo(conn, "setenforce 1")
 
     actual = dump["digests"]["0"]["type"]
     expected = "pbkdf2"

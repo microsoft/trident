@@ -1,3 +1,5 @@
+%global selinuxtype targeted
+
 Summary:        Agent for bare metal platform
 Name:           trident
 Version:        %{rpm_ver}
@@ -5,7 +7,9 @@ Release:        %{rpm_rel}%{?dist}
 Vendor:         Microsoft Corporation
 License:        Proprietary
 Source1:        osmodifier
-Source2:        trident-selinuxpolicies.cil
+Source2:        trident.fc
+Source3:        trident.if
+Source4:        trident.te
 BuildRequires:  openssl-devel
 BuildRequires:  rust
 BuildRequires:  systemd-units
@@ -17,6 +21,7 @@ Requires:       efibootmgr
 Requires:       lsof
 Requires:       systemd >= 255
 Requires:       systemd-udev
+Requires:       (%{name}-selinux if selinux-policy-%{selinuxtype})
 
 # Optional dependencies for various optional features
 
@@ -42,20 +47,6 @@ Agent for bare metal platform
 %{_bindir}/%{name}
 %dir /etc/%{name}
 %{_bindir}/osmodifier
-%{_datadir}/selinux/packages/trident-selinuxpolicies.cil
-
-%post
-#!/bin/sh
-# Apply required selinux policies only if selinux-policy is present
-if rpm -q selinux-policy &> /dev/null; then    
-    semodule -i %{_datadir}/selinux/packages/trident-selinuxpolicies.cil
-fi
-
-%postun
-# If selinux-policy is present, remove the trident-selinuxpolicies module
-if rpm -q selinux-policy &> /dev/null; then
-    semodule -r trident-selinuxpolicies
-fi
 
 # ------------------------------------------------------------------------------
 
@@ -123,6 +114,40 @@ SystemD timer for update polling with Harpoon.
 
 # ------------------------------------------------------------------------------
 
+%package selinux
+Summary:             Trident SELinux policy
+BuildArch:           noarch
+Requires:            selinux-policy-%{selinuxtype}
+Requires(post):      selinux-policy-%{selinuxtype}
+BuildRequires:       selinux-policy-devel
+%{?selinux_requires}
+
+%description selinux
+Custom SELinux policy module
+
+%files selinux
+%{_datadir}/selinux/packages/%{selinuxtype}/%{name}.pp.*
+%{_datadir}/selinux/devel/include/distributed/%{name}.if
+%ghost %verify(not md5 size mode mtime) %{_sharedstatedir}/selinux/%{selinuxtype}/active/modules/200/%{name}
+
+# SELinux contexts are saved so that only affected files can be
+# relabeled after the policy module installation
+%pre selinux
+%selinux_relabel_pre -s %{selinuxtype}
+
+%post selinux
+%selinux_modules_install -s %{selinuxtype} %{_datadir}/selinux/packages/%{selinuxtype}/%{name}.pp.bz2
+
+%postun selinux
+if [ $1 -eq 0 ]; then
+    %selinux_modules_uninstall -s %{selinuxtype} %{name}
+fi
+
+%posttrans selinux
+%selinux_relabel_post -s %{selinuxtype}
+
+# ------------------------------------------------------------------------------
+
 %package static-pcrlock-files
 Summary:        Statically defined .pcrlock files
 Requires:       %{name}
@@ -142,6 +167,14 @@ be removed once the fix is merged in AZL 4.0.
 export TRIDENT_VERSION="%{trident_version}"
 cargo build --release
 
+mkdir selinux
+cp -p %{SOURCE2} selinux/
+cp -p %{SOURCE3} selinux/
+cp -p %{SOURCE4} selinux/
+
+make -f %{_datadir}/selinux/devel/Makefile %{name}.pp
+bzip2 -9 %{name}.pp
+
 %check
 test "$(./target/release/trident --version)" = "trident %{trident_version}"
 
@@ -150,16 +183,16 @@ install -D -m 755 %{SOURCE1} %{buildroot}%{_bindir}/osmodifier
 
 install -D -m 755 target/release/%{name} %{buildroot}/%{_bindir}/%{name}
 
+# Copy Trident SELinux policy module to /usr/share/selinux/packages
+install -D -m 0644 %{name}.pp.bz2 %{buildroot}%{_datadir}/selinux/packages/%{selinuxtype}/%{name}.pp.bz2
+install -D -p -m 0644 selinux/%{name}.if %{buildroot}%{_datadir}/selinux/devel/include/distributed/%{name}.if
+
 mkdir -p %{buildroot}%{_unitdir}
 install -D -m 644 systemd/%{name}.service %{buildroot}%{_unitdir}/%{name}.service
 install -D -m 644 systemd/%{name}-network.service %{buildroot}%{_unitdir}/%{name}-network.service
 install -D -m 644 systemd/%{name}.timer %{buildroot}%{_unitdir}/%{name}.timer
 
 mkdir -p %{buildroot}/etc/%{name}
-
-# Copy the trident-selinuxpolicies file to /usr/share/selinux/packages/
-mkdir -p %{buildroot}%{_datadir}/selinux/packages/
-install -m 755 %{SOURCE2} %{buildroot}%{_datadir}/selinux/packages/
 
 # Copy statically defined .pcrlock files into /var/lib/pcrlock.d
 pcrlockroot="%{buildroot}%{_sharedstatedir}/pcrlock.d"

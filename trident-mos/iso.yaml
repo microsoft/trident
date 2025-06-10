@@ -87,4 +87,5 @@ iso:
       - console=tty0
       - console=ttyS0
       - rd.luks=0
-      - selinux=0
+      - selinux=1
+      - enforcing=0

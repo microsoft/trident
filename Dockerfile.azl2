@@ -8,7 +8,9 @@ COPY trident.spec .
 COPY systemd ./systemd
 COPY bin/trident ./target/release/trident
 COPY artifacts/osmodifier /usr/src/mariner/SOURCES/osmodifier
-COPY trident-selinuxpolicies.cil /usr/src/mariner/SOURCES/trident-selinuxpolicies.cil
+COPY selinux-policy-trident/trident.te /usr/src/azl/SOURCES/trident.te
+COPY selinux-policy-trident/trident.fc /usr/src/azl/SOURCES/trident.fc
+COPY selinux-policy-trident/trident.if /usr/src/azl/SOURCES/trident.if
 COPY packaging/static-pcrlock-files/ /usr/src/mariner/SOURCES/static-pcrlock-files/
 
 ARG TRIDENT_VERSION=dev-build
