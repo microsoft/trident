@@ -8,24 +8,6 @@ import yaml
 import logging
 
 
-def wait_online_script(interface_name: str) -> str:
-    """
-    Generates a script to add a wait for the given network interface to be
-    online before starting the Trident service.
-    """
-    return "\n".join(
-        [
-            "set -eux",
-            f"systemctl enable systemd-networkd-wait-online@{interface_name}.service",
-            "mkdir -p /etc/systemd/system/trident.service.d",
-            "cat << EOF > /etc/systemd/system/trident.service.d/override.conf",
-            "[Unit]",
-            f"Requires=systemd-networkd-wait-online@{interface_name}.service",
-            "EOF",
-        ]
-    )
-
-
 def update_trident_host_config(
     *,
     host_configuration: str,
@@ -61,6 +43,25 @@ def update_trident_host_config(
         },
     }
 
+    # Name of the wait online service for this interface
+    wait_online_service = f"systemd-networkd-wait-online@{interface_name}.service"
+
+    # Enable systemd-networkd-wait-online service for the interface.
+    enable_services = os.setdefault("services", {}).setdefault("enable", [])
+    if wait_online_service not in enable_services:
+        enable_services.append(wait_online_service)
+
+    # Add an override for the trident service to wait for the network
+    # interface to be online before starting.
+    os.setdefault("additionalFiles", []).append(
+        {
+            "destination": "/etc/systemd/system/trident.service.d/override.conf",
+            "content": "[Unit]\n"
+            f"Requires={wait_online_service}\n"
+            f"After={wait_online_service}\n",
+        }
+    )
+
     logging.info("Updating os disks device in trident.yaml")
     disks = host_configuration.get("storage", {}).get("disks", [])
     for disk in disks:
@@ -68,14 +69,6 @@ def update_trident_host_config(
             disk["device"] = "/dev/sda"
         elif disk["id"] == "disk2":
             disk["device"] = "/dev/sdb"
-
-    host_configuration.setdefault("scripts", {}).setdefault("postConfigure", []).append(
-        {
-            "content": wait_online_script(interface_name),
-            "name": "wait-for-network",
-            "runOn": ["all"],
-        }
-    )
 
     logging.info(
         "Final trident_yaml content post all the updates: %s", host_configuration
