@@ -426,7 +426,7 @@ allow trident_t systemd_sysusers_exec_t:file { execute getattr map open read rel
 allow trident_t systemd_tmpfiles_exec_t:file { execute getattr map open read relabelto setattr unlink write };
 allow trident_t systemd_unit_t:dir { read add_name create write };
 allow trident_t systemd_unit_t:file { getattr ioctl link open read relabelto rename setattr unlink write create };
-allow trident_t systemd_unit_t:lnk_file { getattr read };
+allow trident_t systemd_unit_t:lnk_file { getattr read create };
 allow trident_t systemd_update_done_exec_t:file getattr;
 allow trident_t systemd_user_manager_unit_t:file getattr;
 allow trident_t systemd_user_runtime_dir_exec_t:file getattr;
@@ -759,6 +759,7 @@ files_read_generic_tmp_files(udev_t)
 allow udevadm_t cgroup_t:filesystem getattr;
 allow udevadm_t self:netlink_route_socket { bind create getattr getopt nlmsg_read read setopt write };
 allow udevadm_t self:udp_socket { create ioctl };
+allow udevadm_t self:capability { sys_admin };
 allow udevadm_t systemd_hwdb_t:file { getattr map open read };
 allow udevadm_t kernel_t:fd use;
 
