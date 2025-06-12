@@ -1,3 +1,5 @@
+### This file is primarily used to build Trident RPMs for local testing.
+
 FROM mcr.microsoft.com/azurelinux/base/core:3.0
 
 RUN tdnf install -y rpmdevtools openssl-devel clang-devel protobuf-devel rust sed selinux-policy-devel
