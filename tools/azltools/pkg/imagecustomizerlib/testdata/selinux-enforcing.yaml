@@ -1,0 +1,10 @@
+os:
+  selinux:
+    mode: enforcing
+
+  packages:
+    install:
+    - selinux-policy
+    - selinux-policy-modules
+    - setools-console
+    - policycoreutils-python-utils

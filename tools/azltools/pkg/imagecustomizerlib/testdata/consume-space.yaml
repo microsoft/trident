@@ -1,0 +1,3 @@
+scripts:
+  finalizeCustomization:
+  - path: scripts/consume-space.sh
