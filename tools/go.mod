@@ -10,10 +10,7 @@ replace storm => ../storm
 replace golang.org/x/net => golang.org/x/net v0.39.0
 
 require (
-	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.10.1
-	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.6.1
 	github.com/bmc-toolbox/bmclib/v2 v2.0.1-0.20230530141715-da28e42c453f
-	github.com/ddddddO/gtree v1.11.7
 	github.com/dustin/go-humanize v1.0.1
 	github.com/fatih/color v1.18.0
 	github.com/google/uuid v1.6.0
@@ -27,21 +24,13 @@ require (
 )
 
 require (
-	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.18.0 // indirect
-	github.com/Azure/azure-sdk-for-go/sdk/internal v1.11.1 // indirect
-	github.com/AzureAD/microsoft-authentication-library-for-go v1.4.2 // indirect
-	github.com/goccy/go-yaml v1.17.1 // indirect
-	github.com/golang-jwt/jwt/v5 v5.2.2 // indirect
-	github.com/kylelemons/godebug v1.1.0 // indirect
-	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
-	golang.org/x/sync v0.14.0 // indirect
+	github.com/rogpeppe/go-internal v1.12.0 // indirect
+	go.uber.org/goleak v1.3.0 // indirect
+	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 )
 
 require (
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2
-	github.com/cavaliercoder/go-cpio v0.0.0-20180626203310-925f9528c45e
-	github.com/jinzhu/copier v0.4.0
-	github.com/klauspost/pgzip v1.2.6
 	github.com/muesli/crunchy v0.4.0
 	github.com/xrash/smetrics v0.0.0-20170218160415-a3153f7040e9 // indirect
 	gonum.org/v1/gonum v0.16.0
@@ -104,6 +93,6 @@ require (
 	golang.org/x/net v0.40.0 // indirect
 	golang.org/x/sys v0.33.0
 	golang.org/x/text v0.25.0 // indirect
-	gopkg.in/ini.v1 v1.67.0
+	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1
 )

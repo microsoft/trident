@@ -16,7 +16,6 @@ import (
 	"tridenttools/azltools/internal/buildpipeline"
 	"tridenttools/azltools/internal/logger"
 	"tridenttools/azltools/internal/packagerepo/repocloner"
-	"tridenttools/azltools/internal/packagerepo/repomanager/rpmrepomanager"
 	"tridenttools/azltools/internal/pkgjson"
 	"tridenttools/azltools/internal/retry"
 	"tridenttools/azltools/internal/safechroot"
@@ -332,10 +331,6 @@ func (r *RpmRepoCloner) initializeMountedChrootRepo(repoDir string) (err error) 
 		if err != nil {
 			return fmt.Errorf("failed to create repo directory (%s):\n%w", repoDir, err)
 		}
-		err = rpmrepomanager.CreateRepo(repoDir)
-		if err != nil {
-			return fmt.Errorf("failed to create an RPM repository under (%s):\n%w", repoDir, err)
-		}
 
 		return r.refreshPackagesCache()
 	})
@@ -533,16 +528,6 @@ func (r *RpmRepoCloner) ConvertDownloadedPackagesIntoRepo() (err error) {
 	err = r.initializeMountedChrootRepo(chrootCloneDirRegular)
 	if err != nil {
 		return
-	}
-
-	repoDir := filepath.Join(r.chroot.RootDir(), r.chrootCloneDir)
-
-	// Print warnings for any invalid RPMs
-	err = rpmrepomanager.ValidateRpmPaths(repoDir)
-	if err != nil {
-		logger.Log.Warnf("Failed to validate RPM paths: %s", err)
-		// We treat this as just a warning, not a real error.
-		err = nil
 	}
 
 	if !buildpipeline.IsRegularBuild() {
