@@ -25,8 +25,9 @@ use trident_api::{
 
 use crate::{
     datastore::DataStore,
-    engine::{self, boot::esp, bootentries, osimage, storage, EngineContext, SUBSYSTEMS},
+    engine::{self, boot::esp, bootentries, storage, EngineContext, SUBSYSTEMS},
     monitor_metrics,
+    osimage::OsImage,
     subsystems::hooks::HooksSubsystem,
     ExitKind, SAFETY_OVERRIDE_CHECK_PATH,
 };
@@ -41,6 +42,7 @@ pub(crate) fn clean_install(
     state: &mut DataStore,
     allowed_operations: &Operations,
     multiboot: bool,
+    image: OsImage,
     #[cfg(feature = "grpc-dangerous")] sender: &mut Option<GrpcSender>,
 ) -> Result<ExitKind, TridentError> {
     info!("Starting clean install");
@@ -73,6 +75,7 @@ pub(crate) fn clean_install(
         &mut subsystems,
         state,
         host_config,
+        image,
         #[cfg(feature = "grpc-dangerous")]
         sender,
     )?;
@@ -169,6 +172,7 @@ fn stage_clean_install(
     subsystems: &mut MutexGuard<Vec<Box<dyn Subsystem>>>,
     state: &mut DataStore,
     host_config: &HostConfiguration,
+    image: OsImage,
     #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
@@ -193,7 +197,7 @@ fn stage_clean_install(
         partition_paths: Default::default(), // Will be initialized later
         disk_uuids: Default::default(),      // Will be initialized later
         install_index: 0,                    // Will be initialized later
-        image: osimage::load_os_image(host_config)?,
+        image: Some(image),
         storage_graph: engine::build_storage_graph(&host_config.storage)?, // Build storage graph
         filesystems: Vec::new(), // Will be populated after dynamic validation
     };

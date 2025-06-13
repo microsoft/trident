@@ -1,0 +1,811 @@
+policy_module(trident, 1.0.0)
+
+########################################
+#
+# Declarations
+#
+
+type trident_t;
+type trident_exec_t;
+
+# Creates a domain for long running process (daemon), which is started by an init script. Domain is trident_t and entry_point is tridnet_exec_t.
+init_daemon_domain(trident_t, trident_exec_t)
+
+# Create type to label files and directories in /var/lib that are specific to Trident, in particular the Trident datastore.
+type trident_var_lib_t;
+files_type(trident_var_lib_t)
+
+####################
+#
+# Trident policy
+#
+require {
+        type admin_passwd_exec_t;
+        type anacron_exec_t;
+        type audisp_remote_exec_t;
+        type audit_spool_t;
+        type auditctl_exec_t;
+        type auditd_exec_t;
+        type auditd_unit_t;
+        type bluetooth_unit_t;
+        type boot_t;
+        type bpf_t;
+        type bootloader_t;
+        type cgroup_t;
+        type chfn_exec_t;
+        type chkpwd_exec_t;
+        type chronyc_exec_t;
+        type chronyd_unit_t;
+        type chronyd_var_lib_t;
+        type chronyd_var_log_t;
+        type cloud_init_exec_t;
+        type cloud_init_state_t;
+        type cloud_init_t;
+        type colord_var_lib_t;
+        type container_unit_t;
+        type crack_db_t;
+        type crack_exec_t;
+        type cron_spool_t;
+        type crond_unit_t;
+        type dbusd_unit_t;
+        type debugfs_t;
+        type default_t;
+        type device_t;
+        type devpts_t;
+        type dhcpc_exec_t;
+        type dhcpc_state_t;
+        type dhcpd_unit_t;
+        type dmesg_exec_t;
+        type dosfs_t;
+        type efivarfs_t;
+        type etc_runtime_t;
+        type fs_t;
+        type fsadm_exec_t;
+        type fsadm_t;
+        type getty_exec_t;
+        type gpg_agent_exec_t;
+        type gpg_pinentry_exec_t;
+        type gpg_secret_t;
+        type groupadd_exec_t;
+        type home_root_t;
+        type init_t;
+        type init_exec_t;
+        type init_runtime_t;
+        type init_var_lib_t;
+        type initctl_t;
+        type iptables_unit_t;
+        type kernel_t;
+        type kmod_exec_t;
+        type krb5kdc_exec_t;
+        type ld_so_t;
+        type ldconfig_cache_t;
+        type lib_t;
+        type loadkeys_exec_t;
+        type loadkeys_t;
+        type load_policy_t;
+        type locale_t;
+        type locate_exec_t;
+        type logrotate_unit_t;
+        type logrotate_var_lib_t;
+        type lost_found_t;
+        type lvm_metadata_t;
+        type lvm_t;
+        type lvm_unit_t;
+        type mail_spool_t;
+        type mdadm_exec_t;
+        type mdadm_unit_t;
+        type memory_pressure_t;
+        type mnt_t;
+        type modules_conf_t;
+        type modules_dep_t;
+        type modules_object_t;
+        type mount_t;
+        type mount_exec_t;
+        type mptctl_device_t;
+        type net_conf_t;
+        type ntpd_exec_t;
+        type ntpd_unit_t;
+        type oddjob_mkhomedir_exec_t;
+        type power_unit_t;
+        type proc_t;
+        type proc_kcore_t;
+        type proc_mdstat_t;
+        type proc_net_t;
+        type root_t;
+        type rpm_t;
+        type rpm_script_t;
+        type rpm_unit_t;
+        type security_t;
+        type setfiles_t;
+        type semanage_t;
+        type semanage_exec_t;
+        type shadow_lock_t;
+        type shadow_t;
+        type shell_exec_t;
+        type ssh_agent_exec_t;
+        type ssh_exec_t;
+        type ssh_home_t;
+        type sshd_t;
+        type sshd_keygen_unit_t;
+        type sshd_unit_t;
+        type sudo_exec_t;
+        type sulogin_exec_t;
+        type sysctl_fs_t;
+        type sysctl_kernel_t;
+        type sysctl_vm_overcommit_t;
+        type sysctl_vm_t;
+        type sysfs_t;
+        type syslog_conf_t;
+        type syslogd_exec_t;
+        type syslogd_unit_t;
+        type systemd_analyze_exec_t;
+        type systemd_backlight_exec_t;
+        type systemd_backlight_unit_t;
+        type systemd_binfmt_exec_t;
+        type systemd_binfmt_unit_t;
+        type systemd_cgroups_exec_t;
+        type systemd_cgtop_exec_t;
+        type systemd_coredump_exec_t;
+        type systemd_coredump_var_lib_t;
+        type systemd_factory_conf_t;
+        type systemd_generator_t;
+        type systemd_generator_exec_t;
+        type systemd_homed_exec_t;
+        type systemd_homework_exec_t;
+        type systemd_hostnamed_exec_t;
+        type systemd_hw_exec_t;
+        type systemd_hwdb_t;
+        type systemd_journalctl_exec_t;
+        type systemd_locale_exec_t;
+        type systemd_logind_exec_t;
+        type systemd_machine_id_setup_exec_t;
+        type systemd_modules_load_exec_t;
+        type systemd_networkd_t;
+        type systemd_networkd_unit_t;
+        type systemd_networkd_exec_t;
+        type systemd_notify_exec_t;
+        type systemd_passwd_agent_exec_t;
+        type systemd_pcrphase_t;
+        type systemd_pcrphase_exec_t;
+        type systemd_pstore_exec_t;
+        type systemd_resolved_exec_t;
+        type systemd_rfkill_exec_t;
+        type systemd_rfkill_unit_t;
+        type systemd_sessions_exec_t;
+        type systemd_socket_proxyd_exec_t;
+        type systemd_stdio_bridge_exec_t;
+        type systemd_sysctl_exec_t;
+        type systemd_sysusers_exec_t;
+        type systemd_tmpfiles_exec_t;
+        type systemd_unit_t;
+        type systemd_update_done_exec_t;
+        type systemd_user_manager_unit_t;
+        type systemd_user_runtime_dir_exec_t;
+        type systemd_userdbd_exec_t;
+        type systemd_userdbd_unit_t;
+        type tmp_t;
+        type tmpfs_t;
+        type trident_t;
+        type udev_exec_t;
+        type udev_t;
+        type udevadm_t;
+        type unlabeled_t;
+        type unreserved_port_t;
+        type updpwd_exec_t;
+        type useradd_exec_t;
+        type usr_t;
+        type uuidd_exec_t;
+        type unconfined_t;
+        type var_run_t;
+
+        # Define object classes that SELinux can protect
+        class dir { add_name create getattr open read remove_name search write };
+        class file { create getattr ioctl lock open read rename setattr relabelto unlink write map execute execute_no_trans };
+        class chr_file getattr;
+        class filesystem getattr;
+        class lnk_file read;
+        class netlink_route_socket { bind create getattr getopt nlmsg_read read setopt write };
+        class process { getsched noatsecure rlimitinh siginh };
+        class capability sys_admin;
+        class security read_policy;
+        class service start;
+        class tcp_socket { connect create getattr getopt name_connect read setopt shutdown write };
+        class udp_socket { create ioctl };
+
+        attribute can_change_object_identity;
+        attribute domain;
+
+        role unconfined_r;
+        role system_r;
+}
+
+# Allow Trident to change (relabel) the security context of a file or directory
+typeattribute trident_t can_change_object_identity;
+
+# Defines transition from trident_t to fsadm_t domain when Trident executes fsadm tool (i.e. mkfs)
+type_transition trident_t fsadm_exec_t:process fsadm_t;
+
+# Allow transition between unconfined_t and trident_t domains; necessary for an interactive run
+optional_policy(`
+    unconfined_run_to(trident_t, trident_exec_t)
+')
+
+#============= trident_t ==============
+# Gives trident_t the following elevated privileges:
+# dac_override and dac_read_search - allow access files and directories without necessary DAC permissions
+# sys_ptrace - allow trident_t to trace or debug other processes
+# sys_rawio - allow trident_t to perform I/O operations directly on hardware devices
+allow trident_t self:capability { dac_override dac_read_search sys_ptrace sys_rawio };
+
+allow trident_t self:alg_socket { accept bind create read write };
+allow trident_t self:capability { audit_write chown mknod net_admin sys_chroot sys_resource sys_admin fowner fsetid sys_boot ipc_lock sys_nice linux_immutable };
+allow trident_t self:fifo_file manage_fifo_file_perms;
+allow trident_t self:netlink_audit_socket { create nlmsg_relay read write };
+allow trident_t self:netlink_kobject_uevent_socket { bind create getattr getopt read setopt };
+allow trident_t self:netlink_route_socket { bind create getattr nlmsg_read read write };
+allow trident_t self:process { getsched setsched getcap setpgid signull getattr signal };
+allow trident_t self:tcp_socket { connect create getattr getopt read setopt shutdown write };
+allow trident_t self:unix_dgram_socket { connect create };
+allow trident_t self:key { search write };
+allow trident_t self:sem { associate create destroy read unix_read unix_write write };
+
+# Ensure any new files, directories, or symbolic links created by trident_t are automatically labeled with type trident_var_lib_t
+files_var_lib_filetrans(trident_t, trident_var_lib_t, { dir file lnk_file })
+
+# Allow trident_t domain to interact with files and directories labeled as trident_var_lib_t
+# Necessary so Trident can interact with the datastore at /var/lib/trident
+allow trident_t trident_var_lib_t:dir { getattr search read write add_name create remove_name open mounton relabelto };
+allow trident_t trident_var_lib_t:file { getattr setattr create open read write unlink lock };
+
+# Allow Trident to relabel its executable
+allow trident_t trident_exec_t:file relabelto;
+
+allow trident_t audit_spool_t:dir { getattr open read };
+allow trident_t auditctl_exec_t:file getattr;
+allow trident_t auditd_exec_t:file getattr;
+allow trident_t auditd_unit_t:file getattr;
+allow trident_t admin_passwd_exec_t:file getattr;
+allow trident_t anacron_exec_t:file getattr;
+allow trident_t audisp_remote_exec_t:file getattr;
+allow trident_t bluetooth_unit_t:file getattr;
+allow trident_t boot_t:dir { mounton create };
+allow trident_t bpf_t:dir search;
+allow trident_t cgroup_t:filesystem getattr;
+allow trident_t chfn_exec_t:file getattr;
+allow trident_t chkpwd_exec_t:file getattr;
+allow trident_t chronyc_exec_t:file getattr;
+allow trident_t chronyd_unit_t:file getattr;
+allow trident_t chronyd_var_lib_t:dir { getattr open read };
+allow trident_t chronyd_var_log_t:dir { getattr open read };
+allow trident_t cloud_init_exec_t:file getattr;
+allow trident_t cloud_init_state_t:dir list_dir_perms;
+allow trident_t cloud_init_state_t:lnk_file read_lnk_file_perms;
+allow trident_t cloud_init_state_t:file getattr;
+allow trident_t colord_var_lib_t:dir { getattr open read };
+allow trident_t container_unit_t:file getattr;
+allow trident_t crack_db_t:dir { getattr open search read };
+allow trident_t crack_db_t:file getattr;
+allow trident_t crack_db_t:lnk_file getattr;
+allow trident_t crack_exec_t:file getattr;
+allow trident_t cron_spool_t:dir read;
+allow trident_t crond_unit_t:file getattr;
+allow trident_t dbusd_unit_t:file getattr;
+allow trident_t debugfs_t:filesystem getattr;
+allow trident_t debugfs_t:dir search;
+allow trident_t default_t:dir { getattr open read relabelto search };
+allow trident_t default_t:file relabelto;
+allow trident_t device_t:filesystem { getattr mount unmount };
+allow trident_t devpts_t:chr_file { read write ioctl getattr };
+allow trident_t devlog_t:sock_file getattr;
+allow trident_t dhcpc_exec_t:file getattr;
+allow trident_t dhcpc_state_t:dir { getattr open read };
+allow trident_t dhcpd_unit_t:file getattr;
+allow trident_t dmesg_exec_t:file { execute getattr map open read relabelto setattr unlink write };
+allow trident_t dosfs_t:filesystem { getattr mount unmount };
+allow trident_t efivarfs_t:filesystem getattr;
+allow trident_t efivarfs_t:dir search;
+allow trident_t etc_runtime_t:file { getattr open read relabelto relabelfrom setattr unlink };
+allow trident_t etc_t:file { create execute execute_no_trans link relabelfrom relabelto rename setattr unlink write };
+allow trident_t fs_t:filesystem { mount unmount };
+allow trident_t fsadm_t:process { siginh rlimitinh noatsecure transition };
+allow trident_t fsadm_t:fd use;
+allow trident_t fsadm_t:fifo_file { read write };
+allow trident_t fsadm_exec_t:file { getattr open read execute execute_no_trans relabelto setattr unlink write };
+allow trident_t getty_exec_t:file getattr;
+allow trident_t gpg_pinentry_exec_t:file getattr;
+allow trident_t gpg_secret_t:file getattr;
+allow trident_t groupadd_exec_t:file getattr;
+allow trident_t home_root_t:dir { mounton read relabelto add_name create relabelfrom setattr write };
+allow trident_t home_root_t:file { create getattr ioctl open relabelfrom setattr write };
+allow trident_t init_exec_t:file { execute getattr map open read relabelto setattr unlink write };
+allow trident_t init_t:system { reboot start status };
+allow trident_t init_t:key search;
+allow trident_t init_t:unix_stream_socket connectto;
+allow trident_t initctl_t:fifo_file getattr;
+allow trident_t init_runtime_t:dir { add_name write };
+allow trident_t init_runtime_t:file { create getattr open write };
+allow trident_t init_var_lib_t:dir { getattr open read search };
+allow trident_t iptables_unit_t:file getattr;
+allow trident_t kernel_t:process setsched;
+allow trident_t kernel_t:system { module_request ipc_info };
+allow trident_t kmod_exec_t:file { execute execute_no_trans getattr map open read relabelto setattr unlink write };
+allow trident_t krb5kdc_exec_t:file getattr;
+allow trident_t ld_so_t:file { execute_no_trans relabelto setattr unlink write };
+allow trident_t ldconfig_cache_t:dir { getattr open read search };
+allow trident_t ldconfig_cache_t:file getattr;
+allow trident_t lib_t:file { create relabelto rename setattr unlink write };
+allow trident_t loadkeys_exec_t:file { execute getattr map open read relabelto setattr unlink write };
+allow trident_t locale_t:dir { add_name relabelto remove_name rmdir setattr write };
+allow trident_t locale_t:file { link relabelto rename setattr unlink write };
+allow trident_t locate_exec_t:file getattr;
+allow trident_t logrotate_unit_t:file getattr;
+allow trident_t logrotate_var_lib_t:dir { getattr open read };
+allow trident_t lost_found_t:dir { getattr open read relabelto };
+allow trident_t lvm_metadata_t:dir { getattr open read };
+allow trident_t lvm_unit_t:file getattr;
+allow trident_t mail_spool_t:dir list_dir_perms;
+allow trident_t mdadm_exec_t:file { open read getattr map relabelto setattr unlink write execute execute_no_trans };
+allow trident_t mdadm_unit_t:file { getattr open read relabelto setattr unlink };
+allow trident_t mdadm_runtime_t:dir { add_name remove_name search write };
+allow trident_t memory_pressure_t:file { read open getattr setattr };
+allow trident_t mnt_t:dir { add_name create getattr mounton open read search write };
+allow trident_t modules_conf_t:file { relabelto setattr unlink };
+allow trident_t modules_dep_t:file { getattr ioctl map open read relabelto setattr unlink };
+allow trident_t modules_object_t:file { getattr open read relabelto setattr unlink };
+allow trident_t mount_exec_t:file { execute execute_no_trans getattr map open read relabelto setattr unlink write };
+allow trident_t mptctl_device_t:chr_file getattr;
+allow trident_t net_conf_t:file { relabelto setattr unlink };
+allow trident_t ntpd_exec_t:file { execute getattr };
+allow trident_t ntpd_unit_t:file getattr;
+allow trident_t oddjob_mkhomedir_exec_t:file getattr;
+allow trident_t power_unit_t:file { getattr open read relabelto setattr unlink };
+allow trident_t proc_t:dir read;
+allow trident_t proc_t:file { getattr open read ioctl };
+allow trident_t proc_t:filesystem { getattr mount unmount };
+allow trident_t proc_kcore_t:file getattr;
+allow trident_t proc_mdstat_t:file { getattr open read };
+allow trident_t proc_net_t:file { open read };
+allow trident_t root_t:dir { add_name create mounton write };
+allow trident_t root_t:file { create getattr map open read relabelfrom write };
+allow trident_t rpm_unit_t:file getattr;
+allow trident_t security_t:file { map write };
+allow trident_t security_t:filesystem getattr;
+allow trident_t semanage_exec_t:file { execute execute_no_trans entrypoint getattr ioctl open read map };
+allow trident_t setfiles_exec_t:file entrypoint;
+allow trident_t shadow_t:file { getattr open read relabelto setattr unlink write };
+allow trident_t shadow_lock_t:file { create getattr lock open read unlink write };
+allow trident_t shell_exec_t:file { execute execute_no_trans getattr map open read relabelto setattr unlink write };
+allow trident_t ssh_agent_exec_t:file getattr;
+allow trident_t ssh_exec_t:file { execute getattr };
+allow trident_t ssh_home_t:dir { setattr relabelto };
+allow trident_t ssh_home_t:file relabelto;
+allow trident_t sshd_t:fd use;
+allow trident_t sshd_t:fifo_file { read write getattr }; # Allow Trident to read/write stdin/stdout/stderr
+allow trident_t sshd_keygen_unit_t:file getattr;
+allow trident_t sshd_unit_t:file getattr;
+allow trident_t sulogin_exec_t:file { execute getattr map open read relabelto setattr unlink write };
+allow trident_t sysctl_fs_t:dir search;
+allow trident_t sysctl_fs_t:file { getattr ioctl open read };
+allow trident_t sysctl_kernel_t:dir search;
+allow trident_t sysctl_kernel_t:file { getattr ioctl open read };
+allow trident_t sysctl_vm_overcommit_t:file { open read };
+allow trident_t sysctl_vm_t:dir search;
+allow trident_t sysfs_t:filesystem { mount unmount };
+allow trident_t syslog_conf_t:file { getattr open read relabelto setattr unlink };
+allow trident_t syslogd_exec_t:file { execute getattr map open read relabelto setattr unlink write };
+allow trident_t syslogd_runtime_t:dir search;
+allow trident_t syslogd_unit_t:file { getattr open read relabelto setattr unlink };
+allow trident_t systemd_analyze_exec_t:file getattr;
+allow trident_t systemd_backlight_exec_t:file getattr;
+allow trident_t systemd_backlight_unit_t:file getattr;
+allow trident_t systemd_binfmt_exec_t:file getattr;
+allow trident_t systemd_binfmt_unit_t:file getattr;
+allow trident_t systemd_cgroups_exec_t:file { execute getattr map open read relabelto setattr unlink write };
+allow trident_t systemd_cgtop_exec_t:file getattr;
+allow trident_t systemd_coredump_exec_t:file { execute getattr map open read relabelto setattr unlink write };
+allow trident_t systemd_coredump_var_lib_t:dir { getattr open read };
+allow trident_t systemd_factory_conf_t:dir { getattr open read search };
+allow trident_t systemd_factory_conf_t:file getattr;
+allow trident_t systemd_generator_exec_t:file { execute getattr map open read relabelto setattr unlink write };
+allow trident_t systemd_homed_exec_t:file getattr;
+allow trident_t systemd_homework_exec_t:file getattr;
+allow trident_t systemd_hostnamed_exec_t:file { execute getattr };
+allow trident_t systemd_hw_exec_t:file getattr;
+allow trident_t systemd_hwdb_t:file { getattr open read relabelto setattr unlink };
+allow trident_t systemd_journal_t:file relabelfrom_file_perms;
+allow trident_t systemd_journalctl_exec_t:file { execute getattr map open read relabelto setattr unlink write };
+allow trident_t systemd_locale_exec_t:file getattr;
+allow trident_t systemd_logind_exec_t:file getattr;
+allow trident_t systemd_machine_id_setup_exec_t:file getattr;
+allow trident_t systemd_modules_load_exec_t:file { execute getattr map open read relabelto setattr unlink write };
+allow trident_t systemd_networkd_unit_t:service { start status };
+allow trident_t systemd_networkd_exec_t:file { execute getattr };
+allow trident_t systemd_notify_exec_t:file getattr;
+allow trident_t systemd_passwd_agent_exec_t:file { execute getattr map open read relabelto setattr unlink write };
+allow trident_t systemd_pcrphase_exec_t:file { execute getattr };
+allow trident_t pstore_t:dir search;
+allow trident_t systemd_pstore_exec_t:file { execute getattr };
+allow trident_t systemd_resolved_exec_t:file { execute getattr };
+allow trident_t systemd_rfkill_exec_t:file getattr;
+allow trident_t systemd_rfkill_unit_t:file getattr;
+allow trident_t systemd_sessions_exec_t:file getattr;
+allow trident_t systemd_socket_proxyd_exec_t:file getattr;
+allow trident_t systemd_stdio_bridge_exec_t:file getattr;
+allow trident_t systemd_sysctl_exec_t:file { execute getattr map open read relabelto setattr unlink write };
+allow trident_t systemd_sysusers_exec_t:file { execute getattr map open read relabelto setattr unlink write };
+allow trident_t systemd_tmpfiles_exec_t:file { execute getattr map open read relabelto setattr unlink write };
+allow trident_t systemd_unit_t:dir { read add_name create write };
+allow trident_t systemd_unit_t:file { getattr ioctl link open read relabelto rename setattr unlink write create };
+allow trident_t systemd_unit_t:lnk_file { getattr read create };
+allow trident_t systemd_update_done_exec_t:file getattr;
+allow trident_t systemd_user_manager_unit_t:file getattr;
+allow trident_t systemd_user_runtime_dir_exec_t:file getattr;
+allow trident_t systemd_userdbd_exec_t:file getattr;
+allow trident_t systemd_userdbd_unit_t:file getattr;
+allow trident_t tmp_t:chr_file { create getattr unlink };
+allow trident_t tmp_t:dir { add_name create getattr mounton open read relabelfrom remove_name rmdir search setattr write };
+allow trident_t tmp_t:file { append create getattr ioctl open read relabelfrom rename setattr unlink write map };
+allow trident_t tmp_t:lnk_file { create getattr read rename unlink };
+allow trident_t tmpfs_t:file { append create execute getattr ioctl mounton open read relabelto rename setattr unlink write map };
+allow trident_t tmpfs_t:filesystem { getattr mount unmount };
+allow trident_t udev_exec_t:file { execute execute_no_trans getattr map open read relabelto setattr unlink write };
+allow trident_t udev_runtime_t:dir { read watch };
+allow trident_t unlabeled_t:dir { create add_name getattr setattr open read remove_name search write mounton relabelfrom };
+allow trident_t unlabeled_t:file { create getattr lock open read setattr unlink write ioctl relabelfrom };
+allow trident_t unreserved_port_t:tcp_socket name_connect;
+allow trident_t updpwd_exec_t:file getattr;
+allow trident_t useradd_exec_t:file { execute execute_no_trans getattr map open read };
+allow trident_t usr_t:dir { add_name create read relabelto remove_name rmdir setattr write relabelto mounton };
+allow trident_t usr_t:file { create execute execute_no_trans getattr ioctl link open read relabelto rename setattr unlink write };
+allow trident_t uuidd_exec_t:file getattr;
+allow trident_t var_t:dir mounton;
+allow trident_t var_run_t:dir { add_name create remove_name write };
+allow trident_t var_run_t:file { create getattr lock open read unlink write };
+
+#============= interfaces ==============
+###########################################
+# Authentication and User Management
+###########################################
+auth_create_faillog_files(trident_t)
+auth_exec_pam(trident_t)
+auth_login_entry_type(trident_t)
+auth_read_lastlog(trident_t)
+auth_read_login_records(trident_t)
+domain_entry_file(trident_t, gpg_agent_exec_t)
+gpg_entry_type(trident_t)
+gpg_list_user_secrets(trident_t)
+su_exec(trident_t)
+usermanage_check_exec_passwd(trident_t)
+userdom_list_user_home_dirs(trident_t)
+userdom_read_user_home_content_files(trident_t)
+userdom_search_user_runtime_root(trident_t)
+userdom_relabel_generic_user_home_files(trident_t)
+userdom_relabelto_user_home_dirs(trident_t)
+
+###########################################
+# System Services and Daemons
+###########################################
+bootloader_exec(trident_t)
+chronyd_exec(trident_t)
+chronyd_read_config(trident_t)
+chronyd_read_key_files(trident_t)
+clock_exec(trident_t)
+create_files_pattern(trident_t, cgroup_t, cgroup_t)
+cron_exec(trident_t)
+cron_exec_crontab(trident_t)
+cron_read_system_spool(trident_t)
+dbus_exec(trident_t)
+dbus_manage_lib_files(trident_t)
+dbus_read_config(trident_t)
+dbus_read_lib_files(trident_t)
+dbus_list_system_bus_runtime(trident_t)
+dbus_system_bus_client(trident_t)
+domain_read_all_domains_state(trident_t)
+hostname_exec(trident_t)
+init_domtrans(trident_t)
+init_rw_stream_sockets(trident_t)
+logrotate_exec(trident_t)
+ps_process_pattern(trident_t, cloud_init_t) # equivalent to cloud_init_read_state(trident_t)
+ssh_domtrans(trident_t)
+ssh_domtrans_keygen(trident_t)
+ssh_manage_home_files(trident_t)
+systemd_list_journal_dirs(trident_t)
+systemd_read_networkd_units(trident_t)
+systemd_read_user_runtime_units_files(trident_t)
+systemd_dbus_chat_logind(trident_t)
+systemd_read_user_unit_files(trident_t)
+
+###########################################
+# File System Operations
+###########################################
+files_create_boot_dirs(trident_t)
+files_list_kernel_modules(trident_t)
+files_list_spool(trident_t)
+files_list_var(trident_t)
+files_manage_boot_files(trident_t)
+files_manage_etc_dirs(trident_t)
+files_manage_etc_symlinks(trident_t)
+files_mounton_runtime_dirs(trident_t)
+files_read_etc_files(trident_t)
+files_read_default_symlinks(trident_t)
+files_read_kernel_symbol_table(trident_t)
+files_read_usr_src_files(trident_t)
+files_read_usr_symlinks(trident_t)
+files_read_var_lib_files(trident_t)
+files_search_etc(trident_t)
+files_search_kernel_modules(trident_t)
+files_search_locks(trident_t)
+files_search_spool(trident_t)
+files_search_var_lib(trident_t)
+files_rw_etc_runtime_files(trident_t)
+fstools_domtrans(trident_t)
+fstools_relabelto_entry_files(trident_t)
+fs_getattr_hugetlbfs(trident_t)
+fs_getattr_iso9660_files(trident_t)
+fs_getattr_iso9660_fs(trident_t)
+fs_getattr_pstorefs(trident_t)
+fs_getattr_tracefs(trident_t)
+fs_getattr_xattr_fs(trident_t)
+fs_list_efivars(trident_t)
+fs_list_hugetlbfs(trident_t)
+fs_manage_dos_dirs(trident_t)
+fs_manage_dos_files(trident_t)
+fs_manage_efivarfs_files(trident_t)
+fs_manage_tmpfs_dirs(trident_t)
+fs_manage_tmpfs_symlinks(trident_t)
+fs_mounton_tmpfs(trident_t)
+fs_read_iso9660_files(trident_t)
+fs_watch_memory_pressure(trident_t)
+mount_list_runtime(trident_t)
+
+###########################################
+# Network Management
+###########################################
+iptables_exec(trident_t)
+iptables_read_config(trident_t)
+iptables_status(trident_t)
+sysnet_exec_ifconfig(trident_t)
+sysnet_read_config(trident_t)
+sysnet_read_dhcp_config(trident_t)
+sysnet_relabel_config(trident_t)
+sysnet_write_config(trident_t)
+
+###########################################
+# Storage Management
+###########################################
+dev_rw_loop_control(trident_t)
+dev_rw_lvm_control(trident_t)
+lvm_exec(trident_t)
+lvm_read_config(trident_t)
+manage_files_pattern(trident_t, mount_runtime_t, mount_runtime_t)
+storage_getattr_fuse_dev(trident_t)
+storage_getattr_scsi_generic_dev(trident_t)
+storage_raw_read_removable_device(trident_t)
+storage_raw_read_fixed_disk(trident_t)
+storage_raw_write_fixed_disk(trident_t)
+
+###########################################
+# SELinux Management
+###########################################
+corecmd_relabel_bin_files(trident_t)
+files_relabel_etc_files(trident_t)
+files_relabel_kernel_modules(trident_t)
+files_relabelto_etc_runtime_files(trident_t)
+files_relabelto_usr_files(trident_t)
+libs_relabel_ld_so(trident_t)
+libs_relabelto_lib_files(trident_t)
+miscfiles_relabel_localization(trident_t)
+relabel_files_pattern(trident_t, udev_rules_t, udev_rules_t)
+selinux_load_policy(trident_t)
+seutil_exec_checkpolicy(trident_t)
+seutil_exec_loadpolicy(trident_t)
+seutil_exec_setfiles(trident_t)
+seutil_get_semanage_read_lock(trident_t)
+seutil_get_semanage_trans_lock(trident_t)
+seutil_manage_bin_policy(trident_t)
+seutil_manage_config(trident_t)
+seutil_manage_config_dirs(trident_t)
+seutil_manage_file_contexts(trident_t)
+seutil_manage_module_store(trident_t)
+seutil_read_default_contexts(trident_t)
+seutil_read_bin_policy(trident_t)
+udev_relabel_rules_files(trident_t)
+
+###########################################
+# Package Management
+###########################################
+rpm_delete_db(trident_t)
+rpm_exec(trident_t)
+rpm_read_cache(trident_t)
+rpm_read_db(trident_t)
+
+###########################################
+# Device Management
+###########################################
+corenet_getattr_ppp_dev(trident_t)
+corenet_read_tun_tap_dev(trident_t)
+dev_getattr_acpi_bios_dev(trident_t)
+dev_getattr_autofs_dev(trident_t)
+dev_getattr_framebuffer_dev(trident_t)
+dev_getattr_generic_usb_dev(trident_t)
+dev_getattr_mouse_dev(trident_t)
+dev_getattr_pmqos_dev(trident_t)
+dev_getattr_sysfs(trident_t)
+dev_getattr_xserver_misc_dev(trident_t)
+dev_list_sysfs(trident_t)
+dev_manage_generic_blk_files(trident_t)
+dev_manage_generic_dirs(trident_t)
+dev_mounton(trident_t)
+dev_mounton_sysfs_dirs(trident_t)
+dev_read_input_dev(trident_t)
+dev_read_kmsg(trident_t)
+dev_read_rand(trident_t)
+dev_read_raw_memory(trident_t)
+dev_read_realtime_clock(trident_t)
+dev_read_sysfs(trident_t)
+dev_read_watchdog(trident_t)
+dev_read_urand(trident_t)
+dev_relabelfrom_generic_chr_files(trident_t)
+dev_relabelfrom_vfio_dev(trident_t)
+dev_rw_nvram(trident_t)
+dev_rw_tpm(trident_t)
+dev_rw_vhost(trident_t)
+dev_search_sysfs(trident_t)
+dev_write_sysfs(trident_t)
+dev_write_urand(trident_t)
+raid_manage_mdadm_runtime_files(trident_t)
+term_getattr_ptmx(trident_t)
+term_use_virtio_console(trident_t)
+term_getattr_pty_fs(trident_t)
+udev_manage_rules_files(trident_t)
+udev_read_runtime_files(trident_t)
+udev_read_state(trident_t)
+
+###########################################
+# System Command Execution
+###########################################
+can_exec(trident_t, sudo_exec_t)
+corecmd_manage_bin_files(trident_t)
+corecmd_bin_entry_type(trident_t)
+corecmd_shell_entry_type(trident_t)
+corecmd_search_bin(trident_t)
+corecmd_exec_bin(trident_t)
+corecmd_search_bin(trident_t)
+kerberos_exec_kadmind(trident_t)
+kerberos_read_config(trident_t)
+libs_exec_ldconfig(trident_t)
+libs_manage_lib_dirs(trident_t)
+modutils_read_module_config(trident_t)
+tcsd_manage_lib_dirs(trident_t)
+uuidd_manage_lib_dirs(trident_t)
+
+###########################################
+# Logging and Monitoring
+###########################################
+logging_read_audit_config(trident_t)
+logging_read_audit_log(trident_t)
+logging_relabelto_devlog_sock_files(trident_t)
+logging_search_logs(trident_t)
+logging_stream_connect_journald_varlink(trident_t)
+logging_manage_generic_log_dirs(trident_t)
+logging_manage_generic_logs(trident_t)
+
+###########################################
+# Miscellaneous
+###########################################
+miscfiles_read_generic_tls_privkey(trident_t)
+miscfiles_read_man_pages(trident_t)
+miscfiles_read_localization(trident_t)
+miscfiles_read_generic_certs(trident_t)
+xserver_read_xkb_libs(trident_t)
+
+
+####################
+#
+# Additional permissions given to external domains
+#
+#============= bootloader_t ==============
+# List the contents of generic tmpfs directories; required for RAID
+fs_list_tmpfs(bootloader_t)
+
+#============= cloud_init_t ==============
+allow cloud_init_t unlabeled_t:dir { add_name getattr remove_name search write };
+allow cloud_init_t unlabeled_t:file { create getattr ioctl open read rename write };
+allow cloud_init_t usr_t:dir { add_name create remove_name write };
+
+files_exec_usr_files(cloud_init_t)
+files_manage_usr_files(cloud_init_t)
+
+#============= fsadm_t ==============
+role unconfined_r types fsadm_t;
+
+# Get the attributes of efivarfs filesystems
+allow fsadm_t efivarfs_t:filesystem getattr;
+allow fsadm_t trident_t:process { siginh rlimitinh noatsecure transition sigchld };
+allow fsadm_t fixed_disk_device_t:blk_file { open read write getattr ioctl };
+
+# Create, read, write, and delete files on a efivarfs filesystem
+fs_manage_efivarfs_files(fsadm_t)
+fs_manage_tmpfs_dirs(fsadm_t)
+fs_manage_tmpfs_files(fsadm_t)
+
+#============= loadkeys_t ==============
+files_read_default_symlinks(loadkeys_t)
+fs_search_tmpfs(loadkeys_t)
+
+#============= lvm_t ==============
+# This is necessary for Trident to create encrypted volumes
+allow lvm_t trident_t:sem { associate read unix_read unix_write write };
+allow lvm_t initrc_t:sem { associate read unix_read unix_write write };
+
+#============= mount_t =============
+allow mount_t trident_var_lib_t:dir mounton;
+
+#============= systemd_pcrphase_t ==============
+allow systemd_pcrphase_t tmpfs_t:dir { getattr open read search };
+allow systemd_pcrphase_t tmpfs_t:file { getattr lock open setattr write };
+
+#============= rpm_t ==============
+allow rpm_t unlabeled_t:dir { add_name getattr remove_name search write };
+allow rpm_t unlabeled_t:file { create getattr ioctl open read rename write };
+allow rpm_t rpm_script_t:process { noatsecure rlimitinh siginh };
+
+#============= rpm_script_t ==============
+# Allow RPM scripts to read SELinux policy (we currently apply trident.pp as a module in the Trident spec)
+allow rpm_script_t security_t:security read_policy;
+
+allow rpm_script_t kernel_t:fd use;
+allow rpm_script_t unlabeled_t:dir { add_name getattr remove_name search write };
+allow rpm_script_t unlabeled_t:file { create getattr ioctl open read rename write };
+
+#============= semanage_t ==============
+allow semanage_t proc_t:filesystem getattr;
+allow semanage_t load_policy_t:process { noatsecure rlimitinh siginh };
+allow semanage_t setfiles_t:process { noatsecure rlimitinh siginh };
+
+libs_manage_lib_dirs(semanage_t)
+libs_manage_lib_files(semanage_t)
+
+#============= setfiles_t ==============
+allow setfiles_t proc_t:filesystem getattr;
+
+#============= systemd_generator_t ==============
+allow systemd_generator_t home_root_t:dir read;
+
+#============= udev_t ==============
+allow udev_t cloud_init_t:fd use;
+allow udev_t cloud_init_t:fifo_file { append write getattr };
+allow udev_t lvm_t:process { noatsecure rlimitinh siginh };
+
+files_read_generic_tmp_files(udev_t)
+
+#============= udevadm_t ==============
+allow udevadm_t cgroup_t:filesystem getattr;
+allow udevadm_t self:netlink_route_socket { bind create getattr getopt nlmsg_read read setopt write };
+allow udevadm_t self:udp_socket { create ioctl };
+allow udevadm_t self:capability { sys_admin };
+allow udevadm_t systemd_hwdb_t:file { getattr map open read };
+allow udevadm_t kernel_t:fd use;
+
+# Allow udevadm to search kernel modules, read module configurations and dependencies
+files_search_kernel_modules(udevadm_t)
+modutils_read_module_config(udevadm_t)
+modutils_read_module_deps(udevadm_t)
+
+# Read system network configuration files
+sysnet_read_config(udevadm_t)
+
+# List systemd networkd runtime files
+systemd_list_networkd_runtime(udevadm_t)
+
+# Manage udev rules, runtime directories, and files
+udev_manage_rules_files(udevadm_t)
+udev_manage_runtime_dirs(udevadm_t)
+udev_manage_runtime_files(udevadm_t)
+
+# Read symbolic links in cgroup directories and search sysfs
+read_lnk_files_pattern(udevadm_t, cgroup_t, cgroup_t)
+dev_search_sysfs(udevadm_t)
+
+#============= unlabeled_t ==============
+fs_associate_tmpfs(unlabeled_t)

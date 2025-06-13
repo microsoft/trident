@@ -1,6 +1,8 @@
+### This file is primarily used to build Trident RPMs for local testing.
+
 FROM mcr.microsoft.com/azurelinux/base/core:3.0
 
-RUN tdnf install -y rpmdevtools openssl-devel clang-devel protobuf-devel rust sed
+RUN tdnf install -y rpmdevtools openssl-devel clang-devel protobuf-devel rust sed selinux-policy-devel
 
 WORKDIR /work
 
@@ -8,7 +10,10 @@ COPY trident.spec .
 COPY systemd ./systemd
 COPY bin/trident ./target/release/trident
 COPY artifacts/osmodifier /usr/src/azl/SOURCES/osmodifier
-COPY trident-selinuxpolicies.cil /usr/src/azl/SOURCES/trident-selinuxpolicies.cil
+COPY selinux-policy-trident/trident.te /usr/src/azl/SOURCES/trident.te
+COPY selinux-policy-trident/trident.fc /usr/src/azl/SOURCES/trident.fc
+COPY selinux-policy-trident/trident.if /usr/src/azl/SOURCES/trident.if
+COPY packaging/static-pcrlock-files/ /usr/src/azl/SOURCES/static-pcrlock-files/
 
 ARG TRIDENT_VERSION=dev-build
 ARG RPM_VER=0.1.0

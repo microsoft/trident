@@ -59,8 +59,8 @@ steps:
       if pgrep netlisten > /dev/null; then pkill netlisten; fi
 
       ./bin/netlisten -m $(Build.SourcesDirectory)/trident-stage-update-metrics.jsonl \
-        -p ${{ parameters.netlistenPort }} \
-        -s "${{ parameters.artifactsDirectory }}" > ./stage-ab-update-deployment.log 2>&1 &
+          -p ${{ parameters.netlistenPort }} \
+          -s "${{ parameters.artifactsDirectory }}" > ./stage-ab-update-deployment.log 2>&1 &
 
       echo "Running script to stage A/B update..."
       ./bin/storm-trident helper ab-update \
@@ -113,7 +113,10 @@ steps:
       set -eux
       # If there is a netlisten process, kill it so there is no port clash in the instance
       if pgrep netlisten > /dev/null; then pkill netlisten; fi
-      ./bin/netlisten -m $(Build.SourcesDirectory)/trident-finalize-update-metrics.jsonl -p ${{ parameters.netlistenPort }} > ./finalize-ab-update.log 2>&1 &
+      ./bin/netlisten -m $(Build.SourcesDirectory)/trident-finalize-update-metrics.jsonl \
+          -p ${{ parameters.netlistenPort }} \
+          -s "${{ parameters.artifactsDirectory }}" > ./finalize-ab-update.log 2>&1 &
+
       echo "Running script to finalize A/B update..."
       ./bin/storm-trident helper ab-update \
           "${{ parameters.sshKeyPath }}" \

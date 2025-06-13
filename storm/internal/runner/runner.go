@@ -68,10 +68,7 @@ func RegisterAndRunTests(suite core.SuiteContext,
 }
 
 func executeTestCases(suite core.SuiteContext,
-	runnable interface {
-		core.TestRegistrantMetadata
-		core.TestRegistrant
-	},
+	runnable *runnableInstance,
 	testManager *testmgr.StormTestManager,
 	watch bool,
 ) error {
@@ -83,7 +80,7 @@ func executeTestCases(suite core.SuiteContext,
 
 	// If the runnable implements the SetupCleanup interface, we call
 	// the setup method before running the tests.
-	if r, ok := runnable.(core.SetupCleanup); ok {
+	if r, ok := runnable.TestRegistrant.(core.SetupCleanup); ok {
 		err := runCatchPanic(func() error { return r.Setup(ctx) })
 		if err != nil {
 			return newSetupError(runnable, err)
@@ -139,7 +136,7 @@ func executeTestCases(suite core.SuiteContext,
 
 	// If the runnable implements the SetupCleanup interface, we call
 	// the Cleanup method after running the tests.
-	if r, ok := runnable.(core.SetupCleanup); ok {
+	if r, ok := runnable.TestRegistrant.(core.SetupCleanup); ok {
 		err := runCatchPanic(func() error { return r.Cleanup(ctx) })
 		if err != nil {
 			return newCleanupError(runnable, err)

@@ -14,7 +14,7 @@ NETLAUNCH_CONFIG ?= input/netlaunch.yaml
 OVERRIDE_RUST_FEED ?= true
 
 .PHONY: all
-all: format check test build-api-docs bin/trident-rpms-azl2.tar.gz bin/trident-rpms-azl3.tar.gz docker-build build-functional-test coverage validate-configs generate-mermaid-diagrams
+all: format check test build-api-docs bin/trident-rpms-azl3.tar.gz docker-build build-functional-test coverage validate-configs generate-mermaid-diagrams
 
 .PHONY: check
 check:
@@ -117,20 +117,7 @@ bin/trident: build
 	@mkdir -p bin
 	@cp -u target/release/trident bin/
 
-bin/trident-rpms-azl2.tar.gz: Dockerfile.azl2 systemd/*.service trident.spec artifacts/osmodifier bin/trident
-	@docker build --quiet -t trident/trident-build:latest \
-		--build-arg TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
-		--build-arg RPM_VER="$(TRIDENT_CARGO_VERSION)" \
-		--build-arg RPM_REL="dev.$(GIT_COMMIT)" \
-		-f Dockerfile.azl2 \
-		.
-	@id=$$(docker create trident/trident-build:latest) && \
-	    docker cp -q $$id:/work/trident-rpms.tar.gz $@ && \
-	    docker rm -v $$id
-	@rm -rf bin/RPMS/x86_64
-	@tar xf $@ -C bin/
-
-bin/trident-rpms-azl3.tar.gz: Dockerfile.azl3 systemd/*.service trident.spec artifacts/osmodifier bin/trident
+bin/trident-rpms-azl3.tar.gz: Dockerfile.azl3 systemd/*.service trident.spec artifacts/osmodifier bin/trident selinux-policy-trident/*
 	@docker build -t trident/trident-build:latest \
 		--build-arg TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
 		--build-arg RPM_VER="$(TRIDENT_CARGO_VERSION)" \
@@ -622,7 +609,7 @@ artifacts/imagecustomizer:
 	@chmod +x artifacts/imagecustomizer
 	@touch artifacts/imagecustomizer
 
-bin/trident-mos.iso: artifacts/baremetal.vhdx artifacts/imagecustomizer systemd/trident-install.service trident-mos/iso.yaml trident-mos/files/* trident-mos/post-install.sh
+bin/trident-mos.iso: artifacts/baremetal.vhdx artifacts/imagecustomizer systemd/trident-install.service trident-mos/iso.yaml trident-mos/files/* trident-mos/post-install.sh selinux-policy-trident/*
 	@mkdir -p bin
 	BUILD_DIR=`mktemp -d` && \
 		trap 'sudo rm -rf $$BUILD_DIR' EXIT; \

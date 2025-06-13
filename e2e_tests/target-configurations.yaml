@@ -2,49 +2,48 @@ bareMetal:
   host:
     daily:
       - base
-      # TODO(12276) re-enable: #- combined
+      - combined
       - encrypted-partition
       - split
-      # TODO(12291) re-enable: #- usr-verity
+      - usr-verity
     validation:
       - base
-      # TODO(12276) re-enable: #- combined
+      - combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
-      # TODO(12276) re-enable: #- memory-constraint-combined
+      - memory-constraint-combined
       - misc
       - raid-big
       - raid-mirrored
       - raid-resync-small
-      # TODO(12276) re-enable: #- rerun
+      - rerun
       - root-verity
       - simple
       - split
-      # TODO(12291) re-enable: #- usr-verity
-      # TODO(12291) re-enable: #- usr-verity-raid
+      - usr-verity
+      - usr-verity-raid
     weekly:
       - base
-      # TODO(12276) re-enable: #- combined
+      - combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
-      # TODO(12232): enable
-      # - memory-constraint-combined
+      - memory-constraint-combined
       - misc
       - raid-big
       - raid-mirrored
       - raid-resync-small
-      # TODO(12276) re-enable: #- rerun
+      - rerun
       - root-verity
       - simple
       - split
-      # TODO(12291) re-enable: #- usr-verity
-      # TODO(12291) re-enable: #- usr-verity-raid
+      - usr-verity
+      - usr-verity-raid
   container:
     daily:
       - base
-      # TODO(12276) re-enable: #- combined
+      - combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
@@ -52,14 +51,14 @@ bareMetal:
       - raid-mirrored
       - raid-resync-small
       - raid-small
-      # TODO(12276) re-enable: #- rerun
+      - rerun
       - root-verity
       - simple
-      # TODO(12291) re-enable: #- usr-verity
-      # TODO(12291) re-enable: #- usr-verity-raid
+      - usr-verity
+      - usr-verity-raid
     validation:
       - base
-      # TODO(12276) re-enable: #- combined
+      - combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
@@ -67,14 +66,14 @@ bareMetal:
       - raid-mirrored
       - raid-resync-small
       - raid-small
-      # TODO(12276) re-enable: #- rerun
+      - rerun
       - root-verity
       - simple
-      # TODO(12291) re-enable: #- usr-verity
-      # TODO(12291) re-enable: #- usr-verity-raid
+      - usr-verity
+      - usr-verity-raid
     weekly:
       - base
-      # TODO(12276) re-enable: #- combined
+      - combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
@@ -82,11 +81,11 @@ bareMetal:
       - raid-mirrored
       - raid-resync-small
       - raid-small
-      # TODO(12276) re-enable: #- rerun
+      - rerun
       - root-verity
       - simple
-      # TODO(12291) re-enable: #- usr-verity
-      # TODO(12291) re-enable: #- usr-verity-raid
+      - usr-verity
+      - usr-verity-raid
 virtualMachine:
   host:
     daily:

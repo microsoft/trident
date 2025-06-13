@@ -82,6 +82,8 @@ storage:
       source: new
       mountPoint: /var/lib/trident
 os:
+  selinux:
+    mode: enforcing
   network:
     version: 2
     ethernets:

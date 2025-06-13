@@ -10,6 +10,7 @@ replace storm => ../storm
 replace golang.org/x/net => golang.org/x/net v0.39.0
 
 require (
+	github.com/dustin/go-humanize v1.0.1
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.10.1
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.6.1
 	github.com/bmc-toolbox/bmclib/v2 v2.0.1-0.20230530141715-da28e42c453f

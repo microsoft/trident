@@ -193,20 +193,18 @@ jobs:
       # Configuration, and validate that they succeed. Rollback testing will only be run when
       # the rollbackTesting parameter is true. The scaling test logic will set it to false.
 
-      # TODO: reenable as part of https://dev.azure.com/mariner-org/ECF/_workitems/edit/10624
-      - ${{ if ne(parameters.flavor, 'uki') }}:
-        - bash: ./scripts/loop-update/loop-update.sh
-          env:
-            ARTIFACTS: $(Build.ArtifactStagingDirectory)
-            OUTPUT: $(ob_outputDirectory)
-            VERBOSE: ${{ parameters.verboseLogging }}
-            RETRY_COUNT: 3
-            EXPECTED_VOLUME: "volume-b"
-            ROLLBACK: "true"
-            TEST_RESOURCE_GROUP: $(TEST_RESOURCE_GROUP)
-            TEST_PLATFORM: ${{ parameters.platform }}
-          displayName: "Check that Trident can roll back and perform A/B update after"
-          condition: and(succeeded(), eq(${{ parameters.rollbackTesting }}, true))
+      - bash: ./scripts/loop-update/loop-update.sh
+        env:
+          ARTIFACTS: $(Build.ArtifactStagingDirectory)
+          OUTPUT: $(ob_outputDirectory)
+          VERBOSE: ${{ parameters.verboseLogging }}
+          RETRY_COUNT: 3
+          EXPECTED_VOLUME: "volume-b"
+          ROLLBACK: "true"
+          TEST_RESOURCE_GROUP: $(TEST_RESOURCE_GROUP)
+          TEST_PLATFORM: ${{ parameters.platform }}
+        displayName: "Check that Trident can roll back and perform A/B update after"
+        condition: and(succeeded(), eq(${{ parameters.rollbackTesting }}, true))
 
       # TODO add more e2e tests here (Task 8813)
 

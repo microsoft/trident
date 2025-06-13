@@ -26,6 +26,9 @@ pub struct OSModifierConfig {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kernel_command_line: Option<KernelCommandLine>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selinux: Option<Selinux>,
 }
 
 impl OSModifierConfig {

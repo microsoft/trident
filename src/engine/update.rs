@@ -18,11 +18,12 @@ use trident_api::{
 use crate::{
     datastore::DataStore,
     engine::{
-        self, bootentries, osimage, rollback,
+        self, bootentries, rollback,
         storage::{self, verity},
         EngineContext, NewrootMount, SUBSYSTEMS,
     },
     monitor_metrics,
+    osimage::OsImage,
     subsystems::hooks::HooksSubsystem,
     ExitKind,
 };
@@ -36,6 +37,7 @@ pub(crate) fn update(
     host_config: &HostConfiguration,
     state: &mut DataStore,
     allowed_operations: &Operations,
+    image: OsImage,
     #[cfg(feature = "grpc-dangerous")] sender: &mut Option<GrpcSender>,
 ) -> Result<ExitKind, TridentError> {
     info!("Starting update");
@@ -59,7 +61,7 @@ pub(crate) fn update(
         ab_active_volume: state.host_status().ab_active_volume,
         disk_uuids: state.host_status().disk_uuids.clone(),
         install_index: state.host_status().install_index,
-        image: osimage::load_os_image(host_config)?,
+        image: Some(image),
         storage_graph: engine::build_storage_graph(&host_config.storage)?, // Build storage graph
         filesystems: Vec::new(), // Will be populated after dynamic validation
     };

@@ -176,6 +176,8 @@ scripts:
           exit 1
         fi
 os:
+  selinux:
+    mode: enforcing
   network:
     version: 2
     ethernets:

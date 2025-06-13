@@ -381,6 +381,9 @@ pub enum ServicingError {
     #[error("Failed to deploy images")]
     DeployImages,
 
+    #[error("Failed to disable cloud-init networking")]
+    DisableCloudInitNetworking,
+
     #[error(
         "Failed to encrypt and open block device '{device_path}' with id '{device_id}' as \
         '{encrypted_volume_device_name}' for encrypted volume '{encrypted_volume}'"
@@ -557,6 +560,9 @@ pub enum ServicingError {
         active_volume: String,
         hs_active_volume: String,
     },
+
+    #[error("Failed to validate systemd-pcrlock log output")]
+    ValidatePcrlockLog,
 
     #[error("Trident rebuild-raid validation failed")]
     ValidateRebuildRaid,
