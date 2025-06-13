@@ -408,6 +408,18 @@ mod functional_test {
         // Create mock datastore directory and log file
         fs::create_dir_all(&datastore_path).unwrap();
 
+        // ENSURE THE LOG AND METRICS FILES EXIST
+        fs::write(
+            TRIDENT_BACKGROUND_LOG_PATH,
+            "{\"message\":\"This is a mock background log file.\"}",
+        )
+        .unwrap();
+        fs::write(
+            TRIDENT_METRICS_FILE_PATH,
+            "{\"metric\":\"This is a mock metrics file.\"}",
+        )
+        .unwrap();
+
         // Compose the log dir
         let log_dir = join_relative(newroot_path, datastore_dir);
         fs::create_dir_all(&log_dir).unwrap();
@@ -432,17 +444,13 @@ mod functional_test {
         // Create mock datastore directory and log file
         fs::create_dir_all(&datastore_path).unwrap();
 
-        // Create a temp copy of TRIDENT_BACKGROUND_LOG_PATH
-        let temp_log_path = TRIDENT_BACKGROUND_LOG_PATH.to_owned() + ".temp";
-        fs::copy(TRIDENT_BACKGROUND_LOG_PATH, &temp_log_path).unwrap();
-        // Remove TRIDENT_BACKGROUND_LOG_PATH
-        fs::remove_file(TRIDENT_BACKGROUND_LOG_PATH).unwrap();
-
-        // Create a temp copy of TRIDENT_METRICS_FILE_PATH
-        let temp_metrics_path = TRIDENT_METRICS_FILE_PATH.to_owned() + ".temp";
-        fs::copy(TRIDENT_METRICS_FILE_PATH, &temp_metrics_path).unwrap();
-        // Remove TRIDENT_METRICS_FILE_PATH
-        fs::remove_file(TRIDENT_METRICS_FILE_PATH).unwrap();
+        // ENSURE THE LOG AND METRICS FILES DO NOT EXIST
+        if Path::new(TRIDENT_BACKGROUND_LOG_PATH).exists() {
+            fs::remove_file(TRIDENT_BACKGROUND_LOG_PATH).unwrap();
+        }
+        if Path::new(TRIDENT_METRICS_FILE_PATH).exists() {
+            fs::remove_file(TRIDENT_METRICS_FILE_PATH).unwrap();
+        }
 
         // Persist the background log and metrics file
         let servicing_state = ServicingState::AbUpdateFinalized;
@@ -452,11 +460,5 @@ mod functional_test {
             !persisted_log_and_metrics_exist(datastore_dir, servicing_state),
             "Trident background log and metrics should not be persisted."
         );
-
-        // Re-create TRIDENT_BACKGROUND_LOG_PATH by copying from the temp file
-        fs::copy(&temp_log_path, TRIDENT_BACKGROUND_LOG_PATH).unwrap();
-
-        // Re-create TRIDENT_METRICS_FILE_PATH by copying from the temp file
-        fs::copy(&temp_metrics_path, TRIDENT_METRICS_FILE_PATH).unwrap();
     }
 }

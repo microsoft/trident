@@ -21,10 +21,6 @@ pytest_plugins = ["functional_tests.depends"]
 """Location of the Trident repository."""
 TRIDENT_REPO_DIR_PATH = Path(__file__).resolve().parent.parent
 
-NETLAUNCH_BIN_REL_PATH = Path("bin/netlaunch")
-
-NETLAUNCH_BIN_PATH = TRIDENT_REPO_DIR_PATH / NETLAUNCH_BIN_REL_PATH
-
 
 def __get_argus_toolkit_path():
     """Returns the path to the argus-toolkit repository."""
@@ -42,30 +38,15 @@ Needs to be in sync with the
 user specified in the trident-setup.yaml."""
 TEST_USER = "testuser"
 
-"""The name of the file containing the remote address of the VM."""
-REMOTE_ADDR_FILENAME = "remote-addr"
-
 """The name of the file containing the known hosts for SSH connections."""
 KNOWN_HOSTS_FILENAME = "known_hosts"
 
 VM_SSH_NODE_CACHE_KEY = "vm_ssh_node"
 
+FT_BASE_IMAGE = TRIDENT_REPO_DIR_PATH / "artifacts" / "trident-functest.qcow2"
 
-def __get_installer_iso_path():
-    """Returns the path to the installer ISO."""
-    envvar = os.environ.get("INSTALLER_ISO_PATH", None)
-    if envvar:
-        return Path(envvar).resolve()
-    return TRIDENT_REPO_DIR_PATH / "bin" / "trident-mos.iso"
-
-
-"""Location of the installer ISO.
-Defined in the makefile.
-"""
-INSTALLER_ISO_PATH = __get_installer_iso_path()
-
-"""Location of the directory netlaunch will serve from"""
-NETLAUNCH_SERVE_DIRECTORY = TRIDENT_REPO_DIR_PATH / "artifacts" / "test-image"
+"""Target location of the osmodifier binary in the test host."""
+OS_MODIFIER_BIN_TARGET_PATH = Path("/usr/bin/osmodifier")
 
 
 def pytest_addoption(parser):
@@ -104,7 +85,10 @@ def pytest_addoption(parser):
     )
 
     parser.addoption(
-        "--redeploy", action="store_true", help="Redeploy OS using Trident."
+        "--osmodifier",
+        help="Path to the osmodifier binary to copy into the test host.",
+        default=TRIDENT_REPO_DIR_PATH / "artifacts" / "osmodifier",
+        type=Path,
     )
 
 
@@ -269,14 +253,24 @@ def argus_runcmd(cmd, check=True, **kwargs):
     subprocess.run(cmd, check=check, cwd=ARGUS_REPO_DIR_PATH, **kwargs)
 
 
-def upload_test_binaries(build_output_path: Path, force_upload, ssh_node):
+def upload_test_binaries(build_output_path: Path, force_upload, ssh_node: SshNode):
     """Uploads all test binaries to the VM. Unless force_upload is set, only binaries
     that are not fresh are uploaded. You need to make sure that you dont rebuild
     the test binaries between the build and the upload, as the freshness is
     indicated by the cargo build output.
     """
     ssh_node.execute("mkdir -p tests")
-    for line in open(build_output_path):
+    with open(build_output_path, "r") as f:
+        lines = f.readlines()
+
+    logging.info(f"Found {len(lines)} lines in build output.")
+
+    if not lines:
+        raise ValueError(
+            f"No test binaries found in {build_output_path}. Please ensure the build output is correct."
+        )
+
+    for line in lines:
         report = json.loads(line)
         if (
             "target" in report
@@ -285,12 +279,17 @@ def upload_test_binaries(build_output_path: Path, force_upload, ssh_node):
             and "executable" in report
             and report["executable"]
         ):
-            if force_upload or not report["fresh"]:
-                test_binary = report["executable"]
-                filename = os.path.basename(test_binary)
-                stripped_name = filename.split("-", 2)[0]
-                ssh_node.copy(test_binary, "tests/{}".format(stripped_name))
-                ssh_node.execute("chmod +x tests/{}".format(stripped_name))
+            if report["fresh"] and not force_upload:
+                continue
+
+            test_binary = Path(report["executable"])
+            stripped_name = test_binary.name.split("-", 2)[0]
+            remote_path = Path("tests/") / stripped_name
+            logging.info(
+                f"Uploading {test_binary} as {remote_path} ({test_binary.stat().st_size} bytes)"
+            )
+            ssh_node.copy(test_binary, remote_path)
+            ssh_node.execute(f"chmod +x {remote_path}")
 
 
 @pytest.fixture(scope="session")
@@ -299,14 +298,9 @@ def ssh_key_path(request) -> Path:
 
 
 @pytest.fixture(scope="session")
-def ssh_key_public(request) -> Path:
+def ssh_key_public(request) -> str:
     with open(request.config.getoption("--ssh-key"), "r") as f:
         return f.read().strip()
-
-
-@pytest.fixture(scope="session")
-def redeploy(request) -> bool:
-    return bool(request.config.getoption("--redeploy"))
 
 
 @pytest.fixture(scope="session")
@@ -344,14 +338,9 @@ def test_dir_path(request, reuse_environment) -> Optional[Path]:
 
 
 @pytest.fixture(scope="session")
-def remote_addr_path(test_dir_path) -> Path:
-    return test_dir_path / REMOTE_ADDR_FILENAME
-
-
-@pytest.fixture(scope="session")
-def known_hosts_path(test_dir_path, reuse_environment, redeploy) -> Path:
+def known_hosts_path(test_dir_path, reuse_environment) -> Path:
     kh = test_dir_path / KNOWN_HOSTS_FILENAME
-    if reuse_environment and not redeploy:
+    if reuse_environment:
         if not kh.is_file():
             pytest.fail(
                 "No known hosts file found in test directory. You might need to recreate the test environment using make functional-test"
@@ -370,6 +359,8 @@ def vm(request, ssh_key_path, known_hosts_path) -> SshNode:
     if ssh_node_address is None:
         pytest.skip("VM not setup!")
 
+    logging.info(f"Using VM at {ssh_node_address}")
+
     priv_key = ssh_key_path.with_suffix("")
     logging.info(f"Using SSH key {priv_key}")
 
@@ -381,6 +372,13 @@ def vm(request, ssh_key_path, known_hosts_path) -> SshNode:
         key_path=priv_key,
         known_hosts_path=known_hosts_path,
     )
+
+    # Upload OS modifier binary to the VM.
+    osmodifier_path = request.config.getoption("--osmodifier")
+    logging.info(f"Copying osmodifier from {osmodifier_path} to VM")
+    ssh_node.copy(osmodifier_path, Path("osmodifier"))
+    ssh_node.execute("chmod +x osmodifier")
+    ssh_node.execute(f"sudo mv osmodifier {OS_MODIFIER_BIN_TARGET_PATH}")
 
     if build_output:
         upload_test_binaries(build_output, force_upload, ssh_node)

@@ -1,138 +1,125 @@
-import subprocess
-import time
-import pytest
+import json
 import os
-import tempfile
 import logging
-import yaml
+import subprocess
+import tempfile
+import time
 
+from typing import Dict
 from pathlib import Path
+from subprocess import CalledProcessError, TimeoutExpired
 
 from .conftest import (
-    INSTALLER_ISO_PATH,
-    NETLAUNCH_SERVE_DIRECTORY,
     argus_runcmd,
-    trident_runcmd,
     ARGUS_REPO_DIR_PATH,
-    TRIDENT_REPO_DIR_PATH,
-    NETLAUNCH_BIN_PATH,
     VM_SSH_NODE_CACHE_KEY,
+    FT_BASE_IMAGE,
+    TEST_USER,
 )
 from .ssh_node import SshNode
 
+log = logging.getLogger(__name__)
 
-def create_vm(create_params):
+CLOUD_INIT_USER_TEMPLATE = """
+#cloud-config
+users:
+  - name: {username}
+    ssh_authorized_keys:
+      - {ssh_pub_key}
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+"""
+
+
+def create_vm(create_params) -> Dict[str, str]:
+    log.info("Creating VM with parameters: %s", create_params)
     """Creates a VM with the given parameters, using virt-deploy."""
     argus_runcmd([ARGUS_REPO_DIR_PATH / "virt-deploy", "create"] + create_params)
 
+    with open(ARGUS_REPO_DIR_PATH / "virt-deploy-metadata.json", "r") as file:
+        metadata = json.load(file)
 
-def disable_phonehome(ssh_node: SshNode):
-    """Disables phonehome in the VM to allow faster rerunning of Trident."""
-    ssh_node.execute("sudo sed -i 's/^\\s*phonehome: .*//' /etc/trident/config.yaml")
-
-
-def prepare_hostconfig(test_dir_path: Path, ssh_pub_key: str):
-    """Sets up the host configuration file for the VM."""
-
-    # Add user's public key to trident-setup.yaml
-    with open(
-        TRIDENT_REPO_DIR_PATH / "functional_tests/trident-setup.yaml", "r"
-    ) as file:
-        trident_setup = yaml.safe_load(file)
-    trident_setup["os"]["users"][0]["sshPublicKeys"] = [ssh_pub_key]
-
-    prepped_host_config_path = test_dir_path / "trident-setup.yaml"
-    with open(prepped_host_config_path, "w") as file:
-        yaml.dump(trident_setup, file)
-
-    return prepped_host_config_path
+    return metadata["virtualmachines"][0]
 
 
-def deploy_vm(
-    test_dir_path: Path,
-    ssh_pub_key: str,
-    known_hosts_path: Path,
-    remote_addr_path: Path,
-) -> str:
-    """# Provision a VM with the given parameters, using virt-deploy to create the VM
-    and netlaunch to deploy the OS. Returns the ip address of the VM.
-    """
-
-    host_config_path = prepare_hostconfig(test_dir_path, ssh_pub_key)
-
-    trident_runcmd(
-        [
-            NETLAUNCH_BIN_PATH,
-            "-i",
-            INSTALLER_ISO_PATH,
-            "-c",
-            ARGUS_REPO_DIR_PATH / "vm-netlaunch.yaml",
-            "-t",
-            host_config_path,
-            "-l",
-            "-r",
-            remote_addr_path,
-            "-s",
-            NETLAUNCH_SERVE_DIRECTORY,
-        ]
-    )
-
-    # Temporary solution to initialize the known_hosts file until we can inject
-    # a predictable key.
-    with open(remote_addr_path, "r") as file:
-        remote_addr = file.read().strip()
-
-    for i in range(10):
+def wait_online(ip: str, known_hosts_path: Path, timeout: int = 60) -> None:
+    """Waits for the VM to be online by checking SSH connectivity."""
+    start_time = time.time()
+    while time.time() - start_time < timeout:
         try:
-            with open(known_hosts_path, "w") as file:
-                subprocess.run(["ssh-keyscan", remote_addr], stdout=file, check=True)
-            break
-        except:
-            time.sleep(1)
+            with open(known_hosts_path, "w") as f:
+                subprocess.run(
+                    [
+                        "ssh-keyscan",
+                        ip,
+                    ],
+                    stdout=f,
+                    check=True,
+                    timeout=5,
+                )
+            return
+        except (CalledProcessError, TimeoutExpired) as e:
+            time.sleep(5)
 
-    return remote_addr
+    raise TimeoutError(f"VM with IP {ip} did not come online within {timeout} seconds.")
 
 
-def test_create_vm(request):
+def test_create_vm(request, known_hosts_path, ssh_key_public):
     """Test function to create a VM with virt-deploy"""
+
+    if request.config.getoption("--reuse-environment"):
+        log.info("Skipping VM creation as --reuse-environment is set.")
+        return
+
     request.config.cache.set(VM_SSH_NODE_CACHE_KEY, None)
-    if not request.config.getoption("--reuse-environment"):
-        # Create one VM with default flags, cpus, memory, but with two 16GiB disks.
-        create_vm([":::16,16"])
 
+    with tempfile.TemporaryDirectory() as temp_dir:
+        work_dir = Path(temp_dir)
+        # Create a cloud-init metadata file for the VM.
+        cloud_init_meta = work_dir / "cloud-init-meta.yaml"
+        with open(cloud_init_meta, "w") as file:
+            file.write("#cloud-config\n")
 
-@pytest.mark.depends("test_create_vm")
-def test_deploy_vm(
-    request,
-    test_dir_path,
-    reuse_environment,
-    redeploy,
-    remote_addr_path,
-    known_hosts_path,
-    ssh_key_public,
-):
-    if reuse_environment and not redeploy:
-        # Get the IP address from the remote_addr file of the existing VM.
-        with open(remote_addr_path, "r") as file:
-            address = file.read().strip()
-    else:
-        if (
-            not ARGUS_REPO_DIR_PATH.is_dir()
-            or not (ARGUS_REPO_DIR_PATH / "virt-deploy").is_file()
-        ):
-            pytest.fail(f"{ARGUS_REPO_DIR_PATH} is not a argus-toolkit repo directory")
+        # Create a cloud-init user-data file for the VM.
+        cloud_init_user_data = work_dir / "cloud-init-user-data.yaml"
+        with open(cloud_init_user_data, "w") as file:
+            file.write(
+                CLOUD_INIT_USER_TEMPLATE.format(
+                    username=TEST_USER,
+                    ssh_pub_key=ssh_key_public,
+                )
+            )
 
-        # Deploy OS to VM.
-        address = deploy_vm(
-            test_dir_path,
-            ssh_key_public,
-            known_hosts_path,
-            remote_addr_path,
+        # Create one VM with default flags, cpus, memory, but with two 16GiB
+        # disks. Pass the base Image as the OS disk. And Pass cloud init-params
+        # to set up a user and ssh access.
+        vm_data = create_vm(
+            [
+                ":::16,16",
+                "--os-disk",
+                FT_BASE_IMAGE,
+                "--ci-user",
+                cloud_init_user_data,
+                "--ci-meta",
+                cloud_init_meta,
+            ]
         )
 
-    request.config.cache.set(VM_SSH_NODE_CACHE_KEY, address)
+    vm_name = vm_data["name"]
+    vm_ip = vm_data["ip"]
+
+    subprocess.run(
+        ["virsh", "start", vm_name],
+        check=True,
+    )
+
+    wait_online(vm_ip, known_hosts_path, timeout=60)
+
+    request.config.cache.set(VM_SSH_NODE_CACHE_KEY, vm_ip)
 
 
-@pytest.mark.depends("test_deploy_vm")
-def test_deployment(vm):
+# def test_wait_online(known_hosts_path):
+#     wait_online("192.168.242.2", known_hosts_path, timeout=60)
+
+
+def test_deployment(vm: SshNode):
     vm.execute("true")

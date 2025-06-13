@@ -336,18 +336,18 @@ mod functional_test {
 
         // Create a temporary file to store the recovery key file
         let key_file_tmp = NamedTempFile::new().unwrap();
-        let key_file_path = key_file_tmp.path().to_owned();
-        fs::set_permissions(&key_file_path, Permissions::from_mode(0o600)).unwrap();
-        generate_recovery_key_file(&key_file_path).unwrap();
+        let key_file_path = key_file_tmp.path();
+        fs::set_permissions(key_file_path, Permissions::from_mode(0o600)).unwrap();
+        generate_recovery_key_file(key_file_path).unwrap();
 
         // Run `cryptsetup-luksFormat` on the partition
-        cryptsetup_luksformat(&key_file_path, &partition1.node).unwrap();
+        cryptsetup_luksformat(key_file_path, &partition1.node).unwrap();
 
         // Run `systemd-cryptenroll` on the partition
-        systemd_cryptenroll(&key_file_path, &partition1.node, BitFlags::from(Pcr::Pcr7)).unwrap();
+        systemd_cryptenroll(key_file_path, &partition1.node, BitFlags::from(Pcr::Pcr7)).unwrap();
 
         // Open the encrypted volume, to make the block device available
-        cryptsetup_open(&key_file_path, &partition1.node, ENCRYPTED_VOLUME_NAME).unwrap();
+        cryptsetup_open(key_file_path, &partition1.node, ENCRYPTED_VOLUME_NAME).unwrap();
 
         // Format the unlocked volume with ext4
         mkfs::run(Path::new(ENCRYPTED_VOLUME_PATH), MkfsFileSystemType::Ext4).unwrap();
@@ -396,7 +396,7 @@ mod functional_test {
         cryptsetup_close(ENCRYPTED_VOLUME_NAME).unwrap();
 
         // Re-open the encrypted volume
-        cryptsetup_open(&key_file_path, &partition1.node, ENCRYPTED_VOLUME_NAME).unwrap();
+        cryptsetup_open(key_file_path, &partition1.node, ENCRYPTED_VOLUME_NAME).unwrap();
 
         // Re-mount the encrypted volume
         Dependency::Mount

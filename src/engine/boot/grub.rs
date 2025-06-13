@@ -263,7 +263,10 @@ pub(crate) mod functional_test {
     use const_format::formatcp;
     use maplit::btreemap;
 
-    use crate::{engine::storage::raid, OS_MODIFIER_BINARY_PATH};
+    use crate::{
+        engine::{boot::get_update_esp_dir_name, storage::raid},
+        OS_MODIFIER_BINARY_PATH,
+    };
 
     use osutils::{
         block_devices,
@@ -284,6 +287,38 @@ pub(crate) mod functional_test {
         },
         status::ServicingType,
     };
+
+    struct DropFile(PathBuf);
+    impl Drop for DropFile {
+        fn drop(&mut self) {
+            if let Err(e) = fs::remove_file(&self.0) {
+                eprintln!("Failed to remove file '{}': {}", self.0.display(), e);
+            }
+        }
+    }
+
+    fn setup_mock_grub_configs(ctx: &EngineContext) -> (DropFile, DropFile) {
+        let grub_esp = include_str!("test_files/grub_esp.cfg");
+        let grub_boot = include_str!("test_files/grub_boot.cfg");
+
+        let grub_esp_path = Path::new(ESP_MOUNT_POINT_PATH)
+            .join(ESP_EFI_DIRECTORY)
+            .join(get_update_esp_dir_name(ctx).expect("Failed to get update esp dir name"))
+            .join(GRUB2_CONFIG_FILENAME);
+        let grub_boot_path = Path::new(ROOT_MOUNT_POINT_PATH).join(GRUB2_CONFIG_RELATIVE_PATH);
+
+        fs::create_dir_all(grub_esp_path.parent().unwrap())
+            .expect("Failed to create directory for grub esp config");
+        fs::create_dir_all(grub_boot_path.parent().unwrap())
+            .expect("Failed to create directory for grub boot config");
+
+        fs::write(&grub_esp_path, grub_esp).expect("Failed to write grub esp config");
+        let drop_file_esp = DropFile(grub_esp_path.clone());
+        fs::write(&grub_boot_path, grub_boot).expect("Failed to write grub boot config");
+        let drop_file_boot = DropFile(grub_boot_path.clone());
+
+        (drop_file_esp, drop_file_boot)
+    }
 
     pub fn test_execute_and_resulting_layout(is_single_disk_raid: bool, unequal_partitions: bool) {
         let disk_bus_path = PathBuf::from(TEST_DISK_DEVICE_PATH);
@@ -554,6 +589,8 @@ pub(crate) mod functional_test {
 
         mkfs::run(root_device_path, MkfsFileSystemType::Ext4).unwrap();
 
+        let _a = setup_mock_grub_configs(ctx);
+
         update_configs(ctx, Path::new(OS_MODIFIER_BINARY_PATH))
     }
 
@@ -616,6 +653,8 @@ pub(crate) mod functional_test {
 
         let root_device_path = PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"));
         mkfs::run(&root_device_path, MkfsFileSystemType::Ext4).unwrap();
+
+        let _a = setup_mock_grub_configs(&ctx);
 
         update_configs(&ctx, Path::new(OS_MODIFIER_BINARY_PATH)).unwrap();
     }
@@ -692,6 +731,9 @@ pub(crate) mod functional_test {
 
         let root_device_path = PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"));
         mkfs::run(&root_device_path, MkfsFileSystemType::Ext4).unwrap();
+
+        let _a = setup_mock_grub_configs(&ctx);
+
         update_configs(&ctx, Path::new(OS_MODIFIER_BINARY_PATH)).unwrap();
     }
 
@@ -741,6 +783,8 @@ pub(crate) mod functional_test {
             },
             ..Default::default()
         };
+
+        let _a = setup_mock_grub_configs(&ctx);
 
         let result = update_configs(&ctx, Path::new(ROOT_MOUNT_POINT_PATH));
         assert_eq!(
@@ -795,6 +839,8 @@ pub(crate) mod functional_test {
             },
             ..Default::default()
         };
+
+        let _a = setup_mock_grub_configs(&ctx);
 
         let result = update_configs(&ctx, Path::new(ROOT_MOUNT_POINT_PATH));
 

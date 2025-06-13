@@ -22,7 +22,7 @@ more details in the following sections.
       - [Deploy Baremetal Environment - baremetal-deploy.yml](#deploy-baremetal-environment---baremetal-deployyml)
       - [Run End-to-End Tests on the BM Host - e2e-test-run.yml](#run-end-to-end-tests-on-the-bm-host---e2e-test-runyml)
       - [Update trident.yaml to reflect the OAM IP, HTTP server and SSH Key Details - baremetal-update-trident-host-config.yml](#update-tridentyaml-to-reflect-the-oam-ip-http-server-and-ssh-key-details---baremetal-update-trident-host-configyml)
-      - [Boot baremetal lab machine - .pipelines/stages/testing\_baremetal/deploy\_on\_bm.py](#boot-baremetal-lab-machine---pipelinesstagestesting_baremetaldeploy_on_bmpy)
+      - [Boot baremetal lab machine - .pipelines/templates/stages/testing\_baremetal/deploy\_on\_bm.py](#boot-baremetal-lab-machine---pipelinestemplatesstagestesting_baremetaldeploy_on_bmpy)
 
 ## Unit Tests
 
@@ -89,11 +89,11 @@ Functional tests should:
 Functional tests are structured as follows:
 
 - `/functional_tests`: Contains the functional test code, leveraging `pytest`
-  and common SSH interface from `platform-tests` repo. `pytest` creates the test VM
-  using is Fixtures concept and while currently only a single VM is created to
-  run all the tests, this could be easily extended to support seperate VMs for
-  different tests. Most of the time, no changes will be required to this layer
-  while developing functional tests.
+  and common SSH interface from `platform-tests` repo. `pytest` creates the test
+  VM using is Fixtures concept and while currently only a single VM is created
+  to run all the tests, this could be easily extended to support seperate VMs
+  for different tests. Most of the time, no changes will be required to this
+  layer while developing functional tests.
 - `/functional_tests/trident-setup.yaml`: Contains the initial host
   configuration for the VM that will be used to execute the functional tests.
 - `/functional_tests/custom/../*.py`: Manually authored Pytest modules for more
@@ -139,10 +139,9 @@ deployment. The tests are started on the deployed OS through SSH connection.
 
 In the functional test environment, tests are run on top of block device
 /dev/sda. As a result, any changes made by the testing logic should **not**
-modify this block device. E.g., this block device should not be reformatted to
-a clean filesystem, be mounted/unmounted, etc. On the other hand, **/dev/sdb**
-is available for any modifications that are needed for functional testing
-purposes.
+modify this block device. E.g., this block device should not be reformatted to a
+clean filesystem, be mounted/unmounted, etc. On the other hand, **/dev/sdb** is
+available for any modifications that are needed for functional testing purposes.
 
 ### Functional Test Building and Execution
 
@@ -156,12 +155,9 @@ targets:
 
 - `make functional-test`: This will build the tests locally with code coverage
   profile (using internal `build-functional-test-cc` target), a new
-  `virt-deploy` VM will be created and deployed using `netlaunch`. Afterwards,
+  `virt-deploy` VM will be created using a prebuilt qcow image. Afterwards,
   tests will be uploaded into the VM, executed and code coverage will be
-  downloaded for later viewing. To note, this will also execute all UTs. If you
-  want to iterate on the tests without recreating the VM, but do want to
-  redeploy the OS, you can: `make functional-test
-  FUNCTIONAL_TEST_EXTRA_PARAMS="--reuse-environment --redeploy"`.
+  downloaded for later viewing.
 
 - `make patch-functional-test`: This will build the tests locally with code
   coverage profile (using internal `build-functional-test-cc` target), upload
@@ -169,17 +165,16 @@ targets:
   code coverage for later viewing. This is useful when you want to iterate on
   the tests and don't want to wait for the VM to be deployed again. It is
   important to note that only tests that have changed will be re-uploaded. This
-  is determined based on `cargo build` output. To note, this will also execute
-  all UTs.
+  is determined based on `cargo build` output.
 
-To execute the functional tests, ensure that `platform-tests` and `argus-toolkit` of
-recent version are checked out side by side with the `trident` repo.
-Additionally, the following dependencies are required for the Ubuntu based
-pipelines, so you might need to install them on your development machine as well
-(note that this set is different per Ubuntu version and is provided just as an
-illustration of what works for [pipelines](.pipelines/netlaunch-testing.yml), so
-if you are on 22.04 or newer, you might not need to for example reinstall
-`python3-openssl`):
+To execute the functional tests, ensure that `platform-tests` and
+`argus-toolkit` of recent version are checked out side by side with the
+`trident` repo. Additionally, the following dependencies are required for the
+Ubuntu based pipelines, so you might need to install them on your development
+machine as well (note that this set is different per Ubuntu version and is
+provided just as an illustration of what works for
+[pipelines](.pipelines/netlaunch-testing.yml), so if you are on 22.04 or newer,
+you might not need to for example reinstall `python3-openssl`):
 
 ```bash
 sudo apt install -y protobuf-compiler clang-7 bc
@@ -215,11 +210,11 @@ aggregated with the locally produced coverage results.
 
 ### Additional Notes
 
-`functional-test` target depends on `platform-tests` and `argus-toolkit` repos to be
-checked out side by side with the `trident` repo. This is because `platform-tests`
-repo contains the common logic to execute test logic over SSH connection and
-`argus-toolkit` repo contains the `netlaunch` and `virt-deploy` binaries, along
-with logic to generate the OS deployment ISO.
+`functional-test` target depends on `platform-tests` and `argus-toolkit` repos
+to be checked out side by side with the `trident` repo. This is because
+`platform-tests` repo contains the common logic to execute test logic over SSH
+connection and `argus-toolkit` repo contains the `netlaunch` and `virt-deploy`
+binaries, along with logic to generate the OS deployment ISO.
 
 Both `functional-test` and `patch-functional-test` targets leverage `pytest`. To
 get more detailed logs or do any changes to the `pytest` logic, you can modify
@@ -240,15 +235,16 @@ code.
 
 ### Selective Test Execution
 
-The functional test `make` targets support the variable `FILTER`. This is meant to
-be used to filter the tests that are executed. For example, if you want to execute
-only the tests from a certain rust crate, you can do:
+The functional test `make` targets support the variable `FILTER`. This is meant
+to be used to filter the tests that are executed. For example, if you want to
+execute only the tests from a certain rust crate, you can do:
 
 ```bash
 make functional-test FILTER=ft.json::<crate>
 ```
 
-You can narrow down the filter by adding the modules, up to each individual test.
+You can narrow down the filter by adding the modules, up to each individual
+test.
 
 ```bash
 make functional-test FILTER=ft.json::<crate>::<module1>::<module2>
@@ -294,11 +290,13 @@ End to end tests should:
 
 #### Install prerequisites for BM Host communication - baremetal-prep.yml
 
-![Prerequisite Installation - BM Host](./diagrams/install-prerequisites-for-bm-host.png)
+![Prerequisite Installation - BM
+Host](./diagrams/install-prerequisites-for-bm-host.png)
 
 #### Create prerequisites required for the E2E tests - trident-prep.yml
 
-![Prerequisite Installation - E2E](./diagrams/install-prerequisites-for-e2e-tests.png)
+![Prerequisite Installation -
+E2E](./diagrams/install-prerequisites-for-e2e-tests.png)
 
 #### Deploy Baremetal Environment - baremetal-deploy.yml
 
@@ -310,7 +308,8 @@ End to end tests should:
 
 #### Update trident.yaml to reflect the OAM IP, HTTP server and SSH Key Details - baremetal-update-trident-host-config.yml
 
-![Update trident.yaml to reflect the OAM IP, HTTP server and SSH Key Details](./diagrams/update-trident-yaml.png)
+![Update trident.yaml to reflect the OAM IP, HTTP server and SSH Key
+Details](./diagrams/update-trident-yaml.png)
 
 #### Boot baremetal lab machine - .pipelines/templates/stages/testing_baremetal/deploy_on_bm.py
 
