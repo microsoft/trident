@@ -238,7 +238,7 @@ optional_policy(`
 allow trident_t self:capability { dac_override dac_read_search sys_ptrace sys_rawio };
 
 allow trident_t self:alg_socket { accept bind create read write };
-allow trident_t self:capability { audit_write chown mknod net_admin sys_chroot sys_resource sys_admin fowner fsetid sys_boot ipc_lock sys_nice linux_immutable };
+allow trident_t self:capability { audit_write chown mknod net_admin sys_chroot sys_resource sys_admin fowner fsetid sys_boot ipc_lock sys_nice linux_immutable sys_module };
 allow trident_t self:fifo_file manage_fifo_file_perms;
 allow trident_t self:netlink_audit_socket { create nlmsg_relay read write };
 allow trident_t self:netlink_kobject_uevent_socket { bind create getattr getopt read setopt };
@@ -458,7 +458,7 @@ allow trident_t useradd_exec_t:file { execute execute_no_trans getattr map open 
 allow trident_t usr_t:dir { add_name create read relabelto remove_name rmdir setattr write relabelto mounton };
 allow trident_t usr_t:file { create execute execute_no_trans getattr ioctl link open read relabelto rename setattr unlink write };
 allow trident_t uuidd_exec_t:file getattr;
-allow trident_t var_t:dir mounton;
+allow trident_t var_t:dir { mounton relabelto };
 allow trident_t var_run_t:dir { add_name create remove_name write };
 allow trident_t var_run_t:file { create getattr lock open read unlink write };
 
