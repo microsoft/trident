@@ -176,6 +176,14 @@ impl Subsystem for OsConfigSubsystem {
             os_modifier_config.kernel_command_line = Some(ctx.spec.os.kernel_command_line.clone());
         }
 
+        // If UKI support is enabled, update SELinux mode here
+        if ctx.spec.internal_params.get_flag(ENABLE_UKI_SUPPORT)
+            && ctx.spec.os.selinux.mode.is_some()
+        {
+            debug!("Updating SELinux config");
+            os_modifier_config.selinux = Some(ctx.spec.os.selinux.clone());
+        }
+
         os_modifier_config
             .call_os_modifier(Path::new(OS_MODIFIER_NEWROOT_PATH))
             .structured(ServicingError::RunOsModifier)?;
