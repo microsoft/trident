@@ -10,11 +10,11 @@ replace storm => ../storm
 replace golang.org/x/net => golang.org/x/net v0.39.0
 
 require (
-	github.com/dustin/go-humanize v1.0.1
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.10.1
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.6.1
 	github.com/bmc-toolbox/bmclib/v2 v2.0.1-0.20230530141715-da28e42c453f
 	github.com/ddddddO/gtree v1.11.7
+	github.com/dustin/go-humanize v1.0.1
 	github.com/fatih/color v1.18.0
 	github.com/google/uuid v1.6.0
 	github.com/pkg/errors v0.9.1
@@ -41,10 +41,8 @@ require (
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2
 	github.com/cavaliercoder/go-cpio v0.0.0-20180626203310-925f9528c45e
 	github.com/jinzhu/copier v0.4.0
-	github.com/juliangruber/go-intersect v1.1.0
 	github.com/klauspost/pgzip v1.2.6
 	github.com/muesli/crunchy v0.4.0
-	github.com/ulikunitz/xz v0.5.12
 	github.com/xrash/smetrics v0.0.0-20170218160415-a3153f7040e9 // indirect
 	gonum.org/v1/gonum v0.16.0
 )
