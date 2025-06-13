@@ -4,7 +4,7 @@ use std::{
     process::Command,
 };
 
-use anyhow::{Context, Error, Result};
+use anyhow::{bail, Context, Error, Result};
 use enumflags2::{make_bitflags, BitFlags};
 use goblin::pe::PE;
 use log::{debug, error, trace, warn};
@@ -12,7 +12,10 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256, Sha384, Sha512};
 use tempfile::NamedTempFile;
 
-use trident_api::error::{ReportError, ServicingError, TridentError};
+use trident_api::{
+    error::{ReportError, ServicingError, TridentError},
+    primitives::hash::Sha256Hash,
+};
 
 use sysdefs::tpm2::Pcr;
 
@@ -131,15 +134,73 @@ pub fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), TridentErr
     Ok(())
 }
 
-/// Runs `systemd-pcrlock log` command to view the combined TPM 2.0 event log matched against the
-/// current PCR values, output in a tabular format.
-#[allow(dead_code)]
-fn log() -> Result<String, Error> {
-    Dependency::SystemdPcrlock
+#[derive(Debug, Deserialize)]
+struct LogEntry {
+    pcr: Pcr,
+    pcrname: Option<String>,
+    event: Option<String>,
+    sha256: Option<Sha256Hash>,
+    component: Option<String>,
+    description: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LogOutput {
+    log: Vec<LogEntry>,
+}
+
+/// Runs `systemd-pcrlock log` to get the combined TPM 2.0 event log, output as a "pretty" JSON.
+/// Parses the output and validates that every log entry has been matched to a recognized boot
+/// component.
+///
+/// If a log entry has a null component, it means that there is no .pcrlock file that records that
+/// specific measurement extended into the given PCR, for any boot process component. For that
+/// reason, .pcrlock files are known as boot component definition files. If a log entry for a PCR
+/// has its component missing, then the value of that PCR cannot be predicted and so the PCR cannot
+/// be included in a pcrlock policy. Thus, this validation ensures that all .pcrlock files have
+/// been added & generated, so that a valid TPM 2.0 access policy can be generated.
+/// Please refer to `systemd-pcrlock` doc for additional info:
+/// https://www.man7.org/linux/man-pages/man8/systemd-pcrlock.8.html.
+fn validate_log() -> Result<(), Error> {
+    let output = Dependency::SystemdPcrlock
         .cmd()
         .arg("log")
+        .arg("--json=pretty")
         .output_and_check()
-        .context("Failed to run systemd-pcrlock log")
+        .context("Failed to run systemd-pcrlock log")?;
+
+    let parsed: LogOutput =
+        serde_json::from_str(&output).context("Failed to parse systemd-pcrlock log output")?;
+
+    let unrecognized: Vec<_> = parsed
+        .log
+        .iter()
+        .filter(|entry| entry.component.is_none())
+        .collect();
+
+    if unrecognized.is_empty() {
+        return Ok(());
+    }
+
+    let entries: Vec<String> = unrecognized
+        .into_iter()
+        .map(|entry| {
+            format!(
+                "pcr='{}', pcrname='{}', event='{}', sha256='{}', description='{}'",
+                entry.pcr.to_num(),
+                entry.pcrname.as_deref().unwrap_or("null"),
+                entry.event.as_deref().unwrap_or("null"),
+                entry.sha256.as_ref().map(|h| h.as_str()).unwrap_or("null"),
+                entry.description.as_deref().unwrap_or("null"),
+            )
+        })
+        .collect();
+
+    bail!(
+        "Failed to validate systemd-pcrlock log output as some log entries cannot be matched \
+            to recognized components:\n{}",
+        entries.join("\n")
+    );
 }
 
 /// Runs `systemd-pcrlock make-policy` command to predict the PCR state for future boots and then
@@ -435,6 +496,11 @@ pub fn generate_pcrlock_files(
         )?;
     }
 
+    // Parse the systemd-pcrlock log output to validate that every log entry has been matched to a
+    // recognized boot component, and thus that all necessary .pcrlock files have been added or
+    // generated
+    validate_log().structured(ServicingError::ValidatePcrlockLog)?;
+
     Ok(())
 }
 
@@ -669,5 +735,13 @@ mod functional_test {
 
         // TODO: Add other/more test cases once helpers are implemented and statically defined
         // pcrlock files have been added.
+    }
+
+    #[functional_test(feature = "helpers")]
+    fn test_validate_log() {
+        // TODO: This test will fail for now since .pcrlock files have not been generated/added
+        // yet. Once static .pcrlock files are added and dynamic files are generated, the test
+        // should pass.
+        validate_log().unwrap_err();
     }
 }

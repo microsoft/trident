@@ -561,6 +561,9 @@ pub enum ServicingError {
         hs_active_volume: String,
     },
 
+    #[error("Failed to validate systemd-pcrlock log output")]
+    ValidatePcrlockLog,
+
     #[error("Trident rebuild-raid validation failed")]
     ValidateRebuildRaid,
 
