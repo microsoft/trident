@@ -640,3 +640,16 @@ recreate-verity-image: bin/trident-rpms.tar.gz
 	$(MAKE) -C $(TEST_IMAGES_PATH) trident-verity-testimage
 	make copy-runtime-images
 
+
+AZLTOOLS_OUT_DIR := bin
+AZLTOOLS_DIR := tools/azltools
+
+.PHONY: build-liveinstaller
+build-liveinstaller:
+	cd $(AZLTOOLS_DIR)/liveinstaller && \
+		CGO_ENABLED=0 go build -o ../../../$(AZLTOOLS_OUT_DIR)/liveinstaller
+
+.PHONY: build-imager
+build-imager:
+	cd $(AZLTOOLS_DIR)/imager && \
+		CGO_ENABLED=0 go build -o ../../../$(AZLTOOLS_OUT_DIR)/imager

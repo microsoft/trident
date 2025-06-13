@@ -58,7 +58,7 @@ require (
 	github.com/gdamore/tcell v1.4.0
 	github.com/kr/fs v0.1.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
-	github.com/mattn/go-runewidth v0.0.15 // indirect
+	github.com/mattn/go-runewidth v0.0.7 // indirect
 	github.com/moby/sys/mountinfo v0.7.2
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/rivo/tview v0.0.0-20200219135020-0ba8301b415c
