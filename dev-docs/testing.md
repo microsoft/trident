@@ -89,11 +89,11 @@ Functional tests should:
 Functional tests are structured as follows:
 
 - `/functional_tests`: Contains the functional test code, leveraging `pytest`
-  and common SSH interface from `platform-tests` repo. `pytest` creates the test
-  VM using is Fixtures concept and while currently only a single VM is created
-  to run all the tests, this could be easily extended to support seperate VMs
-  for different tests. Most of the time, no changes will be required to this
-  layer while developing functional tests.
+  and common SSH interface from `platform-tests` repo. `pytest` fixtures create
+  the test VM using virt-deploy. Currently, only one VM is created to run all
+  the tests, but this could be easily extended to support separate VMs for
+  different tests. Most of the time, no changes will be required to this layer
+  while developing functional tests.
 - `/functional_tests/trident-setup.yaml`: Contains the initial host
   configuration for the VM that will be used to execute the functional tests.
 - `/functional_tests/custom/../*.py`: Manually authored Pytest modules for more
