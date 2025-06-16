@@ -10,9 +10,8 @@ replace storm => ../storm
 replace golang.org/x/net => golang.org/x/net v0.39.0
 
 require (
-	github.com/bmc-toolbox/bmclib/v2 v2.0.1-0.20230530141715-da28e42c453f
-	github.com/digitalocean/go-libvirt v0.0.0-20250512231903-57024326652b
 	github.com/dustin/go-humanize v1.0.1
+	github.com/bmc-toolbox/bmclib/v2 v2.0.1-0.20230530141715-da28e42c453f
 	github.com/fatih/color v1.18.0
 	github.com/google/uuid v1.6.0
 	github.com/pkg/errors v0.9.1
@@ -21,14 +20,15 @@ require (
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/viper v1.19.0
 	gopkg.in/yaml.v2 v2.4.0
-	libvirt.org/libvirt-go-xml v7.4.0+incompatible
 	storm v1.0.0
 )
 
 require (
+	github.com/digitalocean/go-libvirt v0.0.0-20250512231903-57024326652b // indirect
 	github.com/kr/fs v0.1.0 // indirect
 	github.com/vishvananda/netns v0.0.4 // indirect
 	golang.org/x/term v0.32.0 // indirect
+	libvirt.org/libvirt-go-xml v7.4.0+incompatible // indirect
 )
 
 require (
