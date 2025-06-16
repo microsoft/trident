@@ -354,6 +354,19 @@ bin/storm-trident: $(shell find storm -type f) tools/go.sum
 validate: $(TRIDENT_CONFIG) bin/trident
 	@bin/trident validate $(TRIDENT_CONFIG)
 
+AZLTOOLS_OUT_DIR := bin
+AZLTOOLS_DIR := azltools
+
+.PHONY: build-liveinstaller
+build-liveinstaller:
+	cd $(AZLTOOLS_DIR)/liveinstaller && \
+		CGO_ENABLED=0 go build -o ../../../$(AZLTOOLS_OUT_DIR)/liveinstaller
+
+.PHONY: build-imager
+build-imager:
+	cd $(AZLTOOLS_DIR)/imager && \
+		CGO_ENABLED=0 go build -o ../../../$(AZLTOOLS_OUT_DIR)/imager
+
 NETLAUNCH_ISO ?= bin/trident-mos.iso
 
 input/netlaunch.yaml: $(ARGUS_TOOLKIT_PATH)/vm-netlaunch.yaml
@@ -643,17 +656,3 @@ recreate-verity-image: bin/trident-rpms.tar.gz
 	$(MAKE) -C $(TEST_IMAGES_PATH) copy-trident-rpms
 	$(MAKE) -C $(TEST_IMAGES_PATH) trident-verity-testimage
 	make copy-runtime-images
-
-
-AZLTOOLS_OUT_DIR := bin
-AZLTOOLS_DIR := azltools
-
-.PHONY: build-liveinstaller
-build-liveinstaller:
-	cd $(AZLTOOLS_DIR)/liveinstaller && \
-		CGO_ENABLED=0 go build -o ../../../$(AZLTOOLS_OUT_DIR)/liveinstaller
-
-.PHONY: build-imager
-build-imager:
-	cd $(AZLTOOLS_DIR)/imager && \
-		CGO_ENABLED=0 go build -o ../../../$(AZLTOOLS_OUT_DIR)/imager
