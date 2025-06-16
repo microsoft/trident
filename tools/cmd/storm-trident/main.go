@@ -3,6 +3,7 @@ package main
 import (
 	"storm"
 	"tridenttools/storm/helpers"
+	"tridenttools/storm/servicing"
 )
 
 func main() {
@@ -13,6 +14,9 @@ func main() {
 	// for _, scenario := range scenarios {
 	// 	storm.AddScenario(&scenario)
 	// }
+
+	// Add Trident servicing scenario
+	storm.AddScenario(&servicing.TridentServicingScenario{})
 
 	// Register Trident helpers
 	for _, helper := range helpers.TRIDENT_HELPERS {
