@@ -420,6 +420,30 @@ run-netlaunch-sample: build-api-docs
 	yq '.os.users += [{"name": "$(shell whoami)", "sshPublicKeys": ["$(shell cat ~/.ssh/id_rsa.pub)"], "sshMode": "key-only", "secondaryGroups": ["wheel"]}] | (.. | select(tag == "!!str")) |= sub("file:///trident_cdrom/data", "http://NETLAUNCH_HOST_ADDRESS/files") | del(.storage.encryption.recoveryKeyUrl) | (.storage.filesystems[] | select(has("source")) | .source).sha256 = "ignored" | .storage.verityFilesystems[].dataImage.sha256 = "ignored" | .storage.verityFilesystems[].hashImage.sha256 = "ignored"' docs/Reference/Host-Configuration/Samples/$(HOST_CONFIG) > $(TMP)
 	TRIDENT_CONFIG=$(TMP) make run-netlaunch
 
+# Downloads the latest Trident functional test image from the Azure DevOps pipeline.
+artifacts/trident-functest.qcow2:
+	$(eval BRANCH ?= main)
+	$(eval RUN_ID ?= $(shell az pipelines runs list \
+		--org "https://dev.azure.com/mariner-org" \
+		--project "ECF" \
+		--pipeline-ids 3371 \
+		--branch $(BRANCH) \
+		--query-order QueueTimeDesc \
+		--result succeeded \
+		--reason triggered \
+		--top 1 \
+		--query '[0].id'))
+	@echo PIPELINE RUN ID: $(RUN_ID)
+
+	mkdir -p artifacts
+	rm -f $@
+	az pipelines runs artifact download \
+		--org 'https://dev.azure.com/mariner-org' \
+		--project "ECF" \
+		--run-id $(RUN_ID) \
+		--path artifacts/ \
+		--artifact-name 'trident-functest'
+
 # Downloads regular, verity, and container COSI images from the latest successful
 # pipeline run. The images are downloaded to ./artifacts/test-image.
 .PHONY: download-runtime-images
