@@ -646,7 +646,7 @@ recreate-verity-image: bin/trident-rpms.tar.gz
 
 
 AZLTOOLS_OUT_DIR := bin
-AZLTOOLS_DIR := tools/azltools
+AZLTOOLS_DIR := azltools
 
 .PHONY: build-liveinstaller
 build-liveinstaller:
