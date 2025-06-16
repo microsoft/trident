@@ -260,28 +260,45 @@ build-functional-test-cc: .cargo/config
 		cargo build --target-dir $(TRIDENT_COVERAGE_TARGET) --lib --tests --features functional-test --all
 
 .PHONY: functional-test
-functional-test: bin/trident-mos.iso bin/trident artifacts/osmodifier artifacts/test-image/regular.cosi bin/netlaunch
+functional-test: artifacts/trident-functest.qcow2
 	cp $(PLATFORM_TESTS_PATH)/tools/marinerhci_test_tools/node_interface.py functional_tests/
 	cp $(PLATFORM_TESTS_PATH)/tools/marinerhci_test_tools/ssh_node.py functional_tests/
-	cp bin/trident artifacts/test-image/
-	cp artifacts/osmodifier artifacts/test-image/
 	$(MAKE) functional-test-core
 
 # A target for pipelines that skips all setup and building steps that are not
 # required in the pipeline environment.
 .PHONY: functional-test-core
-functional-test-core: build-functional-test-cc generate-functional-test-manifest
-# Check if INSTALLER_ISO_PATH is set, if not, check if the installer iso is present in the bin directory
-ifndef INSTALLER_ISO_PATH
-ifeq ($(wildcard bin/trident-mos.iso),)
-	$(error INSTALLER_ISO_PATH is not set and bin/trident-mos.iso is not present in the bin directory)
-endif
-endif
-	python3 -u -m pytest functional_tests/test_setup.py functional_tests/$(FILTER) --keep-duplicates -v -o junit_logging=all --junitxml $(FUNCTIONAL_TEST_JUNIT_XML) ${FUNCTIONAL_TEST_EXTRA_PARAMS} --keep-environment --test-dir $(FUNCTIONAL_TEST_DIR) --build-output $(BUILD_OUTPUT) --force-upload
+functional-test-core: artifacts/osmodifier build-functional-test-cc generate-functional-test-manifest artifacts/trident-functest.qcow2
+	python3 -u -m \
+		pytest --color=yes \
+		--log-level=INFO \
+		--force-upload \
+		functional_tests/test_setup.py \
+		functional_tests/$(FILTER) \
+		--keep-duplicates \
+		-v \
+		-o junit_logging=all \
+		--junitxml $(FUNCTIONAL_TEST_JUNIT_XML) \
+		${FUNCTIONAL_TEST_EXTRA_PARAMS} \
+		--keep-environment \
+		--test-dir $(FUNCTIONAL_TEST_DIR) \
+		--build-output $(BUILD_OUTPUT)
 
 .PHONY: patch-functional-test
-patch-functional-test: build-functional-test-cc generate-functional-test-manifest
-	ARGUS_TOOLKIT_PATH=$(ARGUS_TOOLKIT_PATH) python3 -u -m pytest functional_tests/$(FILTER) -v -o junit_logging=all --junitxml $(FUNCTIONAL_TEST_JUNIT_XML) ${FUNCTIONAL_TEST_EXTRA_PARAMS} --keep-environment --test-dir $(FUNCTIONAL_TEST_DIR) --build-output $(BUILD_OUTPUT) --reuse-environment
+patch-functional-test: artifacts/osmodifier build-functional-test-cc generate-functional-test-manifest
+	python3 -u -m \
+		pytest --color=yes \
+		--log-level=INFO \
+		--force-upload \
+		functional_tests/$(FILTER) \
+		-v \
+		-o junit_logging=all \
+		--junitxml $(FUNCTIONAL_TEST_JUNIT_XML) \
+		${FUNCTIONAL_TEST_EXTRA_PARAMS} \
+		--keep-environment \
+		--test-dir $(FUNCTIONAL_TEST_DIR) \
+		--build-output $(BUILD_OUTPUT) \
+		--reuse-environment
 
 .PHONY: generate-functional-test-manifest
 generate-functional-test-manifest: .cargo/config

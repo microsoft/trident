@@ -398,55 +398,48 @@ mod functional_test {
     ///
     ///  ```json
     /// {
-    ///   "partitiontable": {
-    ///     "label": "gpt",
-    ///     "id": "71F5C3EB-6D53-414B-9FF4-0953E6291577",
-    ///     "device": "/dev/sda",
-    ///     "unit": "sectors",
-    ///     "firstlba": 2048,
-    ///     "lastlba": 33554398,
-    ///     "sectorsize": 512,
-    ///     "partitions": [
-    ///        {
-    ///           "node": "/dev/sda1",
-    ///           "start": 2048,
-    ///           "size": 102400,
-    ///           "type": "C12A7328-F81F-11D2-BA4B-00A0C93EC93B",
-    ///           "uuid": "8D738FD1-9B6F-4B6D-B174-021954453D68",
-    ///           "name": "esp"
-    ///        },{
-    ///           "node": "/dev/sda2",
-    ///           "start": 104448,
-    ///           "size": 8388608,
-    ///           "type": "4F68BCE3-E8CD-4DB1-96E7-FBCAF984B709",
-    ///           "uuid": "71982B79-7759-449F-8D68-ACA7625AC1E2",
-    ///           "name": "root-a",
-    ///           "attrs": "GUID:59"
-    ///        },{
-    ///           "node": "/dev/sda3",
-    ///           "start": 8493056,
-    ///           "size": 8388608,
-    ///           "type": "4F68BCE3-E8CD-4DB1-96E7-FBCAF984B709",
-    ///           "uuid": "1864172F-3594-4F7A-B447-EBCA0B115DC6",
-    ///           "name": "root-b",
-    ///           "attrs": "GUID:59"
-    ///        },{
-    ///           "node": "/dev/sda4",
-    ///           "start": 16881664,
-    ///           "size": 4194304,
-    ///           "type": "0657FD6D-A4AB-43C4-84E5-0933C84B4F4F",
-    ///           "uuid": "ED608DB8-58D6-484B-B309-B03CD3615037",
-    ///           "name": "swap"
-    ///        },{
-    ///           "node": "/dev/sda5",
-    ///           "start": 21075968,
-    ///           "size": 204800,
-    ///           "type": "0FC63DAF-8483-4772-8E79-3D69D8477DE4",
-    ///           "uuid": "7DE2DA6E-4512-4091-B0B7-EC432DA971AA",
-    ///           "name": "trident"
-    ///        }
-    ///     ]
-    ///  }
+    ///     "partitiontable": {
+    ///        "label": "gpt",
+    ///        "id": "BC1DB325-B1C0-4D6F-B98F-F9F24AB1C8EF",
+    ///        "device": "/dev/sda",
+    ///        "unit": "sectors",
+    ///        "firstlba": 2048,
+    ///        "lastlba": 21282782,
+    ///        "sectorsize": 512,
+    ///        "partitions": [
+    ///           {
+    ///              "node": "/dev/sda1",
+    ///              "start": 2048,
+    ///              "size": 102400,
+    ///              "type": "C12A7328-F81F-11D2-BA4B-00A0C93EC93B",
+    ///              "uuid": "<IGNORED>"
+    ///           },{
+    ///              "node": "/dev/sda2",
+    ///              "start": 104448,
+    ///              "size": 8388608,
+    ///              "type": "4F68BCE3-E8CD-4DB1-96E7-FBCAF984B709",
+    ///              "uuid": "<IGNORED>"
+    ///           },{
+    ///              "node": "/dev/sda3",
+    ///              "start": 8493056,
+    ///              "size": 8388608,
+    ///              "type": "4F68BCE3-E8CD-4DB1-96E7-FBCAF984B709",
+    ///              "uuid": "<IGNORED>"
+    ///           },{
+    ///              "node": "/dev/sda4",
+    ///              "start": 16881664,
+    ///              "size": 4194304,
+    ///              "type": "0657FD6D-A4AB-43C4-84E5-0933C84B4F4F",
+    ///              "uuid": "<IGNORED>"
+    ///           },{
+    ///              "node": "/dev/sda5",
+    ///              "start": 21075968,
+    ///              "size": 204800,
+    ///              "type": "0FC63DAF-8483-4772-8E79-3D69D8477DE4",
+    ///              "uuid": "<IGNORED>"
+    ///           }
+    ///        ]
+    ///     }
     /// }
     /// ```
     ///
@@ -458,9 +451,9 @@ mod functional_test {
         assert_eq!(disk.unit, SfDiskUnit::Sectors);
         print!("disk: {:#?}", disk);
         assert_eq!(disk.firstlba, 2048);
-        assert_eq!(disk.lastlba, 33554398);
+        assert_eq!(disk.lastlba, 31457246);
         assert_eq!(disk.sectorsize, 512);
-        assert_eq!(disk.capacity, 17_178_803_712);
+        assert_eq!(disk.capacity, 16_105_061_888);
         assert_eq!(disk.partitions.len(), 5);
 
         let expected_partitions = [

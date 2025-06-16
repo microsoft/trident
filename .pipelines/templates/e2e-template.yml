@@ -287,6 +287,8 @@ stages:
   - ${{ if eq(parameters.stageType, 'ci') }}:
       # Functional Testing
       - template: stages/testing_functional/functional-testing.yml
+        parameters:
+          downloadPrebuiltImage: false
 
       # VM Testing (host, post_merge)
       - template: stages/testing_vm/netlaunch-testing.yml
@@ -305,7 +307,7 @@ stages:
       # Functional Testing (short version)
       - template: stages/testing_functional/functional-testing.yml
         parameters:
-          buildPurpose: "validation"
+          rerunTests: false
 
       # VM Testing (host, pullrequest)
       - template: stages/testing_vm/netlaunch-testing.yml

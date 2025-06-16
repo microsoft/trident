@@ -1,27 +1,30 @@
 parameters:
-  - name: testingRun
-    displayName: "Download prebuilt test artifacts"
+  - name: downloadPrebuiltImage
+    displayName: "Download prebuilt base image"
     type: boolean
-    default: false
+    default: true
 
-  - name: buildPurpose
+  - name: rerunTests
+    displayName: "Rerun functional tests on the same VM"
+    type: boolean
+    default: true
+
+  - name: functestImageArtifact
     type: string
-    default: "post_merge"
-    values:
-      - post_merge
-      - validation
+    default: "trident-functest"
+
+  - name: functestImageArtifactPipeline
+    type: number
+    default: 3371 # trident-ci
+    displayName: Where to download prebuilt image from
 
 stages:
   - stage: FunctionalTesting
     displayName: Functional Testing
     dependsOn:
-      - ${{ if eq(parameters.testingRun, true) }}:
-          - DownloadTestingElements
-      - ${{ else }}:
-          - BuildingTools
-          - TridentTestImg_trident_installer
-          - TridentTestImg_trident_testimage
-          - TridentTestImg_trident_verity_testimage
+      - ${{ if eq(parameters.downloadPrebuiltImage, false) }}:
+          - TridentTestImg_trident_functest
+      - ${{ else }}: []
 
     jobs:
       - job: FunctionalTests
@@ -34,7 +37,7 @@ stages:
 
         variables:
           ob_outputDirectory: $(Build.SourcesDirectory)/build
-          argusToolkitSourceDirectory: $(Build.SourcesDirectory)/argus-toolkit
+          baseImageDirectory: "$(Build.SourcesDirectory)/artifacts"
 
         steps:
           - checkout: argus-toolkit
@@ -44,10 +47,26 @@ stages:
 
           - template: ../common_tasks/cargo-auth.yml
 
-          # Download all test images for host
-          - template: ../testing_common/download-test-images.yml
-
           - template: ../testing_vm/netlaunch-prep.yml
+
+          - ${{ if eq(parameters.downloadPrebuiltImage, false) }}:
+              - task: DownloadPipelineArtifact@2
+                displayName: "Download FT Image from current build"
+                inputs:
+                  buildType: current
+                  artifactName: "${{ parameters.functestImageArtifact }}"
+                  targetPath: "${{ variables.baseImageDirectory }}"
+          - ${{ else }}:
+              - task: DownloadPipelineArtifact@2
+                displayName: "Download FT Image from latest build of ${{ parameters.functestImageArtifactPipeline}}"
+                inputs:
+                  buildType: specific
+                  project: "ECF"
+                  definition: ${{ parameters.functestImageArtifactPipeline}}
+                  buildVersionToDownload: latestFromBranch
+                  branchName: "refs/heads/main"
+                  artifactName: "${{ parameters.functestImageArtifact }}"
+                  targetPath: "${{ variables.baseImageDirectory }}"
 
           - bash: |
               set -eux
@@ -57,6 +76,8 @@ stages:
               pip install pytest assertpy paramiko pyopenssl
             displayName: Install dependencies
             retryCountOnTaskFailure: 3
+
+          - template: ../common_tasks/build-osmodifier.yml
 
           - bash: |
               set -eux
@@ -78,7 +99,7 @@ stages:
               # rebuilding the test binaries and invoking pytest. The regular
               # target is meant for local use and does extra setup not required
               # here.
-              sg libvirt "make functional-test-core INSTALLER_ISO_PATH=./artifacts/iso/trident-installer.iso ARGUS_TOOLKIT_PATH=argus-toolkit"
+              sg libvirt "make functional-test-core ARGUS_TOOLKIT_PATH=argus-toolkit"
             displayName: Execute Functional Tests
 
           - template: ../common_tasks/coverage.yml
@@ -97,6 +118,6 @@ stages:
           - bash: |
               set -eux
 
-              sg libvirt "make patch-functional-test INSTALLER_ISO_PATH=$(System.ArtifactsDirectory)/trident-installer.iso ARGUS_TOOLKIT_PATH=argus-toolkit"
-            condition: and(succeeded(), eq('${{ parameters.buildPurpose }}', 'post_merge'))
+              sg libvirt "make patch-functional-test ARGUS_TOOLKIT_PATH=argus-toolkit"
+            condition: and(succeeded(), eq('${{ parameters.rerunTests }}', 'true'))
             displayName: Rerun Functional Tests
