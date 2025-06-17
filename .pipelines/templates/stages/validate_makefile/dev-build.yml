@@ -37,6 +37,13 @@ stages:
             env:
               OVERRIDE_RUST_FEED: false
 
+          - bash: |
+              set -eux
+
+              make build-liveinstaller
+              make build-imager
+            displayName: Build liveinstaller and imager
+
           - script: |
               set -eux
 
