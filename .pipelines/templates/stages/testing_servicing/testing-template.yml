@@ -45,36 +45,6 @@ parameters:
     default: "trident-ubuntu-1es-pool-eastus2"
 
 jobs:
-  - ${{ if eq(parameters.platform, 'azure') }}:
-    - job: PublishAzureImage
-      displayName: Publish Azure Image
-      timeoutInMinutes: 20
-      pool:
-        type: linux
-        name: ${{ parameters.pool }}
-        hostArchitecture: amd64
-      variables:
-        ob_outputDirectory: $(Build.SourcesDirectory)/logs
-      steps:
-        - task: DownloadPipelineArtifact@2
-          inputs:
-            buildType: current
-            artifactName: image-${{ parameters.platform }}-base
-            targetPath: "$(Build.ArtifactStagingDirectory)/"
-          displayName: Download Base Image
-        - bash: |
-            set -eux
-            az login --identity
-            ./scripts/loop-update/publish-sig-image.sh
-          displayName: Publish Base Image
-          env:
-            SUBSCRIPTION: 04cdc145-a4f9-42d4-9868-c46d23d0c63f # CoreOS_Mariner_BMP_Staging
-            IMAGE_DEFINITION: "trident-vm-grub-verity-testimage-$(System.DefinitionId)"
-            ARTIFACTS: $(Build.ArtifactStagingDirectory)
-            STORAGE_ACCOUNT: "azlinuxbmpstagingeastus2"
-            RESOURCE_GROUP: "azlinux_bmp_staging_eastus2"
-            AZCOPY_AUTO_LOGIN_TYPE: "MSI"
-
   - job: UpdateTesting_${{ parameters.flavor }}
     displayName: Update Testing - ${{ parameters.flavor }}
     timeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
@@ -84,9 +54,6 @@ jobs:
       hostArchitecture: amd64
     strategy:
       parallel: ${{ parameters.workers }}
-    dependsOn:
-      - ${{ if eq(parameters.platform, 'azure') }}:
-          - PublishAzureImage
 
     variables:
       tridentSourceDirectory: $(Build.SourcesDirectory)
@@ -95,12 +62,23 @@ jobs:
       IMAGE_DEFINITION: "trident-vm-grub-verity-testimage-$(System.DefinitionId)"
       TEST_RESOURCE_GROUP: trident-vm-servicing-validation-$(Build.BuildId)-$(System.JobPositionInPhase)
       SUBSCRIPTION: 04cdc145-a4f9-42d4-9868-c46d23d0c63f # CoreOS_Mariner_BMP_Staging
+      STORAGE_ACCOUNT: "azlinuxbmpstagingeastus2"
+      RESOURCE_GROUP: "azlinux_bmp_staging_eastus2"
+      SUBNET_ID: /subscriptions/04cdc145-a4f9-42d4-9868-c46d23d0c63f/resourceGroups/trident-vm_servicing-azure-vnet/providers/Microsoft.Network/virtualNetworks/poolpeeringvnet/subnets/default
 
     steps:
       - bash: |
           echo "##vso[task.setvariable variable=ob_artifactBaseName;]update-testing-${{ parameters.flavor }}-$(printf '%03d' $(System.JobPositionInPhase))"
           echo "##vso[task.setvariable variable=TEST_RESOURCE_GROUP;]trident-vm-servicing-validation-$(Build.BuildId)-$(printf '%03d' $(System.JobPositionInPhase))"
         displayName: "Set variables"
+
+      - ${{ if eq(parameters.platform, 'azure') }}:
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            buildType: current
+            artifactName: image-${{ parameters.platform }}-base
+            targetPath: "$(Build.ArtifactStagingDirectory)/"
+          displayName: Download Base Image
 
       - ${{ if eq(parameters.platform, 'qemu') }}:
           - task: DownloadPipelineArtifact@2
@@ -152,70 +130,50 @@ jobs:
 
       - bash: |
           set -eux
-          if [ "$TEST_PLATFORM" == "azure" ]; then
+
+          SUDO="sudo"
+          if [ "${{ parameters.platform }}" == "azure" ]; then
             az login --identity
+            SUDO=""
           fi
-          ./scripts/loop-update/deploy-vm.sh
-        displayName: "Deploy VM"
+
+          FLAGS=""
+          if [ "${{ parameters.verboseLogging }}" == "True" ]; then
+            FLAGS="$FLAGS --verbose"
+          fi
+          if [ "${{ parameters.flavor }}" != "uki" ]; then
+            FLAGS="$FLAGS --secure-boot"
+          fi
+
+          $SUDO ./bin/storm-trident run servicing $FLAGS \
+            --artifacts-dir $(Build.ArtifactStagingDirectory) \
+            --output-path $(ob_outputDirectory) \
+            --subscription $(SUBSCRIPTION) \
+            --image-definition $(IMAGE_DEFINITION) \
+            --storage-account $(STORAGE_ACCOUNT) \
+            --storage-account-resource-group $(RESOURCE_GROUP) \
+            --test-resource-group $(TEST_RESOURCE_GROUP) \
+            --platform ${{ parameters.platform }} \
+            --subnet-id $(SUBNET_ID) \
+            --ssh-private-key-path $HOME/.ssh/id_rsa \
+            --ssh-public-key-path $HOME/.ssh/id_rsa.pub \
+            --retry-count ${{ parameters.updateIterationCount }} \
+            --rollback-retry-count ${{ parameters.updateIterationCount }} \
+            --build-id $(Build.BuildId) \
+            --force-cleanup
+
+          set +x
+          echo "##vso[task.setvariable variable=STORM_SCENARIO_FINISHED;]true"
+
+        displayName: "Servicing test"
+        timeoutInMinutes: 20
         env:
-          VERBOSE: ${{ parameters.verboseLogging }}
-          ARTIFACTS: $(Build.ArtifactStagingDirectory)
-          OUTPUT: $(ob_outputDirectory)
-          TEST_RESOURCE_GROUP: $(TEST_RESOURCE_GROUP)
-          IMAGE_DEFINITION: $(IMAGE_DEFINITION)
-          TEST_PLATFORM: ${{ parameters.platform }}
-          SUBSCRIPTION: $(SUBSCRIPTION)
-          SECURE_BOOT: ${{ ne(parameters.flavor, 'uki') }}
-          VALIDATION_SUBNET_ID: /subscriptions/04cdc145-a4f9-42d4-9868-c46d23d0c63f/resourceGroups/trident-vm_servicing-azure-vnet/providers/Microsoft.Network/virtualNetworks/poolpeeringvnet/subnets/default
-        timeoutInMinutes: 5
-
-      - bash: ./scripts/loop-update/check-deployment.sh
-        displayName: "Check that Trident can adopt the deployment"
-        env:
-          TEST_PLATFORM: ${{ parameters.platform }}
-
-      - bash: ./scripts/loop-update/loop-update.sh
-        env:
-          ARTIFACTS: $(Build.ArtifactStagingDirectory)
-          OUTPUT: $(ob_outputDirectory)
-          VERBOSE: ${{ parameters.verboseLogging }}
-          RETRY_COUNT: ${{ parameters.updateIterationCount }}
-          EXPECTED_VOLUME: "volume-b"
-          ROLLBACK: "false"
-          TEST_RESOURCE_GROUP: $(TEST_RESOURCE_GROUP)
-          TEST_PLATFORM: ${{ parameters.platform }}
-        displayName: "Check that Trident can perform A/B update"
-        condition: succeeded()
-
-      # E2E rollback test: Trigger an A/B update back into runtime OS A, then cause a rollback
-      # by triggering an artificial reboot. Then, check that the firmware performed a rollback
-      # into B correctly. Finally, trigger two A/B updates, the first one using the same Host
-      # Configuration, and validate that they succeed. Rollback testing will only be run when
-      # the rollbackTesting parameter is true. The scaling test logic will set it to false.
-
-      - bash: ./scripts/loop-update/loop-update.sh
-        env:
-          ARTIFACTS: $(Build.ArtifactStagingDirectory)
-          OUTPUT: $(ob_outputDirectory)
-          VERBOSE: ${{ parameters.verboseLogging }}
-          RETRY_COUNT: 3
-          EXPECTED_VOLUME: "volume-b"
-          ROLLBACK: "true"
-          TEST_RESOURCE_GROUP: $(TEST_RESOURCE_GROUP)
-          TEST_PLATFORM: ${{ parameters.platform }}
-        displayName: "Check that Trident can roll back and perform A/B update after"
-        condition: and(succeeded(), eq(${{ parameters.rollbackTesting }}, true))
-
-      # TODO add more e2e tests here (Task 8813)
-
+          AZCOPY_AUTO_LOGIN_TYPE: "MSI"
+          
       - bash: |
           set -eux
-          ./scripts/loop-update/fetch-logs.sh $(ob_outputDirectory)/
 
-          ./scripts/loop-update/cleanup-vm.sh
-
-          if [ "$TEST_PLATFORM" == "qemu" ]; then
-              mkdir -p $(ob_outputDirectory)
+          if [ "${{ parameters.platform }}" == "qemu" ]; then
               sudo zstd -T0 $(Build.ArtifactStagingDirectory)/booted.qcow2
               sudo mv $(Build.ArtifactStagingDirectory)/booted.qcow2.zst $(ob_outputDirectory)/
           fi
@@ -223,21 +181,42 @@ jobs:
           # https://learn.microsoft.com/en-us/azure/virtual-machines/linux/download-vhd?tabs=azure-cli
           # for Azure images
         workingDirectory: $(tridentSourceDirectory)
-        env:
-          TEST_RESOURCE_GROUP: $(TEST_RESOURCE_GROUP)
-          TEST_PLATFORM: ${{ parameters.platform }}
-          SUBSCRIPTION: $(SUBSCRIPTION)
         condition: failed()
         displayName: "Publish logs and OS disk on failure"
         timeoutInMinutes: 5
 
-      - bash: |
-          set -eux
-          ./scripts/loop-update/cleanup-vm.sh
-        displayName: "Cleanup VM"
-        workingDirectory: $(tridentSourceDirectory)
-        condition: always()
-        env:
-          TEST_RESOURCE_GROUP: $(TEST_RESOURCE_GROUP)
-          TEST_PLATFORM: ${{ parameters.platform }}
-          SUBSCRIPTION: $(SUBSCRIPTION)
+      - ${{ if eq(parameters.platform, 'azure') }}:
+        - bash: |
+            set -eux
+
+            # If platform is azure AND the test failed to finish, run cleanup to
+            # ensure there are no azure resources left behind
+            if [ "${STORM_SCENARIO_FINISHED}" != "true" ]; then
+              az login --identity
+
+              FLAGS=""
+              if [ "${{ parameters.verboseLogging }}" == "True" ]; then
+                FLAGS="$FLAGS --verbose"
+              fi
+
+              ./bin/storm-trident run servicing $FLAGS \
+                --artifacts-dir $(Build.ArtifactStagingDirectory) \
+                --output-path $(ob_outputDirectory) \
+                --subscription $(SUBSCRIPTION) \
+                --image-definition $(IMAGE_DEFINITION) \
+                --storage-account $(STORAGE_ACCOUNT) \
+                --storage-account-resource-group $(RESOURCE_GROUP) \
+                --test-resource-group $(TEST_RESOURCE_GROUP) \
+                --platform ${{ parameters.platform }} \
+                --subnet-id $(SUBNET_ID) \
+                --ssh-private-key-path $HOME/.ssh/id_rsa \
+                --ssh-public-key-path $HOME/.ssh/id_rsa.pub \
+                --retry-count ${{ parameters.updateIterationCount }} \
+                --rollback-retry-count ${{ parameters.updateIterationCount }} \
+                --build-id $(Build.BuildId) \
+                --test-case-to-run cleanup-vm
+            fi
+
+          displayName: "Cleanup even if timeout"
+          timeoutInMinutes: 20
+          condition: always()

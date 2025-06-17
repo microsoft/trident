@@ -21,6 +21,7 @@ use trident_api::{
 use crate::{
     engine::boot::BootSubsystem,
     subsystems::{
+        esp::EspSubsystem,
         hooks::HooksSubsystem,
         initrd::InitrdSubsystem,
         management::ManagementSubsystem,
@@ -48,6 +49,7 @@ pub mod storage;
 
 // Helper modules
 mod etc_overlay;
+pub(crate) mod install_index;
 
 pub(crate) use clean_install::{clean_install, finalize_clean_install};
 pub(crate) use context::{filesystem, EngineContext};
@@ -104,6 +106,7 @@ pub(crate) trait Subsystem: Send {
 lazy_static::lazy_static! {
     static ref SUBSYSTEMS: Mutex<Vec<Box<dyn Subsystem>>> = Mutex::new(vec![
         Box::<MosConfigSubsystem>::default(),
+        Box::<EspSubsystem>::default(),
         Box::<StorageSubsystem>::default(),
         Box::<BootSubsystem>::default(),
         Box::<NetworkSubsystem>::default(),

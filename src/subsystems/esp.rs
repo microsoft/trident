@@ -18,23 +18,85 @@ use osutils::{
     path,
 };
 use trident_api::{
-    constants::internal_params::{DISABLE_GRUB_NOPREFIX_CHECK, ENABLE_UKI_SUPPORT},
-    error::{ReportError, TridentError, TridentResultExt, UnsupportedConfigurationError},
-};
-
-use crate::engine::{
-    boot::{uki, ESP_EXTRACTION_DIRECTORY},
     constants::{
+        internal_params::{DISABLE_GRUB_NOPREFIX_CHECK, ENABLE_UKI_SUPPORT},
         EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY, ESP_RELATIVE_MOUNT_POINT_PATH,
         GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH,
     },
-    EngineContext,
+    error::{ReportError, ServicingError, TridentError},
+};
+
+use crate::engine::{
+    boot::{self, uki, ESP_EXTRACTION_DIRECTORY},
+    EngineContext, Subsystem,
 };
 
 /// Bootloader executables
 const BOOT_EFI: &str = BootloaderExecutable::Boot.current_name();
 const GRUB_EFI: &str = BootloaderExecutable::Grub.current_name();
 const GRUB_NOPREFIX_EFI: &str = BootloaderExecutable::GrubNoPrefix.current_name();
+
+#[derive(Default, Debug)]
+pub struct EspSubsystem;
+impl Subsystem for EspSubsystem {
+    fn name(&self) -> &'static str {
+        "esp"
+    }
+
+    #[tracing::instrument(name = "esp_provision", skip_all)]
+    fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
+        // Perform file-based deployment of ESP images, if needed, after filesystems have been
+        // mounted and initialized.
+
+        // Deploy ESP image
+        deploy_esp(ctx, mount_path).structured(ServicingError::DeployESPImages)?;
+
+        Ok(())
+    }
+}
+
+/// Performs file-based deployment of ESP images from the OS image.
+fn deploy_esp(ctx: &EngineContext, mount_point: &Path) -> Result<(), Error> {
+    trace!("Deploying ESP from OS image");
+
+    let os_image = ctx
+        .image
+        .as_ref()
+        .context("OS image is required to deploy ESP from OS image")?;
+
+    let esp_img = os_image
+        .esp_filesystem()
+        .context("Failed to get ESP image from OS image")?;
+
+    let stream = esp_img
+        .image_file
+        .reader()
+        .context("Failed to get reader for ESP image from OS image")?;
+
+    // Extract the ESP image to a temporary file in
+    // `<newroot>/ESP_EXTRACTION_DIRECTORY`. This location is generally
+    // guaranteed to be writable and backed by a real block device, so we don't
+    // have to store a potentially large ESP image in memory.
+    let esp_extraction_dir = path::join_relative(mount_point, ESP_EXTRACTION_DIRECTORY);
+
+    let (temp_file, computed_sha384) = load_raw_image(
+        &esp_extraction_dir,
+        os_image.source(),
+        HashingReader384::new(stream),
+    )
+    .context("Failed to load raw image")?;
+
+    if esp_img.image_file.sha384 != computed_sha384 {
+        bail!(
+            "SHA384 mismatch for disk image {}: expected {}, got {}",
+            os_image.source(),
+            esp_img.image_file.sha384,
+            computed_sha384
+        );
+    }
+
+    copy_file_artifacts(temp_file.path(), ctx, mount_point)
+}
 
 /// Takes in a reader to the raw zstd-compressed ESP image and decompresses it
 /// into a temporary file under `/<mount_point>/<ESP_EXTRACTION_DIRECTORY>`.
@@ -284,22 +346,6 @@ fn generate_boot_filepaths(temp_mount_dir: &Path) -> Result<Vec<PathBuf>, Error>
     Ok(paths)
 }
 
-pub fn next_install_index(mount_point: &Path) -> Result<usize, TridentError> {
-    let esp_efi_path = mount_point
-        .join(ESP_RELATIVE_MOUNT_POINT_PATH)
-        .join(ESP_EFI_DIRECTORY);
-
-    debug!(
-        "Looking for next available install index in '{}'",
-        esp_efi_path.display()
-    );
-    let first_available_install_index = find_first_available_install_index(&esp_efi_path)
-        .message("Failed to find the first available install index")?;
-
-    debug!("Selected first available install index: '{first_available_install_index}'",);
-    Ok(first_available_install_index)
-}
-
 /// Returns the path to the ESP directory where the boot files need to be copied to.
 ///
 /// Path will be in the form of `/boot/efi/EFI/<ID>`, where `<ID>` is the install ID as determined
@@ -307,7 +353,7 @@ pub fn next_install_index(mount_point: &Path) -> Result<usize, TridentError> {
 ///
 /// The function will find the next available install ID for this install and update the install
 /// index in the engine context.
-pub fn generate_efi_bin_base_dir_path(
+fn generate_efi_bin_base_dir_path(
     ctx: &EngineContext,
     mount_point: &Path,
 ) -> Result<PathBuf, Error> {
@@ -318,74 +364,10 @@ pub fn generate_efi_bin_base_dir_path(
 
     // Return the path to the ESP directory with the ESP dir name
     Ok(
-        esp_efi_path.join(super::get_update_esp_dir_name(ctx).context(
+        esp_efi_path.join(boot::get_update_esp_dir_name(ctx).context(
             "Failed to get ESP directory name for the new OS. Engine context is in an invalid state.",
         )?),
     )
-}
-
-/// Tries to find the next available AzL install index by looking at the
-/// ESP directory names present in the specified ESP EFI path.
-fn find_first_available_install_index(esp_efi_path: &Path) -> Result<usize, TridentError> {
-    Ok(super::make_esp_dir_name_candidates()
-        // Take a limited number of candidates to avoid an infinite loop.
-        .take(1000)
-        // Go over all the candidates and find the first one that doesn't exist.
-        .find(|(idx, dir_names)| {
-            trace!("Checking if an install with index '{}' exists", idx);
-            // Returns true if all possible ESP directory names for this index
-            // do NOT exist.
-            dir_names.iter().all(|dir_names| {
-                let path = esp_efi_path.join(dir_names);
-                trace!("Checking if path '{}' exists", path.display());
-                !path.exists()
-            })
-        })
-        .structured(UnsupportedConfigurationError::NoAvailableInstallIndex)?
-        .0)
-}
-
-/// Performs file-based deployment of ESP images from the OS image.
-pub(super) fn deploy_esp(ctx: &EngineContext, mount_point: &Path) -> Result<(), Error> {
-    trace!("Deploying ESP from OS image");
-
-    let os_image = ctx
-        .image
-        .as_ref()
-        .context("OS image is required to deploy ESP from OS image")?;
-
-    let esp_img = os_image
-        .esp_filesystem()
-        .context("Failed to get ESP image from OS image")?;
-
-    let stream = esp_img
-        .image_file
-        .reader()
-        .context("Failed to get reader for ESP image from OS image")?;
-
-    // Extract the ESP image to a temporary file in
-    // `<newroot>/ESP_EXTRACTION_DIRECTORY`. This location is generally
-    // guaranteed to be writable and backed by a real block device, so we don't
-    // have to store a potentially large ESP image in memory.
-    let esp_extraction_dir = path::join_relative(mount_point, ESP_EXTRACTION_DIRECTORY);
-
-    let (temp_file, computed_sha384) = load_raw_image(
-        &esp_extraction_dir,
-        os_image.source(),
-        HashingReader384::new(stream),
-    )
-    .context("Failed to load raw image")?;
-
-    if esp_img.image_file.sha384 != computed_sha384 {
-        bail!(
-            "SHA384 mismatch for disk image {}: expected {}, got {}",
-            os_image.source(),
-            esp_img.image_file.sha384,
-            computed_sha384
-        );
-    }
-
-    copy_file_artifacts(temp_file.path(), ctx, mount_point)
 }
 
 #[cfg(test)]
@@ -401,126 +383,10 @@ mod tests {
         status::{AbVolumeSelection, ServicingType},
     };
 
-    use crate::engine::boot::{get_update_esp_dir_name, make_esp_dir_name_candidates};
-
-    /// Simple case for find_first_available_install_index
-    #[test]
-    fn test_find_first_available_install_index_simple() {
-        let test_dir = TempDir::new().unwrap();
-        let index = find_first_available_install_index(test_dir.path()).unwrap();
-        assert_eq!(index, 0, "First available index should be 0");
-    }
-
-    /// Test that find_first_available_install_index will skip unavailable
-    /// indices
-    #[test]
-    fn test_find_first_available_install_index_existing_all() {
-        let test_dir = TempDir::new().unwrap();
-
-        // Create all ESP directories for indices 0-9
-        make_esp_dir_name_candidates()
-            .take(10)
-            .for_each(|(_, dir_names)| {
-                for dir_name in dir_names {
-                    fs::create_dir(test_dir.path().join(dir_name)).unwrap();
-                }
-            });
-
-        // The first available index should be 10
-        let index = find_first_available_install_index(test_dir.path()).unwrap();
-        assert_eq!(index, 10, "First available index should be 10");
-    }
-
-    /// Test that find_first_available_install_index will skip unavailable
-    /// indices, even when only the A volume IDs are present
-    #[test]
-    fn test_find_first_available_install_index_existing_a() {
-        let test_dir = TempDir::new().unwrap();
-
-        // Create Volume A ESP directories for indices 0-9
-        make_esp_dir_name_candidates()
-            .take(10)
-            .for_each(|(_, dir_names)| {
-                fs::create_dir(test_dir.path().join(&dir_names[0])).unwrap();
-            });
-
-        // The first available index should be 10
-        let index = find_first_available_install_index(test_dir.path()).unwrap();
-        assert_eq!(index, 10, "First available index should be 10");
-    }
-
-    /// Test that find_first_available_install_index will skip unavailable
-    /// indices, even when only the B volume IDs are present
-    #[test]
-    fn test_find_first_available_install_index_existing_b() {
-        let test_dir = TempDir::new().unwrap();
-
-        // Create Volume B ESP directories for indices 0-9
-        make_esp_dir_name_candidates()
-            .take(10)
-            .for_each(|(_, dir_names)| {
-                fs::create_dir(test_dir.path().join(&dir_names[1])).unwrap();
-            });
-
-        // The first available index should be 10
-        let index = find_first_available_install_index(test_dir.path()).unwrap();
-        assert_eq!(index, 10, "First available index should be 10");
-    }
-
-    /// Test that find_first_available_install_index will skip unavailable
-    /// indices, even when only ONE ID is present per install.
-    #[test]
-    fn test_find_first_available_install_index_existing_mixed_1() {
-        let test_dir = TempDir::new().unwrap();
-
-        // Iterator to cycle between 0 and 1
-        let mut volume_selector = (0..=1).cycle();
-
-        // Create alternating A/B Volume ESP directories for indices 0-9, starting with A
-        make_esp_dir_name_candidates()
-            .take(10)
-            .for_each(|(_, dir_names)| {
-                fs::create_dir(
-                    test_dir
-                        .path()
-                        .join(&dir_names[volume_selector.next().unwrap()]),
-                )
-                .unwrap();
-            });
-
-        // The first available index should be 10
-        let index = find_first_available_install_index(test_dir.path()).unwrap();
-        assert_eq!(index, 10, "First available index should be 10");
-    }
-
-    /// Test that find_first_available_install_index will skip unavailable
-    /// indices, even when only ONE ID is present per install.
-    #[test]
-    fn test_find_first_available_install_index_existing_mixed_2() {
-        let test_dir = TempDir::new().unwrap();
-
-        // Iterator to cycle between 0 and 1
-        let mut volume_selector = (0..=1).cycle();
-
-        // Advance the volume selector to start with B
-        volume_selector.next();
-
-        // Create alternating A/B Volume ESP directories for indices 0-9, starting with B
-        make_esp_dir_name_candidates()
-            .take(10)
-            .for_each(|(_, dir_names)| {
-                fs::create_dir(
-                    test_dir
-                        .path()
-                        .join(&dir_names[volume_selector.next().unwrap()]),
-                )
-                .unwrap();
-            });
-
-        // The first available index should be 10
-        let index = find_first_available_install_index(test_dir.path()).unwrap();
-        assert_eq!(index, 10, "First available index should be 10");
-    }
+    use crate::engine::{
+        boot::{get_update_esp_dir_name, make_esp_dir_name_candidates},
+        install_index,
+    };
 
     #[test]
     fn test_generate_efi_bin_base_dir_path_clean_install() {
@@ -546,7 +412,7 @@ mod tests {
                 idx,
                 test_dir.path().display()
             );
-            ctx.install_index = next_install_index(test_dir.path()).unwrap();
+            ctx.install_index = install_index::next_install_index(test_dir.path()).unwrap();
             assert_eq!(idx, ctx.install_index);
 
             let esp_dir_path = generate_efi_bin_base_dir_path(&ctx, test_dir.path()).unwrap();

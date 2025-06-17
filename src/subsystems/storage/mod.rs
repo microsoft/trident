@@ -166,12 +166,12 @@ impl Subsystem for StorageSubsystem {
         Ok(Some(ServicingType::NoActiveServicing))
     }
 
-    fn provision(&mut self, ctx: &EngineContext, mount_point: &Path) -> Result<(), TridentError> {
+    fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
         if ctx.servicing_type == ServicingType::CleanInstall
             && ctx.storage_graph.root_fs_is_verity()
         {
             debug!("Root verity is enabled, setting up machine-id");
-            verity::create_machine_id(mount_point).structured(ServicingError::CreateMachineId)?;
+            verity::create_machine_id(mount_path).structured(ServicingError::CreateMachineId)?;
         }
 
         Ok(())

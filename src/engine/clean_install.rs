@@ -25,7 +25,7 @@ use trident_api::{
 
 use crate::{
     datastore::DataStore,
-    engine::{self, boot::esp, bootentries, storage, EngineContext, SUBSYSTEMS},
+    engine::{self, bootentries, install_index, storage, EngineContext, SUBSYSTEMS},
     monitor_metrics,
     osimage::OsImage,
     subsystems::hooks::HooksSubsystem,
@@ -228,7 +228,7 @@ fn stage_clean_install(
         &ctx.partition_paths,
         AbVolumeSelection::VolumeA,
     )?;
-    ctx.install_index = esp::next_install_index(newroot_mount.path())?;
+    ctx.install_index = install_index::next_install_index(newroot_mount.path())?;
 
     engine::provision(subsystems, &ctx, newroot_mount.path())?;
 

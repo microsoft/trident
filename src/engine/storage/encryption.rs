@@ -60,9 +60,9 @@ enum EncryptionType {
     Reencrypt,
 }
 
-/// Provisions all configured encrypted volumes.
-#[tracing::instrument(name = "encryption_provision", fields(total_partition_size_bytes = tracing::field::Empty), skip_all)]
-pub(super) fn provision(
+/// Sets up and opens encrypted devices.
+#[tracing::instrument(name = "encrypted_devices_creation", fields(total_partition_size_bytes = tracing::field::Empty), skip_all)]
+pub(super) fn create_encrypted_devices(
     ctx: &EngineContext,
     host_config: &HostConfiguration,
 ) -> Result<(), TridentError> {

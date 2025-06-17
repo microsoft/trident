@@ -15,27 +15,25 @@ the scaling pipeline. They can be also used locally.
   servicing and two sets of update images. The produced images are moved to
   `artifacts`. Generally needs to be only rerun when you want to refresh the
   images to be used.
-  
-- For Azure VMs, you will need to publish the image once, before it could be
-  used to create VMs. To publish the image, call `publish-sig-image.sh`.
 
-- `deploy-vm.sh`: Creates a VM instance with the base image and starts the VM.
-  It ensures the VM gets to the login prompt.
+- The servicing tests are backed by a storm scenario (../tools/storm/servicing).
 
-- `check-deployment.sh`: Fetches the Host Status of the freshly deployed VM to
-  ensure it is in an expected state. You need to deploy the VM first using the
-  script above.
+- To run the scenario, you can use the `servicing-tests.sh` script or by invoking
+  the storm binary directly.
 
-- `loop-update.sh`: Loops through the update images and applies them to the VM.
-  It ensures the VM gets to the login prompt after each update and confirms the
-  Host Status is as expected. This script will power off and restart the VM
-  every 10 runs. By default, it will execute 20 loops, and you can change this
-  by setting `RETRY_COUNT` environment variable.
+- The servicing tests are composed of several storm test cases:
 
-- `cleanup-vm.sh`: Deletes the VM instance. The deploy scripts will delete
-  automatically before creating the new VMs. The other scripts use a presence of
-  a QEMU VM to decide whether to target Azure or QEMU, so if you are switching
-  between the two, you may need to delete the VM using this script first.
+1. For Azure VMs, `publish-sig-image` is the first testcase and it will
+   configure an appropriate qcow2 image as needed for an Azure VM and 
+   upload it.
+2. For all VMs, `deploy-vm` is the next phase and will create a VM on the
+   selected platform.
+3. For all VMs, `check-deployment` will verify that the VM has been started
+   and that it booted from the expected volume.`
+4. For all VMs, `update-loop` will update the VM the specified number of
+   times, applying the update images and checking that the VM is in the 
+   expected state.
+5. For all VMs, `rollback` will validate that rollback and update works.
+6. For all VMs, `collect-logs` will collect logs from the VM.
+7. For all VMs, `cleanup-vm` will delete the VM.
 
-- `common.sh`: Not used directly. Contains common functions used by the other
-  scripts.

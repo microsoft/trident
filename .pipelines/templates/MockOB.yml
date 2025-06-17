@@ -111,3 +111,4 @@ stages:
 
                   - publish: ${{ variables.ob_outputDirectory }}
                     artifact: ${{ variables.ob_customArtifactName }}
+                    condition: always()

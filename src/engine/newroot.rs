@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{bail, ensure, Context, Error};
+use anyhow::{anyhow, bail, ensure, Context, Error};
 use log::{debug, error, trace, warn};
 use sys_mount::{MountBuilder, MountFlags};
 
@@ -496,11 +496,31 @@ fn prepare_mount_directory(target_path: &Path, is_newroot: bool) -> Result<(), E
         );
         // Check if the directory is empty
         if let Ok(entries) = fs::read_dir(target_path) {
-            ensure!(
-                entries.count() == 0,
-                "Mount path '{}' is not empty",
-                target_path.display()
-            );
+            let entries_list = entries
+                .filter_map(|e| match e {
+                    Ok(ee) => Some(ee.path().to_string_lossy().into_owned()),
+                    Err(err) => {
+                        warn!(
+                            "Failed to read entry in mount path '{}': {}",
+                            target_path.display(),
+                            err
+                        );
+                        None
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            if !entries_list.is_empty() {
+                error!(
+                    "Mount path '{}' already exists and is non-empty: {}\n",
+                    target_path.display(),
+                    entries_list
+                );
+                return Err(anyhow!(
+                    "Mount path '{}' is not empty",
+                    target_path.display()
+                ));
+            }
         }
         Ok(())
     } else {
