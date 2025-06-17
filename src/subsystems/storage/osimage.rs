@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 use const_format::formatcp;
@@ -408,6 +408,16 @@ fn validate_filesystem_blkdev_fit(
         let fs_size = fs.image_file.uncompressed_size;
         trace!("The size of the filesystem associated with block device '{device_id}' is {fs_size} bytes.");
 
+        if let Some(fs_verity) = fs.verity.as_ref() {
+            // If the filesystem has a verity hash, we need to check the size of the
+            // block device that will contain the verity hash.
+            validate_hash_filesystem_blkdev_fit(
+                fs_verity.hash_image_file.uncompressed_size,
+                fs.mount_point.clone(),
+                graph,
+            )?;
+        }
+
         let Some(blkdev_size) = graph.block_device_size(device_id) else {
             debug!("Could not find the size of the block device with id '{device_id}'. Block device may not have a fixed size.");
             continue;
@@ -432,6 +442,53 @@ fn validate_filesystem_blkdev_fit(
             ));
         };
     }
+    Ok(())
+}
+
+/// Validate that the size of a verity filesystem hash fits in the configured block device.
+fn validate_hash_filesystem_blkdev_fit(
+    fs_verity_hash_file_size: u64,
+    fs_mount_point: PathBuf,
+    graph: &StorageGraph,
+) -> Result<(), TridentError> {
+    // Get the verity block device corresponding to the filesystem
+    let verity_device = graph
+        .verity_device_for_filesystem(&fs_mount_point)
+        .structured(InternalError::Internal(
+            "No verity device found for mount point",
+        ))
+        .message(format!(
+            "Failed to find verity device for filesystem mounted at '{}'",
+            fs_mount_point.display()
+        ))?;
+
+    // Get the size of the block device configured for the verity hash
+    let Some(blkdev_hash_size) = graph.block_device_size(&verity_device.hash_device_id) else {
+        debug!(
+            "Could not find the size of the block device with id '{}'. Block device may not have a fixed size.",
+            verity_device.hash_device_id
+        );
+        return Ok(());
+    };
+
+    debug!(
+        "Found filesystem with verity hash of size {} and block device with size {} for device '{}'",
+        ByteCount::from(fs_verity_hash_file_size).to_human_readable_approx(),
+        ByteCount::from(blkdev_hash_size).to_human_readable_approx(),
+        &verity_device.hash_device_id,
+    );
+
+    // Ensure that the filesystem hash will fit in the block device
+    if fs_verity_hash_file_size > blkdev_hash_size {
+        return Err(TridentError::new(
+            InvalidInputError::FilesystemSizeExceedsBlockDevice {
+                mount_point: fs_mount_point.to_string_lossy().into(),
+                device_id: verity_device.hash_device_id.to_string(),
+                fs_size: ByteCount::from(fs_verity_hash_file_size),
+                device_size: ByteCount::from(blkdev_hash_size),
+            },
+        ));
+    };
     Ok(())
 }
 
@@ -1056,6 +1113,76 @@ mod tests {
                 mount_point: "/mnt/unused/C".to_string(),
             }),
             "Expected UnusedOsImageFilesystem error"
+        );
+    }
+
+    #[test]
+    fn test_validate_hash_filesystem_blkdev_fit() {
+        let required_size_gb = 1;
+        let required_partition_size =
+            PartitionSize::from_str(format!("{required_size_gb}G").as_str()).unwrap();
+        let too_big_size_gb = 2;
+        let too_big_partition_size =
+            PartitionSize::from_str(format!("{too_big_size_gb}G").as_str()).unwrap();
+        let mount_point = "/mnt/path/verity";
+        let fs_mount_point = PathBuf::from(mount_point);
+        let graph = Storage {
+            disks: vec![Disk {
+                device: "/dev/sda".into(),
+                partitions: vec![
+                    Partition {
+                        id: "data".into(),
+                        partition_type: Default::default(),
+                        size: required_partition_size,
+                    },
+                    Partition {
+                        id: "hash".into(),
+                        partition_type: Default::default(),
+                        size: required_partition_size,
+                    },
+                ],
+                ..Default::default()
+            }],
+            verity: vec![VerityDevice {
+                id: "verity".into(),
+                name: "verity".into(),
+                data_device_id: "data".into(),
+                hash_device_id: "hash".into(),
+                ..Default::default()
+            }],
+            filesystems: vec![FileSystem {
+                device_id: Some("verity".into()),
+                source: FileSystemSource::Image,
+                mount_point: Some(MountPoint::from_str(mount_point).unwrap()),
+            }],
+            ..Default::default()
+        }
+        .build_graph()
+        .unwrap();
+
+        // Test with exact matching block device size
+        validate_hash_filesystem_blkdev_fit(
+            required_partition_size.to_bytes().unwrap(),
+            fs_mount_point.clone(),
+            &graph,
+        )
+        .unwrap();
+
+        // Test with too small block device size
+        let err = validate_hash_filesystem_blkdev_fit(
+            too_big_partition_size.to_bytes().unwrap(),
+            fs_mount_point.clone(),
+            &graph,
+        )
+        .unwrap_err();
+        assert_eq!(
+            err.kind(),
+            &ErrorKind::InvalidInput(InvalidInputError::FilesystemSizeExceedsBlockDevice {
+                mount_point: mount_point.to_string(),
+                device_id: "hash".to_string(),
+                fs_size: ByteCount::from(too_big_partition_size.to_bytes().unwrap()),
+                device_size: ByteCount::from(required_partition_size.to_bytes().unwrap()),
+            })
         );
     }
 }
