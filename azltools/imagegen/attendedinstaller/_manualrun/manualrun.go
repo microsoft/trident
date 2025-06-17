@@ -34,9 +34,9 @@ func main() {
 				KernelOptions: map[string]string{
 					"default": "kernel",
 				},
-				AdditionalFiles: map[string]string{
-					"/etc/resolv.conf": "/etc/resolv.conf",
-					"/root/.bashrc":    "/root/.bashrc",
+				AdditionalFiles: map[string]configuration.FileConfigList{
+					"/etc/resolv.conf": {{Path: "/etc/resolv.conf"}},
+					"/root/.bashrc":    {{Path: "/root/.bashrc"}},
 				},
 				PostInstallScripts: []configuration.InstallScript{
 					configuration.InstallScript{
@@ -67,9 +67,9 @@ func main() {
 				KernelOptions: map[string]string{
 					"default": "kernel",
 				},
-				AdditionalFiles: map[string]string{
-					"/etc/resolv.conf": "/etc/resolv.conf",
-					"/root/.bashrc":    "/root/.bashrc",
+				AdditionalFiles: map[string]configuration.FileConfigList{
+					"/etc/resolv.conf": {{Path: "/etc/resolv.conf"}},
+					"/root/.bashrc":    {{Path: "/root/.bashrc"}},
 				},
 				PostInstallScripts: []configuration.InstallScript{
 					configuration.InstallScript{
