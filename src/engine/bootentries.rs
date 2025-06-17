@@ -5,7 +5,7 @@ use log::debug;
 
 use osutils::{
     block_devices,
-    bootloaders::BootloaderExecutable,
+    bootloaders::BOOT_EFI,
     efibootmgr::{self, EfiBootManagerOutput},
     virt,
 };
@@ -22,9 +22,6 @@ use super::{
     boot::{self, uki},
     EngineContext,
 };
-
-/// Boot EFI executable
-const BOOT_EFI: &str = BootloaderExecutable::Boot.current_name();
 
 /// ESP device metadata
 #[derive(Debug, PartialEq, Clone)]
@@ -356,9 +353,9 @@ pub fn create_and_update_boot_variables_after_rebuilding(
     Ok(())
 }
 
-/// Parses the ESP device info and returns the ESP device metadata
-/// If the ESP device is a standalone partition, the metadata for the partition is returned.
-/// If the ESP device is on RAID1, the metadata for the RAID1 partitions is returned.
+/// Parses the ESP device info and returns the ESP device metadata:
+/// - If the ESP device is a standalone partition, the metadata for the partition is returned.
+/// - If the ESP device is on RAID1, the metadata for the RAID1 partitions is returned.
 fn parse_esp_metadata(
     ctx: &EngineContext,
     esp_device_info: EspDevice,
@@ -506,14 +503,11 @@ fn get_esp_device_id(ctx: &EngineContext) -> Result<BlockDeviceId, Error> {
 /// If the ESP partition is on RAID1, the information for the RAID1 partitions will be returned.
 ///
 /// # Arguments
-///
-/// * `ctx` - A reference to the `EngineContext` which contains the host's configuration.
+/// - `ctx` - A reference to the `EngineContext` which contains the host's configuration.
 ///
 /// # Returns
-///
-/// * `Result<EspDevice, Error>` - On success, returns an EspDevice enum containing the ESP device
+/// - `Result<EspDevice, Error>` - On success, returns an EspDevice enum containing the ESP device
 ///   information. On failure, returns an `Error`.
-///
 fn get_esp_device_info(ctx: &EngineContext) -> Result<EspDevice, Error> {
     // TODO: What about deployments with multiple ESP partitions? (in multiple disks)
     // This implementation just finds the first ESP filesystem and uses that.
@@ -574,7 +568,6 @@ fn get_esp_metadata(
 ///
 /// This function takes a reference to a `EngineContext` object and returns a tuple containing
 /// the label associated with the inactive A/B update volume and the path to its EFI boot loader.
-///
 fn get_label_and_path(ctx: &EngineContext) -> Result<(String, PathBuf), Error> {
     let esp_dir_name = boot::get_update_esp_dir_name(ctx).context("Failed to get install id")?;
 
@@ -611,14 +604,10 @@ pub fn first_or_last_boot_order(
     Ok(())
 }
 
-/// This function ensures that the specified boot entries are added to the `BootOrder`
-/// according to the specified position.
-///
-/// #[tracing::instrument(skip_all)]
-pub fn update_boot_order(
-    boot_current_entries: Vec<String>,
-    boot_order_position: &BootOrderPosition,
-) -> Result<(), Error> {
+/// This function sets the `BootOrder` to the specified boot entries, processing them in reverse
+/// order to ensure they are added to the beginning of the `BootOrder` list.
+#[tracing::instrument(skip_all)]
+pub fn update_boot_order(boot_current_entries: Vec<String>) -> Result<(), Error> {
     for added_entry_number in boot_current_entries.iter().rev() {
         debug!(
             "Adding boot entry '{}' to the beginning of `BootOrder`",

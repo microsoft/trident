@@ -43,6 +43,11 @@ const fn get_arch_efi_str(arch: SystemArchitecture) -> &'static str {
     }
 }
 
+/// Bootloader executables
+pub const BOOT_EFI: &str = BootloaderExecutable::Boot.current_name();
+pub const GRUB_EFI: &str = BootloaderExecutable::Grub.current_name();
+pub const GRUB_NOPREFIX_EFI: &str = BootloaderExecutable::GrubNoPrefix.current_name();
+
 #[cfg(test)]
 mod tests {
     use super::*;

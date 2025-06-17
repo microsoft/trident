@@ -10,7 +10,7 @@ use reqwest::Url;
 use tempfile::{NamedTempFile, TempDir};
 
 use osutils::{
-    bootloaders::BootloaderExecutable,
+    bootloaders::{BOOT_EFI, GRUB_EFI, GRUB_NOPREFIX_EFI},
     filesystems::MountFileSystemType,
     hashing_reader::{HashingReader, HashingReader384},
     image_streamer,
@@ -30,11 +30,6 @@ use crate::engine::{
     boot::{self, uki, ESP_EXTRACTION_DIRECTORY},
     EngineContext, Subsystem,
 };
-
-/// Bootloader executables
-const BOOT_EFI: &str = BootloaderExecutable::Boot.current_name();
-const GRUB_EFI: &str = BootloaderExecutable::Grub.current_name();
-const GRUB_NOPREFIX_EFI: &str = BootloaderExecutable::GrubNoPrefix.current_name();
 
 #[derive(Default, Debug)]
 pub struct EspSubsystem;
