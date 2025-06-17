@@ -16,9 +16,8 @@ use crate::{engine::Subsystem, OS_MODIFIER_NEWROOT_PATH};
 
 use super::EngineContext;
 
-pub(super) mod esp;
 pub(super) mod grub;
-pub(super) mod uki;
+pub mod uki;
 
 pub(crate) const ESP_EXTRACTION_DIRECTORY: &str = VAR_TMP_PATH;
 
@@ -27,17 +26,6 @@ pub(super) struct BootSubsystem;
 impl Subsystem for BootSubsystem {
     fn name(&self) -> &'static str {
         "boot"
-    }
-
-    #[tracing::instrument(name = "boot_provision", skip_all)]
-    fn provision(&mut self, ctx: &EngineContext, mount_point: &Path) -> Result<(), TridentError> {
-        // Perform file-based deployment of ESP images, if needed, after filesystems have been
-        // mounted and initialized.
-
-        // Deploy ESP image
-        esp::deploy_esp(ctx, mount_point).structured(ServicingError::DeployESPImages)?;
-
-        Ok(())
     }
 
     #[tracing::instrument(name = "boot_configuration", skip_all)]

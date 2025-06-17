@@ -20,8 +20,6 @@ pub mod verity;
 
 use super::EngineContext;
 
-const ENCRYPTION_SUBSYSTEM_NAME: &str = "encryption";
-
 #[tracing::instrument(skip_all)]
 pub(super) fn create_block_devices(ctx: &mut EngineContext) -> Result<(), TridentError> {
     trace!(
@@ -39,9 +37,8 @@ pub(super) fn create_block_devices(ctx: &mut EngineContext) -> Result<(), Triden
 
     partitioning::create_partitions(ctx).structured(ServicingError::CreatePartitions)?;
     raid::create_sw_raid(ctx, &ctx.spec).structured(ServicingError::CreateRaid)?;
-    encryption::provision(ctx, &ctx.spec).message(format!(
-        "Step 'Provision' failed for subsystem '{ENCRYPTION_SUBSYSTEM_NAME}'"
-    ))?;
+    encryption::create_encrypted_devices(ctx, &ctx.spec)
+        .message("Failed to create and open encrypted devices")?;
 
     Ok(())
 }
