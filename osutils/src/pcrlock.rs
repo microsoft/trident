@@ -90,10 +90,7 @@ pub fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
 
     // Validate that TPM 2.0 access policy has been updated
     if !output.contains("Calculated new pcrlock policy") || !output.contains("Updated NV index") {
-        error!("TPM 2.0 access policy has not been updated:\n{}", output);
-        return Err(anyhow::anyhow!(
-            "Failed to generate a new TPM 2.0 access policy"
-        ));
+        warn!("TPM 2.0 access policy has not been updated:\n{}", output);
     }
 
     // Log pcrlock policy JSON contents

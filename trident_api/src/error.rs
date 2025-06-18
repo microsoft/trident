@@ -425,9 +425,6 @@ pub enum ServicingError {
     #[error("Failed to generate Netplan config")]
     GenerateNetplanConfig,
 
-    #[error("Failed to generate .pcrlock file at '{pcrlock_file}'")]
-    GeneratePcrlockFile { pcrlock_file: String },
-
     #[error("Failed to generate recovery key file '{key_file}'")]
     GenerateRecoveryKeyFile { key_file: String },
 
@@ -560,9 +557,6 @@ pub enum ServicingError {
         active_volume: String,
         hs_active_volume: String,
     },
-
-    #[error("Failed to validate systemd-pcrlock log output")]
-    ValidatePcrlockLog,
 
     #[error("Trident rebuild-raid validation failed")]
     ValidateRebuildRaid,
