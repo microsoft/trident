@@ -1,16 +1,14 @@
 use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf};
 
-use anyhow::{bail, Context, Error};
 use log::{info, trace};
 
 use osutils::{encryption, files};
 use trident_api::{
     config::{
         HostConfiguration, HostConfigurationDynamicValidationError,
-        HostConfigurationStaticValidationError, Partition, PartitionType,
+        HostConfigurationStaticValidationError, PartitionType,
     },
     error::{InvalidInputError, ReportError, ServicingError, TridentError},
-    BlockDeviceId,
 };
 
 use crate::engine::EngineContext;
@@ -91,11 +89,12 @@ pub fn configure(ctx: &EngineContext) -> Result<(), TridentError> {
 
     for ev in encryption.volumes.iter() {
         let backing_partition =
-            get_first_backing_partition(ctx, &ev.device_id).structured(InvalidInputError::from(
-                HostConfigurationStaticValidationError::EncryptedVolumeNotPartitionOrRaid {
-                    encrypted_volume: ev.id.clone(),
-                },
-            ))?;
+            ctx.get_first_backing_partition(&ev.device_id)
+                .structured(InvalidInputError::from(
+                    HostConfigurationStaticValidationError::EncryptedVolumeNotPartitionOrRaid {
+                        encrypted_volume: ev.id.clone(),
+                    },
+                ))?;
         let device_path = &ctx.get_block_device_path(&ev.device_id).structured(
             ServicingError::FindEncryptedVolumeBlockDevice {
                 device_id: ev.device_id.clone(),
@@ -154,39 +153,6 @@ pub fn configure(ctx: &EngineContext) -> Result<(), TridentError> {
     Ok(())
 }
 
-/// Returns the first partition that backs the given block device, or Err if the block device ID
-/// does not correspond to a partition or software RAID array.
-fn get_first_backing_partition<'a>(
-    ctx: &'a EngineContext,
-    block_device_id: &BlockDeviceId,
-) -> Result<&'a Partition, Error> {
-    if let Some(partition) = ctx.spec.storage.get_partition(block_device_id) {
-        Ok(partition)
-    } else if let Some(array) = ctx
-        .spec
-        .storage
-        .raid
-        .software
-        .iter()
-        .find(|r| &r.id == block_device_id)
-    {
-        let partition_id = array
-            .devices
-            .first()
-            .context(format!("RAID array '{}' has no partitions", array.id))?;
-
-        ctx.spec
-            .storage
-            .get_partition(partition_id)
-            .context(format!(
-                "RAID array '{}' doesn't reference partition",
-                block_device_id
-            ))
-    } else {
-        bail!("Block device '{block_device_id}' is not a partition or RAID array")
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -197,75 +163,12 @@ mod tests {
 
     use trident_api::{
         config::{
-            Disk, EncryptedVolume, Encryption, Partition, PartitionSize, PartitionType, Raid,
-            RaidLevel, SoftwareRaidArray, Storage,
+            Disk, EncryptedVolume, Encryption, Partition, PartitionSize, PartitionType, Storage,
         },
         error::ErrorKind,
     };
 
     use crate::subsystems::storage::tests as storage_tests;
-
-    #[test]
-    fn test_get_first_backing_partition() {
-        let ctx = EngineContext {
-            spec: HostConfiguration {
-                storage: Storage {
-                    disks: vec![Disk {
-                        id: "os".to_owned(),
-                        partitions: vec![
-                            Partition {
-                                id: "esp".to_owned(),
-                                partition_type: PartitionType::Esp,
-                                size: PartitionSize::from_str("1G").unwrap(),
-                            },
-                            Partition {
-                                id: "root".to_owned(),
-                                partition_type: PartitionType::Root,
-                                size: PartitionSize::from_str("8G").unwrap(),
-                            },
-                            Partition {
-                                id: "rootb".to_owned(),
-                                partition_type: PartitionType::Root,
-                                size: PartitionSize::from_str("8G").unwrap(),
-                            },
-                        ],
-                        ..Default::default()
-                    }],
-                    raid: Raid {
-                        software: vec![SoftwareRaidArray {
-                            id: "root-raid1".to_owned(),
-                            devices: vec!["root".to_string(), "rootb".to_string()],
-                            name: "raid1".to_string(),
-                            level: RaidLevel::Raid1,
-                        }],
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        assert_eq!(
-            get_first_backing_partition(&ctx, &"esp".to_owned()).unwrap(),
-            &ctx.spec.storage.disks[0].partitions[0]
-        );
-        assert_eq!(
-            get_first_backing_partition(&ctx, &"root".to_owned()).unwrap(),
-            &ctx.spec.storage.disks[0].partitions[1]
-        );
-        assert_eq!(
-            get_first_backing_partition(&ctx, &"rootb".to_owned()).unwrap(),
-            &ctx.spec.storage.disks[0].partitions[2]
-        );
-        assert_eq!(
-            get_first_backing_partition(&ctx, &"root-raid1".to_owned()).unwrap(),
-            &ctx.spec.storage.disks[0].partitions[1]
-        );
-        get_first_backing_partition(&ctx, &"os".to_owned()).unwrap_err();
-        get_first_backing_partition(&ctx, &"non-existant".to_owned()).unwrap_err();
-    }
 
     fn get_storage(recovery_key_file: &tempfile::NamedTempFile) -> Storage {
         Storage {
