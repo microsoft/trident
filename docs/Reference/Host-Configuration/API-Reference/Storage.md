@@ -77,12 +77,12 @@ Swap device configuration.
 
 - Items of the array must have the type:
 
-   | Characteristic   | Value                         |
-   | ---------------- | ----------------------------- |
-   | Type             | `SwapDevice`                  |
-   | Link             | [SwapDevice](./SwapDevice.md) |
-   | Shorthand Type   | `string`                      |
-   | Shorthand Format | `Block Device ID`             |
+   | Characteristic   | Value             |
+   | ---------------- | ----------------- |
+   | Type             | `Swap`            |
+   | Link             | [Swap](./Swap.md) |
+   | Shorthand Type   | `string`          |
+   | Shorthand Format | `Block Device ID` |
 
 ### `verity` (optional)
 

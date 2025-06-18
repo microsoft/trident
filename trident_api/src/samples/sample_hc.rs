@@ -15,7 +15,7 @@ use crate::{
         FileSystemSource, HostConfiguration, ImageSha384, MountOptions, MountPoint,
         NewFileSystemType, Os, OsImage, Partition, PartitionTableType, PartitionType, Raid,
         RaidLevel, Script, ScriptSource, Scripts, Services, ServicingTypeSelection,
-        SoftwareRaidArray, SshMode, Storage, SwapDevice, User, VerityDevice,
+        SoftwareRaidArray, SshMode, Storage, Swap, User, VerityDevice,
     },
     constants::{self, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
 };
@@ -307,7 +307,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                         volume_b_id: "root-b".into(),
                     }],
                 }),
-                swap: vec![SwapDevice {
+                swap: vec![Swap {
                     device_id: "swap".into(),
                 }],
                 ..Default::default()
@@ -907,10 +907,10 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     ..Default::default()
                 }],
                 swap: vec![
-                    SwapDevice {
+                    Swap {
                         device_id: "swap1".into(),
                     },
-                    SwapDevice {
+                    Swap {
                         device_id: "swap2".into(),
                     },
                 ]
@@ -1049,9 +1049,9 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             source: FileSystemSource::Image,
                         },
                     ],
-                    swap: vec![SwapDevice {
+                    swap: vec![Swap {
                         device_id: "swap1".into(),
-                    }, SwapDevice {
+                    }, Swap {
                         device_id: "swap2".into(),
                     }],
                     ..Default::default()
@@ -1194,7 +1194,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             source: FileSystemSource::New(NewFileSystemType::Ext4),
                         },
                     ],
-                    swap: vec![SwapDevice {
+                    swap: vec![Swap {
                         device_id: "swap".into(),
                     }],
                     ..Default::default()

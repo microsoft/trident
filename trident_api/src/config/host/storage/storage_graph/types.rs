@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::{
     AbVolumePair, AdoptedPartition, Disk, EncryptedVolume, Partition, SoftwareRaidArray,
-    SwapDevice, VerityDevice,
+    VerityDevice,
 };
 
 /// Enum for supported block device types
@@ -44,9 +44,6 @@ pub enum BlkDevKind {
 
     /// A verity device
     VerityDevice,
-
-    /// A swap partition
-    SwapDevice,
 }
 
 bitflags::bitflags! {
@@ -62,7 +59,6 @@ bitflags::bitflags! {
         const ABVolume = 1 << 4;
         const EncryptedVolume = 1 << 5;
         const VerityDevice = 1 << 6;
-        const SwapDevice = 1 << 7;
     }
 }
 
@@ -89,9 +85,6 @@ pub enum HostConfigBlockDevice {
 
     /// A verity device
     VerityDevice(VerityDevice),
-
-    /// A swap partition
-    SwapDevice(SwapDevice),
 }
 
 /// Enum for referrer kinds.
@@ -122,8 +115,8 @@ pub enum BlkDevReferrerKind {
     /// A verity device
     VerityDevice,
 
-    /// A swap device
-    SwapDevice,
+    /// A swap mount
+    Swap,
 
     /// A new filesystem
     FileSystemNew,
@@ -186,7 +179,6 @@ impl HostConfigBlockDevice {
             Self::ABVolume(_) => BlkDevKind::ABVolume,
             Self::EncryptedVolume(_) => BlkDevKind::EncryptedVolume,
             Self::VerityDevice(_) => BlkDevKind::VerityDevice,
-            Self::SwapDevice(_) => BlkDevKind::SwapDevice,
         }
     }
 
@@ -200,7 +192,6 @@ impl HostConfigBlockDevice {
             Self::ABVolume(_) => BlkDevReferrerKind::ABVolume,
             Self::EncryptedVolume(_) => BlkDevReferrerKind::EncryptedVolume,
             Self::VerityDevice(_) => BlkDevReferrerKind::VerityDevice,
-            Self::SwapDevice(_) => BlkDevReferrerKind::SwapDevice,
         }
     }
 
@@ -279,7 +270,6 @@ impl BlkDevKind {
             Self::ABVolume => BlkDevKindFlag::ABVolume,
             Self::EncryptedVolume => BlkDevKindFlag::EncryptedVolume,
             Self::VerityDevice => BlkDevKindFlag::VerityDevice,
-            Self::SwapDevice => BlkDevKindFlag::SwapDevice,
         }
     }
 }
@@ -293,7 +283,7 @@ impl BlkDevReferrerKind {
             Self::ABVolume => BlkDevReferrerKindFlag::ABVolume,
             Self::EncryptedVolume => BlkDevReferrerKindFlag::EncryptedVolume,
             Self::VerityDevice => BlkDevReferrerKindFlag::VerityDevice,
-            Self::SwapDevice => BlkDevReferrerKindFlag::SwapDevice,
+            Self::Swap => BlkDevReferrerKindFlag::SwapDevice,
             Self::FileSystemNew => BlkDevReferrerKindFlag::FileSystemNew,
             Self::FileSystemEsp => BlkDevReferrerKindFlag::FileSystemEsp,
             Self::FileSystemAdopted => BlkDevReferrerKindFlag::FileSystemAdopted,
@@ -334,7 +324,6 @@ impl BitFlagsBackingEnumVec<BlkDevKind> for BlkDevKindFlag {
                 Self::ABVolume => BlkDevKind::ABVolume,
                 Self::EncryptedVolume => BlkDevKind::EncryptedVolume,
                 Self::VerityDevice => BlkDevKind::VerityDevice,
-                Self::SwapDevice => BlkDevKind::SwapDevice,
                 _ => unreachable!("Invalid block device kind flag: {:?}", kind),
             })
             .collect()
@@ -350,7 +339,7 @@ impl BitFlagsBackingEnumVec<BlkDevReferrerKind> for BlkDevReferrerKindFlag {
                 Self::RaidArray => BlkDevReferrerKind::RaidArray,
                 Self::ABVolume => BlkDevReferrerKind::ABVolume,
                 Self::VerityDevice => BlkDevReferrerKind::VerityDevice,
-                Self::SwapDevice => BlkDevReferrerKind::SwapDevice,
+                Self::SwapDevice => BlkDevReferrerKind::Swap,
                 Self::EncryptedVolume => BlkDevReferrerKind::EncryptedVolume,
                 Self::FileSystemNew => BlkDevReferrerKind::FileSystemNew,
                 Self::FileSystemEsp => BlkDevReferrerKind::FileSystemEsp,

@@ -10,8 +10,8 @@ use crate::BlockDeviceId;
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
-pub struct SwapDevice {
-    /// The ID of the block device to use for this swap device.
+pub struct Swap {
+    /// The ID of the block device to use for this swap area.
     #[cfg_attr(
         feature = "schemars",
         schemars(schema_with = "crate::schema_helpers::block_device_id_schema")
@@ -19,18 +19,18 @@ pub struct SwapDevice {
     pub device_id: BlockDeviceId,
 }
 
-impl FromStr for SwapDevice {
+impl FromStr for Swap {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(SwapDevice {
+        Ok(Swap {
             device_id: s.to_owned(),
         })
     }
 }
 
 #[cfg(feature = "schemars")]
-impl crate::primitives::shortcuts::StringOrStructMetadata for SwapDevice {
+impl crate::primitives::shortcuts::StringOrStructMetadata for Swap {
     fn shorthand_format() -> &'static str {
         crate::schema_helpers::BLOCK_DEVICE_ID_FORMAT
     }

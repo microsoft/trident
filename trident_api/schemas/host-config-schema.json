@@ -1200,7 +1200,7 @@
           "type": "array",
           "oneOf": [
             {
-              "$ref": "#/definitions/SwapDevice"
+              "$ref": "#/definitions/Swap"
             },
             {
               "type": "string"
@@ -1209,7 +1209,7 @@
           "items": {
             "oneOf": [
               {
-                "$ref": "#/definitions/SwapDevice"
+                "$ref": "#/definitions/Swap"
               },
               {
                 "type": "string"
@@ -1228,14 +1228,14 @@
       },
       "additionalProperties": false
     },
-    "SwapDevice": {
+    "Swap": {
       "type": "object",
       "required": [
         "deviceId"
       ],
       "properties": {
         "deviceId": {
-          "description": "The ID of the block device to use for this swap device.",
+          "description": "The ID of the block device to use for this swap area.",
           "type": "string",
           "format": "Block Device ID"
         }

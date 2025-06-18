@@ -6,7 +6,7 @@ use std::{
 use trident_api::{
     config::{
         Disk, FileSystem, FileSystemSource, HostConfiguration, MountOptions, MountPoint,
-        NewFileSystemType, Partition, PartitionSize, PartitionTableType, PartitionType, SwapDevice,
+        NewFileSystemType, Partition, PartitionSize, PartitionTableType, PartitionType, Swap,
     },
     misc::IdGenerator,
 };
@@ -28,7 +28,7 @@ pub fn translate(input: &ParsedData, hc: &mut HostConfiguration, errors: &mut Ve
     let mut filesystems: Vec<FileSystem> = Vec::new();
 
     // List of all swap devices
-    let mut swap_devices: Vec<SwapDevice> = Vec::new();
+    let mut swap_devices: Vec<Swap> = Vec::new();
 
     // Go over all parsed partitions
     for part in input.partitions.iter() {
@@ -92,7 +92,7 @@ pub fn translate(input: &ParsedData, hc: &mut HostConfiguration, errors: &mut Ve
         });
 
         if let PartitionMount::Swap = part.mntpoint {
-            swap_devices.push(SwapDevice {
+            swap_devices.push(Swap {
                 device_id: partition_id.clone(),
             });
 
