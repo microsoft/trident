@@ -7,7 +7,9 @@ use uuid::Uuid;
 
 use osutils::osrelease::OsRelease;
 use sysdefs::{
-    arch::SystemArchitecture, osuuid::OsUuid, partition_types::DiscoverablePartitionType,
+    arch::{PackageArchitecture, SystemArchitecture},
+    osuuid::OsUuid,
+    partition_types::DiscoverablePartitionType,
 };
 use trident_api::primitives::hash::Sha384Hash;
 
@@ -174,7 +176,7 @@ pub(crate) struct OsPackage {
 
     #[allow(dead_code)]
     #[serde(default)]
-    pub arch: Option<SystemArchitecture>,
+    pub arch: Option<PackageArchitecture>,
 }
 
 impl<'de> Deserialize<'de> for MetadataVersion {
@@ -392,5 +394,35 @@ mod tests {
             },
         ];
         assert_eq!(metadata.get_regular_filesystems().count(), 0);
+    }
+
+    #[test]
+    fn test_noarch_os_packages() {
+        let noarch_os_package_json = r#"
+        {
+            "name": "package1",
+            "version": "1.0.0",
+            "arch": "noarch"
+        }
+        "#;
+        let _noarch_os_package: OsPackage = serde_json::from_str(noarch_os_package_json).unwrap();
+
+        let amd64_os_package_json = r#"
+        {
+            "name": "package1",
+            "version": "1.0.0",
+            "arch": "x86_64"
+        }
+        "#;
+        let _amd64_os_package: OsPackage = serde_json::from_str(amd64_os_package_json).unwrap();
+
+        let amd64_os_package_json = r#"
+        {
+            "name": "package1",
+            "version": "1.0.0",
+            "arch": "amd64"
+        }
+        "#;
+        let _amd64_os_package: OsPackage = serde_json::from_str(amd64_os_package_json).unwrap();
     }
 }
