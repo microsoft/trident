@@ -1,7 +1,7 @@
 use std::{
     fs::{self, File},
     io::Read,
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 use anyhow::{Context, Error};
@@ -10,7 +10,11 @@ use enumflags2::BitFlags;
 use sysdefs::tpm2::Pcr;
 use trident_api::constants::LUKS_HEADER_SIZE_IN_MIB;
 
-use crate::dependencies::Dependency;
+use crate::{
+    bootloaders::BOOT_EFI,
+    dependencies::Dependency,
+    pcrlock::{self, PCRLOCK_POLICY_PATH},
+};
 
 /// Cipher specification string for the LUKS2 data segment.
 pub const CIPHER: &str = "aes-xts-plain64";
@@ -26,7 +30,8 @@ pub const KEY_SIZE: &str = "512";
 const TMP_RECOVERY_KEY_SIZE: usize = 64;
 
 /// Runs `systemd-cryptenroll` to enroll a TPM 2.0 device for the given device of a LUKS2 encrypted
-/// volume.
+/// volume, binding the enrollment to the specified PCRs. For now, this function is called during
+/// the clean install of a UKI image only, when encrypted devices are first created.
 ///
 /// Takes in the key file to unlock the TPM 2.0 device, the path to the device, and a set of PCRs
 /// to bind the enrollment to. By default, the enrollment is binded to PCR 7 only.
@@ -38,11 +43,51 @@ pub fn systemd_cryptenroll(
     Dependency::SystemdCryptenroll
         .cmd()
         .arg("--tpm2-device=auto")
-        .arg(to_tpm2_pcrs_arg(pcrs))
         .arg("--unlock-key-file")
         .arg(key_file.as_ref().as_os_str())
         .arg("--wipe-slot=tpm2")
         .arg(device_path.as_ref().as_os_str())
+        .arg(to_tpm2_pcrs_arg(pcrs)) //--tpm2-pcrs= configures the TPM 2.0 PCRs to bind to
+        .run_and_check()
+        .context(format!(
+            "Failed to enroll TPM 2.0 device for underlying device '{}'",
+            device_path.as_ref().display()
+        ))
+}
+
+/// Runs `systemd-cryptenroll` to enroll a TPM 2.0 device for the given device of a LUKS2 encrypted
+/// volume, binding the enrollment to a pcrlock policy. For now, this function is called during the
+/// provisioning step of the clean install of a UKI image only.
+///
+/// Takes in the key file to unlock the TPM 2.0 device, the path to the device, and a set of PCRs
+/// to include into the pcrlock policy.
+pub fn systemd_cryptenroll_pcrlock(
+    key_file: impl AsRef<Path>,
+    device_path: impl AsRef<Path>,
+    pcrs: BitFlags<Pcr>,
+) -> Result<(), Error> {
+    // TODO: NEED TO GET CORRECT PATHS!!!
+    // UKI binaries to be measured
+    let uki_binaries = vec![PathBuf::from("/boot/efi/EFI/Linux/vmlinuz-1-azla1.efi")];
+    // Kernel cmdlines to be measured. ROS image cmdline should be extracted from the UKI binary
+    let kernel_cmdlines = vec![Some(PathBuf::from("/proc/cmdline"))];
+    // Bootloader binaries to be measured, i.e. shim EFI executable for UKI
+    let bootloader_binaries = vec![PathBuf::from(BOOT_EFI)];
+    // Generate .pcrlock files for current boot ONLY
+    pcrlock::generate_pcrlock_files(uki_binaries, kernel_cmdlines, bootloader_binaries)
+        .context("Failed to generate .pcrlock files")?;
+    // Generate pcrlock policy
+    pcrlock::generate_tpm2_access_policy(pcrs)
+        .context("Failed to generate TPM 2.0 access policy")?;
+
+    Dependency::SystemdCryptenroll
+        .cmd()
+        .arg("--tpm2-device=auto")
+        .arg("--unlock-key-file")
+        .arg(key_file.as_ref().as_os_str())
+        .arg("--wipe-slot=tpm2")
+        .arg(device_path.as_ref().as_os_str())
+        .arg(format!("--tpm2-pcrlock={}", PCRLOCK_POLICY_PATH))
         .run_and_check()
         .context(format!(
             "Failed to enroll TPM 2.0 device for underlying device '{}'",

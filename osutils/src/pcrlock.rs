@@ -13,15 +13,9 @@ use sha2::{Digest, Sha256, Sha384, Sha512};
 use tempfile::NamedTempFile;
 
 use sysdefs::tpm2::Pcr;
-use trident_api::{
-    error::{ReportError, ServicingError, TridentError},
-    primitives::hash::Sha256Hash,
-};
+use trident_api::primitives::hash::Sha256Hash;
 
-use crate::{
-    dependencies::{Dependency, DependencyResultExt},
-    exe::RunAndCheck,
-};
+use crate::{dependencies::Dependency, exe::RunAndCheck};
 
 /// Path to the pcrlock directory where .pcrlock files are located.
 ///
@@ -75,7 +69,7 @@ struct PcrPolicy {
 /// Validates the PCR input and calls a helper function `systemd-pcrlock make-policy` to generate a
 /// TPM 2.0 access policy. Parses the output of the helper func to validate that the policy has
 /// been updated as expected.
-pub fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), TridentError> {
+pub fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
     debug!(
         "Generating a new TPM 2.0 access policy for the following PCRs: {:?}",
         pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
@@ -92,24 +86,27 @@ pub fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), TridentErr
         );
     }
 
-    let output = make_policy(pcrs).structured(ServicingError::GenerateTpm2AccessPolicy)?;
+    let output = make_policy(pcrs).context("Failed to generate a new TPM 2.0 access policy")?;
 
     // Validate that TPM 2.0 access policy has been updated
     if !output.contains("Calculated new pcrlock policy") || !output.contains("Updated NV index") {
-        warn!("TPM 2.0 access policy has not been updated:\n{}", output);
+        error!("TPM 2.0 access policy has not been updated:\n{}", output);
+        return Err(anyhow::anyhow!(
+            "Failed to generate a new TPM 2.0 access policy"
+        ));
     }
 
     // Log pcrlock policy JSON contents
-    let pcrlock_policy = fs::read_to_string(PCRLOCK_POLICY_PATH)
-        .structured(ServicingError::GenerateTpm2AccessPolicy)?;
+    let pcrlock_policy =
+        fs::read_to_string(PCRLOCK_POLICY_PATH).context("Failed to read pcrlock policy JSON")?;
     trace!(
         "Contents of pcrlock policy JSON at '{PCRLOCK_POLICY_PATH}':\n{}",
         pcrlock_policy
     );
 
     // Parse the policy JSON to validate that all requested PCRs are present
-    let policy: PcrPolicy = serde_json::from_str(&pcrlock_policy)
-        .structured(ServicingError::GenerateTpm2AccessPolicy)?;
+    let policy: PcrPolicy =
+        serde_json::from_str(&pcrlock_policy).context("Failed to parse pcrlock policy JSON")?;
     // Extract PCRs from the policy, and filter for PCRs that were requested yet are missing
     // from the policy
     let policy_pcrs: Vec<Pcr> = policy.pcr_values.iter().map(|pv| pv.pcr).collect();
@@ -127,7 +124,9 @@ pub fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), TridentErr
                 .map(|pcr| pcr.to_num())
                 .collect::<Vec<_>>()
         );
-        return Err(TridentError::new(ServicingError::GenerateTpm2AccessPolicy));
+        return Err(anyhow::anyhow!(
+            "Failed to generate a new TPM 2.0 access policy"
+        ));
     }
 
     Ok(())
@@ -359,7 +358,7 @@ impl LockCommand {
     /// Runs a `systemd-pcrlock` command.
     ///
     /// Primarily designed for running the `lock-*` commands.
-    fn run(&self) -> Result<(), TridentError> {
+    fn run(&self) -> Result<(), Error> {
         let (path, pcrlock_file, pcrs) = {
             let mut cmd_path: Option<PathBuf> = None;
             let mut cmd_pcrlock_file: Option<PathBuf> = None;
@@ -414,7 +413,7 @@ impl LockCommand {
             cmd.arg(format!("--pcrlock={}", pcrlock_file.display()));
         }
 
-        cmd.run_and_check().message(format!(
+        cmd.run_and_check().context(format!(
             "Failed to run systemd-pcrlock {}",
             self.subcmd_name()
         ))
@@ -432,7 +431,7 @@ pub fn generate_pcrlock_files(
     // Vector containing paths of bootloader binaries, i.e. shim EFI executables for UKI, to be
     // measured by Trident,
     bootloader_binaries: Vec<PathBuf>,
-) -> Result<(), TridentError> {
+) -> Result<(), Error> {
     let basic_cmds: Vec<LockCommand> = vec![
         LockCommand::FirmwareCode,
         LockCommand::FirmwareConfig,
@@ -443,52 +442,68 @@ pub fn generate_pcrlock_files(
     ];
 
     for cmd in basic_cmds {
-        cmd.run()?;
+        cmd.run().context(format!(
+            "Failed to generate .pcrlock file via '{}'",
+            cmd.subcmd_name()
+        ))?;
     }
 
     // lock-uki
     for (id, uki_path) in uki_binaries.clone().into_iter().enumerate() {
         let pcrlock_file = generate_pcrlock_output_path(UKI_PCRLOCK_DIR, id);
-        LockCommand::Uki {
-            path: uki_path,
+        let cmd = LockCommand::Uki {
+            path: uki_path.clone(),
             pcrlock_file: pcrlock_file.clone(),
-        }
-        .run()?;
+        };
+        cmd.run().context(format!(
+            "Failed to generate .pcrlock file via '{}' for UKI at path '{}'",
+            cmd.subcmd_name(),
+            uki_path.display()
+        ))?;
     }
 
     // lock-kernel-cmdline
     for (id, kernel_cmdline_path) in kernel_cmdlines.into_iter().enumerate() {
         let pcrlock_file = generate_pcrlock_output_path(KERNEL_CMDLINE_PCRLOCK_DIR, id);
-        LockCommand::KernelCmdline {
-            path: kernel_cmdline_path,
+        let cmd = LockCommand::KernelCmdline {
+            path: kernel_cmdline_path.clone(),
             pcrlock_file: pcrlock_file.clone(),
-        }
-        .run()?;
+        };
+        cmd.run().context(format!(
+            "Failed to generate .pcrlock file via '{}' for kernel cmdline at path '{}'",
+            cmd.subcmd_name(),
+            kernel_cmdline_path
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| "/proc/cmdline".to_string())
+        ))?;
     }
 
     // Run helpers to generate two remaining .pcrlock files
     for (id, bootloader_path) in bootloader_binaries.into_iter().enumerate() {
         let pcrlock_file = generate_pcrlock_output_path(BOOT_LOADER_CODE_PCRLOCK_DIR, id);
-        generate_610_boot_loader_code_pcrlock(bootloader_path, pcrlock_file.clone()).structured(
-            ServicingError::GeneratePcrlockFile {
-                pcrlock_file: pcrlock_file.display().to_string(),
-            },
+        generate_610_boot_loader_code_pcrlock(bootloader_path, pcrlock_file.clone()).context(
+            format!(
+                "Failed to manually generate .pcrlock file at path '{}'",
+                pcrlock_file.display()
+            ),
         )?;
     }
 
     for (id, uki_path) in uki_binaries.into_iter().enumerate() {
         let pcrlock_file = generate_pcrlock_output_path(KERNEL_INITRD_PCRLOCK_DIR, id);
-        generate_720_kernel_initrd_pcrlock(uki_path, pcrlock_file.clone()).structured(
-            ServicingError::GeneratePcrlockFile {
-                pcrlock_file: pcrlock_file.display().to_string(),
-            },
-        )?;
+        generate_720_kernel_initrd_pcrlock(uki_path, pcrlock_file.clone()).context(format!(
+            "Failed to manually generate .pcrlock file at path '{}'",
+            pcrlock_file.display()
+        ))?;
     }
 
     // Parse the systemd-pcrlock log output to validate that every log entry has been matched to a
     // recognized boot component, and thus that all necessary .pcrlock files have been added or
     // generated
-    validate_log().structured(ServicingError::ValidatePcrlockLog)?;
+    validate_log().context(
+        "Failed to validate pcrlock log to confirm all required .pcrlock files have been generated",
+    )?;
 
     Ok(())
 }
@@ -697,8 +712,6 @@ mod functional_test {
 
     use pytest_gen::functional_test;
 
-    use trident_api::error::ErrorKind;
-
     #[functional_test(feature = "helpers")]
     fn test_generate_tpm2_access_policy() {
         // Test case #0. Since no .pcrlock files have been generated yet, only 0-valued PCRs can be
@@ -710,8 +723,11 @@ mod functional_test {
         // error since no .pcrlock files have been generated yet.
         let pcrs = BitFlags::<Pcr>::all();
         assert_eq!(
-            generate_tpm2_access_policy(pcrs).unwrap_err().kind(),
-            &ErrorKind::Servicing(ServicingError::GenerateTpm2AccessPolicy)
+            generate_tpm2_access_policy(pcrs)
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            "Failed to generate a new TPM 2.0 access policy"
         );
 
         // TODO: Add other/more test cases once helpers are implemented and statically defined

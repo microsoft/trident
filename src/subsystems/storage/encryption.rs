@@ -78,6 +78,17 @@ pub(super) fn validate_host_config(host_config: &HostConfiguration) -> Result<()
     Ok(())
 }
 
+#[tracing::instrument(name = "encryption_provision", skip_all)]
+pub fn provision(ctx: &EngineContext) -> Result<(), TridentError> {
+    if let Some(encryption) = &ctx.spec.storage.encryption {
+        for _ev in encryption.volumes.iter() {
+            todo!();
+        }
+    }
+
+    Ok(())
+}
+
 #[tracing::instrument(name = "encryption_configuration", skip_all)]
 pub fn configure(ctx: &EngineContext) -> Result<(), TridentError> {
     let path = PathBuf::from(CRYPTTAB_PATH);
