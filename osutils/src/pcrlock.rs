@@ -430,21 +430,6 @@ pub fn generate_pcrlock_files(
 ) -> Result<(), Error> {
     debug!("Generating .pcrlock files");
 
-    for (id, bootloader_path) in bootloader_binaries.into_iter().enumerate() {
-        let pcrlock_file = generate_pcrlock_output_path(BOOT_LOADER_CODE_PCRLOCK_DIR, id);
-        debug!(
-            "Manually generating .pcrlock file at path '{}' for bootloader at path '{}'",
-            pcrlock_file.display(),
-            bootloader_path.display()
-        );
-        generate_610_boot_loader_code_pcrlock(bootloader_path, pcrlock_file.clone()).context(
-            format!(
-                "Failed to manually generate .pcrlock file at path '{}'",
-                pcrlock_file.display()
-            ),
-        )?;
-    }
-
     let basic_cmds: Vec<LockCommand> = vec![
         LockCommand::FirmwareCode,
         LockCommand::FirmwareConfig,
@@ -473,6 +458,21 @@ pub fn generate_pcrlock_files(
             cmd.subcmd_name(),
             uki_path.display()
         ))?;
+    }
+
+    for (id, bootloader_path) in bootloader_binaries.into_iter().enumerate() {
+        let pcrlock_file = generate_pcrlock_output_path(BOOT_LOADER_CODE_PCRLOCK_DIR, id);
+        debug!(
+            "Manually generating .pcrlock file at path '{}' for bootloader at path '{}'",
+            pcrlock_file.display(),
+            bootloader_path.display()
+        );
+        generate_610_boot_loader_code_pcrlock(bootloader_path, pcrlock_file.clone()).context(
+            format!(
+                "Failed to manually generate .pcrlock file at path '{}'",
+                pcrlock_file.display()
+            ),
+        )?;
     }
 
     // Parse the systemd-pcrlock log output to validate that every log entry has been matched to a

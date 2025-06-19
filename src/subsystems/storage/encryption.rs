@@ -115,7 +115,7 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                 // UKI
                 let (_, bootloader_path_relative) = bootentries::get_label_and_path(ctx)
                     .structured(ServicingError::GetLabelAndPath)?;
-                let bootloader_path = esp_dir_path.join(bootloader_path_relative);
+                let bootloader_path = join_relative(esp_dir_path, bootloader_path_relative);
 
                 // TODO: REMOVE BEFORE MERGING
                 debug!(
