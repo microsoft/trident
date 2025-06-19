@@ -8,7 +8,7 @@ use anyhow::{bail, Context, Error, Result};
 use enumflags2::{make_bitflags, BitFlags};
 use goblin::pe::PE;
 use log::{debug, error, trace, warn};
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Serialize};
 use sha2::{Digest, Sha256, Sha384, Sha512};
 use tempfile::NamedTempFile;
 
@@ -44,10 +44,12 @@ const UKI_PCRLOCK_DIR: &str = "650-uki.pcrlock.d";
 
 /// 4. `/var/lib/pcrlock.d/710-kernel-cmdline.pcrlock.d`, where `lock-kernel-cmdline` measures the
 ///    kernel command line, as recorded into PCR 9,
+#[allow(dead_code)]
 const KERNEL_CMDLINE_PCRLOCK_DIR: &str = "710-kernel-cmdline.pcrlock.d";
 
 /// 5. `/var/lib/pcrlock.d/720-kernel-initrd.pcrlock.d`, where Trident measures the initrd section of
 ///    the UKI binary, as recorded into PCR 9.
+#[allow(dead_code)]
 const KERNEL_INITRD_PCRLOCK_DIR: &str = "720-kernel-initrd.pcrlock.d";
 
 /// Valid PCRs for TPM 2.0 policy generation, following the `systemd-pcrlock` spec.
@@ -71,7 +73,7 @@ struct PcrPolicy {
 /// been updated as expected.
 pub fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
     debug!(
-        "Generating a new TPM 2.0 access policy for the following PCRs: {:?}",
+        "Generating a new TPM 2.0 access policy with the following PCRs: {:?}",
         pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
     );
 
@@ -147,11 +149,11 @@ struct LogOutput {
 }
 
 /// Runs `systemd-pcrlock log` to get the combined TPM 2.0 event log, output as a "pretty" JSON.
-/// Parses the output and validates that every log entry has been matched to a recognized boot
-/// component.
+/// Parses the output and validates that every log entry related to a required PCR has been matched
+/// to a recognized boot component. Currently, required PCRs are: 4, 7, and 11.
 ///
-/// If a log entry has a null component, it means that there is no .pcrlock file that records that
-/// specific measurement extended into the given PCR, for any boot process component. For that
+/// If a log entry has a null `component`, it means that there is no .pcrlock file that records
+/// that specific measurement extended into the given PCR, for any boot process component. For that
 /// reason, .pcrlock files are known as boot component definition files. If a log entry for a PCR
 /// has its component missing, then the value of that PCR cannot be predicted and so the PCR cannot
 /// be included in a pcrlock policy. Thus, this validation ensures that all .pcrlock files have
@@ -159,6 +161,8 @@ struct LogOutput {
 /// Please refer to `systemd-pcrlock` doc for additional info:
 /// https://www.man7.org/linux/man-pages/man8/systemd-pcrlock.8.html.
 fn validate_log() -> Result<(), Error> {
+    debug!("Validating systemd-pcrlock log output");
+
     let output = Dependency::SystemdPcrlock
         .cmd()
         .arg("log")
@@ -169,10 +173,13 @@ fn validate_log() -> Result<(), Error> {
     let parsed: LogOutput =
         serde_json::from_str(&output).context("Failed to parse systemd-pcrlock log output")?;
 
+    // Collect all entries that have a null component AND record measurements into PCRs 4, 7, or 11
     let unrecognized: Vec<_> = parsed
         .log
         .iter()
-        .filter(|entry| entry.component.is_none())
+        .filter(|entry| {
+            entry.component.is_none() && matches!(entry.pcr, Pcr::Pcr4 | Pcr::Pcr7 | Pcr::Pcr11)
+        })
         .collect();
 
     if unrecognized.is_empty() {
@@ -205,7 +212,8 @@ fn validate_log() -> Result<(), Error> {
 /// the used TPM 2.0 and its NV index are written to PCRLOCK_POLICY_PATH.
 fn make_policy(pcrs: BitFlags<Pcr>) -> Result<String, Error> {
     debug!(
-        "Generating a new pcrlock policy with the following PCRs: {:?}",
+        "Generating a new pcrlock policy via 'systemd-pcrlock make-policy' \
+        with the following PCRs: {:?}",
         pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
     );
 
@@ -297,6 +305,7 @@ enum LockCommand {
 
     /// Generates a .pcrlock file based on /proc/cmdline (or the specified file if given). Useful
     /// for predicting measurements the Linux kernel makes to PCR 9 ("kernel-initrd").
+    #[allow(dead_code)]
     KernelCmdline {
         path: Option<PathBuf>,
         pcrlock_file: PathBuf,
@@ -413,8 +422,6 @@ impl LockCommand {
 pub fn generate_pcrlock_files(
     // Vector containing paths of UKI binaries to measure via lock-uki,
     uki_binaries: Vec<PathBuf>,
-    // Vector containing paths of kernel cmdlines to measure via lock-kernel-cmdline,
-    kernel_cmdlines: Vec<Option<PathBuf>>,
     // Vector containing paths of bootloader binaries, i.e. shim EFI executables for UKI, to be
     // measured by Trident,
     bootloader_binaries: Vec<PathBuf>,
@@ -449,23 +456,6 @@ pub fn generate_pcrlock_files(
         ))?;
     }
 
-    // lock-kernel-cmdline
-    for (id, kernel_cmdline_path) in kernel_cmdlines.into_iter().enumerate() {
-        let pcrlock_file = generate_pcrlock_output_path(KERNEL_CMDLINE_PCRLOCK_DIR, id);
-        let cmd = LockCommand::KernelCmdline {
-            path: kernel_cmdline_path.clone(),
-            pcrlock_file: pcrlock_file.clone(),
-        };
-        cmd.run().context(format!(
-            "Failed to generate .pcrlock file via '{}' for kernel cmdline at path '{}'",
-            cmd.subcmd_name(),
-            kernel_cmdline_path
-                .as_ref()
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|| "/proc/cmdline".to_string())
-        ))?;
-    }
-
     // Run helpers to generate two remaining .pcrlock files
     for (id, bootloader_path) in bootloader_binaries.into_iter().enumerate() {
         let pcrlock_file = generate_pcrlock_output_path(BOOT_LOADER_CODE_PCRLOCK_DIR, id);
@@ -475,14 +465,6 @@ pub fn generate_pcrlock_files(
                 pcrlock_file.display()
             ),
         )?;
-    }
-
-    for (id, uki_path) in uki_binaries.into_iter().enumerate() {
-        let pcrlock_file = generate_pcrlock_output_path(KERNEL_INITRD_PCRLOCK_DIR, id);
-        generate_720_kernel_initrd_pcrlock(uki_path, pcrlock_file.clone()).context(format!(
-            "Failed to manually generate .pcrlock file at path '{}'",
-            pcrlock_file.display()
-        ))?;
     }
 
     // Parse the systemd-pcrlock log output to validate that every log entry has been matched to a
@@ -592,6 +574,7 @@ fn generate_610_boot_loader_code_pcrlock(
 
 /// Generates .pcrlock files under /var/lib/pcrlock.d/720-kernel-initrd.pcrlock.d, where Trident
 /// measures the initrd section of the UKI binary, as recorded into PCR 9.
+#[allow(dead_code)]
 fn generate_720_kernel_initrd_pcrlock(uki_path: PathBuf, pcrlock_file: PathBuf) -> Result<()> {
     // Copy UKI to a temp file
     let uki_temp = NamedTempFile::new().context("Failed to create temporary UKI file")?;

@@ -568,7 +568,7 @@ fn get_esp_metadata(
 ///
 /// This function takes a reference to a `EngineContext` object and returns a tuple containing
 /// the label associated with the inactive A/B update volume and the path to its EFI boot loader.
-fn get_label_and_path(ctx: &EngineContext) -> Result<(String, PathBuf), Error> {
+pub fn get_label_and_path(ctx: &EngineContext) -> Result<(String, PathBuf), Error> {
     let esp_dir_name = boot::get_update_esp_dir_name(ctx).context("Failed to get install id")?;
 
     let path = Path::new(constants::ROOT_MOUNT_POINT_PATH)

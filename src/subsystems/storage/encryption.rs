@@ -6,7 +6,7 @@ use std::{
 
 use log::{info, trace};
 
-use osutils::{bootloaders::BOOT_EFI, encryption, files, path::join_relative, pcrlock};
+use osutils::{encryption, files, path::join_relative, pcrlock};
 use sysdefs::tpm2::Pcr;
 
 use trident_api::{
@@ -21,7 +21,7 @@ use trident_api::{
 use crate::{
     engine::{
         boot::uki::{TMP_UKI_NAME, UKI_DIRECTORY},
-        EngineContext,
+        bootentries, EngineContext,
     },
     ServicingType,
 };
@@ -103,26 +103,23 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
         // - For a clean install, use all UKI PCRs 4, 7, and 11 and generate .pcrlock files,
         // - For A/B update, reduce to PCR 7.
         // TODO: Modify this logic to re-generate pcrlock policy for the update image using PCRs 4,
-        // 7, and 11.
+        // 7, and 11, on A/B update.
         let pcrs = match ctx.servicing_type {
             ServicingType::CleanInstall => {
                 // UKI binary in runtime OS to be measured; it's currently staged at designated
                 // path
                 let esp_dir_path = join_relative(mount_path, ESP_MOUNT_POINT_PATH);
                 let uki_binary_ros = esp_dir_path.join(UKI_DIRECTORY).join(TMP_UKI_NAME);
-                // Kernel cmdlines to be measured
-                // TODO: ROS image cmdline should be extracted from the UKI binary
-                let kernel_cmdlines = vec![Some(PathBuf::from("/proc/cmdline"))];
-                // Bootloader binaries to be measured, i.e. shim EFI executable for UKI
-                let bootloader_binaries = vec![PathBuf::from(BOOT_EFI)];
 
-                // Generate .pcrlock files for current boot AND runtime OS image A
-                pcrlock::generate_pcrlock_files(
-                    vec![uki_binary_ros],
-                    kernel_cmdlines,
-                    bootloader_binaries,
-                )
-                .structured(ServicingError::GeneratePcrlockFiles)?;
+                // Bootloader binary for runtime OS to be measured, i.e. shim EFI executable for
+                // UKI
+                let (_, bootloader_path_relative) = bootentries::get_label_and_path(ctx)
+                    .structured(ServicingError::GetLabelAndPath)?;
+                let bootloader_path = esp_dir_path.join(bootloader_path_relative);
+
+                // Generate .pcrlock files for runtime OS image A
+                pcrlock::generate_pcrlock_files(vec![uki_binary_ros], vec![bootloader_path])
+                    .structured(ServicingError::GeneratePcrlockFiles)?;
 
                 Pcr::Pcr4 | Pcr::Pcr7 | Pcr::Pcr11
             }
