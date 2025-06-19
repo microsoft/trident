@@ -1,8 +1,14 @@
-use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf};
+use std::{
+    fs,
+    os::unix::fs::PermissionsExt,
+    path::{Path, PathBuf},
+};
 
 use log::{info, trace};
 
-use osutils::{encryption, files};
+use osutils::{bootloaders::BOOT_EFI, encryption, files, pcrlock};
+use sysdefs::tpm2::Pcr;
+
 use trident_api::{
     config::{
         HostConfiguration, HostConfigurationDynamicValidationError,
@@ -81,8 +87,36 @@ pub(super) fn validate_host_config(host_config: &HostConfiguration) -> Result<()
 #[tracing::instrument(name = "encryption_provision", skip_all)]
 pub fn provision(ctx: &EngineContext) -> Result<(), TridentError> {
     if let Some(encryption) = &ctx.spec.storage.encryption {
-        for _ev in encryption.volumes.iter() {
-            todo!();
+        // TODO: NEED TO GET CORRECT PATHS!!!
+        // UKI binaries to be measured
+        let uki_binaries = vec![PathBuf::from("/boot/efi/EFI/Linux/vmlinuz-1-azla1.efi")];
+        // Kernel cmdlines to be measured. ROS image cmdline should be extracted from the UKI binary
+        let kernel_cmdlines = vec![Some(PathBuf::from("/proc/cmdline"))];
+        // Bootloader binaries to be measured, i.e. shim EFI executable for UKI
+        let bootloader_binaries = vec![PathBuf::from(BOOT_EFI)];
+
+        // Generate .pcrlock files for current boot ONLY
+        pcrlock::generate_pcrlock_files(uki_binaries, kernel_cmdlines, bootloader_binaries)
+            .structured(ServicingError::GeneratePcrlockFiles)?;
+
+        // Generate pcrlock policy. For now, we include PCRs 4, 7, and 11
+        let pcrs = Pcr::Pcr4 | Pcr::Pcr7 | Pcr::Pcr11;
+        pcrlock::generate_tpm2_access_policy(pcrs)
+            .structured(ServicingError::GenerateTpm2AccessPolicy)?;
+
+        // Iterate through all encrypted volumes and re-bind them to the pcrlock policy
+        for ev in encryption.volumes.iter() {
+            // Fetch the block device path of the encrypted volume
+            let device_path = ctx.get_block_device_path(&ev.device_id).structured(
+                ServicingError::FindEncryptedVolumeBlockDevice {
+                    device_id: ev.device_id.clone(),
+                    encrypted_volume: ev.id.clone(),
+                },
+            )?;
+
+            // Re-enroll the device with the pcrlock policy
+            encryption::systemd_cryptenroll(None::<&Path>, device_path, true, pcrs)
+                .structured(ServicingError::BindEncryptionToPcrlockPolicy)?;
         }
     }
 

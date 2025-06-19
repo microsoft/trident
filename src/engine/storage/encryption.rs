@@ -189,12 +189,13 @@ pub(super) fn create_encrypted_devices(
 /// header, enrolling a key file, enrolling another randomly generated key and sealing it in the
 /// TPM 2.0 device with PCR 7, and finally, opening the device as a LUKS2 volume.
 ///
-/// This function takes in 4 arguments:
+/// This function takes in 5 arguments:
 /// - `device_path`: The path to the device to be encrypted.
 /// - `device_name`: The name of the device to be used in the crypttab.
 /// - `key_file`: The path to the key file to be used for encryption.
 /// - `encryption_type`: The type of encryption to be used. Determines whether the device should be
-///   re-encrypted in-place, or whether a new LUKS2 volume should be initialized.
+///   re-encrypted in-place, or whether a new LUKS2 volume should be initialized
+/// - `pcrs`: The PCRs to bind the encryption key to.
 fn encrypt_and_open_device(
     device_path: &Path,
     device_name: &String,
@@ -231,8 +232,9 @@ fn encrypt_and_open_device(
     );
 
     // Enroll the TPM 2.0 device for the underlying device. Currently, we bind the enrollment to
-    // PCR 7 by default.
-    encryption::systemd_cryptenroll(key_file, device_path, pcrs)?;
+    // PCR 7 by default. pcrlock_policy bool is set to false, since while creating encrypted
+    // volumes, we first bind to value of PCR 7.
+    encryption::systemd_cryptenroll(Some(key_file), device_path, false, pcrs)?;
 
     debug!(
         "Opening underlying encrypted device '{}' as '{}'",

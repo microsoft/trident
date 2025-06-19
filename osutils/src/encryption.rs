@@ -1,7 +1,7 @@
 use std::{
     fs::{self, File},
     io::Read,
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 use anyhow::{Context, Error};
@@ -10,11 +10,7 @@ use enumflags2::BitFlags;
 use sysdefs::tpm2::Pcr;
 use trident_api::constants::LUKS_HEADER_SIZE_IN_MIB;
 
-use crate::{
-    bootloaders::BOOT_EFI,
-    dependencies::Dependency,
-    pcrlock::{self, PCRLOCK_POLICY_PATH},
-};
+use crate::{dependencies::Dependency, pcrlock::PCRLOCK_POLICY_PATH};
 
 /// Cipher specification string for the LUKS2 data segment.
 pub const CIPHER: &str = "aes-xts-plain64";
@@ -30,69 +26,39 @@ pub const KEY_SIZE: &str = "512";
 const TMP_RECOVERY_KEY_SIZE: usize = 64;
 
 /// Runs `systemd-cryptenroll` to enroll a TPM 2.0 device for the given device of a LUKS2 encrypted
-/// volume, binding the enrollment to the specified PCRs. For now, this function is called during
-/// the clean install of a UKI image only, when encrypted devices are first created.
+/// volume.
 ///
 /// Takes in the key file to unlock the TPM 2.0 device, the path to the device, and a set of PCRs
-/// to bind the enrollment to. By default, the enrollment is binded to PCR 7 only.
+/// to bind the enrollment to. Depending on the value of `pcrlock_policy`, binds encryption either
+/// to the values of the selected PCRs OR a pcrlock policy, which includes these PCRs.
 pub fn systemd_cryptenroll(
-    key_file: impl AsRef<Path>,
+    key_file: Option<impl AsRef<Path>>,
     device_path: impl AsRef<Path>,
+    pcrlock_policy: bool,
     pcrs: BitFlags<Pcr>,
 ) -> Result<(), Error> {
-    Dependency::SystemdCryptenroll
-        .cmd()
+    let mut cmd = Dependency::SystemdCryptenroll.cmd();
+    cmd.arg(device_path.as_ref().as_os_str())
         .arg("--tpm2-device=auto")
-        .arg("--unlock-key-file")
-        .arg(key_file.as_ref().as_os_str())
-        .arg("--wipe-slot=tpm2")
-        .arg(device_path.as_ref().as_os_str())
-        .arg(to_tpm2_pcrs_arg(pcrs)) //--tpm2-pcrs= configures the TPM 2.0 PCRs to bind to
-        .run_and_check()
-        .context(format!(
-            "Failed to enroll TPM 2.0 device for underlying device '{}'",
-            device_path.as_ref().display()
-        ))
-}
+        .arg("--wipe-slot=tpm2");
 
-/// Runs `systemd-cryptenroll` to enroll a TPM 2.0 device for the given device of a LUKS2 encrypted
-/// volume, binding the enrollment to a pcrlock policy. For now, this function is called during the
-/// provisioning step of the clean install of a UKI image only.
-///
-/// Takes in the key file to unlock the TPM 2.0 device, the path to the device, and a set of PCRs
-/// to include into the pcrlock policy.
-pub fn systemd_cryptenroll_pcrlock(
-    key_file: impl AsRef<Path>,
-    device_path: impl AsRef<Path>,
-    pcrs: BitFlags<Pcr>,
-) -> Result<(), Error> {
-    // TODO: NEED TO GET CORRECT PATHS!!!
-    // UKI binaries to be measured
-    let uki_binaries = vec![PathBuf::from("/boot/efi/EFI/Linux/vmlinuz-1-azla1.efi")];
-    // Kernel cmdlines to be measured. ROS image cmdline should be extracted from the UKI binary
-    let kernel_cmdlines = vec![Some(PathBuf::from("/proc/cmdline"))];
-    // Bootloader binaries to be measured, i.e. shim EFI executable for UKI
-    let bootloader_binaries = vec![PathBuf::from(BOOT_EFI)];
-    // Generate .pcrlock files for current boot ONLY
-    pcrlock::generate_pcrlock_files(uki_binaries, kernel_cmdlines, bootloader_binaries)
-        .context("Failed to generate .pcrlock files")?;
-    // Generate pcrlock policy
-    pcrlock::generate_tpm2_access_policy(pcrs)
-        .context("Failed to generate TPM 2.0 access policy")?;
+    // If a key file is provided, use it to unlock the TPM 2.0 device; if a key file is not
+    // provided, it means that the device has already been bound to TPM 2.0, and we're just
+    // updating the slot
+    if let Some(path) = key_file {
+        cmd.arg("--unlock-key-file").arg(path.as_ref().as_os_str());
+    }
 
-    Dependency::SystemdCryptenroll
-        .cmd()
-        .arg("--tpm2-device=auto")
-        .arg("--unlock-key-file")
-        .arg(key_file.as_ref().as_os_str())
-        .arg("--wipe-slot=tpm2")
-        .arg(device_path.as_ref().as_os_str())
-        .arg(format!("--tpm2-pcrlock={}", PCRLOCK_POLICY_PATH))
-        .run_and_check()
-        .context(format!(
-            "Failed to enroll TPM 2.0 device for underlying device '{}'",
-            device_path.as_ref().display()
-        ))
+    if pcrlock_policy {
+        cmd.arg(format!("--tpm2-pcrlock={}", PCRLOCK_POLICY_PATH));
+    } else {
+        cmd.arg(to_tpm2_pcrs_arg(pcrs));
+    }
+
+    cmd.run_and_check().context(format!(
+        "Failed to enroll TPM 2.0 device for underlying device '{}'",
+        device_path.as_ref().display()
+    ))
 }
 
 /// Runs `cryptsetup-luksFormat` to initialize a LUKS2 encrypted volume for the given underlying
@@ -388,7 +354,13 @@ mod functional_test {
         cryptsetup_luksformat(key_file_path, &partition1.node).unwrap();
 
         // Run `systemd-cryptenroll` on the partition
-        systemd_cryptenroll(key_file_path, &partition1.node, BitFlags::from(Pcr::Pcr7)).unwrap();
+        systemd_cryptenroll(
+            Some(key_file_path),
+            &partition1.node,
+            false,
+            BitFlags::from(Pcr::Pcr7),
+        )
+        .unwrap();
 
         // Open the encrypted volume, to make the block device available
         cryptsetup_open(key_file_path, &partition1.node, ENCRYPTED_VOLUME_NAME).unwrap();
@@ -516,18 +488,24 @@ mod functional_test {
 
         // Create a temporary file to store the recovery key file
         let key_file_tmp = NamedTempFile::new().unwrap();
-        let key_file_path = key_file_tmp.path().to_owned();
-        fs::set_permissions(&key_file_path, Permissions::from_mode(0o600)).unwrap();
-        generate_recovery_key_file(&key_file_path).unwrap();
+        let key_file_path = key_file_tmp.path();
+        fs::set_permissions(key_file_path, Permissions::from_mode(0o600)).unwrap();
+        generate_recovery_key_file(key_file_path).unwrap();
 
         // Re-encrypt the filesystem
-        cryptsetup_reencrypt(&key_file_path, &partition1.node).unwrap();
+        cryptsetup_reencrypt(key_file_path, &partition1.node).unwrap();
 
         // Run `systemd-cryptenroll` on the partition
-        systemd_cryptenroll(&key_file_path, &partition1.node, BitFlags::from(Pcr::Pcr7)).unwrap();
+        systemd_cryptenroll(
+            Some(key_file_path),
+            &partition1.node,
+            false,
+            BitFlags::from(Pcr::Pcr7),
+        )
+        .unwrap();
 
         // Open the encrypted volume, to make the block device available
-        cryptsetup_open(&key_file_path, &partition1.node, ENCRYPTED_VOLUME_NAME).unwrap();
+        cryptsetup_open(key_file_path, &partition1.node, ENCRYPTED_VOLUME_NAME).unwrap();
 
         // Verify the test data exists at the expected offset
         let mut decrypted_device = OpenOptions::new()

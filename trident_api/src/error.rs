@@ -291,6 +291,9 @@ pub enum ServicingError {
         expected_device_path: String,
     },
 
+    #[error("Failed to bind encryption to pcrlock policy")]
+    BindEncryptionToPcrlockPolicy,
+
     #[error("Failed to check if the boot entry '{boot_entry}' exists via efibootmgr")]
     BootEntryCheck { boot_entry: String },
 
@@ -427,6 +430,12 @@ pub enum ServicingError {
 
     #[error("Failed to generate recovery key file '{key_file}'")]
     GenerateRecoveryKeyFile { key_file: String },
+
+    #[error("Failed to generate a new TPM 2.0 access policy")]
+    GenerateTpm2AccessPolicy,
+
+    #[error("Failed to generate required .pcrlock files")]
+    GeneratePcrlockFiles,
 
     #[error("Failed to get block device path for device '{device_id}'")]
     GetBlockDevicePath { device_id: String },

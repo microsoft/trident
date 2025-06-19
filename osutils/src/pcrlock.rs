@@ -713,7 +713,7 @@ mod functional_test {
     fn test_generate_tpm2_access_policy() {
         // Test case #0. Since no .pcrlock files have been generated yet, only 0-valued PCRs can be
         // used to generate a TPM 2.0 access policy.
-        let zero_pcrs = make_bitflags!(Pcr::{Pcr11 | Pcr12 | Pcr13});
+        let zero_pcrs = Pcr::Pcr11 | Pcr::Pcr12 | Pcr::Pcr13;
         generate_tpm2_access_policy(zero_pcrs).unwrap();
 
         // Test case #1. Try to generate a TPM 2.0 access policy with all PCRs; should return an
