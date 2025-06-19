@@ -215,18 +215,6 @@ fn make_policy(pcrs: BitFlags<Pcr>) -> Result<String, Error> {
         .context("Failed to run systemd-pcrlock make-policy")
 }
 
-/// Runs `systemd-pcrlock remove-policy` command to remove the previously generated policy. Deletes
-/// the `/var/lib/systemd/pcrlock.json` file and deallocates the NV index.
-#[allow(dead_code)]
-fn remove_policy() -> Result<String, Error> {
-    debug!("Removing current pcrlock policy");
-    Dependency::SystemdPcrlock
-        .cmd()
-        .arg("remove-policy")
-        .output_and_check()
-        .context("Failed to run systemd-pcrlock remove-policy")
-}
-
 /// Converts the provided PCR bitflags into the `--pcr=` argument for `systemd-pcrlock`. Returns a
 /// string with the PCR indices separated by `,`.
 fn to_pcr_arg(pcrs: BitFlags<Pcr>) -> String {
