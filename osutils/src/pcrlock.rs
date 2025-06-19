@@ -86,10 +86,12 @@ pub fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         );
     }
 
+    // Run systemd-pcrlock make-policy helper
     let output = make_policy(pcrs).context("Failed to generate a new TPM 2.0 access policy")?;
 
     // Validate that TPM 2.0 access policy has been updated
     if !output.contains("Calculated new pcrlock policy") || !output.contains("Updated NV index") {
+        // Only warning b/c on clean install, pcrlock policy will be created for the first time
         warn!("TPM 2.0 access policy has not been updated:\n{}", output);
     }
 

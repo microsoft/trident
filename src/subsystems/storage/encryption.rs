@@ -6,7 +6,7 @@ use std::{
 
 use log::{info, trace};
 
-use osutils::{bootloaders::BOOT_EFI, encryption, files, pcrlock};
+use osutils::{bootloaders::BOOT_EFI, encryption, files, path::join_relative, pcrlock};
 use sysdefs::tpm2::Pcr;
 
 use trident_api::{
@@ -14,10 +14,17 @@ use trident_api::{
         HostConfiguration, HostConfigurationDynamicValidationError,
         HostConfigurationStaticValidationError, PartitionType,
     },
+    constants::ESP_MOUNT_POINT_PATH,
     error::{InvalidInputError, ReportError, ServicingError, TridentError},
 };
 
-use crate::{engine::EngineContext, ServicingType};
+use crate::{
+    engine::{
+        boot::uki::{TMP_UKI_NAME, UKI_DIRECTORY},
+        EngineContext,
+    },
+    ServicingType,
+};
 
 const CRYPTTAB_PATH: &str = "/etc/crypttab";
 
@@ -84,8 +91,13 @@ pub(super) fn validate_host_config(host_config: &HostConfiguration) -> Result<()
     Ok(())
 }
 
+/// Provisions encrypted volumes when a UKI image is being installed:
+/// - On a clean install, generates .pcrlock files for the runtime OS image A, creates a pcrlock
+///   TPM 2.0 access policy based on PCRs 4, 7, and 11, and re-enrolls all encrypted volumes with
+///   the new policy,
+/// - On A/B update, re-generates the pcrlock policy for the update image using PCRs 4, 7, and 11.
 #[tracing::instrument(name = "encryption_provision", skip_all)]
-pub fn provision(ctx: &EngineContext) -> Result<(), TridentError> {
+pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
     if let Some(encryption) = &ctx.spec.storage.encryption {
         // Determine PCRs depending on the current servicing type:
         // - For a clean install, use all UKI PCRs 4, 7, and 11 and generate .pcrlock files,
@@ -94,9 +106,10 @@ pub fn provision(ctx: &EngineContext) -> Result<(), TridentError> {
         // 7, and 11.
         let pcrs = match ctx.servicing_type {
             ServicingType::CleanInstall => {
-                // TODO: NEED TO GET CORRECT PATHS!!!
-                // UKI binaries to be measured
-                let uki_binaries = vec![PathBuf::from("/boot/efi/EFI/Linux/vmlinuz-1-azla1.efi")];
+                // UKI binary in runtime OS to be measured; it's currently staged at designated
+                // path
+                let esp_dir_path = join_relative(mount_path, ESP_MOUNT_POINT_PATH);
+                let uki_binary_ros = esp_dir_path.join(UKI_DIRECTORY).join(TMP_UKI_NAME);
                 // Kernel cmdlines to be measured
                 // TODO: ROS image cmdline should be extracted from the UKI binary
                 let kernel_cmdlines = vec![Some(PathBuf::from("/proc/cmdline"))];
@@ -104,8 +117,12 @@ pub fn provision(ctx: &EngineContext) -> Result<(), TridentError> {
                 let bootloader_binaries = vec![PathBuf::from(BOOT_EFI)];
 
                 // Generate .pcrlock files for current boot AND runtime OS image A
-                pcrlock::generate_pcrlock_files(uki_binaries, kernel_cmdlines, bootloader_binaries)
-                    .structured(ServicingError::GeneratePcrlockFiles)?;
+                pcrlock::generate_pcrlock_files(
+                    vec![uki_binary_ros],
+                    kernel_cmdlines,
+                    bootloader_binaries,
+                )
+                .structured(ServicingError::GeneratePcrlockFiles)?;
 
                 Pcr::Pcr4 | Pcr::Pcr7 | Pcr::Pcr11
             }

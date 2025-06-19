@@ -177,7 +177,7 @@ impl Subsystem for StorageSubsystem {
         // If this is a UKI image AND we're performing a clean install, then we need to run the
         // encryption provision logic, i.e. re-seal the encryption key to pcrlock policy!
         if ctx.spec.internal_params.get_flag(ENABLE_UKI_SUPPORT) {
-            encryption::provision(ctx).message(format!(
+            encryption::provision(ctx, mount_path).message(format!(
                 "Step 'Provision' failed for subunit '{ENCRYPTION_SUBSYSTEM_NAME}'"
             ))?;
         }
