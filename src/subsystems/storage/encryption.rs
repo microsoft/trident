@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use log::{info, trace};
+use log::{debug, info, trace};
 
 use osutils::{encryption, files, path::join_relative, pcrlock};
 use sysdefs::tpm2::Pcr;
@@ -117,6 +117,16 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                     .structured(ServicingError::GetLabelAndPath)?;
                 let bootloader_path = esp_dir_path.join(bootloader_path_relative);
 
+                // TODO: REMOVE BEFORE MERGING
+                debug!(
+                    "UKI binary path in runtime OS A: '{}'",
+                    uki_binary_ros.display()
+                );
+                debug!(
+                    "Bootloader path in runtime OS A: '{}'",
+                    bootloader_path.display()
+                );
+
                 // Generate .pcrlock files for runtime OS image A
                 pcrlock::generate_pcrlock_files(vec![uki_binary_ros], vec![bootloader_path])
                     .structured(ServicingError::GeneratePcrlockFiles)?;
@@ -134,6 +144,7 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
         // On clean install, iterate through all encrypted volumes and re-bind them to the newly
         // generated pcrlock policy
         if ctx.servicing_type == ServicingType::CleanInstall {
+            debug!("Re-enrolling encrypted volumes with the new pcrlock policy");
             for ev in encryption.volumes.iter() {
                 // Fetch the block device path of the encrypted volume
                 let device_path = ctx.get_block_device_path(&ev.device_id).structured(

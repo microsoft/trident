@@ -90,6 +90,7 @@ pub fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
 
     // Run systemd-pcrlock make-policy helper
     let output = make_policy(pcrs).context("Failed to generate a new TPM 2.0 access policy")?;
+    trace!("Output of 'systemd-pcrlock make-policy':\n{}", output);
 
     // Validate that TPM 2.0 access policy has been updated
     if !output.contains("Calculated new pcrlock policy") || !output.contains("Updated NV index") {
@@ -355,6 +356,7 @@ impl LockCommand {
     ///
     /// Primarily designed for running the `lock-*` commands.
     fn run(&self) -> Result<(), Error> {
+        debug!("Running systemd-pcrlock {}", self.subcmd_name());
         let (path, pcrlock_file, pcrs) = {
             let mut cmd_path: Option<PathBuf> = None;
             let mut cmd_pcrlock_file: Option<PathBuf> = None;
@@ -426,6 +428,23 @@ pub fn generate_pcrlock_files(
     // measured by Trident,
     bootloader_binaries: Vec<PathBuf>,
 ) -> Result<(), Error> {
+    debug!("Generating .pcrlock files");
+
+    for (id, bootloader_path) in bootloader_binaries.into_iter().enumerate() {
+        let pcrlock_file = generate_pcrlock_output_path(BOOT_LOADER_CODE_PCRLOCK_DIR, id);
+        debug!(
+            "Manually generating .pcrlock file at path '{}' for bootloader at path '{}'",
+            pcrlock_file.display(),
+            bootloader_path.display()
+        );
+        generate_610_boot_loader_code_pcrlock(bootloader_path, pcrlock_file.clone()).context(
+            format!(
+                "Failed to manually generate .pcrlock file at path '{}'",
+                pcrlock_file.display()
+            ),
+        )?;
+    }
+
     let basic_cmds: Vec<LockCommand> = vec![
         LockCommand::FirmwareCode,
         LockCommand::FirmwareConfig,
@@ -454,17 +473,6 @@ pub fn generate_pcrlock_files(
             cmd.subcmd_name(),
             uki_path.display()
         ))?;
-    }
-
-    // Run helpers to generate two remaining .pcrlock files
-    for (id, bootloader_path) in bootloader_binaries.into_iter().enumerate() {
-        let pcrlock_file = generate_pcrlock_output_path(BOOT_LOADER_CODE_PCRLOCK_DIR, id);
-        generate_610_boot_loader_code_pcrlock(bootloader_path, pcrlock_file.clone()).context(
-            format!(
-                "Failed to manually generate .pcrlock file at path '{}'",
-                pcrlock_file.display()
-            ),
-        )?;
     }
 
     // Parse the systemd-pcrlock log output to validate that every log entry has been matched to a
