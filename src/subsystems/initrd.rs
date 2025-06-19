@@ -1,7 +1,7 @@
 use log::{debug, info};
 
 use osutils::mkinitrd;
-use trident_api::{constants::internal_params::ENABLE_UKI_SUPPORT, error::TridentError};
+use trident_api::error::TridentError;
 
 use crate::engine::{EngineContext, Subsystem};
 
@@ -18,7 +18,7 @@ impl Subsystem for InitrdSubsystem {
 
     #[tracing::instrument(name = "initrd_regeneration", skip_all)]
     fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
-        if ctx.spec.internal_params.get_flag(ENABLE_UKI_SUPPORT) {
+        if ctx.is_uki_image()? {
             debug!("Skipping initrd regeneration because UKI is in use");
             return Ok(());
         }

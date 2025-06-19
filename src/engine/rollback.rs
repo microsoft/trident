@@ -5,7 +5,7 @@ use log::{debug, info, trace, warn};
 
 use osutils::{block_devices, efivar, lsblk, veritysetup};
 use trident_api::{
-    constants::internal_params::{ENABLE_UKI_SUPPORT, VIRTDEPLOY_BOOT_ORDER_WORKAROUND},
+    constants::internal_params::VIRTDEPLOY_BOOT_ORDER_WORKAROUND,
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::{AbVolumeSelection, ServicingState, ServicingType},
     BlockDeviceId,
@@ -37,6 +37,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
         image: None, // Not used for boot validation logic
         storage_graph: engine::build_storage_graph(&datastore.host_status().spec.storage)?, // Build storage graph
         filesystems: Vec::new(), // Left empty since context does not have image
+        is_uki: None,
     };
 
     // Get the block device path of the current root
@@ -68,7 +69,9 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
                 .message("Failed to persist boot order after reboot")?;
         }
 
-        if ctx.spec.internal_params.get_flag(ENABLE_UKI_SUPPORT) {
+        // If the bootloader set the LoaderEntrySelected variable, then make its value the default
+        // boot entry. Systemd-boot sets this variable, but GRUB does not.
+        if efivar::current_var_set() {
             efivar::set_default_to_current()
                 .message("Failed to set default boot entry to current")?;
         }

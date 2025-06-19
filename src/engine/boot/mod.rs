@@ -4,10 +4,7 @@ use log::debug;
 use strum::IntoEnumIterator;
 
 use trident_api::{
-    constants::{
-        internal_params::ENABLE_UKI_SUPPORT, AB_VOLUME_A_NAME, AB_VOLUME_B_NAME,
-        AZURE_LINUX_INSTALL_ID_PREFIX, VAR_TMP_PATH,
-    },
+    constants::{AB_VOLUME_A_NAME, AB_VOLUME_B_NAME, AZURE_LINUX_INSTALL_ID_PREFIX, VAR_TMP_PATH},
     error::{ReportError, ServicingError, TridentError},
     status::AbVolumeSelection,
 };
@@ -30,7 +27,7 @@ impl Subsystem for BootSubsystem {
 
     #[tracing::instrument(name = "boot_configuration", skip_all)]
     fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
-        if ctx.spec.internal_params.get_flag(ENABLE_UKI_SUPPORT) {
+        if ctx.is_uki_image()? {
             debug!("Skipping grub configuration because UKI is in use");
             return Ok(());
         }

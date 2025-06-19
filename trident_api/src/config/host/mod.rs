@@ -4,9 +4,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 
-use crate::{
-    constants::internal_params::ENABLE_UKI_SUPPORT, is_default, storage_graph::graph::StorageGraph,
-};
+use crate::{is_default, storage_graph::graph::StorageGraph};
 
 pub(crate) mod error;
 pub(crate) mod harpoon;
@@ -82,11 +80,6 @@ impl HostConfiguration {
         self.validate_root_verity_config(&graph)?;
 
         self.validate_datastore_location()?;
-
-        // Gate usr-verity support behind the UKI support parameter.
-        if graph.usr_fs_is_verity() && !self.internal_params.get_flag(ENABLE_UKI_SUPPORT) {
-            return Err(HostConfigurationStaticValidationError::UsrVerityRequiresUkiSupport);
-        }
 
         Ok(())
     }

@@ -19,11 +19,11 @@ use osutils::{
 };
 use trident_api::{
     constants::{
-        internal_params::{DISABLE_GRUB_NOPREFIX_CHECK, ENABLE_UKI_SUPPORT},
-        EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY, ESP_RELATIVE_MOUNT_POINT_PATH,
-        GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH,
+        internal_params::DISABLE_GRUB_NOPREFIX_CHECK, EFI_DEFAULT_BIN_RELATIVE_PATH,
+        ESP_EFI_DIRECTORY, ESP_RELATIVE_MOUNT_POINT_PATH, GRUB2_CONFIG_FILENAME,
+        GRUB2_CONFIG_RELATIVE_PATH,
     },
-    error::{ReportError, ServicingError, TridentError},
+    error::{ReportError, ServicingError, TridentError, TridentResultExt},
 };
 
 use crate::engine::{
@@ -194,7 +194,7 @@ fn copy_file_artifacts(
             esp_dir_path.display()
         ))?;
 
-    if ctx.spec.internal_params.get_flag(ENABLE_UKI_SUPPORT) {
+    if ctx.is_uki_image().unstructured("UKI setting unknown")? {
         // Prepare ESP directory structure for UKI boot
         uki::prepare_esp_for_uki(mount_point)?;
 

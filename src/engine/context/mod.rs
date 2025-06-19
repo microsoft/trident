@@ -10,6 +10,7 @@ use log::{debug, trace};
 use trident_api::{
     config::{HostConfiguration, Partition, VerityDevice},
     constants::ROOT_MOUNT_POINT_PATH,
+    error::TridentError,
     status::{AbVolumeSelection, ServicingType},
     storage_graph::graph::StorageGraph,
     BlockDeviceId,
@@ -71,6 +72,9 @@ pub struct EngineContext {
 
     /// All of the filesystems in the system.
     pub filesystems: Vec<FileSystemData>,
+
+    /// Whether the image will use a UKI or not.
+    pub is_uki: Option<bool>,
 }
 impl EngineContext {
     /// Returns the update volume selection for all A/B volume pairs. The update volume is the one
@@ -287,6 +291,15 @@ impl EngineContext {
             .and_then(|mp| mp.device_id)?;
 
         self.storage_graph.block_device_size(device)
+    }
+
+    pub(crate) fn is_uki_image(&self) -> Result<bool, TridentError> {
+        if let Some(is_uki) = self.is_uki {
+            return Ok(is_uki);
+        }
+        Err(TridentError::internal(
+            "is_uki() called without it being set",
+        ))
     }
 }
 
