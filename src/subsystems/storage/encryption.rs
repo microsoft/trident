@@ -17,7 +17,7 @@ use trident_api::{
     error::{InvalidInputError, ReportError, ServicingError, TridentError},
 };
 
-use crate::engine::EngineContext;
+use crate::{engine::EngineContext, ServicingType};
 
 const CRYPTTAB_PATH: &str = "/etc/crypttab";
 
@@ -87,36 +87,52 @@ pub(super) fn validate_host_config(host_config: &HostConfiguration) -> Result<()
 #[tracing::instrument(name = "encryption_provision", skip_all)]
 pub fn provision(ctx: &EngineContext) -> Result<(), TridentError> {
     if let Some(encryption) = &ctx.spec.storage.encryption {
-        // TODO: NEED TO GET CORRECT PATHS!!!
-        // UKI binaries to be measured
-        let uki_binaries = vec![PathBuf::from("/boot/efi/EFI/Linux/vmlinuz-1-azla1.efi")];
-        // Kernel cmdlines to be measured. ROS image cmdline should be extracted from the UKI binary
-        let kernel_cmdlines = vec![Some(PathBuf::from("/proc/cmdline"))];
-        // Bootloader binaries to be measured, i.e. shim EFI executable for UKI
-        let bootloader_binaries = vec![PathBuf::from(BOOT_EFI)];
+        // Determine PCRs depending on the current servicing type:
+        // - For a clean install, use all UKI PCRs 4, 7, and 11 and generate .pcrlock files,
+        // - For A/B update, reduce to PCR 7.
+        // TODO: Modify this logic to re-generate pcrlock policy for the update image using PCRs 4,
+        // 7, and 11.
+        let pcrs = match ctx.servicing_type {
+            ServicingType::CleanInstall => {
+                // TODO: NEED TO GET CORRECT PATHS!!!
+                // UKI binaries to be measured
+                let uki_binaries = vec![PathBuf::from("/boot/efi/EFI/Linux/vmlinuz-1-azla1.efi")];
+                // Kernel cmdlines to be measured
+                // TODO: ROS image cmdline should be extracted from the UKI binary
+                let kernel_cmdlines = vec![Some(PathBuf::from("/proc/cmdline"))];
+                // Bootloader binaries to be measured, i.e. shim EFI executable for UKI
+                let bootloader_binaries = vec![PathBuf::from(BOOT_EFI)];
 
-        // Generate .pcrlock files for current boot ONLY
-        pcrlock::generate_pcrlock_files(uki_binaries, kernel_cmdlines, bootloader_binaries)
-            .structured(ServicingError::GeneratePcrlockFiles)?;
+                // Generate .pcrlock files for current boot AND runtime OS image A
+                pcrlock::generate_pcrlock_files(uki_binaries, kernel_cmdlines, bootloader_binaries)
+                    .structured(ServicingError::GeneratePcrlockFiles)?;
 
-        // Generate pcrlock policy. For now, we include PCRs 4, 7, and 11
-        let pcrs = Pcr::Pcr4 | Pcr::Pcr7 | Pcr::Pcr11;
+                Pcr::Pcr4 | Pcr::Pcr7 | Pcr::Pcr11
+            }
+            _ => Pcr::Pcr7.into(),
+        };
+
+        // Generate pcrlock policy; on A/B update, the binding will thus automatically be updated
+        // with the new pcrlock policy
         pcrlock::generate_tpm2_access_policy(pcrs)
             .structured(ServicingError::GenerateTpm2AccessPolicy)?;
 
-        // Iterate through all encrypted volumes and re-bind them to the pcrlock policy
-        for ev in encryption.volumes.iter() {
-            // Fetch the block device path of the encrypted volume
-            let device_path = ctx.get_block_device_path(&ev.device_id).structured(
-                ServicingError::FindEncryptedVolumeBlockDevice {
-                    device_id: ev.device_id.clone(),
-                    encrypted_volume: ev.id.clone(),
-                },
-            )?;
+        // On clean install, iterate through all encrypted volumes and re-bind them to the newly
+        // generated pcrlock policy
+        if ctx.servicing_type == ServicingType::CleanInstall {
+            for ev in encryption.volumes.iter() {
+                // Fetch the block device path of the encrypted volume
+                let device_path = ctx.get_block_device_path(&ev.device_id).structured(
+                    ServicingError::FindEncryptedVolumeBlockDevice {
+                        device_id: ev.device_id.clone(),
+                        encrypted_volume: ev.id.clone(),
+                    },
+                )?;
 
-            // Re-enroll the device with the pcrlock policy
-            encryption::systemd_cryptenroll(None::<&Path>, device_path, true, pcrs)
-                .structured(ServicingError::BindEncryptionToPcrlockPolicy)?;
+                // Re-enroll the device with the pcrlock policy
+                encryption::systemd_cryptenroll(None::<&Path>, device_path, true, pcrs)
+                    .structured(ServicingError::BindEncryptionToPcrlockPolicy)?;
+            }
         }
     }
 

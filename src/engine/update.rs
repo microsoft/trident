@@ -86,7 +86,7 @@ pub(crate) fn update(
         .into_iter()
         .flatten()
         .max()
-        .unwrap_or(ServicingType::NoActiveServicing); // Never None b/c select_servicing_type() returns a value
+        .unwrap_or(ServicingType::NoActiveServicing);
     if servicing_type == ServicingType::NoActiveServicing {
         info!("No update servicing required");
         return Ok(ExitKind::Done);

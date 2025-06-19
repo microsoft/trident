@@ -167,20 +167,19 @@ impl Subsystem for StorageSubsystem {
     }
 
     fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
-        if ctx.servicing_type == ServicingType::CleanInstall {
-            if ctx.storage_graph.root_fs_is_verity() {
-                debug!("Root verity is enabled, setting up machine-id");
-                verity::create_machine_id(mount_path)
-                    .structured(ServicingError::CreateMachineId)?;
-            }
+        if ctx.servicing_type == ServicingType::CleanInstall
+            && ctx.storage_graph.root_fs_is_verity()
+        {
+            debug!("Root verity is enabled, setting up machine-id");
+            verity::create_machine_id(mount_path).structured(ServicingError::CreateMachineId)?;
+        }
 
-            // If this is a UKI image AND we're performing a clean install, then we need to run the
-            // encryption provision logic, i.e. re-seal the encryption key to pcrlock policy!
-            if ctx.spec.internal_params.get_flag(ENABLE_UKI_SUPPORT) {
-                encryption::provision(ctx).message(format!(
-                    "Step 'Provision' failed for subunit '{ENCRYPTION_SUBSYSTEM_NAME}'"
-                ))?;
-            }
+        // If this is a UKI image AND we're performing a clean install, then we need to run the
+        // encryption provision logic, i.e. re-seal the encryption key to pcrlock policy!
+        if ctx.spec.internal_params.get_flag(ENABLE_UKI_SUPPORT) {
+            encryption::provision(ctx).message(format!(
+                "Step 'Provision' failed for subunit '{ENCRYPTION_SUBSYSTEM_NAME}'"
+            ))?;
         }
 
         Ok(())
