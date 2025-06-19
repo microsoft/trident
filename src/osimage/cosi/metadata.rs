@@ -424,5 +424,15 @@ mod tests {
         }
         "#;
         let _amd64_os_package: OsPackage = serde_json::from_str(amd64_os_package_json).unwrap();
+
+        let none_os_package_json = r#"
+        {
+            "name": "gpg-pubkey",
+            "version": "3135ce90",
+            "release": "5e6fda74",
+            "arch": "(none)"
+        }
+        "#;
+        let _none_os_package: OsPackage = serde_json::from_str(none_os_package_json).unwrap();
     }
 }
