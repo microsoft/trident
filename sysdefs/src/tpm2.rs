@@ -4,10 +4,6 @@ use serde::{self, Deserialize};
 
 /// Represents the Platform Configuration Registers (PCRs) in the TPM. Each PCR is associated with
 /// a digit number and a string name.
-///
-/// Currently, the PCRs modified by `systemd`` are represented, e.g. as shown in the
-/// `systemd-cryptenroll` documentation, but more might be added in the future:
-/// https://www.man7.org/linux/man-pages/man1/systemd-cryptenroll.1.html.
 #[bitflags]
 #[repr(u32)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -24,8 +20,12 @@ pub enum Pcr {
     Pcr4 = 1 << 4,
     /// PCR 5, or `boot-loader-config`.
     Pcr5 = 1 << 5,
+    /// PCR 6, or `host-platform`.
+    Pcr6 = 1 << 6,
     /// PCR 7, or `secure-boot-policy`.
     Pcr7 = 1 << 7,
+    /// PCR 8.
+    Pcr8 = 1 << 8,
     /// PCR 9, or `kernel-initrd`.
     Pcr9 = 1 << 9,
     /// PCR 10, or `ima`.
@@ -42,6 +42,18 @@ pub enum Pcr {
     Pcr15 = 1 << 15,
     /// PCR 16, or `debug`.
     Pcr16 = 1 << 16,
+    /// PCR 17.
+    Pcr17 = 1 << 17,
+    /// PCR 18.
+    Pcr18 = 1 << 18,
+    /// PCR 19.
+    Pcr19 = 1 << 19,
+    /// PCR 20.
+    Pcr20 = 1 << 20,
+    /// PCR 21.
+    Pcr21 = 1 << 21,
+    /// PCR 22.
+    Pcr22 = 1 << 22,
     /// PCR 23, or `application-support`.
     Pcr23 = 1 << 23,
 }

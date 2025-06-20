@@ -439,18 +439,6 @@ pub fn generate_pcrlock_files(
         perms.permissions()
     );
 
-    // Execute mount | grep $(dirname $(which systemd-pcrlock))
-    let output = Command::new("mount")
-        .arg("|")
-        .arg("grep")
-        .arg("/usr/lib/systemd/systemd-pcrlock")
-        .output()
-        .context("Failed to execute mount | grep")?;
-    debug!(
-        "Output of 'mount | grep $(dirname $(which systemd-pcrlock))':\n{:?}",
-        output
-    );
-
     let output = Dependency::SystemdPcrlock
         .cmd()
         .arg("log")
@@ -701,7 +689,7 @@ mod tests {
         let all_pcrs = BitFlags::<Pcr>::all();
         assert_eq!(
             to_pcr_arg(all_pcrs),
-            "--pcr=0,1,2,3,4,5,7,9,10,11,12,13,14,15,16,23".to_string()
+            "--pcr=0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23".to_string()
         );
     }
 

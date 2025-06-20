@@ -228,7 +228,7 @@ mod tests {
         let all_pcrs = BitFlags::<Pcr>::all();
         assert_eq!(
             to_tpm2_pcrs_arg(all_pcrs),
-            "--tpm2-pcrs=0+1+2+3+4+5+7+9+10+11+12+13+14+15+16+23".to_string()
+            "--tpm2-pcrs=0+1+2+3+4+5+6+7+8+9+10+11+12+13+14+15+16+17+18+19+20+21+22+23".to_string()
         );
     }
 
