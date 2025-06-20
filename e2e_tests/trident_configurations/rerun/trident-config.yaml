@@ -1,6 +1,8 @@
 internalParams:
   uki: true
-  overrideEncryptionPcrs: [0]
+  # TODO: Remove this over-ride once SecureBoot is enabled in MOS & ROS, and pcrlock policy can
+  # include PCR 7.
+  overrideEncryptionPcrs: [4, 11]
 image:
   url: http://NETLAUNCH_HOST_ADDRESS/files/usrverity.cosi
   sha384: ignored
@@ -188,7 +190,7 @@ scripts:
         exit 1
 os:
   selinux:
-    mode: permissive
+    mode: enforcing
   network:
     version: 2
     ethernets:

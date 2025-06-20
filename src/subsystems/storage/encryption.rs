@@ -4,6 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use enumflags2::BitFlags;
 use log::{debug, info, trace};
 
 use osutils::{encryption, files, path::join_relative, pcrlock};
@@ -14,7 +15,7 @@ use trident_api::{
         HostConfiguration, HostConfigurationDynamicValidationError,
         HostConfigurationStaticValidationError, PartitionType,
     },
-    constants::ESP_MOUNT_POINT_PATH,
+    constants::{internal_params::OVERRIDE_ENCRYPTION_PCRS, ESP_MOUNT_POINT_PATH},
     error::{InvalidInputError, ReportError, ServicingError, TridentError},
 };
 
@@ -102,8 +103,6 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
         // Determine PCRs depending on the current servicing type:
         // - For a clean install, use all UKI PCRs 4, 7, and 11 and generate .pcrlock files,
         // - For A/B update, reduce to PCR 7.
-        // TODO: Modify this logic to re-generate pcrlock policy for the update image using PCRs 4,
-        // 7, and 11, on A/B update.
         let pcrs = match ctx.servicing_type {
             ServicingType::CleanInstall => {
                 // UKI binary in runtime OS to be measured; it's currently staged at designated
@@ -117,23 +116,31 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                     .structured(ServicingError::GetLabelAndPath)?;
                 let bootloader_path = join_relative(esp_dir_path, bootloader_path_relative);
 
-                // TODO: REMOVE BEFORE MERGING
-                debug!(
-                    "UKI binary path in runtime OS A: '{}'",
-                    uki_binary_ros.display()
-                );
-                debug!(
-                    "Bootloader path in runtime OS A: '{}'",
-                    bootloader_path.display()
-                );
-
                 // Generate .pcrlock files for runtime OS image A
                 pcrlock::generate_pcrlock_files(vec![uki_binary_ros], vec![bootloader_path])
                     .structured(ServicingError::GeneratePcrlockFiles)?;
 
-                Pcr::Pcr4 | Pcr::Pcr7 | Pcr::Pcr11
+                // If the internal parameter is not set, default to PCRs 7, 4, and 11. For E2E
+                // testing, we're excluding PCR 7 b/c SecureBoot is not enabled in MOS & ROS.
+                // TODO: Enable PCR 7 for E2E testing once SecureBoot is enabled in MOS & ROS.
+                ctx.spec
+                    .internal_params
+                    .get::<Vec<Pcr>>(OVERRIDE_ENCRYPTION_PCRS)
+                    .transpose()
+                    .structured(InvalidInputError::InvalidInternalParameter {
+                        name: OVERRIDE_ENCRYPTION_PCRS.to_string(),
+                        explanation: format!(
+                            "Failed to parse internal parameter '{}' as BitFlags<Pcr>",
+                            OVERRIDE_ENCRYPTION_PCRS
+                        ),
+                    })?
+                    .map(|v| BitFlags::<Pcr>::from_iter(v.into_iter()))
+                    .unwrap_or(Pcr::Pcr4 | Pcr::Pcr7 | Pcr::Pcr11)
             }
-            _ => Pcr::Pcr7.into(),
+            // TODO: Modify this logic to re-generate pcrlock policy for the update image using
+            // PCRs 4, 7, and 11, on A/B update. Currently, sealing to PCR 0 instead of PCR 7 b/c
+            // SecureBoot is not enabled in MOS & ROS in the E2E testing.
+            _ => Pcr::Pcr0.into(),
         };
 
         // Generate pcrlock policy; on A/B update, the binding will thus automatically be updated

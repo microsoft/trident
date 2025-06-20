@@ -147,10 +147,7 @@ pub(super) fn create_encrypted_devices(
             let pcrs = ctx
                 .spec
                 .internal_params
-                // Extract the parameter as a `Vec<Pcr>`, which is a list of PCRs to bind the
-                // encryption key to.
                 .get::<Vec<Pcr>>(OVERRIDE_ENCRYPTION_PCRS)
-                // Get the result from under the option.
                 .transpose()
                 .structured(InvalidInputError::InvalidInternalParameter {
                     name: OVERRIDE_ENCRYPTION_PCRS.to_string(),

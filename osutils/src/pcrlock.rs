@@ -71,6 +71,8 @@ pub fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         "Generating a new TPM 2.0 access policy with the following PCRs: {:?}",
         pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
     );
+    //Sleep for a few seconds to see the logs
+    std::thread::sleep(std::time::Duration::from_secs(5));
 
     // Run systemd-pcrlock make-policy helper
     let output = make_policy(pcrs).context("Failed to generate a new TPM 2.0 access policy")?;
