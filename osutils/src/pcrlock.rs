@@ -136,8 +136,8 @@ struct LogOutput {
 }
 
 /// Runs `systemd-pcrlock log` to get the combined TPM 2.0 event log, output as a "pretty" JSON.
-/// Parses the output and validates that every log entry related to a required PCR has been matched
-/// to a recognized boot component. Currently, required PCRs are: 4, 7, and 11.
+/// Parses the output and validates that every log entry related to `required_pcrs` has been
+/// matched to a recognized boot component.
 ///
 /// If a log entry has a null `component`, it means that there is no .pcrlock file that records
 /// that specific measurement extended into the given PCR, for any boot process component. For that
@@ -147,26 +147,27 @@ struct LogOutput {
 /// been added & generated, so that a valid TPM 2.0 access policy can be generated.
 /// Please refer to `systemd-pcrlock` doc for additional info:
 /// https://www.man7.org/linux/man-pages/man8/systemd-pcrlock.8.html.
-fn validate_log() -> Result<(), Error> {
-    debug!("Validating systemd-pcrlock log output");
+fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
+    debug!(
+        "Validating 'systemd-pcrlock log' output for required PCRs: {:?}",
+        required_pcrs
+    );
 
     let output = Dependency::SystemdPcrlock
         .cmd()
         .arg("log")
         .arg("--json=pretty")
         .output_and_check()
-        .context("Failed to run systemd-pcrlock log")?;
+        .context("Failed to run 'systemd-pcrlock log'")?;
 
     let parsed: LogOutput =
-        serde_json::from_str(&output).context("Failed to parse systemd-pcrlock log output")?;
+        serde_json::from_str(&output).context("Failed to parse 'systemd-pcrlock log' output")?;
 
-    // Collect all entries that have a null component AND record measurements into PCRs 4, 7, or 11
+    // Collect all entries that have a null component AND record measurements into required PCRs
     let unrecognized: Vec<_> = parsed
         .log
         .iter()
-        .filter(|entry| {
-            entry.component.is_none() && matches!(entry.pcr, Pcr::Pcr4 | Pcr::Pcr7 | Pcr::Pcr11)
-        })
+        .filter(|entry| required_pcrs.contains(entry.pcr) && entry.component.is_none())
         .collect();
 
     if unrecognized.is_empty() {
@@ -209,7 +210,7 @@ fn make_policy(pcrs: BitFlags<Pcr>) -> Result<String, Error> {
         .arg("make-policy")
         .arg(to_pcr_arg(pcrs))
         .output_and_check()
-        .context("Failed to run systemd-pcrlock make-policy")
+        .context("Failed to run 'systemd-pcrlock make-policy'")
 }
 
 /// Converts the provided PCR bitflags into the `--pcr=` argument for `systemd-pcrlock`. Returns a
@@ -342,7 +343,7 @@ impl LockCommand {
     ///
     /// Primarily designed for running the `lock-*` commands.
     fn run(&self) -> Result<(), Error> {
-        debug!("Running systemd-pcrlock {}", self.subcmd_name());
+        debug!("Running 'systemd-pcrlock {}'", self.subcmd_name());
         let (path, pcrlock_file, pcrs) = {
             let mut cmd_path: Option<PathBuf> = None;
             let mut cmd_pcrlock_file: Option<PathBuf> = None;
@@ -398,7 +399,7 @@ impl LockCommand {
         }
 
         cmd.run_and_check().context(format!(
-            "Failed to run systemd-pcrlock {}",
+            "Failed to run 'systemd-pcrlock {}'",
             self.subcmd_name()
         ))
     }
@@ -408,13 +409,18 @@ impl LockCommand {
 /// current and the next boots. Calls the `systemd-pcrlock lock-*` commands to generate the
 /// .pcrlock files, as well as helpers to generate the remaining .pcrlock files.
 pub fn generate_pcrlock_files(
+    // Bitflags representing the PCRs to generate .pcrlock files for,
+    pcrs: BitFlags<Pcr>,
     // Vector containing paths of UKI binaries to measure via lock-uki,
     uki_binaries: Vec<PathBuf>,
     // Vector containing paths of bootloader binaries, i.e. shim EFI executables for UKI, to be
     // measured by Trident,
     bootloader_binaries: Vec<PathBuf>,
 ) -> Result<(), Error> {
-    debug!("Generating .pcrlock files");
+    debug!(
+        "Generating .pcrlock files for the following PCRs: {:?}",
+        pcrs
+    );
 
     // TODO: REMOVE BEFORE MERGING
     // Print out permissions for systemd-pcrlock binary
@@ -430,64 +436,72 @@ pub fn generate_pcrlock_files(
         .arg("log")
         .arg("--json=pretty")
         .output_and_check()
-        .context("Failed to run systemd-pcrlock log")?;
+        .context("Failed to run 'systemd-pcrlock log'")?;
 
     debug!("Output of 'systemd-pcrlock log':\n{}", output);
 
     let parsed = serde_json::from_str::<LogOutput>(&output)
-        .context("Failed to parse systemd-pcrlock log output")?;
+        .context("Failed to parse 'systemd-pcrlock log' output")?;
 
-    debug!("Parsed systemd-pcrlock log output:\n{:#?}", parsed);
+    debug!("Parsed 'systemd-pcrlock log' output:\n{:#?}", parsed);
 
-    let basic_cmds: Vec<LockCommand> = vec![
-        LockCommand::FirmwareCode,
-        LockCommand::FirmwareConfig,
-        LockCommand::SecureBootPolicy,
-        LockCommand::SecureBootAuthority,
-        LockCommand::MachineId,
-        LockCommand::FileSystem,
+    // Define PCR coverage for each command
+    let basic_cmds: Vec<(LockCommand, BitFlags<Pcr>)> = vec![
+        (LockCommand::FirmwareCode, Pcr::Pcr0 | Pcr::Pcr2),
+        (LockCommand::FirmwareConfig, Pcr::Pcr1 | Pcr::Pcr3),
+        (LockCommand::SecureBootPolicy, Pcr::Pcr7.into()),
+        (LockCommand::SecureBootAuthority, Pcr::Pcr7.into()),
+        (LockCommand::MachineId, Pcr::Pcr15.into()),
+        (LockCommand::FileSystem, Pcr::Pcr15.into()),
     ];
 
-    for cmd in basic_cmds {
-        cmd.run().context(format!(
-            "Failed to generate .pcrlock file via '{}'",
-            cmd.subcmd_name()
-        ))?;
-    }
-
-    // lock-uki
-    for (id, uki_path) in uki_binaries.clone().into_iter().enumerate() {
-        let pcrlock_file = generate_pcrlock_output_path(UKI_PCRLOCK_DIR, id);
-        let cmd = LockCommand::Uki {
-            path: uki_path.clone(),
-            pcrlock_file: pcrlock_file.clone(),
-        };
-        cmd.run().context(format!(
-            "Failed to generate .pcrlock file via '{}' for UKI at path '{}'",
-            cmd.subcmd_name(),
-            uki_path.display()
-        ))?;
-    }
-
-    for (id, bootloader_path) in bootloader_binaries.into_iter().enumerate() {
-        let pcrlock_file = generate_pcrlock_output_path(BOOT_LOADER_CODE_PCRLOCK_DIR, id);
+    // Filter and run commands
+    for (cmd, cmd_pcrs) in basic_cmds {
+        if !(cmd_pcrs & pcrs).is_empty() {
+            cmd.run().context(format!(
+                "Failed to generate .pcrlock file via '{}'",
+                cmd.subcmd_name()
+            ))?;
+        }
         debug!(
-            "Manually generating .pcrlock file at path '{}' for bootloader at path '{}'",
-            pcrlock_file.display(),
-            bootloader_path.display()
+            "Skipping running 'systemd-pcrlock {}' as PCRs '{:?}' are not requested",
+            cmd.subcmd_name(),
+            cmd_pcrs
         );
-        generate_610_boot_loader_code_pcrlock(bootloader_path, pcrlock_file.clone()).context(
-            format!(
-                "Failed to manually generate .pcrlock file at path '{}'",
-                pcrlock_file.display()
-            ),
-        )?;
+    }
+
+    // Run lock-uki if PCR 4 or 11 are requested
+    if !(pcrs & (Pcr::Pcr4 | Pcr::Pcr11)).is_empty() {
+        for (id, uki_path) in uki_binaries.into_iter().enumerate() {
+            let pcrlock_file = generate_pcrlock_output_path(UKI_PCRLOCK_DIR, id);
+            let cmd = LockCommand::Uki {
+                path: uki_path.clone(),
+                pcrlock_file: pcrlock_file.clone(),
+            };
+            cmd.run().context(format!(
+                "Failed to generate UKI .pcrlock file at '{}'",
+                uki_path.display()
+            ))?;
+        }
+    } else {
+        debug!("Skipping running 'systemd-pcrlock lock-uki' as PCRs 4 and 11 are not requested");
+    }
+
+    // Generate bootloader .pcrlock files if PCR 4 is requested
+    if pcrs.contains(Pcr::Pcr4) {
+        for (id, bootloader_path) in bootloader_binaries.into_iter().enumerate() {
+            let pcrlock_file = generate_pcrlock_output_path(BOOT_LOADER_CODE_PCRLOCK_DIR, id);
+            generate_610_boot_loader_code_pcrlock(bootloader_path, pcrlock_file.clone())
+                .context("Bootloader PCRLock generation failed")?;
+        }
+    } else {
+        debug!("Skipping generating bootloader .pcrlock files as PCR 4 is not requested");
     }
 
     // Parse the systemd-pcrlock log output to validate that every log entry has been matched to a
     // recognized boot component, and thus that all necessary .pcrlock files have been added or
     // generated
-    validate_log().context(
+    validate_log(pcrs).context(
         "Failed to validate pcrlock log to confirm all required .pcrlock files have been generated",
     )?;
 
@@ -719,13 +733,5 @@ mod functional_test {
 
         // TODO: Add other/more test cases once helpers are implemented and statically defined
         // .pcrlock files have been added.
-    }
-
-    #[functional_test(feature = "helpers")]
-    fn test_validate_log() {
-        // TODO: This test will fail for now since .pcrlock files have not been generated/added
-        // yet. Once static .pcrlock files are added and dynamic files are generated, the test
-        // should pass.
-        validate_log().unwrap_err();
     }
 }
