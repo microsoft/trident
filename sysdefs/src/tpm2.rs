@@ -73,7 +73,9 @@ impl Pcr {
             3 => Ok(Pcr::Pcr3),
             4 => Ok(Pcr::Pcr4),
             5 => Ok(Pcr::Pcr5),
+            6 => Ok(Pcr::Pcr6),
             7 => Ok(Pcr::Pcr7),
+            8 => Ok(Pcr::Pcr8),
             9 => Ok(Pcr::Pcr9),
             10 => Ok(Pcr::Pcr10),
             11 => Ok(Pcr::Pcr11),
@@ -82,6 +84,12 @@ impl Pcr {
             14 => Ok(Pcr::Pcr14),
             15 => Ok(Pcr::Pcr15),
             16 => Ok(Pcr::Pcr16),
+            17 => Ok(Pcr::Pcr17),
+            18 => Ok(Pcr::Pcr18),
+            19 => Ok(Pcr::Pcr19),
+            20 => Ok(Pcr::Pcr20),
+            21 => Ok(Pcr::Pcr21),
+            22 => Ok(Pcr::Pcr22),
             23 => Ok(Pcr::Pcr23),
             _ => bail!("Failed to convert an invalid PCR number '{}' to a Pcr", num),
         }
@@ -111,7 +119,9 @@ mod tests {
         assert_eq!(Pcr::Pcr3.to_num(), 3);
         assert_eq!(Pcr::Pcr4.to_num(), 4);
         assert_eq!(Pcr::Pcr5.to_num(), 5);
+        assert_eq!(Pcr::Pcr6.to_num(), 6);
         assert_eq!(Pcr::Pcr7.to_num(), 7);
+        assert_eq!(Pcr::Pcr8.to_num(), 8);
         assert_eq!(Pcr::Pcr9.to_num(), 9);
         assert_eq!(Pcr::Pcr10.to_num(), 10);
         assert_eq!(Pcr::Pcr11.to_num(), 11);
@@ -120,6 +130,12 @@ mod tests {
         assert_eq!(Pcr::Pcr14.to_num(), 14);
         assert_eq!(Pcr::Pcr15.to_num(), 15);
         assert_eq!(Pcr::Pcr16.to_num(), 16);
+        assert_eq!(Pcr::Pcr17.to_num(), 17);
+        assert_eq!(Pcr::Pcr18.to_num(), 18);
+        assert_eq!(Pcr::Pcr19.to_num(), 19);
+        assert_eq!(Pcr::Pcr20.to_num(), 20);
+        assert_eq!(Pcr::Pcr21.to_num(), 21);
+        assert_eq!(Pcr::Pcr22.to_num(), 22);
         assert_eq!(Pcr::Pcr23.to_num(), 23);
     }
 
