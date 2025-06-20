@@ -513,6 +513,9 @@ allow trident_t var_run_t:file { create getattr lock open read unlink write };
 allow trident_t var_run_t:lnk_file relabelto;
 allow trident_t var_spool_t:dir relabelto;
 allow trident_t wtmp_t:file relabelto;
+# Permissions for running systemd-pcrlock for PCR-based encryption
+allow trident_t self:process setfscreate;
+allow trident_t systemd_pcrphase_exec_t:file { execute_no_trans map open read };
 
 # Policies below must be optional for Steamboat
 optional_policy(`

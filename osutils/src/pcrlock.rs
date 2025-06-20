@@ -491,6 +491,10 @@ pub fn generate_pcrlock_files(
     if pcrs.contains(Pcr::Pcr4) {
         for (id, bootloader_path) in bootloader_binaries.into_iter().enumerate() {
             let pcrlock_file = generate_pcrlock_output_path(BOOT_LOADER_CODE_PCRLOCK_DIR, id);
+            debug!(
+                "Generating bootloader .pcrlock file at '{}'",
+                pcrlock_file.display()
+            );
             generate_610_boot_loader_code_pcrlock(bootloader_path, pcrlock_file.clone())
                 .context("Bootloader PCRLock generation failed")?;
         }
