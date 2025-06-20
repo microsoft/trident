@@ -7,7 +7,7 @@ use std::{
 use anyhow::{bail, Context, Error, Result};
 use enumflags2::BitFlags;
 use goblin::pe::PE;
-use log::{debug, error, warn};
+use log::{debug, error, trace, warn};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256, Sha384, Sha512};
 use tempfile::NamedTempFile;
@@ -151,6 +151,9 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
     debug!(
         "Validating 'systemd-pcrlock log' output for required PCRs: {:?}",
         required_pcrs
+            .iter()
+            .map(|pcr| pcr.to_num())
+            .collect::<Vec<_>>()
     );
 
     let output = Dependency::SystemdPcrlock
@@ -162,6 +165,8 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
 
     let parsed: LogOutput =
         serde_json::from_str(&output).context("Failed to parse 'systemd-pcrlock log' output")?;
+
+    debug!("Parsed 'systemd-pcrlock log' output:\n{:#?}", parsed);
 
     // Collect all entries that have a null component AND record measurements into required PCRs
     let unrecognized: Vec<_> = parsed
@@ -419,7 +424,7 @@ pub fn generate_pcrlock_files(
 ) -> Result<(), Error> {
     debug!(
         "Generating .pcrlock files for the following PCRs: {:?}",
-        pcrs
+        pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
     );
 
     // TODO: REMOVE BEFORE MERGING
@@ -466,7 +471,7 @@ pub fn generate_pcrlock_files(
         debug!(
             "Skipping running 'systemd-pcrlock {}' as PCRs '{:?}' are not requested",
             cmd.subcmd_name(),
-            cmd_pcrs
+            cmd_pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
         );
     }
 
@@ -482,6 +487,16 @@ pub fn generate_pcrlock_files(
                 "Failed to generate UKI .pcrlock file at '{}'",
                 uki_path.display()
             ))?;
+
+            // Print contents of .pcrlock file
+            debug!(
+                "Contents of .pcrlock file at '{}':\n{}",
+                pcrlock_file.display(),
+                fs::read_to_string(&pcrlock_file).context(format!(
+                    "Failed to read .pcrlock file at {}",
+                    pcrlock_file.display()
+                ))?
+            );
         }
     } else {
         debug!("Skipping running 'systemd-pcrlock lock-uki' as PCRs 4 and 11 are not requested");
@@ -512,9 +527,18 @@ pub fn generate_pcrlock_files(
     Ok(())
 }
 
+/// Generates a full .pcrlock file path under PCRLOCK_DIR, i.e. /var/lib/pcrlock.d, given the
+/// sub-dir, e.g. 600-gpt, and the index of the .pcrlock file. This is needed so that each image,
+/// current and update, gets its own .pcrlock file.
+fn generate_pcrlock_output_path(pcrlock_subdir: &str, index: usize) -> PathBuf {
+    let base = Path::new(PCRLOCK_DIR).join(pcrlock_subdir);
+    base.join(format!("generated-{index}.pcrlock"))
+}
+
 /// Represents a single digest entry in a .pcrlock file.
 #[derive(Serialize)]
 struct DigestEntry<'a> {
+    #[serde(rename = "hashAlg")] // Rename to match the .pcrlock file format
     hash_alg: &'a str,
     digest: String,
 }
@@ -530,14 +554,6 @@ struct Record<'a> {
 #[derive(Serialize)]
 struct PcrLock<'a> {
     records: Vec<Record<'a>>,
-}
-
-/// Generates a full .pcrlock file path under PCRLOCK_DIR, i.e. /var/lib/pcrlock.d, given the
-/// sub-dir, e.g. 600-gpt, and the index of the .pcrlock file. This is needed so that each image,
-/// current and update, gets its own .pcrlock file.
-fn generate_pcrlock_output_path(pcrlock_subdir: &str, index: usize) -> PathBuf {
-    let base = Path::new(PCRLOCK_DIR).join(pcrlock_subdir);
-    base.join(format!("generated-{index}.pcrlock"))
 }
 
 /// Generates .pcrlock files under /var/lib/pcrlock.d/610-boot-loader-code.pcrlock.d, where Trident
@@ -568,7 +584,7 @@ fn generate_610_boot_loader_code_pcrlock(
         sha512.update(slice);
     }
 
-    let digests = vec![
+    let digests: Vec<DigestEntry<'_>> = vec![
         DigestEntry {
             hash_alg: "sha256",
             digest: format!("{:x}", sha256.finalize()),
@@ -599,10 +615,18 @@ fn generate_610_boot_loader_code_pcrlock(
         "Failed to serialize .pcrlock file {} as JSON",
         pcrlock_file.display()
     ))?;
-    fs::write(&pcrlock_file, json).context(format!(
+    fs::write(&pcrlock_file, json.clone()).context(format!(
         "Failed to write .pcrlock file at {}",
         pcrlock_file.display()
     ))?;
+
+    // Print contents of .pcrlock file
+    // TODO: Switch to trace!() before merging
+    debug!(
+        "Contents of .pcrlock file at '{}':\n{}",
+        pcrlock_file.display(),
+        json
+    );
 
     Ok(())
 }
@@ -668,10 +692,17 @@ fn generate_720_kernel_initrd_pcrlock(uki_path: PathBuf, pcrlock_file: PathBuf) 
         "Failed to serialize .pcrlock file {} as JSON",
         pcrlock_file.display()
     ))?;
-    fs::write(&pcrlock_file, json).context(format!(
+    fs::write(&pcrlock_file, json.clone()).context(format!(
         "Failed to write .pcrlock file at {}",
         pcrlock_file.display()
     ))?;
+
+    // Print contents of .pcrlock file
+    trace!(
+        "Contents of .pcrlock file at '{}':\n{}",
+        pcrlock_file.display(),
+        json
+    );
 
     Ok(())
 }
