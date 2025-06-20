@@ -1,4 +1,8 @@
 parameters:
+  - name: publishToDevFeed
+    type: boolean
+    default: false
+
   - name: tridentArtifactName
     type: string
 
@@ -84,6 +88,8 @@ stages:
               baseimgBuildType: ${{ parameters.baseimgBuildType }}
               baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
               previewContainerPipeline: "[AMD64-6-OneBranch]-Prod-BuildImages"
+          - ${{ if eq(parameters.publishToDevFeed, true) }}:
+              - template: publish-dev.yml
 
       - job: BuildTridentARM64
         displayName: Build Trident 3.0 RPMs for ARM64
