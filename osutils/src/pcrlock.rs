@@ -7,7 +7,7 @@ use std::{
 use anyhow::{bail, Context, Error, Result};
 use enumflags2::{make_bitflags, BitFlags};
 use goblin::pe::PE;
-use log::{debug, error, trace, warn};
+use log::{debug, error, warn};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256, Sha384, Sha512};
 use tempfile::NamedTempFile;
@@ -90,7 +90,7 @@ pub fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
 
     // Run systemd-pcrlock make-policy helper
     let output = make_policy(pcrs).context("Failed to generate a new TPM 2.0 access policy")?;
-    trace!("Output of 'systemd-pcrlock make-policy':\n{}", output);
+    debug!("Output of 'systemd-pcrlock make-policy':\n{}", output);
 
     // Validate that TPM 2.0 access policy has been updated
     if !output.contains("Calculated new pcrlock policy") || !output.contains("Updated NV index") {
@@ -101,7 +101,7 @@ pub fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
     // Log pcrlock policy JSON contents
     let pcrlock_policy =
         fs::read_to_string(PCRLOCK_POLICY_PATH).context("Failed to read pcrlock policy JSON")?;
-    trace!(
+    debug!(
         "Contents of pcrlock policy JSON at '{PCRLOCK_POLICY_PATH}':\n{}",
         pcrlock_policy
     );
@@ -429,6 +429,19 @@ pub fn generate_pcrlock_files(
     bootloader_binaries: Vec<PathBuf>,
 ) -> Result<(), Error> {
     debug!("Generating .pcrlock files");
+
+    // TODO: REMOVE BEFORE MERGING
+    let output = Dependency::SystemdPcrlock
+        .cmd()
+        .arg("log")
+        .arg("--json=pretty")
+        .output_and_check()
+        .context("Failed to run systemd-pcrlock log")?;
+
+    let parsed: LogOutput =
+        serde_json::from_str(&output).context("Failed to parse systemd-pcrlock log output")?;
+
+    debug!("Parsed log output: {:#?}", parsed);
 
     let basic_cmds: Vec<LockCommand> = vec![
         LockCommand::FirmwareCode,
