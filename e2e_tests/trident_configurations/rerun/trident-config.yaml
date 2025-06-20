@@ -188,7 +188,7 @@ scripts:
         exit 1
 os:
   selinux:
-    mode: permissive
+    mode: enforcing
   network:
     version: 2
     ethernets:

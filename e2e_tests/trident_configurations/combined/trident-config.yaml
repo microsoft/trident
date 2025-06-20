@@ -160,7 +160,7 @@ storage:
       mountPoint: /var/lib/trident
 os:
   selinux:
-    mode: permissive
+    mode: enforcing
   network:
     version: 2
     ethernets:
