@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error, Result};
-use enumflags2::{make_bitflags, BitFlags};
+use enumflags2::BitFlags;
 use goblin::pe::PE;
 use log::{debug, error, warn};
 use serde::{Deserialize, Serialize};
@@ -52,11 +52,6 @@ const KERNEL_CMDLINE_PCRLOCK_DIR: &str = "710-kernel-cmdline.pcrlock.d";
 #[allow(dead_code)]
 const KERNEL_INITRD_PCRLOCK_DIR: &str = "720-kernel-initrd.pcrlock.d";
 
-/// Valid PCRs for TPM 2.0 policy generation, following the `systemd-pcrlock` spec.
-///
-/// https://www.man7.org/linux/man-pages/man8/systemd-pcrlock.8.html.
-const VALID_PCRLOCK_PCRS: BitFlags<Pcr> = make_bitflags!(Pcr::{Pcr0 | Pcr1 | Pcr2 | Pcr3 | Pcr4 | Pcr5 | Pcr7 | Pcr11 | Pcr12 | Pcr13 | Pcr14 | Pcr15});
-
 #[derive(Debug, Deserialize)]
 struct PcrValue {
     pcr: Pcr,
@@ -76,17 +71,6 @@ pub fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         "Generating a new TPM 2.0 access policy with the following PCRs: {:?}",
         pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
     );
-
-    // Validate that all requested PCRs are allowed by systemd-pcrlock
-    let filtered_pcrs = pcrs & VALID_PCRLOCK_PCRS;
-
-    if pcrs != filtered_pcrs {
-        let ignored = pcrs & !filtered_pcrs;
-        warn!(
-            "Ignoring unsupported PCRs while generating a new TPM 2.0 access policy: {:?}",
-            ignored.iter().collect::<Vec<_>>()
-        );
-    }
 
     // Run systemd-pcrlock make-policy helper
     let output = make_policy(pcrs).context("Failed to generate a new TPM 2.0 access policy")?;
