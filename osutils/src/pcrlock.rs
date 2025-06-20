@@ -431,6 +431,26 @@ pub fn generate_pcrlock_files(
     debug!("Generating .pcrlock files");
 
     // TODO: REMOVE BEFORE MERGING
+    // Print out permissions for systemd-pcrlock binary
+    let perms = fs::metadata(Path::new("/usr/lib/systemd/systemd-pcrlock"))
+        .context("Failed to get metadata for systemd-pcrlock binary")?;
+    debug!(
+        "Permissions for systemd-pcrlock binary: {:#?}",
+        perms.permissions()
+    );
+
+    // Execute mount | grep $(dirname $(which systemd-pcrlock))
+    let output = Command::new("mount")
+        .arg("|")
+        .arg("grep")
+        .arg("/usr/lib/systemd/systemd-pcrlock")
+        .output()
+        .context("Failed to execute mount | grep")?;
+    debug!(
+        "Output of 'mount | grep $(dirname $(which systemd-pcrlock))':\n{:?}",
+        output
+    );
+
     let output = Dependency::SystemdPcrlock
         .cmd()
         .arg("log")
@@ -438,10 +458,12 @@ pub fn generate_pcrlock_files(
         .output_and_check()
         .context("Failed to run systemd-pcrlock log")?;
 
-    let parsed: LogOutput =
-        serde_json::from_str(&output).context("Failed to parse systemd-pcrlock log output")?;
+    debug!("Output of 'systemd-pcrlock log':\n{}", output);
 
-    debug!("Parsed log output: {:#?}", parsed);
+    let parsed = serde_json::from_str::<LogOutput>(&output)
+        .context("Failed to parse systemd-pcrlock log output")?;
+
+    debug!("Parsed systemd-pcrlock log output:\n{:#?}", parsed);
 
     let basic_cmds: Vec<LockCommand> = vec![
         LockCommand::FirmwareCode,
