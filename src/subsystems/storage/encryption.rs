@@ -116,6 +116,9 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                     .structured(ServicingError::GetLabelAndPath)?;
                 let bootloader_path = join_relative(esp_dir_path, bootloader_path_relative);
 
+                // TODO: NEED TO GENERATE .PCRLOCK FILES RELATED TO PCR 4 FOR CURRENT BOOT! OTHERWISE,
+                // WILL NOT BE ABLE TO GENERATE A PCRLOCK POLICY
+
                 // If the internal parameter is not set, default to PCRs 7, 4, and 11. For E2E
                 // testing, we're excluding PCR 7 b/c SecureBoot is not enabled in MOS & ROS.
                 // TODO: Enable PCR 7 for E2E testing once SecureBoot is enabled in MOS & ROS.

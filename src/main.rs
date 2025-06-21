@@ -207,6 +207,7 @@ fn setup_logging(args: &Cli) -> Result<Logstream, Error> {
         .with_logger(logstream.make_logger_with_level(LevelFilter::Trace))
         // Set the global filter for reqwest to debug
         .with_global_filter("reqwest", LevelFilter::Debug)
+        // Set the global filter for goblin to off
         .with_global_filter("goblin", LevelFilter::Off);
 
     // Add background logger if we're running a command that needs it
