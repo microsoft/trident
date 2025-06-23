@@ -14,7 +14,7 @@ NETLAUNCH_CONFIG ?= input/netlaunch.yaml
 OVERRIDE_RUST_FEED ?= true
 
 .PHONY: all
-all: format check test build-api-docs bin/trident-rpms-azl3.tar.gz docker-build build-functional-test coverage validate-configs generate-mermaid-diagrams
+all: format check test build-api-docs bin/trident-rpms.tar.gz docker-build build-functional-test coverage validate-configs generate-mermaid-diagrams
 
 .PHONY: check
 check:
@@ -62,10 +62,16 @@ check-sh:
 	fi
 	@echo "NOTICE: Created local .cargo/config file."
 
-.PHONY: build
-build: .cargo/config
+.PHONY: version-vars
+version-vars:
 	$(eval TRIDENT_CARGO_VERSION := $(shell python3 ./scripts/get-version.py "$(shell date +%Y%m%d).99"))
 	$(eval GIT_COMMIT := $(shell git rev-parse --short HEAD)$(shell git diff --quiet || echo '.dirty'))
+	$(eval LOCAL_BUILD_TRIDENT_VERSION=$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT))
+	@echo "TRIDENT_CARGO_VERSION=$(TRIDENT_CARGO_VERSION)"
+	@echo "GIT_COMMIT=$(GIT_COMMIT)"
+
+.PHONY: build
+build: .cargo/config version-vars
 	@OPENSSL_STATIC=1 \
 		OPENSSL_LIB_DIR=$(shell dirname `whereis libssl.a | cut -d" " -f2`) \
 		OPENSSL_INCLUDE_DIR=/usr/include/openssl \
@@ -117,9 +123,30 @@ bin/trident: build
 	@mkdir -p bin
 	@cp -u target/release/trident bin/
 
-bin/trident-rpms-azl3.tar.gz: Dockerfile.azl3 systemd/*.service trident.spec artifacts/osmodifier bin/trident selinux-policy-trident/*
+# This will do a proper build on azl3, exactly as the pipelines would, with the custom registry and all.
+bin/trident-rpms-azl3.tar.gz: Dockerfile.full systemd/*.service trident.spec artifacts/osmodifier selinux-policy-trident/* version-vars
+	$(eval CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN := $(shell az account get-access-token --query "join(' ', ['Bearer', accessToken])" --output tsv))
+
+	@export CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN="$(CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN)" &&\
+		docker build -t trident/trident-build:latest \
+			--secret id=registry_token,env=CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN \
+			--build-arg CARGO_REGISTRIES_FROM_ENV="true" \
+			--build-arg TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
+			--build-arg RPM_VER="$(TRIDENT_CARGO_VERSION)" \
+			--build-arg RPM_REL="dev.$(GIT_COMMIT)" \
+			-f Dockerfile.full \
+			.
+	@mkdir -p bin/
+	@id=$$(docker create trident/trident-build:latest) && \
+	    docker cp -q $$id:/work/trident-rpms.tar.gz $@ || \
+	    docker rm -v $$id
+	@rm -rf bin/RPMS/
+	@tar xf $@ -C bin/
+
+# This one does a fast trick-build where we build locally and inject the binary into the container to add it to the RPM.
+bin/trident-rpms.tar.gz: Dockerfile.azl3 systemd/*.service trident.spec artifacts/osmodifier bin/trident selinux-policy-trident/*
 	@docker build -t trident/trident-build:latest \
-		--build-arg TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
+		--build-arg TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
 		--build-arg RPM_VER="$(TRIDENT_CARGO_VERSION)" \
 		--build-arg RPM_REL="dev.$(GIT_COMMIT)" \
 		-f Dockerfile.azl3 \
@@ -128,14 +155,25 @@ bin/trident-rpms-azl3.tar.gz: Dockerfile.azl3 systemd/*.service trident.spec art
 	@id=$$(docker create trident/trident-build:latest) && \
 	    docker cp -q $$id:/work/trident-rpms.tar.gz $@ || \
 	    docker rm -v $$id
-	@rm -rf bin/RPMS/x86_64
+	@rm -rf bin/RPMS/
 	@tar xf $@ -C bin/
 
-bin/trident-rpms.tar.gz: bin/trident-rpms-azl3.tar.gz
-	cp $< $@
+STEAMBOAT_RPMS_DIR ?= /tmp/mariner/uki/out/RPMS
 
+.PHONY: copy-rpms-to-steamboat
+copy-rpms-to-steamboat: bin/trident-rpms-azl3.tar.gz
+	@echo "Cleaning up old Trident RPMs in Steamboat..."
+	@rm -f $(STEAMBOAT_RPMS_DIR)/trident-*
+	@echo "Copying Trident RPMs to Steamboat..."
+	@mkdir -p $(STEAMBOAT_RPMS_DIR)
+	@find bin/RPMS -type f -name 'trident-*.rpm' -exec cp {} $(STEAMBOAT_RPMS_DIR) \;
+	@echo "Trident RPMs copied to Steamboat directory: $(STEAMBOAT_RPMS_DIR)"
+	@ls -alh $(STEAMBOAT_RPMS_DIR)/trident-*.rpm
+
+
+# Grabs bin/trident-rpms.tar.gz from the local build directory and builds a Docker image with it.
 .PHONY: docker-build
-docker-build: Dockerfile.runtime bin/trident-rpms-azl3.tar.gz
+docker-build: Dockerfile.runtime bin/trident-rpms.tar.gz
 	@docker build --quiet -f Dockerfile.runtime -t trident/trident:latest .
 
 artifacts/test-image/trident-container.tar.gz: docker-build
