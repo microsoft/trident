@@ -111,9 +111,8 @@ impl HostConfiguration {
         if let Some(selinux_mode) = self.os.selinux.mode {
             if selinux_mode != SelinuxMode::Disabled {
                 warn!(
-                    "The use of SELinux with verity and grub is not supported. SELinux mode is \
-                    currently set to '{}', but should be 'disabled'.",
-                    selinux_mode.to_string()
+                    "The use of SELinux with root-verity and grub is not supported. This \
+                    configuration will only work with a UKI-based image."
                 );
             }
         }
