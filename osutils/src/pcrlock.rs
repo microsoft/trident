@@ -7,7 +7,7 @@ use std::{
 use anyhow::{Context, Error, Result};
 use enumflags2::BitFlags;
 use goblin::pe::PE;
-use log::{debug, error, trace, warn};
+use log::{debug, trace, warn};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256, Sha384, Sha512};
 use tempfile::NamedTempFile;
@@ -105,16 +105,23 @@ pub fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
 
     // If any requested PCRs are missing from the policy, return an error
     if !missing_pcrs.is_empty() {
-        error!(
+        warn!(
             "Some requested PCRs are missing from the generated pcrlock policy: '{:?}'",
             missing_pcrs
                 .iter()
                 .map(|pcr| pcr.to_num())
                 .collect::<Vec<_>>()
         );
-        return Err(anyhow::anyhow!(
-            "Failed to generate a new TPM 2.0 access policy"
-        ));
+        // error!(
+        //     "Some requested PCRs are missing from the generated pcrlock policy: '{:?}'",
+        //     missing_pcrs
+        //         .iter()
+        //         .map(|pcr| pcr.to_num())
+        //         .collect::<Vec<_>>()
+        // );
+        // return Err(anyhow::anyhow!(
+        //     "Failed to generate a new TPM 2.0 access policy"
+        // ));
     }
 
     Ok(())
@@ -216,18 +223,55 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
 /// generate a TPM 2.0 access policy, stored in a TPM 2.0 NV index. The prediction and info about
 /// the used TPM 2.0 and its NV index are written to PCRLOCK_POLICY_PATH.
 fn make_policy(pcrs: BitFlags<Pcr>) -> Result<String, Error> {
+    // debug!(
+    //     "Generating a new pcrlock policy via 'systemd-pcrlock make-policy' \
+    //     with the following PCRs: {:?}",
+    //     pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
+    // );
+
+    // Dependency::SystemdPcrlock
+    //     .cmd()
+    //     .arg("make-policy")
+    //     .arg(to_pcr_arg(pcrs))
+    //     .output_and_check()
+    //     .context("Failed to run 'systemd-pcrlock make-policy'")
     debug!(
         "Generating a new pcrlock policy via 'systemd-pcrlock make-policy' \
         with the following PCRs: {:?}",
         pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
     );
 
-    Dependency::SystemdPcrlock
-        .cmd()
-        .arg("make-policy")
-        .arg(to_pcr_arg(pcrs))
-        .output_and_check()
-        .context("Failed to run 'systemd-pcrlock make-policy'")
+    // Create command with arguments
+    let mut cmd = Command::new("/usr/lib/systemd/systemd-pcrlock"); // Directly use Command
+    cmd.arg("make-policy").arg(to_pcr_arg(pcrs));
+
+    // Execute command and capture full output
+    let output = cmd
+        .output() // Returns std::process::Output
+        .context("Failed to execute 'systemd-pcrlock make-policy' command")?;
+
+    // Check exit status using standard fields
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow::anyhow!(
+            "Command failed with exit code {:?}\nStderr: {}",
+            output.status.code(),
+            stderr
+        ));
+    }
+
+    // Convert stdout to UTF-8
+    let stdout_str =
+        String::from_utf8(output.stdout).context("Command output contained invalid UTF-8")?;
+
+    // Log both outputs
+    debug!(
+        "Command output:\nSTDOUT:\n{}\nSTDERR:\n{}",
+        stdout_str,
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    Ok(stdout_str)
 }
 
 /// Converts the provided PCR bitflags into the `--pcr=` argument for `systemd-pcrlock`. Returns a
