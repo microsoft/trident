@@ -128,7 +128,7 @@ impl Subsystem for SelinuxSubsystem {
             match final_selinux_mode {
                 SelinuxMode::Enforcing => {
                     return Err(TridentError::new(InvalidInputError::from(
-                        HostConfigurationDynamicValidationError::VerityAndSelinuxUnsupported {
+                        HostConfigurationDynamicValidationError::RootVerityAndSelinuxUnsupported {
                             selinux_mode: final_selinux_mode.to_string(),
                         },
                     )));
