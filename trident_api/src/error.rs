@@ -12,7 +12,7 @@ use url::Url;
 use crate::{
     config::{HostConfigurationDynamicValidationError, HostConfigurationStaticValidationError},
     primitives::bytes::ByteCount,
-    status::ServicingState,
+    status::{ServicingState, ServicingType},
     storage_graph::error::StorageGraphBuildError,
 };
 
@@ -120,6 +120,9 @@ pub enum InternalError {
 
     #[error("Unexpected servicing state '{state:?}'")]
     UnexpectedServicingState { state: ServicingState },
+
+    #[error("Unexpected servicing type '{servicing_type:?}'")]
+    UnexpectedServicingType { servicing_type: ServicingType },
 
     #[error("Failed to build storage graph: {0}")]
     RebuildStorageGraph(#[from] StorageGraphBuildError),

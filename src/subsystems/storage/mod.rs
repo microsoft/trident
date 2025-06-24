@@ -127,9 +127,6 @@ impl Subsystem for StorageSubsystem {
             }
         }
 
-        // TODO: validate that block devices naming is consistent with the current state
-        // https://dev.azure.com/mariner-org/ECF/_workitems/edit/7322/
-
         encryption::validate_host_config(&ctx.spec).message(format!(
             "Step 'Validate' failed for subunit '{ENCRYPTION_SUBSYSTEM_NAME}'"
         ))?;
@@ -173,8 +170,13 @@ impl Subsystem for StorageSubsystem {
             verity::create_machine_id(mount_path).structured(ServicingError::CreateMachineId)?;
         }
 
-        // If this is a UKI image AND we're performing a clean install, then we need to run the
-        // encryption provision logic, i.e. re-seal the encryption key to pcrlock policy!
+        // If this is a UKI image, then we need to run the encryption provision logic:
+        // 1. On a clean install, re-seal the encryption key to a pcrlock policy for ROS A,
+        // 2. On an A/B update, re-generate pcrlock policy to include update ROS.
+        //
+        // TODO: For now, we're not able to seal to a pcrlock policy on clean install b/c UKI MOS
+        // is required for PCR 4 & 7 sealing. So, for now, we're generating a pcrlock policy for
+        // the first time in ROS A, while staging an A/B update.
         if ctx.is_uki_image()? {
             debug!("Starting step 'Provision' for subunit '{ENCRYPTION_SUBSYSTEM_NAME}'");
             encryption::provision(ctx, mount_path).message(format!(

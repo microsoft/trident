@@ -16,7 +16,7 @@ use trident_api::{
         HostConfigurationStaticValidationError, PartitionType,
     },
     constants::{internal_params::OVERRIDE_ENCRYPTION_PCRS, ESP_MOUNT_POINT_PATH},
-    error::{InvalidInputError, ReportError, ServicingError, TridentError},
+    error::{InternalError, InvalidInputError, ReportError, ServicingError, TridentError},
 };
 
 use crate::{
@@ -93,9 +93,9 @@ pub(super) fn validate_host_config(host_config: &HostConfiguration) -> Result<()
 }
 
 /// Provisions encrypted volumes when a UKI image is being installed:
-/// - On a clean install, generates .pcrlock files for the runtime OS image A, creates a pcrlock
-///   TPM 2.0 access policy based on PCRs 4, 7, and 11, and re-enrolls all encrypted volumes with
-///   the new policy,
+/// - TODO: On a clean install, generates .pcrlock files for the runtime OS image A, creates a
+///   pcrlock TPM 2.0 access policy based on PCRs 4, 7, and 11, and re-enrolls all encrypted
+///   volumes with the new policy,
 /// - On A/B update, re-generates the pcrlock policy for the update image using PCRs 4, 7, and 11.
 #[tracing::instrument(name = "encryption_provision", skip_all)]
 pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
@@ -105,23 +105,30 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
         // - For A/B update, reduce to PCR 7.
         let pcrs = match ctx.servicing_type {
             ServicingType::CleanInstall => {
+                // If the internal parameter is not set, default to PCRs 7, 4, and 11.
+                //
+                // TODO: For E2E testing, we're excluding PCR 7 b/c SecureBoot is not enabled in
+                // MOS or ROS. Need to enable PCR 7 for E2E testing once SecureBoot is enabled.
+                //
+                // TODO: Once a UKI MOS is built, i.e. sealing to PCRs 11 and 4 is possible, enable
+                // PCR-based encryption for clean install.
+                debug!("PCR-based encryption is disabled on clean install");
+                return Ok(());
+            }
+            ServicingType::AbUpdate => {
+                // TODO: Also pass binaries for CURRENT OS image!!!
+
                 // UKI binary in runtime OS to be measured; it's currently staged at designated
                 // path
                 let esp_dir_path = join_relative(mount_path, ESP_MOUNT_POINT_PATH);
-                let uki_binary_ros = esp_dir_path.join(UKI_DIRECTORY).join(TMP_UKI_NAME);
+                let uki_update = esp_dir_path.join(UKI_DIRECTORY).join(TMP_UKI_NAME);
 
                 // Bootloader binary for runtime OS to be measured, i.e. shim EFI executable for
                 // UKI
-                let (_, bootloader_path_relative) = bootentries::get_label_and_path(ctx)
+                let (_, bootloader_update_relative) = bootentries::get_label_and_path(ctx)
                     .structured(ServicingError::GetLabelAndPath)?;
-                let bootloader_path = join_relative(esp_dir_path, bootloader_path_relative);
+                let bootloader_update = join_relative(esp_dir_path, bootloader_update_relative);
 
-                // TODO: NEED TO GENERATE .PCRLOCK FILES RELATED TO PCR 4 FOR CURRENT BOOT! OTHERWISE,
-                // WILL NOT BE ABLE TO GENERATE A PCRLOCK POLICY
-
-                // If the internal parameter is not set, default to PCRs 7, 4, and 11. For E2E
-                // testing, we're excluding PCR 7 b/c SecureBoot is not enabled in MOS & ROS.
-                // TODO: Enable PCR 7 for E2E testing once SecureBoot is enabled in MOS & ROS.
                 let pcrs = ctx
                     .spec
                     .internal_params
@@ -138,15 +145,16 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                     .unwrap_or(Pcr::Pcr4 | Pcr::Pcr7 | Pcr::Pcr11);
 
                 // Generate .pcrlock files for runtime OS image A
-                pcrlock::generate_pcrlock_files(pcrs, vec![uki_binary_ros], vec![bootloader_path])
+                pcrlock::generate_pcrlock_files(pcrs, vec![uki_update], vec![bootloader_update])
                     .structured(ServicingError::GeneratePcrlockFiles)?;
 
                 pcrs
             }
-            // TODO: Modify this logic to re-generate pcrlock policy for the update image using
-            // PCRs 4, 7, and 11, on A/B update. Currently, sealing to PCR 0 instead of PCR 7 b/c
-            // SecureBoot is not enabled in MOS & ROS in the E2E testing.
-            _ => Pcr::Pcr0.into(),
+            _ => {
+                return Err(TridentError::new(InternalError::UnexpectedServicingType {
+                    servicing_type: ctx.servicing_type,
+                }))
+            }
         };
 
         // Generate pcrlock policy; on A/B update, the binding will thus automatically be updated
@@ -154,9 +162,13 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
         pcrlock::generate_tpm2_access_policy(pcrs)
             .structured(ServicingError::GenerateTpm2AccessPolicy)?;
 
-        // On clean install, iterate through all encrypted volumes and re-bind them to the newly
-        // generated pcrlock policy
-        if ctx.servicing_type == ServicingType::CleanInstall {
+        // If PCRLOCK_POLICY_PATH doesn't exist yet, we're doing this for the first time, so we
+        // need to iterate through encrypted volumes and bind them to the newly generated pcrlock
+        // policy.
+        //
+        // TODO: Right now, this happens while Trident is staging the first A/B update. Once PCR
+        // encryption is enabled on clean install, this will take place during clean install.
+        if pcrlock::is_pcrlock_policy() {
             debug!("Re-enrolling encrypted volumes with the new pcrlock policy");
             for ev in encryption.volumes.iter() {
                 // Fetch the block device path of the encrypted volume

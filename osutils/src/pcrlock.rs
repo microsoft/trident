@@ -7,7 +7,7 @@ use std::{
 use anyhow::{Context, Error, Result};
 use enumflags2::BitFlags;
 use goblin::pe::PE;
-use log::{debug, trace, warn};
+use log::{debug, error, trace, warn};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256, Sha384, Sha512};
 use tempfile::NamedTempFile;
@@ -63,6 +63,13 @@ struct PcrPolicy {
     pcr_values: Vec<PcrValue>,
 }
 
+/// Checks whether a pcrlock already exists, i.e. whether encrypted devices in the system have been
+/// sealed to a pcrlock policy.
+pub fn is_pcrlock_policy() -> bool {
+    // Check if PCRLOCK_POLICY_PATH exists
+    Path::new(PCRLOCK_POLICY_PATH).exists()
+}
+
 /// Validates the PCR input and calls a helper function `systemd-pcrlock make-policy` to generate a
 /// TPM 2.0 access policy. Parses the output of the helper func to validate that the policy has
 /// been updated as expected.
@@ -71,8 +78,6 @@ pub fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         "Generating a new TPM 2.0 access policy with the following PCRs: {:?}",
         pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
     );
-    //Sleep for a few seconds to see the logs
-    std::thread::sleep(std::time::Duration::from_secs(5));
 
     // Run systemd-pcrlock make-policy helper
     let output = make_policy(pcrs).context("Failed to generate a new TPM 2.0 access policy")?;
@@ -105,23 +110,16 @@ pub fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
 
     // If any requested PCRs are missing from the policy, return an error
     if !missing_pcrs.is_empty() {
-        warn!(
+        error!(
             "Some requested PCRs are missing from the generated pcrlock policy: '{:?}'",
             missing_pcrs
                 .iter()
                 .map(|pcr| pcr.to_num())
                 .collect::<Vec<_>>()
         );
-        // error!(
-        //     "Some requested PCRs are missing from the generated pcrlock policy: '{:?}'",
-        //     missing_pcrs
-        //         .iter()
-        //         .map(|pcr| pcr.to_num())
-        //         .collect::<Vec<_>>()
-        // );
-        // return Err(anyhow::anyhow!(
-        //     "Failed to generate a new TPM 2.0 access policy"
-        // ));
+        return Err(anyhow::anyhow!(
+            "Failed to generate a new TPM 2.0 access policy"
+        ));
     }
 
     Ok(())
@@ -782,6 +780,20 @@ mod functional_test {
     use pytest_gen::functional_test;
 
     #[functional_test(feature = "helpers")]
+    fn test_is_pcrlock_policy() {
+        // Test case #0. No pcrlock policy has been generated yet, so the func returns false
+        assert!(!is_pcrlock_policy());
+
+        // Write a mock pcrlock policy
+        fs::write(PCRLOCK_POLICY_PATH, "{}").unwrap();
+        // Test case #1. A pcrlock policy has been generated, so the func returns true
+        assert!(is_pcrlock_policy());
+
+        // Clean up the generated pcrlock policy
+        fs::remove_file(PCRLOCK_POLICY_PATH).unwrap();
+    }
+
+    #[functional_test(feature = "helpers")]
     fn test_generate_tpm2_access_policy() {
         // Test case #0. Since no .pcrlock files have been generated yet, only 0-valued PCRs can be
         // used to generate a TPM 2.0 access policy.
@@ -798,6 +810,9 @@ mod functional_test {
                 .to_string(),
             "Failed to generate a new TPM 2.0 access policy"
         );
+
+        // Clean up the generated pcrlock policy
+        fs::remove_file(PCRLOCK_POLICY_PATH).unwrap();
 
         // TODO: Add other/more test cases once helpers are implemented and statically defined
         // .pcrlock files have been added.
