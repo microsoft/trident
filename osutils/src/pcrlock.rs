@@ -4,7 +4,7 @@ use std::{
     process::Command,
 };
 
-use anyhow::{Context, Error, Result};
+use anyhow::{bail, Context, Error, Result};
 use enumflags2::BitFlags;
 use goblin::pe::PE;
 use log::{debug, error, trace, warn};
@@ -80,14 +80,7 @@ pub fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
     );
 
     // Run systemd-pcrlock make-policy helper
-    let output = make_policy(pcrs).context("Failed to generate a new TPM 2.0 access policy")?;
-    debug!("Output of 'systemd-pcrlock make-policy':\n{}", output);
-
-    // Validate that TPM 2.0 access policy has been updated
-    if !output.contains("Calculated new pcrlock policy") || !output.contains("Updated NV index") {
-        // Only warning b/c on clean install, pcrlock policy will be created for the first time
-        warn!("TPM 2.0 access policy has not been updated:\n{}", output);
-    }
+    make_policy(pcrs).context("Failed to generate a new TPM 2.0 access policy")?;
 
     // Log pcrlock policy JSON contents
     let pcrlock_policy =
@@ -180,59 +173,49 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         .collect();
 
     debug!(
-        "Filtered 'systemd-pcrlock log' entries for required PCRs:\n{:#?}",
+        "Filtered 'systemd-pcrlock log' entries for required PCRs {:?}:\n{:#?}",
+        required_pcrs
+            .iter()
+            .map(|pcr| pcr.to_num())
+            .collect::<Vec<_>>(),
         required_entries
     );
 
-    Ok(())
+    // Validate only required PCRs
+    let unrecognized: Vec<_> = required_entries
+        .into_iter()
+        .filter(|entry| entry.component.is_none())
+        .collect();
 
-    // // Validate only required PCRs
-    // let unrecognized: Vec<_> = required_entries
-    //     .into_iter()
-    //     .filter(|entry| entry.component.is_none())
-    //     .collect();
-    //
-    // if unrecognized.is_empty() {
-    //     return Ok(());
-    // }
-    //
-    // let entries: Vec<String> = unrecognized
-    //     .into_iter()
-    //     .map(|entry| {
-    //         format!(
-    //             "pcr='{}', pcrname='{}', event='{}', sha256='{}', description='{}'",
-    //             entry.pcr.to_num(),
-    //             entry.pcrname.as_deref().unwrap_or("null"),
-    //             entry.event.as_deref().unwrap_or("null"),
-    //             entry.sha256.as_ref().map(|h| h.as_str()).unwrap_or("null"),
-    //             entry.description.as_deref().unwrap_or("null"),
-    //         )
-    //     })
-    //     .collect();
+    if unrecognized.is_empty() {
+        return Ok(());
+    }
 
-    // bail!(
-    //     "Failed to validate systemd-pcrlock log output as some log entries cannot be matched \
-    //         to recognized components:\n{}",
-    //     entries.join("\n")
-    // );
+    let entries: Vec<String> = unrecognized
+        .into_iter()
+        .map(|entry| {
+            format!(
+                "pcr='{}', pcrname='{}', event='{}', sha256='{}', description='{}'",
+                entry.pcr.to_num(),
+                entry.pcrname.as_deref().unwrap_or("null"),
+                entry.event.as_deref().unwrap_or("null"),
+                entry.sha256.as_ref().map(|h| h.as_str()).unwrap_or("null"),
+                entry.description.as_deref().unwrap_or("null"),
+            )
+        })
+        .collect();
+
+    bail!(
+        "Failed to validate systemd-pcrlock log output as some log entries cannot be matched \
+            to recognized components:\n{}",
+        entries.join("\n")
+    );
 }
 
 /// Runs `systemd-pcrlock make-policy` command to predict the PCR state for future boots and then
 /// generate a TPM 2.0 access policy, stored in a TPM 2.0 NV index. The prediction and info about
 /// the used TPM 2.0 and its NV index are written to PCRLOCK_POLICY_PATH.
-fn make_policy(pcrs: BitFlags<Pcr>) -> Result<String, Error> {
-    // debug!(
-    //     "Generating a new pcrlock policy via 'systemd-pcrlock make-policy' \
-    //     with the following PCRs: {:?}",
-    //     pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
-    // );
-
-    // Dependency::SystemdPcrlock
-    //     .cmd()
-    //     .arg("make-policy")
-    //     .arg(to_pcr_arg(pcrs))
-    //     .output_and_check()
-    //     .context("Failed to run 'systemd-pcrlock make-policy'")
+fn make_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
     debug!(
         "Generating a new pcrlock policy via 'systemd-pcrlock make-policy' \
         with the following PCRs: {:?}",
@@ -269,7 +252,18 @@ fn make_policy(pcrs: BitFlags<Pcr>) -> Result<String, Error> {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    Ok(stdout_str)
+    // Validate that TPM 2.0 access policy has been updated
+    if !stdout_str.contains("Calculated new pcrlock policy")
+        || !stdout_str.contains("Updated NV index")
+    {
+        // Only warning b/c on clean install, pcrlock policy will be created for the first time
+        warn!(
+            "TPM 2.0 access policy has not been updated:\n{}",
+            stdout_str
+        );
+    }
+
+    Ok(())
 }
 
 /// Converts the provided PCR bitflags into the `--pcr=` argument for `systemd-pcrlock`. Returns a
@@ -498,12 +492,13 @@ pub fn generate_pcrlock_files(
                 "Failed to generate .pcrlock file via '{}'",
                 cmd.subcmd_name()
             ))?;
+        } else {
+            debug!(
+                "Skipping running 'systemd-pcrlock {}' as PCRs '{:?}' are not requested",
+                cmd.subcmd_name(),
+                cmd_pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
+            );
         }
-        debug!(
-            "Skipping running 'systemd-pcrlock {}' as PCRs '{:?}' are not requested",
-            cmd.subcmd_name(),
-            cmd_pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
-        );
     }
 
     // Run lock-uki only for non-null UKI binaries when PCRs 4/11 are requested
