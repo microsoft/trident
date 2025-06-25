@@ -392,19 +392,78 @@ bin/storm-trident: $(shell find storm -type f) tools/go.sum
 validate: $(TRIDENT_CONFIG) bin/trident
 	@bin/trident validate $(TRIDENT_CONFIG)
 
+# Insatller tools
+
 AZLTOOLS_OUT_DIR := bin
 AZLTOOLS_DIR := azltools
 
-.PHONY: build-liveinstaller
-build-liveinstaller:
+bin/liveinstaller: \
+	$(shell find $(AZLTOOLS_DIR)/liveinstaller -type f) \
+	$(shell find $(AZLTOOLS_DIR)/imagegen/attendedinstaller/ -type f) \
+	azltools/go.sum
+	@mkdir -p bin
 	cd $(AZLTOOLS_DIR)/liveinstaller && \
-		CGO_ENABLED=0 go build -o ../../../$(AZLTOOLS_OUT_DIR)/liveinstaller
+		CGO_ENABLED=0 go build -o ../../$(AZLTOOLS_OUT_DIR)/liveinstaller
 
-.PHONY: build-imager
-build-imager:
+bin/manualrun: \
+	$(shell find $(AZLTOOLS_DIR)/imagegen/attendedinstaller/ -type f) \
+	azltools/go.sum
+	@mkdir -p bin
+	cd $(AZLTOOLS_DIR)/imagegen/attendedinstaller/_manualrun && \
+		CGO_ENABLED=0 go build -o ../../../../$(AZLTOOLS_OUT_DIR)/manualrun
+
+bin/imager: $(shell find $(AZLTOOLS_DIR)/imager -type f) azltools/go.sum
+	@mkdir -p bin
 	cd $(AZLTOOLS_DIR)/imager && \
-		CGO_ENABLED=0 go build -o ../../../$(AZLTOOLS_OUT_DIR)/imager
+		CGO_ENABLED=0 go build -o ../../$(AZLTOOLS_OUT_DIR)/imager
 
+# AZL INSTALLER IMAGES
+
+artifacts/test-image/azl-installer-mos.vhdx: \
+	artifacts/baremetal.vhdx \
+	bin/trident_rpms/ \
+	azl-installer/mos/mos.yaml \
+	artifacts/imagecustomizer \
+	$(shell find azl-installer/mos/ -type f)
+	@mkdir -p artifacts/test-image/
+
+	sudo ./artifacts/imagecustomizer \
+		--log-level debug \
+		--rpm-source ./bin/trident_rpms/ \
+		--build-dir ./artifacts/test-image \
+		--image-file $< \
+		--output-image-file $@ \
+		--output-image-format vhdx \
+		--config-file azl-installer/mos/mos.yaml
+
+AZL_INSTALLER_IMAGES_PATH = azl-installer/iso/images
+AZL_INSTALLER_BIN_PATH = azl-installer/iso/bin
+artifacts/test-image/azl-installer.iso: \
+	artifacts/test-image/azl-installer-mos.vhdx \
+	artifacts/imagecustomizer \
+	bin/liveinstaller \
+	bin/imager \
+	artifacts/test-image/regular.cosi \
+	$(shell find azl-installer/iso/ -type f)
+	# Copy runtime images to prepare for inclusion in the ISO
+	rm -rf $(AZL_INSTALLER_IMAGES_PATH)
+	mkdir -p $(AZL_INSTALLER_IMAGES_PATH)
+	cp artifacts/test-image/regular.cosi $(AZL_INSTALLER_IMAGES_PATH)/trident-testimage.cosi
+	rm -rf $(AZL_INSTALLER_BIN_PATH)
+	mkdir -p $(AZL_INSTALLER_BIN_PATH)
+	cp bin/liveinstaller $(AZL_INSTALLER_BIN_PATH)/
+	cp bin/imager $(AZL_INSTALLER_BIN_PATH)/
+
+	mkdir -p artifacts/test-image/
+	sudo ./artifacts/imagecustomizer \
+	    --log-level debug \
+	    --build-dir ./artifacts/test-image/ \
+	    --image-file $< \
+	    --output-image-file $@ \
+	    --config-file azl-installer/iso/mos-iso.yaml \
+	    --output-image-format iso
+
+# Run netlaunch
 NETLAUNCH_ISO ?= bin/trident-mos.iso
 
 input/netlaunch.yaml: $(ARGUS_TOOLKIT_PATH)/vm-netlaunch.yaml

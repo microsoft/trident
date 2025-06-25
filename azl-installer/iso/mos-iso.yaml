@@ -1,0 +1,27 @@
+os:
+  additionalFiles:
+  - source: scripts/installation.sh 
+    destination: /root/installation.sh 
+
+iso:
+  additionalFiles:
+  - source: images/trident-testimage.cosi
+    destination: /images/azure-linux-trident.cosi
+  - source: bin/imager
+    destination: /installer/imager
+  - source: bin/liveinstaller
+    destination: /installer/liveinstaller
+  - source: files/attended_config.json
+    destination: /installer/attended_config.json
+  - source: files/EULA.txt 
+    destination: /installer/EULA.txt 
+  kernelCommandLine:
+    extraCommandLine:
+    - console=tty0
+    - console=tty1
+    - console=ttyS0
+    - loglevel=6
+
+scripts:
+  postCustomization:
+  - path: scripts/startup-command.sh
