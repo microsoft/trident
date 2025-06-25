@@ -508,6 +508,11 @@ pub fn generate_pcrlock_files(
     // measured by Trident,
     bootloader_binaries: Vec<Option<PathBuf>>,
 ) -> Result<(), Error> {
+    // TODO: REMOVE BEFORE MERGING!!!
+    // Iterate through all files in PCRLOCK_DIR recursively, including all sub-dirs, and log the
+    // contents of each .pcrlock file
+    log_all_files_recursively(Path::new(PCRLOCK_DIR));
+
     debug!(
         "Generating .pcrlock files for the following PCRs: {:?}",
         pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
