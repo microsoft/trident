@@ -96,39 +96,18 @@ pub(super) fn validate_host_config(host_config: &HostConfiguration) -> Result<()
 /// - TODO: On a clean install, generates .pcrlock files for the runtime OS image A, creates a
 ///   pcrlock TPM 2.0 access policy based on PCRs 4, 7, and 11, and re-enrolls all encrypted
 ///   volumes with the new policy,
-/// - On A/B update, re-generates the pcrlock policy for the update image using PCRs 4, 7, and 11.
+/// - On A/B update, re-generates the pcrlock policy to include current boot & future boot with
+///   update OS image, using PCRs 4, 7, and 11.
 #[tracing::instrument(name = "encryption_provision", skip_all)]
 pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
     if let Some(encryption) = &ctx.spec.storage.encryption {
         // Determine PCRs depending on the current servicing type:
-        // - For a clean install, use all UKI PCRs 4, 7, and 11 and generate .pcrlock files,
-        // - For A/B update, reduce to PCR 7.
+        // - For clean install, temporarily use only PCR 0,
+        // - For A/B update, use PCRs 4, 7, and 11.
+        // TODO: Once UKI MOS is built, include all UKI PCRs, i.e. 4, 7, and 11, into pcrlock
+        // policy on clean install as well.
         let pcrs = match ctx.servicing_type {
             ServicingType::CleanInstall => {
-                // If the internal parameter is not set, default to PCRs 7, 4, and 11.
-                //
-                // TODO: For E2E testing, we're excluding PCR 7 b/c SecureBoot is not enabled in
-                // MOS or ROS. Need to enable PCR 7 for E2E testing once SecureBoot is enabled.
-                //
-                // TODO: Once a UKI MOS is built, i.e. sealing to PCRs 11 and 4 is possible, enable
-                // PCR-based encryption for clean install.
-                debug!("PCR-based encryption is disabled on clean install");
-                return Ok(());
-            }
-            ServicingType::AbUpdate => {
-                // TODO: Also pass binaries for CURRENT OS image!!!
-
-                // UKI binary in runtime OS to be measured; it's currently staged at designated
-                // path
-                let esp_dir_path = join_relative(mount_path, ESP_MOUNT_POINT_PATH);
-                let uki_update = esp_dir_path.join(UKI_DIRECTORY).join(TMP_UKI_NAME);
-
-                // Bootloader binary for runtime OS to be measured, i.e. shim EFI executable for
-                // UKI
-                let (_, bootloader_update_relative) = bootentries::get_label_and_path(ctx)
-                    .structured(ServicingError::GetLabelAndPath)?;
-                let bootloader_update = join_relative(esp_dir_path, bootloader_update_relative);
-
                 let pcrs = ctx
                     .spec
                     .internal_params
@@ -144,31 +123,58 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                     .map(|v| BitFlags::<Pcr>::from_iter(v.into_iter()))
                     .unwrap_or(Pcr::Pcr4 | Pcr::Pcr7 | Pcr::Pcr11);
 
-                // Generate .pcrlock files for runtime OS image A
-                pcrlock::generate_pcrlock_files(pcrs, vec![uki_update], vec![bootloader_update])
+                // Generate .pcrlock files for runtime OS image A, only using PCR 0.
+                //
+                // TODO: Once UKI MOS is built, include ROS A UKI and bootloader binaries
+                pcrlock::generate_pcrlock_files(pcrs, vec![], vec![])
                     .structured(ServicingError::GeneratePcrlockFiles)?;
+
+                pcrs
+            }
+            ServicingType::AbUpdate => {
+                // TODO: Construct binaries for CURRENT OS image!!!
+                let uki_current = Path::new("/usr/bin/uki").to_path_buf();
+                let bootloader_current = Path::new("/usr/bin/bootloader").to_path_buf();
+
+                // UKI binary in runtime OS to be measured; it's currently staged at designated
+                // path
+                let esp_dir_path = join_relative(mount_path, ESP_MOUNT_POINT_PATH);
+                let uki_update = esp_dir_path.join(UKI_DIRECTORY).join(TMP_UKI_NAME);
+
+                // Bootloader binary for runtime OS to be measured, i.e. shim EFI executable for
+                // UKI
+                let (_, bootloader_update_relative) = bootentries::get_label_and_path(ctx)
+                    .structured(ServicingError::GetLabelAndPath)?;
+                let bootloader_update = join_relative(esp_dir_path, bootloader_update_relative);
+
+                // Use UKI PCRs
+                let pcrs = Pcr::Pcr4 | Pcr::Pcr7 | Pcr::Pcr11;
+
+                // Generate .pcrlock files for runtime OS image A
+                pcrlock::generate_pcrlock_files(
+                    pcrs,
+                    vec![Some(uki_current), Some(uki_update)],
+                    vec![Some(bootloader_current), Some(bootloader_update)],
+                )
+                .structured(ServicingError::GeneratePcrlockFiles)?;
 
                 pcrs
             }
             _ => {
                 return Err(TridentError::new(InternalError::UnexpectedServicingType {
                     servicing_type: ctx.servicing_type,
-                }))
+                }));
             }
         };
 
-        // Generate pcrlock policy; on A/B update, the binding will thus automatically be updated
-        // with the new pcrlock policy
+        // Generate pcrlock policy; on A/B update, the existing binding will be automatically
+        // updated with the new pcrlock policy
         pcrlock::generate_tpm2_access_policy(pcrs)
             .structured(ServicingError::GenerateTpm2AccessPolicy)?;
 
-        // If PCRLOCK_POLICY_PATH doesn't exist yet, we're doing this for the first time, so we
-        // need to iterate through encrypted volumes and bind them to the newly generated pcrlock
-        // policy.
-        //
-        // TODO: Right now, this happens while Trident is staging the first A/B update. Once PCR
-        // encryption is enabled on clean install, this will take place during clean install.
-        if pcrlock::is_pcrlock_policy() {
+        // On clean install, we need to iterate through encrypted volumes and bind them to the
+        // newly generated pcrlock policy
+        if ctx.servicing_type == ServicingType::CleanInstall {
             debug!("Re-enrolling encrypted volumes with the new pcrlock policy");
             for ev in encryption.volumes.iter() {
                 // Fetch the block device path of the encrypted volume

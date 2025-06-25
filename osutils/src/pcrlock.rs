@@ -471,10 +471,10 @@ pub fn generate_pcrlock_files(
     // Bitflags representing the PCRs to generate .pcrlock files for,
     pcrs: BitFlags<Pcr>,
     // Vector containing paths of UKI binaries to measure via lock-uki,
-    uki_binaries: Vec<PathBuf>,
+    uki_binaries: Vec<Option<PathBuf>>,
     // Vector containing paths of bootloader binaries, i.e. shim EFI executables for UKI, to be
     // measured by Trident,
-    bootloader_binaries: Vec<PathBuf>,
+    bootloader_binaries: Vec<Option<PathBuf>>,
 ) -> Result<(), Error> {
     debug!(
         "Generating .pcrlock files for the following PCRs: {:?}",
@@ -506,43 +506,47 @@ pub fn generate_pcrlock_files(
         );
     }
 
-    // Run lock-uki if PCR 4 or 11 are requested
+    // Run lock-uki only for non-null UKI binaries when PCRs 4/11 are requested
     if !(pcrs & (Pcr::Pcr4 | Pcr::Pcr11)).is_empty() {
-        for (id, uki_path) in uki_binaries.into_iter().enumerate() {
-            let pcrlock_file = generate_pcrlock_output_path(UKI_PCRLOCK_DIR, id);
-            let cmd = LockCommand::Uki {
-                path: uki_path.clone(),
-                pcrlock_file: pcrlock_file.clone(),
-            };
-            cmd.run().context(format!(
-                "Failed to generate UKI .pcrlock file at '{}'",
-                uki_path.display()
-            ))?;
+        for (id, uki_path_opt) in uki_binaries.into_iter().enumerate() {
+            if let Some(uki_path) = uki_path_opt {
+                let pcrlock_file = generate_pcrlock_output_path(UKI_PCRLOCK_DIR, id);
+                let cmd = LockCommand::Uki {
+                    path: uki_path.clone(),
+                    pcrlock_file: pcrlock_file.clone(),
+                };
+                cmd.run().context(format!(
+                    "Failed to generate .pcrlock file via 'lock-uki' at '{}'",
+                    uki_path.display()
+                ))?;
 
-            // Print contents of .pcrlock file
-            debug!(
-                "Contents of .pcrlock file at '{}':\n{}",
-                pcrlock_file.display(),
-                fs::read_to_string(&pcrlock_file).context(format!(
-                    "Failed to read .pcrlock file at {}",
-                    pcrlock_file.display()
-                ))?
-            );
+                // Print contents of .pcrlock file
+                debug!(
+                    "Contents of .pcrlock file at '{}':\n{}",
+                    pcrlock_file.display(),
+                    fs::read_to_string(&pcrlock_file).context(format!(
+                        "Failed to read .pcrlock file at {}",
+                        pcrlock_file.display()
+                    ))?
+                );
+            }
         }
     } else {
         debug!("Skipping running 'systemd-pcrlock lock-uki' as PCRs 4 and 11 are not requested");
     }
 
-    // Generate bootloader .pcrlock files if PCR 4 is requested
+    // Generate bootloader .pcrlock files only for non-null binaries when PCR 4 is requested
     if pcrs.contains(Pcr::Pcr4) {
-        for (id, bootloader_path) in bootloader_binaries.into_iter().enumerate() {
-            let pcrlock_file = generate_pcrlock_output_path(BOOT_LOADER_CODE_PCRLOCK_DIR, id);
-            debug!(
-                "Generating bootloader .pcrlock file at '{}'",
-                pcrlock_file.display()
-            );
-            generate_610_boot_loader_code_pcrlock(bootloader_path, pcrlock_file.clone())
-                .context("Bootloader PCRLock generation failed")?;
+        for (id, bootloader_path_opt) in bootloader_binaries.into_iter().enumerate() {
+            if let Some(bootloader_path) = bootloader_path_opt {
+                let pcrlock_file = generate_pcrlock_output_path(BOOT_LOADER_CODE_PCRLOCK_DIR, id);
+                debug!(
+                    "Generating bootloader .pcrlock file at '{}'",
+                    pcrlock_file.display()
+                );
+                generate_610_boot_loader_code_pcrlock(bootloader_path, pcrlock_file.clone())
+                    .context("Bootloader PCRLock generation failed")?;
+            }
         }
     } else {
         debug!("Skipping generating bootloader .pcrlock files as PCR 4 is not requested");

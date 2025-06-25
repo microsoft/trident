@@ -1,11 +1,13 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Error};
 use log::{debug, info, trace, warn};
 
-use osutils::{block_devices, efivar, lsblk, veritysetup};
+use osutils::{block_devices, efivar, lsblk, pcrlock, veritysetup};
+use sysdefs::tpm2::Pcr;
+
 use trident_api::{
-    constants::internal_params::VIRTDEPLOY_BOOT_ORDER_WORKAROUND,
+    constants::internal_params::{ENABLE_UKI_SUPPORT, VIRTDEPLOY_BOOT_ORDER_WORKAROUND},
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::{AbVolumeSelection, ServicingState, ServicingType},
     BlockDeviceId,
@@ -37,7 +39,13 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
         image: None, // Not used for boot validation logic
         storage_graph: engine::build_storage_graph(&datastore.host_status().spec.storage)?, // Build storage graph
         filesystems: Vec::new(), // Left empty since context does not have image
-        is_uki: None,
+        is_uki: Some(
+            datastore
+                .host_status()
+                .spec
+                .internal_params
+                .get_flag(ENABLE_UKI_SUPPORT),
+        ),
     };
 
     // Get the block device path of the current root
@@ -74,6 +82,29 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
         if efivar::current_var_set() {
             efivar::set_default_to_current()
                 .message("Failed to set default boot entry to current")?;
+        }
+
+        // If PCR-based encryption is enabled, re-generate pcrlock policy to only include the
+        // current boot, i.e. active volume.
+        if ctx.is_uki_image()? && ctx.spec.storage.encryption.is_some() {
+            let pcrs = Pcr::Pcr4 | Pcr::Pcr7 | Pcr::Pcr11;
+
+            // TODO: Construct binaries for CURRENT OS image!!!
+            let uki_current = Path::new("/usr/bin/uki").to_path_buf();
+            let bootloader_current = Path::new("/usr/bin/bootloader").to_path_buf();
+
+            // Generate .pcrlock files for runtime OS image A
+            pcrlock::generate_pcrlock_files(
+                pcrs,
+                vec![Some(uki_current)],
+                vec![Some(bootloader_current)],
+            )
+            .structured(ServicingError::GeneratePcrlockFiles)?;
+
+            // Re-generate the pcrlock & TPM 2.0 access policy, to only include the current boot,
+            // i.e. new/active ROS
+            pcrlock::generate_tpm2_access_policy(pcrs)
+                .structured(ServicingError::GenerateTpm2AccessPolicy)?;
         }
     } else if datastore.host_status().servicing_state == ServicingState::CleanInstallStaged
         || datastore.host_status().servicing_state == ServicingState::CleanInstallFinalized
