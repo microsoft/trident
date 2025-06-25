@@ -273,30 +273,29 @@ fn make_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(anyhow::anyhow!(
-            "Command failed with exit code {:?}\nStderr: {}",
+            "Command 'systemd-pcrlock make-policy' failed with exit code {:?}\nStderr: {}",
             output.status.code(),
             stderr
         ));
     }
 
     // Convert stdout to UTF-8
-    let stdout_str =
-        String::from_utf8(output.stdout).context("Command output contained invalid UTF-8")?;
+    let stdout_str = String::from_utf8(output.stdout)
+        .context("Output of 'systemd-pcrlock make-policy' contained invalid UTF-8")?;
 
     // Log both outputs
     debug!(
-        "Command output:\nSTDOUT:\n{}\nSTDERR:\n{}",
+        "Output of 'systemd-pcrlock make-policy':\nSTDOUT:\n{}\nSTDERR:\n{}",
         stdout_str,
         String::from_utf8_lossy(&output.stderr)
     );
 
     // Validate that TPM 2.0 access policy has been updated
-    if !stdout_str.contains("Calculated new pcrlock policy")
-        || !stdout_str.contains("Updated NV index")
+    if !stdout_str.contains("Calculated new PCR policy") || !stdout_str.contains("Updated NV index")
     {
         // Only warning b/c on clean install, pcrlock policy will be created for the first time
         warn!(
-            "TPM 2.0 access policy has not been updated:\n{}",
+            "New TPM 2.0 access policy has not been generated:\n{}",
             stdout_str
         );
     }
