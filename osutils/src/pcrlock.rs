@@ -191,6 +191,11 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         return Ok(());
     }
 
+    // TODO: REMOVE BEFORE MERGING!!!
+    // Iterate through all files in PCRLOCK_DIR recursively, including all sub-dirs, and log the
+    // contents of each .pcrlock file
+    log_all_files_recursively(Path::new(PCRLOCK_DIR));
+
     let entries: Vec<String> = unrecognized
         .into_iter()
         .map(|entry| {
@@ -210,6 +215,39 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
             to recognized components:\n{}",
         entries.join("\n")
     );
+}
+
+fn log_all_files_recursively(dir: &Path) {
+    let read_dir = match fs::read_dir(dir) {
+        Ok(rd) => rd,
+        Err(e) => {
+            warn!("Failed to read directory {}: {}", dir.display(), e);
+            return;
+        }
+    };
+
+    for entry in read_dir {
+        match entry {
+            Ok(entry) => {
+                let path = entry.path();
+                if path.is_dir() {
+                    log_all_files_recursively(&path);
+                } else if path.is_file() {
+                    match fs::read_to_string(&path) {
+                        Ok(contents) => {
+                            debug!("Contents of {}:\n{}", path.display(), contents);
+                        }
+                        Err(e) => {
+                            warn!("Failed to read {}: {}", path.display(), e);
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                warn!("Failed to access entry in {}: {}", dir.display(), e);
+            }
+        }
+    }
 }
 
 /// Runs `systemd-pcrlock make-policy` command to predict the PCR state for future boots and then
