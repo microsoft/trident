@@ -1,8 +1,8 @@
 internalParams:
   uki: true
-  # TODO: Remove this over-ride once SecureBoot is enabled in MOS & ROS, and pcrlock policy can
-  # include PCR 7.
-  overrideEncryptionPcrs: [4, 11]
+  # TODO: Remove this override once UKI MOS is built and PCR-based encryption is enabled on clean
+  # install. For now, only include PCR 0 in pcrlock policy on clean install.
+  overrideEncryptionPcrs: [0]
 image:
   url: http://NETLAUNCH_HOST_ADDRESS/files/usrverity.cosi
   sha384: ignored
