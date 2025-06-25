@@ -40,8 +40,8 @@ stages:
           - bash: |
               set -eux
 
-              make build-liveinstaller
-              make build-imager
+              make bin/liveinstaller
+              make bin/imager
             displayName: Build liveinstaller and imager
 
           - script: |

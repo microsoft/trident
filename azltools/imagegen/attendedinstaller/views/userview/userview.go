@@ -4,7 +4,9 @@
 package userview
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/gdamore/tcell"
 	"github.com/muesli/crunchy"
@@ -203,6 +205,27 @@ func (uv *UserView) userNameAcceptanceCheck(textToCheck string, lastRune rune) b
 	return true
 }
 
+func (uv *UserView) saveUserInput(username, password string) error {
+	data := map[string]string{
+		"username": username,
+		"password": password,
+	}
+
+	// Create local file for username and password
+	// intstead of passing data to main file.
+	file, err := os.Create("userinput.json")
+	if err != nil {
+		uv.navBar.SetUserFeedback(uiutils.ErrorToUserFeedback(err), tview.Styles.TertiaryTextColor)
+		return err
+	}
+	defer file.Close()
+
+	encoder := json.NewEncoder(file)
+	encoder.SetIndent("", "  ")
+
+	return encoder.Encode(data)
+}
+
 func (uv *UserView) onNextButton(nextPage func()) {
 	enteredUserName := uv.userNameField.GetText()
 	enteredPassword := uv.passwordField.GetText()
@@ -227,6 +250,13 @@ func (uv *UserView) onNextButton(nextPage func()) {
 
 	uv.user.Name = enteredUserName
 	uv.user.Password = enteredPassword
+
+	err = uv.saveUserInput(enteredUserName, enteredPassword)
+	if err != nil {
+		uv.navBar.SetUserFeedback(uiutils.ErrorToUserFeedback(err), tview.Styles.TertiaryTextColor)
+		return
+	}
+
 	nextPage()
 }
 
