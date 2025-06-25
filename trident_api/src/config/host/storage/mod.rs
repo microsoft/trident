@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
-use swap::SwapDevice;
+use swap::Swap;
 
 use crate::{
     constants::{
@@ -87,10 +87,10 @@ pub struct Storage {
     #[cfg_attr(
         feature = "schemars",
         schemars(
-            schema_with = "crate::primitives::shortcuts::vec_string_or_struct_schema::<SwapDevice>"
+            schema_with = "crate::primitives::shortcuts::vec_string_or_struct_schema::<Swap>"
         )
     )]
-    pub swap: Vec<SwapDevice>,
+    pub swap: Vec<Swap>,
 }
 
 impl Storage {
@@ -155,6 +155,10 @@ impl Storage {
 
         for fs in &self.filesystems {
             builder.add_node(fs.into());
+        }
+
+        for swap in &self.swap {
+            builder.add_node(swap.into());
         }
 
         // Try to build the graph

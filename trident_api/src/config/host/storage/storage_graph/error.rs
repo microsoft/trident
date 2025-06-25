@@ -22,6 +22,7 @@ fn pretty_node_id(node_identifier: &NodeIdentifier) -> String {
     match node_identifier {
         NodeIdentifier::BlockDevice(id) => format!("'{}'", id),
         NodeIdentifier::FileSystem(fs) => format!("filesystem [{}]", fs),
+        NodeIdentifier::Swap(swap) => format!("swap on '{}'", swap),
     }
 }
 

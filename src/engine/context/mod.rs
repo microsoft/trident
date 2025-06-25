@@ -3,13 +3,14 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{Context, Error};
+use anyhow::{bail, Context, Error};
 use filesystem::FileSystemData;
 use log::{debug, trace};
 
 use trident_api::{
-    config::{HostConfiguration, VerityDevice},
+    config::{HostConfiguration, Partition, VerityDevice},
     constants::ROOT_MOUNT_POINT_PATH,
+    error::TridentError,
     status::{AbVolumeSelection, ServicingType},
     storage_graph::graph::StorageGraph,
     BlockDeviceId,
@@ -71,6 +72,9 @@ pub struct EngineContext {
 
     /// All of the filesystems in the system.
     pub filesystems: Vec<FileSystemData>,
+
+    /// Whether the image will use a UKI or not.
+    pub is_uki: Option<bool>,
 }
 impl EngineContext {
     /// Returns the update volume selection for all A/B volume pairs. The update volume is the one
@@ -243,6 +247,39 @@ impl EngineContext {
         Ok(verity_device_config)
     }
 
+    /// Returns the first partition that backs the given block device, or Err if the block device ID
+    /// does not correspond to a partition or software RAID array.
+    pub(crate) fn get_first_backing_partition<'a>(
+        &'a self,
+        block_device_id: &BlockDeviceId,
+    ) -> Result<&'a Partition, Error> {
+        if let Some(partition) = self.spec.storage.get_partition(block_device_id) {
+            Ok(partition)
+        } else if let Some(array) = self
+            .spec
+            .storage
+            .raid
+            .software
+            .iter()
+            .find(|r| &r.id == block_device_id)
+        {
+            let partition_id = array
+                .devices
+                .first()
+                .context(format!("RAID array '{}' has no partitions", array.id))?;
+
+            self.spec
+                .storage
+                .get_partition(partition_id)
+                .context(format!(
+                    "RAID array '{}' doesn't reference partition",
+                    block_device_id
+                ))
+        } else {
+            bail!("Block device '{block_device_id}' is not a partition or RAID array")
+        }
+    }
+
     /// Returns the estimated size of the block device holding the filesystem that contains the
     /// given path. If the path is not mounted anywhere, or if the block device size cannot be
     /// estimated, returns None.
@@ -255,11 +292,22 @@ impl EngineContext {
 
         self.storage_graph.block_device_size(device)
     }
+
+    pub(crate) fn is_uki_image(&self) -> Result<bool, TridentError> {
+        if let Some(is_uki) = self.is_uki {
+            return Ok(is_uki);
+        }
+        Err(TridentError::internal(
+            "is_uki() called without it being set",
+        ))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::str::FromStr;
 
     use const_format::formatcp;
     use maplit::btreemap;
@@ -267,8 +315,9 @@ mod tests {
     use osutils::testutils::repart::TEST_DISK_DEVICE_PATH;
 
     use trident_api::config::{
-        self, AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, MountOptions, MountPoint,
-        Partition, PartitionType, Storage,
+        self, AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, HostConfiguration,
+        MountOptions, MountPoint, Partition, PartitionSize, PartitionType, Raid, RaidLevel,
+        SoftwareRaidArray, Storage, VerityDevice,
     };
 
     #[test]
@@ -597,5 +646,71 @@ mod tests {
         assert_eq!(ctx.filesystem_block_device_size("/data/subdir"), Some(4096));
 
         assert_eq!(ctx.filesystem_block_device_size("/nonexistent"), None);
+    }
+
+    #[test]
+    fn test_get_first_backing_partition() {
+        let ctx = EngineContext {
+            spec: HostConfiguration {
+                storage: Storage {
+                    disks: vec![Disk {
+                        id: "os".to_owned(),
+                        partitions: vec![
+                            Partition {
+                                id: "esp".to_owned(),
+                                partition_type: PartitionType::Esp,
+                                size: PartitionSize::from_str("1G").unwrap(),
+                            },
+                            Partition {
+                                id: "root".to_owned(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::from_str("8G").unwrap(),
+                            },
+                            Partition {
+                                id: "rootb".to_owned(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::from_str("8G").unwrap(),
+                            },
+                        ],
+                        ..Default::default()
+                    }],
+                    raid: Raid {
+                        software: vec![SoftwareRaidArray {
+                            id: "root-raid1".to_owned(),
+                            devices: vec!["root".to_string(), "rootb".to_string()],
+                            name: "raid1".to_string(),
+                            level: RaidLevel::Raid1,
+                        }],
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        assert_eq!(
+            ctx.get_first_backing_partition(&"esp".to_owned()).unwrap(),
+            &ctx.spec.storage.disks[0].partitions[0]
+        );
+        assert_eq!(
+            ctx.get_first_backing_partition(&"root".to_owned()).unwrap(),
+            &ctx.spec.storage.disks[0].partitions[1]
+        );
+        assert_eq!(
+            ctx.get_first_backing_partition(&"rootb".to_owned())
+                .unwrap(),
+            &ctx.spec.storage.disks[0].partitions[2]
+        );
+        assert_eq!(
+            ctx.get_first_backing_partition(&"root-raid1".to_owned())
+                .unwrap(),
+            &ctx.spec.storage.disks[0].partitions[1]
+        );
+        ctx.get_first_backing_partition(&"os".to_owned())
+            .unwrap_err();
+        ctx.get_first_backing_partition(&"non-existant".to_owned())
+            .unwrap_err();
     }
 }

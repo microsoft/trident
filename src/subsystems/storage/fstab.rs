@@ -7,7 +7,7 @@ use osutils::{
     filesystems::TabFileSystemType,
     tabfile::{TabFile, TabFileEntry},
 };
-use trident_api::{config::SwapDevice, BlockDeviceId};
+use trident_api::{config::Swap, BlockDeviceId};
 
 use crate::engine::{filesystem::FileSystemData, EngineContext};
 
@@ -109,7 +109,7 @@ fn entry_from_fs_data(
 
 fn entry_from_swap(
     device_finder: impl Fn(&BlockDeviceId) -> Result<PathBuf, Error>,
-    swap: &SwapDevice,
+    swap: &Swap,
 ) -> Result<TabFileEntry, Error> {
     Ok(TabFileEntry::new_swap(device_finder(&swap.device_id)?))
 }
@@ -297,7 +297,7 @@ mod tests {
         assert_eq!(
             entry_from_swap(
                 device_finder,
-                &SwapDevice {
+                &Swap {
                     device_id: "swap".to_owned(),
                 },
             )
@@ -319,7 +319,7 @@ mod tests {
             servicing_type: ServicingType::CleanInstall,
             spec: HostConfiguration {
                 storage: Storage {
-                    swap: vec![SwapDevice {
+                    swap: vec![Swap {
                         device_id: "swap".to_owned(),
                     }],
                     ..Default::default()
@@ -453,7 +453,7 @@ mod tests {
                         source: FileSystemSource::New(NewFileSystemType::Ext4),
                     },
                 ],
-                swap: vec![SwapDevice {
+                swap: vec![Swap {
                     device_id: "swap".to_owned(),
                 }],
                 ..Default::default()

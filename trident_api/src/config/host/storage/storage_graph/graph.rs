@@ -323,12 +323,6 @@ fn block_device_size(graph: &StoragePetgraph, idx: NodeIndex) -> Option<u64> {
 
         // For adopted partitions, we report None, as we don't know the size.
         HostConfigBlockDevice::AdoptedPartition(_) => None,
-
-        // For swap devices, report the size of the backing device.
-        HostConfigBlockDevice::SwapDevice(_) => {
-            let backing_node_idx = graph.neighbors_directed(idx, Direction::Outgoing).next()?;
-            block_device_size(graph, backing_node_idx)
-        }
     }
 }
 

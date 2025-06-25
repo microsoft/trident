@@ -104,6 +104,11 @@ fn read_efi_variable(guid: &str, variable: &str) -> Result<Vec<u8>, TridentError
     Ok(data[4..].to_vec())
 }
 
+/// Returns whether the LoaderEntrySelected EFI variable is set.
+pub fn current_var_set() -> bool {
+    read_efi_variable(BOOTLOADER_INTERFACE_GUID, LOADER_ENTRY_SELECTED).is_ok()
+}
+
 /// Set the LoaderEntryDefault EFI variable to the current boot entry
 pub fn set_default_to_current() -> Result<(), TridentError> {
     let current = read_efi_variable(BOOTLOADER_INTERFACE_GUID, LOADER_ENTRY_SELECTED)?;

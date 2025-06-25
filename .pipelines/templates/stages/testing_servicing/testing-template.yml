@@ -166,7 +166,6 @@ jobs:
           echo "##vso[task.setvariable variable=STORM_SCENARIO_FINISHED;]true"
 
         displayName: "Servicing test"
-        timeoutInMinutes: 20
         env:
           AZCOPY_AUTO_LOGIN_TYPE: "MSI"
           
@@ -187,7 +186,7 @@ jobs:
 
       - ${{ if eq(parameters.platform, 'azure') }}:
         - bash: |
-            set -eux
+            set -ex
 
             # If platform is azure AND the test failed to finish, run cleanup to
             # ensure there are no azure resources left behind

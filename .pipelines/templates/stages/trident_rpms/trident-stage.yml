@@ -43,6 +43,8 @@ stages:
   - ${{ if or(parameters.forceTridentRebuild, eq(parameters.stageType, 'pr'), eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e-azure')) }}:
       - template: build-source.yml
         parameters:
+          ${{ if eq(parameters.stageType, 'pr') }}:
+            publishToDevFeed: true
           tridentArtifactName: ${{ parameters.tridentArtifactName }}
           codeCoverage: ${{ parameters.codeCoverage }}
           baseimgBuildType: ${{ parameters.baseimgBuildType }}

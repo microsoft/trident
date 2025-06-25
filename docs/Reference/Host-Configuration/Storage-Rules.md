@@ -36,7 +36,6 @@ configuration, along with their descriptions.
 | ab-volume         | An A/B volume                                        |
 | encrypted-volume  | An encrypted volume                                  |
 | verity-device     | A verity device                                      |
-| swap-device       | A swap partition                                     |
 
 ## Referrer Description
 
@@ -49,7 +48,7 @@ configuration, along with their descriptions.
 | ab-volume          | An A/B volume              |
 | encrypted-volume   | An encrypted volume        |
 | verity-device      | A verity device            |
-| swap-device        | A swap device              |
+| swap-device        | A swap mount               |
 | filesystem-new     | A new filesystem           |
 | filesystem-image   | A filesystem from an image |
 | filesystem-esp     | An ESP/EFI filesystem      |
@@ -65,17 +64,17 @@ that can be referenced.
 A single cell in the table represents whether a referrer of a certain type can
 reference a block device of a certain type.
 
-| Referrer ╲ Device   | disk | partition | adopted-partition | raid-array | ab-volume | encrypted-volume | verity-device | swap-device |
-| ------------------- | ---- | --------- | ----------------- | ---------- | --------- | ---------------- | ------------- | ----------- |
-| raid-array          | No   | Yes       | No                | No         | No        | No               | No            | No          |
-| ab-volume           | No   | Yes       | No                | Yes        | No        | Yes              | No            | No          |
-| encrypted-volume    | No   | Yes       | No                | Yes        | No        | No               | No            | No          |
-| verity-device       | No   | Yes       | No                | Yes        | Yes       | No               | No            | No          |
-| swap-device         | No   | Yes       | No                | No         | No        | Yes              | No            | No          |
-| filesystem-new      | No   | Yes       | No                | Yes        | Yes       | Yes              | No            | No          |
-| filesystem-image    | No   | Yes       | No                | Yes        | Yes       | Yes              | Yes           | No          |
-| filesystem-esp      | No   | Yes       | Yes               | Yes        | No        | No               | No            | No          |
-| filesystem-adopted  | No   | No        | Yes               | No         | No        | No               | No            | No          |
+| Referrer ╲ Device   | disk | partition | adopted-partition | raid-array | ab-volume | encrypted-volume | verity-device |
+| ------------------- | ---- | --------- | ----------------- | ---------- | --------- | ---------------- | ------------- |
+| raid-array          | No   | Yes       | No                | No         | No        | No               | No            |
+| ab-volume           | No   | Yes       | No                | Yes        | No        | Yes              | No            |
+| encrypted-volume    | No   | Yes       | No                | Yes        | No        | No               | No            |
+| verity-device       | No   | Yes       | No                | Yes        | Yes       | No               | No            |
+| swap-device         | No   | Yes       | No                | No         | No        | Yes              | No            |
+| filesystem-new      | No   | Yes       | No                | Yes        | Yes       | Yes              | No            |
+| filesystem-image    | No   | Yes       | No                | Yes        | Yes       | Yes              | Yes           |
+| filesystem-esp      | No   | Yes       | Yes               | Yes        | No        | No               | No            |
+| filesystem-adopted  | No   | No        | Yes               | No         | No        | No               | No            |
 
 ## Reference Count
 

@@ -44,3 +44,15 @@ impl<'de> Deserialize<'de> for SystemArchitecture {
         })
     }
 }
+
+/// System architecture
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub enum PackageArchitecture {
+    /// NoArch
+    #[serde(alias = "noarch")]
+    #[serde(alias = "(none)")]
+    NoArch,
+
+    #[serde(untagged)]
+    Specific(SystemArchitecture),
+}

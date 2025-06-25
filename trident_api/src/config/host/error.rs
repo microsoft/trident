@@ -123,11 +123,6 @@ pub enum HostConfigurationStaticValidationError {
     #[error("In order to use usr-verity, UKI support must be enabled")]
     UsrVerityRequiresUkiSupport,
 
-    #[error(
-        "SELinux mode '{selinux_mode}' is not supported with verity, must be set to 'disabled'"
-    )]
-    VerityAndSelinuxUnsupported { selinux_mode: String },
-
     #[error("Verity device '{device_name}' must define a mount point.")]
     VerityFilesystemWithoutMountPoint { device_name: String },
 
@@ -212,11 +207,12 @@ pub enum HostConfigurationDynamicValidationError {
     #[error("Failed to load script '{name}' at '{path}'")]
     LoadScript { name: String, path: String },
 
+    #[error(
+        "SELinux is not support with root-verity and grub. SELinux is set to '{selinux_mode}', \
+    but should be set to 'disabled'."
+    )]
+    RootVerityAndSelinuxUnsupported { selinux_mode: String },
+
     #[error("Cannot modify storage configuration during update")]
     StorageConfigurationChanged,
-
-    #[error(
-        "SELinux mode '{selinux_mode}' is not supported with verity, must be set to 'disabled'"
-    )]
-    VerityAndSelinuxUnsupported { selinux_mode: String },
 }

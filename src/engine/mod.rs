@@ -12,7 +12,7 @@ use log::{debug, error, info, warn};
 use osutils::{dependencies::Dependency, path::join_relative};
 use trident_api::{
     config::Storage,
-    constants::{self, internal_params::ENABLE_UKI_SUPPORT},
+    constants,
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::{ServicingState, ServicingType},
     storage_graph::graph::StorageGraph,
@@ -292,7 +292,7 @@ fn configure(
     let use_overlay = (ctx.servicing_type == ServicingType::CleanInstall
         || ctx.servicing_type == ServicingType::AbUpdate)
         && ctx.storage_graph.root_fs_is_verity()
-        && !ctx.spec.internal_params.get_flag(ENABLE_UKI_SUPPORT);
+        && !ctx.is_uki_image()?;
 
     info!("Starting step 'Configure'");
     for subsystem in subsystems {

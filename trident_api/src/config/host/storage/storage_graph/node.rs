@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{config::FileSystem, BlockDeviceId};
+use crate::{
+    config::{FileSystem, Swap},
+    BlockDeviceId,
+};
 
 use super::{
     references::{SpecialReferenceKind, StorageReference},
@@ -17,6 +20,7 @@ pub struct BlockDevice {
 pub enum StorageGraphNode {
     BlockDevice(BlockDevice),
     FileSystem(FileSystem),
+    Swap(Swap),
 }
 
 impl StorageGraphNode {
@@ -33,11 +37,17 @@ impl StorageGraphNode {
         Self::FileSystem(fs)
     }
 
+    /// Creates a new swap device node.
+    pub fn new_swap(swap: Swap) -> Self {
+        Self::Swap(swap)
+    }
+
     /// Returns a user friendly identifier of the node.
     pub fn identifier(&self) -> NodeIdentifier {
         match self {
             Self::BlockDevice(dev) => NodeIdentifier::from(dev),
             Self::FileSystem(fs) => NodeIdentifier::from(fs),
+            Self::Swap(swap) => NodeIdentifier::from(swap),
         }
     }
 
@@ -54,8 +64,9 @@ impl StorageGraphNode {
     /// - `verity filesystem 'root'`
     pub fn describe(&self) -> String {
         match self {
-            Self::BlockDevice(dev) => format!("block device '{}'", dev.id),
+            Self::BlockDevice(dev) => format!("{} '{}'", dev.kind(), dev.id),
             Self::FileSystem(fs) => format!("filesystem [{}]", fs.description()),
+            Self::Swap(swap) => format!("swap on '{}'", swap.device_id),
         }
     }
 
@@ -64,6 +75,7 @@ impl StorageGraphNode {
         match self {
             Self::BlockDevice(dev) => Some(&dev.id),
             Self::FileSystem(_) => None,
+            Self::Swap(_) => None,
         }
     }
 
@@ -84,11 +96,20 @@ impl StorageGraphNode {
         }
     }
 
+    /// Returns the inner swap device, if this node is a swap device.
+    #[allow(dead_code)]
+    pub fn as_swap_device(&self) -> Option<&Swap> {
+        match self {
+            Self::Swap(swap) => Some(swap),
+            _ => None,
+        }
+    }
+
     /// Returns the kind of block device this node represents.
     pub fn device_kind(&self) -> BlkDevKind {
         match self {
             Self::BlockDevice(dev) => dev.kind(),
-            Self::FileSystem(_) => BlkDevKind::None,
+            Self::FileSystem(_) | Self::Swap(_) => BlkDevKind::None,
         }
     }
 
@@ -97,6 +118,7 @@ impl StorageGraphNode {
         match self {
             Self::BlockDevice(dev) => dev.host_config_ref.referrer_kind(),
             Self::FileSystem(fs) => (fs).into(),
+            Self::Swap(_) => BlkDevReferrerKind::Swap,
         }
     }
 
@@ -133,9 +155,6 @@ impl StorageGraphNode {
                         ),
                     ]
                 }
-                HostConfigBlockDevice::SwapDevice(swap_dev) => {
-                    vec![StorageReference::new_regular(&swap_dev.device_id)]
-                }
             },
             Self::FileSystem(fs) => fs
                 .device_id
@@ -143,6 +162,7 @@ impl StorageGraphNode {
                 .map(StorageReference::new_regular)
                 .into_iter()
                 .collect(),
+            Self::Swap(swap) => vec![StorageReference::new_regular(&swap.device_id)],
         }
     }
 }
@@ -152,6 +172,7 @@ impl StorageGraphNode {
 pub enum NodeIdentifier {
     BlockDevice(String),
     FileSystem(String),
+    Swap(String),
 }
 
 impl From<&FileSystem> for NodeIdentifier {
@@ -163,6 +184,12 @@ impl From<&FileSystem> for NodeIdentifier {
 impl From<&BlockDevice> for NodeIdentifier {
     fn from(dev: &BlockDevice) -> Self {
         Self::BlockDevice(dev.id.clone())
+    }
+}
+
+impl From<&Swap> for NodeIdentifier {
+    fn from(swap: &Swap) -> Self {
+        Self::Swap(swap.device_id.to_string())
     }
 }
 

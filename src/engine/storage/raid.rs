@@ -14,7 +14,8 @@ use strum_macros::{Display, EnumString};
 use osutils::{block_devices, dependencies::Dependency, mdadm, udevadm};
 use trident_api::{
     config::{HostConfiguration, SoftwareRaidArray},
-    constants::{internal_params::ENABLE_UKI_SUPPORT, MDSTAT_PATH},
+    constants::MDSTAT_PATH,
+    error::TridentResultExt,
     BlockDeviceId,
 };
 
@@ -43,7 +44,7 @@ fn create(config: SoftwareRaidArray, ctx: &EngineContext) -> Result<(), Error> {
 
     info!("Initializing '{}': creating RAID array", config.id);
 
-    if ctx.spec.internal_params.get_flag(ENABLE_UKI_SUPPORT) {
+    if ctx.is_uki_image().unstructured("UKI setting unknown")? {
         // If UKI support is enabled, we need to create the RAID array with the
         // homehost=any option to ensure that the RAID array can be opened by the
         // runtime OS.
@@ -568,6 +569,7 @@ mod functional_test {
                 },
                 ..Default::default()
             },
+            is_uki: Some(false),
             ..Default::default()
         };
 
@@ -618,6 +620,7 @@ mod functional_test {
                 },
                 ..Default::default()
             },
+            is_uki: Some(false),
             ..Default::default()
         };
 
@@ -667,6 +670,7 @@ mod functional_test {
                 },
                 ..Default::default()
             },
+            is_uki: Some(false),
             ..Default::default()
         };
 

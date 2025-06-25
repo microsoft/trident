@@ -34,7 +34,10 @@ ARG RPM_REL=1
 
 # This entry needs to exist in the config.toml file to allow cargo to use the
 # token from the environment variable.
-# RUN printf '[registry]\nglobal-credential-providers = ["cargo:token"]\n' >> ./.cargo/config.toml
+ARG CARGO_REGISTRIES_FROM_ENV=false
+RUN if [ "$CARGO_REGISTRIES_FROM_ENV" = "true" ]; then \
+    printf '[registry]\nglobal-credential-providers = ["cargo:token"]\n' >> ./.cargo/config.toml; \
+fi
 
 RUN --mount=type=secret,id=registry_token \
     export CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN=$(cat /run/secrets/registry_token) && \

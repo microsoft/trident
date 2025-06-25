@@ -8,7 +8,7 @@ use log::{debug, error, warn};
 use osutils::lsblk;
 use trident_api::{
     config::HostConfigurationDynamicValidationError,
-    constants::internal_params::{ENABLE_UKI_SUPPORT, RELAXED_COSI_VALIDATION},
+    constants::internal_params::RELAXED_COSI_VALIDATION,
     error::{
         InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt,
         UnsupportedConfigurationError,
@@ -179,9 +179,7 @@ impl Subsystem for StorageSubsystem {
 
     #[tracing::instrument(name = "storage_configuration", skip_all)]
     fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
-        if ctx.spec.internal_params.get_flag(ENABLE_UKI_SUPPORT)
-            && ctx.storage_graph.root_fs_is_verity()
-        {
+        if ctx.is_uki_image()? && ctx.storage_graph.root_fs_is_verity() {
             debug!("Skipping storage configuration because UKI root verity is in use");
             return Ok(());
         }

@@ -6,7 +6,7 @@ use log::{debug, error, info, warn};
 use osutils::{osmodifier::OSModifierConfig, path};
 use trident_api::{
     config::{ManagementOs, SshMode},
-    constants::internal_params::{DISABLE_HOSTNAME_CARRY_OVER, ENABLE_UKI_SUPPORT},
+    constants::internal_params::DISABLE_HOSTNAME_CARRY_OVER,
     error::{ExecutionEnvironmentMisconfigurationError, ReportError, ServicingError, TridentError},
     status::ServicingType,
 };
@@ -123,9 +123,7 @@ impl Subsystem for OsConfigSubsystem {
                 self.name()
             );
             return Ok(());
-        } else if ctx.spec.internal_params.get_flag(ENABLE_UKI_SUPPORT)
-            && ctx.storage_graph.root_fs_is_verity()
-        {
+        } else if ctx.is_uki_image()? && ctx.storage_graph.root_fs_is_verity() {
             error!("Skipping OS configuration changes requested in Host Configuration because UKI root verity is in use.");
             return Ok(());
         }
@@ -176,10 +174,9 @@ impl Subsystem for OsConfigSubsystem {
             os_modifier_config.kernel_command_line = Some(ctx.spec.os.kernel_command_line.clone());
         }
 
-        // If UKI support is enabled, update SELinux mode here
-        if ctx.spec.internal_params.get_flag(ENABLE_UKI_SUPPORT)
-            && ctx.spec.os.selinux.mode.is_some()
-        {
+        // If we have a UKI image, update SELinux mode here since it cannot be set via kernel
+        // command line.
+        if ctx.is_uki_image()? && ctx.spec.os.selinux.mode.is_some() {
             debug!("Updating SELinux config");
             os_modifier_config.selinux = Some(ctx.spec.os.selinux.clone());
         }
@@ -398,6 +395,7 @@ mod functional_test {
                 },
                 ..Default::default()
             },
+            is_uki: Some(false),
             ..Default::default()
         };
         assert!(os_config_requires_os_modifier(&ctx));
@@ -438,6 +436,7 @@ mod functional_test {
         // Create EngineContext with no hostname specified
         let ctx = EngineContext {
             servicing_type: ServicingType::AbUpdate,
+            is_uki: Some(false),
             ..Default::default()
         };
         assert!(os_config_requires_os_modifier(&ctx));

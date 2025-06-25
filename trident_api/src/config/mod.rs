@@ -21,7 +21,7 @@ pub use host::{
         filesystem_types::{AdoptedFileSystemType, FileSystemType, NewFileSystemType},
         partitions::{AdoptedPartition, Partition, PartitionSize, PartitionType},
         raid::{Raid, RaidLevel, SoftwareRaidArray},
-        swap::SwapDevice,
+        swap::Swap,
         verity::{VerityCorruptionOption, VerityDevice},
         Storage,
     },

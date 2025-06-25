@@ -2,7 +2,7 @@
 
 use crate::config::{
     AbVolumePair, AdoptedPartition, Disk, EncryptedVolume, FileSystem, FileSystemSource, Partition,
-    SoftwareRaidArray, VerityDevice,
+    SoftwareRaidArray, Swap, VerityDevice,
 };
 
 use super::{
@@ -92,6 +92,13 @@ impl From<&VerityDevice> for StorageGraphNode {
 impl From<&FileSystem> for StorageGraphNode {
     fn from(fs: &FileSystem) -> Self {
         Self::new_filesystem(fs.clone())
+    }
+}
+
+/// Get a StorageGraphNode from a SwapDevice reference.
+impl From<&Swap> for StorageGraphNode {
+    fn from(swap: &Swap) -> Self {
+        Self::new_swap(swap.clone())
     }
 }
 
