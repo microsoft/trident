@@ -82,6 +82,11 @@ pub enum ContainerConfigurationError {
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum InternalError {
+    #[error(
+        "Failed to get A/B active volume from Engine Context as it is set to null on A/B update"
+    )]
+    GetAbActiveVolume,
+
     #[error("Failed to get the ESP partition information")]
     GetEspDeviceInfo,
 

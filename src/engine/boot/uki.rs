@@ -23,7 +23,9 @@ use crate::engine::EngineContext;
 pub const TMP_UKI_NAME: &str = "vmlinuz-0.efi.staged";
 pub const UKI_DIRECTORY: &str = formatcp!("{ESP_EFI_DIRECTORY}/Linux");
 
-fn uki_suffix(ctx: &EngineContext) -> String {
+/// Returns the UKI file suffix for the update image, given the current active volume and install
+/// index.
+pub fn uki_suffix(ctx: &EngineContext) -> String {
     match ctx.ab_active_volume {
         Some(AbVolumeSelection::VolumeA) => format!("azlb{}.efi", ctx.install_index),
         None | Some(AbVolumeSelection::VolumeB) => format!("azla{}.efi", ctx.install_index),

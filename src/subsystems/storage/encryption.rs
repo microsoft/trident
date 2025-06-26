@@ -7,7 +7,7 @@ use std::{
 use enumflags2::BitFlags;
 use log::{debug, info, trace};
 
-use osutils::{encryption, files, path::join_relative, pcrlock};
+use osutils::{bootloaders::BOOT_EFI, encryption, files, path::join_relative, pcrlock};
 use sysdefs::tpm2::Pcr;
 
 use trident_api::{
@@ -15,13 +15,19 @@ use trident_api::{
         HostConfiguration, HostConfigurationDynamicValidationError,
         HostConfigurationStaticValidationError, PartitionType,
     },
-    constants::{internal_params::OVERRIDE_ENCRYPTION_PCRS, ESP_MOUNT_POINT_PATH},
+    constants::{
+        internal_params::OVERRIDE_ENCRYPTION_PCRS, ESP_EFI_DIRECTORY, ESP_MOUNT_POINT_PATH,
+    },
     error::{InternalError, InvalidInputError, ReportError, ServicingError, TridentError},
+    status::AbVolumeSelection,
 };
 
 use crate::{
     engine::{
-        boot::uki::{TMP_UKI_NAME, UKI_DIRECTORY},
+        boot::{
+            self,
+            uki::{TMP_UKI_NAME, UKI_DIRECTORY},
+        },
         bootentries, EngineContext,
     },
     ServicingType,
@@ -132,9 +138,32 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                 pcrs
             }
             ServicingType::AbUpdate => {
-                // TODO: Construct binaries for CURRENT OS image!!!
-                let uki_current = Path::new("/usr/bin/uki").to_path_buf();
-                let bootloader_current = Path::new("/usr/bin/bootloader").to_path_buf();
+                // Use UKI PCRs
+                let pcrs = Pcr::Pcr4 | Pcr::Pcr7 | Pcr::Pcr11;
+
+                // Construct current UKI path
+                let uki_suffix = match ctx.ab_active_volume {
+                    Some(AbVolumeSelection::VolumeA) => format!("azla{}.efi", ctx.install_index),
+                    Some(AbVolumeSelection::VolumeB) => {
+                        format!("azlb{}.efi", ctx.install_index)
+                    }
+                    None => {
+                        return Err(TridentError::new(InternalError::GetAbActiveVolume));
+                    }
+                };
+                let uki_current = Path::new(ESP_MOUNT_POINT_PATH)
+                    .join(UKI_DIRECTORY)
+                    .join(uki_suffix);
+
+                // Construct current bootloader path, i.e. i.e. shim EFI executable for UKI
+                let ab_volume = ctx
+                    .ab_active_volume
+                    .ok_or_else(|| TridentError::new(InternalError::GetAbActiveVolume))?;
+                let esp_dir_name = boot::make_esp_dir_name(ctx.install_index, ab_volume);
+                let path = Path::new(ESP_EFI_DIRECTORY)
+                    .join(&esp_dir_name)
+                    .join(BOOT_EFI);
+                let bootloader_current = join_relative(ESP_MOUNT_POINT_PATH, &path);
 
                 // UKI binary in runtime OS to be measured; it's currently staged at designated
                 // path
@@ -146,9 +175,6 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                 let (_, bootloader_update_relative) = bootentries::get_label_and_path(ctx)
                     .structured(ServicingError::GetLabelAndPath)?;
                 let bootloader_update = join_relative(esp_dir_path, bootloader_update_relative);
-
-                // Use UKI PCRs
-                let pcrs = Pcr::Pcr4 | Pcr::Pcr7 | Pcr::Pcr11;
 
                 // Generate .pcrlock files for runtime OS image A
                 pcrlock::generate_pcrlock_files(

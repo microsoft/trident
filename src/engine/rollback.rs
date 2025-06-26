@@ -3,18 +3,33 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Error};
 use log::{debug, info, trace, warn};
 
-use osutils::{block_devices, efivar, lsblk, pcrlock, veritysetup};
+use osutils::{
+    block_devices, bootloaders::BOOT_EFI, efivar, lsblk, path::join_relative, pcrlock, veritysetup,
+    virt,
+};
 use sysdefs::tpm2::Pcr;
 
 use trident_api::{
-    constants::internal_params::{ENABLE_UKI_SUPPORT, VIRTDEPLOY_BOOT_ORDER_WORKAROUND},
+    constants::{
+        internal_params::{ENABLE_UKI_SUPPORT, VIRTDEPLOY_BOOT_ORDER_WORKAROUND},
+        ESP_EFI_DIRECTORY, ESP_MOUNT_POINT_PATH,
+    },
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::{AbVolumeSelection, ServicingState, ServicingType},
     BlockDeviceId,
 };
 
 use crate::{
-    engine::{self, bootentries, context::EngineContext, storage::verity},
+    engine::{
+        self,
+        boot::{
+            self,
+            uki::{self, UKI_DIRECTORY},
+        },
+        bootentries,
+        context::EngineContext,
+        storage::verity,
+    },
     DataStore,
 };
 
@@ -63,7 +78,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
 
         // If it's virtdeploy, after confirming that we have booted into the correct image, we need
         // to update the `BootOrder` to boot from the correct image next time.
-        let use_virtdeploy_workaround = osutils::virt::is_virtdeploy()
+        let use_virtdeploy_workaround = virt::is_virtdeploy()
             || ctx
                 .spec
                 .internal_params
@@ -89,9 +104,26 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
         if ctx.is_uki_image()? && ctx.spec.storage.encryption.is_some() {
             let pcrs = Pcr::Pcr4 | Pcr::Pcr7 | Pcr::Pcr11;
 
-            // TODO: Construct binaries for CURRENT OS image!!!
-            let uki_current = Path::new("/usr/bin/uki").to_path_buf();
-            let bootloader_current = Path::new("/usr/bin/bootloader").to_path_buf();
+            // Construct current UKI path; uki_suffix() already determines the update volume, so
+            // b/c active volume is still set to the old volume, we just pass ctx and get the UKI
+            // suffix for the current/active volume
+            let uki_file = uki::uki_suffix(&ctx);
+            let uki_current = Path::new(ESP_MOUNT_POINT_PATH)
+                .join(UKI_DIRECTORY)
+                .join(uki_file);
+
+            // Construct current bootloader path, i.e. i.e. shim EFI executable for UKI. Currently,
+            // ab_active_volume inside the context is still set to the old volume, so we need to
+            // determine the actual active volume
+            let active_volume = match ctx.ab_active_volume {
+                None | Some(AbVolumeSelection::VolumeB) => AbVolumeSelection::VolumeA,
+                Some(AbVolumeSelection::VolumeA) => AbVolumeSelection::VolumeB,
+            };
+            let esp_dir_name = boot::make_esp_dir_name(ctx.install_index, active_volume);
+            let path = Path::new(ESP_EFI_DIRECTORY)
+                .join(&esp_dir_name)
+                .join(BOOT_EFI);
+            let bootloader_current = join_relative(ESP_MOUNT_POINT_PATH, &path);
 
             // Generate .pcrlock files for runtime OS image A
             pcrlock::generate_pcrlock_files(
