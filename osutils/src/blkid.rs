@@ -12,7 +12,7 @@ fn run(device_path: impl AsRef<Path>, tag: &str) -> Result<String, Error> {
         .arg("value") // single value
         .arg("-s") // tag
         .arg(tag)
-        .arg(device_path.as_ref())xxxx
+        .arg(device_path.as_ref())
         .output_and_check()
         .context("Failed to execute blkid")?;
 
@@ -20,13 +20,13 @@ fn run(device_path: impl AsRef<Path>, tag: &str) -> Result<String, Error> {
 }
 
 fn get_filesystem_uuid_raw(device_path: impl AsRef<Path>) -> Result<String, Error> {
-    run(device_path, "UUID")yyy
+    run(device_path, "UUID")
 }
 
 pub fn get_filesystem_uuid(device_path: impl AsRef<Path>) -> Result<Uuid, Error> {
     let output = get_filesystem_uuid_raw(&device_path)?;
     Uuid::parse_str(output.as_str()).context(format!(
-        "Failed to get UUID for path '{}', received '{}'",
+        "Failed to get UUID: for path '{}', received '{}'",
         device_path.as_ref().display(),
         output
     ))
