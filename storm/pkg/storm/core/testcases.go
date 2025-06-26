@@ -1,6 +1,10 @@
 package core
 
-import "time"
+import (
+	"context"
+	"sync"
+	"time"
+)
 
 type TestCase interface {
 	Named
@@ -35,4 +39,15 @@ type TestCase interface {
 	// in the suite have finished, regardless of their status. Cleanup functions
 	// are called in reverse order of registration.
 	SuiteCleanup(f func())
+
+	// Provides a context for the test case. The context will be cancelled once
+	// the test case has finished running, making it suitable to terminate any
+	// leftover goroutines that were started by the test case.
+	Context() context.Context
+
+	// Provides a wait group that will be used to wait for all background
+	// resources created by a test case to finish before the test case is
+	// considered complete. This is useful to make sure the next test case does
+	// not start before the previous one has finished all its background work.
+	BackgroundWaitGroup() *sync.WaitGroup
 }

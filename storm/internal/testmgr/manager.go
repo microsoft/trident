@@ -25,7 +25,7 @@ func NewStormTestManager(suite core.SuiteContext, registrant interface {
 
 	testCases := make([]*TestCase, len(collected))
 	for i, testCase := range collected {
-		testCases[i] = newTestCase(testCase.Name, testCase.F)
+		testCases[i] = newTestCase(testCase.Name, testCase.F, suite.Context())
 	}
 
 	return &StormTestManager{

@@ -1,13 +1,17 @@
 package testmgr
 
 import (
+	"context"
 	"fmt"
 	"runtime"
 	"storm/pkg/storm/core"
+	"sync"
 	"time"
 )
 
 type TestCase struct {
+	ctx             context.Context
+	cancel          context.CancelFunc
 	registrant      core.TestRegistrantMetadata
 	name            string
 	startTime       time.Time
@@ -18,13 +22,17 @@ type TestCase struct {
 	collectedOutput []string
 	f               core.TestCaseFunction
 	suiteCleanup    []func()
+	waitGroup       sync.WaitGroup
 }
 
-func newTestCase(name string, f core.TestCaseFunction) *TestCase {
+func newTestCase(name string, f core.TestCaseFunction, ctx context.Context) *TestCase {
+	tc_ctx, cancel := context.WithCancel(ctx)
 	tc := &TestCase{
 		name:   name,
 		f:      f,
 		status: TestCaseStatusPending,
+		ctx:    tc_ctx,
+		cancel: cancel,
 	}
 
 	return tc
@@ -44,6 +52,12 @@ func (t *TestCase) Execute() error {
 }
 
 func (t *TestCase) close(status TestCaseStatus, reason string, err error) {
+	// Cancel the context to stop any goroutines that might be running
+	t.cancel()
+
+	// If the test case is still running, we need to wait for it to finish.
+	t.waitGroup.Wait()
+
 	if !status.IsFinal() {
 		panic("Attempted to close test with non-final status: " + status.String())
 	}
@@ -171,4 +185,14 @@ func (t *TestCase) Name() string {
 // RunTime implements core.TestCase.
 func (t *TestCase) RunTime() time.Duration {
 	return t.endTime.Sub(t.startTime)
+}
+
+// Context implements core.TestCase.
+func (t *TestCase) Context() context.Context {
+	return t.ctx
+}
+
+// BackgroundWaitGroup implements core.TestCase.
+func (t *TestCase) BackgroundWaitGroup() *sync.WaitGroup {
+	return &t.waitGroup
 }
