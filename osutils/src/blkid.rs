@@ -20,7 +20,7 @@ fn run(device_path: impl AsRef<Path>, tag: &str) -> Result<String, Error> {
 }
 
 fn get_filesystem_uuid_raw(device_path: impl AsRef<Path>) -> Result<String, Error> {
-    run(device_path, "UUID")
+    run(device_path, "UUID")yyy
 }
 
 pub fn get_filesystem_uuid(device_path: impl AsRef<Path>) -> Result<Uuid, Error> {
