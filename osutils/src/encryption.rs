@@ -10,7 +10,7 @@ use enumflags2::BitFlags;
 use sysdefs::tpm2::Pcr;
 use trident_api::constants::LUKS_HEADER_SIZE_IN_MIB;
 
-use crate::{dependencies::Dependency, pcrlock::PCRLOCK_POLICY_PATH};
+use crate::{dependencies::Dependency, pcrlock::PCRLOCK_POLICY_JSON};
 
 /// Cipher specification string for the LUKS2 data segment.
 pub const CIPHER: &str = "aes-xts-plain64";
@@ -50,7 +50,7 @@ pub fn systemd_cryptenroll(
     }
 
     if pcrlock_policy {
-        cmd.arg(format!("--tpm2-pcrlock={}", PCRLOCK_POLICY_PATH));
+        cmd.arg(format!("--tpm2-pcrlock={}", PCRLOCK_POLICY_JSON));
     } else {
         cmd.arg(to_tpm2_pcrs_arg(pcrs));
     }
