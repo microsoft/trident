@@ -45,6 +45,57 @@ parameters:
     default: "trident-ubuntu-1es-pool-eastus2"
 
 jobs:
+  # For azure tests where there are multiple workers, use a dedicated job to publish the base
+  # image.  Otherwise, the publish will be done as part of the actual test.
+  - ${{ if and(eq(parameters.platform, 'azure'), gt(parameters.workers, 1)) }}:
+    - job: PublishAzureImage
+      displayName: Publish Azure Image
+      timeoutInMinutes: 20
+      pool:
+        type: linux
+        name: ${{ parameters.pool }}
+        hostArchitecture: amd64
+      variables:
+        ob_outputDirectory: $(Build.SourcesDirectory)/logs
+        tridentSourceDirectory: $(Build.SourcesDirectory)
+      steps:
+        - task: DownloadPipelineArtifact@2
+          displayName: "Download go-tools: storm"
+          inputs:
+            buildType: current
+            artifactName: "go-tools"
+            patterns: |
+              storm-trident
+            targetPath: "$(tridentSourceDirectory)/bin"
+        - bash: |
+            set -eux
+            chmod +x $(tridentSourceDirectory)/bin/storm-trident
+            mkdir -p $(ob_outputDirectory)
+          displayName: Make storm executable and create output directory
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            buildType: current
+            artifactName: image-${{ parameters.platform }}-base
+            targetPath: "$(Build.ArtifactStagingDirectory)/"
+          displayName: Download Base Image
+        - bash: |
+            set -eux
+            az login --identity
+            ./bin/storm-trident run servicing \
+              --output-path $(ob_outputDirectory) \
+              --platform ${{ parameters.platform }} \
+              --artifacts-dir $ARTIFACTS \
+              --build-id $(Build.BuildId) \
+              --subscription $(SUBSCRIPTION) \
+              --image-definition $(IMAGE_DEFINITION) \
+              --storage-account $(STORAGE_ACCOUNT) \
+              --storage-account-resource-group $(RESOURCE_GROUP) \
+              --test-case-to-run publish-sig-image
+          displayName: Publish Base Image
+          env:
+            ARTIFACTS: $(Build.ArtifactStagingDirectory)
+            AZCOPY_AUTO_LOGIN_TYPE: "MSI"
+
   - job: UpdateTesting_${{ parameters.flavor }}
     displayName: Update Testing - ${{ parameters.flavor }}
     timeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
@@ -54,17 +105,15 @@ jobs:
       hostArchitecture: amd64
     strategy:
       parallel: ${{ parameters.workers }}
+    dependsOn:
+      - ${{ if and(eq(parameters.platform, 'azure'), gt(parameters.workers, 1)) }}:
+          - PublishAzureImage
 
     variables:
       tridentSourceDirectory: $(Build.SourcesDirectory)
       ob_outputDirectory: $(tridentSourceDirectory)/deployment_logs_${{ parameters.flavor }}
       ob_artifactBaseName: "update-testing-${{ parameters.flavor }}-$(System.JobPositionInPhase)"
-      IMAGE_DEFINITION: "trident-vm-grub-verity-testimage-$(System.DefinitionId)"
       TEST_RESOURCE_GROUP: trident-vm-servicing-validation-$(Build.BuildId)-$(System.JobPositionInPhase)
-      SUBSCRIPTION: 04cdc145-a4f9-42d4-9868-c46d23d0c63f # CoreOS_Mariner_BMP_Staging
-      STORAGE_ACCOUNT: "azlinuxbmpstagingeastus2"
-      RESOURCE_GROUP: "azlinux_bmp_staging_eastus2"
-      SUBNET_ID: /subscriptions/04cdc145-a4f9-42d4-9868-c46d23d0c63f/resourceGroups/trident-vm_servicing-azure-vnet/providers/Microsoft.Network/virtualNetworks/poolpeeringvnet/subnets/default
 
     steps:
       - bash: |
@@ -129,6 +178,10 @@ jobs:
         displayName: Set up SSH Keys and setup output directory
 
       - bash: |
+          echo "##vso[task.setvariable variable=STORM_SCENARIO_FINISHED;]false"
+        displayName: "Initialize STORM_SCENARIO_FINISHED=false"
+
+      - bash: |
           set -eux
 
           SUDO="sudo"
@@ -144,6 +197,9 @@ jobs:
           if [ "${{ parameters.flavor }}" != "uki" ]; then
             FLAGS="$FLAGS --secure-boot"
           fi
+          if [ "${{ parameters.rollbackTesting }}" == "True" ]; then
+            FLAGS="$FLAGS --rollback-retry-count ${{ parameters.updateIterationCount }} --rollback"
+          fi
 
           $SUDO ./bin/storm-trident run servicing $FLAGS \
             --artifacts-dir $(Build.ArtifactStagingDirectory) \
@@ -155,10 +211,9 @@ jobs:
             --test-resource-group $(TEST_RESOURCE_GROUP) \
             --platform ${{ parameters.platform }} \
             --subnet-id $(SUBNET_ID) \
-            --ssh-private-key-path $HOME/.ssh/id_rsa \
-            --ssh-public-key-path $HOME/.ssh/id_rsa.pub \
+            --ssh-private-key-path $(SSH_PRIVATE_KEY_PATH) \
+            --ssh-public-key-path $(SSH_PUBLIC_KEY_PATH) \
             --retry-count ${{ parameters.updateIterationCount }} \
-            --rollback-retry-count ${{ parameters.updateIterationCount }} \
             --build-id $(Build.BuildId) \
             --force-cleanup
 
@@ -186,7 +241,7 @@ jobs:
 
       - ${{ if eq(parameters.platform, 'azure') }}:
         - bash: |
-            set -ex
+            set -eux
 
             # If platform is azure AND the test failed to finish, run cleanup to
             # ensure there are no azure resources left behind
@@ -199,20 +254,10 @@ jobs:
               fi
 
               ./bin/storm-trident run servicing $FLAGS \
-                --artifacts-dir $(Build.ArtifactStagingDirectory) \
                 --output-path $(ob_outputDirectory) \
                 --subscription $(SUBSCRIPTION) \
-                --image-definition $(IMAGE_DEFINITION) \
-                --storage-account $(STORAGE_ACCOUNT) \
-                --storage-account-resource-group $(RESOURCE_GROUP) \
                 --test-resource-group $(TEST_RESOURCE_GROUP) \
                 --platform ${{ parameters.platform }} \
-                --subnet-id $(SUBNET_ID) \
-                --ssh-private-key-path $HOME/.ssh/id_rsa \
-                --ssh-public-key-path $HOME/.ssh/id_rsa.pub \
-                --retry-count ${{ parameters.updateIterationCount }} \
-                --rollback-retry-count ${{ parameters.updateIterationCount }} \
-                --build-id $(Build.BuildId) \
                 --test-case-to-run cleanup-vm
             fi
 

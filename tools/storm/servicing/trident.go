@@ -117,6 +117,10 @@ func (h *TridentServicingScenario) updateLoop(tc storm.TestCase) error {
 }
 
 func (h *TridentServicingScenario) rollback(tc storm.TestCase) error {
+	if !h.args.TestConfig.Rollback {
+		tc.Skip("Test case 'rollback' is skipped because rollback testing is disabled")
+		return nil // No action needed if rollback is not enabled
+	}
 	return h.runTestCase(tc, tests.Rollback)
 }
 

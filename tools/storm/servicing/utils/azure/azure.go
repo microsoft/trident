@@ -179,18 +179,19 @@ func (cfg AzureConfig) PublishSigImage(artifactsDir string, buildId string) erro
 		return fmt.Errorf("failed to set Azure subscription: %w", err)
 	}
 
-	now := time.Now()
-	currentDate := now.Format("20060102")
-	currentTime := now.Format("150405")
-
-	storageAccountUrl := cfg.GetStorageAccountUrl()
-	storageAccountResourceId := cfg.GetStorageAccountId()
-	storageContainerName := cfg.GetStorageContainerName()
-	imagePath := filepath.Join(artifactsDir, "trident-vm-grub-verity-azure-testimage.vhd")
-
 	imageVersion := cfg.GetImageVersion(buildId, true)
 	logrus.Infof("Using image version %s", imageVersion)
 
+	if err := cfg.checkImageVersionExists(imageVersion); err == nil {
+		logrus.Infof("Image version %s already exists. Exiting...", imageVersion)
+		return nil // Image version already exists, no need to proceed
+	}
+	logrus.Tracef("Image version %s does not exist", imageVersion)
+
+	return cfg.publishSigImageVersion(artifactsDir, imageVersion)
+}
+
+func (cfg AzureConfig) checkImageVersionExists(imageVersion string) error {
 	logrus.Tracef("Check if image version %s already exists", imageVersion)
 	_, err := cfg.CallAzCli(
 		[]string{
@@ -201,14 +202,26 @@ func (cfg AzureConfig) PublishSigImage(artifactsDir string, buildId string) erro
 			"--gallery-image-version", imageVersion},
 		false,
 	)
-	if err == nil {
-		logrus.Infof("Image version %s already exists. Exiting...", imageVersion)
-		return nil // Image version already exists, no need to proceed
+	if err != nil {
+		logrus.Tracef("Image version %s does not exist", imageVersion)
+		return err
 	}
-	logrus.Tracef("Image version %s does not exist", imageVersion)
+	logrus.Infof("Image version %s already exists. Exiting...", imageVersion)
+	return nil
+}
+
+func (cfg AzureConfig) publishSigImageVersion(artifactsDir string, imageVersion string) error {
+	now := time.Now()
+	currentDate := now.Format("20060102")
+	currentTime := now.Format("150405")
+
+	storageAccountUrl := cfg.GetStorageAccountUrl()
+	storageAccountResourceId := cfg.GetStorageAccountId()
+	storageContainerName := cfg.GetStorageContainerName()
+	imagePath := filepath.Join(artifactsDir, "trident-vm-grub-verity-azure-testimage.vhd")
 
 	logrus.Tracef("Prepare image for Azure Shared Image Gallery")
-	err = cfg.PrepareSigImage()
+	err := cfg.PrepareSigImage()
 	if err != nil {
 		return fmt.Errorf("failed to prepare image for Azure: %w", err)
 	}
