@@ -12,7 +12,7 @@ fn run(device_path: impl AsRef<Path>, tag: &str) -> Result<String, Error> {
         .arg("value") // single value
         .arg("-s") // tag
         .arg(tag)
-        .arg(device_path.as_ref())
+        .arg(device_path.as_ref())xxxx
         .output_and_check()
         .context("Failed to execute blkid")?;
 
