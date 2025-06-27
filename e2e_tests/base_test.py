@@ -18,6 +18,11 @@ class SizeUnit(Enum):
     P = math.pow(1024, 5)
 
 
+class HostStatusSafeLoader(yaml.SafeLoader):
+    def accept_image(self, node):
+        return self.construct_mapping(node)
+
+
 def test_connection(connection):
     # Check ssh connection
     result = connection.run("sudo echo 'Successful connection'")
@@ -164,10 +169,9 @@ def test_partitions(connection, hostConfiguration, tridentCommand, abActiveVolum
 
     # Structure output
     host_status_output = result.stdout.strip()
-    yaml.add_multi_constructor(
-        "!", lambda loader, _, node: loader.construct_mapping(node)
-    )
-    host_status = yaml.load(host_status_output, Loader=yaml.FullLoader)
+
+    HostStatusSafeLoader.add_constructor("!image", HostStatusSafeLoader.accept_image)
+    host_status = yaml.load(host_status_output, Loader=HostStatusSafeLoader)
 
     # Check that servicingState is as expected
     assert host_status["servicingState"] == "provisioned"
