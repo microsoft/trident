@@ -18,34 +18,105 @@ from typing import Any, Dict
 
 @dataclass
 class PipelineMetadata:
-    id: int
+    ado_id: int
+    gh_id: int = -1
     parameters: Dict[str, Any] = None
 
 
 pipeline_metadata_map: Dict[str, PipelineMetadata] = {
-    "pr": PipelineMetadata(id=2113),
-    "pr-e2e": PipelineMetadata(id=2195),
-    "pr-e2e-azure": PipelineMetadata(id=4524),
-    "ci": PipelineMetadata(id=3371),
-    "pre": PipelineMetadata(id=2648),
+    "pr": PipelineMetadata(ado_id=2113, gh_id=5066),
+    "pr-e2e": PipelineMetadata(ado_id=2195),
+    "pr-e2e-azure": PipelineMetadata(ado_id=4524),
+    "ci": PipelineMetadata(ado_id=3371, gh_id=5067),
+    "pre": PipelineMetadata(ado_id=2648),
     "rel": PipelineMetadata(
-        id=3370,
+        ado_id=3370,
         parameters={"specificVersion": "1.0.0"},
     ),
-    "testing": PipelineMetadata(id=3262),
-    "tester": PipelineMetadata(id=3210),
-    "scale": PipelineMetadata(id=4217),
-    "scale-official": PipelineMetadata(id=4465),
+    "testing": PipelineMetadata(ado_id=3262),
+    "tester": PipelineMetadata(ado_id=3210),
+    "scale": PipelineMetadata(ado_id=4217),
+    "scale-official": PipelineMetadata(ado_id=4465),
     "azl-cicd": PipelineMetadata(
-        id=4358,
+        ado_id=4358,
         parameters={
             "baseImagePipelineBuildId": "730139",
             "baseImageArm64PipelineBuildId": "730138",
         },
     ),
-    "prism-cicd": PipelineMetadata(id=4482),
-    "full-validation": PipelineMetadata(id=4500),
+    "prism-cicd": PipelineMetadata(ado_id=4482),
+    "full-validation": PipelineMetadata(ado_id=4500),
 }
+
+
+def test_pipeline(
+    pipeline, pipeline_id, pipeline_parameters, quiet, selected_branch=None
+):
+    if not selected_branch:
+        selected_branch = (
+            "refs/heads/"
+            + subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                capture_output=True,
+                check=True,
+            )
+            .stdout.decode("utf-8")
+            .strip()
+        )
+
+    print(
+        f"Checking pipeline '{pipeline}' with ID '{pipeline_id}' on branch '{selected_branch}'",
+        file=sys.stderr,
+    )
+
+    payload = {
+        "previewRun": True,
+        "resources": {"repositories": {"self": {"refName": selected_branch}}},
+    }
+
+    if pipeline_parameters:
+        payload["templateParameters"] = pipeline_parameters
+
+    with tempfile.NamedTemporaryFile() as payload_file:
+        payload_file.write(json.dumps(payload).encode("utf-8"))
+        payload_file.flush()
+
+        cmd = [
+            "az",
+            "devops",
+            "invoke",
+            "--org",
+            "https://dev.azure.com/mariner-org",
+            "--api-version",
+            "7.0",
+            "--area",
+            "pipelines",
+            "--resource",
+            "runs",
+            "--route-parameters",
+            "project=ECF",
+            f"pipelineId={pipeline_id}",
+            "--http-method",
+            "POST",
+            "--in-file",
+            payload_file.name,
+        ]
+        output = subprocess.run(
+            cmd,
+            capture_output=True,
+        )
+
+    if output.returncode != 0:
+        print("Failed to preview pipeline:", file=sys.stderr)
+        print(output.stderr.decode("utf-8"), file=sys.stderr)
+        exit(1)
+
+    print("Pipeline previewed successfully", file=sys.stderr)
+
+    if not quiet:
+        out_json = json.loads(output.stdout.decode("utf-8"))
+        print(out_json["finalYaml"])
+
 
 parser = argparse.ArgumentParser(description="Preview a pipeline run")
 
@@ -68,78 +139,25 @@ parser.add_argument(
     "-q", "--quiet", action="store_true", help="Suppress YAML output", default=False
 )
 
-args = parser.parse_args()
+parser.add_argument(
+    "-g", "--github", action="store_true", help="Test github pipelines", default=True
+)
 
+args = parser.parse_args()
 
 pipeline_metadata = pipeline_metadata_map[args.pipeline]
 
-if pipeline_metadata.id == -1:
-    print("Pipeline does not exist yet", file=sys.stderr)
-    exit(2)
+if args.github and pipeline_metadata.gh_id == -1:
+    print(f"Pipeline {args.pipeline} does not have a GitHub ID", file=sys.stdout)
+    exit(0)
+if not args.github and pipeline_metadata.ado_id == -1:
+    print(f"Pipeline {args.pipeline} does not have a ADO ID", file=sys.stdout)
+    exit(0)
 
-if args.branch:
-    selected_branch = args.branch
-else:
-    selected_branch = (
-        "refs/heads/"
-        + subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            capture_output=True,
-            check=True,
-        )
-        .stdout.decode("utf-8")
-        .strip()
-    )
-
-print(
-    f"Checking pipeline '{args.pipeline}' with ID '{pipeline_metadata.id}' on branch '{selected_branch}'",
-    file=sys.stderr,
+test_pipeline(
+    args.pipeline,
+    pipeline_metadata.ado_id if not args.github else pipeline_metadata.gh_id,
+    pipeline_metadata.parameters,
+    args.quiet,
+    args.branch,
 )
-
-payload = {
-    "previewRun": True,
-    "resources": {"repositories": {"self": {"refName": selected_branch}}},
-}
-
-if pipeline_metadata.parameters:
-    payload["templateParameters"] = pipeline_metadata.parameters
-
-with tempfile.NamedTemporaryFile() as payload_file:
-    payload_file.write(json.dumps(payload).encode("utf-8"))
-    payload_file.flush()
-
-    cmd = [
-        "az",
-        "devops",
-        "invoke",
-        "--org",
-        "https://dev.azure.com/mariner-org",
-        "--api-version",
-        "7.0",
-        "--area",
-        "pipelines",
-        "--resource",
-        "runs",
-        "--route-parameters",
-        "project=ECF",
-        f"pipelineId={pipeline_metadata.id}",
-        "--http-method",
-        "POST",
-        "--in-file",
-        payload_file.name,
-    ]
-    output = subprocess.run(
-        cmd,
-        capture_output=True,
-    )
-
-if output.returncode != 0:
-    print("Failed to preview pipeline:", file=sys.stderr)
-    print(output.stderr.decode("utf-8"), file=sys.stderr)
-    exit(1)
-
-print("Pipeline previewed successfully", file=sys.stderr)
-
-if not args.quiet:
-    out_json = json.loads(output.stdout.decode("utf-8"))
-    print(out_json["finalYaml"])
