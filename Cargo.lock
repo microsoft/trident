@@ -1868,6 +1868,7 @@ dependencies = [
  "log",
  "netplan-types",
  "nix",
+ "once_cell",
  "openssl",
  "pytest",
  "pytest_gen",

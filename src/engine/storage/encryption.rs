@@ -13,7 +13,7 @@ use tempfile::NamedTempFile;
 
 use osutils::{
     dependencies::{Dependency, DependencyResultExt},
-    encryption,
+    encryption::{self, ENCRYPTION_PASSPHRASE},
     lsblk::{self, BlockDeviceType},
 };
 use sysdefs::tpm2::Pcr;
@@ -80,11 +80,17 @@ pub(super) fn create_encrypted_devices(
                     key_file: key_file_path.to_string_lossy().to_string(),
                 },
             )?;
-            encryption::generate_recovery_key_file(&key_file_path).structured(
+            let key = encryption::generate_recovery_key_file(&key_file_path).structured(
                 ServicingError::GenerateRecoveryKeyFile {
                     key_file: key_file_path.to_string_lossy().to_string(),
                 },
             )?;
+
+            // Store the key statically for later use, i.e. pcrlock policy enrollment
+            {
+                let mut static_key = ENCRYPTION_PASSPHRASE.lock().unwrap();
+                *static_key = key;
+            }
         };
 
         debug!(
@@ -230,7 +236,7 @@ fn encrypt_and_open_device(
 
     // Enroll the TPM 2.0 device for the underlying device. Currently, we bind the enrollment to
     // PCR 7 by default. pcrlock_policy bool is set to false, since while creating encrypted
-    // volumes, we first bind to value of PCR 7.
+    // volumes, we first bind to PCR values, not pcrlock policy.
     encryption::systemd_cryptenroll(Some(key_file), device_path, false, pcrs)?;
 
     debug!(

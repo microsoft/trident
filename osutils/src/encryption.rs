@@ -1,11 +1,14 @@
 use std::{
     fs::{self, File},
-    io::Read,
+    io::{Read, Write},
     path::Path,
+    sync::Mutex,
 };
 
 use anyhow::{Context, Error};
 use enumflags2::BitFlags;
+use once_cell::sync::Lazy;
+use tempfile::NamedTempFile;
 
 use sysdefs::tpm2::Pcr;
 use trident_api::constants::LUKS_HEADER_SIZE_IN_MIB;
@@ -25,6 +28,10 @@ pub const KEY_SIZE: &str = "512";
 /// Size of the temporary recovery key file in bytes.
 const TMP_RECOVERY_KEY_SIZE: usize = 64;
 
+/// Randomly generated key passphrase used for encryption and protected by a mutex. This passphrase
+/// is used to re-enroll the TPM 2.0 device using a pcrlock policy.
+pub static ENCRYPTION_PASSPHRASE: Lazy<Mutex<Vec<u8>>> = Lazy::new(Default::default);
+
 /// Runs `systemd-cryptenroll` to enroll a TPM 2.0 device for the given device of a LUKS2 encrypted
 /// volume.
 ///
@@ -43,11 +50,31 @@ pub fn systemd_cryptenroll(
         .arg("--wipe-slot=tpm2");
 
     // If a key file is provided, use it to unlock the TPM 2.0 device; if a key file is not
-    // provided, it means that the device has already been bound to TPM 2.0, and we're just
-    // updating the slot
+    // provided, it means that the device has already been bound to TPM 2.0 so we will use the
+    // static ENCRYPTION_PASSPHRASE to unlock the device.
+    let mut _tmp_file;
     if let Some(path) = key_file {
         cmd.arg("--unlock-key-file").arg(path.as_ref().as_os_str());
+    } else {
+        let key = ENCRYPTION_PASSPHRASE
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Failed to lock encryption passphrase in memory"))?;
+
+        if key.is_empty() {
+            return Err(anyhow::anyhow!(
+                "Encryption passphrase in memory is empty; cannot proceed without a key"
+            ));
+        }
+
+        _tmp_file = NamedTempFile::new()
+            .context("Failed to create temporary file for the encryption passphrase")?;
+        _tmp_file
+            .write_all(&key)
+            .context("Failed to write the encryption passphrase to a temporary file")?;
+
+        cmd.arg("--unlock-key-file").arg(_tmp_file.path());
     }
+    ENCRYPTION_PASSPHRASE.lock().unwrap().clear();
 
     if pcrlock_policy {
         cmd.arg(format!("--tpm2-pcrlock={}", PCRLOCK_POLICY_JSON));
@@ -187,7 +214,8 @@ fn to_tpm2_pcrs_arg(pcrs: BitFlags<Pcr>) -> String {
 
 /// This function creates a file at the specified path and fills it with cryptographically secure
 /// random bytes sourced from `/dev/random`. It is intended for generating a recovery key file with
-/// a specified size `TMP_RECOVERY_KEY_SIZE`.
+/// a specified size `TMP_RECOVERY_KEY_SIZE`. The function returns the random bytes that were
+/// written to the file.
 ///
 /// `path` specifies the location and name of the file to be created, and must be accessible and
 /// writable by the process.
@@ -195,17 +223,20 @@ fn to_tpm2_pcrs_arg(pcrs: BitFlags<Pcr>) -> String {
 /// This function can return an error if opening or reading `/dev/random` fails. It can also error
 /// when writing to the specified file path fails, which could be due to permission issues,
 /// non-existent directories in the path, or other filesystem-related errors.
-pub fn generate_recovery_key_file(path: &Path) -> Result<(), Error> {
-    let mut random_file =
-        File::open(DEV_RANDOM_PATH).context("Failed to open '{DEV_RANDOM_PATH}'")?;
-    let mut random_buffer: [u8; TMP_RECOVERY_KEY_SIZE] = [0u8; TMP_RECOVERY_KEY_SIZE];
+pub fn generate_recovery_key_file(path: &Path) -> Result<Vec<u8>, Error> {
+    let mut random_file = File::open(DEV_RANDOM_PATH).context("Failed to open '/dev/random'")?;
+
+    let mut random_buffer = vec![0u8; TMP_RECOVERY_KEY_SIZE];
     random_file
         .read_exact(&mut random_buffer)
-        .context("Failed to read from '{DEV_RANDOM_PATH}'")?;
-    fs::write(path, random_buffer).context(format!(
+        .context("Failed to read from '/dev/random'")?;
+
+    fs::write(path, &random_buffer).context(format!(
         "Failed to write random data to recovery key file '{}'",
         path.display()
-    ))
+    ))?;
+
+    Ok(random_buffer)
 }
 
 #[cfg(test)]
