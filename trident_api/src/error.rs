@@ -514,6 +514,9 @@ pub enum ServicingError {
     #[error("Failed to read current system hostname from {path}")]
     ReadHostname { path: String },
 
+    #[error("Failed to read recovery key file '{key_file}'")]
+    ReadRecoveryKeyFile { key_file: String },
+
     #[error("Failed to reboot")]
     Reboot,
 

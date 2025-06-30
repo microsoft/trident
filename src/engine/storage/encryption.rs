@@ -68,8 +68,18 @@ pub(super) fn create_encrypted_devices(
     if let Some(encryption) = &host_config.storage.encryption {
         let key_file_tmp: NamedTempFile;
         let key_file_path: PathBuf;
+
+        // Store key to update ENCRYPTION_PASSPHRASE static variable
+        let key_value: Option<Vec<u8>>;
+
         if let Some(recovery_key_url) = &encryption.recovery_key_url {
-            key_file_path = recovery_key_url.path().into()
+            key_file_path = recovery_key_url.path().into();
+
+            // Read key from existing recovery key file
+            let key = fs::read(&key_file_path).structured(ServicingError::ReadRecoveryKeyFile {
+                key_file: key_file_path.to_string_lossy().to_string(),
+            })?;
+            key_value = Some(key);
         } else {
             // Create a temporary file to store the recovery key file.
             key_file_tmp =
@@ -86,16 +96,18 @@ pub(super) fn create_encrypted_devices(
                 },
             )?;
 
-            // Store the key statically for later use, i.e. pcrlock policy enrollment
-            {
-                debug!(
-                    "Storing encryption passphrase in memory for later use: {}",
-                    key_file_path.display()
-                );
-                let mut static_key = ENCRYPTION_PASSPHRASE.lock().unwrap();
-                *static_key = key;
-            }
+            key_value = Some(key.clone());
         };
+
+        // Store the key statically for later use, i.e. pcrlock policy enrollment
+        if let Some(key) = key_value {
+            debug!(
+                "Storing encryption passphrase in memory for later use: {}",
+                key_file_path.display()
+            );
+            let mut static_key = ENCRYPTION_PASSPHRASE.lock().unwrap();
+            *static_key = key;
+        }
 
         debug!(
             "Using key file '{}' to initialize all encrypted volumes",
@@ -131,7 +143,7 @@ pub(super) fn create_encrypted_devices(
             if let PartitionSize::Fixed(byte_count) = partition.size {
                 total_partition_size_bytes += byte_count.bytes();
             }
-            // TODO: Print the kind of block device that device_id points to. https://dev.azure.com/mariner-org/ECF/_workitems/edit/7323/
+
             info!(
                 "Initializing '{}': creating encrypted volume of type '{}'",
                 ev.id,

@@ -5,7 +5,7 @@ use std::{
 
 use log::{debug, error, warn};
 
-use osutils::lsblk;
+use osutils::{encryption::ENCRYPTION_PASSPHRASE, lsblk};
 use trident_api::{
     config::HostConfigurationDynamicValidationError,
     constants::internal_params::RELAXED_COSI_VALIDATION,
@@ -179,6 +179,8 @@ impl Subsystem for StorageSubsystem {
             encryption::provision(ctx, mount_path).message(format!(
                 "Step 'Provision' failed for subunit '{ENCRYPTION_SUBSYSTEM_NAME}'"
             ))?;
+
+            ENCRYPTION_PASSPHRASE.lock().unwrap().clear();
         }
 
         Ok(())

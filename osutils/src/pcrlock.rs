@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::{bail, Context, Error, Result};
 use enumflags2::BitFlags;
-use goblin::pe::PE;
+use goblin::pe::{debug, PE};
 use log::{debug, error, trace, warn};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256, Sha384, Sha512};
@@ -153,12 +153,12 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         .output_and_check()
         .context("Failed to run 'systemd-pcrlock log'")?;
 
+    // TODO: REMOVE BEFORE MERGING
+    // print out output
+    debug!("Output of 'systemd-pcrlock log':\n{}", output);
+
     let parsed: LogOutput =
         serde_json::from_str(&output).context("Failed to parse 'systemd-pcrlock log' output")?;
-
-    // TODO: REMOVE
-    // Print the full log output for debugging purposes
-    debug!("Full 'systemd-pcrlock log' output:\n{:#?}", parsed.log);
 
     // Filter and log ONLY required PCR entries
     let required_entries: Vec<_> = parsed
