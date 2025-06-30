@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::{bail, Context, Error, Result};
 use enumflags2::BitFlags;
-use goblin::pe::{debug, PE};
+use goblin::pe::PE;
 use log::{debug, error, trace, warn};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256, Sha384, Sha512};
