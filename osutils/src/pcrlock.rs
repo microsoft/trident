@@ -156,6 +156,10 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
     let parsed: LogOutput =
         serde_json::from_str(&output).context("Failed to parse 'systemd-pcrlock log' output")?;
 
+    // TODO: REMOVE
+    // Print the full log output for debugging purposes
+    debug!("Full 'systemd-pcrlock log' output:\n{:#?}", parsed.log);
+
     // Filter and log ONLY required PCR entries
     let required_entries: Vec<_> = parsed
         .log
@@ -164,7 +168,7 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         .collect();
 
     debug!(
-        "Filtered 'systemd-pcrlock log' entries for required PCRs {:?}:\n{:#?}",
+        "Filtered 'systemd-pcrlock log' entries for required PCRs: {:?}\n{:#?}",
         required_pcrs
             .iter()
             .map(|pcr| pcr.to_num())

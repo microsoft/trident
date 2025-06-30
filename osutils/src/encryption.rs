@@ -75,7 +75,8 @@ pub fn systemd_cryptenroll(
 
     let mut cmd = Dependency::SystemdCryptenroll.cmd();
     cmd.arg(device_path.as_ref().as_os_str())
-        .arg("--tpm2-device=auto");
+        .arg("--tpm2-device=auto")
+        .arg("--wipe-slot=tpm2");
 
     // If a key file is provided, use it to unlock the TPM 2.0 device; if a key file is not
     // provided, it means that the device has already been bound to TPM 2.0 so we will use the
@@ -104,7 +105,7 @@ pub fn systemd_cryptenroll(
     if pcrlock_policy {
         cmd.arg(format!("--tpm2-pcrlock={}", PCRLOCK_POLICY_JSON));
     } else {
-        cmd.arg(to_tpm2_pcrs_arg(pcrs)).arg("--wipe-slot=tpm2");
+        cmd.arg(to_tpm2_pcrs_arg(pcrs));
     }
 
     cmd.run_and_check().context(format!(
