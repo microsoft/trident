@@ -1,12 +1,15 @@
 use std::{
-    fs::{self, File},
+    fs::{self, File, Permissions},
     io::{Read, Write},
+    os::unix::fs::PermissionsExt,
     path::Path,
+    process::Command,
     sync::Mutex,
 };
 
 use anyhow::{Context, Error};
 use enumflags2::BitFlags;
+use log::debug;
 use once_cell::sync::Lazy;
 use tempfile::NamedTempFile;
 
@@ -44,42 +47,64 @@ pub fn systemd_cryptenroll(
     pcrlock_policy: bool,
     pcrs: BitFlags<Pcr>,
 ) -> Result<(), Error> {
+    // TODO: REMOVE BEFORE MERGING
+    // Print output of systemd-cryptenroll <device_name> to see what it's enrolled to
+    debug!(
+        "Running 'systemd-cryptenroll' command to enroll TPM 2.0 device for the underlying device '{}'",
+        device_path.as_ref().display()
+    );
+    // Create the command to run
+    let mut cmd = Command::new("systemd-cryptenroll");
+    cmd.arg(device_path.as_ref().as_os_str());
+    // Execute command and capture full output
+    let output = cmd
+        .output()
+        .context("Failed to execute 'systemd-cryptenroll' command")?;
+
+    // Convert stdout to UTF-8
+    let stdout_str = String::from_utf8(output.stdout)
+        .context("Failed to convert stdout of 'systemd-cryptenroll' to a string as it contains invalid UTF-8")?;
+    let stderr_str = String::from_utf8(output.stderr)
+        .context("Failed to convert stderr of 'systemd-cryptenroll' to a string as it contains invalid UTF-8")?;
+
+    // Log both outputs
+    debug!(
+        "Output of 'systemd-cryptenroll':\nSTDOUT:\n{}\nSTDERR:\n{}",
+        stdout_str, stderr_str
+    );
+
     let mut cmd = Dependency::SystemdCryptenroll.cmd();
     cmd.arg(device_path.as_ref().as_os_str())
-        .arg("--tpm2-device=auto")
-        .arg("--wipe-slot=tpm2");
+        .arg("--tpm2-device=auto");
 
     // If a key file is provided, use it to unlock the TPM 2.0 device; if a key file is not
     // provided, it means that the device has already been bound to TPM 2.0 so we will use the
     // static ENCRYPTION_PASSPHRASE to unlock the device.
     let mut _tmp_file;
     if let Some(path) = key_file {
-        cmd.arg("--unlock-key-file").arg(path.as_ref().as_os_str());
+        cmd.arg(format!("--unlock-key-file={}", path.as_ref().display()));
     } else {
         let key = ENCRYPTION_PASSPHRASE
             .lock()
             .map_err(|_| anyhow::anyhow!("Failed to lock encryption passphrase in memory"))?;
 
-        if key.is_empty() {
-            return Err(anyhow::anyhow!(
-                "Encryption passphrase in memory is empty; cannot proceed without a key"
-            ));
-        }
-
         _tmp_file = NamedTempFile::new()
             .context("Failed to create temporary file for the encryption passphrase")?;
+        // Set permissions required for a key file; only owner has read permission
+        fs::set_permissions(_tmp_file.path(), Permissions::from_mode(0o400))
+            .context("Failed to set permissions for temporary file with encryption passphrase")?;
         _tmp_file
             .write_all(&key)
             .context("Failed to write the encryption passphrase to a temporary file")?;
 
-        cmd.arg("--unlock-key-file").arg(_tmp_file.path());
+        cmd.arg(format!("--unlock-key-file={}", _tmp_file.path().display()));
     }
     ENCRYPTION_PASSPHRASE.lock().unwrap().clear();
 
     if pcrlock_policy {
         cmd.arg(format!("--tpm2-pcrlock={}", PCRLOCK_POLICY_JSON));
     } else {
-        cmd.arg(to_tpm2_pcrs_arg(pcrs));
+        cmd.arg(to_tpm2_pcrs_arg(pcrs)).arg("--wipe-slot=tpm2");
     }
 
     cmd.run_and_check().context(format!(

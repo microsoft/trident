@@ -7,7 +7,7 @@ use std::{
 use anyhow::{bail, Context, Error, Result};
 use enumflags2::BitFlags;
 use goblin::pe::PE;
-use log::{debug, error, trace};
+use log::{debug, error, trace, warn};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256, Sha384, Sha512};
 use tempfile::NamedTempFile;
@@ -73,7 +73,7 @@ pub fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
     );
 
-    make_policy(pcrs).context("Failed to generate a new TPM 2.0 access policy")?;
+    make_policy(pcrs).context("Failed to run 'systemd-pcrlock make-policy' command")?;
 
     // Log pcrlock policy JSON contents
     let pcrlock_policy =
@@ -208,7 +208,7 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
 /// the used TPM 2.0 and its NV index are written to PCRLOCK_POLICY_JSON.
 fn make_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
     debug!(
-        "Generating a new pcrlock policy via 'systemd-pcrlock make-policy' \
+        "Running 'systemd-pcrlock make-policy' command to make a new pcrlock policy \
         with the following PCRs: {:?}",
         pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
     );
@@ -225,30 +225,33 @@ fn make_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
     // Check exit status using standard fields
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(anyhow::anyhow!(
-            "Command 'systemd-pcrlock make-policy' failed with exit code {:?}\nStderr: {}",
-            output.status.code(),
-            stderr
-        ));
+        warn!(
+            "Command 'systemd-pcrlock make-policy' failed with status {}: {}",
+            output.status, stderr
+        );
     }
 
     // Convert stdout to UTF-8
     let stdout_str = String::from_utf8(output.stdout)
-        .context("Output of 'systemd-pcrlock make-policy' contained invalid UTF-8")?;
+        .context("Failed to convert stdout of 'systemd-pcrlock make-policy' to a string as it contains invalid UTF-8")?;
+    let stderr_str = String::from_utf8(output.stderr)
+        .context("Failed to convert stderr of 'systemd-pcrlock make-policy' to a string as it contains invalid UTF-8")?;
 
     // Log both outputs
     debug!(
         "Output of 'systemd-pcrlock make-policy':\nSTDOUT:\n{}\nSTDERR:\n{}",
-        stdout_str,
-        String::from_utf8_lossy(&output.stderr)
+        stdout_str, stderr_str
     );
+    // Join stdout and stderr for parsing, since systemd-pcrlock will output to stderr even when we
+    // don't get an error, e.g. when components for PCRs we don't care about aren't recognized
+    let output_str = format!("{}\n{}", stdout_str, stderr_str);
 
     // Validate that TPM 2.0 access policy has been updated
-    if !stdout_str.contains("Calculated new PCR policy") || !stdout_str.contains("Updated NV index")
+    if !output_str.contains("Calculated new PCR policy") || !output_str.contains("Updated NV index")
     {
         bail!(
-            "Failed to generate a new TPM 2.0 access policy:\n{}",
-            stdout_str
+            "Command 'systemd-pcrlock make-policy' failed to return expected output:\n{}",
+            output_str
         );
     }
 

@@ -88,6 +88,10 @@ pub(super) fn create_encrypted_devices(
 
             // Store the key statically for later use, i.e. pcrlock policy enrollment
             {
+                debug!(
+                    "Storing encryption passphrase in memory for later use: {}",
+                    key_file_path.display()
+                );
                 let mut static_key = ENCRYPTION_PASSPHRASE.lock().unwrap();
                 *static_key = key;
             }
