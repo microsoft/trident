@@ -92,6 +92,27 @@ Trident files for SystemD service
 
 # ------------------------------------------------------------------------------
 
+%package install-service
+Summary:        Trident files for SystemD install service
+Requires:       %{name}
+
+%description install-service
+Trident files for SystemD install service
+
+%files install-service
+%{_unitdir}/%{name}-install.service
+
+%post install-service
+%systemd_post %{name}-install.service
+
+%preun install-service
+%systemd_preun %{name}-install.service
+
+%postun install-service
+%systemd_postun_with_restart %{name}-install.service
+
+# ------------------------------------------------------------------------------
+
 %package update-poll
 Summary:        Trident files for SystemD service
 Requires:       %{name}
@@ -189,6 +210,7 @@ install -D -p -m 0644 selinux/%{name}.if %{buildroot}%{_datadir}/selinux/devel/i
 
 mkdir -p %{buildroot}%{_unitdir}
 install -D -m 644 systemd/%{name}.service %{buildroot}%{_unitdir}/%{name}.service
+install -D -m 644 systemd/%{name}-install.service %{buildroot}%{_unitdir}/%{name}-install.service
 install -D -m 644 systemd/%{name}-network.service %{buildroot}%{_unitdir}/%{name}-network.service
 install -D -m 644 systemd/%{name}.timer %{buildroot}%{_unitdir}/%{name}.timer
 

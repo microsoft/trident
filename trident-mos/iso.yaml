@@ -57,6 +57,8 @@ os:
       # Support for building SELinux module and debugging
       - selinux-policy-devel
       - setools-console
+      # Install trident-install.service
+      - trident-install-service
 
   additionalFiles:
     - source: files/getty@.service
@@ -65,8 +67,6 @@ os:
       destination: /usr/lib/systemd/system/serial-getty@.service
     - source: files/root.profile
       destination: /root/.profile
-    - source: ../systemd/trident-install.service
-      destination: /usr/lib/systemd/system/trident-install.service
     - source: files/download-trident.service
       destination: /usr/lib/systemd/system/download-trident.service
     - source: ../selinux-policy-trident/trident.if
