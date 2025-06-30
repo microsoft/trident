@@ -215,4 +215,18 @@ pub mod internal_params {
 
     /// Overrides the default PCR registries to use when sealing encryption keys.
     pub const OVERRIDE_ENCRYPTION_PCRS: &str = "overrideEncryptionPcrs";
+
+    /// Set the in-image paths of the verity signature files.
+    ///
+    /// The param MUST be a mapping of: Verity Block Device Id -> Absolute path
+    /// of the signature file in the image.
+    ///
+    /// Example:
+    ///
+    /// ```yaml
+    /// internalParams:
+    ///   veritySignaturePaths:
+    ///     usr: /boot/usr.hash.sig
+    /// ```
+    pub const VERITY_SIGNATURE_PATHS: &str = "veritySignaturePaths";
 }

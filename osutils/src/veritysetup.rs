@@ -1,10 +1,18 @@
 use std::{
     collections::HashMap,
+    ffi::OsString,
+    fmt::Display,
+    fs,
     path::{Path, PathBuf},
 };
 
 use anyhow::{bail, Context, Error};
 use log::{error, trace};
+use openssl::{
+    pkcs7::{Pkcs7, Pkcs7Flags},
+    stack::Stack,
+    x509::{X509NameEntries, X509},
+};
 
 use trident_api::constants::DEV_MAPPER_PATH;
 
@@ -15,7 +23,11 @@ use crate::{
 
 /// String representing the value expected for the state of a verity device
 /// after opening it.
-const EXPECTED_VERITY_DEVICE_STATE: &str = "verified";
+const EXPECTED_VERITY_DEVICE_STATUS: &str = "verified";
+
+/// String representing the value expected for the state of a signed verity
+/// device after opening it.
+const EXPECTED_VERITY_DEVICE_STATUS_SIGNED: &str = "verified (with signature)";
 
 /// Represents a verity device
 /// This struct wraps the open and close behavior of a verity device.
@@ -44,6 +56,19 @@ impl VerityDevice {
         }
     }
 
+    /// Will attempt to open the device with a signature file and verify it.
+    pub fn open_with_signature(&self, signature_file: impl AsRef<Path>) -> Result<(), Error> {
+        open_with_signature(
+            &self.device_name,
+            &self.data_device_path,
+            &self.hash_device_path,
+            &self.root_hash,
+            signature_file,
+        )?;
+
+        self.validate_or_close(EXPECTED_VERITY_DEVICE_STATUS_SIGNED)
+    }
+
     /// Will attempt to open the device and verify it.
     pub fn open(&self) -> Result<(), Error> {
         open(
@@ -53,7 +78,12 @@ impl VerityDevice {
             &self.root_hash,
         )?;
 
-        let dev_status = match status(&self.device_name) {
+        self.validate_or_close(EXPECTED_VERITY_DEVICE_STATUS)
+    }
+
+    /// Validates the device status after opening it.
+    fn validate_or_close(&self, expected_status: &str) -> Result<(), Error> {
+        let dev_status = match self.status() {
             Err(e) => {
                 close(&self.device_name)?;
                 return Err(e);
@@ -64,12 +94,12 @@ impl VerityDevice {
             Ok(VerityDeviceStatus::Active(status)) => *status,
         };
 
-        if dev_status.status != EXPECTED_VERITY_DEVICE_STATE {
+        if dev_status.status != expected_status {
             // The device is not verified, so we need to close it
             // and return an error.
             let mut msg = format!(
-                "Failed to activate verity device '{}', status: '{}'",
-                self.device_name, dev_status.status
+                "Failed to activate verity device '{}', status: '{}', expected: '{}'",
+                self.device_name, dev_status.status, expected_status
             );
 
             // Try to close the device, attach the error to the message if it fails.
@@ -79,6 +109,12 @@ impl VerityDevice {
 
             bail!(msg);
         }
+
+        trace!(
+            "Successfully opened verity device '{}', status: '{}'",
+            self.device_name,
+            dev_status.status
+        );
 
         Ok(())
     }
@@ -156,15 +192,56 @@ pub fn open(
     hash_device_path: impl AsRef<Path>,
     root_hash: impl AsRef<str>,
 ) -> Result<(), Error> {
-    Dependency::Veritysetup
-        .cmd()
-        .arg("open")
+    open_inner(
+        name,
+        data_device_path,
+        hash_device_path,
+        root_hash,
+        None::<&Path>,
+    )
+}
+
+/// Same as open() but adds a parameter to pass a signature file.
+fn open_with_signature(
+    name: impl AsRef<str>,
+    data_device_path: impl AsRef<Path>,
+    hash_device_path: impl AsRef<Path>,
+    root_hash: impl AsRef<str>,
+    signature_file: impl AsRef<Path>,
+) -> Result<(), Error> {
+    open_inner(
+        name,
+        data_device_path,
+        hash_device_path,
+        root_hash,
+        Some(signature_file),
+    )
+}
+
+/// Inner implementation of open() and open_with_signature().
+fn open_inner(
+    name: impl AsRef<str>,
+    data_device_path: impl AsRef<Path>,
+    hash_device_path: impl AsRef<Path>,
+    root_hash: impl AsRef<str>,
+    signature_file: Option<impl AsRef<Path>>,
+) -> Result<(), Error> {
+    let mut cmd = Dependency::Veritysetup.cmd();
+    cmd.arg("open")
         .arg(data_device_path.as_ref())
         .arg(name.as_ref())
         .arg(hash_device_path.as_ref())
         .arg(root_hash.as_ref())
-        .arg("--verbose")
-        .run_and_check()
+        .arg("--verbose");
+
+    // If a signature file is provided, add it to the command.
+    if let Some(signature_file) = signature_file {
+        let mut arg = OsString::from("--root-hash-signature=");
+        arg.push(signature_file.as_ref());
+        cmd.arg(arg);
+    }
+
+    cmd.run_and_check()
         .with_context(|| format!("Failed to open verity device '{}'", name.as_ref()))?;
 
     let dm_verity_root_path = Path::new(DEV_MAPPER_PATH).join(name.as_ref());
@@ -421,6 +498,77 @@ pub fn close(device_name: &str) -> Result<(), Error> {
 /// Returns the dev-mapper path for the given device name.
 pub fn device_path(name: impl AsRef<Path>) -> PathBuf {
     Path::new(DEV_MAPPER_PATH).join(name)
+}
+
+pub struct VeritySignatureInfo(Vec<SignerInfo>);
+
+struct SignerInfo {
+    subject_name: String,
+    issuer_name: String,
+    authority_key_id: Option<Vec<u8>>,
+}
+
+impl VeritySignatureInfo {
+    fn new(signers: Stack<X509>) -> Self {
+        fn extract_data(mut entries: X509NameEntries, default: impl Into<String>) -> String {
+            entries
+                .next()
+                .and_then(|e| e.data().as_utf8().ok())
+                .map_or_else(|| default.into(), |s| s.to_string())
+        }
+
+        Self(
+            signers
+                .iter()
+                .map(|signer| SignerInfo {
+                    subject_name: extract_data(signer.subject_name().entries(), "Unknown"),
+                    issuer_name: extract_data(signer.issuer_name().entries(), "Unknown"),
+                    authority_key_id: signer.authority_key_id().map(|id| id.as_slice().to_vec()),
+                })
+                .collect(),
+        )
+    }
+}
+
+impl Display for VeritySignatureInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "VeritySignatureInfo with {} signer(s):", self.0.len())?;
+        for signer in self.0.iter() {
+            writeln!(
+                f,
+                "  Subject: {}, Issuer: {}, Authority Key ID: {}",
+                signer.subject_name,
+                signer.issuer_name,
+                signer
+                    .authority_key_id
+                    .as_ref()
+                    .map(hex::encode)
+                    .unwrap_or_else(|| "None".to_string())
+            )?;
+        }
+
+        Ok(())
+    }
+}
+
+pub fn get_verity_signature_info(path: impl AsRef<Path>) -> Result<VeritySignatureInfo, Error> {
+    get_verity_signature_info_inner(path.as_ref()).with_context(|| {
+        format!(
+            "Failed to read verity signature info from file '{}'",
+            path.as_ref().display()
+        )
+    })
+}
+
+fn get_verity_signature_info_inner(path: impl AsRef<Path>) -> Result<VeritySignatureInfo, Error> {
+    let der = fs::read(path.as_ref()).context("Failed to read verity signature file")?;
+    let pkcs7 = Pkcs7::from_der(&der).context("Failed to parse verity signature file as PKCS#7")?;
+    let empty_stack = Stack::<X509>::new().context("Failed to create empty X509 stack")?;
+    let signers = pkcs7
+        .signers(&empty_stack, Pkcs7Flags::NOVERIFY)
+        .context("Failed to get signers from verity signature file")?;
+
+    Ok(VeritySignatureInfo::new(signers))
 }
 
 #[cfg(test)]
@@ -716,7 +864,7 @@ mod functional_test {
 
             assert_eq!(
                 bad_hash_dev.open().unwrap_err().to_string(),
-                "Failed to activate verity device 'verity-test', status: 'corrupted'"
+                "Failed to activate verity device 'verity-test', status: 'corrupted', expected: 'verified'"
             );
         }
 

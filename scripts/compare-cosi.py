@@ -29,6 +29,7 @@ import shutil
 from pathlib import Path
 import tarfile
 import tempfile
+import time
 from typing import Dict, Generator, List, Optional, Tuple
 import subprocess
 from io import StringIO
@@ -48,16 +49,26 @@ except ImportError:
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Compare two COSI files and optionally write results to a file."
+        description="Extract one COSI file to a directory, or compare two COSI files and optionally write results to a directory."
     )
-    parser.add_argument("cosi_file_a", type=Path, help="Path to the first COSI file.")
-    parser.add_argument("cosi_file_b", type=Path, help="Path to the second COSI file.")
+    parser.add_argument(
+        "cosi_file_a",
+        type=Path,
+        help="Path to the first COSI file.",
+    )
+    parser.add_argument(
+        "cosi_file_b",
+        type=Path,
+        help="Path to the second COSI file.",
+        default=None,
+        nargs="?",
+    )
     parser.add_argument(
         "-o",
         "--output",
         type=Path,
         default=None,
-        help="Optional path to write the comparison results.",
+        help="Optional directory to write the extracted COSI file or the comparison results to.",
     )
     return parser.parse_args()
 
@@ -401,30 +412,63 @@ def compare_ukis(
                 report_file.write(report)
 
 
-def main():
-    args = parse_args()
-    cosi_file_a: Path = args.cosi_file_a
-    cosi_file_b: Path = args.cosi_file_b
-    output: Optional[Path] = args.output
+def cmd_extract_cosi(cosi_file: Path, output_dir: Path):
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    log.info(f"COSI file will be extracted to: {output_dir}/")
 
-    if not cosi_file_a.exists():
-        log.error(f"COSI file 1 does not exist: {cosi_file_a}")
-        exit(1)
+    with cosi_extractor(cosi_file) as cosi_root:
+        log.info(f"Extracted COSI file to: {cosi_root}")
 
+        copied_files: List[Path] = []
+
+        def log_copy(src: Path, dst: Path, **kwargs):
+            copied_files.append(Path(src).relative_to(cosi_root))
+            shutil.copy2(src, dst, **kwargs)
+            dst_file = Path(dst)
+
+        # Copy the extracted COSI root to the output directory
+        output_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(
+            cosi_root,
+            output_dir,
+            dirs_exist_ok=True,
+            symlinks=True,
+            copy_function=log_copy,
+        )
+
+        for path in output_dir.rglob("*"):
+            try:
+                if not path.is_file() and not path.is_dir():
+                    continue
+                path.chmod(path.stat().st_mode | 0o444)
+            except Exception as e:
+                log.warning(f"Could not set permissions for {path}: {e}")
+
+        with open(output_dir / "EXTRACT_MANIFEST", "w") as manifest_file:
+            for file in copied_files:
+                manifest_file.write(f"{file}\n")
+
+        log.info(f"COSI file extracted to: {output_dir}")
+        print(f"COSI file extracted to: {output_dir}")
+
+
+def cmd_compare_cosi(cosi_file_a: Path, cosi_file_b: Path, output_dir: Optional[Path]):
     if not cosi_file_b.exists():
-        log.error(f"COSI file 2 does not exist: {cosi_file_b}")
+        log.error(f"COSI file B does not exist: {cosi_file_b}")
         exit(1)
 
-    if output:
-        if output.exists():
-            shutil.rmtree(output)
-        output.mkdir(parents=True, exist_ok=True)
-        log.info(f"Results will be written to: {output}")
+    if output_dir:
+        if output_dir.exists():
+            shutil.rmtree(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        log.info(f"Results will be written to: {output_dir}")
     else:
-        log.info("No output file specified.")
+        log.info("No output directory specified.")
 
-    log.info(f"COSI file 1: {cosi_file_a}")
-    log.info(f"COSI file 2: {cosi_file_b}")
+    log.info(f"COSI file A: {cosi_file_a}")
+    log.info(f"COSI file B: {cosi_file_b}")
 
     with tempfile.TemporaryDirectory() as work_dir:
         log.info(f"Temporary work directory: {work_dir}")
@@ -449,13 +493,13 @@ def main():
             report = compare.report()
             print(report)
 
-            if output:
-                with open(output / "report.txt", "w") as report_file:
+            if output_dir:
+                with open(output_dir / "report.txt", "w") as report_file:
                     report_file.write(report)
 
                 compare.copy_diftrees(
-                    output / cosi_file_a.name,
-                    output / cosi_file_b.name,
+                    output_dir / cosi_file_a.name,
+                    output_dir / cosi_file_b.name,
                 )
 
             for file in compare.diff_files:
@@ -467,8 +511,28 @@ def main():
                         cosi_a_root=cosi_a_root,
                         cosi_b_path=cosi_file_b,
                         cosi_b_root=cosi_b_root,
-                        output=args.output,
+                        output=output_dir,
                     )
+
+
+def main():
+    args = parse_args()
+    cosi_file_a: Path = args.cosi_file_a
+    cosi_file_b: Optional[Path] = args.cosi_file_b
+    output: Optional[Path] = args.output
+
+    if not cosi_file_a.exists():
+        log.error(f"COSI file A does not exist: {cosi_file_a}")
+        exit(1)
+
+    if cosi_file_b is None:
+        log.info(f"Only extracting COSI file: {cosi_file_a}")
+        if output is None:
+            log.error("Output directory must be specified for extraction.")
+            exit(1)
+        cmd_extract_cosi(cosi_file_a, output / cosi_file_a.name)
+    else:
+        cmd_compare_cosi(cosi_file_a, cosi_file_b, output)
 
 
 if __name__ == "__main__":

@@ -1,21 +1,27 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
+    fs,
     path::{Path, PathBuf},
 };
 
-use anyhow::{anyhow, bail, Context, Error};
-use log::{debug, trace};
+use anyhow::{anyhow, bail, ensure, Context, Error};
+use log::{debug, error, trace};
 
 use osutils::{
     block_devices,
     dependencies::Dependency,
+    filesystems::MountFileSystemType,
+    mount::{self, MountGuard},
     veritysetup::{self, VerityDevice as VerityDeviceUtils},
 };
+use tempfile::NamedTempFile;
 use trident_api::{
     config::{HostConfiguration, VerityDevice},
     constants::{
-        DEV_MAPPER_PATH, ROOT_VERITY_DEVICE_NAME, USR_MOUNT_POINT_PATH, USR_VERITY_DEVICE_NAME,
+        internal_params::VERITY_SIGNATURE_PATHS, DEV_MAPPER_PATH, ESP_MOUNT_POINT_PATH,
+        ROOT_VERITY_DEVICE_NAME, USR_MOUNT_POINT_PATH, USR_VERITY_DEVICE_NAME,
     },
+    BlockDeviceId,
 };
 
 use crate::engine::{
@@ -104,7 +110,199 @@ pub(super) fn setup_verity_devices(ctx: &EngineContext) -> Result<(), Error> {
         );
     };
 
-    VerityDeviceUtils::new(update_name, data_dev, hash_dev, root_hash).open()
+    // Create the internal representation of the verity device.
+    let verity_dev = VerityDeviceUtils::new(update_name, data_dev, hash_dev, root_hash);
+
+    // Check internal parameters for verity signatures.
+    if let Some(signature_file_map) = ctx
+        .spec
+        .internal_params
+        .get::<HashMap<BlockDeviceId, PathBuf>>(VERITY_SIGNATURE_PATHS)
+        .transpose()?
+    {
+        if let Some(signature_file_path) = signature_file_map.get(&verity_device.id) {
+            // If we have valid internal params and one signature file path matching this block device ID,
+            // open the verity device with the signature file and return.
+            return open_verity_device_with_signature(
+                ctx,
+                &verity_device.id,
+                verity_dev,
+                signature_file_path,
+            )
+            .with_context(|| {
+                format!(
+                    "Failed to open verity device '{}' with signature file '{}'",
+                    verity_device.id,
+                    signature_file_path.display()
+                )
+            });
+        }
+    }
+
+    // Otherwise, open and return normally.
+    debug!("Opening verity device '{}'", verity_device.id);
+    verity_dev.open()
+}
+
+/// Open a verity device with a signature file.
+///
+/// ONLY MEANT FOR USE DURING OS UPDATES.
+///
+/// The signature is expected to be a file contained inside of the update image.
+/// It may be located in any filesystem except for the ESP and the verity
+/// filesystem itself (as that would be impossible). However, placing it on a
+/// standalone filesystem mounted at `/boot` is recommended. (And so far the
+/// only tested location.)
+///
+/// The signature is expected to exist in der format.
+///
+/// Internally, this function will figure out where the signature file is
+/// located, mount that filesystem, copy the file out into a temporary file, and
+/// then use `veritysetup open --root-hash-signature=<signature_file_path>` to
+/// open the verity device. The function will only succeed if the device was
+/// successfully opened and the signature validated.
+///
+/// The certificate matching the signature MUST exist in the kernel keyring,
+/// otherwise the operation WILL fail.
+///
+/// As a small aid, information about the signature file will be printed to the
+/// debug log.
+fn open_verity_device_with_signature(
+    ctx: &EngineContext,
+    verity_device_id: &BlockDeviceId,
+    verity_device: VerityDeviceUtils,
+    signature_file_path: &Path,
+) -> Result<(), Error> {
+    debug!(
+        "Preparing to open verity device '{}' with signature file '{}'",
+        verity_device_id,
+        signature_file_path.display()
+    );
+
+    // ESP is populated after this point, so we cannot allow signature files to
+    // be on the ESP mount point.
+    ensure!(
+        !signature_file_path.starts_with(ESP_MOUNT_POINT_PATH),
+        "Signature file cannot be on the ESP mount point '{}'",
+        ESP_MOUNT_POINT_PATH
+    );
+
+    let (mpi, relative_path) = ctx
+        .spec
+        .storage
+        .get_mount_point_info_and_relative_path(signature_file_path)
+        .context("Could not find a mount point and relative path for the signature file.")?;
+
+    let signature_block_device_id = mpi.device_id.with_context(|| {
+        format!(
+            "The mount point '{}' is not placed on a real block device.",
+            mpi.mount_point.path.display()
+        )
+    })?;
+    let signature_block_device_path = ctx
+        .get_block_device_path(signature_block_device_id)
+        .with_context(|| {
+            format!(
+                "Failed to find path for block device '{}'",
+                signature_block_device_id
+            )
+        })?;
+
+    // Create a temporary file to hold a copy of the signature file.
+    let temp_signature_file_path = NamedTempFile::new()
+        .context("Failed to create temporary file for verity signature")?
+        .into_temp_path();
+
+    // Create a temporary directory to mount the signature block device.
+    let signature_mount_dir =
+        tempfile::tempdir().context("Failed to create temporary directory for verity device")?;
+
+    debug!(
+        "Mounting signature block device '{}' [{}] at temporary directory '{}'",
+        signature_block_device_id,
+        signature_block_device_path.display(),
+        signature_mount_dir.path().display()
+    );
+
+    // Mount the signature block device at the temporary directory.
+    mount::mount(
+        &signature_block_device_path,
+        &signature_mount_dir,
+        MountFileSystemType::Auto,
+        &[],
+    )
+    .context(format!(
+        "Failed to mount signature block device '{}' at temporary directory '{}'",
+        signature_block_device_path.display(),
+        signature_mount_dir.path().display()
+    ))?;
+
+    // IMMEDIATELY after mounting create a new scope with a MountGuard to ensure
+    // the temporary mount is unmounted when we leave this scope.
+    {
+        let _guard = MountGuard {
+            mount_dir: signature_mount_dir.path(),
+        };
+
+        // This will be the path we can find the signature file at after mounting.
+        let effective_signature_file_path = signature_mount_dir.path().join(relative_path);
+
+        ensure!(
+            effective_signature_file_path.exists(),
+            "Signature file does not exist at expected path '{}'",
+            effective_signature_file_path.display(),
+        );
+
+        let copied = fs::copy(&effective_signature_file_path, &temp_signature_file_path)
+            .with_context(|| {
+                format!(
+                    "Failed to copy signature file '{}' to temporary file '{}'",
+                    effective_signature_file_path.display(),
+                    temp_signature_file_path.display(),
+                )
+            })?;
+
+        debug!(
+            "Copied signature file '{}' to temporary file '{}' ({} bytes)",
+            effective_signature_file_path.display(),
+            temp_signature_file_path.display(),
+            copied,
+        );
+    }
+
+    // Try to print signature info
+    match veritysetup::get_verity_signature_info(&temp_signature_file_path) {
+        Ok(signature_info) => {
+            debug!(
+                "Signature file '{}' for verity device '{}' info:\n{}",
+                temp_signature_file_path.display(),
+                verity_device_id,
+                signature_info
+            );
+        }
+        Err(e) => {
+            error!(
+                "Failed to get signature info from file '{}': {}",
+                temp_signature_file_path.display(),
+                e
+            );
+        }
+    }
+
+    debug!(
+        "Opening verity device '{}' with signature file '{}' [{}]",
+        verity_device_id,
+        signature_file_path.display(),
+        temp_signature_file_path.display(),
+    );
+
+    verity_device
+        .open_with_signature(&temp_signature_file_path)
+        .context(format!(
+            "Failed to open verity device '{}' with signature file '{}'",
+            verity_device_id,
+            temp_signature_file_path.display()
+        ))
 }
 
 /// Get the verity data and hash paths.
@@ -507,7 +705,7 @@ mod functional_test {
 
         assert_eq!(
             setup_verity_devices(&ctx).unwrap_err().to_string(),
-            "Failed to activate verity device 'root_new', status: 'corrupted'"
+            "Failed to activate verity device 'root_new', status: 'corrupted', expected: 'verified'"
         );
 
         // Failure should close the device!

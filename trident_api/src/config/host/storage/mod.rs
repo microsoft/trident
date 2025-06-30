@@ -409,7 +409,6 @@ impl Storage {
         self.filesystems.iter().filter_map(|fs| {
             fs.mount_point.as_ref().map(|mp| MountPointInfo {
                 mount_point: mp,
-                is_verity: false,
                 device_id: fs.device_id.as_ref(),
             })
         })

@@ -307,7 +307,6 @@ where
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MountPointInfo<'a> {
     pub mount_point: &'a MountPoint,
-    pub is_verity: bool,
     pub device_id: Option<&'a BlockDeviceId>,
 }
 
