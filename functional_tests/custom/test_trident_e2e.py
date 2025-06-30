@@ -20,12 +20,9 @@
 # from functional_tests.conftest import TRIDENT_REPO_DIR_PATH
 
 
-# class HostStatusSafeLoader(yaml.SafeLoader):
-#     def accept_image(self, node):
-#         return self.construct_mapping(node)
-
-
-# HostStatusSafeLoader.add_constructor("!image", HostStatusSafeLoader.accept_image)
+# yaml.add_multi_constructor(
+#     "!", lambda loader, _, node: loader.construct_mapping(node)
+# )
 
 
 # @pytest.mark.functional
@@ -52,7 +49,7 @@
 #     trident = TridentTool(vm)
 
 #     host_status = trident.get()
-#     host_status = yaml.load(host_status, Loader=HostStatusSafeLoader)
+#     host_status = yaml.load(host_status, Loader=yaml.FullLoader)
 #     # TODO remove the placeholder logic by patching the template with the actual
 #     # values, which we can fetch using lsblk, sfdisk and information about the
 #     # images we put into the HostConfiguraion.
@@ -64,7 +61,7 @@
 #     with open(
 #         TRIDENT_REPO_DIR_PATH / "functional_tests/host-status-template.yaml", "r"
 #     ) as file:
-#         host_status_expected = yaml.load(file, Loader=HostStatusSafeLoader)
+#         host_status_expected = yaml.load(file, Loader=yaml.FullLoader)
 #     assert host_status == host_status_expected
 
 #     pass
@@ -78,7 +75,7 @@
 #     host_status = trident.get()
 
 #     # Load it as a yaml
-#     host_status = yaml.load(host_status, Loader=HostStatusSafeLoader)
+#     host_status = yaml.load(host_status, Loader=yaml.FullLoader)
 
 #     working_dir = "/tmp/datastore"
 
@@ -107,7 +104,7 @@
 #     vm.execute(f"sudo chown testuser {datastore_path}")
 
 #     # Use Trident get with the new config to load the status from the datastore
-#     loaded_host_status = yaml.load(trident.get(), Loader=HostStatusSafeLoader)
+#     loaded_host_status = yaml.load(trident.get(), Loader=yaml.FullLoader)
 
 #     host_status["spec"].pop("trident")
 #     loaded_host_status["spec"].pop("trident")
