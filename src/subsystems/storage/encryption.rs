@@ -211,9 +211,33 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                     },
                 )?;
 
-                // Re-enroll the device with the pcrlock policy
-                encryption::systemd_cryptenroll(None::<&Path>, device_path, true, pcrs)
+                debug!(
+                    "Checking if '{}' is a LUKS2 encrypted volume",
+                    device_path.display()
+                );
+                let luks_check = encryption::cryptsetup_is_luks(device_path.clone())
                     .structured(ServicingError::BindEncryptionToPcrlockPolicy)?;
+                debug!(
+                    "LUKS2 check for '{}' returned: {}",
+                    device_path.clone().display(),
+                    luks_check
+                );
+
+                // Re-enroll the device with the pcrlock policy
+                encryption::systemd_cryptenroll(None::<&Path>, device_path.clone(), true, pcrs)
+                    .structured(ServicingError::BindEncryptionToPcrlockPolicy)?;
+
+                debug!(
+                    "Checking if '{}' is a LUKS2 encrypted volume",
+                    device_path.clone().display()
+                );
+                let luks_check = encryption::cryptsetup_is_luks(device_path.clone())
+                    .structured(ServicingError::BindEncryptionToPcrlockPolicy)?;
+                debug!(
+                    "LUKS2 check for '{}' returned: {}",
+                    device_path.clone().display(),
+                    luks_check
+                );
             }
         }
     }

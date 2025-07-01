@@ -193,6 +193,20 @@ pub fn cryptsetup_open(
         ))
 }
 
+/// Runs `cryptsetup isLuks` to check if the given device is a LUKS2 encrypted volume.
+pub fn cryptsetup_is_luks(device_path: impl AsRef<Path>) -> Result<String, Error> {
+    let output = Dependency::Cryptsetup
+        .cmd()
+        .arg("isLuks")
+        .arg(device_path.as_ref().as_os_str())
+        .output_and_check()
+        .context(format!(
+            "Failed to check if device '{}' is a LUKS2 encrypted volume",
+            device_path.as_ref().display()
+        ))?;
+    Ok(output.trim().to_owned())
+}
+
 /// Runs `cryptsetup luksClose` to close the given LUKS2 device.
 pub fn cryptsetup_close(device_name: &str) -> Result<(), Error> {
     Dependency::Cryptsetup
