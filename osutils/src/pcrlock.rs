@@ -153,8 +153,8 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         .output_and_check()
         .context("Failed to run 'systemd-pcrlock log'")?;
 
-    // TODO: REMOVE BEFORE MERGING
-    // print out output
+    // TODO BEFORE MERGING
+    // Change to trace!()
     debug!("Output of 'systemd-pcrlock log':\n{}", output);
 
     let parsed: LogOutput =

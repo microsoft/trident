@@ -8,6 +8,7 @@ use std::{
 
 use anyhow::{Context, Error};
 use enumflags2::BitFlags;
+use log::debug;
 use once_cell::sync::Lazy;
 use tempfile::NamedTempFile;
 
@@ -45,6 +46,11 @@ pub fn systemd_cryptenroll(
     pcrlock_policy: bool,
     pcrs: BitFlags<Pcr>,
 ) -> Result<(), Error> {
+    debug!(
+        "Enrolling TPM 2.0 device for underlying encrypted volume '{}'",
+        device_path.as_ref().display()
+    );
+
     let mut cmd = Dependency::SystemdCryptenroll.cmd();
     cmd.arg(device_path.as_ref().as_os_str())
         .arg("--tpm2-device=auto")
