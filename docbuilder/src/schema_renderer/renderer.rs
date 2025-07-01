@@ -5,7 +5,7 @@ use log::debug;
 use regex::Regex;
 use serde_json::Value;
 use tera::{Context as TeraCxt, Tera};
-use trident_api::schemars::schema::SingleOrVec;
+use trident_api::schemars::schema::{ObjectValidation, Schema, SingleOrVec};
 
 use super::{
     characteristics::Characteristics,
@@ -100,29 +100,112 @@ impl NodeRenderer {
             .as_ref()
             .context("Node is not an object")?;
 
-        // Generate list of properties.
-        let mut properties = obj_data
+        struct PropertyMeta {
+            name: String,
+            node: SchemaNodeModel,
+            required: bool,
+            context: TeraCxt,
+        }
+
+        // Helper fn to create a property node and context.
+        let make_property = |parent: &ObjectValidation,
+                             name: &str,
+                             schema: &Schema|
+         -> Result<PropertyMeta, Error> {
+            let required = parent.required.contains(name);
+            let mut context = self.global_context();
+            context.insert("name", name);
+            context.insert("required", &required);
+            context.insert("type", "property");
+            context.insert("level", &3);
+
+            Ok(PropertyMeta {
+                name: name.to_string(),
+                node: SchemaNodeModel::try_from(&schema.clone().into_object()).context(format!(
+                    "Failed to convert schema for property '{name}' of object to node model"
+                ))?,
+                required,
+                context,
+            })
+        };
+
+        let regular_properties = obj_data
             .properties
             .iter()
-            .map(|(name, schema)| {
-                let schema = schema.clone().into_object();
-                let node = SchemaNodeModel::try_from(&schema).context(format!(
-                    "Failed to convert schema for property '{name}' of '{id}' to node model"
-                ))?;
+            .map(|(name, schema)| make_property(obj_data, name, schema))
+            .collect::<Result<Vec<_>, Error>>()?;
 
-                let required = obj_data.required.contains(name);
+        // A flattened enum is produced as a oneOf subschema.
+        let mut grouped_properties = Vec::new();
+        if let Some(flattened_enum) = node
+            .object
+            .subschemas
+            .as_ref()
+            .and_then(|s| s.one_of.as_ref())
+        {
+            // Produce an organized list of all the items in the flattened enum.
+            let items = flattened_enum
+                .iter()
+                .map(|schema| {
+                    let obj = schema.clone().into_object();
+                    let desc = obj.metadata.and_then(|m| m.description.clone());
+                    Ok((
+                        obj.object
+                            .with_context(|| format!("Node is not an object: {:#?}", schema))?,
+                        desc,
+                    ))
+                })
+                .collect::<Result<Vec<_>, Error>>()
+                .context("Failed to convert flattened enum to nodes")?;
 
-                let mut context = self.global_context();
-                context.insert("name", name);
-                context.insert("required", &required);
-                context.insert("type", "property");
-                context.insert("level", &3); // How many #'s to use for the header.
+            // Now get a list of all the properties defined for each item in the flattened enum.
+            let property_map = items
+                .iter()
+                .map(|(obj, _)| obj.properties.keys().cloned().collect::<Vec<_>>())
+                .collect::<Vec<_>>();
 
+            for (index, (obj, desc)) in items.into_iter().enumerate() {
+                for (name, schema) in obj.properties.iter() {
+                    // For each property, we need to create a PropertyMeta object.
+                    // This will contain the node, context, and name of the property.
+                    // We also need to get the list of all properties that conflict with this one.
+                    let mut property_meta = make_property(&obj, name, schema)?;
+                    // Get the list of all properties that conflict with this one.
+                    property_meta.context.insert(
+                        "conflicts",
+                        &property_map
+                            .iter()
+                            .enumerate()
+                            .filter(|(i, _)| *i != index)
+                            .flat_map(|(_, props)| props)
+                            .map(|a| a.to_string())
+                            .collect::<Vec<_>>(),
+                    );
+
+                    if property_meta.node.description.is_none() {
+                        // If the property has no description, we can use the description of the
+                        // flattened enum item.
+                        property_meta.node.description = desc.clone();
+                    }
+
+                    grouped_properties.push(property_meta);
+                }
+            }
+        }
+
+        // Generate final list of properties.
+        let mut properties = regular_properties
+            .into_iter()
+            .chain(grouped_properties.into_iter())
+            .map(|property_meta| {
                 let body = self
-                    .render_as_section(node, context)
-                    .context(format!("Failed to render property '{name}' for '{id}'",))?;
+                    .render_as_section(property_meta.node, property_meta.context)
+                    .context(format!(
+                        "Failed to render property '{}'",
+                        property_meta.name
+                    ))?;
 
-                Ok((required, body))
+                Ok((property_meta.required, body))
             })
             .collect::<Result<Vec<(bool, String)>, Error>>()
             .context("Failed to render properties")?;
@@ -283,12 +366,7 @@ impl NodeRenderer {
             k => {
                 context.insert("todo", &format!("context for {:?}", k));
                 "sections/field.md.jinja2"
-            } // NodeKind::Object | NodeKind::Enum | NodeKind::SimpleEnum(_) => {
-              //     bail!(
-              //         "Node cannot be rendered as section. It is not a simple type: {:?}",
-              //         node.kind
-              //     )
-              // }
+            }
         };
 
         debug!("Using template: {}", template);

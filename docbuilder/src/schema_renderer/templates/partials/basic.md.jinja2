@@ -1,3 +1,10 @@
 {{ description }}
 
+{% if conflicts -%}
+Conflicts with:
+{% for conflict in conflicts %}
+- `{{ conflict }}`
+{% endfor %}
+{% endif -%}
+
 {% include "partials/characteristics.md.jinja2" %}
