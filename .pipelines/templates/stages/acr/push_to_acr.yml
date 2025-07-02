@@ -21,7 +21,7 @@ stages:
           type: linux
 
         steps:
-          - template: .pipelines/templates/common_tasks/acr_login.yml@test-images
+          - template: .pipelines/templates/common_tasks/acr-login.yml@test-images
             parameters:
               azureSubscription: CoreOS_AzureLinux_Polar_Staging
               acr: ${{ parameters.registry }}
