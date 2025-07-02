@@ -4,8 +4,8 @@ use anyhow::{Context, Error};
 use log::{debug, info, trace, warn};
 
 use osutils::{
-    block_devices, bootloaders::BOOT_EFI, efivar, lsblk, path::join_relative, pcrlock, veritysetup,
-    virt,
+    block_devices, bootloaders::BOOT_EFI, container, efivar, lsblk, path::join_relative, pcrlock,
+    veritysetup, virt,
 };
 use sysdefs::tpm2::Pcr;
 
@@ -102,11 +102,21 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
         // If PCR-based encryption is enabled, re-generate pcrlock policy to only include the
         // current boot, i.e. active volume.
         if ctx.is_uki_image()? && ctx.spec.storage.encryption.is_some() {
+            debug!("Regenerating pcrlock policy for current boot");
             // TODO: Add PCR 7 once SecureBoot is enabled in a follow up PR!
             let pcrs = Pcr::Pcr4 | Pcr::Pcr11;
 
             // Construct current UKI path
-            let esp_uki_directory = Path::new(ESP_MOUNT_POINT_PATH).join(UKI_DIRECTORY);
+            let esp_path = if container::is_running_in_container()
+                .message("Failed to check if Trident is running in a container")?
+            {
+                let host_root =
+                    container::get_host_root_path().message("Failed to get host root path")?;
+                join_relative(host_root, ESP_MOUNT_POINT_PATH)
+            } else {
+                PathBuf::from(ESP_MOUNT_POINT_PATH)
+            };
+            let esp_uki_directory = join_relative(esp_path, UKI_DIRECTORY);
             // uki_suffix() already determines the update volume, so b/c active volume is still set
             // to the old volume, we just pass ctx and get the UKI suffix for the active volume
             let uki_suffix = uki::uki_suffix(&ctx);
