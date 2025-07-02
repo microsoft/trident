@@ -13,8 +13,12 @@ stages:
     dependsOn:
       - TridentTestImg_${{ replace(parameters.imageName, '-', '_') }}
 
+    variables:
+      ob_outputDirectory: $(Pipeline.Workspace)/s/output
+      ob_artifactBaseName: ${{ parameters.imageName }}
+
     jobs:
-      - job: LoginToACR
+      - job: LoginToAcr
         displayName: Login
         timeoutInMinutes: 20
         pool:
