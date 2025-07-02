@@ -128,8 +128,7 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                     .structured(InvalidInputError::InvalidInternalParameter {
                         name: OVERRIDE_ENCRYPTION_PCRS.to_string(),
                         explanation: format!(
-                            "Failed to parse internal parameter '{}' as BitFlags<Pcr>",
-                            OVERRIDE_ENCRYPTION_PCRS
+                            "Failed to parse internal parameter '{OVERRIDE_ENCRYPTION_PCRS}' as BitFlags<Pcr>",
                         ),
                     })?
                     .map(|v| BitFlags::<Pcr>::from_iter(v.into_iter()))
