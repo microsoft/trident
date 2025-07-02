@@ -82,7 +82,7 @@ pub fn systemd_cryptenroll(
     }
 
     if pcrlock_policy {
-        cmd.arg(format!("--tpm2-pcrlock={}", PCRLOCK_POLICY_JSON));
+        cmd.arg(format!("--tpm2-pcrlock={PCRLOCK_POLICY_JSON}"));
     } else {
         cmd.arg(to_tpm2_pcrs_arg(pcrs));
     }

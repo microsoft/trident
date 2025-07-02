@@ -245,7 +245,7 @@ fn make_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
     );
     // Join stdout and stderr for parsing, since systemd-pcrlock will output to stderr even when we
     // don't get an error, e.g. when components for PCRs we don't care about aren't recognized
-    let output_str = format!("{}\n{}", stdout_str, stderr_str);
+    let output_str = format!("{stdout_str}\n{stderr_str}");
 
     // Validate that TPM 2.0 access policy has been updated
     if !output_str.contains("Calculated new PCR policy") || !output_str.contains("Updated NV index")
