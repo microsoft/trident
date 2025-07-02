@@ -1,0 +1,20 @@
+parameters:
+  - name: "imageName"
+    type: string
+
+  - name: "registry"
+    displayName: "Container registry to push to"
+    type: string
+    default: "maritimuspublic"
+
+steps:
+  - template: common_tasks/acr_login.yml@test-images
+    parameters:
+      azureSubscription: CoreOS_AzureLinux_Polar_Staging
+      acr: ${{ parameters.registry }}
+
+  - bash: |
+      set -ex
+      ls
+    displayName: Find test image
+    workingDirectory: $(Pipeline.Workspace)
