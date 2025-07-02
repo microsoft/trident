@@ -9,6 +9,7 @@ use log::{debug, info, trace};
 
 use osutils::{
     bootloaders::BOOT_EFI,
+    dependencies::Dependency,
     encryption, files,
     path::join_relative,
     pcrlock::{self, PCRLOCK_POLICY_JSON},
@@ -228,6 +229,14 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
 
                 // Re-enroll the device with the pcrlock policy
                 encryption::systemd_cryptenroll(None::<&Path>, device_path.clone(), true, pcrs)
+                    .structured(ServicingError::BindEncryptionToPcrlockPolicy)?;
+
+                // Remove password slot for additional security
+                Dependency::SystemdCryptenroll
+                    .cmd()
+                    .arg(device_path)
+                    .arg("--wipe-slot=password")
+                    .run_and_check()
                     .structured(ServicingError::BindEncryptionToPcrlockPolicy)?;
             }
         }
