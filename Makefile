@@ -90,6 +90,27 @@ format:
 test: .cargo/config
 	cargo test --all --no-fail-fast
 
+COVERAGE_EXCLUDED_FILES_REGEX='docbuilder|pytest|setsail'
+
+.PHONY: coverage
+coverage: .cargo/config coverage-llvm
+
+.PHONY: coverage-llvm
+coverage-llvm:
+	cargo llvm-cov nextest \
+		--remap-path-prefix \
+		--lcov \
+		--output-path target/lcov.info \
+		--workspace \
+		--profile ci \
+		--exclude pytest_gen \
+		--ignore-filename-regex $(COVERAGE_EXCLUDED_FILES_REGEX)
+	cargo llvm-cov report \
+	    --ignore-filename-regex $(COVERAGE_EXCLUDED_FILES_REGEX) \
+        --summary-only --json > ./target/coverage.json
+	@echo "Coverage Summary:"
+	@jq '.data[0].totals.lines.percent' ./target/coverage.json
+
 .PHONY: ut-coverage
 ut-coverage: .cargo/config
 	mkdir -p target/coverage/profraw
@@ -101,12 +122,13 @@ coverage-report: .cargo/config
 	grcov . --binary-path ./target/coverage/debug/deps/ -s . -t html,covdir,cobertura --branch --ignore-not-existing --ignore '../*' --ignore "/*" --ignore "docbuilder/*" --ignore "target/*" -o target/coverage
 	jq .coveragePercent target/coverage/covdir
 
-.PHONY: coverage
+.PHONY: grcov-coverage
 coverage: ut-coverage coverage-report
 
 .PHONY: clean-coverage
 clean-coverage:
 	rm -rf target/coverage/profraw
+	rm -rf target/lcov.info
 
 TOOLKIT_DIR="azure-linux-image-tools/toolkit"
 AZL_TOOLS_OUT_DIR="$(TOOLKIT_DIR)/out/tools"
