@@ -58,6 +58,10 @@ os:
       - selinux-policy-devel
       - setools-console
 
+  additionalDirs:
+    - source: "../packaging/static-pcrlock-files/"
+      destination: "/var/lib/pcrlock.d/"
+
   additionalFiles:
     - source: files/getty@.service
       destination: /usr/lib/systemd/system/getty@.service
