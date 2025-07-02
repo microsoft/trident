@@ -14,7 +14,14 @@ stages:
       - TridentTestImg_${{ replace(parameters.imageName, '-', '_') }}
 
     jobs:
-      - template: .pipelines/templates/common_tasks/acr_login.yml@test-images
-        parameters:
-          azureSubscription: CoreOS_AzureLinux_Polar_Staging
-          acr: ${{ parameters.registry }}
+      - job: LoginToACR
+        displayName: Login
+        timeoutInMinutes: 20
+        pool:
+          type: linux
+
+        steps:
+          - template: .pipelines/templates/common_tasks/acr_login.yml@test-images
+            parameters:
+              azureSubscription: CoreOS_AzureLinux_Polar_Staging
+              acr: ${{ parameters.registry }}
