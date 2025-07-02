@@ -78,7 +78,7 @@ pub fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
     // Log pcrlock policy JSON contents
     let pcrlock_policy =
         fs::read_to_string(PCRLOCK_POLICY_JSON).context("Failed to read pcrlock policy JSON")?;
-    debug!(
+    trace!(
         "Contents of pcrlock policy JSON at '{PCRLOCK_POLICY_JSON}':\n{}",
         pcrlock_policy
     );
@@ -110,7 +110,6 @@ pub fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 struct LogEntry {
     pcr: Pcr,
     pcrname: Option<String>,

@@ -7,7 +7,7 @@ use std::{
 
 use anyhow::{Context, Error};
 use enumflags2::BitFlags;
-use log::{debug, info};
+use log::{debug, info, trace};
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 
@@ -101,7 +101,7 @@ pub(super) fn create_encrypted_devices(
 
         // Store the key statically for later use, i.e. pcrlock policy enrollment
         if let Some(key) = key_value {
-            debug!(
+            trace!(
                 "Storing encryption passphrase in memory for later use: {}",
                 key_file_path.display()
             );
