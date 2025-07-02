@@ -522,7 +522,7 @@ impl NodeRenderer {
                 context.insert("name", name);
                 context.insert("required", &required);
                 context.insert("type", "property");
-                context.insert("level", &(level + 1));
+                context.insert("level", &(level + 2));
 
                 let body = self
                     .render_as_section(node, context)

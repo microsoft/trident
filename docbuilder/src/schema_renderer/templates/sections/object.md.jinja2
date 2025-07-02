@@ -1,5 +1,6 @@
 {% include "partials/section.md.jinja2" %}
-{{ level | header_level }} Properties
+{%- set level = level + 1%}
+{{ level  | header_level }} Properties
 
 {% for property in properties -%}
 {{ property }}
