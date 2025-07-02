@@ -105,13 +105,20 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
             // TODO: Add PCR 7 once SecureBoot is enabled in a follow up PR!
             let pcrs = Pcr::Pcr4 | Pcr::Pcr11;
 
-            // Construct current UKI path; uki_suffix() already determines the update volume, so
-            // b/c active volume is still set to the old volume, we just pass ctx and get the UKI
-            // suffix for the current/active volume
-            let uki_file = uki::uki_suffix(&ctx);
-            let uki_current = Path::new(ESP_MOUNT_POINT_PATH)
-                .join(UKI_DIRECTORY)
-                .join(uki_file);
+            // Construct current UKI path
+            let esp_uki_directory = Path::new(ESP_MOUNT_POINT_PATH).join(UKI_DIRECTORY);
+            // uki_suffix() already determines the update volume, so b/c active volume is still set
+            // to the old volume, we just pass ctx and get the UKI suffix for the active volume
+            let uki_suffix = uki::uki_suffix(&ctx);
+            // Determine max index of existing UKIs
+            let existing_ukis = uki::enumerate_existing_ukis(&esp_uki_directory)
+                .structured(ServicingError::EnumerateUkis)?;
+            let max_index = existing_ukis
+                .iter()
+                .map(|(index, _suffix, _path)| *index)
+                .max()
+                .unwrap_or(99);
+            let uki_current = esp_uki_directory.join(format!("vmlinuz-{max_index}-{uki_suffix}"));
 
             // Construct current bootloader path, i.e. i.e. shim EFI executable for UKI. Currently,
             // ab_active_volume inside the context is still set to the old volume, so we need to

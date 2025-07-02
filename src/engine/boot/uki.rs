@@ -78,7 +78,7 @@ pub fn prepare_esp_for_uki(root_mount_point: &Path) -> Result<(), Error> {
 }
 
 /// Enumerates existing UKIs in the given directory, returning their indices and suffixes.
-fn enumerate_existing_ukis(
+pub(crate) fn enumerate_existing_ukis(
     esp_uki_directory: &Path,
 ) -> Result<Vec<(usize, String, PathBuf)>, Error> {
     let mut uki_entries = Vec::new();
