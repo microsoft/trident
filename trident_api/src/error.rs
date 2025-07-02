@@ -281,7 +281,7 @@ pub enum InvalidInputError {
 pub enum ServicingError {
     #[error(
         "A/B update failed as host booted from '{root_device_path}' instead of the expected device \
-        '{expected_device_path}"
+        '{expected_device_path}'"
     )]
     AbUpdateRebootCheck {
         root_device_path: String,
@@ -305,7 +305,7 @@ pub enum ServicingError {
 
     #[error(
         "Clean install failed as host booted from '{root_device_path}' instead of the expected \
-        device '{expected_device_path}"
+        device '{expected_device_path}'"
     )]
     CleanInstallRebootCheck {
         root_device_path: String,
@@ -434,7 +434,7 @@ pub enum ServicingError {
     #[error("Failed to get block device path for device '{device_id}'")]
     GetBlockDevicePath { device_id: String },
 
-    #[error("Failed to get information for device {device_id} via lsblk")]
+    #[error("Failed to get information for device '{device_id}' via lsblk")]
     GetDeviceInformation { device_id: String },
 
     #[error("Failed to get the disks to rebuild")]
