@@ -151,7 +151,7 @@ impl NodeRenderer {
                     let desc = obj.metadata.and_then(|m| m.description.clone());
                     Ok((
                         obj.object
-                            .with_context(|| format!("Node is not an object: {:#?}", schema))?,
+                            .with_context(|| format!("Node is not an object: {schema:#?}"))?,
                         desc,
                     ))
                 })
@@ -325,7 +325,7 @@ impl NodeRenderer {
     fn tera_render(&self, template_name: &str, context: &TeraCxt) -> Result<String, Error> {
         self.tera
             .render(template_name, context)
-            .with_context(|| format!("Failed to render {}", template_name))
+            .with_context(|| format!("Failed to render {template_name}"))
             .map(|s| {
                 let re = Regex::new(r"\n{3,}").unwrap();
                 re.replace_all(&s, "\n\n").to_string()
@@ -364,7 +364,7 @@ impl NodeRenderer {
             NodeKind::WrapperEnum(_) => "sections/wrapper_enum.md.jinja2",
             NodeKind::Object => "sections/object.md.jinja2",
             k => {
-                context.insert("todo", &format!("context for {:?}", k));
+                context.insert("todo", &format!("context for {k:?}"));
                 "sections/field.md.jinja2"
             }
         };

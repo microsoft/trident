@@ -14,7 +14,7 @@ pub const TRIDENT_NETPLAN_FILE: &str = "/etc/netplan/99-trident.yaml";
 pub fn write(value: &NetworkConfig) -> Result<(), Error> {
     debug!("Writing netplan config to {}", TRIDENT_NETPLAN_FILE);
     fs::write(TRIDENT_NETPLAN_FILE, render_netplan_yaml(value)?)
-        .with_context(|| format!("Failed to write netplan config to {}", TRIDENT_NETPLAN_FILE))
+        .with_context(|| format!("Failed to write netplan config to {TRIDENT_NETPLAN_FILE}"))
 }
 
 /// Executes `netplan generate`.

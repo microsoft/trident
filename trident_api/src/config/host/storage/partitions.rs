@@ -232,7 +232,7 @@ impl Display for PartitionSize {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             PartitionSize::Fixed(n) => write!(f, "{}", n.to_human_readable()),
-            PartitionSize::Grow => write!(f, "{}", PARTITION_SIZE_GROW),
+            PartitionSize::Grow => write!(f, "{PARTITION_SIZE_GROW}"),
         }
     }
 }

@@ -143,14 +143,14 @@ impl HttpFile {
             .map_err(|e| {
                 IoError::new(
                     IoErrorKind::InvalidData,
-                    format!("Could not parse 'Content-Length': {}", e),
+                    format!("Could not parse 'Content-Length': {e}"),
                 )
             })?
             .parse()
             .map_err(|e| {
                 IoError::new(
                     IoErrorKind::InvalidData,
-                    format!("Could not parse 'Content-Length' as an integer: {}", e),
+                    format!("Could not parse 'Content-Length' as an integer: {e}"),
                 )
             })?;
 
@@ -169,7 +169,7 @@ impl HttpFile {
             .map_err(|e| {
                 IoError::new(
                     IoErrorKind::InvalidData,
-                    format!("Could not parse 'Accept-Ranges': {}", e),
+                    format!("Could not parse 'Accept-Ranges': {e}"),
                 )
             })?
             .to_lowercase()
@@ -193,7 +193,7 @@ impl HttpFile {
 
     /// Converts an HTTP error into an IO error.
     fn http_to_io_err(e: reqwest::Error) -> IoError {
-        let formatted = format!("HTTP File error: {}", e);
+        let formatted = format!("HTTP File error: {e}");
         if let Some(status) = e.status() {
             match status.as_u16() {
                 400 => IoError::new(IoErrorKind::InvalidInput, formatted),
@@ -222,9 +222,9 @@ impl HttpFile {
 
             // Generate the range header when appropriate
             let range_header = match (start, end) {
-                (Some(start), Some(end)) => Some(format!("bytes={}-{}", start, end)),
-                (Some(start), None) => Some(format!("bytes={}-", start)),
-                (None, Some(end)) => Some(format!("bytes=0-{}", end)),
+                (Some(start), Some(end)) => Some(format!("bytes={start}-{end}")),
+                (Some(start), None) => Some(format!("bytes={start}-")),
+                (None, Some(end)) => Some(format!("bytes=0-{end}")),
                 (None, None) => None,
             };
 
@@ -532,8 +532,7 @@ mod tests {
         );
         assert_eq!(
             original_data, &buf,
-            "Did not read expected data, expected '{}' but got '{}'",
-            original_data, buf
+            "Did not read expected data, expected '{original_data}' but got '{buf}'"
         );
 
         // Helper to check specific sections
@@ -548,13 +547,11 @@ mod tests {
                 .expect("Failed to read data from file");
             assert_eq!(
                 read as u64, size,
-                "Did not read expected number of bytes, expected {} but got {}. Buffer '{}'",
-                size, read, buf
+                "Did not read expected number of bytes, expected {size} but got {read}. Buffer '{buf}'"
             );
             assert_eq!(
                 expected_slice, &buf,
-                "Did not read expected slice, expected '{}' but got '{}'",
-                expected_slice, buf
+                "Did not read expected slice, expected '{expected_slice}' but got '{buf}'"
             );
         };
         check_section(0, 5); // Hello
@@ -641,7 +638,7 @@ mod tests {
 
         // Get a reference to the inner HTTP file reader
         let CosiReader::Http(ref http_file) = cosi_reader else {
-            panic!("Expected a HTTP file reader, got {:?}", cosi_reader);
+            panic!("Expected a HTTP file reader, got {cosi_reader:?}");
         };
 
         // Clone the file to test that the server is only called once.

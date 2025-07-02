@@ -104,7 +104,7 @@ impl TraceStream {
             return Ok(());
         }
 
-        reqwest::Url::parse(&url).context(format!("Failed to parse tracestream URL: {}", url))?;
+        reqwest::Url::parse(&url).context(format!("Failed to parse tracestream URL: {url}"))?;
         let mut val = self
             .target
             .write()
@@ -140,8 +140,7 @@ impl TraceSender {
                 Ok(f) => Some(f),
                 Err(err) => {
                     eprintln!(
-                        "Tracestream setup error: failed to create local metrics file: {:?}",
-                        err
+                        "Tracestream setup error: failed to create local metrics file: {err:?}"
                     );
                     None
                 }
@@ -155,7 +154,7 @@ impl TraceSender {
 
     fn write_metric_to_file(&self, metric: String) {
         if let Some(mut file) = self.metrics_file.as_ref() {
-            if let Err(e) = file.write_all(format!("{}\n", metric).as_bytes()) {
+            if let Err(e) = file.write_all(format!("{metric}\n").as_bytes()) {
                 trace!("Failed to write metric to file: {:?}", e);
             }
         }

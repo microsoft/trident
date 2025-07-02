@@ -198,7 +198,7 @@ fn download_document(
     }
 
     let package_url = update_base_url.join(&package.name).map_err(|err| {
-        HarpoonError::InvalidResponse(format!("Failed to join URL with package name: {}", err))
+        HarpoonError::InvalidResponse(format!("Failed to join URL with package name: {err}"))
     })?;
 
     let document = reqwest::blocking::Client::new()
@@ -233,8 +233,7 @@ fn download_document(
         );
         if actual != expected {
             return Err(HarpoonError::FetchError(format!(
-                "Downloaded document hash does not match package hash: {} != {}",
-                actual, expected
+                "Downloaded document hash does not match package hash: {actual} != {expected}"
             )));
         }
     }

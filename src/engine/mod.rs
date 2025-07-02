@@ -376,8 +376,8 @@ mod functional_test {
     fn persisted_log_and_metrics_exist(dir: &Path, servicing_state: ServicingState) -> bool {
         let files = fs::read_dir(dir).unwrap();
 
-        let log_prefix = format!("trident-{:?}-", servicing_state);
-        let metrics_prefix = format!("trident-metrics-{:?}-", servicing_state);
+        let log_prefix = format!("trident-{servicing_state:?}-");
+        let metrics_prefix = format!("trident-metrics-{servicing_state:?}-");
 
         let (mut log_found, mut metrics_found) = (false, false);
         for entry in files {

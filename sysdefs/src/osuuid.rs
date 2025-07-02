@@ -58,7 +58,7 @@ impl Display for OsUuid {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             OsUuid::Uuid(uuid) => write!(f, "{}", uuid.hyphenated()),
-            OsUuid::Relaxed(s) => write!(f, "{}", s),
+            OsUuid::Relaxed(s) => write!(f, "{s}"),
         }
     }
 }

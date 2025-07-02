@@ -41,7 +41,7 @@ pub fn translate(input: &ParsedData, hc: &mut HostConfiguration, errors: &mut Ve
             .clone()
         {
             s if s.starts_with("/dev/") => s,
-            s => format!("/dev/{}", s),
+            s => format!("/dev/{s}"),
         };
 
         // Get/insert the disk in the HashMap

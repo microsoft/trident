@@ -263,7 +263,7 @@ impl SystemdRepartInvoker {
             .arg(self.disk.as_os_str())
             .arg("--dry-run=no")
             .arg(format!("--empty={}", self.mode.to_str()))
-            .arg(format!("--seed={}", seed))
+            .arg(format!("--seed={seed}"))
             .arg("--json=short")
             .arg("--definitions")
             .arg(repart_root.path())
@@ -317,7 +317,7 @@ impl SystemdRepartInvoker {
             .iter()
             .enumerate()
             .try_for_each(|(index, partition_entry)| {
-                let path = root.join(format!("{:03}.conf", index));
+                let path = root.join(format!("{index:03}.conf"));
                 id_mapping.insert(path.clone(), partition_entry.id.clone());
                 partition_entry
                     .generate_repart_config()
@@ -596,7 +596,7 @@ mod tests {
                 println!("{}:\n{}", filename.to_str().unwrap(), contents);
                 assert_eq!(
                     filename.to_str().unwrap(),
-                    format!("{:03}.conf", index),
+                    format!("{index:03}.conf"),
                     "Wrong filename"
                 );
 

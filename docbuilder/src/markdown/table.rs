@@ -57,7 +57,7 @@ impl MdTable {
                 .headers
                 .iter()
                 .zip(widths.iter())
-                .map(|(header, width)| format!("{:<width$}", header, width = width))
+                .map(|(header, width)| format!("{header:<width$}"))
                 .join(" | "),
         );
         table.push_str(" |\n");
@@ -73,7 +73,7 @@ impl MdTable {
             table.push_str(
                 &row.iter()
                     .zip(widths.iter())
-                    .map(|(header, width)| format!("{:<width$}", header, width = width))
+                    .map(|(header, width)| format!("{header:<width$}"))
                     .join(" | "),
             );
             table.push_str(" |\n");

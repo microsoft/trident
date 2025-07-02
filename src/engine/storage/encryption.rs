@@ -155,8 +155,7 @@ pub(super) fn create_encrypted_devices(
                 .structured(InvalidInputError::InvalidInternalParameter {
                     name: OVERRIDE_ENCRYPTION_PCRS.to_string(),
                     explanation: format!(
-                        "Failed to parse internal parameter '{}' as BitFlags<Pcr>",
-                        OVERRIDE_ENCRYPTION_PCRS
+                        "Failed to parse internal parameter '{OVERRIDE_ENCRYPTION_PCRS}' as BitFlags<Pcr>"
                     ),
                 })?
                 // Convert the `Vec<Pcr>` into a `BitFlags<Pcr>`, which is a bitmask of PCRs.

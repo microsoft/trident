@@ -105,10 +105,10 @@ impl ValidCardinality {
 impl std::fmt::Display for ValidCardinality {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match (self.min_count, self.max_count) {
-            (Some(start), Some(end)) if start == end => write!(f, "exactly {}", start),
-            (Some(start), Some(end)) => write!(f, "between {} and {}", start, end),
-            (Some(start), None) => write!(f, "at least {}", start),
-            (None, Some(end)) => write!(f, "at most {}", end),
+            (Some(start), Some(end)) if start == end => write!(f, "exactly {start}"),
+            (Some(start), Some(end)) => write!(f, "between {start} and {end}"),
+            (Some(start), None) => write!(f, "at least {start}"),
+            (None, Some(end)) => write!(f, "at most {end}"),
             (None, None) => write!(f, "any or none"),
         }
     }

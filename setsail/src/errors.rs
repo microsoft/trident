@@ -197,8 +197,8 @@ impl std::fmt::Display for SetsailError {
             SetsailErrorType::SemanticError(e) => write!(f, "Semantic error: {e}"),
             SetsailErrorType::SemanticWarning(e) => write!(f, "Semantic warning: {e}"),
             SetsailErrorType::PreScriptFailed(e) => write!(f, "%pre script failed: {e}"),
-            SetsailErrorType::TranslationError(e) => write!(f, "Translation error: {}", e),
-            SetsailErrorType::UnsuportedFeature(s) => write!(f, "Unsuported feature: \"{}\"", s),
+            SetsailErrorType::TranslationError(e) => write!(f, "Translation error: {e}"),
+            SetsailErrorType::UnsuportedFeature(s) => write!(f, "Unsuported feature: \"{s}\""),
         }?;
         write!(
             f,

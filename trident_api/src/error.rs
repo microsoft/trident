@@ -784,7 +784,7 @@ impl Serialize for TridentError {
             &format!("{}:{}", self.0.location.file(), self.0.location.line()),
         )?;
         match self.0.source {
-            Some(ref e) => state.serialize_field("cause", &Some(format!("{:?}", e)))?,
+            Some(ref e) => state.serialize_field("cause", &Some(format!("{e:?}")))?,
             None => state.serialize_field("cause", &None::<String>)?,
         }
         state.end()
@@ -806,7 +806,7 @@ impl Debug for TridentError {
             for (i, (context, location)) in self.0.context.iter().enumerate() {
                 for (j, line) in context.split('\n').enumerate() {
                     if j == 0 {
-                        write!(f, "{: >5}: ", i)?;
+                        write!(f, "{i: >5}: ")?;
                     } else {
                         f.write_str("\n       ")?;
                     }
@@ -823,7 +823,7 @@ impl Debug for TridentError {
             while let Some(e) = source {
                 for (i, line) in e.to_string().split('\n').enumerate() {
                     if i == 0 {
-                        write!(f, "{: >5}: ", index)?;
+                        write!(f, "{index: >5}: ")?;
                     } else {
                         f.write_str("\n       ")?;
                     }
@@ -918,7 +918,7 @@ mod tests {
             .structured(InternalError::Internal("w"))
             .unwrap_err();
         assert_eq!(
-            format!("{:?}", error),
+            format!("{error:?}"),
             format!(
                 "Internal error: w at {}:{}\n\nCaused by:\n    0: x\n       y\n    1: z\n",
                 error.0.location.file(),

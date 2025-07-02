@@ -32,7 +32,7 @@ use crate::engine::{
 use super::raid;
 
 pub(crate) fn get_updated_device_name(device_name: &str) -> String {
-    format!("{}_new", device_name)
+    format!("{device_name}_new")
 }
 
 /// Get the root verity root hash.
@@ -202,10 +202,7 @@ fn open_verity_device_with_signature(
     let signature_block_device_path = ctx
         .get_block_device_path(signature_block_device_id)
         .with_context(|| {
-            format!(
-                "Failed to find path for block device '{}'",
-                signature_block_device_id
-            )
+            format!("Failed to find path for block device '{signature_block_device_id}'")
         })?;
 
     // Create a temporary file to hold a copy of the signature file.
@@ -397,7 +394,7 @@ fn stop_verity_device(
             if let Ok(disk_path) = block_devices::get_disk_for_partition(verity_member) {
                 let canonical_disk_path = disk_path
                     .canonicalize()
-                    .context(format!("Failed to find the device path '{:?}'", disk_path))?;
+                    .context(format!("Failed to find the device path '{disk_path:?}'"))?;
                 disks.insert(canonical_disk_path);
             } else if let Ok(disk_paths) = raid::get_raid_disks(verity_member) {
                 disks.extend(disk_paths);
@@ -436,8 +433,7 @@ fn stop_verity_device(
 
     debug!("Closing verity device '{}'", verity_device_path.display());
     veritysetup::close(verity_device_name).context(format!(
-        "Failed to close root verity device '{}'",
-        verity_device_name
+        "Failed to close root verity device '{verity_device_name}'"
     ))?;
 
     Ok(())

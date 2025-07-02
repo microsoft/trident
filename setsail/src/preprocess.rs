@@ -78,7 +78,7 @@ pub(crate) fn preprocess(
                         if mode.missing_is_error() {
                             errors.push(SetsailError::new_ksappend(
                                 line,
-                                format!("Failed to load {}: {}", path, e),
+                                format!("Failed to load {path}: {e}"),
                             ));
                         }
                     }

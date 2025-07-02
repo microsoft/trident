@@ -70,7 +70,7 @@ pub(super) fn check_unique_fields(graph: &StoragePetgraph) -> Result<(), Storage
                 })
                 // Map the error to an internal error, this should never happen.
                 .map_err(|err| StorageGraphBuildError::InternalError {
-                    body: format!("{:?}", err),
+                    body: format!("{err:?}"),
                 })?;
 
             let Some(field_value) = field_value else {

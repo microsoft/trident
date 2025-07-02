@@ -340,7 +340,7 @@ mod tests {
         ctx.filesystems = RealFilesystemType::iter()
             .enumerate()
             .map(|(i, fs_type)| {
-                let mtp_path = format!("/mnt/fs{}", i);
+                let mtp_path = format!("/mnt/fs{i}");
 
                 if SELINUX_SUPPORTED_FILESYSTEMS.contains(&fs_type) {
                     expected.push(PathBuf::from(&mtp_path));
@@ -352,7 +352,7 @@ mod tests {
                         options: MountOptions::empty(),
                     },
                     fs_type: Some(fs_type),
-                    device_id: format!("dev{}", i),
+                    device_id: format!("dev{i}"),
                 })
             })
             .collect::<Vec<_>>();

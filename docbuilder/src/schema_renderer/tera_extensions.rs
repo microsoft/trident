@@ -54,7 +54,7 @@ fn render_characteristic(obj: &Map<String, Value>) -> Result<[String; 2], Error>
     ) {
         (Value::String(name), Value::String(value), None)
         | (Value::String(name), Value::String(value), Some(Value::Bool(false))) => {
-            [name.clone(), format!("`{}`", value)]
+            [name.clone(), format!("`{value}`")]
         }
         (Value::String(name), Value::String(value), Some(Value::Bool(true))) => {
             [name.clone(), value.clone()]

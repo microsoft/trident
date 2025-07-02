@@ -362,8 +362,7 @@ mod tests {
             assert_eq!(
                 flag_vec.len(),
                 1,
-                "Flag '{:?}' could not be converted to enum",
-                flag
+                "Flag '{flag:?}' could not be converted to enum"
             );
         });
     }
@@ -375,8 +374,7 @@ mod tests {
             assert_eq!(
                 flag_vec.len(),
                 1,
-                "Flag '{:?}' could not be converted to enum",
-                flag
+                "Flag '{flag:?}' could not be converted to enum"
             );
         });
     }

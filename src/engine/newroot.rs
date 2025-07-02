@@ -204,18 +204,16 @@ impl NewrootMount {
                 );
 
                 prepare_mount_directory(&target_path, false).with_context(||format!(
-                    "Failed to prepare mount directory for block device '{}'",
-                    target_id
+                    "Failed to prepare mount directory for block device '{target_id}'"
                 ))?;
 
                 let device_path = block_device_paths.get(target_id).context(format!(
-                    "Failed to find block device path for id '{}'",
-                    target_id
+                    "Failed to find block device path for id '{target_id}'"
                 ))?;
 
                 // Check if block device is already mounted
                 let block_device = lsblk::get(device_path).with_context(|| {
-                    format!("Failed to get info about block device '{}'", target_id)
+                    format!("Failed to get info about block device '{target_id}'")
                 })?;
 
                 let fs_type = block_device.fstype.and_then(|fs_type| KernelFilesystemType::from(fs_type.as_str()).try_as_real());

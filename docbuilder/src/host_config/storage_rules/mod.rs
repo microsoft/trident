@@ -115,7 +115,7 @@ pub(crate) fn write(dest: Option<impl AsRef<Path>>) -> Result<(), Error> {
     match dest {
         Some(dest) => fs::write(dest, rendered).context("Failed to write rules to file"),
         None => {
-            println!("{}", rendered);
+            println!("{rendered}");
             Ok(())
         }
     }

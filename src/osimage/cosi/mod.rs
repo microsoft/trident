@@ -166,7 +166,7 @@ fn read_entries_from_tar_archive<R: Read + Seek>(
                         "Successfully read COSI file entry: {}",
                         match entry.path() {
                             Ok(path) => path.display().to_string(),
-                            Err(err) => format!("Failed to read entry path: {}", err),
+                            Err(err) => format!("Failed to read entry path: {err}"),
                         }
                     );
                 }

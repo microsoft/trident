@@ -167,7 +167,7 @@ pub fn get_device_path(tab_file_path: &Path, path: &Path) -> Result<PathBuf, Err
         .arg("--mountpoint")
         .arg(path)
         .output_and_check()
-        .context(format!("Failed to find {:?} in {:?}", path, tab_file_path))?;
+        .context(format!("Failed to find {path:?} in {tab_file_path:?}"))?;
     let map = parse_findmnt_output(findmnt_output_json.as_str())?;
     if map.len() != 1 {
         bail!(
@@ -190,8 +190,7 @@ fn parse_findmnt_output(findmnt_output: &str) -> Result<HashMap<PathBuf, PathBuf
         .context("Failed to deserialize output of tab file reader")?;
 
     let filesystems = payload["filesystems"].as_array().context(format!(
-        "Unexpected formatting of the findmnt utility, missing 'filesystems' in {:?}",
-        payload
+        "Unexpected formatting of the findmnt utility, missing 'filesystems' in {payload:?}"
     ))?;
 
     // returns the first error or the list of results
@@ -201,13 +200,11 @@ fn parse_findmnt_output(findmnt_output: &str) -> Result<HashMap<PathBuf, PathBuf
 /// Parse a single entry from the `findmnt` utility output.
 fn parse_findmnt_entry(entry: &Value) -> Result<(PathBuf, PathBuf), Error> {
     let device_path = entry["source"].as_str().context(format!(
-        "Unexpected formatting of the findmnt utility, missing 'source' in {:?}",
-        entry
+        "Unexpected formatting of the findmnt utility, missing 'source' in {entry:?}"
     ))?;
 
     let mount_path = entry["target"].as_str().context(format!(
-        "Unexpected formatting of the findmnt utility, missing 'target' in {:?}",
-        entry
+        "Unexpected formatting of the findmnt utility, missing 'target' in {entry:?}"
     ))?;
 
     Ok((PathBuf::from(mount_path), PathBuf::from(device_path)))

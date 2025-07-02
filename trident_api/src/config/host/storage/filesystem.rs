@@ -337,7 +337,7 @@ impl FileSystem {
             ),
         ]
         .into_iter()
-        .filter_map(|(k, v)| v.map(|v| format!("{}:{}", k, v)))
+        .filter_map(|(k, v)| v.map(|v| format!("{k}:{v}")))
         .collect::<Vec<_>>()
         .join(", ")
     }

@@ -57,7 +57,7 @@ impl Display for ReferenceKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Regular => write!(f, "regular"),
-            Self::Special(kind) => write!(f, "special ({})", kind),
+            Self::Special(kind) => write!(f, "special ({kind})"),
         }
     }
 }

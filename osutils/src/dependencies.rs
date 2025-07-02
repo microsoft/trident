@@ -271,7 +271,7 @@ impl Command {
                     .iter()
                     .map(|arg| arg.to_string_lossy())
                     .map(|arg| if arg.contains(' ') {
-                        format!("'{}'", arg)
+                        format!("'{arg}'")
                     } else {
                         arg.into()
                     })
@@ -348,14 +348,14 @@ impl CommandOutput {
         let mut res = String::with_capacity(stdout.len() + stderr.len() + 20);
 
         if !stdout.is_empty() {
-            res += &format!("stdout:\n{}\n", stdout);
+            res += &format!("stdout:\n{stdout}\n");
         }
 
         if !stderr.is_empty() {
             if !res.is_empty() {
                 res += "\n";
             }
-            res += &format!("stderr:\n{}\n", stderr);
+            res += &format!("stderr:\n{stderr}\n");
         }
 
         res

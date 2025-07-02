@@ -288,7 +288,7 @@ fn check_targets(graph: &StoragePetgraph) -> Result<(), StorageGraphBuildError> 
             .map_err(|e| StorageGraphBuildError::InvalidTargets {
                 node_identifier: node.identifier(),
                 kind: node.referrer_kind(),
-                body: format!("{:#}", e),
+                body: format!("{e:#}"),
             })?;
     }
 

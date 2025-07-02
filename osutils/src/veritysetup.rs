@@ -104,7 +104,7 @@ impl VerityDevice {
 
             // Try to close the device, attach the error to the message if it fails.
             if let Err(err) = close(&self.device_name) {
-                msg.push_str(&format!(". Also failed to close device: {:#}", err));
+                msg.push_str(&format!(". Also failed to close device: {err:#}"));
             }
 
             bail!(msg);
@@ -475,7 +475,7 @@ pub fn close(device_name: &str) -> Result<(), Error> {
         .arg(device_name)
         .arg("--verbose")
         .run_and_check()
-        .context(format!("Failed to close verity device '{}'", device_name));
+        .context(format!("Failed to close verity device '{device_name}'"));
 
     if let Err(e) = res {
         // If close returns an error, do best effort to log what is holding the
@@ -489,7 +489,7 @@ pub fn close(device_name: &str) -> Result<(), Error> {
         }
 
         // Propagate the original unmount error
-        return Err(e.context(format!("Failed to close verity device '{}'", device_name)));
+        return Err(e.context(format!("Failed to close verity device '{device_name}'")));
     }
 
     Ok(())
