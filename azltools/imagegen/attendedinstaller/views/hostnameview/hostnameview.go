@@ -29,9 +29,6 @@ const (
 	noSelection   = -1
 
 	formProportion = 0
-
-	navBarHeight     = 0
-	navBarProportion = 1
 )
 
 // HostNameView contains the hostname UI
