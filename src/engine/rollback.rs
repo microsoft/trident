@@ -116,7 +116,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
             } else {
                 PathBuf::from(ESP_MOUNT_POINT_PATH)
             };
-            let esp_uki_directory = join_relative(esp_path, UKI_DIRECTORY);
+            let esp_uki_directory = join_relative(esp_path.clone(), UKI_DIRECTORY);
             // uki_suffix() already determines the update volume, so b/c active volume is still set
             // to the old volume, we just pass ctx and get the UKI suffix for the active volume
             let uki_suffix = uki::uki_suffix(&ctx);
@@ -141,7 +141,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
             let path = Path::new(ESP_EFI_DIRECTORY)
                 .join(&esp_dir_name)
                 .join(BOOT_EFI);
-            let bootloader_current = join_relative(ESP_MOUNT_POINT_PATH, &path);
+            let bootloader_current = join_relative(esp_path, &path);
 
             // Generate .pcrlock files for runtime OS image A
             pcrlock::generate_pcrlock_files(
