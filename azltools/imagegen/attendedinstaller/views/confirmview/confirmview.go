@@ -60,8 +60,8 @@ func (cv *ConfirmView) Initialize(backButtonText string, sysConfig *configuratio
 
 	cv.flex = tview.NewFlex().
 		SetDirection(tview.FlexRow).
-		AddItem(centeredText, textHeight, textProportion, false).
-		AddItem(cv.navBar, navBarHeight, navBarProportion, true)
+		AddItem(centeredText, textHeight, textProportion, true).
+		AddItem(cv.navBar, navBarHeight, navBarProportion, false)
 
 	cv.centeredFlex = uiutils.CenterVerticallyDynamically(cv.flex)
 
