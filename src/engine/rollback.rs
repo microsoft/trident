@@ -102,7 +102,8 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
         // If PCR-based encryption is enabled, re-generate pcrlock policy to only include the
         // current boot, i.e. active volume.
         if ctx.is_uki_image()? && ctx.spec.storage.encryption.is_some() {
-            let pcrs = Pcr::Pcr4 | Pcr::Pcr7 | Pcr::Pcr11;
+            // TODO: Add PCR 7 once SecureBoot is enabled in a follow up PR!
+            let pcrs = Pcr::Pcr4 | Pcr::Pcr11;
 
             // Construct current UKI path; uki_suffix() already determines the update volume, so
             // b/c active volume is still set to the old volume, we just pass ctx and get the UKI
