@@ -140,6 +140,8 @@ stages:
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
 
+  # Push Trident test image (regular) to container registry
+
   # Build Trident test image (container)
   - template: stages/build_image/build-image.yml
     parameters:
