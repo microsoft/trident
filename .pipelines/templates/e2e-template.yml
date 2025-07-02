@@ -141,6 +141,10 @@ stages:
       micVersion: ${{ parameters.micVersion }}
 
   # Push Trident test image (regular) to container registry
+  - template: stages/acr/push_to_acr.yml
+    parameters:
+      imageName: trident-testimage
+      registry: maritimuspublic
 
   # Build Trident test image (container)
   - template: stages/build_image/build-image.yml
