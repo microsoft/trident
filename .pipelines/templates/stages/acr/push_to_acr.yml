@@ -7,14 +7,20 @@ parameters:
     type: string
     default: "maritimuspublic"
 
-steps:
-  - template: common_tasks/acr_login.yml@test-images
-    parameters:
-      azureSubscription: CoreOS_AzureLinux_Polar_Staging
-      acr: ${{ parameters.registry }}
+stages:
+  - stage: PushTridentTestImg_${{ replace(parameters.imageName, '-', '_') }}
+    displayName: Push ${{ parameters.imageName }} to ACR
+    dependsOn:
+      - TridentTestImg_${{ replace(parameters.imageName, '-', '_') }}
 
-  - bash: |
-      set -ex
-      ls
-    displayName: Find test image
-    workingDirectory: $(Pipeline.Workspace)
+    jobs:
+      - template: common_tasks/acr_login.yml@test-images
+        parameters:
+          azureSubscription: CoreOS_AzureLinux_Polar_Staging
+          acr: ${{ parameters.registry }}
+
+      - bash: |
+          set -ex
+          ls
+        displayName: Find test image
+        workingDirectory: $(Pipeline.Workspace)
