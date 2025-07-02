@@ -25,8 +25,8 @@ const (
 
 // UI constants.
 const (
-	// default to <Next>
-	defaultNavButton = 1
+	navButtonNext = 1
+	noSelection   = -1
 
 	formProportion = 0
 
@@ -75,10 +75,6 @@ func (hv *HostNameView) Initialize(backButtonText string, sysConfig *configurati
 				return true
 			})
 
-	hv.form = tview.NewForm().
-		SetButtonsAlign(tview.AlignCenter).
-		AddFormItem(hv.nameField)
-
 	hv.navBar = navigationbar.NewNavigationBar().
 		AddButton(backButtonText, previousPage).
 		AddButton(uitext.ButtonNext, func() {
@@ -92,17 +88,25 @@ func (hv *HostNameView) Initialize(backButtonText string, sysConfig *configurati
 				hv.navBar.SetUserFeedback(uiutils.ErrorToUserFeedback(err), tview.Styles.TertiaryTextColor)
 			}
 		}).
-		SetAlign(tview.AlignCenter)
+		SetAlign(tview.AlignCenter).
+		SetOnFocusFunc(func() {
+			hv.navBar.SetSelectedButton(navButtonNext)
+		}).
+		SetOnBlurFunc(func() {
+			hv.navBar.SetSelectedButton(noSelection)
+		})
 
-	formWidth, formHeight := uiutils.MinFormSize(hv.form)
-	centeredForm := uiutils.CenterHorizontally(formWidth, hv.form)
-	centeredNav := uiutils.CenterHorizontally(formWidth, hv.navBar)
+	hv.form = tview.NewForm().
+		SetButtonsAlign(tview.AlignCenter).
+		AddFormItem(hv.nameField).
+		AddFormItem(hv.navBar)
 
 	hv.flex = tview.NewFlex().
-		SetDirection(tview.FlexRow).
-		AddItem(centeredForm, formHeight, formProportion, true).
-		AddItem(centeredNav, navBarHeight, navBarProportion, false)
+		SetDirection(tview.FlexRow)
+	formWidth, formHeight := uiutils.MinFormSize(hv.form)
+	centeredForm := uiutils.CenterHorizontally(formWidth, hv.form)
 
+	hv.flex.AddItem(centeredForm, formHeight+hv.navBar.GetHeight(), formProportion, true)
 	hv.centeredFlex = uiutils.CenterVerticallyDynamically(hv.flex)
 
 	// Box styling
@@ -114,8 +118,12 @@ func (hv *HostNameView) Initialize(backButtonText string, sysConfig *configurati
 
 // HandleInput handles custom input.
 func (hv *HostNameView) HandleInput(event *tcell.EventKey) *tcell.EventKey {
-	if hv.navBar.UnfocusedInputHandler(event) {
-		return nil
+	// Allow Up-Down to navigate the form
+	switch event.Key() {
+	case tcell.KeyUp:
+		return tcell.NewEventKey(tcell.KeyBacktab, 0, tcell.ModNone)
+	case tcell.KeyDown:
+		return tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModNone)
 	}
 
 	return event
@@ -124,7 +132,8 @@ func (hv *HostNameView) HandleInput(event *tcell.EventKey) *tcell.EventKey {
 // Reset resets the page, undoing any user input.
 func (hv *HostNameView) Reset() (err error) {
 	hv.navBar.ClearUserFeedback()
-	hv.navBar.SetSelectedButton(defaultNavButton)
+	hv.navBar.SetSelectedButton(noSelection)
+	hv.form.SetFocus(0)
 	hv.nameField.SetText(hv.defaultName)
 
 	return
