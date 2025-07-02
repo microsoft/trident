@@ -18,9 +18,3 @@ stages:
         parameters:
           azureSubscription: CoreOS_AzureLinux_Polar_Staging
           acr: ${{ parameters.registry }}
-
-      - bash: |
-          set -ex
-          ls
-        displayName: Find test image
-        workingDirectory: $(Pipeline.Workspace)
