@@ -347,6 +347,11 @@ pub enum ServicingError {
     #[error("Failed to stage machine-id file")]
     CopyMachineId,
 
+    #[error(
+        "Failed to copy pcrlock policy JSON file from '{path}' to '{destination}' in update volume"
+    )]
+    CopyPcrlockPolicyJson { path: String, destination: String },
+
     #[error("Failed to copy Trident binary to runtime OS")]
     CopyTridentBinary,
 

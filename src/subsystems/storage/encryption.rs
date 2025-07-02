@@ -7,7 +7,12 @@ use std::{
 use enumflags2::BitFlags;
 use log::{debug, info, trace};
 
-use osutils::{bootloaders::BOOT_EFI, encryption, files, path::join_relative, pcrlock};
+use osutils::{
+    bootloaders::BOOT_EFI,
+    encryption, files,
+    path::join_relative,
+    pcrlock::{self, PCRLOCK_POLICY_JSON},
+};
 use sysdefs::tpm2::Pcr;
 
 use trident_api::{
@@ -198,6 +203,16 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
         pcrlock::generate_tpm2_access_policy(pcrs)
             .structured(ServicingError::GenerateTpm2AccessPolicy)?;
 
+        // Copy the pcrlock policy JSON to the update volume
+        debug!("Copying pcrlock policy JSON to update volume");
+        let pcrlock_json_copy = join_relative(mount_path, PCRLOCK_POLICY_JSON);
+        fs::copy(PCRLOCK_POLICY_JSON, pcrlock_json_copy.clone()).structured(
+            ServicingError::CopyPcrlockPolicyJson {
+                path: PCRLOCK_POLICY_JSON.to_string(),
+                destination: pcrlock_json_copy.display().to_string(),
+            },
+        )?;
+
         // On clean install, we need to iterate through encrypted volumes and bind them to the
         // newly generated pcrlock policy
         if ctx.servicing_type == ServicingType::CleanInstall {
@@ -211,33 +226,9 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                     },
                 )?;
 
-                debug!(
-                    "Checking if '{}' is a LUKS2 encrypted volume",
-                    device_path.display()
-                );
-                let luks_check = encryption::cryptsetup_is_luks(device_path.clone())
-                    .structured(ServicingError::BindEncryptionToPcrlockPolicy)?;
-                debug!(
-                    "LUKS2 check for '{}' returned: {}",
-                    device_path.clone().display(),
-                    luks_check
-                );
-
                 // Re-enroll the device with the pcrlock policy
                 encryption::systemd_cryptenroll(None::<&Path>, device_path.clone(), true, pcrs)
                     .structured(ServicingError::BindEncryptionToPcrlockPolicy)?;
-
-                debug!(
-                    "Checking if '{}' is a LUKS2 encrypted volume",
-                    device_path.clone().display()
-                );
-                let luks_check = encryption::cryptsetup_is_luks(device_path.clone())
-                    .structured(ServicingError::BindEncryptionToPcrlockPolicy)?;
-                debug!(
-                    "LUKS2 check for '{}' returned: {}",
-                    device_path.clone().display(),
-                    luks_check
-                );
             }
         }
     }

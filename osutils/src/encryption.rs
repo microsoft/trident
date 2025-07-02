@@ -199,6 +199,7 @@ pub fn cryptsetup_is_luks(device_path: impl AsRef<Path>) -> Result<String, Error
         .cmd()
         .arg("isLuks")
         .arg(device_path.as_ref().as_os_str())
+        .arg("--verbose")
         .output_and_check()
         .context(format!(
             "Failed to check if device '{}' is a LUKS2 encrypted volume",

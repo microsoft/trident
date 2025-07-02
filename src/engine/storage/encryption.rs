@@ -250,34 +250,10 @@ fn encrypt_and_open_device(
         device_path.display()
     );
 
-    // TODO: REMOVE BEFORE MERGING
-    // Check if it's a valid LUKS2 device
-    debug!(
-        "Checking if '{}' is a LUKS2 encrypted volume",
-        device_path.display()
-    );
-    let luks_check = encryption::cryptsetup_is_luks(device_path)?;
-    debug!(
-        "LUKS2 check for '{}' returned: {}",
-        device_path.display(),
-        luks_check
-    );
-
     // Enroll the TPM 2.0 device for the underlying device. Currently, we bind the enrollment to
     // PCR 7 by default. pcrlock_policy bool is set to false, since while creating encrypted
     // volumes, we first bind to PCR values, not pcrlock policy.
     encryption::systemd_cryptenroll(Some(key_file), device_path, false, pcrs)?;
-
-    debug!(
-        "Checking if '{}' is a LUKS2 encrypted volume",
-        device_path.display()
-    );
-    let luks_check = encryption::cryptsetup_is_luks(device_path)?;
-    debug!(
-        "LUKS2 check for '{}' returned: {}",
-        device_path.display(),
-        luks_check
-    );
 
     debug!(
         "Opening underlying encrypted device '{}' as '{}'",
