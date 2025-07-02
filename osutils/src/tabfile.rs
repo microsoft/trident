@@ -24,6 +24,11 @@ pub struct TabFileEntry {
     pub mount_point: TabMountPoint,
     pub fs_type: TabFileSystemType,
     pub options: Vec<String>,
+
+    /// Whether this entry is disabled (commented out).
+    /// If `None`, the entry is enabled.
+    /// If `Some`, the entry is disabled and the reason is provided.
+    pub disabled_reason: Option<String>,
 }
 
 /// A representation of a device in a tab file.
@@ -67,6 +72,7 @@ impl TabFileEntry {
             mount_point: TabMountPoint::Path(mount_point.into()),
             fs_type,
             options: Vec::new(),
+            disabled_reason: None,
         }
     }
 
@@ -77,6 +83,7 @@ impl TabFileEntry {
             mount_point: TabMountPoint::None,
             fs_type: TabFileSystemType::Swap,
             options: Vec::new(),
+            disabled_reason: None,
         }
     }
 
@@ -87,6 +94,7 @@ impl TabFileEntry {
             mount_point: TabMountPoint::Path(mount_point.into()),
             fs_type: NodevFilesystemType::Tmpfs.into(),
             options: Vec::new(),
+            disabled_reason: None,
         }
     }
 
@@ -97,12 +105,19 @@ impl TabFileEntry {
             mount_point: TabMountPoint::Path(mount_point.into()),
             fs_type: NodevFilesystemType::Overlay.into(),
             options: Vec::new(),
+            disabled_reason: None,
         }
     }
 
     /// Add options to this entry.
     pub fn with_options(mut self, options: Vec<String>) -> Self {
         self.options = options;
+        self
+    }
+
+    /// Disable the entry with a reason.
+    pub fn with_disabled_reason(mut self, reason: Option<impl Into<String>>) -> Self {
+        self.disabled_reason = reason.map(Into::into);
         self
     }
 
@@ -122,14 +137,27 @@ impl TabFileEntry {
             self.options.join(",")
         };
 
-        format!(
+        let line = format!(
             "{} {} {} {} 0 {}\n",
             self.device.render(),
             self.mount_point.render(),
             self.fs_type.name(),
             options,
             fsck_pass,
-        )
+        );
+
+        match &self.disabled_reason {
+            // If the entry is disabled, comment it out and add the reason.
+            // Replace all newlines with newlines followed by a `#` to keep the
+            // comment formatting.
+            Some(reason) => {
+                let escaped = reason.replace("\n", "\n# ");
+                format!("# {escaped}\n# {line}")
+            }
+
+            // If the entry is enabled, just use an empty string.
+            None => line,
+        }
     }
 }
 

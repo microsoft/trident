@@ -26,6 +26,14 @@ impl EngineContext {
         self
     }
 
+    /// Populates filesystem data.
+    /// Needs both spec and image to be set first!
+    pub(crate) fn with_filesystem_data(mut self) -> Self {
+        self.populate_filesystems()
+            .expect("Failed to populate filesystems");
+        self
+    }
+
     /// Inserts a partition path to the context.
     pub(crate) fn with_partition_path<I, P>(mut self, block_device_id: I, partition_path: P) -> Self
     where

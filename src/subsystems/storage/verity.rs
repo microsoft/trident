@@ -66,6 +66,7 @@ mod tests {
                     "workdir=/var/lib/trident-overlay/etc/work".into(),
                     MOUNT_OPTION_READ_ONLY.into()
                 ],
+                disabled_reason: None,
             },
         );
     }
