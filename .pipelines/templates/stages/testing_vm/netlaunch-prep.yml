@@ -29,15 +29,6 @@ steps:
     retryCountOnTaskFailure: 3
 
   - bash: |
-      set -o pipefail
-      # Install Docker if it isn't installed
-      if ! which docker ; then
-        curl -fsSL https://get.docker.com | sudo bash
-      fi
-    displayName: "Install Docker"
-    retryCountOnTaskFailure: 3
-
-  - bash: |
       set -eux
 
       sudo NEEDRESTART_MODE=a apt-get install -y \
@@ -66,7 +57,6 @@ steps:
   - bash: |
       set -eux
 
-      sudo usermod -aG docker $USER
       sudo usermod -a -G libvirt $USER
 
       mkdir -p ~/.config/libvirt
@@ -74,22 +64,14 @@ steps:
       uri_default = "qemu:///system"
       EOF
 
-      sudo mkdir -p /etc/systemd/system/docker.socket.d
-      echo "[Socket]
-      SocketMode=0666" | sudo tee /etc/systemd/system/docker.socket.d/mode.conf > /dev/null
-
       sudo mkdir -p /etc/systemd/system/libvirtd.socket.d
       echo "[Socket]
       SocketMode=0666" | sudo tee /etc/systemd/system/libvirtd.socket.d/mode.conf > /dev/null
 
       sudo systemctl daemon-reload
 
-      sudo systemctl stop docker.service
-      sudo systemctl restart docker.socket
-      sudo systemctl start docker.service
-
       sudo systemctl stop libvirtd.service
       sudo systemctl restart libvirtd.socket
       sudo systemctl start libvirtd.service
 
-    displayName: "Configure virt-deploy"
+    displayName: "Configure libvirt access"

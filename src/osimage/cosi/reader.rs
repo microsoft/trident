@@ -12,6 +12,7 @@ use anyhow::{bail, ensure, Context, Error};
 use log::{debug, trace, warn};
 use oci_client::{secrets::RegistryAuth, Client as OciClient, Reference};
 use reqwest::blocking::{Client, Response};
+use tokio::runtime::Runtime;
 use url::Url;
 
 pub(super) trait ReadSeek: Read + Seek {}
@@ -128,19 +129,20 @@ pub struct HttpFile {
 impl HttpFile {
     /// Creates a new HTTP file reader from a standard HTTP URL.
     pub fn new(url: &Url) -> IoResult<Self> {
-        Self::new_inner(url, None)
+        Self::new_inner(url, None, false)
     }
 
     /// Creates a new HTTP file reader from an OCI URL.
     pub fn new_from_oci(url: &Url) -> Result<Self, Error> {
-        let url_string = url.to_string();
-        let img_ref = url_string
-            .strip_prefix("oci://")
-            .and_then(|url| url.parse::<Reference>().ok())
-            .context(format!("Failed to parse URL '{url}'"))?;
+        let img_ref =
+            Reference::try_from(url.to_string().strip_prefix("oci://").with_context(|| {
+                format!("URL has incorrect scheme: expected to start with 'oci://', got '{url}'")
+            })?)
+            .with_context(|| format!("Failed to parse URL '{url}'"))?;
 
-        let token = HttpFile::retrieve_access_token(&img_ref)?;
-        let digest = Self::retrieve_artifact_digest(&img_ref)?;
+        let rt = Runtime::new().context("Failed to create Tokio runtime")?;
+        let token = Self::retrieve_access_token(&img_ref, &rt)?;
+        let digest = Self::retrieve_artifact_digest(&img_ref, &rt)?;
         trace!("Retrieved artifact digest: {digest}");
 
         // Create HTTP URL
@@ -150,10 +152,14 @@ impl HttpFile {
             "https://{registry}/v2/{repository}/blobs/{digest}"
         ))?;
 
-        Self::new_inner(&http_url, Some(token)).context("Failed to create HTTP file reader")
+        Self::new_inner(&http_url, Some(token), true).context("Failed to create HTTP file reader")
     }
 
-    fn new_inner(url: &Url, token: Option<String>) -> IoResult<Self> {
+    fn new_inner(
+        url: &Url,
+        token: Option<String>,
+        ignore_ranges_header_absence: bool,
+    ) -> IoResult<Self> {
         debug!("Opening HTTP file '{}'", url);
         let timeout_in_seconds = 5;
 
@@ -161,7 +167,7 @@ impl HttpFile {
         let client = Client::new();
         let request_sender = || {
             let mut request = client.head(url.as_str());
-            if let Some(token) = token.clone() {
+            if let Some(token) = &token {
                 request = request.header("Authorization", format!("Bearer {token}"));
             }
             request.send()
@@ -197,7 +203,7 @@ impl HttpFile {
         // Ensure the server supports range requests, this implementation
         // requires that feature!
         let accept_ranges_header = response.headers().get("Accept-Ranges");
-        if accept_ranges_header.is_none() && token.is_some() {
+        if accept_ranges_header.is_none() && ignore_ranges_header_absence {
             warn!("OCI server does not provide 'Accept-Ranges' header, continuing anyway");
         } else if accept_ranges_header
             .ok_or(IoError::new(
@@ -233,38 +239,30 @@ impl HttpFile {
 
     /// Retrieve bearer token to access container registry. Even registries allowing anonymous
     /// access may require a token.
-    fn retrieve_access_token(img_ref: &Reference) -> Result<String, Error> {
+    fn retrieve_access_token(img_ref: &Reference, runtime: &Runtime) -> Result<String, Error> {
         trace!(
             "Retrieving access token for OCI registry '{}'",
             img_ref.registry()
         );
-        let client = OciClient::new(Default::default());
-        let authorization = tokio::runtime::Runtime::new()
-            .context("Failed to create Tokio runtime")?
+        let client = OciClient::default();
+        runtime
             .block_on(client.auth(
                 img_ref,
                 &RegistryAuth::Anonymous,
                 oci_client::RegistryOperation::Pull,
-            ))?;
-
-        if let Some(auth) = authorization {
-            Ok(auth)
-        } else {
-            Err(Error::msg("Failed to retrieve authorization token"))
-        }
+            ))?
+            .context("Failed to retrieve authorization token")
     }
 
     /// Retrieve artifact digest, which is necessary to send HTTP request to container registry.
-    fn retrieve_artifact_digest(img_ref: &Reference) -> Result<String, Error> {
-        match img_ref.digest() {
-            Some(digest) => Ok::<String, Error>(digest.to_string()),
+    fn retrieve_artifact_digest(img_ref: &Reference, runtime: &Runtime) -> Result<String, Error> {
+        Ok(match img_ref.digest() {
+            Some(digest) => digest.to_string(),
             None => {
                 // Attempt to retrieve digest from manifest
-                let client = OciClient::new(Default::default());
+                let client = OciClient::default();
                 let manifest = client.pull_image_manifest(img_ref, &RegistryAuth::Anonymous);
-                let (oci_image_manifest, _) = tokio::runtime::Runtime::new()
-                    .context("Failed to start tokio runtime")?
-                    .block_on(manifest)?;
+                let (oci_image_manifest, _) = runtime.block_on(manifest)?;
                 // Expect the artifact to have one layer, which is the image
                 ensure!(
                     oci_image_manifest.layers.len() == 1,
@@ -273,9 +271,9 @@ impl HttpFile {
                         oci_image_manifest.layers.len()
                     )
                 );
-                Ok(oci_image_manifest.layers[0].digest.clone())
+                oci_image_manifest.layers[0].digest.clone()
             }
-        }
+        })
     }
 
     /// Converts an HTTP error into an IO error.
@@ -492,16 +490,18 @@ mod tests {
 
     #[test]
     fn test_retrieve_access_token() {
+        let rt = Runtime::new().unwrap();
         let url = "oci://docker.io/library/hello-world:latest".to_string();
         let img_ref = url
             .strip_prefix("oci://")
             .and_then(|url| url.parse::<Reference>().ok())
             .unwrap();
-        HttpFile::retrieve_access_token(&img_ref).unwrap();
+        HttpFile::retrieve_access_token(&img_ref, &rt).unwrap();
     }
 
     #[test]
     fn test_retrieve_artifact_digest() {
+        let rt = Runtime::new().unwrap();
         // TODO(12732): Fix this test to use test COSI file instead of hello-world image
         let url = "oci://docker.io/library/hello-world@sha256:940c619fbd418f9b2b1b63e25d8861f9cc1b46e3fc8b018ccfe8b78f19b8cc4f".to_string();
         let img_ref = url
@@ -509,7 +509,7 @@ mod tests {
             .and_then(|url| url.parse::<Reference>().ok())
             .unwrap();
         assert_eq!(
-            HttpFile::retrieve_artifact_digest(&img_ref).unwrap(),
+            HttpFile::retrieve_artifact_digest(&img_ref, &rt).unwrap(),
             "sha256:940c619fbd418f9b2b1b63e25d8861f9cc1b46e3fc8b018ccfe8b78f19b8cc4f"
         );
     }

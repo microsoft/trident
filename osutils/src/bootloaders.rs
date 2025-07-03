@@ -47,6 +47,8 @@ const fn get_arch_efi_str(arch: SystemArchitecture) -> &'static str {
 mod tests {
     use super::*;
 
+    use strum::IntoEnumIterator;
+
     #[test]
     fn test_current_name() {
         let mut expected_arch = "";
@@ -76,6 +78,22 @@ mod tests {
             assert_eq!(
                 filename, expected_filename,
                 "Filename {filename} does not match expected value {expected_filename}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_get_arch_efi_str() {
+        for arch in SystemArchitecture::iter() {
+            let expected = match arch {
+                SystemArchitecture::Amd64 => "x64",
+                SystemArchitecture::Aarch64 => "aa64",
+            };
+
+            assert_eq!(
+                get_arch_efi_str(arch),
+                expected,
+                "get_arch_efi_str({arch:?}) did not return expected value {expected}"
             );
         }
     }
