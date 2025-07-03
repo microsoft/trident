@@ -152,7 +152,8 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         .output_and_check()
         .context("Failed to run 'systemd-pcrlock log'")?;
 
-    trace!("Output of 'systemd-pcrlock log':\n{}", output);
+    // TODO: CHANGE TO TRACE BEFORE MERGING!
+    debug!("Output of 'systemd-pcrlock log':\n{}", output);
 
     let parsed: LogOutput =
         serde_json::from_str(&output).context("Failed to parse 'systemd-pcrlock log' output")?;
