@@ -27,7 +27,7 @@ stages:
         steps:
           - task: AzureCLI@2
             inputs:
-              azureSubscription: CoreOS_AzureLinux_Polar_Staging
+              azureSubscription: maritimus-staging-eastus-cr-umi
               scriptType: bash
               inlineScript: |
-                az acr login --name ${{ parameters.imageName }}
+                az acr login --name ${{ parameters.registry }}
