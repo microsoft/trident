@@ -30,25 +30,25 @@ pub const PCRLOCK_POLICY_JSON: &str = "/var/lib/systemd/pcrlock.json";
 /// Sub-dirs inside PCRLOCK_DIR, i.e. `/var/lib/pcrlock.d`, for dynamically generated .pcrlock
 /// files that might contain 1+ .pcrlock files, for the current and update images:
 /// 1. `/var/lib/pcrlock.d/600-gpt.pcrlock.d`, where `lock-gpt` measures the GPT partition table of
-///     the booted medium, as recorded to PCR 5 by the firmware,
+///    the booted medium, as recorded to PCR 5 by the firmware,
 #[allow(dead_code)]
 const GPT_PCRLOCK_DIR: &str = "600-gpt.pcrlock.d";
 
 /// 2. `/var/lib/pcrlock.d/610-boot-loader-code.pcrlock.d`, where Trident measures the
-///     bootloader binaries, recorded into PCR 4 following Microsoft's Authenticode hash spec,
+///    bootloader binaries, recorded into PCR 4 following Microsoft's Authenticode hash spec,
 const BOOT_LOADER_CODE_PCRLOCK_DIR: &str = "610-boot-loader-code.pcrlock.d";
 
 /// 3. `/var/lib/pcrlock.d/650-uki.pcrlock.d`, where `lock-uki` measures the UKI binary, as
-///     recorded into PCR 4,
+///    recorded into PCR 4,
 const UKI_PCRLOCK_DIR: &str = "650-uki.pcrlock.d";
 
 /// 4. `/var/lib/pcrlock.d/710-kernel-cmdline.pcrlock.d`, where `lock-kernel-cmdline` measures the
-///     kernel command line, as recorded into PCR 9,
+///    kernel command line, as recorded into PCR 9,
 #[allow(dead_code)]
 const KERNEL_CMDLINE_PCRLOCK_DIR: &str = "710-kernel-cmdline.pcrlock.d";
 
 /// 5. `/var/lib/pcrlock.d/720-kernel-initrd.pcrlock.d`, where Trident measures the initrd section of
-///     the UKI binary, as recorded into PCR 9.
+///    the UKI binary, as recorded into PCR 9.
 #[allow(dead_code)]
 const KERNEL_INITRD_PCRLOCK_DIR: &str = "720-kernel-initrd.pcrlock.d";
 
