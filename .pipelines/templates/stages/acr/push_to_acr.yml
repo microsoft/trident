@@ -1,12 +1,3 @@
-resources:
-  containers:
-    - container: maritimuspublic
-      type: acr
-      azureSubscription: CoreOS_AzureLinux_Polar_Staging
-      resourceGroup: maritimus-staging-eastus-cr
-      registry: maritimuspublic
-      repository: regular
-
 parameters:
   - name: "imageName"
     type: string
