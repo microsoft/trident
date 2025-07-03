@@ -25,8 +25,9 @@ stages:
           type: linux
 
         steps:
-          - task: Docker@2
-            displayName: Login to ACR
+          - task: AzureCLI@2
             inputs:
-              containerRegistry: ${{ parameters.registry }}
-              command: login
+              azureSubscription: CoreOS_AzureLinux_Polar_Staging
+              scriptType: bash
+              inlineScript: |
+                az acr login --name ${{ parameters.imageName }}
