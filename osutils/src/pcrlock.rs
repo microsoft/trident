@@ -30,26 +30,25 @@ pub const PCRLOCK_POLICY_JSON: &str = "/var/lib/systemd/pcrlock.json";
 /// Sub-dirs inside PCRLOCK_DIR, i.e. `/var/lib/pcrlock.d`, for dynamically generated .pcrlock
 /// files that might contain 1+ .pcrlock files, for the current and update images:
 /// 1. `/var/lib/pcrlock.d/600-gpt.pcrlock.d`, where `lock-gpt` measures the GPT partition table of
-///    the booted medium, as recorded to PCR 5 by the firmware,
+///     the booted medium, as recorded to PCR 5 by the firmware,
 #[allow(dead_code)]
 const GPT_PCRLOCK_DIR: &str = "600-gpt.pcrlock.d";
 
-/// 2. `/var/lib/pcrlock.d/610-boot-loader-code.pcrlock.d`, where Trident measures the bootloader
-///    PE binary, i.e., the shim EFI executable for UKI at path /EFI/BOOT/bootx64.efi, as recorded
-///    into PCR 4 following Microsoft's Authenticode hash spec,
+/// 2. `/var/lib/pcrlock.d/610-boot-loader-code.pcrlock.d`, where Trident measures the
+///     bootloader binaries, recorded into PCR 4 following Microsoft's Authenticode hash spec,
 const BOOT_LOADER_CODE_PCRLOCK_DIR: &str = "610-boot-loader-code.pcrlock.d";
 
 /// 3. `/var/lib/pcrlock.d/650-uki.pcrlock.d`, where `lock-uki` measures the UKI binary, as
-///    recorded into PCR 4,
+///     recorded into PCR 4,
 const UKI_PCRLOCK_DIR: &str = "650-uki.pcrlock.d";
 
 /// 4. `/var/lib/pcrlock.d/710-kernel-cmdline.pcrlock.d`, where `lock-kernel-cmdline` measures the
-///    kernel command line, as recorded into PCR 9,
+///     kernel command line, as recorded into PCR 9,
 #[allow(dead_code)]
 const KERNEL_CMDLINE_PCRLOCK_DIR: &str = "710-kernel-cmdline.pcrlock.d";
 
 /// 5. `/var/lib/pcrlock.d/720-kernel-initrd.pcrlock.d`, where Trident measures the initrd section of
-///    the UKI binary, as recorded into PCR 9.
+///     the UKI binary, as recorded into PCR 9.
 #[allow(dead_code)]
 const KERNEL_INITRD_PCRLOCK_DIR: &str = "720-kernel-initrd.pcrlock.d";
 
@@ -460,8 +459,7 @@ pub fn generate_pcrlock_files(
     pcrs: BitFlags<Pcr>,
     // Vector containing paths of UKI binaries to measure via lock-uki,
     uki_binaries: Vec<Option<PathBuf>>,
-    // Vector containing paths of bootloader binaries, i.e. shim EFI executables for UKI, to be
-    // measured by Trident,
+    // Vector containing paths of bootloader binaries to be measured by Trident,
     bootloader_binaries: Vec<Option<PathBuf>>,
 ) -> Result<(), Error> {
     debug!(
@@ -523,7 +521,7 @@ pub fn generate_pcrlock_files(
         debug!("Skipping running 'systemd-pcrlock lock-uki' as PCRs 4 and 11 are not requested");
     }
 
-    // Generate bootloader .pcrlock files only for non-null binaries when PCR 4 is requested
+    // Generate bootloader .pcrlock files when PCR 4 is requested
     if pcrs.contains(Pcr::Pcr4) {
         for (id, bootloader_path_opt) in bootloader_binaries.into_iter().enumerate() {
             if let Some(bootloader_path) = bootloader_path_opt {
@@ -532,8 +530,16 @@ pub fn generate_pcrlock_files(
                     "Generating bootloader .pcrlock file at '{}'",
                     pcrlock_file.display()
                 );
-                generate_610_boot_loader_code_pcrlock(bootloader_path, pcrlock_file.clone())
-                    .context("Bootloader PCRLock generation failed")?;
+                compute_pe_binary_authenticode(
+                    bootloader_path.clone(),
+                    pcrlock_file.clone(),
+                    Pcr::Pcr4,
+                )
+                .context(format!(
+                    "Failed to generate .pcrlock file at '{}' for bootloader at '{}'",
+                    pcrlock_file.display(),
+                    bootloader_path.display()
+                ))?;
             }
         }
     } else {
@@ -550,9 +556,9 @@ pub fn generate_pcrlock_files(
     Ok(())
 }
 
-/// Generates a full .pcrlock file path under PCRLOCK_DIR, i.e. /var/lib/pcrlock.d, given the
-/// sub-dir, e.g. 600-gpt, and the index of the .pcrlock file. This is needed so that each image,
-/// current and update, gets its own .pcrlock file.
+/// Generates a full .pcrlock file path under PCRLOCK_DIR, given the sub-dir, and the index of the
+/// .pcrlock file. This is needed so that each image, current and update, gets its own .pcrlock
+/// file.
 fn generate_pcrlock_output_path(pcrlock_subdir: &str, index: usize) -> PathBuf {
     let base = Path::new(PCRLOCK_DIR).join(pcrlock_subdir);
     base.join(format!("generated-{index}.pcrlock"))
@@ -569,7 +575,7 @@ struct DigestEntry<'a> {
 /// Represents a single record in a .pcrlock file.
 #[derive(Serialize)]
 struct Record<'a> {
-    pcr: u8,
+    pcr: u32,
     digests: Vec<DigestEntry<'a>>,
 }
 
@@ -579,22 +585,27 @@ struct PcrLock<'a> {
     records: Vec<Record<'a>>,
 }
 
-/// Generates .pcrlock files under /var/lib/pcrlock.d/610-boot-loader-code.pcrlock.d, where Trident
-/// measures the bootloader PE binary, i.e., the shim EFI executable for UKI at path
-/// /EFI/BOOT/bootx64.efi, as recorded into PCR 4 following Microsoft's Authenticode hash spec for
-/// measuring Windows PE binaries:
-/// https://reversea.me/index.php/authenticode-i-understanding-windows-authenticode/.
-fn generate_610_boot_loader_code_pcrlock(
-    bootloader_path: PathBuf,
+/// Computes the authenticode of a PE binary at `pe_binary` path, following Microsoft's
+/// Authenticode hash spec for measuring Windows PE binaries:
+/// https://reversea.me/index.php/authenticode-i-understanding-windows-authenticode/. Based on the
+/// computed hashes, writes a .pcrlock file at `pcrlock_file` path, for `systemd-pcrlock`.
+fn compute_pe_binary_authenticode(
+    pe_binary: PathBuf,
     pcrlock_file: PathBuf,
+    pcr: Pcr,
 ) -> Result<()> {
+    debug!(
+        "Computing authenticode for PE binary at '{}', writing to .pcrlock file at '{}'",
+        pe_binary.display(),
+        pcrlock_file.display()
+    );
     // Read the entire file into memory
-    let buffer = fs::read(&bootloader_path)
-        .with_context(|| format!("Failed to read PE binary at {}", bootloader_path.display()))?;
+    let buffer = fs::read(&pe_binary)
+        .with_context(|| format!("Failed to read PE binary at {}", pe_binary.display()))?;
 
     // Parse PE
     let pe = PE::parse(&buffer)
-        .with_context(|| format!("Failed to parse PE binary at {}", bootloader_path.display()))?;
+        .with_context(|| format!("Failed to parse PE binary at {}", pe_binary.display()))?;
 
     // Initialize hashers
     let mut sha256 = Sha256::new();
@@ -622,24 +633,27 @@ fn generate_610_boot_loader_code_pcrlock(
         },
     ];
 
-    // Build PcrLock structure with PCR 4
+    // Build .pcrlock file structure
     let pcrlock = PcrLock {
-        records: vec![Record { pcr: 4, digests }],
+        records: vec![Record {
+            pcr: pcr.to_num(),
+            digests,
+        }],
     };
 
     if let Some(parent) = pcrlock_file.parent() {
         fs::create_dir_all(parent).context(format!(
-            "Failed to create directory for .pcrlock file at {}",
+            "Failed to create directory for .pcrlock file at '{}'",
             pcrlock_file.display()
         ))?;
     }
 
     let json = serde_json::to_string(&pcrlock).context(format!(
-        "Failed to serialize .pcrlock file {} as JSON",
+        "Failed to serialize .pcrlock file '{}' as JSON",
         pcrlock_file.display()
     ))?;
     fs::write(&pcrlock_file, json.clone()).context(format!(
-        "Failed to write .pcrlock file at {}",
+        "Failed to write .pcrlock file at '{}'",
         pcrlock_file.display()
     ))?;
 

@@ -8,7 +8,7 @@ use enumflags2::BitFlags;
 use log::{debug, info, trace};
 
 use osutils::{
-    bootloaders::BOOT_EFI,
+    bootloaders::{BOOT_EFI, GRUB_EFI},
     dependencies::Dependency,
     encryption, files,
     path::join_relative,
@@ -160,32 +160,50 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                     .join(UKI_DIRECTORY)
                     .join(uki_suffix);
 
-                // Construct current bootloader path, i.e. i.e. shim EFI executable for UKI
+                // Construct current primary bootloader path, i.e. shim EFI executable
                 let ab_volume = ctx
                     .ab_active_volume
                     .ok_or_else(|| TridentError::new(InternalError::GetAbActiveVolume))?;
                 let esp_dir_name = boot::make_esp_dir_name(ctx.install_index, ab_volume);
-                let path = Path::new(ESP_EFI_DIRECTORY)
+                let shim_path = Path::new(ESP_EFI_DIRECTORY)
                     .join(&esp_dir_name)
                     .join(BOOT_EFI);
-                let bootloader_current = join_relative(ESP_MOUNT_POINT_PATH, &path);
+                let shim_current = join_relative(ESP_MOUNT_POINT_PATH, &shim_path);
+
+                // Construct current secondary bootloader path, i.e. systemd-boot EFI executable
+                let systemd_boot_path = Path::new(ESP_EFI_DIRECTORY)
+                    .join(&esp_dir_name)
+                    .join(GRUB_EFI);
+                let systemd_boot_current = join_relative(ESP_MOUNT_POINT_PATH, &systemd_boot_path);
 
                 // UKI binary in runtime OS to be measured; it's currently staged at designated
                 // path
                 let esp_dir_path = join_relative(mount_path, ESP_MOUNT_POINT_PATH);
                 let uki_update = esp_dir_path.join(UKI_DIRECTORY).join(TMP_UKI_NAME);
 
-                // Bootloader binary for runtime OS to be measured, i.e. shim EFI executable for
-                // UKI
-                let (_, bootloader_update_relative) = bootentries::get_label_and_path(ctx)
+                // Primary bootloader, i.e. shim EFI executable, in update image
+                let (_, shim_update_relative) = bootentries::get_label_and_path(ctx, BOOT_EFI)
                     .structured(ServicingError::GetLabelAndPath)?;
-                let bootloader_update = join_relative(esp_dir_path, bootloader_update_relative);
+                let shim_update = join_relative(esp_dir_path.clone(), shim_update_relative);
+
+                // Secondary bootloader, i.e. systemd-boot EFI executable, in update image
+                let (_, systemd_boot_update_relative) =
+                    bootentries::get_label_and_path(ctx, GRUB_EFI)
+                        .structured(ServicingError::GetLabelAndPath)?;
+                let systemd_boot_update = join_relative(esp_dir_path, systemd_boot_update_relative);
 
                 // Generate .pcrlock files for runtime OS image A
                 pcrlock::generate_pcrlock_files(
                     pcrs,
+                    // List of UKI binaries
                     vec![Some(uki_current), Some(uki_update)],
-                    vec![Some(bootloader_current), Some(bootloader_update)],
+                    // List of bootloader PE binaries
+                    vec![
+                        Some(shim_current),
+                        Some(systemd_boot_current),
+                        Some(shim_update),
+                        Some(systemd_boot_update),
+                    ],
                 )
                 .structured(ServicingError::GeneratePcrlockFiles)?;
 

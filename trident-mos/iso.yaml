@@ -58,6 +58,13 @@ os:
       - selinux-policy-devel
       - setools-console
 
+  additionalDirs:
+    # Required for systemd-pcrlock & PCR-based encryption; can be removed once
+    # AZL 4.0 merges a fix to provide statically defined files inside the same
+    # package as the systemd-pcrlock binary, i.e. systemd-udev.
+    - source: "../packaging/static-pcrlock-files/"
+      destination: "/var/lib/pcrlock.d/"
+
   additionalFiles:
     - source: files/getty@.service
       destination: /usr/lib/systemd/system/getty@.service

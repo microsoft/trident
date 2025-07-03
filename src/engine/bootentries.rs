@@ -56,9 +56,9 @@ pub fn create_and_update_boot_variables(
     ctx: &EngineContext,
     esp_path: &Path,
 ) -> Result<(), TridentError> {
-    // Get the label and path for the EFI boot loader of the inactive A/B update volume.
+    // Get the label and path for the EFI bootloader of the inactive A/B update volume.
     let (entry_label_new, bootloader_path_new) =
-        get_label_and_path(ctx).structured(ServicingError::GetLabelAndPath)?;
+        get_label_and_path(ctx, BOOT_EFI).structured(ServicingError::GetLabelAndPath)?;
 
     // Check if the boot entry already exists, if so, delete the entry and
     // remove it from the `BootOrder`.
@@ -564,17 +564,20 @@ fn get_esp_metadata(
     })
 }
 
-/// Retrieves the label and path for the EFI boot loader of the inactive A/B update volume.
+/// Retrieves the label and path for the EFI bootloader of the inactive A/B update volume.
 ///
 /// This function takes a reference to a `EngineContext` object and returns a tuple containing
-/// the label associated with the inactive A/B update volume and the path to its EFI boot loader.
-pub fn get_label_and_path(ctx: &EngineContext) -> Result<(String, PathBuf), Error> {
+/// the label associated with the inactive A/B update volume and the path to its EFI bootloader.
+pub fn get_label_and_path(
+    ctx: &EngineContext,
+    bootloader: &str,
+) -> Result<(String, PathBuf), Error> {
     let esp_dir_name = boot::get_update_esp_dir_name(ctx).context("Failed to get install id")?;
 
     let path = Path::new(constants::ROOT_MOUNT_POINT_PATH)
         .join(constants::ESP_EFI_DIRECTORY)
         .join(&esp_dir_name)
-        .join(BOOT_EFI);
+        .join(bootloader);
 
     Ok((esp_dir_name, path))
 }
@@ -712,7 +715,7 @@ mod tests {
 
         // Test that clean-install will always use volume A for updates
         assert_eq!(
-            get_label_and_path(&ctx).unwrap(),
+            get_label_and_path(&ctx, BOOT_EFI).unwrap(),
             (
                 get_update_esp_dir_name(&ctx).unwrap(),
                 Path::new(constants::ROOT_MOUNT_POINT_PATH)
@@ -727,7 +730,7 @@ mod tests {
         ctx.servicing_type = ServicingType::NormalUpdate;
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         assert_eq!(
-            get_label_and_path(&ctx).unwrap(),
+            get_label_and_path(&ctx, BOOT_EFI).unwrap(),
             (
                 get_update_esp_dir_name(&ctx).unwrap(),
                 Path::new(constants::ROOT_MOUNT_POINT_PATH)
@@ -739,7 +742,7 @@ mod tests {
 
         // Test that servicing type NoActiveServicing will return None
         ctx.servicing_type = ServicingType::NoActiveServicing;
-        let error_message = get_label_and_path(&ctx).unwrap_err().to_string();
+        let error_message = get_label_and_path(&ctx, BOOT_EFI).unwrap_err().to_string();
         assert_eq!(error_message, "Failed to get install id");
     }
 

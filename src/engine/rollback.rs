@@ -4,8 +4,11 @@ use anyhow::{Context, Error};
 use log::{debug, info, trace, warn};
 
 use osutils::{
-    block_devices, bootloaders::BOOT_EFI, container, efivar, lsblk, path::join_relative, pcrlock,
-    veritysetup, virt,
+    block_devices,
+    bootloaders::{BOOT_EFI, GRUB_EFI},
+    container, efivar, lsblk,
+    path::join_relative,
+    pcrlock, veritysetup, virt,
 };
 use sysdefs::tpm2::Pcr;
 
@@ -130,24 +133,32 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
                 .unwrap_or(99);
             let uki_current = esp_uki_directory.join(format!("vmlinuz-{max_index}-{uki_suffix}"));
 
-            // Construct current bootloader path, i.e. i.e. shim EFI executable for UKI. Currently,
-            // ab_active_volume inside the context is still set to the old volume, so we need to
+            // Construct current primary bootloader path, i.e. shim EFI executable for UKI.
+            // Currently, ab_active_volume inside the context is still set to the old volume, so we
             // determine the actual active volume
             let active_volume = match ctx.ab_active_volume {
                 None | Some(AbVolumeSelection::VolumeB) => AbVolumeSelection::VolumeA,
                 Some(AbVolumeSelection::VolumeA) => AbVolumeSelection::VolumeB,
             };
             let esp_dir_name = boot::make_esp_dir_name(ctx.install_index, active_volume);
-            let path = Path::new(ESP_EFI_DIRECTORY)
+            let shim_path = Path::new(ESP_EFI_DIRECTORY)
                 .join(&esp_dir_name)
                 .join(BOOT_EFI);
-            let bootloader_current = join_relative(esp_path, &path);
+            let shim_current = join_relative(esp_path.clone(), &shim_path);
+
+            // Construct current secondary bootloader path, i.e. systemd-boot EFI executable
+            let systemd_boot_path = Path::new(ESP_EFI_DIRECTORY)
+                .join(&esp_dir_name)
+                .join(GRUB_EFI);
+            let systemd_boot_current = join_relative(esp_path, &systemd_boot_path);
 
             // Generate .pcrlock files for runtime OS image A
             pcrlock::generate_pcrlock_files(
                 pcrs,
+                // List of UKI binaries
                 vec![Some(uki_current)],
-                vec![Some(bootloader_current)],
+                // List of bootloader PE binaries
+                vec![Some(shim_current), Some(systemd_boot_current)],
             )
             .structured(ServicingError::GeneratePcrlockFiles)?;
 
