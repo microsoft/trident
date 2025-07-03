@@ -25,7 +25,7 @@ stages:
           type: linux
 
         steps:
-          - template: .pipelines/templates/common_tasks/acr-login.yml@test-images
-            parameters:
-              azureSubscription: CoreOS_AzureLinux_Polar_Staging
-              acr: ${{ parameters.registry }}
+          - task: Docker@2
+            inputs:
+              containerRegistry: ${{ parameters.registry }}
+              command: login
