@@ -227,6 +227,7 @@ func (uv *UserView) saveUserInput(username, password string) error {
 
 	encoder := json.NewEncoder(file)
 	encoder.SetIndent("", "  ")
+
 	return encoder.Encode(data)
 }
 
