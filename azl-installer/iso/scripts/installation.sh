@@ -23,11 +23,16 @@ cd "$WORKING_DIR"
 set -e
 trap '/bin/bash' ERR
 
+DISK=$(jq -r .disk_path "$WORKING_DIR/userinput.json")
+HOSTNAME=$(jq -r .hostname "$WORKING_DIR/userinput.json")
 USERNAME=$(jq -r .username "$WORKING_DIR/userinput.json")
 USERPASSWORD=$(jq -r .password "$WORKING_DIR/userinput.json")
 
+sed -i "s/@@@%%%###/$DISK/g" "$TRIDENT_CONFIG"
+sed -i "s/@@@###%%%/$HOSTNAME/g" "$TRIDENT_CONFIG"
 sed -i "s/###%%%@@@/$USERNAME/g" "$TRIDENT_CONFIG"
 sed -i "s/%%%###@@@/$USERPASSWORD/g" "$TRIDENT_CONFIG"
 
-/bin/trident install
+
+# /bin/trident install
 /bin/bash

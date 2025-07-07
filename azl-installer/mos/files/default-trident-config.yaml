@@ -3,7 +3,7 @@ image:
   sha384: ignored
 storage:
   disks:
-    - device: /dev/sda
+    - device: "@@@%%%###"
       id: os
       partitionTableType: gpt
       partitions:
@@ -31,4 +31,7 @@ scripts:
       runOn:
         - clean-install
       content: echo "###%%%@@@:%%%###@@@" | chpasswd 
-    
+    - name: hostname
+      runOn:
+        - clean-install
+      content: hostnamectl set-hostname "@@@###%%%"
