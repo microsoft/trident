@@ -28,11 +28,10 @@ HOSTNAME=$(jq -r .hostname "$WORKING_DIR/userinput.json")
 USERNAME=$(jq -r .username "$WORKING_DIR/userinput.json")
 USERPASSWORD=$(jq -r .password "$WORKING_DIR/userinput.json")
 
-sed -i "s/@@@%%%###/$DISK/g" "$TRIDENT_CONFIG"
-sed -i "s/@@@###%%%/$HOSTNAME/g" "$TRIDENT_CONFIG"
-sed -i "s/###%%%@@@/$USERNAME/g" "$TRIDENT_CONFIG"
-sed -i "s/%%%###@@@/$USERPASSWORD/g" "$TRIDENT_CONFIG"
+sed -i "s|__DISK_PATH__|$DISK|g" "$TRIDENT_CONFIG"
+sed -i "s|__HOST_NAME__|$HOSTNAME|g" "$TRIDENT_CONFIG"
+sed -i "s|__USER_NAME__|$USERNAME|g" "$TRIDENT_CONFIG"
+sed -i "s|__USER_PASSWORD__|$USERPASSWORD|g" "$TRIDENT_CONFIG"
 
-
-# /bin/trident install
+/bin/trident install
 /bin/bash

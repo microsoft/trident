@@ -3,7 +3,7 @@ image:
   sha384: ignored
 storage:
   disks:
-    - device: "@@@%%%###"
+    - device: "__DISK_PATH__"
       id: os
       partitionTableType: gpt
       partitions:
@@ -24,14 +24,16 @@ os:
   selinux:
     mode: disabled
   users:
-    - name: ###%%%@@@
+    - name: __USER_NAME__
 scripts:
   postConfigure:
     - name: user-password
       runOn:
         - clean-install
-      content: echo "###%%%@@@:%%%###@@@" | chpasswd 
+      content: echo "__USER_NAME__:__USER_PASSWORD__" | chpasswd 
     - name: hostname
       runOn:
         - clean-install
-      content: hostnamectl set-hostname "@@@###%%%"
+      content: |
+        echo "__HOST_NAME__" > /etc/hostname
+        hostname "__HOST_NAME__"
