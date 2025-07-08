@@ -54,5 +54,13 @@ steps:
       set -eux
       echo "$(ob_outputDirectory)"
       ls "$(ob_outputDirectory)"
-      oras push ${{ parameters.registry }}.azurecr.io/regular:v1 $(ob_outputDirectory)/${{ parameters.imageName }}
+
+      for cosi_file in $(ob_outputDirectory)/*.cosi; do
+        if [ -f "$cosi_file"]; then
+          filename=$(basename "$cosi_file")
+          clone_num=$(echo "$filename" | grep -o '_[0-9]\+' | tr -d '_')
+          version_tag="v$clone_num"
+          oras push ${{ parameters.registry }}.azurecr.io/regular:$version_tag "$cosi_file"
+        fi
+      done
     displayName: "Use ORAS to push to registry"
