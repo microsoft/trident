@@ -27,7 +27,16 @@ stages:
         steps:
           - task: AzureCLI@2
             inputs:
-              azureSubscription: maritimus-staging-eastus-cr-umi
+              azureSubscription: maritimus-staging-eastus-cr-service-connection
               scriptType: bash
+              scriptLocation: inlineScript
               inlineScript: |
-                az acr login --name ${{ parameters.registry }}
+                set -eux
+                acr_token=$(az acr login -n maritimuspublic --expose-token --output tsv --query accessToken)
+                echo "##vso[task.setvariable variable=acr_token;issecret=true]$acr_token"
+              displayName: "Az ACR login and get token"
+
+          - bash: |
+              set -eux
+              echo "$(acr_token)" | docker login maritimuspublic.azurecr.io --username "00000000-0000-0000-0000-000000000000" --password-stdin
+            displayName: "ACR docker login"
