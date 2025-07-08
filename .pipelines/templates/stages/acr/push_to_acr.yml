@@ -7,60 +7,60 @@ parameters:
     type: string
     default: "maritimuspublic"
 
-stages:
-  - stage: PushTridentTestImg_${{ replace(parameters.imageName, '-', '_') }}
-    displayName: Push ${{ parameters.imageName }} to ACR
-    dependsOn:
-      - TridentTestImg_${{ replace(parameters.imageName, '-', '_') }}
+# stages:
+#   - stage: PushTridentTestImg_${{ replace(parameters.imageName, '-', '_') }}
+#     displayName: Push ${{ parameters.imageName }} to ACR
+#     dependsOn:
+#       - TridentTestImg_${{ replace(parameters.imageName, '-', '_') }}
 
-    variables:
-      ob_outputDirectory: $(Build.SourcesDirectory)/build
-      ob_artifactBaseName: ${{ parameters.imageName }}
+#     variables:
+#       ob_outputDirectory: $(Build.SourcesDirectory)/build
+#       ob_artifactBaseName: ${{ parameters.imageName }}
 
-    jobs:
-      - job: LoginToAcr
-        displayName: Login
-        pool:
-          type: linux
+#     jobs:
+#       - job: LoginToAcr
+#         displayName: Login
+#         pool:
+#           type: linux
 
-        steps:
-          - task: Docker@2
-            displayName: Login to ACR
-            inputs:
-              containerRegistry: maritimus-staging-eastus-cr-service-connection
-              command: "login"
+steps:
+  - task: Docker@2
+    displayName: Login to ACR
+    inputs:
+      containerRegistry: maritimus-staging-eastus-cr-service-connection
+      command: "login"
 
-          - task: Docker@2
-            displayName: Push image to ACR
-            inputs:
-              containerRegistry: maritimus-staging-eastus-cr-service-connection
-              repository: "regular"
-              command: "push"
-              tags: |
-                v1
-              condition: false
+  - task: Docker@2
+    displayName: Push image to ACR
+    inputs:
+      containerRegistry: maritimus-staging-eastus-cr-service-connection
+      repository: "regular"
+      command: "push"
+      tags: |
+        v1
+      condition: false
 
-          # - task: AzureCLI@2
-          #   inputs:
-          #     azureSubscription: maritimus-staging-eastus-cr-service-connection
-          #     scriptType: bash
-          #     scriptLocation: inlineScript
-          #     inlineScript: |
-          #       set -eux
-          #       acr_token=$(az acr login -n ${{ parameters.registry }} --expose-token --output tsv --query accessToken)
-          #       echo "##vso[task.setvariable variable=acr_token;issecret=true]$acr_token"
-          #     displayName: "Az ACR login and get token"
+  # - task: AzureCLI@2
+  #   inputs:
+  #     azureSubscription: maritimus-staging-eastus-cr-service-connection
+  #     scriptType: bash
+  #     scriptLocation: inlineScript
+  #     inlineScript: |
+  #       set -eux
+  #       acr_token=$(az acr login -n ${{ parameters.registry }} --expose-token --output tsv --query accessToken)
+  #       echo "##vso[task.setvariable variable=acr_token;issecret=true]$acr_token"
+  #     displayName: "Az ACR login and get token"
 
-          # - bash: |
-          #     set -eux
-          #     echo "$(acr_token)" | docker login ${{ parameters.registry }}.azurecr.io --username "00000000-0000-0000-0000-000000000000" --password-stdin
-          #   displayName: "ACR docker login"
+  # - bash: |
+  #     set -eux
+  #     echo "$(acr_token)" | docker login ${{ parameters.registry }}.azurecr.io --username "00000000-0000-0000-0000-000000000000" --password-stdin
+  #   displayName: "ACR docker login"
 
-          # - task: AzureCLI@2
-          #   inputs:
-          #     azureSubscription: maritimus-staging-eastus-cr-service-connection
-          #     scriptType: bash
-          #     scriptLocation: inlineScript
-          #     inlineScript: |
-          #       set -eux
-          #       oras push ${{ parameters.registry }}.azurecr.io/regular:v1 ${{ variables.ob_outputDirectory }}/${{ variables.ob_artifactBaseName }}
+  # - task: AzureCLI@2
+  #   inputs:
+  #     azureSubscription: maritimus-staging-eastus-cr-service-connection
+  #     scriptType: bash
+  #     scriptLocation: inlineScript
+  #     inlineScript: |
+  #       set -eux
+  #       oras push ${{ parameters.registry }}.azurecr.io/regular:v1 ${{ variables.ob_outputDirectory }}/${{ variables.ob_artifactBaseName }}
