@@ -97,8 +97,8 @@ stages:
               micBuildType: ${{ parameters.micBuildType }}
               micVersion: ${{ parameters.micVersion }}
 
-          - template: stages/acr/push_to_acr.yml
-            parameters:
-              imageName: trident-testimage
-              registry: maritimuspublic
-            condition: eq('${{ parameters.pushToAcr }}', true)
+          - ${{ if eq(parameters.pushToAcr, true) }}:
+              - template: stages/acr/push_to_acr.yml
+                parameters:
+                  imageName: trident-testimage
+                  registry: maritimuspublic
