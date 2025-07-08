@@ -48,16 +48,20 @@ const BOOT_LOADER_CODE_SHIM_PCRLOCK_DIR: &str = "630-boot-loader-code-shim.pcrlo
 ///    following Microsoft's Authenticode hash spec,
 const BOOT_LOADER_CODE_SDBOOT_PCRLOCK_DIR: &str = "640-boot-loader-code-sdboot.pcrlock.d";
 
-/// 2. `/var/lib/pcrlock.d/650-uki.pcrlock.d`, where `lock-uki` measures the UKI binary, as
+/// 4. `/var/lib/pcrlock.d/650-uki.pcrlock.d`, where `lock-uki` measures the UKI binary, as
 ///    recorded into PCR 4,
 const UKI_PCRLOCK_DIR: &str = "650-uki.pcrlock.d";
 
-/// 3. `/var/lib/pcrlock.d/710-kernel-cmdline.pcrlock.d`, where `lock-kernel-cmdline` measures the
+/// 5. `/var/lib/pcrlock.d/660-boot-loader-code-uki.pcrlock.d`, where Trident measures the raw UKI
+///    binary, as recorded into PCR 4 following Microsoft's Authenticode hash spec,
+const BOOT_LOADER_CODE_UKI_PCRLOCK_DIR: &str = "660-boot-loader-code-uki.pcrlock.d";
+
+/// 6. `/var/lib/pcrlock.d/710-kernel-cmdline.pcrlock.d`, where `lock-kernel-cmdline` measures the
 ///    kernel command line, as recorded into PCR 9,
 #[allow(dead_code)]
 const KERNEL_CMDLINE_PCRLOCK_DIR: &str = "710-kernel-cmdline.pcrlock.d";
 
-/// 4. `/var/lib/pcrlock.d/720-kernel-initrd.pcrlock.d`, where Trident measures the initrd section of
+/// 7. `/var/lib/pcrlock.d/720-kernel-initrd.pcrlock.d`, where Trident measures the initrd section of
 ///    the UKI binary, as recorded into PCR 9.
 #[allow(dead_code)]
 const KERNEL_INITRD_PCRLOCK_DIR: &str = "720-kernel-initrd.pcrlock.d";
@@ -504,7 +508,7 @@ pub fn generate_pcrlock_files(
 
     // Run 'lock-uki' when PCRs 4/11 are requested
     if !(pcrs & (Pcr::Pcr4 | Pcr::Pcr11)).is_empty() {
-        for (id, uki_path_opt) in uki_binaries.into_iter().enumerate() {
+        for (id, uki_path_opt) in uki_binaries.clone().into_iter().enumerate() {
             if let Some(uki_path) = uki_path_opt {
                 let pcrlock_file = generate_pcrlock_output_path(UKI_PCRLOCK_DIR, id);
                 let cmd = LockCommand::Uki {
@@ -530,9 +534,10 @@ pub fn generate_pcrlock_files(
         debug!("Skipping running 'systemd-pcrlock lock-uki' as PCRs 4 and 11 are not requested");
     }
 
-    // Generate bootloader .pcrlock files when PCR 4 is requested
+    // Generate .pcrlock files when PCR 4 is requested
     if pcrs.contains(Pcr::Pcr4) {
         for (id, bootloader_path_opt) in bootloader_binaries.into_iter().enumerate() {
+            // PCR 4 measures both bootloader files and UKI binaries as raw strings
             if let Some(bootloader_path) = bootloader_path_opt {
                 // Extract name of PE binary, to determine which dir to write to
                 let bootloader_name = bootloader_path
@@ -540,7 +545,7 @@ pub fn generate_pcrlock_files(
                     .and_then(|name| name.to_str())
                     .ok_or_else(|| {
                         anyhow::anyhow!(
-                            "Failed to get file name from bootloader path '{}'",
+                            "Failed to get file name from bootloader PE binary path '{}'",
                             bootloader_path.display()
                         )
                     })?;
@@ -550,7 +555,7 @@ pub fn generate_pcrlock_files(
                     BOOT_LOADER_CODE_SDBOOT_PCRLOCK_DIR
                 } else {
                     bail!(
-                        "Unexpected bootloader binary name '{}'. Expected '{}' or '{}'.",
+                        "Unexpected bootloader PE binary name '{}'. Expected '{}' or '{}'.",
                         bootloader_path.display(),
                         BOOT_EFI,
                         GRUB_EFI
@@ -560,7 +565,7 @@ pub fn generate_pcrlock_files(
                 let pcrlock_file = generate_pcrlock_output_path(sub_dir, id);
 
                 debug!(
-                    "Generating bootloader .pcrlock file at '{}' to measure bootloader PE binary at '{}'",
+                    "Generating .pcrlock file at '{}' to measure bootloader PE binary at '{}'",
                     pcrlock_file.display(),
                     bootloader_path.display()
                 );
@@ -570,14 +575,31 @@ pub fn generate_pcrlock_files(
                     Pcr::Pcr4,
                 )
                 .context(format!(
-                    "Failed to generate .pcrlock file at '{}' for bootloader at '{}'",
+                    "Failed to generate .pcrlock file at '{}' for bootloader PE binary at '{}'",
                     pcrlock_file.display(),
                     bootloader_path.display()
                 ))?;
             }
         }
+        for (id, uki_path_opt) in uki_binaries.into_iter().enumerate() {
+            if let Some(uki_path) = uki_path_opt {
+                let pcrlock_file =
+                    generate_pcrlock_output_path(BOOT_LOADER_CODE_UKI_PCRLOCK_DIR, id);
+                debug!(
+                    "Generating .pcrlock file at '{}' to measure UKI PE binary at '{}'",
+                    pcrlock_file.display(),
+                    uki_path.display()
+                );
+                compute_pe_binary_authenticode(uki_path.clone(), pcrlock_file.clone(), Pcr::Pcr4)
+                    .context(format!(
+                    "Failed to generate .pcrlock file at '{}' for UKI PE binary at '{}'",
+                    pcrlock_file.display(),
+                    uki_path.display()
+                ))?;
+            }
+        }
     } else {
-        debug!("Skipping generating bootloader .pcrlock files as PCR 4 is not requested");
+        debug!("Skipping generating bootloader and UKI .pcrlock files as PCR 4 is not requested");
     }
 
     // Parse the 'systemd-pcrlock log' output to validate that every log entry has been matched to
