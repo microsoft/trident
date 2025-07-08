@@ -52,5 +52,7 @@ steps:
 
   - bash: |
       set -eux
-      oras push ${{ parameters.registry }}.azurecr.io/regular:v1 ${{ variables.ob_outputDirectory }}/${{ parameters.imageName }}
+      echo "$(ob_outputDirectory)"
+      ls "$(ob_outputDirectory)"
+      oras push ${{ parameters.registry }}.azurecr.io/regular:v1 $(ob_outputDirectory)/${{ parameters.imageName }}
     displayName: "Use ORAS to push to registry"
