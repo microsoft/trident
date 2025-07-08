@@ -52,10 +52,8 @@ steps:
 
   - bash: |
       set -eux
-      echo "$(ob_outputDirectory)"
-      ls "$(ob_outputDirectory)"
-
-      for cosi_file in $(ob_outputDirectory)/*.cosi; do
+      cd "$(ob_outputDirectory)"
+      for cosi_file in *.cosi; do
         if [ -f "$cosi_file" ]; then
           filename=$(basename "$cosi_file")
           clone_num=$(echo "$filename" | grep -o '_[0-9]\+' | tr -d '_')
