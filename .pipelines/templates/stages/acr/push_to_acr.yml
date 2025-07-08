@@ -14,13 +14,12 @@ stages:
       - TridentTestImg_${{ replace(parameters.imageName, '-', '_') }}
 
     variables:
-      ob_outputDirectory: $(Pipeline.Workspace)/s/output
+      ob_outputDirectory: $(Build.SourcesDirectory)/build
       ob_artifactBaseName: ${{ parameters.imageName }}
 
     jobs:
       - job: LoginToAcr
         displayName: Login
-        timeoutInMinutes: 20
         pool:
           type: linux
 
@@ -32,11 +31,20 @@ stages:
               scriptLocation: inlineScript
               inlineScript: |
                 set -eux
-                acr_token=$(az acr login -n maritimuspublic --expose-token --output tsv --query accessToken)
+                acr_token=$(az acr login -n ${{ parameters.registry }} --expose-token --output tsv --query accessToken)
                 echo "##vso[task.setvariable variable=acr_token;issecret=true]$acr_token"
               displayName: "Az ACR login and get token"
 
           - bash: |
               set -eux
-              echo "$(acr_token)" | docker login maritimuspublic.azurecr.io --username "00000000-0000-0000-0000-000000000000" --password-stdin
+              echo "$(acr_token)" | docker login ${{ parameters.registry }}.azurecr.io --username "00000000-0000-0000-0000-000000000000" --password-stdin
             displayName: "ACR docker login"
+
+          - task: AzureCLI@2
+            inputs:
+              azureSubscription: maritimus-staging-eastus-cr-service-connection
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -eux
+                oras push ${{ parameters.registry }}.azurecr.io/regular:v1 ${{ variables.ob_outputDirectory }}/${{ variables.ob_artifactBaseName }}
