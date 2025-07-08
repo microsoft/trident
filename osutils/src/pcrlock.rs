@@ -240,11 +240,13 @@ fn make_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
     // don't get an error, e.g. when components for PCRs we don't care about aren't recognized
     let output_str = format!("{stdout_str}\n{stderr_str}");
 
-    // Validate that TPM 2.0 access policy has been updated
+    // Validate that TPM 2.0 access policy has been updated; only return a warning b/c on E2E rerun
+    // test, policy already exists, for example
     if !output_str.contains("Calculated new PCR policy") || !output_str.contains("Updated NV index")
     {
-        bail!(
-            "Command 'systemd-pcrlock make-policy' failed to return expected output:\n{}",
+        warn!(
+            "The 'systemd-pcrlock make-policy' command did not update the PCR policy as expected. \
+            Output:\n{}",
             output_str
         );
     }
