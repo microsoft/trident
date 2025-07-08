@@ -15,7 +15,11 @@ use tempfile::NamedTempFile;
 use sysdefs::tpm2::Pcr;
 use trident_api::primitives::hash::Sha256Hash;
 
-use crate::{dependencies::Dependency, exe::RunAndCheck};
+use crate::{
+    bootloaders::{BOOT_EFI, GRUB_EFI},
+    dependencies::Dependency,
+    exe::RunAndCheck,
+};
 
 /// Path to the pcrlock directory where .pcrlock files are located.
 ///
@@ -33,6 +37,16 @@ pub const PCRLOCK_POLICY_JSON: &str = "/var/lib/systemd/pcrlock.json";
 ///    the booted medium, as recorded to PCR 5 by the firmware,
 #[allow(dead_code)]
 const GPT_PCRLOCK_DIR: &str = "600-gpt.pcrlock.d";
+
+/// 2. `/var/lib/pcrlock.d/630-boot-loader-code-shim.pcrlock.d`, where Trident measures the
+///    shim bootloader binary, i.e. `/EFI/AZL{A/B}/bootx64.efi`, as recorded into PCR 4 following
+///    Microsoft's Authenticode hash spec,
+const BOOT_LOADER_CODE_SHIM_PCRLOCK_DIR: &str = "630-boot-loader-code-shim.pcrlock.d";
+
+/// 3. `/var/lib/pcrlock.d/640-boot-loader-code-sdboot.pcrlock.d`, where Trident measures the
+///    systemd-boot bootloader binary, i.e. `/EFI/AZL{A/B}/grubx64.efi`, as recorded into PCR 4
+///    following Microsoft's Authenticode hash spec,
+const BOOT_LOADER_CODE_SDBOOT_PCRLOCK_DIR: &str = "640-boot-loader-code-sdboot.pcrlock.d";
 
 /// 2. `/var/lib/pcrlock.d/650-uki.pcrlock.d`, where `lock-uki` measures the UKI binary, as
 ///    recorded into PCR 4,
@@ -520,14 +534,31 @@ pub fn generate_pcrlock_files(
     if pcrs.contains(Pcr::Pcr4) {
         for (id, bootloader_path_opt) in bootloader_binaries.into_iter().enumerate() {
             if let Some(bootloader_path) = bootloader_path_opt {
-                // Extract name of PE binary, to use as sub-dir name
-                let sub_dir = bootloader_path
-                    .file_stem() // Extracts "grubx64" from "grubx64.efi"
-                    .and_then(|s| s.to_str())
-                    .map(|stem| format!("{stem}.d"))
-                    .unwrap_or_else(|| String::from("unknown.d"));
+                // Extract name of PE binary, to determine which dir to write to
+                let bootloader_name = bootloader_path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Failed to get file name from bootloader path '{}'",
+                            bootloader_path.display()
+                        )
+                    })?;
+                let sub_dir = if bootloader_name == BOOT_EFI {
+                    BOOT_LOADER_CODE_SHIM_PCRLOCK_DIR
+                } else if bootloader_name == GRUB_EFI {
+                    BOOT_LOADER_CODE_SDBOOT_PCRLOCK_DIR
+                } else {
+                    bail!(
+                        "Unexpected bootloader binary name '{}'. Expected '{}' or '{}'.",
+                        bootloader_path.display(),
+                        BOOT_EFI,
+                        GRUB_EFI
+                    );
+                };
 
-                let pcrlock_file = generate_pcrlock_output_path(&sub_dir, id);
+                let pcrlock_file = generate_pcrlock_output_path(sub_dir, id);
+
                 debug!(
                     "Generating bootloader .pcrlock file at '{}' to measure bootloader PE binary at '{}'",
                     pcrlock_file.display(),
