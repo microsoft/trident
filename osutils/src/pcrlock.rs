@@ -34,20 +34,16 @@ pub const PCRLOCK_POLICY_JSON: &str = "/var/lib/systemd/pcrlock.json";
 #[allow(dead_code)]
 const GPT_PCRLOCK_DIR: &str = "600-gpt.pcrlock.d";
 
-/// 2. `/var/lib/pcrlock.d/610-boot-loader-code.pcrlock.d`, where Trident measures the
-///    bootloader binaries, recorded into PCR 4 following Microsoft's Authenticode hash spec,
-const BOOT_LOADER_CODE_PCRLOCK_DIR: &str = "610-boot-loader-code.pcrlock.d";
-
-/// 3. `/var/lib/pcrlock.d/650-uki.pcrlock.d`, where `lock-uki` measures the UKI binary, as
+/// 2. `/var/lib/pcrlock.d/650-uki.pcrlock.d`, where `lock-uki` measures the UKI binary, as
 ///    recorded into PCR 4,
 const UKI_PCRLOCK_DIR: &str = "650-uki.pcrlock.d";
 
-/// 4. `/var/lib/pcrlock.d/710-kernel-cmdline.pcrlock.d`, where `lock-kernel-cmdline` measures the
+/// 3. `/var/lib/pcrlock.d/710-kernel-cmdline.pcrlock.d`, where `lock-kernel-cmdline` measures the
 ///    kernel command line, as recorded into PCR 9,
 #[allow(dead_code)]
 const KERNEL_CMDLINE_PCRLOCK_DIR: &str = "710-kernel-cmdline.pcrlock.d";
 
-/// 5. `/var/lib/pcrlock.d/720-kernel-initrd.pcrlock.d`, where Trident measures the initrd section of
+/// 4. `/var/lib/pcrlock.d/720-kernel-initrd.pcrlock.d`, where Trident measures the initrd section of
 ///    the UKI binary, as recorded into PCR 9.
 #[allow(dead_code)]
 const KERNEL_INITRD_PCRLOCK_DIR: &str = "720-kernel-initrd.pcrlock.d";
@@ -150,9 +146,6 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         .arg("--json=pretty")
         .output_and_check()
         .context("Failed to run 'systemd-pcrlock log'")?;
-
-    // TODO: CHANGE TO TRACE BEFORE MERGING!
-    debug!("Output of 'systemd-pcrlock log':\n{}", output);
 
     let parsed: LogOutput =
         serde_json::from_str(&output).context("Failed to parse 'systemd-pcrlock log' output")?;
@@ -525,10 +518,16 @@ pub fn generate_pcrlock_files(
     if pcrs.contains(Pcr::Pcr4) {
         for (id, bootloader_path_opt) in bootloader_binaries.into_iter().enumerate() {
             if let Some(bootloader_path) = bootloader_path_opt {
-                let pcrlock_file = generate_pcrlock_output_path(BOOT_LOADER_CODE_PCRLOCK_DIR, id);
+                // Extract name of PE binary, to use as sub-dir name
+                let sub_dir = bootloader_path
+                    .file_stem() // Extracts "grubx64" from "grubx64.efi"
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("unknown");
+                let pcrlock_file = generate_pcrlock_output_path(sub_dir, id);
                 debug!(
-                    "Generating bootloader .pcrlock file at '{}'",
-                    pcrlock_file.display()
+                    "Generating bootloader .pcrlock file at '{}' to measure bootloader PE binary at '{}'",
+                    pcrlock_file.display(),
+                    bootloader_path.display()
                 );
                 compute_pe_binary_authenticode(
                     bootloader_path.clone(),
