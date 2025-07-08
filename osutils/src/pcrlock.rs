@@ -524,7 +524,7 @@ pub fn generate_pcrlock_files(
                 let sub_dir = bootloader_path
                     .file_stem() // Extracts "grubx64" from "grubx64.efi"
                     .and_then(|s| s.to_str())
-                    .map(|stem| format!("{}.d", stem))
+                    .map(|stem| format!("{stem}.d"))
                     .unwrap_or_else(|| String::from("unknown.d"));
 
                 let pcrlock_file = generate_pcrlock_output_path(&sub_dir, id);
