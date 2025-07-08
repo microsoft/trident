@@ -537,7 +537,7 @@ pub fn generate_pcrlock_files(
     // Generate .pcrlock files when PCR 4 is requested
     if pcrs.contains(Pcr::Pcr4) {
         for (id, bootloader_path_opt) in bootloader_binaries.into_iter().enumerate() {
-            // PCR 4 measures both bootloader files and UKI binaries as raw strings
+            // First, every bootloader PE binary is measured into PCR 4
             if let Some(bootloader_path) = bootloader_path_opt {
                 // Extract name of PE binary, to determine which dir to write to
                 let bootloader_name = bootloader_path
@@ -581,21 +581,27 @@ pub fn generate_pcrlock_files(
                 ))?;
             }
         }
+        // Second, if SecureBoot is disabled, the authenticode of the .linux section of each UKI
+        // binary is measured into PCR 4 as well.
+        //
+        // TODO: Once SecureBoot is enabled, gate this logic with a conditional, or remove
+        // entirely, as SecureBoot will likely be enabled always.
         for (id, uki_path_opt) in uki_binaries.into_iter().enumerate() {
             if let Some(uki_path) = uki_path_opt {
                 let pcrlock_file =
                     generate_pcrlock_output_path(BOOT_LOADER_CODE_UKI_PCRLOCK_DIR, id);
                 debug!(
-                    "Generating .pcrlock file at '{}' to measure UKI PE binary at '{}'",
-                    pcrlock_file.display(),
-                    uki_path.display()
+                    "Generating .pcrlock file at '{}' to measure .linux section of UKI PE binary at '{}'",
+                    pcrlock_file.clone().display(),
+                    uki_path.clone().display()
                 );
-                compute_pe_binary_authenticode(uki_path.clone(), pcrlock_file.clone(), Pcr::Pcr4)
-                    .context(format!(
-                    "Failed to generate .pcrlock file at '{}' for UKI PE binary at '{}'",
-                    pcrlock_file.display(),
-                    uki_path.display()
-                ))?;
+                generate_linux_authenticode(uki_path.clone(), pcrlock_file.clone()).context(
+                    format!(
+                        "Failed to generate .pcrlock file at '{}' for .linux section of UKI PE binary at '{}'",
+                        pcrlock_file.display(),
+                        uki_path.display()
+                    ),
+                )?;
             }
         }
     } else {
@@ -719,6 +725,36 @@ fn compute_pe_binary_authenticode(
         pcrlock_file.display(),
         json
     );
+
+    Ok(())
+}
+
+/// Generates .pcrlock file to record measurement of the `.linux` section of the UKI binary,
+/// as recorded into PCR 4.
+fn generate_linux_authenticode(uki_path: PathBuf, pcrlock_file: PathBuf) -> Result<()> {
+    // Copy UKI to a temp file
+    let uki_temp = NamedTempFile::new().context("Failed to create temporary UKI file")?;
+    fs::copy(&uki_path, uki_temp.path())
+        .with_context(|| format!("Failed to copy UKI from {}", uki_path.display()))?;
+
+    // Extract .linux
+    let linux_temp = NamedTempFile::new().context("Failed to create temporary linux file")?;
+    let linux_path = linux_temp.path().to_path_buf();
+    Command::new("objcopy")
+        .arg("--dump-section")
+        .arg(format!(".linux={}", linux_path.display()))
+        .arg(uki_temp.path())
+        .run_and_check()
+        .context(format!(
+            "Failed to execute objcopy to extract linux section from UKI at '{}'",
+            uki_temp.path().display()
+        ))?;
+
+    // Call helper to compute the authenticode of the extracted .linux section
+    compute_pe_binary_authenticode(linux_path, pcrlock_file, Pcr::Pcr4).context(format!(
+        "Failed to generate .pcrlock file for UKI at '{}' with .linux section",
+        uki_path.display()
+    ))?;
 
     Ok(())
 }
