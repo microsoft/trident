@@ -44,5 +44,5 @@ stages:
                 az acr login -n ${{ parameters.registry }}
 
                 # Delete repository with COSI images
-                az acr repository delete --name ${{ parameters.registry }} --repository ${{ parameters.repository }}
+                az acr repository delete --name ${{ parameters.registry }} --repository ${{ parameters.repository }} --yes
             displayName: "Az ACR login"
