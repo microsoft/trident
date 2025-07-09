@@ -135,27 +135,11 @@ stages:
               sudo ip a
               sudo ip r
 
+              sudo virsh net-list all
+              sudo virsh net-dumpxml default
+
             workingDirectory: $(tridentSourceDirectory)
             displayName: "Test connection"
-
-          - bash: |
-              set -eux
-
-              echo "=== Configure CA certificates and SSL ==="
-
-              # Ensure host has latest CA certificates
-              sudo apt-get update
-              sudo apt-get install -y ca-certificates
-
-              # Test SSL from host
-              echo "Testing SSL from host:"
-              curl -v https://maritimuspublic.azurecr.io/v2/ || echo "Host SSL test failed"
-
-              # Check if there's a corporate proxy or firewall interfering
-              echo "Checking SSL certificate chain:"
-              openssl s_client -connect maritimuspublic.azurecr.io:443 -showcerts < /dev/null || echo "SSL certificate check failed"
-
-            displayName: "Test and configure SSL certificates"
 
           - bash: |
               set -euxo pipefail
