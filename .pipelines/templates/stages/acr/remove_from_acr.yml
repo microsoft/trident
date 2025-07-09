@@ -15,6 +15,7 @@ parameters:
 stages:
   - stage: DeleteFromAcr
     displayName: Delete images from ACR
+    condition: always()
     dependsOn:
       - TridentTestImg_${{ replace(parameters.imageName, '-', '_') }}
       - DeploymentTesting_host
