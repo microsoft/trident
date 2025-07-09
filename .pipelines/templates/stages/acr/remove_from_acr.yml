@@ -19,8 +19,6 @@ stages:
       - TridentTestImg_${{ replace(parameters.imageName, '-', '_') }}
       - DeploymentTesting_host
       - DeploymentTesting_container
-      - BaremetalDeploymentTesting_host
-      - BaremetalDeploymentTesting_container
 
     jobs:
       - job: DeleteFromAcr
