@@ -914,8 +914,21 @@ fn compute_pe_authenticode(pe_path: &Path, pcrlock_file: &Path) -> Result<()> {
     }
 
     // Serialize and write the .pcrlock file
-    let json = serde_json::to_string(&pcrlock)?;
-    fs::write(pcrlock_file, json)?;
+    let json = serde_json::to_string(&pcrlock).context(format!(
+        "Failed to serialize .pcrlock file '{}' as JSON",
+        pcrlock_file.display()
+    ))?;
+    fs::write(pcrlock_file, json.clone()).context(format!(
+        "Failed to write .pcrlock file at '{}'",
+        pcrlock_file.display()
+    ))?;
+
+    // Print contents of .pcrlock file
+    trace!(
+        "Contents of .pcrlock file at '{}':\n{}",
+        pcrlock_file.display(),
+        json
+    );
 
     Ok(())
 }
