@@ -142,6 +142,7 @@ impl HttpFile {
 
         let rt = Runtime::new().context("Failed to create Tokio runtime")?;
         let token = Self::retrieve_access_token(&img_ref, &rt)?;
+        trace!("Successfully retrieved token: {token}");
         let digest = Self::retrieve_artifact_digest(&img_ref, &rt)?;
         trace!("Retrieved artifact digest: {digest}");
 
