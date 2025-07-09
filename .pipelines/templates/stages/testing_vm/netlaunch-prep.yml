@@ -79,8 +79,7 @@ steps:
   - bash: |
       set -eux
 
-      iptables -L 
-      iptables -t nat -L
+      sudo iptables -L 
 
       # Ensure the default libvirt network is active (provides NAT)
       sudo virsh net-start default || true
