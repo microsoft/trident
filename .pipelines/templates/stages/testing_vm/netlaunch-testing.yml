@@ -128,11 +128,29 @@ stages:
 
           - bash: |
               set -eux
-              echo "Testing host internet connectivity:"
-              ping -c 3 8.8.8.8
-              nslookup google.com
-              curl -I https://google.com
-            displayName: "Test host internet connectivity"
+
+              echo "=== Check bridge status after VM creation ==="
+              ip addr show virbr0
+
+              echo "=== Check VM IP assignment ==="
+              VM_IP=$(jq -r '.virtualmachines[0].ip' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)
+              echo "VM assigned IP: $VM_IP"
+
+              echo "=== Test host to VM connectivity ==="
+              ping -c 3 $VM_IP || echo "Cannot reach VM from host"
+
+              echo "=== Wait for VM to boot and test internet from VM ==="
+              sleep 30
+
+              timeout 60 ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -i $(tridentSourceDirectory)/e2e_tests/helpers/key testing-user@$VM_IP '
+                echo "=== VM Internet Test ==="
+                ping -c 3 8.8.8.8 || echo "VM cannot ping 8.8.8.8 (might be blocked)"
+                curl -v --connect-timeout 10 https://maritimuspublic.azurecr.io/v2/ || echo "VM cannot reach ACR"
+                nslookup maritimuspublic.azurecr.io || echo "VM DNS resolution failed"
+              ' || echo "Could not test VM internet - VM might not be ready or SSH not available"
+
+            workingDirectory: $(tridentSourceDirectory)
+            displayName: "Test VM internet connectivity"
 
           - bash: |
               set -euxo pipefail
