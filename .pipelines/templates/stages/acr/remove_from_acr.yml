@@ -13,7 +13,8 @@ parameters:
     default: trident-testimage
 
 stages:
-  - stage: Delete from ACR
+  - stage: DeleteFromAcr
+    displayName: Delete images from ACR
     dependsOn:
       - TridentTestImg_${{ replace(parameters.imageName, '-', '_') }}
       - DeploymentTesting_host
@@ -26,6 +27,10 @@ stages:
         displayName: Delete Trident testimages from ${{ parameters.registry }} ACR
         pool:
           type: linux
+
+        variables:
+          - name: ob_outputDirectory
+            value: $(Build.SourcesDirectory)/build
 
         steps:
           - task: AzureCLI@2
