@@ -1,0 +1,44 @@
+parameters:
+  - name: "repository"
+    displayName: "Repository containing COSI images"
+    type: string
+    default: regular
+
+  - name: "registry"
+    type: string
+    default: maritimuspublic
+
+  - name: "imageName"
+    type: string
+    default: trident-testimage
+
+stages:
+  - stage: Delete from ACR
+    dependsOn:
+      - TridentTestImg_${{ replace(parameters.imageName, '-', '_') }}
+      - DeploymentTesting_host
+      - DeploymentTesting_container
+      - BaremetalDeploymentTesting_host
+      - BaremetalDeploymentTesting_container
+
+    jobs:
+      - job: DeleteFromAcr
+        displayName: Delete Trident testimages from ${{ parameters.registry }} ACR
+        pool:
+          type: linux
+
+        steps:
+          - task: AzureCLI@2
+            inputs:
+              azureSubscription: maritimus-staging-eastus-cr-service-connection
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -eux
+
+                # Login to ACR
+                az acr login -n ${{ parameters.registry }}
+
+                # Delete repository with COSI images
+                az acr repository delete --name ${{ parameters.registry }} --repository ${{ parameters.repository }}
+            displayName: "Az ACR login"

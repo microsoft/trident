@@ -330,3 +330,10 @@ stages:
           - template: stages/publishing/publish.yml
             parameters:
               stageType: ${{ parameters.stageType }}
+
+  # DELETE published images in ACR
+  - template: stages/acr/remove_from_acr.yml
+    parameters:
+      repository: "regular"
+      registry: "maritimuspublic"
+      imageName: trident-testimage
