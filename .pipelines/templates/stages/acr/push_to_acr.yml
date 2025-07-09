@@ -7,28 +7,7 @@ parameters:
     type: string
     default: "maritimuspublic"
 
-# stages:
-#   - stage: PushTridentTestImg_${{ replace(parameters.imageName, '-', '_') }}
-#     displayName: Push ${{ parameters.imageName }} to ACR
-#     dependsOn:
-#       - TridentTestImg_${{ replace(parameters.imageName, '-', '_') }}
-
-#     variables:
-#       ob_outputDirectory: $(Build.SourcesDirectory)/build
-#       ob_artifactBaseName: ${{ parameters.imageName }}
-
-#     jobs:
-#       - job: LoginToAcr
-#         displayName: Login
-#         pool:
-#           type: linux
-
 steps:
-  # - bash: |
-  #     set -eux
-  #     echo "$(acr_token)" | docker login ${{ parameters.registry }}.azurecr.io --username "00000000-0000-0000-0000-000000000000" --password-stdin
-  #   displayName: "ACR docker login"
-
   - bash: |
       set -eux
       VERSION="1.2.2"
@@ -49,13 +28,10 @@ steps:
 
         # Login to ACR
         az acr login -n ${{ parameters.registry }}
-    displayName: "Az ACR login and get token"
+    displayName: "Az ACR login"
 
   - bash: |
       set -eux
-
-      # # Login to registry using ORAS
-      # echo "$(acr_token)" | oras login ${{ parameters.registry }}.azurecr.io --username "00000000-0000-0000-0000-000000000000" --password-stdin
 
       cd "$(ob_outputDirectory)"
       for cosi_file in *.cosi; do
@@ -64,7 +40,7 @@ steps:
           clone_num=$(echo "$filename" | grep -o '_[0-9]\+' | tr -d '_')
           version_tag="v$clone_num"
           echo "Pushing $filename with tag $version_tag to ${{ parameters.registry }}.azurecr.io"
-          oras push ${{ parameters.registry }}.azurecr.io/regular:$version_tag "$cosi_file" --debug
+          oras push ${{ parameters.registry }}.azurecr.io/regular:$version_tag "$cosi_file"
         fi
       done
-    displayName: "Use ORAS to push to registry"
+    displayName: "Push ${{ parameters.imageName }} to registry"
