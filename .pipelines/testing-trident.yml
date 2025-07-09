@@ -6,18 +6,18 @@ parameters:
 
   - name: definition
     type: number
-    default: 3371 # trident-ci
+    default: 5067 # [GITHUB]-trident-ci
     values:
-      # trident-ci
-      - 3371
-      # trident-pr-e2e
-      - 2195
-      # trident-prerelease
-      - 2648
-      # trident-testing
-      - 3262
-      # trident-pipeline-tester
-      - 3210
+      # [GITHUB]-trident-ci
+      - 5067
+      # [GITHUB]-trident-pr-e2e
+      - 5073
+      # [GITHUB]-trident-prerelease
+      - 5074
+      # [GITHUB]-trident-testing
+      - 5078
+      # [GITHUB]-trident-pipeline-tester
+      - 5071
     displayName: Pipeline definition ID
 
   - name: branch

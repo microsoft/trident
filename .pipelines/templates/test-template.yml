@@ -1,7 +1,7 @@
 parameters:
   - name: definition
     type: number
-    default: 3371 # trident-ci
+    default: 5067 # [GITHUB]-trident-ci
     displayName: Pipeline definition ID
 
   - name: branch
