@@ -189,7 +189,6 @@ func (ai *AttendedInstaller) showView(newView int) (err error) {
 		logger.Log.Warnf("Error clearing speakup buffer")
 		err = nil
 	}
-	ai.pauseSpeakupInput = false
 
 	err = view.Reset()
 	if err != nil {
@@ -221,6 +220,7 @@ func (ai *AttendedInstaller) globalInputCapture(event *tcell.EventKey) *tcell.Ev
 	// If we're clearing the speakup buffer, don't process keypresses
 	// tcell has no easy way of differentiating between keypad enter (speakup clear) and enter
 	if ai.pauseSpeakupInput && event.Key() == tcell.KeyEnter {
+		ai.pauseSpeakupInput = false
 		return nil
 	}
 	if !ai.pauseCustomInput {
