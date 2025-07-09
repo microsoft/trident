@@ -79,15 +79,38 @@ steps:
   - bash: |
       set -eux
 
-      sudo iptables -L 
+      echo "=== Initial iptables rules ==="
+      sudo iptables -L
 
-      # Ensure the default libvirt network is active (provides NAT)
+      echo "=== Ensure the default libvirt network is active ==="
       sudo virsh net-start default || true
       sudo virsh net-autostart default
 
-      # Check network status
+      echo "=== Network status ==="
       sudo virsh net-list --all
 
-      # Check if NAT forwarding is enabled
-      sudo iptables -t nat -L POSTROUTING
+      echo "=== Bridge interface details ==="
+      ip addr show virbr0
+      ip route show dev virbr0
+
+      echo "=== NAT rules ==="
+      sudo iptables -t nat -L POSTROUTING -v
+      sudo iptables -t nat -L LIBVIRT_PRT -v
+
+      echo "=== IP forwarding status ==="
+      cat /proc/sys/net/ipv4/ip_forward
+
+      echo "=== Enable IP forwarding if disabled ==="
+      echo 1 | sudo tee /proc/sys/net/ipv4/ip_forward
+
+      echo "=== Host connectivity test ==="
+      ping -c 3 8.8.8.8 || true
+      nslookup maritimuspublic.azurecr.io || echo "DNS resolution failed"
+
+      echo "=== Docker vs libvirt conflict check ==="
+      sudo iptables -L DOCKER-USER -v
+
+      echo "=== Add rule to allow libvirt traffic through Docker ==="
+      sudo iptables -I DOCKER-USER -i virbr0 -j ACCEPT 2>/dev/null || echo "Rule already exists or not needed"
+      sudo iptables -I DOCKER-USER -o virbr0 -j ACCEPT 2>/dev/null || echo "Rule already exists or not needed"
     displayName: "Configure VM networking for internet access"
