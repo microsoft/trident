@@ -75,3 +75,17 @@ steps:
       sudo systemctl start libvirtd.service
 
     displayName: "Configure libvirt access"
+
+  - bash: |
+      set -eux
+
+      # Ensure the default libvirt network is active (provides NAT)
+      sudo virsh net-start default || true
+      sudo virsh net-autostart default
+
+      # Check network status
+      sudo virsh net-list --all
+
+      # Check if NAT forwarding is enabled
+      sudo iptables -t nat -L POSTROUTING
+    displayName: "Configure VM networking for internet access"
