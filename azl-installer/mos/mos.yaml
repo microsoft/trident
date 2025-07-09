@@ -62,6 +62,14 @@ os:
       - trident-provisioning
       - vim
       - veritysetup
+      # Accessibility packages
+      - alsa-lib
+      - alsa-utils
+      - espeak-ng
+      - espeakup
+      - kernel-drivers-accessibility
+      - kernel-drivers-sound
+      - pcaudiolib
 
   additionalFiles:
     # Getty service files for root autologin
