@@ -20,8 +20,10 @@ const (
 )
 
 const (
-	defaultNavButton = navButtonYes
-	defaultPadding   = 1
+	navButtonNext = 1
+	noSelection   = -1
+
+	defaultPadding = 1
 
 	textProportion = 0
 
@@ -35,6 +37,7 @@ type ConfirmView struct {
 	navBar       *navigationbar.NavigationBar
 	flex         *tview.Flex
 	centeredFlex *tview.Flex
+	navFocus     bool // workaround to handle navigation bar focus
 }
 
 // New creates and returns a new ConfirmView.
@@ -57,8 +60,8 @@ func (cv *ConfirmView) Initialize(backButtonText string, sysConfig *configuratio
 
 	cv.flex = tview.NewFlex().
 		SetDirection(tview.FlexRow).
-		AddItem(centeredText, textHeight, textProportion, false).
-		AddItem(cv.navBar, navBarHeight, navBarProportion, true)
+		AddItem(centeredText, textHeight, textProportion, true).
+		AddItem(cv.navBar, navBarHeight, navBarProportion, false)
 
 	cv.centeredFlex = uiutils.CenterVerticallyDynamically(cv.flex)
 
@@ -72,14 +75,30 @@ func (cv *ConfirmView) Initialize(backButtonText string, sysConfig *configuratio
 
 // HandleInput handles custom input.
 func (cv *ConfirmView) HandleInput(event *tcell.EventKey) *tcell.EventKey {
-	// Navbar is the only input element on this page, so it is in focus already.
+	if cv.navFocus {
+		if event.Key() == tcell.KeyUp {
+			cv.navBar.SetSelectedButton(noSelection)
+			cv.navFocus = false
+			return nil
+		}
+		if cv.navBar.UnfocusedInputHandler(event) {
+			return nil
+		}
+		return event
+	}
+
+	cv.navBar.SetSelectedButton(navButtonNext)
+	cv.navFocus = true
+
 	return event
 }
 
 // Reset resets the page, undoing any user input.
 func (cv *ConfirmView) Reset() (err error) {
 	cv.navBar.ClearUserFeedback()
-	cv.navBar.SetSelectedButton(defaultNavButton)
+
+	cv.navBar.SetSelectedButton(noSelection)
+	cv.navFocus = false
 
 	return
 }
