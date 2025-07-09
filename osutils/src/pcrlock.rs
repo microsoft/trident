@@ -608,39 +608,6 @@ pub fn generate_pcrlock_files(
         debug!("Skipping generating bootloader and UKI .pcrlock files as PCR 4 is not requested");
     }
 
-    // TODO: REMOVE BEFORE MERGING
-    // Execute ausearch -m avc
-    let ausearch_output = Command::new("ausearch")
-        .arg("-m")
-        .arg("avc")
-        .output()
-        .context("Failed to run 'ausearch -m avc' command")?;
-    let ausearch_stdout = String::from_utf8(ausearch_output.stdout)
-        .context("Failed to convert 'ausearch -m avc' stdout to a string")?;
-    let ausearch_stderr = String::from_utf8(ausearch_output.stderr)
-        .context("Failed to convert 'ausearch -m avc' stderr to a string")?;
-    debug!(
-        "Output of 'ausearch -m avc':\nSTDOUT:\n{}\nSTDERR:\n{}",
-        ausearch_stdout, ausearch_stderr
-    );
-
-    // Execute audit2allow -i /var/log/audit/audit.log
-    let audit2allow_output = Command::new("audit2allow")
-        .arg("-i")
-        .arg("/var/log/audit/audit.log")
-        .output()
-        .context("Failed to run 'audit2allow -i /var/log/audit/audit.log' command")?;
-    let audit2allow_stdout = String::from_utf8(audit2allow_output.stdout).context(
-        "Failed to convert 'audit2allow -i /var/log/audit/audit.log' stdout to a string",
-    )?;
-    let audit2allow_stderr = String::from_utf8(audit2allow_output.stderr).context(
-        "Failed to convert 'audit2allow -i /var/log/audit/audit.log' stderr to a string",
-    )?;
-    debug!(
-        "Output of 'audit2allow -i /var/log/audit/audit.log':\nSTDOUT:\n{}\nSTDERR:\n{}",
-        audit2allow_stdout, audit2allow_stderr
-    );
-
     // Parse the 'systemd-pcrlock log' output to validate that every log entry has been matched to
     // a recognized boot component for all required PCRs, i.e. that all necessary .pcrlock files
     // have been added or generated
