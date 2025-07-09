@@ -896,7 +896,7 @@ fn compute_pe_authenticode(pe_path: &Path, pcrlock_file: &Path) -> Result<()> {
     // Write the .pcrlock file
     let digest_entry = DigestEntry {
         hash_alg: "sha256",
-        digest: format!("{:x}", digest),
+        digest: format!("{digest:x}"),
     };
     let record = Record {
         pcr: 4,
