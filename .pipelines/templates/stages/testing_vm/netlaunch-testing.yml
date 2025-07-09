@@ -122,9 +122,17 @@ stages:
 
           - bash: |
               set -eux
-              ./virt-deploy create --mem 12 --disks 32,32
+              ./virt-deploy create --mem 12 --disks 32,32 --network network=default,model=virtio
             workingDirectory: $(argusToolkitSourceDirectory)
             displayName: "Creating virt-deploy VM"
+
+          - bash: |
+              set -eux
+              echo "Testing host internet connectivity:"
+              ping -c 3 8.8.8.8
+              nslookup google.com
+              curl -I https://google.com
+            displayName: "Test host internet connectivity"
 
           - bash: |
               set -euxo pipefail
