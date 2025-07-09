@@ -100,8 +100,8 @@ func main() {
 	logger.PanicOnError(err)
 
 	// Change the boot order by either changing the EFI boot order or ejecting CDROM.
-	updateBootOrder(installDetails)
-	ejectDisk()
+	// updateBootOrder(installDetails)
+	// ejectDisk()
 }
 
 func installerFactory(forceAttended bool, configFile, templateConfigFile string) (installFunc func(imagerArguments) (installationDetails, error)) {
