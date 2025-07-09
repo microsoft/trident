@@ -35,10 +35,10 @@ steps:
         echo "##vso[task.setvariable variable=acr_token;issecret=true]$acr_token"
     displayName: "Az ACR login and get token"
 
-  - bash: |
-      set -eux
-      echo "$(acr_token)" | docker login ${{ parameters.registry }}.azurecr.io --username "00000000-0000-0000-0000-000000000000" --password-stdin
-    displayName: "ACR docker login"
+  # - bash: |
+  #     set -eux
+  #     echo "$(acr_token)" | docker login ${{ parameters.registry }}.azurecr.io --username "00000000-0000-0000-0000-000000000000" --password-stdin
+  #   displayName: "ACR docker login"
 
   - bash: |
       set -eux
@@ -52,6 +52,10 @@ steps:
 
   - bash: |
       set -eux
+
+      # Login to registry using ORAS
+      echo "$(acr_token)" | oras login ${{ parameters.registry }}.azurecr.io --username "00000000-0000-0000-0000-000000000000" --password-stdin
+
       cd "$(ob_outputDirectory)"
       for cosi_file in *.cosi; do
         if [ -f "$cosi_file" ]; then
