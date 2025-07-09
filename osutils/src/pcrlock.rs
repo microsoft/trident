@@ -1,6 +1,5 @@
 use std::{
-    fs::{self, File},
-    io::{Read, Seek, SeekFrom},
+    fs,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -596,7 +595,7 @@ pub fn generate_pcrlock_files(
                     pcrlock_file.clone().display(),
                     uki_path.clone().display()
                 );
-                extract_and_measure_linux_section(&uki_path, &pcrlock_file).context(
+                generate_linux_authenticode(uki_path.clone(), pcrlock_file.clone()).context(
                     format!(
                         "Failed to generate .pcrlock file at '{}' for .linux section of UKI PE binary at '{}'",
                         pcrlock_file.display(),
@@ -730,206 +729,30 @@ fn compute_pe_binary_authenticode(
     Ok(())
 }
 
-/// Extracts the `.linux` section from a UKI and computes its Authenticode hash.
-fn extract_and_measure_linux_section(uki_path: &Path, pcrlock_file: &Path) -> Result<()> {
+/// Generates .pcrlock file to record measurement of the `.linux` section of the UKI binary,
+/// as recorded into PCR 4.
+fn generate_linux_authenticode(uki_path: PathBuf, pcrlock_file: PathBuf) -> Result<()> {
     // Copy UKI to a temp file
     let uki_temp = NamedTempFile::new().context("Failed to create temporary UKI file")?;
-    fs::copy(uki_path, uki_temp.path())
+    fs::copy(&uki_path, uki_temp.path())
         .with_context(|| format!("Failed to copy UKI from {}", uki_path.display()))?;
-
-    // Extract .linux section
+    // Extract .linux
     let linux_temp = NamedTempFile::new().context("Failed to create temporary linux file")?;
-    let linux_path = linux_temp.path();
+    let linux_path = linux_temp.path().to_path_buf();
     Command::new("objcopy")
         .arg("--dump-section")
         .arg(format!(".linux={}", linux_path.display()))
         .arg(uki_temp.path())
-        .status()
-        .with_context(|| "Failed to execute objcopy")?
-        .success()
-        .then_some(())
-        .context("objcopy failed to extract .linux section")?;
-
-    // Compute authenticode hash and write .pcrlock
-    compute_pe_authenticode(linux_path, pcrlock_file)
-}
-
-/// Computes the Authenticode hash of a PE file and writes a .pcrlock file.
-fn compute_pe_authenticode(pe_path: &Path, pcrlock_file: &Path) -> Result<()> {
-    let mut fp = File::open(pe_path)
-        .with_context(|| format!("Failed to open PE file at {}", pe_path.display()))?;
-
-    // Read DOS header
-    let mut dossig = [0u8; 2];
-    fp.read_exact(&mut dossig)?;
-    if dossig != [0x4D, 0x5A] {
-        bail!("Missing DOS header magic");
-    }
-
-    // Seek to PE header offset
-    fp.seek(SeekFrom::Start(0x3C))?;
-    let mut pe_offset_bytes = [0u8; 4];
-    fp.read_exact(&mut pe_offset_bytes)?;
-    let pe_offset = u32::from_le_bytes(pe_offset_bytes) as u64;
-
-    // Seek to PE signature
-    fp.seek(SeekFrom::Start(pe_offset))?;
-    let mut pe_sig = [0u8; 4];
-    fp.read_exact(&mut pe_sig)?;
-    if pe_sig != [0x50, 0x45, 0x00, 0x00] {
-        bail!("Missing PE header magic");
-    }
-
-    // Read machine type
-    let mut pemachine_bytes = [0u8; 2];
-    fp.read_exact(&mut pemachine_bytes)?;
-    let pemachine = u16::from_le_bytes(pemachine_bytes);
-
-    // Read number of sections
-    let mut num_sections_bytes = [0u8; 2];
-    fp.read_exact(&mut num_sections_bytes)?;
-    let num_sections = u16::from_le_bytes(num_sections_bytes);
-
-    // Skip 12 bytes to SizeOfOptionalHeader
-    fp.seek(SeekFrom::Current(12))?;
-    let mut size_of_optional_header_bytes = [0u8; 2];
-    fp.read_exact(&mut size_of_optional_header_bytes)?;
-    let size_of_optional_header = u16::from_le_bytes(size_of_optional_header_bytes);
-
-    // Skip 2 bytes to PointerToSymbolTable
-    fp.seek(SeekFrom::Current(2))?;
-    let mut pointer_to_symbol_table_bytes = [0u8; 4];
-    fp.read_exact(&mut pointer_to_symbol_table_bytes)?;
-
-    // Read NumberOfSymbols
-    let mut number_of_symbols_bytes = [0u8; 4];
-    fp.read_exact(&mut number_of_symbols_bytes)?;
-
-    // Calculate offsets for optional header fields
-    let pe_header_size = 24u64; // Standard PE header size
-    let pe32_magic_offset = pe_offset + pe_header_size;
-    fp.seek(SeekFrom::Start(pe32_magic_offset))?;
-    let mut ldrsig = [0u8; 2];
-    fp.read_exact(&mut ldrsig)?;
-
-    let (cert_table_offset, checksum_offset, size_of_headers_offset) = if pemachine == 0x14c {
-        // PE32
-        (
-            pe32_magic_offset + 128,
-            pe32_magic_offset + 64,
-            pe32_magic_offset + 60,
-        )
-    } else {
-        // PE32+
-        (
-            pe32_magic_offset + 144,
-            pe32_magic_offset + 64,
-            pe32_magic_offset + 60,
-        )
-    };
-
-    // Read SizeOfHeaders
-    fp.seek(SeekFrom::Start(size_of_headers_offset))?;
-    let mut size_of_headers_bytes = [0u8; 4];
-    fp.read_exact(&mut size_of_headers_bytes)?;
-    let size_of_headers = u32::from_le_bytes(size_of_headers_bytes) as u64;
-
-    // Read Certificate Table offset and size
-    fp.seek(SeekFrom::Start(cert_table_offset))?;
-    let mut cert_table_offset_bytes = [0u8; 4];
-    fp.read_exact(&mut cert_table_offset_bytes)?;
-
-    let mut cert_table_size_bytes = [0u8; 4];
-    fp.read_exact(&mut cert_table_size_bytes)?;
-    let cert_table_size = u32::from_le_bytes(cert_table_size_bytes) as u64;
-
-    // Build hash ranges
-    let mut tohash = vec![
-        (0, checksum_offset),                     // From start to checksum
-        (checksum_offset + 4, cert_table_offset), // After checksum to cert table
-        (cert_table_offset + 8, size_of_headers), // After cert table to end of headers
-    ];
-
-    // Section headers start after PE header + optional header
-    let section_table_offset = pe_offset + pe_header_size + size_of_optional_header as u64;
-    let section_header_size = 40u64;
-
-    // Collect section data ranges
-    for i in 0..num_sections {
-        let section_offset = section_table_offset + i as u64 * section_header_size;
-        fp.seek(SeekFrom::Start(section_offset + 20))?; // PointerToRawData
-        let mut section_raw_offset_bytes = [0u8; 4];
-        fp.read_exact(&mut section_raw_offset_bytes)?;
-        let section_raw_offset = u32::from_le_bytes(section_raw_offset_bytes) as u64;
-
-        fp.seek(SeekFrom::Start(section_offset + 16))?; // SizeOfRawData
-        let mut section_raw_size_bytes = [0u8; 4];
-        fp.read_exact(&mut section_raw_size_bytes)?;
-        let section_raw_size = u32::from_le_bytes(section_raw_size_bytes) as u64;
-
-        if section_raw_size != 0 {
-            tohash.push((section_raw_offset, section_raw_offset + section_raw_size));
-        }
-    }
-
-    // Add range after headers/sections to file length (minus cert table)
-    let file_length = fp.seek(SeekFrom::End(0))? - cert_table_size;
-    if size_of_headers < file_length {
-        tohash.push((size_of_headers, file_length));
-    }
-
-    // Sort ranges by start offset
-    tohash.sort_by_key(|r| r.0);
-
-    // Hash the ranges
-    let mut h = Sha256::new();
-    for (start, end) in tohash {
-        if end > start {
-            fp.seek(SeekFrom::Start(start))?;
-            let mut buf = vec![0u8; (end - start) as usize];
-            fp.read_exact(&mut buf)?;
-            h.update(&buf);
-        }
-    }
-    let digest = h.finalize();
-
-    // Write the .pcrlock file
-    let digest_entry = DigestEntry {
-        hash_alg: "sha256",
-        digest: format!("{digest:x}"),
-    };
-    let record = Record {
-        pcr: 4,
-        digests: vec![digest_entry],
-    };
-    let pcrlock = PcrLock {
-        records: vec![record],
-    };
-
-    if let Some(parent) = pcrlock_file.parent() {
-        fs::create_dir_all(parent).context(format!(
-            "Failed to create directory for .pcrlock file at '{}'",
-            pcrlock_file.display()
+        .run_and_check()
+        .context(format!(
+            "Failed to execute objcopy to extract linux section from UKI at '{}'",
+            uki_temp.path().display()
         ))?;
-    }
-
-    // Serialize and write the .pcrlock file
-    let json = serde_json::to_string(&pcrlock).context(format!(
-        "Failed to serialize .pcrlock file '{}' as JSON",
-        pcrlock_file.display()
+    // Call helper to compute the authenticode of the extracted .linux section
+    compute_pe_binary_authenticode(linux_path, pcrlock_file, Pcr::Pcr4).context(format!(
+        "Failed to generate .pcrlock file for UKI at '{}' with .linux section",
+        uki_path.display()
     ))?;
-    fs::write(pcrlock_file, json.clone()).context(format!(
-        "Failed to write .pcrlock file at '{}'",
-        pcrlock_file.display()
-    ))?;
-
-    // Print contents of .pcrlock file
-    trace!(
-        "Contents of .pcrlock file at '{}':\n{}",
-        pcrlock_file.display(),
-        json
-    );
-
     Ok(())
 }
 
