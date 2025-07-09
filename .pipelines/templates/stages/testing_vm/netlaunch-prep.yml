@@ -114,3 +114,35 @@ steps:
       sudo iptables -I DOCKER-USER -i virbr0 -j ACCEPT 2>/dev/null || echo "Rule already exists or not needed"
       sudo iptables -I DOCKER-USER -o virbr0 -j ACCEPT 2>/dev/null || echo "Rule already exists or not needed"
     displayName: "Configure VM networking for internet access"
+
+  - bash: |
+      set -eux
+
+      echo "=== Check and fix network configuration ==="
+
+      # Check what networks exist
+      sudo virsh net-list --all
+      sudo virsh net-info default
+
+      # Check if there are conflicting networks
+      ip addr show | grep -E "192\.168\.(122|242)"
+      ip route show | grep -E "192\.168\.(122|242)"
+
+      echo "=== Ensure only default network is active ==="
+
+      # Stop any conflicting networks
+      for net in $(sudo virsh net-list --name | grep -v default); do
+        echo "Stopping network: $net"
+        sudo virsh net-destroy $net || true
+        sudo virsh net-undefine $net || true
+      done
+
+      # Restart default network to ensure clean state
+      sudo virsh net-destroy default || true
+      sudo virsh net-start default
+
+      # Verify configuration
+      sudo virsh net-info default
+      sudo virsh net-dumpxml default
+
+    displayName: "Fix network segment configuration"

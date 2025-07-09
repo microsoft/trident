@@ -122,7 +122,7 @@ stages:
 
           - bash: |
               set -eux
-              ./virt-deploy create --mem 12 --disks 32,32
+              ./virt-deploy create --mem 12 --disks 32,32 --network bridge=virbr0,model=virtio
             workingDirectory: $(argusToolkitSourceDirectory)
             displayName: "Creating virt-deploy VM"
 
@@ -151,6 +151,25 @@ stages:
 
             workingDirectory: $(tridentSourceDirectory)
             displayName: "Test VM internet connectivity"
+
+          - bash: |
+              set -eux
+
+              echo "=== Configure CA certificates and SSL ==="
+
+              # Ensure host has latest CA certificates
+              sudo apt-get update
+              sudo apt-get install -y ca-certificates
+
+              # Test SSL from host
+              echo "Testing SSL from host:"
+              curl -v https://maritimuspublic.azurecr.io/v2/ || echo "Host SSL test failed"
+
+              # Check if there's a corporate proxy or firewall interfering
+              echo "Checking SSL certificate chain:"
+              openssl s_client -connect maritimuspublic.azurecr.io:443 -showcerts < /dev/null || echo "SSL certificate check failed"
+
+            displayName: "Test and configure SSL certificates"
 
           - bash: |
               set -euxo pipefail
