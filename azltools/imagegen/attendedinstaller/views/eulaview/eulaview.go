@@ -23,11 +23,10 @@ const (
 
 // UI constants.
 const (
-	navButtonNext = 1
-	noSelection   = -1
-
-	heightPadding = 1
-	widthPadding  = 10
+	// default to <Accept>
+	defaultNavButton = 1
+	heightPadding    = 1
+	widthPadding     = 10
 
 	textHeight     = 0
 	textProportion = 1
@@ -37,10 +36,9 @@ const (
 
 // EulaView contains the EULA UI
 type EulaView struct {
-	flex     *tview.Flex
-	text     *tview.TextView
-	navBar   *navigationbar.NavigationBar
-	navFocus bool // workaround to handle navigation bar focus
+	flex   *tview.Flex
+	text   *tview.TextView
+	navBar *navigationbar.NavigationBar
 }
 
 // New creates and returns a new EulaView.
@@ -80,30 +78,7 @@ func (ev *EulaView) Initialize(backButtonText string, sysConfig *configuration.S
 
 // HandleInput handles custom input.
 func (ev *EulaView) HandleInput(event *tcell.EventKey) *tcell.EventKey {
-	if ev.navFocus {
-		if event.Key() == tcell.KeyUp {
-			ev.navBar.SetSelectedButton(noSelection)
-			ev.navFocus = false
-			return nil
-		}
-		if ev.navBar.UnfocusedInputHandler(event) {
-			return nil
-		}
-		return event
-	}
-
-	switch event.Key() {
-	case tcell.KeyDown:
-		ev.navBar.SetSelectedButton(navButtonNext)
-		ev.navFocus = true
-		return nil
-	case tcell.KeyTab:
-		ev.navBar.SetSelectedButton(navButtonNext)
-		ev.navFocus = true
-		return nil
-	case tcell.KeyEnter:
-		ev.navBar.SetSelectedButton(navButtonNext)
-		ev.navFocus = true
+	if ev.navBar.UnfocusedInputHandler(event) {
 		return nil
 	}
 
@@ -114,9 +89,7 @@ func (ev *EulaView) HandleInput(event *tcell.EventKey) *tcell.EventKey {
 func (ev *EulaView) Reset() (err error) {
 	ev.navBar.ClearUserFeedback()
 	ev.text.ScrollToBeginning()
-
-	ev.navBar.SetSelectedButton(noSelection)
-	ev.navFocus = false
+	ev.navBar.SetSelectedButton(defaultNavButton)
 
 	return
 }
