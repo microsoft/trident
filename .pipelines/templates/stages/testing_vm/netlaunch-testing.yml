@@ -135,7 +135,7 @@ stages:
               sudo ip a
               sudo ip r
 
-              sudo virsh net-list all
+              sudo virsh net-list --all
               sudo virsh net-dumpxml default
 
             workingDirectory: $(tridentSourceDirectory)
