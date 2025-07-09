@@ -4,7 +4,9 @@
 package autopartitionwidget
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/gdamore/tcell"
 	"github.com/rivo/tview"
@@ -127,6 +129,31 @@ func (ap *AutoPartitionWidget) SelectedSystemDevice() int {
 	return ap.deviceList.GetCurrentItem()
 }
 
+func saveDiskPath(diskPath string) error {
+	fileName := "userinput.json"
+	data := make(map[string]interface{})
+
+	file, err := os.Open(fileName)
+	if err == nil {
+		defer file.Close()
+		decoder := json.NewDecoder(file)
+		_ = decoder.Decode(&data)
+	}
+
+	data["disk_path"] = diskPath
+
+	file, err = os.Create(fileName)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	encoder := json.NewEncoder(file)
+	encoder.SetIndent("", "  ")
+
+	return encoder.Encode(data)
+}
+
 func (ap *AutoPartitionWidget) mustUpdateConfiguration(sysConfig *configuration.SystemConfig, cfg *configuration.Config) {
 	const (
 		targetDiskType     = "path"
@@ -190,6 +217,9 @@ func (ap *AutoPartitionWidget) mustUpdateConfiguration(sysConfig *configuration.
 	sysConfig.BootType = ap.bootType
 	sysConfig.PartitionSettings = partitionSettings
 	cfg.Disks = []configuration.Disk{disk}
+
+	disk_path := disk.TargetDisk.Value
+	saveDiskPath(disk_path)
 }
 
 func (ap *AutoPartitionWidget) populateBlockDeviceOptions() {
