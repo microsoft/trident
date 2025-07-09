@@ -905,6 +905,15 @@ fn compute_pe_authenticode(pe_path: &Path, pcrlock_file: &Path) -> Result<()> {
     let pcrlock = PcrLock {
         records: vec![record],
     };
+
+    if let Some(parent) = pcrlock_file.parent() {
+        fs::create_dir_all(parent).context(format!(
+            "Failed to create directory for .pcrlock file at '{}'",
+            pcrlock_file.display()
+        ))?;
+    }
+
+    // Serialize and write the .pcrlock file
     let json = serde_json::to_string(&pcrlock)?;
     fs::write(pcrlock_file, json)?;
 
