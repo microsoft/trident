@@ -326,7 +326,7 @@ pub fn execute(hs_path: Option<&Path>) -> Result<(), TridentError> {
         info!("Reading Host Status from {:?}", hs_path);
         let host_status_yaml = fs::read_to_string(hs_path)
             .structured(InitializationError::LoadHostStatus)
-            .message(format!("Failed to read Host Status from {:?}", hs_path))?;
+            .message(format!("Failed to read Host Status from {hs_path:?}"))?;
         let mut host_status: HostStatus = serde_yaml::from_str(&host_status_yaml)
             .structured(InitializationError::ParseHostStatus)
             .message("Failed to parse Host Status from YAML")?;
@@ -384,8 +384,7 @@ pub fn execute(hs_path: Option<&Path>) -> Result<(), TridentError> {
         .message("Failed to set new Host Status")?;
 
     datastore.persist(&datastore_path).message(format!(
-        "Failed to persist Host Status to datastore at {:?}",
-        datastore_path
+        "Failed to persist Host Status to datastore at {datastore_path:?}"
     ))?;
 
     Ok(())

@@ -904,7 +904,7 @@ mod functional_test {
         let check_part = |name: &str| {
             ctx.partition_paths
                 .get(name)
-                .unwrap_or_else(|| panic!("Failed to find block device '{}' in status", name));
+                .unwrap_or_else(|| panic!("Failed to find block device '{name}' in status"));
         };
 
         check_part("part1");
@@ -940,7 +940,7 @@ mod functional_test {
             ]);
 
         let output = repart.execute().unwrap();
-        println!("Created partitions:\n{:#?}", output);
+        println!("Created partitions:\n{output:#?}");
 
         // Wait for the partitions to appear.
         for part in output.iter() {

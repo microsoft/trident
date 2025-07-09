@@ -10,9 +10,33 @@ A script that can be run on the host during Trident stages.
 
 ## Properties
 
+### `content` **<span style="color:orange;">(required)</span>**
+
+Raw contents of the script.
+
+Conflicts with:
+
+- `path`
+
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+
 ### `name` **<span style="color:orange;">(required)</span>**
 
 Name of the script.
+
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+
+### `path` **<span style="color:orange;">(required)</span>**
+
+Path to a script in the execution OS.
+
+Conflicts with:
+
+- `content`
 
 | Characteristic | Value    |
 | -------------- | -------- |

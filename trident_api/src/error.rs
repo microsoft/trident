@@ -281,7 +281,7 @@ pub enum InvalidInputError {
 pub enum ServicingError {
     #[error(
         "A/B update failed as host booted from '{root_device_path}' instead of the expected device \
-        '{expected_device_path}"
+        '{expected_device_path}'"
     )]
     AbUpdateRebootCheck {
         root_device_path: String,
@@ -305,7 +305,7 @@ pub enum ServicingError {
 
     #[error(
         "Clean install failed as host booted from '{root_device_path}' instead of the expected \
-        device '{expected_device_path}"
+        device '{expected_device_path}'"
     )]
     CleanInstallRebootCheck {
         root_device_path: String,
@@ -434,7 +434,7 @@ pub enum ServicingError {
     #[error("Failed to get block device path for device '{device_id}'")]
     GetBlockDevicePath { device_id: String },
 
-    #[error("Failed to get information for device {device_id} via lsblk")]
+    #[error("Failed to get information for device '{device_id}' via lsblk")]
     GetDeviceInformation { device_id: String },
 
     #[error("Failed to get the disks to rebuild")]
@@ -784,7 +784,7 @@ impl Serialize for TridentError {
             &format!("{}:{}", self.0.location.file(), self.0.location.line()),
         )?;
         match self.0.source {
-            Some(ref e) => state.serialize_field("cause", &Some(format!("{:?}", e)))?,
+            Some(ref e) => state.serialize_field("cause", &Some(format!("{e:?}")))?,
             None => state.serialize_field("cause", &None::<String>)?,
         }
         state.end()
@@ -806,7 +806,7 @@ impl Debug for TridentError {
             for (i, (context, location)) in self.0.context.iter().enumerate() {
                 for (j, line) in context.split('\n').enumerate() {
                     if j == 0 {
-                        write!(f, "{: >5}: ", i)?;
+                        write!(f, "{i: >5}: ")?;
                     } else {
                         f.write_str("\n       ")?;
                     }
@@ -823,7 +823,7 @@ impl Debug for TridentError {
             while let Some(e) = source {
                 for (i, line) in e.to_string().split('\n').enumerate() {
                     if i == 0 {
-                        write!(f, "{: >5}: ", index)?;
+                        write!(f, "{index: >5}: ")?;
                     } else {
                         f.write_str("\n       ")?;
                     }
@@ -918,7 +918,7 @@ mod tests {
             .structured(InternalError::Internal("w"))
             .unwrap_err();
         assert_eq!(
-            format!("{:?}", error),
+            format!("{error:?}"),
             format!(
                 "Internal error: w at {}:{}\n\nCaused by:\n    0: x\n       y\n    1: z\n",
                 error.0.location.file(),

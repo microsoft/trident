@@ -433,7 +433,7 @@ pub fn translate(input: &ParsedData, hc: &mut HostConfiguration, errors: &mut Ve
                         for err in errs {
                             errors.push(SetsailError::new_translation(
                                 net.line.clone(),
-                                format!("failed to parse bond parameters: {}", err),
+                                format!("failed to parse bond parameters: {err}"),
                             ));
                         }
                         continue;
@@ -449,7 +449,7 @@ pub fn translate(input: &ParsedData, hc: &mut HostConfiguration, errors: &mut Ve
                         for err in errs {
                             errors.push(SetsailError::new_translation(
                                 net.line.clone(),
-                                format!("failed to parse bridge parameters: {}", err),
+                                format!("failed to parse bridge parameters: {err}"),
                             ));
                         }
                         continue;
@@ -618,13 +618,13 @@ where
 {
     match value.parse::<T>() {
         Ok(_) => Ok(value.to_string()),
-        Err(e) => Err(format!("failed to parse value: {}", e)),
+        Err(e) => Err(format!("failed to parse value: {e}")),
     }
 }
 
 /// This function translates bond options into netplan
 fn map_bridge_opts(key: &str, value: &str, opts: &mut BridgeParameters) -> Result<(), String> {
-    println!("{} = {}", key, value);
+    println!("{key} = {value}");
     match key {
         "stp" => {
             opts.stp = Some(match value {

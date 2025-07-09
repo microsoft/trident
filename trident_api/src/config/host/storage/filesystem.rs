@@ -307,7 +307,6 @@ where
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MountPointInfo<'a> {
     pub mount_point: &'a MountPoint,
-    pub is_verity: bool,
     pub device_id: Option<&'a BlockDeviceId>,
 }
 
@@ -338,7 +337,7 @@ impl FileSystem {
             ),
         ]
         .into_iter()
-        .filter_map(|(k, v)| v.map(|v| format!("{}:{}", k, v)))
+        .filter_map(|(k, v)| v.map(|v| format!("{k}:{v}")))
         .collect::<Vec<_>>()
         .join(", ")
     }

@@ -205,7 +205,7 @@ where
     D: serde::Deserializer<'de>,
 {
     OsImageFileSystemType::deserialize(deserializer)
-        .map_err(|err| serde::de::Error::custom(format!("Unknown filesystem type: {}", err)))
+        .map_err(|err| serde::de::Error::custom(format!("Unknown filesystem type: {err}")))
 }
 
 #[cfg(test)]

@@ -635,10 +635,7 @@ mod functional_test {
         );
         assert_eq!(
             result.unwrap_err().root_cause().to_string(),
-            format!(
-                "Bootentry with the same label '{}' already exists in efibootmgr",
-                entry_label
-            ),
+            format!("Bootentry with the same label '{entry_label}' already exists in efibootmgr"),
             "Failed to return error when creating boot entry with the same label"
         );
 
@@ -675,7 +672,7 @@ mod functional_test {
         );
         assert_eq!(
             result.unwrap_err().root_cause().to_string(),
-            format!("Disk path '{}' does not exist", disk_path_invalid),
+            format!("Disk path '{disk_path_invalid}' does not exist"),
             "Failed to return error when creating boot entry with invalid disk path"
         );
 

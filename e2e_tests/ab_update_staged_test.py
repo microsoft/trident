@@ -5,11 +5,6 @@ from typing import Dict, List, Tuple
 pytestmark = [pytest.mark.ab_update_staged]
 
 
-class HostStatusSafeLoader(yaml.SafeLoader):
-    def accept_image(self, node):
-        return self.construct_mapping(node)
-
-
 def test_ab_update_staged(
     connection, hostConfiguration, tridentCommand, abActiveVolume
 ):
@@ -18,8 +13,10 @@ def test_ab_update_staged(
     res_host_status = connection.run(trident_get_command)
     output_host_status = res_host_status.stdout.strip()
 
-    HostStatusSafeLoader.add_constructor("!image", HostStatusSafeLoader.accept_image)
-    host_status = yaml.load(output_host_status, Loader=HostStatusSafeLoader)
+    yaml.add_multi_constructor(
+        "!", lambda loader, _, node: loader.construct_mapping(node)
+    )
+    host_status = yaml.load(output_host_status, Loader=yaml.FullLoader)
 
     # Assert that servicingState is correct.
     assert host_status["servicingState"] == "ab-update-staged"

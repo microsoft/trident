@@ -33,7 +33,7 @@ impl Display for AppStatus {
             AppStatus::Restricted => write!(f, "restricted"),
             AppStatus::ErrorUnknownApplication => write!(f, "error-unknownApplication"),
             AppStatus::ErrorInvalidAppId => write!(f, "error-invalidAppId"),
-            AppStatus::Other(other) => write!(f, "other: {}", other),
+            AppStatus::Other(other) => write!(f, "other: {other}"),
         }
     }
 }
@@ -85,7 +85,7 @@ impl Display for UpdateCheckStatus {
             UpdateCheckStatus::ErrorPluginRestrictedHost => write!(f, "error-pluginRestrictedHost"),
             UpdateCheckStatus::ErrorHash => write!(f, "error-hash"),
             UpdateCheckStatus::ErrorInternal => write!(f, "error-internal"),
-            UpdateCheckStatus::Other(other) => write!(f, "other: {}", other),
+            UpdateCheckStatus::Other(other) => write!(f, "other: {other}"),
         }
     }
 }

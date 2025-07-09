@@ -131,7 +131,7 @@ impl KeyValList {
 
         for (k, v) in &self.0 {
             if let Err(e) = f(k, v, &mut obj) {
-                errors.push(format!("{}: {} = {}", e, k, v));
+                errors.push(format!("{e}: {k} = {v}"));
             }
         }
 

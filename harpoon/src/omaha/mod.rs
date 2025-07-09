@@ -69,7 +69,7 @@ pub(crate) fn send_event(url: &Url, req: &Request) -> Result<Response, HarpoonEr
             .iter()
             .find(|a| a.app_id() == app)
             .ok_or_else(|| {
-                HarpoonError::InvalidResponse(format!("Missing app '{}' in response", app))
+                HarpoonError::InvalidResponse(format!("Missing app '{app}' in response"))
             })?;
 
         if events.len() != resp_app.events().len() {

@@ -4,8 +4,6 @@ import yaml
 import fabric
 import pytest
 
-from base_test import HostStatusSafeLoader
-
 pytestmark = [pytest.mark.encryption]
 
 
@@ -132,8 +130,10 @@ def get_host_status(connection: fabric.Connection, tridentCommand: str) -> dict:
     cmd = f"{tridentCommand} get"
     stdout = sudo(connection, cmd)
 
-    HostStatusSafeLoader.add_constructor("!image", HostStatusSafeLoader.accept_image)
-    return yaml.load(stdout, Loader=HostStatusSafeLoader)
+    yaml.add_multi_constructor(
+        "!", lambda loader, _, node: loader.construct_mapping(node)
+    )
+    return yaml.load(stdout, Loader=yaml.FullLoader)
 
 
 def get_blkid_output(connection: fabric.Connection) -> dict:

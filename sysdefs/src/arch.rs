@@ -1,8 +1,8 @@
 use serde::{de::Error, Deserialize, Deserializer};
-use strum_macros::IntoStaticStr;
+use strum_macros::{EnumIter, IntoStaticStr};
 
 /// System architecture
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, IntoStaticStr)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, IntoStaticStr, EnumIter)]
 pub enum SystemArchitecture {
     /// 64-bit x86
     #[strum(serialize = "amd64")]
@@ -55,4 +55,59 @@ pub enum PackageArchitecture {
 
     #[serde(untagged)]
     Specific(SystemArchitecture),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_deserialize_system_architecture_amd64_variants() {
+        let variants = vec!["amd64", "x64", "x86_64", "AMD64", "X64", "X86_64"];
+        for arch in variants {
+            let deser: SystemArchitecture = serde_json::from_str(&format!("\"{arch}\"")).unwrap();
+            assert_eq!(deser, SystemArchitecture::Amd64);
+        }
+    }
+
+    #[test]
+    fn test_deserialize_system_architecture_aarch64_variants() {
+        let variants = vec!["arm64", "aarch64", "ARM64", "AARCH64"];
+        for arch in variants {
+            let deser: SystemArchitecture = serde_json::from_str(&format!("\"{arch}\"")).unwrap();
+            assert_eq!(deser, SystemArchitecture::Aarch64);
+        }
+    }
+
+    #[test]
+    fn test_deserialize_system_architecture_invalid() {
+        let result: Result<SystemArchitecture, _> = serde_json::from_str("\"foobar\"");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("unknown system architecture"));
+    }
+
+    #[test]
+    fn test_deserialize_package_architecture_noarch() {
+        let variants = vec!["noarch", "(none)", "NoArch"];
+        for arch in variants {
+            let deser: PackageArchitecture = serde_json::from_str(&format!("\"{arch}\"")).unwrap();
+            assert_eq!(deser, PackageArchitecture::NoArch);
+        }
+    }
+
+    #[test]
+    fn test_deserialize_package_architecture_specific() {
+        let deser: PackageArchitecture = serde_json::from_str("\"amd64\"").unwrap();
+        assert_eq!(
+            deser,
+            PackageArchitecture::Specific(SystemArchitecture::Amd64)
+        );
+
+        let deser: PackageArchitecture = serde_json::from_str("\"arm64\"").unwrap();
+        assert_eq!(
+            deser,
+            PackageArchitecture::Specific(SystemArchitecture::Aarch64)
+        );
+    }
 }

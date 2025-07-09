@@ -122,7 +122,7 @@ impl std::fmt::Display for SelinuxMode {
             SelinuxMode::Permissive => "permissive",
             SelinuxMode::Enforcing => "enforcing",
         };
-        write!(f, "{}", mode_str)
+        write!(f, "{mode_str}")
     }
 }
 

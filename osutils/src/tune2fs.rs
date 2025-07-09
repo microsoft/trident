@@ -76,8 +76,7 @@ mod functional_test {
         for substring in &expected_substrings {
             assert!(
                 error_message.contains(substring),
-                "Error message does not contain expected substring '{}'",
-                substring
+                "Error message does not contain expected substring '{substring}'"
             );
         }
 
@@ -113,7 +112,7 @@ mod functional_test {
         let result_2 = run(&Uuid::new_v4(), Path::new(&loop_device_path));
         let error_message_2 = result_2.unwrap_err().root_cause().to_string();
 
-        println!("LOOK HERE:\n{}", error_message_2);
+        println!("LOOK HERE:\n{error_message_2}");
         assert!(
                 error_message_2.contains("stdout:\next2fs_open2: Bad magic number in super-block\n/usr/sbin/e2fsck: Superblock invalid, trying backup blocks...\n\nThe superblock could not be read or does not describe a valid ext2/ext3/ext4\nfilesystem.  If the device is valid and it really contains an ext2/ext3/ext4\nfilesystem (and not swap or ufs or something else), then the superblock\nis corrupt, and you might try running e2fsck with an alternate superblock:"),
                 "Running tune2fs on a valid block device that does not have a filesystem did not return the expected error message"

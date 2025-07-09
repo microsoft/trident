@@ -163,7 +163,7 @@ impl GrubConfig {
             .iter()
             .map(|(k, v)| match v.as_str() {
                 "" => k.clone(),
-                _ => format!("{}={}", k, v),
+                _ => format!("{k}={v}"),
             })
             .collect::<Vec<String>>()
             .join(" "))

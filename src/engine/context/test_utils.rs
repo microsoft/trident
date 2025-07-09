@@ -10,6 +10,7 @@ use trident_api::{config::HostConfiguration, BlockDeviceId};
 use crate::osimage::{mock::MockOsImage, OsImage};
 
 use super::EngineContext;
+use std::path::Path;
 
 impl EngineContext {
     /// Adds a spec to the context and builds the graph for it.
@@ -22,6 +23,14 @@ impl EngineContext {
     /// Sets the mock image for the context.
     pub(crate) fn with_image(mut self, img: MockOsImage) -> Self {
         self.image = Some(OsImage::mock(img));
+        self
+    }
+
+    /// Populates filesystem data.
+    /// Needs both spec and image to be set first!
+    pub(crate) fn with_filesystem_data(mut self) -> Self {
+        self.populate_filesystems()
+            .expect("Failed to populate filesystems");
         self
     }
 
@@ -45,5 +54,41 @@ impl EngineContext {
         self.partition_paths
             .extend(paths.map(|(id, path)| (id.into(), path.into())));
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_with_partition_path() {
+        let ctx = EngineContext::default().with_partition_path("dev1", "/tmp/partition1");
+
+        let id = BlockDeviceId::from("dev1");
+        let expected_path = Path::new("/tmp/partition1");
+
+        assert_eq!(
+            ctx.partition_paths.get(&id).map(|p| p.as_path()),
+            Some(expected_path)
+        );
+    }
+
+    #[test]
+    fn test_with_partition_paths() {
+        use super::*;
+
+        let paths = vec![("dev1", "/tmp/partition1"), ("dev2", "/tmp/partition2")];
+
+        let ctx = EngineContext::default().with_partition_paths(paths.iter().cloned());
+
+        for (dev, path) in &paths {
+            let id = BlockDeviceId::from(*dev);
+            let expected_path = Path::new(*path);
+            assert_eq!(
+                ctx.partition_paths.get(&id).map(|p| p.as_path()),
+                Some(expected_path)
+            );
+        }
     }
 }

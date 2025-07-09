@@ -348,7 +348,7 @@ mod stat_tests {
         cpu_stat.summary_trace();
 
         let logs = trace_logs.lock().unwrap().join("");
-        println!("Trace logs: {}", logs);
+        println!("Trace logs: {logs}");
         let expected_log = format!(
             "total_cpu_time={}",
             (last_update - start_cpu_ticks) / ticks_per_second
@@ -395,13 +395,13 @@ mod stat_tests {
         memory_stat.summary_trace();
 
         let logs = trace_logs.lock().unwrap().join("");
-        println!("Trace logs: {}", logs);
+        println!("Trace logs: {logs}");
         let expected_log = format!(
             "average_memory_usage={}",
             (first_rss + second_rss) as f64 / 2.0
         );
         assert!(logs.contains(&expected_log));
-        let expected_log = format!("peak_memory_usage={}", first_rss);
+        let expected_log = format!("peak_memory_usage={first_rss}");
         assert!(logs.contains(&expected_log));
     }
 
@@ -462,7 +462,7 @@ mod stat_tests {
         network_stat.summary_trace();
 
         let logs = trace_logs.lock().unwrap().join("");
-        println!("Trace logs: {}", logs);
+        println!("Trace logs: {logs}");
         let expected_log = "iface_name=\"eth0\" rx_bytes=2000 tx_bytes=2000".to_string();
         assert!(logs.contains(&expected_log));
         let expected_log = "iface_name=\"eth1\" rx_bytes=5000 tx_bytes=6000".to_string();

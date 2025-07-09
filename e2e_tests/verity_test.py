@@ -10,11 +10,6 @@ pytestmark = [pytest.mark.verity]
 log = logging.getLogger(__name__)
 
 
-class HostStatusSafeLoader(yaml.SafeLoader):
-    def accept_image(self, node):
-        return self.construct_mapping(node)
-
-
 def test_verity_root(connection, hostConfiguration, tridentCommand, abActiveVolume):
     # Print out result of blkid for asserting verity root device mapper.
     res_blkid = connection.run("sudo blkid")
@@ -115,8 +110,10 @@ def test_verity_root(connection, hostConfiguration, tridentCommand, abActiveVolu
     res_host_status = connection.run(trident_get_command)
     output_host_status = res_host_status.stdout.strip()
 
-    HostStatusSafeLoader.add_constructor("!image", HostStatusSafeLoader.accept_image)
-    host_status = yaml.load(output_host_status, Loader=HostStatusSafeLoader)
+    yaml.add_multi_constructor(
+        "!", lambda loader, _, node: loader.construct_mapping(node)
+    )
+    host_status = yaml.load(output_host_status, Loader=yaml.FullLoader)
     # Host status expected output example:
     # root:
     #   path: /dev/disk/by-partuuid/f69514c7-d20a-42fd-8c4e-49df24d2ce40

@@ -42,10 +42,15 @@ pub struct Scripts {
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub enum ScriptSource {
+    /// Raw contents of the script.
     Content(String),
+
+    /// Path to a script in the execution OS.
     Path(PathBuf),
 }
 
+/// Impl default for ScriptSource to instantiat so that Script can derive
+/// default and it is easier to make definitions for tests and samples.
 impl Default for ScriptSource {
     fn default() -> Self {
         ScriptSource::Content(String::new())
@@ -70,10 +75,6 @@ pub struct Script {
     pub interpreter: Option<PathBuf>,
 
     /// The source of the script.
-    ///
-    /// This is either specified by `Content` (String of the contents
-    /// of the script) or `Path` (PathBuf of the path to the script
-    /// file).
     #[serde(flatten)]
     pub source: ScriptSource,
 

@@ -976,7 +976,7 @@ mod tests {
         let block_device = &parsed[0];
 
         let mount_point_list = block_device.get_all_mountpoints_recursive();
-        println!("{:#?}", mount_point_list);
+        println!("{mount_point_list:#?}");
         assert_eq!(mount_point_list.len(), 4, "Expected 4 mount points");
 
         assert!(mount_point_list.contains(&Path::new("/boot/efi")));

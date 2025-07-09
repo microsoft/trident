@@ -15,6 +15,8 @@ use super::verity;
 
 pub(super) const DEFAULT_FSTAB_PATH: &str = "/etc/fstab";
 
+const DISABLED_REASON_VERITY: &str = "Mounting is handled by veritysetup generator";
+
 /// Create a tabfile that captures all the desired as per the spec in engine context.
 pub(super) fn generate_fstab(ctx: &EngineContext, output_path: &Path) -> Result<(), Error> {
     // Helper closure to find the block device path for a given device id.
@@ -23,10 +25,29 @@ pub(super) fn generate_fstab(ctx: &EngineContext, output_path: &Path) -> Result<
             .context(format!("Failed to find block device with id '{device_id}'"))
     };
 
+    // Helper to check if a mount point should be disabled and provide a reason if so.
+    let check_disabled = |mount_point_path: &Path| -> Result<Option<String>, Error> {
+        // Check if this mount point is on a verity device, if so, disable it as it is handled by the veritysetup generator.
+        if ctx
+            .storage_graph
+            .verity_device_for_filesystem(mount_point_path)
+            .is_some()
+        {
+            trace!(
+                "Skipping filesystem '{}' mounted on verity device",
+                mount_point_path.display()
+            );
+            return Ok(Some(DISABLED_REASON_VERITY.into()));
+        }
+
+        Ok(None)
+    };
+
+    // Iterate over all filesystems in the context and create entries for them.
     let mut entries = ctx
         .filesystems()
         .filter_map(|fsdata| {
-            entry_from_fs_data(device_finder, fsdata)
+            entry_from_fs_data(check_disabled, device_finder, fsdata)
                 .context("Failed to create fstab entry for filesystem")
                 .transpose()
         })
@@ -59,6 +80,7 @@ pub(super) fn generate_fstab(ctx: &EngineContext, output_path: &Path) -> Result<
 }
 
 fn entry_from_fs_data(
+    check_disabled: impl Fn(&Path) -> Result<Option<String>, Error>,
     device_finder: impl Fn(&BlockDeviceId) -> Result<PathBuf, Error>,
     fsd: FileSystemData,
 ) -> Result<Option<TabFileEntry>, Error> {
@@ -101,9 +123,16 @@ fn entry_from_fs_data(
 
     let device_path = device_finder(&device_id)?;
 
+    // Check if this entry should be disabled, and if so, get the reason.
+    let disabled_reason = check_disabled(&mount_point.path).context(format!(
+        "Failed to check if mount point '{}' is disabled",
+        mount_point.path.display()
+    ))?;
+
     Ok(Some(
         TabFileEntry::new_path(device_path, &mount_point.path, fs_type)
-            .with_options(mount_point.options.to_string_vec()),
+            .with_options(mount_point.options.to_string_vec())
+            .with_disabled_reason(disabled_reason),
     ))
 }
 
@@ -121,6 +150,7 @@ mod tests {
     use std::{fs, path::PathBuf, str::FromStr};
 
     use anyhow::bail;
+    use const_format::formatcp;
     use indoc::indoc;
     use maplit::btreemap;
     use uuid::Uuid;
@@ -133,7 +163,10 @@ mod tests {
             NewFileSystemType, Partition, PartitionSize, PartitionTableType, PartitionType,
             Storage, VerityDevice,
         },
-        constants::{ESP_MOUNT_POINT_PATH, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
+        constants::{
+            ESP_MOUNT_POINT_PATH, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH,
+            USR_MOUNT_POINT_PATH,
+        },
         status::ServicingType,
     };
 
@@ -163,6 +196,7 @@ mod tests {
     fn test_entry_from_fs_data_image() {
         assert_eq!(
             entry_from_fs_data(
+                |_| Ok(None),
                 device_finder,
                 FileSystemDataImage {
                     mount_point: MountPoint {
@@ -189,6 +223,7 @@ mod tests {
     fn test_entry_from_fs_data_new() {
         assert_eq!(
             entry_from_fs_data(
+                |_| Ok(None),
                 device_finder,
                 FileSystemDataNew {
                     mount_point: Some(MountPoint::from_str("/mnt/data").unwrap()),
@@ -212,6 +247,7 @@ mod tests {
     fn test_entry_from_fs_data_adopted() {
         assert_eq!(
             entry_from_fs_data(
+                |_| Ok(None),
                 device_finder,
                 FileSystemDataAdopted {
                     mount_point: Some(MountPoint::from_str("/mnt/data").unwrap()),
@@ -235,6 +271,7 @@ mod tests {
     fn test_entry_from_fs_data_adopted_unmounted() {
         assert_eq!(
             entry_from_fs_data(
+                |_| Ok(None),
                 device_finder,
                 FileSystemDataAdopted {
                     mount_point: None,
@@ -252,6 +289,7 @@ mod tests {
     fn test_entry_from_fs_data_tmpfs() {
         assert_eq!(
             entry_from_fs_data(
+                |_| Ok(None),
                 device_finder,
                 FileSystemDataTmpfs {
                     mount_point: MountPoint::from_str("/tmp").unwrap(),
@@ -268,6 +306,7 @@ mod tests {
     fn test_entry_from_fs_data_overlay() {
         assert_eq!(
             entry_from_fs_data(
+                |_| Ok(None),
                 device_finder,
                 FileSystemDataOverlay {
                     mount_point: MountPoint {
@@ -303,6 +342,36 @@ mod tests {
             )
             .unwrap(),
             TabFileEntry::new_swap("/dev/disk/by-partlabel/swap")
+        );
+    }
+
+    #[test]
+    fn test_disabled_entry() {
+        assert_eq!(
+            entry_from_fs_data(
+                |_| Ok(Some("Mounting is handled by veritysetup generator".into())),
+                device_finder,
+                FileSystemDataImage {
+                    mount_point: MountPoint {
+                        path: PathBuf::from("/boot/efi"),
+                        options: MountOptions::new("umask=0077"),
+                    },
+                    fs_type: Some(RealFilesystemType::Vfat),
+                    device_id: "efi".to_owned(),
+                }
+                .into(),
+            )
+            .unwrap()
+            .unwrap(),
+            TabFileEntry::new_path(
+                "/dev/disk/by-partlabel/osp1",
+                "/boot/efi",
+                RealFilesystemType::Vfat.into(),
+            )
+            .with_disabled_reason(Some(
+                "Mounting is handled by veritysetup generator".to_owned(),
+            ))
+            .with_options(vec!["umask=0077".to_owned()])
         );
     }
 
@@ -377,7 +446,8 @@ mod tests {
             [
                 "/dev/disk/by-partlabel/osp4 /home ext4 defaults,x-systemd.makefs 0 2",
                 "/dev/disk/by-partlabel/osp1 /boot/efi vfat umask=0077 0 2",
-                "/dev/mapper/root / ext4 ro 0 1",
+                formatcp!("# {DISABLED_REASON_VERITY}"),
+                "# /dev/mapper/root / ext4 ro 0 1",
             ]
             .into_iter()
             .chain(extra)
@@ -506,5 +576,126 @@ mod tests {
                 verity::create_etc_overlay_mount_point().render().trim()
             ))
         );
+    }
+
+    #[test]
+    fn test_generate_fstab_usrverity() {
+        let expected_fstab = indoc! {r#"
+            /dev/disk/by-partlabel/osp1 /boot/efi vfat umask=0077 0 2
+            /dev/disk/by-partlabel/osp2 / ext4 defaults 0 1
+            # Mounting is handled by veritysetup generator
+            # /dev/mapper/usr /usr ext4 ro 0 2
+            /dev/disk/by-partlabel/swap none swap defaults 0 0
+        "#};
+
+        let ctx = EngineContext::default()
+            .with_partition_paths(
+                [
+                    ("os", "/dev/disk/by-bus/foobar"),
+                    ("efi", "/dev/disk/by-partlabel/osp1"),
+                    ("root", "/dev/disk/by-partlabel/osp2"),
+                    ("usr-data", "/dev/disk/by-partlabel/osp3"),
+                    ("usr-hash", "/dev/disk/by-partlabel/osp4"),
+                    ("swap", "/dev/disk/by-partlabel/swap"),
+                ]
+                .into_iter(),
+            )
+            .with_spec(HostConfiguration {
+                storage: Storage {
+                    disks: vec![Disk {
+                        id: "os".to_owned(),
+                        device: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        partition_table_type: PartitionTableType::Gpt,
+                        partitions: vec![
+                            Partition {
+                                id: "efi".to_owned(),
+                                partition_type: PartitionType::Esp,
+                                size: PartitionSize::from_str("100M").unwrap(),
+                            },
+                            Partition {
+                                id: "root".to_owned(),
+                                partition_type: PartitionType::Home,
+                                size: PartitionSize::from_str("10G").unwrap(),
+                            },
+                            Partition {
+                                id: "usr-data".to_owned(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::from_str("1G").unwrap(),
+                            },
+                            Partition {
+                                id: "usr-hash".to_owned(),
+                                partition_type: PartitionType::RootVerity,
+                                size: PartitionSize::from_str("1G").unwrap(),
+                            },
+                            Partition {
+                                id: "swap".to_owned(),
+                                partition_type: PartitionType::Swap,
+                                size: PartitionSize::from_str("1G").unwrap(),
+                            },
+                        ],
+                        ..Default::default()
+                    }],
+                    verity: vec![VerityDevice {
+                        id: "usr".to_owned(),
+                        name: "usr".to_owned(),
+                        data_device_id: "usr-data".to_owned(),
+                        hash_device_id: "usr-hash".to_owned(),
+                        ..Default::default()
+                    }],
+                    filesystems: vec![
+                        FileSystem {
+                            mount_point: Some(MountPoint {
+                                path: PathBuf::from(ESP_MOUNT_POINT_PATH),
+                                options: "umask=0077".into(),
+                            }),
+                            device_id: Some("efi".into()),
+                            source: FileSystemSource::Image,
+                        },
+                        FileSystem {
+                            mount_point: Some(MountPoint::from(ROOT_MOUNT_POINT_PATH)),
+                            device_id: Some("root".into()),
+                            source: FileSystemSource::Image,
+                        },
+                        FileSystem {
+                            mount_point: Some(MountPoint {
+                                path: PathBuf::from(USR_MOUNT_POINT_PATH),
+                                options: "ro".into(),
+                            }),
+                            device_id: Some("usr".into()),
+                            source: FileSystemSource::Image,
+                        },
+                    ],
+                    swap: vec![Swap {
+                        device_id: "swap".to_owned(),
+                    }],
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .with_image(MockOsImage::new().with_images([
+                MockImage::new(
+                    PathBuf::from(ESP_MOUNT_POINT_PATH),
+                    OsImageFileSystemType::Vfat,
+                    DiscoverablePartitionType::Esp,
+                    None::<&str>,
+                ),
+                MockImage::new(
+                    PathBuf::from(ROOT_MOUNT_POINT_PATH),
+                    OsImageFileSystemType::Ext4,
+                    DiscoverablePartitionType::Root,
+                    None::<&str>,
+                ),
+                MockImage::new(
+                    PathBuf::from(USR_MOUNT_POINT_PATH),
+                    OsImageFileSystemType::Ext4,
+                    DiscoverablePartitionType::Usr,
+                    Some("usrverity-roothash"),
+                ),
+            ]))
+            .with_filesystem_data();
+
+        let tmp_file = NamedTempFile::new().unwrap();
+        generate_fstab(&ctx, tmp_file.path()).unwrap();
+        assert_eq!(fs::read_to_string(tmp_file.path()).unwrap(), expected_fstab);
     }
 }

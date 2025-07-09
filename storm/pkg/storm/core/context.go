@@ -1,5 +1,7 @@
 package core
 
+import "context"
+
 type SuiteContext interface {
 	Named
 
@@ -21,4 +23,7 @@ type SuiteContext interface {
 
 	// Returns whether the suite has Azure DevOps integration enabled
 	AzureDevops() bool
+
+	// Returns a context for the suite.
+	Context() context.Context
 }

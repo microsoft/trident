@@ -402,8 +402,8 @@ impl From<&str> for DeviceReference {
 impl std::fmt::Display for DeviceReference {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DeviceReference::Name(name) => write!(f, "{}", name),
-            DeviceReference::Mac(mac) => write!(f, "{}", mac),
+            DeviceReference::Name(name) => write!(f, "{name}"),
+            DeviceReference::Mac(mac) => write!(f, "{mac}"),
             // DeviceReference::Link => write!(f, "link"),
         }
     }
@@ -521,7 +521,7 @@ impl FromStr for Ipv4Netmask {
         let mask = u32::from(Ipv4Addr::from_str(s)?);
         let prefix = mask.leading_ones() as u8;
         if (u64::from(mask) << prefix) & 0xffffffff != 0 {
-            Err(format!("Invalid netmask: {}", s))?;
+            Err(format!("Invalid netmask: {s}"))?;
         }
 
         Ok(Self(prefix))
@@ -646,13 +646,11 @@ fn validate_vlan_interface_name(name: &str, vlanid: u16) -> Result<(), String> {
         let parts: Vec<&str> = name.split('.').collect();
         if parts.len() != 2 {
             Err(format!(
-                "VLAN interface name {} must contain exactly one dot",
-                name
+                "VLAN interface name {name} must contain exactly one dot"
             ))
         } else if parts[1] != vlanid.to_string() {
             Err(format!(
-                "VLAN interface name {} must end with the VLAN ID {}",
-                name, vlanid
+                "VLAN interface name {name} must end with the VLAN ID {vlanid}"
             ))
         } else {
             Ok(())
@@ -661,8 +659,7 @@ fn validate_vlan_interface_name(name: &str, vlanid: u16) -> Result<(), String> {
         && name.strip_prefix("vlan") != Some(vlanid.to_string().as_str())
     {
         Err(format!(
-            "VLAN interface name {} must contain the VLAN ID {}",
-            name, vlanid
+            "VLAN interface name {name} must contain the VLAN ID {vlanid}"
         ))
     } else {
         Ok(())

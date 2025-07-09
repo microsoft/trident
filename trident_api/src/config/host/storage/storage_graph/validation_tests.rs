@@ -51,7 +51,7 @@ fn test_basic_graph() {
 
     let partitions = (1..=6)
         .map(|i| Partition {
-            id: format!("partition{}", i),
+            id: format!("partition{i}"),
             size: PartitionSize::Fixed(4096.into()),
             partition_type: PartitionType::LinuxGeneric,
         })

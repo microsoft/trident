@@ -175,7 +175,7 @@ trait Transform {
 
 impl Transform for Group {
     fn translated(self, x: i32, y: i32) -> Self {
-        self.set("transform", format!("translate({}, {})", x, y))
+        self.set("transform", format!("translate({x}, {y})"))
     }
 }
 

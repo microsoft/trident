@@ -77,7 +77,7 @@ pub fn cryptsetup_luksformat(
         .arg("--pbkdf")
         .arg("pbkdf2")
         .arg("--reduce-device-size")
-        .arg(format!("{}M", LUKS_HEADER_SIZE_IN_MIB))
+        .arg(format!("{LUKS_HEADER_SIZE_IN_MIB}M"))
         .arg("--type")
         .arg("luks2")
         .arg(device_path.as_ref().as_os_str())
@@ -118,7 +118,7 @@ pub fn cryptsetup_reencrypt(
         .arg("--pbkdf")
         .arg("pbkdf2")
         .arg("--reduce-device-size")
-        .arg(format!("{}M", LUKS_HEADER_SIZE_IN_MIB))
+        .arg(format!("{LUKS_HEADER_SIZE_IN_MIB}M"))
         .arg("--type")
         .arg("luks2")
         .arg(device_path.as_ref().as_os_str())
@@ -158,8 +158,7 @@ pub fn cryptsetup_close(device_name: &str) -> Result<(), Error> {
         .arg(device_name)
         .run_and_check()
         .context(format!(
-            "Failed to close pre-existing encrypted volume '{}'",
-            device_name
+            "Failed to close pre-existing encrypted volume '{device_name}'"
         ))
 }
 

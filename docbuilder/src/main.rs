@@ -184,7 +184,7 @@ fn build_setsail_docs(opts: SetsailOpts) -> Result<(), Error> {
             parent.display()
         ))?;
     } else {
-        println!("{}", doc);
+        println!("{doc}");
     }
 
     Ok(())
@@ -229,7 +229,7 @@ fn build_tricent_cli_docs(opts: TridentCliOpts) -> Result<(), Error> {
         std::fs::write(&output, docs)
             .context(format!("Failed to write to file {}", output.display()))?;
     } else {
-        println!("{}", docs);
+        println!("{docs}");
     }
 
     Ok(())
@@ -251,7 +251,7 @@ fn build_trident_arch_diagram(opts: TridentArchOpts) -> Result<(), Error> {
         std::fs::write(&output, diagram)
             .context(format!("Failed to write to file {}", output.display()))?;
     } else {
-        println!("{}", diagram);
+        println!("{diagram}");
     }
 
     Ok(())

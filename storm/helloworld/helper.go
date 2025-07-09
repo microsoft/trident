@@ -3,6 +3,7 @@ package helloworld
 import (
 	"fmt"
 	"storm"
+	"time"
 
 	"github.com/sirupsen/logrus"
 )
@@ -28,6 +29,7 @@ func (h *HelloWorldHelper) Args() any {
 func (h *HelloWorldHelper) RegisterTestCases(r storm.TestRegistrar) error {
 	r.RegisterTestCase("myPassingTestCase", h.myPasssingTestCase)
 	r.RegisterTestCase("mySkippedTestCase", h.mySkippedTestCase)
+	r.RegisterTestCase("myTestCaseWithBackgroundJobs", h.myTestCaseWithBackgroundJobs)
 	r.RegisterTestCase("myFailingTestCase", h.myFailingTestCase)
 	r.RegisterTestCase("myErrorTestCase", h.myErrorTestCase)
 	return nil
@@ -56,12 +58,43 @@ func (h *HelloWorldHelper) mySkippedTestCase(tc storm.TestCase) error {
 	return nil
 }
 
+func (h *HelloWorldHelper) myTestCaseWithBackgroundJobs(tc storm.TestCase) error {
+	logrus.Info("This test case will start go routines in the background.")
+
+	// You can use a goroutine to run the test case in the background.
+	tc.BackgroundWaitGroup().Add(1) // Increment the wait group counter to wait for this goroutine to finish
+	go func() {
+		defer tc.BackgroundWaitGroup().Done() // Ensure the wait group is decremented when done
+		logrus.Info("Hello from the background test case!")
+		for {
+			select {
+			// It is critical to check the context of the test case to see if it
+			// has been cancelled to avoid leaving goroutines behind!
+			case <-tc.Context().Done():
+				// Adding a small sleep here to show how we won't proceed to the
+				// next test case until the background goroutine has finished.
+				// You can run with `-w` to watch captured output live and see
+				// the messages.
+				logrus.Info("Background test case is done, exiting in 1 second...")
+				time.Sleep(time.Second)
+				return
+			case <-time.After(200 * time.Millisecond):
+				logrus.Info("Background test case is still running...\n")
+			}
+		}
+	}()
+
+	time.Sleep(time.Second) // Simulate some work in the main test case
+	logrus.Info("Main test case finished, but the background test case is still running!")
+
+	return nil
+}
+
 func (h *HelloWorldHelper) myFailingTestCase(tc storm.TestCase) error {
 	logrus.Info("This message will be shown in the failure report!")
+	time.Sleep(time.Second)
 	// A failure will stop execution of this test case here, mark it as failed,
 	// and stop execution of the entire test suite.
-	// time.Sleep(time.Second * 10)
-	panic("This test case will fail")
 	tc.Fail("This test case will fail")
 
 	// You can also use this handy function to fail a test case from an error!

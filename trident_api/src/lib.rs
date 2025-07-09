@@ -171,7 +171,7 @@ mod schema_helpers {
             &non_unit_variant.metadata().description,
             &untagged_variant_schema.metadata().description,
         ) {
-            (Some(d1), Some(d2)) => format!("{}\n\n*Details:*\n\n{}", d1, d2),
+            (Some(d1), Some(d2)) => format!("{d1}\n\n*Details:*\n\n{d2}"),
             (Some(description), _) => description.clone(),
             (_, Some(description)) => description.clone(),
             _ => panic!("Expected either the enum or the variant to have a description."),

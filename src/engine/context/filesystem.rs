@@ -119,7 +119,7 @@ impl FileSystemData {
             ),
         ]
         .into_iter()
-        .filter_map(|(k, v)| v.map(|v| format!("{}:{}", k, v)))
+        .filter_map(|(k, v)| v.map(|v| format!("{k}:{v}")))
         .collect::<Vec<_>>()
         .join(", ")
     }
@@ -374,8 +374,7 @@ impl<'a> TryFrom<&'a FileSystem> for FileSystemData {
                     fs_type: fs_type.try_into().ok(),
                     device_id: fs.device_id.clone().structured(
                         InternalError::PopulateFilesystems(format!(
-                            "Expected device id for Adopted filesystem{} but found none",
-                            mpp
+                            "Expected device id for Adopted filesystem{mpp} but found none"
                         )),
                     )?,
                 }))
@@ -401,8 +400,7 @@ impl<'a> TryFrom<&'a FileSystem> for FileSystemData {
                     fs_type: fs_type.try_into()?,
                     device_id: fs.device_id.clone().structured(
                         InternalError::PopulateFilesystems(format!(
-                            "Expected device id for New filesystem{} but found none",
-                            mpp
+                            "Expected device id for New filesystem{mpp} but found none"
                         )),
                     )?,
                 })),

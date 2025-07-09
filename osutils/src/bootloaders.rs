@@ -47,6 +47,8 @@ const fn get_arch_efi_str(arch: SystemArchitecture) -> &'static str {
 mod tests {
     use super::*;
 
+    use strum::IntoEnumIterator;
+
     #[test]
     fn test_current_name() {
         let mut expected_arch = "";
@@ -59,15 +61,15 @@ mod tests {
         let expected_bootloader_executables = [
             (
                 BootloaderExecutable::Boot,
-                format!("boot{}.efi", expected_arch),
+                format!("boot{expected_arch}.efi"),
             ),
             (
                 BootloaderExecutable::Grub,
-                format!("grub{}.efi", expected_arch),
+                format!("grub{expected_arch}.efi"),
             ),
             (
                 BootloaderExecutable::GrubNoPrefix,
-                format!("grub{}-noprefix.efi", expected_arch),
+                format!("grub{expected_arch}-noprefix.efi"),
             ),
         ];
 
@@ -75,8 +77,23 @@ mod tests {
             let filename = bootloader_executable.current_name();
             assert_eq!(
                 filename, expected_filename,
-                "Filename {} does not match expected value {}",
-                filename, expected_filename
+                "Filename {filename} does not match expected value {expected_filename}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_get_arch_efi_str() {
+        for arch in SystemArchitecture::iter() {
+            let expected = match arch {
+                SystemArchitecture::Amd64 => "x64",
+                SystemArchitecture::Aarch64 => "aa64",
+            };
+
+            assert_eq!(
+                get_arch_efi_str(arch),
+                expected,
+                "get_arch_efi_str({arch:?}) did not return expected value {expected}"
             );
         }
     }

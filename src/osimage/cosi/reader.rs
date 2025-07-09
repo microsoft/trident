@@ -8,9 +8,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::{bail, ensure, Error};
+use anyhow::{bail, ensure, Context, Error};
 use log::{debug, trace, warn};
+use oci_client::{secrets::RegistryAuth, Client as OciClient, Reference};
 use reqwest::blocking::{Client, Response};
+use tokio::runtime::Runtime;
 use url::Url;
 
 pub(super) trait ReadSeek: Read + Seek {}
@@ -59,6 +61,11 @@ impl CosiReader {
                 // Load COSI from remote URL
                 debug!("Loading COSI file from URL: '{}'", source);
                 Self::Http(HttpFile::new(source)?)
+            }
+            "oci" => {
+                // Load COSI from container registry
+                debug!("Loading COSI file from URL: '{}'", source);
+                Self::Http(HttpFile::new_from_oci(source)?)
             }
             _ => {
                 bail!("Unsupported URL scheme: {}", source.scheme());
@@ -116,18 +123,55 @@ pub struct HttpFile {
     size: u64,
     client: Client,
     timeout_in_seconds: u64,
+    token: Option<String>,
 }
 
 impl HttpFile {
-    /// Creates a new HTTP file reader from the given URL.
+    /// Creates a new HTTP file reader from a standard HTTP URL.
     pub fn new(url: &Url) -> IoResult<Self> {
-        debug!("Opening HTTP file '{}'", url);
+        Self::new_inner(url, None, false)
+    }
 
+    /// Creates a new HTTP file reader from an OCI URL.
+    pub fn new_from_oci(url: &Url) -> Result<Self, Error> {
+        let img_ref =
+            Reference::try_from(url.to_string().strip_prefix("oci://").with_context(|| {
+                format!("URL has incorrect scheme: expected to start with 'oci://', got '{url}'")
+            })?)
+            .with_context(|| format!("Failed to parse URL '{url}'"))?;
+
+        let rt = Runtime::new().context("Failed to create Tokio runtime")?;
+        let token = Self::retrieve_access_token(&img_ref, &rt)?;
+        let digest = Self::retrieve_artifact_digest(&img_ref, &rt)?;
+        trace!("Retrieved artifact digest: {digest}");
+
+        // Create HTTP URL
+        let registry = img_ref.registry();
+        let repository = img_ref.repository();
+        let http_url = Url::parse(&format!(
+            "https://{registry}/v2/{repository}/blobs/{digest}"
+        ))?;
+
+        Self::new_inner(&http_url, Some(token), true).context("Failed to create HTTP file reader")
+    }
+
+    fn new_inner(
+        url: &Url,
+        token: Option<String>,
+        ignore_ranges_header_absence: bool,
+    ) -> IoResult<Self> {
+        debug!("Opening HTTP file '{}'", url);
         let timeout_in_seconds = 5;
 
         // Create a new client for this file.
         let client = Client::new();
-        let request_sender = || client.head(url.as_str()).send();
+        let request_sender = || {
+            let mut request = client.head(url.as_str());
+            if let Some(token) = &token {
+                request = request.header("Authorization", format!("Bearer {token}"));
+            }
+            request.send()
+        };
         let response = Self::retriable_request_sender(request_sender, timeout_in_seconds)?;
         trace!("HTTP file '{}' has status: {}", url, response.status());
 
@@ -143,14 +187,14 @@ impl HttpFile {
             .map_err(|e| {
                 IoError::new(
                     IoErrorKind::InvalidData,
-                    format!("Could not parse 'Content-Length': {}", e),
+                    format!("Could not parse 'Content-Length': {e}"),
                 )
             })?
             .parse()
             .map_err(|e| {
                 IoError::new(
                     IoErrorKind::InvalidData,
-                    format!("Could not parse 'Content-Length' as an integer: {}", e),
+                    format!("Could not parse 'Content-Length' as an integer: {e}"),
                 )
             })?;
 
@@ -158,9 +202,10 @@ impl HttpFile {
 
         // Ensure the server supports range requests, this implementation
         // requires that feature!
-        if response
-            .headers()
-            .get("Accept-Ranges")
+        let accept_ranges_header = response.headers().get("Accept-Ranges");
+        if accept_ranges_header.is_none() && ignore_ranges_header_absence {
+            warn!("OCI server does not provide 'Accept-Ranges' header, continuing anyway");
+        } else if accept_ranges_header
             .ok_or(IoError::new(
                 IoErrorKind::Other,
                 "Server does not support range requests: 'Accept-Ranges' header was not provided",
@@ -169,7 +214,7 @@ impl HttpFile {
             .map_err(|e| {
                 IoError::new(
                     IoErrorKind::InvalidData,
-                    format!("Could not parse 'Accept-Ranges': {}", e),
+                    format!("Could not parse 'Accept-Ranges': {e}"),
                 )
             })?
             .to_lowercase()
@@ -188,12 +233,52 @@ impl HttpFile {
             size,
             client,
             timeout_in_seconds,
+            token,
+        })
+    }
+
+    /// Retrieve bearer token to access container registry. Even registries allowing anonymous
+    /// access may require a token.
+    fn retrieve_access_token(img_ref: &Reference, runtime: &Runtime) -> Result<String, Error> {
+        trace!(
+            "Retrieving access token for OCI registry '{}'",
+            img_ref.registry()
+        );
+        let client = OciClient::default();
+        runtime
+            .block_on(client.auth(
+                img_ref,
+                &RegistryAuth::Anonymous,
+                oci_client::RegistryOperation::Pull,
+            ))?
+            .context("Failed to retrieve authorization token")
+    }
+
+    /// Retrieve artifact digest, which is necessary to send HTTP request to container registry.
+    fn retrieve_artifact_digest(img_ref: &Reference, runtime: &Runtime) -> Result<String, Error> {
+        Ok(match img_ref.digest() {
+            Some(digest) => digest.to_string(),
+            None => {
+                // Attempt to retrieve digest from manifest
+                let client = OciClient::default();
+                let manifest = client.pull_image_manifest(img_ref, &RegistryAuth::Anonymous);
+                let (oci_image_manifest, _) = runtime.block_on(manifest)?;
+                // Expect the artifact to have one layer, which is the image
+                ensure!(
+                    oci_image_manifest.layers.len() == 1,
+                    format!(
+                        "Expected OCI artifact to contain 1 layer, found {}",
+                        oci_image_manifest.layers.len()
+                    )
+                );
+                oci_image_manifest.layers[0].digest.clone()
+            }
         })
     }
 
     /// Converts an HTTP error into an IO error.
     fn http_to_io_err(e: reqwest::Error) -> IoError {
-        let formatted = format!("HTTP File error: {}", e);
+        let formatted = format!("HTTP File error: {e}");
         if let Some(status) = e.status() {
             match status.as_u16() {
                 400 => IoError::new(IoErrorKind::InvalidInput, formatted),
@@ -220,11 +305,15 @@ impl HttpFile {
         let request_sender = || {
             let mut request = self.client.get(self.url.as_str());
 
+            if let Some(token) = self.token.clone() {
+                request = request.header("Authorization", format!("Bearer {token}"));
+            }
+
             // Generate the range header when appropriate
             let range_header = match (start, end) {
-                (Some(start), Some(end)) => Some(format!("bytes={}-{}", start, end)),
-                (Some(start), None) => Some(format!("bytes={}-", start)),
-                (None, Some(end)) => Some(format!("bytes=0-{}", end)),
+                (Some(start), Some(end)) => Some(format!("bytes={start}-{end}")),
+                (Some(start), None) => Some(format!("bytes={start}-")),
+                (None, Some(end)) => Some(format!("bytes=0-{end}")),
                 (None, None) => None,
             };
 
@@ -387,8 +476,6 @@ impl Read for HttpFile {
 
 #[cfg(test)]
 mod tests {
-    use tempfile::NamedTempFile;
-
     use super::*;
 
     use std::{
@@ -398,6 +485,34 @@ mod tests {
             Arc,
         },
     };
+
+    use tempfile::NamedTempFile;
+
+    #[test]
+    fn test_retrieve_access_token() {
+        let rt = Runtime::new().unwrap();
+        let url = "oci://docker.io/library/hello-world:latest".to_string();
+        let img_ref = url
+            .strip_prefix("oci://")
+            .and_then(|url| url.parse::<Reference>().ok())
+            .unwrap();
+        HttpFile::retrieve_access_token(&img_ref, &rt).unwrap();
+    }
+
+    #[test]
+    fn test_retrieve_artifact_digest() {
+        let rt = Runtime::new().unwrap();
+        // TODO(12732): Fix this test to use test COSI file instead of hello-world image
+        let url = "oci://docker.io/library/hello-world@sha256:940c619fbd418f9b2b1b63e25d8861f9cc1b46e3fc8b018ccfe8b78f19b8cc4f".to_string();
+        let img_ref = url
+            .strip_prefix("oci://")
+            .and_then(|url| url.parse::<Reference>().ok())
+            .unwrap();
+        assert_eq!(
+            HttpFile::retrieve_artifact_digest(&img_ref, &rt).unwrap(),
+            "sha256:940c619fbd418f9b2b1b63e25d8861f9cc1b46e3fc8b018ccfe8b78f19b8cc4f"
+        );
+    }
 
     #[test]
     fn test_retriable_request_sender_retry_count() {
@@ -456,6 +571,7 @@ mod tests {
             size: 100, // We have indices from 0 to 99
             client: Client::new(),
             timeout_in_seconds: 1,
+            token: None,
         };
 
         assert_eq!(http_file.seek(SeekFrom::Start(50)).unwrap(), 50);
@@ -532,8 +648,7 @@ mod tests {
         );
         assert_eq!(
             original_data, &buf,
-            "Did not read expected data, expected '{}' but got '{}'",
-            original_data, buf
+            "Did not read expected data, expected '{original_data}' but got '{buf}'"
         );
 
         // Helper to check specific sections
@@ -548,13 +663,11 @@ mod tests {
                 .expect("Failed to read data from file");
             assert_eq!(
                 read as u64, size,
-                "Did not read expected number of bytes, expected {} but got {}. Buffer '{}'",
-                size, read, buf
+                "Did not read expected number of bytes, expected {size} but got {read}. Buffer '{buf}'"
             );
             assert_eq!(
                 expected_slice, &buf,
-                "Did not read expected slice, expected '{}' but got '{}'",
-                expected_slice, buf
+                "Did not read expected slice, expected '{expected_slice}' but got '{buf}'"
             );
         };
         check_section(0, 5); // Hello
@@ -641,7 +754,7 @@ mod tests {
 
         // Get a reference to the inner HTTP file reader
         let CosiReader::Http(ref http_file) = cosi_reader else {
-            panic!("Expected a HTTP file reader, got {:?}", cosi_reader);
+            panic!("Expected a HTTP file reader, got {cosi_reader:?}");
         };
 
         // Clone the file to test that the server is only called once.

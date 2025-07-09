@@ -15,7 +15,7 @@ pub(crate) fn write(dest: Option<impl AsRef<Path>>) -> Result<(), Error> {
             dest.as_ref().display()
         ))?;
     } else {
-        println!("{}", schema);
+        println!("{schema}");
     }
 
     Ok(())

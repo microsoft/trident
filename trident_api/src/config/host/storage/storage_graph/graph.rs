@@ -151,7 +151,7 @@ impl StorageGraph {
             .inner
             .node_references()
             .find(|(_, node)| node.id() == Some(id))
-            .with_context(|| format!("Block device '{}' not found", id))?;
+            .with_context(|| format!("Block device '{id}' not found"))?;
 
         // Then, get the count of incoming edges to the block device node. An
         // outgoing edge represents a dependency, so incoming edges represent
@@ -712,7 +712,7 @@ mod tests {
                     id: "raid".into(),
                     level: RaidLevel::Raid0,
                     name: "raid".into(),
-                    devices: (1..=4).map(|i| format!("raid-{}", i)).collect(),
+                    devices: (1..=4).map(|i| format!("raid-{i}")).collect(),
                 }],
                 ..Default::default()
             },

@@ -449,7 +449,7 @@ mod functional_test {
         assert_eq!(disk.device, PathBuf::from("/dev/sda"));
         assert_eq!(disk.label, SfDiskLabel::Gpt);
         assert_eq!(disk.unit, SfDiskUnit::Sectors);
-        print!("disk: {:#?}", disk);
+        print!("disk: {disk:#?}");
         assert_eq!(disk.firstlba, 2048);
         assert_eq!(disk.lastlba, 31457246);
         assert_eq!(disk.sectorsize, 512);

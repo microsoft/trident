@@ -237,7 +237,7 @@ mod tests {
             line 2
             line 3
         "#};
-        let expected = format!("{}{}", heading, contents);
+        let expected = format!("{heading}{contents}");
 
         file.write_all(contents.as_bytes()).unwrap();
         file.flush().unwrap();
@@ -313,7 +313,7 @@ mod tests {
 
         // Create a bunch of files in the tempdir
         let files = (0..10)
-            .map(|i| test_dir.path().join(format!("test_file_{}", i)))
+            .map(|i| test_dir.path().join(format!("test_file_{i}")))
             .collect::<Vec<PathBuf>>();
         files.iter().for_each(|file| {
             create_file(file).unwrap();
@@ -321,7 +321,7 @@ mod tests {
 
         // Create a bunch of directories in the tempdir
         let dirs = (0..10)
-            .map(|i| test_dir.path().join(format!("test_dir_{}", i)))
+            .map(|i| test_dir.path().join(format!("test_dir_{i}")))
             .collect::<Vec<PathBuf>>();
         dirs.iter().for_each(|dir| {
             create_dirs(dir).unwrap();

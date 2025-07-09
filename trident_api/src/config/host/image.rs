@@ -46,7 +46,7 @@ impl std::fmt::Display for ImageSha384 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ImageSha384::Ignored => write!(f, "ignored"),
-            ImageSha384::Checksum(hash) => write!(f, "{}", hash),
+            ImageSha384::Checksum(hash) => write!(f, "{hash}"),
         }
     }
 }

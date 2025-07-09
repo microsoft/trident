@@ -26,7 +26,7 @@ pub(crate) fn print(
         );
 
         if markdown {
-            format!("<!-- {} -->", string)
+            format!("<!-- {string} -->")
         } else {
             string.lines().fold(String::new(), |mut acc, l| {
                 acc.push_str("# ");
@@ -38,9 +38,9 @@ pub(crate) fn print(
     };
 
     let output = if markdown {
-        format!("{}\n\n```yaml\n{}```", autogen_warning, raw_yaml)
+        format!("{autogen_warning}\n\n```yaml\n{raw_yaml}```")
     } else {
-        format!("{}\n{}", autogen_warning, raw_yaml)
+        format!("{autogen_warning}\n{raw_yaml}")
     };
 
     if let Some(dest) = dest {
@@ -51,7 +51,7 @@ pub(crate) fn print(
             dest.as_ref().display()
         ))?;
     } else {
-        println!("{}", output);
+        println!("{output}");
     }
 
     Ok(())

@@ -22,9 +22,9 @@ Lock the user's password. (equivalent to `passwd -l`)
 | -------------- | -------- |
 | Type           | `object` |
 
-### Properties
+#### Properties
 
-#### `type` **<span style="color:orange;">(required)</span>**
+##### `type` **<span style="color:orange;">(required)</span>**
 
 | Characteristic | Value    |
 | -------------- | -------- |

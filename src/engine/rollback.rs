@@ -283,10 +283,7 @@ fn get_expected_root_device_path(ctx: &EngineContext) -> Result<PathBuf, Trident
 fn construct_by_partuuid_path(device_path: &PathBuf) -> Option<PathBuf> {
     if let Ok(block_device) = lsblk::get(device_path) {
         if let Some(part_uuid) = block_device.part_uuid {
-            return Some(PathBuf::from(format!(
-                "/dev/disk/by-partuuid/{}",
-                part_uuid
-            )));
+            return Some(PathBuf::from(format!("/dev/disk/by-partuuid/{part_uuid}")));
         }
     }
 
@@ -455,8 +452,7 @@ fn get_verity_data_device_path(
     device_id: &BlockDeviceId,
 ) -> Result<PathBuf, Error> {
     let verity_device_config = ctx.get_verity_config(device_id).context(format!(
-        "Failed to get configuration for verity device '{}'",
-        device_id
+        "Failed to get configuration for verity device '{device_id}'"
     ))?;
 
     // Run veritysetup to get the data device path
