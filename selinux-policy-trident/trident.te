@@ -346,7 +346,7 @@ allow trident_t initctl_t:fifo_file getattr;
 allow trident_t init_runtime_t:dir { add_name write };
 allow trident_t init_runtime_t:file { create getattr open write };
 allow trident_t init_var_lib_t:dir { add_name getattr open read relabelto remove_name search write };
-allow trident_t init_var_lib_t:file { create getattr open read rename setattr write };
+allow trident_t init_var_lib_t:file { create getattr open read rename setattr write unlink };
 allow trident_t iptables_unit_t:file getattr;
 # Required for veritysetup to search for keys in the kernel's keyring when launched by trident.
 allow trident_t kernel_t:key search;
