@@ -642,33 +642,37 @@ fn generate_new_boot_order(
 ) -> Option<String> {
     let mut boot_order_initial: Vec<String> = bootmgr_output.boot_order.clone();
 
+    let add_to_boot_order = |bo: &mut Vec<String>| match boot_order_position {
+        BootOrderPosition::First => {
+            bo.insert(0, boot_entry.to_string());
+        }
+        BootOrderPosition::Last => {
+            bo.push(boot_entry.to_string());
+        }
+    };
+
     if boot_order_initial.contains(boot_entry) {
         if let Some(index) = boot_order_initial.iter().position(|x| x == boot_entry) {
-            if index != 0 {
-                // Boot entry is part of `BootOrder` but not at the first position. Move it to the first position.
-                boot_order_initial.remove(index);
-                match boot_order_position {
-                    BootOrderPosition::First => {
-                        boot_order_initial.insert(0, boot_entry.to_string());
-                    }
-                    BootOrderPosition::Last => {
-                        boot_order_initial.push(boot_entry.to_string());
+            match boot_order_position {
+                BootOrderPosition::First => {
+                    if index == 0 {
+                        // Boot entry is already at the first position in `BootOrder`. No need to modify.
+                        return None;
                     }
                 }
-            } else {
-                // Boot entry is already at the first position in `BootOrder`. No need to modify.
-                return None;
-            }
+                BootOrderPosition::Last => {
+                    if index == boot_order_initial.len() - 1 {
+                        // Boot entry is already at the last position in `BootOrder`. No need to modify.
+                        return None;
+                    }
+                }
+            };
+            // Boot entry is part of `BootOrder` but not at the first position. Move it to the first position.
+            boot_order_initial.remove(index);
+            add_to_boot_order(&mut boot_order_initial);
         }
     } else {
-        match boot_order_position {
-            BootOrderPosition::First => {
-                boot_order_initial.insert(0, boot_entry.to_string());
-            }
-            BootOrderPosition::Last => {
-                boot_order_initial.push(boot_entry.to_string());
-            }
-        }
+        add_to_boot_order(&mut boot_order_initial);
     }
 
     let new_boot_order_str = boot_order_initial.join(",");
@@ -781,7 +785,7 @@ mod tests {
     fn test_update_efi_boot_order() {
         let bootmgr_output = get_bootmgr_output();
 
-        // Test case where boot entry is already at the first position in `BootOrder`
+        // Test first-case where boot entry is already at the first position in `BootOrder`
         let result = generate_new_boot_order(
             &bootmgr_output,
             &String::from("0001"),
@@ -789,7 +793,7 @@ mod tests {
         );
         assert_eq!(result, None);
 
-        // Test case where boot entry is not part of `BootOrder`
+        // Test first-case where boot entry is not part of `BootOrder`
         let result = generate_new_boot_order(
             &bootmgr_output,
             &String::from("0002"),
@@ -797,7 +801,7 @@ mod tests {
         );
         assert_eq!(result, Some("0002,0001,0000".to_string()));
 
-        // Test case where boot entry is part of `BootOrder` but not at the first position
+        // Test first-case where boot entry is part of `BootOrder` but not at the first position
         let result = generate_new_boot_order(
             &bootmgr_output,
             &String::from("0000"),
@@ -805,13 +809,27 @@ mod tests {
         );
         assert_eq!(result, Some("0000,0001".to_string()));
 
-        // Test case where boot entry is part of `BootOrder` but not at the first position
+        // Test last-case where boot entry is not part of `BootOrder`
+        let result = generate_new_boot_order(
+            &bootmgr_output,
+            &String::from("0002"),
+            &BootOrderPosition::Last,
+        );
+        assert_eq!(result, Some("0001,0000,0002".to_string()));
+        // Test last-case where boot entry is part of `BootOrder` in the last position
         let result = generate_new_boot_order(
             &bootmgr_output,
             &String::from("0000"),
             &BootOrderPosition::Last,
         );
-        assert_eq!(result, Some("0001,0000".to_string()));
+        assert_eq!(result, None);
+        // Test last-case where boot entry is part of `BootOrder` but not in the last position
+        let result = generate_new_boot_order(
+            &bootmgr_output,
+            &String::from("0001"),
+            &BootOrderPosition::Last,
+        );
+        assert_eq!(result, Some("0000,0001".to_string()));
     }
 
     pub(crate) fn get_esp_on_raid_ctx() -> EngineContext {
