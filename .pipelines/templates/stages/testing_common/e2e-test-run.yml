@@ -161,7 +161,7 @@ steps:
         echo "Serial log not found!"
         echo "(No serial log captured)" > $(ob_outputDirectory)/serial-update-runtime-os-B.log
       fi
-    displayName: "Display serial output from update to B"
+    displayName: "📄 Display serial output from update to B"
     condition: and(always(), ne(variables['abActiveVolume'], 'null'))
 
   - template: ../testing_common/display-deployment-logs.yml
@@ -279,7 +279,7 @@ steps:
         echo "Serial log not found!"
         echo "(No serial log captured)" > $(ob_outputDirectory)/serial-update-runtime-os-A.log
       fi
-    displayName: "Display serial output from update to A"
+    displayName: "📄 Display serial output from update to A"
     condition: and(always(), ne(variables['abActiveVolume'], 'null'))
 
   - template: ../testing_common/display-deployment-logs.yml
