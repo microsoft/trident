@@ -139,7 +139,8 @@ stages:
       baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
-      pushToAcr: true
+      ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pre')) }}:
+        pushToAcr: true
 
   # Build Trident test image (container)
   - template: stages/build_image/build-image.yml
@@ -332,7 +333,7 @@ stages:
               stageType: ${{ parameters.stageType }}
 
   # DELETE published images in ACR
-  - ${{ if ne(parameters.stageType, 'pr-e2e-azure') }}:
+  - ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pre')) }}:
       - template: stages/acr/remove_from_acr.yml
         parameters:
           repository: "regular"
