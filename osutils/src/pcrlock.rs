@@ -586,6 +586,7 @@ pub fn generate_pcrlock_files(
         //
         // TODO: Once SecureBoot is enabled, gate this logic with a conditional, or remove
         // entirely, as SecureBoot will likely be enabled always.
+        // https://dev.azure.com/mariner-org/ECF/_workitems/edit/12865/.
         for (id, uki_path_opt) in uki_binaries.into_iter().enumerate() {
             if let Some(uki_path) = uki_path_opt {
                 let pcrlock_file =
@@ -895,6 +896,7 @@ mod functional_test {
         fs::remove_file(PCRLOCK_POLICY_JSON).unwrap();
 
         // TODO: Add other/more test cases once helpers are implemented and statically defined
-        // .pcrlock files have been added.
+        // .pcrlock files have been added. Related ADO task:
+        // https://dev.azure.com/mariner-org/ECF/_workitems/edit/12596.
     }
 }

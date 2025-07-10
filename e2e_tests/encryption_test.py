@@ -470,29 +470,29 @@ def check_crypsetup_luks_dump(connection: fabric.Connection, cryptDevPath: str) 
 
     # Validate that type of keyslot is luks2
     expected = "luks2"
-    actual = dump["keyslots"]["0"]["type"]
+    actual = dump["keyslots"]["2"]["type"]
     assert (
         actual == expected
-    ), f"Expected keyslot 0 type to be {expected!r}, got {actual!r}"
+    ), f"Expected keyslot 2 type to be {expected!r}, got {actual!r}"
 
     # Validate other info about the keyslot
     expected = "pbkdf2"
-    actual = dump["keyslots"]["0"]["kdf"]["type"]
+    actual = dump["keyslots"]["2"]["kdf"]["type"]
     assert (
         actual == expected
-    ), f"Expected keyslot 0 KDF type to be {expected!r}, got {actual!r}"
+    ), f"Expected keyslot 2 KDF type to be {expected!r}, got {actual!r}"
 
     expected = "sha512"
-    actual = dump["keyslots"]["0"]["kdf"]["hash"]
+    actual = dump["keyslots"]["2"]["kdf"]["hash"]
     assert (
         actual == expected
-    ), f"Expected keyslot 0 KDF hash to be {expected!r}, got {actual!r}"
+    ), f"Expected keyslot 2 KDF hash to be {expected!r}, got {actual!r}"
 
     expected = "aes-xts-plain64"
-    actual = dump["keyslots"]["0"]["area"]["encryption"]
+    actual = dump["keyslots"]["2"]["area"]["encryption"]
     assert (
         actual == expected
-    ), f"Expected keyslot 0 area encryption to be {expected!r}, got {actual!r}"
+    ), f"Expected keyslot 2 area encryption to be {expected!r}, got {actual!r}"
 
 
 def check_parent_devices(

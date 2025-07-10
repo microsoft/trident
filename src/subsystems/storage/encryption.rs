@@ -106,10 +106,11 @@ pub(super) fn validate_host_config(host_config: &HostConfiguration) -> Result<()
 
 /// Provisions encrypted volumes when a UKI image is being installed:
 /// - TODO: On a clean install, generates .pcrlock files for the runtime OS image A, creates a
-///   pcrlock TPM 2.0 access policy based on PCRs 4, 7, and 11, and re-enrolls all encrypted
-///   volumes with the new policy,
+///    pcrlock TPM 2.0 access policy based on PCRs 4, 7, and 11, and re-enrolls all encrypted
+///    volumes with the new policy. Related ADO task:
+///    https://dev.azure.com/mariner-org/ECF/_workitems/edit/12865/.
 /// - On A/B update, re-generates the pcrlock policy to include current boot & future boot with
-///   update OS image, using PCRs 4, 7, and 11.
+///    update OS image, using PCRs 4, 7, and 11.
 #[tracing::instrument(name = "encryption_provision", skip_all)]
 pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
     if let Some(encryption) = &ctx.spec.storage.encryption {
@@ -117,7 +118,12 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
         // - For clean install, temporarily use only PCR 0,
         // - For A/B update, use PCRs 4, 7, and 11.
         // TODO: Once UKI MOS is built, include all UKI PCRs, i.e. 4, 7, and 11, into pcrlock
-        // policy on clean install as well.
+        // policy on clean install as well. Related ADO task:
+        // https://dev.azure.com/mariner-org/ECF/_workitems/edit/12865/.
+        debug!(
+            "Determining PCRs for pcrlock policy based on servicing type: {:?}",
+            ctx.servicing_type
+        );
         let pcrs = match ctx.servicing_type {
             ServicingType::CleanInstall => {
                 let pcrs = ctx
@@ -136,7 +142,8 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
 
                 // Generate .pcrlock files for runtime OS image A, only using PCR 0.
                 //
-                // TODO: Once UKI MOS is built, include ROS A UKI and bootloader binaries
+                // TODO: Once UKI MOS is built, include ROS A UKI and bootloader binaries.
+                // https://dev.azure.com/mariner-org/ECF/_workitems/edit/12865/.
                 pcrlock::generate_pcrlock_files(pcrs, vec![], vec![])
                     .structured(ServicingError::GeneratePcrlockFiles)?;
 

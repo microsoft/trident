@@ -106,7 +106,8 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
         // current boot, i.e. active volume.
         if ctx.is_uki_image()? && ctx.spec.storage.encryption.is_some() {
             debug!("Regenerating pcrlock policy for current boot");
-            // TODO: Add PCR 7 once SecureBoot is enabled in a follow up PR!
+            // TODO: Add PCR 7 once SecureBoot is enabled in a follow up PR. Related ADO task:
+            // https://dev.azure.com/mariner-org/ECF/_workitems/edit/12865/.
             let pcrs = Pcr::Pcr4 | Pcr::Pcr11;
 
             // Construct current UKI path
