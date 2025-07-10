@@ -151,6 +151,8 @@ stages:
       runtimeEnv: "container"
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
+      ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pre')) }}:
+        pushToAcr: true
 
   # Build Trident test image for verity (host)
   - template: stages/build_image/build-image.yml
