@@ -241,7 +241,7 @@ impl HttpFile {
     /// Retrieve bearer token to access container registry. Even registries allowing anonymous
     /// access may require a token.
     fn retrieve_access_token(img_ref: &Reference, runtime: &Runtime) -> Result<String, Error> {
-        trace!(
+        debug!(
             "Retrieving access token for OCI registry '{}'",
             img_ref.registry()
         );
@@ -257,7 +257,6 @@ impl HttpFile {
 
     /// Retrieve artifact digest, which is necessary to send HTTP request to container registry.
     fn retrieve_artifact_digest(img_ref: &Reference, runtime: &Runtime) -> Result<String, Error> {
-        debug!("img_ref: {:?}", img_ref);
         Ok(match img_ref.digest() {
             Some(digest) => digest.to_string(),
             None => {
@@ -265,7 +264,6 @@ impl HttpFile {
                 let client = OciClient::default();
                 let manifest = client.pull_image_manifest(img_ref, &RegistryAuth::Anonymous);
                 let (oci_image_manifest, _) = runtime.block_on(manifest)?;
-                debug!("manifest: {:?}", oci_image_manifest);
                 // Expect the artifact to have one layer, which is the image
                 ensure!(
                     oci_image_manifest.layers.len() == 1,
