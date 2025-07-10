@@ -52,7 +52,7 @@ parameters:
     type: number
     default: 4000
   
-  - name: tridentConfigFile
+  - name: netlaunchConfigFile
     type: string
 
 steps:
