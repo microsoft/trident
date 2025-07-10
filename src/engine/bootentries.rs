@@ -152,12 +152,21 @@ pub fn set_boot_next_and_update_boot_order(
                 .get_flag(VIRTDEPLOY_BOOT_ORDER_WORKAROUND);
 
         if ctx.servicing_type == ServicingType::AbUpdate {
-            // During AB update, add new entry to end of the bootorder so that UEFI will
-            // consider the entry as permanent.
-            // Note: this is especially important for some DELL machines which do not always
-            // persist boot entries that are not in the BootOrder (this is especially important
-            // for our tests because they run on DELL machines).  Also of importance is that
-            // this failure seems related to the machine state, so it does not always reproduce.
+            // During AB update, add new entry to end of the BootOrder so that UEFI will
+            // consider the entry as permanent.  The entry is added to the end of the BootOrder
+            // so that we can use BootNext to attempt to boot into the new OS and if anything
+            // goes wrong, the system will "rollback" to the previous OS.  If the new OS is
+            // successfully booted into, the BootOrder will be updated to move the new entry
+            // to the head of the BootOrder list during 'commit'.
+            //
+            // Note: Ensuring new entries are present in the boot order is especially important
+            // for some DELL machines which do not always persist boot entries that are not in
+            // the BootOrder (which is vital to our tests as they run on DELL machines).
+            // Boot entries disappearing does seem related to something unknown (maybe a machine
+            // corruption) in the machine state, so be wary of changing this code to create boot
+            // entries that are not in the BootOrder. We have fixed this and subsequently removed
+            // the fix because it didn't seem neccessary (our tests continued passing), only to
+            // have boot entries start disappearing again.
             update_boot_order(entry_numbers, &BootOrderPosition::Last)
                 .structured(ServicingError::UpdateBootOrder)?;
         } else if ctx.servicing_type == ServicingType::CleanInstall && !use_virtdeploy_workaround {
