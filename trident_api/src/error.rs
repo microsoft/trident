@@ -595,6 +595,9 @@ pub enum ServicingError {
     #[error("Failed to update GRUB configs")]
     UpdateGrubConfigs,
 
+    #[error("Failed to wipe all key slots unlocked by a passphrase for an encrypted volume '{device_path}'")]
+    WipePasswordKeySlot { device_path: String },
+
     #[error("Failed to write an additional file '{file_name}'")]
     WriteAdditionalFile { file_name: String },
 

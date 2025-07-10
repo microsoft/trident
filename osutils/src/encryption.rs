@@ -98,6 +98,39 @@ pub fn systemd_cryptenroll(
     ))
 }
 
+#[derive(Debug, Clone)]
+pub enum KeySlotType {
+    Password,
+    Index(u8),
+}
+
+impl std::fmt::Display for KeySlotType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            KeySlotType::Password => write!(f, "password"),
+            KeySlotType::Index(idx) => write!(f, "{idx}"),
+        }
+    }
+}
+
+/// Runs `systemd-cryptenroll <encrypted_device_path> --wipe-slot={}` to wipe the desired key slot
+/// for the given encrypted device.
+pub fn systemd_cryptenroll_wipe_slot(
+    device_path: impl AsRef<Path>,
+    key_slot: KeySlotType,
+) -> Result<(), Error> {
+    Dependency::SystemdCryptenroll
+        .cmd()
+        .arg(device_path.as_ref().as_os_str())
+        .arg(format!("--wipe-slot={}", key_slot))
+        .run_and_check()
+        .context(format!(
+            "Failed to wipe key slot '{}' for underlying device '{}'",
+            key_slot,
+            device_path.as_ref().display()
+        ))
+}
+
 /// Runs `cryptsetup-luksFormat` to initialize a LUKS2 encrypted volume for the given underlying
 /// device.
 ///

@@ -9,7 +9,8 @@ use log::{debug, info, trace};
 
 use osutils::{
     bootloaders::{BOOT_EFI, GRUB_EFI},
-    encryption, files,
+    encryption::{self, KeySlotType},
+    files,
     path::join_relative,
     pcrlock::{self, PCRLOCK_POLICY_JSON},
 };
@@ -254,10 +255,19 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                 encryption::systemd_cryptenroll(None::<&Path>, device_path.clone(), true, pcrs)
                     .structured(ServicingError::BindEncryptionToPcrlockPolicy)?;
 
-                // TODO: If the key file was randomly generated and NOT provided by the user,
-                // remove the password keyslot from the encrypted volume, once it's been
-                // re-enrolled with a pcrlock policy. Related ADO task:
-                // https://dev.azure.com/mariner-org/ECF/_workitems/edit/12868.
+                // If the key file was randomly generated and NOT provided by the user as a
+                // recovery key, remove the password key slot from the encrypted volume, as it's
+                // not needed, for security
+                if encryption.recovery_key_url.is_none() {
+                    debug!("Removing password key slot from encrypted volume {}", ev.id);
+                    encryption::systemd_cryptenroll_wipe_slot(
+                        device_path.clone(),
+                        KeySlotType::Password,
+                    )
+                    .structured(ServicingError::WipePasswordKeySlot {
+                        device_path: device_path.to_string_lossy().to_string(),
+                    })?;
+                }
             }
         }
     }
