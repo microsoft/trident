@@ -157,9 +157,9 @@ steps:
         export SERIAL_LOG="$(find /tmp/*-serial0.log | head -n 1)"
       fi
 
-      cp $SERIAL_LOG $(ob_outputDirectory)/serial-update-runtime-os-B.log
+      sudo cp $SERIAL_LOG $(ob_outputDirectory)/serial-update-runtime-os-B.log
       echo "Serial log found:"
-      cat $SERIAL_LOG
+      sudo cat $SERIAL_LOG
     displayName: "Display serial output from update to B"
     condition: and(always(), ne(variables['abActiveVolume'], 'null'))
 
@@ -274,9 +274,9 @@ steps:
         export SERIAL_LOG="$(find /tmp/*-serial0.log | head -n 1)"
       fi
 
-      cp $SERIAL_LOG $(ob_outputDirectory)/serial-update-runtime-os-A.log
+      sudo cp $SERIAL_LOG $(ob_outputDirectory)/serial-update-runtime-os-A.log
       echo "Serial log found:"
-      cat $SERIAL_LOG
+      sudo cat $SERIAL_LOG
     displayName: "Display serial output from update to A"
     condition: and(always(), ne(variables['abActiveVolume'], 'null'))
 
