@@ -8,21 +8,17 @@ parameters:
     type: string
     default: maritimuspublic
 
-  - name: "imageName"
-    type: string
-    default: trident-testimage
-
 stages:
   - stage: DeleteFromAcr
     displayName: Delete images from ACR
     condition: always()
     dependsOn:
-      - TridentTestImg_${{ replace(parameters.imageName, '-', '_') }}
+      - TridentTestImg_${{ replace(parameters.repository, '-', '_') }}
       - DeploymentTesting_host
 
     jobs:
       - job: DeleteFromAcr
-        displayName: Delete ${{ parameters.imageName }} from ${{ parameters.registry }} ACR
+        displayName: Delete ${{ parameters.repository }} from ${{ parameters.registry }} ACR
         pool:
           type: linux
 
