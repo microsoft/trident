@@ -15,7 +15,7 @@ parameters:
 
   - name: functestImageArtifactPipeline
     type: number
-    default: 3371 # trident-ci
+    default: 5067 # [GITHUB]-trident-ci
     displayName: Where to download prebuilt image from
 
 stages:
