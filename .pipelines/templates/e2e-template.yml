@@ -332,8 +332,9 @@ stages:
               stageType: ${{ parameters.stageType }}
 
   # DELETE published images in ACR
-  - template: stages/acr/remove_from_acr.yml
-    parameters:
-      repository: "regular"
-      registry: "maritimuspublic"
-      imageName: trident-testimage
+  - ${{ if ne(parameters.stageType, 'pr-e2e-azure') }}:
+      - template: stages/acr/remove_from_acr.yml
+        parameters:
+          repository: "regular"
+          registry: "maritimuspublic"
+          imageName: trident-testimage
