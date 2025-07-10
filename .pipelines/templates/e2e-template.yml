@@ -338,10 +338,6 @@ stages:
   - ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pre')) }}:
       - template: stages/acr/remove_from_acr.yml
         parameters:
-          repository: "trident-testimage"
-          registry: "maritimuspublic"
-  - ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pre')) }}:
-      - template: stages/acr/remove_from_acr.yml
-        parameters:
-          repository: "trident-container-testimage"
+          hostRepository: "trident-testimage"
+          containerRepository: "trident-container-testimage"
           registry: "maritimuspublic"

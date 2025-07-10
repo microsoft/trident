@@ -1,5 +1,10 @@
 parameters:
-  - name: "repository"
+  - name: "hostRepository"
+    displayName: "Repository containing COSI images"
+    type: string
+    default: regular
+
+  - name: "containerRepository"
     displayName: "Repository containing COSI images"
     type: string
     default: regular
@@ -9,16 +14,18 @@ parameters:
     default: maritimuspublic
 
 stages:
-  - stage: DeleteFromAcr_${{ parameters.repository }}
-    displayName: Delete ${{ parameters.repository }} from ACR
+  - stage: DeleteFromAcr
+    displayName: Delete from ACR
     condition: always()
     dependsOn:
-      - TridentTestImg_${{ replace(parameters.repository, '-', '_') }}
+      - TridentTestImg_${{ replace(parameters.hostRepository, '-', '_') }}
+      - TridentTestImg_${{ replace(parameters.containerRepository, '-', '_') }}
       - DeploymentTesting_host
+      - DeploymentTesting_container
 
     jobs:
       - job: DeleteFromAcr
-        displayName: Delete ${{ parameters.repository }} from ${{ parameters.registry }} ACR
+        displayName: Delete images from ${{ parameters.registry }} ACR
         pool:
           type: linux
 
@@ -39,5 +46,6 @@ stages:
                 az acr login -n ${{ parameters.registry }}
 
                 # Delete repository with COSI images
-                az acr repository delete --name ${{ parameters.registry }} --repository ${{ parameters.repository }} --yes
+                az acr repository delete --name ${{ parameters.registry }} --repository ${{ parameters.hostRepository }} --yes
+                az acr repository delete --name ${{ parameters.registry }} --repository ${{ parameters.containerRepository }} --yes
             displayName: "Log into ACR and delete repository"
