@@ -127,6 +127,14 @@ virtualMachine:
     pullrequest:
       - base
       - base-acr
+      - combined
+      - raid-mirrored
+      - raid-resync-small
+      - rerun
+      - simple
+      - split
+      - usr-verity
+      - usr-verity-raid
     validation:
       - base
       - base-acr
