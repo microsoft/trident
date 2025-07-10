@@ -45,4 +45,4 @@ stages:
 
                 # Delete repository with COSI images
                 az acr repository delete --name ${{ parameters.registry }} --repository ${{ parameters.repository }} --yes
-            displayName: "Az ACR login"
+            displayName: "Log into ACR and delete repository"
