@@ -588,7 +588,7 @@ fn get_label_and_path(ctx: &EngineContext) -> Result<(String, PathBuf), Error> {
 
 /// Lists EFI boot manager entries, checks if the `BootOrder` requires
 /// updates based on the given boot entry, and updates the `BootOrder` if
-/// needed.
+/// needed according to the specified position.
 ///
 #[tracing::instrument(skip_all)]
 pub fn first_or_last_boot_order(
@@ -611,8 +611,8 @@ pub fn first_or_last_boot_order(
     Ok(())
 }
 
-/// This function sets the `BootOrder` to the specified boot entries, processing them in reverse
-/// order to ensure they are added to the beginning of the `BootOrder` list.
+/// This function ensures that the specified boot entries are added to the `BootOrder`
+/// according to the specified position.
 ///
 /// #[tracing::instrument(skip_all)]
 pub fn update_boot_order(
