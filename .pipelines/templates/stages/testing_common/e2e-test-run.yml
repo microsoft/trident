@@ -144,7 +144,7 @@ steps:
   - template: ../testing_common/display-serial-logs.yml
     parameters:
       netlaunchConfigFile: ${{ parameters.netlaunchConfigFile }}
-      bmSerialLog: ${{ variables.TRIDENT_SOURCE_DIR }}/baremetal-serial.log
+      bmSerialLog: $(Build.SourcesDirectory)/baremetal-serial.log
       outputDirectory: $(ob_outputDirectory)
       partition: B
 
@@ -251,7 +251,7 @@ steps:
   - template: ../testing_common/display-serial-logs.yml
     parameters:
       netlaunchConfigFile: ${{ parameters.netlaunchConfigFile }}
-      bmSerialLog: ${{ variables.TRIDENT_SOURCE_DIR }}/baremetal-serial.log
+      bmSerialLog: $(Build.SourcesDirectory)/baremetal-serial.log
       outputDirectory: $(ob_outputDirectory)
       partition: A
 
