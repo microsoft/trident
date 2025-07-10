@@ -154,6 +154,7 @@ steps:
       # Output the serial log
       if [ -f $SERIAL_LOG ]; then
         sudo cp $SERIAL_LOG $(ob_outputDirectory)/serial-update-runtime-os-B.log
+        sudo chmod 644 $(ob_outputDirectory)/serial-update-runtime-os-B.log
         echo "Serial log found:"
         sudo cat $SERIAL_LOG
       else
@@ -271,11 +272,12 @@ steps:
       # Output the serial log
       if [ -f $SERIAL_LOG ]; then
         sudo cp $SERIAL_LOG $(ob_outputDirectory)/serial-update-runtime-os-A.log
+        sudo chmod 644 $(ob_outputDirectory)/serial-update-runtime-os-A.log
         echo "Serial log found:"
         sudo cat $SERIAL_LOG
       else
         echo "Serial log not found!"
-        echo "(No serial log captured)" > $SERIAL_LOG $(ob_outputDirectory)/serial-update-runtime-os-A.log
+        echo "(No serial log captured)" > $(ob_outputDirectory)/serial-update-runtime-os-A.log
       fi
     displayName: "Display serial output from update to A"
     condition: and(always(), ne(variables['abActiveVolume'], 'null'))
