@@ -42,6 +42,13 @@ steps:
           version_tag="v$version_num"
           echo "Pushing $filename with tag $version_tag to ${{ parameters.registry }}.azurecr.io"
           oras push ${{ parameters.registry }}.azurecr.io/regular:$version_tag "$cosi_file"
+
+          # Push duplicate of clean install image with v3 tag for A/B Update into runtime OS A
+          if [ "$version_num" -eq 1 ]; then
+            version_tag="v3"
+            echo "Pushing $filename with tag $version_tag to ${{ parameters.registry }}.azurecr.io"
+            oras push ${{ parameters.registry }}.azurecr.io/regular:$version_tag "$cosi_file"
+          fi
         fi
       done
     displayName: "Push ${{ parameters.imageName }} to registry"
