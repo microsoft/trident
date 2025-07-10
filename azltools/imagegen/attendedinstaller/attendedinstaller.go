@@ -186,7 +186,8 @@ func (ai *AttendedInstaller) showView(newView int) (err error) {
 	ai.pauseSpeakupInput = true
 	err = speakuputils.ClearSpeakupBuffer(ai.keyboard)
 	if err != nil {
-		logger.Log.Warnf("Error clearing speakup buffer")
+		logger.Log.Warnf("Error clearing speakup buffer, signal was not sent")
+		ai.pauseSpeakupInput = false
 		err = nil
 	}
 
@@ -367,6 +368,7 @@ func (ai *AttendedInstaller) initializeUI() (err error) {
 	ai.titleText.SetTextColor(ai.backdropStyle.SecondaryTextColor)
 
 	ai.showView(ai.currentView)
+	ai.pauseSpeakupInput = false
 	ai.app.SetInputCapture(ai.globalInputCapture)
 
 	return
