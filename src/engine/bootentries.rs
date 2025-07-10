@@ -156,7 +156,8 @@ pub fn set_boot_next_and_update_boot_order(
             // consider the entry as permanent.
             // Note: this is especially important for some DELL machines which do not always
             // persist boot entries that are not in the BootOrder (this is especially important
-            // for our tests because they run on DELL machines).
+            // for our tests because they run on DELL machines).  Also of importance is that
+            // this failure seems related to the machine state, so it does not always reproduce.
             update_boot_order(entry_numbers, &BootOrderPosition::Last)
                 .structured(ServicingError::UpdateBootOrder)?;
         } else if ctx.servicing_type == ServicingType::CleanInstall && !use_virtdeploy_workaround {
