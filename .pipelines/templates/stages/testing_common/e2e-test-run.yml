@@ -219,7 +219,12 @@ steps:
           -s "${{ parameters.artifactsDirectory }}" \
           -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-runtime-os-A.log 2>&1 &
 
-      ./bin/seriallisten --config ${{ parameters.netlaunchConfigFile}} &
+      if ! ps | grep seriallisten > /dev/null; then
+        echo "seriallisten is not running, start seriallisten."
+        ./bin/seriallisten --config ${{ parameters.netlaunchConfigFile}} &
+      else
+        echo "seriallisten process is already running."
+      fi
 
       echo "Running script to stage and finalize A/B update..."
       ./bin/storm-trident helper ab-update \
