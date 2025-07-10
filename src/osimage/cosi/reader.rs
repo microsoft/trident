@@ -251,10 +251,12 @@ impl HttpFile {
                 &RegistryAuth::Anonymous,
                 oci_client::RegistryOperation::Pull,
             ))
-            .context(format!(
-                "Registry '{}' is not accessible or does not exist",
-                img_ref.registry()
-            ))?
+            .with_context(|| {
+                format!(
+                    "Registry '{}' is not accessible or does not exist",
+                    img_ref.registry()
+                )
+            })?
             .context("Failed to retrieve authorization token")
     }
 
@@ -266,11 +268,13 @@ impl HttpFile {
                 // Attempt to retrieve digest from manifest
                 let client = OciClient::default();
                 let manifest = client.pull_image_manifest(img_ref, &RegistryAuth::Anonymous);
-                let (oci_image_manifest, _) = runtime.block_on(manifest).context(format!(
-                    "Repository '{}' does not exist in registry '{}' or tag not found",
-                    img_ref.repository(),
-                    img_ref.registry()
-                ))?;
+                let (oci_image_manifest, _) = runtime.block_on(manifest).with_context(|| {
+                    format!(
+                        "Repository '{}' does not exist in registry '{}' or tag not found",
+                        img_ref.repository(),
+                        img_ref.registry()
+                    )
+                })?;
                 // Expect the artifact to have one layer, which is the image
                 ensure!(
                     oci_image_manifest.layers.len() == 1,
