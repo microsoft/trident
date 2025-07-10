@@ -265,19 +265,18 @@ impl HttpFile {
         Ok(match img_ref.digest() {
             Some(digest) => digest.to_string(),
             None => {
+                let tag = img_ref
+                    .tag()
+                    .with_context(|| format!("No tag provided in OCI URL '{}'", img_ref.whole()))?;
                 // Attempt to retrieve digest from manifest
                 let client = OciClient::default();
                 let manifest = client.pull_image_manifest(img_ref, &RegistryAuth::Anonymous);
-                let (oci_image_manifest, _) = runtime.block_on(manifest).with_context(|| {
-                    let tag = img_ref
-                        .tag()
-                        .map_or("tag".to_string(), |t| format!("tag '{t}'"));
+                let (oci_image_manifest, _) = runtime.block_on(manifest).with_context(|| 
                     format!(
-                        "Repository '{}' does not exist in registry '{}' or {tag} not found",
+                        "Repository '{}' does not exist in registry '{}' or tag '{tag}' not found in repository",
                         img_ref.repository(),
                         img_ref.registry()
-                    )
-                })?;
+                    ))?;
                 // Expect the artifact to have one layer, which is the image
                 ensure!(
                     oci_image_manifest.layers.len() == 1,
