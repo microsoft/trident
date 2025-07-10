@@ -127,21 +127,6 @@ stages:
             displayName: "Creating virt-deploy VM"
 
           - bash: |
-              set -eux
-
-              # Ping ACR
-              ping -c 3 -W 5 127.0.0.53
-
-              sudo ip a
-              sudo ip r
-
-              sudo virsh net-list --all
-              sudo virsh net-dumpxml default
-
-            workingDirectory: $(tridentSourceDirectory)
-            displayName: "Test connection"
-
-          - bash: |
               set -euxo pipefail
               MAX_FAILURES_FLAG=""
 

@@ -257,13 +257,18 @@ impl HttpFile {
 
     /// Retrieve artifact digest, which is necessary to send HTTP request to container registry.
     fn retrieve_artifact_digest(img_ref: &Reference, runtime: &Runtime) -> Result<String, Error> {
+        debug!("img_ref: {:?}", img_ref);
         Ok(match img_ref.digest() {
-            Some(digest) => digest.to_string(),
+            Some(digest) => {
+                debug!("digest: {:?}", digest);
+                digest.to_string()
+            },
             None => {
                 // Attempt to retrieve digest from manifest
                 let client = OciClient::default();
                 let manifest = client.pull_image_manifest(img_ref, &RegistryAuth::Anonymous);
                 let (oci_image_manifest, _) = runtime.block_on(manifest)?;
+                debug!("manifest: {:?}", oci_image_manifest);
                 // Expect the artifact to have one layer, which is the image
                 ensure!(
                     oci_image_manifest.layers.len() == 1,
