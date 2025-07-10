@@ -251,7 +251,10 @@ impl HttpFile {
                 &RegistryAuth::Anonymous,
                 oci_client::RegistryOperation::Pull,
             ))
-            .context("Registry is not accessible or does not exist")?
+            .context(format!(
+                "Registry '{}' is not accessible or does not exist",
+                img_ref.registry()
+            ))?
             .context("Failed to retrieve authorization token")
     }
 
