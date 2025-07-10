@@ -32,6 +32,11 @@ const TMP_RECOVERY_KEY_SIZE: usize = 64;
 
 /// Randomly generated key passphrase used for encryption and protected by a mutex. This passphrase
 /// is used to re-enroll the TPM 2.0 device using a pcrlock policy.
+///
+/// TODO: In systemd v256, `--unlock-tpm2-device` is added, which allows to use a TPM 2.0 device,
+/// instead of a key file, to unlock the volume. Once systemd v256 is available in AZL 4.0, remove
+/// ENCRYPTION_PASSPHRASE and use `--unlock-tpm2-device` instead. Related ADO task:
+/// https://dev.azure.com/mariner-org/ECF/_workitems/edit/12867.
 pub static ENCRYPTION_PASSPHRASE: Lazy<Mutex<Vec<u8>>> = Lazy::new(Default::default);
 
 /// Runs `systemd-cryptenroll` to enroll a TPM 2.0 device for the given device of a LUKS2 encrypted
