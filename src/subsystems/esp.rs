@@ -126,7 +126,7 @@ where
 
     // Stream image to the temporary file.
     let computed_hash = image_streamer::stream_zstd(reader, &temp_image_path)
-        .context(format!("Failed to stream ESP image from {}", source))?;
+        .context(format!("Failed to stream ESP image from {source}"))?;
 
     Ok((temp_image, computed_hash))
 }
@@ -416,7 +416,7 @@ mod tests {
             assert_eq!(idx, ctx.install_index);
 
             let esp_dir_path = generate_efi_bin_base_dir_path(&ctx, test_dir.path()).unwrap();
-            println!("Returned ESP directory path: {:?}", esp_dir_path);
+            println!("Returned ESP directory path: {esp_dir_path:?}");
             assert!(
                 !esp_dir_path.exists(),
                 "ESP directory returned should not exist yet"

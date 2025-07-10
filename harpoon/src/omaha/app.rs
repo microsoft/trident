@@ -80,7 +80,7 @@ mod tests {
                 (0..100).for_each(|patch| {
                     let version = AppVersion::from(Version::new(major, minor, patch));
                     let json = serde_json::to_string(&version).unwrap();
-                    assert_eq!(json, format!("\"{}.{}.{}\"", major, minor, patch));
+                    assert_eq!(json, format!("\"{major}.{minor}.{patch}\""));
                     let deserialized: AppVersion = serde_json::from_str(&json).unwrap();
                     assert_eq!(deserialized, version);
                 });

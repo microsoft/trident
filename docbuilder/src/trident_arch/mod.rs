@@ -22,10 +22,10 @@ fn get_diagram_base(selected: TridentArchSelection) -> Result<Diagram, Error> {
         .join(file);
 
     let yaml = std::fs::read_to_string(&full_path)
-        .with_context(|| format!("Failed to read diagram file: {:?}", full_path))?;
+        .with_context(|| format!("Failed to read diagram file: {full_path:?}"))?;
 
     serde_yaml::from_str(&yaml)
-        .with_context(|| format!("Failed to parse YAML for diagram '{:?}'", selected))
+        .with_context(|| format!("Failed to parse YAML for diagram '{selected:?}'"))
 }
 
 pub(super) fn build_arch_diagram(selected: TridentArchSelection) -> Result<String, Error> {

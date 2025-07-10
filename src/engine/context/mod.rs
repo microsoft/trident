@@ -191,8 +191,7 @@ impl EngineContext {
             .iter()
             .find(|p| &p.id == device_id)
             .context(format!(
-                "No volume pair for block device ID '{}' found",
-                device_id
+                "No volume pair for block device ID '{device_id}' found"
             ))?;
 
         debug!(
@@ -234,8 +233,7 @@ impl EngineContext {
             .find(|vd| &vd.id == device_id)
             .cloned()
             .context(format!(
-                "Failed to find configuration for verity device '{}'",
-                device_id
+                "Failed to find configuration for verity device '{device_id}'"
             ))?;
 
         trace!(
@@ -272,8 +270,7 @@ impl EngineContext {
                 .storage
                 .get_partition(partition_id)
                 .context(format!(
-                    "RAID array '{}' doesn't reference partition",
-                    block_device_id
+                    "RAID array '{block_device_id}' doesn't reference partition"
                 ))
         } else {
             bail!("Block device '{block_device_id}' is not a partition or RAID array")

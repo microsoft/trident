@@ -51,13 +51,13 @@ fn create_inner(
     mdadm_command
         .arg("--create")
         .arg(raid_path)
-        .arg(format!("--level={}", raid_level_numeric))
+        .arg(format!("--level={raid_level_numeric}"))
         .arg(format!("--raid-devices={}", &device_paths.len()))
         .args(&device_paths)
         .arg(format!("--metadata={METADATA_VERSION}"));
 
     if let Some(homehost) = homehost {
-        mdadm_command.arg(format!("--homehost={}", homehost));
+        mdadm_command.arg(format!("--homehost={homehost}"));
     }
 
     mdadm_command
@@ -370,7 +370,7 @@ mod functional_test {
             self::stop(PathBuf::from(NON_EXISTENT_RAID_DEVICE))
                 .unwrap_err()
                 .to_string(),
-            format!("Failed to stop RAID array {}", NON_EXISTENT_RAID_DEVICE)
+            format!("Failed to stop RAID array {NON_EXISTENT_RAID_DEVICE}")
         );
     }
 

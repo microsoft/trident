@@ -21,8 +21,7 @@ pub(super) fn create_filesystems(ctx: &EngineContext) -> Result<(), Error> {
         .map(|(block_device_id, device_path, filesystem)| {
             info!("Initializing '{block_device_id}': creating filesystem of type '{filesystem}'");
             create_filesystem_on_block_device(device_path, *filesystem).context(format!(
-                "Failed to create filesystem '{}' on block device '{}'",
-                filesystem, block_device_id
+                "Failed to create filesystem '{filesystem}' on block device '{block_device_id}'"
             ))?;
             Ok(())
         })
@@ -75,9 +74,9 @@ fn block_devices_needing_fs_creation(
         };
 
         // Get the block device info for the device_id
-        let bd_path = ctx.get_block_device_path(device_id).with_context(|| {
-            format!("Block device path not found for device ID: {:?}", device_id)
-        })?;
+        let bd_path = ctx
+            .get_block_device_path(device_id)
+            .with_context(|| format!("Block device path not found for device ID: {device_id:?}"))?;
 
         let effective_device_id = if ab_volume_pair_ids.contains(device_id)
             && ctx.servicing_type == ServicingType::AbUpdate
@@ -93,8 +92,7 @@ fn block_devices_needing_fs_creation(
             ctx.get_ab_volume_block_device_id(device_id)
                 .with_context(|| {
                     format!(
-                        "Failed to resolve A/B volume pair ID to update volume ID: {:?}",
-                        device_id
+                        "Failed to resolve A/B volume pair ID to update volume ID: {device_id:?}"
                     )
                 })?
         } else if ctx.servicing_type == ServicingType::CleanInstall {
@@ -540,8 +538,7 @@ mod functional_test {
         let error_string = result.as_ref().unwrap_err().root_cause().to_string();
         assert!(
             error_string.contains(&format!(
-                "The file {}2 does not exist and no size was specified",
-                TEST_DISK_DEVICE_PATH
+                "The file {TEST_DISK_DEVICE_PATH}2 does not exist and no size was specified"
             )),
             "Unexpected output: {error_string}"
         );

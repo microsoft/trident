@@ -70,10 +70,8 @@ fn get_device_paths(ctx: &EngineContext, devices: &[BlockDeviceId]) -> Result<Ve
     devices
         .iter()
         .map(|device_id| {
-            ctx.get_block_device_path(device_id).context(format!(
-                "Failed to get block device path for '{}'",
-                device_id
-            ))
+            ctx.get_block_device_path(device_id)
+                .context(format!("Failed to get block device path for '{device_id}'"))
         })
         .collect()
 }
@@ -293,8 +291,7 @@ fn wait_for_raid_sync(ctx: &EngineContext, sync_timeout: u64) -> Result<(), Erro
             .filter(|(_, sync_status)| *sync_status != "idle")
             .for_each(|(raid_device, sync_status)| {
                 if let Ok(sync_action) = osutils::files::read_file_trim(&PathBuf::from(format!(
-                    "/sys/devices/virtual/block/{}/md/sync_action",
-                    raid_device
+                    "/sys/devices/virtual/block/{raid_device}/md/sync_action"
                 ))) {
                     sync_status.clone_from(&sync_action);
                 } else {
@@ -326,7 +323,7 @@ fn wait_for_raid_sync(ctx: &EngineContext, sync_timeout: u64) -> Result<(), Erro
 
         // Log the current RAID sync status
         let mdstat_output = osutils::files::read_file_trim(&PathBuf::from(MDSTAT_PATH))
-            .context(format!("Failed to read {}", MDSTAT_PATH))?;
+            .context(format!("Failed to read {MDSTAT_PATH}"))?;
         trace!("RAID sync status:\n{}", mdstat_output);
 
         sleep(sleep_duration);

@@ -1,6 +1,7 @@
 package suite
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"slices"
@@ -16,7 +17,9 @@ import (
 type StormSuite struct {
 	name        string
 	scenarios   []core.Scenario
-	ctx         *kong.Context
+	ctx         context.Context
+	cancel      context.CancelFunc
+	kong_ctx    *kong.Context
 	Log         *logrus.Logger
 	helpers     []core.Helper
 	azureDevops bool
@@ -24,7 +27,7 @@ type StormSuite struct {
 
 func CreateSuite(name string) StormSuite {
 	name = fmt.Sprintf("storm-%s", name)
-	ctx, global := cli.ParseCommandLine(name)
+	kong_ctx, global := cli.ParseCommandLine(name)
 
 	logger := logrus.New()
 	logger.SetLevel(global.Verbosity)
@@ -40,10 +43,15 @@ func CreateSuite(name string) StormSuite {
 
 	logger.Infof("Creating suite '%s'", name)
 
+	ctx, cancel := context.WithCancel(context.Background())
+
 	return StormSuite{
 		name:        name,
-		scenarios:   make([]core.Scenario, 0),
 		ctx:         ctx,
+		cancel:      cancel,
+		scenarios:   make([]core.Scenario, 0),
+		helpers:     make([]core.Helper, 0),
+		kong_ctx:    kong_ctx,
 		Log:         logger,
 		azureDevops: global.AzureDevops,
 	}
@@ -51,13 +59,16 @@ func CreateSuite(name string) StormSuite {
 
 // Run the storm suite
 func (s *StormSuite) Run() {
-	if s.ctx == nil {
+	if s.kong_ctx == nil {
 		s.Log.Fatalf("Suite '%s' not initialized", s.name)
 	}
 
 	s.Log.Infof("Running suite '%s' - %d scenarios, %d helpers collected.", s.name, len(s.scenarios), len(s.helpers))
-	s.ctx.BindTo(s, (*core.SuiteContext)(nil))
-	err := s.ctx.Run()
+	s.kong_ctx.BindTo(s, (*core.SuiteContext)(nil))
+	err := s.kong_ctx.Run()
+
+	// Cancel the suite context.
+	s.cancel()
 
 	// This call will end the program!
 	s.reportExitStatus(err)
@@ -156,4 +167,8 @@ func (s *StormSuite) Logger() *logrus.Logger {
 
 func (s *StormSuite) AzureDevops() bool {
 	return s.azureDevops
+}
+
+func (s *StormSuite) Context() context.Context {
+	return s.ctx
 }

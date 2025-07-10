@@ -227,6 +227,15 @@ stages:
           - ${{ if eq(parameters.includeUKI, true) }}:
               - BuildImagesUKI
 
+    variables:
+      SSH_PRIVATE_KEY_PATH: "$HOME/.ssh/id_rsa"
+      SSH_PUBLIC_KEY_PATH: "$(SSH_PRIVATE_KEY_PATH).pub"
+      IMAGE_DEFINITION: "trident-vm-grub-verity-testimage-$(System.DefinitionId)"
+      SUBSCRIPTION: 04cdc145-a4f9-42d4-9868-c46d23d0c63f # CoreOS_Mariner_BMP_Staging
+      STORAGE_ACCOUNT: "azlinuxbmpstagingeastus2"
+      RESOURCE_GROUP: "azlinux_bmp_staging_eastus2"
+      SUBNET_ID: /subscriptions/04cdc145-a4f9-42d4-9868-c46d23d0c63f/resourceGroups/trident-vm_servicing-azure-vnet/providers/Microsoft.Network/virtualNetworks/poolpeeringvnet/subnets/default
+
     jobs:
       - ${{ if eq(parameters.includeQemu, true) }}:
           - template: testing-template.yml

@@ -40,8 +40,7 @@ fn rebuild_raid_array(
                 .iter()
                 .find(|d| d.id == *disk_id)
                 .context(format!(
-                    "Failed to find configuration for disk '{}' in Host Status spec",
-                    disk_id
+                    "Failed to find configuration for disk '{disk_id}' in Host Status spec"
                 ))
                 .map(|disk| disk.partitions.iter().map(|p| p.id.clone()))
         })
@@ -57,8 +56,7 @@ fn rebuild_raid_array(
         .iter()
         .find(|raid| raid.id == *raid_id)
         .context(format!(
-            "Failed to find configuration for RAID array '{}' in Host Status spec",
-            raid_id
+            "Failed to find configuration for RAID array '{raid_id}' in Host Status spec"
         ))?;
 
     let rebuild_partitions: Vec<_> = raid_array
@@ -202,8 +200,7 @@ pub(crate) fn validate_rebuild_raid(
             .iter()
             .find(|d| d.id.as_str() == disk)
             .context(format!(
-                "Failed to find configuration for disk '{}' in host config",
-                disk
+                "Failed to find configuration for disk '{disk}' in host config"
             ))?;
 
         let partitions_len = disk_info.partitions.len();
@@ -276,7 +273,7 @@ pub(crate) fn rebuild_raid(
         let resolved_disk = resolved_disks
             .iter()
             .find(|rd| rd.id == *disk)
-            .context(format!("Failed to find resolved disk for disk '{}'", disk))?;
+            .context(format!("Failed to find resolved disk for disk '{disk}'"))?;
 
         // Create Partitions on the new disk
         partitioning::create_partitions_on_disk(
@@ -302,7 +299,7 @@ pub(crate) fn rebuild_raid(
             raid_array, disks
         );
         rebuild_raid_array(&raid_array, &disks, host_status)
-            .context(format!("Failed to rebuild RAID array '{}'", raid_array))?;
+            .context(format!("Failed to rebuild RAID array '{raid_array}'"))?;
     }
     Ok(())
 }
@@ -324,8 +321,7 @@ fn validate_raid_recovery(
             .iter()
             .find(|d| d.id == *disk_id)
             .context(format!(
-                "Failed to find configuration for disk '{}' in host config",
-                disk_id
+                "Failed to find configuration for disk '{disk_id}' in host config"
             ))?;
 
         disks_to_rebuild_partitions.extend(disk.partitions.iter().map(|p| p.id.clone()));
@@ -370,8 +366,7 @@ fn get_raid_disks_to_rebuild_map(
                 .iter()
                 .find(|d| d.id == *disk)
                 .context(format!(
-                    "Failed to find configuration for disk '{}' in host config",
-                    disk
+                    "Failed to find configuration for disk '{disk}' in host config"
                 ))?
                 .partitions
                 .iter()

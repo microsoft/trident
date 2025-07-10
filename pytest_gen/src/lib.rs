@@ -168,12 +168,12 @@ fn extract_test_case_metadata(attr: TokenStream) -> TestCaseMetadataInt {
                     }
                     "true" | "false" => {
                         if current_key != Some(TestCaseMetadataAttribute::Negative) {
-                            panic!("Unknown attribute value: {}", ident_str);
+                            panic!("Unknown attribute value: {ident_str}");
                         }
                         metadata.negative = ident_str == "true";
                     }
                     _ => {
-                        panic!("Unknown attribute name: {}", ident_str);
+                        panic!("Unknown attribute name: {ident_str}");
                     }
                 }
             }
@@ -192,7 +192,7 @@ fn extract_test_case_metadata(attr: TokenStream) -> TestCaseMetadataInt {
                         current_key = None;
                     }
                     _ => {
-                        panic!("Unknown attribute separator: {}", punct_str);
+                        panic!("Unknown attribute separator: {punct_str}");
                     }
                 }
             }
@@ -208,7 +208,7 @@ fn extract_test_case_metadata(attr: TokenStream) -> TestCaseMetadataInt {
                     _ => None,
                 };
                 if literal_bool.is_none() && literal_str.is_none() {
-                    panic!("Unknown attribute value: {:?}", token);
+                    panic!("Unknown attribute value: {token:?}");
                 }
                 match current_key {
                     None => {
@@ -216,7 +216,7 @@ fn extract_test_case_metadata(attr: TokenStream) -> TestCaseMetadataInt {
                     }
                     Some(ref key) => match key {
                         TestCaseMetadataAttribute::Negative => {
-                            panic!("Unexpected attribute key: {:?}", token)
+                            panic!("Unexpected attribute key: {token:?}")
                             // handled above
                         }
                         TestCaseMetadataAttribute::Feature => {
@@ -232,7 +232,7 @@ fn extract_test_case_metadata(attr: TokenStream) -> TestCaseMetadataInt {
                 }
             }
             _ => {
-                panic!("Unknown attribute: {:?}", token);
+                panic!("Unknown attribute: {token:?}");
             }
         }
     }

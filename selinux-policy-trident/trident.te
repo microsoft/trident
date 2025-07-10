@@ -345,6 +345,8 @@ allow trident_t init_runtime_t:dir { add_name write };
 allow trident_t init_runtime_t:file { create getattr open write };
 allow trident_t init_var_lib_t:dir { getattr open read search relabelto };
 allow trident_t iptables_unit_t:file getattr;
+# Required for veritysetup to search for keys in the kernel's keyring when launched by trident.
+allow trident_t kernel_t:key search;
 allow trident_t kernel_t:process setsched;
 allow trident_t kernel_t:system { module_request ipc_info };
 allow trident_t kernel_t:unix_dgram_socket sendto;
@@ -848,6 +850,9 @@ optional_policy(`
 # This is necessary for Trident to create encrypted volumes
 allow lvm_t trident_t:sem { associate read unix_read unix_write write };
 allow lvm_t initrc_t:sem { associate read unix_read unix_write write };
+
+# This is necessary for veritysetup to be able to read a key file in /tmp.
+allow lvm_t tmp_t:file getattr;
 
 #============= mount_t =============
 allow mount_t trident_var_lib_t:dir mounton;

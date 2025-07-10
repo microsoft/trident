@@ -194,7 +194,7 @@ fn deploy_os_image_file(
 ) -> Result<(), Error> {
     let block_device_path = ctx
         .get_block_device_path(id)
-        .context(format!("No block device with id '{}' found", id))?;
+        .context(format!("No block device with id '{id}' found"))?;
 
     let dev_info = lsblk::get(&block_device_path).with_context(|| {
         format!(

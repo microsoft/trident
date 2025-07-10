@@ -431,8 +431,7 @@ mod tests {
         assert_eq!(
             stack[0].0.target,
             Path::new(ROOT_MOUNT_POINT_PATH),
-            "Expected stack to only contain the root mountpoint after traversing all mount points, got:\n{:#?}",
-            stack
+            "Expected stack to only contain the root mountpoint after traversing all mount points, got:\n{stack:#?}"
         );
     }
 
@@ -581,7 +580,7 @@ mod functional_tests {
 
         let assert_mountpoint_exists = |target: &str| {
             if !root.contains_mountpoint(target) {
-                panic!("Mount point {} not found", target)
+                panic!("Mount point {target} not found")
             }
         };
 

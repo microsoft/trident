@@ -43,10 +43,7 @@ impl Subsystem for NetworkSubsystem {
 fn disable_cloud_init_networking() -> Result<(), TridentError> {
     fs::write(CLOUD_INIT_DISABLE_FILE, CLOUD_INIT_DISABLE_CONTENT)
         .with_context(|| {
-            format!(
-                "Failed to write to cloud-init disable file at {}",
-                CLOUD_INIT_DISABLE_FILE
-            )
+            format!("Failed to write to cloud-init disable file at {CLOUD_INIT_DISABLE_FILE}")
         })
         .structured(ServicingError::DisableCloudInitNetworking)
 }

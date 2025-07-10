@@ -178,8 +178,7 @@ impl HostConfiguration {
                 obj.object().required.remove("network");
             } else {
                 panic!(
-                    "Failed to remove 'network' from required fields from definition '{}'. Perhaps the API has changed?",
-                    key
+                    "Failed to remove 'network' from required fields from definition '{key}'. Perhaps the API has changed?"
                 );
             }
         };

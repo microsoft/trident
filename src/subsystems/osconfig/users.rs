@@ -20,13 +20,13 @@ pub(super) fn set_up_users(users: &[User]) -> Result<Vec<MICUser>, Error> {
         // Create sshd config dir
         osutils::files::create_dirs(SSHD_CONFIG_DIR).context("Failed to create sshd config dir")?;
 
-        let include_dir = format!("Include {}/{}", SSHD_CONFIG_DIR, GLOBAL_CONFIG_FILE_NAME);
+        let include_dir = format!("Include {SSHD_CONFIG_DIR}/{GLOBAL_CONFIG_FILE_NAME}");
 
         // Check if the include directive is already in the sshd config.
         // If not, add it, otherwise do nothing.
         let config =
             std::fs::read_to_string(SSHD_CONFIG_FILE).context("Failed to read sshd config")?;
-        if !regex::Regex::new(&format!(r"^ *{}", include_dir))
+        if !regex::Regex::new(&format!(r"^ *{include_dir}"))
             .context("Failed to compile regex")?
             .is_match(&config)
         {
@@ -34,7 +34,7 @@ pub(super) fn set_up_users(users: &[User]) -> Result<Vec<MICUser>, Error> {
             osutils::files::prepend_file(
                 SSHD_CONFIG_FILE,
                 false,
-                format!("# Trident Configuration Overrides\n{}\n\n", include_dir).as_bytes(),
+                format!("# Trident Configuration Overrides\n{include_dir}\n\n").as_bytes(),
             )
             .context("Failed to prepend sshd config")?;
         }

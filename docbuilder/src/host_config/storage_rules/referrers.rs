@@ -104,7 +104,7 @@ pub(super) fn homogeneous_references() -> RuleDefinition {
         .into_iter()
         .filter(|r| r.enforce_homogeneous_reference_kinds())
     {
-        list.push(format!("- {}", referrer_kind));
+        list.push(format!("- {referrer_kind}"));
     }
 
     RuleDefinition {
@@ -121,7 +121,7 @@ pub(super) fn homogeneous_partition_types() -> RuleDefinition {
         .into_iter()
         .filter(|r| r.enforce_homogeneous_partition_types())
     {
-        list.push(format!("- {}", referrer_kind));
+        list.push(format!("- {referrer_kind}"));
     }
 
     RuleDefinition {
@@ -138,7 +138,7 @@ pub(super) fn homogeneous_partition_sizes() -> RuleDefinition {
         .into_iter()
         .filter(|r| r.enforce_homogeneous_partition_sizes())
     {
-        list.push(format!("- {}", referrer_kind));
+        list.push(format!("- {referrer_kind}"));
     }
 
     RuleDefinition {

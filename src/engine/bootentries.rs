@@ -1555,7 +1555,7 @@ mod functional_test {
 
         let bootmgr_output: EfiBootManagerOutput =
             efibootmgr::list_and_parse_bootmgr_entries().unwrap();
-        print!("{:?}", bootmgr_output);
+        print!("{bootmgr_output:?}");
 
         let disk1_uuid = sfdisk::get_disk_uuid(&PathBuf::from("/dev/sda"))
             .unwrap()
@@ -1568,7 +1568,7 @@ mod functional_test {
 
         let bootmgr_output: EfiBootManagerOutput =
             efibootmgr::list_and_parse_bootmgr_entries().unwrap();
-        print!("{:?}", bootmgr_output);
+        print!("{bootmgr_output:?}");
         // Get all the entries with label "TESTA"
         let testa_entries = bootmgr_output.get_entries_with_label("TESTA");
         // Get all the entries with label "TESTB"
@@ -1613,7 +1613,7 @@ mod functional_test {
 
         let bootmgr_output: EfiBootManagerOutput =
             efibootmgr::list_and_parse_bootmgr_entries().unwrap();
-        print!("{:?}", bootmgr_output);
+        print!("{bootmgr_output:?}");
 
         let disk1_uuid = sfdisk::get_disk_uuid(&PathBuf::from("/dev/sda"))
             .unwrap()

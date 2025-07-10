@@ -24,6 +24,11 @@ pub struct TabFileEntry {
     pub mount_point: TabMountPoint,
     pub fs_type: TabFileSystemType,
     pub options: Vec<String>,
+
+    /// Whether this entry is disabled (commented out).
+    /// If `None`, the entry is enabled.
+    /// If `Some`, the entry is disabled and the reason is provided.
+    pub disabled_reason: Option<String>,
 }
 
 /// A representation of a device in a tab file.
@@ -67,6 +72,7 @@ impl TabFileEntry {
             mount_point: TabMountPoint::Path(mount_point.into()),
             fs_type,
             options: Vec::new(),
+            disabled_reason: None,
         }
     }
 
@@ -77,6 +83,7 @@ impl TabFileEntry {
             mount_point: TabMountPoint::None,
             fs_type: TabFileSystemType::Swap,
             options: Vec::new(),
+            disabled_reason: None,
         }
     }
 
@@ -87,6 +94,7 @@ impl TabFileEntry {
             mount_point: TabMountPoint::Path(mount_point.into()),
             fs_type: NodevFilesystemType::Tmpfs.into(),
             options: Vec::new(),
+            disabled_reason: None,
         }
     }
 
@@ -97,12 +105,19 @@ impl TabFileEntry {
             mount_point: TabMountPoint::Path(mount_point.into()),
             fs_type: NodevFilesystemType::Overlay.into(),
             options: Vec::new(),
+            disabled_reason: None,
         }
     }
 
     /// Add options to this entry.
     pub fn with_options(mut self, options: Vec<String>) -> Self {
         self.options = options;
+        self
+    }
+
+    /// Disable the entry with a reason.
+    pub fn with_disabled_reason(mut self, reason: Option<impl Into<String>>) -> Self {
+        self.disabled_reason = reason.map(Into::into);
         self
     }
 
@@ -122,14 +137,27 @@ impl TabFileEntry {
             self.options.join(",")
         };
 
-        format!(
+        let line = format!(
             "{} {} {} {} 0 {}\n",
             self.device.render(),
             self.mount_point.render(),
             self.fs_type.name(),
             options,
             fsck_pass,
-        )
+        );
+
+        match &self.disabled_reason {
+            // If the entry is disabled, comment it out and add the reason.
+            // Replace all newlines with newlines followed by a `#` to keep the
+            // comment formatting.
+            Some(reason) => {
+                let escaped = reason.replace("\n", "\n# ");
+                format!("# {escaped}\n# {line}")
+            }
+
+            // If the entry is enabled, just use an empty string.
+            None => line,
+        }
     }
 }
 
@@ -167,7 +195,7 @@ pub fn get_device_path(tab_file_path: &Path, path: &Path) -> Result<PathBuf, Err
         .arg("--mountpoint")
         .arg(path)
         .output_and_check()
-        .context(format!("Failed to find {:?} in {:?}", path, tab_file_path))?;
+        .context(format!("Failed to find {path:?} in {tab_file_path:?}"))?;
     let map = parse_findmnt_output(findmnt_output_json.as_str())?;
     if map.len() != 1 {
         bail!(
@@ -190,8 +218,7 @@ fn parse_findmnt_output(findmnt_output: &str) -> Result<HashMap<PathBuf, PathBuf
         .context("Failed to deserialize output of tab file reader")?;
 
     let filesystems = payload["filesystems"].as_array().context(format!(
-        "Unexpected formatting of the findmnt utility, missing 'filesystems' in {:?}",
-        payload
+        "Unexpected formatting of the findmnt utility, missing 'filesystems' in {payload:?}"
     ))?;
 
     // returns the first error or the list of results
@@ -201,13 +228,11 @@ fn parse_findmnt_output(findmnt_output: &str) -> Result<HashMap<PathBuf, PathBuf
 /// Parse a single entry from the `findmnt` utility output.
 fn parse_findmnt_entry(entry: &Value) -> Result<(PathBuf, PathBuf), Error> {
     let device_path = entry["source"].as_str().context(format!(
-        "Unexpected formatting of the findmnt utility, missing 'source' in {:?}",
-        entry
+        "Unexpected formatting of the findmnt utility, missing 'source' in {entry:?}"
     ))?;
 
     let mount_path = entry["target"].as_str().context(format!(
-        "Unexpected formatting of the findmnt utility, missing 'target' in {:?}",
-        entry
+        "Unexpected formatting of the findmnt utility, missing 'target' in {entry:?}"
     ))?;
 
     Ok((PathBuf::from(mount_path), PathBuf::from(device_path)))

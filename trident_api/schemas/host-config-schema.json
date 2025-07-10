@@ -891,6 +891,7 @@
       "type": "object",
       "oneOf": [
         {
+          "description": "Raw contents of the script.",
           "type": "object",
           "required": [
             "content"
@@ -903,6 +904,7 @@
           "additionalProperties": false
         },
         {
+          "description": "Path to a script in the execution OS.",
           "type": "object",
           "required": [
             "path"

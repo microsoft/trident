@@ -73,7 +73,7 @@ impl SwapSpace {
             .lines()
             .map(|line| {
                 SwapSpace::from_str(line)
-                    .with_context(|| format!("Failed to parse swap space line: {}", line))
+                    .with_context(|| format!("Failed to parse swap space line: {line}"))
             })
             .collect()
     }
@@ -183,10 +183,10 @@ mod functional_test {
         swapoff(TEST_DISK_DEVICE_PATH).unwrap();
 
         let err = swapoff(TEST_DISK_DEVICE_PATH).unwrap_err();
-        println!("Error: {:?}", err);
+        println!("Error: {err:?}");
         assert_eq!(
             err.to_string(),
-            format!("Failed to execute swapoff on '{}'", TEST_DISK_DEVICE_PATH)
+            format!("Failed to execute swapoff on '{TEST_DISK_DEVICE_PATH}'")
         );
 
         // run() on a formatted block device with a different filesystem

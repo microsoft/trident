@@ -20,18 +20,18 @@ use super::{
 /// error message.
 fn pretty_node_id(node_identifier: &NodeIdentifier) -> String {
     match node_identifier {
-        NodeIdentifier::BlockDevice(id) => format!("'{}'", id),
-        NodeIdentifier::FileSystem(fs) => format!("filesystem [{}]", fs),
-        NodeIdentifier::Swap(swap) => format!("swap on '{}'", swap),
+        NodeIdentifier::BlockDevice(id) => format!("'{id}'"),
+        NodeIdentifier::FileSystem(fs) => format!("filesystem [{fs}]"),
+        NodeIdentifier::Swap(swap) => format!("swap on '{swap}'"),
     }
 }
 
 /// Pluralizes a word based on the count.
 fn pluralize(count: usize, singular: &str, plural: &str) -> String {
     if count == 1 {
-        format!("{} {}", count, singular)
+        format!("{count} {singular}")
     } else {
-        format!("{} {}", count, plural)
+        format!("{count} {plural}")
     }
 }
 

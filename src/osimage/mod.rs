@@ -1,5 +1,5 @@
 use std::{
-    fmt::{Display, Formatter, Write},
+    fmt::{Display, Formatter},
     io::{Error as IoError, Read},
     path::{Path, PathBuf},
 };
@@ -68,7 +68,7 @@ impl OsImage {
             return Err(TridentError::new(InvalidInputError::MissingOsImage));
         };
 
-        debug!("Loading COSI file '{}'", image_source.url);
+        debug!("Attempting to load COSI file from '{}'", image_source.url);
         let os_image = OsImage::cosi(image_source).structured(InvalidInputError::LoadCosi {
             url: image_source.url.clone(),
         })?;
@@ -77,9 +77,9 @@ impl OsImage {
         }
 
         info!(
-            "Successfully loaded OS image of type '{}' from '{}'",
-            os_image.name(),
-            os_image.source()
+            "Loaded COSI file from '{}' with hash '{}'",
+            os_image.source(),
+            os_image.metadata_sha384()
         );
 
         // Ensure the OS image architecture matches the current system architecture
@@ -93,25 +93,15 @@ impl OsImage {
         }
 
         debug!(
-            "OS image provides the following mount points:\n{}",
+            "OS image provides the following mount points: {}",
             os_image
                 .available_mount_points()
-                .fold(String::new(), |mut acc, p| {
-                    let _ = writeln!(acc, "  - {}", p.display());
-                    acc
-                })
+                .map(|p| p.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
         );
 
         Ok(os_image)
-    }
-
-    /// Returns the name of the OS image type.
-    pub(crate) fn name(&self) -> &'static str {
-        match &self.0 {
-            OsImageInner::Cosi(_) => "COSI",
-            #[cfg(test)]
-            OsImageInner::Mock(_) => "Mock",
-        }
     }
 
     /// Returns the source URL of the OS image.
@@ -355,7 +345,6 @@ mod tests {
             ],
         });
 
-        assert_eq!(mock.name(), "Mock");
         assert_eq!(mock.source(), &source_url);
         assert_eq!(mock.architecture(), arch);
 

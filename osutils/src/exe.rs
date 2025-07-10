@@ -43,14 +43,14 @@ pub trait OutputChecker: Sealed {
         let mut res = String::with_capacity(stdout.len() + stderr.len() + 20);
 
         if !stdout.is_empty() {
-            res += &format!("stdout:\n{}\n", stdout);
+            res += &format!("stdout:\n{stdout}\n");
         }
 
         if !stderr.is_empty() {
             if !res.is_empty() {
                 res += "\n";
             }
-            res += &format!("stderr:\n{}\n", stderr);
+            res += &format!("stderr:\n{stderr}\n");
         }
 
         res
@@ -261,7 +261,7 @@ impl RunAndCheck for Command {
                 self.get_args()
                     .map(|arg| arg.to_string_lossy())
                     .map(|arg| if arg.contains(' ') {
-                        format!("'{}'", arg)
+                        format!("'{arg}'")
                     } else {
                         arg.into()
                     })
@@ -305,29 +305,26 @@ mod tests {
         // Check trait on io::Result<Output>
         let result = Command::new("/doesnotexist_1234").arg("something").output();
 
-        assert!(result.is_err(), "Expected error, got {:?}", result);
+        assert!(result.is_err(), "Expected error, got {result:?}");
 
-        assert!(!result.is_success(), "Expected failure, got {:?}", result);
+        assert!(!result.is_success(), "Expected failure, got {result:?}");
 
         assert_eq!(
             result.exit_code(),
             None,
-            "Expected exit code None, got {:?}",
-            result
+            "Expected exit code None, got {result:?}"
         );
 
         assert_eq!(
             result.end_signal(),
             None,
-            "Expected end signal None, got {:?}",
-            result
+            "Expected end signal None, got {result:?}"
         );
 
-        assert!(result.check().is_err(), "Expected error, got {:?}", result);
+        assert!(result.check().is_err(), "Expected error, got {result:?}");
         assert!(
             result.check_output().is_err(),
-            "Expected error, got {:?}",
-            result
+            "Expected error, got {result:?}"
         );
         assert!(result.explain_exit().contains("Failed to execute process:"));
 
@@ -338,20 +335,18 @@ mod tests {
             .output()
             .expect("Failed to start bash");
 
-        assert!(!result.is_success(), "Expected failure, got {:?}", result);
+        assert!(!result.is_success(), "Expected failure, got {result:?}");
 
         assert_eq!(
             result.exit_code(),
             Some(123),
-            "Expected exit code 123, got {:?}",
-            result
+            "Expected exit code 123, got {result:?}"
         );
 
         assert_eq!(
             result.end_signal(),
             None,
-            "Expected end signal None, got {:?}",
-            result
+            "Expected end signal None, got {result:?}"
         );
     }
 
@@ -407,7 +402,7 @@ mod tests {
             output.stdout, b"something\n",
             "Output does not match expected",
         );
-        assert!(output.is_success(), "Expected success, got {:?}", output);
+        assert!(output.is_success(), "Expected success, got {output:?}");
 
         // This command doesnt exist
         let mut cmd = Command::new("nonexistent_command_1234");

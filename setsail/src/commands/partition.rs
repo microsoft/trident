@@ -127,9 +127,9 @@ impl std::fmt::Display for PartitionMount {
         match self {
             PartitionMount::Path(path) => write!(f, "{}", path.display()),
             PartitionMount::Swap => write!(f, "swap"),
-            PartitionMount::Raid(raid) => write!(f, "raid.{}", raid),
-            PartitionMount::Pv(pv) => write!(f, "pv.{}", pv),
-            PartitionMount::Btrfs(btrfs) => write!(f, "btrfs.{}", btrfs),
+            PartitionMount::Raid(raid) => write!(f, "raid.{raid}"),
+            PartitionMount::Pv(pv) => write!(f, "pv.{pv}"),
+            PartitionMount::Btrfs(btrfs) => write!(f, "btrfs.{btrfs}"),
             PartitionMount::BiosBoot => write!(f, "biosboot"),
         }
     }
@@ -156,7 +156,7 @@ pub enum FsType {
 
 impl std::fmt::Display for FsType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", format!("{:?}", self).to_lowercase())
+        write!(f, "{}", format!("{self:?}").to_lowercase())
     }
 }
 

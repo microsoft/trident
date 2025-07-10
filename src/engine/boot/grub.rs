@@ -190,7 +190,7 @@ fn update_grub_config_azl3(
                 .map(|device_id| {
                     let overlay_device_path = ctx
                         .get_block_device_path(device_id)
-                        .context(format!("Failed to find overlay device {}", device_id))?;
+                        .context(format!("Failed to find overlay device {device_id}"))?;
 
                     let volume_value = overlay_device_path.to_str().context(format!(
                         "Failed to convert mount device path '{}' to string",

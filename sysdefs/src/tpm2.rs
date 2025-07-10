@@ -83,7 +83,7 @@ impl<'de> Deserialize<'de> for Pcr {
     {
         let val = u32::deserialize(deserializer)?;
         Pcr::from_num(val)
-            .map_err(|_| serde::de::Error::custom(format!("Failed to deserialize PCR: {}", val)))
+            .map_err(|_| serde::de::Error::custom(format!("Failed to deserialize PCR: {val}")))
     }
 }
 

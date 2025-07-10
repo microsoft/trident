@@ -90,6 +90,27 @@ format:
 test: .cargo/config
 	cargo test --all --no-fail-fast
 
+COVERAGE_EXCLUDED_FILES_REGEX='docbuilder|pytest|setsail'
+
+.PHONY: coverage
+coverage: .cargo/config coverage-llvm
+
+.PHONY: coverage-llvm
+coverage-llvm:
+	cargo llvm-cov nextest \
+		--remap-path-prefix \
+		--lcov \
+		--output-path target/lcov.info \
+		--workspace \
+		--profile ci \
+		--exclude pytest_gen \
+		--ignore-filename-regex $(COVERAGE_EXCLUDED_FILES_REGEX)
+	cargo llvm-cov report \
+	    --ignore-filename-regex $(COVERAGE_EXCLUDED_FILES_REGEX) \
+        --summary-only --json > ./target/coverage.json
+	@echo "Coverage Summary:"
+	@jq '.data[0].totals.lines.percent' ./target/coverage.json
+
 .PHONY: ut-coverage
 ut-coverage: .cargo/config
 	mkdir -p target/coverage/profraw
@@ -101,12 +122,13 @@ coverage-report: .cargo/config
 	grcov . --binary-path ./target/coverage/debug/deps/ -s . -t html,covdir,cobertura --branch --ignore-not-existing --ignore '../*' --ignore "/*" --ignore "docbuilder/*" --ignore "target/*" -o target/coverage
 	jq .coveragePercent target/coverage/covdir
 
-.PHONY: coverage
+.PHONY: grcov-coverage
 coverage: ut-coverage coverage-report
 
 .PHONY: clean-coverage
 clean-coverage:
 	rm -rf target/coverage/profraw
+	rm -rf target/lcov.info
 
 TOOLKIT_DIR="azure-linux-image-tools/toolkit"
 AZL_TOOLS_OUT_DIR="$(TOOLKIT_DIR)/out/tools"
@@ -158,7 +180,7 @@ bin/trident-rpms.tar.gz: Dockerfile.azl3 systemd/*.service trident.spec artifact
 	@rm -rf bin/RPMS/
 	@tar xf $@ -C bin/
 
-STEAMBOAT_RPMS_DIR ?= /tmp/mariner/uki/out/RPMS
+STEAMBOAT_RPMS_DIR ?= ../steamboat/build/uki/out/RPMS
 
 .PHONY: copy-rpms-to-steamboat
 copy-rpms-to-steamboat: bin/trident-rpms-azl3.tar.gz
@@ -170,6 +192,23 @@ copy-rpms-to-steamboat: bin/trident-rpms-azl3.tar.gz
 	@echo "Trident RPMs copied to Steamboat directory: $(STEAMBOAT_RPMS_DIR)"
 	@ls -alh $(STEAMBOAT_RPMS_DIR)/trident-*.rpm
 
+# Does a full build of Trident RPMs and publishes them to the TridentDev feed in Azure DevOps.
+.PHONY: publish-dev-rpms
+publish-dev-rpms: bin/trident-rpms-azl3.tar.gz
+	@echo "Publishing Trident dev RPMs to TridentDev/rpms-dev:$(LOCAL_BUILD_TRIDENT_VERSION)"
+	$(eval STAGING_DIR := $(shell mktemp -d))
+	@find bin/RPMS/ -type f -name '*.rpm' -exec cp {} $(STAGING_DIR)/ \;
+	ls -alh $(STAGING_DIR)
+	az artifacts universal publish \
+		--organization "https://dev.azure.com/mariner-org/" \
+		--project "2311650c-e79e-4301-b4d2-96543fdd84ff" \
+		--scope project \
+		--feed "TridentDev" \
+		--name "rpms-dev" \
+		--version "$(LOCAL_BUILD_TRIDENT_VERSION)" \
+		--path "$(STAGING_DIR)"
+	rm -rf $(STAGING_DIR)
+	@echo "Trident dev RPMs published to TridentDev:rpms-dev with version $(LOCAL_BUILD_TRIDENT_VERSION)"
 
 # Grabs bin/trident-rpms.tar.gz from the local build directory and builds a Docker image with it.
 .PHONY: docker-build

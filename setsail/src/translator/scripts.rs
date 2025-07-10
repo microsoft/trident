@@ -11,7 +11,7 @@ pub fn translate(input: &ParsedData, hc: &mut HostConfiguration) {
         .enumerate()
         .filter(|(_, s)| matches!(s.script_type, ScriptType::Post))
         .map(|(index, script)| Script {
-            name: format!("kickstart-script-{}", index),
+            name: format!("kickstart-script-{index}"),
             run_on: vec![ServicingTypeSelection::CleanInstall],
             interpreter: Some(script.interpreter.clone()),
             source: ScriptSource::Content(script.body.clone()),
