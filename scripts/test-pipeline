@@ -23,28 +23,28 @@ class PipelineMetadata:
 
 
 pipeline_metadata_map: Dict[str, PipelineMetadata] = {
-    "pr": PipelineMetadata(id=2113),
-    "pr-e2e": PipelineMetadata(id=2195),
-    "pr-e2e-azure": PipelineMetadata(id=4524),
-    "ci": PipelineMetadata(id=3371),
-    "pre": PipelineMetadata(id=2648),
+    "pr": PipelineMetadata(id=5066),
+    "pr-e2e": PipelineMetadata(id=5073),
+    "pr-e2e-azure": PipelineMetadata(id=5072),
+    "ci": PipelineMetadata(id=5067),
+    "pre": PipelineMetadata(id=5074),
     "rel": PipelineMetadata(
-        id=3370,
+        id=5075,
         parameters={"specificVersion": "1.0.0"},
     ),
-    "testing": PipelineMetadata(id=3262),
-    "tester": PipelineMetadata(id=3210),
-    "scale": PipelineMetadata(id=4217),
-    "scale-official": PipelineMetadata(id=4465),
+    "testing": PipelineMetadata(id=5078),
+    "tester": PipelineMetadata(id=5071),
+    "scale": PipelineMetadata(id=5077),
+    "scale-official": PipelineMetadata(id=5076),
     "azl-cicd": PipelineMetadata(
-        id=4358,
+        id=5068,
         parameters={
             "baseImagePipelineBuildId": "730139",
             "baseImageArm64PipelineBuildId": "730138",
         },
     ),
-    "prism-cicd": PipelineMetadata(id=4482),
-    "full-validation": PipelineMetadata(id=4500),
+    "prism-cicd": PipelineMetadata(id=5069),
+    "full-validation": PipelineMetadata(id=5070),
 }
 
 parser = argparse.ArgumentParser(description="Preview a pipeline run")
