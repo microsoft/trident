@@ -23,7 +23,7 @@ stages:
 
     jobs:
       - job: DeleteFromAcr
-        displayName: Delete Trident testimages from ${{ parameters.registry }} ACR
+        displayName: Delete ${{ parameters.imageName }} from ${{ parameters.registry }} ACR
         pool:
           type: linux
 
