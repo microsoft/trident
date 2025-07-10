@@ -49,7 +49,7 @@ after release.
 ## On
 
 - Run [the release
-  pipeline](https://dev.azure.com/mariner-org/ECF/_build?definitionId=3370) with
+  pipeline](https://dev.azure.com/mariner-org/ECF/_build?definitionId=5075) with
   the version from the prerelease feed that will be published. (The pipeline
   will download RPMs from [the prerelease
   feed](https://dev.azure.com/mariner-org/ECF/_artifacts/feed/Trident/UPack/rpms-prerelease/versions/)
