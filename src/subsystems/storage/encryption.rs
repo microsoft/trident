@@ -253,6 +253,11 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                 // Re-enroll the device with the pcrlock policy
                 encryption::systemd_cryptenroll(None::<&Path>, device_path.clone(), true, pcrs)
                     .structured(ServicingError::BindEncryptionToPcrlockPolicy)?;
+
+                // TODO: If the key file was randomly generated and NOT provided by the user,
+                // remove the password keyslot from the encrypted volume, once it's been
+                // re-enrolled with a pcrlock policy. Related ADO task:
+                // https://dev.azure.com/mariner-org/ECF/_workitems/edit/12868.
             }
         }
     }
