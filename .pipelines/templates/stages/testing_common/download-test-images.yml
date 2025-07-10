@@ -128,6 +128,7 @@ steps:
         netlaunch
         netlisten
         mkcosi
+        seriallisten
         storm-trident
       targetPath: "${{ parameters.toolsDirectory }}"
 
@@ -145,6 +146,7 @@ steps:
       # Set tools to be executable
       chmod +x ${{ parameters.toolsDirectory }}/net*
       chmod +x ${{ parameters.toolsDirectory }}/mkcosi
+      chmod +x ${{ parameters.toolsDirectory }}/seriallisten
       chmod +x ${{ parameters.toolsDirectory }}/storm-trident
 
       # Call helper to copy and rename images!

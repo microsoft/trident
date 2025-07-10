@@ -15,6 +15,10 @@ parameters:
     type: boolean
     default: true
 
+  - name: buildSerialListen
+    type: boolean
+    default: true
+
   - name: buildStormTrident
     type: boolean
     default: true
@@ -74,6 +78,15 @@ stages:
                   mv bin/mkcosi $(ob_outputDirectory)
                 workingDirectory: $(Build.SourcesDirectory)
                 displayName: "Building mkcosi"
+
+          - ${{ if eq(parameters.buildSerialListen, true) }}:
+              - bash: |
+                  set -eux
+                  make bin/seriallisten
+                  mkdir -p $(ob_outputDirectory)
+                  mv bin/seriallisten $(ob_outputDirectory)
+                workingDirectory: $(Build.SourcesDirectory)
+                displayName: "Building seriallisten"
 
           - ${{ if eq(parameters.buildStormTrident, true) }}:
               - bash: |

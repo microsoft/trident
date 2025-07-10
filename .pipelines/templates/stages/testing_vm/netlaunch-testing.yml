@@ -241,6 +241,8 @@ stages:
               userName: testing-user
               artifactsDirectory: artifacts/test-image
               netlistenPort: ${{variables.netlaunchPort}}
+              netlaunchConfigFile: $(argusToolkitSourceDirectory)/vm-netlaunch.yaml
+
 
           - bash: |
               set -eux

@@ -165,12 +165,14 @@ jobs:
           artifactName: "go-tools"
           patterns: |
             netlisten
+            seriallisten
             storm-trident
           targetPath: "$(tridentSourceDirectory)/bin"
 
       - bash: |
           set -eux
           chmod +x $(tridentSourceDirectory)/bin/netlisten
+          chmod +x $(tridentSourceDirectory)/bin/seriallisten
           chmod +x $(tridentSourceDirectory)/bin/storm-trident
           cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* ~/.ssh/
           chmod -R 700 ~/.ssh/
