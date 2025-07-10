@@ -575,7 +575,7 @@ artifacts/trident-functest.qcow2:
 	$(eval RUN_ID ?= $(shell az pipelines runs list \
 		--org "https://dev.azure.com/mariner-org" \
 		--project "ECF" \
-		--pipeline-ids 3371 \
+		--pipeline-ids 5067 \
 		--branch $(BRANCH) \
 		--query-order QueueTimeDesc \
 		--result succeeded \
@@ -601,7 +601,7 @@ download-runtime-images:
 	$(eval RUN_ID ?= $(shell az pipelines runs list \
 		--org "https://dev.azure.com/mariner-org" \
 		--project "ECF" \
-		--pipeline-ids 3371 \
+		--pipeline-ids 5067 \
 		--branch $(BRANCH) \
 		--query-order QueueTimeDesc \
 		--result succeeded \
@@ -707,7 +707,7 @@ download-trident-container-installer-iso:
 	$(eval RUN_ID ?= $(shell az pipelines runs list \
 		--org "https://dev.azure.com/mariner-org" \
 		--project "ECF" \
-		--pipeline-ids 3371 \
+		--pipeline-ids 5067 \
 		--branch $(BRANCH) \
 		--query-order QueueTimeDesc \
 		--result succeeded \
