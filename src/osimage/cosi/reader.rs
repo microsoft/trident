@@ -271,7 +271,7 @@ impl HttpFile {
                 // Attempt to retrieve digest from manifest
                 let client = OciClient::default();
                 let manifest = client.pull_image_manifest(img_ref, &RegistryAuth::Anonymous);
-                let (oci_image_manifest, _) = runtime.block_on(manifest).with_context(|| 
+                let (oci_image_manifest, _) = runtime.block_on(manifest).with_context(||
                     format!(
                         "Repository '{}' does not exist in registry '{}' or tag '{tag}' not found in repository",
                         img_ref.repository(),
