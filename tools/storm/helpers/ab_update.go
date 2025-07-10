@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"strconv"
 
 	"storm"
 
@@ -113,15 +114,25 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 	logrus.Debugf("Base name: %s", base)
 
 	matches := regexp.MustCompile(`^(.*?)(_v\d+)?\.(.+)$`).FindStringSubmatch(base)
+	matches_oci := regexp.MustCompile(`^(.*?)\:v(\d+)$`).FindStringSubmatch(base)
 
-	if len(matches) != 4 {
+	var newCosiName string
+
+	if len(matches) == 4 {
+		name := matches[1]
+		ext := matches[3]
+		newCosiName := fmt.Sprintf("%s_v%s.%s", name, h.args.Version, ext)
+	} else if len(matches_oci) == 3 {
+		name := matches_oci[1]
+		tagNumber, err := strconv.Atoi(matches_oci[2])
+		if err != nil {
+			return fmt.Errorf("failed to parse tag: %s", base)
+		}
+		newCosiName := fmt.Sprintf("%s:v%s", name, h.args.Version)
+	} else {
 		return fmt.Errorf("failed to parse image name: %s", base)
 	}
 
-	name := matches[1]
-	ext := matches[3]
-
-	newCosiName := fmt.Sprintf("%s_v%s.%s", name, h.args.Version, ext)
 	newUrl := fmt.Sprintf("%s%s", urlPath, newCosiName)
 	logrus.Infof("New image URL: %s", newUrl)
 
