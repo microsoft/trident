@@ -9,8 +9,8 @@ parameters:
     default: maritimuspublic
 
 stages:
-  - stage: DeleteFromAcr
-    displayName: Delete images from ACR
+  - stage: DeleteFromAcr_${{ parameters.repository }}
+    displayName: Delete ${{ parameters.repository }} from ACR
     condition: always()
     dependsOn:
       - TridentTestImg_${{ replace(parameters.repository, '-', '_') }}
