@@ -269,8 +269,11 @@ impl HttpFile {
                 let client = OciClient::default();
                 let manifest = client.pull_image_manifest(img_ref, &RegistryAuth::Anonymous);
                 let (oci_image_manifest, _) = runtime.block_on(manifest).with_context(|| {
+                    let tag = img_ref
+                        .tag()
+                        .map_or("tag".to_string(), |t| format!("tag '{t}'"));
                     format!(
-                        "Repository '{}' does not exist in registry '{}' or tag not found",
+                        "Repository '{}' does not exist in registry '{}' or {tag} not found",
                         img_ref.repository(),
                         img_ref.registry()
                     )
