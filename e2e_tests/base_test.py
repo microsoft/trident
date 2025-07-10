@@ -1,3 +1,4 @@
+import fabric
 import json
 import math
 import pytest
@@ -158,19 +159,10 @@ def test_partitions(connection, hostConfiguration, tridentCommand, abActiveVolum
                 partitions_blkid[system_name]
             )
 
-    # Check hostStatus
-    trident_get_command = tridentCommand + "get"
-    result = connection.run(trident_get_command)
+    # Check Host Status
+    host_status = get_host_status(connection, tridentCommand)
 
-    # Structure output
-    host_status_output = result.stdout.strip()
-
-    yaml.add_multi_constructor(
-        "!", lambda loader, _, node: loader.construct_mapping(node)
-    )
-    host_status = yaml.load(host_status_output, Loader=yaml.FullLoader)
-
-    # Check that servicingState is as expected
+    # Check that servicing state is as expected
     assert host_status["servicingState"] == "provisioned"
 
     # Check partitions size and type
@@ -299,6 +291,24 @@ def is_raid(host_status, block_device_id):
         if raid["id"] == block_device_id:
             return True
     return False
+
+
+def get_host_status(connection: fabric.Connection, tridentCommand: str) -> dict:
+    """
+    Get the Host Status by running `trident get` on the given connection,
+    and return the parsed YAML output.
+    """
+
+    cmd = f"{tridentCommand} get"
+    result = connection.run(cmd)
+
+    # Structure output
+    output = result.stdout.strip()
+
+    yaml.add_multi_constructor(
+        "!", lambda loader, _, node: loader.construct_mapping(node)
+    )
+    return yaml.load(output, Loader=yaml.FullLoader)
 
 
 # Runs 'mount' and returns the name of the block device mounted at root /

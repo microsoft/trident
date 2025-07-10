@@ -1,6 +1,5 @@
 import json
 import typing
-import yaml
 import fabric
 import pytest
 
@@ -119,21 +118,6 @@ def sudo(connection: fabric.Connection, cmd: str) -> str:
     """
     res = connection.run(f"sudo {cmd}")
     return res.stdout.strip()
-
-
-def get_host_status(connection: fabric.Connection, tridentCommand: str) -> dict:
-    """
-    Get the Host Status by running `trident get` on the given connection,
-    and return the parsed YAML output.
-    """
-
-    cmd = f"{tridentCommand} get"
-    stdout = sudo(connection, cmd)
-
-    yaml.add_multi_constructor(
-        "!", lambda loader, _, node: loader.construct_mapping(node)
-    )
-    return yaml.load(stdout, Loader=yaml.FullLoader)
 
 
 def get_blkid_output(connection: fabric.Connection) -> dict:
@@ -340,208 +324,179 @@ def get_block_dev_path_by_partlabel(
     return None
 
 
-def check_crypsetup_luks_dump(conn: fabric.Connection, cryptDevPath: str) -> None:
+def check_crypsetup_luks_dump(connection: fabric.Connection, cryptDevPath: str) -> None:
     """
     Check the output of `cryptsetup luksDump --dump-json-metadata` for the
     given device path.
 
     Example output:
+
         {
-            "keyslots":{
-                "0":{
-                "type":"luks2",
-                "key_size":64,
-                "af":{
-                    "type":"luks1",
-                    "stripes":4000,
-                    "hash":"sha512"
+            "keyslots": {
+                "2": {
+                "type": "luks2",
+                "key_size": 64,
+                "af": {
+                    "type": "luks1",
+                    "stripes": 4000,
+                    "hash": "sha512"
                 },
-                "area":{
-                    "type":"raw",
-                    "offset":"32768",
-                    "size":"258048",
-                    "encryption":"aes-xts-plain64",
-                    "key_size":64
+                "area": {
+                    "type": "raw",
+                    "offset": "548864",
+                    "size": "258048",
+                    "encryption": "aes-xts-plain64",
+                    "key_size": 64
                 },
-                "kdf":{
-                    "type":"pbkdf2",
-                    "hash":"sha512",
-                    "iterations":2966268,
-                    "salt":"Wl7JuYZm0NHP9kYNLiaToajI+zpDpHKaEpTdJUGO58s="
-                }
-                },
-                "1":{
-                "type":"luks2",
-                "key_size":64,
-                "af":{
-                    "type":"luks1",
-                    "stripes":4000,
-                    "hash":"sha512"
-                },
-                "area":{
-                    "type":"raw",
-                    "offset":"290816",
-                    "size":"258048",
-                    "encryption":"aes-xts-plain64",
-                    "key_size":64
-                },
-                "kdf":{
-                    "type":"pbkdf2",
-                    "hash":"sha512",
-                    "iterations":1000,
-                    "salt":"7TLeB0NUKub0T6BWcEGTRc//cWamE+m+VL1vflUyRyo="
+                "kdf": {
+                    "type": "pbkdf2",
+                    "hash": "sha512",
+                    "iterations": 1000,
+                    "salt": "ckq4BDEkrmGTcFjcY9dI1e+/iyn1ksgI9RvGNiS52Rs="
                 }
                 }
             },
-            "tokens":{
-                "0":{
-                "type":"systemd-tpm2",
-                "keyslots":[
-                    "1"
+            "tokens": {
+                "1": {
+                "type": "systemd-tpm2",
+                "keyslots": [
+                    "2"
                 ],
-                "tpm2-blob":"AJ4AICmIf+c3AJgUms6gR0AkVmRqP1TFUERdOCe8gE2UZU32ABDQlfNCdyRUDAzitUDsxZbW7BguG33zKMKinmPJc7yCLYye5UCcP2zVWe8QMGZRi91/rZJAOHtka8tZTA2W+Vxwnhn+wnONce9AZquVxACGhYXrseFUCJCOpXWAel881S+ymaffc0yTqc6m4DAPG38HKSuZwjat/JmqNwBOAAgACwAAABIAIEsLIvUeWcZWYYo9OBodhaT3wrjnUjegJvbiCXxTBXDHABAAIFFzxHKynkmZ5DwX/NdWFcHixHSfrhgz1TU/3K1Cw9f0",
-                "tpm2-pcrs":[
-                    7
-                ],
-                "tpm2-pcr-bank":"sha256",
-                "tpm2-policy-hash":"4b0b22f51e59c656618a3d381a1d85a4f7c2b8e75237a026f6e2097c530570c7",
-                "tpm2-pin":false,
-                "tpm2_pcrlock":false,
-                "tpm2_srk":"gQAAAQAiAAvfr86mWQ4ncWaXV9jUk3nRHRw/bEYnAiQSalhvf/6mpwAAAAEAWgAjAAsAAwRyAAAABgCAAEMAEAADABAAIP6Ye/LshHa6QKXX2NTPu7PEtBsUMnV57+02mjS75wKXACDvxzC6RaHZbojoiA3IzwXNp7vsM285RQApR76fkT8xKA=="
+                "tpm2-blob": "AJ4AIPe69RFTvAlGkBaLZ9XFfiPhKXUA7FEKFZF5grqoot9tABCPMeDTUIP9JaS/0A6yUaW9y/JjVo0gKnoDALPibV20RPhwHAFg6ycQdQX1sbyhIa/+CmzfMvHOM7+cYZXiq6O/ZIF9hWKMtRUg47Q8C8ok0dyxFWow8wQy7woH0p94pUeCGBmgq34smc3aCUdnjl/TQLDvsgmLlpJHnwBOAAgACwAAABIAIDzHev7RjwqkxM/9b4dCkH0O2Kd96RwB2CLhE2PMOkSRABAAIEx0aFr/1AgrYBoB6qrLsHkXvkEuPOWd5Ns2AQx0uHoh",
+                "tpm2-pcrs": [],
+                "tpm2-policy-hash": "3cc77afed18f0aa4c4cffd6f8742907d0ed8a77de91c01d822e11363cc3a4491",
+                "tpm2-pin": false,
+                "tpm2_pcrlock": true,
+                "tpm2_srk": "gQAAAQAiAAupLdVcuox9yfRZaxtvQ8X/Dj/VK4OEY2X42DKM+xBzfAAAAAEAWgAjAAsAAwRyAAAABgCAAEMAEAADABAAIAmK45y/lGMhOdONab4wzGT43Yt3oZDCSATydlLlP5gTACBb1qkPGKbv248ZsEvDhA4zdEnOIjkcFD/hxtff5IzRgQ=="
                 }
             },
-            "segments":{
-                "0":{
-                "type":"crypt",
-                "offset":"8388608",
-                "size":"dynamic",
-                "iv_tweak":"0",
-                "encryption":"aes-xts-plain64",
-                "sector_size":512
+            "segments": {
+                "0": {
+                "type": "crypt",
+                "offset": "16777216",
+                "size": "dynamic",
+                "iv_tweak": "0",
+                "encryption": "aes-xts-plain64",
+                "sector_size": 512
                 }
             },
-            "digests":{
-                "0":{
-                "type":"pbkdf2",
-                "keyslots":[
-                    "0",
-                    "1"
+            "digests": {
+                "0": {
+                "type": "pbkdf2",
+                "keyslots": [
+                    "2"
                 ],
-                "segments":[
+                "segments": [
                     "0"
                 ],
-                "hash":"sha512",
-                "iterations":185654,
-                "salt":"zQIsdWQ1wcojcdTLZvjH5z4+qfdcwPfLaUNqaXOCdoI=",
-                "digest":"H3MNqpQPt4xohsdQiEM7M5cihytpf8wiVm8sSh3M8dRqrNpYBdfTo+89EFXTTvJYSsI5jjcaFutzpEXq5Mt8tQ=="
+                "hash": "sha512",
+                "iterations": 160039,
+                "salt": "MvbiBEkmWJamhQzPZWqwLn+bTumgznQ5xc6qSw8JWX8=",
+                "digest": "q20q8T3wEvpdFn3sBG27iW5lldT4t6xlzyzmN5zHMQ4ScqRzUJisIIOPvOz1lYfEAuxlxad9Si/C4zNI0rxpdQ=="
                 }
             },
-            "config":{
-                "json_size":"12288",
-                "keyslots_size":"8355840"
+            "config": {
+                "json_size": "12288",
+                "keyslots_size": "16744448"
             }
         }
+
     """
     # Running this command requires additional SELinux permission for lvm_t, so temporarily switch to Permissive mode
     # Missing permission: allow lvm_t initrc_runtime_t:dir { read }
-    enforcing = sudo(conn, "getenforce").strip() == "Enforcing"
+    enforcing = sudo(connection, "getenforce").strip() == "Enforcing"
     if enforcing:
-        sudo(conn, "setenforce 0")
+        sudo(connection, "setenforce 0")
 
-    stdout = sudo(conn, f"cryptsetup luksDump --dump-json-metadata {cryptDevPath}")
+    stdout = sudo(
+        connection, f"cryptsetup luksDump --dump-json-metadata {cryptDevPath}"
+    )
     dump = json.loads(stdout)
 
     # Revert to Enforcing mode
     if enforcing:
-        sudo(conn, "setenforce 1")
+        sudo(connection, "setenforce 1")
 
+    # Validate type to be pbkdf2
     actual = dump["digests"]["0"]["type"]
     expected = "pbkdf2"
     assert (
         actual == expected
     ), f"Expected digest type to be {expected!r}, got {actual!r}"
 
+    # Validate hash type to be sha512
     actual = dump["digests"]["0"]["hash"]
     expected = "sha512"
     assert (
         actual == expected
     ), f"Expected digest hash to be {expected!r}, got {actual!r}"
 
-    actual = dump["tokens"]["0"]["type"]
+    # Because we first enroll encrypted volumes to PCR 0 and only then
+    # re-enroll to a pcrlock policy, we expect to see only token 1.
+    assert (
+        len(dump["tokens"]) == 1
+    ), f"Expected one token, got {len(dump['tokens'])}. Tokens: {dump['tokens']}"
+
+    # Validate token type to be systemd-tpm2
+    actual = dump["tokens"]["1"]["type"]
     expected = "systemd-tpm2"
     assert actual == expected, f"Expected token type to be {expected!r}, got {actual!r}"
 
-    actual = dump["tokens"]["0"]["keyslots"][0]
-    expected = "1"
+    # Validate that keyslot is 2 b/c it's the 2nd keyslot used
+    actual = dump["tokens"]["1"]["keyslots"][0]
+    expected = "2"
     assert actual == expected, f"Expected keyslot to be {expected!r}, got {actual!r}"
 
     assert (
-        len(dump["tokens"]["0"]["keyslots"]) == 1
-    ), f"Expected one TPM keyslot, got {len(dump['tokens'][0]['keyslots'])}"
+        len(dump["tokens"]["1"]["keyslots"]) == 1
+    ), f"Expected one TPM keyslot, got {len(dump['tokens']['1']['keyslots'])}"
 
-    actual = dump["tokens"]["0"]["tpm2-pcrs"][0]
-    expectedInt = [0, 7]
+    # Validate that tpm2-pcrs is an empty vector b/c we enrolled with a pcrlock
+    # policy
+    assert dump["tokens"]["1"]["tpm2-pcrs"] == []
+
+    # Validate that tpm2_pcrlock is true b/c we enrolled with a pcrlock
+    # policy
+    actual = dump["tokens"]["1"]["tpm2_pcrlock"]
+    assert actual is True, f"Expected 'tpm2_pcrlock' to be {expected!r}, got {actual!r}"
+
+    # Validate that there is only one keyslot
     assert (
-        actual in expectedInt
-    ), f"Expected TPM2 PCR to be in '{expectedInt}', got {actual}"
-
+        len(dump["keyslots"]) == 1
+    ), f"Expected one keyslot, got {len(dump['keyslots'])}"
     assert (
-        len(dump["tokens"]["0"]["tpm2-pcrs"]) == 1
-    ), f"Expected one TPM2 PCR, got {len(dump['tokens'][0]['tpm2-pcrs'])}"
+        "2" in dump["keyslots"]
+    ), f"Expected keyslot 2 to be in {dump['keyslots']!r}, got {dump['keyslots']!r}"
 
-    actual = dump["tokens"]["0"]["tpm2-pcr-bank"]
-    expected = "sha256"
-    assert (
-        actual == expected
-    ), f"Expected TPM2 PCR bank to be {expected!r}, got {actual!r}"
-
+    # Validate that type of keyslot is luks2
     expected = "luks2"
     actual = dump["keyslots"]["0"]["type"]
     assert (
         actual == expected
     ), f"Expected keyslot 0 type to be {expected!r}, got {actual!r}"
-    actual = dump["keyslots"]["1"]["type"]
-    assert (
-        actual == expected
-    ), f"Expected keyslot 1 type to be {expected!r}, got {actual!r}"
 
+    # Validate other info about the keyslot
     expected = "pbkdf2"
     actual = dump["keyslots"]["0"]["kdf"]["type"]
     assert (
         actual == expected
     ), f"Expected keyslot 0 KDF type to be {expected!r}, got {actual!r}"
-    actual = dump["keyslots"]["1"]["kdf"]["type"]
-    assert (
-        actual == expected
-    ), f"Expected keyslot 1 KDF type to be {expected!r}, got {actual!r}"
 
     expected = "sha512"
     actual = dump["keyslots"]["0"]["kdf"]["hash"]
     assert (
         actual == expected
     ), f"Expected keyslot 0 KDF hash to be {expected!r}, got {actual!r}"
-    actual = dump["keyslots"]["1"]["kdf"]["hash"]
-    assert (
-        actual == expected
-    ), f"Expected keyslot 1 KDF hash to be {expected!r}, got {actual!r}"
 
     expected = "aes-xts-plain64"
     actual = dump["keyslots"]["0"]["area"]["encryption"]
     assert (
         actual == expected
     ), f"Expected keyslot 0 area encryption to be {expected!r}, got {actual!r}"
-    actual = dump["keyslots"]["1"]["area"]["encryption"]
-    assert (
-        actual == expected
-    ), f"Expected keyslot 1 area encryption to be {expected!r}, got {actual!r}"
-
-    assert (
-        len(dump["keyslots"]) == 2
-    ), f"Expected two keyslots, got {len(dump['keyslots'])}"
 
 
 def check_parent_devices(
-    conn: fabric.Connection,
+    connection: fabric.Connection,
     hostConfiguration: dict,
     blockDevs: dict,
     cryptDevId: str,
@@ -562,7 +517,7 @@ def check_parent_devices(
         assert (
             cryptDevName is not None
         ), f"Expected {cryptDevId} to be a disk partition or RAID array"
-        cryptDevPath = sudo(conn, f"readlink -f /dev/md/{cryptDevName}")
+        cryptDevPath = sudo(connection, f"readlink -f /dev/md/{cryptDevName}")
 
     expectedType = "crypto_LUKS"
     actualType = blockDevs[cryptDevPath]["TYPE"]
@@ -570,11 +525,11 @@ def check_parent_devices(
         actualType == expectedType
     ), f"Expected TYPE to be {expectedType!r}, got {actualType!r}"
 
-    check_crypsetup_luks_dump(conn, cryptDevPath)
+    check_crypsetup_luks_dump(connection, cryptDevPath)
 
 
 def check_crypt_device(
-    conn: fabric.Connection,
+    connection: fabric.Connection,
     hostConfiguration: dict,
     abActiveVolume: str,
     blockDevs: dict,
@@ -584,7 +539,7 @@ def check_crypt_device(
 ) -> None:
     cryptDevicePath = f"/dev/mapper/{cryptDevName}"
 
-    check_parent_devices(conn, hostConfiguration, blockDevs, cryptDevId)
+    check_parent_devices(connection, hostConfiguration, blockDevs, cryptDevId)
 
     swap = False
     isInUse = True
@@ -613,11 +568,11 @@ def check_crypt_device(
             if isinstance(fs["mountPoint"], str)
             else fs["mountPoint"]["path"]
         )
-        check_exists(conn, mpPath)
-        check_findmnt(conn, mpPath, cryptDevicePath, isInUse)
+        check_exists(connection, mpPath)
+        check_findmnt(connection, mpPath, cryptDevicePath, isInUse)
     elif swap := get_swap(hostConfiguration, cryptId) is not None:
-        swaps = get_active_swaps(conn)
-        real_path = sudo(conn, f"readlink -f {cryptDevicePath}")
+        swaps = get_active_swaps(connection)
+        real_path = sudo(connection, f"readlink -f {cryptDevicePath}")
         assert (
             real_path in swaps,
             f"Expected '{real_path}' to be in active swaps: {swaps}",
@@ -639,16 +594,18 @@ def check_crypt_device(
             else fs["mountPoint"]["path"]
         )
 
-        check_exists(conn, mpPath)
-        check_findmnt(conn, mpPath, cryptDevicePath, isInUse)
+        check_exists(connection, mpPath)
+        check_findmnt(connection, mpPath, cryptDevicePath, isInUse)
 
-    check_exists(conn, cryptDevicePath)
-    check_cryptsetup_status(conn, cryptDevName, isInUse)
-    check_dmsetup_info(conn, cryptDevName, swap)
+    check_exists(connection, cryptDevicePath)
+    check_cryptsetup_status(connection, cryptDevName, isInUse)
+    check_dmsetup_info(connection, cryptDevName, swap)
 
 
 def test_encryption(
-    connection: fabric.Connection, hostConfiguration: dict, abActiveVolume: str
+    connection: fabric.Connection,
+    hostConfiguration: dict,
+    abActiveVolume: str,
 ) -> None:
     blockDevs = get_blkid_output(connection)
 
