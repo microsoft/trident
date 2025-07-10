@@ -117,7 +117,7 @@ steps:
         -s "${{ parameters.artifactsDirectory }}" \
         -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-runtime-os-B.log 2>&1 &
       
-      ./bin/seriallisten --config ${{ parameters.netlaunchConfigFile}}
+      ./bin/seriallisten --config ${{ parameters.netlaunchConfigFile}} &
 
       echo "Running script to stage and finalize A/B update..."
       ./bin/storm-trident helper ab-update \
@@ -234,7 +234,7 @@ steps:
           -s "${{ parameters.artifactsDirectory }}" \
           -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-runtime-os-A.log 2>&1 &
 
-      ./bin/seriallisten --config ${{ parameters.netlaunchConfigFile}}
+      ./bin/seriallisten --config ${{ parameters.netlaunchConfigFile}} &
 
       echo "Running script to stage and finalize A/B update..."
       ./bin/storm-trident helper ab-update \

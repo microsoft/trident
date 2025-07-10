@@ -40,16 +40,16 @@ var rootCmd = &cobra.Command{
 		terminateCtx, terminateFunc := context.WithCancel(context.Background())
 		defer terminateFunc()
 
-		if config.Netlaunch.Bmc.SerialOverSsh != nil {
+		if config.Netlaunch.Bmc != nil && config.Netlaunch.Bmc.SerialOverSsh != nil {
 			serial, err := config.Netlaunch.Bmc.ListenForSerialOutput()
 			if err != nil {
 				log.WithError(err).Fatalf("Failed to open serial over SSH session")
 			}
 			defer serial.Close()
-		}
 
-		// Wait for context cancellation
-		<-terminateCtx.Done()
+			// Wait for context cancellation
+			<-terminateCtx.Done()
+		}
 		// If we're told to terminate, then we're done.
 		os.Exit(0)
 	},

@@ -274,7 +274,7 @@ var rootCmd = &cobra.Command{
 		if config.Netlaunch.LocalVmUuid != nil {
 			startLocalVm(*config.Netlaunch.LocalVmUuid, iso_location)
 		} else {
-			if config.Netlaunch.Bmc.SerialOverSsh != nil {
+			if config.Netlaunch.Bmc != nil && config.Netlaunch.Bmc.SerialOverSsh != nil {
 				serial, err := config.Netlaunch.Bmc.ListenForSerialOutput()
 				if err != nil {
 					log.WithError(err).Fatalf("Failed to open serial over SSH session")
