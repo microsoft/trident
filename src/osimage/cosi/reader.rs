@@ -259,10 +259,7 @@ impl HttpFile {
     fn retrieve_artifact_digest(img_ref: &Reference, runtime: &Runtime) -> Result<String, Error> {
         debug!("img_ref: {:?}", img_ref);
         Ok(match img_ref.digest() {
-            Some(digest) => {
-                debug!("digest: {:?}", digest);
-                digest.to_string()
-            },
+            Some(digest) => digest.to_string(),
             None => {
                 // Attempt to retrieve digest from manifest
                 let client = OciClient::default();
