@@ -57,6 +57,22 @@ def add_copy_command(host_config_path):
         yaml.safe_dump(host_config, f)
 
 
+def rename_oci_url(host_config_path):
+    with open(host_config_path, "r") as f:
+        host_config = yaml.safe_load(f)
+
+    if "oci://" not in host_config["image"]["url"]:
+        return
+
+    host_config["image"][
+        "url"
+    ] = "oci://maritimuspublic.azurecr.io/trident-container-testimage:v1"
+    host_config["image"]["sha384"] = "ignored"
+
+    with open(host_config_path, "w") as f:
+        yaml.safe_dump(host_config, f)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Makes host configuration edits: Adds an SSH key and optionally copies the container image."
@@ -86,6 +102,7 @@ def main():
 
     if args.runtimeEnv == "container":
         add_copy_command(args.hostconfig)
+        rename_oci_url(args.hostconfig)
 
 
 if __name__ == "__main__":

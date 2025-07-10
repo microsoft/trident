@@ -1,5 +1,5 @@
 image:
-  url: oci://maritimuspublic.azurecr.io/regular:v1
+  url: oci://maritimuspublic.azurecr.io/trident-testimage:v1
   sha384: ignored
 storage:
   disks:
