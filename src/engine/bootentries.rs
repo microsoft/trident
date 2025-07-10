@@ -154,6 +154,9 @@ pub fn set_boot_next_and_update_boot_order(
         if ctx.servicing_type == ServicingType::AbUpdate {
             // During AB update, add new entry to end of the bootorder so that UEFI will
             // consider the entry as permanent.
+            // Note: this is especially important for some DELL machines which do not always
+            // persist boot entries that are not in the BootOrder (this is especially important
+            // for our tests because they run on DELL machines).
             update_boot_order(entry_numbers, &BootOrderPosition::Last)
                 .structured(ServicingError::UpdateBootOrder)?;
         } else if ctx.servicing_type == ServicingType::CleanInstall && !use_virtdeploy_workaround {
