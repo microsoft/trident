@@ -38,7 +38,8 @@ steps:
         if [ -f "$cosi_file" ]; then
           filename=$(basename "$cosi_file")
           clone_num=$(echo "$filename" | grep -o '_[0-9]\+' | tr -d '_')
-          version_tag="v$clone_num"
+          version_num=$((clone_num + 1))
+          version_tag="v$version_num"
           echo "Pushing $filename with tag $version_tag to ${{ parameters.registry }}.azurecr.io"
           oras push ${{ parameters.registry }}.azurecr.io/regular:$version_tag "$cosi_file"
         fi
