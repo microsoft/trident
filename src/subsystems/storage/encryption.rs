@@ -253,8 +253,11 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
             .structured(ServicingError::GenerateTpm2AccessPolicy)?;
 
         // Copy the pcrlock policy JSON to the update volume
-        debug!("Copying pcrlock policy JSON to update volume");
         let pcrlock_json_copy = join_relative(mount_path, PCRLOCK_POLICY_JSON);
+        debug!(
+            "Copying pcrlock policy JSON to update volume at path '{}'",
+            pcrlock_json_copy.display()
+        );
         fs::copy(PCRLOCK_POLICY_JSON, pcrlock_json_copy.clone()).structured(
             ServicingError::CopyPcrlockPolicyJson {
                 path: PCRLOCK_POLICY_JSON.to_string(),

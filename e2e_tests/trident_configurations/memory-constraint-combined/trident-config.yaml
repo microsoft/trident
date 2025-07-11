@@ -4,6 +4,9 @@ internalParams:
   # install. For now, only include PCR 0 in pcrlock policy on clean install.
   # https://dev.azure.com/mariner-org/ECF/_workitems/edit/12865/.
   overrideEncryptionPcrs: [0]
+  # TODO: Remove this internal parameter once UKI & encryption tests are fixed.
+  # https://dev.azure.com/mariner-org/ECF/_workitems/edit/12877.
+  overridePcrlockEncryption: true
 image:
   url: http://NETLAUNCH_HOST_ADDRESS/files/usrverity.cosi
   sha384: ignored

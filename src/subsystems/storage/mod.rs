@@ -5,7 +5,7 @@ use std::{
 
 use log::{debug, error, warn};
 
-use osutils::{encryption::ENCRYPTION_PASSPHRASE, lsblk};
+use osutils::{container, encryption::ENCRYPTION_PASSPHRASE, lsblk};
 use trident_api::{
     config::HostConfigurationDynamicValidationError,
     constants::internal_params::RELAXED_COSI_VALIDATION,
@@ -175,14 +175,28 @@ impl Subsystem for StorageSubsystem {
         // 1. On a clean install, re-seal the encryption key to a pcrlock policy for ROS A,
         // 2. On an A/B update, re-generate pcrlock policy to include current boot + future boot,
         // i.e. update ROS image.
+        //
+        // TODO: Remove this override once UKI & encryption tests are fixed. Related ADO:
+        // https://dev.azure.com/mariner-org/ECF/_workitems/edit/12877.
+        let override_pcrlock_encryption = ctx
+            .spec
+            .internal_params
+            .get_flag("overridePcrlockEncryption")
+            || container::is_running_in_container()?;
         if ctx.is_uki_image()? {
-            debug!("Starting step 'Provision' for subunit '{ENCRYPTION_SUBSYSTEM_NAME}'");
-            encryption::provision(ctx, mount_path).message(format!(
-                "Step 'Provision' failed for subunit '{ENCRYPTION_SUBSYSTEM_NAME}'"
-            ))?;
-
-            ENCRYPTION_PASSPHRASE.lock().unwrap().clear();
+            if !override_pcrlock_encryption {
+                debug!("Starting step 'Provision' for subunit '{ENCRYPTION_SUBSYSTEM_NAME}'");
+                encryption::provision(ctx, mount_path).message(format!(
+                    "Step 'Provision' failed for subunit '{ENCRYPTION_SUBSYSTEM_NAME}'"
+                ))?;
+            } else {
+                debug!(
+                    "Skipping step 'Provision' for subunit '{ENCRYPTION_SUBSYSTEM_NAME}' \
+                    because overridePcrlockEncryption is set or running in a container"
+                );
+            }
         }
+        ENCRYPTION_PASSPHRASE.lock().unwrap().clear();
 
         Ok(())
     }
