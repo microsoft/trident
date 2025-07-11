@@ -32,7 +32,7 @@ use crate::{
     engine::{
         boot::{
             self,
-            uki::{TMP_UKI_NAME, UKI_DIRECTORY},
+            uki::{self, TMP_UKI_NAME, UKI_DIRECTORY},
         },
         bootentries, EngineContext,
     },
@@ -120,10 +120,6 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
         // TODO: Once UKI MOS is built, include all UKI PCRs, i.e. 4, 7, and 11, into pcrlock
         // policy on clean install as well. Related ADO task:
         // https://dev.azure.com/mariner-org/ECF/_workitems/edit/12865/.
-        debug!(
-            "Determining PCRs for pcrlock policy based on servicing type: {:?}",
-            ctx.servicing_type
-        );
         let pcrs = match ctx.servicing_type {
             ServicingType::CleanInstall => {
                 // Generate .pcrlock files for runtime OS image A, only using PCR 0, thanks to
@@ -164,9 +160,18 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                         return Err(TridentError::new(InternalError::GetAbActiveVolume));
                     }
                 };
-                let uki_current = Path::new(ESP_MOUNT_POINT_PATH)
-                    .join(UKI_DIRECTORY)
-                    .join(uki_suffix);
+                let esp_uki_directory = Path::new(ESP_MOUNT_POINT_PATH).join(UKI_DIRECTORY);
+                let existing_ukis = uki::enumerate_existing_ukis(&esp_uki_directory)
+                    .structured(ServicingError::EnumerateUkis)?;
+                let max_index = existing_ukis
+                    .iter()
+                    .map(|(index, _suffix, _path)| *index)
+                    .max()
+                    .unwrap_or(99);
+                let uki_current =
+                    esp_uki_directory.join(format!("vmlinuz-{max_index}-{uki_suffix}"));
+                // TODO: REMOVE BEFORE MERGING
+                debug!("Current UKI path: {}", uki_current.display());
 
                 // Construct current primary bootloader path, i.e. shim EFI executable
                 let ab_volume = ctx
@@ -177,6 +182,8 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                     .join(&esp_dir_name)
                     .join(BOOT_EFI);
                 let shim_current = join_relative(ESP_MOUNT_POINT_PATH, &shim_path);
+                // TODO: REMOVE BEFORE MERGING
+                debug!("Current shim path: {}", shim_current.display());
 
                 // Construct current secondary bootloader path, i.e. systemd-boot EFI executable
                 let systemd_boot_path = Path::new(ESP_EFI_DIRECTORY)
@@ -193,12 +200,19 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                 let (_, shim_update_relative) = bootentries::get_label_and_path(ctx, BOOT_EFI)
                     .structured(ServicingError::GetLabelAndPath)?;
                 let shim_update = join_relative(esp_dir_path.clone(), shim_update_relative);
+                // TODO: REMOVE BEFORE MERGING
+                debug!("Shim update path: {}", shim_update.display());
 
                 // Secondary bootloader, i.e. systemd-boot EFI executable, in update image
                 let (_, systemd_boot_update_relative) =
                     bootentries::get_label_and_path(ctx, GRUB_EFI)
                         .structured(ServicingError::GetLabelAndPath)?;
                 let systemd_boot_update = join_relative(esp_dir_path, systemd_boot_update_relative);
+                // TODO: REMOVE BEFORE MERGING
+                debug!(
+                    "Systemd-boot update path: {}",
+                    systemd_boot_update.display()
+                );
 
                 // Generate .pcrlock files for runtime OS image A
                 pcrlock::generate_pcrlock_files(
