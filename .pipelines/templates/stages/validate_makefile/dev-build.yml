@@ -41,8 +41,7 @@ stages:
               set -eux
 
               make bin/liveinstaller
-              make bin/imager
-            displayName: Build liveinstaller and imager
+            displayName: Build liveinstaller
 
           - script: |
               set -eux

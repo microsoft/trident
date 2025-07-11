@@ -7,8 +7,6 @@ iso:
   additionalFiles:
   - source: images/trident-testimage.cosi
     destination: /images/azure-linux-trident.cosi
-  - source: bin/imager
-    destination: /installer/imager
   - source: bin/liveinstaller
     destination: /installer/liveinstaller
   - source: files/attended_config.json
