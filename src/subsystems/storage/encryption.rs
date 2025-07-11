@@ -126,6 +126,11 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
         );
         let pcrs = match ctx.servicing_type {
             ServicingType::CleanInstall => {
+                // Generate .pcrlock files for runtime OS image A, only using PCR 0, thanks to
+                // OVERRIDE_ENCRYPTION_PCRS.
+                //
+                // TODO: Once UKI MOS is built, include ROS A UKI and bootloader binaries.
+                // https://dev.azure.com/mariner-org/ECF/_workitems/edit/12865/.
                 let pcrs = ctx
                     .spec
                     .internal_params
@@ -140,10 +145,6 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                     .map(|v| BitFlags::<Pcr>::from_iter(v.into_iter()))
                     .unwrap_or(Pcr::Pcr4 | Pcr::Pcr7 | Pcr::Pcr11);
 
-                // Generate .pcrlock files for runtime OS image A, only using PCR 0.
-                //
-                // TODO: Once UKI MOS is built, include ROS A UKI and bootloader binaries.
-                // https://dev.azure.com/mariner-org/ECF/_workitems/edit/12865/.
                 pcrlock::generate_pcrlock_files(pcrs, vec![], vec![])
                     .structured(ServicingError::GeneratePcrlockFiles)?;
 
@@ -151,7 +152,7 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
             }
             ServicingType::AbUpdate => {
                 // Use UKI PCRs
-                let pcrs = Pcr::Pcr4 | Pcr::Pcr7 | Pcr::Pcr11;
+                let pcrs = Pcr::Pcr4 | Pcr::Pcr11;
 
                 // Construct current UKI path
                 let uki_suffix = match ctx.ab_active_volume {
