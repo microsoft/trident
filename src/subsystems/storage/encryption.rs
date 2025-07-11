@@ -9,6 +9,7 @@ use log::{debug, info, trace};
 
 use osutils::{
     bootloaders::{BOOT_EFI, GRUB_EFI},
+    container,
     encryption::{self, KeySlotType},
     files,
     path::join_relative,
@@ -114,6 +115,7 @@ pub(super) fn validate_host_config(host_config: &HostConfiguration) -> Result<()
 #[tracing::instrument(name = "encryption_provision", skip_all)]
 pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
     if let Some(encryption) = &ctx.spec.storage.encryption {
+        debug!("Initializing pcrlock encryption provisioning");
         // Determine PCRs depending on the current servicing type:
         // - For clean install, temporarily use only PCR 0,
         // - For A/B update, use PCRs 4, 7, and 11.
@@ -151,6 +153,13 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                 let pcrs = Pcr::Pcr4 | Pcr::Pcr11;
 
                 // Construct current UKI path
+                let esp_path = if container::is_running_in_container()? {
+                    let host_root = container::get_host_root_path()?;
+                    join_relative(host_root, ESP_MOUNT_POINT_PATH)
+                } else {
+                    PathBuf::from(ESP_MOUNT_POINT_PATH)
+                };
+                let esp_uki_directory = join_relative(esp_path.clone(), UKI_DIRECTORY);
                 let uki_suffix = match ctx.ab_active_volume {
                     Some(AbVolumeSelection::VolumeA) => format!("azla{}.efi", ctx.install_index),
                     Some(AbVolumeSelection::VolumeB) => {
@@ -160,7 +169,6 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                         return Err(TridentError::new(InternalError::GetAbActiveVolume));
                     }
                 };
-                let esp_uki_directory = Path::new(ESP_MOUNT_POINT_PATH).join(UKI_DIRECTORY);
                 let existing_ukis = uki::enumerate_existing_ukis(&esp_uki_directory)
                     .structured(ServicingError::EnumerateUkis)?;
                 let max_index = existing_ukis
@@ -170,8 +178,7 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                     .unwrap_or(99);
                 let uki_current =
                     esp_uki_directory.join(format!("vmlinuz-{max_index}-{uki_suffix}"));
-                // TODO: REMOVE BEFORE MERGING
-                debug!("Current UKI path: {}", uki_current.display());
+                trace!("Current UKI binary path: {}", uki_current.display());
 
                 // Construct current primary bootloader path, i.e. shim EFI executable
                 let ab_volume = ctx
@@ -182,35 +189,37 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                     .join(&esp_dir_name)
                     .join(BOOT_EFI);
                 let shim_current = join_relative(ESP_MOUNT_POINT_PATH, &shim_path);
-                // TODO: REMOVE BEFORE MERGING
-                debug!("Current shim path: {}", shim_current.display());
+                trace!("Current shim binary path: {}", shim_current.display());
 
                 // Construct current secondary bootloader path, i.e. systemd-boot EFI executable
                 let systemd_boot_path = Path::new(ESP_EFI_DIRECTORY)
                     .join(&esp_dir_name)
                     .join(GRUB_EFI);
                 let systemd_boot_current = join_relative(ESP_MOUNT_POINT_PATH, &systemd_boot_path);
+                trace!(
+                    "Current systemd-boot binary path: {}",
+                    systemd_boot_current.display()
+                );
 
                 // UKI binary in runtime OS to be measured; it's currently staged at designated
                 // path
                 let esp_dir_path = join_relative(mount_path, ESP_MOUNT_POINT_PATH);
                 let uki_update = esp_dir_path.join(UKI_DIRECTORY).join(TMP_UKI_NAME);
+                trace!("Update UKI binary path: {}", uki_update.display());
 
                 // Primary bootloader, i.e. shim EFI executable, in update image
                 let (_, shim_update_relative) = bootentries::get_label_and_path(ctx, BOOT_EFI)
                     .structured(ServicingError::GetLabelAndPath)?;
                 let shim_update = join_relative(esp_dir_path.clone(), shim_update_relative);
-                // TODO: REMOVE BEFORE MERGING
-                debug!("Shim update path: {}", shim_update.display());
+                trace!("Update shim binary path: {}", shim_update.display());
 
                 // Secondary bootloader, i.e. systemd-boot EFI executable, in update image
                 let (_, systemd_boot_update_relative) =
                     bootentries::get_label_and_path(ctx, GRUB_EFI)
                         .structured(ServicingError::GetLabelAndPath)?;
                 let systemd_boot_update = join_relative(esp_dir_path, systemd_boot_update_relative);
-                // TODO: REMOVE BEFORE MERGING
-                debug!(
-                    "Systemd-boot update path: {}",
+                trace!(
+                    "Update systemd-boot binary path: {}",
                     systemd_boot_update.display()
                 );
 

@@ -133,6 +133,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
                 .max()
                 .unwrap_or(99);
             let uki_current = esp_uki_directory.join(format!("vmlinuz-{max_index}-{uki_suffix}"));
+            trace!("Current UKI binary path: {}", uki_current.display());
 
             // Construct current primary bootloader path, i.e. shim EFI executable for UKI.
             // Currently, ab_active_volume inside the context is still set to the old volume, so we
@@ -146,12 +147,17 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
                 .join(&esp_dir_name)
                 .join(BOOT_EFI);
             let shim_current = join_relative(esp_path.clone(), &shim_path);
+            trace!("Current shim binary path: {}", shim_current.display());
 
             // Construct current secondary bootloader path, i.e. systemd-boot EFI executable
             let systemd_boot_path = Path::new(ESP_EFI_DIRECTORY)
                 .join(&esp_dir_name)
                 .join(GRUB_EFI);
             let systemd_boot_current = join_relative(esp_path, &systemd_boot_path);
+            trace!(
+                "Current systemd-boot binary path: {}",
+                systemd_boot_current.display()
+            );
 
             // Generate .pcrlock files for runtime OS image A
             pcrlock::generate_pcrlock_files(
