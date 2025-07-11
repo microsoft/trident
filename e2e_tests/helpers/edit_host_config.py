@@ -57,17 +57,14 @@ def add_copy_command(host_config_path):
         yaml.safe_dump(host_config, f)
 
 
-def rename_oci_url(host_config_path):
+def rename_oci_url(host_config_path, oci_url):
     with open(host_config_path, "r") as f:
         host_config = yaml.safe_load(f)
 
     if "oci://" not in host_config["image"]["url"]:
         return
 
-    host_config["image"][
-        "url"
-    ] = "oci://maritimuspublic.azurecr.io/trident-container-testimage:v1"
-    host_config["image"]["sha384"] = "ignored"
+    host_config["image"]["url"] = oci_url
 
     with open(host_config_path, "w") as f:
         yaml.safe_dump(host_config, f)
@@ -88,6 +85,20 @@ def main():
         help="Path to the Trident configuration file.",
     )
     parser.add_argument(
+        "-c",
+        "--configuration",
+        type=str,
+        required=True,
+        help="Trident configration.",
+    )
+    parser.add_argument(
+        "-o",
+        "--ociUrl",
+        type=str,
+        required=True,
+        help="Url to ACR blob containing COSI file.",
+    )
+    parser.add_argument(
         "-r",
         "--runtimeEnv",
         type=str,
@@ -102,7 +113,9 @@ def main():
 
     if args.runtimeEnv == "container":
         add_copy_command(args.hostconfig)
-        rename_oci_url(args.hostconfig)
+
+    if args.configuration == "base-acr":
+        rename_oci_url(args.hostconfig, args.ociUrl)
 
 
 if __name__ == "__main__":

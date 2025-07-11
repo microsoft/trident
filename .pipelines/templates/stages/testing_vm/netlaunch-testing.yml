@@ -119,6 +119,8 @@ stages:
               tridentSourceDirectory: $(tridentSourceDirectory)
               tridentConfigPath: $(tridentConfigPath)
               runtimeEnv: ${{ parameters.runtimeEnv }}
+              config: $(tridentConfigurationName)
+              tridentTestImage: ${{ variables.testImageName }}
 
           - bash: |
               set -eux

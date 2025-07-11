@@ -13,6 +13,17 @@ parameters:
       - host
       - container
 
+  - name: tridentTestImage
+    displayName: "Image used the runtime OS, source of Trident (container vs host)"
+    type: string
+    default: trident-testimage
+    values:
+      - trident-container-testimage
+      - trident-testimage
+
+  - name: config
+    type: string
+
 steps:
   - bash: |
       set -eux
@@ -22,10 +33,12 @@ steps:
 
   - bash: |
       set -eux
+      oci_url="oci://maritimuspublic.azurecr.io/${{ parameters.tridentTestImage }}-$(Build.BuildId):v1"
       python3 ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/edit_host_config.py \
           --keypath ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/key \
           --hostconfig ${{ parameters.tridentConfigPath }}/trident-config.yaml \
-          --runtimeEnv ${{ parameters.runtimeEnv }}
+          --runtimeEnv ${{ parameters.runtimeEnv }} \
+          --ociUrl $oci_url
       chmod 600 ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/key
       ssh-keygen -p -m PEM -f ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/key -N ""
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
