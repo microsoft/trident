@@ -34,7 +34,7 @@ steps:
   - bash: |
       set -eux
 
-      repository_name=${{ parameters.imageName }}_$(Build.BuildId)
+      repository_name=${{ parameters.imageName }}-$(Build.BuildId)
 
       # Create repository if it doesn't already exist
       az acr repository show --name ${{ parameters.registry }} --repository $repository_name || \

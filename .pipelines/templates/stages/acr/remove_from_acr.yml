@@ -45,8 +45,8 @@ stages:
                 # Login to ACR
                 az acr login -n ${{ parameters.registry }}
 
-                host_repository_name=${{ parameters.hostRepository }}_$(Build.BuildId)
-                container_repository_name=${{ parameters.containerRepository }}_${{ parameters.baseImagePipelineBuildId }}
+                host_repository_name=${{ parameters.hostRepository }}-$(Build.BuildId)
+                container_repository_name=${{ parameters.containerRepository }}-$(Build.BuildId)
 
                 # Delete repository with COSI images
                 az acr repository delete --name ${{ parameters.registry }} --repository ${{ parameters.hostRepository }} --yes
