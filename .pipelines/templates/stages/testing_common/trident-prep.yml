@@ -38,6 +38,7 @@ steps:
           --keypath ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/key \
           --hostconfig ${{ parameters.tridentConfigPath }}/trident-config.yaml \
           --runtimeEnv ${{ parameters.runtimeEnv }} \
+          --configuration ${{ parameters.config }} \
           --ociUrl $oci_url
       chmod 600 ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/key
       ssh-keygen -p -m PEM -f ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/key -N ""
