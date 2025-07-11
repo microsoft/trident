@@ -202,12 +202,11 @@ stages:
               ssh -o StrictHostKeyChecking=no -i $(tridentSourceDirectory)/e2e_tests/helpers/key testing-user@$HOST_IP \
                 'sudo audit2allow -i /var/log/audit/audit.log' || echo "audit2allow failed"
 
+              echo "Looking for audit logs in VM"
+              ssh -o StrictHostKeyChecking=no -i $(tridentSourceDirectory)/e2e_tests/helpers/key testing-user@$HOST_IP \
+                'sudo cp /var/log/audit/audit.log /tmp/audit.log && sudo chmod 644 /tmp/audit.log'
               scp -o StrictHostKeyChecking=no -i $(tridentSourceDirectory)/e2e_tests/helpers/key \
-                testing-user@$HOST_IP:/var/log/audit/audit.log ./vm-audit.log || echo "Failed to copy audit log"
-
-              echo "Looking for audit logs in VM at /var/log/audit/audit.log"
-              VM_NAME=$(jq -r '.virtualmachines[0].name' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)
-              VM_AUDIT_LOG="/var/log/audit/audit.log"
+                testing-user@$HOST_IP:/tmp/audit.log ./vm-audit.log || echo "Failed to copy audit log"
 
               if [ -f "./vm-audit.log" ]; then
                 cat ./vm-audit.log
@@ -217,7 +216,7 @@ stages:
               fi
 
             timeoutInMinutes: 5
-            condition: succeededOrFailed()
+            condition: eq('${{ parameters.runtimeEnv }}', 'host')
             displayName: "📄 Check for SELinux failures"
 
           - bash: |
