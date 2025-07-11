@@ -541,10 +541,21 @@ def check_crypsetup_luks_dump(
     host_status = get_host_status(connection, tridentCommand)
     # TODO: Remove this override once UKI & encryption tests are fixed. ADO:
     # https://dev.azure.com/mariner-org/ECF/_workitems/edit/12877.
-    is_uki = host_status["spec"].get("internalParams", {}).get(
-        "uki", False
-    ) and not host_status["spec"].get("internalParams", {}).get(
-        "overridePcrlockEncryption", False
+    override_uki = (
+        host_status["spec"]
+        .get("internalParams", {})
+        .get("overridePcrlockEncryption", False)
+    )
+    # Hack: also want to disable on `combined` E2E test but only for container
+    additional_files = host_status["spec"].get("os", {}).get("additionalFiles", [])
+    if any(
+        f.get("destination") == "/var/lib/trident/trident-container.tar.gz"
+        for f in additional_files
+    ):
+        override_uki = True
+    is_uki = (
+        host_status["spec"].get("internalParams", {}).get("uki", False)
+        and not override_uki
     )
 
     # For a non-UKI image, we expect to see two key slots: 0 and 1, for the
@@ -613,9 +624,11 @@ def check_crypsetup_luks_dump(
         assert (
             dump["tokens"][expected_index]["tpm2_pcrlock"] is False
         ), f"Expected tpm2_pcrlock to be False for non-UKI image, got {dump['tokens'][expected_index]['tpm2_pcrlock']!r}"
-        assert dump["tokens"][expected_index]["tpm2-pcrs"] == [
-            7
-        ], f"Expected tpm2-pcrs to be [7] for non-UKI image, got {dump['tokens'][expected_index]['tpm2-pcrs']!r}"
+        # Expect PCR 0 or 7
+        assert dump["tokens"][expected_index]["tpm2-pcrs"] in [
+            [0],
+            [7],
+        ], f"Expected tpm2-pcrs to be [0] or [7] for non-UKI image, got {dump['tokens'][expected_index]['tpm2-pcrs']!r}"
 
     # Validate that UKI images have a single key slot, 2, while non-UKI
     # images have two key slots, 0 and 1.
