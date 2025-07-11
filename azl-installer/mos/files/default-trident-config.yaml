@@ -30,7 +30,7 @@ scripts:
     - name: user-password
       runOn:
         - clean-install
-      content: echo "__USER_NAME__:__USER_PASSWORD__" | chpasswd 
+      path: /etc/trident/scripts/user-password.sh
     - name: hostname
       runOn:
         - clean-install
