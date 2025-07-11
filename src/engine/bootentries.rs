@@ -40,6 +40,13 @@ enum EspDevice {
     Raid(Vec<EspDeviceMetadata>),
 }
 
+/// Desired position to add boot entry into the BootOrder.
+#[derive(Debug, PartialEq, Clone)]
+pub enum BootOrderPosition {
+    First,
+    Last,
+}
+
 /// Creates a boot entry for the A/B update volume and sets the `BootNext`
 /// variable to boot from the updated partition on next boot. Also updates the
 /// `BootOrder` for non-virtdeploy targets.
@@ -144,9 +151,28 @@ pub fn set_boot_next_and_update_boot_order(
                 .internal_params
                 .get_flag(VIRTDEPLOY_BOOT_ORDER_WORKAROUND);
 
-        // During clean install, immediately set the bootorder to use the new entry.
-        if ctx.servicing_type == ServicingType::CleanInstall && !use_virtdeploy_workaround {
-            update_boot_order(entry_numbers).structured(ServicingError::UpdateBootOrder)?;
+        if ctx.servicing_type == ServicingType::AbUpdate {
+            // During AB update, add new entry to end of the BootOrder so that UEFI will
+            // consider the entry as permanent.  The entry is added to the end of the BootOrder
+            // so that we can use BootNext to attempt to boot into the new OS and if anything
+            // goes wrong, the system will "rollback" to the previous OS.  If the new OS is
+            // successfully booted into, the BootOrder will be updated to move the new entry
+            // to the head of the BootOrder list during 'commit'.
+            //
+            // Note: Ensuring new entries are present in the boot order is especially important
+            // for some DELL machines which do not always persist boot entries that are not in
+            // the BootOrder (which is vital to our tests as they run on DELL machines).
+            // Boot entries disappearing does seem related to something unknown (maybe a machine
+            // corruption) in the machine state, so be wary of changing this code to create boot
+            // entries that are not in the BootOrder. We have fixed this and subsequently removed
+            // the fix because it didn't seem neccessary (our tests continued passing), only to
+            // have boot entries start disappearing again.
+            update_boot_order(entry_numbers, &BootOrderPosition::Last)
+                .structured(ServicingError::UpdateBootOrder)?;
+        } else if ctx.servicing_type == ServicingType::CleanInstall && !use_virtdeploy_workaround {
+            // During clean install, immediately set the bootorder to use the new entry.
+            update_boot_order(entry_numbers, &BootOrderPosition::First)
+                .structured(ServicingError::UpdateBootOrder)?;
         }
     } else {
         debug!("No changes to the boot variables are needed, skipping `BootNext` and `BootOrder` update");
@@ -177,7 +203,8 @@ pub fn persist_boot_order() -> Result<(), TridentError> {
     );
     // Modify `BootOrder` to include all the entries with the same label as
     // `BootCurrent`` in the `BootOrder`.
-    update_boot_order(boot_current_entries).structured(ServicingError::UpdateBootOrder)
+    update_boot_order(boot_current_entries, &BootOrderPosition::First)
+        .structured(ServicingError::UpdateBootOrder)
 }
 
 /// Returns the boot entry labels of the A/B volumes.
@@ -561,14 +588,17 @@ fn get_label_and_path(ctx: &EngineContext) -> Result<(String, PathBuf), Error> {
 
 /// Lists EFI boot manager entries, checks if the `BootOrder` requires
 /// updates based on the given boot entry, and updates the `BootOrder` if
-/// needed.
+/// needed according to the specified position.
 ///
 #[tracing::instrument(skip_all)]
-pub fn first_boot_order(boot_entry: &String) -> Result<(), Error> {
+pub fn first_or_last_boot_order(
+    boot_entry: &String,
+    boot_order_position: &BootOrderPosition,
+) -> Result<(), Error> {
     let bootmgr_output: EfiBootManagerOutput = efibootmgr::list_and_parse_bootmgr_entries()
         .context("Failed to list and parse boot manager entries")?;
 
-    let new_boot_order = generate_new_boot_order(&bootmgr_output, boot_entry);
+    let new_boot_order = generate_new_boot_order(&bootmgr_output, boot_entry, boot_order_position);
 
     if let Some(new_boot_order) = new_boot_order {
         debug!("Modifying `BootOrder` to {}", new_boot_order);
@@ -581,17 +611,20 @@ pub fn first_boot_order(boot_entry: &String) -> Result<(), Error> {
     Ok(())
 }
 
-/// This function sets the `BootOrder` to the specified boot entries, processing them in reverse
-/// order to ensure they are added to the beginning of the `BootOrder` list.
+/// This function ensures that the specified boot entries are added to the `BootOrder`
+/// according to the specified position.
 ///
-#[tracing::instrument(skip_all)]
-pub fn update_boot_order(boot_current_entries: Vec<String>) -> Result<(), Error> {
+/// #[tracing::instrument(skip_all)]
+pub fn update_boot_order(
+    boot_current_entries: Vec<String>,
+    boot_order_position: &BootOrderPosition,
+) -> Result<(), Error> {
     for added_entry_number in boot_current_entries.iter().rev() {
         debug!(
             "Adding boot entry '{}' to the beginning of `BootOrder`",
             added_entry_number
         );
-        first_boot_order(added_entry_number)?;
+        first_or_last_boot_order(added_entry_number, boot_order_position)?;
     }
     Ok(())
 }
@@ -605,22 +638,41 @@ pub fn update_boot_order(boot_current_entries: Vec<String>) -> Result<(), Error>
 fn generate_new_boot_order(
     bootmgr_output: &EfiBootManagerOutput,
     boot_entry: &String,
+    boot_order_position: &BootOrderPosition,
 ) -> Option<String> {
     let mut boot_order_initial: Vec<String> = bootmgr_output.boot_order.clone();
 
+    let add_to_boot_order = |bo: &mut Vec<String>| match boot_order_position {
+        BootOrderPosition::First => {
+            bo.insert(0, boot_entry.to_string());
+        }
+        BootOrderPosition::Last => {
+            bo.push(boot_entry.to_string());
+        }
+    };
+
     if boot_order_initial.contains(boot_entry) {
         if let Some(index) = boot_order_initial.iter().position(|x| x == boot_entry) {
-            if index != 0 {
-                // Boot entry is part of `BootOrder` but not at the first position. Move it to the first position.
-                boot_order_initial.remove(index);
-                boot_order_initial.insert(0, boot_entry.to_string());
-            } else {
-                // Boot entry is already at the first position in `BootOrder`. No need to modify.
-                return None;
-            }
+            match boot_order_position {
+                BootOrderPosition::First => {
+                    if index == 0 {
+                        // Boot entry is already at the first position in `BootOrder`. No need to modify.
+                        return None;
+                    }
+                }
+                BootOrderPosition::Last => {
+                    if index == boot_order_initial.len() - 1 {
+                        // Boot entry is already at the last position in `BootOrder`. No need to modify.
+                        return None;
+                    }
+                }
+            };
+            // Boot entry is part of `BootOrder` but not at the first position. Move it to the first position.
+            boot_order_initial.remove(index);
+            add_to_boot_order(&mut boot_order_initial);
         }
     } else {
-        boot_order_initial.insert(0, boot_entry.to_string());
+        add_to_boot_order(&mut boot_order_initial);
     }
 
     let new_boot_order_str = boot_order_initial.join(",");
@@ -733,16 +785,50 @@ mod tests {
     fn test_update_efi_boot_order() {
         let bootmgr_output = get_bootmgr_output();
 
-        // Test case where boot entry is already at the first position in `BootOrder`
-        let result = generate_new_boot_order(&bootmgr_output, &String::from("0001"));
+        // Test first-case where boot entry is already at the first position in `BootOrder`
+        let result = generate_new_boot_order(
+            &bootmgr_output,
+            &String::from("0001"),
+            &BootOrderPosition::First,
+        );
         assert_eq!(result, None);
 
-        // Test case where boot entry is not part of `BootOrder`
-        let result = generate_new_boot_order(&bootmgr_output, &String::from("0002"));
+        // Test first-case where boot entry is not part of `BootOrder`
+        let result = generate_new_boot_order(
+            &bootmgr_output,
+            &String::from("0002"),
+            &BootOrderPosition::First,
+        );
         assert_eq!(result, Some("0002,0001,0000".to_string()));
 
-        // Test case where boot entry is part of `BootOrder` but not at the first position
-        let result = generate_new_boot_order(&bootmgr_output, &String::from("0000"));
+        // Test first-case where boot entry is part of `BootOrder` but not at the first position
+        let result = generate_new_boot_order(
+            &bootmgr_output,
+            &String::from("0000"),
+            &BootOrderPosition::First,
+        );
+        assert_eq!(result, Some("0000,0001".to_string()));
+
+        // Test last-case where boot entry is not part of `BootOrder`
+        let result = generate_new_boot_order(
+            &bootmgr_output,
+            &String::from("0002"),
+            &BootOrderPosition::Last,
+        );
+        assert_eq!(result, Some("0001,0000,0002".to_string()));
+        // Test last-case where boot entry is part of `BootOrder` in the last position
+        let result = generate_new_boot_order(
+            &bootmgr_output,
+            &String::from("0000"),
+            &BootOrderPosition::Last,
+        );
+        assert_eq!(result, None);
+        // Test last-case where boot entry is part of `BootOrder` but not in the last position
+        let result = generate_new_boot_order(
+            &bootmgr_output,
+            &String::from("0001"),
+            &BootOrderPosition::Last,
+        );
         assert_eq!(result, Some("0000,0001".to_string()));
     }
 
@@ -1141,7 +1227,7 @@ mod functional_test {
     }
 
     #[functional_test(feature = "helpers")]
-    fn test_first_boot_order_when_update_success() {
+    fn test_first_or_last_boot_order_when_update_success() {
         delete_boot_next();
         set_some_boot_entries();
 
@@ -1151,7 +1237,7 @@ mod functional_test {
         let initial_boot_order = bootmgr_output.boot_order;
 
         // Test that target was able to boot into the updated partition.
-        first_boot_order(boot_current).unwrap();
+        first_or_last_boot_order(boot_current, &BootOrderPosition::First).unwrap();
 
         // Get the modified boot_order
         let bootmgr_output1: EfiBootManagerOutput =
@@ -1182,7 +1268,7 @@ mod functional_test {
 
     /// Test that the `BootOrder` is not modified if the boot entry is already at the first position.
     #[functional_test(feature = "helpers")]
-    fn test_first_boot_order_skip_boot_order_update() {
+    fn test_first_or_last_boot_order_skip_boot_order_update() {
         delete_boot_next();
         set_some_boot_entries();
 
@@ -1191,7 +1277,7 @@ mod functional_test {
         let initial_boot_order = bootmgr_output.boot_order;
         let boot_entry = initial_boot_order[0].clone();
 
-        first_boot_order(&boot_entry).unwrap();
+        first_or_last_boot_order(&boot_entry, &BootOrderPosition::First).unwrap();
 
         // Get the modified `BootOrder`
         let bootmgr_output1: EfiBootManagerOutput =
@@ -1216,7 +1302,11 @@ mod functional_test {
         let boot_entry1 = initial_boot_order[0].clone();
         let boot_entry2 = initial_boot_order[1].clone();
 
-        update_boot_order(vec![boot_entry1.clone(), boot_entry2.clone()]).unwrap();
+        update_boot_order(
+            vec![boot_entry1.clone(), boot_entry2.clone()],
+            &BootOrderPosition::First,
+        )
+        .unwrap();
 
         // Get the modified `BootOrder`
         let bootmgr_output1: EfiBootManagerOutput =
