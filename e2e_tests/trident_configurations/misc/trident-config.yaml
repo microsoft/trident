@@ -1,5 +1,5 @@
 image:
-  url: http://NETLAUNCH_HOST_ADDRESS/files/regular.cosi
+  url: oci://maritimuspublic.azurecr.io/trident-testimage:v1
   sha384: ignored
 storage:
   disks:

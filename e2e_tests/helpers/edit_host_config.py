@@ -85,13 +85,6 @@ def main():
         help="Path to the Trident configuration file.",
     )
     parser.add_argument(
-        "-c",
-        "--configuration",
-        type=str,
-        required=True,
-        help="Trident configration.",
-    )
-    parser.add_argument(
         "-o",
         "--ociUrl",
         type=str,
@@ -114,7 +107,7 @@ def main():
     if args.runtimeEnv == "container":
         add_copy_command(args.hostconfig)
 
-    if args.configuration == "base-acr":
+    if args.ociUrl != "":
         rename_oci_url(args.hostconfig, args.ociUrl)
 
 
