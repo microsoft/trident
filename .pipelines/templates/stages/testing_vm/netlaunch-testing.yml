@@ -195,6 +195,27 @@ stages:
             displayName: "📄 Check Runtime OS deployment"
 
           - bash: |
+              set -ux
+
+              VM_NAME=$(jq -r '.virtualmachines[0].name' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)
+              VM_AUDIT_LOG="/var/log/audit/audit.log"
+
+              until [ -f "$VM_AUDIT_LOG" ]
+              do
+                  sleep 0.1
+              done
+
+              echo "Found audit log file: $VM_AUDIT_LOG"
+              echo "VM audit log:"
+
+              mkdir -p $(ob_outputDirectory)
+              sudo cp ./audit.log $(ob_outputDirectory)/audit.log
+
+            timeoutInMinutes: 5
+            condition: succeededOrFailed()
+            displayName: "📄 Check for SELinux failures"
+
+          - bash: |
               set -eux
               HOST_IP=$(jq -r '.virtualmachines[0].ip' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)
               ssh -o StrictHostKeyChecking=no -i $(tridentSourceDirectory)/e2e_tests/helpers/key testing-user@$HOST_IP \
