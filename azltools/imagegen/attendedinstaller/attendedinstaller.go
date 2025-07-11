@@ -183,6 +183,7 @@ func (ai *AttendedInstaller) showView(newView int) (err error) {
 	logger.Log.Debugf("Showing view: %s", view.Name())
 
 	// Clear the text-to-speech buffer when we change pages
+	// Pause TUI input while input to clear the buffer is sent
 	ai.pauseSpeakupInput = true
 	err = speakuputils.ClearSpeakupBuffer(ai.keyboard)
 	if err != nil {
@@ -221,6 +222,7 @@ func (ai *AttendedInstaller) globalInputCapture(event *tcell.EventKey) *tcell.Ev
 	// If we're clearing the speakup buffer, don't process keypresses
 	// tcell has no easy way of differentiating between keypad enter (speakup clear) and enter
 	if ai.pauseSpeakupInput && event.Key() == tcell.KeyEnter {
+		// Resume TUI input, input intended to clear the buffer has been ignored
 		ai.pauseSpeakupInput = false
 		return nil
 	}
