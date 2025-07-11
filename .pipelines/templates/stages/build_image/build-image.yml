@@ -102,3 +102,4 @@ stages:
                 parameters:
                   imageName: ${{ parameters.imageName }}
                   registry: maritimuspublic
+                  baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}

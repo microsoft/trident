@@ -8,6 +8,11 @@ parameters:
     type: string
     default: "maritimuspublic"
 
+  - name: baseImagePipelineBuildId
+    displayName: "Build Id of the pipeline run, default will select latest successful run from pipeline 2116 ([AMD64-6-OneBranch]-Prod-BuildImages) with tag 3.0-preview"
+    type: string
+    default: "latestFromBranch"
+
 steps:
   - bash: |
       set -eux
@@ -34,21 +39,24 @@ steps:
   - bash: |
       set -eux
 
+      repository_name=${{ parameters.imageName }}_${{ parameters.baseImagePipelineBuildId }}
       cd "$(ob_outputDirectory)"
+
       for cosi_file in *.cosi; do
         if [ -f "$cosi_file" ]; then
           filename=$(basename "$cosi_file")
           clone_num=$(echo "$filename" | grep -o '_[0-9]\+' | tr -d '_')
           version_num=$((clone_num + 1))
           version_tag="v$version_num"
+
           echo "Pushing $filename with tag $version_tag to ${{ parameters.registry }}.azurecr.io"
-          oras push ${{ parameters.registry }}.azurecr.io/${{ parameters.imageName }}:$version_tag "$cosi_file"
+          oras push ${{ parameters.registry }}.azurecr.io/$repository_name:$version_tag "$cosi_file"
 
           # Push duplicate of clean install image with v3 tag for A/B Update into runtime OS A
           if [ "$version_num" -eq 1 ]; then
             version_tag="v3"
             echo "Pushing $filename with tag $version_tag to ${{ parameters.registry }}.azurecr.io"
-            oras push ${{ parameters.registry }}.azurecr.io/${{ parameters.imageName }}:$version_tag "$cosi_file"
+            oras push ${{ parameters.registry }}.azurecr.io/$repository_name:$version_tag "$cosi_file"
           fi
         fi
       done
