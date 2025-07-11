@@ -28,11 +28,6 @@ variables:
 
 resources:
   repositories:
-    - repository: templates
-      type: git
-      name: OneBranch.Pipelines/GovernedTemplates
-      ref: refs/heads/main
-
     - repository: argus-toolkit
       type: git
       name: argus-toolkit
@@ -59,25 +54,8 @@ resources:
       ref: refs/heads/main
 
 extends:
-  template: v2/OneBranch.NonOfficial.CrossPlat.yml@templates
+  template: templates/MockOB.yml
   parameters:
-    globalSdl: # https://aka.ms/obpipelines/sdl
-      tsa:
-        # Break build on SDL failures instead of filing bugs.
-        enabled: false # onebranch publish all sdl results to TSA. If TSA is disabled all SDL tools will forced into 'break' build mode.
-      credscan:
-        suppressionsFile: $(Build.SourcesDirectory)\.config\CredScanSuppressions.json
-      policheck:
-        break: true # always break the build on policheck issues. You can disable it by setting to 'false'
-      # suppression:
-      #   suppressionFile: $(Build.SourcesDirectory)\.gdn\global.gdnsuppress
-      disableLegacyManifest: true
-      cg:
-        alertWarningLevel: Medium
-    featureFlags:
-      runOnHost: true
-      EnableCDPxPAT: false
-
     stages:
       - template: templates/pipeline-selector.yml
         parameters:
