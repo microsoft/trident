@@ -13,11 +13,6 @@ parameters:
     type: string
     default: maritimuspublic
 
-  - name: baseImagePipelineBuildId
-    displayName: "Build Id of the pipeline run, default will select latest successful run from pipeline 2116 ([AMD64-6-OneBranch]-Prod-BuildImages) with tag 3.0-preview"
-    type: string
-    default: "latestFromBranch"
-
 stages:
   - stage: DeleteFromAcr
     displayName: Delete from ACR
@@ -50,7 +45,7 @@ stages:
                 # Login to ACR
                 az acr login -n ${{ parameters.registry }}
 
-                host_repository_name=${{ parameters.hostRepository }}_${{ parameters.baseImagePipelineBuildId }}
+                host_repository_name=${{ parameters.hostRepository }}_$(Build.BuildId)
                 container_repository_name=${{ parameters.containerRepository }}_${{ parameters.baseImagePipelineBuildId }}
 
                 # Delete repository with COSI images

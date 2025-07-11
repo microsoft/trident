@@ -341,4 +341,3 @@ stages:
           hostRepository: "trident-testimage"
           containerRepository: "trident-container-testimage"
           registry: "maritimuspublic"
-          baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}

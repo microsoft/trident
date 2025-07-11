@@ -8,11 +8,6 @@ parameters:
     type: string
     default: "maritimuspublic"
 
-  - name: baseImagePipelineBuildId
-    displayName: "Build Id of the pipeline run, default will select latest successful run from pipeline 2116 ([AMD64-6-OneBranch]-Prod-BuildImages) with tag 3.0-preview"
-    type: string
-    default: "latestFromBranch"
-
 steps:
   - bash: |
       set -eux
@@ -39,7 +34,12 @@ steps:
   - bash: |
       set -eux
 
-      repository_name=${{ parameters.imageName }}_${{ parameters.baseImagePipelineBuildId }}
+      repository_name=${{ parameters.imageName }}_$(Build.BuildId)
+
+      # Create repository if it doesn't already exist
+      az acr repository show --name ${{ parameters.registry }} --repository $repository_name || \
+      az acr repository create --name ${{ parameters.registry }} --repository $repository_name
+
       cd "$(ob_outputDirectory)"
 
       for cosi_file in *.cosi; do
