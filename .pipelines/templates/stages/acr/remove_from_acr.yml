@@ -49,6 +49,6 @@ stages:
                 container_repository_name=${{ parameters.containerRepository }}-$(Build.BuildId)
 
                 # Delete repository with COSI images
-                az acr repository delete --name ${{ parameters.registry }} --repository ${{ parameters.hostRepository }} --yes
-                az acr repository delete --name ${{ parameters.registry }} --repository ${{ parameters.containerRepository }} --yes
+                az acr repository delete --name ${{ parameters.registry }} --repository $host_repository_name --yes
+                az acr repository delete --name ${{ parameters.registry }} --repository $container_repository_name --yes
             displayName: "Log into ACR and delete repository"
