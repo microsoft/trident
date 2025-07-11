@@ -212,9 +212,9 @@ stages:
 
               echo "Printing audit logs in VM"
               ssh -o StrictHostKeyChecking=no -i $(tridentSourceDirectory)/e2e_tests/helpers/key testing-user@$HOST_IP \
-                'sudo chmod 644 /var/log/audit/audit.log'
+                'sudo cp /var/log/audit/audit.log /tmp/audit.log && sudo chmod 644 /tmp/audit.log'
               scp -o StrictHostKeyChecking=no -i $(tridentSourceDirectory)/e2e_tests/helpers/key \
-                testing-user@$HOST_IP:/var/log/audit/audit.log ./vm-audit.log || echo "Failed to copy audit log"
+                testing-user@$HOST_IP:/tmp/audit.log ./vm-audit.log || echo "Failed to copy audit log"
 
               if [ -f "./vm-audit.log" ]; then
                 cat ./vm-audit.log
