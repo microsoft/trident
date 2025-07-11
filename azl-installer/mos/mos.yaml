@@ -62,6 +62,16 @@ os:
       - trident-provisioning
       - vim
       - veritysetup
+      # Accessibility packages
+      - pcaudiolib
+      # Debug accessibility packages. 
+      # Successfully installed, but failed to create ISO.
+      # - alsa-lib
+      # - alsa-utils
+      # - espeak-ng
+      # - espeakup
+      # - kernel-drivers-accessibility
+      # - kernel-drivers-sound
 
   additionalFiles:
     # Getty service files for root autologin

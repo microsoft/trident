@@ -4,6 +4,8 @@
 package speakuputils
 
 import (
+	"fmt"
+
 	"github.com/bendahl/uinput"
 
 	"azltools/internal/shell"
@@ -25,7 +27,7 @@ func CreateVirtualKeyboard() (keyboard uinput.Keyboard, err error) {
 // SetHighlightTrackingMode is used once at startup to enable speakup's highlight tracking mode
 func SetHighlightTrackingMode(k uinput.Keyboard) (err error) {
 	if k == nil {
-		return
+		return fmt.Errorf("virtual keyboard is not initialized")
 	}
 	err = k.KeyPress(uinput.KeyKpasterisk)
 	return
@@ -34,7 +36,7 @@ func SetHighlightTrackingMode(k uinput.Keyboard) (err error) {
 // ClearSpeakupBuffer sends keypresses that will clear the speakup buffer
 func ClearSpeakupBuffer(k uinput.Keyboard) (err error) {
 	if k == nil {
-		return
+		return fmt.Errorf("virtual keyboard is not initialized")
 	}
 	err = k.KeyPress(uinput.KeyKpenter)
 	if err != nil {
