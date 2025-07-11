@@ -539,7 +539,13 @@ def check_crypsetup_luks_dump(
 
     # Check Host Status to see if image is UKI or not
     host_status = get_host_status(connection, tridentCommand)
-    is_uki = host_status["spec"].get("internalParams", {}).get("uki", False)
+    # TODO: Remove this override once UKI & encryption tests are fixed. ADO:
+    # https://dev.azure.com/mariner-org/ECF/_workitems/edit/12877.
+    is_uki = host_status["spec"].get("internalParams", {}).get(
+        "uki", False
+    ) and not host_status["spec"].get("internalParams", {}).get(
+        "overridePcrlockEncryption", False
+    )
 
     # For a non-UKI image, we expect to see two key slots: 0 and 1, for the
     # password and TPM 2.0 device. But for a UKI image, we expect to see a
