@@ -610,7 +610,10 @@ pub fn first_or_last_boot_order(
 /// This function sets the `BootOrder` to the specified boot entries, processing them in reverse
 /// order to ensure they are added to the beginning of the `BootOrder` list.
 #[tracing::instrument(skip_all)]
-pub fn update_boot_order(boot_current_entries: Vec<String>) -> Result<(), Error> {
+pub fn update_boot_order(
+    boot_current_entries: Vec<String>,
+    boot_order_position: &BootOrderPosition,
+) -> Result<(), Error> {
     for added_entry_number in boot_current_entries.iter().rev() {
         debug!(
             "Adding boot entry '{}' to the beginning of `BootOrder`",
