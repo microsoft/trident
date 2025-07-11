@@ -18,9 +18,7 @@ import (
 	"azltools/imagegen/attendedinstaller/views/diskview"
 	"azltools/imagegen/attendedinstaller/views/encryptview"
 	"azltools/imagegen/attendedinstaller/views/eulaview"
-	"azltools/imagegen/attendedinstaller/views/finishview"
 	"azltools/imagegen/attendedinstaller/views/hostnameview"
-	"azltools/imagegen/attendedinstaller/views/installationview"
 	"azltools/imagegen/attendedinstaller/views/installerview"
 	"azltools/imagegen/attendedinstaller/views/userview"
 	"azltools/imagegen/configuration"
@@ -376,24 +374,24 @@ func (ai *AttendedInstaller) initializeUI() (err error) {
 
 func (ai *AttendedInstaller) initializeViews() (err error) {
 	installerView := installerview.New(ai.installWithCalamaresWrapper)
-	ai.allViews = append(ai.allViews, diskview.New())
 	if installerView.NeedsToPrompt() {
 		ai.allViews = append(ai.allViews, installerView)
 	}
 
 	ai.allViews = append(ai.allViews, eulaview.New())
 
-	installationView := installationview.New(ai.systemConfig, ai.templateConfig)
-	if installationView.NeedsToPrompt() {
-		ai.allViews = append(ai.allViews, installationView)
-	}
+	// installationView := installationview.New(ai.systemConfig, ai.templateConfig)
+	// if installationView.NeedsToPrompt() {
+	// 	ai.allViews = append(ai.allViews, installationView)
+	// }
 
+	ai.allViews = append(ai.allViews, diskview.New())
 	ai.allViews = append(ai.allViews, encryptview.New())
 	ai.allViews = append(ai.allViews, hostnameview.New())
 	ai.allViews = append(ai.allViews, userview.New())
 	ai.allViews = append(ai.allViews, confirmview.New())
 	// ai.allViews = append(ai.allViews, progressview.New(ai.installationWrapper))
-	ai.allViews = append(ai.allViews, finishview.New(ai.recordedInstallationTime))
+	// ai.allViews = append(ai.allViews, finishview.New(ai.recordedInstallationTime))
 
 	for i, view := range ai.allViews {
 		var backButtonText string

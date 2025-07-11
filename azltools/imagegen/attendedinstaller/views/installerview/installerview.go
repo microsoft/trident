@@ -21,10 +21,9 @@ import (
 
 // UI constants.
 const (
-	navButtonNext = 1
-	noSelection   = -1
-
-	defaultPadding = 1
+	// default to <Next>
+	defaultNavButton = 1
+	defaultPadding   = 1
 
 	listProportion = 0
 
@@ -48,7 +47,6 @@ type InstallerView struct {
 	needsToPrompt    bool
 
 	calamaresInstallFunc func()
-	navFocus             bool // workaround to handle navigation bar focus
 }
 
 // New creates and returns a new InstallerView.
@@ -150,26 +148,7 @@ func (iv *InstallerView) Initialize(backButtonText string, sysConfig *configurat
 
 // HandleInput handles custom input.
 func (iv *InstallerView) HandleInput(event *tcell.EventKey) *tcell.EventKey {
-	if iv.navFocus {
-		if event.Key() == tcell.KeyUp {
-			iv.navBar.SetSelectedButton(noSelection)
-			iv.navFocus = false
-			return nil
-		}
-		if iv.navBar.UnfocusedInputHandler(event) {
-			return nil
-		}
-		return event
-	}
-
-	switch event.Key() {
-	case tcell.KeyTab:
-		iv.navBar.SetSelectedButton(navButtonNext)
-		iv.navFocus = true
-		return nil
-	case tcell.KeyEnter:
-		iv.navBar.SetSelectedButton(navButtonNext)
-		iv.navFocus = true
+	if iv.navBar.UnfocusedInputHandler(event) {
 		return nil
 	}
 
@@ -184,9 +163,7 @@ func (iv *InstallerView) NeedsToPrompt() bool {
 // Reset resets the page, undoing any user input.
 func (iv *InstallerView) Reset() (err error) {
 	iv.navBar.ClearUserFeedback()
-
-	iv.navBar.SetSelectedButton(noSelection)
-	iv.navFocus = false
+	iv.navBar.SetSelectedButton(defaultNavButton)
 
 	iv.optionList.SetCurrentItem(0)
 
