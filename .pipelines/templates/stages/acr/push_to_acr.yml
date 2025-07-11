@@ -36,10 +36,6 @@ steps:
 
       repository_name=${{ parameters.imageName }}-$(Build.BuildId)
 
-      # Create repository if it doesn't already exist
-      az acr repository show --name ${{ parameters.registry }} --repository $repository_name || \
-      az acr repository create --name ${{ parameters.registry }} --repository $repository_name
-
       cd "$(ob_outputDirectory)"
 
       for cosi_file in *.cosi; do
