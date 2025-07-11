@@ -16,7 +16,6 @@ import (
 	"azltools/imagegen/attendedinstaller/views"
 	"azltools/imagegen/attendedinstaller/views/confirmview"
 	"azltools/imagegen/attendedinstaller/views/diskview"
-	"azltools/imagegen/attendedinstaller/views/encryptview"
 	"azltools/imagegen/attendedinstaller/views/eulaview"
 	"azltools/imagegen/attendedinstaller/views/hostnameview"
 	"azltools/imagegen/attendedinstaller/views/installerview"
@@ -76,25 +75,11 @@ type AttendedInstaller struct {
 	installationError    error
 	installationTime     time.Duration
 	userQuitInstallation bool
-
-	systemConfig *configuration.SystemConfig
-
-	templateConfig configuration.Config
-	finalConfig    configuration.Config
 }
 
 // New creates and returns a new AttendedInstaller.
 func New(cfg configuration.Config, installationFunc func(configuration.Config, chan int, chan string) error, calamaresInstallFunc func() error) (attendedInstaller *AttendedInstaller, err error) {
-	finalConfig := configuration.Config{
-		SystemConfigs: []configuration.SystemConfig{
-			configuration.SystemConfig{},
-		},
-	}
-
 	attendedInstaller = &AttendedInstaller{
-		templateConfig:       cfg,
-		finalConfig:          finalConfig,
-		systemConfig:         &finalConfig.SystemConfigs[0],
 		installationFunc:     installationFunc,
 		calamaresInstallFunc: calamaresInstallFunc,
 	}
@@ -141,10 +126,6 @@ func (ai *AttendedInstaller) Run() (config configuration.Config, installationQui
 	if err != nil {
 		return
 	}
-
-	ai.finalConfig.SetDefaultConfig()
-
-	config = ai.finalConfig
 
 	return
 }
@@ -385,17 +366,11 @@ func (ai *AttendedInstaller) initializeViews() (err error) {
 
 	ai.allViews = append(ai.allViews, eulaview.New())
 
-	// installationView := installationview.New(ai.systemConfig, ai.templateConfig)
-	// if installationView.NeedsToPrompt() {
-	// 	ai.allViews = append(ai.allViews, installationView)
-	// }
-
 	ai.allViews = append(ai.allViews, diskview.New())
-	ai.allViews = append(ai.allViews, encryptview.New())
+	// ai.allViews = append(ai.allViews, encryptview.New())
 	ai.allViews = append(ai.allViews, hostnameview.New())
 	ai.allViews = append(ai.allViews, userview.New())
 	ai.allViews = append(ai.allViews, confirmview.New())
-	// ai.allViews = append(ai.allViews, progressview.New(ai.installationWrapper))
 	// ai.allViews = append(ai.allViews, finishview.New(ai.recordedInstallationTime))
 
 	for i, view := range ai.allViews {
@@ -407,7 +382,7 @@ func (ai *AttendedInstaller) initializeViews() (err error) {
 			backButtonText = uitext.ButtonGoBack
 		}
 
-		err = view.Initialize(backButtonText, ai.systemConfig, &ai.finalConfig, ai.app, ai.nextPage, ai.previousPage, ai.quit, ai.refreshTitle)
+		err = view.Initialize(backButtonText, ai.app, ai.nextPage, ai.previousPage, ai.quit, ai.refreshTitle)
 		if err != nil {
 			return
 		}

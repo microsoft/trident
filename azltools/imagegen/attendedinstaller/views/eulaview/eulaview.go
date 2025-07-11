@@ -13,7 +13,6 @@ import (
 
 	"azltools/imagegen/attendedinstaller/primitives/navigationbar"
 	"azltools/imagegen/attendedinstaller/uitext"
-	"azltools/imagegen/configuration"
 )
 
 // Resource constants.
@@ -47,7 +46,7 @@ func New() *EulaView {
 }
 
 // Initialize initializes the view.
-func (ev *EulaView) Initialize(backButtonText string, sysConfig *configuration.SystemConfig, cfg *configuration.Config, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
+func (ev *EulaView) Initialize(backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
 	ev.text = tview.NewTextView().
 		SetWordWrap(true).
 		SetChangedFunc(func() {

@@ -15,7 +15,6 @@ import (
 	"azltools/imagegen/attendedinstaller/speakuputils"
 	"azltools/imagegen/attendedinstaller/uitext"
 	"azltools/imagegen/attendedinstaller/uiutils"
-	"azltools/imagegen/configuration"
 	"azltools/internal/logger"
 )
 
@@ -112,7 +111,7 @@ func AssignDbusPermissions() (err error) {
 }
 
 // Initialize initializes the view.
-func (iv *InstallerView) Initialize(backButtonText string, sysConfig *configuration.SystemConfig, cfg *configuration.Config, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
+func (iv *InstallerView) Initialize(backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
 	iv.navBar = navigationbar.NewNavigationBar().
 		AddButton(backButtonText, previousPage).
 		AddButton(uitext.ButtonNext, func() {
