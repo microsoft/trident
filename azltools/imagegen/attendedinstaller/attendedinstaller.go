@@ -421,28 +421,6 @@ func (ai *AttendedInstaller) installWithCalamaresWrapper() {
 	ai.installationError = ai.calamaresInstallFunc()
 }
 
-func (ai *AttendedInstaller) installationWrapper(progress chan int, status chan string) {
-	defer func() {
-		if r := recover(); r != nil {
-			ai.installationError = fmt.Errorf("unexptected failure: %v", r)
-			ai.app.Stop()
-		}
-	}()
-
-	startTime := time.Now()
-	ai.installationError = ai.installationFunc(ai.finalConfig, progress, status)
-	ai.installationTime = time.Since(startTime)
-
-	// On error, gracefully stop the installation
-	if ai.installationError != nil {
-		ai.app.Stop()
-	}
-}
-
-func (ai *AttendedInstaller) recordedInstallationTime() time.Duration {
-	return ai.installationTime
-}
-
 func releaseVersion(releaseFile string) (version string, err error) {
 	const attributeName = "VERSION"
 
