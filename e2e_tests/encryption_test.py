@@ -564,13 +564,6 @@ def check_crypsetup_luks_dump(
 
     # For both UKI and non-UKI images, we expect to see a single token, but for
     # a different key slot and with a different index
-    assert (
-        len(dump["tokens"]) == 1
-    ), f"Expected one token, got {len(dump['tokens'])}. Tokens: {dump['tokens']}"
-    assert (
-        len(dump["tokens"][expected_index]["keyslots"]) == 1
-    ), f"Expected one key slot for the token, got {len(dump['tokens'][expected_index]['keyslots'])}. Key slots: {dump['tokens'][expected_index]['keyslots']}"
-
     expected_index = "0"
     if is_uki:
         assert (
@@ -587,6 +580,13 @@ def check_crypsetup_luks_dump(
         assert (
             "1" in dump["tokens"]["0"]["keyslots"]
         ), f"Expected key slot 1 to be in {dump['tokens']['0']['keyslots']!r}, got {dump['tokens']['0']['keyslots']!r}"
+
+    assert (
+        len(dump["tokens"]) == 1
+    ), f"Expected one token, got {len(dump['tokens'])}. Tokens: {dump['tokens']}"
+    assert (
+        len(dump["tokens"][expected_index]["keyslots"]) == 1
+    ), f"Expected one key slot for the token, got {len(dump['tokens'][expected_index]['keyslots'])}. Key slots: {dump['tokens'][expected_index]['keyslots']}"
 
     # Validate token type to be systemd-tpm2
     actual = dump["tokens"][expected_index]["type"]
