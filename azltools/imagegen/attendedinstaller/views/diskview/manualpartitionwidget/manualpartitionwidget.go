@@ -97,9 +97,6 @@ type ManualPartitionWidget struct {
 	systemDevices  []diskutils.SystemBlockDevice
 	bootType       string
 
-	cfg       *configuration.Config
-	sysConfig *configuration.SystemConfig
-
 	nextPage     func()
 	refreshTitle func()
 }
@@ -113,13 +110,11 @@ func New(systemDevices []diskutils.SystemBlockDevice, bootType string) *ManualPa
 }
 
 // Initialize initializes the view.
-func (mp *ManualPartitionWidget) Initialize(backButtonText string, sysConfig *configuration.SystemConfig, cfg *configuration.Config, app *tview.Application, switchMode, nextPage, previousPage, quit, refreshTitle func()) (err error) {
+func (mp *ManualPartitionWidget) Initialize(backButtonText string, app *tview.Application, switchMode, nextPage, previousPage, quit, refreshTitle func()) (err error) {
 	if len(mp.systemDevices) == 0 {
 		return fmt.Errorf("no devices to install to found")
 	}
 
-	mp.sysConfig = sysConfig
-	mp.cfg = cfg
 	mp.nextPage = nextPage
 	mp.refreshTitle = refreshTitle
 
@@ -623,10 +618,6 @@ func (mp *ManualPartitionWidget) unmarshalPartitionTable() (err error) {
 		Value: mp.systemDevices[mp.deviceIndex].DevicePath,
 	}
 	disk.Partitions = partitions
-
-	mp.sysConfig.BootType = mp.bootType
-	mp.sysConfig.PartitionSettings = partitionSettings
-	mp.cfg.Disks = []configuration.Disk{disk}
 
 	disk_path := disk.TargetDisk.Value
 	saveDiskPath(disk_path)

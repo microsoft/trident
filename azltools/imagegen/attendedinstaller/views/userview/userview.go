@@ -54,7 +54,7 @@ func New() *UserView {
 }
 
 // Initialize initializes the view.
-func (uv *UserView) Initialize(backButtonText string, cfg *configuration.Config, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
+func (uv *UserView) Initialize(backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
 	uv.userNameField = tview.NewInputField().
 		SetLabel(uitext.UserNameInputLabel).
 		SetFieldWidth(maxUserNameLength).
