@@ -188,14 +188,14 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                 let shim_path = Path::new(ESP_EFI_DIRECTORY)
                     .join(&esp_dir_name)
                     .join(BOOT_EFI);
-                let shim_current = join_relative(ESP_MOUNT_POINT_PATH, &shim_path);
+                let shim_current = join_relative(esp_path.clone(), &shim_path);
                 trace!("Current shim binary path: {}", shim_current.display());
 
                 // Construct current secondary bootloader path, i.e. systemd-boot EFI executable
                 let systemd_boot_path = Path::new(ESP_EFI_DIRECTORY)
                     .join(&esp_dir_name)
                     .join(GRUB_EFI);
-                let systemd_boot_current = join_relative(ESP_MOUNT_POINT_PATH, &systemd_boot_path);
+                let systemd_boot_current = join_relative(esp_path, &systemd_boot_path);
                 trace!(
                     "Current systemd-boot binary path: {}",
                     systemd_boot_current.display()
