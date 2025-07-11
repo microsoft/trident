@@ -34,7 +34,8 @@ steps:
   - bash: |
       set -eux
 
-      repository_name=${{ parameters.imageName }}-$(Build.BuildId)
+      repository_name=${{ parameters.imageName }}
+      build_id="$(Build.BuildId)"
 
       cd "$(ob_outputDirectory)"
 
@@ -43,7 +44,7 @@ steps:
           filename=$(basename "$cosi_file")
           clone_num=$(echo "$filename" | grep -o '_[0-9]\+' | tr -d '_')
           version_num=$((clone_num + 1))
-          version_tag="v$version_num"
+          version_tag="v$build_id.$version_num"
 
           echo "Pushing $filename with tag $version_tag to ${{ parameters.registry }}.azurecr.io"
           oras push ${{ parameters.registry }}.azurecr.io/$repository_name:$version_tag "$cosi_file"

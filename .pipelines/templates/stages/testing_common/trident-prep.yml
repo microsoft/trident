@@ -33,7 +33,8 @@ steps:
 
   - bash: |
       set -eux
-      oci_url="oci://maritimuspublic.azurecr.io/${{ parameters.tridentTestImage }}-$(Build.BuildId):v1"
+      build_id="$(Build.BuildId)"
+      oci_url="oci://maritimuspublic.azurecr.io/${{ parameters.tridentTestImage }}:v${build}_id.1"
       python3 ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/edit_host_config.py \
           --keypath ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/key \
           --hostconfig ${{ parameters.tridentConfigPath }}/trident-config.yaml \

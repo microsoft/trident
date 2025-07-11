@@ -115,8 +115,8 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 	// Match form <name>_v<version number>.<file extension> (note that "_v<version number>" is optional)
 	matches := regexp.MustCompile(`^(.*?)(_v\d+)?\.(.+)$`).FindStringSubmatch(base)
 
-	// Match form <repository>:v<version number>
-	matches_oci := regexp.MustCompile(`^(.*?)\:v(\d+)$`).FindStringSubmatch(base)
+	// Match form <repository>:v<build ID>.<version number>
+	matches_oci := regexp.MustCompile(`^(.*?)\:v(\d+)\.(\d+)$`).FindStringSubmatch(base)
 
 	var newCosiName string
 
@@ -124,9 +124,10 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 		name := matches[1]
 		ext := matches[3]
 		newCosiName = fmt.Sprintf("%s_v%s.%s", name, h.args.Version, ext)
-	} else if len(matches_oci) == 3 {
+	} else if len(matches_oci) == 4 {
 		name := matches_oci[1]
-		newCosiName = fmt.Sprintf("%s:v%s", name, h.args.Version)
+		buildId := matches_oci[2]
+		newCosiName = fmt.Sprintf("%s:v%s.%s", name, buildId, h.args.Version)
 	} else {
 		return fmt.Errorf("failed to parse image name: %s", base)
 	}
