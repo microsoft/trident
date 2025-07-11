@@ -368,6 +368,7 @@ func (ai *AttendedInstaller) initializeUI() (err error) {
 	ai.titleText.SetTextColor(ai.backdropStyle.SecondaryTextColor)
 
 	ai.showView(ai.currentView)
+	// Initialize input capture and custom input handling for TUI.
 	ai.pauseSpeakupInput = false
 	ai.app.SetInputCapture(ai.globalInputCapture)
 
