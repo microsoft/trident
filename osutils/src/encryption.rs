@@ -122,7 +122,7 @@ pub fn systemd_cryptenroll_wipe_slot(
     Dependency::SystemdCryptenroll
         .cmd()
         .arg(device_path.as_ref().as_os_str())
-        .arg(format!("--wipe-slot={}", key_slot))
+        .arg(format!("--wipe-slot={key_slot}"))
         .run_and_check()
         .context(format!(
             "Failed to wipe key slot '{}' for underlying device '{}'",
