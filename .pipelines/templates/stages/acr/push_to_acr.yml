@@ -51,7 +51,7 @@ steps:
 
           # Push duplicate of clean install image with v3 tag for A/B Update into runtime OS A
           if [ "$version_num" -eq 1 ]; then
-            version_tag="v3"
+            version_tag="v$build_id.3"
             echo "Pushing $filename with tag $version_tag to ${{ parameters.registry }}.azurecr.io"
             oras push ${{ parameters.registry }}.azurecr.io/$repository_name:$version_tag "$cosi_file"
           fi
