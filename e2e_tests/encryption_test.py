@@ -671,8 +671,8 @@ def check_crypsetup_luks_dump(
 
 def check_parent_devices(
     connection: fabric.Connection,
-    tridentCommand: str,
     hostConfiguration: dict,
+    tridentCommand: str,
     blockDevs: dict,
     cryptDevId: str,
 ) -> None:
