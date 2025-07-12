@@ -90,9 +90,6 @@ stages:
 
   - ${{ if parameters.runFunctionalTests }}:
       - template: stages/testing_functional/functional-testing.yml
-        parameters:
-          buildPurpose: "validation"
-          testingRun: true
 
   - ${{ if parameters.runServicingTests }}:
       - template: stages/testing_servicing/vm-testing.yml
