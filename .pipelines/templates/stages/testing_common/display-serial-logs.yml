@@ -13,7 +13,7 @@ steps:
       set -eux
       
       export SERIAL_LOG=""
-      if [ -f ${{ parameters.netlistenConfigFile }} ]; then
+      if [[  -n "${{ parameters.netlistenConfigFile }}" && -f "${{ parameters.netlistenConfigFile }}" ]]; then
         export SERIAL_LOG=$(yq -e '.netlisten.bmc.serialOverSsh.output' ${{ parameters.netlistenConfigFile }})
         echo "Using serial log from netlisten config file (${{ parameters.netlistenConfigFile }}): $SERIAL_LOG"
       fi
