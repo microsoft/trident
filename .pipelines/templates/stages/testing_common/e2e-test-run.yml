@@ -123,6 +123,7 @@ steps:
         --full-logstream ./logstream-full.log \
         -s "${{ parameters.artifactsDirectory }}" \
         -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-runtime-os-B.log 2>&1 &
+
       echo "Running script to stage and finalize A/B update..."
       ./bin/storm-trident helper ab-update \
           "${{ parameters.sshKeyPath }}" \

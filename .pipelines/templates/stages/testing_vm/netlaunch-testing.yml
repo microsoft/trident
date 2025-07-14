@@ -242,7 +242,6 @@ stages:
               artifactsDirectory: artifacts/test-image
               netlistenPort: ${{variables.netlaunchPort}}
 
-
           - bash: |
               set -eux
               sudo virsh shutdown virtdeploy-vm-0
