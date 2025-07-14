@@ -14,7 +14,7 @@ steps:
       
       export SERIAL_LOG=""
       if [[  -n "${{ parameters.netlistenConfigFile }}" && -f "${{ parameters.netlistenConfigFile }}" ]]; then
-        export SERIAL_LOG=$(yq -e '.netlisten.bmc.serialOverSsh.output' ${{ parameters.netlistenConfigFile }})
+        export SERIAL_LOG=$(sudo yq -e '.netlisten.bmc.serialOverSsh.output' ${{ parameters.netlistenConfigFile }})
         echo "Using serial log from netlisten config file (${{ parameters.netlistenConfigFile }}): $SERIAL_LOG"
       fi
       if [[ "$SERIAL_LOG" == "" ]]; then
