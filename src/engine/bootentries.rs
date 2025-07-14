@@ -785,13 +785,13 @@ mod tests {
     fn test_update_efi_boot_order() {
         let bootmgr_output = get_bootmgr_output();
 
-        // Test first-case where boot entry is already at the first position in `BootOrder`
+        // Test first-case where boot entry is not part of `BootOrder`
         let result = generate_new_boot_order(
             &bootmgr_output,
             &String::from("0001"),
             &BootOrderPosition::First,
         );
-        assert_eq!(result, None);
+        assert_eq!(result, Some("0001,0000".to_string()));
 
         // Test first-case where boot entry is not part of `BootOrder`
         let result = generate_new_boot_order(
