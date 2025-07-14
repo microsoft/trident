@@ -17,7 +17,7 @@ steps:
         export SERIAL_LOG=$(yq -e '.netlisten.bmc.serialOverSsh.output' ${{ parameters.netlistenConfigFile }})
         echo "Using serial log from netlisten config file (${{ parameters.netlistenConfigFile }}): $SERIAL_LOG"
       fi
-      if [[ "$SERIAL_LOG" == "" ]] then
+      if [[ "$SERIAL_LOG" == "" ]]; then
         echo "Netlisten config file does not contain 'bmc' keyword, retrieve serial output from local VM"
         export SERIAL_LOG="$(find /tmp/*-serial0.log | head -n 1)"
       fi
