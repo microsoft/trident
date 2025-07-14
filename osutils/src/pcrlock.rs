@@ -184,7 +184,8 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         required_entries
     );
 
-    // Validate only required PCRs
+    // Validate that all required PCR entries have a recognized component; otherwise,
+    // a PCR cannot be included into the pcrlock policy
     let unrecognized: Vec<_> = required_entries
         .into_iter()
         .filter(|entry| entry.component.is_none())
@@ -209,7 +210,7 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         .collect();
 
     bail!(
-        "Failed to validate systemd-pcrlock log output as some log entries cannot be matched \
+        "Failed to validate 'systemd-pcrlock log' output as some log entries cannot be matched \
             to recognized components:\n{}",
         entries.join("\n")
     );
@@ -508,9 +509,9 @@ pub fn generate_pcrlock_files(
 
     // Run 'lock-uki' when PCRs 4/11 are requested
     if !(pcrs & (Pcr::Pcr4 | Pcr::Pcr11)).is_empty() {
-        for (id, uki_path_opt) in uki_binaries.clone().into_iter().enumerate() {
+        for (index, uki_path_opt) in uki_binaries.clone().into_iter().enumerate() {
             if let Some(uki_path) = uki_path_opt {
-                let pcrlock_file = generate_pcrlock_output_path(UKI_PCRLOCK_DIR, id);
+                let pcrlock_file = generate_pcrlock_output_path(UKI_PCRLOCK_DIR, index);
                 let cmd = LockCommand::Uki {
                     path: uki_path.clone(),
                     pcrlock_file: pcrlock_file.clone(),
@@ -536,7 +537,7 @@ pub fn generate_pcrlock_files(
 
     // Generate .pcrlock files when PCR 4 is requested
     if pcrs.contains(Pcr::Pcr4) {
-        for (id, bootloader_path_opt) in bootloader_binaries.into_iter().enumerate() {
+        for (index, bootloader_path_opt) in bootloader_binaries.into_iter().enumerate() {
             // First, every bootloader PE binary is measured into PCR 4
             if let Some(bootloader_path) = bootloader_path_opt {
                 // Extract name of PE binary, to determine which dir to write to
@@ -562,14 +563,14 @@ pub fn generate_pcrlock_files(
                     );
                 };
 
-                let pcrlock_file = generate_pcrlock_output_path(sub_dir, id);
+                let pcrlock_file = generate_pcrlock_output_path(sub_dir, index);
 
                 debug!(
                     "Generating .pcrlock file at '{}' to measure bootloader PE binary at '{}'",
                     pcrlock_file.display(),
                     bootloader_path.display()
                 );
-                compute_pe_binary_authenticode(
+                write_pe_binary_authenticode_pcrlock_file(
                     bootloader_path.clone(),
                     pcrlock_file.clone(),
                     Pcr::Pcr4,
@@ -587,10 +588,10 @@ pub fn generate_pcrlock_files(
         // TODO: Once SecureBoot is enabled, gate this logic with a conditional, or remove
         // entirely, as SecureBoot will likely be enabled always.
         // https://dev.azure.com/mariner-org/ECF/_workitems/edit/12865/.
-        for (id, uki_path_opt) in uki_binaries.into_iter().enumerate() {
+        for (index, uki_path_opt) in uki_binaries.into_iter().enumerate() {
             if let Some(uki_path) = uki_path_opt {
                 let pcrlock_file =
-                    generate_pcrlock_output_path(BOOT_LOADER_CODE_UKI_PCRLOCK_DIR, id);
+                    generate_pcrlock_output_path(BOOT_LOADER_CODE_UKI_PCRLOCK_DIR, index);
                 debug!(
                     "Generating .pcrlock file at '{}' to measure .linux section of UKI PE binary at '{}'",
                     pcrlock_file.clone().display(),
@@ -648,11 +649,14 @@ struct PcrLock<'a> {
     records: Vec<Record<'a>>,
 }
 
-/// Computes the authenticode of a PE binary at `pe_binary` path, following Microsoft's
-/// Authenticode hash spec for measuring Windows PE binaries:
-/// https://reversea.me/index.php/authenticode-i-understanding-windows-authenticode/. Based on the
-/// computed hashes, writes a .pcrlock file at `pcrlock_file` path, for `systemd-pcrlock`.
-fn compute_pe_binary_authenticode(
+/// Computes the authenticode of a PE binary at `pe_binary` path, and writes a .pcrlock file at
+/// `pcrlock_file` for the PCR. This file will later be used by `systemd-pcrlock` to predict the
+/// measurement of the PE binary into the specified PCR.
+///
+/// To compute the authenticode, the func follows Microsoft's Authenticode hash spec for measuring
+/// Windows PE binaries:
+/// https://reversea.me/index.php/authenticode-i-understanding-windows-authenticode/.
+fn write_pe_binary_authenticode_pcrlock_file(
     pe_binary: PathBuf,
     pcrlock_file: PathBuf,
     pcr: Pcr,
@@ -750,10 +754,12 @@ fn generate_linux_authenticode(uki_path: PathBuf, pcrlock_file: PathBuf) -> Resu
             uki_temp.path().display()
         ))?;
     // Call helper to compute the authenticode of the extracted .linux section
-    compute_pe_binary_authenticode(linux_path, pcrlock_file, Pcr::Pcr4).context(format!(
-        "Failed to generate .pcrlock file for UKI at '{}' with .linux section",
-        uki_path.display()
-    ))?;
+    write_pe_binary_authenticode_pcrlock_file(linux_path, pcrlock_file, Pcr::Pcr4).context(
+        format!(
+            "Failed to generate .pcrlock file for UKI at '{}' with .linux section",
+            uki_path.display()
+        ),
+    )?;
     Ok(())
 }
 
