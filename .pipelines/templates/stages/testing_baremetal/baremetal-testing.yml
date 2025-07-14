@@ -215,7 +215,6 @@ stages:
 
               cat $(TRIDENT_SOURCE_DIR)/baremetal-netlaunch.yaml | grep -v password
 
-
               cat << EOF > $(TRIDENT_SOURCE_DIR)/baremetal-netlisten.yaml
               netlisten:
                 bmc:

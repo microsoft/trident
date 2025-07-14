@@ -410,7 +410,7 @@ bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum tools/pkg/*
 	@mkdir -p bin
 	cd tools && go build -o ../bin/netlaunch ./cmd/netlaunch
 
-bin/netlisten: tools/cmd/netlisten/* tools/go.sum tools/pkg/phonehome/*
+bin/netlisten: tools/cmd/netlisten/* tools/go.sum tools/pkg/*
 	@mkdir -p bin
 	cd tools && go build -o ../bin/netlisten ./cmd/netlisten
 
