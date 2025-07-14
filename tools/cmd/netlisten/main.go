@@ -109,7 +109,7 @@ var rootCmd = &cobra.Command{
 			http.Handle("/files/", http.StripPrefix("/files/", http.FileServer(http.Dir(serveFolder))))
 		}
 
-		if netlistenConfigFile == "" {
+		if netlistenConfigFile != "" {
 			go func() {
 				viper.SetConfigType("yaml")
 				viper.SetConfigFile(netlistenConfigFile)
@@ -159,7 +159,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&forceColor, "force-color", "", false, "Force colored output.")
 	rootCmd.PersistentFlags().StringVarP(&backgroundLogstreamFull, "full-logstream", "b", "logstream-full.log", "File to write full logstream output to.")
 	rootCmd.PersistentFlags().StringVarP(&traceFile, "trace-file", "m", "trident-metrics.jsonl", "File for writing metrics collected from Trident. Defaults to trident-metrics.jsonl")
-	rootCmd.PersistentFlags().StringVarP(&netlistenConfigFile, "config", "c", "", "Netlisten config file")
+	rootCmd.PersistentFlags().StringVarP(&netlistenConfigFile, "config", "c", "", "Optional netlisten config file")
 	rootCmd.MarkFlagRequired("port")
 	log.SetLevel(log.DebugLevel)
 }
