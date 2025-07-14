@@ -1,8 +1,5 @@
 parameters:
-  - name: netlaunchConfigFile
-    type: string
-
-  - name: bmSerialLog
+  - name: netlistenConfigFile
     type: string
 
   - name: outputDirectory
@@ -14,11 +11,14 @@ parameters:
 steps:
   - bash: |
       set -eux
-      if cat ${{ parameters.netlaunchConfigFile }} | grep -q "bmc:"; then
-        echo "Netlaunch config file contains 'bmc' keyword, retrieve serial output from seriallisten"
-        export SERIAL_LOG="${{ parameters.bmSerialLog }}"
-      else
-        echo "Netlaunch config file does not contain 'bmc' keyword, retrieve serial output from local VM"
+      
+      export SERIAL_LOG=""
+      if [ -f ${{ parameters.netlistenConfigFile }} ]; then
+        export SERIAL_LOG=$(yq -e '.netlisten.bmc.serialOverSsh.output' ${{ parameters.netlistenConfigFile }})
+        echo "Using serial log from netlisten config file (${{ parameters.netlistenConfigFile }}): $SERIAL_LOG"
+      fi
+      if [[ "$SERIAL_LOG" == "" ]] then
+        echo "Netlisten config file does not contain 'bmc' keyword, retrieve serial output from local VM"
         export SERIAL_LOG="$(find /tmp/*-serial0.log | head -n 1)"
       fi
 

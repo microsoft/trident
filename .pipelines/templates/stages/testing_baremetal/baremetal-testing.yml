@@ -307,4 +307,4 @@ stages:
               tridentConfigPath: $(TRIDENT_CONFIG_PATH)
               netlistenPort: ${{ variables.NETLAUNCH_PORT }}
               runtimeEnv: ${{ parameters.runtimeEnv }}
-              netlaunchConfigFile: $(TRIDENT_SOURCE_DIR)/baremetal-netlaunch.yaml
+              netlistenConfigFile: $(TRIDENT_SOURCE_DIR)/baremetal-netlisten.yaml

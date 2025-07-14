@@ -404,7 +404,7 @@ go.sum: go.mod
 	go mod tidy
 
 .PHONY: go-tools
-go-tools: bin/netlaunch bin/netlisten bin/miniproxy bin/seriallisten
+go-tools: bin/netlaunch bin/netlisten bin/miniproxy
 
 bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum tools/pkg/*
 	@mkdir -p bin
@@ -421,10 +421,6 @@ bin/miniproxy: tools/cmd/miniproxy/* tools/go.sum
 bin/mkcosi: tools/cmd/mkcosi/* tools/go.sum tools/pkg/* tools/cmd/mkcosi/**/*
 	@mkdir -p bin
 	cd tools && go build -o ../bin/mkcosi ./cmd/mkcosi
-
-bin/seriallisten: tools/cmd/seriallisten/* tools/go.sum tools/pkg/* 
-	@mkdir -p bin
-	cd tools && go build -o ../bin/seriallisten ./cmd/seriallisten
 
 bin/storm-trident: $(shell find storm -type f) tools/go.sum
 	@mkdir -p bin

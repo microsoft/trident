@@ -66,7 +66,6 @@ stages:
                 netlaunch
                 netlisten
                 mkcosi
-                seriallisten
                 storm-trident
               targetPath: $(ob_outputDirectory)
 

@@ -13,3 +13,9 @@ type NetLaunchConfig struct {
 		PreTridentScript *string
 	}
 }
+
+type NetListenConfig struct {
+	Netlisten struct {
+		Bmc *bmc.Bmc
+	}
+}
