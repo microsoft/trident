@@ -15,7 +15,6 @@ import (
 	"azltools/imagegen/attendedinstaller/primitives/navigationbar"
 	"azltools/imagegen/attendedinstaller/uitext"
 	"azltools/imagegen/attendedinstaller/uiutils"
-	"azltools/imagegen/configuration"
 )
 
 // UI constants.
@@ -42,8 +41,6 @@ type UserView struct {
 	flex                 *tview.Flex
 	centeredFlex         *tview.Flex
 	passwordValidator    *crunchy.Validator
-
-	user *configuration.User
 }
 
 // New creates and returns a new UserView.
@@ -123,9 +120,9 @@ func (uv *UserView) Reset() (err error) {
 	uv.navBar.ClearUserFeedback()
 	uv.navBar.SetSelectedButton(noSelection)
 	uv.form.SetFocus(0)
-
-	uv.user.Name = ""
-	uv.user.Password = ""
+	uv.userNameField.SetText("")
+	uv.passwordField.SetText("")
+	uv.confirmPasswordField.SetText("")
 
 	return
 }
@@ -215,9 +212,6 @@ func (uv *UserView) onNextButton(nextPage func()) {
 		uv.navBar.SetUserFeedback(uiutils.ErrorToUserFeedback(err), tview.Styles.TertiaryTextColor)
 		return
 	}
-
-	uv.user.Name = enteredUserName
-	uv.user.Password = enteredPassword
 
 	err = uv.saveUserInput(enteredUserName, enteredPassword)
 	if err != nil {
