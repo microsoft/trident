@@ -742,6 +742,6 @@ mod functional_test {
         // TODO: This test will fail for now since .pcrlock files have not been generated/added
         // yet. Once static .pcrlock files are added and dynamic files are generated, the test
         // should pass.
-        validate_log().unwrap_err();
+        validate_log().unwrap();
     }
 }
