@@ -131,7 +131,11 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
                 .iter()
                 .map(|(index, _suffix, _path)| *index)
                 .max()
-                .unwrap_or(99);
+                .ok_or_else(|| {
+                    TridentError::new(ServicingError::FindUkisForPcrlockGeneration {
+                        uki_dir: esp_uki_directory.display().to_string(),
+                    })
+                })?;
             let uki_current = esp_uki_directory.join(format!("vmlinuz-{max_index}-{uki_suffix}"));
             trace!("Current UKI binary path: {}", uki_current.display());
 

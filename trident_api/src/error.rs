@@ -435,6 +435,9 @@ pub enum ServicingError {
     #[error("Failed to find staged file at path '{staged_file}'")]
     FindStagedFile { staged_file: String },
 
+    #[error("Failed to find UKI binaries required for .pcrlock file generation in directory '{uki_dir}'")]
+    FindUkisForPcrlockGeneration { uki_dir: String },
+
     #[error("Failed to generate fstab at path '{fstab_path}'")]
     GenerateFstab { fstab_path: String },
 
