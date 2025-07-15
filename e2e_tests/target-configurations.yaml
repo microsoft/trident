@@ -204,6 +204,7 @@ virtualMachine:
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
+      - misc
       - raid-mirrored
       - raid-resync-small
       - rerun

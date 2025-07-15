@@ -109,7 +109,7 @@ def main():
     if args.runtimeEnv == "container":
         add_copy_command(args.hostconfig)
 
-    if args.ociUrl != "":
+    if args.ociUrl:
         rename_oci_url(args.hostconfig, args.ociUrl)
 
 

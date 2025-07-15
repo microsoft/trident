@@ -33,18 +33,23 @@ steps:
 
   - bash: |
       set -eux
+
+      cmd=(
+        python3 ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/edit_host_config.py \
+          --keypath ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/key \
+          --hostconfig ${{ parameters.tridentConfigPath }}/trident-config.yaml \
+          --runtimeEnv ${{ parameters.runtimeEnv }}
+      )
+
       if [ "${{ parameters.config }}" == "misc" ]; then
         build_id="$(Build.BuildId)"
         oci_url="oci://maritimuspublic.azurecr.io/${{ parameters.tridentTestImage }}:v${build_id}.1"
-      else
-        oci_url=""
+        cmd+=(--ociUrl "$oci_url")
       fi
 
-      python3 ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/edit_host_config.py \
-          --keypath ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/key \
-          --hostconfig ${{ parameters.tridentConfigPath }}/trident-config.yaml \
-          --runtimeEnv ${{ parameters.runtimeEnv }} \
-          --ociUrl $oci_url
+      # Execute the command
+      "${cmd[@]}"
+
       chmod 600 ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/key
       ssh-keygen -p -m PEM -f ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/key -N ""
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
