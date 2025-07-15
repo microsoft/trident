@@ -7,7 +7,7 @@ use std::{
     str::FromStr,
 };
 
-use anyhow::{anyhow, Error};
+use anyhow::{bail, Error};
 use log::{debug, info, trace};
 
 use maplit::hashmap;
@@ -378,15 +378,15 @@ fn parse_lazy_partitions(
         match partition.split_once(':') {
             Some((name, uuid)) => {
                 if name.is_empty() || uuid.is_empty() {
-                    return Err(anyhow!("Lazy partitions must be provided as <b-partition-name>:<b-partition-uuid> pairs"));
+                    bail!("Lazy partitions must be provided as <b-partition-name>:<b-partition-uuid> pairs");
                 }
                 // Ensure that the second part is a valid UUID
                 if let Err(err) = Uuid::parse_str(uuid) {
-                    return Err(anyhow!("Invalid UUID format: {uuid}: {err}"));
+                    bail!("Invalid UUID format: {uuid}: {err}");
                 }
                 // Ensure that the partition name ends with '-b'
                 if !name.ends_with("-b") {
-                    return Err(anyhow!("Lazy partitions must end with '-b'"));
+                    bail!("Lazy partitions must end with '-b'");
                 }
                 // Ensure that there is a corresponding '-a' partition
                 let corresponding_a_partition = name.replace("-b", "-a");
@@ -394,17 +394,13 @@ fn parse_lazy_partitions(
                     .iter()
                     .any(|p| p.id == *corresponding_a_partition)
                 {
-                    return Err(anyhow!(
-                        "No corresponding '-a' partition found for lazy partition '{name}'"
-                    ));
+                    bail!("No corresponding '-a' partition found for lazy partition '{name}'");
                 }
 
                 lazy_partitions_map.insert(name.to_string(), uuid.to_string());
             }
             None => {
-                return Err(anyhow!(
-                    "Lazy partitions must be provided as colon-separated <b-partition-name>:<b-partition-uuid> pairs"
-                ));
+                bail!("Lazy partitions must be provided as colon-separated <b-partition-name>:<b-partition-uuid> pairs");
             }
         }
     }
