@@ -177,6 +177,9 @@ pub enum InvalidInputError {
     #[error("Invalid internal parameter '{name}' provided: '{explanation}'")]
     InvalidInternalParameter { name: String, explanation: String },
 
+    #[error("Invalid --lazy-partitions provided")]
+    InvalidLazyPartition,
+
     #[error("Failed to load COSI file from '{url}'")]
     LoadCosi { url: Url },
 
