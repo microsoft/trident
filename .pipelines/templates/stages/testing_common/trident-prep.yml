@@ -33,7 +33,7 @@ steps:
 
   - bash: |
       set -eux
-      if [ "${{ parameters.config }}"" == "misc" ]; then
+      if [ "${{ parameters.config }}" == "misc" ]; then
         build_id="$(Build.BuildId)"
         oci_url="oci://maritimuspublic.azurecr.io/${{ parameters.tridentTestImage }}:v${build_id}.1"
       else
