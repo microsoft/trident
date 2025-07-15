@@ -483,10 +483,35 @@ mod tests {
 
     use super::*;
 
-    const PRISM_HISTORY: &str = include_str!("prism_history.json");
+    // lsblk.json was adding a postCustomization step to the
+    // usr-verity configuration in test-images
+    // (test-images/platform-integration-images/trident-vm-testimage/base/baseimg-usr-verity.yaml)
+    // like this:
+    //      scripts:
+    //          postCustomization:
+    //             - path: lsblk.sh
+    // the script does this:
+    //     `lsblk --json --output-all --bytes`
+    // and running:
+    //     `make trident-vm-usr-verity-testimage`
+    // the output from this postCusomization step was then
+    // captured and copied into lsblk.json.
     const LSBLK: &str = include_str!("lsblk.json");
-
+    // prism_history.json was created from the usr-verity
+    // configuration in test-images
+    // (test-images/platform-integration-images/trident-vm-testimage/base/baseimg-usr-verity.yaml)
+    // by running:
+    //     `make trident-vm-usr-verity-testimage`
+    // and then untar'ing and unzstd'ing the resulting
+    // COSI file, and then extracting the history.json
+    // from the /usr partition in share/image-customizer/history.json.
+    const PRISM_HISTORY: &str = include_str!("prism_history.json");
+    // lazy_prism_history.json was created by deleting the '-b'
+    // partitions from prism_history.json
     const LAZY_PRISM_HISTORY: &str = include_str!("lazy_prism_history.json");
+    // lazy_lsblk.json was created by finding the 'b' parition
+    // partuuids in prism_history.json and removing them from the
+    // lsblk.json file.
     const LAZY_LSBLK: &str = include_str!("lazy_lsblk.json");
 
     #[test]
