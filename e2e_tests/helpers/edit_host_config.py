@@ -57,6 +57,8 @@ def add_copy_command(host_config_path):
         yaml.safe_dump(host_config, f)
 
 
+# Images stored in ACR are tagged based on pipeline build ID, and therefore the
+# URL must be updated for every build.
 def rename_oci_url(host_config_path, oci_url):
     with open(host_config_path, "r") as f:
         host_config = yaml.safe_load(f)
