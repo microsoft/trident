@@ -90,7 +90,6 @@ virtualMachine:
   host:
     daily:
       - base
-      - base-acr
       - combined
       - encrypted-partition
       - encrypted-raid
@@ -108,7 +107,6 @@ virtualMachine:
       - usr-verity-raid
     post_merge:
       - base
-      - base-acr
       - combined
       - encrypted-partition
       - encrypted-raid
@@ -126,8 +124,8 @@ virtualMachine:
       - usr-verity-raid
     pullrequest:
       - base
-      - base-acr
       - combined
+      - misc
       - raid-mirrored
       - raid-resync-small
       - rerun
@@ -172,7 +170,6 @@ virtualMachine:
   container:
     daily:
       - base
-      - base-acr
       - combined
       - encrypted-partition
       - encrypted-raid
@@ -188,7 +185,6 @@ virtualMachine:
       - usr-verity-raid
     post_merge:
       - base
-      - base-acr
       - combined
       - encrypted-partition
       - encrypted-raid
@@ -204,7 +200,6 @@ virtualMachine:
       - usr-verity-raid
     pullrequest:
       - base
-      - base-acr
       - combined
       - encrypted-partition
       - encrypted-raid

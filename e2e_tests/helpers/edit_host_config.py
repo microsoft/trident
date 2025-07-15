@@ -90,7 +90,7 @@ def main():
         "-o",
         "--ociUrl",
         type=str,
-        required=True,
+        required=False,
         help="Url to ACR blob containing COSI file.",
     )
     parser.add_argument(
