@@ -133,14 +133,14 @@ fn generate_host_status(
         .partitions;
 
     // Validate lazy partitions and create map
-    let lazy_partitions_map = parse_lazy_partitions(lazy_partitions, prism_history_partitions)
+    let lazy_partitions = parse_lazy_partitions(lazy_partitions, prism_history_partitions)
         .structured(InvalidInputError::InvalidLazyPartition)?;
 
     let mut prism_partitions = prism_history_partitions.clone();
 
     // Create list of lazy PrismPartitions
     let mut lazy_prism_partitions_to_add: Vec<PrismPartition> = vec![];
-    for (lazy_partition_b, lazy_partition_uuid) in &lazy_partitions_map {
+    for (lazy_partition_b, lazy_partition_uuid) in &lazy_partitions {
         // create the a partition name
         let lazy_partition_a = lazy_partition_b.replace("-b", "-a");
         if let Some(partition) = prism_history_partitions
@@ -287,7 +287,7 @@ fn generate_host_status(
         })
         .collect();
     // Add lazy partitions to the partition paths, if they were provided.
-    for (lazy_partition_b, lazy_partition_uuid) in &lazy_partitions_map {
+    for (lazy_partition_b, lazy_partition_uuid) in &lazy_partitions {
         partition_paths.insert(
             lazy_partition_b.to_string(),
             PathBuf::from(format!("/dev/disk/by-partuuid/{lazy_partition_uuid}")),
@@ -295,7 +295,7 @@ fn generate_host_status(
     }
 
     lazy_prism_partitions_to_add.iter().for_each(|p| {
-        if let Some(uuid) = lazy_partitions_map.get(&p.id) {
+        if let Some(uuid) = lazy_partitions.get(&p.id) {
             partition_paths.insert(
                 p.id.clone(),
                 PathBuf::from(format!("/dev/disk/by-partuuid/{uuid}")),
