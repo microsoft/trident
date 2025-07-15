@@ -133,9 +133,10 @@ fn generate_host_status(
         .partitions;
 
     // Validate lazy partitions and create map
-    let lazy_partitions_map =
-        validate_lazy_partition_input(lazy_partitions, prism_history_partitions)
-            .structured(InvalidInputError::InvalidLazyPartition)?;
+    let lazy_partitions_map = parse_lazy_partitions(lazy_partitions, prism_history_partitions)
+        .structured(InvalidInputError::InvalidLazyPartition)?;
+
+    let mut prism_partitions = prism_history_partitions.clone();
 
     // Create list of lazy PrismPartitions
     let mut lazy_prism_partitions_to_add: Vec<PrismPartition> = vec![];
@@ -146,19 +147,16 @@ fn generate_host_status(
             .iter()
             .find(|p| p.id == lazy_partition_a)
         {
-            lazy_prism_partitions_to_add.push(PrismPartition {
+            let lazy_partition = PrismPartition {
                 id: lazy_partition_b.to_string(),
-                start: partition.start.clone(),
-                size: partition.size.clone(),
-                ty: partition.ty.clone(),
-            });
+                // "Empty" settings for remaining properties
+                start: "0".to_string(),
+                size: None,
+                ty: None,
+            };
+            prism_partitions.push(lazy_partition);
         }
     }
-
-    // Append any lazy partitions to the prism history partitions
-    let mut all_prism_partitions = prism_history_partitions.clone();
-    all_prism_partitions.extend(lazy_prism_partitions_to_add.iter().cloned());
-    let prism_partitions = &all_prism_partitions;
 
     let mut host_config = HostConfiguration::default();
 
@@ -289,6 +287,13 @@ fn generate_host_status(
         })
         .collect();
     // Add lazy partitions to the partition paths, if they were provided.
+    for (lazy_partition_b, lazy_partition_uuid) in &lazy_partitions_map {
+        partition_paths.insert(
+            lazy_partition_b.to_string(),
+            PathBuf::from(format!("/dev/disk/by-partuuid/{lazy_partition_uuid}")),
+        );
+    }
+
     lazy_prism_partitions_to_add.iter().for_each(|p| {
         if let Some(uuid) = lazy_partitions_map.get(&p.id) {
             partition_paths.insert(
@@ -363,7 +368,7 @@ fn generate_host_status(
     })
 }
 
-fn validate_lazy_partition_input(
+fn parse_lazy_partitions(
     lazy_partitions: &[String],
     prism_history_partitions: &[PrismPartition],
 ) -> Result<HashMap<String, String>, Error> {
@@ -666,7 +671,7 @@ mod tests {
 
         // Not colon-separated
         assert_eq!(
-            validate_lazy_partition_input(&["no-colon-in-string".to_string()], prism_partitions)
+            parse_lazy_partitions(&["no-colon-in-string".to_string()], prism_partitions)
                 .unwrap_err()
                 .to_string(),
             "Lazy partitions must be provided as colon-separated <b-partition-name>:<b-partition-uuid> pairs"
@@ -674,7 +679,7 @@ mod tests {
 
         // no partition name
         assert_eq!(
-            validate_lazy_partition_input(
+            parse_lazy_partitions(
                 &[":6d792d45-30bc-4764-a3f0-e1c1c8eadbad".to_string()],
                 prism_partitions,
             )
@@ -685,7 +690,7 @@ mod tests {
 
         // no partition uuid
         assert_eq!(
-            validate_lazy_partition_input(&["foo-b:".to_string()], prism_partitions)
+            parse_lazy_partitions(&["foo-b:".to_string()], prism_partitions)
                 .unwrap_err()
                 .to_string(),
             "Lazy partitions must be provided as <b-partition-name>:<b-partition-uuid> pairs"
@@ -693,7 +698,7 @@ mod tests {
 
         // invalid partition uuid
         assert_eq!(
-            validate_lazy_partition_input(&["foo-b:asd".to_string()], prism_partitions)
+            parse_lazy_partitions(&["foo-b:asd".to_string()], prism_partitions)
                 .unwrap_err()
                 .to_string(),
             "Invalid UUID format: asd: invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `s` at 2"
@@ -701,7 +706,7 @@ mod tests {
 
         // partition doesn't end in '-b'
         assert_eq!(
-            validate_lazy_partition_input(
+            parse_lazy_partitions(
                 &["no_dash_b:6d792d45-30bc-4764-a3f0-e1c1c8eadbad".to_string()],
                 prism_partitions,
             )
@@ -712,7 +717,7 @@ mod tests {
 
         // no corresponding '-a' partition
         assert_eq!(
-            validate_lazy_partition_input(
+            parse_lazy_partitions(
                 &["foo-b:6d792d45-30bc-4764-a3f0-e1c1c8eadbad".to_string()],
                 prism_partitions,
             )
