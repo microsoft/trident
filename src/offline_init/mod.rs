@@ -41,6 +41,9 @@ struct PrismPartition {
 
     #[serde(rename = "type")]
     ty: Option<String>,
+
+    #[serde(default)]
+    lazy: bool,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -151,8 +154,9 @@ fn generate_host_status(
                 id: lazy_partition_b.to_string(),
                 // "Empty" settings for remaining properties
                 start: "0".to_string(),
-                size: None,
+                size: Some("0G".to_string()),
                 ty: None,
+                lazy: true,
             };
             prism_partitions.push(lazy_partition);
         }
@@ -169,11 +173,15 @@ fn generate_host_status(
             } else {
                 PartitionType::LinuxGeneric
             },
-            size: match &partition.size {
-                Some(s) => PartitionSize::from_str(s)
-                    .structured(InvalidInputError::ParsePrismHistory)
-                    .message(format!("Failed to parse partition size '{s}'"))?,
-                None => PartitionSize::Grow,
+            size: if partition.lazy {
+                PartitionSize::Lazy
+            } else {
+                match &partition.size {
+                    Some(s) => PartitionSize::from_str(s)
+                        .structured(InvalidInputError::ParsePrismHistory)
+                        .message(format!("Failed to parse partition size '{s}'"))?,
+                    None => PartitionSize::Grow,
+                }
             },
         });
     }
@@ -643,7 +651,7 @@ mod tests {
             host_status.partition_paths.get("usr-hash-b").unwrap(),
             &PathBuf::from(format!("/dev/disk/by-partuuid/{usr_hash_b_uuid}"))
         );
-        assert_eq!(host_status.partition_paths.len(), 12);
+        assert_eq!(host_status.partition_paths.len(), 121);
     }
 
     #[test]

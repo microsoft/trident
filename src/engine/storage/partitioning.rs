@@ -368,6 +368,9 @@ fn add_repart_entries(
         let size = match partition.size {
             PartitionSize::Grow => None,
             PartitionSize::Fixed(s) => Some(s.bytes()),
+            // Lazy partitions are not created during install/update, so
+            // skip them here.
+            PartitionSize::Lazy => continue,
         };
 
         repart.push_partition_entry(RepartPartitionEntry {

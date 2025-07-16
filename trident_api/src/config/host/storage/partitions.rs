@@ -6,7 +6,11 @@ use uuid::Uuid;
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 
-use crate::{constants::PARTITION_SIZE_GROW, primitives::bytes::ByteCount, BlockDeviceId};
+use crate::{
+    constants::{PARTITION_SIZE_GROW, PARTITION_SIZE_LAZY},
+    primitives::bytes::ByteCount,
+    BlockDeviceId,
+};
 
 #[cfg(feature = "schemars")]
 use crate::schema_helpers::{block_device_id_schema, unit_enum_with_untagged_variant};
@@ -208,6 +212,11 @@ pub enum PartitionSize {
     /// Grow a partition to use all available space.
     Grow,
 
+    /// # Lazy
+    ///
+    /// No size specified, parition will not be created during install or update.
+    Lazy,
+
     /// # Fixed
     ///
     /// Fixed size in bytes. Must be a non-zero multiple of 4096 bytes.
@@ -222,6 +231,8 @@ impl FromStr for PartitionSize {
         let s = s.trim();
         Ok(if s == PARTITION_SIZE_GROW {
             PartitionSize::Grow
+        } else if s == PARTITION_SIZE_LAZY {
+            PartitionSize::Lazy
         } else {
             PartitionSize::Fixed(ByteCount::from_human_readable(s)?)
         })
@@ -233,6 +244,7 @@ impl Display for PartitionSize {
         match self {
             PartitionSize::Fixed(n) => write!(f, "{}", n.to_human_readable()),
             PartitionSize::Grow => write!(f, "{PARTITION_SIZE_GROW}"),
+            PartitionSize::Lazy => write!(f, "lazy"),
         }
     }
 }
@@ -249,6 +261,7 @@ impl PartitionSize {
         match self {
             PartitionSize::Fixed(size) => Some(size.bytes()),
             PartitionSize::Grow => None,
+            PartitionSize::Lazy => None,
         }
     }
 }
@@ -276,11 +289,18 @@ mod tests {
                     size: PartitionSize::Grow,
                 }
             }
+
+            fn lazy() -> Self {
+                Self {
+                    size: PartitionSize::Lazy,
+                }
+            }
         }
 
         // Define test cases
         let test_cases = [
             ("size: grow", TestStruct::grow(), "size: grow"),
+            ("size: lazy", TestStruct::lazy(), "size: lazy"),
             ("size: 1", TestStruct::fixed(1), "size: 1"),
             ("size: 512", TestStruct::fixed(512), "size: 512"),
             ("size: 1K", TestStruct::fixed(1024), "size: 1K"),

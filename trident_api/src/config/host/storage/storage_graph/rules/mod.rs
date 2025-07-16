@@ -77,6 +77,10 @@ impl HostConfigBlockDevice {
                 size: PartitionSize::Grow,
                 ..
             }) => (),
+            Self::Partition(Partition {
+                size: PartitionSize::Lazy,
+                ..
+            }) => (),
             Self::AdoptedPartition(ap) => match (&ap.match_label, &ap.match_uuid) {
                 (Some(_), Some(_)) => {
                     bail!("Adopted partitions cannot have both matchLabel and matchUUID");
