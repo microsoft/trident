@@ -378,7 +378,7 @@ fn parse_lazy_partitions(
         match partition.split_once(':') {
             Some((name, uuid)) => {
                 if name.is_empty() || uuid.is_empty() {
-                    bail!("Lazy partitions must be provided as <b-partition-name>:<b-partition-uuid> pairs");
+                    bail!("Lazy partitions must be provided as <b-partition-name>:<b-partition-partuuid> pairs");
                 }
                 // Ensure that the second part is a valid UUID
                 if let Err(err) = Uuid::parse_str(uuid) {
@@ -400,7 +400,7 @@ fn parse_lazy_partitions(
                 lazy_partitions_map.insert(name.to_string(), uuid.to_string());
             }
             None => {
-                bail!("Lazy partitions must be provided as colon-separated <b-partition-name>:<b-partition-uuid> pairs");
+                bail!("Lazy partitions must be provided as colon-separated <b-partition-name>:<b-partition-partuuid> pairs");
             }
         }
     }
@@ -670,7 +670,7 @@ mod tests {
             parse_lazy_partitions(&["no-colon-in-string".to_string()], prism_partitions)
                 .unwrap_err()
                 .to_string(),
-            "Lazy partitions must be provided as colon-separated <b-partition-name>:<b-partition-uuid> pairs"
+            "Lazy partitions must be provided as colon-separated <b-partition-name>:<b-partition-partuuid> pairs"
         );
 
         // no partition name
@@ -681,7 +681,7 @@ mod tests {
             )
             .unwrap_err()
             .to_string(),
-            "Lazy partitions must be provided as <b-partition-name>:<b-partition-uuid> pairs"
+            "Lazy partitions must be provided as <b-partition-name>:<b-partition-partuuid> pairs"
         );
 
         // no partition uuid
@@ -689,7 +689,7 @@ mod tests {
             parse_lazy_partitions(&["foo-b:".to_string()], prism_partitions)
                 .unwrap_err()
                 .to_string(),
-            "Lazy partitions must be provided as <b-partition-name>:<b-partition-uuid> pairs"
+            "Lazy partitions must be provided as <b-partition-name>:<b-partition-partuuid> pairs"
         );
 
         // invalid partition uuid

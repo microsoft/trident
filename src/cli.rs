@@ -163,7 +163,7 @@ pub enum Commands {
         hs_path: Option<PathBuf>,
         /// Provide lazy partition information overrides for `-b` partitions
         ///
-        /// This is a comma-separated list of `<b-partition-name>`:`<b-partition-uuid>` pairs.
+        /// This is a comma-separated list of `<b-partition-name>`:`<b-partition-partuuid>` pairs.
         ///
         /// If `hs_path` is provided, this will be ignored.
         #[clap(long, value_delimiter = ',', num_args = 0..)]
