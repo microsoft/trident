@@ -142,17 +142,17 @@ fn generate_host_status(
     let mut lazy_prism_partitions_to_add: Vec<PrismPartition> = vec![];
     for (lazy_partition_b, lazy_partition_uuid) in &lazy_partitions {
         // create the a partition name
-        let lazy_partition_a = lazy_partition_b.replace("-b", "-a");
-        if let Some(partition) = prism_history_partitions
+        let partition_a_name = lazy_partition_b.replace("-b", "-a");
+        if let Some(partition_a) = prism_history_partitions
             .iter()
-            .find(|p| p.id == lazy_partition_a)
+            .find(|p| p.id == partition_a_name)
         {
             let lazy_partition = PrismPartition {
                 id: lazy_partition_b.to_string(),
-                // "Empty" settings for remaining properties
-                start: "0".to_string(),
-                size: None,
-                ty: None,
+                // mirror 'a' partition properties
+                start: partition_a.start.clone(),
+                size: partition_a.size.clone(),
+                ty: partition_a.ty.clone(),
             };
             prism_partitions.push(lazy_partition);
         }
