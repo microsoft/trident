@@ -285,17 +285,21 @@ fn generate_host_status(
                 )),
             )
         })
+        .chain(
+            // Add lazy partitions to the partition paths, if they were provided.
+            lazy_partitions
+                .iter()
+                .map(|(lazy_partition_b, lazy_partition_info)| {
+                    (
+                        lazy_partition_b.to_string(),
+                        PathBuf::from(format!(
+                            "/dev/disk/by-partuuid/{}",
+                            lazy_partition_info.part_uuid
+                        )),
+                    )
+                }),
+        )
         .collect();
-    // Add lazy partitions to the partition paths, if they were provided.
-    for (lazy_partition_b, lazy_partition_info) in &lazy_partitions {
-        partition_paths.insert(
-            lazy_partition_b.to_string(),
-            PathBuf::from(format!(
-                "/dev/disk/by-partuuid/{}",
-                lazy_partition_info.part_uuid
-            )),
-        );
-    }
 
     for filesystem in &prism_storage.filesystems {
         let Some(mount_point) = &filesystem.mount_point else {
