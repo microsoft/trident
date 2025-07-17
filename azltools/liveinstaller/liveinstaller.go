@@ -49,6 +49,7 @@ type imagerArguments struct {
 
 type installationDetails struct {
 	installationQuit bool
+	finalConfig      configuration.Config
 }
 
 func handleCtrlC(signals chan os.Signal) {
