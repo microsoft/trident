@@ -61,9 +61,10 @@ pub(crate) fn update(
         ab_active_volume: state.host_status().ab_active_volume,
         disk_uuids: state.host_status().disk_uuids.clone(),
         install_index: state.host_status().install_index,
-        image: Some(image),
+        image: Some(image.clone()),
         storage_graph: engine::build_storage_graph(&host_config.storage)?, // Build storage graph
         filesystems: Vec::new(), // Will be populated after dynamic validation
+        is_uki: Some(image.is_uki()),
     };
 
     // Before starting an update servicing, need to validate that the active volume is set
@@ -321,6 +322,7 @@ pub(crate) fn finalize_update(
         image: None, // Not used in finalize_update
         storage_graph: engine::build_storage_graph(&state.host_status().spec.storage)?, // Build storage graph
         filesystems: Vec::new(), // Left empty since context does not have image
+        is_uki: None,
     };
 
     let esp_path = if container::is_running_in_container()

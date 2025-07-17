@@ -72,6 +72,9 @@ pub struct EngineContext {
 
     /// All of the filesystems in the system.
     pub filesystems: Vec<FileSystemData>,
+
+    /// Whether the image will use a UKI or not.
+    pub is_uki: Option<bool>,
 }
 impl EngineContext {
     /// Returns the update volume selection for all A/B volume pairs. The update volume is the one
@@ -288,22 +291,17 @@ impl EngineContext {
     }
 
     pub(crate) fn is_uki_image(&self) -> Result<bool, TridentError> {
-        Ok(if self.spec.internal_params.get_flag(ENABLE_UKI_SUPPORT) {
+        if self.spec.internal_params.get_flag(ENABLE_UKI_SUPPORT) {
             trace!("internal param {ENABLE_UKI_SUPPORT} specified: UKI image");
-            true
+            Ok(true)
+        } else if let Some(is_uki) = self.is_uki {
+            trace!("uki configured as {is_uki}");
+            Ok(is_uki)
         } else {
-            match &self.image {
-                Some(image) => {
-                    let uki = image.is_uki();
-                    trace!("getting uki-ness from image: {uki}");
-                    uki
-                }
-                None => {
-                    trace!("no image specified: not a UKI image");
-                    false
-                }
-            }
-        })
+            Err(TridentError::internal(
+                "is_uki() called without it being set",
+            ))
+        }
     }
 }
 

@@ -197,9 +197,10 @@ fn stage_clean_install(
         partition_paths: Default::default(), // Will be initialized later
         disk_uuids: Default::default(),      // Will be initialized later
         install_index: 0,                    // Will be initialized later
-        image: Some(image),
+        image: Some(image.clone()),
         storage_graph: engine::build_storage_graph(&host_config.storage)?, // Build storage graph
         filesystems: Vec::new(), // Will be populated after dynamic validation
+        is_uki: Some(image.is_uki()),
     };
 
     // Execute pre-servicing scripts
@@ -301,6 +302,7 @@ pub(crate) fn finalize_clean_install(
         image: None, // Not used in finalize_clean_install
         storage_graph: engine::build_storage_graph(&state.host_status().spec.storage)?, // Build storage graph
         filesystems: Vec::new(), // Left empty since context does not have image
+        is_uki: None,
     };
 
     let new_root = match new_root {
