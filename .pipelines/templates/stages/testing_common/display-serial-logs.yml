@@ -1,0 +1,37 @@
+parameters:
+  - name: netlistenConfigFile
+    type: string
+
+  - name: outputDirectory
+    type: string
+
+  - name: partition
+    type: string
+
+steps:
+  - bash: |
+      set -eux
+      
+      export SERIAL_LOG=""
+      if [[  -n "${{ parameters.netlistenConfigFile }}" && -f "${{ parameters.netlistenConfigFile }}" ]]; then
+        export SERIAL_LOG=$(sudo yq -e '.netlisten.bmc.serialOverSsh.output' ${{ parameters.netlistenConfigFile }})
+        echo "Using serial log from netlisten config file (${{ parameters.netlistenConfigFile }}): $SERIAL_LOG"
+      fi
+      if [[ "$SERIAL_LOG" == "" ]]; then
+        echo "Netlisten config file does not contain 'bmc' keyword, retrieve serial output from local VM"
+        export SERIAL_LOG="$(find /tmp/*-serial0.log | head -n 1)"
+      fi
+
+      # Output the serial log
+      if [ -f $SERIAL_LOG ]; then
+        sudo cp $SERIAL_LOG ${{ parameters.outputDirectory }}/serial-update-runtime-os-${{ parameters.partition }}.log
+        sudo chmod 644 ${{ parameters.outputDirectory }}/serial-update-runtime-os-${{ parameters.partition }}.log
+        echo "Serial log found:"
+        sudo cat $SERIAL_LOG
+      else
+        echo "Serial log not found!"
+        echo "(No serial log captured)" > ${{ parameters.outputDirectory }}/serial-update-runtime-os-${{ parameters.partition }}.log
+      fi
+    displayName: "📄 Display serial output from update to ${{ parameters.partition }}"
+    condition: succeededOrFailed()
+    

@@ -5,9 +5,9 @@ package main
 
 import (
 	"sync"
+	"tridenttools/pkg/config"
 	"tridenttools/pkg/netfinder"
 	"tridenttools/pkg/phonehome"
-	"tridenttools/pkg/serial"
 	"tridenttools/storm/utils"
 
 	"bytes"
@@ -38,28 +38,6 @@ import (
 // This enables us to later replace the placeholder with the actual file contents without having
 // to parse the ISO file format.
 var MagicString = `#8505c8ab802dd717290331acd0592804c4e413b030150c53f5018ac998b7831d`
-
-type NetLaunchConfig struct {
-	Netlaunch struct {
-		AnnounceIp   *string
-		AnnouncePort *uint16
-		Bmc          *struct {
-			Ip            string
-			Port          *string
-			Username      string
-			Password      string
-			SerialOverSsh *struct {
-				SshPort uint16
-				ComPort string
-				Output  string
-			}
-		}
-		LocalVmUuid *string
-	}
-	Iso struct {
-		PreTridentScript *string
-	}
-}
 
 var (
 	netlaunchConfigFile string
@@ -149,7 +127,7 @@ var rootCmd = &cobra.Command{
 			log.WithError(err).Fatal("failed to read configuration file")
 		}
 
-		config := NetLaunchConfig{}
+		config := config.NetLaunchConfig{}
 
 		if err := viper.UnmarshalExact(&config); err != nil {
 			log.WithError(err).Fatal("could not unmarshal configuration")
@@ -296,21 +274,13 @@ var rootCmd = &cobra.Command{
 		if config.Netlaunch.LocalVmUuid != nil {
 			startLocalVm(*config.Netlaunch.LocalVmUuid, iso_location)
 		} else {
-			if config.Netlaunch.Bmc.SerialOverSsh != nil {
-				serial, err := serial.NewSerialOverSshSession(serial.SerialOverSSHSettings{
-					Host:     config.Netlaunch.Bmc.Ip,
-					Port:     config.Netlaunch.Bmc.SerialOverSsh.SshPort,
-					Username: config.Netlaunch.Bmc.Username,
-					Password: config.Netlaunch.Bmc.Password,
-					ComPort:  config.Netlaunch.Bmc.SerialOverSsh.ComPort,
-					Output:   config.Netlaunch.Bmc.SerialOverSsh.Output,
-				})
+			if config.Netlaunch.Bmc != nil && config.Netlaunch.Bmc.SerialOverSsh != nil {
+				serial, err := config.Netlaunch.Bmc.ListenForSerialOutput()
 				if err != nil {
 					log.WithError(err).Fatalf("Failed to open serial over SSH session")
 				}
 				defer serial.Close()
 			}
-
 			// Deploy ISO to BMC
 
 			// Default to port 443

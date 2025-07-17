@@ -28,6 +28,7 @@ import (
 	"net"
 	"os/signal"
 	"syscall"
+	"tridenttools/pkg/config"
 	"tridenttools/pkg/phonehome"
 
 	"context"
@@ -36,6 +37,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 var listen_port uint16
@@ -43,6 +45,7 @@ var serveFolder string
 var forceColor bool
 var backgroundLogstreamFull string
 var traceFile string
+var netlistenConfigFile string
 
 var rootCmd = &cobra.Command{
 	Use:   "netlisten",
@@ -106,6 +109,31 @@ var rootCmd = &cobra.Command{
 			http.Handle("/files/", http.StripPrefix("/files/", http.FileServer(http.Dir(serveFolder))))
 		}
 
+		if netlistenConfigFile != "" {
+			go func() {
+				viper.SetConfigType("yaml")
+				viper.SetConfigFile(netlistenConfigFile)
+				if err := viper.ReadInConfig(); err != nil {
+					log.WithError(err).Fatal("failed to read configuration file")
+				}
+
+				config := config.NetListenConfig{}
+				if err := viper.UnmarshalExact(&config); err != nil {
+					log.WithError(err).Fatal("could not unmarshal configuration")
+				}
+				if config.Netlisten.Bmc != nil && config.Netlisten.Bmc.SerialOverSsh != nil {
+					serial, err := config.Netlisten.Bmc.ListenForSerialOutput()
+					if err != nil {
+						log.WithError(err).Fatalf("Failed to open serial over SSH session")
+					}
+					defer serial.Close()
+
+					// Wait for context cancellation
+					<-ctx.Done()
+				}
+			}()
+		}
+
 		// Start the HTTP server
 		go server.Serve(listen)
 		log.WithField("address", listen.Addr().String()).Info("Listening...")
@@ -131,6 +159,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&forceColor, "force-color", "", false, "Force colored output.")
 	rootCmd.PersistentFlags().StringVarP(&backgroundLogstreamFull, "full-logstream", "b", "logstream-full.log", "File to write full logstream output to.")
 	rootCmd.PersistentFlags().StringVarP(&traceFile, "trace-file", "m", "trident-metrics.jsonl", "File for writing metrics collected from Trident. Defaults to trident-metrics.jsonl")
+	rootCmd.PersistentFlags().StringVarP(&netlistenConfigFile, "config", "c", "", "Optional netlisten config file")
 	rootCmd.MarkFlagRequired("port")
 	log.SetLevel(log.DebugLevel)
 }
