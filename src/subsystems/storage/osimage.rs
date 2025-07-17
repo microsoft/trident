@@ -1238,6 +1238,7 @@ mod functional_test {
             source: Url::parse("http://example/osimage").unwrap(),
             os_arch: SystemArchitecture::Amd64,
             os_release: OsRelease::default(),
+            is_uki: false,
             images: vec![MockImage {
                 mount_point: PathBuf::from("/"),
                 fs_type: OsImageFileSystemType::Ext4,
