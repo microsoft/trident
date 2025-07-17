@@ -74,17 +74,6 @@ pub struct EngineContext {
     pub filesystems: Vec<FileSystemData>,
 }
 impl EngineContext {
-    // pub fn is_uki(&self) -> bool {
-    //     if self.spec.internal_params.get_flag(ENABLE_UKI_SUPPORT) {
-    //         true
-    //     } else {
-    //         match self.image {
-    //             Some(image) => image.is_uki(),
-    //             None => false,
-    //         }
-    //     }
-    // }
-
     /// Returns the update volume selection for all A/B volume pairs. The update volume is the one
     /// that is meant to be updated, based on the servicing in progress, if any.
     pub fn get_ab_update_volume(&self) -> Option<AbVolumeSelection> {
@@ -305,9 +294,9 @@ impl EngineContext {
         } else {
             match &self.image {
                 Some(image) => {
-                    let ukiu = image.is_uki();
-                    trace!("getting uki-ness from image: {ukiu}");
-                    ukiu
+                    let uki = image.is_uki();
+                    trace!("getting uki-ness from image: {uki}");
+                    uki
                 }
                 None => {
                     trace!("no image specified: not a UKI image");
