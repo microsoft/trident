@@ -20,7 +20,6 @@ import (
 	"azltools/imagegen/attendedinstaller/views/hostnameview"
 	"azltools/imagegen/attendedinstaller/views/installerview"
 	"azltools/imagegen/attendedinstaller/views/userview"
-	"azltools/imagegen/configuration"
 	"azltools/internal/logger"
 
 	"github.com/bendahl/uinput"
@@ -70,7 +69,6 @@ type AttendedInstaller struct {
 	titleText         *tview.TextView
 	keyboard          uinput.Keyboard
 
-	installationFunc     func(configuration.Config, chan int, chan string) error
 	calamaresInstallFunc func() error
 	installationError    error
 	installationTime     time.Duration
@@ -78,9 +76,8 @@ type AttendedInstaller struct {
 }
 
 // New creates and returns a new AttendedInstaller.
-func New(cfg configuration.Config, installationFunc func(configuration.Config, chan int, chan string) error, calamaresInstallFunc func() error) (attendedInstaller *AttendedInstaller, err error) {
+func New(calamaresInstallFunc func() error) (attendedInstaller *AttendedInstaller, err error) {
 	attendedInstaller = &AttendedInstaller{
-		installationFunc:     installationFunc,
 		calamaresInstallFunc: calamaresInstallFunc,
 	}
 
@@ -90,7 +87,7 @@ func New(cfg configuration.Config, installationFunc func(configuration.Config, c
 
 // Run shows the attended installer UI on the current thread.
 // When the user completes the installer, the function will return.
-func (ai *AttendedInstaller) Run() (config configuration.Config, installationQuit bool, err error) {
+func (ai *AttendedInstaller) Run() (installationQuit bool, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("unexpected failure: %v", r)
