@@ -160,13 +160,14 @@ pub enum Commands {
         ///
         /// If not provided, Trident will infer one based on the state of the system and history
         /// information left by Image Customizer.
+        #[arg(conflicts_with = "lazy_partitions")]
         hs_path: Option<PathBuf>,
         /// Provide lazy partition information overrides for `-b` partitions
         ///
         /// This is a comma-separated list of `<b-partition-name>`:`<b-partition-partuuid>` pairs.
         ///
         /// If `hs_path` is provided, this will be ignored.
-        #[clap(long, value_delimiter = ',', num_args = 0..)]
+        #[arg(long, value_delimiter = ',', num_args = 0.., conflicts_with = "hs_path")]
         lazy_partitions: Vec<String>,
     },
 }
