@@ -107,6 +107,13 @@ struct PrismHistoryEntry {
     config: PrismHistoryConfig,
 }
 
+#[derive(Clone, Debug)]
+struct LazyPartitionInfo {
+    name: String,
+    part_uuid: String,
+    a_partition: PrismPartition,
+}
+
 fn generate_host_status(
     history: &[PrismHistoryEntry],
     mut lsblk_output: Vec<lsblk::BlockDevice>,
@@ -140,22 +147,15 @@ fn generate_host_status(
 
     // Create list of lazy PrismPartitions
     let mut lazy_prism_partitions_to_add: Vec<PrismPartition> = vec![];
-    for (lazy_partition_b, lazy_partition_uuid) in &lazy_partitions {
-        // create the a partition name
-        let partition_a_name = lazy_partition_b.replace("-b", "-a");
-        if let Some(partition_a) = prism_history_partitions
-            .iter()
-            .find(|p| p.id == partition_a_name)
-        {
-            let lazy_partition = PrismPartition {
-                id: lazy_partition_b.to_string(),
-                // mirror 'a' partition properties
-                start: partition_a.start.clone(),
-                size: partition_a.size.clone(),
-                ty: partition_a.ty.clone(),
-            };
-            prism_partitions.push(lazy_partition);
-        }
+    for (lazy_partition_b, lazy_partition_info) in &lazy_partitions {
+        let lazy_partition = PrismPartition {
+            id: lazy_partition_b.to_string(),
+            // mirror 'a' partition properties
+            start: lazy_partition_info.a_partition.start.clone(),
+            size: lazy_partition_info.a_partition.size.clone(),
+            ty: lazy_partition_info.a_partition.ty.clone(),
+        };
+        prism_partitions.push(lazy_partition);
     }
 
     let mut host_config = HostConfiguration::default();
@@ -287,10 +287,13 @@ fn generate_host_status(
         })
         .collect();
     // Add lazy partitions to the partition paths, if they were provided.
-    for (lazy_partition_b, lazy_partition_uuid) in &lazy_partitions {
+    for (lazy_partition_b, lazy_partition_info) in &lazy_partitions {
         partition_paths.insert(
             lazy_partition_b.to_string(),
-            PathBuf::from(format!("/dev/disk/by-partuuid/{lazy_partition_uuid}")),
+            PathBuf::from(format!(
+                "/dev/disk/by-partuuid/{}",
+                lazy_partition_info.part_uuid
+            )),
         );
     }
 
@@ -362,7 +365,7 @@ fn generate_host_status(
 fn parse_lazy_partitions(
     lazy_partitions: &[String],
     prism_history_partitions: &[PrismPartition],
-) -> Result<HashMap<String, String>, Error> {
+) -> Result<HashMap<String, LazyPartitionInfo>, Error> {
     let mut lazy_partitions_map = HashMap::new();
     for partition in lazy_partitions {
         // Ensure that provided input is in the form xxx:yyy
@@ -381,14 +384,24 @@ fn parse_lazy_partitions(
                 }
                 // Ensure that there is a corresponding '-a' partition
                 let corresponding_a_partition = name.replace("-b", "-a");
-                if !prism_history_partitions
+                match prism_history_partitions
                     .iter()
-                    .any(|p| p.id == *corresponding_a_partition)
+                    .find(|p| p.id == *corresponding_a_partition)
                 {
-                    bail!("No corresponding '-a' partition found for lazy partition '{name}'");
-                }
-
-                lazy_partitions_map.insert(name.to_string(), uuid.to_string());
+                    Some(a_partition) => {
+                        lazy_partitions_map.insert(
+                            name.to_string(),
+                            LazyPartitionInfo {
+                                name: name.to_string(),
+                                part_uuid: uuid.to_string(),
+                                a_partition: a_partition.clone(),
+                            },
+                        );
+                    }
+                    None => {
+                        bail!("No corresponding '-a' partition found for lazy partition '{name}'");
+                    }
+                };
             }
             None => {
                 bail!("Lazy partitions must be provided as colon-separated <b-partition-name>:<b-partition-partuuid> pairs");
