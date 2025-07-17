@@ -294,15 +294,6 @@ fn generate_host_status(
         );
     }
 
-    lazy_prism_partitions_to_add.iter().for_each(|p| {
-        if let Some(uuid) = lazy_partitions.get(&p.id) {
-            partition_paths.insert(
-                p.id.clone(),
-                PathBuf::from(format!("/dev/disk/by-partuuid/{uuid}")),
-            );
-        }
-    });
-
     for filesystem in &prism_storage.filesystems {
         let Some(mount_point) = &filesystem.mount_point else {
             continue;
@@ -647,7 +638,7 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_host_status_with_bad_lazy_partitions() {
+    fn test_parse_lazy_partitions_with_bad_lazy_partitions() {
         let history: Vec<PrismHistoryEntry> =
             serde_json::from_str(LAZY_PRISM_HISTORY).expect("Failed to parse Prism history");
         let lsblk_output: LsBlkOutput =
