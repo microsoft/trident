@@ -30,15 +30,10 @@ import (
 var (
 	app = kingpin.New("liveinstaller", "A tool to download a provided list of packages into a given directory.")
 
-	// Take in strings for the config and template config file, as they may not exist on disk
-	configFile         = exe.InputStringFlag(app, "Path to the image config file.")
-	templateConfigFile = app.Flag("template-config", "Path to the template config file.").String()
-	forceAttended      = app.Flag("attended", "Use the attended installer regardless if a config file is present.").Bool()
-	imagerTool         = app.Flag("imager", "Path to the imager tool.").String()
-	buildDir           = app.Flag("build-dir", "Directory to store temporary files while building.").Required().ExistingDir()
-	baseDirPath        = app.Flag("base-dir", "Base directory for relative file paths from the config. Defaults to config's directory.").ExistingDir()
-	repoSnapshotTime   = app.Flag("repo-snapshot-time", "Optional: tdnf repo snapshot time").String()
-	logFlags           = exe.SetupLogFlags(app)
+	forceAttended = app.Flag("attended", "Use the attended installer regardless if a config file is present.").Bool()
+	buildDir      = app.Flag("build-dir", "Directory to store temporary files while building.").Required().ExistingDir()
+	baseDirPath   = app.Flag("base-dir", "Base directory for relative file paths from the config. Defaults to config's directory.").ExistingDir()
+	logFlags      = exe.SetupLogFlags(app)
 )
 
 // Every valid mouse event handler will follow the format:
@@ -78,16 +73,6 @@ func main() {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, unix.SIGINT)
 	go handleCtrlC(signals)
-
-	// Imager's stdout/stderr will be combined with this tool's, so it will automatically be logged to the current log file
-	args := imagerArguments{
-		imagerTool:       *imagerTool,
-		buildDir:         *buildDir,
-		baseDirPath:      *baseDirPath,
-		logLevel:         logger.Log.GetLevel().String(),
-		logFile:          imagerLogFile,
-		repoSnapshotTime: *repoSnapshotTime,
-	}
 
 	installFunc := installerFactory(*forceAttended, *configFile, *templateConfigFile)
 	installDetails, err := installFunc(args)
