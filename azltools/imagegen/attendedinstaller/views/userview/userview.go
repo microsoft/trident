@@ -25,12 +25,11 @@ const (
 
 	formProportion = 0
 
-	navBarHeight     = 0
-	navBarProportion = 1
-
 	passwordFieldWidth = 64
 
 	maxUserNameLength = 32
+
+	userInputFileName = "userinput.json"
 )
 
 // UserView contains the password UI
@@ -206,14 +205,20 @@ func (uv *UserView) userNameAcceptanceCheck(textToCheck string, lastRune rune) b
 }
 
 func (uv *UserView) saveUserInput(username, password string) error {
-	data := map[string]string{
-		"username": username,
-		"password": password,
+	fileName := userInputFileName
+	data := make(map[string]interface{})
+
+	file, err := os.Open(fileName)
+	if err == nil {
+		defer file.Close()
+		decoder := json.NewDecoder(file)
+		_ = decoder.Decode(&data)
 	}
 
-	// Create local file for username and password
-	// intstead of passing data to main file.
-	file, err := os.Create("userinput.json")
+	data["username"] = username
+	data["password"] = password
+
+	file, err = os.Create(fileName)
 	if err != nil {
 		uv.navBar.SetUserFeedback(uiutils.ErrorToUserFeedback(err), tview.Styles.TertiaryTextColor)
 		return err
