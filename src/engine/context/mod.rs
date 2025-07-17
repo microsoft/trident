@@ -299,12 +299,21 @@ impl EngineContext {
     }
 
     pub(crate) fn is_uki_image(&self) -> Result<bool, TridentError> {
+        trace!("Checking if the image is a UKI image");
         Ok(if self.spec.internal_params.get_flag(ENABLE_UKI_SUPPORT) {
+            trace!("internal param {ENABLE_UKI_SUPPORT} specified: UKI image");
             true
         } else {
             match &self.image {
-                Some(image) => image.is_uki(),
-                None => false,
+                Some(image) => {
+                    let ukiu = image.is_uki();
+                    trace!("getting uki-ness from image: {ukiu}");
+                    ukiu
+                }
+                None => {
+                    trace!("no image specified: not a UKI image");
+                    false
+                }
             }
         })
     }
