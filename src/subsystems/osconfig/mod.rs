@@ -395,7 +395,6 @@ mod functional_test {
                 },
                 ..Default::default()
             },
-            is_uki: Some(false),
             ..Default::default()
         };
         assert!(os_config_requires_os_modifier(&ctx));
@@ -436,7 +435,6 @@ mod functional_test {
         // Create EngineContext with no hostname specified
         let ctx = EngineContext {
             servicing_type: ServicingType::AbUpdate,
-            is_uki: Some(false),
             ..Default::default()
         };
         assert!(os_config_requires_os_modifier(&ctx));

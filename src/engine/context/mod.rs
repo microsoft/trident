@@ -9,7 +9,7 @@ use log::{debug, trace};
 
 use trident_api::{
     config::{HostConfiguration, Partition, VerityDevice},
-    constants::ROOT_MOUNT_POINT_PATH,
+    constants::{internal_params::ENABLE_UKI_SUPPORT, ROOT_MOUNT_POINT_PATH},
     error::TridentError,
     status::{AbVolumeSelection, ServicingType},
     storage_graph::graph::StorageGraph,
@@ -72,11 +72,19 @@ pub struct EngineContext {
 
     /// All of the filesystems in the system.
     pub filesystems: Vec<FileSystemData>,
-
-    /// Whether the image will use a UKI or not.
-    pub is_uki: Option<bool>,
 }
 impl EngineContext {
+    // pub fn is_uki(&self) -> bool {
+    //     if self.spec.internal_params.get_flag(ENABLE_UKI_SUPPORT) {
+    //         true
+    //     } else {
+    //         match self.image {
+    //             Some(image) => image.is_uki(),
+    //             None => false,
+    //         }
+    //     }
+    // }
+
     /// Returns the update volume selection for all A/B volume pairs. The update volume is the one
     /// that is meant to be updated, based on the servicing in progress, if any.
     pub fn get_ab_update_volume(&self) -> Option<AbVolumeSelection> {
@@ -291,12 +299,14 @@ impl EngineContext {
     }
 
     pub(crate) fn is_uki_image(&self) -> Result<bool, TridentError> {
-        if let Some(is_uki) = self.is_uki {
-            return Ok(is_uki);
-        }
-        Err(TridentError::internal(
-            "is_uki() called without it being set",
-        ))
+        Ok(if self.spec.internal_params.get_flag(ENABLE_UKI_SUPPORT) {
+            true
+        } else {
+            match &self.image {
+                Some(image) => image.is_uki(),
+                None => false,
+            }
+        })
     }
 }
 

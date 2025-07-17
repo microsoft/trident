@@ -27,9 +27,6 @@ use super::{OsImageFile, OsImageFileSystem, OsImageVerityHash};
 /// Path to the COSI metadata file. Part of the COSI specification.
 const COSI_METADATA_PATH: &str = "metadata.json";
 
-/// List of COSI versions that are accepted by this implementation.
-const ACCEPTED_COSI_VERSIONS: [(u32, u32); 1] = [(1, 0)];
-
 /// Top-level COSI file representation.
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
@@ -77,6 +74,10 @@ impl Cosi {
     /// Returns the source URL of the COSI file.
     pub(super) fn source(&self) -> &Url {
         &self.source
+    }
+
+    pub(super) fn is_uki(&self) -> bool {
+        self.metadata.is_uki()
     }
 
     /// Returns the ESP filesystem image.
@@ -280,17 +281,13 @@ fn validate_cosi_metadata_version(version: &MetadataVersion) -> Result<(), Error
         version.minor
     );
 
-    if !ACCEPTED_COSI_VERSIONS
-        .iter()
-        .any(|(major, minor)| version.major == *major && version.minor == *minor)
-    {
+    if version.major != 1 {
         bail!(
-            "Unsupported COSI version: {}.{}",
+            "Unsupported COSI version: {}.{}, (minimum: 1.0)",
             version.major,
             version.minor
         );
     }
-
     Ok(())
 }
 
@@ -495,17 +492,14 @@ mod tests {
     #[test]
     fn test_validate_cosi_metadata_version() {
         // Test accepted versions
-        for (major, minor) in ACCEPTED_COSI_VERSIONS.iter() {
-            let version = MetadataVersion {
-                major: *major,
-                minor: *minor,
-            };
-            super::validate_cosi_metadata_version(&version).unwrap();
-        }
+        super::validate_cosi_metadata_version(&MetadataVersion { major: 1, minor: 0 }).unwrap();
+        super::validate_cosi_metadata_version(&MetadataVersion { major: 1, minor: 1 }).unwrap();
+        super::validate_cosi_metadata_version(&MetadataVersion { major: 1, minor: 2 }).unwrap();
 
         // Test unsupported versions
-        let version = MetadataVersion { major: 0, minor: 0 };
-        assert!(super::validate_cosi_metadata_version(&version).is_err());
+        super::validate_cosi_metadata_version(&MetadataVersion { major: 0, minor: 0 }).unwrap_err();
+        super::validate_cosi_metadata_version(&MetadataVersion { major: 0, minor: 1 }).unwrap_err();
+        super::validate_cosi_metadata_version(&MetadataVersion { major: 2, minor: 1 }).unwrap_err();
     }
 
     #[test]
@@ -804,6 +798,7 @@ mod tests {
                 os_release: OsRelease::default(),
                 os_packages: None,
                 images,
+                bootloader: None,
             },
             reader: CosiReader::Mock(data),
             metadata_sha384: Sha384Hash::from("0".repeat(96)),
@@ -823,6 +818,7 @@ mod tests {
                 os_release: OsRelease::default(),
                 images: vec![],
                 os_packages: None,
+                bootloader: None,
             },
             reader: CosiReader::Mock(Cursor::new(Vec::<u8>::new())),
             metadata_sha384: Sha384Hash::from("0".repeat(96)),

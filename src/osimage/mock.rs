@@ -33,6 +33,8 @@ pub struct MockOsImage {
     pub os_release: OsRelease,
 
     pub images: Vec<MockImage>,
+
+    pub is_uki: bool,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -75,6 +77,7 @@ impl MockOsImage {
             source: Url::parse("mock://").unwrap(),
             os_arch: SystemArchitecture::Amd64,
             os_release: OsRelease::default(),
+            is_uki: false,
             images: vec![],
         }
     }

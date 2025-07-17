@@ -545,7 +545,6 @@ pub(crate) mod functional_test {
                 "root1".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
                 "root2".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
             },
-            is_uki: Some(false),
             ..Default::default()
         };
 

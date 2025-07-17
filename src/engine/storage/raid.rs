@@ -566,7 +566,6 @@ mod functional_test {
                 },
                 ..Default::default()
             },
-            is_uki: Some(false),
             ..Default::default()
         };
 
@@ -617,7 +616,6 @@ mod functional_test {
                 },
                 ..Default::default()
             },
-            is_uki: Some(false),
             ..Default::default()
         };
 
@@ -667,7 +665,6 @@ mod functional_test {
                 },
                 ..Default::default()
             },
-            is_uki: Some(false),
             ..Default::default()
         };
 

@@ -60,6 +60,11 @@ pub(crate) struct CosiMetadata {
     #[allow(dead_code)]
     #[serde(default)]
     pub id: Option<Uuid>,
+
+    /// The bootloader of this COSI file.
+    #[allow(dead_code)]
+    #[serde(default)]
+    pub bootloader: Option<Bootloader>,
 }
 
 impl CosiMetadata {
@@ -73,7 +78,56 @@ impl CosiMetadata {
             }
         }
 
+        // Validate bootloader
+        match &self.bootloader {
+            Some(Bootloader {
+                bootloader_type,
+                systemd_boot,
+            }) => {
+                match &**bootloader_type {
+                    "grub" => {
+                        // Validate that for grub, there are no systemd-boot entries
+                        if systemd_boot.is_some() {
+                            bail!("Bootloader type 'grub' cannot have systemd-boot entries");
+                        }
+                    }
+                    "systemd-boot" => {
+                        // Validate that for systemd, there is exactly 1 entry and it is uki
+                        if systemd_boot.is_none()
+                            || systemd_boot.as_ref().unwrap().entries.len() != 1
+                        {
+                            bail!("Bootloader type 'systemd-boot' must have exactly one entry");
+                        }
+                        let entry = &systemd_boot.as_ref().unwrap().entries[0];
+                        if entry.boot_type != "uki-standalone" {
+                            bail!(
+                                "Unsupported boot entry type for 'systemd-boot': {}",
+                                entry.boot_type
+                            );
+                        }
+                    }
+                    _ => bail!("Unsupported bootloader type: {}", bootloader_type),
+                }
+            }
+            None => {
+                if self.version.major > 1 || (self.version.major == 1 && self.version.minor > 0) {
+                    bail!("Bootloader is required for COSI version >= 1.1, but not provided");
+                }
+            }
+        }
+
         Ok(())
+    }
+
+    pub(super) fn is_uki(&self) -> bool {
+        match &self.bootloader {
+            Some(bootloader) => bootloader.systemd_boot.iter().any(|sb| {
+                sb.entries
+                    .iter()
+                    .any(|entry| entry.boot_type == "uki-standalone")
+            }),
+            None => false,
+        }
     }
 
     /// Returns the ESP filesystem image.
@@ -208,6 +262,41 @@ where
         .map_err(|err| serde::de::Error::custom(format!("Unknown filesystem type: {err}")))
 }
 
+#[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct Bootloader {
+    #[allow(dead_code)]
+    #[serde(rename = "type")]
+    pub bootloader_type: String,
+
+    #[allow(dead_code)]
+    pub systemd_boot: Option<SystemdBoot>,
+}
+
+#[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct SystemdBoot {
+    #[allow(dead_code)]
+    pub entries: Vec<BootloaderEntry>,
+}
+
+#[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct BootloaderEntry {
+    #[allow(dead_code)]
+    #[serde(rename = "type")]
+    pub boot_type: String,
+
+    #[allow(dead_code)]
+    pub kernel: String,
+
+    #[allow(dead_code)]
+    pub path: String,
+
+    #[allow(dead_code)]
+    pub cmdline: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -257,6 +346,7 @@ mod tests {
             images: vec![], // Empty images
             os_packages: None,
             id: None,
+            bootloader: None,
         };
 
         // No images
@@ -326,6 +416,7 @@ mod tests {
             images: vec![], // Empty images
             os_packages: None,
             id: None,
+            bootloader: None,
         };
 
         // No images

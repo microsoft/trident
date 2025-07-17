@@ -154,6 +154,7 @@ mod tests {
             source: Url::parse(OSIMAGE_DUMMY_SOURCE).unwrap(),
             os_arch: SystemArchitecture::Amd64,
             os_release: OsRelease::default(),
+            is_uki: false,
             images: mock_entries
                 .clone()
                 .map(|(path, fs_type)| MockImage {
