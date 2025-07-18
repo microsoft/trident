@@ -131,10 +131,10 @@ impl TabFileEntry {
         };
 
         // If the options are empty, use "defaults" as the default
-        let options = if self.options.is_empty() {
-            "defaults".into()
-        } else {
+        let options = if self.options.iter().any(|opt| !opt.is_empty()) {
             self.options.join(",")
+        } else {
+            "defaults".into()
         };
 
         let line = format!(
