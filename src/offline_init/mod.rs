@@ -132,7 +132,7 @@ fn generate_host_status(
 
     // Get the partitions declared in the Prism history, this will not include any
     // lazy partitions.
-    let mut prism_history_partitions = &prism_storage
+    let mut prism_partitions = &prism_storage
         .disks
         .first()
         .structured(InvalidInputError::ParsePrismHistory)
@@ -140,43 +140,50 @@ fn generate_host_status(
         .partitions;
 
     // Validate lazy partitions and create map
-    let lazy_partitions = parse_lazy_partitions(lazy_partitions, prism_history_partitions)
+    let lazy_partitions = parse_lazy_partitions(lazy_partitions, prism_partitions)
         .structured(InvalidInputError::InvalidLazyPartition)?;
-
-    let mut prism_partitions = prism_history_partitions.clone();
-
-    // Create list of lazy PrismPartitions
-    let mut lazy_prism_partitions_to_add: Vec<PrismPartition> = vec![];
-    for (lazy_partition_b, lazy_partition_info) in &lazy_partitions {
-        let lazy_partition = PrismPartition {
-            id: lazy_partition_b.to_string(),
-            // mirror 'a' partition properties
-            start: lazy_partition_info.a_partition.start.clone(),
-            size: lazy_partition_info.a_partition.size.clone(),
-            ty: lazy_partition_info.a_partition.ty.clone(),
-        };
-        prism_partitions.push(lazy_partition);
-    }
 
     let mut host_config = HostConfiguration::default();
 
-    let mut partitions = Vec::new();
-    for partition in prism_partitions {
-        partitions.push(Partition {
-            id: partition.id.clone(),
-            partition_type: if partition.ty.as_deref() == Some("esp") {
-                PartitionType::Esp
-            } else {
-                PartitionType::LinuxGeneric
-            },
-            size: match &partition.size {
-                Some(s) => PartitionSize::from_str(s)
-                    .structured(InvalidInputError::ParsePrismHistory)
-                    .message(format!("Failed to parse partition size '{s}'"))?,
-                None => PartitionSize::Grow,
-            },
-        });
-    }
+    let new_partition =
+        |id: String, ty: Option<String>, size: Option<String>| -> Result<Partition, TridentError> {
+            Ok(Partition {
+                id: id.clone(),
+                partition_type: if ty.as_deref() == Some("esp") {
+                    PartitionType::Esp
+                } else {
+                    PartitionType::LinuxGeneric
+                },
+                size: match &size {
+                    Some(s) => PartitionSize::from_str(s)
+                        .structured(InvalidInputError::ParsePrismHistory)
+                        .message(format!("Failed to parse partition size '{s}'"))?,
+                    None => PartitionSize::Grow,
+                },
+            })
+        };
+
+    let partitions = prism_partitions
+        .iter()
+        .map(|partition| {
+            new_partition(
+                partition.id.clone(),
+                partition.ty.clone(),
+                partition.size.clone(),
+            )
+        })
+        .chain(
+            lazy_partitions
+                .iter()
+                .map(|(lazy_partition_b, lazy_partition_info)| {
+                    new_partition(
+                        lazy_partition_b.to_string(),
+                        lazy_partition_info.a_partition.ty.clone(),
+                        lazy_partition_info.a_partition.size.clone(),
+                    )
+                }),
+        )
+        .collect::<Result<Vec<_>, _>>()?;
 
     host_config.storage.disks.push(Disk {
         id: "disk0".to_string(),
@@ -275,7 +282,7 @@ fn generate_host_status(
     let mut partition_paths: BTreeMap<String, PathBuf> = lsblk_device
         .children
         .iter()
-        .zip(prism_history_partitions.iter())
+        .zip(prism_partitions.iter())
         .map(|(s, p)| {
             (
                 p.id.clone(),
