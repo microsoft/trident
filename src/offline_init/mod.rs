@@ -132,7 +132,7 @@ fn generate_host_status(
 
     // Get the partitions declared in the Prism history, this will not include any
     // lazy partitions.
-    let mut prism_partitions = &prism_storage
+    let prism_partitions = &prism_storage
         .disks
         .first()
         .structured(InvalidInputError::ParsePrismHistory)
@@ -279,7 +279,7 @@ fn generate_host_status(
     }
 
     // Get partition paths created from combining Prism history and lsblk output.
-    let mut partition_paths: BTreeMap<String, PathBuf> = lsblk_device
+    let partition_paths: BTreeMap<String, PathBuf> = lsblk_device
         .children
         .iter()
         .zip(prism_partitions.iter())
