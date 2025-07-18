@@ -61,10 +61,10 @@ pub(crate) fn update(
         ab_active_volume: state.host_status().ab_active_volume,
         disk_uuids: state.host_status().disk_uuids.clone(),
         install_index: state.host_status().install_index,
-        image: Some(image.clone()),
+        is_uki: Some(image.is_uki()),
+        image: Some(image),
         storage_graph: engine::build_storage_graph(&host_config.storage)?, // Build storage graph
         filesystems: Vec::new(), // Will be populated after dynamic validation
-        is_uki: Some(image.is_uki()),
     };
 
     // Before starting an update servicing, need to validate that the active volume is set

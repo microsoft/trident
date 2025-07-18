@@ -197,10 +197,10 @@ fn stage_clean_install(
         partition_paths: Default::default(), // Will be initialized later
         disk_uuids: Default::default(),      // Will be initialized later
         install_index: 0,                    // Will be initialized later
-        image: Some(image.clone()),
+        is_uki: Some(image.is_uki()),
+        image: Some(image),
         storage_graph: engine::build_storage_graph(&host_config.storage)?, // Build storage graph
         filesystems: Vec::new(), // Will be populated after dynamic validation
-        is_uki: Some(image.is_uki()),
     };
 
     // Execute pre-servicing scripts
