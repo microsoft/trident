@@ -145,28 +145,10 @@ fn generate_host_status(
 
     let mut host_config = HostConfiguration::default();
 
-    let new_partition =
-        |id: String, ty: Option<String>, size: Option<String>| -> Result<Partition, TridentError> {
-            Ok(Partition {
-                id: id.clone(),
-                partition_type: if ty.as_deref() == Some("esp") {
-                    PartitionType::Esp
-                } else {
-                    PartitionType::LinuxGeneric
-                },
-                size: match &size {
-                    Some(s) => PartitionSize::from_str(s)
-                        .structured(InvalidInputError::ParsePrismHistory)
-                        .message(format!("Failed to parse partition size '{s}'"))?,
-                    None => PartitionSize::Grow,
-                },
-            })
-        };
-
     let partitions = prism_partitions
         .iter()
         .map(|partition| {
-            new_partition(
+            create_partition(
                 partition.id.clone(),
                 partition.ty.clone(),
                 partition.size.clone(),
@@ -176,7 +158,7 @@ fn generate_host_status(
             lazy_partitions
                 .iter()
                 .map(|(lazy_partition_b, lazy_partition_info)| {
-                    new_partition(
+                    create_partition(
                         lazy_partition_b.to_string(),
                         lazy_partition_info.a_partition.ty.clone(),
                         lazy_partition_info.a_partition.size.clone(),
@@ -370,6 +352,27 @@ fn generate_host_status(
         install_index: 0,
         is_management_os: false,
         ..Default::default()
+    })
+}
+
+fn create_partition(
+    id: String,
+    ty: Option<String>,
+    size: Option<String>,
+) -> Result<Partition, TridentError> {
+    Ok(Partition {
+        id: id.clone(),
+        partition_type: if ty.as_deref() == Some("esp") {
+            PartitionType::Esp
+        } else {
+            PartitionType::LinuxGeneric
+        },
+        size: match &size {
+            Some(s) => PartitionSize::from_str(s)
+                .structured(InvalidInputError::ParsePrismHistory)
+                .message(format!("Failed to parse partition size '{s}'"))?,
+            None => PartitionSize::Grow,
+        },
     })
 }
 
