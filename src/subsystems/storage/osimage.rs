@@ -651,6 +651,7 @@ mod tests {
                     verity: None,
                 },
             ],
+            is_uki: false,
         };
         let os_image = OsImage::mock(mock_image.clone());
         let mut ctx = EngineContext {
@@ -700,6 +701,7 @@ mod tests {
                         }),
                     },
                 ],
+                is_uki: false,
             })
             .with_spec(HostConfiguration {
                 storage: Storage {
@@ -753,6 +755,7 @@ mod tests {
                     }),
                 },
             ],
+            is_uki: false,
         });
 
         // Expect validation to fail
@@ -777,6 +780,7 @@ mod tests {
                 part_type: DiscoverablePartitionType::Xbootldr,
                 verity: None,
             }],
+            is_uki: false,
         };
 
         // Expect validation to fail
@@ -1234,6 +1238,7 @@ mod functional_test {
             source: Url::parse("http://example/osimage").unwrap(),
             os_arch: SystemArchitecture::Amd64,
             os_release: OsRelease::default(),
+            is_uki: false,
             images: vec![MockImage {
                 mount_point: PathBuf::from("/"),
                 fs_type: OsImageFileSystemType::Ext4,

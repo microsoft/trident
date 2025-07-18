@@ -9,7 +9,7 @@ use log::{debug, trace};
 
 use trident_api::{
     config::{HostConfiguration, Partition, VerityDevice},
-    constants::ROOT_MOUNT_POINT_PATH,
+    constants::{internal_params::ENABLE_UKI_SUPPORT, ROOT_MOUNT_POINT_PATH},
     error::TridentError,
     status::{AbVolumeSelection, ServicingType},
     storage_graph::graph::StorageGraph,
@@ -291,12 +291,17 @@ impl EngineContext {
     }
 
     pub(crate) fn is_uki_image(&self) -> Result<bool, TridentError> {
-        if let Some(is_uki) = self.is_uki {
-            return Ok(is_uki);
+        if self.spec.internal_params.get_flag(ENABLE_UKI_SUPPORT) {
+            trace!("internal param {ENABLE_UKI_SUPPORT} specified: UKI image");
+            Ok(true)
+        } else if let Some(is_uki) = self.is_uki {
+            trace!("uki configured as {is_uki}");
+            Ok(is_uki)
+        } else {
+            Err(TridentError::internal(
+                "is_uki() called without it being set",
+            ))
         }
-        Err(TridentError::internal(
-            "is_uki() called without it being set",
-        ))
     }
 }
 
