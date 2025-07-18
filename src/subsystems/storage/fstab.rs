@@ -155,10 +155,7 @@ mod tests {
     use maplit::btreemap;
     use uuid::Uuid;
 
-    use sysdefs::{
-        filesystems::{KernelFilesystemType, RealFilesystemType},
-        partition_types::DiscoverablePartitionType,
-    };
+    use sysdefs::{filesystems::RealFilesystemType, partition_types::DiscoverablePartitionType};
     use tempfile::NamedTempFile;
     use trident_api::{
         config::{
@@ -712,14 +709,10 @@ mod tests {
             serde_yaml::from_str(host_config_with_mount_options_as_empty_string).unwrap();
         assert_eq!(mount_point.options, MountOptions::empty());
 
-        let tmpfile = NamedTempFile::new().unwrap();
-        let fstab_entry = TabFileEntry::new_path(
-            tmpfile.path(),
-            &mount_point.path,
-            TabFileSystemType::Kernel(KernelFilesystemType::Real(RealFilesystemType::Ext4)),
-        )
-        .with_options(mount_point.options.to_string_vec())
-        .render();
+        let fstab_entry =
+            TabFileEntry::new_path("/foo", &mount_point.path, TabFileSystemType::Auto)
+                .with_options(mount_point.options.to_string_vec())
+                .render();
         print!("Fstab entry: {}", fstab_entry);
         assert!(fstab_entry.contains("defaults"));
     }
