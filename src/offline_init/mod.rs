@@ -279,7 +279,7 @@ fn generate_host_status(
     }
 
     // Get partition paths created from combining Prism history and lsblk output.
-    let partition_paths: BTreeMap<String, PathBuf> = lsblk_device
+    let partition_paths = lsblk_device
         .children
         .iter()
         .zip(prism_partitions.iter())
