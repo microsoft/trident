@@ -165,8 +165,6 @@ pub enum Commands {
         /// Provide lazy partition information overrides for `-b` partitions
         ///
         /// This is a comma-separated list of `<b-partition-name>`:`<b-partition-partuuid>` pairs.
-        ///
-        /// If `hs_path` is provided, this will be ignored.
         #[arg(long, value_delimiter = ',', num_args = 0.., conflicts_with = "hs_path")]
         lazy_partitions: Vec<String>,
     },
