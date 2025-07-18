@@ -280,13 +280,13 @@ impl MountOptions {
     }
 
     pub fn to_str_vec(&self) -> Vec<&str> {
-        self.0.split(',').filter(|s| !s.is_empty()).collect()
+        self.0.split(',').filter(|s| !s.trim().is_empty()).collect()
     }
 
     pub fn to_string_vec(&self) -> Vec<String> {
         self.0
             .split(',')
-            .filter(|s| !s.is_empty())
+            .filter(|s| !s.trim().is_empty())
             .map(|s| s.to_string())
             .collect()
     }
@@ -701,6 +701,14 @@ mountPoint:
             path: "/mnt/empty".into(),
             options: MountOptions::empty(),
         };
+        assert_eq!(mount_point.options.to_str_vec(), Vec::<&str>::new());
+        assert_eq!(mount_point.options.to_string_vec(), Vec::<String>::new());
+
+        mount_point.options = MountOptions::new(", ,,");
+        assert_eq!(mount_point.options.to_str_vec(), Vec::<&str>::new());
+        assert_eq!(mount_point.options.to_string_vec(), Vec::<String>::new());
+
+        mount_point.options = MountOptions::new("  ");
         assert_eq!(mount_point.options.to_str_vec(), Vec::<&str>::new());
         assert_eq!(mount_point.options.to_string_vec(), Vec::<String>::new());
 
