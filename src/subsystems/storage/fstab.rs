@@ -698,4 +698,22 @@ mod tests {
         generate_fstab(&ctx, tmp_file.path()).unwrap();
         assert_eq!(fs::read_to_string(tmp_file.path()).unwrap(), expected_fstab);
     }
+
+    #[test]
+    fn test_empty_mount_options_fstab_entry_creation() {
+        let host_config_with_mount_options_as_empty_string = r#"
+            path: /boot
+            options: ''
+        "#;
+        let mount_point: MountPoint =
+            serde_yaml::from_str(host_config_with_mount_options_as_empty_string).unwrap();
+        assert_eq!(mount_point.options, MountOptions::empty());
+
+        let fstab_entry =
+            TabFileEntry::new_path("/foo", &mount_point.path, TabFileSystemType::Auto)
+                .with_options(mount_point.options.to_string_vec())
+                .render();
+        print!("Fstab entry: {fstab_entry}");
+        assert!(fstab_entry.contains("defaults"));
+    }
 }

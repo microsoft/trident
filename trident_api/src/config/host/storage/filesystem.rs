@@ -280,11 +280,15 @@ impl MountOptions {
     }
 
     pub fn to_str_vec(&self) -> Vec<&str> {
-        self.0.split(',').collect()
+        self.0.split(',').filter(|s| !s.trim().is_empty()).collect()
     }
 
     pub fn to_string_vec(&self) -> Vec<String> {
-        self.0.split(',').map(|s| s.to_string()).collect()
+        self.0
+            .split(',')
+            .filter(|s| !s.trim().is_empty())
+            .map(|s| s.to_string())
+            .collect()
     }
 }
 
@@ -688,6 +692,43 @@ mountPoint:
                 path: "/mnt/custom".into(),
                 options: MountOptions::defaults(),
             }),
+        );
+    }
+
+    #[test]
+    fn test_mount_options_to_vec_functions() {
+        let mut mount_point = MountPoint {
+            path: "/mnt/empty".into(),
+            options: MountOptions::empty(),
+        };
+        assert_eq!(mount_point.options.to_str_vec(), Vec::<&str>::new());
+        assert_eq!(mount_point.options.to_string_vec(), Vec::<String>::new());
+
+        mount_point.options = MountOptions::new(", ,,");
+        assert_eq!(mount_point.options.to_str_vec(), Vec::<&str>::new());
+        assert_eq!(mount_point.options.to_string_vec(), Vec::<String>::new());
+
+        mount_point.options = MountOptions::new("  ");
+        assert_eq!(mount_point.options.to_str_vec(), Vec::<&str>::new());
+        assert_eq!(mount_point.options.to_string_vec(), Vec::<String>::new());
+
+        mount_point.options = MountOptions::default();
+        assert_eq!(mount_point.options.to_str_vec(), vec!["defaults"]);
+        assert_eq!(
+            mount_point.options.to_string_vec(),
+            vec!["defaults".to_string()]
+        );
+
+        mount_point.options = MountOptions::new("a,b,c,d");
+        assert_eq!(mount_point.options.to_str_vec(), vec!["a", "b", "c", "d"]);
+        assert_eq!(
+            mount_point.options.to_string_vec(),
+            vec![
+                "a".to_string(),
+                "b".to_string(),
+                "c".to_string(),
+                "d".to_string()
+            ]
         );
     }
 }
