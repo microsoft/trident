@@ -1,35 +1,36 @@
 #![allow(unused)]
 
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
     str::FromStr,
 };
 
+use anyhow::{bail, Error};
 use log::{debug, info, trace};
 
 use maplit::hashmap;
 use osutils::lsblk;
 use trident_api::{
     config::{
-        AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, FileSystemType,
-        HostConfiguration, MountOptions, MountPoint, Partition, PartitionSize, PartitionTableType,
-        PartitionType, VerityCorruptionOption, VerityDevice,
+        AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, HostConfiguration,
+        MountOptions, MountPoint, Partition, PartitionSize, PartitionTableType, PartitionType,
+        VerityCorruptionOption, VerityDevice,
     },
     constants::internal_params::ENABLE_UKI_SUPPORT,
     error::{
         ExecutionEnvironmentMisconfigurationError, InitializationError, InvalidInputError,
         ReportError, TridentError, TridentResultExt,
     },
-    primitives::bytes::ByteCount,
     status::{AbVolumeSelection, HostStatus, ServicingState},
     BlockDeviceId,
 };
+use uuid::Uuid;
 
 use crate::datastore::DataStore;
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Deserialize)]
 struct PrismPartition {
     id: BlockDeviceId,
     #[allow(unused)]
@@ -105,9 +106,17 @@ struct PrismHistoryEntry {
     config: PrismHistoryConfig,
 }
 
+#[derive(Clone, Debug)]
+struct LazyPartitionInfo {
+    name: String,
+    part_uuid: String,
+    a_partition: PrismPartition,
+}
+
 fn generate_host_status(
     history: &[PrismHistoryEntry],
     mut lsblk_output: Vec<lsblk::BlockDevice>,
+    lazy_partitions: &[String],
 ) -> Result<HostStatus, TridentError> {
     let Some(prism_storage) = history
         .iter()
@@ -120,31 +129,42 @@ fn generate_host_status(
             .message("Prism history doesn't contain any storage information");
     };
 
+    // Get the partitions declared in the Prism history, this will not include any
+    // lazy partitions.
     let prism_partitions = &prism_storage
         .disks
         .first()
         .structured(InvalidInputError::ParsePrismHistory)
         .message("Prism history doesn't contain any disks")?
         .partitions;
+
+    // Validate lazy partitions and create map
+    let lazy_partitions = parse_lazy_partitions(lazy_partitions, prism_partitions)
+        .structured(InvalidInputError::InvalidLazyPartition)?;
+
     let mut host_config = HostConfiguration::default();
 
-    let mut partitions = Vec::new();
-    for partition in prism_partitions {
-        partitions.push(Partition {
-            id: partition.id.clone(),
-            partition_type: if partition.ty.as_deref() == Some("esp") {
-                PartitionType::Esp
-            } else {
-                PartitionType::LinuxGeneric
-            },
-            size: match &partition.size {
-                Some(s) => PartitionSize::from_str(s)
-                    .structured(InvalidInputError::ParsePrismHistory)
-                    .message(format!("Failed to parse partition size '{s}'"))?,
-                None => PartitionSize::Grow,
-            },
-        });
-    }
+    let partitions = prism_partitions
+        .iter()
+        .map(|partition| {
+            create_partition(
+                partition.id.clone(),
+                partition.ty.clone(),
+                partition.size.clone(),
+            )
+        })
+        .chain(
+            lazy_partitions
+                .iter()
+                .map(|(lazy_partition_b, lazy_partition_info)| {
+                    create_partition(
+                        lazy_partition_b.to_string(),
+                        lazy_partition_info.a_partition.ty.clone(),
+                        lazy_partition_info.a_partition.size.clone(),
+                    )
+                }),
+        )
+        .collect::<Result<Vec<_>, _>>()?;
 
     host_config.storage.disks.push(Disk {
         id: "disk0".to_string(),
@@ -239,6 +259,7 @@ fn generate_host_status(
         }
     }
 
+    // Get partition paths created from combining Prism history and lsblk output.
     let partition_paths = lsblk_device
         .children
         .iter()
@@ -252,6 +273,20 @@ fn generate_host_status(
                 )),
             )
         })
+        .chain(
+            // Add lazy partitions to the partition paths, if they were provided.
+            lazy_partitions
+                .iter()
+                .map(|(lazy_partition_b, lazy_partition_info)| {
+                    (
+                        lazy_partition_b.to_string(),
+                        PathBuf::from(format!(
+                            "/dev/disk/by-partuuid/{}",
+                            lazy_partition_info.part_uuid
+                        )),
+                    )
+                }),
+        )
         .collect();
 
     for filesystem in &prism_storage.filesystems {
@@ -319,9 +354,79 @@ fn generate_host_status(
     })
 }
 
+fn create_partition(
+    id: String,
+    ty: Option<String>,
+    size: Option<String>,
+) -> Result<Partition, TridentError> {
+    Ok(Partition {
+        id: id.clone(),
+        partition_type: if ty.as_deref() == Some("esp") {
+            PartitionType::Esp
+        } else {
+            PartitionType::LinuxGeneric
+        },
+        size: match &size {
+            Some(s) => PartitionSize::from_str(s)
+                .structured(InvalidInputError::ParsePrismHistory)
+                .message(format!("Failed to parse partition size '{s}'"))?,
+            None => PartitionSize::Grow,
+        },
+    })
+}
+
+fn parse_lazy_partitions(
+    lazy_partitions: &[String],
+    prism_history_partitions: &[PrismPartition],
+) -> Result<HashMap<String, LazyPartitionInfo>, Error> {
+    let mut lazy_partitions_map = HashMap::new();
+    for partition in lazy_partitions {
+        // Ensure that provided input is in the form xxx:yyy
+        match partition.split_once(':') {
+            Some((name, uuid)) => {
+                if name.is_empty() || uuid.is_empty() {
+                    bail!("Lazy partitions must be provided as <b-partition-name>:<b-partition-partuuid> pairs");
+                }
+                // Ensure that the second part is a valid UUID
+                if let Err(err) = Uuid::parse_str(uuid) {
+                    bail!("Invalid UUID format: {uuid}: {err}");
+                }
+                // Ensure that the partition name ends with '-b'
+                if !name.ends_with("-b") {
+                    bail!("Lazy partitions must end with '-b'");
+                }
+                // Ensure that there is a corresponding '-a' partition
+                let corresponding_a_partition = name.replace("-b", "-a");
+                match prism_history_partitions
+                    .iter()
+                    .find(|p| p.id == *corresponding_a_partition)
+                {
+                    Some(a_partition) => {
+                        lazy_partitions_map.insert(
+                            name.to_string(),
+                            LazyPartitionInfo {
+                                name: name.to_string(),
+                                part_uuid: uuid.to_string(),
+                                a_partition: a_partition.clone(),
+                            },
+                        );
+                    }
+                    None => {
+                        bail!("No corresponding '-a' partition found for lazy partition '{name}'");
+                    }
+                };
+            }
+            None => {
+                bail!("Lazy partitions must be provided as colon-separated <b-partition-name>:<b-partition-partuuid> pairs");
+            }
+        }
+    }
+    Ok(lazy_partitions_map)
+}
+
 /// Given a path to a Host Status file, initializes the datastore with the Host Status.
 /// This command can be executed offline in a chroot environment as part of MIC image customization.
-pub fn execute(hs_path: Option<&Path>) -> Result<(), TridentError> {
+pub fn execute(hs_path: Option<&Path>, lazy_partitions: &[String]) -> Result<(), TridentError> {
     let host_status: HostStatus = if let Some(hs_path) = hs_path {
         info!("Reading Host Status from {:?}", hs_path);
         let host_status_yaml = fs::read_to_string(hs_path)
@@ -361,7 +466,7 @@ pub fn execute(hs_path: Option<&Path>) -> Result<(), TridentError> {
             .structured(ExecutionEnvironmentMisconfigurationError::PrismChrootEnvironment)
             .message("Failed to run lsblk")?;
 
-        generate_host_status(&history, lsblk_output)?
+        generate_host_status(&history, lsblk_output, lazy_partitions)?
     };
 
     debug!(
@@ -396,8 +501,36 @@ mod tests {
 
     use super::*;
 
-    const PRISM_HISTORY: &str = include_str!("prism_history.json");
+    // lsblk.json was adding a postCustomization step to the
+    // usr-verity configuration in test-images
+    // (test-images/platform-integration-images/trident-vm-testimage/base/baseimg-usr-verity.yaml)
+    // like this:
+    //      scripts:
+    //          postCustomization:
+    //             - path: lsblk.sh
+    // the script does this:
+    //     `lsblk --json --output-all --bytes`
+    // and running:
+    //     `make trident-vm-usr-verity-testimage`
+    // the output from this postCusomization step was then
+    // captured and copied into lsblk.json.
     const LSBLK: &str = include_str!("lsblk.json");
+    // prism_history.json was created from the usr-verity
+    // configuration in test-images
+    // (test-images/platform-integration-images/trident-vm-testimage/base/baseimg-usr-verity.yaml)
+    // by running:
+    //     `make trident-vm-usr-verity-testimage`
+    // and then untar'ing and unzstd'ing the resulting
+    // COSI file, and then extracting the history.json
+    // from the /usr partition in share/image-customizer/history.json.
+    const PRISM_HISTORY: &str = include_str!("prism_history.json");
+    // lazy_prism_history.json was created by deleting the '-b'
+    // partitions from prism_history.json
+    const LAZY_PRISM_HISTORY: &str = include_str!("lazy_prism_history.json");
+    // lazy_lsblk.json was created by finding the 'b' parition
+    // partuuids in prism_history.json and removing them from the
+    // lsblk.json file.
+    const LAZY_LSBLK: &str = include_str!("lazy_lsblk.json");
 
     #[test]
     fn test_parse_prism_history() {
@@ -407,26 +540,201 @@ mod tests {
         let entry = &history[0];
         assert_eq!(entry.config.storage.as_ref().unwrap().disks.len(), 1);
         let disk = &entry.config.storage.as_ref().unwrap().disks[0];
-        assert_eq!(disk.partitions.len(), 14);
+        assert_eq!(disk.partitions.len(), 12);
         assert_eq!(disk.partitions[0].id, "esp");
         assert_eq!(disk.partitions[1].id, "boot-a");
+        assert_eq!(disk.partitions[2].id, "boot-b");
 
         let _history2: Vec<PrismHistoryEntry> =
             serde_json::from_str(include_str!("aksee_prism_history.json")).unwrap();
     }
 
     #[test]
-    #[ignore]
     fn test_generate_host_status() {
         let history: Vec<PrismHistoryEntry> =
             serde_json::from_str(PRISM_HISTORY).expect("Failed to parse Prism history");
         let lsblk_output: LsBlkOutput =
             serde_json::from_str(LSBLK).expect("Failed to parse lsblk output");
 
-        let host_status = generate_host_status(&history, lsblk_output.blockdevices).unwrap();
+        let host_status = generate_host_status(&history, lsblk_output.blockdevices, &[]).unwrap();
+        print!(
+            "host_status:\n{}",
+            serde_yaml::to_string(&host_status).unwrap_or("Failed to serialize Host Status".into())
+        );
 
         assert_eq!(host_status.spec.storage.disks.len(), 1);
-        assert_eq!(host_status.spec.storage.filesystems.len(), 2);
+        assert_eq!(host_status.spec.storage.filesystems.len(), 7);
         assert_eq!(host_status.spec.storage.verity.len(), 1);
+
+        assert!(host_status.partition_paths.contains_key("boot-a"));
+        assert!(host_status.partition_paths.contains_key("boot-b"));
+        assert!(host_status.partition_paths.contains_key("esp"));
+        assert!(host_status.partition_paths.contains_key("home"));
+        assert!(host_status.partition_paths.contains_key("root-a"));
+        assert!(host_status.partition_paths.contains_key("root-b"));
+        assert!(host_status.partition_paths.contains_key("srv"));
+        assert!(host_status.partition_paths.contains_key("trident"));
+        assert!(host_status.partition_paths.contains_key("usr-a"));
+        assert!(host_status.partition_paths.contains_key("usr-b"));
+        assert!(host_status.partition_paths.contains_key("usr-hash-a"));
+        assert!(host_status.partition_paths.contains_key("usr-hash-b"));
+        assert_eq!(host_status.partition_paths.len(), 12);
+    }
+
+    #[test]
+    fn test_generate_host_status_with_lazy_partitions() {
+        let history: Vec<PrismHistoryEntry> =
+            serde_json::from_str(LAZY_PRISM_HISTORY).expect("Failed to parse Prism history");
+        let lsblk_output: LsBlkOutput =
+            serde_json::from_str(LAZY_LSBLK).expect("Failed to parse lsblk output");
+
+        // Validate that the '-b' partitions are not present in the history
+        let host_status_without_lazy_command_line_overrides =
+            generate_host_status(&history, lsblk_output.clone().blockdevices, &[]).unwrap();
+        print!(
+            "host_status_without_lazy_command_line_overrides:\n{}",
+            serde_yaml::to_string(&host_status_without_lazy_command_line_overrides)
+                .unwrap_or("Failed to serialize Host Status".into())
+        );
+        assert_eq!(
+            host_status_without_lazy_command_line_overrides
+                .partition_paths
+                .len(),
+            8
+        );
+
+        // Validate that the '-b' partitions provided by the command line are
+        // applied by generate_host_status.
+        let boot_b_uuid = "6d792d45-30bc-4764-a3f0-e1c1c8eadbad";
+        let root_b_uuid = "05cdb533-2132-4cf9-8802-cb69a71f0c2a";
+        let usr_b_uuid = "95f66080-cb1c-400c-8841-06f7fd8380a1";
+        let usr_hash_b_uuid = "0b76cf98-d6f7-478c-a93c-d6f912c9b0bd";
+        let lazy_partitions = vec![
+            format!("boot-b:{boot_b_uuid}"),
+            format!("root-b:{root_b_uuid}"),
+            format!("usr-b:{usr_b_uuid}"),
+            format!("usr-hash-b:{usr_hash_b_uuid}"),
+        ];
+        let host_status = generate_host_status(
+            &history,
+            lsblk_output.clone().blockdevices,
+            &lazy_partitions,
+        )
+        .unwrap();
+        print!(
+            "host_status:\n{}",
+            serde_yaml::to_string(&host_status).unwrap_or("Failed to serialize Host Status".into())
+        );
+
+        assert_eq!(host_status.spec.storage.disks.len(), 1);
+        assert_eq!(host_status.spec.storage.filesystems.len(), 7);
+        assert_eq!(host_status.spec.storage.verity.len(), 1);
+
+        // Check that all partitions are present in PartitionPaths
+        assert!(host_status.partition_paths.contains_key("boot-a"));
+        assert!(host_status.partition_paths.contains_key("boot-b"));
+        assert!(host_status.partition_paths.contains_key("esp"));
+        assert!(host_status.partition_paths.contains_key("home"));
+        assert!(host_status.partition_paths.contains_key("root-a"));
+        assert!(host_status.partition_paths.contains_key("root-b"));
+        assert!(host_status.partition_paths.contains_key("srv"));
+        assert!(host_status.partition_paths.contains_key("trident"));
+        assert!(host_status.partition_paths.contains_key("usr-a"));
+        assert!(host_status.partition_paths.contains_key("usr-b"));
+        assert!(host_status.partition_paths.contains_key("usr-hash-a"));
+        assert!(host_status.partition_paths.contains_key("usr-hash-b"));
+        // Check that all partition uuids are as expected for lazy partition overridees
+        assert_eq!(
+            host_status.partition_paths.get("boot-b").unwrap(),
+            &PathBuf::from(format!("/dev/disk/by-partuuid/{boot_b_uuid}"))
+        );
+        assert_eq!(
+            host_status.partition_paths.get("root-b").unwrap(),
+            &PathBuf::from(format!("/dev/disk/by-partuuid/{root_b_uuid}"))
+        );
+        assert_eq!(
+            host_status.partition_paths.get("usr-b").unwrap(),
+            &PathBuf::from(format!("/dev/disk/by-partuuid/{usr_b_uuid}"))
+        );
+        assert_eq!(
+            host_status.partition_paths.get("usr-hash-b").unwrap(),
+            &PathBuf::from(format!("/dev/disk/by-partuuid/{usr_hash_b_uuid}"))
+        );
+        assert_eq!(host_status.partition_paths.len(), 12);
+    }
+
+    #[test]
+    fn test_parse_lazy_partitions_with_bad_lazy_partitions() {
+        let history: Vec<PrismHistoryEntry> =
+            serde_json::from_str(LAZY_PRISM_HISTORY).expect("Failed to parse Prism history");
+
+        let prism_partitions = &history
+            .iter()
+            .rev()
+            .map(|entry| entry.config.storage.as_ref())
+            .find(|storage| storage.is_some_and(|s| !s.disks.is_empty()))
+            .flatten()
+            .unwrap()
+            .disks
+            .first()
+            .unwrap()
+            .partitions;
+
+        // Not colon-separated
+        assert_eq!(
+            parse_lazy_partitions(&["no-colon-in-string".to_string()], prism_partitions)
+                .unwrap_err()
+                .to_string(),
+            "Lazy partitions must be provided as colon-separated <b-partition-name>:<b-partition-partuuid> pairs"
+        );
+
+        // no partition name
+        assert_eq!(
+            parse_lazy_partitions(
+                &[":6d792d45-30bc-4764-a3f0-e1c1c8eadbad".to_string()],
+                prism_partitions,
+            )
+            .unwrap_err()
+            .to_string(),
+            "Lazy partitions must be provided as <b-partition-name>:<b-partition-partuuid> pairs"
+        );
+
+        // no partition uuid
+        assert_eq!(
+            parse_lazy_partitions(&["foo-b:".to_string()], prism_partitions)
+                .unwrap_err()
+                .to_string(),
+            "Lazy partitions must be provided as <b-partition-name>:<b-partition-partuuid> pairs"
+        );
+
+        // invalid partition uuid
+        assert_eq!(
+            parse_lazy_partitions(&["foo-b:asd".to_string()], prism_partitions)
+                .unwrap_err()
+                .to_string(),
+            "Invalid UUID format: asd: invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `s` at 2"
+        );
+
+        // partition doesn't end in '-b'
+        assert_eq!(
+            parse_lazy_partitions(
+                &["no_dash_b:6d792d45-30bc-4764-a3f0-e1c1c8eadbad".to_string()],
+                prism_partitions,
+            )
+            .unwrap_err()
+            .to_string(),
+            "Lazy partitions must end with '-b'"
+        );
+
+        // no corresponding '-a' partition
+        assert_eq!(
+            parse_lazy_partitions(
+                &["foo-b:6d792d45-30bc-4764-a3f0-e1c1c8eadbad".to_string()],
+                prism_partitions,
+            )
+            .unwrap_err()
+            .to_string(),
+            "No corresponding '-a' partition found for lazy partition 'foo-b'"
+        );
     }
 }
