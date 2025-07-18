@@ -713,7 +713,7 @@ mod tests {
             TabFileEntry::new_path("/foo", &mount_point.path, TabFileSystemType::Auto)
                 .with_options(mount_point.options.to_string_vec())
                 .render();
-        print!("Fstab entry: {}", fstab_entry);
+        print!("Fstab entry: {fstab_entry}");
         assert!(fstab_entry.contains("defaults"));
     }
 }
