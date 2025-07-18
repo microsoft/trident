@@ -1,7 +1,7 @@
 #![allow(unused)]
 
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
     str::FromStr,
@@ -14,16 +14,15 @@ use maplit::hashmap;
 use osutils::lsblk;
 use trident_api::{
     config::{
-        AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, FileSystemType,
-        HostConfiguration, MountOptions, MountPoint, Partition, PartitionSize, PartitionTableType,
-        PartitionType, VerityCorruptionOption, VerityDevice,
+        AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, HostConfiguration,
+        MountOptions, MountPoint, Partition, PartitionSize, PartitionTableType, PartitionType,
+        VerityCorruptionOption, VerityDevice,
     },
     constants::internal_params::ENABLE_UKI_SUPPORT,
     error::{
         ExecutionEnvironmentMisconfigurationError, InitializationError, InvalidInputError,
         ReportError, TridentError, TridentResultExt,
     },
-    primitives::bytes::ByteCount,
     status::{AbVolumeSelection, HostStatus, ServicingState},
     BlockDeviceId,
 };
@@ -668,8 +667,6 @@ mod tests {
     fn test_parse_lazy_partitions_with_bad_lazy_partitions() {
         let history: Vec<PrismHistoryEntry> =
             serde_json::from_str(LAZY_PRISM_HISTORY).expect("Failed to parse Prism history");
-        let lsblk_output: LsBlkOutput =
-            serde_json::from_str(LAZY_LSBLK).expect("Failed to parse lsblk output");
 
         let prism_partitions = &history
             .iter()
