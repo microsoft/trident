@@ -1,7 +1,7 @@
 <!--
 DELETE ME AFTER COMPLETING THE DOCUMENT!
 ---
-Task: https://dev.azure.com/mariner-org/ECF/_workitems/edit/11445
+Task: https://dev.azure.com/mariner-org/polar/_workitems/edit/13148
 Title: COSI
 Type: Reference
 Objective: Discuss with Prism where the "one true source" of the COSI spec
