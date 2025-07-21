@@ -74,6 +74,7 @@ Trident files for the provisioning OS
 %package service
 Summary:        Trident files for SystemD update and commit services
 Requires:       %{name}
+Conflicts:      %{name}-install-service
 
 %description service
 Trident files for SystemD update and commit services
@@ -99,7 +100,7 @@ Trident files for SystemD update and commit services
 %package install-service
 Summary:        Trident files for SystemD install service
 Requires:       %{name}
-Conflicts:      %{name}-update-service
+Conflicts:      %{name}-service
 
 %description install-service
 Trident files for SystemD install service
