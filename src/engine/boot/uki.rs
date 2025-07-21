@@ -37,7 +37,7 @@ pub fn uki_suffix(
         (None, false) => bail!("Failed to determine UKI suffix for the current image since A/B volume selection is not set"),
     };
 
-    Ok(format!("azl{}{}.efi", volume_letter, install_index))
+    Ok(format!("azl{volume_letter}{install_index}.efi"))
 }
 
 /// Return whether there is a staged UKI file on the ESP.
