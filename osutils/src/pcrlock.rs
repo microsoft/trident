@@ -250,8 +250,9 @@ fn make_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
     );
 
-    // Create command with arguments
-    let mut cmd = Command::new("/usr/lib/systemd/systemd-pcrlock"); // Directly use Command
+    // Run command directly since pcrlock may write to stderr even when a pcrlock policy is
+    // successfully generated
+    let mut cmd = Command::new("/usr/lib/systemd/systemd-pcrlock");
     cmd.arg("make-policy").arg(to_pcr_arg(pcrs));
 
     // Execute command and capture full output
