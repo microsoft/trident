@@ -479,6 +479,9 @@ Arguments:
   [HS_PATH]  Path to a Host Status file (deprecated)
 
 Options:
+      --lazy-partitions [<LAZY_PARTITIONS>...]
+          Provide lazy partition information overrides for `-b`
+          partitions
   -v, --verbosity <VERBOSITY>
           Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
           [default: DEBUG]
@@ -492,6 +495,21 @@ Options:
 Path to a Host Status file (deprecated)
 
 If not provided, Trident will infer one based on the state of the system and history information left by Image Customizer.
+
+Conflicts with:
+
+- `--lazy_partitions <LAZY_PARTITIONS>`
+
+
+#### <span style="color:#d96125;font-family:monospace;">--lazy_partitions &lt;LAZY_PARTITIONS&gt;</span>
+
+Provide lazy partition information overrides for `-b` partitions
+
+This is a comma-separated list of `<b-partition-name>`:`<b-partition-partuuid>` pairs.
+
+Conflicts with:
+
+- `<HS_PATH>`
 
 
 #### <span style="color:#d96125;font-family:monospace;">--verbosity &lt;VERBOSITY&gt;</span>
