@@ -190,7 +190,8 @@ func (ap *AutoPartitionWidget) mustUpdateConfiguration() {
 	disk.Partitions = partitions
 
 	disk_path := disk.TargetDisk.Value
-	ap.userInput.DiskPath = disk_path
+	logger.Log.Debugf("Selected disk: %s", disk_path)
+	// ap.userInput.DiskPath = disk_path
 }
 
 func (ap *AutoPartitionWidget) populateBlockDeviceOptions() {

@@ -8,6 +8,10 @@ import (
 	"os"
 )
 
+const (
+	fileName = "user_input.json"
+)
+
 type UserInput struct {
 	DiskPath string `json:"disk_path"`
 	Hostname string `json:"hostname"`
@@ -19,7 +23,7 @@ func NewUserInput() *UserInput {
 	return &UserInput{}
 }
 
-func (u *UserInput) Save(fileName string) error {
+func (u *UserInput) Save() error {
 	file, err := os.Create(fileName)
 	if err != nil {
 		return err

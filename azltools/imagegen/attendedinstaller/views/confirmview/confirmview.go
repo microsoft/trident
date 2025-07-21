@@ -51,7 +51,9 @@ func (cv *ConfirmView) Initialize(userInput *configuration.UserInput, backButton
 
 	cv.navBar = navigationbar.NewNavigationBar().
 		AddButton(backButtonText, previousPage).
-		AddButton(uitext.ButtonYes, nextPage).
+		AddButton(uitext.ButtonYes, func() {
+			cv.onNextButton(nextPage)
+		}).
 		SetAlign(tview.AlignCenter)
 
 	textWidth, textHeight := uiutils.MinTextViewWithNoWrapSize(cv.text)
@@ -84,6 +86,18 @@ func (cv *ConfirmView) Reset() (err error) {
 	cv.navBar.SetSelectedButton(defaultNavButton)
 
 	return
+}
+
+func (cv *ConfirmView) onNextButton(nextPage func()) error {
+	// Save the user input to the config file.
+	err := cv.userInput.Save()
+	if err != nil {
+		cv.navBar.SetUserFeedback(uiutils.ErrorToUserFeedback(err), tview.Styles.TertiaryTextColor)
+		return err
+	}
+
+	nextPage()
+	return nil
 }
 
 // Name returns the friendly name of the view.

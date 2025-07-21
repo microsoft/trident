@@ -90,6 +90,7 @@ func New(calamaresInstallFunc func() error) (attendedInstaller *AttendedInstalle
 
 // Run shows the attended installer UI on the current thread.
 // When the user completes the installer, the function will return.
+// When producing the Host configuration, it would be best to return it from this function.
 func (ai *AttendedInstaller) Run() (installationQuit bool, err error) {
 	defer func() {
 		if r := recover(); r != nil {
