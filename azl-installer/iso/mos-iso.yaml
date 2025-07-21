@@ -9,8 +9,6 @@ iso:
     destination: /images/azure-linux-trident.cosi
   - source: bin/liveinstaller
     destination: /installer/liveinstaller
-  - source: files/attended_config.json
-    destination: /installer/attended_config.json
   - source: files/EULA.txt 
     destination: /installer/EULA.txt 
   kernelCommandLine:
