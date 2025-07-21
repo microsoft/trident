@@ -18,6 +18,7 @@ steps:
       sudo mv oras-install/oras /usr/local/bin/
       rm -rf oras_${VERSION}_*.tar.gz oras-install/
     displayName: "Install ORAS"
+    retryCountOnTaskFailure: 3
 
   - task: AzureCLI@2
     inputs:
