@@ -137,7 +137,7 @@ Trident files for SystemD update service
 %package update-poll
 Summary:        Trident files for SystemD service
 Requires:       %{name}
-Requires:       %{name}-service
+Requires:       %{name}-update-service
 
 %description update-poll
 SystemD timer for update polling with Harpoon.
