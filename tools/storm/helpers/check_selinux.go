@@ -1,13 +1,8 @@
 package helpers
 
 import (
-	"bufio"
-	"encoding/json"
-	"fmt"
 	"os"
-	"regexp"
 	"storm"
-	"strconv"
 	"strings"
 	"time"
 	"tridenttools/storm/utils"
@@ -19,8 +14,7 @@ type CheckSelinuxHelper struct {
 	args struct {
 		utils.SshCliSettings `embed:""`
 		utils.EnvCliSettings `embed:""`
-		MetricsFile          string `required:"" help:"Metrics file." type:"path"`
-		MetricsOperation     string `required:"" help:"Metrics operation."`
+		AuditFile            string `required:"" help:"Audit logs file." type:"path"`
 	}
 }
 
@@ -42,16 +36,54 @@ func (h *CheckSelinuxHelper) checkSelinuxDenials(tc storm.TestCase) error {
 		tc.Skip("No Trident environment specified")
 	}
 
-	logrus.Infof("Checking for SELinux violations with audit2allow")
+	logrus.Infof("== Checking for SELinux violations with audit2allow ==")
 	err := h.checkAudit2Allow()
 	if err != nil {
 		// Log this as a test failure
 		tc.FailFromError(err)
 	}
 
+	logrus.Infof("== VM audit logs ==")
+	auditLogsOutput, err := utils.Retry(
+		time.Second*time.Duration(h.args.Timeout),
+		time.Second*5,
+		func(attempt int) (*string, error) {
+			client, err := utils.OpenSshClient(h.args.SshCliSettings)
+			if err != nil {
+				return nil, err
+			}
+			defer client.Close()
+
+			auditLogsResult, err := utils.RunCommand(client, "sudo cat /var/log/audit/audit.log")
+			if err != nil {
+				return nil, err
+			}
+
+			return &auditLogsResult.Stdout, nil
+		},
+	)
+	if err != nil {
+		// Log this as a test failure
+		tc.FailFromError(err)
+	}
+
+	// Display the audit logs
+	if auditLogsOutput != nil && strings.TrimSpace(*auditLogsOutput) != "" {
+		logrus.Infof("\n%s", *auditLogsOutput)
+
+		// Save to audit file if specified
+		if h.args.AuditFile != "" {
+			err = os.WriteFile(h.args.AuditFile, []byte(*auditLogsOutput), 0644)
+			if err != nil {
+				logrus.Errorf("Failed to write audit logs to %s: %v", h.args.AuditFile, err)
+			}
+		}
+	} else {
+		logrus.Infof("Audit log is empty")
+	}
+
 	return nil
 }
-			
 
 func (h *CheckSelinuxHelper) checkAudit2Allow() error {
 	client, err := utils.OpenSshClient(h.args.SshCliSettings)
@@ -59,7 +91,7 @@ func (h *CheckSelinuxHelper) checkAudit2Allow() error {
 		return err
 	}
 
-	audit2AllowResult, err := utils.RunCommand(client, "audit2allow -i /var/log/audit/audit.log")
+	audit2AllowResult, err := utils.RunCommand(client, "sudo audit2allow -i /var/log/audit/audit.log")
 	if err != nil {
 		logrus.Errorf("Failed to run audit2allow: %v", err)
 		return err

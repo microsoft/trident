@@ -197,32 +197,13 @@ stages:
           - bash: |
               set -eux
 
-              echo "Checking for SELinux violations with audit2allow"
               HOST_IP=$(jq -r '.virtualmachines[0].ip' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)
-              ssh -o StrictHostKeyChecking=no -i $(tridentSourceDirectory)/e2e_tests/helpers/key testing-user@$HOST_IP \
-                'sudo audit2allow -i /var/log/audit/audit.log' | { 
-                  output=$(cat)
-                  if [ -n "$output" ]; then
-                    echo "audit2allow output:"
-                    echo "$output"
-                  else
-                    echo "audit2allow had no output"
-                  fi
-                } || echo "audit2allow failed"
-
-              echo "Printing audit logs in VM"
-              ssh -o StrictHostKeyChecking=no -i $(tridentSourceDirectory)/e2e_tests/helpers/key testing-user@$HOST_IP \
-                'sudo cp /var/log/audit/audit.log /tmp/audit.log && sudo chmod 644 /tmp/audit.log'
-              scp -o StrictHostKeyChecking=no -i $(tridentSourceDirectory)/e2e_tests/helpers/key \
-                testing-user@$HOST_IP:/tmp/audit.log ./vm-audit.log || echo "Failed to copy audit log"
-
-              if [ -f "./vm-audit.log" ]; then
-                cat ./vm-audit.log
-                
-                mkdir -p $(ob_outputDirectory)
-                cp ./vm-audit.log $(ob_outputDirectory)/audit.log
-              fi
-
+              ./bin/storm-trident helper check-selinux \
+                  "$(tridentSourceDirectory)/e2e_tests/helpers/key" \
+                  "$HOST_IP" \
+                  "testing-user" \
+                  "${{ parameters.runtimeEnv }}" \
+                  --audit-file $(ob_outputDirectory)/audit.log \
             timeoutInMinutes: 5
             condition: eq('${{ parameters.runtimeEnv }}', 'host')
             displayName: "📄 Check for SELinux failures"
