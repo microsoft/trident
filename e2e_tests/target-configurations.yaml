@@ -140,7 +140,6 @@ virtualMachine:
       - encrypted-raid
       - encrypted-swap
       - memory-constraint-combined
-      - misc
       - raid-mirrored
       - raid-resync-small
       - raid-small
@@ -157,7 +156,6 @@ virtualMachine:
       - encrypted-raid
       - encrypted-swap
       - memory-constraint-combined
-      - misc
       - raid-mirrored
       - raid-resync-small
       - raid-small
@@ -217,7 +215,6 @@ virtualMachine:
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
-      - misc
       - raid-mirrored
       - raid-resync-small
       - raid-small
@@ -232,7 +229,6 @@ virtualMachine:
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
-      - misc
       - raid-mirrored
       - raid-resync-small
       - raid-small
