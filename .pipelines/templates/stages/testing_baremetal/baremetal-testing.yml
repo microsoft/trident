@@ -291,6 +291,20 @@ stages:
 
           - bash: |
               set -eux
+
+              HOST_IP=$(jq -r '.virtualmachines[0].ip' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)
+              ./bin/storm-trident helper check-selinux \
+                  "$(tridentSourceDirectory)/e2e_tests/helpers/key" \
+                  "$HOST_IP" \
+                  "testing-user" \
+                  "${{ parameters.runtimeEnv }}" \
+                  --audit-file $(ob_outputDirectory)/audit.log \
+            timeoutInMinutes: 5
+            condition: eq('${{ parameters.runtimeEnv }}', 'host')
+            displayName: "📄 Check for SELinux failures"
+
+          - bash: |
+              set -eux
               ./bin/storm-trident helper boot-metrics \
                   "$(Build.SourcesDirectory)/e2e_tests/helpers/key" \
                   "${{ variables.BAREMETAL_OAM_IP }}" \
