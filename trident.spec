@@ -232,8 +232,9 @@ install -D -p -m 0644 selinux/%{name}.if %{buildroot}%{_datadir}/selinux/devel/i
 mkdir -p %{buildroot}%{_unitdir}
 install -D -m 644 systemd/%{name}.service %{buildroot}%{_unitdir}/%{name}.service
 install -D -m 644 systemd/%{name}-install.service %{buildroot}%{_unitdir}/%{name}-install.service
+install -D -m 644 systemd/%{name}-update.service %{buildroot}%{_unitdir}/%{name}-update.service
 install -D -m 644 systemd/%{name}-network.service %{buildroot}%{_unitdir}/%{name}-network.service
-install -D -m 644 systemd/%{name}.timer %{buildroot}%{_unitdir}/%{name}.timer
+install -D -m 644 systemd/%{name}-update.timer %{buildroot}%{_unitdir}/%{name}-update.timer
 
 mkdir -p %{buildroot}/etc/%{name}
 
