@@ -43,12 +43,11 @@ pub static ENCRYPTION_PASSPHRASE: Lazy<Mutex<Vec<u8>>> = Lazy::new(Default::defa
 /// volume.
 ///
 /// Takes in the key file to unlock the TPM 2.0 device, the path to the device, and a set of PCRs
-/// to bind the enrollment to. Depending on the value of `pcrlock_policy`, binds encryption either
-/// to the values of the selected PCRs OR a pcrlock policy, which includes these PCRs.
+/// to bind the enrollment to. If a key file is not provided, it means that the device has already
+/// been bound to TPM 2.0 and we're re-enrolling it with a pcrlock policy.
 pub fn systemd_cryptenroll(
     key_file: Option<impl AsRef<Path>>,
     device_path: impl AsRef<Path>,
-    pcrlock_policy: bool,
     pcrs: BitFlags<Pcr>,
 ) -> Result<(), Error> {
     debug!(
@@ -62,11 +61,12 @@ pub fn systemd_cryptenroll(
         .arg("--wipe-slot=tpm2");
 
     // If a key file is provided, use it to unlock the TPM 2.0 device; if a key file is not
-    // provided, it means that the device has already been bound to TPM 2.0 so we will use the
-    // static ENCRYPTION_PASSPHRASE to unlock the device.
+    // provided, it means that the device has already been bound to TPM 2.0 and we're re-enrolling
+    // it with a pcrlock policy. So we use ENCRYPTION_PASSPHRASE to unlock the device.
     let mut _tmp_file;
     if let Some(path) = key_file {
-        cmd.arg(format!("--unlock-key-file={}", path.as_ref().display()));
+        cmd.arg(format!("--unlock-key-file={}", path.as_ref().display()))
+            .arg(to_tpm2_pcrs_arg(pcrs));
     } else {
         let key = {
             ENCRYPTION_PASSPHRASE
@@ -83,13 +83,8 @@ pub fn systemd_cryptenroll(
             .write_all(&key)
             .context("Failed to write the encryption passphrase to a temporary file")?;
 
-        cmd.arg(format!("--unlock-key-file={}", _tmp_file.path().display()));
-    }
-
-    if pcrlock_policy {
-        cmd.arg(format!("--tpm2-pcrlock={PCRLOCK_POLICY_JSON}"));
-    } else {
-        cmd.arg(to_tpm2_pcrs_arg(pcrs));
+        cmd.arg(format!("--unlock-key-file={}", _tmp_file.path().display()))
+            .arg(format!("--tpm2-pcrlock={}", PCRLOCK_POLICY_JSON));
     }
 
     cmd.run_and_check().context(format!(
@@ -432,7 +427,6 @@ mod functional_test {
         systemd_cryptenroll(
             Some(key_file_path),
             &partition1.node,
-            false,
             BitFlags::from(Pcr::Pcr7),
         )
         .unwrap();
@@ -574,7 +568,6 @@ mod functional_test {
         systemd_cryptenroll(
             Some(key_file_path),
             &partition1.node,
-            false,
             BitFlags::from(Pcr::Pcr7),
         )
         .unwrap();

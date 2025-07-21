@@ -13,7 +13,10 @@ use sha2::{Digest, Sha256, Sha384, Sha512};
 use tempfile::NamedTempFile;
 
 use sysdefs::tpm2::Pcr;
-use trident_api::primitives::hash::Sha256Hash;
+use trident_api::{
+    error::{ReportError, ServicingError, TridentError},
+    primitives::hash::Sha256Hash,
+};
 
 use crate::{
     bootloaders::{BOOT_EFI, GRUB_EFI},
@@ -77,10 +80,31 @@ struct PcrPolicy {
     pcr_values: Vec<PcrValue>,
 }
 
+/// Generates a new pcrlock policy for the given PCRs, UKI binaries, and bootloader binaries.
+pub fn generate_pcrlock_policy(
+    pcrs: BitFlags<Pcr>,
+    uki_binaries: Vec<PathBuf>,
+    bootloader_binaries: Vec<PathBuf>,
+) -> Result<(), TridentError> {
+    debug!(
+        "Generating a new pcrlock policy for the following PCRs: {:?}",
+        pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
+    );
+    // Generate .pcrlock files for runtime OS image A
+    generate_pcrlock_files(pcrs, uki_binaries, bootloader_binaries)
+        .structured(ServicingError::GeneratePcrlockFiles)?;
+
+    // Generate pcrlock policy; on A/B update, the existing binding will be automatically
+    // updated with the new pcrlock policy
+    generate_tpm2_access_policy(pcrs).structured(ServicingError::GenerateTpm2AccessPolicy)?;
+
+    Ok(())
+}
+
 /// Calls a helper function `systemd-pcrlock make-policy` to generate a TPM 2.0 access policy.
 /// Parses the contents of the JSON to validate that the pcrlock policy has been updated as
 /// expected.
-pub fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
+fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
     debug!(
         "Generating a new TPM 2.0 access policy with the following PCRs: {:?}",
         pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
@@ -468,13 +492,13 @@ impl LockCommand {
 /// Generates dynamically defined .pcrlock files for either (1) the current boot only or (2) the
 /// current and the future boots. Calls the `systemd-pcrlock lock-*` commands to generate the
 /// .pcrlock files, as well as helpers to generate the remaining .pcrlock files.
-pub fn generate_pcrlock_files(
+fn generate_pcrlock_files(
     // Bitflags representing the PCRs to generate .pcrlock files for,
     pcrs: BitFlags<Pcr>,
     // Vector containing paths of UKI binaries to measure via lock-uki,
-    uki_binaries: Vec<Option<PathBuf>>,
+    uki_binaries: Vec<PathBuf>,
     // Vector containing paths of bootloader binaries to be measured by Trident,
-    bootloader_binaries: Vec<Option<PathBuf>>,
+    bootloader_binaries: Vec<PathBuf>,
 ) -> Result<(), Error> {
     debug!(
         "Generating .pcrlock files for the following PCRs: {:?}",
@@ -509,27 +533,25 @@ pub fn generate_pcrlock_files(
 
     // Run 'lock-uki' when PCRs 4/11 are requested
     if !(pcrs & (Pcr::Pcr4 | Pcr::Pcr11)).is_empty() {
-        for (index, uki_path_opt) in uki_binaries.clone().into_iter().enumerate() {
-            if let Some(uki_path) = uki_path_opt {
-                let pcrlock_file = generate_pcrlock_output_path(UKI_PCRLOCK_DIR, index);
-                let cmd = LockCommand::Uki {
-                    path: uki_path.clone(),
-                    pcrlock_file: pcrlock_file.clone(),
-                };
-                cmd.run().context(format!(
-                    "Failed to generate .pcrlock file via 'lock-uki' at '{}'",
-                    uki_path.display()
-                ))?;
+        for (index, uki_path) in uki_binaries.clone().into_iter().enumerate() {
+            let pcrlock_file = generate_pcrlock_output_path(UKI_PCRLOCK_DIR, index);
+            let cmd = LockCommand::Uki {
+                path: uki_path.clone(),
+                pcrlock_file: pcrlock_file.clone(),
+            };
+            cmd.run().context(format!(
+                "Failed to generate .pcrlock file via 'lock-uki' at '{}'",
+                uki_path.display()
+            ))?;
 
-                trace!(
-                    "Contents of .pcrlock file at '{}':\n{}",
-                    pcrlock_file.display(),
-                    fs::read_to_string(&pcrlock_file).context(format!(
-                        "Failed to read .pcrlock file at {}",
-                        pcrlock_file.display()
-                    ))?
-                );
-            }
+            trace!(
+                "Contents of .pcrlock file at '{}':\n{}",
+                pcrlock_file.display(),
+                fs::read_to_string(&pcrlock_file).context(format!(
+                    "Failed to read .pcrlock file at {}",
+                    pcrlock_file.display()
+                ))?
+            );
         }
     } else {
         debug!("Skipping running 'systemd-pcrlock lock-uki' as PCRs 4 and 11 are not requested");
@@ -537,50 +559,47 @@ pub fn generate_pcrlock_files(
 
     // Generate .pcrlock files when PCR 4 is requested
     if pcrs.contains(Pcr::Pcr4) {
-        for (index, bootloader_path_opt) in bootloader_binaries.into_iter().enumerate() {
-            // First, every bootloader PE binary is measured into PCR 4
-            if let Some(bootloader_path) = bootloader_path_opt {
-                // Extract name of PE binary, to determine which dir to write to
-                let bootloader_name = bootloader_path
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .ok_or_else(|| {
-                        anyhow::anyhow!(
-                            "Failed to get file name from bootloader PE binary path '{}'",
-                            bootloader_path.display()
-                        )
-                    })?;
-                let sub_dir = if bootloader_name == BOOT_EFI {
-                    BOOT_LOADER_CODE_SHIM_PCRLOCK_DIR
-                } else if bootloader_name == GRUB_EFI {
-                    BOOT_LOADER_CODE_SDBOOT_PCRLOCK_DIR
-                } else {
-                    bail!(
-                        "Unexpected bootloader PE binary name '{}'. Expected '{}' or '{}'.",
-                        bootloader_path.display(),
-                        BOOT_EFI,
-                        GRUB_EFI
-                    );
-                };
-
-                let pcrlock_file = generate_pcrlock_output_path(sub_dir, index);
-
-                debug!(
-                    "Generating .pcrlock file at '{}' to measure bootloader PE binary at '{}'",
-                    pcrlock_file.display(),
-                    bootloader_path.display()
+        for (index, bootloader_path) in bootloader_binaries.into_iter().enumerate() {
+            // Extract name of PE binary, to determine which dir to write to
+            let bootloader_name = bootloader_path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Failed to get file name from bootloader PE binary path '{}'",
+                        bootloader_path.display()
+                    )
+                })?;
+            let sub_dir = if bootloader_name == BOOT_EFI {
+                BOOT_LOADER_CODE_SHIM_PCRLOCK_DIR
+            } else if bootloader_name == GRUB_EFI {
+                BOOT_LOADER_CODE_SDBOOT_PCRLOCK_DIR
+            } else {
+                bail!(
+                    "Unexpected bootloader PE binary name '{}'. Expected '{}' or '{}'.",
+                    bootloader_path.display(),
+                    BOOT_EFI,
+                    GRUB_EFI
                 );
-                write_pe_binary_authenticode_pcrlock_file(
-                    bootloader_path.clone(),
-                    pcrlock_file.clone(),
-                    Pcr::Pcr4,
-                )
-                .context(format!(
-                    "Failed to generate .pcrlock file at '{}' for bootloader PE binary at '{}'",
-                    pcrlock_file.display(),
-                    bootloader_path.display()
-                ))?;
-            }
+            };
+
+            let pcrlock_file = generate_pcrlock_output_path(sub_dir, index);
+
+            debug!(
+                "Generating .pcrlock file at '{}' to measure bootloader PE binary at '{}'",
+                pcrlock_file.display(),
+                bootloader_path.display()
+            );
+            write_pe_binary_authenticode_pcrlock_file(
+                bootloader_path.clone(),
+                pcrlock_file.clone(),
+                Pcr::Pcr4,
+            )
+            .context(format!(
+                "Failed to generate .pcrlock file at '{}' for bootloader PE binary at '{}'",
+                pcrlock_file.display(),
+                bootloader_path.display()
+            ))?;
         }
         // Second, if SecureBoot is disabled, the authenticode of the .linux section of each UKI
         // binary is measured into PCR 4 as well.
@@ -588,23 +607,21 @@ pub fn generate_pcrlock_files(
         // TODO: Once SecureBoot is enabled, gate this logic with a conditional, or remove
         // entirely, as SecureBoot will likely be enabled always.
         // https://dev.azure.com/mariner-org/ECF/_workitems/edit/12865/.
-        for (index, uki_path_opt) in uki_binaries.into_iter().enumerate() {
-            if let Some(uki_path) = uki_path_opt {
-                let pcrlock_file =
-                    generate_pcrlock_output_path(BOOT_LOADER_CODE_UKI_PCRLOCK_DIR, index);
-                debug!(
+        for (index, uki_path) in uki_binaries.into_iter().enumerate() {
+            let pcrlock_file =
+                generate_pcrlock_output_path(BOOT_LOADER_CODE_UKI_PCRLOCK_DIR, index);
+            debug!(
                     "Generating .pcrlock file at '{}' to measure .linux section of UKI PE binary at '{}'",
                     pcrlock_file.clone().display(),
                     uki_path.clone().display()
                 );
-                generate_linux_authenticode(uki_path.clone(), pcrlock_file.clone()).context(
+            generate_linux_authenticode(uki_path.clone(), pcrlock_file.clone()).context(
                     format!(
                         "Failed to generate .pcrlock file at '{}' for .linux section of UKI PE binary at '{}'",
                         pcrlock_file.display(),
                         uki_path.display()
                     ),
                 )?;
-            }
         }
     } else {
         debug!("Skipping generating bootloader and UKI .pcrlock files as PCR 4 is not requested");

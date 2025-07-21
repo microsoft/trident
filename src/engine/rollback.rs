@@ -1,22 +1,13 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::{Context, Error};
 use log::{debug, info, trace, warn};
 
-use osutils::{
-    block_devices,
-    bootloaders::{BOOT_EFI, GRUB_EFI},
-    container, efivar, lsblk,
-    path::join_relative,
-    pcrlock, veritysetup, virt,
-};
+use osutils::{block_devices, efivar, lsblk, pcrlock, veritysetup, virt};
 use sysdefs::tpm2::Pcr;
 
 use trident_api::{
-    constants::{
-        internal_params::{ENABLE_UKI_SUPPORT, VIRTDEPLOY_BOOT_ORDER_WORKAROUND},
-        ESP_EFI_DIRECTORY, ESP_MOUNT_POINT_PATH,
-    },
+    constants::internal_params::{ENABLE_UKI_SUPPORT, VIRTDEPLOY_BOOT_ORDER_WORKAROUND},
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::{AbVolumeSelection, ServicingState, ServicingType},
     BlockDeviceId,
@@ -24,14 +15,9 @@ use trident_api::{
 
 use crate::{
     engine::{
-        self,
-        boot::{
-            self,
-            uki::{self, UKI_DIRECTORY},
-        },
-        bootentries,
+        self, bootentries,
         context::EngineContext,
-        storage::verity,
+        storage::{encryption, verity},
     },
     DataStore,
 };
@@ -110,73 +96,13 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
             // https://dev.azure.com/mariner-org/ECF/_workitems/edit/12865/.
             let pcrs = Pcr::Pcr4 | Pcr::Pcr11;
 
-            // Construct current UKI path
-            let esp_path = if container::is_running_in_container()
-                .message("Failed to check if Trident is running in a container")?
-            {
-                let host_root =
-                    container::get_host_root_path().message("Failed to get host root path")?;
-                join_relative(host_root, ESP_MOUNT_POINT_PATH)
-            } else {
-                PathBuf::from(ESP_MOUNT_POINT_PATH)
-            };
-            let esp_uki_directory = join_relative(esp_path.clone(), UKI_DIRECTORY);
-            // uki_suffix() already determines the update volume, so b/c active volume is still set
-            // to the old volume, we just pass ctx and get the UKI suffix for the active volume
-            let uki_suffix = uki::uki_suffix(&ctx);
-            // Determine max index of existing UKIs
-            let existing_ukis = uki::enumerate_existing_ukis(&esp_uki_directory)
-                .structured(ServicingError::EnumerateUkis)?;
-            let max_index = existing_ukis
-                .iter()
-                .map(|(index, _suffix, _path)| *index)
-                .max()
-                .ok_or_else(|| {
-                    TridentError::new(ServicingError::FindUkisForPcrlockGeneration {
-                        uki_dir: esp_uki_directory.display().to_string(),
-                    })
-                })?;
-            let uki_current = esp_uki_directory.join(format!("vmlinuz-{max_index}-{uki_suffix}"));
-            trace!("Current UKI binary path: {}", uki_current.display());
+            // Construct boot binaries for .pcrlock file generation
+            let (uki_binaries, bootloader_binaries) =
+                encryption::construct_binary_paths_pcrlock(&ctx, None)
+                    .structured(ServicingError::ConstructBinaryPathsForPcrlockEncryption)?;
 
-            // Construct current primary bootloader path, i.e. shim EFI executable for UKI.
-            // Currently, ab_active_volume inside the context is still set to the old volume, so we
-            // determine the actual active volume
-            let active_volume = match ctx.ab_active_volume {
-                None | Some(AbVolumeSelection::VolumeB) => AbVolumeSelection::VolumeA,
-                Some(AbVolumeSelection::VolumeA) => AbVolumeSelection::VolumeB,
-            };
-            let esp_dir_name = boot::make_esp_dir_name(ctx.install_index, active_volume);
-            let shim_path = Path::new(ESP_EFI_DIRECTORY)
-                .join(&esp_dir_name)
-                .join(BOOT_EFI);
-            let shim_current = join_relative(esp_path.clone(), &shim_path);
-            trace!("Current shim binary path: {}", shim_current.display());
-
-            // Construct current secondary bootloader path, i.e. systemd-boot EFI executable
-            let systemd_boot_path = Path::new(ESP_EFI_DIRECTORY)
-                .join(&esp_dir_name)
-                .join(GRUB_EFI);
-            let systemd_boot_current = join_relative(esp_path, &systemd_boot_path);
-            trace!(
-                "Current systemd-boot binary path: {}",
-                systemd_boot_current.display()
-            );
-
-            // Generate .pcrlock files for runtime OS image A
-            pcrlock::generate_pcrlock_files(
-                pcrs,
-                // List of UKI binaries
-                vec![Some(uki_current)],
-                // List of bootloader PE binaries
-                vec![Some(shim_current), Some(systemd_boot_current)],
-            )
-            .structured(ServicingError::GeneratePcrlockFiles)?;
-
-            // Re-generate the pcrlock & TPM 2.0 access policy, to only include the current boot,
-            // i.e. new/active ROS
-            pcrlock::generate_tpm2_access_policy(pcrs)
-                .structured(ServicingError::GenerateTpm2AccessPolicy)?;
+            // Generate a pcrlock policy
+            pcrlock::generate_pcrlock_policy(pcrs, uki_binaries, bootloader_binaries)?;
         }
     } else if datastore.host_status().servicing_state == ServicingState::CleanInstallStaged
         || datastore.host_status().servicing_state == ServicingState::CleanInstallFinalized

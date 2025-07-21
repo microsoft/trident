@@ -12,20 +12,35 @@ use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 
 use osutils::{
+    bootloaders::{BOOT_EFI, GRUB_EFI},
+    container,
     dependencies::{Dependency, DependencyResultExt},
     encryption::{self, ENCRYPTION_PASSPHRASE},
     lsblk::{self, BlockDeviceType},
+    path::join_relative,
 };
 use sysdefs::tpm2::Pcr;
+
 use trident_api::{
     config::{HostConfiguration, HostConfigurationStaticValidationError, PartitionSize},
-    constants::internal_params::{
-        NO_CLOSE_ENCRYPTED_VOLUMES, OVERRIDE_ENCRYPTION_PCRS, REENCRYPT_ON_CLEAN_INSTALL,
+    constants::{
+        internal_params::{
+            NO_CLOSE_ENCRYPTED_VOLUMES, OVERRIDE_ENCRYPTION_PCRS, REENCRYPT_ON_CLEAN_INSTALL,
+        },
+        ESP_EFI_DIRECTORY, ESP_MOUNT_POINT_PATH,
     },
-    error::{InvalidInputError, ReportError, ServicingError, TridentError},
+    error::{InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt},
+    status::{AbVolumeSelection, ServicingType},
 };
 
-use crate::engine::EngineContext;
+use crate::{
+    bootentries,
+    engine::{
+        boot::{self, uki},
+        storage::encryption::uki::{TMP_UKI_NAME, UKI_DIRECTORY},
+        EngineContext,
+    },
+};
 
 /// Closes all open LUKS2-encrypted volumes found on the system.
 pub(super) fn close_pre_existing_encrypted_volumes(
@@ -250,10 +265,8 @@ fn encrypt_and_open_device(
         device_path.display()
     );
 
-    // Enroll the TPM 2.0 device for the underlying device. Currently, we bind the enrollment to
-    // PCR 7 by default. pcrlock_policy bool is set to false, since while creating encrypted
-    // volumes, we first bind to PCR values, not pcrlock policy.
-    encryption::systemd_cryptenroll(Some(key_file), device_path, false, pcrs)?;
+    // Enroll the TPM 2.0 device for the underlying device
+    encryption::systemd_cryptenroll(Some(key_file), device_path, pcrs)?;
 
     debug!(
         "Opening underlying encrypted device '{}' as '{}'",
@@ -287,4 +300,169 @@ struct LuksDumpSegment {
     iv_tweak: String,
     encryption: String,
     sector_size: u64,
+}
+
+/// Constructs the paths to the UKI and bootloader binaries for the generation of .pcrlock files.
+/// Returns a tuple containing two vectors:
+/// - uki_binaries: Paths to the UKI binaries,
+/// - bootloader_binaries: Paths to the bootloader binaries (shim and systemd-boot).
+pub fn construct_binary_paths_pcrlock(
+    ctx: &EngineContext,
+    mount_path: Option<&Path>,
+) -> Result<(Vec<PathBuf>, Vec<PathBuf>), Error> {
+    // TODO: If this is a clean install, binaries are not needed. Once UKI MOS is built and
+    // SecureBoot is enabled, also construct binary paths for clean install. ADO task:
+    // https://dev.azure.com/mariner-org/ECF/_workitems/edit/12865/.
+    if ctx.servicing_type == ServicingType::CleanInstall {
+        return Ok((vec![], vec![]));
+    }
+    debug!("Constructing binary paths for generation of .pcrlock files");
+
+    // Determine esp path depending on the environment
+    let esp_path = if container::is_running_in_container()
+        .unstructured("Failed to determine if running in container")?
+    {
+        let host_root =
+            container::get_host_root_path().unstructured("Failed to get host root path")?;
+        join_relative(host_root, ESP_MOUNT_POINT_PATH)
+    } else {
+        PathBuf::from(ESP_MOUNT_POINT_PATH)
+    };
+
+    // Construct UKI paths
+    let uki_binaries = construct_uki_paths(
+        &esp_path,
+        mount_path,
+        ctx.ab_active_volume,
+        ctx.install_index,
+    )?;
+
+    // Construct bootloader paths
+    let bootloader_binaries = construct_bootloader_paths(&esp_path, mount_path, ctx)?;
+
+    Ok((uki_binaries, bootloader_binaries))
+}
+
+/// Returns the path to the current UKI binary, which is used for the generation of .pcrlock files.
+/// If `mount_path` is provided, it means that this is called during staging of an A/B update, so
+/// the UKI binary for the update image is requested.
+fn construct_uki_paths(
+    esp_path: &Path,
+    mount_path: Option<&Path>,
+    active_volume: Option<AbVolumeSelection>,
+    install_index: usize,
+) -> Result<Vec<PathBuf>, Error> {
+    let mut uki_binaries: Vec<PathBuf> = Vec::new();
+    let esp_uki_directory = join_relative(esp_path, UKI_DIRECTORY);
+
+    // If mount_path is null, this logic is called on rollback detection, when active volume is
+    // still set to the old volume, so we request UKI suffix for update image, to get it for the
+    // current boot. Otherwise, when staging an A/B update, for_update is set to false.
+    let uki_suffix = match mount_path {
+        Some(_) => uki::uki_suffix(active_volume, install_index, false)?,
+        None => uki::uki_suffix(active_volume, install_index, true)?,
+    };
+
+    let existing_ukis = uki::enumerate_existing_ukis(&esp_uki_directory)?;
+    let max_index = existing_ukis
+        .iter()
+        .map(|(index, _suffix, _path)| *index)
+        .max()
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "No existing UKIs found in directory '{}'",
+                esp_uki_directory.display()
+            )
+        })?;
+    let uki_current = esp_uki_directory.join(format!("vmlinuz-{max_index}-{uki_suffix}"));
+    uki_binaries.push(uki_current.clone());
+    trace!(
+        "Constructed current UKI binary path: {}",
+        uki_current.display()
+    );
+
+    // If this is done during encryption provisioning, i.e. update image is mounted at mount_path,
+    // we also construct the update UKI binary path
+    if let Some(mount_path) = mount_path {
+        // UKI binary in runtime OS to be measured; it's currently staged at designated
+        // path
+        let esp_dir_path = join_relative(mount_path, ESP_MOUNT_POINT_PATH);
+        let uki_update = esp_dir_path.join(UKI_DIRECTORY).join(TMP_UKI_NAME);
+        trace!(
+            "Constructed update UKI binary path: {}",
+            uki_update.display()
+        );
+        uki_binaries.push(uki_update.clone());
+    }
+
+    Ok(uki_binaries)
+}
+
+fn construct_bootloader_paths(
+    esp_path: &Path,
+    mount_path: Option<&Path>,
+    ctx: &EngineContext,
+) -> Result<Vec<PathBuf>, Error> {
+    let mut bootloader_binaries: Vec<PathBuf> = Vec::new();
+
+    // If mount_path is null, this logic is called on rollback detection, when active volume is
+    // still set to the old volume, so we need to determine the actual active volume
+    let active_volume = match mount_path {
+        // Currently, not executing pcrlock encryption or this logic on clean install, so active
+        // volume has to be non-null on encryption provisioning.
+        // TODO: Once pcrlock encryption is enabled on clean install, need to adjust the logic, to
+        // correctly construct the binary paths. Related ADO task:
+        // https://dev.azure.com/mariner-org/ECF/_workitems/edit/12865/.
+        Some(_) => ctx.ab_active_volume.ok_or_else(|| {
+            anyhow::anyhow!("Active volume is not set outside of clean install servicing")
+        })?,
+        None => match ctx.ab_active_volume {
+            None | Some(AbVolumeSelection::VolumeB) => AbVolumeSelection::VolumeA,
+            Some(AbVolumeSelection::VolumeA) => AbVolumeSelection::VolumeB,
+        },
+    };
+
+    let esp_dir_name = boot::make_esp_dir_name(ctx.install_index, active_volume);
+    let shim_path = Path::new(ESP_EFI_DIRECTORY)
+        .join(&esp_dir_name)
+        .join(BOOT_EFI);
+    let shim_current = join_relative(esp_path, &shim_path);
+    trace!("Current shim binary path: {}", shim_current.display());
+    bootloader_binaries.push(shim_current);
+
+    // Construct current secondary bootloader path, i.e. systemd-boot EFI executable
+    let systemd_boot_path = Path::new(ESP_EFI_DIRECTORY)
+        .join(&esp_dir_name)
+        .join(GRUB_EFI);
+    let systemd_boot_current = join_relative(esp_path, &systemd_boot_path);
+    trace!(
+        "Current systemd-boot binary path: {}",
+        systemd_boot_current.display()
+    );
+    bootloader_binaries.push(systemd_boot_current);
+
+    // If there is mount_path, we are currently staging a clean install or an A/B update, so also
+    // construct update paths
+    if let Some(mount_path) = mount_path {
+        let esp_dir_path = join_relative(mount_path, ESP_MOUNT_POINT_PATH);
+        // Primary bootloader, i.e. shim EFI executable, in update image
+        let (_, shim_update_relative) = bootentries::get_label_and_path(ctx, BOOT_EFI)?;
+        let shim_update = join_relative(esp_dir_path.clone(), shim_update_relative);
+        trace!(
+            "Constructed update shim binary path: {}",
+            shim_update.display()
+        );
+        bootloader_binaries.push(shim_update);
+
+        // Secondary bootloader, i.e. systemd-boot EFI executable, in update image
+        let (_, systemd_boot_update_relative) = bootentries::get_label_and_path(ctx, GRUB_EFI)?;
+        let systemd_boot_update = join_relative(esp_dir_path, systemd_boot_update_relative);
+        trace!(
+            "Constructed update systemd-boot binary path: {}",
+            systemd_boot_update.display()
+        );
+        bootloader_binaries.push(systemd_boot_update);
+    }
+
+    Ok(bootloader_binaries)
 }

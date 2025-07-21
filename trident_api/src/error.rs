@@ -344,6 +344,12 @@ pub enum ServicingError {
         explanation: String,
     },
 
+    #[error("Failed to construct binary paths for pcrlock encryption")]
+    ConstructBinaryPathsForPcrlockEncryption,
+
+    #[error("Failed to construct UKI suffix")]
+    ConstructUkiSuffix,
+
     #[error("Failed to stage machine-id file")]
     CopyMachineId,
 

@@ -8,8 +8,6 @@ use enumflags2::BitFlags;
 use log::{debug, info, trace};
 
 use osutils::{
-    bootloaders::{BOOT_EFI, GRUB_EFI},
-    container,
     encryption::{self, KeySlotType},
     files,
     path::join_relative,
@@ -22,21 +20,12 @@ use trident_api::{
         HostConfiguration, HostConfigurationDynamicValidationError,
         HostConfigurationStaticValidationError, PartitionType,
     },
-    constants::{
-        internal_params::OVERRIDE_ENCRYPTION_PCRS, ESP_EFI_DIRECTORY, ESP_MOUNT_POINT_PATH,
-    },
+    constants::internal_params::OVERRIDE_ENCRYPTION_PCRS,
     error::{InternalError, InvalidInputError, ReportError, ServicingError, TridentError},
-    status::AbVolumeSelection,
 };
 
 use crate::{
-    engine::{
-        boot::{
-            self,
-            uki::{self, TMP_UKI_NAME, UKI_DIRECTORY},
-        },
-        bootentries, EngineContext,
-    },
+    engine::{storage::encryption as storage_encryption, EngineContext},
     ServicingType,
 };
 
@@ -120,7 +109,7 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
         // - For clean install, temporarily use only PCR 0,
         // - For A/B update, use PCRs 4, 7, and 11.
         // TODO: Once UKI MOS is built, include all UKI PCRs, i.e. 4, 7, and 11, into pcrlock
-        // policy on clean install as well. Related ADO task:
+        // policy on A/B update and clean install. Related ADO task:
         // https://dev.azure.com/mariner-org/ECF/_workitems/edit/12865/.
         let pcrs = match ctx.servicing_type {
             ServicingType::CleanInstall => {
@@ -129,10 +118,7 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                 //
                 // TODO: Once UKI MOS is built, include ROS A UKI and bootloader binaries.
                 // https://dev.azure.com/mariner-org/ECF/_workitems/edit/12865/.
-                let pcrs = ctx
-                    .spec
-                    .internal_params
-                    .get::<Vec<Pcr>>(OVERRIDE_ENCRYPTION_PCRS)
+                ctx.spec.internal_params.get::<Vec<Pcr>>(OVERRIDE_ENCRYPTION_PCRS)
                     .transpose()
                     .structured(InvalidInputError::InvalidInternalParameter {
                         name: OVERRIDE_ENCRYPTION_PCRS.to_string(),
@@ -141,109 +127,9 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                         ),
                     })?
                     .map(|v| BitFlags::<Pcr>::from_iter(v.into_iter()))
-                    .unwrap_or(Pcr::Pcr4 | Pcr::Pcr7 | Pcr::Pcr11);
-
-                pcrlock::generate_pcrlock_files(pcrs, vec![], vec![])
-                    .structured(ServicingError::GeneratePcrlockFiles)?;
-
-                pcrs
+                    .unwrap_or(Pcr::Pcr4 | Pcr::Pcr7 | Pcr::Pcr11)
             }
-            ServicingType::AbUpdate => {
-                // Use UKI PCRs
-                let pcrs = Pcr::Pcr4 | Pcr::Pcr11;
-
-                // Construct current UKI path
-                let esp_path = if container::is_running_in_container()? {
-                    let host_root = container::get_host_root_path()?;
-                    join_relative(host_root, ESP_MOUNT_POINT_PATH)
-                } else {
-                    PathBuf::from(ESP_MOUNT_POINT_PATH)
-                };
-                let esp_uki_directory = join_relative(esp_path.clone(), UKI_DIRECTORY);
-                let uki_suffix = match ctx.ab_active_volume {
-                    Some(AbVolumeSelection::VolumeA) => format!("azla{}.efi", ctx.install_index),
-                    Some(AbVolumeSelection::VolumeB) => {
-                        format!("azlb{}.efi", ctx.install_index)
-                    }
-                    None => {
-                        return Err(TridentError::new(InternalError::GetAbActiveVolume));
-                    }
-                };
-                let existing_ukis = uki::enumerate_existing_ukis(&esp_uki_directory)
-                    .structured(ServicingError::EnumerateUkis)?;
-                let max_index = existing_ukis
-                    .iter()
-                    .map(|(index, _suffix, _path)| *index)
-                    .max()
-                    .ok_or_else(|| {
-                        TridentError::new(ServicingError::FindUkisForPcrlockGeneration {
-                            uki_dir: esp_uki_directory.display().to_string(),
-                        })
-                    })?;
-                let uki_current =
-                    esp_uki_directory.join(format!("vmlinuz-{max_index}-{uki_suffix}"));
-                trace!("Current UKI binary path: {}", uki_current.display());
-
-                // Construct current primary bootloader path, i.e. shim EFI executable
-                let ab_volume = ctx
-                    .ab_active_volume
-                    .ok_or_else(|| TridentError::new(InternalError::GetAbActiveVolume))?;
-                let esp_dir_name = boot::make_esp_dir_name(ctx.install_index, ab_volume);
-                let shim_path = Path::new(ESP_EFI_DIRECTORY)
-                    .join(&esp_dir_name)
-                    .join(BOOT_EFI);
-                let shim_current = join_relative(esp_path.clone(), &shim_path);
-                trace!("Current shim binary path: {}", shim_current.display());
-
-                // Construct current secondary bootloader path, i.e. systemd-boot EFI executable
-                let systemd_boot_path = Path::new(ESP_EFI_DIRECTORY)
-                    .join(&esp_dir_name)
-                    .join(GRUB_EFI);
-                let systemd_boot_current = join_relative(esp_path, &systemd_boot_path);
-                trace!(
-                    "Current systemd-boot binary path: {}",
-                    systemd_boot_current.display()
-                );
-
-                // UKI binary in runtime OS to be measured; it's currently staged at designated
-                // path
-                let esp_dir_path = join_relative(mount_path, ESP_MOUNT_POINT_PATH);
-                let uki_update = esp_dir_path.join(UKI_DIRECTORY).join(TMP_UKI_NAME);
-                trace!("Update UKI binary path: {}", uki_update.display());
-
-                // Primary bootloader, i.e. shim EFI executable, in update image
-                let (_, shim_update_relative) = bootentries::get_label_and_path(ctx, BOOT_EFI)
-                    .structured(ServicingError::GetLabelAndPath)?;
-                let shim_update = join_relative(esp_dir_path.clone(), shim_update_relative);
-                trace!("Update shim binary path: {}", shim_update.display());
-
-                // Secondary bootloader, i.e. systemd-boot EFI executable, in update image
-                let (_, systemd_boot_update_relative) =
-                    bootentries::get_label_and_path(ctx, GRUB_EFI)
-                        .structured(ServicingError::GetLabelAndPath)?;
-                let systemd_boot_update = join_relative(esp_dir_path, systemd_boot_update_relative);
-                trace!(
-                    "Update systemd-boot binary path: {}",
-                    systemd_boot_update.display()
-                );
-
-                // Generate .pcrlock files for runtime OS image A
-                pcrlock::generate_pcrlock_files(
-                    pcrs,
-                    // List of UKI binaries
-                    vec![Some(uki_current), Some(uki_update)],
-                    // List of bootloader PE binaries
-                    vec![
-                        Some(shim_current),
-                        Some(systemd_boot_current),
-                        Some(shim_update),
-                        Some(systemd_boot_update),
-                    ],
-                )
-                .structured(ServicingError::GeneratePcrlockFiles)?;
-
-                pcrs
-            }
+            ServicingType::AbUpdate => Pcr::Pcr4 | Pcr::Pcr11,
             _ => {
                 return Err(TridentError::new(InternalError::UnexpectedServicingType {
                     servicing_type: ctx.servicing_type,
@@ -251,10 +137,13 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
             }
         };
 
-        // Generate pcrlock policy; on A/B update, the existing binding will be automatically
-        // updated with the new pcrlock policy
-        pcrlock::generate_tpm2_access_policy(pcrs)
-            .structured(ServicingError::GenerateTpm2AccessPolicy)?;
+        // Construct boot binaries for .pcrlock file generation
+        let (uki_binaries, bootloader_binaries) =
+            storage_encryption::construct_binary_paths_pcrlock(ctx, Some(mount_path))
+                .structured(ServicingError::ConstructBinaryPathsForPcrlockEncryption)?;
+
+        // Generate a pcrlock policy
+        pcrlock::generate_pcrlock_policy(pcrs, uki_binaries, bootloader_binaries)?;
 
         // Copy the pcrlock policy JSON to the update volume
         let pcrlock_json_copy = join_relative(mount_path, PCRLOCK_POLICY_JSON);
@@ -272,7 +161,7 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
         // On clean install, we need to iterate through encrypted volumes and bind them to the
         // newly generated pcrlock policy
         if ctx.servicing_type == ServicingType::CleanInstall {
-            debug!("Re-enrolling encrypted volumes with the new pcrlock policy");
+            debug!("Re-enrolling encrypted volumes with the newly generated pcrlock policy");
             for ev in encryption.volumes.iter() {
                 // Fetch the block device path of the encrypted volume
                 let device_path = ctx.get_block_device_path(&ev.device_id).structured(
@@ -283,14 +172,17 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                 )?;
 
                 // Re-enroll the device with the pcrlock policy
-                encryption::systemd_cryptenroll(None::<&Path>, device_path.clone(), true, pcrs)
+                encryption::systemd_cryptenroll(None::<&Path>, device_path.clone(), pcrs)
                     .structured(ServicingError::BindEncryptionToPcrlockPolicy)?;
 
                 // If the key file was randomly generated and NOT provided by the user as a
                 // recovery key, remove the password key slot from the encrypted volume, as it's
                 // not needed, for security
                 if encryption.recovery_key_url.is_none() {
-                    debug!("Removing password key slot from encrypted volume {}", ev.id);
+                    debug!(
+                        "Removing password key slot from encrypted volume with id '{}'",
+                        ev.id
+                    );
                     encryption::systemd_cryptenroll_wipe_slot(
                         device_path.clone(),
                         KeySlotType::Password,

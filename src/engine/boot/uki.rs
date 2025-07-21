@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{ensure, Context, Error};
+use anyhow::{bail, ensure, Context, Error};
 use const_format::formatcp;
 use log::{debug, trace};
 
@@ -23,13 +23,21 @@ use crate::engine::EngineContext;
 pub const TMP_UKI_NAME: &str = "vmlinuz-0.efi.staged";
 pub const UKI_DIRECTORY: &str = formatcp!("{ESP_EFI_DIRECTORY}/Linux");
 
-/// Returns the UKI file suffix for the update image, given the current active volume and install
-/// index.
-pub fn uki_suffix(ctx: &EngineContext) -> String {
-    match ctx.ab_active_volume {
-        Some(AbVolumeSelection::VolumeA) => format!("azlb{}.efi", ctx.install_index),
-        None | Some(AbVolumeSelection::VolumeB) => format!("azla{}.efi", ctx.install_index),
-    }
+/// Returns the UKI file suffix, given the current active volume and install index. If `for_update`
+/// is set to true, returns the suffix for the update image; otherwise, returns the suffix for
+/// the current image.
+pub fn uki_suffix(
+    active_volume: Option<AbVolumeSelection>,
+    install_index: usize,
+    for_update: bool,
+) -> Result<String, Error> {
+    let volume_letter = match (active_volume, for_update) {
+        (Some(AbVolumeSelection::VolumeA), false) | (Some(AbVolumeSelection::VolumeB), true) | (None, true) => "a",
+        (Some(AbVolumeSelection::VolumeB), false) | (Some(AbVolumeSelection::VolumeA), true) => "b",
+        (None, false) => bail!("Failed to determine UKI suffix for the current image since A/B volume selection is not set"),
+    };
+
+    Ok(format!("azl{}{}.efi", volume_letter, install_index))
 }
 
 /// Return whether there is a staged UKI file on the ESP.
@@ -117,7 +125,10 @@ pub fn update_uki_boot_order(
     let esp_uki_directory = esp_dir_path.join(UKI_DIRECTORY);
     let existing_ukis =
         enumerate_existing_ukis(&esp_uki_directory).structured(ServicingError::EnumerateUkis)?;
-    let uki_suffix = uki_suffix(ctx);
+
+    // Determine UKI suffix for the update image
+    let uki_suffix = uki_suffix(ctx.ab_active_volume, ctx.install_index, true)
+        .structured(ServicingError::ConstructUkiSuffix)?;
 
     let mut max_index = 99;
     for (index, suffix, path) in existing_ukis {
@@ -167,15 +178,40 @@ mod tests {
             install_index: 1,
             ..Default::default()
         };
-        assert_eq!(uki_suffix(&ctx), "azlb1.efi");
+        assert_eq!(
+            uki_suffix(ctx.ab_active_volume, ctx.install_index, true).unwrap(),
+            "azlb1.efi"
+        );
+        assert_eq!(
+            uki_suffix(ctx.ab_active_volume, ctx.install_index, false).unwrap(),
+            "azla1.efi"
+        );
 
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         ctx.install_index = 2;
-        assert_eq!(uki_suffix(&ctx), "azla2.efi");
+        assert_eq!(
+            uki_suffix(ctx.ab_active_volume, ctx.install_index, true).unwrap(),
+            "azla2.efi"
+        );
+        assert_eq!(
+            uki_suffix(ctx.ab_active_volume, ctx.install_index, false).unwrap(),
+            "azlb2.efi"
+        );
 
         ctx.ab_active_volume = None;
         ctx.install_index = 3;
-        assert_eq!(uki_suffix(&ctx), "azla3.efi");
+        assert_eq!(
+            uki_suffix(ctx.ab_active_volume, ctx.install_index, true).unwrap(),
+            "azla3.efi"
+        );
+        // This should return an error b/c cannot determine UKI suffix for current image if A/B
+        // volume is not set
+        assert_eq!(uki_suffix(ctx.ab_active_volume, ctx.install_index, false)
+            .unwrap_err()
+            .root_cause()
+            .to_string(),
+            "Failed to determine UKI suffix for the current image since A/B volume selection is not set"
+        );
     }
 
     #[test]
