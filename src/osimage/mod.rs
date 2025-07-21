@@ -104,6 +104,14 @@ impl OsImage {
         Ok(os_image)
     }
 
+    pub(crate) fn is_uki(&self) -> bool {
+        match &self.0 {
+            OsImageInner::Cosi(cosi) => cosi.is_uki(),
+            #[cfg(test)]
+            OsImageInner::Mock(mock) => mock.is_uki,
+        }
+    }
+
     /// Returns the source URL of the OS image.
     pub(crate) fn source(&self) -> &Url {
         match &self.0 {
@@ -317,6 +325,7 @@ mod tests {
             source: source_url.clone(),
             os_arch: arch,
             os_release: os_release.clone(),
+            is_uki: false,
             images: vec![
                 MockImage::new(
                     "/boot/efi",

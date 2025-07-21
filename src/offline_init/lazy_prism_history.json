@@ -27,18 +27,8 @@
                                 "size": "256M"
                             },
                             {
-                                "id": "boot-b",
-                                "start": "769M",
-                                "size": "256M"
-                            },
-                            {
                                 "id": "root-a",
                                 "start": "1025M",
-                                "size": "4G"
-                            },
-                            {
-                                "id": "root-b",
-                                "start": "5121M",
                                 "size": "4G"
                             },
                             {
@@ -47,18 +37,8 @@
                                 "size": "1G"
                             },
                             {
-                                "id": "usr-b",
-                                "start": "10241M",
-                                "size": "1G"
-                            },
-                            {
                                 "id": "usr-hash-a",
                                 "start": "11265M",
-                                "size": "128M"
-                            },
-                            {
-                                "id": "usr-hash-b",
-                                "start": "11393M",
                                 "size": "128M"
                             },
                             {
