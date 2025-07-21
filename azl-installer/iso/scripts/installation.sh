@@ -13,7 +13,6 @@ cp -r "$CD_INSTALLER_DIR/" "/root/"
 cd "$WORKING_DIR"
 "$WORKING_DIR/liveinstaller" \
   --input=$WORKING_DIR/imager_config.json \
-  --imager=$WORKING_DIR/imager \
   --build-dir=$WORKING_DIR/ \
   --attended \
   --template-config=$WORKING_DIR/attended_config.json \

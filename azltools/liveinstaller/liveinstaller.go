@@ -34,7 +34,7 @@ var (
 	configFile         = exe.InputStringFlag(app, "Path to the image config file.")
 	templateConfigFile = app.Flag("template-config", "Path to the template config file.").String()
 	forceAttended      = app.Flag("attended", "Use the attended installer regardless if a config file is present.").Bool()
-	imagerTool         = app.Flag("imager", "Path to the imager tool.").Required().ExistingFile()
+	imagerTool         = app.Flag("imager", "Path to the imager tool.").String()
 	buildDir           = app.Flag("build-dir", "Directory to store temporary files while building.").Required().ExistingDir()
 	baseDirPath        = app.Flag("base-dir", "Base directory for relative file paths from the config. Defaults to config's directory.").ExistingDir()
 	repoSnapshotTime   = app.Flag("repo-snapshot-time", "Optional: tdnf repo snapshot time").String()

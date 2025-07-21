@@ -6,14 +6,12 @@ package views
 import (
 	"github.com/gdamore/tcell"
 	"github.com/rivo/tview"
-
-	"azltools/imagegen/configuration"
 )
 
 // View is the interface for different "pages" in the attended installer.
 type View interface {
 	// Initialize initializes the view.
-	Initialize(backButtonText string, sysConfig *configuration.SystemConfig, cfg *configuration.Config, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) error
+	Initialize(backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) error
 
 	// HandleInput handles custom input.
 	HandleInput(event *tcell.EventKey) *tcell.EventKey

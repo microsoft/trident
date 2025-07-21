@@ -15,7 +15,6 @@ import (
 	"azltools/imagegen/attendedinstaller/primitives/navigationbar"
 	"azltools/imagegen/attendedinstaller/uitext"
 	"azltools/imagegen/attendedinstaller/uiutils"
-	"azltools/imagegen/configuration"
 )
 
 // UI constants.
@@ -42,8 +41,6 @@ type UserView struct {
 	flex                 *tview.Flex
 	centeredFlex         *tview.Flex
 	passwordValidator    *crunchy.Validator
-
-	user *configuration.User
 }
 
 // New creates and returns a new UserView.
@@ -54,12 +51,7 @@ func New() *UserView {
 }
 
 // Initialize initializes the view.
-func (uv *UserView) Initialize(backButtonText string, sysConfig *configuration.SystemConfig, cfg *configuration.Config, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
-	err = uv.setupConfigUsers(sysConfig)
-	if err != nil {
-		return
-	}
-
+func (uv *UserView) Initialize(backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
 	uv.userNameField = tview.NewInputField().
 		SetLabel(uitext.UserNameInputLabel).
 		SetFieldWidth(maxUserNameLength).
@@ -128,9 +120,9 @@ func (uv *UserView) Reset() (err error) {
 	uv.navBar.ClearUserFeedback()
 	uv.navBar.SetSelectedButton(noSelection)
 	uv.form.SetFocus(0)
-
-	uv.user.Name = ""
-	uv.user.Password = ""
+	uv.userNameField.SetText("")
+	uv.passwordField.SetText("")
+	uv.confirmPasswordField.SetText("")
 
 	return
 }
@@ -152,38 +144,6 @@ func (uv *UserView) Primitive() tview.Primitive {
 
 // OnShow gets called when the view is shown to the user
 func (uv *UserView) OnShow() {
-}
-
-func (uv *UserView) setupConfigUsers(sysConfig *configuration.SystemConfig) (err error) {
-	const (
-		rootUserName = "root"
-		sudoersGroup = "wheel"
-		newUserIndex = 1
-	)
-
-	// The configuration provided by the attended installer should have an empty users section, no other view should have filled in this information.
-	if len(sysConfig.Users) != 0 {
-		return fmt.Errorf("unsupported configuration, expected no users")
-	}
-
-	// To setup the user account:
-	// 1) Create a passwordless-root account
-	// 2) Create the requested user account
-	// 3) Give the new user account sudo privileges
-	rootUser := configuration.User{
-		Name: rootUserName,
-	}
-
-	// Give the user a secondary group of wheel:
-	// The User's primary group should remain the default value -- its user name.
-	newUser := configuration.User{
-		SecondaryGroups: []string{sudoersGroup},
-	}
-
-	sysConfig.Users = []configuration.User{rootUser, newUser}
-	uv.user = &sysConfig.Users[newUserIndex]
-
-	return
 }
 
 func (uv *UserView) userNameAcceptanceCheck(textToCheck string, lastRune rune) bool {
@@ -252,9 +212,6 @@ func (uv *UserView) onNextButton(nextPage func()) {
 		uv.navBar.SetUserFeedback(uiutils.ErrorToUserFeedback(err), tview.Styles.TertiaryTextColor)
 		return
 	}
-
-	uv.user.Name = enteredUserName
-	uv.user.Password = enteredPassword
 
 	err = uv.saveUserInput(enteredUserName, enteredPassword)
 	if err != nil {

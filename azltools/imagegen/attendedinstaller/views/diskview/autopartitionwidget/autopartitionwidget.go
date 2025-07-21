@@ -53,12 +53,12 @@ func New(systemDevices []diskutils.SystemBlockDevice, bootType string) *AutoPart
 }
 
 // Initialize initializes the view.
-func (ap *AutoPartitionWidget) Initialize(backButtonText string, sysConfig *configuration.SystemConfig, cfg *configuration.Config, app *tview.Application, switchMode, nextPage, previousPage, quit, refreshTitle func()) (err error) {
+func (ap *AutoPartitionWidget) Initialize(backButtonText string, app *tview.Application, switchMode, nextPage, previousPage, quit, refreshTitle func()) (err error) {
 	ap.navBar = navigationbar.NewNavigationBar().
 		AddButton(backButtonText, previousPage).
 		AddButton(uitext.DiskButtonCustom, switchMode).
 		AddButton(uitext.ButtonNext, func() {
-			ap.mustUpdateConfiguration(sysConfig, cfg)
+			ap.mustUpdateConfiguration()
 			nextPage()
 		}).
 		SetAlign(tview.AlignCenter)
@@ -154,7 +154,7 @@ func saveDiskPath(diskPath string) error {
 	return encoder.Encode(data)
 }
 
-func (ap *AutoPartitionWidget) mustUpdateConfiguration(sysConfig *configuration.SystemConfig, cfg *configuration.Config) {
+func (ap *AutoPartitionWidget) mustUpdateConfiguration() {
 	const (
 		targetDiskType     = "path"
 		partitionTableType = "gpt"
@@ -169,7 +169,8 @@ func (ap *AutoPartitionWidget) mustUpdateConfiguration(sysConfig *configuration.
 		rootMountPoint    = "/"
 	)
 
-	bootMountPoint, bootMountOptions, bootFlags, err := configuration.BootPartitionConfig(ap.bootType, partitionTableType)
+	// bootMountPoint, bootMountOptions, and bootFlags
+	_, _, bootFlags, err := configuration.BootPartitionConfig(ap.bootType, partitionTableType)
 	if err != nil {
 		logger.Log.Panic(err)
 	}
@@ -192,19 +193,19 @@ func (ap *AutoPartitionWidget) mustUpdateConfiguration(sysConfig *configuration.
 		},
 	}
 
-	partitionSettings := []configuration.PartitionSetting{
-		configuration.PartitionSetting{
-			ID:              bootPartitionName,
-			MountPoint:      bootMountPoint,
-			MountOptions:    bootMountOptions,
-			MountIdentifier: configuration.MountIdentifierDefault,
-		},
-		configuration.PartitionSetting{
-			ID:              rootPartitionName,
-			MountPoint:      rootMountPoint,
-			MountIdentifier: configuration.MountIdentifierDefault,
-		},
-	}
+	// partitionSettings := []configuration.PartitionSetting{
+	// 	configuration.PartitionSetting{
+	// 		ID:              bootPartitionName,
+	// 		MountPoint:      bootMountPoint,
+	// 		MountOptions:    bootMountOptions,
+	// 		MountIdentifier: configuration.MountIdentifierDefault,
+	// 	},
+	// 	configuration.PartitionSetting{
+	// 		ID:              rootPartitionName,
+	// 		MountPoint:      rootMountPoint,
+	// 		MountIdentifier: configuration.MountIdentifierDefault,
+	// 	},
+	// }
 
 	disk := configuration.Disk{}
 	disk.PartitionTableType = partitionTableType
@@ -213,10 +214,6 @@ func (ap *AutoPartitionWidget) mustUpdateConfiguration(sysConfig *configuration.
 		Value: ap.systemDevices[ap.deviceList.GetCurrentItem()].DevicePath,
 	}
 	disk.Partitions = partitions
-
-	sysConfig.BootType = ap.bootType
-	sysConfig.PartitionSettings = partitionSettings
-	cfg.Disks = []configuration.Disk{disk}
 
 	disk_path := disk.TargetDisk.Value
 	saveDiskPath(disk_path)

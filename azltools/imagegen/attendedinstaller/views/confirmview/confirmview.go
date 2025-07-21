@@ -10,7 +10,6 @@ import (
 	"azltools/imagegen/attendedinstaller/primitives/navigationbar"
 	"azltools/imagegen/attendedinstaller/uitext"
 	"azltools/imagegen/attendedinstaller/uiutils"
-	"azltools/imagegen/configuration"
 )
 
 // UI constants.
@@ -43,7 +42,7 @@ func New() *ConfirmView {
 }
 
 // Initialize initializes the view.
-func (cv *ConfirmView) Initialize(backButtonText string, sysConfig *configuration.SystemConfig, cfg *configuration.Config, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
+func (cv *ConfirmView) Initialize(backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
 	cv.text = tview.NewTextView().
 		SetText(uitext.ConfirmPrompt)
 

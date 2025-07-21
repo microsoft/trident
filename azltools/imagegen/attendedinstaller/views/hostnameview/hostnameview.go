@@ -15,7 +15,6 @@ import (
 	"azltools/imagegen/attendedinstaller/primitives/navigationbar"
 	"azltools/imagegen/attendedinstaller/uitext"
 	"azltools/imagegen/attendedinstaller/uiutils"
-	"azltools/imagegen/configuration"
 	"azltools/internal/randomization"
 )
 
@@ -52,7 +51,7 @@ func New() *HostNameView {
 }
 
 // Initialize initializes the view.
-func (hv *HostNameView) Initialize(backButtonText string, sysConfig *configuration.SystemConfig, cfg *configuration.Config, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
+func (hv *HostNameView) Initialize(backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
 	hostname, err := randomHostname(defaultHostNamePrefix)
 	if err != nil {
 		return
@@ -88,7 +87,6 @@ func (hv *HostNameView) Initialize(backButtonText string, sysConfig *configurati
 
 			err := validateFQDN(enteredHostname)
 			if err == nil {
-				sysConfig.Hostname = enteredHostname
 				err = saveHostName(enteredHostname)
 				if err != nil {
 					hv.navBar.SetUserFeedback(uiutils.ErrorToUserFeedback(err), tview.Styles.TertiaryTextColor)

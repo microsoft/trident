@@ -451,11 +451,6 @@ bin/manualrun: \
 	cd $(AZLTOOLS_DIR)/imagegen/attendedinstaller/_manualrun && \
 		CGO_ENABLED=0 go build -o ../../../../$(AZLTOOLS_OUT_DIR)/manualrun
 
-bin/imager: $(shell find $(AZLTOOLS_DIR)/imager -type f) azltools/go.sum
-	@mkdir -p bin
-	cd $(AZLTOOLS_DIR)/imager && \
-		CGO_ENABLED=0 go build -o ../../$(AZLTOOLS_OUT_DIR)/imager
-
 # AZL INSTALLER IMAGES
 
 artifacts/test-image/azl-installer-mos.vhdx: \
@@ -481,7 +476,6 @@ artifacts/test-image/azl-installer.iso: \
 	artifacts/test-image/azl-installer-mos.vhdx \
 	artifacts/imagecustomizer \
 	bin/liveinstaller \
-	bin/imager \
 	artifacts/test-image/regular.cosi \
 	$(shell find azl-installer/iso/ -type f)
 	# Copy runtime images to prepare for inclusion in the ISO
@@ -491,7 +485,6 @@ artifacts/test-image/azl-installer.iso: \
 	rm -rf $(AZL_INSTALLER_BIN_PATH)
 	mkdir -p $(AZL_INSTALLER_BIN_PATH)
 	cp bin/liveinstaller $(AZL_INSTALLER_BIN_PATH)/
-	cp bin/imager $(AZL_INSTALLER_BIN_PATH)/
 
 	mkdir -p artifacts/test-image/
 	sudo ./artifacts/imagecustomizer \
