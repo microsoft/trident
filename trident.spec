@@ -95,6 +95,7 @@ Trident files for SystemD service
 %package install-service
 Summary:        Trident files for SystemD install service
 Requires:       %{name}
+Conflicts:      %{name}-update-service
 
 %description install-service
 Trident files for SystemD install service
@@ -116,6 +117,7 @@ Trident files for SystemD install service
 %package update-service
 Summary:        Trident files for SystemD update service
 Requires:       %{name}
+Conflicts:      %{name}-install-service
 
 %description update-service
 Trident files for SystemD update service
