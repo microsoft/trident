@@ -25,7 +25,7 @@ The Sha384 of the entire COSI file.
 
 The path to the COSI file.
 
-URLs may have one of the following three schemes: `https://`, `file://`, or `oci://`. COSI files stored as an OCI image must allow for anonymous pulls.
+URLs may have one of the following four schemes: `http://`, `https://`, `file://`, or `oci://`. COSI files stored as an OCI image must allow for anonymous pulls.
 
 | Characteristic | Value    |
 | -------------- | -------- |
