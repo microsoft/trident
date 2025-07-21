@@ -15,7 +15,7 @@ use tempfile::NamedTempFile;
 use sysdefs::tpm2::Pcr;
 use trident_api::constants::LUKS_HEADER_SIZE_IN_MIB;
 
-use crate::{dependencies::Dependency, pcrlock::PCRLOCK_POLICY_JSON};
+use crate::{dependencies::Dependency, pcrlock::PCRLOCK_POLICY_JSON_PATH};
 
 /// Cipher specification string for the LUKS2 data segment.
 pub const CIPHER: &str = "aes-xts-plain64";
@@ -84,7 +84,7 @@ pub fn systemd_cryptenroll(
             .context("Failed to write the encryption passphrase to a temporary file")?;
 
         cmd.arg(format!("--unlock-key-file={}", _tmp_file.path().display()))
-            .arg(format!("--tpm2-pcrlock={PCRLOCK_POLICY_JSON}"));
+            .arg(format!("--tpm2-pcrlock={PCRLOCK_POLICY_JSON_PATH}"));
     }
 
     cmd.run_and_check().context(format!(

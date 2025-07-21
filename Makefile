@@ -139,8 +139,7 @@ ARTIFACTS_DIR="artifacts"
 # the submodules listed in .gitmodules and then fetch the actual content of the
 # submodule, via:
 #
-# git submodule init
-# git submodule update
+# git submodule update --init
 artifacts/osmodifier:
 	@mkdir -p "$(ARTIFACTS_DIR)"
 	$(MAKE) -C $(TOOLKIT_DIR) go-osmodifier REBUILD_TOOLS=y

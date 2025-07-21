@@ -11,7 +11,7 @@ use osutils::{
     encryption::{self, KeySlotType},
     files,
     path::join_relative,
-    pcrlock::{self, PCRLOCK_POLICY_JSON},
+    pcrlock::{self, PCRLOCK_POLICY_JSON_PATH},
 };
 use sysdefs::tpm2::Pcr;
 
@@ -146,14 +146,14 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
         pcrlock::generate_pcrlock_policy(pcrs, uki_binaries, bootloader_binaries)?;
 
         // Copy the pcrlock policy JSON to the update volume
-        let pcrlock_json_copy = join_relative(mount_path, PCRLOCK_POLICY_JSON);
+        let pcrlock_json_copy = join_relative(mount_path, PCRLOCK_POLICY_JSON_PATH);
         debug!(
             "Copying pcrlock policy JSON to update volume at path '{}'",
             pcrlock_json_copy.display()
         );
-        fs::copy(PCRLOCK_POLICY_JSON, pcrlock_json_copy.clone()).structured(
+        fs::copy(PCRLOCK_POLICY_JSON_PATH, pcrlock_json_copy.clone()).structured(
             ServicingError::CopyPcrlockPolicyJson {
-                path: PCRLOCK_POLICY_JSON.to_string(),
+                path: PCRLOCK_POLICY_JSON_PATH.to_string(),
                 destination: pcrlock_json_copy.display().to_string(),
             },
         )?;

@@ -190,7 +190,7 @@ impl Subsystem for StorageSubsystem {
                     "Step 'Provision' failed for subunit '{ENCRYPTION_SUBSYSTEM_NAME}'"
                 ))?;
             } else {
-                debug!(
+                warn!(
                     "Skipping step 'Provision' for subunit '{ENCRYPTION_SUBSYSTEM_NAME}' \
                     because overridePcrlockEncryption is set or running in a container"
                 );

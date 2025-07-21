@@ -82,11 +82,6 @@ pub enum ContainerConfigurationError {
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum InternalError {
-    #[error(
-        "Failed to get A/B active volume from Engine Context as it is set to null on A/B update"
-    )]
-    GetAbActiveVolume,
-
     #[error("Failed to get the ESP partition information")]
     GetEspDeviceInfo,
 
@@ -440,9 +435,6 @@ pub enum ServicingError {
 
     #[error("Failed to find staged file at path '{staged_file}'")]
     FindStagedFile { staged_file: String },
-
-    #[error("Failed to find UKI binaries required for .pcrlock file generation in directory '{uki_dir}'")]
-    FindUkisForPcrlockGeneration { uki_dir: String },
 
     #[error("Failed to generate fstab at path '{fstab_path}'")]
     GenerateFstab { fstab_path: String },
