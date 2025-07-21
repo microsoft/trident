@@ -24,8 +24,8 @@ stages:
       - DeploymentTesting_container
 
     jobs:
-      - job: DeleteFromAcr
-        displayName: Delete images from ${{ parameters.registry }} ACR
+      - job: DeleteCosiFromAcr
+        displayName: Delete COSI images from ${{ parameters.registry }} ACR
         pool:
           type: linux
 
