@@ -113,6 +113,27 @@ Trident files for SystemD install service
 
 # ------------------------------------------------------------------------------
 
+%package update-service
+Summary:        Trident files for SystemD update service
+Requires:       %{name}
+
+%description update-service
+Trident files for SystemD update service
+
+%files update-service
+%{_unitdir}/%{name}-update.service
+
+%post update-service
+%systemd_post %{name}-update.service
+
+%preun update-service
+%systemd_preun %{name}-update.service
+
+%postun update-service
+%systemd_postun_with_restart %{name}-update.service
+
+# ------------------------------------------------------------------------------
+
 %package update-poll
 Summary:        Trident files for SystemD service
 Requires:       %{name}
@@ -122,16 +143,16 @@ Requires:       %{name}-service
 SystemD timer for update polling with Harpoon.
 
 %files update-poll
-%{_unitdir}/%{name}.timer
+%{_unitdir}/%{name}-update.timer
 
 %post update-poll
-%systemd_post %{name}.timer
+%systemd_post %{name}-update.timer
 
 %preun update-poll
-%systemd_preun %{name}.timer
+%systemd_preun %{name}-update.timer
 
 %postun update-poll
-%systemd_postun_with_restart %{name}.timer
+%systemd_postun_with_restart %{name}-update.timer
 
 # ------------------------------------------------------------------------------
 
