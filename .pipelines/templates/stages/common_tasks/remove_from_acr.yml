@@ -18,8 +18,8 @@ stages:
     displayName: Delete from ACR
     condition: always()
     dependsOn:
-      - TridentTestImg_${{ replace(parameters.hostRepository, '-', '_') }}
-      - TridentTestImg_${{ replace(parameters.containerRepository, '-', '_') }}
+      - TridentTestImg_trident_testimage
+      - TridentTestImg_trident_container_testimage
       - DeploymentTesting_host
       - DeploymentTesting_container
 
