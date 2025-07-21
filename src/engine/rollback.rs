@@ -43,13 +43,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
         image: None, // Not used for boot validation logic
         storage_graph: engine::build_storage_graph(&datastore.host_status().spec.storage)?, // Build storage graph
         filesystems: Vec::new(), // Left empty since context does not have image
-        is_uki: Some(
-            datastore
-                .host_status()
-                .spec
-                .internal_params
-                .get_flag(ENABLE_UKI_SUPPORT),
-        ),
+        is_uki: Some(efivar::current_var_is_uki()),
     };
 
     // Get the block device path of the current root
@@ -81,9 +75,8 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
                 .message("Failed to persist boot order after reboot")?;
         }
 
-        // If the bootloader set the LoaderEntrySelected variable, then make its value the default
-        // boot entry. Systemd-boot sets this variable, but GRUB does not.
-        if efivar::current_var_set() {
+        // In UKI mode, set systemd-boot's default boot option to the currently running one.
+        if ctx.is_uki_image()? {
             efivar::set_default_to_current()
                 .message("Failed to set default boot entry to current")?;
         }

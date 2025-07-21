@@ -105,9 +105,13 @@ fn read_efi_variable(guid: &str, variable: &str) -> Result<Vec<u8>, TridentError
     Ok(data[4..].to_vec())
 }
 
-/// Returns whether the LoaderEntrySelected EFI variable is set.
-pub fn current_var_set() -> bool {
-    read_efi_variable(BOOTLOADER_INTERFACE_GUID, LOADER_ENTRY_SELECTED).is_ok()
+/// Returns whether the LoaderEntrySelected EFI variable is set and indicates a UKI boot.
+pub fn current_var_is_uki() -> bool {
+    let Ok(current) = read_efi_variable(BOOTLOADER_INTERFACE_GUID, LOADER_ENTRY_SELECTED) else {
+        return false;
+    };
+
+    current.ends_with(b".efi")
 }
 
 /// Returns the value of the LoaderEntrySelected EFI variable. This is the current boot entry.
