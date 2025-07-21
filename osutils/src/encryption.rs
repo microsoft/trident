@@ -84,7 +84,7 @@ pub fn systemd_cryptenroll(
             .context("Failed to write the encryption passphrase to a temporary file")?;
 
         cmd.arg(format!("--unlock-key-file={}", _tmp_file.path().display()))
-            .arg(format!("--tpm2-pcrlock={}", PCRLOCK_POLICY_JSON));
+            .arg(format!("--tpm2-pcrlock={PCRLOCK_POLICY_JSON}"));
     }
 
     cmd.run_and_check().context(format!(
