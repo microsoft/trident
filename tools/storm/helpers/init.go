@@ -7,4 +7,5 @@ var TRIDENT_HELPERS = []storm.Helper{
 	&AbUpdateHelper{},
 	&PrepareImages{},
 	&BootMetricsHelper{},
+	&CheckSelinuxHelper{},
 }
