@@ -54,7 +54,6 @@ func (h *CheckSelinuxHelper) checkSelinuxDenials(tc storm.TestCase) error {
 			
 
 func (h *CheckSelinuxHelper) checkAudit2Allow() error {
-	var err error = nil
 	client, err := utils.OpenSshClient(h.args.SshCliSettings)
 	if err != nil {
 		return err
