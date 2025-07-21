@@ -4,9 +4,7 @@
 package hostnameview
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/gdamore/tcell"
@@ -15,6 +13,7 @@ import (
 	"azltools/imagegen/attendedinstaller/primitives/navigationbar"
 	"azltools/imagegen/attendedinstaller/uitext"
 	"azltools/imagegen/attendedinstaller/uiutils"
+	"azltools/imagegen/configuration"
 	"azltools/internal/randomization"
 )
 
@@ -43,6 +42,7 @@ type HostNameView struct {
 	flex         *tview.Flex
 	centeredFlex *tview.Flex
 	defaultName  string
+	userInput    *configuration.UserInput
 }
 
 // New creates and returns a new HostNameView.
@@ -51,7 +51,8 @@ func New() *HostNameView {
 }
 
 // Initialize initializes the view.
-func (hv *HostNameView) Initialize(backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
+func (hv *HostNameView) Initialize(userInput *configuration.UserInput, backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
+	hv.userInput = userInput
 	hostname, err := randomHostname(defaultHostNamePrefix)
 	if err != nil {
 		return
@@ -87,11 +88,7 @@ func (hv *HostNameView) Initialize(backButtonText string, app *tview.Application
 
 			err := validateFQDN(enteredHostname)
 			if err == nil {
-				err = saveHostName(enteredHostname)
-				if err != nil {
-					hv.navBar.SetUserFeedback(uiutils.ErrorToUserFeedback(err), tview.Styles.TertiaryTextColor)
-					return
-				}
+				hv.userInput.Hostname = enteredHostname
 				nextPage()
 			} else {
 				hv.navBar.SetUserFeedback(uiutils.ErrorToUserFeedback(err), tview.Styles.TertiaryTextColor)
@@ -242,29 +239,4 @@ func randomHostname(prefix string) (hostname string, err error) {
 	hostname = fmt.Sprintf("%s-%s", prefix, postfix)
 
 	return
-}
-
-func saveHostName(hostname string) error {
-	fileName := "userinput.json"
-	data := make(map[string]interface{})
-
-	file, err := os.Open(fileName)
-	if err == nil {
-		defer file.Close()
-		decoder := json.NewDecoder(file)
-		_ = decoder.Decode(&data)
-	}
-
-	data["hostname"] = hostname
-
-	file, err = os.Create(fileName)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	encoder := json.NewEncoder(file)
-	encoder.SetIndent("", "  ")
-
-	return encoder.Encode(data)
 }

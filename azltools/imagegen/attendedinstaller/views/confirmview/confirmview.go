@@ -10,6 +10,7 @@ import (
 	"azltools/imagegen/attendedinstaller/primitives/navigationbar"
 	"azltools/imagegen/attendedinstaller/uitext"
 	"azltools/imagegen/attendedinstaller/uiutils"
+	"azltools/imagegen/configuration"
 )
 
 // UI constants.
@@ -34,6 +35,7 @@ type ConfirmView struct {
 	navBar       *navigationbar.NavigationBar
 	flex         *tview.Flex
 	centeredFlex *tview.Flex
+	userInput    *configuration.UserInput
 }
 
 // New creates and returns a new ConfirmView.
@@ -42,7 +44,8 @@ func New() *ConfirmView {
 }
 
 // Initialize initializes the view.
-func (cv *ConfirmView) Initialize(backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
+func (cv *ConfirmView) Initialize(userInput *configuration.UserInput, backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
+	cv.userInput = userInput
 	cv.text = tview.NewTextView().
 		SetText(uitext.ConfirmPrompt)
 

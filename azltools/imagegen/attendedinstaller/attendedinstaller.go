@@ -20,6 +20,7 @@ import (
 	"azltools/imagegen/attendedinstaller/views/hostnameview"
 	"azltools/imagegen/attendedinstaller/views/installerview"
 	"azltools/imagegen/attendedinstaller/views/userview"
+	"azltools/imagegen/configuration"
 	"azltools/internal/logger"
 
 	"github.com/bendahl/uinput"
@@ -73,6 +74,7 @@ type AttendedInstaller struct {
 	installationError    error
 	installationTime     time.Duration
 	userQuitInstallation bool
+	userInput            *configuration.UserInput
 }
 
 // New creates and returns a new AttendedInstaller.
@@ -80,6 +82,7 @@ func New(calamaresInstallFunc func() error) (attendedInstaller *AttendedInstalle
 	attendedInstaller = &AttendedInstaller{
 		calamaresInstallFunc: calamaresInstallFunc,
 	}
+	attendedInstaller.userInput = configuration.NewUserInput()
 
 	err = attendedInstaller.initializeUI()
 	return
@@ -362,7 +365,6 @@ func (ai *AttendedInstaller) initializeViews() (err error) {
 	}
 
 	ai.allViews = append(ai.allViews, eulaview.New())
-
 	ai.allViews = append(ai.allViews, diskview.New())
 	// ai.allViews = append(ai.allViews, encryptview.New())
 	ai.allViews = append(ai.allViews, hostnameview.New())
@@ -379,7 +381,7 @@ func (ai *AttendedInstaller) initializeViews() (err error) {
 			backButtonText = uitext.ButtonGoBack
 		}
 
-		err = view.Initialize(backButtonText, ai.app, ai.nextPage, ai.previousPage, ai.quit, ai.refreshTitle)
+		err = view.Initialize(ai.userInput, backButtonText, ai.app, ai.nextPage, ai.previousPage, ai.quit, ai.refreshTitle)
 		if err != nil {
 			return
 		}

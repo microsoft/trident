@@ -4,9 +4,7 @@
 package autopartitionwidget
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/gdamore/tcell"
 	"github.com/rivo/tview"
@@ -41,6 +39,7 @@ type AutoPartitionWidget struct {
 	helpText     *tview.TextView
 
 	systemDevices []diskutils.SystemBlockDevice
+	userInput     *configuration.UserInput
 	bootType      string
 }
 
@@ -53,7 +52,7 @@ func New(systemDevices []diskutils.SystemBlockDevice, bootType string) *AutoPart
 }
 
 // Initialize initializes the view.
-func (ap *AutoPartitionWidget) Initialize(backButtonText string, app *tview.Application, switchMode, nextPage, previousPage, quit, refreshTitle func()) (err error) {
+func (ap *AutoPartitionWidget) Initialize(userInput *configuration.UserInput, backButtonText string, app *tview.Application, switchMode, nextPage, previousPage, quit, refreshTitle func()) (err error) {
 	ap.navBar = navigationbar.NewNavigationBar().
 		AddButton(backButtonText, previousPage).
 		AddButton(uitext.DiskButtonCustom, switchMode).
@@ -129,31 +128,6 @@ func (ap *AutoPartitionWidget) SelectedSystemDevice() int {
 	return ap.deviceList.GetCurrentItem()
 }
 
-func saveDiskPath(diskPath string) error {
-	fileName := "userinput.json"
-	data := make(map[string]interface{})
-
-	file, err := os.Open(fileName)
-	if err == nil {
-		defer file.Close()
-		decoder := json.NewDecoder(file)
-		_ = decoder.Decode(&data)
-	}
-
-	data["disk_path"] = diskPath
-
-	file, err = os.Create(fileName)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	encoder := json.NewEncoder(file)
-	encoder.SetIndent("", "  ")
-
-	return encoder.Encode(data)
-}
-
 func (ap *AutoPartitionWidget) mustUpdateConfiguration() {
 	const (
 		targetDiskType     = "path"
@@ -216,7 +190,7 @@ func (ap *AutoPartitionWidget) mustUpdateConfiguration() {
 	disk.Partitions = partitions
 
 	disk_path := disk.TargetDisk.Value
-	saveDiskPath(disk_path)
+	ap.userInput.DiskPath = disk_path
 }
 
 func (ap *AutoPartitionWidget) populateBlockDeviceOptions() {

@@ -15,6 +15,7 @@ import (
 	"azltools/imagegen/attendedinstaller/speakuputils"
 	"azltools/imagegen/attendedinstaller/uitext"
 	"azltools/imagegen/attendedinstaller/uiutils"
+	"azltools/imagegen/configuration"
 	"azltools/internal/logger"
 )
 
@@ -46,6 +47,7 @@ type InstallerView struct {
 	needsToPrompt    bool
 
 	calamaresInstallFunc func()
+	userInput            *configuration.UserInput
 }
 
 // New creates and returns a new InstallerView.
@@ -111,7 +113,8 @@ func AssignDbusPermissions() (err error) {
 }
 
 // Initialize initializes the view.
-func (iv *InstallerView) Initialize(backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
+func (iv *InstallerView) Initialize(userInput *configuration.UserInput, backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
+	iv.userInput = userInput
 	iv.navBar = navigationbar.NewNavigationBar().
 		AddButton(backButtonText, previousPage).
 		AddButton(uitext.ButtonNext, func() {
