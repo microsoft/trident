@@ -336,7 +336,7 @@ stages:
 
   # DELETE published images in ACR
   - ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pre')) }}:
-      - template: stages/acr/remove_from_acr.yml
+      - template: stages/common_tasks/remove_from_acr.yml
         parameters:
           hostRepository: "trident-testimage"
           containerRepository: "trident-container-testimage"

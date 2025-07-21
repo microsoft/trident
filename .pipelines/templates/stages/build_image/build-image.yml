@@ -98,7 +98,7 @@ stages:
               micVersion: ${{ parameters.micVersion }}
 
           - ${{ if parameters.pushToAcr }}:
-              - template: ../acr/push_to_acr.yml
+              - template: ../common_tasks/push_to_acr.yml
                 parameters:
                   imageName: ${{ parameters.imageName }}
                   registry: maritimuspublic
