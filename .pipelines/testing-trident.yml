@@ -18,7 +18,7 @@ parameters:
       - 5078
       # [GITHUB]-trident-pipeline-tester
       - 5071
-    displayName: "Pipeline definition ID (in order: Trident CI, Trident PR E2E, Trident PreRelease, Trident Testing, Trident Pipeline Tester)"
+    displayName: "Pipeline definition ID (in order of appearance: Trident CI, Trident PR E2E, Trident PreRelease, Trident Testing, Trident Pipeline Tester)"
 
   - name: branch
     type: string
