@@ -53,6 +53,7 @@ func New(systemDevices []diskutils.SystemBlockDevice, bootType string) *AutoPart
 
 // Initialize initializes the view.
 func (ap *AutoPartitionWidget) Initialize(userInput *configuration.UserInput, backButtonText string, app *tview.Application, switchMode, nextPage, previousPage, quit, refreshTitle func()) (err error) {
+	ap.userInput = userInput
 	ap.navBar = navigationbar.NewNavigationBar().
 		AddButton(backButtonText, previousPage).
 		AddButton(uitext.DiskButtonCustom, switchMode).
@@ -188,10 +189,7 @@ func (ap *AutoPartitionWidget) mustUpdateConfiguration() {
 		Value: ap.systemDevices[ap.deviceList.GetCurrentItem()].DevicePath,
 	}
 	disk.Partitions = partitions
-
-	disk_path := disk.TargetDisk.Value
-	logger.Log.Debugf("Selected disk: %s", disk_path)
-	// ap.userInput.DiskPath = disk_path
+	ap.userInput.DiskPath = disk.TargetDisk.Value
 }
 
 func (ap *AutoPartitionWidget) populateBlockDeviceOptions() {
