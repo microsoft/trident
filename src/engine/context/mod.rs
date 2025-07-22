@@ -290,7 +290,10 @@ impl EngineContext {
         self.storage_graph.block_device_size(device)
     }
 
-    pub(crate) fn is_uki_image(&self) -> Result<bool, TridentError> {
+    /// Convience method to check if the current context is a UKI context and return a suitable
+    /// error if the flag isn't set.
+    #[track_caller]
+    pub(crate) fn is_uki(&self) -> Result<bool, TridentError> {
         self.is_uki.structured(InternalError::Internal(
             "is_uki() called without it being set",
         ))

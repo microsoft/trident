@@ -183,7 +183,7 @@ impl Subsystem for StorageSubsystem {
             .internal_params
             .get_flag("overridePcrlockEncryption")
             || container::is_running_in_container()?;
-        if ctx.is_uki_image()? {
+        if ctx.is_uki()? {
             if !override_pcrlock_encryption {
                 debug!("Starting step 'Provision' for subunit '{ENCRYPTION_SUBSYSTEM_NAME}'");
                 encryption::provision(ctx, mount_path).message(format!(
@@ -203,7 +203,7 @@ impl Subsystem for StorageSubsystem {
 
     #[tracing::instrument(name = "storage_configuration", skip_all)]
     fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
-        if ctx.is_uki_image()? && ctx.storage_graph.root_fs_is_verity() {
+        if ctx.is_uki()? && ctx.storage_graph.root_fs_is_verity() {
             debug!("Skipping storage configuration because UKI root verity is in use");
             return Ok(());
         }

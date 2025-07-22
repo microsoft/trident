@@ -27,7 +27,7 @@ impl Subsystem for BootSubsystem {
 
     #[tracing::instrument(name = "boot_configuration", skip_all)]
     fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
-        if ctx.is_uki_image()? {
+        if ctx.is_uki()? {
             debug!("Skipping grub configuration because UKI is in use");
             return Ok(());
         }
