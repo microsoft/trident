@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Error};
 use log::{debug, info, trace, warn};
 
-use osutils::{block_devices, efivar, lsblk, pcrlock, veritysetup, virt};
+use osutils::{block_devices, container, efivar, lsblk, pcrlock, veritysetup, virt};
 use sysdefs::tpm2::Pcr;
 
 use trident_api::{
@@ -88,21 +88,35 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
                 .message("Failed to set default boot entry to current")?;
         }
 
-        // If PCR-based encryption is enabled, re-generate pcrlock policy to only include the
-        // current boot, i.e. active volume.
+        // If this is a UKI image, then we need to re-generate pcrlock policy to include current
+        // boot only.
+        //
+        // TODO: Remove this override once UKI & encryption tests are fixed. Related ADO:
+        // https://dev.azure.com/mariner-org/ECF/_workitems/edit/12877.
+        let override_pcrlock_encryption = ctx
+            .spec
+            .internal_params
+            .get_flag("overridePcrlockEncryption")
+            || container::is_running_in_container()?;
         if ctx.is_uki_image()? && ctx.spec.storage.encryption.is_some() {
-            debug!("Regenerating pcrlock policy for current boot");
-            // TODO: Add PCR 7 once SecureBoot is enabled in a follow up PR. Related ADO task:
-            // https://dev.azure.com/mariner-org/ECF/_workitems/edit/12865/.
-            let pcrs = Pcr::Pcr4 | Pcr::Pcr11;
+            if !override_pcrlock_encryption {
+                debug!("Regenerating pcrlock policy for current boot");
+                // TODO: Add PCR 7 once SecureBoot is enabled in a follow up PR. Related ADO task:
+                // https://dev.azure.com/mariner-org/ECF/_workitems/edit/12865/.
+                let pcrs = Pcr::Pcr4 | Pcr::Pcr11;
 
-            // Construct boot binaries for .pcrlock file generation
-            let (uki_binaries, bootloader_binaries) =
-                encryption::construct_binary_paths_pcrlock(&ctx, None)
-                    .structured(ServicingError::ConstructBinaryPathsForPcrlockEncryption)?;
+                // Construct boot binaries for .pcrlock file generation
+                let (uki_binaries, bootloader_binaries) =
+                    encryption::construct_binary_paths_pcrlock(&ctx, None)
+                        .structured(ServicingError::ConstructBinaryPathsForPcrlockEncryption)?;
 
-            // Generate a pcrlock policy
-            pcrlock::generate_pcrlock_policy(pcrs, uki_binaries, bootloader_binaries)?;
+                // Generate a pcrlock policy
+                pcrlock::generate_pcrlock_policy(pcrs, uki_binaries, bootloader_binaries)?;
+            } else {
+                warn!(
+                    "Skipping pcrlock policy generation because overridePcrlockEncryption is set or running in a container"
+                );
+            }
         }
     } else if datastore.host_status().servicing_state == ServicingState::CleanInstallStaged
         || datastore.host_status().servicing_state == ServicingState::CleanInstallFinalized
