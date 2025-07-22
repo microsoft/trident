@@ -292,7 +292,7 @@ stages:
           - bash: |
               set -eux
               ./bin/storm-trident helper check-selinux \
-                  "$(tridentSourceDirectory)/e2e_tests/helpers/key" \
+                  "$(Build.SourcesDirectory)/e2e_tests/helpers/key" \
                   "${{ variables.BAREMETAL_OAM_IP }}" \
                   "testing-user" \
                   "${{ parameters.runtimeEnv }}" \
