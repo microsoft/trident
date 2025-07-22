@@ -52,6 +52,10 @@ parameters:
     type: number
     default: 4000
 
+  - name: netlistenConfigFile
+    type: string
+    default: ""
+
 steps:
   - bash: |
       set -eux
@@ -137,6 +141,12 @@ steps:
     workingDirectory: $(Build.SourcesDirectory)
     displayName: "🔄 Finalize A/B update into runtime OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
+
+  - template: ../testing_common/display-serial-logs.yml
+    parameters:
+      netlistenConfigFile: ${{ parameters.netlistenConfigFile }}
+      outputDirectory: $(ob_outputDirectory)
+      partition: B
 
   - template: ../testing_common/display-deployment-logs.yml
     parameters:

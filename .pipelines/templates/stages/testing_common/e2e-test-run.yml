@@ -331,6 +331,7 @@ steps:
           artifactsDirectory: ${{ parameters.artifactsDirectory }}
           deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
           netlistenPort: ${{ parameters.netlistenPort }}
+          netlistenConfigFile: ${{ parameters.netlistenConfigFile }}
 
   - template: ../testing_common/trident-rebuild.yml
     parameters:
