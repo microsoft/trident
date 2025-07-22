@@ -162,6 +162,12 @@ pub enum InvalidInputError {
     )]
     DuplicateFsUuidAbUpdate { pair_id: String, uuid: String },
 
+    #[error("Cannot update host since it is not provisioned")]
+    HostNotProvisioned,
+
+    #[error("Image contains invalid agent configuration")]
+    ImageBadAgentConfiguration,
+
     #[error("Host Configuration failed dynamic validation: {inner}")]
     InvalidHostConfigurationDynamic {
         #[from]
@@ -269,9 +275,6 @@ pub enum InvalidInputError {
     )]
     UnusedOsImageFilesystem { mount_point: String },
 
-    #[error("Cannot update host since it is not provisioned")]
-    UpdateOnUnprovisionedHost,
-
     #[error("Failed to write to output file '{path}'")]
     WriteOutputFile { path: String },
 }
@@ -341,6 +344,9 @@ pub enum ServicingError {
 
     #[error("Failed to create boot entry '{boot_entry}' via efibootmgr")]
     CreateBootEntry { boot_entry: String },
+
+    #[error("Failed to create configuration file '{path}'")]
+    CreateConfigurationFile { path: String },
 
     #[error("Failed to create crypttab at path '{crypttab_path}'")]
     CreateCrypttab { crypttab_path: String },

@@ -10,7 +10,8 @@ use log::info;
 use osutils::path;
 use trident_api::{
     config::HostConfigurationDynamicValidationError,
-    error::{InvalidInputError, ReportError, ServicingError, TridentError},
+    constants::{AGENT_CONFIG_PATH, TRIDENT_DATASTORE_PATH_DEFAULT},
+    error::{InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::ServicingType,
 };
 
@@ -61,6 +62,52 @@ impl Subsystem for ManagementSubsystem {
                 path::join_relative(mount_path, TRIDENT_BINARY_PATH),
             )
             .structured(ServicingError::CopyTridentBinary)?;
+        }
+
+        Ok(())
+    }
+
+    #[tracing::instrument(name = "management_configure", skip_all)]
+    fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
+        // Ensure that Trident agent config exists with correct datastore path
+        if Path::new(AGENT_CONFIG_PATH).exists() {
+            if let Ok(contents) = std::fs::read_to_string(AGENT_CONFIG_PATH) {
+                let mut datastore_path_configured = TRIDENT_DATASTORE_PATH_DEFAULT;
+                for line in contents.lines() {
+                    if let Some(path) = line.strip_prefix("DatastorePath=") {
+                        datastore_path_configured = path.trim();
+                        break;
+                    }
+                }
+                let datastore_path = &ctx.spec.trident.datastore_path;
+                if datastore_path != Path::new(datastore_path_configured) {
+                    return Err(TridentError::new(
+                        InvalidInputError::ImageBadAgentConfiguration,
+                    ))
+                    .message(format!(
+                        "Datastore path in agent config ({}) does not match expected path ({})",
+                        datastore_path_configured,
+                        datastore_path.display()
+                    ));
+                }
+            }
+        } else if ctx.spec.trident.datastore_path != Path::new(TRIDENT_DATASTORE_PATH_DEFAULT) {
+            if ctx.storage_graph.root_fs_is_verity() {
+                return Err(TridentError::new(
+                    InvalidInputError::ImageBadAgentConfiguration,
+                ))
+                .message("Agent configuration file does not exist and root filesystem is verity");
+            }
+
+            let datastore_configuration = format!(
+                "DatastorePath={}",
+                ctx.spec.trident.datastore_path.display()
+            );
+            fs::write(AGENT_CONFIG_PATH, datastore_configuration).structured(
+                ServicingError::CreateConfigurationFile {
+                    path: AGENT_CONFIG_PATH.into(),
+                },
+            )?;
         }
 
         Ok(())
