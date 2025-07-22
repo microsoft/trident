@@ -154,6 +154,7 @@ steps:
       netlistenConfigFile: ${{ parameters.netlistenConfigFile }}
       outputDirectory: $(ob_outputDirectory)
       partition: B
+      artifactPrefix: "finalize-ab-update"
 
   - template: ../testing_common/display-deployment-logs.yml
     parameters:
