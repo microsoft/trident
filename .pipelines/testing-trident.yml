@@ -18,7 +18,7 @@ parameters:
       - 5078
       # [GITHUB]-trident-pipeline-tester
       - 5071
-    displayName: Pipeline definition ID
+    displayName: "Pipeline definition ID (in order of appearance: Trident CI, Trident PR E2E, Trident PreRelease, Trident Testing, Trident Pipeline Tester)"
 
   - name: branch
     type: string
@@ -28,7 +28,7 @@ parameters:
   - name: tridentPipelineRunId
     type: string
     default: latestFromBranch
-    displayName: Pipeline run ID (branch will be ignored if ID is provided)
+    displayName: Pipeline Build ID (check the URL of the specific pipeline run), branch and pipeline definition will be ignored if ID is provided.
 
   - name: runDeploymentVMHost
     type: boolean
