@@ -86,6 +86,7 @@ impl ManagementSubsystem {
     ) -> Result<(), TridentError> {
         // Ensure that Trident agent config exists with correct datastore path
         if Path::new(agent_config_path).exists() {
+            // If the agent config exists, check that the datastore matches the expected path.
             if let Ok(contents) = std::fs::read_to_string(agent_config_path) {
                 let mut datastore_path_configured = TRIDENT_DATASTORE_PATH_DEFAULT;
                 for line in contents.lines() {
@@ -94,6 +95,8 @@ impl ManagementSubsystem {
                         break;
                     }
                 }
+                // If the datastore path in the agent config does not match the expected path,
+                // return an error.
                 if datastore_path != Path::new(datastore_path_configured) {
                     return Err(TridentError::new(
                         InvalidInputError::ImageBadAgentConfiguration,
@@ -106,7 +109,10 @@ impl ManagementSubsystem {
                 }
             }
         } else if datastore_path != Path::new(TRIDENT_DATASTORE_PATH_DEFAULT) {
+            // Only attempt to create the agent config if the datastore path is not the default.
+
             if is_root_verity {
+                // For root-verity, do not attempt to create the agent config.
                 return Err(TridentError::new(
                     InvalidInputError::ImageBadAgentConfiguration,
                 ))
