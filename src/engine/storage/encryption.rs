@@ -116,10 +116,6 @@ pub(super) fn create_encrypted_devices(
 
         // Store the key statically for later use, i.e. pcrlock policy enrollment
         if let Some(key) = key_value {
-            trace!(
-                "Storing encryption passphrase in memory for later use: {}",
-                key_file_path.display()
-            );
             let mut static_key = ENCRYPTION_PASSPHRASE.lock().unwrap();
             *static_key = key;
         }
@@ -302,7 +298,11 @@ struct LuksDumpSegment {
     sector_size: u64,
 }
 
-/// Constructs the paths to the UKI and bootloader binaries for the generation of .pcrlock files.
+/// Returns paths of UKI and bootloader binaries that `systemd-pcrlock` tool should seal to. During
+/// encryption provisioning, returns binaries used for the current boot, as well as binaries that
+/// will be used in the future boot, i.e. in the ROS update image. During rollback validation,
+/// returns binaries used for the current boot only.
+///
 /// Returns a tuple containing two vectors:
 /// - uki_binaries: Paths to the UKI binaries,
 /// - bootloader_binaries: Paths to the bootloader binaries (shim and systemd-boot).
@@ -310,8 +310,9 @@ pub fn construct_binary_paths_pcrlock(
     ctx: &EngineContext,
     mount_path: Option<&Path>,
 ) -> Result<(Vec<PathBuf>, Vec<PathBuf>), Error> {
-    // TODO: If this is a clean install, binaries are not needed. Once UKI MOS is built and
-    // SecureBoot is enabled, also construct binary paths for clean install. ADO task:
+    // TODO: For now, on a clean install, binaries are not needed since we're first sealing to a
+    // pcrlock policy that only includes PCR 0. Once UKI MOS is built and SecureBoot is enabled,
+    // need to also return binary paths for clean install. Related ADO task:
     // https://dev.azure.com/mariner-org/ECF/_workitems/edit/12865/.
     if ctx.servicing_type == ServicingType::CleanInstall {
         return Ok((vec![], vec![]));
