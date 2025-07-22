@@ -115,9 +115,16 @@ steps:
 
   - bash: |
       set -eux
+
+      NETLISTEN_CONFIG_ARGS=""
+      if [ -n "${{ parameters.netlistenConfigFile }}" ]; then
+        NETLISTEN_CONFIG_ARGS="--config ${{ parameters.netlistenConfigFile }}"
+      fi
+
       # If there is a netlisten process, kill it so there is no port clash in the instance
       if pgrep netlisten > /dev/null; then pkill netlisten; fi
-      ./bin/netlisten -m $(Build.SourcesDirectory)/trident-finalize-update-metrics.jsonl \
+      ./bin/netlisten $NETLISTEN_CONFIG_ARGS \
+          -m $(Build.SourcesDirectory)/trident-finalize-update-metrics.jsonl \
           -p ${{ parameters.netlistenPort }} \
           -s "${{ parameters.artifactsDirectory }}" > ./finalize-ab-update.log 2>&1 &
 
