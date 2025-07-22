@@ -28,7 +28,7 @@ parameters:
   - name: tridentPipelineRunId
     type: string
     default: latestFromBranch
-    displayName: Pipeline Build ID (check the URL of the pipeline run), branch and pipeline definition will be ignored if ID is provided.
+    displayName: Pipeline Build ID (check the URL of the specific pipeline run), branch and pipeline definition will be ignored if ID is provided.
 
   - name: runDeploymentVMHost
     type: boolean
