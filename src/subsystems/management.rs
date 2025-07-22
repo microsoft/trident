@@ -69,9 +69,24 @@ impl Subsystem for ManagementSubsystem {
 
     #[tracing::instrument(name = "management_configure", skip_all)]
     fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
+        self.internal_configure(
+            AGENT_CONFIG_PATH,
+            &ctx.spec.trident.datastore_path,
+            ctx.storage_graph.root_fs_is_verity(),
+        )
+    }
+}
+
+impl ManagementSubsystem {
+    fn internal_configure(
+        &mut self,
+        agent_config_path: &str,
+        datastore_path: &Path,
+        is_root_verity: bool,
+    ) -> Result<(), TridentError> {
         // Ensure that Trident agent config exists with correct datastore path
-        if Path::new(AGENT_CONFIG_PATH).exists() {
-            if let Ok(contents) = std::fs::read_to_string(AGENT_CONFIG_PATH) {
+        if Path::new(agent_config_path).exists() {
+            if let Ok(contents) = std::fs::read_to_string(agent_config_path) {
                 let mut datastore_path_configured = TRIDENT_DATASTORE_PATH_DEFAULT;
                 for line in contents.lines() {
                     if let Some(path) = line.strip_prefix("DatastorePath=") {
@@ -79,7 +94,6 @@ impl Subsystem for ManagementSubsystem {
                         break;
                     }
                 }
-                let datastore_path = &ctx.spec.trident.datastore_path;
                 if datastore_path != Path::new(datastore_path_configured) {
                     return Err(TridentError::new(
                         InvalidInputError::ImageBadAgentConfiguration,
@@ -91,21 +105,18 @@ impl Subsystem for ManagementSubsystem {
                     ));
                 }
             }
-        } else if ctx.spec.trident.datastore_path != Path::new(TRIDENT_DATASTORE_PATH_DEFAULT) {
-            if ctx.storage_graph.root_fs_is_verity() {
+        } else if datastore_path != Path::new(TRIDENT_DATASTORE_PATH_DEFAULT) {
+            if is_root_verity {
                 return Err(TridentError::new(
                     InvalidInputError::ImageBadAgentConfiguration,
                 ))
                 .message("Agent configuration file does not exist and root filesystem is verity");
             }
 
-            let datastore_configuration = format!(
-                "DatastorePath={}",
-                ctx.spec.trident.datastore_path.display()
-            );
-            fs::write(AGENT_CONFIG_PATH, datastore_configuration).structured(
+            let datastore_configuration = format!("DatastorePath={}", datastore_path.display());
+            fs::write(agent_config_path, datastore_configuration).structured(
                 ServicingError::CreateConfigurationFile {
-                    path: AGENT_CONFIG_PATH.into(),
+                    path: agent_config_path.into(),
                 },
             )?;
         }
@@ -162,5 +173,96 @@ mod tests {
         ctx.spec.trident.disable = true;
         ctx.servicing_type = ServicingType::CleanInstall;
         mgmt_mod.validate_host_config(&ctx).unwrap();
+    }
+
+    #[test]
+    fn test_configure_host_config() {
+        let mut mgmt_mod = ManagementSubsystem;
+
+        {
+            // Default datastore path, agent does not exist
+            let agent_config_folder = tempfile::tempdir().unwrap();
+            let agent_config_path = agent_config_folder.path().join("trident.conf");
+            mgmt_mod
+                .internal_configure(
+                    &agent_config_path.to_string_lossy(),
+                    Path::new(TRIDENT_DATASTORE_PATH_DEFAULT),
+                    false,
+                )
+                .unwrap();
+            // agent config should not be created
+            assert!(!agent_config_path.exists());
+        }
+
+        let nonstandard_datastore_path = "/var/lib/trident/nonstandard-datastore.sqlite";
+        {
+            // Non-standard datastore path, agent config does not exist
+            let agent_config_folder = tempfile::tempdir().unwrap();
+            let agent_config_path = agent_config_folder.path().join("trident.conf");
+            mgmt_mod
+                .internal_configure(
+                    &agent_config_path.to_string_lossy(),
+                    Path::new(nonstandard_datastore_path),
+                    false,
+                )
+                .unwrap();
+            // agent config should be created with non-standard datastore path
+            let contents = std::fs::read_to_string(agent_config_path).unwrap();
+            print!("Contents of agent config file:\n{contents}");
+            let expected_contents = format!("DatastorePath={nonstandard_datastore_path}");
+            assert!(contents.contains(expected_contents.as_str()));
+        }
+
+        {
+            // Non-standard datastore path, agent config does not exist, root verity
+            let agent_config_folder = tempfile::tempdir().unwrap();
+            let agent_config_path = agent_config_folder.path().join("trident.conf");
+            mgmt_mod
+                .internal_configure(
+                    &agent_config_path.to_string_lossy(),
+                    Path::new(nonstandard_datastore_path),
+                    true,
+                )
+                .unwrap_err();
+        }
+
+        {
+            // agent config exists with matching datastore path
+            let agent_config_folder = tempfile::tempdir().unwrap();
+            let agent_config_path = agent_config_folder.path().join("trident.conf");
+            fs::write(
+                &agent_config_path,
+                format!("DatastorePath={nonstandard_datastore_path}"),
+            )
+            .unwrap();
+
+            mgmt_mod
+                .internal_configure(
+                    &agent_config_path.to_string_lossy(),
+                    Path::new(nonstandard_datastore_path),
+                    false,
+                )
+                .unwrap();
+        }
+
+        {
+            // agent config exists with mismatched datastore path
+            let mismatched_datastore_path = "/var/lib/trident/mismatched-datastore.sqlite";
+            let agent_config_folder = tempfile::tempdir().unwrap();
+            let agent_config_path = agent_config_folder.path().join("trident.conf");
+            fs::write(
+                &agent_config_path,
+                format!("DatastorePath={mismatched_datastore_path}"),
+            )
+            .unwrap();
+
+            mgmt_mod
+                .internal_configure(
+                    &agent_config_path.to_string_lossy(),
+                    Path::new(nonstandard_datastore_path),
+                    false,
+                )
+                .unwrap_err();
+        }
     }
 }
