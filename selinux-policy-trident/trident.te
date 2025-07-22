@@ -68,6 +68,7 @@ require {
         type gpg_secret_t;
         type groupadd_exec_t;
         type home_root_t;
+        type http_port_t;
         type init_t;
         type init_exec_t;
         type init_runtime_t;
@@ -259,7 +260,7 @@ allow trident_t self:netlink_route_socket { bind create getattr nlmsg_read read 
 allow trident_t self:process { getsched setsched getcap setpgid signull getattr signal };
 allow trident_t self:tcp_socket { connect create getattr getopt read setopt shutdown write };
 allow trident_t self:unix_dgram_socket { connect create write };
-allow trident_t self:udp_socket { connect create getattr };
+allow trident_t self:udp_socket { connect create getattr setopt read write };
 allow trident_t self:key { search write };
 allow trident_t self:sem { associate create destroy read unix_read unix_write write };
 
@@ -336,6 +337,7 @@ allow trident_t gpg_secret_t:file getattr;
 allow trident_t groupadd_exec_t:file getattr;
 allow trident_t home_root_t:dir { mounton read relabelto add_name create relabelfrom setattr write };
 allow trident_t home_root_t:file { create getattr ioctl open relabelfrom setattr write };
+allow trident_t http_port_t:tcp_socket name_connect;
 allow trident_t init_exec_t:file { execute getattr map open read relabelto setattr unlink write };
 allow trident_t init_t:system { reboot start status };
 allow trident_t init_t:key search;

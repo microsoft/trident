@@ -139,6 +139,8 @@ stages:
       baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
+      ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pre')) }}:
+        pushToAcr: true
 
   # Build Trident test image (container)
   - template: stages/build_image/build-image.yml
@@ -149,6 +151,8 @@ stages:
       runtimeEnv: "container"
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
+      ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pre')) }}:
+        pushToAcr: true
 
   # Build Trident test image for verity (host)
   - template: stages/build_image/build-image.yml
@@ -329,3 +333,11 @@ stages:
           - template: stages/publishing/publish.yml
             parameters:
               stageType: ${{ parameters.stageType }}
+
+  # DELETE published images in ACR
+  - ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pre')) }}:
+      - template: stages/common_tasks/remove_from_acr.yml
+        parameters:
+          hostRepository: "trident-testimage"
+          containerRepository: "trident-container-testimage"
+          registry: "maritimuspublic"

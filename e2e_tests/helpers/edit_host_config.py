@@ -57,6 +57,18 @@ def add_copy_command(host_config_path):
         yaml.safe_dump(host_config, f)
 
 
+# Images stored in ACR are tagged based on pipeline build ID, and therefore the
+# URL must be updated for every build.
+def rename_oci_url(host_config_path, oci_url):
+    with open(host_config_path, "r") as f:
+        host_config = yaml.safe_load(f)
+
+    host_config["image"]["url"] = oci_url
+
+    with open(host_config_path, "w") as f:
+        yaml.safe_dump(host_config, f)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Makes host configuration edits: Adds an SSH key and optionally copies the container image."
@@ -70,6 +82,13 @@ def main():
         type=str,
         required=True,
         help="Path to the Trident configuration file.",
+    )
+    parser.add_argument(
+        "-o",
+        "--ociUrl",
+        type=str,
+        required=False,
+        help="Url to ACR blob containing COSI file.",
     )
     parser.add_argument(
         "-r",
@@ -86,6 +105,9 @@ def main():
 
     if args.runtimeEnv == "container":
         add_copy_command(args.hostconfig)
+
+    if args.ociUrl:
+        rename_oci_url(args.hostconfig, args.ociUrl)
 
 
 if __name__ == "__main__":

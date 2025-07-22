@@ -11,7 +11,7 @@ parameters:
     #   - trident-container-installer
 
   - name: tridentTestImage
-    displayName: "Image used the runtime OS, source of Trident (container vs host)"
+    displayName: "Image used in the runtime OS, source of Trident (container vs host)"
     type: string
     default: trident-testimage
     values:
@@ -19,7 +19,7 @@ parameters:
       - trident-testimage
 
   - name: tridentTestImageVerity
-    displayName: "Image used the verity runtime OS, source of Trident (container vs host)"
+    displayName: "Image used in the verity runtime OS, source of Trident (container vs host)"
     type: string
     default: trident-verity-testimage
     values:
@@ -27,7 +27,7 @@ parameters:
       - trident-container-verity-testimage
 
   - name: tridentTestImageUsrVerity
-    displayName: "Image used the verity runtime OS, source of Trident (container vs host)"
+    displayName: "Image used in the verity runtime OS, source of Trident (container vs host)"
     type: string
     default: trident-usrverity-testimage
     values:
