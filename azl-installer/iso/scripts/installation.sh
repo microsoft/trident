@@ -14,7 +14,6 @@ cd "$WORKING_DIR"
 "$WORKING_DIR/liveinstaller" \
   --build-dir=$WORKING_DIR/ \
   --attended \
-  --template-config=$WORKING_DIR/attended_config.json \
   --log-level=trace \
   --log-file=$WORKING_DIR/liveinstaller.log > "$WORKING_DIR/output_liveinstaller.log" 2>&1
 
