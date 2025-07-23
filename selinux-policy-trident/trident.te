@@ -505,6 +505,7 @@ allow trident_t uuidd_var_lib_t:dir relabelto;
 allow trident_t var_t:dir { mounton relabelto };
 allow trident_t var_lib_t:dir relabelto;
 allow trident_t var_lib_t:file relabelto;
+allow trident_t var_lib_t:lnk_file relabelto;
 allow trident_t var_lock_t:lnk_file relabelto;
 allow trident_t var_log_t:dir relabelto;
 allow trident_t var_log_t:lnk_file relabelto;
