@@ -35,7 +35,6 @@ type ConfirmView struct {
 	navBar       *navigationbar.NavigationBar
 	flex         *tview.Flex
 	centeredFlex *tview.Flex
-	userInput    *configuration.TridentConfigData
 }
 
 // New creates and returns a new ConfirmView.
@@ -45,7 +44,6 @@ func New() *ConfirmView {
 
 // Initialize initializes the view.
 func (cv *ConfirmView) Initialize(userInput *configuration.TridentConfigData, backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
-	cv.userInput = userInput
 	cv.text = tview.NewTextView().
 		SetText(uitext.ConfirmPrompt)
 
