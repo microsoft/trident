@@ -29,6 +29,7 @@ var (
 	forceAttended = app.Flag("attended", "Use the attended installer regardless if a config file is present.").Bool()
 	buildDir      = app.Flag("build-dir", "Directory to store temporary files while building.").Required().ExistingDir()
 	baseDirPath   = app.Flag("base-dir", "Base directory for relative file paths from the config. Defaults to config's directory.").ExistingDir()
+	imagePath     = app.Flag("image-path", "Path to the OS image for the target system.").Default("/mnt/trident_cdrom/images/azure-linux-trident.cosi").String()
 	logFlags      = exe.SetupLogFlags(app)
 )
 
@@ -124,7 +125,7 @@ func terminalUIAttendedInstall(args imagerArguments) (installDetails installatio
 		// Calamares based installation
 		func() (err error) {
 			return calamaresInstall(args)
-		})
+		}, *imagePath)
 
 	if err != nil {
 		return

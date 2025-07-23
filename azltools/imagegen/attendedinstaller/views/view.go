@@ -13,7 +13,7 @@ import (
 // View is the interface for different "pages" in the attended installer.
 type View interface {
 	// Initialize initializes the view.
-	Initialize(userInput *configuration.UserInput, backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) error
+	Initialize(userInput *configuration.TridentConfigData, backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) error
 
 	// HandleInput handles custom input.
 	HandleInput(event *tcell.EventKey) *tcell.EventKey

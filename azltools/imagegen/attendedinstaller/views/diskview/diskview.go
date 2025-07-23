@@ -27,7 +27,7 @@ type DiskView struct {
 	autoPartitionMode     bool
 	autoPartitionWidget   *autopartitionwidget.AutoPartitionWidget
 	manualPartitionWidget *manualpartitionwidget.ManualPartitionWidget
-	userInput             *configuration.UserInput
+	userInput             *configuration.TridentConfigData
 
 	refreshTitle func()
 }
@@ -38,7 +38,7 @@ func New() *DiskView {
 }
 
 // Initialize initializes the view.
-func (dv *DiskView) Initialize(userInput *configuration.UserInput, backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
+func (dv *DiskView) Initialize(userInput *configuration.TridentConfigData, backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
 	dv.userInput = userInput
 	err = dv.populateBlockDeviceOptions()
 	if err != nil {

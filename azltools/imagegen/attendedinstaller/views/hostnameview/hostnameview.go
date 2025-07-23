@@ -42,7 +42,7 @@ type HostNameView struct {
 	flex         *tview.Flex
 	centeredFlex *tview.Flex
 	defaultName  string
-	userInput    *configuration.UserInput
+	userInput    *configuration.TridentConfigData
 }
 
 // New creates and returns a new HostNameView.
@@ -51,7 +51,7 @@ func New() *HostNameView {
 }
 
 // Initialize initializes the view.
-func (hv *HostNameView) Initialize(userInput *configuration.UserInput, backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
+func (hv *HostNameView) Initialize(userInput *configuration.TridentConfigData, backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
 	hv.userInput = userInput
 	hostname, err := randomHostname(defaultHostNamePrefix)
 	if err != nil {

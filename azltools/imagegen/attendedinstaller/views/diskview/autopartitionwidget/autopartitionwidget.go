@@ -39,7 +39,7 @@ type AutoPartitionWidget struct {
 	helpText     *tview.TextView
 
 	systemDevices []diskutils.SystemBlockDevice
-	userInput     *configuration.UserInput
+	userInput     *configuration.TridentConfigData
 	bootType      string
 }
 
@@ -52,7 +52,7 @@ func New(systemDevices []diskutils.SystemBlockDevice, bootType string) *AutoPart
 }
 
 // Initialize initializes the view.
-func (ap *AutoPartitionWidget) Initialize(userInput *configuration.UserInput, backButtonText string, app *tview.Application, switchMode, nextPage, previousPage, quit, refreshTitle func()) (err error) {
+func (ap *AutoPartitionWidget) Initialize(userInput *configuration.TridentConfigData, backButtonText string, app *tview.Application, switchMode, nextPage, previousPage, quit, refreshTitle func()) (err error) {
 	ap.userInput = userInput
 	ap.navBar = navigationbar.NewNavigationBar().
 		AddButton(backButtonText, previousPage).

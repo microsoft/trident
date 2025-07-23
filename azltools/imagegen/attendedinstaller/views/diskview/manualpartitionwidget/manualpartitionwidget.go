@@ -95,7 +95,7 @@ type ManualPartitionWidget struct {
 	systemDevices  []diskutils.SystemBlockDevice
 	bootType       string
 
-	userInput    *configuration.UserInput
+	userInput    *configuration.TridentConfigData
 	nextPage     func()
 	refreshTitle func()
 }
@@ -109,7 +109,7 @@ func New(systemDevices []diskutils.SystemBlockDevice, bootType string) *ManualPa
 }
 
 // Initialize initializes the view.
-func (mp *ManualPartitionWidget) Initialize(userInput *configuration.UserInput, backButtonText string, app *tview.Application, switchMode, nextPage, previousPage, quit, refreshTitle func()) (err error) {
+func (mp *ManualPartitionWidget) Initialize(userInput *configuration.TridentConfigData, backButtonText string, app *tview.Application, switchMode, nextPage, previousPage, quit, refreshTitle func()) (err error) {
 	mp.userInput = userInput
 
 	if len(mp.systemDevices) == 0 {
