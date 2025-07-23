@@ -92,7 +92,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
         // boot only.
         //
         // TODO: Remove this override once UKI & encryption tests are fixed. Related ADO:
-        // https://dev.azure.com/mariner-org/ECF/_workitems/edit/12877.
+        // https://dev.azure.com/mariner-org/polar/_workitems/edit/13344/.
         let override_pcrlock_encryption = ctx
             .spec
             .internal_params
@@ -102,7 +102,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
             if !override_pcrlock_encryption {
                 debug!("Regenerating pcrlock policy for current boot");
                 // TODO: Add PCR 7 once SecureBoot is enabled in a follow up PR. Related ADO task:
-                // https://dev.azure.com/mariner-org/ECF/_workitems/edit/12865/.
+                // https://dev.azure.com/mariner-org/polar/_workitems/edit/14286/.
                 let pcrs = Pcr::Pcr4 | Pcr::Pcr11;
 
                 // Get UKI and bootloader binaries for .pcrlock file generation

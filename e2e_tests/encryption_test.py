@@ -540,7 +540,7 @@ def check_crypsetup_luks_dump(
     # Check Host Status to see if image is UKI or not
     host_status = get_host_status(connection, tridentCommand)
     # TODO: Remove this override once UKI & encryption tests are fixed. ADO:
-    # https://dev.azure.com/mariner-org/ECF/_workitems/edit/12877.
+    # https://dev.azure.com/mariner-org/polar/_workitems/edit/13344/.
     override_uki = (
         host_status["spec"]
         .get("internalParams", {})

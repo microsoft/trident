@@ -607,7 +607,7 @@ fn generate_pcrlock_files(
         //
         // TODO: Once SecureBoot is enabled, gate this logic with a conditional, or remove
         // entirely, as SecureBoot will likely be enabled always.
-        // https://dev.azure.com/mariner-org/ECF/_workitems/edit/12865/.
+        // https://dev.azure.com/mariner-org/polar/_workitems/edit/14286/.
         for (index, uki_path) in uki_binaries.into_iter().enumerate() {
             let pcrlock_file =
                 generate_pcrlock_output_path(BOOT_LOADER_CODE_UKI_PCRLOCK_DIR, index);

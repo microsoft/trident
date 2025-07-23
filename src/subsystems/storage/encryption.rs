@@ -98,7 +98,8 @@ pub(super) fn validate_host_config(host_config: &HostConfiguration) -> Result<()
 /// - TODO: On a clean install, generates .pcrlock files for the runtime OS image A, creates a
 ///    pcrlock TPM 2.0 access policy based on PCRs 4, 7, and 11, and re-enrolls all encrypted
 ///    volumes with the new policy. Related ADO task:
-///    https://dev.azure.com/mariner-org/ECF/_workitems/edit/12865/.
+///    https://dev.azure.com/mariner-org/polar/_workitems/edit/14286/ and
+///    https://dev.azure.com/mariner-org/polar/_workitems/edit/13059/.
 /// - On A/B update, re-generates the pcrlock policy to include current boot & future boot with
 ///    update OS image, using PCRs 4, 7, and 11.
 #[tracing::instrument(name = "encryption_provision", skip_all)]
@@ -110,14 +111,16 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
         // - For A/B update, use PCRs 4, 7, and 11.
         // TODO: Once UKI MOS is built, include all UKI PCRs, i.e. 4, 7, and 11, into pcrlock
         // policy on A/B update and clean install. Related ADO task:
-        // https://dev.azure.com/mariner-org/ECF/_workitems/edit/12865/.
+        // https://dev.azure.com/mariner-org/polar/_workitems/edit/14286/ and
+        // https://dev.azure.com/mariner-org/polar/_workitems/edit/13059/.
         let pcrs = match ctx.servicing_type {
             ServicingType::CleanInstall => {
                 // Generate .pcrlock files for runtime OS image A, only using PCR 0, thanks to
                 // OVERRIDE_ENCRYPTION_PCRS.
                 //
                 // TODO: Once UKI MOS is built, include ROS A UKI and bootloader binaries.
-                // https://dev.azure.com/mariner-org/ECF/_workitems/edit/12865/.
+                // https://dev.azure.com/mariner-org/polar/_workitems/edit/14286/ and
+                // https://dev.azure.com/mariner-org/polar/_workitems/edit/13059/.
                 ctx.spec.internal_params.get::<Vec<Pcr>>(OVERRIDE_ENCRYPTION_PCRS)
                     .transpose()
                     .structured(InvalidInputError::InvalidInternalParameter {

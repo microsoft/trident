@@ -311,8 +311,9 @@ pub fn get_binary_paths_pcrlock(
 ) -> Result<(Vec<PathBuf>, Vec<PathBuf>), Error> {
     // TODO: For now, on a clean install, binaries are not needed since we're first sealing to a
     // pcrlock policy that only includes PCR 0. Once UKI MOS is built and SecureBoot is enabled,
-    // need to also return binary paths for clean install. Related ADO task:
-    // https://dev.azure.com/mariner-org/ECF/_workitems/edit/12865/.
+    // need to also return binary paths for clean install. Related ADO tasks:
+    // https://dev.azure.com/mariner-org/polar/_workitems/edit/14286/ and
+    // https://dev.azure.com/mariner-org/polar/_workitems/edit/13059/.
     if ctx.servicing_type == ServicingType::CleanInstall {
         return Ok((vec![], vec![]));
     }
@@ -395,8 +396,9 @@ fn get_bootloader_paths(
         // Currently, not executing pcrlock encryption or this logic on clean install, so active
         // volume has to be non-null on encryption provisioning.
         // TODO: Once pcrlock encryption is enabled on clean install, need to adjust the logic, to
-        // correctly construct the binary paths. Related ADO task:
-        // https://dev.azure.com/mariner-org/ECF/_workitems/edit/12865/.
+        // correctly construct the binary paths. Related ADO tasks:
+        // https://dev.azure.com/mariner-org/polar/_workitems/edit/14286/ and
+        // https://dev.azure.com/mariner-org/polar/_workitems/edit/13059/.
         Some(_) => ctx.ab_active_volume.ok_or_else(|| {
             anyhow::anyhow!("Active volume is not set outside of clean install servicing")
         })?,

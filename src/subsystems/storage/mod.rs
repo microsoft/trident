@@ -177,7 +177,7 @@ impl Subsystem for StorageSubsystem {
         // i.e. update ROS image.
         //
         // TODO: Remove this override once UKI & encryption tests are fixed. Related ADO:
-        // https://dev.azure.com/mariner-org/ECF/_workitems/edit/12877.
+        // https://dev.azure.com/mariner-org/polar/_workitems/edit/13344/.
         let override_pcrlock_encryption = ctx
             .spec
             .internal_params
