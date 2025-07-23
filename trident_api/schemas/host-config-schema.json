@@ -612,7 +612,7 @@
           ]
         },
         "url": {
-          "description": "The path to the COSI file.",
+          "description": "The path to the COSI file.\n\nURLs may have one of the following four schemes: `http://`, `https://`, `file://`, or `oci://`. COSI files stored as an OCI image must allow for anonymous pulls.",
           "type": "string",
           "format": "uri"
         }
