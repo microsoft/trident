@@ -9,7 +9,7 @@ use trident_api::{
 };
 
 mod common;
-mod encryption;
+pub mod encryption;
 mod filesystem;
 pub mod image;
 pub mod partitioning;

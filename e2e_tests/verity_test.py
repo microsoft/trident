@@ -3,7 +3,8 @@ import pytest
 import yaml
 import re
 import logging
-from base_test import get_raid_name_from_device_name
+
+from base_test import get_raid_name_from_device_name, get_host_status
 
 pytestmark = [pytest.mark.verity]
 
@@ -106,14 +107,8 @@ def test_verity_root(connection, hostConfiguration, tridentCommand, abActiveVolu
     assert "readonly" == veritysetup_status_dict["mode"]
 
     # Check Host Status.
-    trident_get_command = tridentCommand + "get"
-    res_host_status = connection.run(trident_get_command)
-    output_host_status = res_host_status.stdout.strip()
+    host_status = get_host_status(connection, tridentCommand)
 
-    yaml.add_multi_constructor(
-        "!", lambda loader, _, node: loader.construct_mapping(node)
-    )
-    host_status = yaml.load(output_host_status, Loader=yaml.FullLoader)
     # Host status expected output example:
     # root:
     #   path: /dev/disk/by-partuuid/f69514c7-d20a-42fd-8c4e-49df24d2ce40

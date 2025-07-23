@@ -41,9 +41,8 @@ impl Subsystem for BootSubsystem {
 
 /// Returns the ESP directory name of the current install's update volume.
 ///
-/// Internally, calls `EngineContext::make_install_id` with the update volume
-/// returned by `EngineContext::get_ab_update_volume` and the current install
-/// index.
+/// Internally, calls `EngineContext::make_install_id` with the update volume returned by
+/// `EngineContext::get_ab_update_volume` and the current install index.
 pub fn get_update_esp_dir_name(ctx: &EngineContext) -> Option<String> {
     Some(make_esp_dir_name(
         ctx.install_index,

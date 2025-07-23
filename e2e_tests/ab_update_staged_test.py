@@ -1,25 +1,16 @@
 import pytest
-import yaml
-from typing import Dict, List, Tuple
+
+from base_test import get_host_status
 
 pytestmark = [pytest.mark.ab_update_staged]
 
 
-def test_ab_update_staged(
-    connection, hostConfiguration, tridentCommand, abActiveVolume
-):
-    # Check Host Status.
-    trident_get_command = tridentCommand + "get"
-    res_host_status = connection.run(trident_get_command)
-    output_host_status = res_host_status.stdout.strip()
+def test_ab_update_staged(connection, tridentCommand, abActiveVolume):
+    # Check Host Status
+    host_status = get_host_status(connection, tridentCommand)
 
-    yaml.add_multi_constructor(
-        "!", lambda loader, _, node: loader.construct_mapping(node)
-    )
-    host_status = yaml.load(output_host_status, Loader=yaml.FullLoader)
-
-    # Assert that servicingState is correct.
+    # Assert that servicing state is correct
     assert host_status["servicingState"] == "ab-update-staged"
 
-    # Assert that the active volume has not changed.
+    # Assert that the active volume has not changed
     assert host_status["abActiveVolume"] == abActiveVolume

@@ -134,7 +134,12 @@ TOOLKIT_DIR="azure-linux-image-tools/toolkit"
 AZL_TOOLS_OUT_DIR="$(TOOLKIT_DIR)/out/tools"
 ARTIFACTS_DIR="artifacts"
 
-# Build OSModifier from the azure-linux-image-tools submodule
+# Build OSModifier from the azure-linux-image-tools submodule.
+# Before building OSModifier, you need to initialize the local .git/config with
+# the submodules listed in .gitmodules and then fetch the actual content of the
+# submodule, via:
+#
+# git submodule update --init
 artifacts/osmodifier:
 	@mkdir -p "$(ARTIFACTS_DIR)"
 	$(MAKE) -C $(TOOLKIT_DIR) go-osmodifier REBUILD_TOOLS=y

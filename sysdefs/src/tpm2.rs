@@ -4,10 +4,6 @@ use serde::{self, Deserialize};
 
 /// Represents the Platform Configuration Registers (PCRs) in the TPM. Each PCR is associated with
 /// a digit number and a string name.
-///
-/// Currently, the PCRs modified by `systemd`` are represented, e.g. as shown in the
-/// `systemd-cryptenroll` documentation, but more might be added in the future:
-/// https://www.man7.org/linux/man-pages/man1/systemd-cryptenroll.1.html.
 #[bitflags]
 #[repr(u32)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -24,8 +20,12 @@ pub enum Pcr {
     Pcr4 = 1 << 4,
     /// PCR 5, or `boot-loader-config`.
     Pcr5 = 1 << 5,
+    /// PCR 6, or `host-platform`.
+    Pcr6 = 1 << 6,
     /// PCR 7, or `secure-boot-policy`.
     Pcr7 = 1 << 7,
+    /// PCR 8.
+    Pcr8 = 1 << 8,
     /// PCR 9, or `kernel-initrd`.
     Pcr9 = 1 << 9,
     /// PCR 10, or `ima`.
@@ -42,6 +42,18 @@ pub enum Pcr {
     Pcr15 = 1 << 15,
     /// PCR 16, or `debug`.
     Pcr16 = 1 << 16,
+    /// PCR 17.
+    Pcr17 = 1 << 17,
+    /// PCR 18.
+    Pcr18 = 1 << 18,
+    /// PCR 19.
+    Pcr19 = 1 << 19,
+    /// PCR 20.
+    Pcr20 = 1 << 20,
+    /// PCR 21.
+    Pcr21 = 1 << 21,
+    /// PCR 22.
+    Pcr22 = 1 << 22,
     /// PCR 23, or `application-support`.
     Pcr23 = 1 << 23,
 }
@@ -61,7 +73,9 @@ impl Pcr {
             3 => Ok(Pcr::Pcr3),
             4 => Ok(Pcr::Pcr4),
             5 => Ok(Pcr::Pcr5),
+            6 => Ok(Pcr::Pcr6),
             7 => Ok(Pcr::Pcr7),
+            8 => Ok(Pcr::Pcr8),
             9 => Ok(Pcr::Pcr9),
             10 => Ok(Pcr::Pcr10),
             11 => Ok(Pcr::Pcr11),
@@ -70,6 +84,12 @@ impl Pcr {
             14 => Ok(Pcr::Pcr14),
             15 => Ok(Pcr::Pcr15),
             16 => Ok(Pcr::Pcr16),
+            17 => Ok(Pcr::Pcr17),
+            18 => Ok(Pcr::Pcr18),
+            19 => Ok(Pcr::Pcr19),
+            20 => Ok(Pcr::Pcr20),
+            21 => Ok(Pcr::Pcr21),
+            22 => Ok(Pcr::Pcr22),
             23 => Ok(Pcr::Pcr23),
             _ => bail!("Failed to convert an invalid PCR number '{}' to a Pcr", num),
         }
@@ -99,7 +119,9 @@ mod tests {
         assert_eq!(Pcr::Pcr3.to_num(), 3);
         assert_eq!(Pcr::Pcr4.to_num(), 4);
         assert_eq!(Pcr::Pcr5.to_num(), 5);
+        assert_eq!(Pcr::Pcr6.to_num(), 6);
         assert_eq!(Pcr::Pcr7.to_num(), 7);
+        assert_eq!(Pcr::Pcr8.to_num(), 8);
         assert_eq!(Pcr::Pcr9.to_num(), 9);
         assert_eq!(Pcr::Pcr10.to_num(), 10);
         assert_eq!(Pcr::Pcr11.to_num(), 11);
@@ -108,6 +130,12 @@ mod tests {
         assert_eq!(Pcr::Pcr14.to_num(), 14);
         assert_eq!(Pcr::Pcr15.to_num(), 15);
         assert_eq!(Pcr::Pcr16.to_num(), 16);
+        assert_eq!(Pcr::Pcr17.to_num(), 17);
+        assert_eq!(Pcr::Pcr18.to_num(), 18);
+        assert_eq!(Pcr::Pcr19.to_num(), 19);
+        assert_eq!(Pcr::Pcr20.to_num(), 20);
+        assert_eq!(Pcr::Pcr21.to_num(), 21);
+        assert_eq!(Pcr::Pcr22.to_num(), 22);
         assert_eq!(Pcr::Pcr23.to_num(), 23);
     }
 

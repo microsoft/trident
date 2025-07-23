@@ -20,9 +20,10 @@ use trident_api::{
 use crate::engine::EngineContext;
 
 /// Temporary name for the UKI file before renaming.
-const TMP_UKI_NAME: &str = "vmlinuz-0.efi.staged";
-const UKI_DIRECTORY: &str = formatcp!("{ESP_EFI_DIRECTORY}/Linux");
+pub const TMP_UKI_NAME: &str = "vmlinuz-0.efi.staged";
+pub const UKI_DIRECTORY: &str = formatcp!("{ESP_EFI_DIRECTORY}/Linux");
 
+/// Returns the UKI file suffix, given the current active volume and install index.
 fn uki_suffix(ctx: &EngineContext) -> String {
     match ctx.ab_active_volume {
         Some(AbVolumeSelection::VolumeA) => format!("azlb{}.efi", ctx.install_index),

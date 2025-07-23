@@ -12,7 +12,7 @@ use url::Url;
 use crate::{
     config::{HostConfigurationDynamicValidationError, HostConfigurationStaticValidationError},
     primitives::bytes::ByteCount,
-    status::ServicingState,
+    status::{ServicingState, ServicingType},
     storage_graph::error::StorageGraphBuildError,
 };
 
@@ -120,6 +120,9 @@ pub enum InternalError {
 
     #[error("Unexpected servicing state '{state:?}'")]
     UnexpectedServicingState { state: ServicingState },
+
+    #[error("Unexpected servicing type '{servicing_type:?}'")]
+    UnexpectedServicingType { servicing_type: ServicingType },
 
     #[error("Failed to build storage graph: {0}")]
     RebuildStorageGraph(#[from] StorageGraphBuildError),
@@ -291,6 +294,9 @@ pub enum ServicingError {
         expected_device_path: String,
     },
 
+    #[error("Failed to bind encryption to pcrlock policy")]
+    BindEncryptionToPcrlockPolicy,
+
     #[error("Failed to check if the boot entry '{boot_entry}' exists via efibootmgr")]
     BootEntryCheck { boot_entry: String },
 
@@ -333,8 +339,16 @@ pub enum ServicingError {
         explanation: String,
     },
 
+    #[error("Failed to get binary paths required for pcrlock encryption")]
+    GetBinaryPathsForPcrlockEncryption,
+
     #[error("Failed to stage machine-id file")]
     CopyMachineId,
+
+    #[error(
+        "Failed to copy pcrlock policy JSON file from '{path}' to '{destination}' in update volume"
+    )]
+    CopyPcrlockPolicyJson { path: String, destination: String },
 
     #[error("Failed to copy Trident binary to runtime OS")]
     CopyTridentBinary,
@@ -425,14 +439,14 @@ pub enum ServicingError {
     #[error("Failed to generate Netplan config")]
     GenerateNetplanConfig,
 
-    #[error("Failed to generate .pcrlock file at '{pcrlock_file}'")]
-    GeneratePcrlockFile { pcrlock_file: String },
-
     #[error("Failed to generate recovery key file '{key_file}'")]
     GenerateRecoveryKeyFile { key_file: String },
 
     #[error("Failed to generate a new TPM 2.0 access policy")]
     GenerateTpm2AccessPolicy,
+
+    #[error("Failed to generate required .pcrlock files")]
+    GeneratePcrlockFiles,
 
     #[error("Failed to get block device path for device '{device_id}'")]
     GetBlockDevicePath { device_id: String },
@@ -503,6 +517,9 @@ pub enum ServicingError {
     #[error("Failed to read current system hostname from {path}")]
     ReadHostname { path: String },
 
+    #[error("Failed to read recovery key file '{key_file}'")]
+    ReadRecoveryKeyFile { key_file: String },
+
     #[error("Failed to reboot")]
     Reboot,
 
@@ -564,9 +581,6 @@ pub enum ServicingError {
         hs_active_volume: String,
     },
 
-    #[error("Failed to validate systemd-pcrlock log output")]
-    ValidatePcrlockLog,
-
     #[error("Trident rebuild-raid validation failed")]
     ValidateRebuildRaid,
 
@@ -578,6 +592,9 @@ pub enum ServicingError {
 
     #[error("Failed to update GRUB configs")]
     UpdateGrubConfigs,
+
+    #[error("Failed to wipe all key slots unlocked by a passphrase for an encrypted volume '{device_path}'")]
+    WipePasswordKeySlot { device_path: String },
 
     #[error("Failed to write an additional file '{file_name}'")]
     WriteAdditionalFile { file_name: String },

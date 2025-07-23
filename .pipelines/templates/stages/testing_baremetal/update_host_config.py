@@ -84,6 +84,18 @@ def update_trident_host_config(
         "Final trident_yaml content post all the updates: %s", host_configuration
     )
 
+    # TODO: Remove this logic once pcrlock encryption is enabled for the BM
+    # scenario. For now, if this is a UKI image, add an internal param to
+    # disable pcrlock encryption. Related ADO task:
+    # https://dev.azure.com/mariner-org/polar/_workitems/edit/14269/.
+    if host_configuration.get("internalParams", {}).get("uki", False):
+        logging.info(
+            "Detected UKI image, setting 'overridePcrlockEncryption' internal param."
+        )
+        host_configuration.setdefault("internalParams", {})[
+            "overridePcrlockEncryption"
+        ] = True
+
 
 def is_root_verity(host_configuration: dict) -> bool:
     """

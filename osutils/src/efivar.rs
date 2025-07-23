@@ -86,6 +86,7 @@ pub fn set_default(entry: &str) -> Result<(), TridentError> {
     )
 }
 
+/// Returns the value of a given EFI variable given the variable name and GUID.
 fn read_efi_variable(guid: &str, variable: &str) -> Result<Vec<u8>, TridentError> {
     let efi_var_path = Path::new("/sys/firmware/efi/efivars/").join(format!("{variable}-{guid}"));
 
@@ -107,6 +108,12 @@ fn read_efi_variable(guid: &str, variable: &str) -> Result<Vec<u8>, TridentError
 /// Returns whether the LoaderEntrySelected EFI variable is set.
 pub fn current_var_set() -> bool {
     read_efi_variable(BOOTLOADER_INTERFACE_GUID, LOADER_ENTRY_SELECTED).is_ok()
+}
+
+/// Returns the value of the LoaderEntrySelected EFI variable. This is the current boot entry.
+pub fn read_current_var() -> Result<String, TridentError> {
+    let data = read_efi_variable(BOOTLOADER_INTERFACE_GUID, LOADER_ENTRY_SELECTED)?;
+    Ok(decode_utf16le(&data))
 }
 
 /// Set the LoaderEntryDefault EFI variable to the current boot entry
@@ -169,11 +176,16 @@ mod functional_test {
 
     #[functional_test(feature = "helpers")]
     fn test_set_default_to_current() {
+        assert!(!current_var_set());
         set_efi_variable(
             &format!("{BOOTLOADER_INTERFACE_GUID}-{LOADER_ENTRY_SELECTED}"),
             &encode_utf16le("CurrentEntry"),
         )
         .unwrap();
+
+        // Check that the current entry is set
+        assert!(current_var_set());
+        assert_eq!(read_current_var().unwrap(), "CurrentEntry");
 
         // Now set the default to the current entry
         set_default_to_current().unwrap();
