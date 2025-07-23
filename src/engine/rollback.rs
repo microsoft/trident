@@ -105,10 +105,10 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
                 // https://dev.azure.com/mariner-org/ECF/_workitems/edit/12865/.
                 let pcrs = Pcr::Pcr4 | Pcr::Pcr11;
 
-                // Construct boot binaries for .pcrlock file generation
+                // Get UKI and bootloader binaries for .pcrlock file generation
                 let (uki_binaries, bootloader_binaries) =
-                    encryption::construct_binary_paths_pcrlock(&ctx, None)
-                        .structured(ServicingError::ConstructBinaryPathsForPcrlockEncryption)?;
+                    encryption::get_binary_paths_pcrlock(&ctx, None)
+                        .structured(ServicingError::GetBinaryPathsForPcrlockEncryption)?;
 
                 // Generate a pcrlock policy
                 pcrlock::generate_pcrlock_policy(pcrs, uki_binaries, bootloader_binaries)?;

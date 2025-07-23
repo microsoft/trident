@@ -137,10 +137,10 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
             }
         };
 
-        // Construct boot binaries for .pcrlock file generation
+        // Get UKI and bootloader binaries for .pcrlock file generation
         let (uki_binaries, bootloader_binaries) =
-            storage_encryption::construct_binary_paths_pcrlock(ctx, Some(mount_path))
-                .structured(ServicingError::ConstructBinaryPathsForPcrlockEncryption)?;
+            storage_encryption::get_binary_paths_pcrlock(ctx, Some(mount_path))
+                .structured(ServicingError::GetBinaryPathsForPcrlockEncryption)?;
 
         // Generate a pcrlock policy
         pcrlock::generate_pcrlock_policy(pcrs, uki_binaries, bootloader_binaries)?;

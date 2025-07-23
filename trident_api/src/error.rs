@@ -339,8 +339,8 @@ pub enum ServicingError {
         explanation: String,
     },
 
-    #[error("Failed to construct binary paths for pcrlock encryption")]
-    ConstructBinaryPathsForPcrlockEncryption,
+    #[error("Failed to get binary paths required for pcrlock encryption")]
+    GetBinaryPathsForPcrlockEncryption,
 
     #[error("Failed to construct UKI suffix")]
     ConstructUkiSuffix,
