@@ -1,11 +1,13 @@
 internalParams:
   uki: true
-  # TODO: Remove this override once UKI MOS is built and PCR-based encryption is enabled on clean
-  # install. For now, only include PCR 0 in pcrlock policy on clean install.
-  # https://dev.azure.com/mariner-org/ECF/_workitems/edit/12865/.
+  # TODO: Remove this override once UKI MOS is built and pcrlock encryption is
+  # enabled on clean install. For now, only include PCR 0 in pcrlock policy on
+  # clean install. Related ADO tasks:
+  # https://dev.azure.com/mariner-org/polar/_workitems/edit/14286/ and
+  # https://dev.azure.com/mariner-org/polar/_workitems/edit/13059/.
   overrideEncryptionPcrs: [0]
   # TODO: Remove this internal parameter once UKI & encryption tests are fixed.
-  # https://dev.azure.com/mariner-org/ECF/_workitems/edit/12877.
+  # https://dev.azure.com/mariner-org/polar/_workitems/edit/13344/.
   overridePcrlockEncryption: true
 image:
   url: http://NETLAUNCH_HOST_ADDRESS/files/usrverity.cosi

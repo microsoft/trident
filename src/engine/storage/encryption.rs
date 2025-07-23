@@ -86,7 +86,7 @@ pub(super) fn create_encrypted_devices(
         let key_file_path: PathBuf;
 
         // Store key to update ENCRYPTION_PASSPHRASE static variable
-        let key_value: Option<Vec<u8>>;
+        let key_value: Vec<u8>;
 
         if let Some(recovery_key_url) = &encryption.recovery_key_url {
             key_file_path = recovery_key_url.path().into();
@@ -95,7 +95,7 @@ pub(super) fn create_encrypted_devices(
             let key = fs::read(&key_file_path).structured(ServicingError::ReadRecoveryKeyFile {
                 key_file: key_file_path.to_string_lossy().to_string(),
             })?;
-            key_value = Some(key);
+            key_value = key;
         } else {
             // Create a temporary file to store the recovery key file.
             key_file_tmp =
@@ -112,14 +112,12 @@ pub(super) fn create_encrypted_devices(
                 },
             )?;
 
-            key_value = Some(key.clone());
+            key_value = key.clone();
         };
 
         // Store the key statically for later use, i.e. pcrlock policy enrollment
-        if let Some(key) = key_value {
-            let mut static_key = ENCRYPTION_PASSPHRASE.lock().unwrap();
-            *static_key = key;
-        }
+        let mut static_key = ENCRYPTION_PASSPHRASE.lock().unwrap();
+        *static_key = key_value;
 
         debug!(
             "Using key file '{}' to initialize all encrypted volumes",

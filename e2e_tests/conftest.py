@@ -81,12 +81,9 @@ def connection(request):
         # The getenforce command returns Enforcing, Permissive, or Disabled ...
         # disable if selinux is not already.
         if not "Disabled" in getenforce_result.stdout:
-            # Disable SELinux:
+            # Disable SELinux
             disable_selinux_enforcement_command = "setenforce 0"
-            ssh_connection.run(
-                f"sudo {disable_selinux_enforcement_command}"
-            )  # TODO: Re-enable SELinux:
-            # https://dev.azure.com/mariner-org/ECF/_workitems/edit/9508.
+            ssh_connection.run(f"sudo {disable_selinux_enforcement_command}")
         # Load Docker Image
         load_container = f"docker load --input {DOCKER_IMAGE_PATH}"
         ssh_connection.run(f"sudo {load_container}")
