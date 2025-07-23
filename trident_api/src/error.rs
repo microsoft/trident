@@ -342,9 +342,6 @@ pub enum ServicingError {
     #[error("Failed to get binary paths required for pcrlock encryption")]
     GetBinaryPathsForPcrlockEncryption,
 
-    #[error("Failed to construct UKI suffix")]
-    ConstructUkiSuffix,
-
     #[error("Failed to stage machine-id file")]
     CopyMachineId,
 
