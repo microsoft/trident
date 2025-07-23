@@ -331,10 +331,10 @@ pub fn get_binary_paths_pcrlock(
     };
 
     // Construct UKI paths
-    let uki_binaries = construct_uki_paths(&esp_path, mount_path)?;
+    let uki_binaries = get_uki_paths(&esp_path, mount_path)?;
 
     // Construct bootloader paths
-    let bootloader_binaries = construct_bootloader_paths(&esp_path, mount_path, ctx)?;
+    let bootloader_binaries = get_bootloader_paths(&esp_path, mount_path, ctx)?;
 
     debug!("Paths of boot binaries required for pcrlock encryption:");
     for (i, path) in uki_binaries.iter().enumerate() {
@@ -347,17 +347,22 @@ pub fn get_binary_paths_pcrlock(
     Ok((uki_binaries, bootloader_binaries))
 }
 
-/// Returns the path to the current UKI binary, which is used for the generation of .pcrlock files.
-/// If `mount_path` is provided, it means that this is called during staging of an A/B update, so
-/// the UKI binary for the update image is requested.
-fn construct_uki_paths(esp_path: &Path, mount_path: Option<&Path>) -> Result<Vec<PathBuf>, Error> {
+/// Returns paths of the UKI binaries for the current boot and if mount_path is provided, for the
+/// future boot, i.e. update image, as required for the generation of .pcrlock files.
+///
+/// If `mount_path` is provided, it means that this func is called during staging of an A/B update,
+/// so the UKI binary for the update image is requested. Otherwise, this logic is called on boot
+/// validation, and so we're re-generating the pcrlock policy for the current boot only.
+fn get_uki_paths(esp_path: &Path, mount_path: Option<&Path>) -> Result<Vec<PathBuf>, Error> {
     let mut uki_binaries: Vec<PathBuf> = Vec::new();
 
     // If mount_path is null, this logic is called on rollback detection, when active volume is
     // still set to the old volume, so we request UKI suffix for update image, to get it for the
     // current boot. Otherwise, when staging an A/B update, for_update is set to false.
-    let uki_current =
+    let esp_uki_directory = join_relative(esp_path, UKI_DIRECTORY);
+    let uki_filename =
         efivar::read_current_var().unstructured("Failed to read current boot entry")?;
+    let uki_current = esp_uki_directory.join(uki_filename);
     uki_binaries.push(Path::new(&uki_current).to_path_buf());
 
     // If this is done during encryption provisioning, i.e. update image is mounted at mount_path,
@@ -365,14 +370,21 @@ fn construct_uki_paths(esp_path: &Path, mount_path: Option<&Path>) -> Result<Vec
     if mount_path.is_some() {
         // UKI binary in runtime OS to be measured; it's currently staged at designated
         // path
-        let uki_update = esp_path.join(UKI_DIRECTORY).join(TMP_UKI_NAME);
+        let uki_update = esp_uki_directory.join(TMP_UKI_NAME);
         uki_binaries.push(uki_update.clone());
     }
 
     Ok(uki_binaries)
 }
 
-fn construct_bootloader_paths(
+/// Returns paths of the bootloader binaries for the current boot and if mount_path is provided,
+/// for the future boot, i.e. update image, as required for the generation of .pcrlock files.
+/// Bootloaders include shim and systemd-boot EFI executables.
+///
+/// If `mount_path` is provided, it means that this func is called during staging of an A/B update,
+/// so the bootloader binary for the update image is requested. Otherwise, this logic is called on
+/// boot validation, and so we're re-generating the pcrlock policy for the current boot only.
+fn get_bootloader_paths(
     esp_path: &Path,
     mount_path: Option<&Path>,
     ctx: &EngineContext,
