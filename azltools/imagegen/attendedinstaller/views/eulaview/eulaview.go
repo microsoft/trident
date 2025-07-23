@@ -36,10 +36,9 @@ const (
 
 // EulaView contains the EULA UI
 type EulaView struct {
-	flex      *tview.Flex
-	text      *tview.TextView
-	navBar    *navigationbar.NavigationBar
-	userInput *configuration.UserInput
+	flex   *tview.Flex
+	text   *tview.TextView
+	navBar *navigationbar.NavigationBar
 }
 
 // New creates and returns a new EulaView.
@@ -49,8 +48,6 @@ func New() *EulaView {
 
 // Initialize initializes the view.
 func (ev *EulaView) Initialize(userInput *configuration.UserInput, backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
-	ev.userInput = userInput
-
 	ev.text = tview.NewTextView().
 		SetWordWrap(true).
 		SetChangedFunc(func() {
