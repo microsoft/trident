@@ -116,8 +116,6 @@ pub fn update_uki_boot_order(
     let esp_uki_directory = esp_dir_path.join(UKI_DIRECTORY);
     let existing_ukis =
         enumerate_existing_ukis(&esp_uki_directory).structured(ServicingError::EnumerateUkis)?;
-
-    // Determine UKI suffix for the update image
     let uki_suffix = uki_suffix(ctx);
 
     let mut max_index = 99;
