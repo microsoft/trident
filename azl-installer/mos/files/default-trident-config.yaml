@@ -1,0 +1,39 @@
+image:
+  url: file:///mnt/trident_cdrom/images/azure-linux-trident.cosi
+  sha384: ignored
+storage:
+  disks:
+    - device: "__DISK_PATH__"
+      id: os
+      partitionTableType: gpt
+      partitions:
+        - id: esp
+          size: 64M
+          type: esp
+        - id: root
+          size: 4G
+          type: root
+  filesystems:
+    - deviceId: root
+      mountPoint: /
+    - deviceId: esp
+      mountPoint:
+        options: umask=0077
+        path: /boot/efi
+os:
+  selinux:
+    mode: disabled
+  users:
+    - name: __USER_NAME__
+scripts:
+  postConfigure:
+    - name: user-password
+      runOn:
+        - clean-install
+      path: /etc/trident/scripts/user-password.sh
+    - name: hostname
+      runOn:
+        - clean-install
+      content: |
+        echo "__HOST_NAME__" > /etc/hostname
+        hostname "__HOST_NAME__"
