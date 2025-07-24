@@ -198,15 +198,6 @@ fn persist_background_log_and_metrics(
         );
     }
 
-    debug!(
-        "Run ausearch: \n{:?}",
-        std::process::Command::new("ausearch")
-            .arg("-m")
-            .arg("avc")
-            .output()
-            .expect("failed")
-    );
-
     // Copy the metrics file to the new location
     if let Err(e) = fs::copy(TRIDENT_METRICS_FILE_PATH, &new_metrics_path) {
         warn!(

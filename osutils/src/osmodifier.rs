@@ -1,7 +1,7 @@
 use std::{io::Write, path::Path, process::Command};
 
 use anyhow::{Context, Error};
-use log::{debug, warn};
+use log::{debug, trace, warn};
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 
@@ -44,7 +44,7 @@ impl OSModifierConfig {
         }
 
         debug!("Calling OS modifier");
-        debug!(
+        trace!(
             "Calling OS modifier with the following config:\n{}",
             os_modifier_config_yaml
         );
