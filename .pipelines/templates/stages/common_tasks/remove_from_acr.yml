@@ -54,17 +54,11 @@ stages:
                   tag="v${build_id}.${i}"
 
                   if az acr repository show --name ${{ parameters.registry }} --image ${host_repository_name}:${tag} &> /dev/null; then
-                    echo "Deleting image ${host_repository_name}:${tag} from ACR ${{ parameters.registry }}"
                     az acr repository delete --name ${{ parameters.registry }} --image ${host_repository_name}:${tag} --yes
-                  else
-                    echo "Image ${host_repository_name}:${tag} not found in ACR ${{ parameters.registry }}."
                   fi
 
                   if az acr repository show --name ${{ parameters.registry }} --image ${container_repository_name}:${tag} &> /dev/null; then
-                    echo "Deleting image ${container_repository_name}:${tag} from ACR ${{ parameters.registry }}"
                     az acr repository delete --name ${{ parameters.registry }} --image ${container_repository_name}:${tag} --yes
-                  else
-                    echo "Image ${container_repository_name}:${tag} not found in ACR ${{ parameters.registry }}."
                   fi
                 done
             displayName: "Log into ACR and delete images by tag"
