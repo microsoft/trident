@@ -8,6 +8,10 @@ parameters:
   - name: partition
     type: string
 
+  - name: artifactPrefix
+    type: string
+    default: "stage-finalize-ab-update-runtime-os"
+
 steps:
   - bash: |
       set -eux
@@ -23,14 +27,15 @@ steps:
       fi
 
       # Output the serial log
+      SERIAL_LOG_ARTIFACT_PATH="${{ parameters.outputDirectory }}/${{ parameters.artifactPrefix }}-${{ parameters.partition }}-serial.log"
       if [ -f $SERIAL_LOG ]; then
-        sudo cp $SERIAL_LOG ${{ parameters.outputDirectory }}/serial-update-runtime-os-${{ parameters.partition }}.log
-        sudo chmod 644 ${{ parameters.outputDirectory }}/serial-update-runtime-os-${{ parameters.partition }}.log
+        sudo cp $SERIAL_LOG $SERIAL_LOG_ARTIFACT_PATH
+        sudo chmod 644 $SERIAL_LOG_ARTIFACT_PATH
         echo "Serial log found:"
         sudo cat $SERIAL_LOG
       else
         echo "Serial log not found!"
-        echo "(No serial log captured)" > ${{ parameters.outputDirectory }}/serial-update-runtime-os-${{ parameters.partition }}.log
+        echo "(No serial log captured)" > $SERIAL_LOG_ARTIFACT_PATH
       fi
     displayName: "📄 Display serial output from update to ${{ parameters.partition }}"
     condition: succeededOrFailed()
