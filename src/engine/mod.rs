@@ -199,7 +199,7 @@ fn persist_background_log_and_metrics(
     }
 
     debug!(
-        "{:?}",
+        "Run ausearch: \n{:?}",
         std::process::Command::new("ausearch")
             .arg("-m")
             .arg("avc")
