@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::{anyhow, bail, ensure, Context, Error};
-use log::{debug, error, trace};
+use log::{debug, trace, warn};
 
 use osutils::{
     block_devices,
@@ -278,10 +278,9 @@ fn open_verity_device_with_signature(
             );
         }
         Err(e) => {
-            error!(
-                "Failed to get signature info from file '{}': {}",
+            warn!(
+                "Failed to get signature info from file '{}': {e:?}",
                 temp_signature_file_path.display(),
-                e
             );
         }
     }

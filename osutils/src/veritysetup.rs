@@ -552,15 +552,6 @@ impl Display for VeritySignatureInfo {
 }
 
 pub fn get_verity_signature_info(path: impl AsRef<Path>) -> Result<VeritySignatureInfo, Error> {
-    get_verity_signature_info_inner(path.as_ref()).with_context(|| {
-        format!(
-            "Failed to read verity signature info from file '{}'",
-            path.as_ref().display()
-        )
-    })
-}
-
-fn get_verity_signature_info_inner(path: impl AsRef<Path>) -> Result<VeritySignatureInfo, Error> {
     let der = fs::read(path.as_ref()).context("Failed to read verity signature file")?;
     let pkcs7 = Pkcs7::from_der(&der).context("Failed to parse verity signature file as PKCS#7")?;
     let empty_stack = Stack::<X509>::new().context("Failed to create empty X509 stack")?;
