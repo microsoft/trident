@@ -111,7 +111,7 @@ pub fn current_var_is_uki() -> bool {
         return false;
     };
 
-    current.ends_with(b".efi")
+    decode_utf16le(&current).ends_with(".efi")
 }
 
 /// Returns the value of the LoaderEntrySelected EFI variable. This is the current boot entry.
