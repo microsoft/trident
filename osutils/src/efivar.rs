@@ -181,7 +181,7 @@ mod functional_test {
     #[functional_test(feature = "helpers")]
     fn test_set_default_to_current() {
         // Generate a random current entry
-        let current_entry = format!("CurrentEntry-{}", rand::random::<u32>());
+        let current_entry = format!("CurrentEntry-{}.efi", rand::random::<u32>());
 
         set_efi_variable(
             &format!("{BOOTLOADER_INTERFACE_GUID}-{LOADER_ENTRY_SELECTED}"),
@@ -190,7 +190,7 @@ mod functional_test {
         .unwrap();
 
         // Check that the current entry is set
-        assert!(current_var_set());
+        assert!(current_var_is_uki());
         assert_eq!(read_current_var().unwrap(), current_entry);
 
         // Now set the default to the current entry
