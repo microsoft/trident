@@ -3,6 +3,7 @@ use std::{
     fs::{self, Permissions},
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
+    process::Command,
 };
 
 use anyhow::{Context, Error};
@@ -270,6 +271,22 @@ fn encrypt_and_open_device(
     );
 
     encryption::cryptsetup_open(key_file, device_path, device_name)?;
+
+    // TODO: REMOVE BEFORE MERGING
+    // Run luksDump to get the JSON metadata of the LUKS2 volume
+    let output = Command::new("cryptsetup")
+        .arg("luksDump")
+        .arg(device_path)
+        .output()
+        .context("Failed to run 'cryptsetup luksDump'")?;
+    let stdout_str = String::from_utf8(output.stdout)
+        .context("Failed to convert stdout of 'cryptsetup luksDump' to a string as it contains invalid UTF-8")?;
+    let stderr_str = String::from_utf8(output.stderr)
+        .context("Failed to convert stderr of 'cryptsetup luksDump' to a string as it contains invalid UTF-8")?;
+
+    debug!("LUKS2 volume metadata:");
+    debug!("stdout: {}", stdout_str);
+    debug!("stderr: {}", stderr_str);
 
     Ok(())
 }
