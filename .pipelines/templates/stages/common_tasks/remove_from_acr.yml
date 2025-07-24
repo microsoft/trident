@@ -52,7 +52,13 @@ stages:
                 # Delete repository with COSI images
                 for i in {1..3}; do
                   tag="v${build_id}.${i}"
-                  az acr repository delete --name ${{ parameters.registry }} --image ${host_repository_name}:${tag} --yes
-                  az acr repository delete --name ${{ parameters.registry }} --image ${container_repository_name}:${tag} --yes
+
+                  if az acr repository show --name ${{ parameters.registry }} --image ${host_repository_name}:${tag} &> /dev/null; then
+                    az acr repository delete --name ${{ parameters.registry }} --image ${host_repository_name}:${tag} --yes
+                  fi
+
+                  if az acr repository show --name ${{ parameters.registry }} --image ${container_repository_name}:${tag} &> /dev/null; then
+                    az acr repository delete --name ${{ parameters.registry }} --image ${container_repository_name}:${tag} --yes
+                  fi
                 done
             displayName: "Log into ACR and delete images by tag"
