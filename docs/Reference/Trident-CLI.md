@@ -469,7 +469,7 @@ Initialize for a system that wasn't installed by Trident
 Usage:
 
 ```
-trident offline-initialize [OPTIONS] [HS_PATH]
+trident offline-initialize [OPTIONS] [HS_PATH] [DISK]
 ```
 
 Argument summary:
@@ -477,6 +477,7 @@ Argument summary:
 ```
 Arguments:
   [HS_PATH]  Path to a Host Status file (deprecated)
+  [DISK]     Provide disk path [default: /dev/sda]
 
 Options:
       --lazy-partitions [<LAZY_PARTITIONS>...]
@@ -506,6 +507,17 @@ Conflicts with:
 Provide lazy partition information overrides for `-b` partitions
 
 This is a comma-separated list of `<b-partition-name>`:`<b-partition-partuuid>` pairs.
+
+Conflicts with:
+
+- `<HS_PATH>`
+
+
+#### <span style="color:#d96125;font-family:monospace;">&lt;DISK&gt;</span>
+
+Provide disk path
+
+Default: `/dev/sda`
 
 Conflicts with:
 
