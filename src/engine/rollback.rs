@@ -7,9 +7,7 @@ use osutils::{block_devices, container, efivar, lsblk, pcrlock, veritysetup, vir
 use sysdefs::tpm2::Pcr;
 
 use trident_api::{
-    constants::internal_params::{
-        ENABLE_UKI_SUPPORT, OVERRIDE_PCRLOCK_ENCRYPTION, VIRTDEPLOY_BOOT_ORDER_WORKAROUND,
-    },
+    constants::internal_params::{OVERRIDE_PCRLOCK_ENCRYPTION, VIRTDEPLOY_BOOT_ORDER_WORKAROUND},
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::{AbVolumeSelection, ServicingState, ServicingType},
     BlockDeviceId,
