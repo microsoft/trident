@@ -113,11 +113,11 @@ stages:
               tridentTestImageUsrVerity: ${{ variables.usrVerityTestImageName }}
 
           # Push (regular or container) testimage to ACR, only for "misc" test
-          - template: ../common_tasks/push_to_acr.yml
-            parameters:
-              imageName: ${{ variables.testImageName }}
-              registry: maritimuspublic
-            condition: ${{ eq($(tridentConfigurationName), "misc") }}
+          - ${{ if eq($(tridentConfigurationName), "misc") }}:
+              - template: ../common_tasks/push_to_acr.yml
+                parameters:
+                  imageName: ${{ variables.testImageName }}
+                  registry: maritimuspublic
 
           - template: netlaunch-prep.yml
 
