@@ -108,6 +108,13 @@ steps:
       testRunTitle: ${{ parameters.deploymentEnvironment }}_trident_e2e_tests_${{ parameters.tridentConfigurationName }}_clean_install_$(System.JobAttempt)
     displayName: "Publish test results for clean install of runtime OS"
 
+  - bash: |
+      set -eux
+      mkdir -p ${{ variables.artifactsDirectory }}/junit
+      sudo cp "./e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_clean_install_$(System.JobAttempt).junit.xml" "${{ variables.artifactsDirectory }}/junit."
+    displayName: Copy junit results to artifact directory
+    condition: succeededOrFailed()
+
   # If current config requires A/B update testing, execute script to ssh into the host, update
   # images in the custom Trident config, and re-run Trident to both stage and finalize A/B update.
   - bash: |
@@ -212,12 +219,12 @@ steps:
       testRunTitle: ${{ parameters.deploymentEnvironment }}_trident_e2e_tests_${{ parameters.tridentConfigurationName }}_ab_update_B_$(System.JobAttempt)
     displayName: "Publish test results for A/B update into runtime OS B"
 
-  - task: PublishBuildArtifacts@1
-    condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
-    inputs:
-      pathToPublish: './e2e_tests'
-      artifactName: 'junit_test_results_ab_update_B'
-    displayName: 'Publish JUnit XML for A/B update B as artifact'
+  - bash: |
+      set -eux
+      mkdir -p ${{ variables.artifactsDirectory }}/junit
+      sudo cp "./e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_B_$(System.JobAttempt).junit.xml" "${{ variables.artifactsDirectory }}/junit."
+    displayName: Copy junit results to artifact directory
+    condition: succeededOrFailed()
 
   - bash: |
       set -eux
@@ -321,6 +328,13 @@ steps:
       testResultsFiles: ./e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_A_$(System.JobAttempt).junit.xml
       testRunTitle: ${{ parameters.deploymentEnvironment }}_trident_e2e_tests_${{ parameters.tridentConfigurationName }}_ab_update_A_$(System.JobAttempt)
     displayName: "Publish test results for A/B update into runtime OS A"
+
+  - bash: |
+      set -eux
+      mkdir -p ${{ variables.artifactsDirectory }}/junit
+      sudo cp "./e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_A_$(System.JobAttempt).junit.xml" "${{ variables.artifactsDirectory }}/junit."
+    displayName: Copy junit results to artifact directory
+    condition: succeededOrFailed()
 
   # Check the value of 'buildPurpose', to determine if we need to execute the
   # test scenario where A/B update is staged and finalized independently. This

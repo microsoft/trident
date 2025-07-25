@@ -115,12 +115,12 @@ stages:
               testResultsFormat: "JUnit"
               testResultsFiles: "$(Build.SourcesDirectory)/target/trident_functional_tests.xml"
 
-          - task: PublishBuildArtifacts@1
-            displayName: Publish raw test results
+          - bash: |
+              set -eux
+              mkdir -p ${{ variables.ob_outputDirectory }}/junit
+              sudo cp "$(Build.SourcesDirectory)/target/trident_functional_tests.xml" "${{ variables.ob_outputDirectory }}/junit."
+            displayName: Copy junit results to artifact directory
             condition: succeededOrFailed()
-            inputs:
-              pathToPublish: "$(Build.SourcesDirectory)/target"
-              ArtifactName: "trident_test_results"
 
           - bash: |
               set -eux
