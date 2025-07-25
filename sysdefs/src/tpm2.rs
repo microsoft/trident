@@ -1,12 +1,16 @@
 use anyhow::{bail, Error};
 use enumflags2::bitflags;
-use serde::{self, Deserialize};
+use serde::{self, Deserialize, Serialize};
+
+#[cfg(feature = "schemars")]
+use schemars::JsonSchema;
 
 /// Represents the Platform Configuration Registers (PCRs) in the TPM. Each PCR is associated with
 /// a digit number and a string name.
 #[bitflags]
 #[repr(u32)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub enum Pcr {
     /// PCR 0, or `platform-code`.
     Pcr0 = 1 << 0,
@@ -94,6 +98,79 @@ impl Pcr {
             _ => bail!("Failed to convert an invalid PCR number '{}' to a Pcr", num),
         }
     }
+
+    /// Returns a human-readable string representation of the PCR. The strings are based on the
+    /// `systemd-cryptenroll` documentation published here:
+    /// https://www.man7.org/linux/man-pages/man1/systemd-cryptenroll.1.html.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Pcr::Pcr0 => "platform-code",
+            Pcr::Pcr1 => "platform-config",
+            Pcr::Pcr2 => "external-code",
+            Pcr::Pcr3 => "external-config",
+            Pcr::Pcr4 => "boot-loader-code",
+            Pcr::Pcr5 => "boot-loader-config",
+            Pcr::Pcr6 => "host-platform",
+            Pcr::Pcr7 => "secure-boot-policy",
+            Pcr::Pcr8 => "pcr8",
+            Pcr::Pcr9 => "kernel-initrd",
+            Pcr::Pcr10 => "ima",
+            Pcr::Pcr11 => "kernel-boot",
+            Pcr::Pcr12 => "kernel-config",
+            Pcr::Pcr13 => "sysexts",
+            Pcr::Pcr14 => "shim-policy",
+            Pcr::Pcr15 => "system-identity",
+            Pcr::Pcr16 => "debug",
+            Pcr::Pcr17 => "pcr17",
+            Pcr::Pcr18 => "pcr18",
+            Pcr::Pcr19 => "pcr19",
+            Pcr::Pcr20 => "pcr20",
+            Pcr::Pcr21 => "pcr21",
+            Pcr::Pcr22 => "pcr22",
+            Pcr::Pcr23 => "application-support",
+        }
+    }
+
+    /// Returns the PCR for the given string name.
+    pub fn from_str_name(s: &str) -> Result<Self, Error> {
+        match s {
+            "platform-code" => Ok(Pcr::Pcr0),
+            "platform-config" => Ok(Pcr::Pcr1),
+            "external-code" => Ok(Pcr::Pcr2),
+            "external-config" => Ok(Pcr::Pcr3),
+            "boot-loader-code" => Ok(Pcr::Pcr4),
+            "boot-loader-config" => Ok(Pcr::Pcr5),
+            "host-platform" => Ok(Pcr::Pcr6),
+            "secure-boot-policy" => Ok(Pcr::Pcr7),
+            "pcr8" => Ok(Pcr::Pcr8),
+            "kernel-initrd" => Ok(Pcr::Pcr9),
+            "ima" => Ok(Pcr::Pcr10),
+            "kernel-boot" => Ok(Pcr::Pcr11),
+            "kernel-config" => Ok(Pcr::Pcr12),
+            "sysexts" => Ok(Pcr::Pcr13),
+            "shim-policy" => Ok(Pcr::Pcr14),
+            "system-identity" => Ok(Pcr::Pcr15),
+            "debug" => Ok(Pcr::Pcr16),
+            "pcr17" => Ok(Pcr::Pcr17),
+            "pcr18" => Ok(Pcr::Pcr18),
+            "pcr19" => Ok(Pcr::Pcr19),
+            "pcr20" => Ok(Pcr::Pcr20),
+            "pcr21" => Ok(Pcr::Pcr21),
+            "pcr22" => Ok(Pcr::Pcr22),
+            "application-support" => Ok(Pcr::Pcr23),
+            _ => bail!("Failed to convert string '{}' to a Pcr", s),
+        }
+    }
+}
+
+impl Serialize for Pcr {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // Serialize as string representation for better readability
+        serializer.serialize_str(self.as_str())
+    }
 }
 
 impl<'de> Deserialize<'de> for Pcr {
@@ -101,9 +178,41 @@ impl<'de> Deserialize<'de> for Pcr {
     where
         D: serde::Deserializer<'de>,
     {
-        let val = u32::deserialize(deserializer)?;
-        Pcr::from_num(val)
-            .map_err(|_| serde::de::Error::custom(format!("Failed to deserialize PCR: {val}")))
+        struct PcrVisitor;
+
+        impl serde::de::Visitor<'_> for PcrVisitor {
+            type Value = Pcr;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a PCR number (0-23) or string name (e.g., 'boot-loader-code')")
+            }
+
+            fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Pcr::from_num(value as u32)
+                    .map_err(|_| E::custom(format!("Invalid PCR number: {}", value)))
+            }
+
+            fn visit_u32<E>(self, value: u32) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Pcr::from_num(value)
+                    .map_err(|_| E::custom(format!("Invalid PCR number: {}", value)))
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Pcr::from_str_name(value)
+                    .map_err(|_| E::custom(format!("Invalid PCR string: '{}'", value)))
+            }
+        }
+
+        deserializer.deserialize_any(PcrVisitor)
     }
 }
 
@@ -152,5 +261,43 @@ mod tests {
             Pcr::from_num(31).unwrap_err().root_cause().to_string(),
             "Failed to convert an invalid PCR number '31' to a Pcr"
         );
+    }
+
+    #[test]
+    fn test_from_str_name() {
+        // Test valid string representations
+        assert_eq!(Pcr::from_str_name("platform-code").unwrap(), Pcr::Pcr0);
+        assert_eq!(Pcr::from_str_name("boot-loader-code").unwrap(), Pcr::Pcr4);
+        assert_eq!(Pcr::from_str_name("secure-boot-policy").unwrap(), Pcr::Pcr7);
+        assert_eq!(Pcr::from_str_name("kernel-boot").unwrap(), Pcr::Pcr11);
+        assert_eq!(
+            Pcr::from_str_name("application-support").unwrap(),
+            Pcr::Pcr23
+        );
+
+        // Test invalid string
+        assert!(Pcr::from_str_name("invalid-pcr").is_err());
+    }
+
+    #[test]
+    fn test_serialize_deserialize() {
+        use serde_json;
+
+        // Test serialization (should serialize as string)
+        let pcr4 = Pcr::Pcr4;
+        let serialized = serde_json::to_string(&pcr4).unwrap();
+        assert_eq!(serialized, "\"boot-loader-code\"");
+
+        // Test deserialization from string
+        let deserialized: Pcr = serde_json::from_str("\"boot-loader-code\"").unwrap();
+        assert_eq!(deserialized, Pcr::Pcr4);
+
+        // Test deserialization from number
+        let deserialized: Pcr = serde_json::from_str("4").unwrap();
+        assert_eq!(deserialized, Pcr::Pcr4);
+
+        // Test array of mixed types
+        let pcrs: Vec<Pcr> = serde_json::from_str("[4, \"secure-boot-policy\", 11]").unwrap();
+        assert_eq!(pcrs, vec![Pcr::Pcr4, Pcr::Pcr7, Pcr::Pcr11]);
     }
 }

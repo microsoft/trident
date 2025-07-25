@@ -30,6 +30,8 @@ storage:
     - id: srv
       deviceName: srv
       deviceId: luks-srv
+    pcrs:
+    - secure-boot-policy
   filesystems:
   - deviceId: esp
     mountPoint:

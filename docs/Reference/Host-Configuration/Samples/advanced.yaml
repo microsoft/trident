@@ -103,6 +103,8 @@ storage:
     - id: home
       deviceName: home
       deviceId: enc-home
+    pcrs:
+    - secure-boot-policy
   raid:
     software:
     - id: boot-a

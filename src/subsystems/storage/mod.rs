@@ -8,7 +8,7 @@ use log::{debug, error, warn};
 use osutils::{container, encryption::ENCRYPTION_PASSPHRASE, lsblk};
 use trident_api::{
     config::HostConfigurationDynamicValidationError,
-    constants::internal_params::RELAXED_COSI_VALIDATION,
+    constants::internal_params::{OVERRIDE_PCRLOCK_ENCRYPTION, RELAXED_COSI_VALIDATION},
     error::{
         InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt,
         UnsupportedConfigurationError,
@@ -181,7 +181,7 @@ impl Subsystem for StorageSubsystem {
         let override_pcrlock_encryption = ctx
             .spec
             .internal_params
-            .get_flag("overridePcrlockEncryption")
+            .get_flag(OVERRIDE_PCRLOCK_ENCRYPTION)
             || container::is_running_in_container()?;
         if ctx.is_uki()? {
             if !override_pcrlock_encryption {
@@ -192,7 +192,7 @@ impl Subsystem for StorageSubsystem {
             } else {
                 warn!(
                     "Skipping step 'Provision' for subunit '{ENCRYPTION_SUBSYSTEM_NAME}' \
-                    because overridePcrlockEncryption is set or running in a container"
+                    because '{OVERRIDE_PCRLOCK_ENCRYPTION}' is set or running in a container"
                 );
             }
         }
@@ -242,9 +242,10 @@ mod tests {
     use url::Url;
 
     use osutils::encryption;
+    use sysdefs::tpm2::Pcr;
     use trident_api::{
         config::{
-            Disk as DiskConfig, FileSystem, HostConfiguration, MountPoint,
+            AbUpdate, Disk as DiskConfig, Encryption, FileSystem, HostConfiguration, MountPoint,
             Partition as PartitionConfig, PartitionSize, PartitionType, Raid, RaidLevel,
             SoftwareRaidArray, Storage as StorageConfig,
         },
@@ -335,20 +336,21 @@ mod tests {
                     source: Default::default(),
                     mount_point: Some(MountPoint::from_str("/").unwrap()),
                 }],
-                ab_update: Some(trident_api::config::AbUpdate {
+                ab_update: Some(AbUpdate {
                     volume_pairs: vec![trident_api::config::AbVolumePair {
                         id: "ab1".to_owned(),
                         volume_a_id: "part1".to_owned(),
                         volume_b_id: "part2".to_owned(),
                     }],
                 }),
-                encryption: Some(trident_api::config::Encryption {
+                encryption: Some(Encryption {
                     recovery_key_url: Some(Url::from_file_path(recovery_key_file).unwrap()),
                     volumes: vec![trident_api::config::EncryptedVolume {
                         id: "enc1".to_owned(),
                         device_name: "luks-enc".to_owned(),
                         device_id: "part5".to_owned(),
                     }],
+                    pcrs: vec![Pcr::Pcr7],
                 }),
                 ..Default::default()
             },

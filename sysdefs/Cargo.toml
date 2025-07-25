@@ -11,6 +11,10 @@ serde = { version = "1.0.215", features = ["derive"] }
 strum = "0.26.3"
 strum_macros = "0.26.4"
 uuid = { version = "1.11.0", features = ["v4", "serde"] }
+schemars = { version = "0.8", optional = true }
+
+[features]
+schemars = ["dep:schemars"]
 
 
 [dev-dependencies]

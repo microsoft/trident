@@ -6,6 +6,8 @@ use url::Url;
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 
+use sysdefs::tpm2::Pcr;
+
 use crate::{
     config::HostConfigurationStaticValidationError, constants::DEV_MAPPER_PATH, BlockDeviceId,
 };
@@ -88,6 +90,9 @@ pub struct Encryption {
     /// or RAID array.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub volumes: Vec<EncryptedVolume>,
+
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub pcrs: Vec<Pcr>,
 }
 
 /// A LUKS2-encrypted volume configuration.

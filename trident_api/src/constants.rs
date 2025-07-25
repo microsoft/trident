@@ -216,6 +216,10 @@ pub mod internal_params {
     /// Overrides the default PCR registries to use when sealing encryption keys.
     pub const OVERRIDE_ENCRYPTION_PCRS: &str = "overrideEncryptionPcrs";
 
+    /// Overrides the pcrlock encryption logic to use the previous logic where encryption volumes
+    /// are sealed against a set of specific PCR values.
+    pub const OVERRIDE_PCRLOCK_ENCRYPTION: &str = "overridePcrlockEncryption";
+
     /// Set the in-image paths of the verity signature files.
     ///
     /// The param MUST be a mapping of: Verity Block Device Id -> Absolute path

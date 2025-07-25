@@ -10,6 +10,19 @@ Configure encrypted volumes of underlying disk partitions or software RAID array
 
 ## Properties
 
+### `pcrs` **<span style="color:orange;">(required)</span>**
+
+| Characteristic | Value   |
+| -------------- | ------- |
+| Type           | `array` |
+
+- Items of the array must have the type:
+
+   | Characteristic | Value           |
+   | -------------- | --------------- |
+   | Type           | `Pcr`           |
+   | Link           | [Pcr](./Pcr.md) |
+
 ### `volumes` **<span style="color:orange;">(required)</span>**
 
 The list of LUKS2-encrypted volumes to create.

@@ -325,6 +325,7 @@ mod tests {
                     device_name: "luks-srv".to_owned(),
                     device_id: "srv-enc".to_owned(),
                 }],
+                pcrs: vec![Pcr::Pcr7],
             }),
             ..Default::default()
         }
