@@ -117,7 +117,7 @@ stages:
             parameters:
               imageName: ${{ variables.testImageName }}
               registry: maritimuspublic
-            condition: ${{ eq($(TRIDENT_CONFIGURATION_NAME), "misc") }}
+            condition: ${{ eq($(tridentConfigurationName), "misc") }}
 
           - template: netlaunch-prep.yml
 
