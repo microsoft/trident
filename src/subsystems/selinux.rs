@@ -124,7 +124,7 @@ impl Subsystem for SelinuxSubsystem {
 
         // If a verity filesystem is mounted at root, ensure that SELinux is not
         // in enforcing mode and warn if it is in permissive mode
-        if ctx.storage_graph.root_fs_is_verity() && !ctx.is_uki_image()? {
+        if ctx.storage_graph.root_fs_is_verity() && !ctx.is_uki()? {
             match final_selinux_mode {
                 SelinuxMode::Enforcing => {
                     return Err(TridentError::new(InvalidInputError::from(

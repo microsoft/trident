@@ -7,7 +7,7 @@ use osutils::{block_devices, container, efivar, lsblk, pcrlock, veritysetup, vir
 use sysdefs::tpm2::Pcr;
 
 use trident_api::{
-    constants::internal_params::{ENABLE_UKI_SUPPORT, VIRTDEPLOY_BOOT_ORDER_WORKAROUND},
+    constants::internal_params::VIRTDEPLOY_BOOT_ORDER_WORKAROUND,
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::{AbVolumeSelection, ServicingState, ServicingType},
     BlockDeviceId,
@@ -43,13 +43,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
         image: None, // Not used for boot validation logic
         storage_graph: engine::build_storage_graph(&datastore.host_status().spec.storage)?, // Build storage graph
         filesystems: Vec::new(), // Left empty since context does not have image
-        is_uki: Some(
-            datastore
-                .host_status()
-                .spec
-                .internal_params
-                .get_flag(ENABLE_UKI_SUPPORT),
-        ),
+        is_uki: Some(efivar::current_var_is_uki()),
     };
 
     // Get the block device path of the current root
@@ -81,9 +75,8 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
                 .message("Failed to persist boot order after reboot")?;
         }
 
-        // If the bootloader set the LoaderEntrySelected variable, then make its value the default
-        // boot entry. Systemd-boot sets this variable, but GRUB does not.
-        if efivar::current_var_set() {
+        // In UKI mode, set systemd-boot's default boot option to the currently running one.
+        if ctx.is_uki()? {
             efivar::set_default_to_current()
                 .message("Failed to set default boot entry to current")?;
         }
@@ -98,7 +91,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
             .internal_params
             .get_flag("overridePcrlockEncryption")
             || container::is_running_in_container()?;
-        if ctx.is_uki_image()? && ctx.spec.storage.encryption.is_some() {
+        if ctx.is_uki()? && ctx.spec.storage.encryption.is_some() {
             if !override_pcrlock_encryption {
                 debug!("Regenerating pcrlock policy for current boot");
                 // TODO: Add PCR 7 once SecureBoot is enabled in a follow up PR. Related ADO task:

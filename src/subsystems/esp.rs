@@ -189,7 +189,7 @@ fn copy_file_artifacts(
             esp_dir_path.display()
         ))?;
 
-    if ctx.is_uki_image().unstructured("UKI setting unknown")? {
+    if ctx.is_uki().unstructured("UKI setting unknown")? {
         // Prepare ESP directory structure for UKI boot
         uki::prepare_esp_for_uki(mount_point)?;
 
