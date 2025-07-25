@@ -1,6 +1,7 @@
 use anyhow::{bail, Error};
 use enumflags2::bitflags;
 use serde::{self, Deserialize, Serialize};
+use strum_macros::{EnumString, IntoStaticStr};
 
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
@@ -9,56 +10,80 @@ use schemars::JsonSchema;
 /// a digit number and a string name.
 #[bitflags]
 #[repr(u32)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, IntoStaticStr, EnumString)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub enum Pcr {
     /// PCR 0, or `platform-code`.
+    #[strum(serialize = "platform-code")]
     Pcr0 = 1 << 0,
     /// PCR 1, or `platform-config`.
+    #[strum(serialize = "platform-config")]
     Pcr1 = 1 << 1,
     /// PCR 2, or `external-code`.
+    #[strum(serialize = "external-code")]
     Pcr2 = 1 << 2,
     /// PCR 3, or `external-config`.
+    #[strum(serialize = "external-config")]
     Pcr3 = 1 << 3,
     /// PCR 4, or `boot-loader-code`.
+    #[strum(serialize = "boot-loader-code")]
     Pcr4 = 1 << 4,
     /// PCR 5, or `boot-loader-config`.
+    #[strum(serialize = "boot-loader-config")]
     Pcr5 = 1 << 5,
     /// PCR 6, or `host-platform`.
+    #[strum(serialize = "host-platform")]
     Pcr6 = 1 << 6,
     /// PCR 7, or `secure-boot-policy`.
+    #[strum(serialize = "secure-boot-policy")]
     Pcr7 = 1 << 7,
     /// PCR 8.
+    #[strum(serialize = "pcr8")]
     Pcr8 = 1 << 8,
     /// PCR 9, or `kernel-initrd`.
+    #[strum(serialize = "kernel-initrd")]
     Pcr9 = 1 << 9,
     /// PCR 10, or `ima`.
+    #[strum(serialize = "ima")]
     Pcr10 = 1 << 10,
     /// PCR 11, or `kernel-boot`.
+    #[strum(serialize = "kernel-boot")]
     Pcr11 = 1 << 11,
     /// PCR 12, or `kernel-config`.
+    #[strum(serialize = "kernel-config")]
     Pcr12 = 1 << 12,
     /// PCR 13, or `sysexts`.
+    #[strum(serialize = "sysexts")]
     Pcr13 = 1 << 13,
     /// PCR 14, or `shim-policy`.
+    #[strum(serialize = "shim-policy")]
     Pcr14 = 1 << 14,
     /// PCR 15, or `system-identity`.
+    #[strum(serialize = "system-identity")]
     Pcr15 = 1 << 15,
     /// PCR 16, or `debug`.
+    #[strum(serialize = "debug")]
     Pcr16 = 1 << 16,
     /// PCR 17.
+    #[strum(serialize = "pcr17")]
     Pcr17 = 1 << 17,
     /// PCR 18.
+    #[strum(serialize = "pcr18")]
     Pcr18 = 1 << 18,
     /// PCR 19.
+    #[strum(serialize = "pcr19")]
     Pcr19 = 1 << 19,
     /// PCR 20.
+    #[strum(serialize = "pcr20")]
     Pcr20 = 1 << 20,
     /// PCR 21.
+    #[strum(serialize = "pcr21")]
     Pcr21 = 1 << 21,
     /// PCR 22.
+    #[strum(serialize = "pcr22")]
     Pcr22 = 1 << 22,
     /// PCR 23, or `application-support`.
+    #[strum(serialize = "application-support")]
     Pcr23 = 1 << 23,
 }
 
@@ -103,63 +128,15 @@ impl Pcr {
     /// `systemd-cryptenroll` documentation published here:
     /// https://www.man7.org/linux/man-pages/man1/systemd-cryptenroll.1.html.
     pub fn as_str(&self) -> &'static str {
-        match self {
-            Pcr::Pcr0 => "platform-code",
-            Pcr::Pcr1 => "platform-config",
-            Pcr::Pcr2 => "external-code",
-            Pcr::Pcr3 => "external-config",
-            Pcr::Pcr4 => "boot-loader-code",
-            Pcr::Pcr5 => "boot-loader-config",
-            Pcr::Pcr6 => "host-platform",
-            Pcr::Pcr7 => "secure-boot-policy",
-            Pcr::Pcr8 => "pcr8",
-            Pcr::Pcr9 => "kernel-initrd",
-            Pcr::Pcr10 => "ima",
-            Pcr::Pcr11 => "kernel-boot",
-            Pcr::Pcr12 => "kernel-config",
-            Pcr::Pcr13 => "sysexts",
-            Pcr::Pcr14 => "shim-policy",
-            Pcr::Pcr15 => "system-identity",
-            Pcr::Pcr16 => "debug",
-            Pcr::Pcr17 => "pcr17",
-            Pcr::Pcr18 => "pcr18",
-            Pcr::Pcr19 => "pcr19",
-            Pcr::Pcr20 => "pcr20",
-            Pcr::Pcr21 => "pcr21",
-            Pcr::Pcr22 => "pcr22",
-            Pcr::Pcr23 => "application-support",
-        }
+        // Use strum's IntoStaticStr trait
+        self.into()
     }
 
     /// Returns the PCR for the given string name.
     pub fn from_str_name(s: &str) -> Result<Self, Error> {
-        match s {
-            "platform-code" => Ok(Pcr::Pcr0),
-            "platform-config" => Ok(Pcr::Pcr1),
-            "external-code" => Ok(Pcr::Pcr2),
-            "external-config" => Ok(Pcr::Pcr3),
-            "boot-loader-code" => Ok(Pcr::Pcr4),
-            "boot-loader-config" => Ok(Pcr::Pcr5),
-            "host-platform" => Ok(Pcr::Pcr6),
-            "secure-boot-policy" => Ok(Pcr::Pcr7),
-            "pcr8" => Ok(Pcr::Pcr8),
-            "kernel-initrd" => Ok(Pcr::Pcr9),
-            "ima" => Ok(Pcr::Pcr10),
-            "kernel-boot" => Ok(Pcr::Pcr11),
-            "kernel-config" => Ok(Pcr::Pcr12),
-            "sysexts" => Ok(Pcr::Pcr13),
-            "shim-policy" => Ok(Pcr::Pcr14),
-            "system-identity" => Ok(Pcr::Pcr15),
-            "debug" => Ok(Pcr::Pcr16),
-            "pcr17" => Ok(Pcr::Pcr17),
-            "pcr18" => Ok(Pcr::Pcr18),
-            "pcr19" => Ok(Pcr::Pcr19),
-            "pcr20" => Ok(Pcr::Pcr20),
-            "pcr21" => Ok(Pcr::Pcr21),
-            "pcr22" => Ok(Pcr::Pcr22),
-            "application-support" => Ok(Pcr::Pcr23),
-            _ => bail!("Failed to convert string '{}' to a Pcr", s),
-        }
+        // Use the strum-generated FromStr implementation
+        use std::str::FromStr;
+        Self::from_str(s).map_err(|_| anyhow::anyhow!("Failed to convert string '{}' to a Pcr", s))
     }
 }
 
