@@ -20,7 +20,6 @@ use trident_api::{
         HostConfiguration, HostConfigurationDynamicValidationError,
         HostConfigurationStaticValidationError, PartitionType,
     },
-    constants::internal_params::OVERRIDE_ENCRYPTION_PCRS,
     error::{InternalError, InvalidInputError, ReportError, ServicingError, TridentError},
 };
 
@@ -115,22 +114,13 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
         // https://dev.azure.com/mariner-org/polar/_workitems/edit/13059/.
         let pcrs = match ctx.servicing_type {
             ServicingType::CleanInstall => {
-                // Generate .pcrlock files for runtime OS image A, only using PCR 0, thanks to
-                // OVERRIDE_ENCRYPTION_PCRS.
+                // Generate .pcrlock files for runtime OS image A.
                 //
                 // TODO: Once UKI MOS is built, include ROS A UKI and bootloader binaries.
                 // https://dev.azure.com/mariner-org/polar/_workitems/edit/14286/ and
                 // https://dev.azure.com/mariner-org/polar/_workitems/edit/13059/.
-                ctx.spec.internal_params.get::<Vec<Pcr>>(OVERRIDE_ENCRYPTION_PCRS)
-                    .transpose()
-                    .structured(InvalidInputError::InvalidInternalParameter {
-                        name: OVERRIDE_ENCRYPTION_PCRS.to_string(),
-                        explanation: format!(
-                            "Failed to parse internal parameter '{OVERRIDE_ENCRYPTION_PCRS}' as BitFlags<Pcr>",
-                        ),
-                    })?
-                    .map(|v| BitFlags::<Pcr>::from_iter(v.into_iter()))
-                    .unwrap_or(Pcr::Pcr4 | Pcr::Pcr7 | Pcr::Pcr11)
+
+                // TODO: Select PCRs
             }
             ServicingType::AbUpdate => Pcr::Pcr4 | Pcr::Pcr11,
             _ => {

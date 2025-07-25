@@ -25,9 +25,7 @@ use sysdefs::tpm2::Pcr;
 use trident_api::{
     config::{HostConfiguration, HostConfigurationStaticValidationError, PartitionSize},
     constants::{
-        internal_params::{
-            NO_CLOSE_ENCRYPTED_VOLUMES, OVERRIDE_ENCRYPTION_PCRS, REENCRYPT_ON_CLEAN_INSTALL,
-        },
+        internal_params::{NO_CLOSE_ENCRYPTED_VOLUMES, REENCRYPT_ON_CLEAN_INSTALL},
         ESP_EFI_DIRECTORY, ESP_MOUNT_POINT_PATH,
     },
     error::{InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt},
@@ -176,21 +174,7 @@ pub(super) fn create_encrypted_devices(
                 EncryptionType::LuksFormat
             };
 
-            let pcrs = ctx
-                .spec
-                .internal_params
-                .get::<Vec<Pcr>>(OVERRIDE_ENCRYPTION_PCRS)
-                .transpose()
-                .structured(InvalidInputError::InvalidInternalParameter {
-                    name: OVERRIDE_ENCRYPTION_PCRS.to_string(),
-                    explanation: format!(
-                        "Failed to parse internal parameter '{OVERRIDE_ENCRYPTION_PCRS}' as BitFlags<Pcr>"
-                    ),
-                })?
-                // Convert the `Vec<Pcr>` into a `BitFlags<Pcr>`, which is a bitmask of PCRs.
-                .map(|v| BitFlags::<Pcr>::from_iter(v.into_iter()))
-                // If the internal parameter is not set, default to PCR 7.
-                .unwrap_or(Pcr::Pcr7.into());
+            // TODO: Select which PCRs to seal to
 
             // Check if `REENCRYPT_ON_CLEAN_INSTALL` internal param is set to true; if so, re-encrypt
             // the device in-place. Otherwise, initialize a new LUKS2 volume.
