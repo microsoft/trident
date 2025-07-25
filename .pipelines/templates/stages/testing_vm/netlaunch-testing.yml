@@ -114,7 +114,7 @@ stages:
 
           # Push (regular or container) testimage to ACR, only for "misc" test
           - ${{ if eq(variables['tridentConfigurationName'], 'misc') }}:
-              - template: ../common_tasks/push_to_acr.yml
+              - template: stages/common_tasks/push_to_acr.yml
                 parameters:
                   imageName: ${{ variables.testImageName }}
                   registry: maritimuspublic
