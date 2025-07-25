@@ -38,7 +38,7 @@ steps:
       repository_name=${{ parameters.imageName }}
       build_id="$(Build.BuildId)"
 
-      cd "$(ob_outputDirectory)"
+      cd "$(System.ArtifactsDirectory)/testimage"
 
       for cosi_file in *.cosi; do
         if [ -f "$cosi_file" ]; then

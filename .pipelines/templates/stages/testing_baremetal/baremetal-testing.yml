@@ -179,6 +179,13 @@ stages:
               ${{ if eq(parameters.runtimeEnv, 'container') }}:
                 downloadTridentContainer: true
 
+          # Push (regular or container) testimage to ACR, only for "misc" test
+          - template: ../common_tasks/push_to_acr.yml
+            parameters:
+              imageName: ${{ variables.IMAGE_NAME }}
+              registry: maritimuspublic
+            condition: ${{ eq($(TRIDENT_CONFIGURATION_NAME), "misc") }}
+
           - bash: |
               set -xe
 
@@ -336,3 +343,8 @@ stages:
               netlistenPort: ${{ variables.NETLAUNCH_PORT }}
               runtimeEnv: ${{ parameters.runtimeEnv }}
               netlistenConfigFile: $(TRIDENT_SOURCE_DIR)/baremetal-netlisten.yaml
+
+          - template: stages/common_tasks/remove_from_acr.yml
+            parameters:
+              repository: ${{ variables.IMAGE_NAME }}
+              registry: "maritimuspublic"
