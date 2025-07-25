@@ -4,6 +4,8 @@
 
 Represents the Platform Configuration Registers (PCRs) in the TPM. Each PCR is associated with a digit number and a string name.
 
+NOTE: In the current encryption logic, only the following PCRs are supported when sealing encrypted volumes against the state of TPM 2.0 device: - 4, or `boot-loader-code` - 7, or `secure-boot-policy` - 11, or `kernel-boot`.
+
 | Characteristic | Value  |
 | -------------- | ------ |
 | Type           | `enum` |
