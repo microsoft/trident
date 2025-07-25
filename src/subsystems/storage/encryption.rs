@@ -115,14 +115,24 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
         // https://dev.azure.com/mariner-org/polar/_workitems/edit/13059/.
         let pcrs = match ctx.servicing_type {
             ServicingType::CleanInstall => BitFlags::from(Pcr::Pcr0),
-            // TODO: Use PCRs selected by the user through the API!
-            ServicingType::AbUpdate => Pcr::Pcr4 | Pcr::Pcr11,
+            // On A/B update, use PCRs selected by the user through the API!
+            ServicingType::AbUpdate => {
+                let mut bitflags = BitFlags::empty();
+                for pcr in &encryption.pcrs {
+                    bitflags |= BitFlags::from(*pcr);
+                }
+                bitflags
+            }
             _ => {
                 return Err(TridentError::new(InternalError::UnexpectedServicingType {
                     servicing_type: ctx.servicing_type,
                 }));
             }
         };
+        debug!(
+            "Using the following requested PCRs for pcrlock policy: {:?}",
+            pcrs
+        );
 
         // Get UKI and bootloader binaries for .pcrlock file generation
         let (uki_binaries, bootloader_binaries) =
