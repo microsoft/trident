@@ -52,6 +52,10 @@ parameters:
     type: number
     default: 4000
 
+  - name: netlistenConfigFile
+    type: string
+    default: ""
+
 steps:
   - bash: |
       set -eux
@@ -111,9 +115,16 @@ steps:
 
   - bash: |
       set -eux
+
+      NETLISTEN_CONFIG_ARGS=""
+      if [ -n "${{ parameters.netlistenConfigFile }}" ]; then
+        NETLISTEN_CONFIG_ARGS="--config ${{ parameters.netlistenConfigFile }}"
+      fi
+
       # If there is a netlisten process, kill it so there is no port clash in the instance
       if pgrep netlisten > /dev/null; then pkill netlisten; fi
-      ./bin/netlisten -m $(Build.SourcesDirectory)/trident-finalize-update-metrics.jsonl \
+      ./bin/netlisten $NETLISTEN_CONFIG_ARGS \
+          -m $(Build.SourcesDirectory)/trident-finalize-update-metrics.jsonl \
           -p ${{ parameters.netlistenPort }} \
           -s "${{ parameters.artifactsDirectory }}" > ./finalize-ab-update.log 2>&1 &
 
@@ -137,6 +148,13 @@ steps:
     workingDirectory: $(Build.SourcesDirectory)
     displayName: "🔄 Finalize A/B update into runtime OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
+
+  - template: ../testing_common/display-serial-logs.yml
+    parameters:
+      netlistenConfigFile: ${{ parameters.netlistenConfigFile }}
+      outputDirectory: $(ob_outputDirectory)
+      partition: B
+      artifactPrefix: "finalize-ab-update"
 
   - template: ../testing_common/display-deployment-logs.yml
     parameters:
