@@ -115,6 +115,13 @@ stages:
               testResultsFormat: "JUnit"
               testResultsFiles: "$(Build.SourcesDirectory)/target/trident_functional_tests.xml"
 
+          - task: PublishBuildArtifacts@1
+            displayName: Publish raw test results
+            condition: succeededOrFailed()
+            inputs:
+              pathToPublish: "$(Build.SourcesDirectory)/target"
+              ArtifactName: "trident_test_results"
+
           - bash: |
               set -eux
 
