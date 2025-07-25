@@ -460,7 +460,7 @@ pub fn execute(
             return Err(TridentError::new(
                 ExecutionEnvironmentMisconfigurationError::PrismChrootEnvironment,
             ))
-            .message(format!("Prism chroot environment doesn't contain {}", disk));
+            .message(format!("Prism chroot environment doesn't contain {disk}"));
         }
 
         let history: Vec<PrismHistoryEntry> =
