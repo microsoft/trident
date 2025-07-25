@@ -19,10 +19,6 @@ files_type(trident_var_lib_t)
 #
 # Trident policy
 #
-
-# REMOVE
-permissive trident_t;
-
 require {
         type admin_passwd_exec_t;
         type anacron_exec_t;
