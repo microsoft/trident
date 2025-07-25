@@ -168,7 +168,7 @@ pub enum Commands {
         #[arg(long, value_delimiter = ',', num_args = 0.., conflicts_with = "hs_path")]
         lazy_partitions: Vec<String>,
         /// Provide disk path
-        #[arg(default_value = "/dev/sda", conflicts_with = "hs_path")]
+        #[arg(long, default_value = "/dev/sda", conflicts_with = "hs_path")]
         disk: String,
     },
 }
