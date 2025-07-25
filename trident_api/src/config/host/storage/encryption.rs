@@ -97,6 +97,8 @@ pub struct Encryption {
     /// - 4, or `boot-loader-code`
     /// - 7, or `secure-boot-policy`
     /// - 11, or `kernel-boot`.
+    ///
+    /// Other PCRs are currently not supported in the encryption logic.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub pcrs: Vec<Pcr>,
 }
