@@ -223,5 +223,5 @@ steps:
       set -eux
       mkdir -p ${{ variables.artifactsDirectory }}/junit
       sudo cp "./e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_stage_finalize_ab_update_B_$(System.JobAttempt).junit.xml" "${{ variables.artifactsDirectory }}/junit."
-    displayName: Copy junit results to artifact directory
+    displayName: Copy junit results to artifacet directory
     condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
