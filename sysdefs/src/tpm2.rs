@@ -192,15 +192,14 @@ impl<'de> Deserialize<'de> for Pcr {
                 E: serde::de::Error,
             {
                 Pcr::from_num(value as u32)
-                    .map_err(|_| E::custom(format!("Invalid PCR number: {}", value)))
+                    .map_err(|_| E::custom(format!("Invalid PCR number: {value}")))
             }
 
             fn visit_u32<E>(self, value: u32) -> Result<Self::Value, E>
             where
                 E: serde::de::Error,
             {
-                Pcr::from_num(value)
-                    .map_err(|_| E::custom(format!("Invalid PCR number: {}", value)))
+                Pcr::from_num(value).map_err(|_| E::custom(format!("Invalid PCR number: {value}")))
             }
 
             fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
@@ -208,7 +207,7 @@ impl<'de> Deserialize<'de> for Pcr {
                 E: serde::de::Error,
             {
                 Pcr::from_str_name(value)
-                    .map_err(|_| E::custom(format!("Invalid PCR string: '{}'", value)))
+                    .map_err(|_| E::custom(format!("Invalid PCR string: '{value}'")))
             }
         }
 

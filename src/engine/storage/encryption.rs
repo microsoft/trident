@@ -174,7 +174,12 @@ pub(super) fn create_encrypted_devices(
                 EncryptionType::LuksFormat
             };
 
-            // TODO: Select which PCRs to seal to
+            // TODO: Once UKI MOS is built, include all PCRs out of 4, 7, and 11 that were selected
+            // by the user, into pcrlock policy on A/B update and clean install. For now, only seal
+            // to PCR 0 into pcrlock policy. Related ADO task:
+            // https://dev.azure.com/mariner-org/polar/_workitems/edit/14286/ and
+            // https://dev.azure.com/mariner-org/polar/_workitems/edit/13059/.
+            let pcrs = BitFlags::from(Pcr::Pcr0);
 
             // Check if `REENCRYPT_ON_CLEAN_INSTALL` internal param is set to true; if so, re-encrypt
             // the device in-place. Otherwise, initialize a new LUKS2 volume.

@@ -91,6 +91,12 @@ pub struct Encryption {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub volumes: Vec<EncryptedVolume>,
 
+    /// List of PCRs in TPM 2.0 device to seal to. Each PCR may be specified either as a digit or a
+    /// string representation. At least one PCR must be specified, and any combination of the
+    /// following PCRs may be used:
+    /// - 4, or `boot-loader-code`
+    /// - 7, or `secure-boot-policy`
+    /// - 11, or `kernel-boot`.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub pcrs: Vec<Pcr>,
 }
