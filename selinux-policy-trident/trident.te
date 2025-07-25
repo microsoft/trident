@@ -124,6 +124,7 @@ require {
         type ssh_home_t;
         type ssh_port_t;
         type sshd_t;
+        type sshd_key_t;
         type sshd_keygen_unit_t;
         type sshd_unit_t;
         type sudo_exec_t;
@@ -416,6 +417,7 @@ allow trident_t ssh_home_t:file relabelto;
 allow trident_t ssh_port_t:tcp_socket name_connect;
 allow trident_t sshd_t:fd use;
 allow trident_t sshd_t:fifo_file { read write getattr ioctl }; # Allow Trident to read/write stdin/stdout/stderr
+allow trident_t sshd_key_t:file { getattr }; # Allow Trident to copy SSH keys
 allow trident_t sshd_keygen_unit_t:file getattr;
 allow trident_t sshd_unit_t:file getattr;
 allow trident_t sulogin_exec_t:file { execute getattr map open read relabelto setattr unlink write };
