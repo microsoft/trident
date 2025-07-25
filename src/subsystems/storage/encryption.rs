@@ -115,7 +115,8 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
         // https://dev.azure.com/mariner-org/polar/_workitems/edit/13059/.
         let pcrs = match ctx.servicing_type {
             ServicingType::CleanInstall => BitFlags::from(Pcr::Pcr0),
-            ServicingType::AbUpdate => BitFlags::from(Pcr::Pcr4 | Pcr::Pcr11),
+            // TODO: Use PCRs selected by the user through the API!
+            ServicingType::AbUpdate => Pcr::Pcr4 | Pcr::Pcr11,
             _ => {
                 return Err(TridentError::new(InternalError::UnexpectedServicingType {
                     servicing_type: ctx.servicing_type,
