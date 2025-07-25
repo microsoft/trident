@@ -344,7 +344,7 @@ stages:
               runtimeEnv: ${{ parameters.runtimeEnv }}
               netlistenConfigFile: $(TRIDENT_SOURCE_DIR)/baremetal-netlisten.yaml
 
-          - template: stages/common_tasks/remove_from_acr.yml
+          - template: ../common_tasks/remove_from_acr.yml
             parameters:
               repository: ${{ variables.IMAGE_NAME }}
               registry: "maritimuspublic"
