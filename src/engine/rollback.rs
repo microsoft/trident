@@ -7,7 +7,7 @@ use osutils::{block_devices, container, efivar, lsblk, pcrlock, veritysetup, vir
 use sysdefs::tpm2::Pcr;
 
 use trident_api::{
-    constants::internal_params::VIRTDEPLOY_BOOT_ORDER_WORKAROUND,
+    constants::internal_params::{OVERRIDE_PCRLOCK_ENCRYPTION, VIRTDEPLOY_BOOT_ORDER_WORKAROUND},
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::{AbVolumeSelection, ServicingState, ServicingType},
     BlockDeviceId,
@@ -89,7 +89,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
         let override_pcrlock_encryption = ctx
             .spec
             .internal_params
-            .get_flag("overridePcrlockEncryption")
+            .get_flag(OVERRIDE_PCRLOCK_ENCRYPTION)
             || container::is_running_in_container()?;
         if ctx.is_uki()? && ctx.spec.storage.encryption.is_some() {
             if !override_pcrlock_encryption {
@@ -107,7 +107,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
                 pcrlock::generate_pcrlock_policy(pcrs, uki_binaries, bootloader_binaries)?;
             } else {
                 warn!(
-                    "Skipping pcrlock policy generation because overridePcrlockEncryption is set or running in a container"
+                    "Skipping pcrlock policy generation because '{OVERRIDE_PCRLOCK_ENCRYPTION}' is set or running in a container"
                 );
             }
         }

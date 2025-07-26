@@ -545,6 +545,8 @@ mod tests {
     };
     use url::Url;
 
+    use sysdefs::tpm2::Pcr;
+
     use crate::{
         config::HostConfiguration,
         constants::{BOOT_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
@@ -641,6 +643,7 @@ mod tests {
                     device_name: "luks-srv".to_owned(),
                     device_id: "srv-enc".to_owned(),
                 }],
+                pcrs: vec![Pcr::Pcr7],
             }),
             raid: Raid {
                 software: vec![SoftwareRaidArray {

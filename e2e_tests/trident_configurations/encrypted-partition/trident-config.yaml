@@ -25,6 +25,14 @@ storage:
       - id: web
         deviceName: web
         deviceId: web-e
+    pcrs:
+      # TODO: Once UKI MOS is built and used for all E2E tests, include PCRs 4
+      # and 11. Related ADO tasks:
+      # https://dev.azure.com/mariner-org/polar/_workitems/edit/14286/
+      # and https://dev.azure.com/mariner-org/polar/_workitems/edit/14331.
+      #- boot-loader-code # 4
+      - secure-boot-policy # 7
+      #- kernel-boot # 11
   filesystems:
     - deviceId: web
       source: new
