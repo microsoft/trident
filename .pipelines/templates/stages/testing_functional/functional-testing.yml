@@ -119,7 +119,7 @@ stages:
             displayName: Publish raw test results
             condition: succeededOrFailed()
             inputs:
-              pathToPublish: "$(Build.SourcesDirectory)/target"
+              pathToPublish: "$(Build.ArtifactStagingDirectory)/ONEBRANCH_ARTIFACT"
               ArtifactName: "trident_test_results"
 
           - bash: |

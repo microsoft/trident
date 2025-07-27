@@ -215,7 +215,7 @@ steps:
   - task: PublishBuildArtifacts@1
     condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
     inputs:
-      pathToPublish: './e2e_tests'
+      pathToPublish: '$(Build.ArtifactStagingDirectory)/ONEBRANCH_ARTIFACT'
       artifactName: 'junit_test_results_ab_update_B'
     displayName: 'Publish JUnit XML for A/B update B as artifact'
 

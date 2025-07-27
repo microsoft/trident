@@ -223,5 +223,5 @@ steps:
     displayName: "Publish e2e test result artifacts"
     condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
     inputs:
-      pathToPublish: ./e2e_tests
+      pathToPublish: $(Build.ArtifactStagingDirectory)/ONEBRANCH_ARTIFACT
       artifactName: trident_ab_update_test_results
