@@ -1,0 +1,59 @@
+parameters:
+- name: marinertridentPipelinesSourceDirectory
+  type: string
+- name: junitFilesDirectory
+  type: string
+- name: isStaging
+  type: boolean
+- name: buildConfigArtifactName
+  type: string
+- name: test_suite_name
+  type: string
+  default: ''  
+- name: architecture
+  type: string
+- name: test_type_prefix
+  type: string
+  default: ''
+steps:
+- download: "_resource-pipeline"
+- task: Bash@3
+  displayName: 'Install Python dependencies for pushing results to DB'
+  inputs:
+    targetType: 'inline'
+    script: |
+      # Install Python and pip.
+      sudo tdnf -y --rpmverbosity=debug install python3 python3-pip
+      pip3 install --user -r ${{ parameters.marinerAKSPipelinesSourceDirectory }}/scripts/tests/requirements.txt
+- task: Bash@3
+  name: build_config 
+  displayName: 'Set build number and architecture variables'
+  inputs:
+    targetType: 'inline'
+    script: |    
+      build_config_file="$(PIPELINE.WORKSPACE)/_resource-pipeline/${{ parameters.buildConfigArtifactName }}/build-number.config"
+      build_number=$(cat "$build_config_file")
+      echo "Using build number from config file: $build_number"
+      echo "##vso[task.setvariable variable=build_number;isOutput=true]$build_number"
+      
+      # Use architecture passed as parameter
+      architecture="${{ parameters.architecture }}"
+      echo "Using architecture from parameter: $architecture"
+      echo "##vso[task.setvariable variable=architecture;isOutput=true]$architecture"
+- task: AzureCLI@2
+  displayName: "Push test results to DB"
+  condition: succeeded()
+  inputs:
+    azureSubscription: "AzureLinuxAKSTestIDCDashboard"
+    scriptType: bash
+    scriptLocation: inlineScript
+    inlineScript: |
+      set -x
+      python3 ${{ parameters.marinertridentPipelinesSourceDirectory }}/scripts/tests/push-test-results-to-db.py \
+      --junits_dir "${{ parameters.junitFilesDirectory }}" \
+      --arch $(build_config.architecture) \
+      --build_number $(build_config.build_number) \
+      --run_pipeline-id $(Build.BuildId) \
+      --is_staging ${{ parameters.isStaging }} \
+      --test_suite "${{ parameters.test_suite_name }}" \
+      --test_type_prefix "${{ parameters.test_type_prefix }}" 
