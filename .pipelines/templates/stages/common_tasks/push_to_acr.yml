@@ -8,16 +8,14 @@ parameters:
     type: string
     default: "maritimuspublic"
 
-  - name: "config"
+  - name: "publish"
     displayName: "Trident configuration"
-    type: string
+    type: bool
+    default: false
 
 steps:
   - bash: |
       set -eux
-
-      echo ${{ parameters.config }}
-
       VERSION="1.2.2"
       curl -LO "https://github.com/oras-project/oras/releases/download/v${VERSION}/oras_${VERSION}_linux_amd64.tar.gz"
       mkdir -p oras-install/
@@ -26,7 +24,7 @@ steps:
       rm -rf oras_${VERSION}_*.tar.gz oras-install/
     displayName: "Install ORAS"
     retryCountOnTaskFailure: 3
-    condition: eq(${{ parameters.config }}, 'misc')
+    condition: eq(${{ parameters.publish }}, true)
 
   - task: AzureCLI@2
     inputs:
@@ -40,7 +38,7 @@ steps:
         az acr login -n ${{ parameters.registry }}
     displayName: "Az ACR login"
     retryCountOnTaskFailure: 3
-    condition: eq(${{ parameters.config }}, 'misc')
+    condition: eq(${{ parameters.publish }}, true)
 
   - bash: |
       set -eux
@@ -70,4 +68,4 @@ steps:
       done
     displayName: "Push ${{ parameters.imageName }} to registry"
     retryCountOnTaskFailure: 3
-    condition: eq(${{ parameters.config }}, 'misc')
+    condition: eq(${{ parameters.publish }}, true)
