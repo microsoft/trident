@@ -350,3 +350,26 @@ steps:
       tridentConfigPath: ${{ parameters.tridentConfigPath }}
       deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
       tridentConfigurationName: ${{ parameters.tridentConfigurationName }}
+      
+  - task: DownloadPipelineArtifact@2
+    displayName: 'Download JUnit test results for dashboard push'
+    inputs:
+      artifact: 'junit_test_results_ab_update_B'
+      path: '$(Build.ArtifactStagingDirectory)/junits'
+
+  - bash: |
+      mkdir -p $(Build.ArtifactStagingDirectory)/filtered-junits
+      cp $(Build.ArtifactStagingDirectory)/junits/*stage_finalize_ab_update_B*.xml $(Build.ArtifactStagingDirectory)/filtered-junits/
+      echo "Filtered JUnit files:"
+      ls -la $(Build.ArtifactStagingDirectory)/filtered-junits/
+    displayName: 'Filter JUnit files for dashboard push'
+
+  - template: ../common/dbCommunication/push-test-results-to-db.yaml
+    parameters:
+      marinerAKSPipelinesSourceDirectory: '$(Build.SourcesDirectory)'
+      junitFilesDirectory: '$(Build.ArtifactStagingDirectory)/filtered-junits'
+      isStaging: true
+      buildConfigArtifactName: 'build-number-trident-stage-finalize'
+      architecture: 'x86_64'
+      test_suite_name: "trident-stage-finalize"
+      test_type_prefix: "${{ parameters.buildPurpose }}"
