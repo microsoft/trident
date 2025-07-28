@@ -105,7 +105,7 @@ scripts:
     environmentVariables:
       SAMPLE_VARIABLE: sample-variable-value
 os:
-  network:
+  netplan:
     version: 2
     ethernets:
       eths:
