@@ -10,7 +10,7 @@ parameters:
 
   - name: "publish"
     displayName: "Trident configuration"
-    type: bool
+    type: boolean
     default: false
 
 steps:
