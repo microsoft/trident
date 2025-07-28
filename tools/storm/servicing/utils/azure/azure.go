@@ -96,7 +96,7 @@ func (cfg AzureConfig) DeployAzureVM(vmName string, user string, buildId string)
 		for i := 0; i < 10; i++ {
 			out, err := cfg.CallAzCli([]string{
 				"network", "vnet", "show",
-				"--resource-group", cfg.GetTestResourceGroup(),
+				"--resource-group", "trident-vm_servicing-azure-vnet",
 				"--name", cfg.SubnetId,
 			},
 				true)
