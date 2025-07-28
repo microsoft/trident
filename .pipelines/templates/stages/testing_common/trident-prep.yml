@@ -13,7 +13,7 @@ parameters:
       - host
       - container
 
-  - name: tridentTestImage
+  - name: imageName
     displayName: "Image used in the runtime OS, source of Trident (container vs host)"
     type: string
     default: trident-testimage
@@ -43,7 +43,7 @@ steps:
 
       if [ "${{ parameters.config }}" == "misc" ]; then
         build_id="$(Build.BuildId)"
-        oci_url="oci://maritimuspublic.azurecr.io/${{ parameters.tridentTestImage }}:v${build_id}.1"
+        oci_url="oci://maritimuspublic.azurecr.io/${{ parameters.imageName }}:v${build_id}"
         cmd+=(--ociUrl "$oci_url")
       fi
 

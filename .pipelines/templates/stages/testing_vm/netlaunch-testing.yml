@@ -115,7 +115,11 @@ stages:
           # Push (regular or container) testimage to ACR
           - template: ../common_tasks/push_to_acr.yml
             parameters:
-              imageName: ${{ variables.testImageName }}
+              ${{ if eq(parameters.runtimeEnv, 'container') }}:
+                imageName: "container"
+              ${{ else }}:
+                imageName: "regular"
+              versionNumber: 1
               registry: maritimuspublic
               config: ${{ variables.tridentConfigurationName }}
 
@@ -127,7 +131,10 @@ stages:
               tridentConfigPath: $(tridentConfigPath)
               runtimeEnv: ${{ parameters.runtimeEnv }}
               config: ${{ variables.tridentConfigurationName }}
-              tridentTestImage: ${{ variables.testImageName }}
+              ${{ if eq(parameters.runtimeEnv, 'container') }}:
+                imageName: "container"
+              ${{ else }}:
+                imageName: "regular"
 
           - bash: |
               set -eux
