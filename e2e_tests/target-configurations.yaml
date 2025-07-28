@@ -140,6 +140,7 @@ virtualMachine:
       - encrypted-raid
       - encrypted-swap
       - memory-constraint-combined
+      - misc
       - raid-mirrored
       - raid-resync-small
       - raid-small
