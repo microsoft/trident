@@ -91,6 +91,28 @@ func (cfg AzureConfig) DeployAzureVM(vmName string, user string, buildId string)
 		return fmt.Errorf("failed to create Azure resource group: %w", err)
 	}
 
+	if cfg.SubnetId != "" {
+		// Loop until subnet resource is available
+		for i := 0; i < 10; i++ {
+			out, err := cfg.CallAzCli([]string{
+				"network", "vnet", "show",
+				"--resource-group", cfg.GetTestResourceGroup(),
+				"--name", cfg.SubnetId,
+			},
+				true)
+			if err == nil {
+				// Subnet found, continue with test
+				break
+			}
+			// If failed N-1 times, exit and return failure
+			if i == 9 {
+				return fmt.Errorf("failed to find specified vnet %s: %w", cfg.SubnetId, err)
+			}
+			logrus.Tracef("Waiting for subnet (%v) to be available: %v", cfg.SubnetId, out)
+			time.Sleep(time.Second)
+		}
+	}
+
 	imageVersion := cfg.GetImageVersion(buildId, false)
 
 	// Create the VM
