@@ -115,9 +115,9 @@ stages:
           # Push (regular or container) testimage to ACR
           - template: ../common_tasks/push_to_acr.yml
             parameters:
-              imageName: $(testImageName)
+              imageName: ${{ variables.testImageName }}
               registry: maritimuspublic
-              config: $(tridentConfigurationName)
+              config: ${{ variables.tridentConfigurationName }}
 
           - template: netlaunch-prep.yml
 
@@ -126,8 +126,8 @@ stages:
               tridentSourceDirectory: $(tridentSourceDirectory)
               tridentConfigPath: $(tridentConfigPath)
               runtimeEnv: ${{ parameters.runtimeEnv }}
-              config: $(tridentConfigurationName)
-              tridentTestImage: $(testImageName)
+              config: ${{ variables.tridentConfigurationName }}
+              tridentTestImage: ${{ variables.testImageName }}
 
           - bash: |
               set -eux
