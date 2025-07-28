@@ -130,7 +130,7 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 		logrus.Infof("URL is for an OCI image so it is unnecessary to update URL")
 		newUrl = oldUrl
 	} else {
-		return fmt.Errorf("failed to parse image name: %s", base)
+		return fmt.Errorf("failed to parse image name: %s. Output of matches_oci was: %v (length: %d)", base, matches_oci, len(matches_oci))
 	}
 
 	logrus.Infof("New image URL: %s", newUrl)
