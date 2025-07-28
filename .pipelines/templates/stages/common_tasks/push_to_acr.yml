@@ -55,11 +55,10 @@ steps:
       build_id="$(Build.BuildId)"
 
       cd $(Build.SourcesDirectory)/artifacts/test-image
-      ls
 
       # Regardless of whether the test is on host or container, the file is called 'regular.cosi'
       if [[ ${{ parameters.versionNumber }} == 1 ]]; then
-        filename=regular.cosi"
+        filename="regular.cosi"
       else
         filename="regular_v${{ parameters.versionNumber }}.cosi"
       fi
