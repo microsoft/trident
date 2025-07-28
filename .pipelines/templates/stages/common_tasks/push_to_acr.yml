@@ -31,6 +31,7 @@ steps:
         # Login to ACR
         az acr login -n ${{ parameters.registry }}
     displayName: "Az ACR login"
+    retryCountOnTaskFailure: 3
 
   - bash: |
       set -eux
@@ -59,3 +60,4 @@ steps:
         fi
       done
     displayName: "Push ${{ parameters.imageName }} to registry"
+    retryCountOnTaskFailure: 3
