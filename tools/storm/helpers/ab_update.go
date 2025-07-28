@@ -125,7 +125,7 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 		ext := matches[3]
 		newCosiName := fmt.Sprintf("%s_v%s.%s", name, h.args.Version, ext)
 		newUrl = fmt.Sprintf("%s%s", urlPath, newCosiName)
-	} else if len(matches_oci) == 4 {
+	} else if len(matches_oci) == 3 {
 		logrus.Infof("URL is for an OCI image so it is unnecessary to update URL")
 		newUrl = oldUrl
 	} else {
