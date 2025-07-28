@@ -101,6 +101,7 @@ func (cfg AzureConfig) DeployAzureVM(vmName string, user string, buildId string)
 			out, err := cfg.CallAzCli(vnetResourceArgs, true)
 			if err == nil {
 				// Subnet found, continue with test
+				logrus.Tracef("Subnet (%v) found to be available: %v", cfg.SubnetId, out)
 				break
 			}
 			// If failed N-1 times, exit and return failure
