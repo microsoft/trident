@@ -38,9 +38,9 @@ type AutoPartitionWidget struct {
 	deviceList   *customshortcutlist.List
 	helpText     *tview.TextView
 
-	systemDevices []diskutils.SystemBlockDevice
-	userInput     *configuration.TridentConfigData
-	bootType      string
+	systemDevices  []diskutils.SystemBlockDevice
+	hostConfigData *configuration.TridentConfigData
+	bootType       string
 }
 
 // New creates and returns a new AutoPartitionWidget.
@@ -52,8 +52,8 @@ func New(systemDevices []diskutils.SystemBlockDevice, bootType string) *AutoPart
 }
 
 // Initialize initializes the view.
-func (ap *AutoPartitionWidget) Initialize(userInput *configuration.TridentConfigData, backButtonText string, app *tview.Application, switchMode, nextPage, previousPage, quit, refreshTitle func()) (err error) {
-	ap.userInput = userInput
+func (ap *AutoPartitionWidget) Initialize(hostConfigData *configuration.TridentConfigData, backButtonText string, app *tview.Application, switchMode, nextPage, previousPage, quit, refreshTitle func()) (err error) {
+	ap.hostConfigData = hostConfigData
 	ap.navBar = navigationbar.NewNavigationBar().
 		AddButton(backButtonText, previousPage).
 		AddButton(uitext.DiskButtonCustom, switchMode).
@@ -189,7 +189,7 @@ func (ap *AutoPartitionWidget) mustUpdateConfiguration() {
 		Value: ap.systemDevices[ap.deviceList.GetCurrentItem()].DevicePath,
 	}
 	disk.Partitions = partitions
-	ap.userInput.DiskPath = disk.TargetDisk.Value
+	ap.hostConfigData.DiskPath = disk.TargetDisk.Value
 }
 
 func (ap *AutoPartitionWidget) populateBlockDeviceOptions() {

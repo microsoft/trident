@@ -26,7 +26,7 @@ func RenderTridentHostConfig(configPath string, configData *TridentConfigData) e
 
 	// Write password script
 	passwordScriptPath := filepath.Join(scriptsDir, "user-password.sh")
-	err := configData.passwordScript(passwordScriptPath)
+	err := passwordScript(passwordScriptPath, configData)
 	if err != nil {
 		return fmt.Errorf("failed to write password script: %w", err)
 	}
@@ -46,7 +46,7 @@ func RenderTridentHostConfig(configPath string, configData *TridentConfigData) e
 }
 
 // Creates the password script at the given path and returns the path if successful.
-func (configData *TridentConfigData) passwordScript(passwordScriptPath string) (err error) {
+func passwordScript(passwordScriptPath string, configData *TridentConfigData) (err error) {
 	script := fmt.Sprintf("echo '%s:%s' | chpasswd\n", configData.Username, configData.Password)
 	dir := filepath.Dir(passwordScriptPath)
 	if err = os.MkdirAll(dir, 0700); err != nil {

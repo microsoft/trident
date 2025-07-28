@@ -38,7 +38,7 @@ type UserView struct {
 	flex                 *tview.Flex
 	centeredFlex         *tview.Flex
 	passwordValidator    *crunchy.Validator
-	userInput            *configuration.TridentConfigData
+	hostConfigData       *configuration.TridentConfigData
 }
 
 // New creates and returns a new UserView.
@@ -49,8 +49,8 @@ func New() *UserView {
 }
 
 // Initialize initializes the view.
-func (uv *UserView) Initialize(userInput *configuration.TridentConfigData, backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
-	uv.userInput = userInput
+func (uv *UserView) Initialize(hostConfigData *configuration.TridentConfigData, backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
+	uv.hostConfigData = hostConfigData
 	uv.userNameField = tview.NewInputField().
 		SetLabel(uitext.UserNameInputLabel).
 		SetFieldWidth(maxUserNameLength).
@@ -185,8 +185,8 @@ func (uv *UserView) onNextButton(nextPage func()) {
 		return
 	}
 
-	uv.userInput.Username = enteredUserName
-	uv.userInput.Password = enteredPassword
+	uv.hostConfigData.Username = enteredUserName
+	uv.hostConfigData.Password = enteredPassword
 
 	nextPage()
 }
