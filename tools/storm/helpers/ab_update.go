@@ -116,7 +116,8 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 	matches := regexp.MustCompile(`^(.*?)(_v\d+)?\.(.+)$`).FindStringSubmatch(base)
 
 	// Match form <repository>:v<build ID>
-	matches_oci := regexp.MustCompile(`^(.*?)\:v(\d+)$`).FindStringSubmatch(base)
+	matches_oci := regexp.MustCompile(`^(.*?):v(\d+)$`).FindStringSubmatch(base)
+	logrus.Debugf("OCI matches: %v (length: %d)", matches_oci, len(matches_oci))
 
 	var newUrl string
 
