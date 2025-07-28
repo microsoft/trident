@@ -58,8 +58,9 @@ fn run_trident(
         Commands::OfflineInitialize {
             hs_path,
             lazy_partitions,
+            disk,
         } => {
-            return offline_init::execute(hs_path.as_deref(), lazy_partitions)
+            return offline_init::execute(hs_path.as_deref(), lazy_partitions, disk)
                 .map(|()| ExitKind::Done);
         }
 

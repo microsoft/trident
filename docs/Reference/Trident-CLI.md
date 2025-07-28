@@ -485,6 +485,8 @@ Options:
   -v, --verbosity <VERBOSITY>
           Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
           [default: DEBUG]
+      --disk <DISK>
+          Provide disk path [default: /dev/sda]
 ```
 
 
@@ -506,6 +508,17 @@ Conflicts with:
 Provide lazy partition information overrides for `-b` partitions
 
 This is a comma-separated list of `<b-partition-name>`:`<b-partition-partuuid>` pairs.
+
+Conflicts with:
+
+- `<HS_PATH>`
+
+
+#### <span style="color:#d96125;font-family:monospace;">--disk &lt;DISK&gt;</span>
+
+Provide disk path
+
+Default: `/dev/sda`
 
 Conflicts with:
 
