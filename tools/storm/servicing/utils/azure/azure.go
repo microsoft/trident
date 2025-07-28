@@ -95,7 +95,7 @@ func (cfg AzureConfig) DeployAzureVM(vmName string, user string, buildId string)
 		// Loop until subnet resource is available
 		for i := 0; i < 10; i++ {
 			vnetResourceArgs := []string{
-				"resources", "show",
+				"resource", "show",
 				"--ids", cfg.SubnetId,
 			}
 			out, err := cfg.CallAzCli(vnetResourceArgs, true)
