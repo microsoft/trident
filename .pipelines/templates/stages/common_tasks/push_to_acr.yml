@@ -66,5 +66,13 @@ steps:
       tag="v$build_id"
       echo "Pushing $filename with tag $tag to ${{ parameters.registry }}.azurecr.io"
       oras push ${{ parameters.registry }}.azurecr.io/$repository_name:$tag "$filename"
+
+      echo "Ensure tag is in the repository"
+      if oras repo tags ${{ parameters.registry }}.azurecr.io/$repository_name | grep -q "^$tag$"; then
+          echo "✅ Tag $tag found in repository $repository_name"
+      else
+          echo "❌ Tag $tag NOT found in repository $repository_name"
+          exit 1
+      fi
     displayName: "Push ${{ parameters.imageName }} to registry"
     retryCountOnTaskFailure: 3
