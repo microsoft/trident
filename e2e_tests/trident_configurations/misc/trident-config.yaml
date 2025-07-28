@@ -19,6 +19,9 @@ storage:
         - id: ntfs-partition
           type: linux-generic
           size: 100M
+        - id: trident
+          type: linux-generic
+          size: 1G
     - id: disk2
       device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
       partitionTableType: gpt
@@ -39,6 +42,9 @@ storage:
       type: ntfs
       source: new
       mountPoint: /mnt/ntfs-partition
+    - deviceId: trident
+      source: new
+      mountPoint: /var/lib/trident
 scripts:
   postConfigure:
     - name: testing-privilege
