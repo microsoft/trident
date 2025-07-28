@@ -93,7 +93,7 @@ func (cfg AzureConfig) DeployAzureVM(vmName string, user string, buildId string)
 
 	if cfg.SubnetId != "" {
 		// Loop until subnet resource is available
-		for i := 0; i < 10; i++ {
+		for {
 			vnetResourceArgs := []string{
 				"resource", "show",
 				"--ids", cfg.SubnetId,
@@ -104,10 +104,7 @@ func (cfg AzureConfig) DeployAzureVM(vmName string, user string, buildId string)
 				logrus.Tracef("Subnet (%v) found to be available: %v", cfg.SubnetId, out)
 				break
 			}
-			// If failed N-1 times, exit and return failure
-			if i == 9 {
-				return fmt.Errorf("failed to find specified vnet %s: %w", cfg.SubnetId, err)
-			}
+			// Log and retry
 			logrus.Tracef("Waiting for subnet (%v) to be available: %v", cfg.SubnetId, out)
 			time.Sleep(time.Second)
 		}
