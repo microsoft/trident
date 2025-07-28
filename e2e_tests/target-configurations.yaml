@@ -211,19 +211,20 @@ virtualMachine:
       - usr-verity
       - usr-verity-raid
     validation:
-      - base
-      - combined
-      - encrypted-partition
-      - encrypted-raid
-      - encrypted-swap
-      - raid-mirrored
-      - raid-resync-small
-      - raid-small
-      - rerun
-      - root-verity
-      - simple
-      - usr-verity
-      - usr-verity-raid
+      # - base
+      # - combined
+      # - encrypted-partition
+      # - encrypted-raid
+      # - encrypted-swap
+      - misc
+      # - raid-mirrored
+      # - raid-resync-small
+      # - raid-small
+      # - rerun
+      # - root-verity
+      # - simple
+      # - usr-verity
+      # - usr-verity-raid
     weekly:
       - base
       - combined
