@@ -13,18 +13,6 @@ parameters:
     type: string
 
 steps:
-  - ${{ if eq(parameters.config, 'misc') }}:
-      - bash: |
-          set -eux
-          VERSION="1.2.2"
-          curl -LO "https://github.com/oras-project/oras/releases/download/v${VERSION}/oras_${VERSION}_linux_amd64.tar.gz"
-          mkdir -p oras-install/
-          tar -zxf oras_${VERSION}_*.tar.gz -C oras-install/
-          sudo mv oras-install/oras /usr/local/bin/
-          rm -rf oras_${VERSION}_*.tar.gz oras-install/
-        displayName: "Install ORAS"
-        retryCountOnTaskFailure: 3
-
   - task: AzureCLI@2
     inputs:
       azureSubscription: maritimus-staging-eastus-cr-service-connection
@@ -33,7 +21,10 @@ steps:
       inlineScript: |
         set -eux
 
-        echo ${{ parameters.config }}
+        if [ ${{ parameters.config }} != 'misc' ]; then
+          echo "Skipping step. Configuration is '${{ parameters.config }}'."
+          exit 0
+        fi
 
         # Login to ACR
         az acr login -n ${{ parameters.registry }}
@@ -42,6 +33,19 @@ steps:
 
   - bash: |
       set -eux
+
+      if [ ${{ parameters.config }} != 'misc' ]; then
+        echo "Skipping step. Configuration is '${{ parameters.config }}'."
+        exit 0
+      fi
+
+      echo "Installing ORAS"
+      VERSION="1.2.2"
+      curl -LO "https://github.com/oras-project/oras/releases/download/v${VERSION}/oras_${VERSION}_linux_amd64.tar.gz"
+      mkdir -p oras-install/
+      tar -zxf oras_${VERSION}_*.tar.gz -C oras-install/
+      sudo mv oras-install/oras /usr/local/bin/
+      rm -rf oras_${VERSION}_*.tar.gz oras-install/
 
       repository_name=${{ parameters.imageName }}
       build_id="$(Build.BuildId)"
