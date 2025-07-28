@@ -94,12 +94,11 @@ func (cfg AzureConfig) DeployAzureVM(vmName string, user string, buildId string)
 	if cfg.SubnetId != "" {
 		// Loop until subnet resource is available
 		for i := 0; i < 10; i++ {
-			out, err := cfg.CallAzCli([]string{
-				"network", "vnet", "show",
-				"--resource-group", "trident-vm_servicing-azure-vnet",
-				"--name", cfg.SubnetId,
-			},
-				true)
+			vnetResourceArgs := []string{
+				"resources", "show",
+				"--ids", cfg.SubnetId,
+			}
+			out, err := cfg.CallAzCli(vnetResourceArgs, true)
 			if err == nil {
 				// Subnet found, continue with test
 				break
