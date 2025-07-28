@@ -34,7 +34,7 @@ pub struct Os {
         feature = "schemars",
         schemars(schema_with = "network::schema_helpers::make_placeholder_netplan_schema")
     )]
-    pub network: Option<NetworkConfig>,
+    pub netplan: Option<NetworkConfig>,
 
     /// SELinux configuration for the host.
     ///
@@ -152,7 +152,7 @@ pub struct ManagementOs {
         feature = "schemars",
         schemars(schema_with = "network::schema_helpers::make_placeholder_netplan_schema")
     )]
-    pub network: Option<NetworkConfig>,
+    pub netplan: Option<NetworkConfig>,
 
     /// Users to configure on the management OS.
     #[serde(default)]
@@ -174,7 +174,7 @@ impl Os {
             file.validate()?;
         }
 
-        if let Some(network) = self.network.as_ref() {
+        if let Some(network) = self.netplan.as_ref() {
             network::validate_netplan(network)?;
         }
 
@@ -184,7 +184,7 @@ impl Os {
 
 impl ManagementOs {
     pub fn validate(&self) -> Result<(), HostConfigurationStaticValidationError> {
-        if let Some(network) = self.network.as_ref() {
+        if let Some(network) = self.netplan.as_ref() {
             network::validate_netplan(network)?;
         }
 
