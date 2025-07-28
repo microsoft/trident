@@ -47,7 +47,7 @@ type InstallerView struct {
 	needsToPrompt    bool
 
 	calamaresInstallFunc func()
-	userInput            *configuration.TridentConfigData
+	hostConfigData       *configuration.TridentConfigData
 }
 
 // New creates and returns a new InstallerView.
@@ -113,8 +113,8 @@ func AssignDbusPermissions() (err error) {
 }
 
 // Initialize initializes the view.
-func (iv *InstallerView) Initialize(userInput *configuration.TridentConfigData, backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
-	iv.userInput = userInput
+func (iv *InstallerView) Initialize(hostConfigData *configuration.TridentConfigData, backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
+	iv.hostConfigData = hostConfigData
 	iv.navBar = navigationbar.NewNavigationBar().
 		AddButton(backButtonText, previousPage).
 		AddButton(uitext.ButtonNext, func() {

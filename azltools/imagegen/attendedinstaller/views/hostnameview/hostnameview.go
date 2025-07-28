@@ -36,13 +36,13 @@ const (
 
 // HostNameView contains the hostname UI
 type HostNameView struct {
-	form         *tview.Form
-	nameField    *tview.InputField
-	navBar       *navigationbar.NavigationBar
-	flex         *tview.Flex
-	centeredFlex *tview.Flex
-	defaultName  string
-	userInput    *configuration.TridentConfigData
+	form           *tview.Form
+	nameField      *tview.InputField
+	navBar         *navigationbar.NavigationBar
+	flex           *tview.Flex
+	centeredFlex   *tview.Flex
+	defaultName    string
+	hostConfigData *configuration.TridentConfigData
 }
 
 // New creates and returns a new HostNameView.
@@ -51,8 +51,8 @@ func New() *HostNameView {
 }
 
 // Initialize initializes the view.
-func (hv *HostNameView) Initialize(userInput *configuration.TridentConfigData, backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
-	hv.userInput = userInput
+func (hv *HostNameView) Initialize(hostConfigData *configuration.TridentConfigData, backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
+	hv.hostConfigData = hostConfigData
 	hostname, err := randomHostname(defaultHostNamePrefix)
 	if err != nil {
 		return
@@ -88,7 +88,7 @@ func (hv *HostNameView) Initialize(userInput *configuration.TridentConfigData, b
 
 			err := validateFQDN(enteredHostname)
 			if err == nil {
-				hv.userInput.Hostname = enteredHostname
+				hv.hostConfigData.Hostname = enteredHostname
 				nextPage()
 			} else {
 				hv.navBar.SetUserFeedback(uiutils.ErrorToUserFeedback(err), tview.Styles.TertiaryTextColor)

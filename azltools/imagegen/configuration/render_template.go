@@ -18,7 +18,7 @@ var hostConfigTemplate string
 
 // Creates Host Configuration using the template and adding the given user input.
 func RenderTridentHostConfig(configData *TridentConfigData) error {
-	passwordScriptPath, err := configData.passwordScript()
+	passwordScriptPath, err := passwordScript(configData)
 	if err != nil {
 		return fmt.Errorf("failed to write password script: %w", err)
 	}
@@ -37,7 +37,7 @@ func RenderTridentHostConfig(configData *TridentConfigData) error {
 }
 
 // Creates script to add user's password. Returns the script file path if successful.
-func (configData *TridentConfigData) passwordScript() (savedFile string, err error) {
+func passwordScript(configData *TridentConfigData) (savedFile string, err error) {
 	savedFile = ""
 	script := fmt.Sprintf("echo '%s:%s' | chpasswd\n", configData.Username, configData.Password)
 	dir := filepath.Dir(passwordScriptPath)
