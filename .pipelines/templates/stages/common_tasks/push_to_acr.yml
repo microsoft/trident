@@ -54,8 +54,8 @@ steps:
       repository_name=${{ parameters.imageName }}
       build_id="$(Build.BuildId)"
 
-      # cd "$(System.ArtifactsDirectory)/testimage"
       cd $(Build.SourcesDirectory)/artifacts/test-image
+      ls
 
       if [[ ${{ parameters.versionNumber }} == 1 ]]; then
         filename="${{ parameters.imageName }}.cosi"
