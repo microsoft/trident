@@ -68,7 +68,7 @@ mod tests {
         };
 
         let expected = indoc::indoc! {r#"
-            network:
+            netplan:
               version: 2
               ethernets:
                 eth0:
@@ -86,7 +86,7 @@ mod tests {
         };
 
         let expected = indoc::indoc! {r#"
-            network:
+            netplan:
               version: 2
         "#};
         let yaml = render_netplan_yaml(&config).expect("Failed to render yaml");
