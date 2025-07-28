@@ -8,6 +8,10 @@ parameters:
     type: string
     default: "maritimuspublic"
 
+  - name: "config"
+    displayName: "Trident configuration"
+    type: string
+
 steps:
   - bash: |
       set -eux
@@ -19,6 +23,7 @@ steps:
       rm -rf oras_${VERSION}_*.tar.gz oras-install/
     displayName: "Install ORAS"
     retryCountOnTaskFailure: 3
+    condition: eq('${{ parameters.config }}', 'misc')
 
   - task: AzureCLI@2
     inputs:
@@ -32,6 +37,7 @@ steps:
         az acr login -n ${{ parameters.registry }}
     displayName: "Az ACR login"
     retryCountOnTaskFailure: 3
+    condition: eq('${{ parameters.config }}', 'misc')
 
   - bash: |
       set -eux
@@ -61,3 +67,4 @@ steps:
       done
     displayName: "Push ${{ parameters.imageName }} to registry"
     retryCountOnTaskFailure: 3
+    condition: eq('${{ parameters.config }}', 'misc')
