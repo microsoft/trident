@@ -117,7 +117,7 @@ steps:
         imageName: "regular"
       versionNumber: 2
       registry: maritimuspublic
-      config: ${{ variables.tridentConfigurationName }}
+      config: ${{ parameters.tridentConfigurationName }}
 
   # If current config requires A/B update testing, execute script to ssh into the host, update
   # images in the custom Trident config, and re-run Trident to both stage and finalize A/B update.
@@ -240,7 +240,7 @@ steps:
         imageName: "regular"
       versionNumber: 2
       registry: maritimuspublic
-      config: ${{ variables.tridentConfigurationName }}
+      config: ${{ parameters.tridentConfigurationName }}
 
   - bash: |
       set -eux
