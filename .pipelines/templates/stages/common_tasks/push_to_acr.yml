@@ -57,21 +57,21 @@ steps:
       cd $(Build.SourcesDirectory)/artifacts/test-image
       ls
 
+      # Regardless of whether the test is on host or container, the file is called 'regular.cosi'
       if [[ ${{ parameters.versionNumber }} == 1 ]]; then
-        filename="${{ parameters.imageName }}.cosi"
+        filename=regular.cosi"
       else
-        filename="${{ parameters.imageName }}_v${{ parameters.versionNumber }}.cosi"
+        filename="regular_v${{ parameters.versionNumber }}.cosi"
       fi
 
       tag="v$build_id"
       echo "Pushing $filename with tag $tag to ${{ parameters.registry }}.azurecr.io"
       oras push ${{ parameters.registry }}.azurecr.io/$repository_name:$tag "$filename"
 
-      echo "Ensure tag is in the repository"
       if oras repo tags ${{ parameters.registry }}.azurecr.io/$repository_name | grep -q "^$tag$"; then
-          echo "✅ Tag $tag found in repository $repository_name"
+          echo "Tag $tag found in repository $repository_name"
       else
-          echo "❌ Tag $tag NOT found in repository $repository_name"
+          echo "Tag $tag NOT found in repository $repository_name"
           exit 1
       fi
     displayName: "Push ${{ parameters.imageName }} to registry"

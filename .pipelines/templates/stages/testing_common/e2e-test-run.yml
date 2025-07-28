@@ -112,9 +112,9 @@ steps:
   - template: ../common_tasks/push_to_acr.yml
     parameters:
       ${{ if eq(parameters.runtimeEnv, 'container') }}:
-        imageName: "container"
+        imageName: "trident-testimage"
       ${{ else }}:
-        imageName: "regular"
+        imageName: "trident-container-testimage"
       versionNumber: 2
       registry: maritimuspublic
       config: ${{ parameters.tridentConfigurationName }}
@@ -235,10 +235,10 @@ steps:
   - template: ../common_tasks/push_to_acr.yml
     parameters:
       ${{ if eq(parameters.runtimeEnv, 'container') }}:
-        imageName: "container"
+        imageName: "trident-testimage"
       ${{ else }}:
-        imageName: "regular"
-      versionNumber: 2
+        imageName: "trident-container-testimage"
+      versionNumber: 3
       registry: maritimuspublic
       config: ${{ parameters.tridentConfigurationName }}
 
