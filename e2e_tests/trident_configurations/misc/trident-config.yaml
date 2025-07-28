@@ -10,7 +10,10 @@ storage:
         - id: esp
           type: esp
           size: 1G
-        - id: root
+        - id: root-a
+          type: root
+          size: 8G
+        - id: root-b
           type: root
           size: 8G
         - id: ntfs-partition
@@ -20,6 +23,11 @@ storage:
       device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
       partitionTableType: gpt
       partitions: []
+  abUpdate:
+    volumePairs:
+      - id: root
+        volumeAId: root-a
+        volumeBId: root-b
   filesystems:
     - deviceId: root
       mountPoint: /
