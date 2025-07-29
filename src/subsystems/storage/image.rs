@@ -31,18 +31,22 @@ pub(super) fn ab_update_required(ctx: &EngineContext) -> Result<bool, TridentErr
 
         // Update if the sha384 has changed (including if one is 'ignored'), or both are ignored but
         // the URL has changed.
-        (Some(old_os_image), Some(new_os_image)) => Ok(old_os_image.sha384 != new_os_image.sha384
-            || old_os_image.sha384 == ImageSha384::Ignored
-                && (old_os_image.url != new_os_image.url
-                    || get_digest(&old_os_image.url).structured(
-                        InvalidInputError::RetrieveOciImageDigest {
-                            path: old_os_image.url.to_string(),
-                        },
-                    )? != get_digest(&new_os_image.url).structured(
-                        InvalidInputError::RetrieveOciImageDigest {
-                            path: new_os_image.url.to_string(),
-                        },
-                    )?)),
+        (Some(old_os_image), Some(new_os_image)) => {
+            if old_os_image.url.scheme() == "oci" && new_os_image.url.scheme() == "oci" {
+                return Ok(get_digest(&old_os_image.url).structured(
+                    InvalidInputError::RetrieveOciImageDigest {
+                        path: old_os_image.url.to_string(),
+                    },
+                )? != get_digest(&new_os_image.url).structured(
+                    InvalidInputError::RetrieveOciImageDigest {
+                        path: new_os_image.url.to_string(),
+                    },
+                )?);
+            }
+            Ok(old_os_image.sha384 != new_os_image.sha384
+                || old_os_image.sha384 == ImageSha384::Ignored
+                    && old_os_image.url != new_os_image.url)
+        }
 
         (Some(_), None) => {
             // Return an error if the old spec requests an OS image but the new spec does not.

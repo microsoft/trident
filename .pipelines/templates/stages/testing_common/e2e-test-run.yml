@@ -109,7 +109,7 @@ steps:
     displayName: "Publish test results for clean install of runtime OS"
 
   # Push (regular or container) testimage to ACR
-  - template: ../common_tasks/push_to_acr.yml
+  - template: ../common_tasks/push-to-acr.yml
     parameters:
       ${{ if eq(parameters.runtimeEnv, 'container') }}:
         imageName: "trident-testimage"
@@ -157,7 +157,7 @@ steps:
     displayName: "🔄 Stage and finalize A/B update into runtime OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
-  - template: ../common_tasks/remove_from_acr.yml
+  - template: ../common_tasks/remove-from-acr.yml
     parameters:
       ${{ if eq(parameters.runtimeEnv, 'container') }}:
         repository: "container"
@@ -232,7 +232,7 @@ steps:
     displayName: "Publish test results for A/B update into runtime OS B"
 
   # Push (regular or container) testimage to ACR
-  - template: ../common_tasks/push_to_acr.yml
+  - template: ../common_tasks/push-to-acr.yml
     parameters:
       ${{ if eq(parameters.runtimeEnv, 'container') }}:
         imageName: "trident-testimage"
@@ -280,7 +280,7 @@ steps:
     displayName: "🔄 Stage and finalize A/B update into runtime OS A"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
-  - template: ../common_tasks/remove_from_acr.yml
+  - template: ../common_tasks/remove-from-acr.yml
     parameters:
       ${{ if eq(parameters.runtimeEnv, 'container') }}:
         repository: "container"
