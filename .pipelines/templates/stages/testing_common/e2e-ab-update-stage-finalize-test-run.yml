@@ -258,4 +258,3 @@ steps:
       architecture:                           'x86_64'
       test_suite_name:                        'trident-stage-finalize'
       test_type_prefix:                       '${{ parameters.buildPurpose }}'
-

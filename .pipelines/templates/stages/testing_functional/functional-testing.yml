@@ -129,6 +129,13 @@ stages:
 
           - bash: |
               set -eux
+              mkdir -p ${{ variables.ob_outputDirectory }}/junit
+              sudo cp "$(Build.SourcesDirectory)/target/trident_functional_tests.xml" "${{ variables.ob_outputDirectory }}/junit."
+            displayName: Copy junit results to artifact directory
+            condition: succeededOrFailed()
+
+          - bash: |
+              set -eux
 
               sg libvirt "make patch-functional-test ARGUS_TOOLKIT_PATH=argus-toolkit"
             condition: and(succeeded(), eq('${{ parameters.rerunTests }}', 'true'))
