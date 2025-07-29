@@ -128,10 +128,7 @@ stages:
               tridentConfigPath: $(tridentConfigPath)
               runtimeEnv: ${{ parameters.runtimeEnv }}
               config: ${{ variables.tridentConfigurationName }}
-              ${{ if eq(parameters.runtimeEnv, 'container') }}:
-                imageName: "container"
-              ${{ else }}:
-                imageName: "regular"
+              imageName: ${{ variables.testImageName }}
 
           - bash: |
               set -eux
