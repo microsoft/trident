@@ -78,6 +78,7 @@ func main() {
 	// ejectDisk()
 }
 
+// Returns the correct funtion to execute the selected installation process
 func installerFactory(unattended bool) (installFunc func() (bool, error)) {
 	isAttended := false
 
@@ -99,7 +100,9 @@ func installerFactory(unattended bool) (installFunc func() (bool, error)) {
 	return
 }
 
+// Runs the terminal UI for attended installation
 func terminalUIAttendedInstall() (installationQuit bool, err error) {
+	// Initialize the attended installer
 	attendedInstaller, err := attendedinstaller.New(
 		// Calamares based installation
 		func() (err error) {
@@ -110,11 +113,12 @@ func terminalUIAttendedInstall() (installationQuit bool, err error) {
 		return
 	}
 
+	// Execute installation UI
 	installationQuit, err = attendedInstaller.Run()
 	return
 }
 
-// Replace in Trident:
+// This function will be replaced in Trident
 func ejectDisk() (err error) {
 	logger.Log.Info("Ejecting CD-ROM.")
 	const squashErrors = false
