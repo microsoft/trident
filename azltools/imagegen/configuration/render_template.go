@@ -8,8 +8,6 @@ import (
 	"text/template"
 )
 
-// The following line is not a comment, it is a compiler directive. Do not delete it.
-//
 //go:embed template/host-config.yaml.tmpl
 var hostConfigTemplate string
 
@@ -52,7 +50,7 @@ func RenderTridentHostConfig(tmplPath string, configData *TridentConfigData, hos
 	return tmpl.Execute(out, configData)
 }
 
-// Creates the password script at the given path and returns the path if successful.
+// Creates the password script at the given path
 func passwordScript(passwordScriptPath string, configData *TridentConfigData) (err error) {
 	script := fmt.Sprintf("echo '%s:%s' | chpasswd\n", configData.Username, configData.Password)
 	dir := filepath.Dir(passwordScriptPath)
