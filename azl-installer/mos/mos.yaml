@@ -80,10 +80,6 @@ os:
   - source: files/serial-getty@.service
     destination: /usr/lib/systemd/system/serial-getty@.service
 
-    # Template trident config file
-  - source: files/default-trident-config.yaml
-    destination: /etc/trident/config.yaml
-
 scripts:
   postCustomization:
   - path: scripts/create-cdrom-symlink.sh

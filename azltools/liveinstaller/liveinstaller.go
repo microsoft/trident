@@ -10,18 +10,14 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"azltools/imagegen/attendedinstaller"
 	"azltools/imagegen/configuration"
 	"azltools/internal/exe"
-	"azltools/internal/file"
 	"azltools/internal/jsonutils"
 	"azltools/internal/logger"
 	"azltools/internal/shell"
-
-	"github.com/sirupsen/logrus"
 
 	"github.com/alecthomas/kingpin/v2"
 	"golang.org/x/sys/unix"
@@ -30,15 +26,11 @@ import (
 var (
 	app = kingpin.New("liveinstaller", "A tool to download a provided list of packages into a given directory.")
 
-	// Take in strings for the config and template config file, as they may not exist on disk
-	configFile         = exe.InputStringFlag(app, "Path to the image config file.")
-	templateConfigFile = app.Flag("template-config", "Path to the template config file.").String()
-	forceAttended      = app.Flag("attended", "Use the attended installer regardless if a config file is present.").Bool()
-	imagerTool         = app.Flag("imager", "Path to the imager tool.").String()
-	buildDir           = app.Flag("build-dir", "Directory to store temporary files while building.").Required().ExistingDir()
-	baseDirPath        = app.Flag("base-dir", "Base directory for relative file paths from the config. Defaults to config's directory.").ExistingDir()
-	repoSnapshotTime   = app.Flag("repo-snapshot-time", "Optional: tdnf repo snapshot time").String()
-	logFlags           = exe.SetupLogFlags(app)
+	forceAttended = app.Flag("attended", "Use the attended installer regardless if a config file is present.").Bool()
+	buildDir      = app.Flag("build-dir", "Directory to store temporary files while building.").Required().ExistingDir()
+	baseDirPath   = app.Flag("base-dir", "Base directory for relative file paths from the config. Defaults to config's directory.").ExistingDir()
+	imagePath     = app.Flag("image-path", "Path to the OS image for the target system.").Required().String()
+	logFlags      = exe.SetupLogFlags(app)
 )
 
 // Every valid mouse event handler will follow the format:
@@ -67,8 +59,6 @@ func handleCtrlC(signals chan os.Signal) {
 }
 
 func main() {
-	const imagerLogFile = "/var/log/imager.log"
-
 	app.Version(exe.ToolkitVersion)
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 	logger.InitBestEffort(logFlags)
@@ -79,17 +69,13 @@ func main() {
 	signal.Notify(signals, unix.SIGINT)
 	go handleCtrlC(signals)
 
-	// Imager's stdout/stderr will be combined with this tool's, so it will automatically be logged to the current log file
 	args := imagerArguments{
-		imagerTool:       *imagerTool,
-		buildDir:         *buildDir,
-		baseDirPath:      *baseDirPath,
-		logLevel:         logger.Log.GetLevel().String(),
-		logFile:          imagerLogFile,
-		repoSnapshotTime: *repoSnapshotTime,
+		buildDir:    *buildDir,
+		baseDirPath: *baseDirPath,
+		logLevel:    logger.Log.GetLevel().String(),
 	}
 
-	installFunc := installerFactory(*forceAttended, *configFile, *templateConfigFile)
+	installFunc := installerFactory(*forceAttended)
 	installDetails, err := installFunc(args)
 	if installDetails.installationQuit {
 		logger.Log.Error("User quit installation")
@@ -99,12 +85,13 @@ func main() {
 
 	logger.PanicOnError(err)
 
-	// Change the boot order by either changing the EFI boot order or ejecting CDROM.
-	// updateBootOrder(installDetails)
-	// ejectDisk()
+	// Trident needs to eject the disk:
+	// 		Change the boot order by either changing the EFI boot order or ejecting CDROM.
+	// 		updateBootOrder(installDetails)
+	// 		ejectDisk()
 }
 
-func installerFactory(forceAttended bool, configFile, templateConfigFile string) (installFunc func(imagerArguments) (installationDetails, error)) {
+func installerFactory(forceAttended bool) (installFunc func(imagerArguments) (installationDetails, error)) {
 	isAttended := false
 
 	// Determine if the attended installer should be shown
@@ -112,34 +99,206 @@ func installerFactory(forceAttended bool, configFile, templateConfigFile string)
 		logger.Log.Info("`attended` flag set, using attended installation")
 		isAttended = true
 	} else {
-		unattendedExists, _ := file.PathExists(configFile)
-
-		if !unattendedExists {
-			logger.Log.Infof("Config file (%s) does not exist, using attended installation", configFile)
-			isAttended = true
-		}
-	}
-
-	if isAttended {
-		templateExists, _ := file.PathExists(templateConfigFile)
-		if !templateExists {
-			logger.Log.Panicf("Attended installation requires a template config file. Specified template (%s) does not exist.", templateConfigFile)
-		}
+		logger.Log.Infof("Unattended installation is currently not supported. Using attended installation.")
+		isAttended = true
 	}
 
 	if isAttended {
 		installFunc = func(args imagerArguments) (installationDetails, error) {
-			return terminalUIAttendedInstall(templateConfigFile, args)
-		}
-	} else {
-		installFunc = func(args imagerArguments) (installationDetails, error) {
-			return unattendedInstall(configFile, args)
+			return terminalUIAttendedInstall(args)
 		}
 	}
 
 	return
 }
 
+func terminalUIAttendedInstall(args imagerArguments) (installDetails installationDetails, err error) {
+	//Replace with saved user input:
+	// 		Store the config file generated by the attended installer under the build dir
+	// 		err = os.MkdirAll(args.buildDir, os.ModePerm)
+	// 		if err != nil {
+	// 			return
+	// 		}
+	// 		args.configFile = filepath.Join(args.buildDir, configFileName)
+
+	attendedInstaller, err := attendedinstaller.New(
+		// Calamares based installation
+		func() (err error) {
+			return calamaresInstall(args)
+		}, *imagePath)
+
+	if err != nil {
+		return
+	}
+
+	installationQuit, err := attendedInstaller.Run()
+	installDetails.installationQuit = installationQuit
+	return
+}
+
+// Calamares based installation
+func findMouseHandlers() (handlers string, err error) {
+	const (
+		deviceHandlerFile   = "/proc/bus/input/devices"
+		eventPrefix         = "/dev/input"
+		handlerDelimiter    = ":"
+		absoluteInputEvents = "abs"
+		eventMatchGroup     = 1
+	)
+
+	devicesFile, err := os.Open(deviceHandlerFile)
+	if err != nil {
+		return
+	}
+	defer devicesFile.Close()
+
+	// Gather a list of all mouse event handlers from the devices file
+	eventHandlers := []string{}
+	scanner := bufio.NewScanner(devicesFile)
+	for scanner.Scan() {
+		matches := mouseEventHandlerRegex.FindStringSubmatch(scanner.Text())
+		if len(matches) == 0 {
+			continue
+		}
+
+		eventPath := filepath.Join(eventPrefix, matches[eventMatchGroup])
+		eventHandlers = append(eventHandlers, eventPath)
+	}
+
+	err = scanner.Err()
+	if err != nil {
+		return
+	}
+
+	if len(eventHandlers) == 0 {
+		err = fmt.Errorf("no mouse handler detected")
+		return
+	}
+
+	// Add the the absolute input modifier to the handler list as mouse events are absolute.
+	// QT's default behavior is to take in relative events.
+	eventHandlers = append(eventHandlers, absoluteInputEvents)
+
+	// Join all mouse event handlers together so they all function inside QT
+	handlers = strings.Join(eventHandlers, handlerDelimiter)
+
+	return
+}
+
+func calamaresInstall(args imagerArguments) (err error) {
+	const (
+		squashErrors = false
+		calamaresDir = "/etc/calamares"
+	)
+
+	args.emitProgress = true
+	args.configFile = filepath.Join(calamaresDir, "unattended_config.json")
+
+	launchScript := filepath.Join(calamaresDir, "mariner-install.sh")
+	skuDir := filepath.Join(calamaresDir, "azurelinux-skus")
+
+	bootType := configuration.SystemBootType()
+	logger.Log.Infof("Boot type detected: %s", bootType)
+
+	mouseHandlers, err := findMouseHandlers()
+	if err != nil {
+		// Not finding a mouse isn't fatal as the installer can instead be driven with
+		// a keyboard only.
+		logger.Log.Warnf("No mouse detected: %v", err)
+	}
+
+	logger.Log.Infof("Using (%s) for mouse input", mouseHandlers)
+	newEnv := append(shell.CurrentEnvironment(), fmt.Sprintf("QT_QPA_EVDEV_MOUSE_PARAMETERS=%s", mouseHandlers))
+	shell.SetEnvironment(newEnv)
+
+	// Generate the files needed for calamares
+	err = os.MkdirAll(skuDir, os.ModePerm)
+	if err != nil {
+		return
+	}
+
+	err = generateCalamaresLaunchScript(launchScript, args)
+	if err != nil {
+		return
+	}
+
+	// Generate the partial JSONs for SKUs
+	err = generateCalamaresSKUs(skuDir, bootType)
+	if err != nil {
+		return
+	}
+
+	return shell.ExecuteLive(squashErrors, "calamares", "-platform", "linuxfb")
+}
+
+func generateCalamaresLaunchScript(launchScriptPath string, args imagerArguments) (err error) {
+	const executionPerm = 0755
+
+	// Generate the script calamares will invoke to install
+	scriptFile, err := os.OpenFile(launchScriptPath, os.O_CREATE|os.O_RDWR, executionPerm)
+	if err != nil {
+		return
+	}
+	defer scriptFile.Close()
+
+	logger.Log.Infof("Generating install script (%s)", launchScriptPath)
+	program, commandArgs := formatImagerCommand(args)
+
+	scriptFile.WriteString("#!/bin/bash\n")
+	scriptFile.WriteString(fmt.Sprintf("%s %s", program, strings.Join(commandArgs, " ")))
+	scriptFile.WriteString("\n")
+
+	return
+}
+
+func generateCalamaresSKUs(skuDir, bootType string) (err error) {
+	// Parse template config
+	templateConfig, err := configuration.Load("/root/installer/attended_config.json")
+	if err != nil {
+		return
+	}
+
+	// Generate JSON snippets for each SKU
+	for _, sysConfig := range templateConfig.SystemConfigs {
+		sysConfig.BootType = bootType
+		err = generateSingleCalamaresSKU(sysConfig, skuDir)
+		if err != nil {
+			return
+		}
+	}
+
+	return
+}
+
+func generateSingleCalamaresSKU(sysConfig configuration.SystemConfig, skuDir string) (err error) {
+	skuFilePath := filepath.Join(skuDir, sysConfig.Name+".json")
+	logger.Log.Infof("Generating SKU option (%s)", skuFilePath)
+
+	// Write the individual system config to a file.
+	return jsonutils.WriteJSONFile(skuFilePath, sysConfig)
+}
+
+func formatImagerCommand(args imagerArguments) (program string, commandArgs []string) {
+	program = args.imagerTool
+
+	commandArgs = []string{
+		"--live-install",
+		fmt.Sprintf("--input=%s", args.configFile),
+		fmt.Sprintf("--build-dir=%s", args.buildDir),
+		fmt.Sprintf("--base-dir=%s", args.baseDirPath),
+		fmt.Sprintf("--log-file=%s", args.logFile),
+		fmt.Sprintf("--log-level=%s", args.logLevel),
+		fmt.Sprintf("--repo-snapshot-time=%s", args.repoSnapshotTime),
+	}
+
+	if args.emitProgress {
+		commandArgs = append(commandArgs, "--emit-progress")
+	}
+
+	return
+}
+
+// Replace in Trident:
 func updateBootOrder(installDetails installationDetails) (err error) {
 	if installDetails.finalConfig.DefaultSystemConfig.BootType != "efi" {
 		logger.Log.Info("No BootType of 'efi' detected. Not attempting to set EFI boot order.")
@@ -209,257 +368,5 @@ func ejectDisk() (err error) {
 		logger.Log.Info("Installation Complete. Please Remove USB installation media and reboot if present.")
 		logger.Log.Info("==================================================================================")
 	}
-	return
-}
-
-func findMouseHandlers() (handlers string, err error) {
-	const (
-		deviceHandlerFile   = "/proc/bus/input/devices"
-		eventPrefix         = "/dev/input"
-		handlerDelimiter    = ":"
-		absoluteInputEvents = "abs"
-		eventMatchGroup     = 1
-	)
-
-	devicesFile, err := os.Open(deviceHandlerFile)
-	if err != nil {
-		return
-	}
-	defer devicesFile.Close()
-
-	// Gather a list of all mouse event handlers from the devices file
-	eventHandlers := []string{}
-	scanner := bufio.NewScanner(devicesFile)
-	for scanner.Scan() {
-		matches := mouseEventHandlerRegex.FindStringSubmatch(scanner.Text())
-		if len(matches) == 0 {
-			continue
-		}
-
-		eventPath := filepath.Join(eventPrefix, matches[eventMatchGroup])
-		eventHandlers = append(eventHandlers, eventPath)
-	}
-
-	err = scanner.Err()
-	if err != nil {
-		return
-	}
-
-	if len(eventHandlers) == 0 {
-		err = fmt.Errorf("no mouse handler detected")
-		return
-	}
-
-	// Add the the absolute input modifier to the handler list as mouse events are absolute.
-	// QT's default behavior is to take in relative events.
-	eventHandlers = append(eventHandlers, absoluteInputEvents)
-
-	// Join all mouse event handlers together so they all function inside QT
-	handlers = strings.Join(eventHandlers, handlerDelimiter)
-
-	return
-}
-
-func calamaresInstall(templateConfigFile string, args imagerArguments) (err error) {
-	const (
-		squashErrors = false
-		calamaresDir = "/etc/calamares"
-	)
-
-	args.emitProgress = true
-	args.configFile = filepath.Join(calamaresDir, "unattended_config.json")
-
-	launchScript := filepath.Join(calamaresDir, "mariner-install.sh")
-	skuDir := filepath.Join(calamaresDir, "azurelinux-skus")
-
-	bootType := configuration.SystemBootType()
-	logger.Log.Infof("Boot type detected: %s", bootType)
-
-	mouseHandlers, err := findMouseHandlers()
-	if err != nil {
-		// Not finding a mouse isn't fatal as the installer can instead be driven with
-		// a keyboard only.
-		logger.Log.Warnf("No mouse detected: %v", err)
-	}
-
-	logger.Log.Infof("Using (%s) for mouse input", mouseHandlers)
-	newEnv := append(shell.CurrentEnvironment(), fmt.Sprintf("QT_QPA_EVDEV_MOUSE_PARAMETERS=%s", mouseHandlers))
-	shell.SetEnvironment(newEnv)
-
-	// Generate the files needed for calamares
-	err = os.MkdirAll(skuDir, os.ModePerm)
-	if err != nil {
-		return
-	}
-
-	err = generateCalamaresLaunchScript(launchScript, args)
-	if err != nil {
-		return
-	}
-
-	// Generate the partial JSONs for SKUs
-	err = generateCalamaresSKUs(templateConfigFile, skuDir, bootType)
-	if err != nil {
-		return
-	}
-
-	return shell.ExecuteLive(squashErrors, "calamares", "-platform", "linuxfb")
-}
-
-func generateCalamaresLaunchScript(launchScriptPath string, args imagerArguments) (err error) {
-	const executionPerm = 0755
-
-	// Generate the script calamares will invoke to install
-	scriptFile, err := os.OpenFile(launchScriptPath, os.O_CREATE|os.O_RDWR, executionPerm)
-	if err != nil {
-		return
-	}
-	defer scriptFile.Close()
-
-	logger.Log.Infof("Generating install script (%s)", launchScriptPath)
-	program, commandArgs := formatImagerCommand(args)
-
-	scriptFile.WriteString("#!/bin/bash\n")
-	scriptFile.WriteString(fmt.Sprintf("%s %s", program, strings.Join(commandArgs, " ")))
-	scriptFile.WriteString("\n")
-
-	return
-}
-
-func generateCalamaresSKUs(templateConfigFile, skuDir, bootType string) (err error) {
-	// Parse template config
-	templateConfig, err := configuration.Load(templateConfigFile)
-	if err != nil {
-		return
-	}
-
-	// Generate JSON snippets for each SKU
-	for _, sysConfig := range templateConfig.SystemConfigs {
-		sysConfig.BootType = bootType
-		err = generateSingleCalamaresSKU(sysConfig, skuDir)
-		if err != nil {
-			return
-		}
-	}
-
-	return
-}
-
-func generateSingleCalamaresSKU(sysConfig configuration.SystemConfig, skuDir string) (err error) {
-	skuFilePath := filepath.Join(skuDir, sysConfig.Name+".json")
-	logger.Log.Infof("Generating SKU option (%s)", skuFilePath)
-
-	// Write the individual system config to a file.
-	return jsonutils.WriteJSONFile(skuFilePath, sysConfig)
-}
-
-func terminalUIAttendedInstall(templateConfigFile string, args imagerArguments) (installDetails installationDetails, err error) {
-	const configFileName = "attendedconfig.json"
-
-	// Parse template config
-	templateConfig, err := configuration.Load(templateConfigFile)
-	if err != nil {
-		return
-	}
-
-	// Store the config file generated by the attended installer under the build dir
-	err = os.MkdirAll(args.buildDir, os.ModePerm)
-	if err != nil {
-		return
-	}
-
-	args.configFile = filepath.Join(args.buildDir, configFileName)
-	attendedInstaller, err := attendedinstaller.New(templateConfig,
-		// Terminal-UI based installation
-		func(cfg configuration.Config, progress chan int, status chan string) (err error) {
-			return terminalAttendedInstall(cfg, progress, status, args)
-		},
-
-		// Calamares based installation
-		func() (err error) {
-			return calamaresInstall(templateConfigFile, args)
-		})
-
-	if err != nil {
-		return
-	}
-
-	finalConfig, installationQuit, err := attendedInstaller.Run()
-	installDetails.finalConfig = finalConfig
-	installDetails.installationQuit = installationQuit
-	return
-}
-
-func terminalAttendedInstall(cfg configuration.Config, progress chan int, status chan string, args imagerArguments) (err error) {
-	defer close(progress)
-	defer close(status)
-
-	logger.Log.Infof("Writing temporary config file to (%s)", args.configFile)
-	err = jsonutils.WriteJSONFile(args.configFile, cfg)
-	if err != nil {
-		return
-	}
-
-	onStdout := func(line string) {
-		const (
-			progressPrefix = "progress:"
-			actionPrefix   = "action:"
-		)
-
-		if strings.HasPrefix(line, progressPrefix) {
-			reportedProgress, err := strconv.Atoi(strings.TrimPrefix(line, progressPrefix))
-			if err != nil {
-				logger.Log.Warnf("Failed to convert progress to an integer (%s). Error: %v", line, err)
-				return
-			}
-
-			progress <- reportedProgress
-		} else if strings.HasPrefix(line, actionPrefix) {
-			status <- strings.TrimPrefix(line, actionPrefix)
-		}
-	}
-
-	args.emitProgress = true
-	program, commandArgs := formatImagerCommand(args)
-	err = shell.NewExecBuilder(program, commandArgs...).
-		LogLevel(logrus.TraceLevel, logrus.WarnLevel).
-		StdoutCallback(onStdout).
-		Execute()
-
-	return
-}
-
-func unattendedInstall(configFile string, args imagerArguments) (installDetails installationDetails, err error) {
-	const squashErrors = false
-
-	args.configFile = configFile
-
-	installDetails.finalConfig, err = configuration.Load(configFile)
-	if err != nil {
-		installDetails.installationQuit = true
-		return
-	}
-	program, commandArgs := formatImagerCommand(args)
-	err = shell.ExecuteLive(squashErrors, program, commandArgs...)
-	return
-}
-
-func formatImagerCommand(args imagerArguments) (program string, commandArgs []string) {
-	program = args.imagerTool
-
-	commandArgs = []string{
-		"--live-install",
-		fmt.Sprintf("--input=%s", args.configFile),
-		fmt.Sprintf("--build-dir=%s", args.buildDir),
-		fmt.Sprintf("--base-dir=%s", args.baseDirPath),
-		fmt.Sprintf("--log-file=%s", args.logFile),
-		fmt.Sprintf("--log-level=%s", args.logLevel),
-		fmt.Sprintf("--repo-snapshot-time=%s", args.repoSnapshotTime),
-	}
-
-	if args.emitProgress {
-		commandArgs = append(commandArgs, "--emit-progress")
-	}
-
 	return
 }

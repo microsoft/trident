@@ -10,6 +10,7 @@ import (
 	"azltools/imagegen/attendedinstaller/primitives/navigationbar"
 	"azltools/imagegen/attendedinstaller/uitext"
 	"azltools/imagegen/attendedinstaller/uiutils"
+	"azltools/imagegen/configuration"
 )
 
 // UI constants.
@@ -34,6 +35,7 @@ type ConfirmView struct {
 	navBar       *navigationbar.NavigationBar
 	flex         *tview.Flex
 	centeredFlex *tview.Flex
+	hostConfigData     *configuration.TridentConfigData
 }
 
 // New creates and returns a new ConfirmView.
@@ -42,13 +44,15 @@ func New() *ConfirmView {
 }
 
 // Initialize initializes the view.
-func (cv *ConfirmView) Initialize(backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
+func (cv *ConfirmView) Initialize(hostConfigData  *configuration.TridentConfigData, backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
 	cv.text = tview.NewTextView().
 		SetText(uitext.ConfirmPrompt)
 
 	cv.navBar = navigationbar.NewNavigationBar().
 		AddButton(backButtonText, previousPage).
-		AddButton(uitext.ButtonYes, nextPage).
+		AddButton(uitext.ButtonYes, func() {
+			cv.onNextButton(nextPage)
+		}).
 		SetAlign(tview.AlignCenter)
 
 	textWidth, textHeight := uiutils.MinTextViewWithNoWrapSize(cv.text)
@@ -81,6 +85,18 @@ func (cv *ConfirmView) Reset() (err error) {
 	cv.navBar.SetSelectedButton(defaultNavButton)
 
 	return
+}
+
+func (cv *ConfirmView) onNextButton(nextPage func()) error {
+	// Save the user input to the config file.
+	err := configuration.RenderTridentHostConfig(cv.hostConfigData )
+	if err != nil {
+		cv.navBar.SetUserFeedback(uiutils.ErrorToUserFeedback(err), tview.Styles.TertiaryTextColor)
+		return err
+	}
+
+	nextPage()
+	return nil
 }
 
 // Name returns the friendly name of the view.

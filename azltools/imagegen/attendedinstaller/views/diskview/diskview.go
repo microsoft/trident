@@ -27,6 +27,7 @@ type DiskView struct {
 	autoPartitionMode     bool
 	autoPartitionWidget   *autopartitionwidget.AutoPartitionWidget
 	manualPartitionWidget *manualpartitionwidget.ManualPartitionWidget
+	hostConfigData        *configuration.TridentConfigData
 
 	refreshTitle func()
 }
@@ -37,7 +38,8 @@ func New() *DiskView {
 }
 
 // Initialize initializes the view.
-func (dv *DiskView) Initialize(backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
+func (dv *DiskView) Initialize(hostConfigData *configuration.TridentConfigData, backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
+	dv.hostConfigData = hostConfigData
 	err = dv.populateBlockDeviceOptions()
 	if err != nil {
 		return
@@ -46,13 +48,13 @@ func (dv *DiskView) Initialize(backButtonText string, app *tview.Application, ne
 	bootType := configuration.SystemBootType()
 	logger.Log.Infof("Boot type detected: %s", bootType)
 	dv.autoPartitionWidget = autopartitionwidget.New(dv.systemDevices, bootType)
-	err = dv.autoPartitionWidget.Initialize(backButtonText, app, dv.switchMode, nextPage, previousPage, quit, refreshTitle)
+	err = dv.autoPartitionWidget.Initialize(dv.hostConfigData, backButtonText, app, dv.switchMode, nextPage, previousPage, quit, refreshTitle)
 	if err != nil {
 		return
 	}
 
 	dv.manualPartitionWidget = manualpartitionwidget.New(dv.systemDevices, bootType)
-	err = dv.manualPartitionWidget.Initialize(backButtonText, app, dv.switchMode, nextPage, previousPage, quit, refreshTitle)
+	err = dv.manualPartitionWidget.Initialize(dv.hostConfigData, backButtonText, app, dv.switchMode, nextPage, previousPage, quit, refreshTitle)
 	if err != nil {
 		return
 	}

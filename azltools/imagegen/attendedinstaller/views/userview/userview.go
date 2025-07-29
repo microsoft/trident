@@ -4,9 +4,7 @@
 package userview
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/gdamore/tcell"
 	"github.com/muesli/crunchy"
@@ -15,6 +13,7 @@ import (
 	"azltools/imagegen/attendedinstaller/primitives/navigationbar"
 	"azltools/imagegen/attendedinstaller/uitext"
 	"azltools/imagegen/attendedinstaller/uiutils"
+	"azltools/imagegen/configuration"
 )
 
 // UI constants.
@@ -27,8 +26,6 @@ const (
 	passwordFieldWidth = 64
 
 	maxUserNameLength = 32
-
-	userInputFileName = "userinput.json"
 )
 
 // UserView contains the password UI
@@ -41,6 +38,7 @@ type UserView struct {
 	flex                 *tview.Flex
 	centeredFlex         *tview.Flex
 	passwordValidator    *crunchy.Validator
+	hostConfigData       *configuration.TridentConfigData
 }
 
 // New creates and returns a new UserView.
@@ -51,7 +49,8 @@ func New() *UserView {
 }
 
 // Initialize initializes the view.
-func (uv *UserView) Initialize(backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
+func (uv *UserView) Initialize(hostConfigData *configuration.TridentConfigData, backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
+	uv.hostConfigData = hostConfigData
 	uv.userNameField = tview.NewInputField().
 		SetLabel(uitext.UserNameInputLabel).
 		SetFieldWidth(maxUserNameLength).
@@ -164,33 +163,6 @@ func (uv *UserView) userNameAcceptanceCheck(textToCheck string, lastRune rune) b
 	return true
 }
 
-func (uv *UserView) saveUserInput(username, password string) error {
-	fileName := userInputFileName
-	data := make(map[string]interface{})
-
-	file, err := os.Open(fileName)
-	if err == nil {
-		defer file.Close()
-		decoder := json.NewDecoder(file)
-		_ = decoder.Decode(&data)
-	}
-
-	data["username"] = username
-	data["password"] = password
-
-	file, err = os.Create(fileName)
-	if err != nil {
-		uv.navBar.SetUserFeedback(uiutils.ErrorToUserFeedback(err), tview.Styles.TertiaryTextColor)
-		return err
-	}
-	defer file.Close()
-
-	encoder := json.NewEncoder(file)
-	encoder.SetIndent("", "  ")
-
-	return encoder.Encode(data)
-}
-
 func (uv *UserView) onNextButton(nextPage func()) {
 	enteredUserName := uv.userNameField.GetText()
 	enteredPassword := uv.passwordField.GetText()
@@ -213,11 +185,8 @@ func (uv *UserView) onNextButton(nextPage func()) {
 		return
 	}
 
-	err = uv.saveUserInput(enteredUserName, enteredPassword)
-	if err != nil {
-		uv.navBar.SetUserFeedback(uiutils.ErrorToUserFeedback(err), tview.Styles.TertiaryTextColor)
-		return
-	}
+	uv.hostConfigData.Username = enteredUserName
+	uv.hostConfigData.Password = enteredPassword
 
 	nextPage()
 }

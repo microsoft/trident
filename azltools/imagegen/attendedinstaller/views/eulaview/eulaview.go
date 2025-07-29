@@ -13,6 +13,7 @@ import (
 
 	"azltools/imagegen/attendedinstaller/primitives/navigationbar"
 	"azltools/imagegen/attendedinstaller/uitext"
+	"azltools/imagegen/configuration"
 )
 
 // Resource constants.
@@ -35,9 +36,10 @@ const (
 
 // EulaView contains the EULA UI
 type EulaView struct {
-	flex   *tview.Flex
-	text   *tview.TextView
-	navBar *navigationbar.NavigationBar
+	flex           *tview.Flex
+	text           *tview.TextView
+	navBar         *navigationbar.NavigationBar
+	hostConfigData *configuration.TridentConfigData
 }
 
 // New creates and returns a new EulaView.
@@ -46,7 +48,9 @@ func New() *EulaView {
 }
 
 // Initialize initializes the view.
-func (ev *EulaView) Initialize(backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
+func (ev *EulaView) Initialize(hostConfigData *configuration.TridentConfigData, backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
+	ev.hostConfigData = hostConfigData
+
 	ev.text = tview.NewTextView().
 		SetWordWrap(true).
 		SetChangedFunc(func() {

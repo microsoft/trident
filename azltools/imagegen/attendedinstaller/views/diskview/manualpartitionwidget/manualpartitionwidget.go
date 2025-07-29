@@ -4,9 +4,7 @@
 package manualpartitionwidget
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/gdamore/tcell"
@@ -97,8 +95,9 @@ type ManualPartitionWidget struct {
 	systemDevices  []diskutils.SystemBlockDevice
 	bootType       string
 
-	nextPage     func()
-	refreshTitle func()
+	hostConfigData *configuration.TridentConfigData
+	nextPage       func()
+	refreshTitle   func()
 }
 
 // New creates and returns a new ManualPartitionWidget.
@@ -110,7 +109,9 @@ func New(systemDevices []diskutils.SystemBlockDevice, bootType string) *ManualPa
 }
 
 // Initialize initializes the view.
-func (mp *ManualPartitionWidget) Initialize(backButtonText string, app *tview.Application, switchMode, nextPage, previousPage, quit, refreshTitle func()) (err error) {
+func (mp *ManualPartitionWidget) Initialize(hostConfigData *configuration.TridentConfigData, backButtonText string, app *tview.Application, switchMode, nextPage, previousPage, quit, refreshTitle func()) (err error) {
+	mp.hostConfigData = hostConfigData
+
 	if len(mp.systemDevices) == 0 {
 		return fmt.Errorf("no devices to install to found")
 	}
@@ -516,31 +517,6 @@ func (mp *ManualPartitionWidget) mustRemovePartition() {
 	return
 }
 
-func saveDiskPath(diskPath string) error {
-	fileName := "userinput.json"
-	data := make(map[string]interface{})
-
-	file, err := os.Open(fileName)
-	if err == nil {
-		defer file.Close()
-		decoder := json.NewDecoder(file)
-		_ = decoder.Decode(&data)
-	}
-
-	data["disk_path"] = diskPath
-
-	file, err = os.Create(fileName)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	encoder := json.NewEncoder(file)
-	encoder.SetIndent("", "  ")
-
-	return encoder.Encode(data)
-}
-
 func (mp *ManualPartitionWidget) unmarshalPartitionTable() (err error) {
 	const (
 		targetDiskType     = "path"
@@ -620,7 +596,7 @@ func (mp *ManualPartitionWidget) unmarshalPartitionTable() (err error) {
 	disk.Partitions = partitions
 
 	disk_path := disk.TargetDisk.Value
-	saveDiskPath(disk_path)
+	mp.hostConfigData.DiskPath = disk_path
 
 	return
 }

@@ -70,19 +70,19 @@ type AttendedInstaller struct {
 	titleText         *tview.TextView
 	keyboard          uinput.Keyboard
 
-	installationFunc     func(configuration.Config, chan int, chan string) error
 	calamaresInstallFunc func() error
 	installationError    error
 	installationTime     time.Duration
 	userQuitInstallation bool
+	hostConfigData       *configuration.TridentConfigData
 }
 
 // New creates and returns a new AttendedInstaller.
-func New(cfg configuration.Config, installationFunc func(configuration.Config, chan int, chan string) error, calamaresInstallFunc func() error) (attendedInstaller *AttendedInstaller, err error) {
+func New(calamaresInstallFunc func() error, imagePath string) (attendedInstaller *AttendedInstaller, err error) {
 	attendedInstaller = &AttendedInstaller{
-		installationFunc:     installationFunc,
 		calamaresInstallFunc: calamaresInstallFunc,
 	}
+	attendedInstaller.hostConfigData = configuration.NewTridentConfigData(imagePath)
 
 	err = attendedInstaller.initializeUI()
 	return
@@ -90,7 +90,8 @@ func New(cfg configuration.Config, installationFunc func(configuration.Config, c
 
 // Run shows the attended installer UI on the current thread.
 // When the user completes the installer, the function will return.
-func (ai *AttendedInstaller) Run() (config configuration.Config, installationQuit bool, err error) {
+// When producing the Host configuration, it would be best to return it from this function.
+func (ai *AttendedInstaller) Run() (installationQuit bool, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("unexpected failure: %v", r)
@@ -365,7 +366,6 @@ func (ai *AttendedInstaller) initializeViews() (err error) {
 	}
 
 	ai.allViews = append(ai.allViews, eulaview.New())
-
 	ai.allViews = append(ai.allViews, diskview.New())
 	// ai.allViews = append(ai.allViews, encryptview.New())
 	ai.allViews = append(ai.allViews, hostnameview.New())
@@ -382,7 +382,7 @@ func (ai *AttendedInstaller) initializeViews() (err error) {
 			backButtonText = uitext.ButtonGoBack
 		}
 
-		err = view.Initialize(backButtonText, ai.app, ai.nextPage, ai.previousPage, ai.quit, ai.refreshTitle)
+		err = view.Initialize(ai.hostConfigData, backButtonText, ai.app, ai.nextPage, ai.previousPage, ai.quit, ai.refreshTitle)
 		if err != nil {
 			return
 		}

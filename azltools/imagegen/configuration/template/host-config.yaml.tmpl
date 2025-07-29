@@ -1,9 +1,9 @@
 image:
-  url: file:///mnt/trident_cdrom/images/azure-linux-trident.cosi
+  url: file://{{ .ImagePath }}
   sha384: ignored
 storage:
   disks:
-    - device: "__DISK_PATH__"
+    - device: "{{ .DiskPath }}"
       id: os
       partitionTableType: gpt
       partitions:
@@ -24,16 +24,16 @@ os:
   selinux:
     mode: disabled
   users:
-    - name: __USER_NAME__
+    - name: {{ .Username }}
 scripts:
   postConfigure:
     - name: user-password
       runOn:
         - clean-install
-      path: /etc/trident/scripts/user-password.sh
+      path: {{ .PasswordScript }}
     - name: hostname
       runOn:
         - clean-install
       content: |
-        echo "__HOST_NAME__" > /etc/hostname
-        hostname "__HOST_NAME__"
+        echo "{{ .Hostname }}" > /etc/hostname
+        hostname "{{ .Hostname }}"
