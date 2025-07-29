@@ -337,7 +337,7 @@ allow trident_t gpg_pinentry_exec_t:file getattr;
 allow trident_t gpg_secret_t:file getattr;
 allow trident_t groupadd_exec_t:file getattr;
 allow trident_t home_root_t:dir { mounton read relabelto add_name create relabelfrom setattr write };
-allow trident_t home_root_t:file { create getattr ioctl open relabelfrom setattr write };
+allow trident_t home_root_t:file { create getattr ioctl open relabelfrom setattr read write };
 allow trident_t http_port_t:tcp_socket name_connect;
 allow trident_t init_exec_t:file { execute getattr map open read relabelto setattr unlink write };
 allow trident_t init_t:system { reboot start status };
