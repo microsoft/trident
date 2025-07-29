@@ -166,6 +166,9 @@ pub const MOUNT_OPTION_READ_ONLY: &str = "ro";
 
 /// Internal-only overrides
 pub mod internal_params {
+    /// Allow unused images in a COSI file.
+    pub const ALLOW_UNUSED_FILESYSTEMS_IN_COSI: &str = "allowUnusedFilesystems";
+
     /// Disable check that filesystem size does not exceed the size of its block device.
     pub const DISABLE_FS_BLOCK_DEVICE_SIZE_CHECK: &str = "disableFsBlockDeviceSizeCheck";
 
@@ -187,12 +190,13 @@ pub mod internal_params {
     /// Block Trident from transitioning to the new OS after finalizing
     pub const NO_TRANSITION: &str = "noTransition";
 
-    /// Force Trident to wait for systemd-networkd-wait-online
-    pub const WAIT_FOR_SYSTEMD_NETWORKD: &str = "waitForSystemdNetworkd";
-
     /// Allow configuration of orchestrator connection timeout
     pub const ORCHESTRATOR_CONNECTION_TIMEOUT_SECONDS: &str =
         "orchestratorConnectionTimeoutSeconds";
+
+    /// Overrides the pcrlock encryption logic to use the previous logic where encryption volumes
+    /// are sealed against a set of specific PCR values.
+    pub const OVERRIDE_PCRLOCK_ENCRYPTION: &str = "overridePcrlockEncryption";
 
     /// Run extra partition and filesystem checks before reboot
     pub const PRE_REBOOT_CHECKS: &str = "preRebootChecks";
@@ -201,20 +205,8 @@ pub mod internal_params {
     /// new LUKS2 volumes.
     pub const REENCRYPT_ON_CLEAN_INSTALL: &str = "reencryptOnCleanInstall";
 
-    /// Use alternate boot order logic to work around virtdeploy limitations.
-    pub const VIRTDEPLOY_BOOT_ORDER_WORKAROUND: &str = "virtdeployBootOrderWorkaround";
-
-    /// Mount a writable overlay for /etc for the hooks subsystem.
-    pub const WRITABLE_ETC_OVERLAY_HOOKS: &str = "writableEtcOverlayHooks";
-
     /// Relax COSI filesystem match checks.
     pub const RELAXED_COSI_VALIDATION: &str = "relaxedCosiValidation";
-
-    /// Allow unused images in a COSI file.
-    pub const ALLOW_UNUSED_FILESYSTEMS_IN_COSI: &str = "allowUnusedFilesystems";
-
-    /// Overrides the default PCR registries to use when sealing encryption keys.
-    pub const OVERRIDE_ENCRYPTION_PCRS: &str = "overrideEncryptionPcrs";
 
     /// Set the in-image paths of the verity signature files.
     ///
@@ -229,4 +221,13 @@ pub mod internal_params {
     ///     usr: /boot/usr.hash.sig
     /// ```
     pub const VERITY_SIGNATURE_PATHS: &str = "veritySignaturePaths";
+
+    /// Use alternate boot order logic to work around virtdeploy limitations.
+    pub const VIRTDEPLOY_BOOT_ORDER_WORKAROUND: &str = "virtdeployBootOrderWorkaround";
+
+    /// Force Trident to wait for systemd-networkd-wait-online
+    pub const WAIT_FOR_SYSTEMD_NETWORKD: &str = "waitForSystemdNetworkd";
+
+    /// Mount a writable overlay for /etc for the hooks subsystem.
+    pub const WRITABLE_ETC_OVERLAY_HOOKS: &str = "writableEtcOverlayHooks";
 }

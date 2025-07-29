@@ -20,7 +20,6 @@ use trident_api::{
         HostConfiguration, HostConfigurationDynamicValidationError,
         HostConfigurationStaticValidationError, PartitionType,
     },
-    constants::internal_params::OVERRIDE_ENCRYPTION_PCRS,
     error::{InternalError, InvalidInputError, ReportError, ServicingError, TridentError},
 };
 
@@ -109,36 +108,31 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
         // Determine PCRs depending on the current servicing type:
         // - For clean install, temporarily use only PCR 0,
         // - For A/B update, use PCRs 4, 7, and 11.
-        // TODO: Once UKI MOS is built, include all UKI PCRs, i.e. 4, 7, and 11, into pcrlock
-        // policy on A/B update and clean install. Related ADO task:
+        // TODO: Once UKI MOS is built, include all PCRs out of 4, 7, and 11 that were selected by
+        // the user, into pcrlock policy on A/B update and clean install. For now, only include
+        // PCR 0 into pcrlock policy. Related ADO task:
         // https://dev.azure.com/mariner-org/polar/_workitems/edit/14286/ and
         // https://dev.azure.com/mariner-org/polar/_workitems/edit/13059/.
         let pcrs = match ctx.servicing_type {
-            ServicingType::CleanInstall => {
-                // Generate .pcrlock files for runtime OS image A, only using PCR 0, thanks to
-                // OVERRIDE_ENCRYPTION_PCRS.
-                //
-                // TODO: Once UKI MOS is built, include ROS A UKI and bootloader binaries.
-                // https://dev.azure.com/mariner-org/polar/_workitems/edit/14286/ and
-                // https://dev.azure.com/mariner-org/polar/_workitems/edit/13059/.
-                ctx.spec.internal_params.get::<Vec<Pcr>>(OVERRIDE_ENCRYPTION_PCRS)
-                    .transpose()
-                    .structured(InvalidInputError::InvalidInternalParameter {
-                        name: OVERRIDE_ENCRYPTION_PCRS.to_string(),
-                        explanation: format!(
-                            "Failed to parse internal parameter '{OVERRIDE_ENCRYPTION_PCRS}' as BitFlags<Pcr>",
-                        ),
-                    })?
-                    .map(|v| BitFlags::<Pcr>::from_iter(v.into_iter()))
-                    .unwrap_or(Pcr::Pcr4 | Pcr::Pcr7 | Pcr::Pcr11)
+            ServicingType::CleanInstall => BitFlags::from(Pcr::Pcr0),
+            // On A/B update, use PCRs selected by the user through the API!
+            ServicingType::AbUpdate => {
+                let mut bitflags = BitFlags::empty();
+                for pcr in &encryption.pcrs {
+                    bitflags |= BitFlags::from(*pcr);
+                }
+                bitflags
             }
-            ServicingType::AbUpdate => Pcr::Pcr4 | Pcr::Pcr11,
             _ => {
                 return Err(TridentError::new(InternalError::UnexpectedServicingType {
                     servicing_type: ctx.servicing_type,
                 }));
             }
         };
+        debug!(
+            "Using the following requested PCRs for pcrlock policy: {:?}",
+            pcrs
+        );
 
         // Get UKI and bootloader binaries for .pcrlock file generation
         let (uki_binaries, bootloader_binaries) =
@@ -183,7 +177,7 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                 // not needed, for security
                 if encryption.recovery_key_url.is_none() {
                     debug!(
-                        "Removing password key slot from encrypted volume with id '{}'",
+                        "Recovery key file not provided, so removing password key slot from encrypted volume with id '{}'",
                         ev.id
                     );
                     encryption::systemd_cryptenroll_wipe_slot(
@@ -325,6 +319,7 @@ mod tests {
                     device_name: "luks-srv".to_owned(),
                     device_id: "srv-enc".to_owned(),
                 }],
+                pcrs: vec![Pcr::Pcr7],
             }),
             ..Default::default()
         }

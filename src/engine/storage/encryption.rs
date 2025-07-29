@@ -25,9 +25,7 @@ use sysdefs::tpm2::Pcr;
 use trident_api::{
     config::{HostConfiguration, HostConfigurationStaticValidationError, PartitionSize},
     constants::{
-        internal_params::{
-            NO_CLOSE_ENCRYPTED_VOLUMES, OVERRIDE_ENCRYPTION_PCRS, REENCRYPT_ON_CLEAN_INSTALL,
-        },
+        internal_params::{NO_CLOSE_ENCRYPTED_VOLUMES, REENCRYPT_ON_CLEAN_INSTALL},
         ESP_EFI_DIRECTORY, ESP_MOUNT_POINT_PATH,
     },
     error::{InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt},
@@ -176,21 +174,12 @@ pub(super) fn create_encrypted_devices(
                 EncryptionType::LuksFormat
             };
 
-            let pcrs = ctx
-                .spec
-                .internal_params
-                .get::<Vec<Pcr>>(OVERRIDE_ENCRYPTION_PCRS)
-                .transpose()
-                .structured(InvalidInputError::InvalidInternalParameter {
-                    name: OVERRIDE_ENCRYPTION_PCRS.to_string(),
-                    explanation: format!(
-                        "Failed to parse internal parameter '{OVERRIDE_ENCRYPTION_PCRS}' as BitFlags<Pcr>"
-                    ),
-                })?
-                // Convert the `Vec<Pcr>` into a `BitFlags<Pcr>`, which is a bitmask of PCRs.
-                .map(|v| BitFlags::<Pcr>::from_iter(v.into_iter()))
-                // If the internal parameter is not set, default to PCR 7.
-                .unwrap_or(Pcr::Pcr7.into());
+            // TODO: Once UKI MOS is built, include all PCRs out of 4, 7, and 11 that were selected
+            // by the user, into pcrlock policy on A/B update and clean install. For now, only seal
+            // to PCR 0 into pcrlock policy. Related ADO task:
+            // https://dev.azure.com/mariner-org/polar/_workitems/edit/14286/ and
+            // https://dev.azure.com/mariner-org/polar/_workitems/edit/13059/.
+            let pcrs = BitFlags::from(Pcr::Pcr0);
 
             // Check if `REENCRYPT_ON_CLEAN_INSTALL` internal param is set to true; if so, re-encrypt
             // the device in-place. Otherwise, initialize a new LUKS2 volume.
