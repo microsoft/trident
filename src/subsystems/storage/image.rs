@@ -1,9 +1,13 @@
+use anyhow::{ensure, Context, Error};
 use log::debug;
 
+use oci_client::{secrets::RegistryAuth, Client, Reference};
+use tokio::runtime::Runtime;
 use trident_api::{
     config::{HostConfigurationDynamicValidationError, ImageSha384},
-    error::{InvalidInputError, TridentError},
+    error::{InvalidInputError, ReportError, TridentError},
 };
+use url::Url;
 
 use crate::engine::EngineContext;
 
@@ -28,7 +32,10 @@ pub(super) fn ab_update_required(ctx: &EngineContext) -> Result<bool, TridentErr
         // Update if the sha384 has changed (including if one is 'ignored'), or both are ignored but
         // the URL has changed.
         (Some(old_os_image), Some(new_os_image)) => Ok(old_os_image.sha384 != new_os_image.sha384
-            || old_os_image.sha384 == ImageSha384::Ignored && old_os_image.url != new_os_image.url),
+            || old_os_image.sha384 == ImageSha384::Ignored
+                && (old_os_image.url != new_os_image.url
+                    || retrieve_oci_digest(&old_os_image.url).structured()?
+                        != retrieve_oci_digest(&new_os_image.url))?),
 
         (Some(_), None) => {
             // Return an error if the old spec requests an OS image but the new spec does not.
@@ -37,6 +44,41 @@ pub(super) fn ab_update_required(ctx: &EngineContext) -> Result<bool, TridentErr
             )))
         }
     }
+}
+
+/// Retrieve artifact digest from OCI reference.
+fn retrieve_oci_digest(url: &Url) -> Result<String, Error> {
+    let img_ref =
+        Reference::try_from(url.to_string().strip_prefix("oci://").with_context(|| {
+            format!("URL has incorrect scheme: expected to start with 'oci://', got '{url}'")
+        })?)
+        .with_context(|| format!("Failed to parse URL '{url}'"))?;
+    Ok(match img_ref.digest() {
+        Some(digest) => digest.to_string(),
+        None => {
+            let tag = img_ref.tag().with_context(|| {
+                format!("Failed to retrieve tag from OCI URL '{}'", img_ref.whole())
+            })?;
+            // Attempt to retrieve digest from manifest
+            let client = Client::default();
+            let manifest = client.pull_image_manifest(&img_ref, &RegistryAuth::Anonymous);
+            let (oci_image_manifest, _) = Runtime::new()?.block_on(manifest).with_context(||
+                    format!(
+                        "Repository '{}' does not exist in registry '{}' or tag '{tag}' not found in repository",
+                        img_ref.repository(),
+                        img_ref.registry()
+                    ))?;
+            // Expect the artifact to have one layer, which is the image
+            ensure!(
+                oci_image_manifest.layers.len() == 1,
+                format!(
+                    "Expected OCI artifact to contain 1 layer, found {}",
+                    oci_image_manifest.layers.len()
+                )
+            );
+            oci_image_manifest.layers[0].digest.clone()
+        }
+    })
 }
 
 #[cfg(test)]
