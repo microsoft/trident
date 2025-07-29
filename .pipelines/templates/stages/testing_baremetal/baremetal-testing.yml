@@ -179,12 +179,18 @@ stages:
               ${{ if eq(parameters.runtimeEnv, 'container') }}:
                 downloadTridentContainer: true
 
-          # Push (regular or container) testimage to ACR, only for "misc" test
-          - ${{ if eq(variables['TRIDENT_CONFIGURATION_NAME'], 'misc') }}:
-              - template: ../common_tasks/push-to-acr.yml
-                parameters:
-                  imageName: ${{ variables.IMAGE_NAME }}
-                  registry: maritimuspublic
+          - template: ../common_tasks/setup-acr-access.yml
+            parameters:
+              registry: maritimuspublic
+              config: ${{ parameters.tridentConfigurationName }}
+
+          # Push (regular or container) testimage to ACR
+          - template: ../common_tasks/push-to-acr.yml
+            parameters:
+              imageName: ${{ variables.testImageName }}
+              versionNumber: 1
+              registry: maritimuspublic
+              config: ${{ variables.tridentConfigurationName }}
 
           - bash: |
               set -xe

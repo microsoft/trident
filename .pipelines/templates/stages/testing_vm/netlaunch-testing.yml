@@ -115,7 +115,7 @@ stages:
           - template: ../common_tasks/setup-acr-access.yml
             parameters:
               registry: maritimuspublic
-              config: ${{ parameters.tridentConfigurationName }}
+              config: ${{ variables.tridentConfigurationName }}
 
           # Push (regular or container) testimage to ACR
           - template: ../common_tasks/push-to-acr.yml
