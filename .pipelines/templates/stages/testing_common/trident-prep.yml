@@ -18,8 +18,8 @@ parameters:
     type: string
     default: trident-testimage
     values:
-      - regular
-      - container
+      - trident-testimage
+      - trident-container-testimage
 
   - name: config
     type: string
