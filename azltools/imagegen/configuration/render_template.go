@@ -45,7 +45,7 @@ func RenderTridentHostConfig(configPath string, configData *TridentConfigData) e
 	return tmpl.Execute(out, configData)
 }
 
-// Creates the password script at the given path and returns the path if successful.
+// Creates the password script at the given path
 func passwordScript(passwordScriptPath string, configData *TridentConfigData) (err error) {
 	script := fmt.Sprintf("echo '%s:%s' | chpasswd\n", configData.Username, configData.Password)
 	dir := filepath.Dir(passwordScriptPath)
