@@ -11,11 +11,17 @@ import (
 	"path/filepath"
 )
 
+const passwordScriptName = "user-password.sh"
+
 // manualrun is a tool to test the attendedinstaller in the current terminal window.
 // It will simply run the UI and print out the final config structure's content.
 func main() {
-	const imagePath = "/mnt/trident_cdrom/images/azure-linux-trident.cosi"
+	// Set log-level to warn to show clean up failures
 	logger.InitStderrLog()
+	logger.SetStderrLogLevel("warn")
+
+	// Example of an image path
+	const imagePath = "/mnt/trident_cdrom/images/azure-linux-trident.cosi"
 
 	// Create a temporary directory for config and scripts
 	tmpDir, err := os.MkdirTemp("", "trident-manualrun-*")
@@ -25,12 +31,12 @@ func main() {
 	// Clean up the entire temp directory when the program exits
 	defer func() {
 		if err := os.RemoveAll(tmpDir); err != nil {
-			fmt.Println("(Could not delete temp directory:", err, ")")
+			logger.Log.Warnf("Could not delete temp directory: %v", err)
 		}
 	}()
 
 	hostconfigPath := filepath.Join(tmpDir, "config.yaml")
-	passwordScriptPath := filepath.Join(tmpDir, "scripts", "user-password.sh")
+	passwordScriptPath := filepath.Join(tmpDir, "scripts", passwordScriptName)
 
 	// Run the attended installer
 	attendedInstaller, err := attendedinstaller.New(performCalamaresInstallation, imagePath, hostconfigPath)
@@ -48,19 +54,19 @@ func main() {
 	displayContent(hostconfigPath, passwordScriptPath)
 }
 
-// Shows the contents of the config file and the password script
+// Shows the contents of the generated Host Configuration and the script to add the user's password
 func displayContent(hostconfigPath, passwordScriptPath string) {
 	fmt.Println("\n--- Generated Host Configuration: ---")
 	if data, err := os.ReadFile(hostconfigPath); err == nil {
 		fmt.Println(string(data))
 	} else {
-		fmt.Println("(Could not read config file:", err, ")")
+		logger.Log.Warnf("Could not read Host Configuration file: %v", err)
 	}
 	fmt.Println("\n--- Generated Password Script (", passwordScriptPath, ") ---")
 	if data, err := os.ReadFile(passwordScriptPath); err == nil {
 		fmt.Println(string(data))
 	} else {
-		fmt.Println("(Could not read password script:", err, ")")
+		logger.Log.Warnf("Could not read generated script to add user's password: %v", err)
 	}
 }
 
