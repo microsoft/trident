@@ -36,12 +36,14 @@ type ConfirmView struct {
 	flex           *tview.Flex
 	centeredFlex   *tview.Flex
 	hostconfigPath string
+	templatePath   string
 	hostConfigData *configuration.TridentConfigData
 }
 
 // New creates and returns a new ConfirmView.
-func New(hostconfigPath string) *ConfirmView {
+func New(templatePath string, hostconfigPath string) *ConfirmView {
 	return &ConfirmView{
+		templatePath:   templatePath,
 		hostconfigPath: hostconfigPath,
 	}
 }
@@ -93,7 +95,7 @@ func (cv *ConfirmView) Reset() (err error) {
 
 func (cv *ConfirmView) onNextButton(nextPage func()) error {
 	// Save the user input to the config file.
-	err := configuration.RenderTridentHostConfig(cv.hostconfigPath, cv.hostConfigData)
+	err := configuration.RenderTridentHostConfig(cv.templatePath, cv.hostConfigData, cv.hostconfigPath)
 	if err != nil {
 		cv.navBar.SetUserFeedback(uiutils.ErrorToUserFeedback(err), tview.Styles.TertiaryTextColor)
 		return err

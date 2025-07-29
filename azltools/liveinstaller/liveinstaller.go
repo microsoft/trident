@@ -14,7 +14,9 @@ import (
 
 	"azltools/imagegen/attendedinstaller"
 	"azltools/imagegen/configuration"
+	"azltools/imagegen/diskutils"
 	"azltools/internal/exe"
+	"azltools/internal/file"
 	"azltools/internal/jsonutils"
 	"azltools/internal/logger"
 	"azltools/internal/shell"
@@ -26,10 +28,11 @@ import (
 var (
 	app = kingpin.New("liveinstaller", "A tool to download a provided list of packages into a given directory.")
 
-	unattended     = app.Flag("unattended", "Use the unattended installer without user interaction.").Bool()
-	imagePath      = app.Flag("image-path", "Path to the OS image for the target system.").Required().String()
-	hostconfigPath = app.Flag("host-config", "Path to the host configuration file.").Default("/etc/trident/config.yaml").String()
-	logFlags       = exe.SetupLogFlags(app)
+	unattended         = app.Flag("unattended", "Use the unattended installer without user interaction.").Bool()
+	imagePath          = app.Flag("image-path", "Path to the OS image for the target system.").Default("").String()
+	hostconfigTmplPath = app.Flag("host-config-tmpl", "Path to the Host Configuration template that will be updated.").Default("").String()
+	hostconfigDestPath = app.Flag("host-config", "Destination path for the Host Configuration file.").Default("/etc/trident/config.yaml").String()
+	logFlags           = exe.SetupLogFlags(app)
 )
 
 // Every valid mouse event handler will follow the format:
@@ -66,6 +69,11 @@ func main() {
 
 	installFunc := installerFactory(*unattended)
 	installationQuit, err := installFunc()
+
+	if err != nil {
+		logger.Log.Error("Installation failed: %v", err)
+	}
+
 	if installationQuit {
 		logger.Log.Error("User quit installation")
 		// Return a non-zero exit code to drop the user to shell
@@ -79,14 +87,20 @@ func main() {
 }
 
 func installerFactory(unattended bool) (installFunc func() (bool, error)) {
-	isAttended := false
+	isAttended := true
 
 	// Determine if the attended installer should be shown
 	if unattended {
-		logger.Log.Info("`unattended` flag set, using unattended installation")
-		isAttended = false
+		logger.Log.Info("The unattended flag is set, using unattended installation")
+		if *hostconfigTmplPath == "" {
+			logger.Log.Warn("No Host Configuration template was specified, changing to attended installation.")
+			isAttended = true
+		} else {
+			logger.Log.Infof("Using Host Configuration template: %s", *hostconfigTmplPath)
+			isAttended = false
+		}
 	} else {
-		logger.Log.Infof("Unattended installation is currently not supported. Using attended installation.")
+		logger.Log.Infof("Proceeding with attended installation")
 		isAttended = true
 	}
 
@@ -94,17 +108,34 @@ func installerFactory(unattended bool) (installFunc func() (bool, error)) {
 		installFunc = func() (bool, error) {
 			return terminalUIAttendedInstall()
 		}
+	} else {
+		installFunc = func() (bool, error) {
+			return unattendedInstall()
+		}
 	}
 
 	return
 }
 
 func terminalUIAttendedInstall() (installationQuit bool, err error) {
+	hostConfigData := configuration.NewTridentConfigData()
+	if *imagePath == "" {
+		if *hostconfigTmplPath == "" {
+			err = fmt.Errorf("no image source was provided, unable to proceed with the installation process")
+			return
+		}
+	} else {
+		hostConfigData.ImagePath, err = formatImageSource(*imagePath)
+		if err != nil {
+			return
+		}
+	}
+
 	attendedInstaller, err := attendedinstaller.New(
 		// Calamares based installation
 		func() (err error) {
 			return calamaresInstall()
-		}, *imagePath, *hostconfigPath)
+		}, *hostconfigTmplPath, hostConfigData, *hostconfigDestPath)
 
 	if err != nil {
 		return
@@ -112,6 +143,56 @@ func terminalUIAttendedInstall() (installationQuit bool, err error) {
 
 	installationQuit, err = attendedInstaller.Run()
 	return
+}
+
+func unattendedInstall() (installationQuit bool, err error) {
+	installationQuit = false
+	hostConfigData := configuration.NewTridentConfigData()
+
+	// Set disk path for installation
+	devicePath, err := getDevicePath()
+	if err != nil {
+		return
+	}
+	hostConfigData.DiskPath = devicePath
+
+	// Add image source if provided
+	if *imagePath != "" {
+		hostConfigData.ImagePath, err = formatImageSource(*imagePath)
+		if err != nil {
+			return
+		}
+	}
+
+	err = configuration.RenderTridentHostConfig(*hostconfigTmplPath, hostConfigData, *hostconfigDestPath)
+	return
+}
+
+func formatImageSource(imagePath string) (hcImagePath string, err error) {
+	imageFileExists, _ := file.PathExists(imagePath)
+	if !imageFileExists {
+		err = fmt.Errorf("image file does not exist: %s", imagePath)
+		return
+	}
+
+	hcImagePath = fmt.Sprintf("file://%s", imagePath)
+	return
+}
+
+// Device path for installation
+func getDevicePath() (string, error) {
+	// Get all system devices
+	systemDevices, err := diskutils.SystemBlockDevices()
+	if err != nil {
+		return "", fmt.Errorf("failed to get system devices: %w", err)
+	}
+	if len(systemDevices) == 0 {
+		return "", fmt.Errorf("no system devices found")
+	}
+
+	// Using first device as the default selection
+	// (same as autopartitionwidget does in attended installation)
+	return systemDevices[0].DevicePath, nil
 }
 
 // Replace in Trident:

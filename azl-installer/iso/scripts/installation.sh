@@ -11,11 +11,13 @@ cp -r "$CD_INSTALLER_DIR/" "/root/"
 cp -r "$IMAGES_PATH" "$WORKING_DIR/"
 
 TRIDENT_CONFIG="/etc/trident/config.yaml"
+TRIDENT_TEMPLATE_CONFIG="/etc/trident/template-hostconfig.yaml.tmpl"
 TRIDENT_IMAGE_PATH="$WORKING_DIR/images/azure-linux-trident.cosi"
 
 cd "$WORKING_DIR"
 "$WORKING_DIR/liveinstaller" \
   --image-path=$TRIDENT_IMAGE_PATH \
+  --host-config-tmpl=$TRIDENT_TEMPLATE_CONFIG \
   --host-config=$TRIDENT_CONFIG \
   --log-level=trace \
   --log-file=$WORKING_DIR/liveinstaller.log > "$WORKING_DIR/output_liveinstaller.log" 2>&1

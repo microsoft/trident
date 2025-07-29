@@ -5,6 +5,7 @@ package main
 
 import (
 	"azltools/imagegen/attendedinstaller"
+	"azltools/imagegen/configuration"
 	"azltools/internal/logger"
 	"fmt"
 	"os"
@@ -14,7 +15,8 @@ import (
 // manualrun is a tool to test the attendedinstaller in the current terminal window.
 // It will simply run the UI and print out the final config structure's content.
 func main() {
-	const imagePath = "/mnt/trident_cdrom/images/azure-linux-trident.cosi"
+	const imagePath = "file:///mnt/trident_cdrom/images/azure-linux-trident.cosi"
+	const templatePath = "" // Use embeded template.
 	logger.InitStderrLog()
 
 	// Create a temporary directory for config and scripts
@@ -33,7 +35,9 @@ func main() {
 	passwordScriptPath := filepath.Join(tmpDir, "scripts", "user-password.sh")
 
 	// Run the attended installer
-	attendedInstaller, err := attendedinstaller.New(performCalamaresInstallation, imagePath, hostconfigPath)
+	hostConfigData := configuration.NewTridentConfigData()
+	hostConfigData.ImagePath = imagePath
+	attendedInstaller, err := attendedinstaller.New(performCalamaresInstallation, templatePath, hostConfigData, hostconfigPath)
 	if err != nil {
 		logger.PanicOnError(err)
 	}

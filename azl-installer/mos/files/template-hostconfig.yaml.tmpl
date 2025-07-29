@@ -1,5 +1,5 @@
 image:
-  url: {{ .ImagePath }}
+  url: "{{ .ImagePath }}"
   sha384: ignored
 storage:
   disks:
@@ -23,17 +23,3 @@ storage:
 os:
   selinux:
     mode: disabled
-  users:
-    - name: {{ .Username }}
-scripts:
-  postConfigure:
-    - name: user-password
-      runOn:
-        - clean-install
-      path: {{ .PasswordScript }}
-    - name: hostname
-      runOn:
-        - clean-install
-      content: |
-        echo "{{ .Hostname }}" > /etc/hostname
-        hostname "{{ .Hostname }}"

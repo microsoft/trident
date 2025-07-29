@@ -8,12 +8,14 @@ import (
 	"text/template"
 )
 
+// The following line is not a comment, it is a compiler directive. Do not delete it.
+//
 //go:embed template/host-config.yaml.tmpl
 var hostConfigTemplate string
 
 // Creates Host Configuration in the specified path, by adding the user input to the template.
-func RenderTridentHostConfig(configPath string, configData *TridentConfigData) error {
-	configDir := filepath.Dir(configPath)
+func RenderTridentHostConfig(tmplPath string, configData *TridentConfigData, hostconfigPath string) error {
+	configDir := filepath.Dir(hostconfigPath)
 	if err := os.MkdirAll(configDir, 0755); err != nil {
 		return fmt.Errorf("failed to create Host Configuration directory: %w", err)
 	}
@@ -33,11 +35,16 @@ func RenderTridentHostConfig(configPath string, configData *TridentConfigData) e
 	configData.PasswordScript = passwordScriptPath
 
 	// Render the config file
-	tmpl, err := template.New("host-config").Parse(hostConfigTemplate)
+	var tmpl *template.Template
+	if tmplPath == "" {
+		tmpl, err = template.New("host-config").Parse(hostConfigTemplate)
+	} else {
+		tmpl, err = template.ParseFiles(tmplPath)
+	}
 	if err != nil {
 		return fmt.Errorf("failed to parse template: %w", err)
 	}
-	out, err := os.Create(configPath)
+	out, err := os.Create(hostconfigPath)
 	if err != nil {
 		return fmt.Errorf("failed to create config file: %w", err)
 	}
@@ -45,7 +52,7 @@ func RenderTridentHostConfig(configPath string, configData *TridentConfigData) e
 	return tmpl.Execute(out, configData)
 }
 
-// Creates the password script at the given path
+// Creates the password script at the given path and returns the path if successful.
 func passwordScript(passwordScriptPath string, configData *TridentConfigData) (err error) {
 	script := fmt.Sprintf("echo '%s:%s' | chpasswd\n", configData.Username, configData.Password)
 	dir := filepath.Dir(passwordScriptPath)

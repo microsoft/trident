@@ -75,16 +75,19 @@ type AttendedInstaller struct {
 	installationTime     time.Duration
 	userQuitInstallation bool
 	hostconfigPath       string
+	templatePath         string
 	hostConfigData       *configuration.TridentConfigData
 }
 
 // New creates and returns a new AttendedInstaller.
-func New(calamaresInstallFunc func() error, imagePath string, hostConfigPath string) (attendedInstaller *AttendedInstaller, err error) {
+func New(calamaresInstallFunc func() error, hostconfigTemplatePath string, configData *configuration.TridentConfigData, hostConfigPath string) (attendedInstaller *AttendedInstaller, err error) {
 	attendedInstaller = &AttendedInstaller{
 		calamaresInstallFunc: calamaresInstallFunc,
 	}
-	attendedInstaller.hostConfigData = configuration.NewTridentConfigData(imagePath)
+
+	attendedInstaller.hostConfigData = configData
 	attendedInstaller.hostconfigPath = hostConfigPath
+	attendedInstaller.templatePath = hostconfigTemplatePath
 
 	err = attendedInstaller.initializeUI()
 	return
@@ -372,7 +375,7 @@ func (ai *AttendedInstaller) initializeViews() (err error) {
 	// ai.allViews = append(ai.allViews, encryptview.New())
 	ai.allViews = append(ai.allViews, hostnameview.New())
 	ai.allViews = append(ai.allViews, userview.New())
-	ai.allViews = append(ai.allViews, confirmview.New(ai.hostconfigPath))
+	ai.allViews = append(ai.allViews, confirmview.New(ai.templatePath, ai.hostconfigPath))
 	// ai.allViews = append(ai.allViews, finishview.New(ai.recordedInstallationTime))
 
 	for i, view := range ai.allViews {
