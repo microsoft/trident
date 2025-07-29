@@ -219,32 +219,43 @@ steps:
       testRunTitle: ${{ parameters.deploymentEnvironment }}_trident_e2e_tests_${{ parameters.tridentConfigurationName }}_stage_finalize_ab_update_B_$(System.JobAttempt)
     displayName: "Publish test results for A/B update into runtime OS A that was staged and finalized independently"
 
+  - bash: |
+     mkdir -p $(Build.ArtifactStagingDirectory)/ONEBRANCH_ARTIFACT
+     cp ./e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_stage_finalize_ab_update_B_$(System.JobAttempt).junit.xml $(Build.ArtifactStagingDirectory)/ONEBRANCH_ARTIFACT/
+    displayName: "Prepare JUnit XML for artifact publishing"
+    condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
+
   - task: PublishBuildArtifacts@1
-    displayName: "Publish e2e test result artifacts"
+    displayName: "Publish JUnit XML for stage-finalise A/B update B"
     condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
     inputs:
       pathToPublish: $(Build.ArtifactStagingDirectory)/ONEBRANCH_ARTIFACT
-      artifactName: trident_ab_update_test_results
-  
+      artifactName: trident_stage_finalize_ab_update_B_test_results
+
+  # 1) Download the previously published JUnit XML files
   - task: DownloadPipelineArtifact@2
     displayName: 'Download JUnit test results'
     inputs:
-      artifact: 'junit_test_results_ab_update_B'
+      artifact: 'trident_stage_finalize_ab_update_B_test_results'   # ✅ This must exactly match the 'artifactName' you used in PublishBuildArtifacts@1
       path: '$(Build.ArtifactStagingDirectory)/junits'
 
+# 2) Filter out only the stage-finalize AB update B test reports
   - bash: |
-      mkdir -p $(Build.ArtifactStagingDirectory)/filtered-junits
-      cp $(Build.ArtifactStagingDirectory)/junits/*ab_update_B*.xml $(Build.ArtifactStagingDirectory)/filtered-junits/
-      echo "Filtered JUnit files:"
-      ls -la $(Build.ArtifactStagingDirectory)/filtered-junits/
+     mkdir -p $(Build.ArtifactStagingDirectory)/filtered-junits
+     cp $(Build.ArtifactStagingDirectory)/junits/*stage_finalize_ab_update_B*.xml \
+       $(Build.ArtifactStagingDirectory)/filtered-junits/
+     echo "Filtered JUnit files:"
+     ls -la $(Build.ArtifactStagingDirectory)/filtered-junits/
     displayName: 'Filter JUnit files for dashboard push'
 
+# 3) Invoke common template to push results into your DB
   - template: ../common/dbCommunication/push-test-results-to-db.yaml
     parameters:
-      marinerAKSPipelinesSourceDirectory: '$(Build.SourcesDirectory)'
-      junitFilesDirectory: '$(Build.ArtifactStagingDirectory)/filtered-junits'
-      isStaging: true
-      buildConfigArtifactName: 'build-number-trident-ab-update-B'
-      architecture: 'x86_64'
-      test_suite_name: "trident-ab-update"
-      test_type_prefix: "post-merge"
+      marinerTridentPipelinesSourceDirectory: '$(Build.SourcesDirectory)' 
+      junitFilesDirectory:                    '$(Build.ArtifactStagingDirectory)/filtered-junits'
+      isStaging:                              true
+      buildConfigArtifactName:                'build-number-trident-stage-finalize'
+      architecture:                           'x86_64'
+      test_suite_name:                        'trident-stage-finalize'
+      test_type_prefix:                       '${{ parameters.buildPurpose }}'
+

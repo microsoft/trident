@@ -44,7 +44,7 @@ steps:
   displayName: "Push test results to DB"
   condition: succeeded()
   inputs:
-    azureSubscription: "AzureLinuxAKSTestIDCDashboard"
+    azureSubscription: "LISAv3_Test_Service_Connection"
     scriptType: bash
     scriptLocation: inlineScript
     inlineScript: |

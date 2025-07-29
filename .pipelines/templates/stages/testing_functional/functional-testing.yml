@@ -115,8 +115,13 @@ stages:
               testResultsFormat: "JUnit"
               testResultsFiles: "$(Build.SourcesDirectory)/target/trident_functional_tests.xml"
 
+          - bash: |
+             mkdir -p $(Build.ArtifactStagingDirectory)/ONEBRANCH_ARTIFACT
+             cp $(Build.SourcesDirectory)/target/trident_functional_tests.xml $(Build.ArtifactStagingDirectory)/ONEBRANCH_ARTIFACT/
+            displayName: "Prepare JUnit XML for artifact publishing"
+
           - task: PublishBuildArtifacts@1
-            displayName: Publish raw test results
+            displayName: "Publish JUnit XML as artifact"
             condition: succeededOrFailed()
             inputs:
               pathToPublish: "$(Build.ArtifactStagingDirectory)/ONEBRANCH_ARTIFACT"
@@ -144,7 +149,7 @@ stages:
 
           - template: ../common/dbCommunication/push-test-results-to-db.yaml
             parameters:
-              marinerAKSPipelinesSourceDirectory: '$(Build.SourcesDirectory)'
+              marinerTridentPipelinesSourceDirectory: '$(Build.SourcesDirectory)'
               junitFilesDirectory: '$(Build.ArtifactStagingDirectory)/filtered-junits'
               isStaging: true
               buildConfigArtifactName: 'build-number-trident-functional'
