@@ -14,7 +14,7 @@ import (
 const passwordScriptName = "user-password.sh"
 
 // manualrun is a tool to test the attendedinstaller in the current terminal window.
-// It will simply run the UI and print out the final config structure's content.
+// It will simply run the UI and print out the generated Host Configuration.
 func main() {
 	// Set log-level to warn to show clean up failures
 	logger.InitStderrLog()
