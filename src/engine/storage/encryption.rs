@@ -8,6 +8,7 @@ use std::{
 use anyhow::{Context, Error};
 use enumflags2::BitFlags;
 use log::{debug, info};
+use rayon::vec;
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 
@@ -19,6 +20,7 @@ use osutils::{
     encryption::{self, ENCRYPTION_PASSPHRASE},
     lsblk::{self, BlockDeviceType},
     path::join_relative,
+    pcrlock,
 };
 use sysdefs::tpm2::Pcr;
 
@@ -136,6 +138,14 @@ pub(super) fn create_encrypted_devices(
             .run_and_check()
             .message("Failed to clear TPM 2.0 device")?;
 
+        // Use PCR 0 as a "bootstrapping" PCR when first creating encrypted devices
+        let pcrs = BitFlags::from(Pcr::Pcr0);
+
+        // Generate a pcrlock policy that exclusively contains PCR 0; no UKI or bootloader binaries are
+        // needed here
+        pcrlock::generate_pcrlock_policy(pcrs, vec![], vec![])
+            .unstructured("Failed to generate pcrlock policy for the underlying device")?;
+
         let mut total_partition_size_bytes: u64 = 0;
         for ev in encryption.volumes.iter() {
             // Get the block device indicated by device_id if it is a partition; the first
@@ -174,9 +184,6 @@ pub(super) fn create_encrypted_devices(
                 EncryptionType::LuksFormat
             };
 
-            // Use PCR 0 as a "bootstrapping" PCR when first creating encrypted devices
-            let pcrs = BitFlags::from(Pcr::Pcr0);
-
             // Check if `REENCRYPT_ON_CLEAN_INSTALL` internal param is set to true; if so, re-encrypt
             // the device in-place. Otherwise, initialize a new LUKS2 volume.
             encrypt_and_open_device(
@@ -208,8 +215,8 @@ pub(super) fn create_encrypted_devices(
 /// - `device_name`: The name of the device to be used in the crypttab.
 /// - `key_file`: The path to the key file to be used for encryption.
 /// - `encryption_type`: The type of encryption to be used. Determines whether the device should be
-///   re-encrypted in-place, or whether a new LUKS2 volume should be initialized
-/// - `pcrs`: The PCRs to bind the encryption key to.
+///   re-encrypted in-place, or whether a new LUKS2 volume should be initialized.
+/// - `pcrs`: The PCRs to be used for sealing the key in the TPM 2.0 device.
 fn encrypt_and_open_device(
     device_path: &Path,
     device_name: &String,
