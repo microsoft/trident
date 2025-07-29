@@ -240,6 +240,9 @@ pub enum InvalidInputError {
     #[error("Failed to read input file '{path}'")]
     ReadInputFile { path: String },
 
+    #[error("Failed to retrieve OCI image digest for url '{path}'")]
+    RetrieveOciImageDigest { path: String },
+
     #[error(
         "Host configuration requires the following filesystems to be placed on verity devices: {}\
         but the OS image provides verity data for the following filesystems: {}",
