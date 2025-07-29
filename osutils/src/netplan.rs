@@ -35,10 +35,10 @@ pub fn apply() -> Result<(), Error> {
 fn render_netplan_yaml(value: &NetworkConfig) -> Result<String, Error> {
     #[derive(serde::Serialize)]
     struct NetplanConfig<'a> {
-        network: &'a NetworkConfig,
+        netplan: &'a NetworkConfig,
     }
 
-    serde_yaml::to_string(&NetplanConfig { network: value })
+    serde_yaml::to_string(&NetplanConfig { netplan: value })
         .context("Failed to render netplan yaml")
 }
 #[cfg(test)]
