@@ -30,8 +30,8 @@ stages:
           type: linux
 
         variables:
-          - name: ob_outputDirectory
-            value: $(Build.SourcesDirectory)/build
+          ob_outputDirectory: $(Build.SourcesDirectory)/build
+          ob_artifactBaseName: deleteImageAcr_$(System.JobAttempt)
 
         steps:
           - task: AzureCLI@2
