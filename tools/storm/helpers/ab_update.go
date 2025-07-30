@@ -115,22 +115,16 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 	// Match form <name>_v<version number>.<file extension> (note that "_v<version number>" is optional)
 	matches := regexp.MustCompile(`^(.*?)(_v\d+)?\.(.+)$`).FindStringSubmatch(base)
 
-	// Match form <repository>:v<build ID>
-	matches_oci := regexp.MustCompile(`^(.*?):v(\d+)$`).FindStringSubmatch(base)
-	logrus.Debugf("OCI matches: %v (length: %d)", matches_oci, len(matches_oci))
-
 	var newUrl string
-
 	if len(matches) == 4 {
 		name := matches[1]
 		ext := matches[3]
 		newCosiName := fmt.Sprintf("%s_v%s.%s", name, h.args.Version, ext)
 		newUrl = fmt.Sprintf("%s%s", urlPath, newCosiName)
-	} else if len(matches_oci) == 3 {
-		logrus.Infof("URL is for an OCI image so it is unnecessary to update URL")
+	} else if strings.HasPrefix(oldUrl, "oci://") {
 		newUrl = oldUrl
 	} else {
-		return fmt.Errorf("failed to parse image name: %s. Output of matches_oci was: %v (length: %d)", base, matches_oci, len(matches_oci))
+		return fmt.Errorf("failed to parse image name: %s.", base)
 	}
 
 	logrus.Infof("New image URL: %s", newUrl)
