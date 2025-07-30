@@ -21,11 +21,14 @@ steps:
 
         # Login to ACR
         az acr login -n ${{ parameters.registry }}
-
+        sleep 5
         repository_name="${{ parameters.repository }}"
         build_id="$(Build.BuildId)"
         tag="v${build_id}"
         if az acr repository show --name ${{ parameters.registry }} --image ${repository_name}:${tag} &> /dev/null; then
           az acr repository delete --name ${{ parameters.registry }} --image ${repository_name}:${tag} --yes
+        else
+          exit 1
         fi
     displayName: "Log into ACR and delete images by tag"
+    retryCountOnTaskFailure: 3
