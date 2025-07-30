@@ -7,22 +7,22 @@ bareMetal:
       - split
       - usr-verity
     validation:
-      - base
-      - combined
-      - encrypted-partition
-      - encrypted-raid
-      - encrypted-swap
-      - memory-constraint-combined
+      # - base
+      # - combined
+      # - encrypted-partition
+      # - encrypted-raid
+      # - encrypted-swap
+      # - memory-constraint-combined
       - misc
-      - raid-big
-      - raid-mirrored
-      - raid-resync-small
-      - rerun
-      - root-verity
-      - simple
-      - split
-      - usr-verity
-      - usr-verity-raid
+      # - raid-big
+      # - raid-mirrored
+      # - raid-resync-small
+      # - rerun
+      # - root-verity
+      # - simple
+      # - split
+      # - usr-verity
+      # - usr-verity-raid
     weekly:
       - base
       - combined
@@ -57,20 +57,20 @@ bareMetal:
       - usr-verity
       - usr-verity-raid
     validation:
-      - base
-      - combined
-      - encrypted-partition
-      - encrypted-raid
-      - encrypted-swap
+      # - base
+      # - combined
+      # - encrypted-partition
+      # - encrypted-raid
+      # - encrypted-swap
       - misc
-      - raid-mirrored
-      - raid-resync-small
-      - raid-small
-      - rerun
-      - root-verity
-      - simple
-      - usr-verity
-      - usr-verity-raid
+      # - raid-mirrored
+      # - raid-resync-small
+      # - raid-small
+      # - rerun
+      # - root-verity
+      # - simple
+      # - usr-verity
+      # - usr-verity-raid
     weekly:
       - base
       - combined
