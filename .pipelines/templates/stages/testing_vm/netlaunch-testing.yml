@@ -112,11 +112,6 @@ stages:
               downloadTridentContainer: ${{ variables.downloadTridentContainer }}
               tridentTestImageUsrVerity: ${{ variables.usrVerityTestImageName }}
 
-          - template: ../common_tasks/setup-acr-access.yml
-            parameters:
-              registry: maritimuspublic
-              config: ${{ variables.tridentConfigurationName }}
-
           # Push (regular or container) testimage to ACR
           - template: ../common_tasks/push-to-acr.yml
             parameters:
