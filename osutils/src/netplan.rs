@@ -35,10 +35,10 @@ pub fn apply() -> Result<(), Error> {
 fn render_netplan_yaml(value: &NetworkConfig) -> Result<String, Error> {
     #[derive(serde::Serialize)]
     struct NetplanConfig<'a> {
-        netplan: &'a NetworkConfig,
+        network: &'a NetworkConfig,
     }
 
-    serde_yaml::to_string(&NetplanConfig { netplan: value })
+    serde_yaml::to_string(&NetplanConfig { network: value })
         .context("Failed to render netplan yaml")
 }
 #[cfg(test)]
@@ -68,7 +68,7 @@ mod tests {
         };
 
         let expected = indoc::indoc! {r#"
-            netplan:
+            network:
               version: 2
               ethernets:
                 eth0:
@@ -86,7 +86,7 @@ mod tests {
         };
 
         let expected = indoc::indoc! {r#"
-            netplan:
+            network:
               version: 2
         "#};
         let yaml = render_netplan_yaml(&config).expect("Failed to render yaml");
