@@ -270,7 +270,6 @@ stages:
               repository: ${{ variables.testImageName }}
               registry: "maritimuspublic"
               config: ${{ variables.tridentConfigurationName }}
-            condition: always()
 
           - bash: |
               set -eux

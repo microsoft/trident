@@ -348,4 +348,3 @@ stages:
             parameters:
               repository: ${{ variables.IMAGE_NAME }}
               registry: "maritimuspublic"
-            condition: always()
