@@ -350,7 +350,8 @@ mod functional_test {
 
     use crate::{
         filesystems::MkfsFileSystemType,
-        mkfs, pcrlock,
+        mkfs,
+        pcrlock::{self, PCRLOCK_DIR},
         repart::{RepartEmptyMode, RepartPartitionEntry, SystemdRepartInvoker},
         testutils::repart::{self, TEST_DISK_DEVICE_PATH},
         udevadm,
@@ -366,6 +367,30 @@ mod functional_test {
         if !Path::new("/mnt").exists() {
             Dependency::Mkdir.cmd().arg("/mnt").run_and_check().unwrap();
         }
+    }
+
+    /// Copies the static .pcrlock files related to PCR 0 to the expected location inside
+    /// PCRLOCK_DIR, so that the pcrlock policy can be generated.
+    fn copy_static_pcrlock_files() {
+        fs::create_dir_all(format!("{PCRLOCK_DIR}/500-separator.pcrlock.d")).unwrap();
+
+        let pcrlock_330 = include_str!(
+            "../../packaging/static-pcrlock-files/500-separator.pcrlock.d/300-0x00000000.pcrlock"
+        );
+        let pcrlock_600 = include_str!(
+            "../../packaging/static-pcrlock-files/500-separator.pcrlock.d/600-0xffffffff.pcrlock"
+        );
+        // Write the .pcrlock files to the expected location
+        fs::write(
+            format!("{PCRLOCK_DIR}/500-separator.pcrlock.d/300-0x00000000.pcrlock"),
+            pcrlock_330,
+        )
+        .unwrap();
+        fs::write(
+            format!("{PCRLOCK_DIR}/500-separator.pcrlock.d/600-0xffffffff.pcrlock"),
+            pcrlock_600,
+        )
+        .unwrap();
     }
 
     #[functional_test(feature = "helpers")]
@@ -397,6 +422,8 @@ mod functional_test {
         // Run `cryptsetup-luksFormat` on the partition
         cryptsetup_luksformat(key_file_path, &partition1.node).unwrap();
 
+        // Copy the static .pcrlock files related to PCR 0 to the expected location
+        copy_static_pcrlock_files();
         // Generate a pcrlock policy that only includes PCR 0
         let pcrs = BitFlags::from(Pcr::Pcr0);
         pcrlock::generate_pcrlock_policy(pcrs, vec![], vec![]).unwrap();
@@ -537,6 +564,8 @@ mod functional_test {
         // Re-encrypt the filesystem
         cryptsetup_reencrypt(key_file_path, &partition1.node).unwrap();
 
+        // Copy the static .pcrlock files related to PCR 0 to the expected location
+        copy_static_pcrlock_files();
         // Generate a pcrlock policy that only includes PCR 0
         let pcrs = BitFlags::from(Pcr::Pcr0);
         pcrlock::generate_pcrlock_policy(pcrs, vec![], vec![]).unwrap();
