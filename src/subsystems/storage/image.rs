@@ -1,13 +1,9 @@
-use anyhow::{ensure, Context, Error};
 use log::debug;
 
-use oci_client::{secrets::RegistryAuth, Client, Reference};
-use tokio::runtime::Runtime;
 use trident_api::{
     config::{HostConfigurationDynamicValidationError, ImageSha384},
-    error::{InvalidInputError, ReportError, TridentError},
+    error::{InvalidInputError, TridentError},
 };
-use url::Url;
 
 use crate::engine::EngineContext;
 
