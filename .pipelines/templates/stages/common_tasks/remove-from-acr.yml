@@ -28,6 +28,8 @@ steps:
         oras manifest fetch ${{ parameters.registry }}.azurecr.io/$repository_name:$tag
         az acr repository show --name ${{ parameters.registry }} --image $repository_name:$tag
 
+        az acr repository delete --name ${{ parameters.registry }} --image $repository_name:$tag --yes
+
         # if az acr repository show --name ${{ parameters.registry }} --image ${repository_name}:${tag} &> /dev/null; then
         #   az acr repository delete --name ${{ parameters.registry }} --image ${repository_name}:${tag} --yes
         # else
