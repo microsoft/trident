@@ -160,9 +160,9 @@ steps:
   - template: ../common_tasks/remove-from-acr.yml
     parameters:
       ${{ if eq(parameters.runtimeEnv, 'container') }}:
-        repository: "container"
+        repository: "trident-container-testimage"
       ${{ else }}:
-        repository: "regular"
+        repository: "trident-testimage"
       registry: "maritimuspublic"
 
   - template: ../testing_common/display-serial-logs.yml
@@ -283,9 +283,9 @@ steps:
   - template: ../common_tasks/remove-from-acr.yml
     parameters:
       ${{ if eq(parameters.runtimeEnv, 'container') }}:
-        repository: "container"
+        repository: "trident-container-testimage"
       ${{ else }}:
-        repository: "regular"
+        repository: "trident-testimage"
       registry: "maritimuspublic"
 
   - template: ../testing_common/display-serial-logs.yml

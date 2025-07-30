@@ -175,10 +175,7 @@ stages:
 
           - template: ../common_tasks/remove-from-acr.yml
             parameters:
-              ${{ if eq(parameters.runtimeEnv, 'container') }}:
-                repository: "container"
-              ${{ else }}:
-                repository: "regular"
+              repository: ${{ variables.testImageName }}
               registry: "maritimuspublic"
 
           - template: ../testing_common/display-deployment-logs.yml

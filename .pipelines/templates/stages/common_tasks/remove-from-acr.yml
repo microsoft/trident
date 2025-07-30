@@ -2,6 +2,9 @@ parameters:
   - name: "repository"
     displayName: "Repository containing COSI images"
     type: string
+    values:
+      - trident-testimage
+      - trident-container-testimage
 
   - name: "registry"
     type: string

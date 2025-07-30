@@ -2,6 +2,9 @@ parameters:
   - name: "imageName"
     displayName: "Test image name, doubling as repository name"
     type: string
+    values:
+      - trident-testimage
+      - trident-container-testimage
 
   - name: "versionNumber"
     displayName: "Test image version number"
