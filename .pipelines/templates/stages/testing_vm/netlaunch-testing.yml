@@ -121,7 +121,6 @@ stages:
           - template: ../common_tasks/push-to-acr.yml
             parameters:
               imageName: ${{ variables.testImageName }}
-              versionNumber: 1
               registry: maritimuspublic
               config: ${{ variables.tridentConfigurationName }}
 
@@ -172,11 +171,6 @@ stages:
             workingDirectory: $(tridentSourceDirectory)
             displayName: "🚀 Run netlaunch for testing"
             timeoutInMinutes: 20
-
-          - template: ../common_tasks/remove-from-acr.yml
-            parameters:
-              repository: ${{ variables.testImageName }}
-              registry: "maritimuspublic"
 
           - template: ../testing_common/display-deployment-logs.yml
             parameters:
@@ -275,6 +269,11 @@ stages:
               userName: testing-user
               artifactsDirectory: artifacts/test-image
               netlistenPort: ${{variables.netlaunchPort}}
+
+          - template: ../common_tasks/remove-from-acr.yml
+            parameters:
+              repository: ${{ variables.testImageName }}
+              registry: "maritimuspublic"
 
           - bash: |
               set -eux

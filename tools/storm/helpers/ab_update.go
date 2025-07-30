@@ -115,18 +115,26 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 	// Match form <name>_v<version number>.<file extension> (note that "_v<version number>" is optional)
 	matches := regexp.MustCompile(`^(.*?)(_v\d+)?\.(.+)$`).FindStringSubmatch(base)
 
+	// Match form <repository>:v<build ID>.<version number>
+	matches_oci := regexp.MustCompile(`^(.*?)\:v(\d+)\.(\d+)$`).FindStringSubmatch(base)
+
+	var newCosiName string
+
 	var newUrl string
 	if len(matches) == 4 {
 		name := matches[1]
 		ext := matches[3]
 		newCosiName := fmt.Sprintf("%s_v%s.%s", name, h.args.Version, ext)
-		newUrl = fmt.Sprintf("%s%s", urlPath, newCosiName)
-	} else if strings.HasPrefix(oldUrl, "oci://") {
-		newUrl = oldUrl
+		newCosiName = fmt.Sprintf("%s_v%s.%s", name, h.args.Version, ext)
+	} else if len(matches_oci) == 4 {
+		name := matches_oci[1]
+		buildId := matches_oci[2]
+		newCosiName = fmt.Sprintf("%s:v%s.%s", name, buildId, h.args.Version)
 	} else {
-		return fmt.Errorf("failed to parse image name: %s.", base)
+		return fmt.Errorf("failed to parse image name: %s", base)
 	}
 
+	newUrl := fmt.Sprintf("%s%s", urlPath, newCosiName)
 	logrus.Infof("New image URL: %s", newUrl)
 
 	logrus.Infof("Checking if new image URL is accessible...")

@@ -6,10 +6,6 @@ parameters:
       - trident-testimage
       - trident-container-testimage
 
-  - name: "versionNumber"
-    displayName: "Test image version number"
-    type: string
-
   - name: "registry"
     displayName: "Container registry to push to"
     type: string
@@ -20,6 +16,23 @@ parameters:
     type: string
 
 steps:
+  - bash: |
+      set -eux
+
+      if [ ${{ parameters.config }} != 'misc' ]; then
+        echo "Skipping step. Configuration is '${{ parameters.config }}'."
+        exit 0
+      fi
+
+      VERSION="1.2.2"
+      curl -LO "https://github.com/oras-project/oras/releases/download/v${VERSION}/oras_${VERSION}_linux_amd64.tar.gz"
+      mkdir -p oras-install/
+      tar -zxf oras_${VERSION}_*.tar.gz -C oras-install/
+      sudo mv oras-install/oras /usr/local/bin/
+      rm -rf oras_${VERSION}_*.tar.gz oras-install/
+    displayName: "Install ORAS"
+    retryCountOnTaskFailure: 3
+
   - task: AzureCLI@2
     inputs:
       azureSubscription: maritimus-staging-eastus-cr-service-connection
@@ -41,62 +54,23 @@ steps:
 
         cd $(Build.SourcesDirectory)/artifacts/test-image
 
-        # Regardless of whether the test is on host or container, the file is called 'regular.cosi'
-        if [[ ${{ parameters.versionNumber }} == 1 ]]; then
-          filename="regular.cosi"
-        else
-          filename="regular_v${{ parameters.versionNumber }}.cosi"
-        fi
+        for version in 1 2 3; do
+          if [[ $version == 1 ]]; then
+            filename="regular.cosi"
+          else
+            filename="regular_v${version}.cosi"
+          fi
 
-        tag="v$build_id"
-        echo "Pushing $filename with tag $tag to ${{ parameters.registry }}.azurecr.io"
-        oras push ${{ parameters.registry }}.azurecr.io/$repository_name:$tag "$filename"
+          tag="v${build_id}.${version}"
 
-        sleep 5
-
-        oras manifest fetch ${{ parameters.registry }}.azurecr.io/$repository_name:$tag
-
-        az acr repository show --name ${{ parameters.registry }} --image ${repository_name}:${tag}
-
-        # if oras manifest fetch ${{ parameters.registry }}.azurecr.io/$repository_name:$tag > /dev/null 2>&1; then
-        #     echo "Tag $tag found in repository $repository_name"
-        # else
-        #     echo "Tag $tag NOT found in repository $repository_name"
-        #     exit 1
-        # fi
-    displayName: "Az ACR login & Push to Registry"
+          if [[ -f "$filename" ]]; then
+            echo "Pushing $filename with tag $tag to ${{ parameters.registry }}.azurecr.io"
+            oras push ${{ parameters.registry }}.azurecr.io/$repository_name:$tag "$filename"
+            sleep 3
+            echo "Verifying $filename was pushed successfully..."
+            az acr repository show --name ${{ parameters.registry }} --image ${repository_name}:${tag}
+          else
+            echo "File $filename not found"
+          fi
+    displayName: "Push to ACR"
     retryCountOnTaskFailure: 3
-  # - bash: |
-  #     set -eux
-
-  #     if [ ${{ parameters.config }} != 'misc' ]; then
-  #       echo "Skipping step. Configuration is '${{ parameters.config }}'."
-  #       exit 0
-  #     fi
-
-  #     repository_name=${{ parameters.imageName }}
-  #     build_id="$(Build.BuildId)"
-
-  #     cd $(Build.SourcesDirectory)/artifacts/test-image
-
-  #     # Regardless of whether the test is on host or container, the file is called 'regular.cosi'
-  #     if [[ ${{ parameters.versionNumber }} == 1 ]]; then
-  #       filename="regular.cosi"
-  #     else
-  #       filename="regular_v${{ parameters.versionNumber }}.cosi"
-  #     fi
-
-  #     tag="v$build_id"
-  #     echo "Pushing $filename with tag $tag to ${{ parameters.registry }}.azurecr.io"
-  #     oras push ${{ parameters.registry }}.azurecr.io/$repository_name:$tag "$filename"
-
-  #     sleep 5
-
-  #     if oras manifest fetch ${{ parameters.registry }}.azurecr.io/$repository_name:$tag > /dev/null 2>&1; then
-  #         echo "Tag $tag found in repository $repository_name"
-  #     else
-  #         echo "Tag $tag NOT found in repository $repository_name"
-  #         exit 1
-  #     fi
-  #   displayName: "Push ${{ parameters.imageName }} to registry"
-  #   retryCountOnTaskFailure: 3

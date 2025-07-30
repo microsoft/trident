@@ -22,21 +22,20 @@ steps:
         # Login to ACR
         az acr login -n ${{ parameters.registry }}
         sleep 5
+        az acr repository show-tags -n ${{ parameters.registry }} --repository $repository_name
+
         repository_name="${{ parameters.repository }}"
         build_id="$(Build.BuildId)"
-        tag="v${build_id}"
 
-        az acr repository show-tags -n maritimuspublic --repository trident-container-testimage
-
-        # oras manifest fetch ${{ parameters.registry }}.azurecr.io/$repository_name:$tag
-        az acr repository show --name ${{ parameters.registry }} --image $repository_name:$tag
-
-        az acr repository delete --name ${{ parameters.registry }} --image $repository_name:$tag --yes
-
-        # if az acr repository show --name ${{ parameters.registry }} --image ${repository_name}:${tag} &> /dev/null; then
-        #   az acr repository delete --name ${{ parameters.registry }} --image ${repository_name}:${tag} --yes
-        # else
-        #   exit 1
-        # fi
+        # Delete repository with COSI images
+        for i in {1..3}; do
+          tag="v${build_id}.${i}"
+          if az acr repository show --name ${{ parameters.registry }} --image ${host_repository_name}:${tag} &> /dev/null; then
+            az acr repository delete --name ${{ parameters.registry }} --image ${host_repository_name}:${tag} --yes
+          fi
+          if az acr repository show --name ${{ parameters.registry }} --image ${container_repository_name}:${tag} &> /dev/null; then
+            az acr repository delete --name ${{ parameters.registry }} --image ${container_repository_name}:${tag} --yes
+          fi
+        done
     displayName: "Log into ACR and delete images by tag"
     retryCountOnTaskFailure: 3

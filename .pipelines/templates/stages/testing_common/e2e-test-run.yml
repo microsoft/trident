@@ -108,16 +108,16 @@ steps:
       testRunTitle: ${{ parameters.deploymentEnvironment }}_trident_e2e_tests_${{ parameters.tridentConfigurationName }}_clean_install_$(System.JobAttempt)
     displayName: "Publish test results for clean install of runtime OS"
 
-  # Push (regular or container) testimage to ACR
-  - template: ../common_tasks/push-to-acr.yml
-    parameters:
-      ${{ if eq(parameters.runtimeEnv, 'container') }}:
-        imageName: "trident-testimage"
-      ${{ else }}:
-        imageName: "trident-container-testimage"
-      versionNumber: 2
-      registry: maritimuspublic
-      config: ${{ parameters.tridentConfigurationName }}
+  # # Push (regular or container) testimage to ACR
+  # - template: ../common_tasks/push-to-acr.yml
+  #   parameters:
+  #     ${{ if eq(parameters.runtimeEnv, 'container') }}:
+  #       imageName: "trident-testimage"
+  #     ${{ else }}:
+  #       imageName: "trident-container-testimage"
+  #     versionNumber: 2
+  #     registry: maritimuspublic
+  #     config: ${{ parameters.tridentConfigurationName }}
 
   # If current config requires A/B update testing, execute script to ssh into the host, update
   # images in the custom Trident config, and re-run Trident to both stage and finalize A/B update.
@@ -157,13 +157,13 @@ steps:
     displayName: "🔄 Stage and finalize A/B update into runtime OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
-  - template: ../common_tasks/remove-from-acr.yml
-    parameters:
-      ${{ if eq(parameters.runtimeEnv, 'container') }}:
-        repository: "trident-container-testimage"
-      ${{ else }}:
-        repository: "trident-testimage"
-      registry: "maritimuspublic"
+  # - template: ../common_tasks/remove-from-acr.yml
+  #   parameters:
+  #     ${{ if eq(parameters.runtimeEnv, 'container') }}:
+  #       repository: "trident-container-testimage"
+  #     ${{ else }}:
+  #       repository: "trident-testimage"
+  #     registry: "maritimuspublic"
 
   - template: ../testing_common/display-serial-logs.yml
     parameters:
@@ -231,16 +231,16 @@ steps:
       testRunTitle: ${{ parameters.deploymentEnvironment }}_trident_e2e_tests_${{ parameters.tridentConfigurationName }}_ab_update_B_$(System.JobAttempt)
     displayName: "Publish test results for A/B update into runtime OS B"
 
-  # Push (regular or container) testimage to ACR
-  - template: ../common_tasks/push-to-acr.yml
-    parameters:
-      ${{ if eq(parameters.runtimeEnv, 'container') }}:
-        imageName: "trident-testimage"
-      ${{ else }}:
-        imageName: "trident-container-testimage"
-      versionNumber: 3
-      registry: maritimuspublic
-      config: ${{ parameters.tridentConfigurationName }}
+  # # Push (regular or container) testimage to ACR
+  # - template: ../common_tasks/push-to-acr.yml
+  #   parameters:
+  #     ${{ if eq(parameters.runtimeEnv, 'container') }}:
+  #       imageName: "trident-testimage"
+  #     ${{ else }}:
+  #       imageName: "trident-container-testimage"
+  #     versionNumber: 3
+  #     registry: maritimuspublic
+  #     config: ${{ parameters.tridentConfigurationName }}
 
   - bash: |
       set -eux
@@ -280,13 +280,13 @@ steps:
     displayName: "🔄 Stage and finalize A/B update into runtime OS A"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
-  - template: ../common_tasks/remove-from-acr.yml
-    parameters:
-      ${{ if eq(parameters.runtimeEnv, 'container') }}:
-        repository: "trident-container-testimage"
-      ${{ else }}:
-        repository: "trident-testimage"
-      registry: "maritimuspublic"
+  # - template: ../common_tasks/remove-from-acr.yml
+  #   parameters:
+  #     ${{ if eq(parameters.runtimeEnv, 'container') }}:
+  #       repository: "trident-container-testimage"
+  #     ${{ else }}:
+  #       repository: "trident-testimage"
+  #     registry: "maritimuspublic"
 
   - template: ../testing_common/display-serial-logs.yml
     parameters:
