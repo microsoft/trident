@@ -5,10 +5,10 @@ use std::{
 
 use log::{debug, error, warn};
 
-use osutils::{container, encryption::ENCRYPTION_PASSPHRASE, lsblk};
+use osutils::lsblk;
 use trident_api::{
     config::HostConfigurationDynamicValidationError,
-    constants::internal_params::{OVERRIDE_PCRLOCK_ENCRYPTION, RELAXED_COSI_VALIDATION},
+    constants::internal_params::RELAXED_COSI_VALIDATION,
     error::{
         InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt,
         UnsupportedConfigurationError,
@@ -171,32 +171,13 @@ impl Subsystem for StorageSubsystem {
             verity::create_machine_id(mount_path).structured(ServicingError::CreateMachineId)?;
         }
 
-        // If this is a UKI image, then we need to run the encryption provision logic:
-        // 1. On a clean install, re-seal the encryption key to a pcrlock policy for ROS A,
-        // 2. On an A/B update, re-generate pcrlock policy to include current boot + future boot,
-        // i.e. update ROS image.
-        //
-        // TODO: Remove this override once UKI & encryption tests are fixed. Related ADO:
-        // https://dev.azure.com/mariner-org/polar/_workitems/edit/13344/.
-        let override_pcrlock_encryption = ctx
-            .spec
-            .internal_params
-            .get_flag(OVERRIDE_PCRLOCK_ENCRYPTION)
-            || container::is_running_in_container()?;
-        if ctx.is_uki()? {
-            if !override_pcrlock_encryption {
-                debug!("Starting step 'Provision' for subunit '{ENCRYPTION_SUBSYSTEM_NAME}'");
-                encryption::provision(ctx, mount_path).message(format!(
-                    "Step 'Provision' failed for subunit '{ENCRYPTION_SUBSYSTEM_NAME}'"
-                ))?;
-            } else {
-                warn!(
-                    "Skipping step 'Provision' for subunit '{ENCRYPTION_SUBSYSTEM_NAME}' \
-                    because '{OVERRIDE_PCRLOCK_ENCRYPTION}' is set or running in a container"
-                );
-            }
+        // Run encryption provisioning if encryption configuration is present
+        if ctx.spec.storage.encryption.is_some() {
+            debug!("Starting step 'Provision' for subunit '{ENCRYPTION_SUBSYSTEM_NAME}'");
+            encryption::provision(ctx, mount_path).message(format!(
+                "Step 'Provision' failed for subunit '{ENCRYPTION_SUBSYSTEM_NAME}'"
+            ))?;
         }
-        ENCRYPTION_PASSPHRASE.lock().unwrap().clear();
 
         Ok(())
     }
