@@ -55,6 +55,7 @@ steps:
         sleep 5
 
         oras manifest fetch ${{ parameters.registry }}.azurecr.io/$repository_name:$tag
+
         az acr repository show --name ${{ parameters.registry }} --image ${repository_name}:${tag}
 
         # if oras manifest fetch ${{ parameters.registry }}.azurecr.io/$repository_name:$tag > /dev/null 2>&1; then

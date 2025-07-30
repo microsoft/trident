@@ -25,6 +25,8 @@ steps:
         repository_name="${{ parameters.repository }}"
         build_id="$(Build.BuildId)"
         tag="v${build_id}"
+        oras manifest fetch ${{ parameters.registry }}.azurecr.io/$repository_name:$tag
+
         if az acr repository show --name ${{ parameters.registry }} --image ${repository_name}:${tag} &> /dev/null; then
           az acr repository delete --name ${{ parameters.registry }} --image ${repository_name}:${tag} --yes
         else
