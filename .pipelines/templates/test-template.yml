@@ -46,20 +46,26 @@ parameters:
 
 stages:
   - ${{ if or(parameters.runDeploymentVMHost, parameters.runDeploymentVMContainer, parameters.runDeploymentBMHost, parameters.runDeploymentBMContainer, parameters.runServicingTests) }}:
-    - template: stages/download_artifacts/get-artifacts.yml
-      parameters:
-        definition: ${{ parameters.definition }}
-        servicingImages: ${{ parameters.runServicingTests }}
-        hostImages: ${{ or(parameters.runDeploymentVMHost, parameters.runDeploymentBMHost) }}
-        containerImages: ${{ or(parameters.runDeploymentVMContainer, parameters.runDeploymentBMContainer) }}
-        ${{ if eq(parameters.tridentPipelineRunId, 'latestFromBranch') }}:
-          runVersion: latestFromBranch
-          branch: ${{ parameters.branch }}
-          allowFailedBuilds: false
-        ${{ else }}:
-          runVersion: specific
-          tridentPipelineRunId: ${{ parameters.tridentPipelineRunId }}
-          allowFailedBuilds: true
+      - template: stages/download_artifacts/get-artifacts.yml
+        parameters:
+          definition: ${{ parameters.definition }}
+          servicingImages: ${{ parameters.runServicingTests }}
+          hostImages: ${{ or(parameters.runDeploymentVMHost, parameters.runDeploymentBMHost) }}
+          containerImages: ${{ or(parameters.runDeploymentVMContainer, parameters.runDeploymentBMContainer) }}
+          ${{ if eq(parameters.tridentPipelineRunId, 'latestFromBranch') }}:
+            runVersion: latestFromBranch
+            branch: ${{ parameters.branch }}
+            allowFailedBuilds: false
+          ${{ else }}:
+            runVersion: specific
+            tridentPipelineRunId: ${{ parameters.tridentPipelineRunId }}
+            allowFailedBuilds: true
+
+  - ${{ if parameters.runFunctionalTests }}:
+      - template: stages/testing_functional/functional-testing.yml
+        parameters:
+          downloadPrebuiltImage: true
+          rerunTests: true
 
   - ${{ if parameters.runDeploymentVMHost }}:
       - template: stages/testing_vm/netlaunch-testing.yml
@@ -91,11 +97,6 @@ stages:
           ${{ if parameters.runDeploymentBMHost }}:
             extraDependsOn: "BaremetalDeploymentTesting_host"
 
-  - ${{ if parameters.runFunctionalTests }}:
-      - template: stages/testing_functional/functional-testing.yml
-        parameters:
-          downloadPrebuiltImage: true
-          rerunTests: true
           
   - ${{ if parameters.runServicingTests }}:
       - template: stages/testing_servicing/vm-testing.yml

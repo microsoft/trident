@@ -72,29 +72,35 @@ Trident files for the provisioning OS
 # ------------------------------------------------------------------------------
 
 %package service
-Summary:        Trident files for SystemD service
+Summary:        Trident files for SystemD update and commit services
 Requires:       %{name}
+Conflicts:      %{name}-install-service
 
 %description service
-Trident files for SystemD service
+Trident files for SystemD update and commit services
 
 %files service
 %{_unitdir}/%{name}.service
+%{_unitdir}/%{name}-update.service
 
 %post service
 %systemd_post %{name}.service
+%systemd_post %{name}-update.service
 
 %preun service
 %systemd_preun %{name}.service
+%systemd_preun %{name}-update.service
 
 %postun service
 %systemd_postun_with_restart %{name}.service
+%systemd_postun_with_restart %{name}-update.service
 
 # ------------------------------------------------------------------------------
 
 %package install-service
 Summary:        Trident files for SystemD install service
 Requires:       %{name}
+Conflicts:      %{name}-service
 
 %description install-service
 Trident files for SystemD install service
@@ -122,16 +128,16 @@ Requires:       %{name}-service
 SystemD timer for update polling with Harpoon.
 
 %files update-poll
-%{_unitdir}/%{name}.timer
+%{_unitdir}/%{name}-update.timer
 
 %post update-poll
-%systemd_post %{name}.timer
+%systemd_post %{name}-update.timer
 
 %preun update-poll
-%systemd_preun %{name}.timer
+%systemd_preun %{name}-update.timer
 
 %postun update-poll
-%systemd_postun_with_restart %{name}.timer
+%systemd_postun_with_restart %{name}-update.timer
 
 # ------------------------------------------------------------------------------
 
@@ -211,8 +217,9 @@ install -D -p -m 0644 selinux/%{name}.if %{buildroot}%{_datadir}/selinux/devel/i
 mkdir -p %{buildroot}%{_unitdir}
 install -D -m 644 systemd/%{name}.service %{buildroot}%{_unitdir}/%{name}.service
 install -D -m 644 systemd/%{name}-install.service %{buildroot}%{_unitdir}/%{name}-install.service
+install -D -m 644 systemd/%{name}-update.service %{buildroot}%{_unitdir}/%{name}-update.service
 install -D -m 644 systemd/%{name}-network.service %{buildroot}%{_unitdir}/%{name}-network.service
-install -D -m 644 systemd/%{name}.timer %{buildroot}%{_unitdir}/%{name}.timer
+install -D -m 644 systemd/%{name}-update.timer %{buildroot}%{_unitdir}/%{name}-update.timer
 
 mkdir -p %{buildroot}/etc/%{name}
 

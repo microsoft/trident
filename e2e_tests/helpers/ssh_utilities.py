@@ -84,9 +84,9 @@ def _reload_container_image(connection: Connection):
         raise Exception(f"Can not locate Docker image at {DOCKER_IMAGE_PATH}.")
 
     # Disable SELinux:
-    docker_permission = "sudo setenforce 0"
+    disable_selinux_enforcement_command = "sudo setenforce 0"
     _connection_run_command(
-        connection, docker_permission
+        connection, disable_selinux_enforcement_command
     )  # TODO: Re-enable SELinux (#9508).
 
     command = f"sudo docker load --input {DOCKER_IMAGE_PATH}"

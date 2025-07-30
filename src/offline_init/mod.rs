@@ -117,6 +117,7 @@ fn generate_host_status(
     history: &[PrismHistoryEntry],
     mut lsblk_output: Vec<lsblk::BlockDevice>,
     lazy_partitions: &[String],
+    disk: &String,
 ) -> Result<HostStatus, TridentError> {
     let Some(prism_storage) = history
         .iter()
@@ -168,7 +169,7 @@ fn generate_host_status(
 
     host_config.storage.disks.push(Disk {
         id: "disk0".to_string(),
-        device: "/dev/sda".into(),
+        device: disk.into(),
         partition_table_type: PartitionTableType::Gpt,
         partitions,
         adopted_partitions: Vec::new(),
@@ -426,7 +427,11 @@ fn parse_lazy_partitions(
 
 /// Given a path to a Host Status file, initializes the datastore with the Host Status.
 /// This command can be executed offline in a chroot environment as part of MIC image customization.
-pub fn execute(hs_path: Option<&Path>, lazy_partitions: &[String]) -> Result<(), TridentError> {
+pub fn execute(
+    hs_path: Option<&Path>,
+    lazy_partitions: &[String],
+    disk: &String,
+) -> Result<(), TridentError> {
     let host_status: HostStatus = if let Some(hs_path) = hs_path {
         info!("Reading Host Status from {:?}", hs_path);
         let host_status_yaml = fs::read_to_string(hs_path)
@@ -450,13 +455,12 @@ pub fn execute(hs_path: Option<&Path>, lazy_partitions: &[String]) -> Result<(),
 
         trace!("Prism history contents:\n{history_file}");
 
-        // TODO: Don't hardcode /dev/sda
-        let disk_path = Path::new("/dev/sda");
+        let disk_path = Path::new(disk);
         if !disk_path.exists() {
             return Err(TridentError::new(
                 ExecutionEnvironmentMisconfigurationError::PrismChrootEnvironment,
             ))
-            .message("Prism chroot environment doesn't contain /dev/sda");
+            .message(format!("Prism chroot environment doesn't contain {disk}"));
         }
 
         let history: Vec<PrismHistoryEntry> =
@@ -466,7 +470,7 @@ pub fn execute(hs_path: Option<&Path>, lazy_partitions: &[String]) -> Result<(),
             .structured(ExecutionEnvironmentMisconfigurationError::PrismChrootEnvironment)
             .message("Failed to run lsblk")?;
 
-        generate_host_status(&history, lsblk_output, lazy_partitions)?
+        generate_host_status(&history, lsblk_output, lazy_partitions, disk)?
     };
 
     debug!(
@@ -555,8 +559,10 @@ mod tests {
             serde_json::from_str(PRISM_HISTORY).expect("Failed to parse Prism history");
         let lsblk_output: LsBlkOutput =
             serde_json::from_str(LSBLK).expect("Failed to parse lsblk output");
+        let disk = "/dev/sda".to_string();
 
-        let host_status = generate_host_status(&history, lsblk_output.blockdevices, &[]).unwrap();
+        let host_status =
+            generate_host_status(&history, lsblk_output.blockdevices, &[], &disk).unwrap();
         print!(
             "host_status:\n{}",
             serde_yaml::to_string(&host_status).unwrap_or("Failed to serialize Host Status".into())
@@ -587,10 +593,11 @@ mod tests {
             serde_json::from_str(LAZY_PRISM_HISTORY).expect("Failed to parse Prism history");
         let lsblk_output: LsBlkOutput =
             serde_json::from_str(LAZY_LSBLK).expect("Failed to parse lsblk output");
+        let disk = "/dev/sda".to_string();
 
         // Validate that the '-b' partitions are not present in the history
         let host_status_without_lazy_command_line_overrides =
-            generate_host_status(&history, lsblk_output.clone().blockdevices, &[]).unwrap();
+            generate_host_status(&history, lsblk_output.clone().blockdevices, &[], &disk).unwrap();
         print!(
             "host_status_without_lazy_command_line_overrides:\n{}",
             serde_yaml::to_string(&host_status_without_lazy_command_line_overrides)
@@ -619,6 +626,7 @@ mod tests {
             &history,
             lsblk_output.clone().blockdevices,
             &lazy_partitions,
+            &disk,
         )
         .unwrap();
         print!(

@@ -604,7 +604,7 @@ impl Trident {
 
         self.execute_and_record_error(datastore, |datastore| {
             if !datastore.is_persistent() {
-                return Err(TridentError::new(InvalidInputError::UpdateOnUnprovisionedHost))
+                return Err(TridentError::new(InvalidInputError::HostNotProvisioned))
                     .message("Persistent datastore not found on host");
             }
 

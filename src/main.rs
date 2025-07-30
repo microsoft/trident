@@ -58,8 +58,9 @@ fn run_trident(
         Commands::OfflineInitialize {
             hs_path,
             lazy_partitions,
+            disk,
         } => {
-            return offline_init::execute(hs_path.as_deref(), lazy_partitions)
+            return offline_init::execute(hs_path.as_deref(), lazy_partitions, disk)
                 .map(|()| ExitKind::Done);
         }
 
@@ -107,6 +108,13 @@ fn run_trident(
                 }
 
                 let agent_config = load_agent_config()?;
+                // For non-install commands, we expect the datastore to exist
+                if !matches!(args.command, Commands::Install { .. })
+                    && !agent_config.datastore.exists()
+                {
+                    return Err(TridentError::new(InvalidInputError::HostNotProvisioned))
+                        .message("Datastore file does not exist");
+                }
 
                 let mut trident = Trident::new(
                     config_path.map(HostConfigurationSource::File),
@@ -206,7 +214,9 @@ fn setup_logging(args: &Cli) -> Result<Logstream, Error> {
         // Add logstream to send logs to the log server
         .with_logger(logstream.make_logger_with_level(LevelFilter::Trace))
         // Set the global filter for reqwest to debug
-        .with_global_filter("reqwest", LevelFilter::Debug);
+        .with_global_filter("reqwest", LevelFilter::Debug)
+        // Set the global filter for goblin to off
+        .with_global_filter("goblin", LevelFilter::Off);
 
     // Add background logger if we're running a command that needs it
     if matches!(

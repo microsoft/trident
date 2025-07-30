@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use sysdefs::tpm2::Pcr;
+
 use crate::{
     constants::VAR_TMP_PATH,
     error::{InvalidInputError, TridentError},
@@ -57,6 +59,18 @@ pub enum HostConfigurationStaticValidationError {
 
     #[error(transparent)]
     InvalidStorageGraph(#[from] StorageGraphBuildError),
+
+    #[error(
+        "List of PCRs to seal to in encryption configuration is empty, \
+        but at least one PCR must be specified"
+    )]
+    InvalidEncryptionPcrsEmpty,
+
+    #[error(
+        "List of PCRs to seal to in encryption configuration contains unsupported PCRs '{pcrs:?}'.\n
+        Only PCRs 4, 7, and 11 are supported"
+    )]
+    InvalidEncryptionPcrsUnsupported { pcrs: Vec<Pcr> },
 
     #[error("Encryption recovery key URL '{url}' has invalid scheme '{scheme}'")]
     InvalidEncryptionRecoveryKeyUrlScheme { url: String, scheme: String },

@@ -5,10 +5,10 @@ use std::{
 
 use log::{debug, error, warn};
 
-use osutils::lsblk;
+use osutils::{container, encryption::ENCRYPTION_PASSPHRASE, lsblk};
 use trident_api::{
     config::HostConfigurationDynamicValidationError,
-    constants::internal_params::RELAXED_COSI_VALIDATION,
+    constants::internal_params::{OVERRIDE_PCRLOCK_ENCRYPTION, RELAXED_COSI_VALIDATION},
     error::{
         InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt,
         UnsupportedConfigurationError,
@@ -128,9 +128,6 @@ impl Subsystem for StorageSubsystem {
             }
         }
 
-        // TODO: validate that block devices naming is consistent with the current state
-        // https://dev.azure.com/mariner-org/ECF/_workitems/edit/7322/
-
         encryption::validate_host_config(&ctx.spec).message(format!(
             "Step 'Validate' failed for subunit '{ENCRYPTION_SUBSYSTEM_NAME}'"
         ))?;
@@ -174,12 +171,39 @@ impl Subsystem for StorageSubsystem {
             verity::create_machine_id(mount_path).structured(ServicingError::CreateMachineId)?;
         }
 
+        // If this is a UKI image, then we need to run the encryption provision logic:
+        // 1. On a clean install, re-seal the encryption key to a pcrlock policy for ROS A,
+        // 2. On an A/B update, re-generate pcrlock policy to include current boot + future boot,
+        // i.e. update ROS image.
+        //
+        // TODO: Remove this override once UKI & encryption tests are fixed. Related ADO:
+        // https://dev.azure.com/mariner-org/polar/_workitems/edit/13344/.
+        let override_pcrlock_encryption = ctx
+            .spec
+            .internal_params
+            .get_flag(OVERRIDE_PCRLOCK_ENCRYPTION)
+            || container::is_running_in_container()?;
+        if ctx.is_uki()? {
+            if !override_pcrlock_encryption {
+                debug!("Starting step 'Provision' for subunit '{ENCRYPTION_SUBSYSTEM_NAME}'");
+                encryption::provision(ctx, mount_path).message(format!(
+                    "Step 'Provision' failed for subunit '{ENCRYPTION_SUBSYSTEM_NAME}'"
+                ))?;
+            } else {
+                warn!(
+                    "Skipping step 'Provision' for subunit '{ENCRYPTION_SUBSYSTEM_NAME}' \
+                    because '{OVERRIDE_PCRLOCK_ENCRYPTION}' is set or running in a container"
+                );
+            }
+        }
+        ENCRYPTION_PASSPHRASE.lock().unwrap().clear();
+
         Ok(())
     }
 
     #[tracing::instrument(name = "storage_configuration", skip_all)]
     fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
-        if ctx.is_uki_image()? && ctx.storage_graph.root_fs_is_verity() {
+        if ctx.is_uki()? && ctx.storage_graph.root_fs_is_verity() {
             debug!("Skipping storage configuration because UKI root verity is in use");
             return Ok(());
         }
@@ -218,9 +242,10 @@ mod tests {
     use url::Url;
 
     use osutils::encryption;
+    use sysdefs::tpm2::Pcr;
     use trident_api::{
         config::{
-            Disk as DiskConfig, FileSystem, HostConfiguration, MountPoint,
+            AbUpdate, Disk as DiskConfig, Encryption, FileSystem, HostConfiguration, MountPoint,
             Partition as PartitionConfig, PartitionSize, PartitionType, Raid, RaidLevel,
             SoftwareRaidArray, Storage as StorageConfig,
         },
@@ -311,20 +336,21 @@ mod tests {
                     source: Default::default(),
                     mount_point: Some(MountPoint::from_str("/").unwrap()),
                 }],
-                ab_update: Some(trident_api::config::AbUpdate {
+                ab_update: Some(AbUpdate {
                     volume_pairs: vec![trident_api::config::AbVolumePair {
                         id: "ab1".to_owned(),
                         volume_a_id: "part1".to_owned(),
                         volume_b_id: "part2".to_owned(),
                     }],
                 }),
-                encryption: Some(trident_api::config::Encryption {
+                encryption: Some(Encryption {
                     recovery_key_url: Some(Url::from_file_path(recovery_key_file).unwrap()),
                     volumes: vec![trident_api::config::EncryptedVolume {
                         id: "enc1".to_owned(),
                         device_name: "luks-enc".to_owned(),
                         device_id: "part5".to_owned(),
                     }],
+                    pcrs: vec![Pcr::Pcr7],
                 }),
                 ..Default::default()
             },

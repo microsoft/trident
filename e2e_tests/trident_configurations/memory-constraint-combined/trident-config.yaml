@@ -1,6 +1,8 @@
 internalParams:
   uki: true
-  overrideEncryptionPcrs: [0]
+  # TODO: Remove this internal parameter once UKI & encryption tests are fixed.
+  # https://dev.azure.com/mariner-org/polar/_workitems/edit/13344/.
+  overridePcrlockEncryption: true
 image:
   url: http://NETLAUNCH_HOST_ADDRESS/files/usrverity.cosi
   sha384: ignored
@@ -65,6 +67,13 @@ storage:
       - id: web-b
         deviceName: web-b
         deviceId: web-b-e
+    pcrs:
+      - boot-loader-code # 4
+      # TODO: Once UKI MOS is built and pcrlock policy can include PCR 7,
+      # un-comment. Related ADO task:
+      # https://dev.azure.com/mariner-org/polar/_workitems/edit/14286/.
+      #- secure-boot-policy # 7
+      - kernel-boot # 11
   raid:
     software:
       - id: root-a

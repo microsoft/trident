@@ -56,7 +56,7 @@ stages:
               AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
               OVERRIDE_RUST_FEED: false
 
-          - script: cargo install --locked cargo-deny@0.16.1
+          - script: cargo install --locked cargo-deny@0.16.2
             displayName: Install cargo-deny
 
           - script: cargo deny --all-features --workspace check licenses

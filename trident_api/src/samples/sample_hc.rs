@@ -8,6 +8,8 @@ use netplan_types::{
     NetworkConfig,
 };
 
+use sysdefs::tpm2::Pcr;
+
 use crate::{
     config::{
         host::os::{KernelCommandLine, Selinux, SelinuxMode},
@@ -248,6 +250,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                         device_name: "luks-srv".to_string(),
                         device_id: "enc-srv".to_string(),
                     }],
+                    pcrs: vec![Pcr::Pcr7],
                 }),
                 raid: Raid {
                     software: vec![SoftwareRaidArray {
@@ -806,6 +809,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                         device_name: "home".to_string(),
                         device_id: "enc-home".to_string(),
                     }],
+                    pcrs: vec![Pcr::Pcr7],
                 }),
                 ab_update: Some(AbUpdate {
                     volume_pairs: vec![
@@ -1166,6 +1170,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             device_name: "srv".to_string(),
                             device_id: "luks-srv".to_string(),
                         }],
+                        pcrs: vec![Pcr::Pcr7],
                     }),
                     ab_update: None,
                     filesystems: vec![

@@ -27,7 +27,7 @@ impl Subsystem for BootSubsystem {
 
     #[tracing::instrument(name = "boot_configuration", skip_all)]
     fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
-        if ctx.is_uki_image()? {
+        if ctx.is_uki()? {
             debug!("Skipping grub configuration because UKI is in use");
             return Ok(());
         }
@@ -41,9 +41,8 @@ impl Subsystem for BootSubsystem {
 
 /// Returns the ESP directory name of the current install's update volume.
 ///
-/// Internally, calls `EngineContext::make_install_id` with the update volume
-/// returned by `EngineContext::get_ab_update_volume` and the current install
-/// index.
+/// Internally, calls `EngineContext::make_install_id` with the update volume returned by
+/// `EngineContext::get_ab_update_volume` and the current install index.
 pub fn get_update_esp_dir_name(ctx: &EngineContext) -> Option<String> {
     Some(make_esp_dir_name(
         ctx.install_index,

@@ -12,20 +12,34 @@ use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 
 use osutils::{
+    bootloaders::{BOOT_EFI, GRUB_EFI},
+    container,
     dependencies::{Dependency, DependencyResultExt},
-    encryption,
+    efivar,
+    encryption::{self, ENCRYPTION_PASSPHRASE},
     lsblk::{self, BlockDeviceType},
+    path::join_relative,
 };
 use sysdefs::tpm2::Pcr;
+
 use trident_api::{
     config::{HostConfiguration, HostConfigurationStaticValidationError, PartitionSize},
-    constants::internal_params::{
-        NO_CLOSE_ENCRYPTED_VOLUMES, OVERRIDE_ENCRYPTION_PCRS, REENCRYPT_ON_CLEAN_INSTALL,
+    constants::{
+        internal_params::{NO_CLOSE_ENCRYPTED_VOLUMES, REENCRYPT_ON_CLEAN_INSTALL},
+        ESP_EFI_DIRECTORY, ESP_MOUNT_POINT_PATH,
     },
-    error::{InvalidInputError, ReportError, ServicingError, TridentError},
+    error::{InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt},
+    status::{AbVolumeSelection, ServicingType},
 };
 
-use crate::engine::EngineContext;
+use crate::{
+    bootentries,
+    engine::{
+        boot::{self, uki},
+        storage::encryption::uki::{TMP_UKI_NAME, UKI_DIRECTORY},
+        EngineContext,
+    },
+};
 
 /// Closes all open LUKS2-encrypted volumes found on the system.
 pub(super) fn close_pre_existing_encrypted_volumes(
@@ -68,8 +82,18 @@ pub(super) fn create_encrypted_devices(
     if let Some(encryption) = &host_config.storage.encryption {
         let key_file_tmp: NamedTempFile;
         let key_file_path: PathBuf;
+
+        // Store key to update ENCRYPTION_PASSPHRASE static variable
+        let key_value: Vec<u8>;
+
         if let Some(recovery_key_url) = &encryption.recovery_key_url {
-            key_file_path = recovery_key_url.path().into()
+            key_file_path = recovery_key_url.path().into();
+
+            // Read key from existing recovery key file
+            let key = fs::read(&key_file_path).structured(ServicingError::ReadRecoveryKeyFile {
+                key_file: key_file_path.to_string_lossy().to_string(),
+            })?;
+            key_value = key;
         } else {
             // Create a temporary file to store the recovery key file.
             key_file_tmp =
@@ -80,12 +104,18 @@ pub(super) fn create_encrypted_devices(
                     key_file: key_file_path.to_string_lossy().to_string(),
                 },
             )?;
-            encryption::generate_recovery_key_file(&key_file_path).structured(
+            let key = encryption::generate_recovery_key_file(&key_file_path).structured(
                 ServicingError::GenerateRecoveryKeyFile {
                     key_file: key_file_path.to_string_lossy().to_string(),
                 },
             )?;
+
+            key_value = key.clone();
         };
+
+        // Store the key statically for later use, i.e. pcrlock policy enrollment
+        let mut static_key = ENCRYPTION_PASSPHRASE.lock().unwrap();
+        *static_key = key_value;
 
         debug!(
             "Using key file '{}' to initialize all encrypted volumes",
@@ -121,7 +151,7 @@ pub(super) fn create_encrypted_devices(
             if let PartitionSize::Fixed(byte_count) = partition.size {
                 total_partition_size_bytes += byte_count.bytes();
             }
-            // TODO: Print the kind of block device that device_id points to. https://dev.azure.com/mariner-org/ECF/_workitems/edit/7323/
+
             info!(
                 "Initializing '{}': creating encrypted volume of type '{}'",
                 ev.id,
@@ -144,24 +174,12 @@ pub(super) fn create_encrypted_devices(
                 EncryptionType::LuksFormat
             };
 
-            let pcrs = ctx
-                .spec
-                .internal_params
-                // Extract the parameter as a `Vec<Pcr>`, which is a list of PCRs to bind the
-                // encryption key to.
-                .get::<Vec<Pcr>>(OVERRIDE_ENCRYPTION_PCRS)
-                // Get the result from under the option.
-                .transpose()
-                .structured(InvalidInputError::InvalidInternalParameter {
-                    name: OVERRIDE_ENCRYPTION_PCRS.to_string(),
-                    explanation: format!(
-                        "Failed to parse internal parameter '{OVERRIDE_ENCRYPTION_PCRS}' as BitFlags<Pcr>"
-                    ),
-                })?
-                // Convert the `Vec<Pcr>` into a `BitFlags<Pcr>`, which is a bitmask of PCRs.
-                .map(|v| BitFlags::<Pcr>::from_iter(v.into_iter()))
-                // If the internal parameter is not set, default to PCR 7.
-                .unwrap_or(Pcr::Pcr7.into());
+            // TODO: Once UKI MOS is built, include all PCRs out of 4, 7, and 11 that were selected
+            // by the user, into pcrlock policy on A/B update and clean install. For now, only seal
+            // to PCR 0 into pcrlock policy. Related ADO task:
+            // https://dev.azure.com/mariner-org/polar/_workitems/edit/14286/ and
+            // https://dev.azure.com/mariner-org/polar/_workitems/edit/13059/.
+            let pcrs = BitFlags::from(Pcr::Pcr0);
 
             // Check if `REENCRYPT_ON_CLEAN_INSTALL` internal param is set to true; if so, re-encrypt
             // the device in-place. Otherwise, initialize a new LUKS2 volume.
@@ -189,12 +207,13 @@ pub(super) fn create_encrypted_devices(
 /// header, enrolling a key file, enrolling another randomly generated key and sealing it in the
 /// TPM 2.0 device with PCR 7, and finally, opening the device as a LUKS2 volume.
 ///
-/// This function takes in 4 arguments:
+/// This function takes in 5 arguments:
 /// - `device_path`: The path to the device to be encrypted.
 /// - `device_name`: The name of the device to be used in the crypttab.
 /// - `key_file`: The path to the key file to be used for encryption.
 /// - `encryption_type`: The type of encryption to be used. Determines whether the device should be
-///   re-encrypted in-place, or whether a new LUKS2 volume should be initialized.
+///   re-encrypted in-place, or whether a new LUKS2 volume should be initialized
+/// - `pcrs`: The PCRs to bind the encryption key to.
 fn encrypt_and_open_device(
     device_path: &Path,
     device_name: &String,
@@ -230,9 +249,8 @@ fn encrypt_and_open_device(
         device_path.display()
     );
 
-    // Enroll the TPM 2.0 device for the underlying device. Currently, we bind the enrollment to
-    // PCR 7 by default.
-    encryption::systemd_cryptenroll(key_file, device_path, pcrs)?;
+    // Enroll the TPM 2.0 device for the underlying device
+    encryption::systemd_cryptenroll(Some(key_file), device_path, pcrs)?;
 
     debug!(
         "Opening underlying encrypted device '{}' as '{}'",
@@ -266,4 +284,147 @@ struct LuksDumpSegment {
     iv_tweak: String,
     encryption: String,
     sector_size: u64,
+}
+
+/// Returns paths of UKI and bootloader binaries that `systemd-pcrlock` tool should seal to. During
+/// encryption provisioning, returns binaries used for the current boot, as well as binaries that
+/// will be used in the future boot, i.e. in the ROS update image. During rollback validation,
+/// returns binaries used for the current boot only.
+///
+/// Returns a tuple containing two vectors:
+/// - uki_binaries: Paths to the UKI binaries,
+/// - bootloader_binaries: Paths to the bootloader binaries (shim and systemd-boot).
+pub fn get_binary_paths_pcrlock(
+    ctx: &EngineContext,
+    mount_path: Option<&Path>,
+) -> Result<(Vec<PathBuf>, Vec<PathBuf>), Error> {
+    // TODO: For now, on a clean install, binaries are not needed since we're first sealing to a
+    // pcrlock policy that only includes PCR 0. Once UKI MOS is built and SecureBoot is enabled,
+    // need to also return binary paths for clean install. Related ADO tasks:
+    // https://dev.azure.com/mariner-org/polar/_workitems/edit/14286/ and
+    // https://dev.azure.com/mariner-org/polar/_workitems/edit/13059/.
+    if ctx.servicing_type == ServicingType::CleanInstall {
+        return Ok((vec![], vec![]));
+    }
+
+    // Determine esp path depending on the environment
+    let esp_path = if container::is_running_in_container()
+        .unstructured("Failed to determine if running in container")?
+    {
+        let host_root =
+            container::get_host_root_path().unstructured("Failed to get host root path")?;
+        join_relative(host_root, ESP_MOUNT_POINT_PATH)
+    } else {
+        PathBuf::from(ESP_MOUNT_POINT_PATH)
+    };
+
+    // Construct UKI paths
+    let uki_binaries = get_uki_paths(&esp_path, mount_path)?;
+
+    // Construct bootloader paths
+    let bootloader_binaries = get_bootloader_paths(&esp_path, mount_path, ctx)?;
+
+    debug!("Paths of boot binaries required for pcrlock encryption:");
+    for (i, path) in uki_binaries.iter().enumerate() {
+        debug!("UKI binary {}: {}", i + 1, path.display());
+    }
+    for (i, path) in bootloader_binaries.iter().enumerate() {
+        debug!("Bootloader binary {}: {}", i + 1, path.display());
+    }
+
+    Ok((uki_binaries, bootloader_binaries))
+}
+
+/// Returns paths of the UKI binaries for the current boot and if mount_path is provided, for the
+/// future boot, i.e. update image, as required for the generation of .pcrlock files.
+///
+/// If `mount_path` is provided, it means that this func is called during staging of an A/B update,
+/// so the UKI binary for the update image is requested. Otherwise, this logic is called on boot
+/// validation, and so we're re-generating the pcrlock policy for the current boot only.
+fn get_uki_paths(esp_path: &Path, mount_path: Option<&Path>) -> Result<Vec<PathBuf>, Error> {
+    let mut uki_binaries: Vec<PathBuf> = Vec::new();
+
+    // If mount_path is null, this logic is called on rollback detection, when active volume is
+    // still set to the old volume, so we request UKI suffix for update image, to get it for the
+    // current boot. Otherwise, when staging an A/B update, for_update is set to false.
+    let esp_uki_directory = join_relative(esp_path, UKI_DIRECTORY);
+    let uki_filename =
+        efivar::read_current_var().unstructured("Failed to read current boot entry")?;
+    let uki_current = esp_uki_directory.join(uki_filename);
+    uki_binaries.push(Path::new(&uki_current).to_path_buf());
+
+    // If this is done during encryption provisioning, i.e. update image is mounted at mount_path,
+    // we also construct the update UKI binary path
+    if mount_path.is_some() {
+        // UKI binary in runtime OS to be measured; it's currently staged at designated
+        // path
+        let uki_update = esp_uki_directory.join(TMP_UKI_NAME);
+        uki_binaries.push(uki_update.clone());
+    }
+
+    Ok(uki_binaries)
+}
+
+/// Returns paths of the bootloader binaries for the current boot and if mount_path is provided,
+/// for the future boot, i.e. update image, as required for the generation of .pcrlock files.
+/// Bootloaders include shim and systemd-boot EFI executables.
+///
+/// If `mount_path` is provided, it means that this func is called during staging of an A/B update,
+/// so the bootloader binary for the update image is requested. Otherwise, this logic is called on
+/// boot validation, and so we're re-generating the pcrlock policy for the current boot only.
+fn get_bootloader_paths(
+    esp_path: &Path,
+    mount_path: Option<&Path>,
+    ctx: &EngineContext,
+) -> Result<Vec<PathBuf>, Error> {
+    let mut bootloader_binaries: Vec<PathBuf> = Vec::new();
+
+    // If mount_path is null, this logic is called on rollback detection, when active volume is
+    // still set to the old volume, so we need to determine the actual active volume
+    let active_volume = match mount_path {
+        // Currently, not executing pcrlock encryption or this logic on clean install, so active
+        // volume has to be non-null on encryption provisioning.
+        // TODO: Once pcrlock encryption is enabled on clean install, need to adjust the logic, to
+        // correctly construct the binary paths. Related ADO tasks:
+        // https://dev.azure.com/mariner-org/polar/_workitems/edit/14286/ and
+        // https://dev.azure.com/mariner-org/polar/_workitems/edit/13059/.
+        Some(_) => ctx.ab_active_volume.ok_or_else(|| {
+            anyhow::anyhow!("Active volume is not set outside of clean install servicing")
+        })?,
+        None => match ctx.ab_active_volume {
+            None | Some(AbVolumeSelection::VolumeB) => AbVolumeSelection::VolumeA,
+            Some(AbVolumeSelection::VolumeA) => AbVolumeSelection::VolumeB,
+        },
+    };
+
+    let esp_dir_name = boot::make_esp_dir_name(ctx.install_index, active_volume);
+    let shim_path = Path::new(ESP_EFI_DIRECTORY)
+        .join(&esp_dir_name)
+        .join(BOOT_EFI);
+    let shim_current = join_relative(esp_path, &shim_path);
+    bootloader_binaries.push(shim_current);
+
+    // Construct current secondary bootloader path, i.e. systemd-boot EFI executable
+    let systemd_boot_path = Path::new(ESP_EFI_DIRECTORY)
+        .join(&esp_dir_name)
+        .join(GRUB_EFI);
+    let systemd_boot_current = join_relative(esp_path, &systemd_boot_path);
+    bootloader_binaries.push(systemd_boot_current);
+
+    // If there is mount_path, we are currently staging a clean install or an A/B update, so also
+    // construct update paths
+    if let Some(mount_path) = mount_path {
+        let esp_dir_path = join_relative(mount_path, ESP_MOUNT_POINT_PATH);
+        // Primary bootloader, i.e. shim EFI executable, in update image
+        let (_, shim_update_relative) = bootentries::get_label_and_path(ctx, BOOT_EFI)?;
+        let shim_update = join_relative(esp_dir_path.clone(), shim_update_relative);
+        bootloader_binaries.push(shim_update);
+
+        // Secondary bootloader, i.e. systemd-boot EFI executable, in update image
+        let (_, systemd_boot_update_relative) = bootentries::get_label_and_path(ctx, GRUB_EFI)?;
+        let systemd_boot_update = join_relative(esp_dir_path, systemd_boot_update_relative);
+        bootloader_binaries.push(systemd_boot_update);
+    }
+
+    Ok(bootloader_binaries)
 }

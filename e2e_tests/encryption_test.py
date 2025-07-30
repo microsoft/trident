@@ -1,8 +1,9 @@
 import json
 import typing
-import yaml
 import fabric
 import pytest
+
+from base_test import get_host_status
 
 pytestmark = [pytest.mark.encryption]
 
@@ -119,21 +120,6 @@ def sudo(connection: fabric.Connection, cmd: str) -> str:
     """
     res = connection.run(f"sudo {cmd}")
     return res.stdout.strip()
-
-
-def get_host_status(connection: fabric.Connection, tridentCommand: str) -> dict:
-    """
-    Get the Host Status by running `trident get` on the given connection,
-    and return the parsed YAML output.
-    """
-
-    cmd = f"{tridentCommand} get"
-    stdout = sudo(connection, cmd)
-
-    yaml.add_multi_constructor(
-        "!", lambda loader, _, node: loader.construct_mapping(node)
-    )
-    return yaml.load(stdout, Loader=yaml.FullLoader)
 
 
 def get_blkid_output(connection: fabric.Connection) -> dict:
@@ -340,209 +326,372 @@ def get_block_dev_path_by_partlabel(
     return None
 
 
-def check_crypsetup_luks_dump(conn: fabric.Connection, cryptDevPath: str) -> None:
+def check_crypsetup_luks_dump(
+    connection: fabric.Connection, tridentCommand: str, cryptDevPath: str
+) -> None:
     """
     Check the output of `cryptsetup luksDump --dump-json-metadata` for the
-    given device path.
+    given device path. The output will differ depending on whether the
+    encryption is based on a pcrlock policy or not.
 
-    Example output:
+    Example output for a UKI image, where pcrlock policy is used:
+
         {
-            "keyslots":{
-                "0":{
-                "type":"luks2",
-                "key_size":64,
-                "af":{
-                    "type":"luks1",
-                    "stripes":4000,
-                    "hash":"sha512"
+            "keyslots": {
+                "2": {
+                "type": "luks2",
+                "key_size": 64,
+                "af": {
+                    "type": "luks1",
+                    "stripes": 4000,
+                    "hash": "sha512"
                 },
-                "area":{
-                    "type":"raw",
-                    "offset":"32768",
-                    "size":"258048",
-                    "encryption":"aes-xts-plain64",
-                    "key_size":64
+                "area": {
+                    "type": "raw",
+                    "offset": "548864",
+                    "size": "258048",
+                    "encryption": "aes-xts-plain64",
+                    "key_size": 64
                 },
-                "kdf":{
-                    "type":"pbkdf2",
-                    "hash":"sha512",
-                    "iterations":2966268,
-                    "salt":"Wl7JuYZm0NHP9kYNLiaToajI+zpDpHKaEpTdJUGO58s="
-                }
-                },
-                "1":{
-                "type":"luks2",
-                "key_size":64,
-                "af":{
-                    "type":"luks1",
-                    "stripes":4000,
-                    "hash":"sha512"
-                },
-                "area":{
-                    "type":"raw",
-                    "offset":"290816",
-                    "size":"258048",
-                    "encryption":"aes-xts-plain64",
-                    "key_size":64
-                },
-                "kdf":{
-                    "type":"pbkdf2",
-                    "hash":"sha512",
-                    "iterations":1000,
-                    "salt":"7TLeB0NUKub0T6BWcEGTRc//cWamE+m+VL1vflUyRyo="
+                "kdf": {
+                    "type": "pbkdf2",
+                    "hash": "sha512",
+                    "iterations": 1000,
+                    "salt": "ckq4BDEkrmGTcFjcY9dI1e+/iyn1ksgI9RvGNiS52Rs="
                 }
                 }
             },
-            "tokens":{
-                "0":{
-                "type":"systemd-tpm2",
-                "keyslots":[
+            "tokens": {
+                "1": {
+                "type": "systemd-tpm2",
+                "keyslots": [
+                    "2"
+                ],
+                "tpm2-blob": "AJ4AIPe69RFTvAlGkBaLZ9XFfiPhKXUA7FEKFZF5grqoot9tABCPMeDTUIP9JaS/0A6yUaW9y/JjVo0gKnoDALPibV20RPhwHAFg6ycQdQX1sbyhIa/+CmzfMvHOM7+cYZXiq6O/ZIF9hWKMtRUg47Q8C8ok0dyxFWow8wQy7woH0p94pUeCGBmgq34smc3aCUdnjl/TQLDvsgmLlpJHnwBOAAgACwAAABIAIDzHev7RjwqkxM/9b4dCkH0O2Kd96RwB2CLhE2PMOkSRABAAIEx0aFr/1AgrYBoB6qrLsHkXvkEuPOWd5Ns2AQx0uHoh",
+                "tpm2-pcrs": [],
+                "tpm2-policy-hash": "3cc77afed18f0aa4c4cffd6f8742907d0ed8a77de91c01d822e11363cc3a4491",
+                "tpm2-pin": false,
+                "tpm2_pcrlock": true,
+                "tpm2_srk": "gQAAAQAiAAupLdVcuox9yfRZaxtvQ8X/Dj/VK4OEY2X42DKM+xBzfAAAAAEAWgAjAAsAAwRyAAAABgCAAEMAEAADABAAIAmK45y/lGMhOdONab4wzGT43Yt3oZDCSATydlLlP5gTACBb1qkPGKbv248ZsEvDhA4zdEnOIjkcFD/hxtff5IzRgQ=="
+                }
+            },
+            "segments": {
+                "0": {
+                "type": "crypt",
+                "offset": "16777216",
+                "size": "dynamic",
+                "iv_tweak": "0",
+                "encryption": "aes-xts-plain64",
+                "sector_size": 512
+                }
+            },
+            "digests": {
+                "0": {
+                "type": "pbkdf2",
+                "keyslots": [
+                    "2"
+                ],
+                "segments": [
+                    "0"
+                ],
+                "hash": "sha512",
+                "iterations": 160039,
+                "salt": "MvbiBEkmWJamhQzPZWqwLn+bTumgznQ5xc6qSw8JWX8=",
+                "digest": "q20q8T3wEvpdFn3sBG27iW5lldT4t6xlzyzmN5zHMQ4ScqRzUJisIIOPvOz1lYfEAuxlxad9Si/C4zNI0rxpdQ=="
+                }
+            },
+            "config": {
+                "json_size": "12288",
+                "keyslots_size": "16744448"
+            }
+        }
+
+    Example output for a non-UKI image, where pcrlock policy is NOT used, and
+    instead, the volume is enrolled to the value of PCR 7:
+
+        {
+            "keyslots": {
+                "0": {
+                "type": "luks2",
+                "key_size": 64,
+                "af": {
+                    "type": "luks1",
+                    "stripes": 4000,
+                    "hash": "sha512"
+                },
+                "area": {
+                    "type": "raw",
+                    "offset": "32768",
+                    "size": "258048",
+                    "encryption": "aes-xts-plain64",
+                    "key_size": 64
+                },
+                "kdf": {
+                    "type": "pbkdf2",
+                    "hash": "sha512",
+                    "iterations": 2548178,
+                    "salt": "qD1xElrPbsqcDi6LNzijCr16VCNE6EZch4zoRLM7cBo="
+                }
+                },
+                "1": {
+                "type": "luks2",
+                "key_size": 64,
+                "af": {
+                    "type": "luks1",
+                    "stripes": 4000,
+                    "hash": "sha512"
+                },
+                "area": {
+                    "type": "raw",
+                    "offset": "290816",
+                    "size": "258048",
+                    "encryption": "aes-xts-plain64",
+                    "key_size": 64
+                },
+                "kdf": {
+                    "type": "pbkdf2",
+                    "hash": "sha512",
+                    "iterations": 1000,
+                    "salt": "+BdrnJ5ewLnzuZeleuH9DK0zs8BSYPWdcgRrVxB1IgM="
+                }
+                }
+            },
+            "tokens": {
+                "0": {
+                "type": "systemd-tpm2",
+                "keyslots": [
                     "1"
                 ],
-                "tpm2-blob":"AJ4AICmIf+c3AJgUms6gR0AkVmRqP1TFUERdOCe8gE2UZU32ABDQlfNCdyRUDAzitUDsxZbW7BguG33zKMKinmPJc7yCLYye5UCcP2zVWe8QMGZRi91/rZJAOHtka8tZTA2W+Vxwnhn+wnONce9AZquVxACGhYXrseFUCJCOpXWAel881S+ymaffc0yTqc6m4DAPG38HKSuZwjat/JmqNwBOAAgACwAAABIAIEsLIvUeWcZWYYo9OBodhaT3wrjnUjegJvbiCXxTBXDHABAAIFFzxHKynkmZ5DwX/NdWFcHixHSfrhgz1TU/3K1Cw9f0",
-                "tpm2-pcrs":[
+                "tpm2-blob": "AJ4AIJwKSpUCL4cb91OgnUSmk7xDp0boJQfU2WG3nZZnIlevABBCOQhfd7iEZENmkpVB3tGVtTeQEi1niSa0q17ogl8HAifFfSQVPI4qhOFB5V/B3gKrLLJtRsvR0C4IEe0K7QHfCMIpvAd0xTGSVFG8LP+vnvE92owslTjMLD1Wz59Q7tlrePWpfO+moAihPeC7Ydvtm8+cRP1SSOKmdABOAAgACwAAABIAIEsLIvUeWcZWYYo9OBodhaT3wrjnUjegJvbiCXxTBXDHABAAIOrB8H9looP25gzypERUlR92FsaN+m0McOjiP3l1tnjm",
+                "tpm2-pcrs": [
                     7
                 ],
-                "tpm2-pcr-bank":"sha256",
-                "tpm2-policy-hash":"4b0b22f51e59c656618a3d381a1d85a4f7c2b8e75237a026f6e2097c530570c7",
-                "tpm2-pin":false,
-                "tpm2_pcrlock":false,
-                "tpm2_srk":"gQAAAQAiAAvfr86mWQ4ncWaXV9jUk3nRHRw/bEYnAiQSalhvf/6mpwAAAAEAWgAjAAsAAwRyAAAABgCAAEMAEAADABAAIP6Ye/LshHa6QKXX2NTPu7PEtBsUMnV57+02mjS75wKXACDvxzC6RaHZbojoiA3IzwXNp7vsM285RQApR76fkT8xKA=="
+                "tpm2-pcr-bank": "sha256",
+                "tpm2-policy-hash": "4b0b22f51e59c656618a3d381a1d85a4f7c2b8e75237a026f6e2097c530570c7",
+                "tpm2-pin": false,
+                "tpm2_pcrlock": false,
+                "tpm2_srk": "gQAAAQAiAAvXpSqpFDNnEGxleOAOBjDeoid6N6SvN24Uz5fsRArUQQAAAAEAWgAjAAsAAwRyAAAABgCAAEMAEAADABAAIMNOuXVhxPjyOtx1VoiR0C3xMcXToKKKs2fptfP3IhWsACCajVW7lEU/YKTedo0hZCdcqq/GzW6dvyAksm4SWm2HGA=="
                 }
             },
-            "segments":{
-                "0":{
-                "type":"crypt",
-                "offset":"8388608",
-                "size":"dynamic",
-                "iv_tweak":"0",
-                "encryption":"aes-xts-plain64",
-                "sector_size":512
+            "segments": {
+                "0": {
+                "type": "crypt",
+                "offset": "16777216",
+                "size": "dynamic",
+                "iv_tweak": "0",
+                "encryption": "aes-xts-plain64",
+                "sector_size": 512
                 }
             },
-            "digests":{
-                "0":{
-                "type":"pbkdf2",
-                "keyslots":[
+            "digests": {
+                "0": {
+                "type": "pbkdf2",
+                "keyslots": [
                     "0",
                     "1"
                 ],
-                "segments":[
+                "segments": [
                     "0"
                 ],
-                "hash":"sha512",
-                "iterations":185654,
-                "salt":"zQIsdWQ1wcojcdTLZvjH5z4+qfdcwPfLaUNqaXOCdoI=",
-                "digest":"H3MNqpQPt4xohsdQiEM7M5cihytpf8wiVm8sSh3M8dRqrNpYBdfTo+89EFXTTvJYSsI5jjcaFutzpEXq5Mt8tQ=="
+                "hash": "sha512",
+                "iterations": 127750,
+                "salt": "Os3X2YOf2F7oJaIGq+4x51JgcNBwdt1DnXVl+Qtc8Pk=",
+                "digest": "/vD4hHKGKalsgNiLCphAwNbzMUP9DUt1zDGsUBybcuJuRbs9I470DVZPTez1nlkLm38O6dAOLDGTCcFRkSSXTw=="
                 }
             },
-            "config":{
-                "json_size":"12288",
-                "keyslots_size":"8355840"
+            "config": {
+                "json_size": "12288",
+                "keyslots_size": "16744448"
             }
         }
-    """
-    # Running this command requires additional SELinux permission for lvm_t, so temporarily switch to Permissive mode
-    # Missing permission: allow lvm_t initrc_runtime_t:dir { read }
-    enforcing = sudo(conn, "getenforce").strip() == "Enforcing"
-    if enforcing:
-        sudo(conn, "setenforce 0")
 
-    stdout = sudo(conn, f"cryptsetup luksDump --dump-json-metadata {cryptDevPath}")
+    """
+    # Running this command requires additional SELinux permission for lvm_t:
+    # allow lvm_t initrc_runtime_t:dir { read }.
+    # This is a quirk of the testing infra, and this perm shouldn't be part of
+    # the Trident policy. So, temporarily switch to Permissive mode.
+    enforcing = sudo(connection, "getenforce").strip() == "Enforcing"
+    if enforcing:
+        sudo(connection, "setenforce 0")
+
+    stdout = sudo(
+        connection, f"cryptsetup luksDump --dump-json-metadata {cryptDevPath}"
+    )
     dump = json.loads(stdout)
 
     # Revert to Enforcing mode
     if enforcing:
-        sudo(conn, "setenforce 1")
+        sudo(connection, "setenforce 1")
 
+    # Validate type of digest to be pbkdf2
     actual = dump["digests"]["0"]["type"]
     expected = "pbkdf2"
     assert (
         actual == expected
     ), f"Expected digest type to be {expected!r}, got {actual!r}"
 
+    # Validate hash type to be sha512
     actual = dump["digests"]["0"]["hash"]
     expected = "sha512"
     assert (
         actual == expected
     ), f"Expected digest hash to be {expected!r}, got {actual!r}"
 
-    actual = dump["tokens"]["0"]["type"]
+    # Check Host Status to see if image is UKI or not
+    host_status = get_host_status(connection, tridentCommand)
+    # TODO: Remove this override once UKI & encryption tests are fixed. ADO:
+    # https://dev.azure.com/mariner-org/polar/_workitems/edit/13344/.
+    override_uki = (
+        host_status["spec"]
+        .get("internalParams", {})
+        .get("overridePcrlockEncryption", False)
+    )
+    # Hack: also want to disable on `combined` E2E test but only for container
+    additional_files = host_status["spec"].get("os", {}).get("additionalFiles", [])
+    if any(
+        f.get("destination") == "/var/lib/trident/trident-container.tar.gz"
+        for f in additional_files
+    ):
+        override_uki = True
+    is_uki = (
+        host_status["spec"].get("internalParams", {}).get("uki", False)
+        and not override_uki
+    )
+
+    # For a non-UKI image, we expect to see two key slots: 0 and 1, for the
+    # password and TPM 2.0 device. But for a UKI image, we expect to see a
+    # single key slot, 2, for the TPM 2.0 device via pcrlock policy
+    if is_uki:
+        assert (
+            len(dump["digests"]["0"]["keyslots"]) == 1
+        ), f"Expected one key slot, got {len(dump['digests']['0']['keyslots'])}. Key slots: {dump['digests']['0']['keyslots']}"
+        assert (
+            "2" in dump["digests"]["0"]["keyslots"]
+        ), f"Expected key slot 2 to be in {dump['digests']['0']['key slots']!r}, got {dump['digests']['0']['keyslots']!r}"
+    else:
+        assert (
+            len(dump["digests"]["0"]["keyslots"]) == 2
+        ), f"Expected two key slots, got {len(dump['digests']['0']['keyslots'])}. Key slots: {dump['digests']['0']['keyslots']}"
+        assert (
+            "0" in dump["digests"]["0"]["keyslots"]
+        ), f"Expected key slot 0 to be in {dump['digests']['0']['keyslots']!r}, got {dump['digests']['0']['keyslots']!r}"
+        assert (
+            "1" in dump["digests"]["0"]["keyslots"]
+        ), f"Expected key slot 1 to be in {dump['digests']['0']['keyslots']!r}, got {dump['digests']['0']['keyslots']!r}"
+
+    # For both UKI and non-UKI images, we expect to see a single token, but for
+    # a different key slot and with a different index
+    expected_index = "0"
+    if is_uki:
+        assert (
+            "1" in dump["tokens"]
+        ), f"Expected token 1 to be in {dump['tokens']!r}, got {dump['tokens']!r}"
+        assert (
+            "2" in dump["tokens"]["1"]["keyslots"]
+        ), f"Expected key slot 2 to be in {dump['tokens']['1']['keyslots']!r}, got {dump['tokens']['1']['keyslots']!r}"
+        expected_index = "1"
+    else:
+        assert (
+            "0" in dump["tokens"]
+        ), f"Expected token 0 to be in {dump['tokens']!r}, got {dump['tokens']!r}"
+        assert (
+            "1" in dump["tokens"]["0"]["keyslots"]
+        ), f"Expected key slot 1 to be in {dump['tokens']['0']['keyslots']!r}, got {dump['tokens']['0']['keyslots']!r}"
+
+    assert (
+        len(dump["tokens"]) == 1
+    ), f"Expected one token, got {len(dump['tokens'])}. Tokens: {dump['tokens']}"
+    assert (
+        len(dump["tokens"][expected_index]["keyslots"]) == 1
+    ), f"Expected one key slot for the token, got {len(dump['tokens'][expected_index]['keyslots'])}. Key slots: {dump['tokens'][expected_index]['keyslots']}"
+
+    # Validate token type to be systemd-tpm2
+    actual = dump["tokens"][expected_index]["type"]
     expected = "systemd-tpm2"
     assert actual == expected, f"Expected token type to be {expected!r}, got {actual!r}"
 
-    actual = dump["tokens"]["0"]["keyslots"][0]
-    expected = "1"
-    assert actual == expected, f"Expected keyslot to be {expected!r}, got {actual!r}"
+    # Validate that for UKI images, tpm2_pcrlock is true and tpm2-pcrs is an
+    # empty vector, while for non-UKI images, tpm2_pcrlock is false and
+    # tpm2-pcrs is a vector with PCR 7.
+    if is_uki:
+        assert (
+            dump["tokens"][expected_index]["tpm2_pcrlock"] is True
+        ), f"Expected tpm2_pcrlock to be True for UKI image, got {dump['tokens'][expected_index]['tpm2_pcrlock']!r}"
+        assert (
+            dump["tokens"][expected_index]["tpm2-pcrs"] == []
+        ), f"Expected tpm2-pcrs to be an empty vector for UKI image, got {dump['tokens'][expected_index]['tpm2-pcrs']!r}"
+    else:
+        assert (
+            dump["tokens"][expected_index]["tpm2_pcrlock"] is False
+        ), f"Expected tpm2_pcrlock to be False for non-UKI image, got {dump['tokens'][expected_index]['tpm2_pcrlock']!r}"
+        # Expect PCR 0 or 7
+        assert dump["tokens"][expected_index]["tpm2-pcrs"] in [
+            [0],
+            [7],
+        ], f"Expected tpm2-pcrs to be [0] or [7] for non-UKI image, got {dump['tokens'][expected_index]['tpm2-pcrs']!r}"
 
-    assert (
-        len(dump["tokens"]["0"]["keyslots"]) == 1
-    ), f"Expected one TPM keyslot, got {len(dump['tokens'][0]['keyslots'])}"
+    # Validate that UKI images have a single key slot, 2, while non-UKI
+    # images have two key slots, 0 and 1.
+    expected_key_slot = ["0", "1"]
+    if is_uki:
+        assert (
+            len(dump["keyslots"]) == 1
+        ), f"Expected one key slot, got {len(dump['keyslots'])}. Key slots: {dump['keyslots']}"
+        assert (
+            "2" in dump["keyslots"]
+        ), f"Expected key slot 2 to be in {dump['keyslots']!r}, got {dump['keyslots']!r}"
 
-    actual = dump["tokens"]["0"]["tpm2-pcrs"][0]
-    expectedInt = [0, 7]
-    assert (
-        actual in expectedInt
-    ), f"Expected TPM2 PCR to be in '{expectedInt}', got {actual}"
+        expected_key_slot = ["2"]
+    else:
+        assert (
+            len(dump["keyslots"]) == 2
+        ), f"Expected two key slots, got {len(dump['keyslots'])}. Key slots: {dump['keyslots']}"
+        assert (
+            "0" in dump["keyslots"]
+        ), f"Expected key slot 0 to be in {dump['keyslots']!r}, got {dump['keyslots']!r}"
+        assert (
+            "1" in dump["keyslots"]
+        ), f"Expected key slot 1 to be in {dump['keyslots']!r}, got {dump['keyslots']!r}"
 
-    assert (
-        len(dump["tokens"]["0"]["tpm2-pcrs"]) == 1
-    ), f"Expected one TPM2 PCR, got {len(dump['tokens'][0]['tpm2-pcrs'])}"
+    # For each expected key slot, validate its type and other properties
+    for key_slot in expected_key_slot:
+        assert (
+            key_slot in dump["keyslots"]
+        ), f"Expected key slot {key_slot} to be in {dump['keyslots']!r}, got {dump['keyslots']!r}"
 
-    actual = dump["tokens"]["0"]["tpm2-pcr-bank"]
-    expected = "sha256"
-    assert (
-        actual == expected
-    ), f"Expected TPM2 PCR bank to be {expected!r}, got {actual!r}"
+        # Validate key slot type
+        expected = "luks2"
+        actual = dump["keyslots"][key_slot]["type"]
+        assert (
+            actual == expected
+        ), f"Expected keyslot {key_slot} type to be {expected!r}, got {actual!r}"
 
-    expected = "luks2"
-    actual = dump["keyslots"]["0"]["type"]
-    assert (
-        actual == expected
-    ), f"Expected keyslot 0 type to be {expected!r}, got {actual!r}"
-    actual = dump["keyslots"]["1"]["type"]
-    assert (
-        actual == expected
-    ), f"Expected keyslot 1 type to be {expected!r}, got {actual!r}"
+        # Validate key slot KDF type
+        expected = "pbkdf2"
+        actual = dump["keyslots"][key_slot]["kdf"]["type"]
+        assert (
+            actual == expected
+        ), f"Expected keyslot {key_slot} KDF type to be {expected!r}, got {actual!r}"
 
-    expected = "pbkdf2"
-    actual = dump["keyslots"]["0"]["kdf"]["type"]
-    assert (
-        actual == expected
-    ), f"Expected keyslot 0 KDF type to be {expected!r}, got {actual!r}"
-    actual = dump["keyslots"]["1"]["kdf"]["type"]
-    assert (
-        actual == expected
-    ), f"Expected keyslot 1 KDF type to be {expected!r}, got {actual!r}"
+        # Validate key slot KDF hash
+        expected = "sha512"
+        actual = dump["keyslots"][key_slot]["kdf"]["hash"]
+        assert (
+            actual == expected
+        ), f"Expected keyslot {key_slot} KDF hash to be {expected!r}, got {actual!r}"
 
-    expected = "sha512"
-    actual = dump["keyslots"]["0"]["kdf"]["hash"]
-    assert (
-        actual == expected
-    ), f"Expected keyslot 0 KDF hash to be {expected!r}, got {actual!r}"
-    actual = dump["keyslots"]["1"]["kdf"]["hash"]
-    assert (
-        actual == expected
-    ), f"Expected keyslot 1 KDF hash to be {expected!r}, got {actual!r}"
-
-    expected = "aes-xts-plain64"
-    actual = dump["keyslots"]["0"]["area"]["encryption"]
-    assert (
-        actual == expected
-    ), f"Expected keyslot 0 area encryption to be {expected!r}, got {actual!r}"
-    actual = dump["keyslots"]["1"]["area"]["encryption"]
-    assert (
-        actual == expected
-    ), f"Expected keyslot 1 area encryption to be {expected!r}, got {actual!r}"
-
-    assert (
-        len(dump["keyslots"]) == 2
-    ), f"Expected two keyslots, got {len(dump['keyslots'])}"
+        # Validate key slot area type
+        expected = "aes-xts-plain64"
+        actual = dump["keyslots"][key_slot]["area"]["encryption"]
+        assert (
+            actual == expected
+        ), f"Expected keyslot {key_slot} area encryption to be {expected!r}, got {actual!r}"
 
 
 def check_parent_devices(
-    conn: fabric.Connection,
+    connection: fabric.Connection,
     hostConfiguration: dict,
+    tridentCommand: str,
     blockDevs: dict,
     cryptDevId: str,
 ) -> None:
@@ -562,7 +711,7 @@ def check_parent_devices(
         assert (
             cryptDevName is not None
         ), f"Expected {cryptDevId} to be a disk partition or RAID array"
-        cryptDevPath = sudo(conn, f"readlink -f /dev/md/{cryptDevName}")
+        cryptDevPath = sudo(connection, f"readlink -f /dev/md/{cryptDevName}")
 
     expectedType = "crypto_LUKS"
     actualType = blockDevs[cryptDevPath]["TYPE"]
@@ -570,12 +719,13 @@ def check_parent_devices(
         actualType == expectedType
     ), f"Expected TYPE to be {expectedType!r}, got {actualType!r}"
 
-    check_crypsetup_luks_dump(conn, cryptDevPath)
+    check_crypsetup_luks_dump(connection, tridentCommand, cryptDevPath)
 
 
 def check_crypt_device(
-    conn: fabric.Connection,
+    connection: fabric.Connection,
     hostConfiguration: dict,
+    tridentCommand: str,
     abActiveVolume: str,
     blockDevs: dict,
     cryptId: str,
@@ -584,7 +734,9 @@ def check_crypt_device(
 ) -> None:
     cryptDevicePath = f"/dev/mapper/{cryptDevName}"
 
-    check_parent_devices(conn, hostConfiguration, blockDevs, cryptDevId)
+    check_parent_devices(
+        connection, hostConfiguration, tridentCommand, blockDevs, cryptDevId
+    )
 
     swap = False
     isInUse = True
@@ -613,11 +765,11 @@ def check_crypt_device(
             if isinstance(fs["mountPoint"], str)
             else fs["mountPoint"]["path"]
         )
-        check_exists(conn, mpPath)
-        check_findmnt(conn, mpPath, cryptDevicePath, isInUse)
+        check_exists(connection, mpPath)
+        check_findmnt(connection, mpPath, cryptDevicePath, isInUse)
     elif swap := get_swap(hostConfiguration, cryptId) is not None:
-        swaps = get_active_swaps(conn)
-        real_path = sudo(conn, f"readlink -f {cryptDevicePath}")
+        swaps = get_active_swaps(connection)
+        real_path = sudo(connection, f"readlink -f {cryptDevicePath}")
         assert (
             real_path in swaps,
             f"Expected '{real_path}' to be in active swaps: {swaps}",
@@ -639,16 +791,19 @@ def check_crypt_device(
             else fs["mountPoint"]["path"]
         )
 
-        check_exists(conn, mpPath)
-        check_findmnt(conn, mpPath, cryptDevicePath, isInUse)
+        check_exists(connection, mpPath)
+        check_findmnt(connection, mpPath, cryptDevicePath, isInUse)
 
-    check_exists(conn, cryptDevicePath)
-    check_cryptsetup_status(conn, cryptDevName, isInUse)
-    check_dmsetup_info(conn, cryptDevName, swap)
+    check_exists(connection, cryptDevicePath)
+    check_cryptsetup_status(connection, cryptDevName, isInUse)
+    check_dmsetup_info(connection, cryptDevName, swap)
 
 
 def test_encryption(
-    connection: fabric.Connection, hostConfiguration: dict, abActiveVolume: str
+    connection: fabric.Connection,
+    hostConfiguration: dict,
+    tridentCommand: str,
+    abActiveVolume: str,
 ) -> None:
     blockDevs = get_blkid_output(connection)
 
@@ -658,6 +813,7 @@ def test_encryption(
         check_crypt_device(
             connection,
             hostConfiguration,
+            tridentCommand,
             abActiveVolume,
             blockDevs,
             crypt["id"],

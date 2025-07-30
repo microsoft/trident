@@ -246,9 +246,17 @@
       "description": "Configure encrypted volumes of underlying disk partitions or software RAID arrays.",
       "type": "object",
       "required": [
+        "pcrs",
         "volumes"
       ],
       "properties": {
+        "pcrs": {
+          "description": "List of PCRs in TPM 2.0 device to seal to. Each PCR may be specified either as a digit or a string representation. At least one PCR must be specified, and any combination of the following PCRs may be used: - 4, or `boot-loader-code` - 7, or `secure-boot-policy` - 11, or `kernel-boot`.\n\nOther PCRs are currently not supported in the encryption logic.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Pcr"
+          }
+        },
         "recoveryKeyUrl": {
           "description": "A URL to read the recovery key from.\n\nThis parameter allows specifying a local file path to a recovery key file via a `file://` URL scheme. The recovery key file serves as an essential fallback to recover data should TPM 2.0 automatic decryption fail. If not specified, only the TPM 2.0 device will be enrolled.\n\nThe URL must be non-empty if provided. Other URL schemes are not supported at this time.\n\n# Recommended Configuration\n\nIt is strongly advised to configure a recovery key file, as it plays a pivotal role in data recovery.\n\n# File Format Expectations\n\nThe recovery key file must be a binary file without any encoding. This direct format ensures compatibility with cryptsetup and systemd APIs. Be mindful that all file content, including any potential whitespace or newline characters, is considered part of the recovery key.\n\n# Security Considerations\n\nEnsuring the recovery key's confidentiality and integrity is paramount. Employ secure storage and rigorous access control measures. Specifically:\n\n- The file containing the key should only be accessible by the root user and have `0400` permissions set.\n\n- The recovery key should be a minimum of 32 bytes long and should be generated with enough high entropy to defend against brute force or cryptographic attacks targeting on-disk hash values.\n\n# Generating a Recovery Key\n\nOne way to create a recovery key file on Linux systems is using the `dd` utility:\n\n> Note: The following example is for illustration purposes only. > Be sure to generate recovery keys with diligence and attention > to security principles. Please adjust the following example > according to your own security policies and operational > environment to fit your specific security requirements and > constraints.\n\n```sh touch ./recovery.key chmod 0400 ./recovery.key dd if=/dev/random of=./recovery.key bs=1 count=256 ```\n\nThis command generates 256 bytes of random data for the recovery key, sourcing entropy from `/dev/random`. Be aware, in environments with limited entropy sources, such as certain embedded systems, `/dev/random` may not provide sufficient data promptly. Alternative entropy sources or methods may be required.",
           "type": "string",
@@ -612,7 +620,7 @@
           ]
         },
         "url": {
-          "description": "The path to the COSI file.",
+          "description": "The path to the COSI file.\n\nURLs may have one of the following four schemes: `http://`, `https://`, `file://`, or `oci://`. COSI files stored as an OCI image must allow for anonymous pulls.",
           "type": "string",
           "format": "uri"
         }
@@ -823,6 +831,179 @@
             }
           },
           "additionalProperties": false
+        }
+      ]
+    },
+    "Pcr": {
+      "description": "Represents the Platform Configuration Registers (PCRs) in the TPM. Each PCR is associated with a digit number and a string name.\n\nNOTE: In the current encryption logic, only the following PCRs are supported when sealing encrypted volumes against the state of TPM 2.0 device: - 4, or `boot-loader-code` - 7, or `secure-boot-policy` - 11, or `kernel-boot`.",
+      "oneOf": [
+        {
+          "description": "PCR 0, or `platform-code`.",
+          "type": "string",
+          "enum": [
+            "Pcr0"
+          ]
+        },
+        {
+          "description": "PCR 1, or `platform-config`.",
+          "type": "string",
+          "enum": [
+            "Pcr1"
+          ]
+        },
+        {
+          "description": "PCR 2, or `external-code`.",
+          "type": "string",
+          "enum": [
+            "Pcr2"
+          ]
+        },
+        {
+          "description": "PCR 3, or `external-config`.",
+          "type": "string",
+          "enum": [
+            "Pcr3"
+          ]
+        },
+        {
+          "description": "PCR 4, or `boot-loader-code`.",
+          "type": "string",
+          "enum": [
+            "Pcr4"
+          ]
+        },
+        {
+          "description": "PCR 5, or `boot-loader-config`.",
+          "type": "string",
+          "enum": [
+            "Pcr5"
+          ]
+        },
+        {
+          "description": "PCR 6, or `host-platform`.",
+          "type": "string",
+          "enum": [
+            "Pcr6"
+          ]
+        },
+        {
+          "description": "PCR 7, or `secure-boot-policy`.",
+          "type": "string",
+          "enum": [
+            "Pcr7"
+          ]
+        },
+        {
+          "description": "PCR 8.",
+          "type": "string",
+          "enum": [
+            "Pcr8"
+          ]
+        },
+        {
+          "description": "PCR 9, or `kernel-initrd`.",
+          "type": "string",
+          "enum": [
+            "Pcr9"
+          ]
+        },
+        {
+          "description": "PCR 10, or `ima`.",
+          "type": "string",
+          "enum": [
+            "Pcr10"
+          ]
+        },
+        {
+          "description": "PCR 11, or `kernel-boot`.",
+          "type": "string",
+          "enum": [
+            "Pcr11"
+          ]
+        },
+        {
+          "description": "PCR 12, or `kernel-config`.",
+          "type": "string",
+          "enum": [
+            "Pcr12"
+          ]
+        },
+        {
+          "description": "PCR 13, or `sysexts`.",
+          "type": "string",
+          "enum": [
+            "Pcr13"
+          ]
+        },
+        {
+          "description": "PCR 14, or `shim-policy`.",
+          "type": "string",
+          "enum": [
+            "Pcr14"
+          ]
+        },
+        {
+          "description": "PCR 15, or `system-identity`.",
+          "type": "string",
+          "enum": [
+            "Pcr15"
+          ]
+        },
+        {
+          "description": "PCR 16, or `debug`.",
+          "type": "string",
+          "enum": [
+            "Pcr16"
+          ]
+        },
+        {
+          "description": "PCR 17.",
+          "type": "string",
+          "enum": [
+            "Pcr17"
+          ]
+        },
+        {
+          "description": "PCR 18.",
+          "type": "string",
+          "enum": [
+            "Pcr18"
+          ]
+        },
+        {
+          "description": "PCR 19.",
+          "type": "string",
+          "enum": [
+            "Pcr19"
+          ]
+        },
+        {
+          "description": "PCR 20.",
+          "type": "string",
+          "enum": [
+            "Pcr20"
+          ]
+        },
+        {
+          "description": "PCR 21.",
+          "type": "string",
+          "enum": [
+            "Pcr21"
+          ]
+        },
+        {
+          "description": "PCR 22.",
+          "type": "string",
+          "enum": [
+            "Pcr22"
+          ]
+        },
+        {
+          "description": "PCR 23, or `application-support`.",
+          "type": "string",
+          "enum": [
+            "Pcr23"
+          ]
         }
       ]
     },
