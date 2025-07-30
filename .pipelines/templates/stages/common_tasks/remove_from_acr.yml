@@ -29,10 +29,6 @@ stages:
         pool:
           type: linux
 
-        variables:
-          - name: ob_outputDirectory
-            value: $(Build.SourcesDirectory)/build
-
         steps:
           - task: AzureCLI@2
             inputs:
