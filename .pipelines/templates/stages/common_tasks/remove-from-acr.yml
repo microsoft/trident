@@ -10,6 +10,10 @@ parameters:
     type: string
     default: maritimuspublic
 
+  - name: "config"
+    displayName: "Trident configuration"
+    type: string
+
 steps:
   - task: AzureCLI@2
     inputs:
@@ -19,13 +23,18 @@ steps:
       inlineScript: |
         set -eux
 
+        if [ ${{ parameters.config }} != 'misc' ]; then
+          echo "Skipping step. Configuration is '${{ parameters.config }}'."
+          exit 0
+        fi
+
         # Login to ACR
         az acr login -n ${{ parameters.registry }}
         sleep 5
-        az acr repository show-tags -n ${{ parameters.registry }} --repository $repository_name
 
         repository_name="${{ parameters.repository }}"
         build_id="$(Build.BuildId)"
+        az acr repository show-tags -n ${{ parameters.registry }} --repository $repository_name
 
         # Delete repository with COSI images
         for i in {1..3}; do
