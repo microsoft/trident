@@ -12,7 +12,6 @@ use osutils::{
     path::join_relative,
     pcrlock::{self, PCRLOCK_POLICY_JSON_PATH},
 };
-use sysdefs::tpm2::Pcr;
 
 use trident_api::{
     config::{
@@ -101,7 +100,7 @@ pub(super) fn validate_host_config(host_config: &HostConfiguration) -> Result<()
 ///    the user; not implemented for now. Related ADO task:
 ///    https://dev.azure.com/mariner-org/polar/_workitems/edit/13059/.
 /// 2. Grub MOS + UKI ROS -> N/A, i.e. keep previous pcrlock policy that includes PCR 0 only,
-/// 3. Grub MOS + grub ROS -> re-generate pcrlock policy to include PCR 7 only.
+/// 3. Grub MOS + grub ROS -> N/A, i.e. still sealed to the value of PCR 7.
 ///
 /// On A/B update:
 /// 1. UKI ROS -> re-generate pcrlock policy to include PCRs 4,7,11 as selected by the user,
@@ -113,13 +112,7 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
 
         // Determine if pcrlock policy should be re-generated to include updated PCRs
         let updated_pcrs = match ctx.servicing_type {
-            ServicingType::CleanInstall => {
-                if !ctx.is_uki()? {
-                    Some(BitFlags::from(Pcr::Pcr7))
-                } else {
-                    None
-                }
-            }
+            ServicingType::CleanInstall => None,
             // On A/B update, use PCRs selected by the user through the API!
             ServicingType::AbUpdate => {
                 if ctx.is_uki()? {
@@ -262,6 +255,8 @@ mod tests {
     use std::{os::unix::fs::PermissionsExt, path::Path, str::FromStr};
 
     use url::Url;
+
+    use sysdefs::tpm2::Pcr;
 
     use trident_api::{
         config::{
