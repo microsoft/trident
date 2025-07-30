@@ -123,16 +123,16 @@ virtualMachine:
       - usr-verity
       - usr-verity-raid
     pullrequest:
-      - base
-      - combined
+      # - base
+      # - combined
       - misc
-      - raid-mirrored
-      - raid-resync-small
-      - rerun
+      # - raid-mirrored
+      # - raid-resync-small
+      # - rerun
       - simple
-      - split
-      - usr-verity
-      - usr-verity-raid
+      # - split
+      # - usr-verity
+      # - usr-verity-raid
     validation:
       # - base
       # - combined
@@ -198,18 +198,18 @@ virtualMachine:
       - usr-verity
       - usr-verity-raid
     pullrequest:
-      - base
-      - combined
-      - encrypted-partition
-      - encrypted-raid
-      - encrypted-swap
+      # - base
+      # - combined
+      # - encrypted-partition
+      # - encrypted-raid
+      # - encrypted-swap
       - misc
-      - raid-mirrored
-      - raid-resync-small
-      - rerun
+      # - raid-mirrored
+      # - raid-resync-small
+      # - rerun
       - simple
-      - usr-verity
-      - usr-verity-raid
+      # - usr-verity
+      # - usr-verity-raid
     validation:
       # - base
       # - combined
