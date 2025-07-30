@@ -124,7 +124,6 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 	if len(matches) == 4 {
 		name := matches[1]
 		ext := matches[3]
-		newCosiName := fmt.Sprintf("%s_v%s.%s", name, h.args.Version, ext)
 		newCosiName = fmt.Sprintf("%s_v%s.%s", name, h.args.Version, ext)
 	} else if len(matches_oci) == 4 {
 		name := matches_oci[1]
