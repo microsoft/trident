@@ -44,7 +44,9 @@ steps:
       echo "Pushing $filename with tag $tag to ${{ parameters.registry }}.azurecr.io"
       oras push ${{ parameters.registry }}.azurecr.io/$repository_name:$tag "$filename"
 
-      if az acr repository show --name ${{ parameters.registry }} --image $repository_name:$tag &> /dev/null; then
+      sleep 5
+
+      if oras manifest fetch ${{ parameters.registry }}.azurecr.io/$repository_name:$tag > /dev/null 2>&1; then
           echo "Tag $tag found in repository $repository_name"
       else
           echo "Tag $tag NOT found in repository $repository_name"
