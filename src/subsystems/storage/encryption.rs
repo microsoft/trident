@@ -156,18 +156,20 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
             pcrlock::generate_pcrlock_policy(pcrs, uki_binaries, bootloader_binaries)?;
         }
 
-        // Copy the pcrlock policy JSON to the update volume for all flows
-        let pcrlock_json_copy = join_relative(mount_path, PCRLOCK_POLICY_JSON_PATH);
-        debug!(
-            "Copying pcrlock policy JSON to update volume at path '{}'",
-            pcrlock_json_copy.display()
-        );
-        fs::copy(PCRLOCK_POLICY_JSON_PATH, pcrlock_json_copy.clone()).structured(
-            ServicingError::CopyPcrlockPolicyJson {
-                path: PCRLOCK_POLICY_JSON_PATH.to_string(),
-                destination: pcrlock_json_copy.display().to_string(),
-            },
-        )?;
+        // If a pcrlock policy JSON file exists, copy it to the update volume
+        if Path::new(PCRLOCK_POLICY_JSON_PATH).exists() {
+            let pcrlock_json_copy = join_relative(mount_path, PCRLOCK_POLICY_JSON_PATH);
+            debug!(
+                "Copying pcrlock policy JSON to update volume at path '{}'",
+                pcrlock_json_copy.display()
+            );
+            fs::copy(PCRLOCK_POLICY_JSON_PATH, pcrlock_json_copy.clone()).structured(
+                ServicingError::CopyPcrlockPolicyJson {
+                    path: PCRLOCK_POLICY_JSON_PATH.to_string(),
+                    destination: pcrlock_json_copy.display().to_string(),
+                },
+            )?;
+        }
     }
 
     Ok(())
