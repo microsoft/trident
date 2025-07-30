@@ -114,9 +114,11 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 
 	// Match form <name>_v<version number>.<file extension> (note that "_v<version number>" is optional)
 	matches := regexp.MustCompile(`^(.*?)(_v\d+)?\.(.+)$`).FindStringSubmatch(base)
+	logrus.Debugf("File pattern matches: %+v (length: %d)", matches, len(matches))
 
 	// Match form <repository>:v<build ID>.<version number>
-	matches_oci := regexp.MustCompile(`^(.*?)\:v(\d+)\.(\d+)$`).FindStringSubmatch(base)
+	matches_oci := regexp.MustCompile(`^(.+):v(\d+)\.(\d+)$`).FindStringSubmatch(base)
+	logrus.Debugf("File pattern matches: %+v (length: %d)", matches_oci, len(matches_oci))
 
 	var newCosiName string
 
