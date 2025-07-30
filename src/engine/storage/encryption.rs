@@ -137,10 +137,14 @@ pub(super) fn create_encrypted_devices(
             .run_and_check()
             .message("Failed to clear TPM 2.0 device")?;
 
-        // Generate a pcrlock policy that exclusively contains PCR 0 as "bootstrapping" PCR; no UKI
-        // or bootloader binaries are needed here
-        let pcrs = BitFlags::from(Pcr::Pcr0);
-        pcrlock::generate_pcrlock_policy(pcrs, vec![], vec![])?;
+        // TODO: If this for a grub ROS, seal against the value of PCR 7; if this for a UKI ROS,
+        // seal against a "bootstrapping" pcrlock policy that exclusively contains PCR 0.
+        let pcr = if ctx.is_uki()? {
+            pcrlock::generate_pcrlock_policy(BitFlags::from(Pcr::Pcr0), vec![], vec![])?;
+            None
+        } else {
+            Some(BitFlags::from(Pcr::Pcr7))
+        };
 
         // Check if `REENCRYPT_ON_CLEAN_INSTALL` internal param is set to true; if so, re-encrypt
         // the device in-place. Otherwise, initialize a new LUKS2 volume.
@@ -187,6 +191,7 @@ pub(super) fn create_encrypted_devices(
                 &ev.device_name,
                 &key_file_path,
                 encryption_type,
+                pcr,
             )
             .structured(ServicingError::EncryptBlockDevice {
                 device_path: device_path.to_string_lossy().to_string(),
@@ -222,17 +227,21 @@ pub(super) fn create_encrypted_devices(
 /// header, enrolling a key file, enrolling another randomly generated key and sealing it in the
 /// TPM 2.0 device, and finally, opening the device as a LUKS2 volume.
 ///
-/// This function takes in 4 arguments:
+/// This function takes in 5 arguments:
 /// - `device_path`: The path to the device to be encrypted.
 /// - `device_name`: The name of the device to be used in the crypttab.
 /// - `key_file`: The path to the key file to be used for encryption.
 /// - `encryption_type`: The type of encryption to be used. Determines whether the device should be
 ///   re-encrypted in-place, or whether a new LUKS2 volume should be initialized.
+/// - `pcr`: The PCR to seal the key against. This is an optional PCR for scenarios where encrypted
+///   volumes are sealed against the value of PCR 7 instead of a pcrlock policy, mainly for the
+///   grub MOS + grub ROS flow.
 fn encrypt_and_open_device(
     device_path: &Path,
     device_name: &String,
     key_file: &Path,
     encryption_type: EncryptionType,
+    pcr: Option<BitFlags<Pcr>>,
 ) -> Result<(), Error> {
     match encryption_type {
         EncryptionType::Reencrypt => {
@@ -263,7 +272,7 @@ fn encrypt_and_open_device(
     );
 
     // Enroll the TPM 2.0 device for the underlying device
-    encryption::systemd_cryptenroll(key_file, device_path)?;
+    encryption::systemd_cryptenroll(key_file, device_path, pcr)?;
 
     debug!(
         "Opening underlying encrypted device '{}' as '{}'",

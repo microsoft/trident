@@ -40,30 +40,42 @@ pub static ENCRYPTION_PASSPHRASE: Lazy<Mutex<Vec<u8>>> = Lazy::new(Default::defa
 /// Runs `systemd-cryptenroll` to enroll a TPM 2.0 device for the given device of a LUKS2 encrypted
 /// volume.
 ///
-/// Takes in the key file to unlock the TPM 2.0 device, the path to the device, and a set of PCRs
-/// to bind the enrollment to. If a key file is not provided, it means that the device has already
-/// been bound to TPM 2.0 and we're re-enrolling it with a pcrlock policy.
+/// Takes in the key file to unlock the TPM 2.0 device and device path. Optionally, also takes in
+/// a set of PCRs to seal to, when sealing to a pcrlock policy is not possible. E.g. is customers
+/// want to seal against PCR 7 but do not have `SecureBoot` enabled, generating a pcrlock policy
+/// would fail, so we need to seal against the value of PCR 7 directly.
+///
+/// TODO: Generate a pcrlock policy when sealing to PCR 7 is requested, when AZL 4.0 is released
+/// containing this fix in v256 of pcrlock: https://github.com/systemd/systemd/pull/30997/.
+/// Related ADO task: https://dev.azure.com/mariner-org/polar/_workitems/edit/14455/.
 pub fn systemd_cryptenroll(
     key_file: impl AsRef<Path>,
     device_path: impl AsRef<Path>,
+    pcrs: Option<BitFlags<Pcr>>,
 ) -> Result<(), Error> {
     debug!(
         "Enrolling TPM 2.0 device for underlying encrypted volume '{}'",
         device_path.as_ref().display()
     );
 
-    Dependency::SystemdCryptenroll
-        .cmd()
-        .arg(device_path.as_ref().as_os_str())
+    let mut cmd = Dependency::SystemdCryptenroll.cmd();
+    cmd.arg(device_path.as_ref().as_os_str())
         .arg("--tpm2-device=auto")
         .arg("--wipe-slot=tpm2")
-        .arg(format!("--unlock-key-file={}", key_file.as_ref().display()))
-        .arg(format!("--tpm2-pcrlock={PCRLOCK_POLICY_JSON_PATH}"))
-        .run_and_check()
-        .context(format!(
-            "Failed to enroll TPM 2.0 device for underlying device '{}'",
-            device_path.as_ref().display()
-        ))
+        .arg(format!("--unlock-key-file={}", key_file.as_ref().display()));
+
+    // If PCRs are provided, seal against the values of these PCRs directly; otherwise, seal
+    // against a pcrlock policy.
+    if let Some(pcrs) = pcrs {
+        cmd.arg(to_tpm2_pcrs_arg(pcrs));
+    } else {
+        cmd.arg(format!("--tpm2-pcrlock={PCRLOCK_POLICY_JSON_PATH}"));
+    }
+
+    cmd.run_and_check().context(format!(
+        "Failed to enroll TPM 2.0 device for underlying device '{}'",
+        device_path.as_ref().display()
+    ))
 }
 
 #[derive(Debug, Clone)]
@@ -429,7 +441,7 @@ mod functional_test {
         pcrlock::generate_pcrlock_policy(pcrs, vec![], vec![]).unwrap();
 
         // Run `systemd-cryptenroll` on the partition
-        systemd_cryptenroll(key_file_path, &partition1.node).unwrap();
+        systemd_cryptenroll(key_file_path, &partition1.node, None).unwrap();
 
         // Open the encrypted volume, to make the block device available
         cryptsetup_open(key_file_path, &partition1.node, ENCRYPTED_VOLUME_NAME).unwrap();
@@ -571,7 +583,7 @@ mod functional_test {
         pcrlock::generate_pcrlock_policy(pcrs, vec![], vec![]).unwrap();
 
         // Run `systemd-cryptenroll` on the partition
-        systemd_cryptenroll(key_file_path, &partition1.node).unwrap();
+        systemd_cryptenroll(key_file_path, &partition1.node, None).unwrap();
 
         // Open the encrypted volume, to make the block device available
         cryptsetup_open(key_file_path, &partition1.node, ENCRYPTED_VOLUME_NAME).unwrap();
