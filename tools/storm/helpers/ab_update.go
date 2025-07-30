@@ -120,7 +120,6 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 
 	var newCosiName string
 
-	var newUrl string
 	if len(matches) == 4 {
 		name := matches[1]
 		ext := matches[3]
