@@ -45,3 +45,4 @@ steps:
         done
     displayName: "Log into ACR and delete images by tag"
     retryCountOnTaskFailure: 3
+    condition: always()
