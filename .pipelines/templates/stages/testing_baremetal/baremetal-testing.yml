@@ -179,11 +179,6 @@ stages:
               ${{ if eq(parameters.runtimeEnv, 'container') }}:
                 downloadTridentContainer: true
 
-          - template: ../common_tasks/setup-acr-access.yml
-            parameters:
-              registry: maritimuspublic
-              config: $(TRIDENT_CONFIGURATION_NAME)
-
           # Push (regular or container) testimage to ACR
           - template: ../common_tasks/push-to-acr.yml
             parameters:

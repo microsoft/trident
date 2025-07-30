@@ -54,7 +54,7 @@ steps:
 
         cd $(Build.SourcesDirectory)/artifacts/test-image
 
-        for version in 1 2 3; do
+        for version in {1..3}; do
           if [[ $version == 1 ]]; then
             filename="regular.cosi"
           else
@@ -72,5 +72,6 @@ steps:
           else
             echo "File $filename not found"
           fi
+        done
     displayName: "Push to ACR"
     retryCountOnTaskFailure: 3
