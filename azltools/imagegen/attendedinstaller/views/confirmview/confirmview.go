@@ -31,20 +31,24 @@ const (
 
 // ConfirmView contains the confirmation UI
 type ConfirmView struct {
-	text         *tview.TextView
-	navBar       *navigationbar.NavigationBar
-	flex         *tview.Flex
-	centeredFlex *tview.Flex
-	hostConfigData     *configuration.TridentConfigData
+	text           *tview.TextView
+	navBar         *navigationbar.NavigationBar
+	flex           *tview.Flex
+	centeredFlex   *tview.Flex
+	hostconfigPath string
+	hostConfigData *configuration.TridentConfigData
 }
 
 // New creates and returns a new ConfirmView.
-func New() *ConfirmView {
-	return &ConfirmView{}
+func New(hostconfigPath string) *ConfirmView {
+	return &ConfirmView{
+		hostconfigPath: hostconfigPath,
+	}
 }
 
 // Initialize initializes the view.
-func (cv *ConfirmView) Initialize(hostConfigData  *configuration.TridentConfigData, backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
+func (cv *ConfirmView) Initialize(hostConfigData *configuration.TridentConfigData, backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
+	cv.hostConfigData = hostConfigData
 	cv.text = tview.NewTextView().
 		SetText(uitext.ConfirmPrompt)
 
@@ -89,7 +93,7 @@ func (cv *ConfirmView) Reset() (err error) {
 
 func (cv *ConfirmView) onNextButton(nextPage func()) error {
 	// Save the user input to the config file.
-	err := configuration.RenderTridentHostConfig(cv.hostConfigData )
+	err := configuration.RenderTridentHostConfig(cv.hostconfigPath, cv.hostConfigData)
 	if err != nil {
 		cv.navBar.SetUserFeedback(uiutils.ErrorToUserFeedback(err), tview.Styles.TertiaryTextColor)
 		return err
