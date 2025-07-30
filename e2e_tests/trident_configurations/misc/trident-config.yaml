@@ -50,6 +50,7 @@ scripts:
     - name: testing-privilege
       runOn:
         - clean-install
+        - ab-update
       content: echo "testing-user ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/testing-user
 os:
   selinux:
