@@ -411,98 +411,72 @@ def check_crypsetup_luks_dump(
     instead, the volume is enrolled to the value of PCR 7:
 
         {
-            "keyslots": {
-                "0": {
-                "type": "luks2",
-                "key_size": 64,
-                "af": {
-                    "type": "luks1",
-                    "stripes": 4000,
-                    "hash": "sha512"
+            "keyslots":{
+                "1":{
+                "type":"luks2",
+                "key_size":64,
+                "af":{
+                    "type":"luks1",
+                    "stripes":4000,
+                    "hash":"sha512"
                 },
-                "area": {
-                    "type": "raw",
-                    "offset": "32768",
-                    "size": "258048",
-                    "encryption": "aes-xts-plain64",
-                    "key_size": 64
+                "area":{
+                    "type":"raw",
+                    "offset":"290816",
+                    "size":"258048",
+                    "encryption":"aes-xts-plain64",
+                    "key_size":64
                 },
-                "kdf": {
-                    "type": "pbkdf2",
-                    "hash": "sha512",
-                    "iterations": 2548178,
-                    "salt": "qD1xElrPbsqcDi6LNzijCr16VCNE6EZch4zoRLM7cBo="
-                }
-                },
-                "1": {
-                "type": "luks2",
-                "key_size": 64,
-                "af": {
-                    "type": "luks1",
-                    "stripes": 4000,
-                    "hash": "sha512"
-                },
-                "area": {
-                    "type": "raw",
-                    "offset": "290816",
-                    "size": "258048",
-                    "encryption": "aes-xts-plain64",
-                    "key_size": 64
-                },
-                "kdf": {
-                    "type": "pbkdf2",
-                    "hash": "sha512",
-                    "iterations": 1000,
-                    "salt": "+BdrnJ5ewLnzuZeleuH9DK0zs8BSYPWdcgRrVxB1IgM="
+                "kdf":{
+                    "type":"pbkdf2",
+                    "hash":"sha512",
+                    "iterations":1000,
+                    "salt":"V78EvaQMSroXSvwmIlaQ7QgJEAYdmykbr/U580bibK4="
                 }
                 }
             },
-            "tokens": {
-                "0": {
-                "type": "systemd-tpm2",
-                "keyslots": [
+            "tokens":{
+                "0":{
+                "type":"systemd-tpm2",
+                "keyslots":[
                     "1"
                 ],
-                "tpm2-blob": "AJ4AIJwKSpUCL4cb91OgnUSmk7xDp0boJQfU2WG3nZZnIlevABBCOQhfd7iEZENmkpVB3tGVtTeQEi1niSa0q17ogl8HAifFfSQVPI4qhOFB5V/B3gKrLLJtRsvR0C4IEe0K7QHfCMIpvAd0xTGSVFG8LP+vnvE92owslTjMLD1Wz59Q7tlrePWpfO+moAihPeC7Ydvtm8+cRP1SSOKmdABOAAgACwAAABIAIEsLIvUeWcZWYYo9OBodhaT3wrjnUjegJvbiCXxTBXDHABAAIOrB8H9looP25gzypERUlR92FsaN+m0McOjiP3l1tnjm",
-                "tpm2-pcrs": [
-                    7
-                ],
-                "tpm2-pcr-bank": "sha256",
-                "tpm2-policy-hash": "4b0b22f51e59c656618a3d381a1d85a4f7c2b8e75237a026f6e2097c530570c7",
-                "tpm2-pin": false,
-                "tpm2_pcrlock": false,
-                "tpm2_srk": "gQAAAQAiAAvXpSqpFDNnEGxleOAOBjDeoid6N6SvN24Uz5fsRArUQQAAAAEAWgAjAAsAAwRyAAAABgCAAEMAEAADABAAIMNOuXVhxPjyOtx1VoiR0C3xMcXToKKKs2fptfP3IhWsACCajVW7lEU/YKTedo0hZCdcqq/GzW6dvyAksm4SWm2HGA=="
+                "tpm2-blob":"AJ4AIA6FIxPCpzLJIrPYM+xkjHd01LZAQQjcoiK3fWJNy0zHABBErLSo75LGafmcHEIOhx7PtNoO3x4hW86gT0Jkf1drvjnULqHQBV13iJnDz1w+lbK+GnfumBntmj12LLeUIr/6SAVCU+KNu/owZCyOl1+p1eLFNt9LwpXQLCUa4rfPYUsLHYG/TcNc9kzQcpw49TEFRJwADQUiZlD1XgBOAAgACwAAABIAINyyj1eDDYXFHzMdKs/hxGS6hMdir2JqwbiulxUWj5RIABAAIJaw5Gip7m2PDETPSC/HOEZGosLuCpDGQ6sms6RwVdGh",
+                "tpm2-pcrs":[],
+                "tpm2-policy-hash":"dcb28f57830d85c51f331d2acfe1c464ba84c762af626ac1b8ae9715168f9448",
+                "tpm2-pin":false,
+                "tpm2_pcrlock":true,
+                "tpm2_srk":"gQAAAQAiAAuRnxBWvxRchDQNQyi/ryIVqTKLSmwcmfXCqzpmf3Ls7QAAAAEAWgAjAAsAAwRyAAAABgCAAEMAEAADABAAILIu6HvU3U/n+AclA9T/nOQ8gVGaNIgAGWScI5CThurRACCEWbjxEE50DKczUwuOXAd0/iCEid83UE10zB6ncOzYJA=="
                 }
             },
-            "segments": {
-                "0": {
-                "type": "crypt",
-                "offset": "16777216",
-                "size": "dynamic",
-                "iv_tweak": "0",
-                "encryption": "aes-xts-plain64",
-                "sector_size": 512
+            "segments":{
+                "0":{
+                "type":"crypt",
+                "offset":"16777216",
+                "size":"dynamic",
+                "iv_tweak":"0",
+                "encryption":"aes-xts-plain64",
+                "sector_size":512
                 }
             },
-            "digests": {
-                "0": {
-                "type": "pbkdf2",
-                "keyslots": [
-                    "0",
+            "digests":{
+                "0":{
+                "type":"pbkdf2",
+                "keyslots":[
                     "1"
                 ],
-                "segments": [
+                "segments":[
                     "0"
                 ],
-                "hash": "sha512",
-                "iterations": 127750,
-                "salt": "Os3X2YOf2F7oJaIGq+4x51JgcNBwdt1DnXVl+Qtc8Pk=",
-                "digest": "/vD4hHKGKalsgNiLCphAwNbzMUP9DUt1zDGsUBybcuJuRbs9I470DVZPTez1nlkLm38O6dAOLDGTCcFRkSSXTw=="
+                "hash":"sha512",
+                "iterations":158875,
+                "salt":"OsbDAAnbzyWuugQsSF1E+EphOH/Oxw+IhsPd7rw7dFA=",
+                "digest":"gVqfej2XffVQR3FEMgSA19WZgKtcfETrfAThRlao86TdjaU/vUyGRoMrshL8zEULAwSORd9qiuZ2gPPN4fu1XA=="
                 }
             },
-            "config": {
-                "json_size": "12288",
-                "keyslots_size": "16744448"
+            "config":{
+                "json_size":"12288",
+                "keyslots_size":"16744448"
             }
         }
 
@@ -559,28 +533,7 @@ def check_crypsetup_luks_dump(
         and not override_uki
     )
 
-    # For a non-UKI image, we expect to see two key slots: 0 and 1, for the
-    # password and TPM 2.0 device. But for a UKI image, we expect to see a
-    # single key slot, 1, for the TPM 2.0 device via pcrlock policy.
-    if is_uki:
-        assert (
-            len(dump["digests"]["0"]["keyslots"]) == 1
-        ), f"Expected one key slot, got {len(dump['digests']['0']['keyslots'])}. Key slots: {dump['digests']['0']['keyslots']}"
-        assert (
-            "1" in dump["digests"]["0"]["keyslots"]
-        ), f"Expected key slot 1 to be in {dump['digests']['0']['keyslots']!r}, got {dump['digests']['0']['keyslots']!r}"
-    else:
-        assert (
-            len(dump["digests"]["0"]["keyslots"]) == 2
-        ), f"Expected two key slots, got {len(dump['digests']['0']['keyslots'])}. Key slots: {dump['digests']['0']['keyslots']}"
-        assert (
-            "0" in dump["digests"]["0"]["keyslots"]
-        ), f"Expected key slot 0 to be in {dump['digests']['0']['keyslots']!r}, got {dump['digests']['0']['keyslots']!r}"
-        assert (
-            "1" in dump["digests"]["0"]["keyslots"]
-        ), f"Expected key slot 1 to be in {dump['digests']['0']['keyslots']!r}, got {dump['digests']['0']['keyslots']!r}"
-
-    # For both UKI and non-UKI images, we expect to see a single token 1
+    # For both UKI and grub ROS images, we expect to see a single token 1
     assert (
         "0" in dump["tokens"]
     ), f"Expected token 0 to be in {dump['tokens']!r}, got {dump['tokens']!r}"
