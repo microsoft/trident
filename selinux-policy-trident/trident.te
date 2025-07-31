@@ -676,6 +676,8 @@ dev_rw_loop_control(trident_t)
 dev_rw_lvm_control(trident_t)
 lvm_exec(trident_t)
 lvm_domtrans(trident_t)
+lvm_manage_runtime_dirs(trident_t)
+lvm_manage_runtime_files(trident_t)
 lvm_read_config(trident_t)
 manage_files_pattern(trident_t, mount_runtime_t, mount_runtime_t)
 storage_getattr_fuse_dev(trident_t)
@@ -859,7 +861,7 @@ allow lvm_t trident_t:sem { associate read unix_read unix_write write };
 allow lvm_t initrc_t:sem { associate read unix_read unix_write write };
 
 # This is necessary for veritysetup to be able to read a key file in /tmp.
-allow lvm_t tmp_t:file getattr;
+allow lvm_t tmp_t:file { getattr read open ioctl };
 
 #============= mount_t =============
 allow mount_t trident_var_lib_t:dir mounton;
