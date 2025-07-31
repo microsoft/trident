@@ -16,20 +16,23 @@ use osutils::{
     container,
     dependencies::{Dependency, DependencyResultExt},
     efivar,
-    encryption::{self, ENCRYPTION_PASSPHRASE},
+    encryption::{self, KeySlotType, ENCRYPTION_PASSPHRASE},
     lsblk::{self, BlockDeviceType},
     path::join_relative,
+    pcrlock,
 };
 use sysdefs::tpm2::Pcr;
 
 use trident_api::{
     config::{HostConfiguration, HostConfigurationStaticValidationError, PartitionSize},
     constants::{
-        internal_params::{NO_CLOSE_ENCRYPTED_VOLUMES, REENCRYPT_ON_CLEAN_INSTALL},
+        internal_params::{
+            NO_CLOSE_ENCRYPTED_VOLUMES, OVERRIDE_PCRLOCK_ENCRYPTION, REENCRYPT_ON_CLEAN_INSTALL,
+        },
         ESP_EFI_DIRECTORY, ESP_MOUNT_POINT_PATH,
     },
     error::{InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt},
-    status::{AbVolumeSelection, ServicingType},
+    status::AbVolumeSelection,
 };
 
 use crate::{
@@ -136,6 +139,48 @@ pub(super) fn create_encrypted_devices(
             .run_and_check()
             .message("Failed to clear TPM 2.0 device")?;
 
+        // If this for a grub ROS, seal against the value of PCR 7; if this is for a UKI ROS,
+        // seal against a "bootstrapping" pcrlock policy that exclusively contains PCR 0.
+        // TODO: If this is a flow with an internal override, seal against the value of PCR 0
+        // directly. Remove this internal override once container, BM, and "rerun" E2E encryption
+        // tests are fixed. Related ADO tasks:
+        // https://dev.azure.com/mariner-org/polar/_workitems/edit/13344/ and
+        // https://dev.azure.com/mariner-org/polar/_workitems/edit/14269/.
+        let pcr = if ctx.is_uki()? {
+            if ctx
+                .spec
+                .internal_params
+                .get_flag(OVERRIDE_PCRLOCK_ENCRYPTION)
+            {
+                debug!(
+                    "Runtime OS image is a UKI image, \
+                    but internal override '{OVERRIDE_PCRLOCK_ENCRYPTION}' is set to true, \
+                    so sealing against PCR 0"
+                );
+                Some(BitFlags::from(Pcr::Pcr0))
+            } else {
+                debug!(
+                    "Runtime OS image is a UKI image, so sealing against a pcrlock policy of PCR 0"
+                );
+                pcrlock::generate_pcrlock_policy(BitFlags::from(Pcr::Pcr0), vec![], vec![])?;
+                None
+            }
+        } else {
+            debug!("Runtime OS image is a grub image, so sealing against PCR 7");
+            Some(BitFlags::from(Pcr::Pcr7))
+        };
+
+        // Check if `REENCRYPT_ON_CLEAN_INSTALL` internal param is set to true; if so, re-encrypt
+        // the device in-place. Otherwise, initialize a new LUKS2 volume.
+        let encryption_type = if host_config
+            .internal_params
+            .get_flag(REENCRYPT_ON_CLEAN_INSTALL)
+        {
+            EncryptionType::Reencrypt
+        } else {
+            EncryptionType::LuksFormat
+        };
+
         let mut total_partition_size_bytes: u64 = 0;
         for ev in encryption.volumes.iter() {
             // Get the block device indicated by device_id if it is a partition; the first
@@ -165,30 +210,12 @@ pub(super) fn create_encrypted_devices(
                 },
             )?;
 
-            let encryption_type = if host_config
-                .internal_params
-                .get_flag(REENCRYPT_ON_CLEAN_INSTALL)
-            {
-                EncryptionType::Reencrypt
-            } else {
-                EncryptionType::LuksFormat
-            };
-
-            // TODO: Once UKI MOS is built, include all PCRs out of 4, 7, and 11 that were selected
-            // by the user, into pcrlock policy on A/B update and clean install. For now, only seal
-            // to PCR 0 into pcrlock policy. Related ADO task:
-            // https://dev.azure.com/mariner-org/polar/_workitems/edit/14286/ and
-            // https://dev.azure.com/mariner-org/polar/_workitems/edit/13059/.
-            let pcrs = BitFlags::from(Pcr::Pcr0);
-
-            // Check if `REENCRYPT_ON_CLEAN_INSTALL` internal param is set to true; if so, re-encrypt
-            // the device in-place. Otherwise, initialize a new LUKS2 volume.
             encrypt_and_open_device(
                 &device_path,
                 &ev.device_name,
                 &key_file_path,
                 encryption_type,
-                pcrs,
+                pcr,
             )
             .structured(ServicingError::EncryptBlockDevice {
                 device_path: device_path.to_string_lossy().to_string(),
@@ -196,6 +223,23 @@ pub(super) fn create_encrypted_devices(
                 encrypted_volume_device_name: ev.device_name.clone(),
                 encrypted_volume: ev.id.clone(),
             })?;
+
+            // If the key file was randomly generated and NOT provided by the user as a
+            // recovery key, remove the password key slot from the encrypted volume, as it's
+            // not needed, for security
+            if encryption.recovery_key_url.is_none() {
+                debug!(
+                        "Recovery key file not provided, so removing password key slot from encrypted volume with id '{}'",
+                        ev.id
+                    );
+                encryption::systemd_cryptenroll_wipe_slot(
+                    device_path.clone(),
+                    KeySlotType::Password,
+                )
+                .structured(ServicingError::WipePasswordKeySlot {
+                    device_path: device_path.to_string_lossy().to_string(),
+                })?;
+            }
         }
         tracing::Span::current().record("total_partition_size_bytes", total_partition_size_bytes);
     }
@@ -205,21 +249,23 @@ pub(super) fn create_encrypted_devices(
 
 /// Encrypts the device of a single encrypted volume by reformatting the device with a LUKS2
 /// header, enrolling a key file, enrolling another randomly generated key and sealing it in the
-/// TPM 2.0 device with PCR 7, and finally, opening the device as a LUKS2 volume.
+/// TPM 2.0 device, and finally, opening the device as a LUKS2 volume.
 ///
 /// This function takes in 5 arguments:
 /// - `device_path`: The path to the device to be encrypted.
 /// - `device_name`: The name of the device to be used in the crypttab.
 /// - `key_file`: The path to the key file to be used for encryption.
 /// - `encryption_type`: The type of encryption to be used. Determines whether the device should be
-///   re-encrypted in-place, or whether a new LUKS2 volume should be initialized
-/// - `pcrs`: The PCRs to bind the encryption key to.
+///   re-encrypted in-place, or whether a new LUKS2 volume should be initialized.
+/// - `pcr`: The PCR to seal the key against. This is an optional PCR for scenarios where encrypted
+///   volumes are sealed against the value of PCR 7 instead of a pcrlock policy, mainly for the
+///   grub MOS + grub ROS flow.
 fn encrypt_and_open_device(
     device_path: &Path,
     device_name: &String,
     key_file: &Path,
     encryption_type: EncryptionType,
-    pcrs: BitFlags<Pcr>,
+    pcr: Option<BitFlags<Pcr>>,
 ) -> Result<(), Error> {
     match encryption_type {
         EncryptionType::Reencrypt => {
@@ -250,7 +296,7 @@ fn encrypt_and_open_device(
     );
 
     // Enroll the TPM 2.0 device for the underlying device
-    encryption::systemd_cryptenroll(Some(key_file), device_path, pcrs)?;
+    encryption::systemd_cryptenroll(key_file, device_path, pcr)?;
 
     debug!(
         "Opening underlying encrypted device '{}' as '{}'",
@@ -296,14 +342,11 @@ struct LuksDumpSegment {
 /// - bootloader_binaries: Paths to the bootloader binaries (shim and systemd-boot).
 pub fn get_binary_paths_pcrlock(
     ctx: &EngineContext,
+    pcrs: BitFlags<Pcr>,
     mount_path: Option<&Path>,
 ) -> Result<(Vec<PathBuf>, Vec<PathBuf>), Error> {
-    // TODO: For now, on a clean install, binaries are not needed since we're first sealing to a
-    // pcrlock policy that only includes PCR 0. Once UKI MOS is built and SecureBoot is enabled,
-    // need to also return binary paths for clean install. Related ADO tasks:
-    // https://dev.azure.com/mariner-org/polar/_workitems/edit/14286/ and
-    // https://dev.azure.com/mariner-org/polar/_workitems/edit/13059/.
-    if ctx.servicing_type == ServicingType::CleanInstall {
+    // If neither PCR 4 nor 11 are requested, no binaries are needed
+    if !pcrs.contains(Pcr::Pcr4) && !pcrs.contains(Pcr::Pcr11) {
         return Ok((vec![], vec![]));
     }
 
@@ -321,16 +364,12 @@ pub fn get_binary_paths_pcrlock(
     // Construct UKI paths
     let uki_binaries = get_uki_paths(&esp_path, mount_path)?;
 
-    // Construct bootloader paths
-    let bootloader_binaries = get_bootloader_paths(&esp_path, mount_path, ctx)?;
-
-    debug!("Paths of boot binaries required for pcrlock encryption:");
-    for (i, path) in uki_binaries.iter().enumerate() {
-        debug!("UKI binary {}: {}", i + 1, path.display());
-    }
-    for (i, path) in bootloader_binaries.iter().enumerate() {
-        debug!("Bootloader binary {}: {}", i + 1, path.display());
-    }
+    // If PCR 4 is requested, construct bootloader paths
+    let bootloader_binaries = if pcrs.contains(Pcr::Pcr4) {
+        get_bootloader_paths(&esp_path, mount_path, ctx)?
+    } else {
+        vec![]
+    };
 
     Ok((uki_binaries, bootloader_binaries))
 }
@@ -360,6 +399,11 @@ fn get_uki_paths(esp_path: &Path, mount_path: Option<&Path>) -> Result<Vec<PathB
         // path
         let uki_update = esp_uki_directory.join(TMP_UKI_NAME);
         uki_binaries.push(uki_update.clone());
+    }
+
+    debug!("Paths of UKI binaries required for pcrlock encryption:");
+    for (i, path) in uki_binaries.iter().enumerate() {
+        debug!("UKI binary {}: {}", i + 1, path.display());
     }
 
     Ok(uki_binaries)
@@ -424,6 +468,11 @@ fn get_bootloader_paths(
         let (_, systemd_boot_update_relative) = bootentries::get_label_and_path(ctx, GRUB_EFI)?;
         let systemd_boot_update = join_relative(esp_dir_path, systemd_boot_update_relative);
         bootloader_binaries.push(systemd_boot_update);
+    }
+
+    debug!("Paths of bootloader binaries required for pcrlock encryption:");
+    for (i, path) in bootloader_binaries.iter().enumerate() {
+        debug!("Bootloader binary {}: {}", i + 1, path.display());
     }
 
     Ok(bootloader_binaries)

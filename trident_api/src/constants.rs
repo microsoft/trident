@@ -194,8 +194,8 @@ pub mod internal_params {
     pub const ORCHESTRATOR_CONNECTION_TIMEOUT_SECONDS: &str =
         "orchestratorConnectionTimeoutSeconds";
 
-    /// Overrides the pcrlock encryption logic to use the previous logic where encryption volumes
-    /// are sealed against a set of specific PCR values.
+    /// Overrides the pcrlock policy encryption logic to use logic where encryption volumes are
+    /// sealed directly against a set of specific PCR values.
     pub const OVERRIDE_PCRLOCK_ENCRYPTION: &str = "overridePcrlockEncryption";
 
     /// Run extra partition and filesystem checks before reboot
