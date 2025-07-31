@@ -108,7 +108,7 @@ pub(super) fn validate_host_config(host_config: &HostConfiguration) -> Result<()
 #[tracing::instrument(name = "encryption_provision", skip_all)]
 pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
     if let Some(encryption) = &ctx.spec.storage.encryption {
-        debug!("Initializing pcrlock encryption provisioning");
+        debug!("Initializing encryption provisioning");
 
         // Determine if pcrlock policy should be re-generated to include updated PCRs
         let updated_pcrs = match ctx.servicing_type {
