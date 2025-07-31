@@ -249,7 +249,7 @@ scripts:
     - all
     content: mkdir -p /var/lib/trident-overlay/etc-rw/upper && mkdir -p /var/lib/trident-overlay/etc-rw/work
 os:
-  network:
+  netplan:
     version: 2
     ethernets:
       eths:
