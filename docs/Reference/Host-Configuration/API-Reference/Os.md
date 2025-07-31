@@ -10,17 +10,6 @@ Configuration for the host OS.
 
 ## Properties
 
-### `netplan` **<span style="color:orange;">(required)</span>**
-
-Netplan network configuration for the runtime OS.
-
-See [Netplan YAML Configuration](https://netplan.readthedocs.io/en/stable/netplan-yaml/) for more information.
-
-| Characteristic | Value          |
-| -------------- | -------------- |
-| Type           | `object`       |
-| Format         | `Netplan YAML` |
-
 ### `additionalFiles` (optional)
 
 Additional Files to add to the image.
@@ -67,6 +56,17 @@ Kernel modules to configure.
    | -------------- | --------------------- |
    | Type           | `Module`              |
    | Link           | [Module](./Module.md) |
+
+### `netplan` (optional)
+
+Netplan network configuration for the runtime OS.
+
+See [Netplan YAML Configuration](https://netplan.readthedocs.io/en/stable/netplan-yaml/) for more information.
+
+| Characteristic | Value          |
+| -------------- | -------------- |
+| Type           | `object`       |
+| Format         | `Netplan YAML` |
 
 ### `selinux` (optional)
 

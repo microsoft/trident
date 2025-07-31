@@ -29,7 +29,7 @@ pub struct Os {
     /// Netplan network configuration for the runtime OS.
     ///
     /// See [Netplan YAML Configuration](https://netplan.readthedocs.io/en/stable/netplan-yaml/) for more information.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(
         feature = "schemars",
         schemars(schema_with = "network::schema_helpers::make_placeholder_netplan_schema")
@@ -147,7 +147,7 @@ pub struct ManagementOs {
     /// Netplan network configuration for the management OS.
     ///
     /// See [Netplan YAML Configuration](https://netplan.readthedocs.io/en/stable/netplan-yaml/) for more information.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(
         feature = "schemars",
         schemars(schema_with = "network::schema_helpers::make_placeholder_netplan_schema")

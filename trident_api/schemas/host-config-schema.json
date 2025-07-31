@@ -470,9 +470,6 @@
     "ManagementOs": {
       "description": "Configuration for the management OS.",
       "type": "object",
-      "required": [
-        "netplan"
-      ],
       "properties": {
         "netplan": {
           "description": "Netplan network configuration for the management OS.\n\nSee [Netplan YAML Configuration](https://netplan.readthedocs.io/en/stable/netplan-yaml/) for more information.",
@@ -542,9 +539,6 @@
     "Os": {
       "description": "Configuration for the host OS.",
       "type": "object",
-      "required": [
-        "netplan"
-      ],
       "properties": {
         "additionalFiles": {
           "description": "Additional Files to add to the image.",
