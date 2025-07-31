@@ -367,7 +367,7 @@ allow trident_t locate_exec_t:file getattr;
 allow trident_t logrotate_unit_t:file getattr;
 allow trident_t logrotate_var_lib_t:dir { getattr open read relabelto };
 allow trident_t lost_found_t:dir { getattr open read relabelto };
-# allow trident_t lvm_metadata_t:dir { getattr open read };
+allow trident_t lvm_metadata_t:dir { getattr open read };
 allow trident_t lvm_unit_t:file getattr;
 allow trident_t mail_spool_t:dir { list_dir_perms relabelto };
 allow trident_t memory_pressure_t:file { read open getattr setattr };
