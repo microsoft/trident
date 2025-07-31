@@ -32,6 +32,11 @@ variables:
 
 resources:
   repositories:
+    - repository: templates
+      type: git
+      name: OneBranch.Pipelines/GovernedTemplates
+      ref: refs/heads/main
+
     - repository: argus-toolkit
       type: git
       name: argus-toolkit
