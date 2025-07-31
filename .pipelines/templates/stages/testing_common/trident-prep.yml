@@ -44,7 +44,7 @@ steps:
           --runtimeEnv ${{ parameters.runtimeEnv }}
       )
 
-      if [ "${{ parameters.config }}" == "misc" ] && [ "${{ parameters.baremetal }} != true" ]; then
+      if [ "${{ parameters.config }}" == "misc" ] && [ "${{ parameters.baremetal }}" != "true" ]; then
         build_id="$(Build.BuildId)"
         oci_url="oci://maritimuspublic.azurecr.io/${{ parameters.imageName }}:v${build_id}.1"
         cmd+=(--ociUrl "$oci_url")
