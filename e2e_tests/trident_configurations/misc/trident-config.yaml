@@ -1,5 +1,5 @@
 image:
-  url: http://NETLAUNCH_HOST_ADDRESS/files/regular.cosi
+  url: oci://REGISTRY_ADDRESS/REPOSITORY:TAG
   sha384: ignored
 storage:
   disks:
