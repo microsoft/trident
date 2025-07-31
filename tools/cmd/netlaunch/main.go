@@ -359,8 +359,8 @@ func startLocalVm(localVmUuidStr string, isoLocation string) {
 	}
 	defer vm.Disconnect()
 
-	if err = vm.SetVmHttpBootUri(isoLocation); err != nil {
-		log.WithError(err).Fatalf("failed to set VM HTTP boot URI")
+	if err = vm.SetFirmwareVars(isoLocation, false); err != nil {
+		log.WithError(err).Fatalf("failed to set UEFI variables")
 	}
 
 	if err = vm.Start(); err != nil {
