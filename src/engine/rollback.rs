@@ -111,7 +111,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
             } else {
                 warn!(
                     "Skipping pcrlock policy re-generation on boot validation \
-                    because '{OVERRIDE_PCRLOCK_ENCRYPTION}' is set or running in a container"
+                    because '{OVERRIDE_PCRLOCK_ENCRYPTION}' is set"
                 );
             }
         }

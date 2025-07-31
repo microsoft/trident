@@ -131,9 +131,15 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                         }
                         Some(bitflags)
                     } else {
+                        debug!(
+                            "Runtime OS image is a UKI image, \
+                            but internal override '{OVERRIDE_PCRLOCK_ENCRYPTION}' is set to true, \
+                            so skipping re-generating pcrlock policy",
+                        );
                         None
                     }
                 } else {
+                    debug!("Runtime OS image is a grub image, so skipping re-generating pcrlock policy");
                     None
                 }
             }
@@ -146,6 +152,7 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
 
         // If updated PCRs are specified, re-generate pcrlock policy
         if let Some(pcrs) = updated_pcrs {
+            debug!("Re-generating pcrlock policy to include PCRs: {:?}", pcrs);
             // Get UKI and bootloader binaries for .pcrlock file generation
             let (uki_binaries, bootloader_binaries) =
                 storage_encryption::get_binary_paths_pcrlock(ctx, pcrs, Some(mount_path))

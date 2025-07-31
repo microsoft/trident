@@ -152,12 +152,21 @@ pub(super) fn create_encrypted_devices(
                 .internal_params
                 .get_flag(OVERRIDE_PCRLOCK_ENCRYPTION)
             {
-                Some(BitFlags::from(Pcr::Pcr7))
+                debug!(
+                    "Runtime OS image is a UKI image, \
+                    but internal override '{OVERRIDE_PCRLOCK_ENCRYPTION}' is set to true, \
+                    so sealing against PCR 0"
+                );
+                Some(BitFlags::from(Pcr::Pcr0))
             } else {
+                debug!(
+                    "Runtime OS image is a UKI image, so sealing against a pcrlock policy of PCR 0"
+                );
                 pcrlock::generate_pcrlock_policy(BitFlags::from(Pcr::Pcr0), vec![], vec![])?;
                 None
             }
         } else {
+            debug!("Runtime OS image is a grub image, so sealing against PCR 7");
             Some(BitFlags::from(Pcr::Pcr7))
         };
 
