@@ -292,7 +292,7 @@ mod tests {
         let mk_ctx = || EngineContext {
             spec: HostConfiguration {
                 os: Os {
-                    network: None,
+                    netplan: None,
                     selinux: Selinux::default(),
                     users: vec![],
                     additional_files: vec![],
@@ -355,7 +355,7 @@ mod tests {
         // changes in the future, forcing us to update this test.
         let mut mos = ManagementOs {
             users: vec![],
-            network: None,
+            netplan: None,
         };
         assert!(!mos_config_requires_os_modifier(&mos));
 

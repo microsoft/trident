@@ -59,7 +59,7 @@ scripts:
 os:
   selinux:
     mode: enforcing
-  network:
+  netplan:
     version: 2
     ethernets:
       vmeths:

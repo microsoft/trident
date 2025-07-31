@@ -51,7 +51,7 @@ func InitializeVm(vmUuid uuid.UUID) (*LibvirtVm, error) {
 	return &LibvirtVm{l, domain}, nil
 }
 
-func (vm *LibvirtVm) SetVmHttpBootUri(url string) error {
+func (vm *LibvirtVm) SetFirmwareVars(boot_url string, secure_boot bool) error {
 	// Get the domain XML
 	domainXml, err := vm.libvirt.DomainGetXMLDesc(vm.domain, libvirt.DomainXMLUpdateCPU)
 	if err != nil {
@@ -85,12 +85,19 @@ func (vm *LibvirtVm) SetVmHttpBootUri(url string) error {
 		}
 	}
 
-	cmd := exec.Command("virt-fw-vars", "--inplace", nvram.NVRam, "--set-boot-uri", url)
+	args := []string{"--inplace", nvram.NVRam, "--set-boot-uri", boot_url}
+	if secure_boot {
+		args = append(args, "--set-true", "SecureBootEnable")
+	} else {
+		args = append(args, "--set-false", "SecureBootEnable")
+	}
+
+	cmd := exec.Command("virt-fw-vars", args...)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		logrus.Debugf("virt-fw-vars output:\n%s\n", output)
 		return fmt.Errorf("failed to set boot URI: %w", err)
 	}
-	logrus.Infof("Set boot URI to %s", url)
+	logrus.Infof("Set boot URI to %s and set SecureBoot to %t", boot_url, secure_boot)
 
 	return nil
 }

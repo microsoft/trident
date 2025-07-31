@@ -44,9 +44,12 @@ Linux, with focus on security. Among the features that Trident supports are:
   - [Trident Configuration](#trident-configuration)
     - [Host Configuration](#host-configuration)
     - [Command Line Options](#command-line-options)
+      - [Allowed Operations](#allowed-operations)
+      - [Other Options](#other-options)
     - [Agent Configuration](#agent-configuration)
   - [A/B Update](#ab-update)
     - [Getting Started with A/B Update](#getting-started-with-ab-update)
+      - [Staging and Finalizing A/B Update](#staging-and-finalizing-ab-update)
   - [dm-verity Support](#dm-verity-support)
   - [Running from container](#running-from-container)
   - [Running from Azure VM](#running-from-azure-vm)
@@ -378,7 +381,7 @@ scripts:
         - ab-update
       content: echo 'testing-user ALL=(ALL:ALL) NOPASSWD:ALL' > /etc/sudoers.d/testing-user
 os:
-  network:
+  netplan:
     version: 2
     ethernets:
       vmeths:

@@ -57,7 +57,7 @@ Kernel modules to configure.
    | Type           | `Module`              |
    | Link           | [Module](./Module.md) |
 
-### `network` (optional)
+### `netplan` (optional)
 
 Netplan network configuration for the runtime OS.
 

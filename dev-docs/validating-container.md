@@ -60,7 +60,7 @@ validating an image running Trident from a container.
            - ab-update
            content: echo "testing-user ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/testing-user
    os:
-      network:
+      netplan:
          version: 2
          ethernets:
             vmeths:

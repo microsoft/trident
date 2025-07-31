@@ -92,7 +92,7 @@ how to manually validate the A/B update flow with Trident.
                - ab-update
             content: echo 'testing-user ALL=(ALL:ALL) NOPASSWD:ALL' > /etc/sudoers.d/testing-user
    os:
-      network:
+      netplan:
          version: 2
          ethernets:
             vmeths:

@@ -8,9 +8,9 @@ use trident_api::config::HostConfiguration;
 pub fn start(host_config: &HostConfiguration) -> Result<(), Error> {
     let netconf = host_config
         .management_os
-        .network
+        .netplan
         .as_ref()
-        .or(host_config.os.network.as_ref());
+        .or(host_config.os.netplan.as_ref());
 
     match netconf {
         Some(config) => {

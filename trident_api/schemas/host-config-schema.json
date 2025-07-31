@@ -471,7 +471,7 @@
       "description": "Configuration for the management OS.",
       "type": "object",
       "properties": {
-        "network": {
+        "netplan": {
           "description": "Netplan network configuration for the management OS.\n\nSee [Netplan YAML Configuration](https://netplan.readthedocs.io/en/stable/netplan-yaml/) for more information.",
           "type": "object",
           "format": "Netplan YAML",
@@ -567,7 +567,7 @@
             "$ref": "#/definitions/Module"
           }
         },
-        "network": {
+        "netplan": {
           "description": "Netplan network configuration for the runtime OS.\n\nSee [Netplan YAML Configuration](https://netplan.readthedocs.io/en/stable/netplan-yaml/) for more information.",
           "type": "object",
           "format": "Netplan YAML",
