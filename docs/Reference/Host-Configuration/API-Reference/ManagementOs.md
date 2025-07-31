@@ -10,7 +10,7 @@ Configuration for the management OS.
 
 ## Properties
 
-### `netplan` **<span style="color:orange;">(required)</span>**
+### `netplan` (optional)
 
 Netplan network configuration for the management OS.
 
