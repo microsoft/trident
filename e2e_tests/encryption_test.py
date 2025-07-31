@@ -521,13 +521,6 @@ def check_crypsetup_luks_dump(
         .get("internalParams", {})
         .get("overridePcrlockEncryption", False)
     )
-    # Hack: also want to disable on `combined` E2E test but only for container
-    additional_files = host_status["spec"].get("os", {}).get("additionalFiles", [])
-    if any(
-        f.get("destination") == "/var/lib/trident/trident-container.tar.gz"
-        for f in additional_files
-    ):
-        override_uki = True
     is_uki = (
         host_status["spec"].get("internalParams", {}).get("uki", False)
         and not override_uki

@@ -4,7 +4,7 @@ use anyhow::{Context, Error};
 use enumflags2::BitFlags;
 use log::{debug, info, trace, warn};
 
-use osutils::{block_devices, container, efivar, lsblk, pcrlock, veritysetup, virt};
+use osutils::{block_devices, efivar, lsblk, pcrlock, veritysetup, virt};
 
 use trident_api::{
     constants::internal_params::{OVERRIDE_PCRLOCK_ENCRYPTION, VIRTDEPLOY_BOOT_ORDER_WORKAROUND},

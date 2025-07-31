@@ -8,7 +8,7 @@ use enumflags2::BitFlags;
 use log::{debug, info, trace};
 
 use osutils::{
-    container, encryption, files,
+    encryption, files,
     path::join_relative,
     pcrlock::{self, PCRLOCK_POLICY_JSON_PATH},
 };
