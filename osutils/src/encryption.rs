@@ -41,13 +41,7 @@ pub static ENCRYPTION_PASSPHRASE: Lazy<Mutex<Vec<u8>>> = Lazy::new(Default::defa
 /// volume.
 ///
 /// Takes in the key file to unlock the TPM 2.0 device and device path. Optionally, also takes in
-/// a set of PCRs to seal to, when sealing to a pcrlock policy is not possible. E.g. is customers
-/// want to seal against PCR 7 but do not have `SecureBoot` enabled, generating a pcrlock policy
-/// would fail, so we need to seal against the value of PCR 7 directly.
-///
-/// TODO: Generate a pcrlock policy when sealing to PCR 7 is requested, when AZL 4.0 is released
-/// containing this fix in v256 of pcrlock: https://github.com/systemd/systemd/pull/30997/.
-/// Related ADO task: https://dev.azure.com/mariner-org/polar/_workitems/edit/14455/.
+/// a set of PCRs to seal to, when sealing to a pcrlock policy is not possible.
 pub fn systemd_cryptenroll(
     key_file: impl AsRef<Path>,
     device_path: impl AsRef<Path>,
