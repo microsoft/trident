@@ -1,5 +1,8 @@
 internalParams:
   uki: true
+  # TODO: Remove this internal parameter once UKI & encryption tests are fixed.
+  # https://dev.azure.com/mariner-org/polar/_workitems/edit/13344/.
+  overridePcrlockEncryption: true
 image:
   url: http://NETLAUNCH_HOST_ADDRESS/files/usrverity.cosi
   sha384: ignored
