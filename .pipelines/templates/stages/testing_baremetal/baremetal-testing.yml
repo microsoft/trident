@@ -168,7 +168,6 @@ stages:
               tridentConfigPath: $(TRIDENT_CONFIG_PATH)
               runtimeEnv: ${{ parameters.runtimeEnv }}
               config: $(TRIDENT_CONFIGURATION_NAME)
-              baremetal: true
 
           # Download all test images
           - template: ../testing_common/download-test-images.yml
@@ -179,6 +178,13 @@ stages:
               tridentTestImageUsrVerity: ${{ variables.USRVERITY_IMAGE_NAME }}
               ${{ if eq(parameters.runtimeEnv, 'container') }}:
                 downloadTridentContainer: true
+
+          # Push (regular or container) testimage to ACR
+          - template: ../common_tasks/push-to-acr.yml
+            parameters:
+              imageName: ${{ variables.IMAGE_NAME }}
+              registry: maritimuspublic
+              config: $(TRIDENT_CONFIGURATION_NAME)
 
           - bash: |
               set -xe
@@ -337,3 +343,9 @@ stages:
               netlistenPort: ${{ variables.NETLAUNCH_PORT }}
               runtimeEnv: ${{ parameters.runtimeEnv }}
               netlistenConfigFile: $(TRIDENT_SOURCE_DIR)/baremetal-netlisten.yaml
+
+          - template: ../common_tasks/remove-from-acr.yml
+            parameters:
+              repository: ${{ variables.IMAGE_NAME }}
+              registry: "maritimuspublic"
+              config: $(TRIDENT_CONFIGURATION_NAME)
