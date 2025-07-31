@@ -123,8 +123,7 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                     let override_pcrlock_encryption = ctx
                         .spec
                         .internal_params
-                        .get_flag(OVERRIDE_PCRLOCK_ENCRYPTION)
-                        || container::is_running_in_container()?;
+                        .get_flag(OVERRIDE_PCRLOCK_ENCRYPTION);
                     if !override_pcrlock_encryption {
                         let mut bitflags = BitFlags::empty();
                         for pcr in &encryption.pcrs {

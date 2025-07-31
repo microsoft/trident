@@ -91,8 +91,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
         let override_pcrlock_encryption = ctx
             .spec
             .internal_params
-            .get_flag(OVERRIDE_PCRLOCK_ENCRYPTION)
-            || container::is_running_in_container()?;
+            .get_flag(OVERRIDE_PCRLOCK_ENCRYPTION);
         if let Some(ref encryption) = ctx.spec.storage.encryption {
             if ctx.is_uki()? && !override_pcrlock_encryption {
                 debug!("Regenerating pcrlock policy for current boot");
