@@ -1,5 +1,5 @@
 image:
-  url: oci://REGISTRY_ADDRESS/REPOSITORY:TAG
+  url: http://NETLAUNCH_HOST_ADDRESS/files/regular.cosi
   sha384: ignored
 storage:
   disks:
@@ -46,14 +46,6 @@ storage:
       source: new
       mountPoint: /var/lib/trident
 scripts:
-  preServicing:
-    - name: set-env-vars
-      runOn:
-        - clean-install
-        - ab-update
-      content: |
-        export ALL_PROXY='http://172.16.1.10:3128'
-        export NO_PROXY='10.96.0.0/12,10.244.0.0/16,172.27.254.0/24,.svc,127.0.0.1,localhost'
   postConfigure:
     - name: testing-privilege
       runOn:
