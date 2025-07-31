@@ -514,14 +514,17 @@ def check_crypsetup_luks_dump(
 
     # Check Host Status to see if image is UKI or not
     host_status = get_host_status(connection, tridentCommand)
-    # # TODO: Remove this override once UKI & encryption tests are fixed. ADO:
-    # # https://dev.azure.com/mariner-org/polar/_workitems/edit/13344/.
-    # override_uki = (
-    #     host_status["spec"]
-    #     .get("internalParams", {})
-    #     .get("overridePcrlockEncryption", False)
-    # )
-    is_uki = host_status["spec"].get("internalParams", {}).get("uki", False)
+    # TODO: Remove this override once UKI & encryption tests are fixed. ADO:
+    # https://dev.azure.com/mariner-org/polar/_workitems/edit/13344/.
+    override_uki = (
+        host_status["spec"]
+        .get("internalParams", {})
+        .get("overridePcrlockEncryption", False)
+    )
+    is_uki = (
+        host_status["spec"].get("internalParams", {}).get("uki", False)
+        and not override_uki
+    )
 
     # For both UKI and grub ROS images, we expect to see a single token 1
     assert (
