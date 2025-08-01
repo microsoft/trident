@@ -1,0 +1,48 @@
+parameters:
+  - name: "repository"
+    displayName: "Repository containing COSI images"
+    type: string
+    values:
+      - trident-testimage
+      - trident-container-testimage
+
+  - name: "registry"
+    type: string
+    default: maritimuspublic
+
+  - name: "config"
+    displayName: "Trident configuration"
+    type: string
+
+steps:
+  - task: AzureCLI@2
+    inputs:
+      azureSubscription: maritimus-staging-eastus-cr-service-connection
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        set -eux
+
+        if [ ${{ parameters.config }} != 'misc' ]; then
+          echo "Skipping step. Configuration is '${{ parameters.config }}'."
+          exit 0
+        fi
+
+        # Login to ACR
+        az acr login -n ${{ parameters.registry }}
+        sleep 5
+
+        repository_name="${{ parameters.repository }}"
+        build_id="$(Build.BuildId)"
+        az acr repository show-tags -n ${{ parameters.registry }} --repository $repository_name
+
+        # Delete repository with COSI images
+        for i in {1..3}; do
+          tag="v${build_id}.${{ parameters.config }}.${i}"
+          if az acr repository show --name ${{ parameters.registry }} --image ${repository_name}:${tag} &> /dev/null; then
+            az acr repository delete --name ${{ parameters.registry }} --image ${repository_name}:${tag} --yes
+          fi
+        done
+    displayName: "Log into ACR and delete images by tag"
+    retryCountOnTaskFailure: 3
+    condition: always()

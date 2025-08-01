@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Error};
+use enumflags2::BitFlags;
 use log::{debug, info, trace, warn};
 
-use osutils::{block_devices, container, efivar, lsblk, pcrlock, veritysetup, virt};
-use sysdefs::tpm2::Pcr;
+use osutils::{block_devices, efivar, lsblk, pcrlock, veritysetup, virt};
 
 use trident_api::{
     constants::internal_params::{OVERRIDE_PCRLOCK_ENCRYPTION, VIRTDEPLOY_BOOT_ORDER_WORKAROUND},
@@ -81,33 +81,37 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
                 .message("Failed to set default boot entry to current")?;
         }
 
-        // If this is a UKI image, then we need to re-generate pcrlock policy to include current
-        // boot only.
+        // If this is a UKI image, then we need to re-generate pcrlock policy to include the PCRs
+        // selected by the user for the current boot only.
         //
-        // TODO: Remove this override once UKI & encryption tests are fixed. Related ADO:
-        // https://dev.azure.com/mariner-org/polar/_workitems/edit/13344/.
+        // TODO: Remove this internal override once container, BM, and "rerun" E2E
+        // encryption tests are fixed. Related ADO tasks:
+        // https://dev.azure.com/mariner-org/polar/_workitems/edit/13344/ and
+        // https://dev.azure.com/mariner-org/polar/_workitems/edit/14269/.
         let override_pcrlock_encryption = ctx
             .spec
             .internal_params
-            .get_flag(OVERRIDE_PCRLOCK_ENCRYPTION)
-            || container::is_running_in_container()?;
-        if ctx.is_uki()? && ctx.spec.storage.encryption.is_some() {
-            if !override_pcrlock_encryption {
+            .get_flag(OVERRIDE_PCRLOCK_ENCRYPTION);
+        if let Some(ref encryption) = ctx.spec.storage.encryption {
+            if ctx.is_uki()? && !override_pcrlock_encryption {
                 debug!("Regenerating pcrlock policy for current boot");
-                // TODO: Add PCR 7 once SecureBoot is enabled in a follow up PR. Related ADO task:
-                // https://dev.azure.com/mariner-org/polar/_workitems/edit/14286/.
-                let pcrs = Pcr::Pcr4 | Pcr::Pcr11;
+
+                let mut pcrs = BitFlags::empty();
+                for pcr in &encryption.pcrs {
+                    pcrs |= BitFlags::from(*pcr);
+                }
 
                 // Get UKI and bootloader binaries for .pcrlock file generation
                 let (uki_binaries, bootloader_binaries) =
-                    encryption::get_binary_paths_pcrlock(&ctx, None)
+                    encryption::get_binary_paths_pcrlock(&ctx, pcrs, None)
                         .structured(ServicingError::GetBinaryPathsForPcrlockEncryption)?;
 
                 // Generate a pcrlock policy
                 pcrlock::generate_pcrlock_policy(pcrs, uki_binaries, bootloader_binaries)?;
             } else {
                 warn!(
-                    "Skipping pcrlock policy generation because '{OVERRIDE_PCRLOCK_ENCRYPTION}' is set or running in a container"
+                    "Skipping pcrlock policy re-generation on boot validation \
+                    because '{OVERRIDE_PCRLOCK_ENCRYPTION}' is set"
                 );
             }
         }

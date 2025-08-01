@@ -1,5 +1,5 @@
 image:
-  url: oci://REGISTRY_ADDRESS/REPOSITORY:TAG
+  url: http://NETLAUNCH_HOST_ADDRESS/files/regular.cosi
   sha384: ignored
 storage:
   disks:
@@ -10,16 +10,27 @@ storage:
         - id: esp
           type: esp
           size: 1G
-        - id: root
+        - id: root-a
+          type: root
+          size: 8G
+        - id: root-b
           type: root
           size: 8G
         - id: ntfs-partition
           type: linux-generic
           size: 100M
+        - id: trident
+          type: linux-generic
+          size: 1G
     - id: disk2
       device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
       partitionTableType: gpt
       partitions: []
+  abUpdate:
+    volumePairs:
+      - id: root
+        volumeAId: root-a
+        volumeBId: root-b
   filesystems:
     - deviceId: root
       mountPoint: /
@@ -31,16 +42,20 @@ storage:
       type: ntfs
       source: new
       mountPoint: /mnt/ntfs-partition
+    - deviceId: trident
+      source: new
+      mountPoint: /var/lib/trident
 scripts:
   postConfigure:
     - name: testing-privilege
       runOn:
         - clean-install
+        - ab-update
       content: echo "testing-user ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/testing-user
 os:
   selinux:
     mode: enforcing
-  network:
+  netplan:
     version: 2
     ethernets:
       vmeths:

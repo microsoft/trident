@@ -10,7 +10,7 @@ Configuration for the management OS.
 
 ## Properties
 
-### `network` (optional)
+### `netplan` (optional)
 
 Netplan network configuration for the management OS.
 

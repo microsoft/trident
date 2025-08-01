@@ -70,7 +70,7 @@ impl HostConfiguration {
         let require_root_mount_point = self.trident != Trident::default()
             || self.scripts != Scripts::default()
             || self.os != Os::default()
-            || self.os.network.is_some();
+            || self.os.netplan.is_some();
         let graph = self.storage.validate(require_root_mount_point)?;
         self.os.validate()?;
         self.scripts.validate()?;

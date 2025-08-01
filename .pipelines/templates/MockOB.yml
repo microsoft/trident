@@ -111,4 +111,7 @@ stages:
 
                   - publish: ${{ variables.ob_outputDirectory }}
                     artifact: ${{ variables.ob_customArtifactName }}
-                    condition: always()
+                    condition: succeeded()
+                  - publish: ${{ variables.ob_outputDirectory }}
+                    artifact: ${{ variables.ob_customArtifactName }}_failed_$(System.JobAttempt)
+                    condition: not(succeeded())
