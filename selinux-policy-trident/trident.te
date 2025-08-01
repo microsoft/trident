@@ -88,6 +88,7 @@ require {
         type logrotate_var_lib_t;
         type lost_found_t;
         type lvm_metadata_t;
+        type lvm_runtime_t;
         type lvm_t;
         type lvm_unit_t;
         type mail_spool_t;
@@ -368,6 +369,7 @@ allow trident_t logrotate_unit_t:file getattr;
 allow trident_t logrotate_var_lib_t:dir { getattr open read relabelto };
 allow trident_t lost_found_t:dir { getattr open read relabelto };
 allow trident_t lvm_metadata_t:dir { getattr open read };
+allow trident_t lvm_runtime_t:dir { add_name open read remove_name search write };
 allow trident_t lvm_unit_t:file getattr;
 allow trident_t mail_spool_t:dir { list_dir_perms relabelto };
 allow trident_t memory_pressure_t:file { read open getattr setattr };
@@ -417,7 +419,7 @@ allow trident_t ssh_home_t:file relabelto;
 allow trident_t ssh_port_t:tcp_socket name_connect;
 allow trident_t sshd_t:fd use;
 allow trident_t sshd_t:fifo_file { read write getattr ioctl }; # Allow Trident to read/write stdin/stdout/stderr
-allow trident_t sshd_key_t:file { getattr }; # Allow Trident to copy SSH keys
+allow trident_t sshd_key_t:file { getattr manage_file_perms }; # Allow Trident to copy SSH keys
 allow trident_t sshd_keygen_unit_t:file getattr;
 allow trident_t sshd_unit_t:file getattr;
 allow trident_t sulogin_exec_t:file { execute getattr map open read relabelto setattr unlink write };
@@ -675,6 +677,8 @@ sysnet_write_config(trident_t)
 dev_rw_loop_control(trident_t)
 dev_rw_lvm_control(trident_t)
 lvm_exec(trident_t)
+lvm_domtrans(trident_t)
+lvm_manage_runtime_files(trident_t)
 lvm_read_config(trident_t)
 manage_files_pattern(trident_t, mount_runtime_t, mount_runtime_t)
 storage_getattr_fuse_dev(trident_t)
@@ -768,7 +772,6 @@ corecmd_bin_entry_type(trident_t)
 corecmd_shell_entry_type(trident_t)
 corecmd_search_bin(trident_t)
 corecmd_exec_bin(trident_t)
-corecmd_search_bin(trident_t)
 kerberos_exec_kadmind(trident_t)
 kerberos_read_config(trident_t)
 libs_exec_ldconfig(trident_t)
@@ -858,8 +861,12 @@ optional_policy(`
 allow lvm_t trident_t:sem { associate read unix_read unix_write write };
 allow lvm_t initrc_t:sem { associate read unix_read unix_write write };
 
+# These permissions are necessary for cryptsetup luksOpen to succeed.
+allow lvm_t init_t:key search; # Allows LVM to write to search the kernel keyring.
+allow lvm_t tpm_device_t:chr_file write; # Allows LVM to write to the TPM device.
+
 # This is necessary for veritysetup to be able to read a key file in /tmp.
-allow lvm_t tmp_t:file getattr;
+allow lvm_t tmp_t:file { getattr ioctl open read };
 
 #============= mount_t =============
 allow mount_t trident_var_lib_t:dir mounton;
