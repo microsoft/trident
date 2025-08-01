@@ -73,7 +73,7 @@ stages:
       displayName: Download trident docker image
 
     - script: |
-        tdnf install -y squashfs-tools lsof
+        sudo tdnf install -y squashfs-tools lsof
       displayName: Ensure mksquashfs
 
     - script: |
