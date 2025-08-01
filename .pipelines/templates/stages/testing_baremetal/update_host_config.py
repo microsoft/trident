@@ -36,7 +36,7 @@ def update_trident_host_config(
         )
 
     # Override network to only preserve the eno interface.
-    os["network"] = {
+    os["netplan"] = {
         "version": 2,
         "ethernets": {
             interface_name: main_interface,
