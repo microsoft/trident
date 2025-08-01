@@ -61,7 +61,7 @@ pub enum HostConfigurationStaticValidationError {
 
     #[error(
         "List of PCRs to seal to in encryption configuration contains unsupported PCRs '{pcrs:?}'.\n
-        Only PCRs 4, 7, and 11 are supported"
+        Only PCR 7 is currently supported."
     )]
     InvalidEncryptionPcrsUnsupported { pcrs: Vec<Pcr> },
 
