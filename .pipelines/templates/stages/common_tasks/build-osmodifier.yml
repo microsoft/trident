@@ -24,3 +24,4 @@ steps:
       mv azure-linux-image-tools/toolkit/out/tools/osmodifier artifacts/
     displayName: "Build OSModifier"
     workingDirectory: $(Build.SourcesDirectory)
+    retryCountOnTaskFailure: 3

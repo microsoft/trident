@@ -13,16 +13,19 @@ parameters:
       - host
       - container
 
-  - name: tridentTestImage
+  - name: imageName
     displayName: "Image used in the runtime OS, source of Trident (container vs host)"
     type: string
     default: trident-testimage
     values:
-      - trident-container-testimage
       - trident-testimage
+      - trident-container-testimage
 
   - name: config
     type: string
+
+  - name: baremetal
+    type: boolean
 
 steps:
   - bash: |
@@ -41,9 +44,9 @@ steps:
           --runtimeEnv ${{ parameters.runtimeEnv }}
       )
 
-      if [ "${{ parameters.config }}" == "misc" ]; then
+      if [ "${{ parameters.config }}" == "misc" ] && [ "${{ parameters.baremetal }}" != "True" ]; then
         build_id="$(Build.BuildId)"
-        oci_url="oci://maritimuspublic.azurecr.io/${{ parameters.tridentTestImage }}:v${build_id}.1"
+        oci_url="oci://maritimuspublic.azurecr.io/${{ parameters.imageName }}:v${build_id}.${{ parameters.config }}.1"
         cmd+=(--ociUrl "$oci_url")
       fi
 

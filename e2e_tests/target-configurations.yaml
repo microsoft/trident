@@ -13,7 +13,7 @@ bareMetal:
       - encrypted-raid
       - encrypted-swap
       - memory-constraint-combined
-      # - misc TODO #14249
+      - misc
       - raid-big
       - raid-mirrored
       - raid-resync-small
@@ -30,7 +30,7 @@ bareMetal:
       - encrypted-raid
       - encrypted-swap
       - memory-constraint-combined
-      # - misc TODO #14249
+      - misc
       - raid-big
       - raid-mirrored
       - raid-resync-small
@@ -47,7 +47,7 @@ bareMetal:
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
-      # - misc TODO #14249
+      - misc
       - raid-mirrored
       - raid-resync-small
       - raid-small
@@ -62,7 +62,7 @@ bareMetal:
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
-      # - misc TODO #14249
+      - misc
       - raid-mirrored
       - raid-resync-small
       - raid-small
@@ -77,7 +77,7 @@ bareMetal:
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
-      # - misc TODO #14249
+      - misc
       - raid-mirrored
       - raid-resync-small
       - raid-small
@@ -140,6 +140,7 @@ virtualMachine:
       - encrypted-raid
       - encrypted-swap
       - memory-constraint-combined
+      - misc
       - raid-mirrored
       - raid-resync-small
       - raid-small
@@ -215,6 +216,7 @@ virtualMachine:
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
+      - misc
       - raid-mirrored
       - raid-resync-small
       - raid-small
