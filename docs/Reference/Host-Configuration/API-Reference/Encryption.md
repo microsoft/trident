@@ -29,9 +29,11 @@ This parameter is required and must not be empty. Each item is an object that wi
 
 ### `pcrs` (optional)
 
-Optional list of PCRs in TPM 2.0 device to seal to. Each PCR may be specified either as a digit or a string representation. If specified, at least one PCR must be provided, and any combination of the following PCRs may be used: - 4, or `boot-loader-code` - 7, or `secure-boot-policy` - 11, or `kernel-boot`.
+Optional list of PCRs in TPM 2.0 device to seal to. If not specified, Trident will seal encrypted volumes against the following default options: - If doing a clean install of a grub ROS image, seal to PCR 7.
 
-Other PCRs are currently not supported in the encryption logic. TODO: Before grub MOS + UKI ROS encryption flow is enabled & announced, determine whether `pcrs` should remain optional or be required. Related ADO task: https://dev.azure.com/mariner-org/polar/_workitems/edit/14485.
+Each PCR may be specified either as a digit or a string representation. If specified, at least one PCR must be provided, and any combination of the following PCRs may be used: - 7, or `secure-boot-policy`.
+
+More encryption flows, with additional PCR options, will be added in the future.
 
 | Characteristic | Value   |
 | -------------- | ------- |

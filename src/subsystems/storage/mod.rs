@@ -331,7 +331,7 @@ mod tests {
                         device_name: "luks-enc".to_owned(),
                         device_id: "part5".to_owned(),
                     }],
-                    pcrs: Some(vec![Pcr::Pcr7]),
+                    pcrs: vec![Pcr::Pcr7],
                 }),
                 ..Default::default()
             },
