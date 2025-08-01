@@ -112,20 +112,18 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 
 	logrus.Debugf("Base name: %s", base)
 
-	// Match form <repository>:v<build ID>.<version number>
-	matches_oci := regexp.MustCompile(`^(.+):v(\d+)\.(\d+)$`).FindStringSubmatch(base)
-	logrus.Debugf("File pattern matches: %+v (length: %d)", matches_oci, len(matches_oci))
-
+	// Match form <repository>:v<build ID>.<config>.<version number>
+	matches_oci := regexp.MustCompile(`^(.+):v(\d+)\.(.+)\.(\d+)$`).FindStringSubmatch(base)
 	// Match form <name>_v<version number>.<file extension> (note that "_v<version number>" is optional)
 	matches := regexp.MustCompile(`^(.*?)(_v\d+)?\.(.+)$`).FindStringSubmatch(base)
-	logrus.Debugf("File pattern matches: %+v (length: %d)", matches, len(matches))
 
 	var newCosiName string
 
-	if strings.HasPrefix(oldUrl, "oci://") {
+	if strings.HasPrefix(oldUrl, "oci://") && len(matches_oci) == 5 {
 		name := matches_oci[1]
 		buildId := matches_oci[2]
-		newCosiName = fmt.Sprintf("%s:v%s.%s", name, buildId, h.args.Version)
+		config := matches_oci[3]
+		newCosiName = fmt.Sprintf("%s:v%s.%s.%s", name, buildId, config, h.args.Version)
 	} else if len(matches) == 4 {
 		name := matches[1]
 		ext := matches[3]
