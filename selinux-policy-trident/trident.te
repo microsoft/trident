@@ -866,7 +866,7 @@ allow lvm_t init_t:key search; # Allows LVM to write to search the kernel keyrin
 allow lvm_t tpm_device_t:chr_file write; # Allows LVM to write to the TPM device.
 
 # This is necessary for veritysetup to be able to read a key file in /tmp.
-allow lvm_t tmp_t:file { getattr read open ioctl };
+allow lvm_t tmp_t:file { getattr ioctl open read };
 
 #============= mount_t =============
 allow mount_t trident_var_lib_t:dir mounton;
