@@ -8,8 +8,6 @@ use netplan_types::{
     NetworkConfig,
 };
 
-use sysdefs::tpm2::Pcr;
-
 use crate::{
     config::{
         host::os::{KernelCommandLine, Selinux, SelinuxMode},
@@ -21,6 +19,7 @@ use crate::{
     },
     constants::{self, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
 };
+use sysdefs::tpm2::Pcr;
 
 const SAMPLE_SHA384: &str = "ec9a9aa23f02b30f4ec6a168b9bc24733b652eeab4f8abc243630666a5e34cea1667c34313a13ec1564ac4871b80112f";
 

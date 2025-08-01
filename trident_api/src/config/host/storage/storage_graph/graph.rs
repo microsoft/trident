@@ -348,8 +348,6 @@ mod tests {
 
     use super::*;
 
-    use sysdefs::tpm2::Pcr;
-
     use crate::{
         config::{
             AbUpdate, AbVolumePair, AdoptedPartition, Disk, EncryptedVolume, Encryption,
@@ -360,6 +358,7 @@ mod tests {
             node::BlockDevice, references::SpecialReferenceKind, types::HostConfigBlockDevice,
         },
     };
+    use sysdefs::tpm2::Pcr;
 
     #[test]
     fn test_filesystems_on_verity() {

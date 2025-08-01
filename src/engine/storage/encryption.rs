@@ -22,7 +22,6 @@ use osutils::{
     pcrlock,
 };
 use sysdefs::tpm2::Pcr;
-
 use trident_api::{
     config::{HostConfiguration, HostConfigurationStaticValidationError, PartitionSize},
     constants::{
@@ -139,7 +138,7 @@ pub(super) fn create_encrypted_devices(
             .run_and_check()
             .message("Failed to clear TPM 2.0 device")?;
 
-        // If this for a grub ROS, seal against the value of PCR 7; if this is for a UKI ROS,
+        // If this is for a grub ROS, seal against the value of PCR 7; if this is for a UKI ROS,
         // seal against a "bootstrapping" pcrlock policy that exclusively contains PCR 0.
         // TODO: If this is a flow with an internal override, seal against the value of PCR 0
         // directly. Remove this internal override once container, BM, and "rerun" E2E encryption

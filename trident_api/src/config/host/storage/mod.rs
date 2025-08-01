@@ -545,12 +545,11 @@ mod tests {
     };
     use url::Url;
 
-    use sysdefs::tpm2::Pcr;
-
     use crate::{
         config::HostConfiguration,
         constants::{BOOT_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
     };
+    use sysdefs::tpm2::Pcr;
 
     use self::{
         abupdate::AbVolumePair,
