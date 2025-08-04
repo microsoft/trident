@@ -120,6 +120,7 @@ fn clean_install_safety_check(
             warn!("Trident is running from an OS installed on persistent storage");
         }
         Err(e) => {
+            // TODO: Remove this warning and add TridentError relevent to no /proc/cmdline
             warn!("Unable to detect boot type: {e:?} - assuming persistent storage");
             warn!("Trident is running from an OS installed on persistent storage");
         }
