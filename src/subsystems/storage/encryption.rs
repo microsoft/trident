@@ -32,6 +32,8 @@ const CRYPTTAB_PATH: &str = "/etc/crypttab";
 /// Validates the encryption configuration in Host Configuration.
 pub(super) fn validate_host_config(host_config: &HostConfiguration) -> Result<(), TridentError> {
     if let Some(encryption) = &host_config.storage.encryption {
+        // If a recovery key URL is specified, ensure that the file exists, is a regular file,
+        // is not empty, and is only accessible by the owner.
         if let Some(recovery_key_url) = &encryption.recovery_key_url {
             let key_file: PathBuf = recovery_key_url.path().into();
 
@@ -85,6 +87,13 @@ pub(super) fn validate_host_config(host_config: &HostConfiguration) -> Result<()
                         permissions: key_file_perms_mode & 0o777,
                     },
                 )));
+            }
+        }
+
+        // If PCRs are specified, ensure that they can be used given the runtime OS image.
+        if !encryption.pcrs.is_empty() {
+            if host_config.is_uki()? {
+                // TODO: Implement validation for UKI runtime
             }
         }
     }
