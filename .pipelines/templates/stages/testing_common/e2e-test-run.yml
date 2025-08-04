@@ -113,7 +113,10 @@ steps:
   # images in the custom Trident config, and re-run Trident to both stage and finalize A/B update.
   - bash: |
       set -eux
-      
+      NETLISTEN_CONFIG_ARGS=""
+      if [ -n "${{ parameters.netlistenConfigFile }}" ]; then
+        NETLISTEN_CONFIG_ARGS="--config ${{ parameters.netlistenConfigFile }}"
+      fi
       ./bin/netlisten --force-color $NETLISTEN_CONFIG_ARGS \
         -m $(Build.SourcesDirectory)/trident-ab-update-metrics-runtime-os-B.jsonl \
         --full-logstream ./logstream-full.log \
@@ -210,7 +213,6 @@ steps:
 
   - bash: |
       set -eux
-
       # If there is a netlisten process, kill it so there is no port clash in the instance
       if pgrep netlisten > /dev/null; then pkill netlisten; fi
 

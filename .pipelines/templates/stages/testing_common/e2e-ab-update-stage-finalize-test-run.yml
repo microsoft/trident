@@ -59,7 +59,6 @@ parameters:
 steps:
   - bash: |
       set -eux
-
       # If there is a netlisten process, kill it so there is no port clash in the instance
       if pgrep netlisten > /dev/null; then pkill netlisten; fi
 
