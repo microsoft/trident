@@ -162,13 +162,20 @@ stages:
             displayName: "Install dependencies"
             retryCountOnTaskFailure: 3
 
+          # Push (regular or container) testimage to ACR
+          - template: ../common_tasks/push-to-acr.yml
+            parameters:
+              imageName: ${{ variables.testImageName }}
+              registry: maritimuspublic
+              config: ${{ variables.tridentConfigurationName }}
+
           # Run trident prep
           - template: ../testing_common/trident-prep.yml
             parameters:
               tridentConfigPath: $(TRIDENT_CONFIG_PATH)
               runtimeEnv: ${{ parameters.runtimeEnv }}
               config: $(TRIDENT_CONFIGURATION_NAME)
-              baremetal: true
+              baremetal: false
 
           # Download all test images
           - template: ../testing_common/download-test-images.yml
@@ -345,3 +352,9 @@ stages:
               netlistenPort: ${{ variables.NETLAUNCH_PORT }}
               runtimeEnv: ${{ parameters.runtimeEnv }}
               netlistenConfigFile: $(TRIDENT_SOURCE_DIR)/baremetal-netlisten.yaml
+
+          - template: ../common_tasks/remove-from-acr.yml
+            parameters:
+              repository: ${{ variables.testImageName }}
+              registry: "maritimuspublic"
+              config: ${{ variables.tridentConfigurationName }}
