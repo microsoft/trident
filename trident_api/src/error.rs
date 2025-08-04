@@ -165,6 +165,9 @@ pub enum InvalidInputError {
     )]
     DuplicateFsUuidAbUpdate { pair_id: String, uuid: String },
 
+    #[error("Cannot find history file")]
+    HistoryFileNotFound,
+
     #[error("Cannot update host since it is not provisioned")]
     HostNotProvisioned,
 

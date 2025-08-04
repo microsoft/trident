@@ -487,6 +487,8 @@ Options:
           [default: DEBUG]
       --disk <DISK>
           Provide disk path [default: /dev/sda]
+      --history-path <HISTORY_PATH>
+          Provide path for history.json
 ```
 
 
@@ -519,6 +521,15 @@ Conflicts with:
 Provide disk path
 
 Default: `/dev/sda`
+
+Conflicts with:
+
+- `<HS_PATH>`
+
+
+#### <span style="color:#d96125;font-family:monospace;">--history_path &lt;HISTORY_PATH&gt;</span>
+
+Provide path for history.json
 
 Conflicts with:
 

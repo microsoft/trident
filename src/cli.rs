@@ -170,6 +170,9 @@ pub enum Commands {
         /// Provide disk path
         #[arg(long, default_value = "/dev/sda", conflicts_with = "hs_path")]
         disk: String,
+        /// Provide path for history.json
+        #[arg(long, conflicts_with = "hs_path")]
+        history_path: Option<PathBuf>,
     },
 }
 

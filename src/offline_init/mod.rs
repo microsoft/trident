@@ -431,6 +431,7 @@ pub fn execute(
     hs_path: Option<&Path>,
     lazy_partitions: &[String],
     disk: &String,
+    history_path: Option<&Path>,
 ) -> Result<(), TridentError> {
     let host_status: HostStatus = if let Some(hs_path) = hs_path {
         info!("Reading Host Status from {:?}", hs_path);
@@ -446,10 +447,11 @@ pub fn execute(
             .set_flag("injectedHostStatus".into());
         host_status
     } else {
-        let history_file_path = "/usr/share/image-customizer/history.json";
-        let history_file = fs::read_to_string(history_file_path)
+        let history_file_paths = ["/usr/share/image-customizer/history.json"];
+        let history_file_path = find_history_file(history_path, &history_file_paths)?;
+        let history_file = fs::read_to_string(&history_file_path)
             .structured(InvalidInputError::ReadInputFile {
-                path: history_file_path.to_string(),
+                path: history_file_path.display().to_string(),
             })
             .message("Failed to read Prism history file")?;
 
@@ -499,11 +501,45 @@ pub fn execute(
     Ok(())
 }
 
+fn find_history_file(
+    provided_history_path: Option<&Path>,
+    default_history_paths: &[&str],
+) -> Result<PathBuf, TridentError> {
+    match provided_history_path {
+        // If history path is passed in from the command line, use it
+        Some(history_file_path) => {
+            if !history_file_path.exists() {
+                return Err(TridentError::new(InvalidInputError::HistoryFileNotFound))
+                    .message("Configured history file does not exist");
+            }
+            Ok(history_file_path.to_path_buf())
+        }
+        // If no history is passed in, scan expected paths and use first existing
+        None => {
+            let history_file_path = default_history_paths
+                .iter()
+                .filter_map(|f| {
+                    let path = Path::new(f);
+                    if path.exists() {
+                        return Some(path.to_path_buf());
+                    }
+                    None
+                })
+                .next();
+            let Some(history_file_path) = history_file_path else {
+                return Err(TridentError::new(InvalidInputError::HistoryFileNotFound))
+                    .message("History file not found in default paths.");
+            };
+            Ok(history_file_path)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use osutils::lsblk::LsBlkOutput;
-
     use super::*;
+    use osutils::lsblk::LsBlkOutput;
+    use tempfile::NamedTempFile;
 
     // lsblk.json was adding a postCustomization step to the
     // usr-verity configuration in test-images
@@ -744,5 +780,65 @@ mod tests {
             .to_string(),
             "No corresponding '-a' partition found for lazy partition 'foo-b'"
         );
+    }
+
+    #[test]
+    fn test_find_history_file() {
+        // test nothing exists
+        let history_file = find_history_file(None, &["/foo/bar/blah.json"]);
+        history_file.unwrap_err();
+
+        // test nothing provided, first default exists
+        let existing_file = NamedTempFile::new().unwrap();
+        let history_file = find_history_file(
+            None,
+            &[
+                &existing_file.path().display().to_string(),
+                "/foo/blah.json",
+            ],
+        );
+        assert_eq!(
+            history_file.unwrap().display().to_string(),
+            existing_file.path().display().to_string()
+        );
+
+        // test nothing provided, second default exists
+        let existing_file = NamedTempFile::new().unwrap();
+        let history_file = find_history_file(
+            None,
+            &[
+                "/foo/blah.json",
+                &existing_file.path().display().to_string(),
+            ],
+        );
+        assert_eq!(
+            history_file.unwrap().display().to_string(),
+            existing_file.path().display().to_string()
+        );
+
+        // test use provided
+        let provided_file = NamedTempFile::new().unwrap();
+        let existing_file = NamedTempFile::new().unwrap();
+        let history_file = find_history_file(
+            Some(provided_file.path()),
+            &[&existing_file.path().display().to_string()],
+        );
+        assert_eq!(
+            history_file.unwrap().display().to_string(),
+            provided_file.path().display().to_string()
+        );
+
+        // test provided does not exist
+        let existing_file = NamedTempFile::new().unwrap();
+        let history_file = find_history_file(
+            Some(Path::new("/foo/blah.json`")),
+            &[&existing_file.path().display().to_string()],
+        );
+        history_file.unwrap_err();
+
+        // test default paths do not exist
+        let existing_file = NamedTempFile::new().unwrap();
+        let history_file = find_history_file(None, &["/foo/history.json"]);
+        history_file.unwrap_err();
     }
 }
