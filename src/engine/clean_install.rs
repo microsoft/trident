@@ -114,7 +114,10 @@ fn clean_install_safety_check(
     // Check if Trident is running from a live image
     let cmdline =
         fs::read_to_string("/proc/cmdline").structured(InitializationError::ReadCmdline)?;
-    if cmdline.contains("root=/dev/ram0") || cmdline.contains("root=live:LABEL=CDROM") {
+    if cmdline.contains("root=/dev/ram0")
+        || cmdline.contains("root=live:LABEL=CDROM")
+        || !cmdline.contains("root=")
+    {
         debug!("Trident is running from a live image.");
         return Ok(());
     }
