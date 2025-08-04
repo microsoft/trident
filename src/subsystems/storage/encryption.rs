@@ -12,10 +12,11 @@ use osutils::{
     path::join_relative,
     pcrlock::{self, PCRLOCK_POLICY_JSON_PATH},
 };
+use sysdefs::tpm2::Pcr;
 use trident_api::{
     config::{
-        HostConfiguration, HostConfigurationDynamicValidationError,
-        HostConfigurationStaticValidationError, PartitionType,
+        HostConfigurationDynamicValidationError, HostConfigurationStaticValidationError,
+        PartitionType,
     },
     constants::internal_params::OVERRIDE_PCRLOCK_ENCRYPTION,
     error::{InternalError, InvalidInputError, ReportError, ServicingError, TridentError},
@@ -28,9 +29,9 @@ use crate::{
 
 const CRYPTTAB_PATH: &str = "/etc/crypttab";
 
-/// Validates the encryption configuration in Host Configuration.
-pub(super) fn validate_host_config(host_config: &HostConfiguration) -> Result<(), TridentError> {
-    if let Some(encryption) = &host_config.storage.encryption {
+/// Validates the encryption configuration.
+pub(super) fn validate_host_config(ctx: &EngineContext) -> Result<(), TridentError> {
+    if let Some(encryption) = &ctx.spec.storage.encryption {
         // If a recovery key URL is specified, ensure that the file exists, is a regular file,
         // is not empty, and is only accessible by the owner.
         if let Some(recovery_key_url) = &encryption.recovery_key_url {
@@ -89,13 +90,29 @@ pub(super) fn validate_host_config(host_config: &HostConfiguration) -> Result<()
             }
         }
 
-        // If PCRs are specified, ensure that they can be used given the runtime OS image.
-        // TODO: HOW TO CHECK IF IT IS A UKI COSI?
-        // if !encryption.pcrs.is_empty() {
-        //     if host_config.image.is_uki()? {
-        //         // TODO: Implement validation for UKI runtime
-        //     }
-        // }
+        // We've already validated that only supported PCRs, i.e. 4, 7, and/or 11, are specified;
+        // but we also need to ensure that only PCR 7 is specified if this is a grub image.
+        if !encryption.pcrs.is_empty() && !ctx.is_uki()? {
+            let invalid_pcrs: Vec<_> = encryption
+                .pcrs
+                .iter()
+                .filter(|&&pcr| pcr != Pcr::Pcr7)
+                .cloned()
+                .collect();
+
+            if !invalid_pcrs.is_empty() {
+                let pcrs_string = invalid_pcrs
+                    .iter()
+                    .map(|pcr| pcr.to_num().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                return Err(TridentError::new(InvalidInputError::from(
+                    HostConfigurationDynamicValidationError::InvalidEncryptionPcrsForGrubImage {
+                        pcrs: pcrs_string,
+                    },
+                )));
+            }
+        }
     }
 
     Ok(())
@@ -275,12 +292,14 @@ mod tests {
     use super::*;
 
     use std::{os::unix::fs::PermissionsExt, path::Path, str::FromStr};
+    use tempfile::NamedTempFile;
 
     use url::Url;
 
     use trident_api::{
         config::{
-            Disk, EncryptedVolume, Encryption, Partition, PartitionSize, PartitionType, Storage,
+            Disk, EncryptedVolume, Encryption, HostConfiguration, Partition, PartitionSize,
+            PartitionType, Storage,
         },
         error::ErrorKind,
     };
@@ -325,9 +344,13 @@ mod tests {
         }
     }
 
-    fn get_host_config(recovery_key_file: &tempfile::NamedTempFile) -> HostConfiguration {
-        HostConfiguration {
-            storage: get_storage(recovery_key_file),
+    fn get_ctx(recovery_key_file: &NamedTempFile) -> EngineContext {
+        EngineContext {
+            spec: HostConfiguration {
+                storage: get_storage(recovery_key_file),
+                ..Default::default()
+            },
+            is_uki: Some(false),
             ..Default::default()
         }
     }
@@ -336,32 +359,32 @@ mod tests {
     #[test]
     fn test_validate_host_config_pass() {
         let recovery_key_file = storage_tests::get_recovery_key_file();
-        let host_config = get_host_config(&recovery_key_file);
-        validate_host_config(&host_config).unwrap();
+        let ctx = get_ctx(&recovery_key_file);
+        validate_host_config(&ctx).unwrap();
     }
 
     // Encryption doesn't need to be configured at all.
     #[test]
     fn test_validate_host_config_encryption_none_pass() {
         let recovery_key_file = storage_tests::get_recovery_key_file();
-        let mut host_config = get_host_config(&recovery_key_file);
+        let mut ctx = get_ctx(&recovery_key_file);
 
-        host_config.storage.encryption = None;
+        ctx.spec.storage.encryption = None;
 
-        validate_host_config(&host_config).unwrap();
+        validate_host_config(&ctx).unwrap();
     }
 
     // Encryption recovery key file needs to exist on the system.
     #[test]
     fn test_validate_host_config_recovery_key_not_exist_fail() {
         let recovery_key_file = storage_tests::get_recovery_key_file();
-        let host_config = get_host_config(&recovery_key_file);
+        let ctx = get_ctx(&recovery_key_file);
 
         // Delete the recovery key file.
         fs::remove_file(recovery_key_file.path()).unwrap();
 
         assert_eq!(
-            validate_host_config(&host_config).unwrap_err().kind(),
+            validate_host_config(&ctx).unwrap_err().kind(),
             &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
                 inner: HostConfigurationDynamicValidationError::InvalidEncryptionKeyFilePath {
                     path: recovery_key_file.path().to_string_lossy().to_string()
@@ -374,15 +397,15 @@ mod tests {
     #[test]
     fn test_validate_host_config_recovery_key_not_file_fail() {
         let recovery_key_file = storage_tests::get_recovery_key_file();
-        let mut host_config = get_host_config(&recovery_key_file);
-        let encryption = host_config.storage.encryption.as_mut().unwrap();
+        let mut ctx = get_ctx(&recovery_key_file);
+        let encryption = ctx.spec.storage.encryption.as_mut().unwrap();
 
         // Point to the recovery key file's directory.
         let recovery_key_dir: &Path = recovery_key_file.path().parent().unwrap();
         encryption.recovery_key_url = Some(Url::from_directory_path(recovery_key_dir).unwrap());
 
         assert_eq!(
-            validate_host_config(&host_config).unwrap_err().kind(),
+            validate_host_config(&ctx).unwrap_err().kind(),
             &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
                 inner: HostConfigurationDynamicValidationError::EncryptionKeyNotRegularFile {
                     key_file: format!("{}/", recovery_key_dir.to_string_lossy())
@@ -395,7 +418,7 @@ mod tests {
     #[test]
     fn test_validate_host_config_recovery_key_perm_pass() {
         let recovery_key_file = storage_tests::get_recovery_key_file();
-        let host_config = get_host_config(&recovery_key_file);
+        let ctx = get_ctx(&recovery_key_file);
 
         // Loop through all possible permission modes.
         for owner_digit in 0..=7 {
@@ -413,7 +436,7 @@ mod tests {
                     perms.set_mode(mode);
                     fs::set_permissions(recovery_key_file.path(), perms).unwrap();
 
-                    validate_host_config(&host_config).unwrap();
+                    validate_host_config(&ctx).unwrap();
                 }
             }
         }
@@ -422,7 +445,7 @@ mod tests {
     #[test]
     fn test_validate_host_config_recovery_key_perm_fail() {
         let recovery_key_file = storage_tests::get_recovery_key_file();
-        let host_config = get_host_config(&recovery_key_file);
+        let ctx = get_ctx(&recovery_key_file);
 
         // Loop through all possible permission modes.
         for owner_digit in 0..=7 {
@@ -441,7 +464,7 @@ mod tests {
                     fs::set_permissions(recovery_key_file.path(), perms).unwrap();
 
                     assert_eq!(
-                        validate_host_config(&host_config).unwrap_err().kind(),
+                        validate_host_config(&ctx).unwrap_err().kind(),
                         &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
                             inner: HostConfigurationDynamicValidationError::EncryptionKeyInvalidPermissions {
                                 key_file: recovery_key_file.path().to_string_lossy().to_string(),
@@ -457,18 +480,47 @@ mod tests {
     #[test]
     fn test_validate_host_config_recovery_key_empty_fail() {
         let recovery_key_file = storage_tests::get_recovery_key_file();
-        let host_config = get_host_config(&recovery_key_file);
+        let ctx = get_ctx(&recovery_key_file);
 
         // Set the recovery key file's contents to empty.
         fs::write(recovery_key_file.path(), "").unwrap();
 
         assert_eq!(
-            validate_host_config(&host_config).unwrap_err().kind(),
+            validate_host_config(&ctx).unwrap_err().kind(),
             &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
                 inner: HostConfigurationDynamicValidationError::EncryptionKeyEmpty {
                     key_file: recovery_key_file.path().to_string_lossy().to_string()
                 }
             })
         );
+    }
+
+    #[test]
+    fn test_validate_host_config_encryption_pcrs() {
+        // Test case #0: If OS image is a grub image and PCRs include 4, 7, and 11, then fail b/c
+        // only PCR 7 is valid for non-UKI images.
+        let recovery_key_file = storage_tests::get_recovery_key_file();
+        let mut ctx = get_ctx(&recovery_key_file);
+        let encryption = ctx.spec.storage.encryption.as_mut().unwrap();
+        let pcrs = vec![Pcr::Pcr4, Pcr::Pcr7, Pcr::Pcr11];
+        encryption.pcrs = pcrs.clone();
+
+        let pcrs_str = [Pcr::Pcr4, Pcr::Pcr11]
+            .iter()
+            .map(|pcr| pcr.to_num().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        assert_eq!(
+            validate_host_config(&ctx).unwrap_err().kind(),
+            &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
+                inner: HostConfigurationDynamicValidationError::InvalidEncryptionPcrsForGrubImage {
+                    pcrs: pcrs_str,
+                }
+            })
+        );
+
+        // Test case #1: If OS image is a UKI image, then pass.
+        ctx.is_uki = Some(true);
+        validate_host_config(&ctx).unwrap();
     }
 }

@@ -166,9 +166,14 @@ impl Encryption {
                 .filter(|pcr| !supported_pcrs.contains(pcr))
                 .collect();
             if !unsupported_pcrs.is_empty() {
+                let pcrs_string = unsupported_pcrs
+                    .iter()
+                    .map(|pcr| pcr.to_num().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 return Err(
-                    HostConfigurationStaticValidationError::InvalidEncryptionPcrsUnsupported {
-                        pcrs: unsupported_pcrs,
+                    HostConfigurationStaticValidationError::UnsupportedEncryptionPcrs {
+                        pcrs: pcrs_string,
                     },
                 );
             }
@@ -231,8 +236,8 @@ mod tests {
         };
         assert_eq!(
             config.validate().unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidEncryptionPcrsUnsupported {
-                pcrs: vec![Pcr::Pcr0],
+            HostConfigurationStaticValidationError::UnsupportedEncryptionPcrs {
+                pcrs: "0".to_string(),
             }
         );
     }
