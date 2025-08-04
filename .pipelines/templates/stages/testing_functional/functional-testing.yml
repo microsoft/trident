@@ -165,8 +165,8 @@ stages:
           - task: PublishBuildArtifacts@1
             displayName: "Publish build number artifact"
             inputs:
-            pathToPublish: "$(Build.ArtifactStagingDirectory)/build-number-trident-functional"
-            ArtifactName: "build-number-trident-functional"
+              pathToPublish: "$(Build.ArtifactStagingDirectory)/build-number-trident-functional"
+              ArtifactName: "build-number-trident-functional"
 
 
           - template: ../common/dbCommunication/push-test-results-to-db.yaml
