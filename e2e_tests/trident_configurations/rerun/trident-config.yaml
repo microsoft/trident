@@ -119,7 +119,11 @@ storage:
         deviceId: home-b-e
     pcrs:
       - boot-loader-code # 4
-      - secure-boot-policy # 7
+      # TODO: Enable including PCR 7 in pcrlock policy when all the components
+      # related to SHIM and PCR 7 are recognized, for both SecureBoot enabled
+      # and disabled states. Related ADO task:
+      # https://dev.azure.com/mariner-org/polar/_workitems/edit/14523.
+      #- secure-boot-policy # 7
       - kernel-boot # 11
   abUpdate:
     volumePairs:
