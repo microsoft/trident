@@ -113,12 +113,7 @@ steps:
   # images in the custom Trident config, and re-run Trident to both stage and finalize A/B update.
   - bash: |
       set -eux
-
-      NETLISTEN_CONFIG_ARGS=""
-      if [ -n "${{ parameters.netlistenConfigFile }}" ]; then
-        NETLISTEN_CONFIG_ARGS="--config ${{ parameters.netlistenConfigFile }}"
-      fi
-
+      
       ./bin/netlisten --force-color $NETLISTEN_CONFIG_ARGS \
         -m $(Build.SourcesDirectory)/trident-ab-update-metrics-runtime-os-B.jsonl \
         --full-logstream ./logstream-full.log \
@@ -136,7 +131,11 @@ steps:
           --stage-ab-update \
           --finalize-ab-update
 
+      current_version=$(echo $(version))
+      new_version=$((current_version + 1))
+      # Un-set the 'x' flag to avoid errors.
       set +x
+      echo "##vso[task.setvariable variable=version]$new_version"
       echo "##vso[task.setvariable variable=abActiveVolume]volume-b"
     timeoutInMinutes: 15
     workingDirectory: $(Build.SourcesDirectory)
@@ -211,15 +210,6 @@ steps:
 
   - bash: |
       set -eux
-      # Get the current image version and increment it to use a new version for the update.
-      # This is done to provide an easy way to identify that the image was updated.
-      current_version=$(echo $(version))
-      new_version=$((current_version + 1))
-      
-      # Un-set the 'x' flag to avoid errors.
-      set +x
-      echo "##vso[task.setvariable variable=version]$new_version"
-      set -eux
 
       # If there is a netlisten process, kill it so there is no port clash in the instance
       if pgrep netlisten > /dev/null; then pkill netlisten; fi
@@ -246,7 +236,11 @@ steps:
           --stage-ab-update \
           --finalize-ab-update
 
+      current_version=$(echo $(version))
+      new_version=$((current_version + 1))
+      # Un-set the 'x' flag to avoid errors.
       set +x
+      echo "##vso[task.setvariable variable=version]$new_version"
       echo "##vso[task.setvariable variable=abActiveVolume]volume-a"
     timeoutInMinutes: 15
     workingDirectory: $(Build.SourcesDirectory)
