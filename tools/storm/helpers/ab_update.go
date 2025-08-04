@@ -307,6 +307,12 @@ func (h *AbUpdateHelper) checkTridentService(tc storm.TestCase) error {
 }
 
 func checkUrlIsAccessible(url string) error {
+	// If this is an OCI image, skip check
+	if strings.HasPrefix(url, "oci://") {
+		logrus.Infof("Skipping accessibility check for OCI URL: %s", url)
+		return nil
+	}
+
 	resp, err := http.Head(url)
 	if err != nil {
 		return fmt.Errorf("failed to check new image URL: %w", err)
