@@ -8,11 +8,10 @@ use enumflags2::BitFlags;
 use log::{debug, info, trace};
 
 use osutils::{
-    encryption, files,
+    encryption as osutils_encryption, files,
     path::join_relative,
     pcrlock::{self, PCRLOCK_POLICY_JSON_PATH},
 };
-use sysdefs::tpm2::Pcr;
 use trident_api::{
     config::{
         HostConfiguration, HostConfigurationDynamicValidationError,
@@ -23,7 +22,7 @@ use trident_api::{
 };
 
 use crate::{
-    engine::{storage::encryption as storage_encryption, EngineContext},
+    engine::{storage::encryption as engine_encryption, EngineContext},
     ServicingType,
 };
 
@@ -91,11 +90,12 @@ pub(super) fn validate_host_config(host_config: &HostConfiguration) -> Result<()
         }
 
         // If PCRs are specified, ensure that they can be used given the runtime OS image.
-        if !encryption.pcrs.is_empty() {
-            if host_config.is_uki()? {
-                // TODO: Implement validation for UKI runtime
-            }
-        }
+        // TODO: HOW TO CHECK IF IT IS A UKI COSI?
+        // if !encryption.pcrs.is_empty() {
+        //     if host_config.image.is_uki()? {
+        //         // TODO: Implement validation for UKI runtime
+        //     }
+        // }
     }
 
     Ok(())
@@ -140,12 +140,8 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                                 bitflags |= BitFlags::from(*pcr);
                             }
                         } else {
-                            // Use default PCRs if none specified.
-                            // TODO: Before grub MOS + UKI ROS encryption flow is enabled &
-                            // announced, determine what should be the default, and update here.
-                            // Related ADO task:
-                            // https://dev.azure.com/mariner-org/polar/_workitems/edit/14485.
-                            bitflags |= BitFlags::from(Pcr::Pcr7);
+                            // Use default PCR if none specified.
+                            bitflags |= BitFlags::from(osutils_encryption::DEFAULT_PCR);
                         }
                         Some(bitflags)
                     } else {
@@ -173,7 +169,7 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
             debug!("Re-generating pcrlock policy to include PCRs: {:?}", pcrs);
             // Get UKI and bootloader binaries for .pcrlock file generation
             let (uki_binaries, bootloader_binaries) =
-                storage_encryption::get_binary_paths_pcrlock(ctx, pcrs, Some(mount_path))
+                engine_encryption::get_binary_paths_pcrlock(ctx, pcrs, Some(mount_path))
                     .structured(ServicingError::GetBinaryPathsForPcrlockEncryption)?;
 
             // Re-generate pcrlock policy
@@ -241,9 +237,9 @@ pub fn configure(ctx: &EngineContext) -> Result<(), TridentError> {
                 "{}\t{}\t{}\tluks,swap,cipher={},size={}\n",
                 ev.device_name,
                 device_path.display(),
-                encryption::DEV_RANDOM_PATH,
-                encryption::CIPHER,
-                encryption::KEY_SIZE
+                osutils_encryption::DEV_RANDOM_PATH,
+                osutils_encryption::CIPHER,
+                osutils_encryption::KEY_SIZE
             ));
         } else {
             contents.push_str(&format!(
@@ -282,7 +278,6 @@ mod tests {
 
     use url::Url;
 
-    use sysdefs::tpm2::Pcr;
     use trident_api::{
         config::{
             Disk, EncryptedVolume, Encryption, Partition, PartitionSize, PartitionType, Storage,
@@ -324,7 +319,7 @@ mod tests {
                     device_name: "luks-srv".to_owned(),
                     device_id: "srv-enc".to_owned(),
                 }],
-                pcrs: vec![Pcr::Pcr7],
+                pcrs: vec![osutils_encryption::DEFAULT_PCR],
             }),
             ..Default::default()
         }

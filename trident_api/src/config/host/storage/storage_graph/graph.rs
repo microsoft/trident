@@ -358,7 +358,6 @@ mod tests {
             node::BlockDevice, references::SpecialReferenceKind, types::HostConfigBlockDevice,
         },
     };
-    use sysdefs::tpm2::Pcr;
 
     #[test]
     fn test_filesystems_on_verity() {
@@ -731,7 +730,7 @@ mod tests {
                     device_name: "encrypted".into(),
                 }],
                 recovery_key_url: None,
-                pcrs: vec![Pcr::Pcr7],
+                pcrs: vec![],
             }),
             ..Default::default()
         };

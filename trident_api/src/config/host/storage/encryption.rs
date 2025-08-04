@@ -191,7 +191,6 @@ mod tests {
     #[test]
     fn test_validate_encryption() {
         let mut config = Encryption {
-            pcrs: vec![Pcr::Pcr7],
             ..Default::default()
         };
         config.validate().unwrap();
@@ -210,7 +209,6 @@ mod tests {
     #[test]
     fn test_validate_encryption_fail_invalid_recovery_key_url() {
         let config = Encryption {
-            pcrs: vec![Pcr::Pcr7],
             recovery_key_url: Some(
                 Url::parse("http://example.com/invalid-recovery-key-http").unwrap(),
             ),
