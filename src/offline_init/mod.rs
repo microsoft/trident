@@ -447,7 +447,7 @@ pub fn execute(
             .set_flag("injectedHostStatus".into());
         host_status
     } else {
-        let history_file_paths = ["/usr/share/image-customizer/history.json"];
+        let history_file_paths = [Path::new("/usr/share/image-customizer/history.json")];
         let history_file_path = find_history_file(history_path, &history_file_paths)?;
         let history_file = fs::read_to_string(&history_file_path)
             .structured(InvalidInputError::ReadInputFile {
@@ -503,7 +503,7 @@ pub fn execute(
 
 fn find_history_file(
     provided_history_path: Option<&Path>,
-    default_history_paths: &[&str],
+    default_history_paths: &[&Path],
 ) -> Result<PathBuf, TridentError> {
     match provided_history_path {
         // If history path is passed in from the command line, use it
@@ -784,33 +784,22 @@ mod tests {
 
     #[test]
     fn test_find_history_file() {
+        let nonexistent = Path::new("/foo/blah.json");
+        let existing_file = NamedTempFile::new().unwrap();
+
         // test nothing exists
-        let history_file = find_history_file(None, &["/foo/bar/blah.json"]);
+        let history_file = find_history_file(None, &[nonexistent]);
         history_file.unwrap_err();
 
         // test nothing provided, first default exists
-        let existing_file = NamedTempFile::new().unwrap();
-        let history_file = find_history_file(
-            None,
-            &[
-                &existing_file.path().display().to_string(),
-                "/foo/blah.json",
-            ],
-        );
+        let history_file = find_history_file(None, &[existing_file.path(), nonexistent]);
         assert_eq!(
             history_file.unwrap().display().to_string(),
             existing_file.path().display().to_string()
         );
 
         // test nothing provided, second default exists
-        let existing_file = NamedTempFile::new().unwrap();
-        let history_file = find_history_file(
-            None,
-            &[
-                "/foo/blah.json",
-                &existing_file.path().display().to_string(),
-            ],
-        );
+        let history_file = find_history_file(None, &[nonexistent, existing_file.path()]);
         assert_eq!(
             history_file.unwrap().display().to_string(),
             existing_file.path().display().to_string()
@@ -819,26 +808,18 @@ mod tests {
         // test use provided
         let provided_file = NamedTempFile::new().unwrap();
         let existing_file = NamedTempFile::new().unwrap();
-        let history_file = find_history_file(
-            Some(provided_file.path()),
-            &[&existing_file.path().display().to_string()],
-        );
+        let history_file = find_history_file(Some(provided_file.path()), &[existing_file.path()]);
         assert_eq!(
             history_file.unwrap().display().to_string(),
             provided_file.path().display().to_string()
         );
 
         // test provided does not exist
-        let existing_file = NamedTempFile::new().unwrap();
-        let history_file = find_history_file(
-            Some(Path::new("/foo/blah.json`")),
-            &[&existing_file.path().display().to_string()],
-        );
+        let history_file = find_history_file(Some(nonexistent), &[existing_file.path()]);
         history_file.unwrap_err();
 
         // test default paths do not exist
-        let existing_file = NamedTempFile::new().unwrap();
-        let history_file = find_history_file(None, &["/foo/history.json"]);
+        let history_file = find_history_file(None, &[nonexistent]);
         history_file.unwrap_err();
     }
 }
