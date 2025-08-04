@@ -118,7 +118,7 @@ steps:
       if [ -n "${{ parameters.netlistenConfigFile }}" ]; then
         NETLISTEN_CONFIG_ARGS="--config ${{ parameters.netlistenConfigFile }}"
       fi
-      
+
       ./bin/netlisten --force-color $NETLISTEN_CONFIG_ARGS \
         -m $(Build.SourcesDirectory)/trident-ab-update-metrics-runtime-os-B.jsonl \
         --full-logstream ./logstream-full.log \
