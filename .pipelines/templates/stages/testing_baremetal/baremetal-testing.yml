@@ -162,13 +162,6 @@ stages:
             displayName: "Install dependencies"
             retryCountOnTaskFailure: 3
 
-          # Push (regular or container) testimage to ACR
-          - template: ../common_tasks/push-to-acr.yml
-            parameters:
-              imageName: ${{ variables.IMAGE_NAME }}
-              registry: maritimuspublic
-              config: $(TRIDENT_CONFIGURATION_NAME)
-
           # Run trident prep
           - template: ../testing_common/trident-prep.yml
             parameters:
@@ -187,6 +180,13 @@ stages:
               tridentTestImageUsrVerity: ${{ variables.USRVERITY_IMAGE_NAME }}
               ${{ if eq(parameters.runtimeEnv, 'container') }}:
                 downloadTridentContainer: true
+
+          # Push (regular or container) testimage to ACR
+          - template: ../common_tasks/push-to-acr.yml
+            parameters:
+              imageName: ${{ variables.IMAGE_NAME }}
+              registry: maritimuspublic
+              config: $(TRIDENT_CONFIGURATION_NAME)
 
           - bash: |
               set -xe
