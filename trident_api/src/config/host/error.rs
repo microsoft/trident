@@ -2,12 +2,11 @@
 
 use serde::{Deserialize, Serialize};
 
-use sysdefs::tpm2::Pcr;
-
 use crate::{
     constants::VAR_TMP_PATH,
     error::{InvalidInputError, TridentError},
 };
+use sysdefs::tpm2::Pcr;
 
 use super::storage::storage_graph::error::StorageGraphBuildError;
 
@@ -61,14 +60,8 @@ pub enum HostConfigurationStaticValidationError {
     InvalidStorageGraph(#[from] StorageGraphBuildError),
 
     #[error(
-        "List of PCRs to seal to in encryption configuration is empty, \
-        but at least one PCR must be specified"
-    )]
-    InvalidEncryptionPcrsEmpty,
-
-    #[error(
         "List of PCRs to seal to in encryption configuration contains unsupported PCRs '{pcrs:?}'.\n
-        Only PCRs 4, 7, and 11 are supported"
+        Only PCR 7 is currently supported."
     )]
     InvalidEncryptionPcrsUnsupported { pcrs: Vec<Pcr> },
 

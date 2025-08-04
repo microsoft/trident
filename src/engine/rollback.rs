@@ -5,7 +5,7 @@ use enumflags2::BitFlags;
 use log::{debug, info, trace, warn};
 
 use osutils::{block_devices, efivar, lsblk, pcrlock, veritysetup, virt};
-
+use sysdefs::tpm2::Pcr;
 use trident_api::{
     constants::internal_params::{OVERRIDE_PCRLOCK_ENCRYPTION, VIRTDEPLOY_BOOT_ORDER_WORKAROUND},
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
@@ -97,8 +97,17 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
                 debug!("Regenerating pcrlock policy for current boot");
 
                 let mut pcrs = BitFlags::empty();
-                for pcr in &encryption.pcrs {
-                    pcrs |= BitFlags::from(*pcr);
+                if !encryption.pcrs.is_empty() {
+                    for pcr in &encryption.pcrs {
+                        pcrs |= BitFlags::from(*pcr);
+                    }
+                } else {
+                    // Use default PCRs if none specified.
+                    // TODO: Before grub MOS + UKI ROS encryption flow is enabled &
+                    // announced, determine what should be the default, and update here.
+                    // Related ADO task:
+                    // https://dev.azure.com/mariner-org/polar/_workitems/edit/14485.
+                    pcrs |= BitFlags::from(Pcr::Pcr7);
                 }
 
                 // Get UKI and bootloader binaries for .pcrlock file generation

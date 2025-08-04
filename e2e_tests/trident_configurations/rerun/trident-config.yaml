@@ -120,13 +120,16 @@ storage:
       - id: home-b
         deviceName: home-b
         deviceId: home-b-e
-    pcrs:
-      - boot-loader-code # 4
-      # TODO: Once UKI MOS is built and pcrlock policy can include PCR 7,
-      # un-comment. Related ADO task:
-      # https://dev.azure.com/mariner-org/polar/_workitems/edit/14286/.
-      #- secure-boot-policy # 7
-      - kernel-boot # 11
+    # TODO: Un-comment when pcrlock logic enabled for grub MOS + UKI ROS
+    # scenario; need to update API validation. Related ADO task:
+    # https://dev.azure.com/mariner-org/polar/_workitems/edit/14485.
+    # pcrs:
+    #   - boot-loader-code # 4
+    #   # TODO: Once UKI MOS is built and pcrlock policy can include PCR 7,
+    #   # un-comment. Related ADO task:
+    #   # https://dev.azure.com/mariner-org/polar/_workitems/edit/14286/.
+    #   #- secure-boot-policy # 7
+    #   - kernel-boot # 11
   abUpdate:
     volumePairs:
       - id: boot

@@ -12,7 +12,7 @@ use osutils::{
     path::join_relative,
     pcrlock::{self, PCRLOCK_POLICY_JSON_PATH},
 };
-
+use sysdefs::tpm2::Pcr;
 use trident_api::{
     config::{
         HostConfiguration, HostConfigurationDynamicValidationError,
@@ -126,8 +126,17 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                         .get_flag(OVERRIDE_PCRLOCK_ENCRYPTION);
                     if !override_pcrlock_encryption {
                         let mut bitflags = BitFlags::empty();
-                        for pcr in &encryption.pcrs {
-                            bitflags |= BitFlags::from(*pcr);
+                        if !encryption.pcrs.is_empty() {
+                            for pcr in &encryption.pcrs {
+                                bitflags |= BitFlags::from(*pcr);
+                            }
+                        } else {
+                            // Use default PCRs if none specified.
+                            // TODO: Before grub MOS + UKI ROS encryption flow is enabled &
+                            // announced, determine what should be the default, and update here.
+                            // Related ADO task:
+                            // https://dev.azure.com/mariner-org/polar/_workitems/edit/14485.
+                            bitflags |= BitFlags::from(Pcr::Pcr7);
                         }
                         Some(bitflags)
                     } else {
@@ -265,7 +274,6 @@ mod tests {
     use url::Url;
 
     use sysdefs::tpm2::Pcr;
-
     use trident_api::{
         config::{
             Disk, EncryptedVolume, Encryption, Partition, PartitionSize, PartitionType, Storage,
