@@ -6,7 +6,6 @@ use crate::{
     constants::VAR_TMP_PATH,
     error::{InvalidInputError, TridentError},
 };
-use sysdefs::tpm2::Pcr;
 
 use super::storage::storage_graph::error::StorageGraphBuildError;
 
@@ -58,12 +57,6 @@ pub enum HostConfigurationStaticValidationError {
 
     #[error(transparent)]
     InvalidStorageGraph(#[from] StorageGraphBuildError),
-
-    #[error(
-        "List of PCRs to seal to in encryption configuration contains unsupported PCRs '{pcrs:?}'.\n
-        Only PCR 4, 7, and 11 are currently supported"
-    )]
-    InvalidEncryptionPcrsUnsupported { pcrs: Vec<Pcr> },
 
     #[error("Encryption recovery key URL '{url}' has invalid scheme '{scheme}'")]
     InvalidEncryptionRecoveryKeyUrlScheme { url: String, scheme: String },
@@ -117,6 +110,12 @@ pub enum HostConfigurationStaticValidationError {
 
     #[error("Cannot request self-upgrade of Trident when a read-only verity filesystem is mounted at '/'")]
     SelfUpgradeOnReadOnlyRootVerityFs,
+
+    #[error(
+        "List of PCRs in encryption config contains unsupported PCRs '{pcrs}'.\n
+        Currently only PCRs 4, 7, and 11 are supported"
+    )]
+    UnsupportedEncryptionPcrs { pcrs: String },
 
     #[error("Netplan renderer '{renderer}' is not supported")]
     UnsupportedNetplanRenderer { renderer: String },
@@ -186,6 +185,12 @@ pub enum HostConfigurationDynamicValidationError {
 
     #[error("Encryption recovery key file '{key_file}' must be a regular file")]
     EncryptionKeyNotRegularFile { key_file: String },
+
+    #[error(
+        "Since update image is a grub image, list of PCRs in encryption config contains invalid PCRs: '{pcrs}'. \
+        Only PCR 7 is valid for grub images"
+    )]
+    InvalidEncryptionPcrsForGrubImage { pcrs: String },
 
     #[error("Failed to get block device information for disk '{disk_id}' that requires partition adoption")]
     GetBlockDeviceInfoForDisk { disk_id: String },

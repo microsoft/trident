@@ -128,7 +128,7 @@ impl Subsystem for StorageSubsystem {
             }
         }
 
-        encryption::validate_host_config(&ctx.spec).message(format!(
+        encryption::validate_host_config(ctx).message(format!(
             "Step 'Validate' failed for subunit '{ENCRYPTION_SUBSYSTEM_NAME}'"
         ))?;
 
@@ -235,6 +235,7 @@ mod tests {
     fn get_ctx() -> EngineContext {
         EngineContext {
             servicing_type: ServicingType::CleanInstall,
+            is_uki: Some(false),
             ..Default::default()
         }
     }
@@ -249,7 +250,7 @@ mod tests {
         recovery_key_file
     }
 
-    /// Produces a baseline Host Config with ab, encryption, and raid.
+    /// Produces a baseline Host Config with A/B update, encryption, and RAID.
     pub(super) fn get_host_config(recovery_key_file: &Path) -> HostConfiguration {
         HostConfiguration {
             storage: StorageConfig {
