@@ -730,7 +730,7 @@ mod tests {
                     device_name: "encrypted".into(),
                 }],
                 recovery_key_url: None,
-                pcrs: vec![],
+                ..Default::default()
             }),
             ..Default::default()
         };
