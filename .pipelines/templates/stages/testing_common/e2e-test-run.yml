@@ -64,6 +64,7 @@ steps:
     displayName: "Installing dependencies for E2E tests"
 
   # Check if Trident config requires A/B update testing.
+  # If it does, initialize the variables for active volume and image version.
   - bash: |
       set -eu
       abUpdateExists=$(sudo yq e '.storage.abUpdate != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
@@ -112,8 +113,8 @@ steps:
   # images in the custom Trident config, and re-run Trident to both stage and finalize A/B update.
   - bash: |
       set -eux
-      # Get the current image version and increment it to use new version for update.
-      # This is done to provide an easy way to identify the image was updated.
+      # Get the current image version and increment it to use a new version for the update.
+      # This is done to provide an easy way to identify that the image was updated.
       current_version=$(echo $(version))
       new_version=$((current_version + 1))
       
@@ -219,8 +220,8 @@ steps:
 
   - bash: |
       set -eux
-      # Get the current image version and increment it to use new version for update.
-      # This is done to provide an easy way to identify the image was updated.
+      # Get the current image version and increment it to use a new version for the update.
+      # This is done to provide an easy way to identify that the image was updated.
       current_version=$(echo $(version))
       new_version=$((current_version + 1))
       
