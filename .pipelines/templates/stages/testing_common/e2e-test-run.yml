@@ -134,16 +134,9 @@ steps:
           --version $(version) \
           --stage-ab-update \
           --finalize-ab-update
-
-      current_version=$(echo $(version))
-      new_version=$((current_version + 1))
-      # Un-set the 'x' flag to avoid errors.
-      set +x
-      echo "##vso[task.setvariable variable=version]$new_version"
-      echo "##vso[task.setvariable variable=abActiveVolume]volume-b"
     timeoutInMinutes: 15
     workingDirectory: $(Build.SourcesDirectory)
-    displayName: "🔄 Stage and finalize A/B update into runtime OS B"
+    displayName: "🅱️🔄 Stage and finalize A/B update into runtime OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - template: ../testing_common/display-serial-logs.yml
@@ -214,6 +207,17 @@ steps:
 
   - bash: |
       set -eux
+      # Get the current image version and increment it to use new version for update.
+      # This is done to provide an easy way to identify the image was updated.
+      current_version=$(echo $(version))
+      new_version=$((current_version + 1))
+      
+      # Un-set the 'x' flag to avoid errors.
+      set +x
+      echo "##vso[task.setvariable variable=version]$new_version"
+      echo "##vso[task.setvariable variable=abActiveVolume]volume-b"
+      set -eux
+
       # If there is a netlisten process, kill it so there is no port clash in the instance
       if pgrep netlisten > /dev/null; then pkill netlisten; fi
 
@@ -238,16 +242,9 @@ steps:
           --version $(version) \
           --stage-ab-update \
           --finalize-ab-update
-
-      current_version=$(echo $(version))
-      new_version=$((current_version + 1))
-      # Un-set the 'x' flag to avoid errors.
-      set +x
-      echo "##vso[task.setvariable variable=version]$new_version"
-      echo "##vso[task.setvariable variable=abActiveVolume]volume-a"
     timeoutInMinutes: 15
     workingDirectory: $(Build.SourcesDirectory)
-    displayName: "🔄 Stage and finalize A/B update into runtime OS A"
+    displayName: "🅰️🔄 Stage and finalize A/B update into runtime OS A"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - template: ../testing_common/display-serial-logs.yml
@@ -316,9 +313,12 @@ steps:
     displayName: "Publish test results for A/B update into runtime OS A"
 
   # Check the value of 'buildPurpose', to determine if we need to execute the
-  # test scenario where A/B update is staged and finalized independently. This
-  # test is to be run only when 'buildPurpose' is 'daily', for lower frequency.
-  - ${{ if eq(parameters.buildPurpose, 'daily') }}:
+  # test scenario where A/B update is staged and finalized independently. For 
+  # lower frequency, this test is to be run only when 'buildPurpose' is:
+  #  - daily
+  #  - validation
+  #  - weekly
+  - ${{ if or(eq(parameters.buildPurpose, 'daily'), eq(parameters.buildPurpose, 'validation'), eq(parameters.buildPurpose, 'weekly')) }}:
       - template: e2e-ab-update-stage-finalize-test-run.yml
         parameters:
           buildPurpose: ${{ parameters.buildPurpose }}
