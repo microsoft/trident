@@ -158,7 +158,7 @@ impl Encryption {
 
         // The list of PCRs, if provided and not empty, must only contain currently supported PCRs.
         if !self.pcrs.is_empty() {
-            let supported_pcrs = [Pcr::Pcr7];
+            let supported_pcrs = [Pcr::Pcr4, Pcr::Pcr7, Pcr::Pcr11];
             let unsupported_pcrs: Vec<Pcr> = self
                 .pcrs
                 .iter()
