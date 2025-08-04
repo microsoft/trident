@@ -338,7 +338,7 @@ mod tests {
                     device_name: "luks-srv".to_owned(),
                     device_id: "srv-enc".to_owned(),
                 }],
-                pcrs: vec![osutils_encryption::DEFAULT_PCR],
+                ..Default::default()
             }),
             ..Default::default()
         }
