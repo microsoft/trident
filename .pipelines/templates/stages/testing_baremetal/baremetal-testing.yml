@@ -165,9 +165,9 @@ stages:
           # Push (regular or container) testimage to ACR
           - template: ../common_tasks/push-to-acr.yml
             parameters:
-              imageName: ${{ variables.testImageName }}
+              imageName: ${{ variables.IMAGE_NAME }}
               registry: maritimuspublic
-              config: ${{ variables.tridentConfigurationName }}
+              config: $(TRIDENT_CONFIGURATION_NAME)
 
           # Run trident prep
           - template: ../testing_common/trident-prep.yml
@@ -175,6 +175,7 @@ stages:
               tridentConfigPath: $(TRIDENT_CONFIG_PATH)
               runtimeEnv: ${{ parameters.runtimeEnv }}
               config: $(TRIDENT_CONFIGURATION_NAME)
+              imageName: ${{ variables.IMAGE_NAME }}
               baremetal: false
 
           # Download all test images
@@ -355,6 +356,6 @@ stages:
 
           - template: ../common_tasks/remove-from-acr.yml
             parameters:
-              repository: ${{ variables.testImageName }}
+              repository: ${{ variables.IMAGE_NAME }}
               registry: "maritimuspublic"
-              config: ${{ variables.tridentConfigurationName }}
+              config: $(TRIDENT_CONFIGURATION_NAME)
