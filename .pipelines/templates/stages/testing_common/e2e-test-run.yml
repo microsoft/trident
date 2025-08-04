@@ -226,6 +226,20 @@ steps:
       artifactName: 'junit_test_results_ab_update_B'
     displayName: 'Publish JUnit XML for A/B update B as artifact'
 
+    # Generate build-number.config for stage-finalize
+  - bash: |
+     set -eux
+     mkdir -p $(Build.ArtifactStagingDirectory)/build-number-trident-stage-finalize
+     echo "$(Build.BuildNumber)" > $(Build.ArtifactStagingDirectory)/build-number-trident-stage-finalize/build-number.config
+    displayName: "Generate build-number.config for stage-finalize"
+
+  # Publish the build-number artifact
+  - task: PublishBuildArtifacts@1
+    displayName: "Publish build-number-trident-stage-finalize artifact"
+    inputs:
+      pathToPublish: "$(Build.ArtifactStagingDirectory)/build-number-trident-stage-finalize"
+      ArtifactName: build-number-trident-stage-finalize
+
   - bash: |
       set -eux
       mkdir -p ${{ variables.artifactsDirectory }}/junit
