@@ -24,7 +24,7 @@ steps:
     script: |
       # Install Python and pip.
       sudo tdnf -y --rpmverbosity=debug install python3 python3-pip
-      pip3 install --user -r ${{ parameters.marinerAKSPipelinesSourceDirectory }}/scripts/tests/requirements.txt
+      pip3 install --user -r ${{ parameters.marinertridentPipelinesSourceDirectory }}/scripts/tests/requirements.txt
 - task: Bash@3
   name: build_config 
   displayName: 'Set build number and architecture variables'
