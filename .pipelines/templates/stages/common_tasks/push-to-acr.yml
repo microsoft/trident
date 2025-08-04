@@ -54,7 +54,7 @@ steps:
 
         cd $(Build.SourcesDirectory)/artifacts/test-image
 
-        for version in {1..3}; do
+        for version in {1..4}; do
           if [[ $version == 1 ]]; then
             filename="regular.cosi"
           else
