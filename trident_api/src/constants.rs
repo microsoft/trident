@@ -178,6 +178,9 @@ pub mod internal_params {
     /// Do not carry over existing machine hostname into the chroot during A/B update.
     pub const DISABLE_HOSTNAME_CARRY_OVER: &str = "disableHostnameCarryOver";
 
+    /// Disable automatic ejection of installation media after clean install
+    pub const DISABLE_MEDIA_EJECTION: &str = "disableMediaEjection";
+
     /// Enable support for Harpoon to query for updated Host Config documents.
     pub const ENABLE_HARPOON_SUPPORT: &str = "harpoon";
 

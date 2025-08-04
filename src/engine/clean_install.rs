@@ -1,19 +1,20 @@
 use std::{
-    fs,
     path::{Path, PathBuf},
     sync::MutexGuard,
     time::Instant,
 };
 
 use log::{debug, error, info, warn};
+use serde::de;
 #[cfg(feature = "grpc-dangerous")]
 use tokio::sync::mpsc;
 
-use osutils::{chroot, container, mount, mountpoint, path::join_relative};
+use osutils::{chroot, container, installation_media, mount, mountpoint, path::join_relative};
+use tracing_subscriber::field::debug;
 use trident_api::{
     config::{HostConfiguration, Operations},
     constants::{
-        internal_params::{ENABLE_UKI_SUPPORT, NO_TRANSITION},
+        internal_params::{DISABLE_MEDIA_EJECTION, ENABLE_UKI_SUPPORT, NO_TRANSITION},
         ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_PATH,
     },
     error::{
@@ -112,17 +113,19 @@ fn clean_install_safety_check(
     multiboot: bool,
 ) -> Result<(), TridentError> {
     // Check if Trident is running from a live image
-    let cmdline =
-        fs::read_to_string("/proc/cmdline").structured(InitializationError::ReadCmdline)?;
-    if cmdline.contains("root=/dev/ram0")
-        || cmdline.contains("root=live:LABEL=CDROM")
-        || !cmdline.contains("root=")
-    {
-        debug!("Trident is running from a live image.");
-        return Ok(());
+    match installation_media::detect_boot_type() {
+        Ok(installation_media::BootType::RamDisk) | Ok(installation_media::BootType::LiveCdrom) => {
+            debug!("Trident is running from a live image.");
+            return Ok(());
+        }
+        Ok(installation_media::BootType::PersistentStorage) => {
+            warn!("Trident is running from an OS installed on persistent storage");
+        }
+        Err(e) => {
+            warn!("Unable to detect boot type: {e:?} - assuming persistent storage");
+            warn!("Trident is running from an OS installed on persistent storage");
+        }
     }
-
-    warn!("Trident is running from an OS installed on persistent storage");
 
     // To go past this point in the safety check we NEED multiboot
     if !multiboot {
@@ -368,6 +371,21 @@ pub(crate) fn finalize_clean_install(
         .internal_params
         .get_flag(NO_TRANSITION)
     {
+        if !state
+            .host_status()
+            .spec
+            .internal_params
+            .get_flag(DISABLE_MEDIA_EJECTION)
+        {
+            if let Err(e) = installation_media::media_ejection() {
+                warn!("Media ejection failed: {e:?}");
+            }
+        } else {
+            debug!(
+                "Skipping media ejection as requested by internal parameter '{}'",
+                DISABLE_MEDIA_EJECTION
+            );
+        }
         Ok(ExitKind::NeedsReboot)
     } else {
         warn!(
