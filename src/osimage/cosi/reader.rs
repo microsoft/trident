@@ -240,6 +240,11 @@ impl HttpFile {
     /// Retrieve bearer token to access container registry. Even registries allowing anonymous
     /// access may require a token.
     fn retrieve_access_token(img_ref: &Reference, runtime: &Runtime) -> Result<String, Error> {
+        debug!(
+            "HTTPS_PROXY environment variable: {:?}",
+            std::env::var("HTTPS_PROXY").unwrap_or_else(|_| "not set".to_string())
+        );
+
         trace!(
             "Retrieving access token for OCI registry '{}'",
             img_ref.registry()

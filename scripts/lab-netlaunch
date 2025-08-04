@@ -208,6 +208,12 @@ def generate_netlaunch_config() -> Path:
             curl -s -o /dev/null "http://{JUMPBOX_IP}:{LISTEN_HTTP_PORT_REMOTE}" && break
             sleep 1
         done
+
+      serviceOverride: |
+        [Service]
+            Environment="HTTP_PROXY=http://172.16.1.10:3128"
+            Environment="HTTPS_PROXY=https://172.16.1.10:3128"
+            Environment="NO_PROXY=10.96.0.0/12,10.244.0.0/16,172.27.254.0/24,.svc,127.0.0.1,localhost"
     """
     contents = inspect.cleandoc(contents)
     log.info(f"Generated {netlaunch_config_file}:\n{contents}")

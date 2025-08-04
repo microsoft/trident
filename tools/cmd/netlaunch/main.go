@@ -225,6 +225,14 @@ var rootCmd = &cobra.Command{
 				}
 			}
 
+			if config.Iso.ServiceOverride != nil {
+				log.Info("Patching Trident service override!")
+				err = patchFile(iso, "/etc/systemd/system/trident-install.service", []byte(*config.Iso.ServiceOverride))
+				if err != nil {
+					log.WithError(err).Fatalf("failed to patch service override into ISO")
+				}
+			}
+
 			http.HandleFunc("/provision.iso", func(w http.ResponseWriter, r *http.Request) {
 				isoLogFunc(r.RemoteAddr)
 				http.ServeContent(w, r, "provision.iso", time.Now(), bytes.NewReader(iso))
