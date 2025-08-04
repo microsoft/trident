@@ -59,6 +59,16 @@ parameters:
 steps:
   - bash: |
       set -eux
+      # Get the current image version and increment it to use new version for update.
+      # This is done to provide an easy way to identify the image was updated.
+      current_version=$(echo $(version))
+      new_version=$((current_version + 1))
+      
+      # Un-set the 'x' flag to avoid errors.
+      set +x
+      echo "##vso[task.setvariable variable=version]$new_version"
+      set -eux
+
       # If there is a netlisten process, kill it so there is no port clash in the instance
       if pgrep netlisten > /dev/null; then pkill netlisten; fi
 
@@ -115,6 +125,7 @@ steps:
 
   - bash: |
       set -eux
+
       NETLISTEN_CONFIG_ARGS=""
       if [ -n "${{ parameters.netlistenConfigFile }}" ]; then
         NETLISTEN_CONFIG_ARGS="--config ${{ parameters.netlistenConfigFile }}"
@@ -136,6 +147,10 @@ steps:
           --trident-config $(tridentConfigFile) \
           --version $(version) \
           --finalize-ab-update
+
+      # Un-set the 'x' flag to avoid errors.
+      set +x
+      echo "##vso[task.setvariable variable=abActiveVolume]volume-b"
     timeoutInMinutes: 15
     workingDirectory: $(Build.SourcesDirectory)
     displayName: "🔄 Finalize A/B update into runtime OS B"
