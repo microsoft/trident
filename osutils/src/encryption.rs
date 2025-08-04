@@ -37,6 +37,9 @@ const TMP_RECOVERY_KEY_SIZE: usize = 64;
 /// https://dev.azure.com/mariner-org/polar/_workitems/edit/13057/.
 pub static ENCRYPTION_PASSPHRASE: Lazy<Mutex<Vec<u8>>> = Lazy::new(Default::default);
 
+/// Default PCR to seal encrypted volumes to. PCR 7 represents the `SecureBoot` state.
+pub const DEFAULT_PCR: Pcr = Pcr::Pcr7;
+
 /// Runs `systemd-cryptenroll` to enroll a TPM 2.0 device for the given device of a LUKS2 encrypted
 /// volume.
 ///
@@ -264,15 +267,14 @@ mod tests {
 
     use std::path::PathBuf;
 
-    use enumflags2::make_bitflags;
     use tempfile::{NamedTempFile, TempDir};
 
     #[test]
     fn test_to_tpm2_pcrs_arg() {
-        let pcrs = make_bitflags!(Pcr::{Pcr1 | Pcr4});
+        let pcrs = BitFlags::from(Pcr::Pcr1) | BitFlags::from(Pcr::Pcr4);
         assert_eq!(to_tpm2_pcrs_arg(pcrs), "--tpm2-pcrs=1+4".to_string());
 
-        let single_pcr = make_bitflags!(Pcr::{Pcr7});
+        let single_pcr = BitFlags::from(DEFAULT_PCR);
         assert_eq!(to_tpm2_pcrs_arg(single_pcr), "--tpm2-pcrs=7".to_string());
 
         let all_pcrs = BitFlags::<Pcr>::all();

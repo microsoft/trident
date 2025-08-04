@@ -222,8 +222,7 @@ mod tests {
     use tempfile::NamedTempFile;
     use url::Url;
 
-    use osutils::encryption;
-    use sysdefs::tpm2::Pcr;
+    use osutils::encryption::{self, DEFAULT_PCR};
     use trident_api::{
         config::{
             AbUpdate, Disk as DiskConfig, Encryption, FileSystem, HostConfiguration, MountPoint,
@@ -331,7 +330,7 @@ mod tests {
                         device_name: "luks-enc".to_owned(),
                         device_id: "part5".to_owned(),
                     }],
-                    pcrs: vec![Pcr::Pcr7],
+                    pcrs: vec![DEFAULT_PCR],
                 }),
                 ..Default::default()
             },
