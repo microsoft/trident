@@ -19,7 +19,6 @@ use crate::{
     },
     constants::{self, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
 };
-use sysdefs::tpm2::Pcr;
 
 const SAMPLE_SHA384: &str = "ec9a9aa23f02b30f4ec6a168b9bc24733b652eeab4f8abc243630666a5e34cea1667c34313a13ec1564ac4871b80112f";
 
@@ -249,7 +248,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                         device_name: "luks-srv".to_string(),
                         device_id: "enc-srv".to_string(),
                     }],
-                    pcrs: vec![Pcr::Pcr7],
+                    ..Default::default()
                 }),
                 raid: Raid {
                     software: vec![SoftwareRaidArray {
@@ -808,7 +807,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                         device_name: "home".to_string(),
                         device_id: "enc-home".to_string(),
                     }],
-                    pcrs: vec![Pcr::Pcr7],
+                    ..Default::default()
                 }),
                 ab_update: Some(AbUpdate {
                     volume_pairs: vec![
@@ -1169,7 +1168,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             device_name: "srv".to_string(),
                             device_id: "luks-srv".to_string(),
                         }],
-                        pcrs: vec![Pcr::Pcr7],
+                        ..Default::default()
                     }),
                     ab_update: None,
                     filesystems: vec![

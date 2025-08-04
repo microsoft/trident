@@ -16,7 +16,7 @@ use osutils::{
     container,
     dependencies::{Dependency, DependencyResultExt},
     efivar,
-    encryption::{self, KeySlotType, ENCRYPTION_PASSPHRASE},
+    encryption::{self, KeySlotType, DEFAULT_PCR, ENCRYPTION_PASSPHRASE},
     lsblk::{self, BlockDeviceType},
     path::join_relative,
     pcrlock,
@@ -165,8 +165,8 @@ pub(super) fn create_encrypted_devices(
                 None
             }
         } else {
-            debug!("Runtime OS image is a grub image, so sealing against PCR 7");
-            Some(BitFlags::from(Pcr::Pcr7))
+            debug!("Runtime OS image is a grub image, so sealing against the default PCR 7");
+            Some(BitFlags::from(DEFAULT_PCR))
         };
 
         // Check if `REENCRYPT_ON_CLEAN_INSTALL` internal param is set to true; if so, re-encrypt
