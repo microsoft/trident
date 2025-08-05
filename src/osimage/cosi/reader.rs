@@ -29,6 +29,9 @@ impl ReadSeek for File {}
 #[cfg(test)]
 impl ReadSeek for Cursor<Vec<u8>> {}
 
+#[cfg(feature = "grpc-dangerous")]
+const DOCKER_CONFIG_FILE_PATH: &str = "/root/.docker/config.json";
+
 /// An abstraction over a COSI file reader that can be either a local file or an
 /// HTTP request.
 ///
@@ -269,7 +272,7 @@ impl HttpFile {
 
     fn get_auth(_img_ref: &Reference) -> RegistryAuth {
         #[cfg(feature = "grpc-dangerous")]
-        if let Ok(docker_config) = File::open("/root/.docker/config.json") {
+        if let Ok(docker_config) = File::open(DOCKER_CONFIG_FILE_PATH) {
             let registry = _img_ref
                 .resolve_registry()
                 .strip_suffix('/')
