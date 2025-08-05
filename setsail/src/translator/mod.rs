@@ -1,7 +1,8 @@
 use log::trace;
 
-use crate::data::ParsedData;
 use trident_api::config::HostConfiguration;
+
+use crate::data::ParsedData;
 
 use super::errors::SetsailError;
 
