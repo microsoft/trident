@@ -183,7 +183,10 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
 
         // If updated PCRs are specified, re-generate pcrlock policy
         if let Some(pcrs) = updated_pcrs {
-            debug!("Re-generating pcrlock policy to include PCRs: {:?}", pcrs);
+            debug!(
+                "Re-generating pcrlock policy to include PCRs: {:?}",
+                pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
+            );
             // Get UKI and bootloader binaries for .pcrlock file generation
             let (uki_binaries, bootloader_binaries) =
                 engine_encryption::get_binary_paths_pcrlock(ctx, pcrs, Some(mount_path))
@@ -194,6 +197,16 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
         }
 
         // If a pcrlock policy JSON file exists, copy it to the update volume
+        // // Determine esp path depending on the environment
+        // let esp_path = if container::is_running_in_container()
+        //     .unstructured("Failed to determine if running in container")?
+        // {
+        //     let host_root =
+        //         container::get_host_root_path().unstructured("Failed to get host root path")?;
+        //     join_relative(host_root, ESP_MOUNT_POINT_PATH)
+        // } else {
+        //     PathBuf::from(ESP_MOUNT_POINT_PATH)
+        // };
         if Path::new(PCRLOCK_POLICY_JSON_PATH).exists() {
             let pcrlock_json_copy = join_relative(mount_path, PCRLOCK_POLICY_JSON_PATH);
             debug!(

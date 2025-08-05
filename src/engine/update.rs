@@ -25,7 +25,7 @@ use crate::{
         storage::{self, verity},
         EngineContext, NewrootMount, SUBSYSTEMS,
     },
-    monitor_metrics,
+    harpoon_hc, monitor_metrics,
     osimage::OsImage,
     subsystems::hooks::HooksSubsystem,
     ExitKind,
@@ -125,9 +125,8 @@ pub(crate) fn update(
     )
     .message("Failed to stage update")?;
 
-    // When enabled, notify Harpoon that the installation of the update has
-    // finalized.
-    crate::harpoon_hc::on_harpoon_enabled_event(
+    // When enabled, notify Harpoon that the installation of the update has been finalized.
+    harpoon_hc::on_harpoon_enabled_event(
         host_config,
         harpoon::EventType::Install,
         harpoon::EventResult::Success,
