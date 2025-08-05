@@ -300,8 +300,8 @@ allow trident_t cloud_init_exec_t:file getattr;
 allow trident_t cloud_init_state_t:dir { list_dir_perms relabelto };
 allow trident_t cloud_init_state_t:lnk_file read_lnk_file_perms;
 allow trident_t cloud_init_state_t:file getattr;
-allow trident_t container_conf_home_t:dir search;
-allow trident_t container_conf_home_t:file { open read };
+allow trident_t container_conf_home_t:dir search; # Allow access to ~/.docker directory
+allow trident_t container_conf_home_t:file { open read }; # Allow access to ~/.docker/config.json
 allow trident_t container_unit_t:file getattr;
 allow trident_t container_var_lib_t:file getattr;
 allow trident_t crack_db_t:dir { getattr open search read };
