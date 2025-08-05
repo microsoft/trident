@@ -1,7 +1,7 @@
 use log::trace;
 
 use crate::data::ParsedData;
-use trident_api::{config::HostConfiguration, constants::internal_params::SELF_UPGRADE_TRIDENT};
+use trident_api::config::HostConfiguration;
 
 use super::errors::SetsailError;
 
