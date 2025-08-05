@@ -77,6 +77,7 @@ stages:
       baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
       baseImageArm64PipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
       forceTridentRebuild: ${{ parameters.forceTridentRebuild }}
+      osModifierBranch: ${{ parameters.osModifierBranch }}
 
   # Build tools (Go stuff)
   - template: stages/building_tools/building-tools.yml
