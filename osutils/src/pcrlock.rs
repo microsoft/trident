@@ -12,9 +12,16 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256, Sha384, Sha512};
 use tempfile::NamedTempFile;
 
+use crate::{
+    bootloaders::{BOOT_EFI, GRUB_EFI},
+    container,
+    dependencies::Dependency,
+    exe::RunAndCheck,
+    path,
+};
 use sysdefs::tpm2::Pcr;
 use trident_api::{
-    error::{ReportError, ServicingError, TridentError},
+    error::{ReportError, ServicingError, TridentError, TridentResultExt},
     primitives::hash::Sha256Hash,
 };
 
@@ -112,11 +119,23 @@ fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
 
     make_policy(pcrs).context("Failed to run 'systemd-pcrlock make-policy' command")?;
 
+    // Construct the full pcrlock.json path
+    let pcrlock_json_full_path = if container::is_running_in_container()
+        .unstructured("Failed to determine if running in container")?
+    {
+        let host_root =
+            container::get_host_root_path().unstructured("Failed to get host root path")?;
+        path::join_relative(host_root, PCRLOCK_POLICY_JSON_PATH)
+    } else {
+        PathBuf::from(PCRLOCK_POLICY_JSON_PATH)
+    };
+
     // Log pcrlock policy JSON contents
-    let pcrlock_policy = fs::read_to_string(PCRLOCK_POLICY_JSON_PATH)
+    let pcrlock_policy = fs::read_to_string(&pcrlock_json_full_path)
         .context("Failed to read pcrlock policy JSON")?;
     trace!(
-        "Contents of pcrlock policy JSON at '{PCRLOCK_POLICY_JSON_PATH}':\n{}",
+        "Contents of pcrlock policy JSON at '{}':\n{}",
+        pcrlock_json_full_path.display(),
         pcrlock_policy
     );
 
@@ -250,10 +269,23 @@ fn make_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
     );
 
+    // Construct the full pcrlock.json path
+    let pcrlock_json_full_path = if container::is_running_in_container()
+        .unstructured("Failed to determine if running in container")?
+    {
+        let host_root =
+            container::get_host_root_path().unstructured("Failed to get host root path")?;
+        path::join_relative(host_root, PCRLOCK_POLICY_JSON_PATH)
+    } else {
+        PathBuf::from(PCRLOCK_POLICY_JSON_PATH)
+    };
+
     // Run command directly since pcrlock may write to stderr even when a pcrlock policy is
     // successfully generated
     let mut cmd = Command::new("/usr/lib/systemd/systemd-pcrlock");
-    cmd.arg("make-policy").arg(to_pcr_arg(pcrs));
+    cmd.arg("make-policy")
+        .arg(to_pcr_arg(pcrs))
+        .arg(format!("--policy={}", pcrlock_json_full_path.display()));
 
     // Execute command and capture full output
     let output = cmd
