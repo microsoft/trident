@@ -211,7 +211,8 @@ pub mod internal_params {
     /// (FOR DEBUGGING ONLY) a boolean flag that indicates whether Trident should
     /// upgrade itself. If set to `true`, Trident will replicate itself into the
     /// runtime OS prior to rebooting. This is useful during development to
-    /// ensure that the matching version of Trident is used.
+    /// ensure that the matching version of Trident is used.  This feature is not
+    /// available for root verity images.
     pub const SELF_UPGRADE_TRIDENT: &str = "selfUpgradeTrident";
 
     /// Set the in-image paths of the verity signature files.
