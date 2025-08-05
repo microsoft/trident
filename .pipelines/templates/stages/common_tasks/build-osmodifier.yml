@@ -28,6 +28,7 @@ steps:
         git checkout ${{ parameters.osModifierBranch }}
         popd
       fi
+      git log -1
 
       mkdir -p artifacts
       mkdir -p azure-linux-image-tools/SPECS
