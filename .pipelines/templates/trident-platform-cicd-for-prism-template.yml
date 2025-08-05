@@ -18,6 +18,11 @@ parameters:
     type: string
     default: "*.*.*"
 
+  - name: osModifierBranch
+    displayName: Branch to use for OS Modifier (the default, 'submodule', will use trident's current submodule)
+    type: string
+    default: "submodule"
+
 stages:
     - template: e2e-template.yml
       parameters:
@@ -26,3 +31,4 @@ stages:
         forceTridentRebuild: true
         micBuildType: ${{ parameters.micBuildType }}
         micVersion: ${{ parameters.micVersion }}
+        osModifierBranch: ${{ parameters.osModifierBranch }}
