@@ -131,8 +131,10 @@ fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
     };
 
     // Log pcrlock policy JSON contents
-    let pcrlock_policy = fs::read_to_string(&pcrlock_json_full_path)
-        .context("Failed to read pcrlock policy JSON")?;
+    let pcrlock_policy = fs::read_to_string(&pcrlock_json_full_path).context(format!(
+        "Failed to read pcrlock policy JSON at path '{}'",
+        pcrlock_json_full_path.display()
+    ))?;
     trace!(
         "Contents of pcrlock policy JSON at '{}':\n{}",
         pcrlock_json_full_path.display(),
@@ -284,8 +286,8 @@ fn make_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
     // successfully generated
     let mut cmd = Command::new("/usr/lib/systemd/systemd-pcrlock");
     cmd.arg("make-policy")
-        .arg(to_pcr_arg(pcrs))
-        .arg(format!("--policy={}", pcrlock_json_full_path.display()));
+        .arg(format!("--policy={}", pcrlock_json_full_path.display()))
+        .arg(to_pcr_arg(pcrs));
 
     // Execute command and capture full output
     let output = cmd
