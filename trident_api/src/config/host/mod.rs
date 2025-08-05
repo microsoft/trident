@@ -110,7 +110,7 @@ impl HostConfiguration {
             return Err(HostConfigurationStaticValidationError::SelfUpgradeOnReadOnlyRootVerityFs);
         }
 
-        // Warn if SELinux is not `disabled.
+        // Warn if SELinux is not disabled.
         if let Some(selinux_mode) = self.os.selinux.mode {
             if selinux_mode != SelinuxMode::Disabled {
                 warn!(
