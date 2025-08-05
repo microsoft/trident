@@ -62,6 +62,10 @@ parameters:
     type: number
     default: 3
 
+  - name: osModifierBranch
+    type: string
+    default: "submodule"
+
 stages:
   # Trident Build/Download
   - template: stages/trident_rpms/trident-stage.yml
@@ -80,6 +84,9 @@ stages:
   # Makefile validation, only for CI
   - ${{ if eq(parameters.stageType, 'ci') }}:
       - template: stages/validate_makefile/dev-build.yml
+        parameters:
+          osModifierBranch: ${{ parameters.osModifierBranch }}
+
 
   # Build FT base Image, only in CI
   - ${{ if eq(parameters.stageType, 'ci') }}:
@@ -289,6 +296,8 @@ stages:
       - template: stages/testing_functional/functional-testing.yml
         parameters:
           downloadPrebuiltImage: false
+          osModifierBranch: ${{ parameters.osModifierBranch }}
+
 
       # VM Testing (host, post_merge)
       - template: stages/testing_vm/netlaunch-testing.yml

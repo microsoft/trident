@@ -1,3 +1,8 @@
+parameters:
+  - name: osModifierBranch
+    type: string
+    default: "submodule"
+
 steps:
   - bash: |
       set -ex
@@ -17,6 +22,13 @@ steps:
       set -ex
       git submodule init
       git submodule update
+
+      if [[ "${{ parameters.osModifierBranch }}" != "submodule" ]]; then
+        pushd azure-linux-image-tools
+        git checkout ${{ parameters.osModifierBranch }}
+        popd
+      fi
+
       mkdir -p artifacts
       mkdir -p azure-linux-image-tools/SPECS
       make -C azure-linux-image-tools/toolkit go-osmodifier REBUILD_TOOLS=y
