@@ -15,9 +15,6 @@ pub fn translate(input: ParsedData) -> Result<HostConfiguration, Vec<SetsailErro
     let mut hc = HostConfiguration::default();
     let mut errors: Vec<SetsailError> = Vec::new();
 
-    // TODO(6007): remove this dev option
-    hc.internal_params.set_flag(SELF_UPGRADE_TRIDENT.into());
-
     // Translation functions
     scripts::translate(&input, &mut hc);
     network::translate(&input, &mut hc, &mut errors);
