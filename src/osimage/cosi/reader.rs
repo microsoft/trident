@@ -8,12 +8,18 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(feature = "grpc-dangerous")]
+use std::io::BufReader;
+
 use anyhow::{bail, ensure, Context, Error};
 use log::{debug, trace, warn};
 use oci_client::{secrets::RegistryAuth, Client as OciClient, Reference};
 use reqwest::blocking::{Client, Response};
 use tokio::runtime::Runtime;
 use url::Url;
+
+#[cfg(feature = "grpc-dangerous")]
+use docker_credential::{self, DockerCredential};
 
 pub(super) trait ReadSeek: Read + Seek {}
 
@@ -140,9 +146,10 @@ impl HttpFile {
             })?)
             .with_context(|| format!("Failed to parse URL '{url}'"))?;
 
+        let oci_client = OciClient::default();
         let rt = Runtime::new().context("Failed to create Tokio runtime")?;
-        let token = Self::retrieve_access_token(&img_ref, &rt)?;
-        let digest = Self::retrieve_artifact_digest(&img_ref, &rt)?;
+        let token = Self::retrieve_access_token(&img_ref, &rt, &oci_client)?;
+        let digest = Self::retrieve_artifact_digest(&img_ref, &rt, &oci_client)?;
         trace!("Retrieved artifact digest: {digest}");
 
         // Create HTTP URL
@@ -239,18 +246,18 @@ impl HttpFile {
 
     /// Retrieve bearer token to access container registry. Even registries allowing anonymous
     /// access may require a token.
-    fn retrieve_access_token(img_ref: &Reference, runtime: &Runtime) -> Result<String, Error> {
+    fn retrieve_access_token(
+        img_ref: &Reference,
+        runtime: &Runtime,
+        client: &OciClient,
+    ) -> Result<String, Error> {
         trace!(
             "Retrieving access token for OCI registry '{}'",
             img_ref.registry()
         );
-        let client = OciClient::default();
+        let auth = Self::get_auth(img_ref);
         runtime
-            .block_on(client.auth(
-                img_ref,
-                &RegistryAuth::Anonymous,
-                oci_client::RegistryOperation::Pull,
-            ))
+            .block_on(client.auth(img_ref, &auth, oci_client::RegistryOperation::Pull))
             .with_context(|| {
                 format!(
                     "Registry '{}' is not accessible or does not exist",
@@ -260,8 +267,39 @@ impl HttpFile {
             .context("Failed to retrieve authorization token")
     }
 
+    fn get_auth(_img_ref: &Reference) -> RegistryAuth {
+        #[cfg(feature = "grpc-dangerous")]
+        if let Ok(docker_config) = File::open("/root/.docker/config.json") {
+            let registry = _img_ref
+                .resolve_registry()
+                .strip_suffix('/')
+                .unwrap_or_else(|| _img_ref.resolve_registry());
+            match docker_credential::get_credential_from_reader(
+                BufReader::new(docker_config),
+                registry,
+            ) {
+                Ok(DockerCredential::UsernamePassword(username, password)) => {
+                    debug!("Found username and password docker credential");
+                    return RegistryAuth::Basic(username, password);
+                }
+                Ok(DockerCredential::IdentityToken(_)) => {
+                    debug!("Found identity token docker credential")
+                }
+                Err(_) => debug!("Failed to find docker credentials"),
+            }
+        };
+
+        debug!("Proceeding with anonymous access");
+        RegistryAuth::Anonymous
+    }
+
     /// Retrieve artifact digest, which is necessary to send HTTP request to container registry.
-    fn retrieve_artifact_digest(img_ref: &Reference, runtime: &Runtime) -> Result<String, Error> {
+    fn retrieve_artifact_digest(
+        img_ref: &Reference,
+        runtime: &Runtime,
+        client: &OciClient,
+    ) -> Result<String, Error> {
+        debug!("Attempting to retrieve artifact digest");
         Ok(match img_ref.digest() {
             Some(digest) => digest.to_string(),
             None => {
@@ -269,7 +307,6 @@ impl HttpFile {
                     format!("Failed to retrieve tag from OCI URL '{}'", img_ref.whole())
                 })?;
                 // Attempt to retrieve digest from manifest
-                let client = OciClient::default();
                 let manifest = client.pull_image_manifest(img_ref, &RegistryAuth::Anonymous);
                 let (oci_image_manifest, _) = runtime.block_on(manifest).with_context(||
                     format!(
@@ -504,17 +541,19 @@ mod tests {
 
     #[test]
     fn test_retrieve_access_token() {
+        let client = OciClient::default();
         let rt = Runtime::new().unwrap();
         let url = "oci://docker.io/library/hello-world:latest".to_string();
         let img_ref = url
             .strip_prefix("oci://")
             .and_then(|url| url.parse::<Reference>().ok())
             .unwrap();
-        HttpFile::retrieve_access_token(&img_ref, &rt).unwrap();
+        HttpFile::retrieve_access_token(&img_ref, &rt, &client).unwrap();
     }
 
     #[test]
     fn test_retrieve_artifact_digest() {
+        let client = OciClient::default();
         let rt = Runtime::new().unwrap();
         // TODO(12732): Fix this test to use test COSI file instead of hello-world image
         let url = "oci://docker.io/library/hello-world@sha256:940c619fbd418f9b2b1b63e25d8861f9cc1b46e3fc8b018ccfe8b78f19b8cc4f".to_string();
@@ -523,7 +562,7 @@ mod tests {
             .and_then(|url| url.parse::<Reference>().ok())
             .unwrap();
         assert_eq!(
-            HttpFile::retrieve_artifact_digest(&img_ref, &rt).unwrap(),
+            HttpFile::retrieve_artifact_digest(&img_ref, &rt, &client).unwrap(),
             "sha256:940c619fbd418f9b2b1b63e25d8861f9cc1b46e3fc8b018ccfe8b78f19b8cc4f"
         );
     }
