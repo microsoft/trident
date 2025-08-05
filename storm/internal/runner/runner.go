@@ -23,6 +23,7 @@ func RegisterAndRunTests(suite core.SuiteContext,
 	},
 	args []string,
 	watch bool,
+	logDir *string,
 ) error {
 	// Create a new runnable instance
 	registrantInstance := &runnableInstance{
@@ -63,6 +64,15 @@ func RegisterAndRunTests(suite core.SuiteContext,
 	rep := reporter.NewTestReporter(testMgr)
 
 	rep.PrintReport()
+
+	if logDir != nil {
+		suite.Logger().Infof("Saving logs to '%s'", *logDir)
+		err := os.MkdirAll(*logDir, 0755)
+		if err != nil {
+			return fmt.Errorf("failed to create log directory '%s': %w", *logDir, err)
+		}
+		rep.SaveLogs(*logDir)
+	}
 
 	return rep.ExitError()
 }
