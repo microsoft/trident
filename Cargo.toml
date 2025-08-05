@@ -85,6 +85,7 @@ sha2 = "0.10.8"
 dangerous-options = [
     "trident_api/dangerous-options",
     "setsail/dangerous-options",
+    "docker_credential",
 ]
 sysupdate = ["trident_api/sysupdate"]
 functional-test = [
