@@ -1,6 +1,7 @@
 #[cfg(test)]
 use std::io::Cursor;
 use std::{
+    env,
     fs::File,
     io::{Error as IoError, ErrorKind as IoErrorKind, Read, Result as IoResult, Seek, SeekFrom},
     path::PathBuf,
@@ -30,7 +31,7 @@ impl ReadSeek for File {}
 impl ReadSeek for Cursor<Vec<u8>> {}
 
 #[cfg(feature = "dangerous-options")]
-const DOCKER_CONFIG_FILE_PATH: &str = "/root/.docker/config.json";
+const DOCKER_CONFIG_FILE_PATH: &str = ".docker/config.json";
 
 /// An abstraction over a COSI file reader that can be either a local file or an
 /// HTTP request.
@@ -272,7 +273,11 @@ impl HttpFile {
 
     fn get_auth(_img_ref: &Reference) -> RegistryAuth {
         #[cfg(feature = "dangerous-options")]
-        if let Ok(docker_config) = File::open(DOCKER_CONFIG_FILE_PATH) {
+        if let Ok(docker_config) = File::open(
+            env::home_dir()
+                .unwrap_or_default()
+                .join(DOCKER_CONFIG_FILE_PATH),
+        ) {
             let registry = _img_ref
                 .resolve_registry()
                 .strip_suffix('/')
