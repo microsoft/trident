@@ -117,8 +117,6 @@ fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
     );
 
-    make_policy(pcrs).context("Failed to run 'systemd-pcrlock make-policy' command")?;
-
     // Construct the full pcrlock.json path
     let pcrlock_json_full_path = if container::is_running_in_container()
         .unstructured("Failed to determine if running in container")?
@@ -129,6 +127,9 @@ fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
     } else {
         PathBuf::from(PCRLOCK_POLICY_JSON_PATH)
     };
+
+    make_policy(pcrlock_json_full_path.clone(), pcrs)
+        .context("Failed to run 'systemd-pcrlock make-policy' command")?;
 
     // Log pcrlock policy JSON contents
     let pcrlock_policy = fs::read_to_string(&pcrlock_json_full_path).context(format!(
@@ -264,29 +265,28 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
 /// Runs `systemd-pcrlock make-policy` command to predict the PCR state for future boots and then
 /// generate a TPM 2.0 access policy, stored in a TPM 2.0 NV index. The prediction and info about
 /// the used TPM 2.0 and its NV index are written to PCRLOCK_POLICY_JSON_PATH.
-fn make_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
+fn make_policy(pcrlock_json_path: PathBuf, pcrs: BitFlags<Pcr>) -> Result<(), Error> {
     debug!(
         "Running 'systemd-pcrlock make-policy' command to make a new pcrlock policy \
         with the following PCRs: {:?}",
         pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
     );
 
-    // Construct the full pcrlock.json path
-    let pcrlock_json_full_path = if container::is_running_in_container()
-        .unstructured("Failed to determine if running in container")?
-    {
-        let host_root =
-            container::get_host_root_path().unstructured("Failed to get host root path")?;
-        path::join_relative(host_root, PCRLOCK_POLICY_JSON_PATH)
-    } else {
-        PathBuf::from(PCRLOCK_POLICY_JSON_PATH)
-    };
+    // Dependency::SystemdPcrlock
+    //     .cmd()
+    //     .arg("make-policy")
+    //     .arg(format!("--pcrlock={}", pcrlock_json_path.display()))
+    //     .arg(to_pcr_arg(pcrs))
+    //     .output_and_check()
+    //     .context("Failed to run 'systemd-pcrlock make-policy'")?;
+
+    // Ok(())
 
     // Run command directly since pcrlock may write to stderr even when a pcrlock policy is
     // successfully generated
     let mut cmd = Command::new("/usr/lib/systemd/systemd-pcrlock");
     cmd.arg("make-policy")
-        .arg(format!("--policy={}", pcrlock_json_full_path.display()))
+        .arg(format!("--pcrlock={}", pcrlock_json_path.display()))
         .arg(to_pcr_arg(pcrs));
 
     // Execute command and capture full output
