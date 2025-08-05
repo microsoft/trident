@@ -1,8 +1,7 @@
 use log::trace;
 
-use trident_api::config::HostConfiguration;
-
 use crate::data::ParsedData;
+use trident_api::{config::HostConfiguration, constants::internal_params::SELF_UPGRADE_TRIDENT};
 
 use super::errors::SetsailError;
 
@@ -17,7 +16,7 @@ pub fn translate(input: ParsedData) -> Result<HostConfiguration, Vec<SetsailErro
     let mut errors: Vec<SetsailError> = Vec::new();
 
     // TODO(6007): remove this dev option
-    hc.trident.self_upgrade = true;
+    hc.internal_params.set_flag(SELF_UPGRADE_TRIDENT.into());
 
     // Translation functions
     scripts::translate(&input, &mut hc);
