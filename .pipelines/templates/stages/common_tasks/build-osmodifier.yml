@@ -26,9 +26,9 @@ steps:
       if [[ "${{ parameters.osModifierBranch }}" != "submodule" ]]; then
         pushd azure-linux-image-tools
         git checkout ${{ parameters.osModifierBranch }}
+        git log -1
         popd
       fi
-      git log -1
 
       mkdir -p artifacts
       mkdir -p azure-linux-image-tools/SPECS
