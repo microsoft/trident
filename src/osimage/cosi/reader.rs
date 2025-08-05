@@ -8,7 +8,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-#[cfg(feature = "grpc-dangerous")]
+#[cfg(feature = "dangerous-options")]
 use std::io::BufReader;
 
 use anyhow::{bail, ensure, Context, Error};
@@ -18,7 +18,7 @@ use reqwest::blocking::{Client, Response};
 use tokio::runtime::Runtime;
 use url::Url;
 
-#[cfg(feature = "grpc-dangerous")]
+#[cfg(feature = "dangerous-options")]
 use docker_credential::{self, DockerCredential};
 
 pub(super) trait ReadSeek: Read + Seek {}
@@ -29,7 +29,7 @@ impl ReadSeek for File {}
 #[cfg(test)]
 impl ReadSeek for Cursor<Vec<u8>> {}
 
-#[cfg(feature = "grpc-dangerous")]
+#[cfg(feature = "dangerous-options")]
 const DOCKER_CONFIG_FILE_PATH: &str = "/root/.docker/config.json";
 
 /// An abstraction over a COSI file reader that can be either a local file or an
@@ -271,7 +271,7 @@ impl HttpFile {
     }
 
     fn get_auth(_img_ref: &Reference) -> RegistryAuth {
-        #[cfg(feature = "grpc-dangerous")]
+        #[cfg(feature = "dangerous-options")]
         if let Ok(docker_config) = File::open(DOCKER_CONFIG_FILE_PATH) {
             let registry = _img_ref
                 .resolve_registry()
@@ -302,7 +302,7 @@ impl HttpFile {
         runtime: &Runtime,
         client: &OciClient,
     ) -> Result<String, Error> {
-        debug!("Attempting to retrieve artifact digest");
+        trace!("Retrieving artifact digest");
         Ok(match img_ref.digest() {
             Some(digest) => digest.to_string(),
             None => {
