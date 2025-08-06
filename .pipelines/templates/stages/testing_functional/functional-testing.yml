@@ -141,7 +141,7 @@ stages:
             condition: and(succeeded(), eq('${{ parameters.rerunTests }}', 'true'))
             displayName: Rerun Functional Tests
 
-          - task: DownloadPipelineArtifact@2
+          - task: DownloadPipelineArtifact@1
             displayName: 'Download JUnit test results for dashboard push'
             inputs:
               artifact: 'trident_test_results'
@@ -162,7 +162,7 @@ stages:
             displayName: "Generate build-number.config file"
 
           # Publish the artifact
-          - task: PublishBuildArtifacts@2
+          - task: PublishBuildArtifacts@1
             displayName: "Publish build number artifact"
             inputs:
               pathToPublish: "$(Build.ArtifactStagingDirectory)/build-number-trident-functional"

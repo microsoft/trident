@@ -234,7 +234,7 @@ steps:
     displayName: "Generate build-number.config for stage-finalize"
 
   # Publish the build-number artifact
-  - task: PublishBuildArtifacts@2
+  - task: PublishBuildArtifacts@1
     displayName: "Publish build-number-trident-stage-finalize artifact"
     inputs:
       pathToPublish: "$(Build.ArtifactStagingDirectory)/build-number-trident-stage-finalize"
@@ -386,7 +386,7 @@ steps:
       deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
       tridentConfigurationName: ${{ parameters.tridentConfigurationName }}
       
-  - task: DownloadPipelineArtifact@2
+  - task: DownloadPipelineArtifact@1
     displayName: 'Download JUnit test results for dashboard push'
     inputs:
       artifact: 'junit_test_results_ab_update_B'
