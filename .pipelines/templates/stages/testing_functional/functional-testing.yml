@@ -1,9 +1,3 @@
-resources:
-  pipelines:
-    - pipeline: functestImagePipeline     # alias for the FT image builder
-      project: ECF                        # project containing that pipeline
-      source: ${{ parameters.functestImageArtifactPipeline }}  # pipeline ID (e.g. 5067)
-      trigger: none
 
 parameters:
   - name: downloadPrebuiltImage
@@ -22,7 +16,7 @@ parameters:
 
   - name: functestImageArtifactPipeline
     type: number
-    default: 5067
+    default: 5067 # [GITHUB]-trident-ci
     displayName: Where to download prebuilt image from
 
 stages:
@@ -38,8 +32,8 @@ stages:
         displayName: Functional Tests
         timeoutInMinutes: 50
         pool:
+          type: linux
           name: trident-ubuntu-1es-pool-eastus2
-          vmImage: ubuntu-latest
           hostArchitecture: amd64
 
         variables:
@@ -49,7 +43,6 @@ stages:
         steps:
           - checkout: argus-toolkit
             fetchDepth: 1
-
           - checkout: platform-tests
             fetchDepth: 1
 
@@ -57,28 +50,100 @@ stages:
 
           - template: ../testing_vm/netlaunch-prep.yml
 
-          # ── Download FT image ──
+          # ========= Download FT image: from current build (downloadPrebuiltImage == false) =========
           - ${{ if eq(parameters.downloadPrebuiltImage, false) }}:
+              - bash: |
+                  set -eux
+                  mkdir -p "${{ variables.baseImageDirectory }}"
+                  rm -rf "${{ variables.baseImageDirectory }}"/* || true
+                displayName: "Prep FT image target (current build)"
+
+              # Try Pipeline Artifact first (current run)
               - task: DownloadPipelineArtifact@2
-                displayName: "Download FT Image from current build"
+                displayName: "Download FT Image (Pipeline Artifact, current)"
                 inputs:
                   buildType: current
-                  artifactName: ${{ parameters.functestImageArtifact }}
-                  targetPath: $(variables.baseImageDirectory)
-            ${{ else }}:
+                  artifactName: "${{ parameters.functestImageArtifact }}"
+                  targetPath: "${{ variables.baseImageDirectory }}"
+
+              # Detect if fallback is needed
+              - bash: |
+                  set -eux
+                  if [ -z "$(ls -A "${{ variables.baseImageDirectory }}" 2>/dev/null)" ]; then
+                    echo "##vso[task.setvariable variable=needBuildArtifactCurrent]true"
+                  else
+                    echo "##vso[task.setvariable variable=needBuildArtifactCurrent]false"
+                  fi
+                displayName: "Detect if fallback is needed (current)"
+
+              # Fall back to Build Artifact (current run)
+              - task: DownloadBuildArtifacts@1
+                displayName: "Download FT Image (Build Artifact, current)"
+                condition: eq(variables['needBuildArtifactCurrent'], 'true')
+                inputs:
+                  buildType: current
+                  downloadType: single
+                  artifactName: "${{ parameters.functestImageArtifact }}"
+                  downloadPath: "${{ variables.baseImageDirectory }}"
+
+              - bash: |
+                  set -eux
+                  echo "FT image directory contents (current):"
+                  ls -la "${{ variables.baseImageDirectory }}" || true
+                displayName: "Verify FT image (current)"
+
+          # ========= Download FT image: from specific pipeline latestFromBranch (downloadPrebuiltImage == true) =========
+          - ${{ else }}:
+              - bash: |
+                  set -eux
+                  mkdir -p "${{ variables.baseImageDirectory }}"
+                  rm -rf "${{ variables.baseImageDirectory }}"/* || true
+                displayName: "Prep FT image target (specific pipeline)"
+
+              # Try Pipeline Artifact first (specific pipeline)
               - task: DownloadPipelineArtifact@2
-                displayName: "Download FT Image from latest build of pipeline #${{ parameters.functestImageArtifactPipeline }}"
+                displayName: "Download FT Image (Pipeline Artifact, specific)"
                 inputs:
                   buildType: specific
-                  pipeline: functestImagePipeline
-                  project: ECF
+                  project: "ECF"
+                  pipeline: ${{ parameters.functestImageArtifactPipeline }}   # e.g., 5067
                   buildVersionToDownload: latestFromBranch
-                  branchName: refs/heads/main
-                  artifactName: ${{ parameters.functestImageArtifact }}
-                  targetPath: $(variables.baseImageDirectory)
+                  branchName: "refs/heads/main"
+                  artifactName: "${{ parameters.functestImageArtifact }}"
+                  targetPath: "${{ variables.baseImageDirectory }}"
+
+              # Detect if fallback is needed
+              - bash: |
+                  set -eux
+                  if [ -z "$(ls -A "${{ variables.baseImageDirectory }}" 2>/dev/null)" ]; then
+                    echo "##vso[task.setvariable variable=needBuildArtifactSpecific]true"
+                  else
+                    echo "##vso[task.setvariable variable=needBuildArtifactSpecific]false"
+                  fi
+                displayName: "Detect if fallback is needed (specific)"
+
+              # Fall back to Build Artifact (specific pipeline)
+              - task: DownloadBuildArtifacts@1
+                displayName: "Download FT Image (Build Artifact, specific)"
+                condition: eq(variables['needBuildArtifactSpecific'], 'true')
+                inputs:
+                  buildType: specific
+                  project: "ECF"
+                  definition: ${{ parameters.functestImageArtifactPipeline }} # numeric pipeline id
+                  buildVersionToDownload: latestFromBranch
+                  branchName: "refs/heads/main"
+                  artifactName: "${{ parameters.functestImageArtifact }}"
+                  downloadPath: "${{ variables.baseImageDirectory }}"
+
+              - bash: |
+                  set -eux
+                  echo "FT image directory contents (specific):"
+                  ls -la "${{ variables.baseImageDirectory }}" || true
+                displayName: "Verify FT image (specific)"
 
           - bash: |
               set -eux
+
               sudo apt install -y protobuf-compiler clang bc
               sudo apt remove python3-openssl
               pip install pytest assertpy paramiko pyopenssl
@@ -89,6 +154,7 @@ stages:
 
           - bash: |
               set -eux
+
               ssh-keygen -t rsa -b 2048 -f ~/.ssh/id_rsa -q -N ""
             displayName: Set up SSH Keys
             retryCountOnTaskFailure: 3
@@ -97,14 +163,21 @@ stages:
 
           - bash: |
               set -eux
+
+              # Copy files from platform-tests to functional_tests
               cp platform-tests/tools/marinerhci_test_tools/node_interface.py functional_tests/
               cp platform-tests/tools/marinerhci_test_tools/ssh_node.py functional_tests/
+
+              # Run the core of the functional tests, which means only
+              # rebuilding the test binaries and invoking pytest. The regular
+              # target is meant for local use and does extra setup not required
+              # here.
               sg libvirt "make functional-test-core ARGUS_TOOLKIT_PATH=argus-toolkit"
             displayName: Execute Functional Tests
 
           - template: ../common_tasks/coverage.yml
             parameters:
-              codeCoverageBaseline: 78
+              codeCoverageBaseline: 78 # Unit + functional tests
               executeUnitTests: true
               installNativeDependencies: false
               rustup: false
@@ -136,11 +209,12 @@ stages:
 
           - bash: |
               set -eux
+
               sg libvirt "make patch-functional-test ARGUS_TOOLKIT_PATH=argus-toolkit"
             condition: and(succeeded(), eq('${{ parameters.rerunTests }}', 'true'))
             displayName: Rerun Functional Tests
 
-          # ── Download JUnit for dashboard push ──
+          # Download the JUnit artifact you published above (Build Artifact)
           - task: DownloadBuildArtifacts@1
             displayName: 'Download JUnit test results for dashboard push'
             inputs:
@@ -149,6 +223,7 @@ stages:
               artifactName: 'trident_test_results'
               downloadPath: '$(Build.ArtifactStagingDirectory)/junits'
 
+          # Copy from the artifact subfolder created by DownloadBuildArtifacts
           - bash: |
               mkdir -p $(Build.ArtifactStagingDirectory)/filtered-junits
               cp $(Build.ArtifactStagingDirectory)/junits/trident_test_results/ONEBRANCH_ARTIFACT/*trident_functional_tests.xml \
@@ -157,12 +232,14 @@ stages:
               ls -la $(Build.ArtifactStagingDirectory)/filtered-junits/
             displayName: 'Filter JUnit files for dashboard push'
 
+          # Generate build-number.config file
           - bash: |
               set -eux
               mkdir -p $(Build.ArtifactStagingDirectory)/build-number-trident-functional
               echo "$(Build.BuildNumber)" > $(Build.ArtifactStagingDirectory)/build-number-trident-functional/build-number.config
             displayName: "Generate build-number.config file"
 
+          # Publish the artifact
           - task: PublishBuildArtifacts@1
             displayName: "Publish build number artifact"
             inputs:
