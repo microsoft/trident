@@ -141,15 +141,20 @@ stages:
             condition: and(succeeded(), eq('${{ parameters.rerunTests }}', 'true'))
             displayName: Rerun Functional Tests
 
-          - task: DownloadPipelineArtifact@1
+          # FIX: Use DownloadBuildArtifacts for build artifact + correct input names
+          - task: DownloadBuildArtifacts@1
             displayName: 'Download JUnit test results for dashboard push'
             inputs:
-              artifact: 'trident_test_results'
-              path: '$(Build.ArtifactStagingDirectory)/junits'
+              buildType: current
+              downloadType: single
+              artifactName: 'trident_test_results'
+              downloadPath: '$(Build.ArtifactStagingDirectory)/junits'
 
+          # FIX: Copy from the artifact subfolder created by DownloadBuildArtifacts
           - bash: |
               mkdir -p $(Build.ArtifactStagingDirectory)/filtered-junits
-              cp $(Build.ArtifactStagingDirectory)/junits/*trident_functional_tests.xml $(Build.ArtifactStagingDirectory)/filtered-junits/
+              cp $(Build.ArtifactStagingDirectory)/junits/trident_test_results/ONEBRANCH_ARTIFACT/*trident_functional_tests.xml \
+                 $(Build.ArtifactStagingDirectory)/filtered-junits/ || true
               echo "Filtered JUnit files:"
               ls -la $(Build.ArtifactStagingDirectory)/filtered-junits/
             displayName: 'Filter JUnit files for dashboard push'
@@ -167,7 +172,6 @@ stages:
             inputs:
               pathToPublish: "$(Build.ArtifactStagingDirectory)/build-number-trident-functional"
               ArtifactName: "build-number-trident-functional"
-
 
           - template: ../common/dbCommunication/push-test-results-to-db.yaml
             parameters:

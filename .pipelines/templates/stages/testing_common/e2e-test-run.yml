@@ -124,7 +124,6 @@ steps:
       if [ -n "${{ parameters.netlistenConfigFile }}" ]; then
         NETLISTEN_CONFIG_ARGS="--config ${{ parameters.netlistenConfigFile }}"
       fi
-
       ./bin/netlisten --force-color $NETLISTEN_CONFIG_ARGS \
         -m $(Build.SourcesDirectory)/trident-ab-update-metrics-runtime-os-B.jsonl \
         --full-logstream ./logstream-full.log \
@@ -242,8 +241,8 @@ steps:
 
   - bash: |
       set -eux
-      mkdir -p ${{ variables.artifactsDirectory }}/junit
-      sudo cp "./e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_B_$(System.JobAttempt).junit.xml" "${{ variables.artifactsDirectory }}/junit."
+      mkdir -p ${{ parameters.artifactsDirectory }}/junit
+      sudo cp "./e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_B_$(System.JobAttempt).junit.xml" "${{ parameters.artifactsDirectory }}/junit."
     displayName: Copy junit results to artifact directory
     condition: succeededOrFailed()
 
@@ -352,8 +351,8 @@ steps:
 
   - bash: |
       set -eux
-      mkdir -p ${{ variables.artifactsDirectory }}/junit
-      sudo cp "./e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_A_$(System.JobAttempt).junit.xml" "${{ variables.artifactsDirectory }}/junit."
+      mkdir -p ${{ parameters.artifactsDirectory }}/junit
+      sudo cp "./e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_A_$(System.JobAttempt).junit.xml" "${{ parameters.artifactsDirectory }}/junit."
     displayName: Copy junit results to artifact directory
     condition: succeededOrFailed()
 
@@ -386,15 +385,18 @@ steps:
       deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
       tridentConfigurationName: ${{ parameters.tridentConfigurationName }}
       
-  - task: DownloadPipelineArtifact@1
+  - task: DownloadBuildArtifacts@1
     displayName: 'Download JUnit test results for dashboard push'
     inputs:
-      artifact: 'junit_test_results_ab_update_B'
-      path: '$(Build.ArtifactStagingDirectory)/junits'
+      buildType: current
+      downloadType: single
+      artifactName: 'junit_test_results_ab_update_B'
+      downloadPath: '$(Build.ArtifactStagingDirectory)/junits'
 
   - bash: |
       mkdir -p $(Build.ArtifactStagingDirectory)/filtered-junits
-      cp $(Build.ArtifactStagingDirectory)/junits/*stage_finalize_ab_update_B*.xml $(Build.ArtifactStagingDirectory)/filtered-junits/
+      cp $(Build.ArtifactStagingDirectory)/junits/junit_test_results_ab_update_B/*ab_update_B*.xml \
+        $(Build.ArtifactStagingDirectory)/filtered-junits/ || true
       echo "Filtered JUnit files:"
       ls -la $(Build.ArtifactStagingDirectory)/filtered-junits/
     displayName: 'Filter JUnit files for dashboard push'
