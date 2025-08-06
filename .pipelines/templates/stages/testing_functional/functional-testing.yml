@@ -1,3 +1,10 @@
+resources:
+  pipelines:
+    - pipeline: functestImagePipeline     # alias for the FT image builder
+      project: ECF                        # project containing that pipeline
+      source: ${{ parameters.functestImageArtifactPipeline }}  # pipeline ID (e.g. 5067)
+      trigger: none
+
 parameters:
   - name: downloadPrebuiltImage
     displayName: "Download prebuilt base image"
@@ -15,7 +22,7 @@ parameters:
 
   - name: functestImageArtifactPipeline
     type: number
-    default: 5067 # [GITHUB]-trident-ci
+    default: 5067
     displayName: Where to download prebuilt image from
 
 stages:
@@ -31,8 +38,8 @@ stages:
         displayName: Functional Tests
         timeoutInMinutes: 50
         pool:
-          type: linux
           name: trident-ubuntu-1es-pool-eastus2
+          vmImage: ubuntu-latest
           hostArchitecture: amd64
 
         variables:
@@ -42,6 +49,7 @@ stages:
         steps:
           - checkout: argus-toolkit
             fetchDepth: 1
+
           - checkout: platform-tests
             fetchDepth: 1
 
@@ -49,28 +57,28 @@ stages:
 
           - template: ../testing_vm/netlaunch-prep.yml
 
+          # ── Download FT image ──
           - ${{ if eq(parameters.downloadPrebuiltImage, false) }}:
               - task: DownloadPipelineArtifact@2
                 displayName: "Download FT Image from current build"
                 inputs:
                   buildType: current
-                  artifactName: "${{ parameters.functestImageArtifact }}"
-                  targetPath: "${{ variables.baseImageDirectory }}"
-          - ${{ else }}:
+                  artifactName: ${{ parameters.functestImageArtifact }}
+                  targetPath: $(variables.baseImageDirectory)
+            ${{ else }}:
               - task: DownloadPipelineArtifact@2
-                displayName: "Download FT Image from latest build of ${{ parameters.functestImageArtifactPipeline}}"
+                displayName: "Download FT Image from latest build of pipeline #${{ parameters.functestImageArtifactPipeline }}"
                 inputs:
                   buildType: specific
-                  project: "ECF"
-                  pipeline: ${{ parameters.functestImageArtifactPipeline }}
+                  pipeline: functestImagePipeline
+                  project: ECF
                   buildVersionToDownload: latestFromBranch
-                  branchName: "refs/heads/main"
-                  artifactName: "${{ parameters.functestImageArtifact }}"
-                  targetPath: "${{ variables.baseImageDirectory }}"
+                  branchName: refs/heads/main
+                  artifactName: ${{ parameters.functestImageArtifact }}
+                  targetPath: $(variables.baseImageDirectory)
 
           - bash: |
               set -eux
-
               sudo apt install -y protobuf-compiler clang bc
               sudo apt remove python3-openssl
               pip install pytest assertpy paramiko pyopenssl
@@ -81,7 +89,6 @@ stages:
 
           - bash: |
               set -eux
-
               ssh-keygen -t rsa -b 2048 -f ~/.ssh/id_rsa -q -N ""
             displayName: Set up SSH Keys
             retryCountOnTaskFailure: 3
@@ -90,21 +97,14 @@ stages:
 
           - bash: |
               set -eux
-
-              # Copy files from platform-tests to functional_tests
               cp platform-tests/tools/marinerhci_test_tools/node_interface.py functional_tests/
               cp platform-tests/tools/marinerhci_test_tools/ssh_node.py functional_tests/
-
-              # Run the core of the functional tests, which means only
-              # rebuilding the test binaries and invoking pytest. The regular
-              # target is meant for local use and does extra setup not required
-              # here.
               sg libvirt "make functional-test-core ARGUS_TOOLKIT_PATH=argus-toolkit"
             displayName: Execute Functional Tests
 
           - template: ../common_tasks/coverage.yml
             parameters:
-              codeCoverageBaseline: 78 # Unit + functional tests
+              codeCoverageBaseline: 78
               executeUnitTests: true
               installNativeDependencies: false
               rustup: false
@@ -116,8 +116,8 @@ stages:
               testResultsFiles: "$(Build.SourcesDirectory)/target/trident_functional_tests.xml"
 
           - bash: |
-             mkdir -p $(Build.ArtifactStagingDirectory)/ONEBRANCH_ARTIFACT
-             cp $(Build.SourcesDirectory)/target/trident_functional_tests.xml $(Build.ArtifactStagingDirectory)/ONEBRANCH_ARTIFACT/
+              mkdir -p $(Build.ArtifactStagingDirectory)/ONEBRANCH_ARTIFACT
+              cp $(Build.SourcesDirectory)/target/trident_functional_tests.xml $(Build.ArtifactStagingDirectory)/ONEBRANCH_ARTIFACT/
             displayName: "Prepare JUnit XML for artifact publishing"
 
           - task: PublishBuildArtifacts@1
@@ -136,12 +136,11 @@ stages:
 
           - bash: |
               set -eux
-
               sg libvirt "make patch-functional-test ARGUS_TOOLKIT_PATH=argus-toolkit"
             condition: and(succeeded(), eq('${{ parameters.rerunTests }}', 'true'))
             displayName: Rerun Functional Tests
 
-          # FIX: Use DownloadBuildArtifacts for build artifact + correct input names
+          # ── Download JUnit for dashboard push ──
           - task: DownloadBuildArtifacts@1
             displayName: 'Download JUnit test results for dashboard push'
             inputs:
@@ -150,7 +149,6 @@ stages:
               artifactName: 'trident_test_results'
               downloadPath: '$(Build.ArtifactStagingDirectory)/junits'
 
-          # FIX: Copy from the artifact subfolder created by DownloadBuildArtifacts
           - bash: |
               mkdir -p $(Build.ArtifactStagingDirectory)/filtered-junits
               cp $(Build.ArtifactStagingDirectory)/junits/trident_test_results/ONEBRANCH_ARTIFACT/*trident_functional_tests.xml \
@@ -159,14 +157,12 @@ stages:
               ls -la $(Build.ArtifactStagingDirectory)/filtered-junits/
             displayName: 'Filter JUnit files for dashboard push'
 
-          # Generate build-number.config file
           - bash: |
-             set -eux
-             mkdir -p $(Build.ArtifactStagingDirectory)/build-number-trident-functional
-             echo "$(Build.BuildNumber)" > $(Build.ArtifactStagingDirectory)/build-number-trident-functional/build-number.config
+              set -eux
+              mkdir -p $(Build.ArtifactStagingDirectory)/build-number-trident-functional
+              echo "$(Build.BuildNumber)" > $(Build.ArtifactStagingDirectory)/build-number-trident-functional/build-number.config
             displayName: "Generate build-number.config file"
 
-          # Publish the artifact
           - task: PublishBuildArtifacts@1
             displayName: "Publish build number artifact"
             inputs:

@@ -115,8 +115,7 @@ steps:
       artifactName: 'junit_test_results_ab_update_B'
     displayName: 'Publish JUnit XML for A/B update B as artifact'
 
-  # If current config requires A/B update testing, execute script to ssh into the host, update
-  # images in the custom Trident config, and re-run Trident to both stage and finalize A/B update.
+  # If current config requires A/B update testing, execute A/B update
   - bash: |
       set -eux
 
@@ -143,7 +142,6 @@ steps:
 
       current_version=$(echo $(version))
       new_version=$((current_version + 1))
-      # Un-set the 'x' flag to avoid errors.
       set +x
       echo "##vso[task.setvariable variable=version]$new_version"
       echo "##vso[task.setvariable variable=abActiveVolume]volume-b"
@@ -161,12 +159,12 @@ steps:
   - template: ../testing_common/display-deployment-logs.yml
     parameters:
       deploymentLogPath: $(Build.SourcesDirectory)/stage-finalize-ab-update-runtime-os-B.log
-      displayName: "📄 Display A/B update deployment logs for runtime OS B"
+      displayName: "📄 Display deployment logs for OS B"
 
   - template: ../testing_common/display-deployment-logs.yml
     parameters:
       deploymentLogPath: $(Build.SourcesDirectory)/logstream-full.log
-      displayName: "📄 [TRACE] Display A/B update deployment logs for runtime OS B"
+      displayName: "📄 [TRACE] Full logstream for OS B"
 
   - bash: |
       set -eux
@@ -177,7 +175,7 @@ steps:
           "${{ parameters.runtimeEnv }}" \
           --metrics-file $(Build.SourcesDirectory)/trident-ab-update-metrics-runtime-os-B.jsonl \
           --metrics-operation update1
-    displayName: "Create boot metrics for booting into runtime OS B"
+    displayName: "Create boot metrics for OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - template: ../testing_common/trident-metrics.yml
@@ -194,7 +192,6 @@ steps:
       ${{ if ne(variables['Build.SourceBranchName'], 'main') }}:
         kustoTableName: dev
 
-  # Re-run E2E tests after A/B update into runtime OS B.
   - bash: |
       set -eux
       python3 -u -m pytest \
@@ -207,7 +204,7 @@ steps:
           --ab-active-volume $(abActiveVolume)
     timeoutInMinutes: 5
     workingDirectory: $(Build.SourcesDirectory)/e2e_tests
-    displayName: "🔬 Run Trident E2E tests after A/B update into runtime OS B"
+    displayName: "🔬 Trident E2E tests after A/B update into runtime OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - task: PublishTestResults@2
@@ -216,190 +213,49 @@ steps:
       testResultsFormat: JUnit
       testResultsFiles: ./e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_B_$(System.JobAttempt).junit.xml
       testRunTitle: ${{ parameters.deploymentEnvironment }}_trident_e2e_tests_${{ parameters.tridentConfigurationName }}_ab_update_B_$(System.JobAttempt)
-    displayName: "Publish test results for A/B update into runtime OS B"
+
+  - bash: |
+     mkdir -p $(Build.ArtifactStagingDirectory)/ONEBRANCH_ARTIFACT
+     cp ./e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_B_$(System.JobAttempt).junit.xml $(Build.ArtifactStagingDirectory)/ONEBRANCH_ARTIFACT/
+    displayName: "Prepare JUnit XML for artifact publishing"
+    condition: succeededOrFailed()
 
   - task: PublishBuildArtifacts@1
-    condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
+    displayName: "Publish JUnit XML as artifact"
+    condition: succeededOrFailed()
     inputs:
-      pathToPublish: './e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_B_$(System.JobAttempt).junit.xml'
-      artifactName: 'junit_test_results_ab_update_B'
-    displayName: 'Publish JUnit XML for A/B update B as artifact'
+      pathToPublish: "$(Build.ArtifactStagingDirectory)/ONEBRANCH_ARTIFACT"
+      artifactName: "junit_test_results_ab_update_B"
 
-    # Generate build-number.config for stage-finalize
   - bash: |
-     set -eux
-     mkdir -p $(Build.ArtifactStagingDirectory)/build-number-trident-stage-finalize
-     echo "$(Build.BuildNumber)" > $(Build.ArtifactStagingDirectory)/build-number-trident-stage-finalize/build-number.config
+      set -eux
+      mkdir -p $(Build.ArtifactStagingDirectory)/build-number-trident-stage-finalize
+      echo "$(Build.BuildNumber)" > $(Build.ArtifactStagingDirectory)/build-number-trident-stage-finalize/build-number.config
     displayName: "Generate build-number.config for stage-finalize"
 
-  # Publish the build-number artifact
   - task: PublishBuildArtifacts@1
     displayName: "Publish build-number-trident-stage-finalize artifact"
     inputs:
       pathToPublish: "$(Build.ArtifactStagingDirectory)/build-number-trident-stage-finalize"
       ArtifactName: build-number-trident-stage-finalize
 
-  - bash: |
-      set -eux
-      mkdir -p ${{ parameters.artifactsDirectory }}/junit
-      sudo cp "./e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_B_$(System.JobAttempt).junit.xml" "${{ parameters.artifactsDirectory }}/junit."
-    displayName: Copy junit results to artifact directory
-    condition: succeededOrFailed()
-
-  - bash: |
-      set -eux
-      # If there is a netlisten process, kill it so there is no port clash in the instance
-      if pgrep netlisten > /dev/null; then pkill netlisten; fi
-
-      NETLISTEN_CONFIG_ARGS=""
-      if [ -n "${{ parameters.netlistenConfigFile }}" ]; then
-        NETLISTEN_CONFIG_ARGS="--config ${{ parameters.netlistenConfigFile }}"
-      fi
-
-      ./bin/netlisten --force-color $NETLISTEN_CONFIG_ARGS \
-          -m $(Build.SourcesDirectory)/trident-ab-update-metrics-runtime-os-A.jsonl \
-          --full-logstream ./logstream-full.log \
-          -s "${{ parameters.artifactsDirectory }}" \
-          -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-runtime-os-A.log 2>&1 &
-
-      echo "Running script to stage and finalize A/B update..."
-      ./bin/storm-trident helper ab-update \
-          "${{ parameters.sshKeyPath }}" \
-          "${{ parameters.hostIp }}" \
-          "${{ parameters.userName }}" \
-          "${{ parameters.runtimeEnv }}" \
-          --trident-config $(tridentConfigFile) \
-          --version $(version) \
-          --stage-ab-update \
-          --finalize-ab-update
-
-      current_version=$(echo $(version))
-      new_version=$((current_version + 1))
-      # Un-set the 'x' flag to avoid errors.
-      set +x
-      echo "##vso[task.setvariable variable=version]$new_version"
-      echo "##vso[task.setvariable variable=abActiveVolume]volume-a"
-    timeoutInMinutes: 15
-    workingDirectory: $(Build.SourcesDirectory)
-    displayName: "🔄 Stage and finalize A/B update into runtime OS A"
-    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
-
-  - template: ../testing_common/display-serial-logs.yml
-    parameters:
-      netlistenConfigFile: ${{ parameters.netlistenConfigFile }}
-      outputDirectory: $(ob_outputDirectory)
-      partition: A
-
-  - template: ../testing_common/display-deployment-logs.yml
-    parameters:
-      deploymentLogPath: $(Build.SourcesDirectory)/stage-finalize-ab-update-runtime-os-A.log
-      displayName: "📄 Display A/B update deployment logs for runtime OS A"
-
-  - template: ../testing_common/display-deployment-logs.yml
-    parameters:
-      deploymentLogPath: $(Build.SourcesDirectory)/logstream-full.log
-      displayName: "📄 [TRACE] Display A/B update deployment logs for runtime OS A"
-
-  - bash: |
-      set -eux
-      ./bin/storm-trident helper boot-metrics \
-          "${{ parameters.sshKeyPath }}" \
-          "${{ parameters.hostIp }}" \
-          "${{ parameters.userName }}" \
-          "${{ parameters.runtimeEnv }}" \
-          --metrics-file $(Build.SourcesDirectory)/trident-ab-update-metrics-runtime-os-A.jsonl \
-          --metrics-operation update2
-    displayName: "Create boot metrics for booting into runtime OS A"
-    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
-
-  - template: ../testing_common/trident-metrics.yml
-    parameters:
-      tridentSourceDirectory: $(Build.SourcesDirectory)
-      tridentConfigPath: ${{ parameters.tridentConfigPath }}
-      deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
-      runtimeEnvironment: ${{ parameters.runtimeEnv }}
-      tridentConfigurationName: ${{ parameters.tridentConfigurationName }}
-      metricsFile: $(Build.SourcesDirectory)/trident-ab-update-metrics-runtime-os-A.jsonl
-      tridentOperation: ab-update
-      ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
-        kustoTableName: main
-      ${{ if ne(variables['Build.SourceBranchName'], 'main') }}:
-        kustoTableName: dev
-
-  - bash: |
-      set -eux
-      python3 -u -m pytest \
-          -m "${{ parameters.buildPurpose }}" \
-          --capture=no \
-          --junit-xml=${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_A_$(System.JobAttempt).junit.xml \
-          --host ${{ parameters.hostIp }} \
-          --runtime-env ${{ parameters.runtimeEnv }} \
-          --configuration ${{ parameters.tridentConfigPath }} \
-          --ab-active-volume $(abActiveVolume)
-    timeoutInMinutes: 5
-    workingDirectory: $(Build.SourcesDirectory)/e2e_tests
-    displayName: "🔬 Run Trident E2E tests after A/B update into runtime OS A"
-    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
-
-  - task: PublishTestResults@2
-    condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
-    inputs:
-      testResultsFormat: JUnit
-      testResultsFiles: ./e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_A_$(System.JobAttempt).junit.xml
-      testRunTitle: ${{ parameters.deploymentEnvironment }}_trident_e2e_tests_${{ parameters.tridentConfigurationName }}_ab_update_A_$(System.JobAttempt)
-    displayName: "Publish test results for A/B update into runtime OS A"
-
-  - bash: |
-      set -eux
-      mkdir -p ${{ parameters.artifactsDirectory }}/junit
-      sudo cp "./e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_A_$(System.JobAttempt).junit.xml" "${{ parameters.artifactsDirectory }}/junit."
-    displayName: Copy junit results to artifact directory
-    condition: succeededOrFailed()
-
-  # Check the value of 'buildPurpose', to determine if we need to execute the
-  # test scenario where A/B update is staged and finalized independently. This
-  # test is to be run only when 'buildPurpose' is 'daily', for lower frequency.
-  - ${{ if eq(parameters.buildPurpose, 'daily') }}:
-      - template: e2e-ab-update-stage-finalize-test-run.yml
-        parameters:
-          buildPurpose: ${{ parameters.buildPurpose }}
-          tridentConfigurationName: ${{ parameters.tridentConfigurationName }}
-          hostIp: ${{ parameters.hostIp }}
-          runtimeEnv: ${{ parameters.runtimeEnv }}
-          tridentConfigPath: ${{ parameters.tridentConfigPath }}
-          sshKeyPath: ${{ parameters.sshKeyPath }}
-          userName: ${{ parameters.userName }}
-          artifactsDirectory: ${{ parameters.artifactsDirectory }}
-          deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
-          netlistenPort: ${{ parameters.netlistenPort }}
-          netlistenConfigFile: ${{ parameters.netlistenConfigFile }}
-
-  - template: ../testing_common/trident-rebuild.yml
-    parameters:
-      hostIp: ${{ parameters.hostIp }}
-      sshKeyPath: ${{ parameters.sshKeyPath }}
-      userName: ${{ parameters.userName }}
-      runtimeEnv: ${{ parameters.runtimeEnv }}
-      tridentSourceDirectory: $(Build.SourcesDirectory)
-      tridentConfigPath: ${{ parameters.tridentConfigPath }}
-      deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
-      tridentConfigurationName: ${{ parameters.tridentConfigurationName }}
-      
+  # 1) Download the previously published JUnit XML files
   - task: DownloadBuildArtifacts@1
-    displayName: 'Download JUnit test results for dashboard push'
+    displayName: "Download JUnit test results"
     inputs:
       buildType: current
       downloadType: single
-      artifactName: 'junit_test_results_ab_update_B'
-      downloadPath: '$(Build.ArtifactStagingDirectory)/junits'
+      artifactName: "junit_test_results_ab_update_B"
+      downloadPath: "$(Build.ArtifactStagingDirectory)/junits"
 
+  # 2) Filter out only the A/B update B test reports
   - bash: |
       mkdir -p $(Build.ArtifactStagingDirectory)/filtered-junits
       cp $(Build.ArtifactStagingDirectory)/junits/junit_test_results_ab_update_B/*ab_update_B*.xml \
         $(Build.ArtifactStagingDirectory)/filtered-junits/ || true
       echo "Filtered JUnit files:"
       ls -la $(Build.ArtifactStagingDirectory)/filtered-junits/
-    displayName: 'Filter JUnit files for dashboard push'
+    displayName: "Filter JUnit files for dashboard push"
 
   - template: ../common/dbCommunication/push-test-results-to-db.yaml
     parameters:

@@ -120,7 +120,7 @@ steps:
       if [ -n "${{ parameters.netlistenConfigFile }}" ]; then
         NETLISTEN_CONFIG_ARGS="--config ${{ parameters.netlistenConfigFile }}"
       fi
-      # If there is a netlisten process, kill it so there is no port clash in the instance
+      # If there is a netlisten process, kill it so there is no port clash
       if pgrep netlisten > /dev/null; then pkill netlisten; fi
       ./bin/netlisten $NETLISTEN_CONFIG_ARGS \
           -m $(Build.SourcesDirectory)/trident-finalize-update-metrics.jsonl \
@@ -139,7 +139,6 @@ steps:
 
       current_version=$(echo $(version))
       new_version=$((current_version + 1))
-      # Un-set the 'x' flag to avoid errors.
       set +x
       echo "##vso[task.setvariable variable=version]$new_version"
       echo "##vso[task.setvariable variable=abActiveVolume]volume-b"
@@ -166,7 +165,7 @@ steps:
           "${{ parameters.hostIp }}" \
           "${{ parameters.userName }}" \
           "${{ parameters.runtimeEnv }}"
-    displayName: "🤝 Check SSH connection after booting into runtime OS B"
+    displayName: "🤝 Check SSH after booting into OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - bash: |
@@ -178,7 +177,7 @@ steps:
           "${{ parameters.runtimeEnv }}" \
           --metrics-file $(Build.SourcesDirectory)/trident-finalize-update-metrics.jsonl \
           --metrics-operation update1
-    displayName: "Create boot metrics for booting into runtime OS B"
+    displayName: "Create boot metrics for OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - template: ../testing_common/trident-metrics.yml
@@ -207,7 +206,7 @@ steps:
           --ab-active-volume $(abActiveVolume)
     timeoutInMinutes: 5
     workingDirectory: $(Build.SourcesDirectory)/e2e_tests
-    displayName: "🔬 Run Trident E2E tests after A/B update into runtime OS B"
+    displayName: "🔬 Trident E2E tests after finalize OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - task: PublishTestResults@2
@@ -216,29 +215,26 @@ steps:
       testResultsFormat: JUnit
       testResultsFiles: ./e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_stage_finalize_ab_update_B_$(System.JobAttempt).junit.xml
       testRunTitle: ${{ parameters.deploymentEnvironment }}_trident_e2e_tests_${{ parameters.tridentConfigurationName }}_stage_finalize_ab_update_B_$(System.JobAttempt)
-    displayName: "Publish test results for A/B update into runtime OS A that was staged and finalized independently"
 
   - bash: |
-     mkdir -p $(Build.ArtifactStagingDirectory)/ONEBRANCH_ARTIFACT
-     cp ./e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_stage_finalize_ab_update_B_$(System.JobAttempt).junit.xml $(Build.ArtifactStagingDirectory)/ONEBRANCH_ARTIFACT/
+      mkdir -p $(Build.ArtifactStagingDirectory)/ONEBRANCH_ARTIFACT
+      cp ./e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_stage_finalize_ab_update_B_$(System.JobAttempt).junit.xml $(Build.ArtifactStagingDirectory)/ONEBRANCH_ARTIFACT/
     displayName: "Prepare JUnit XML for artifact publishing"
     condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
 
   - task: PublishBuildArtifacts@1
-    displayName: "Publish JUnit XML for stage-finalise A/B update B"
+    displayName: "Publish JUnit XML for stage-finalise B"
     condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
     inputs:
       pathToPublish: "$(Build.ArtifactStagingDirectory)/ONEBRANCH_ARTIFACT"
       artifactName: "trident_stage_finalize_ab_update_B_test_results"
 
-  # Generate build-number.config for stage-finalize
   - bash: |
-     set -eux
-     mkdir -p $(Build.ArtifactStagingDirectory)/build-number-trident-stage-finalize
-     echo "$(Build.BuildNumber)" > $(Build.ArtifactStagingDirectory)/build-number-trident-stage-finalize/build-number.config
+      set -eux
+      mkdir -p $(Build.ArtifactStagingDirectory)/build-number-trident-stage-finalize
+      echo "$(Build.BuildNumber)" > $(Build.ArtifactStagingDirectory)/build-number-trident-stage-finalize/build-number.config
     displayName: "Generate build-number.config for stage-finalize"
 
-  # Publish the build-number artifact
   - task: PublishBuildArtifacts@1
     displayName: "Publish build-number-trident-stage-finalize artifact"
     inputs:
@@ -247,29 +243,28 @@ steps:
 
   # 1) Download the previously published JUnit XML files
   - task: DownloadBuildArtifacts@1
-    displayName: 'Download JUnit test results'
+    displayName: "Download JUnit test results"
     inputs:
       buildType: current
       downloadType: single
-      artifactName: 'trident_stage_finalize_ab_update_B_test_results'
-      downloadPath: '$(Build.ArtifactStagingDirectory)/junits'
+      artifactName: "trident_stage_finalize_ab_update_B_test_results"
+      downloadPath: "$(Build.ArtifactStagingDirectory)/junits"
 
-# 2) Filter out only the stage-finalize AB update B test reports
+  # 2) Filter out only the stage-finalize AB update B test reports
   - bash: |
-     mkdir -p $(Build.ArtifactStagingDirectory)/filtered-junits
-     cp $(Build.ArtifactStagingDirectory)/junits/trident_stage_finalize_ab_update_B_test_results/ONEBRANCH_ARTIFACT/*stage_finalize_ab_update_B*.xml \
-       $(Build.ArtifactStagingDirectory)/filtered-junits/ || true
-     echo "Filtered JUnit files:"
-     ls -la $(Build.ArtifactStagingDirectory)/filtered-junits/
-    displayName: 'Filter JUnit files for dashboard push'
+      mkdir -p $(Build.ArtifactStagingDirectory)/filtered-junits
+      cp $(Build.ArtifactStagingDirectory)/junits/trident_stage_finalize_ab_update_B_test_results/ONEBRANCH_ARTIFACT/*stage_finalize_ab_update_B*.xml \
+        $(Build.ArtifactStagingDirectory)/filtered-junits/ || true
+      echo "Filtered JUnit files:"
+      ls -la $(Build.ArtifactStagingDirectory)/filtered-junits/
+    displayName: "Filter JUnit files for dashboard push"
 
-# 3) Invoke common template to push results into your DB
   - template: ../common/dbCommunication/push-test-results-to-db.yaml
     parameters:
       marinerTridentPipelinesSourceDirectory: '$(Build.SourcesDirectory)'
-      junitFilesDirectory:                    '$(Build.ArtifactStagingDirectory)/filtered-junits'
-      isStaging:                              true
-      buildConfigArtifactName:                'build-number-trident-stage-finalize'
-      architecture:                           'x86_64'
-      test_suite_name:                        'trident-stage-finalize'
-      test_type_prefix:                       '${{ parameters.buildPurpose }}'
+      junitFilesDirectory: '$(Build.ArtifactStagingDirectory)/filtered-junits'
+      isStaging: true
+      buildConfigArtifactName: 'build-number-trident-stage-finalize'
+      architecture: 'x86_64'
+      test_suite_name: 'trident-stage-finalize'
+      test_type_prefix: '${{ parameters.buildPurpose }}'
