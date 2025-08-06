@@ -234,7 +234,7 @@ steps:
     displayName: "Generate build-number.config for stage-finalize"
 
   # Publish the build-number artifact
-  - task: PublishBuildArtifacts@1
+  - task: PublishBuildArtifacts@2
     displayName: "Publish build-number-trident-stage-finalize artifact"
     inputs:
       pathToPublish: "$(Build.ArtifactStagingDirectory)/build-number-trident-stage-finalize"
