@@ -1,7 +1,7 @@
 use std::{
     fs::{self, File},
     io::Read,
-    path::{Path, PathBuf},
+    path::Path,
     sync::Mutex,
 };
 
@@ -10,9 +10,9 @@ use enumflags2::BitFlags;
 use log::debug;
 use once_cell::sync::Lazy;
 
-use crate::{container, dependencies::Dependency, path, pcrlock::PCRLOCK_POLICY_JSON_PATH};
+use crate::{dependencies::Dependency, pcrlock::PCRLOCK_POLICY_JSON_PATH};
 use sysdefs::tpm2::Pcr;
-use trident_api::{constants::LUKS_HEADER_SIZE_IN_MIB, error::TridentResultExt};
+use trident_api::constants::LUKS_HEADER_SIZE_IN_MIB;
 
 /// Cipher specification string for the LUKS2 data segment.
 pub const CIPHER: &str = "aes-xts-plain64";
@@ -65,20 +65,7 @@ pub fn systemd_cryptenroll(
     if let Some(pcrs) = pcrs {
         cmd.arg(to_tpm2_pcrs_arg(pcrs));
     } else {
-        // Construct the full pcrlock.json path
-        let pcrlock_json_full_path = if container::is_running_in_container()
-            .unstructured("Failed to determine if running in container")?
-        {
-            let host_root =
-                container::get_host_root_path().unstructured("Failed to get host root path")?;
-            path::join_relative(host_root, PCRLOCK_POLICY_JSON_PATH)
-        } else {
-            PathBuf::from(PCRLOCK_POLICY_JSON_PATH)
-        };
-        cmd.arg(format!(
-            "--tpm2-pcrlock={}",
-            pcrlock_json_full_path.display()
-        ));
+        cmd.arg(format!("--tpm2-pcrlock={PCRLOCK_POLICY_JSON_PATH}"));
     }
 
     cmd.run_and_check().context(format!(
