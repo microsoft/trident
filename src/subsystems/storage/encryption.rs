@@ -8,7 +8,7 @@ use enumflags2::BitFlags;
 use log::{debug, info, trace};
 
 use osutils::{
-    container, encryption as osutils_encryption, files, path,
+    encryption as osutils_encryption, files, path,
     pcrlock::{self, PCRLOCK_POLICY_JSON_PATH},
 };
 use sysdefs::tpm2::Pcr;
@@ -195,24 +195,17 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
             pcrlock::generate_pcrlock_policy(pcrs, uki_binaries, bootloader_binaries)?;
         }
 
-        // Construct the full pcrlock.json path
-        let pcrlock_json_full_path = if container::is_running_in_container()? {
-            let host_root = container::get_host_root_path()?;
-            path::join_relative(host_root, PCRLOCK_POLICY_JSON_PATH)
-        } else {
-            PathBuf::from(PCRLOCK_POLICY_JSON_PATH)
-        };
         // If a pcrlock policy JSON file exists, copy it to the update volume
-        if pcrlock_json_full_path.exists() {
+        if Path::new(PCRLOCK_POLICY_JSON_PATH).exists() {
             let pcrlock_json_copy = path::join_relative(mount_path, PCRLOCK_POLICY_JSON_PATH);
             debug!(
                 "Copying pcrlock policy JSON from path '{}' to update volume at path '{}'",
-                pcrlock_json_full_path.display(),
+                PCRLOCK_POLICY_JSON_PATH,
                 pcrlock_json_copy.display()
             );
-            fs::copy(&pcrlock_json_full_path, pcrlock_json_copy.clone()).structured(
+            fs::copy(PCRLOCK_POLICY_JSON_PATH, pcrlock_json_copy.clone()).structured(
                 ServicingError::CopyPcrlockPolicyJson {
-                    path: pcrlock_json_full_path.display().to_string(),
+                    path: PCRLOCK_POLICY_JSON_PATH.to_string(),
                     destination: pcrlock_json_copy.display().to_string(),
                 },
             )?;
