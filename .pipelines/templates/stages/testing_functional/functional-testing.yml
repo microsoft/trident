@@ -62,7 +62,7 @@ stages:
                 inputs:
                   buildType: specific
                   project: "ECF"
-                  definition: ${{ parameters.functestImageArtifactPipeline }}
+                  pipeline: ${{ parameters.functestImageArtifactPipeline }}
                   buildVersionToDownload: latestFromBranch
                   branchName: "refs/heads/main"
                   artifactName: "${{ parameters.functestImageArtifact }}"
