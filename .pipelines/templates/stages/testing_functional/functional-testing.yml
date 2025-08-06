@@ -1,3 +1,4 @@
+
 parameters:
   - name: downloadPrebuiltImage
     displayName: "Download prebuilt base image"
@@ -46,31 +47,160 @@ stages:
             fetchDepth: 1
 
           - template: ../common_tasks/cargo-auth.yml
-
           - template: ../testing_vm/netlaunch-prep.yml
 
+          # ==========================================================================================
+          # Download FT image when downloadPrebuiltImage == false (from current build)
+          # Try Pipeline Artifact first; if none found, fall back to Build Artifact.
+          # ==========================================================================================
           - ${{ if eq(parameters.downloadPrebuiltImage, false) }}:
+              - bash: |
+                  set -eux
+                  mkdir -p "${{ variables.baseImageDirectory }}"
+                  rm -rf "${{ variables.baseImageDirectory }}"/* || true
+                displayName: "Prep FT image target (current build)"
+
               - task: DownloadPipelineArtifact@2
-                displayName: "Download FT Image from current build"
+                displayName: "Download FT Image (Pipeline Artifact, current)"
                 inputs:
                   buildType: current
                   artifactName: "${{ parameters.functestImageArtifact }}"
                   targetPath: "${{ variables.baseImageDirectory }}"
+
+              - bash: |
+                  set -eux
+                  if [ -z "$(ls -A "${{ variables.baseImageDirectory }}" 2>/dev/null)" ]; then
+                    echo "##vso[task.setvariable variable=needBuildArtifactCurrent]true"
+                  else
+                    echo "##vso[task.setvariable variable=needBuildArtifactCurrent]false"
+                  fi
+                displayName: "Detect if fallback is needed (current)"
+
+              - task: DownloadBuildArtifacts@1
+                displayName: "Download FT Image (Build Artifact, current)"
+                condition: eq(variables['needBuildArtifactCurrent'], 'true')
+                inputs:
+                  buildType: current
+                  downloadType: single
+                  artifactName: "${{ parameters.functestImageArtifact }}"
+                  downloadPath: "${{ variables.baseImageDirectory }}"
+
+              - bash: |
+                  set -eux
+                  echo "FT image directory contents (current):"
+                  ls -la "${{ variables.baseImageDirectory }}" || true
+                displayName: "Verify FT image (current)"
+
+          # ==========================================================================================
+          # Download FT image when downloadPrebuiltImage == true (from specific pipeline 5067)
+          # Resolve the actual artifact type/name from the latest successful build on refs/heads/main,
+          # then download with the correct task pointing to the exact build ID.
+          # ==========================================================================================
           - ${{ else }}:
+              - bash: |
+                  set -eux
+                  if [ -z "${SYSTEM_ACCESSTOKEN:-}" ]; then
+                    echo "##vso[task.logissue type=error]System.AccessToken is not available. Enable 'Allow scripts to access OAuth token' in pipeline options."
+                    exit 1
+                  fi
+                  mkdir -p "${{ variables.baseImageDirectory }}"
+                  rm -rf "${{ variables.baseImageDirectory }}"/* || true
+                displayName: "Prep FT image target & OAuth check (specific pipeline)"
+                env:
+                  SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+
+              # -- Resolver: discover latest successful build & artifact list, pick the right one --
+              - bash: |
+                  set -eux
+                  cat > resolve_ft_artifact.py << 'PY'
+                  import json, os, sys, urllib.request
+
+                  org = os.environ['ORG_URI']
+                  project = os.environ['PROJECT']
+                  definition = os.environ['DEF_ID']
+                  branch = os.environ.get('BRANCH','refs/heads/main')
+                  token = os.environ['SYSTEM_ACCESSTOKEN']
+                  pref  = os.environ.get('PREF_ART','')
+
+                  def api(url):
+                      req = urllib.request.Request(url)
+                      req.add_header('Authorization', f'Bearer {token}')
+                      with urllib.request.urlopen(req) as r:
+                          return json.load(r)
+
+                  base = f"{org}{project}/_apis/build"
+                  builds = api(f"{base}/builds?definitions={definition}&statusFilter=completed&resultFilter=succeeded&branchName={branch}&$top=1&api-version=7.1-preview.7")
+                  if not builds.get('value'):
+                      print("##vso[task.logissue type=error]No successful builds found for the specified definition/branch.")
+                      sys.exit(1)
+                  build = builds['value'][0]
+                  build_id = build['id']
+                  arts = api(f"{base}/builds/{build_id}/artifacts?api-version=7.1-preview.5").get('value', [])
+                  if not arts:
+                      print(f"##vso[task.logissue type=error]No artifacts found on build {build_id}.")
+                      sys.exit(1)
+
+                  chosen = None
+                  for a in arts:
+                      if a.get('name') == pref:
+                          chosen = a
+                          break
+                  if not chosen:
+                      chosen = arts[0]
+
+                  name = chosen.get('name','')
+                  atype = (chosen.get('resource') or {}).get('type','')
+
+                  print(f"Resolved artifact: build={build_id}, name={name}, type={atype}")
+                  print(f"##vso[task.setvariable variable=ResolvedBuildId]{build_id}")
+                  print(f"##vso[task.setvariable variable=ResolvedArtifactName]{name}")
+                  print(f"##vso[task.setvariable variable=ResolvedArtifactType]{atype}")
+                  PY
+
+                  python3 resolve_ft_artifact.py
+                displayName: "Resolve FT image artifact (name/type/id)"
+                env:
+                  ORG_URI: $(System.CollectionUri)       # e.g., https://dev.azure.com/{org}/
+                  PROJECT: $(System.TeamProject)          # project name
+                  DEF_ID: ${{ parameters.functestImageArtifactPipeline }}
+                  BRANCH: refs/heads/main
+                  PREF_ART: ${{ parameters.functestImageArtifact }}
+                  SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+
+              # -- Download using the correct task based on resolved type --
               - task: DownloadPipelineArtifact@2
-                displayName: "Download FT Image from latest build of ${{ parameters.functestImageArtifactPipeline}}"
+                displayName: "Download FT Image (Pipeline Artifact, specific)"
+                condition: eq(variables['ResolvedArtifactType'], 'PipelineArtifact')
+                inputs:
+                  buildType: specific
+                  project: "ECF"
+                  pipeline: ${{ parameters.functestImageArtifactPipeline }}
+                  buildVersionToDownload: specific
+                  pipelineId: $(ResolvedBuildId)
+                  artifactName: "$(ResolvedArtifactName)"
+                  targetPath: "${{ variables.baseImageDirectory }}"
+
+              - task: DownloadBuildArtifacts@1
+                displayName: "Download FT Image (Build Artifact, specific)"
+                condition: ne(variables['ResolvedArtifactType'], 'PipelineArtifact')
                 inputs:
                   buildType: specific
                   project: "ECF"
                   definition: ${{ parameters.functestImageArtifactPipeline }}
-                  buildVersionToDownload: latestFromBranch
-                  branchName: "refs/heads/main"
-                  artifactName: "${{ parameters.functestImageArtifact }}"
-                  targetPath: "${{ variables.baseImageDirectory }}"
+                  buildVersionToDownload: specific
+                  pipelineId: $(ResolvedBuildId)
+                  downloadType: single
+                  artifactName: "$(ResolvedArtifactName)"
+                  downloadPath: "${{ variables.baseImageDirectory }}"
+
+              - bash: |
+                  set -eux
+                  echo "FT image directory contents (specific):"
+                  ls -la "${{ variables.baseImageDirectory }}" || true
+                displayName: "Verify FT image (specific)"
 
           - bash: |
               set -eux
-
               sudo apt install -y protobuf-compiler clang bc
               sudo apt remove python3-openssl
               pip install pytest assertpy paramiko pyopenssl
@@ -81,7 +211,6 @@ stages:
 
           - bash: |
               set -eux
-
               ssh-keygen -t rsa -b 2048 -f ~/.ssh/id_rsa -q -N ""
             displayName: Set up SSH Keys
             retryCountOnTaskFailure: 3
@@ -90,21 +219,17 @@ stages:
 
           - bash: |
               set -eux
-
               # Copy files from platform-tests to functional_tests
               cp platform-tests/tools/marinerhci_test_tools/node_interface.py functional_tests/
               cp platform-tests/tools/marinerhci_test_tools/ssh_node.py functional_tests/
 
-              # Run the core of the functional tests, which means only
-              # rebuilding the test binaries and invoking pytest. The regular
-              # target is meant for local use and does extra setup not required
-              # here.
+              # Run the core of the functional tests
               sg libvirt "make functional-test-core ARGUS_TOOLKIT_PATH=argus-toolkit"
             displayName: Execute Functional Tests
 
           - template: ../common_tasks/coverage.yml
             parameters:
-              codeCoverageBaseline: 78 # Unit + functional tests
+              codeCoverageBaseline: 78
               executeUnitTests: true
               installNativeDependencies: false
               rustup: false
@@ -116,8 +241,8 @@ stages:
               testResultsFiles: "$(Build.SourcesDirectory)/target/trident_functional_tests.xml"
 
           - bash: |
-             mkdir -p $(Build.ArtifactStagingDirectory)/ONEBRANCH_ARTIFACT
-             cp $(Build.SourcesDirectory)/target/trident_functional_tests.xml $(Build.ArtifactStagingDirectory)/ONEBRANCH_ARTIFACT/
+              mkdir -p $(Build.ArtifactStagingDirectory)/ONEBRANCH_ARTIFACT
+              cp $(Build.SourcesDirectory)/target/trident_functional_tests.xml $(Build.ArtifactStagingDirectory)/ONEBRANCH_ARTIFACT/
             displayName: "Prepare JUnit XML for artifact publishing"
 
           - task: PublishBuildArtifacts@1
@@ -136,38 +261,38 @@ stages:
 
           - bash: |
               set -eux
-
               sg libvirt "make patch-functional-test ARGUS_TOOLKIT_PATH=argus-toolkit"
             condition: and(succeeded(), eq('${{ parameters.rerunTests }}', 'true'))
             displayName: Rerun Functional Tests
 
-          - task: DownloadPipelineArtifact@2
+          # Fixed JUnit download: Build Artifacts task + correct subfolder path
+          - task: DownloadBuildArtifacts@1
             displayName: 'Download JUnit test results for dashboard push'
             inputs:
-              artifact: 'trident_test_results'
-              path: '$(Build.ArtifactStagingDirectory)/junits'
+              buildType: current
+              downloadType: single
+              artifactName: 'trident_test_results'
+              downloadPath: '$(Build.ArtifactStagingDirectory)/junits'
 
           - bash: |
               mkdir -p $(Build.ArtifactStagingDirectory)/filtered-junits
-              cp $(Build.ArtifactStagingDirectory)/junits/*trident_functional_tests.xml $(Build.ArtifactStagingDirectory)/filtered-junits/
+              cp $(Build.ArtifactStagingDirectory)/junits/trident_test_results/ONEBRANCH_ARTIFACT/*trident_functional_tests.xml \
+                 $(Build.ArtifactStagingDirectory)/filtered-junits/ || true
               echo "Filtered JUnit files:"
               ls -la $(Build.ArtifactStagingDirectory)/filtered-junits/
             displayName: 'Filter JUnit files for dashboard push'
 
-          # Generate build-number.config file
           - bash: |
-             set -eux
-             mkdir -p $(Build.ArtifactStagingDirectory)/build-number-trident-functional
-             echo "$(Build.BuildNumber)" > $(Build.ArtifactStagingDirectory)/build-number-trident-functional/build-number.config
+              set -eux
+              mkdir -p $(Build.ArtifactStagingDirectory)/build-number-trident-functional
+              echo "$(Build.BuildNumber)" > $(Build.ArtifactStagingDirectory)/build-number-trident-functional/build-number.config
             displayName: "Generate build-number.config file"
 
-          # Publish the artifact
-          - task: PublishBuildArtifacts@2
+          - task: PublishBuildArtifacts@1
             displayName: "Publish build number artifact"
             inputs:
               pathToPublish: "$(Build.ArtifactStagingDirectory)/build-number-trident-functional"
               ArtifactName: "build-number-trident-functional"
-
 
           - template: ../common/dbCommunication/push-test-results-to-db.yaml
             parameters:
