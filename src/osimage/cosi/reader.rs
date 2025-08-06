@@ -270,6 +270,8 @@ impl HttpFile {
             .context("Failed to retrieve authorization token")
     }
 
+    /// Get authentication credentials for accessing registry. Unless "dangerous-options" flag is
+    /// enabled, will default to anonymous access.
     fn get_auth(_img_ref: &Reference) -> RegistryAuth {
         #[cfg(feature = "dangerous-options")]
         if let Ok(docker_config) = File::open(
