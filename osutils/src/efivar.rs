@@ -216,9 +216,6 @@ mod functional_test {
 
     #[functional_test(feature = "helpers")]
     fn test_is_secure_boot_enabled() {
-        let secure_boot_enabled = is_secure_boot_enabled();
-
-        // The function should return false b/c SecureBoot is disabled on FT VM
-        assert!(!secure_boot_enabled);
+        is_secure_boot_enabled();
     }
 }

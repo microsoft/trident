@@ -622,6 +622,11 @@ fn generate_pcrlock_files(
                     ),
                 )?;
             }
+        } else {
+            debug!(
+                "SecureBoot is enabled, so skipping generating .pcrlock file \
+                to measure .linux section of UKI PE binaries"
+            );
         }
     } else {
         debug!("Skipping generating bootloader and UKI .pcrlock files as PCR 4 is not requested");
