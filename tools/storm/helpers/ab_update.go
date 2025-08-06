@@ -148,13 +148,12 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 	h.config["image"].(map[string]any)["sha384"] = "ignored"
 
 	// Set the config to NOT self-upgrade
-	trident, ok := h.config["trident"].(map[string]any)
+	internalParams, ok := h.config["internalParams"].(map[string]any)
 	if !ok {
-		trident = make(map[string]any)
-		h.config["trident"] = trident
+		internalParams = make(map[string]any)
+		h.config["internalParams"] = internalParams
 	}
-
-	trident["selfUpgrade"] = false
+	internalParams["selfUpgradeTrident"] = false
 
 	// Delete the storage section from the config, not needed for A/B update
 	delete(h.config, "storage")
