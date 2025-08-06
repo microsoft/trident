@@ -1,6 +1,7 @@
 #[cfg(test)]
 use std::io::Cursor;
 use std::{
+    env,
     fs::File,
     io::{Error as IoError, ErrorKind as IoErrorKind, Read, Result as IoResult, Seek, SeekFrom},
     path::PathBuf,
@@ -9,7 +10,7 @@ use std::{
 };
 
 #[cfg(feature = "dangerous-options")]
-use std::{env, io::BufReader};
+use std::io::BufReader;
 
 use anyhow::{bail, ensure, Context, Error};
 use log::{debug, trace, warn};
