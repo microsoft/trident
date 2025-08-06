@@ -117,6 +117,24 @@ fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
     );
 
+    // If running inside of a container AND pcrlock.json already exists in the ROS on the host,
+    // copy it from the host and into the container
+    if container::is_running_in_container()
+        .unstructured("Failed to determine if running in container")?
+    {
+        let host_root =
+            container::get_host_root_path().unstructured("Failed to get host root path")?;
+        let host_pcrlock_json_path = path::join_relative(host_root, PCRLOCK_POLICY_JSON_PATH);
+        if host_pcrlock_json_path.exists() {
+            debug!("Running inside of a container, so copying pcrlock policy JSON from the host at '{}' into the container at '{}'",
+            host_pcrlock_json_path.display(),
+            PCRLOCK_POLICY_JSON_PATH
+        );
+            fs::copy(host_pcrlock_json_path, PCRLOCK_POLICY_JSON_PATH)
+                .context("Failed to copy pcrlock policy JSON from host to container")?;
+        }
+    }
+
     make_policy(pcrs).context("Failed to run 'systemd-pcrlock make-policy' command")?;
 
     // Log pcrlock policy JSON contents
@@ -136,12 +154,12 @@ fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         let host_root =
             container::get_host_root_path().unstructured("Failed to get host root path")?;
         let host_pcrlock_json_path = path::join_relative(host_root, PCRLOCK_POLICY_JSON_PATH);
-        debug!("Running inside of a container, so copying pcrlock policy JSON from '{}' onto the host at '{}'",
+        debug!("Running inside of a container, so copying pcrlock policy JSON from the container at '{}' onto the host at '{}'",
             PCRLOCK_POLICY_JSON_PATH,
             host_pcrlock_json_path.display()
         );
         fs::copy(PCRLOCK_POLICY_JSON_PATH, host_pcrlock_json_path)
-            .context("Failed to copy pcrlock policy JSON to host")?;
+            .context("Failed to copy pcrlock policy JSON from container to host")?;
     }
 
     // Parse the policy JSON to validate that all requested PCRs are present
