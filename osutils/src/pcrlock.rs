@@ -264,23 +264,17 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
 
 /// Runs `systemd-pcrlock make-policy` command to predict the PCR state for future boots and then
 /// generate a TPM 2.0 access policy, stored in a TPM 2.0 NV index. The prediction and info about
-/// the used TPM 2.0 and its NV index are written to PCRLOCK_POLICY_JSON_PATH.
+/// the used TPM 2.0 and its NV index are written to pcrlock_json_path, which is specified with the
+/// `--pcrlock` option.
+///
+/// TODO: According to the docs, the path should be specified via `--policy`. File an isssue with
+/// systemd to update the doc or correct the source code.
 fn make_policy(pcrlock_json_path: PathBuf, pcrs: BitFlags<Pcr>) -> Result<(), Error> {
     debug!(
         "Running 'systemd-pcrlock make-policy' command to make a new pcrlock policy \
         with the following PCRs: {:?}",
         pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
     );
-
-    // Dependency::SystemdPcrlock
-    //     .cmd()
-    //     .arg("make-policy")
-    //     .arg(format!("--pcrlock={}", pcrlock_json_path.display()))
-    //     .arg(to_pcr_arg(pcrs))
-    //     .output_and_check()
-    //     .context("Failed to run 'systemd-pcrlock make-policy'")?;
-
-    // Ok(())
 
     // Run command directly since pcrlock may write to stderr even when a pcrlock policy is
     // successfully generated
