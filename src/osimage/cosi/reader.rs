@@ -13,7 +13,7 @@ use std::{env, io::BufReader};
 
 use anyhow::{bail, ensure, Context, Error};
 use log::{debug, trace, warn};
-use oci_client::{secrets::RegistryAuth, Client as OciClient, Reference};
+use oci_client::{client::ClientConfig, secrets::RegistryAuth, Client as OciClient, Reference};
 use reqwest::blocking::{Client, Response};
 use tokio::runtime::Runtime;
 use url::Url;
@@ -149,7 +149,13 @@ impl HttpFile {
             })?)
             .with_context(|| format!("Failed to parse URL '{url}'"))?;
 
-        let oci_client = OciClient::default();
+        debug!("Found env vars: {:?}", env::vars());
+
+        let oci_client = OciClient::new(ClientConfig {
+            http_proxy: Some("http://172.16.1.10:3128".to_string()),
+            https_proxy: Some("http://172.16.1.10:3128".to_string()),
+            ..Default::default()
+        });
         let rt = Runtime::new().context("Failed to create Tokio runtime")?;
         let token = Self::retrieve_access_token(&img_ref, &rt, &oci_client)?;
         let digest = Self::retrieve_artifact_digest(&img_ref, &rt, &oci_client)?;
