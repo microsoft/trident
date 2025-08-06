@@ -15,7 +15,6 @@ use tempfile::NamedTempFile;
 use crate::{
     bootloaders::{BOOT_EFI, GRUB_EFI},
     dependencies::Dependency,
-    efivar,
     exe::RunAndCheck,
 };
 use sysdefs::tpm2::Pcr;
@@ -604,24 +603,22 @@ fn generate_pcrlock_files(
         }
         // If SecureBoot is disabled, the authenticode of the .linux section of each UKI binary is
         // measured into PCR 4 as well.
-        if !efivar::is_secure_boot_enabled() {
-            for (index, uki_path) in uki_binaries.into_iter().enumerate() {
-                let pcrlock_file =
-                    generate_pcrlock_output_path(BOOT_LOADER_CODE_UKI_PCRLOCK_DIR, index);
-                debug!(
-                    "SecureBoot is disabled, so generating .pcrlock file at '{}' \
+        for (index, uki_path) in uki_binaries.into_iter().enumerate() {
+            let pcrlock_file =
+                generate_pcrlock_output_path(BOOT_LOADER_CODE_UKI_PCRLOCK_DIR, index);
+            debug!(
+                "SecureBoot is disabled, so generating .pcrlock file at '{}' \
                     to measure .linux section of UKI PE binary at '{}'",
-                    pcrlock_file.clone().display(),
-                    uki_path.clone().display()
-                );
-                generate_linux_authenticode(uki_path.clone(), pcrlock_file.clone()).context(
+                pcrlock_file.clone().display(),
+                uki_path.clone().display()
+            );
+            generate_linux_authenticode(uki_path.clone(), pcrlock_file.clone()).context(
                     format!(
                         "Failed to generate .pcrlock file at '{}' for .linux section of UKI PE binary at '{}'",
                         pcrlock_file.display(),
                         uki_path.display()
                     ),
                 )?;
-            }
         }
     } else {
         debug!("Skipping generating bootloader and UKI .pcrlock files as PCR 4 is not requested");
