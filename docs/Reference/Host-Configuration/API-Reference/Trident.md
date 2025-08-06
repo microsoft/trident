@@ -51,12 +51,3 @@ URL to reach out to when runtime OS networking is up, so Trident can report its 
 | -------------- | -------- |
 | Type           | `string` |
 
-### `selfUpgrade` (optional)
-
-(FOR DEBUGGING ONLY) a boolean flag that indicates whether Trident should upgrade itself. If set to `true`, Trident will replicate itself into the runtime OS prior to rebooting. This is useful during development to ensure that the matching version of Trident is used. Defaults to `false`.
-
-| Characteristic | Value     |
-| -------------- | --------- |
-| Type           | `boolean` |
-| Default        | `false`   |
-

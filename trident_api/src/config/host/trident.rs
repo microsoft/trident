@@ -24,13 +24,6 @@ pub struct Trident {
     #[serde(default)]
     pub disable: bool,
 
-    /// (FOR DEBUGGING ONLY) a boolean flag that indicates whether Trident should
-    /// upgrade itself. If set to `true`, Trident will replicate itself into the
-    /// runtime OS prior to rebooting. This is useful during development to
-    /// ensure that the matching version of Trident is used. Defaults to `false`.
-    #[serde(default)]
-    pub self_upgrade: bool,
-
     /// Whether Trident should start a gRPC server to listen for commands when the runtime OS boots.
     /// Defaults to `false`.
     #[serde(default, skip_serializing_if = "is_default")]
@@ -69,7 +62,6 @@ impl Default for Trident {
     fn default() -> Self {
         Self {
             disable: Default::default(),
-            self_upgrade: Default::default(),
             enable_grpc: Default::default(),
             datastore_path: Trident::default_datastore_path(),
             phonehome: Default::default(),

@@ -1450,11 +1450,6 @@
           "description": "URL to reach out to when runtime OS networking is up, so Trident can report its status. If not specified, the value from the Trident configuration will be used. This is useful for debugging and monitoring purposes, say by an orchestrator.",
           "type": "string",
           "nullable": true
-        },
-        "selfUpgrade": {
-          "description": "(FOR DEBUGGING ONLY) a boolean flag that indicates whether Trident should upgrade itself. If set to `true`, Trident will replicate itself into the runtime OS prior to rebooting. This is useful during development to ensure that the matching version of Trident is used. Defaults to `false`.",
-          "default": false,
-          "type": "boolean"
         }
       },
       "additionalProperties": false
