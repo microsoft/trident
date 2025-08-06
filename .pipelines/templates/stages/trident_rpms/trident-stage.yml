@@ -39,6 +39,10 @@ parameters:
     type: boolean
     default: false
 
+  - name: osModifierBranch
+    type: string
+    default: "submodule"
+
 stages:
   - ${{ if or(parameters.forceTridentRebuild, eq(parameters.stageType, 'pr'), eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e-azure')) }}:
       - template: build-source.yml
@@ -50,6 +54,7 @@ stages:
           baseimgBuildType: ${{ parameters.baseimgBuildType }}
           baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
           baseImageArm64PipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
+          osModifierBranch: ${{ parameters.osModifierBranch }}
 
   - ${{ else }}:
       - template: ../download_staged/download-staged.yml
