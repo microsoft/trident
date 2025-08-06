@@ -8,9 +8,6 @@ use trident_api::error::{ReportError, ServicingError, TridentError, TridentResul
 use crate::dependencies::{Dependency, DependencyResultExt};
 
 const BOOTLOADER_INTERFACE_GUID: &str = "4a67b082-0a4c-41cf-b6c7-440b29bb8c4f";
-const EFI_GLOBAL_VARIABLE_GUID: &str = "8be4df61-93ca-11d2-aa0d-00e098032b8c";
-
-const SECURE_BOOT: &str = "SecureBoot";
 
 const LOADER_ENTRY_ONESHOT: &str = "LoaderEntryOneShot";
 const LOADER_ENTRY_DEFAULT: &str = "LoaderEntryDefault";
@@ -93,7 +90,7 @@ pub fn set_default(entry: &str) -> Result<(), TridentError> {
 fn read_efi_variable(guid: &str, variable: &str) -> Result<Vec<u8>, TridentError> {
     let efi_var_path = Path::new("/sys/firmware/efi/efivars/").join(format!("{variable}-{guid}"));
 
-    // Read the LoaderEntrySelected EFI variable from efivars
+    // Read the EFI variable from efivars
     let data = fs::read(efi_var_path).structured(ServicingError::ReadEfiVariable {
         name: variable.to_string(),
     })?;

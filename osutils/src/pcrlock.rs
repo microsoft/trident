@@ -15,7 +15,6 @@ use tempfile::NamedTempFile;
 use crate::{
     bootloaders::{BOOT_EFI, GRUB_EFI},
     dependencies::Dependency,
-    efivar,
     exe::RunAndCheck,
 };
 use sysdefs::tpm2::Pcr;
