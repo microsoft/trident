@@ -228,7 +228,7 @@ stages:
                   [Service]
                   Environment="HTTP_PROXY=http://172.16.1.10:3128"
                   Environment="HTTPS_PROXY=http://172.16.1.10:3128"
-                  Environment="NO_PROXY=${{ variables.BAREMETAL_BMC_IP }},10.248.0.0/24,10.8.3.0/24,10.8.4.0/24,10.8.6.0/24,localhost"
+                  Environment="NO_PROXY=${{ variables.BAREMETAL_BMC_IP }},10.248.0.0/24,localhost"
               EOF
 
               cat $(TRIDENT_SOURCE_DIR)/baremetal-netlaunch.yaml | grep -v password
