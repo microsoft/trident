@@ -8,6 +8,9 @@ use trident_api::error::{ReportError, ServicingError, TridentError, TridentResul
 use crate::dependencies::{Dependency, DependencyResultExt};
 
 const BOOTLOADER_INTERFACE_GUID: &str = "4a67b082-0a4c-41cf-b6c7-440b29bb8c4f";
+const EFI_GLOBAL_VARIABLE_GUID: &str = "8be4df61-93ca-11d2-aa0d-00e098032b8c";
+
+const SECURE_BOOT: &str = "SecureBoot";
 
 const LOADER_ENTRY_ONESHOT: &str = "LoaderEntryOneShot";
 const LOADER_ENTRY_DEFAULT: &str = "LoaderEntryDefault";
@@ -105,6 +108,16 @@ fn read_efi_variable(guid: &str, variable: &str) -> Result<Vec<u8>, TridentError
     Ok(data[4..].to_vec())
 }
 
+/// Returns whether `SecureBoot` is currently enabled.
+pub fn is_secure_boot_enabled() -> bool {
+    let Ok(data) = read_efi_variable(EFI_GLOBAL_VARIABLE_GUID, SECURE_BOOT) else {
+        return false;
+    };
+
+    // SecureBoot is a single byte: 0x00 = disabled, 0x01 = enabled
+    !data.is_empty() && data[0] == 1
+}
+
 /// Returns whether the LoaderEntrySelected EFI variable is set and indicates a UKI boot.
 pub fn current_var_is_uki() -> bool {
     let Ok(current) = read_efi_variable(BOOTLOADER_INTERFACE_GUID, LOADER_ENTRY_SELECTED) else {
@@ -199,5 +212,13 @@ mod functional_test {
         assert_eq!(decode_utf16le(&data), current_entry);
 
         set_default("").unwrap();
+    }
+
+    #[functional_test(feature = "helpers")]
+    fn test_is_secure_boot_enabled() {
+        let secure_boot_enabled = is_secure_boot_enabled();
+
+        // The function should return false b/c SecureBoot is disabled on FT VM
+        assert!(!secure_boot_enabled);
     }
 }
