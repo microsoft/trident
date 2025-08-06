@@ -19,9 +19,9 @@ parameters:
     default: "*.*.*"
 
   - name: osModifierBranch
-    displayName: Branch to use for OS Modifier (the default, 'submodule', will use trident's current submodule)
+    displayName: Branch to use for OS Modifier (specify 'submodule' to use trident's current submodule)
     type: string
-    default: "submodule"
+    default: "main"
 
 stages:
     - template: e2e-template.yml
