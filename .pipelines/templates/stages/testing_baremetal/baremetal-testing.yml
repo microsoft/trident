@@ -169,7 +169,7 @@ stages:
               runtimeEnv: ${{ parameters.runtimeEnv }}
               config: $(TRIDENT_CONFIGURATION_NAME)
               imageName: ${{ variables.IMAGE_NAME }}
-              baremetal: false
+              baremetal: true
 
           # Download all test images
           - template: ../testing_common/download-test-images.yml
@@ -227,7 +227,7 @@ stages:
                 serviceOverride: |
                   [Service]
                   Environment="HTTP_PROXY=http://172.16.1.10:3128"
-                  Environment="HTTPS_PROXY=http://172.16.1.10:3128"
+                  Environment="HTTPS_PROXY=https://172.16.1.10:3128"
                   Environment="NO_PROXY=${{ variables.BAREMETAL_BMC_IP }},10.248.0.0/24,localhost"
               EOF
 

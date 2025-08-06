@@ -153,8 +153,9 @@ impl HttpFile {
         debug!("Found env vars: {:?}", env::vars());
 
         let oci_client = OciClient::new(ClientConfig {
-            http_proxy: Some("http://172.16.1.10:3128".to_string()),
-            https_proxy: Some("http://172.16.1.10:3128".to_string()),
+            http_proxy: env::var("HTTP_PROXY").ok(),
+            https_proxy: env::var("HTTPS_PROXY").ok(),
+            no_proxy: env::var("NO_PROXY").ok(),
             ..Default::default()
         });
         let rt = Runtime::new().context("Failed to create Tokio runtime")?;
