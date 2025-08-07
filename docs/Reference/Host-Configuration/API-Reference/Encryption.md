@@ -27,6 +27,25 @@ This parameter is required and must not be empty. Each item is an object that wi
    | Type           | `EncryptedVolume`                       |
    | Link           | [EncryptedVolume](./EncryptedVolume.md) |
 
+### `pcrs` (optional)
+
+Optional list of PCRs in TPM 2.0 device to seal to. If not specified, Trident will seal encrypted volumes against the following default options: - If doing a clean install of a grub ROS image, seal to PCR 7.
+
+Each PCR may be specified either as a digit or a string representation. If specified, at least one PCR must be provided, and any combination of the following PCRs may be used: - 7, or `secure-boot-policy`.
+
+More encryption flows, with additional PCR options, will be added in the future.
+
+| Characteristic | Value   |
+| -------------- | ------- |
+| Type           | `array` |
+
+- Items of the array must have the type:
+
+   | Characteristic | Value           |
+   | -------------- | --------------- |
+   | Type           | `Pcr`           |
+   | Link           | [Pcr](./Pcr.md) |
+
 ### `recoveryKeyUrl` (optional)
 
 A URL to read the recovery key from.

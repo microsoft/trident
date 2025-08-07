@@ -9,6 +9,7 @@ use schemars::JsonSchema;
 use crate::{
     config::HostConfigurationStaticValidationError, constants::DEV_MAPPER_PATH, BlockDeviceId,
 };
+use sysdefs::tpm2::Pcr;
 
 #[cfg(feature = "schemars")]
 use crate::schema_helpers::block_device_id_schema;
@@ -88,6 +89,18 @@ pub struct Encryption {
     /// or RAID array.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub volumes: Vec<EncryptedVolume>,
+
+    /// Optional list of PCRs in TPM 2.0 device to seal to. If not specified, Trident will seal
+    /// encrypted volumes against the following default options:
+    /// - If doing a clean install of a grub ROS image, seal to PCR 7.
+    ///
+    /// Each PCR may be specified either as a digit or a string representation. If specified, at
+    /// least one PCR must be provided, and any combination of the following PCRs may be used:
+    /// - 7, or `secure-boot-policy`.
+    ///
+    /// More encryption flows, with additional PCR options, will be added in the future.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pcrs: Vec<Pcr>,
 }
 
 /// A LUKS2-encrypted volume configuration.
@@ -143,6 +156,24 @@ impl Encryption {
             }
         }
 
+        // The list of PCRs, if provided and not empty, must only contain currently supported PCRs.
+        if !self.pcrs.is_empty() {
+            let supported_pcrs = [Pcr::Pcr7];
+            let unsupported_pcrs: Vec<Pcr> = self
+                .pcrs
+                .iter()
+                .cloned()
+                .filter(|pcr| !supported_pcrs.contains(pcr))
+                .collect();
+            if !unsupported_pcrs.is_empty() {
+                return Err(
+                    HostConfigurationStaticValidationError::InvalidEncryptionPcrsUnsupported {
+                        pcrs: unsupported_pcrs,
+                    },
+                );
+            }
+        }
+
         Ok(())
     }
 }
@@ -159,16 +190,27 @@ mod tests {
 
     #[test]
     fn test_validate_encryption() {
-        let mut config = Encryption::default();
+        let mut config = Encryption {
+            pcrs: vec![Pcr::Pcr7],
+            ..Default::default()
+        };
         config.validate().unwrap();
 
         config.recovery_key_url = Some(Url::parse("file:///path/to/recovery.key").unwrap());
         config.validate().unwrap();
+
+        // Test with empty pcrs (should be valid - means use defaults)
+        let config_empty_pcrs = Encryption {
+            pcrs: vec![],
+            ..Default::default()
+        };
+        config_empty_pcrs.validate().unwrap();
     }
 
     #[test]
     fn test_validate_encryption_fail_invalid_recovery_key_url() {
         let config = Encryption {
+            pcrs: vec![Pcr::Pcr7],
             recovery_key_url: Some(
                 Url::parse("http://example.com/invalid-recovery-key-http").unwrap(),
             ),
@@ -179,6 +221,20 @@ mod tests {
             HostConfigurationStaticValidationError::InvalidEncryptionRecoveryKeyUrlScheme {
                 url: "http://example.com/invalid-recovery-key-http".to_string(),
                 scheme: "http".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn test_validate_encryption_fail_invalid_pcrs_unsupported() {
+        let config = Encryption {
+            pcrs: vec![Pcr::Pcr0],
+            ..Default::default()
+        };
+        assert_eq!(
+            config.validate().unwrap_err(),
+            HostConfigurationStaticValidationError::InvalidEncryptionPcrsUnsupported {
+                pcrs: vec![Pcr::Pcr0],
             }
         );
     }

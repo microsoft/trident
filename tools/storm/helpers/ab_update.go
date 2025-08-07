@@ -112,22 +112,22 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 
 	logrus.Debugf("Base name: %s", base)
 
+	// Match form <repository>:v<build ID>.<config>.<version number>
+	matches_oci := regexp.MustCompile(`^(.+):v(\d+)\.(.+)\.(\d+)$`).FindStringSubmatch(base)
 	// Match form <name>_v<version number>.<file extension> (note that "_v<version number>" is optional)
 	matches := regexp.MustCompile(`^(.*?)(_v\d+)?\.(.+)$`).FindStringSubmatch(base)
 
-	// Match form <repository>:v<build ID>.<version number>
-	matches_oci := regexp.MustCompile(`^(.*?)\:v(\d+)\.(\d+)$`).FindStringSubmatch(base)
-
 	var newCosiName string
 
-	if len(matches) == 4 {
+	if strings.HasPrefix(oldUrl, "oci://") && len(matches_oci) == 5 {
+		name := matches_oci[1]
+		buildId := matches_oci[2]
+		config := matches_oci[3]
+		newCosiName = fmt.Sprintf("%s:v%s.%s.%s", name, buildId, config, h.args.Version)
+	} else if len(matches) == 4 {
 		name := matches[1]
 		ext := matches[3]
 		newCosiName = fmt.Sprintf("%s_v%s.%s", name, h.args.Version, ext)
-	} else if len(matches_oci) == 4 {
-		name := matches_oci[1]
-		buildId := matches_oci[2]
-		newCosiName = fmt.Sprintf("%s:v%s.%s", name, buildId, h.args.Version)
 	} else {
 		return fmt.Errorf("failed to parse image name: %s", base)
 	}
@@ -148,13 +148,12 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 	h.config["image"].(map[string]any)["sha384"] = "ignored"
 
 	// Set the config to NOT self-upgrade
-	trident, ok := h.config["trident"].(map[string]any)
+	internalParams, ok := h.config["internalParams"].(map[string]any)
 	if !ok {
-		trident = make(map[string]any)
-		h.config["trident"] = trident
+		internalParams = make(map[string]any)
+		h.config["internalParams"] = internalParams
 	}
-
-	trident["selfUpgrade"] = false
+	internalParams["selfUpgradeTrident"] = false
 
 	// Delete the storage section from the config, not needed for A/B update
 	delete(h.config, "storage")

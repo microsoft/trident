@@ -112,6 +112,13 @@ stages:
               downloadTridentContainer: ${{ variables.downloadTridentContainer }}
               tridentTestImageUsrVerity: ${{ variables.usrVerityTestImageName }}
 
+          # Push (regular or container) testimage to ACR
+          - template: ../common_tasks/push-to-acr.yml
+            parameters:
+              imageName: ${{ variables.testImageName }}
+              registry: maritimuspublic
+              config: ${{ variables.tridentConfigurationName }}
+
           - template: netlaunch-prep.yml
 
           - template: ../testing_common/trident-prep.yml
@@ -119,8 +126,9 @@ stages:
               tridentSourceDirectory: $(tridentSourceDirectory)
               tridentConfigPath: $(tridentConfigPath)
               runtimeEnv: ${{ parameters.runtimeEnv }}
-              config: $(tridentConfigurationName)
-              tridentTestImage: ${{ variables.testImageName }}
+              config: ${{ variables.tridentConfigurationName }}
+              imageName: ${{ variables.testImageName }}
+              baremetal: false
 
           - bash: |
               set -eux
@@ -257,6 +265,12 @@ stages:
               userName: testing-user
               artifactsDirectory: artifacts/test-image
               netlistenPort: ${{variables.netlaunchPort}}
+
+          - template: ../common_tasks/remove-from-acr.yml
+            parameters:
+              repository: ${{ variables.testImageName }}
+              registry: "maritimuspublic"
+              config: ${{ variables.tridentConfigurationName }}
 
           - bash: |
               set -eux

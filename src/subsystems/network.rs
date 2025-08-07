@@ -20,7 +20,7 @@ impl Subsystem for NetworkSubsystem {
 
     #[tracing::instrument(name = "network_configuration", skip_all)]
     fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
-        match ctx.spec.os.network.as_ref() {
+        match ctx.spec.os.netplan.as_ref() {
             Some(config) => {
                 debug!("Configuring network");
                 netplan::write(config).structured(ServicingError::WriteNetplanConfig)?;

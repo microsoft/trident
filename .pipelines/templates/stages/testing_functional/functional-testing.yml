@@ -19,6 +19,10 @@ parameters:
     default: 5067 # [GITHUB]-trident-ci
     displayName: Where to download prebuilt image from
 
+  - name: osModifierBranch
+    type: string
+    default: "submodule"
+
 stages:
   - stage: FunctionalTesting
     displayName: Functional Testing
@@ -208,6 +212,8 @@ stages:
             retryCountOnTaskFailure: 3
 
           - template: ../common_tasks/build-osmodifier.yml
+            parameters:
+              osModifierBranch: ${{ parameters.osModifierBranch }}
 
           - bash: |
               set -eux

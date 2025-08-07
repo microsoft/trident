@@ -13,8 +13,8 @@ use osutils::{chroot, container, mount, mountpoint, path::join_relative};
 use trident_api::{
     config::{HostConfiguration, Operations},
     constants::{
-        internal_params::NO_TRANSITION, ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH,
-        UPDATE_ROOT_PATH,
+        internal_params::{ENABLE_UKI_SUPPORT, NO_TRANSITION},
+        ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_PATH,
     },
     error::{
         InitializationError, InternalError, InvalidInputError, ReportError, ServicingError,
@@ -114,7 +114,10 @@ fn clean_install_safety_check(
     // Check if Trident is running from a live image
     let cmdline =
         fs::read_to_string("/proc/cmdline").structured(InitializationError::ReadCmdline)?;
-    if cmdline.contains("root=/dev/ram0") || cmdline.contains("root=live:LABEL=CDROM") {
+    if cmdline.contains("root=/dev/ram0")
+        || cmdline.contains("root=live:LABEL=CDROM")
+        || !cmdline.contains("root=")
+    {
         debug!("Trident is running from a live image.");
         return Ok(());
     }
@@ -197,7 +200,7 @@ fn stage_clean_install(
         partition_paths: Default::default(), // Will be initialized later
         disk_uuids: Default::default(),      // Will be initialized later
         install_index: 0,                    // Will be initialized later
-        is_uki: Some(image.is_uki()),
+        is_uki: Some(image.is_uki() || host_config.internal_params.get_flag(ENABLE_UKI_SUPPORT)),
         image: Some(image),
         storage_graph: engine::build_storage_graph(&host_config.storage)?, // Build storage graph
         filesystems: Vec::new(), // Will be populated after dynamic validation

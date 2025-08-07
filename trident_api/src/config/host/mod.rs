@@ -4,7 +4,10 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 
-use crate::{is_default, storage_graph::graph::StorageGraph};
+use crate::{
+    constants::internal_params::SELF_UPGRADE_TRIDENT, is_default,
+    storage_graph::graph::StorageGraph,
+};
 
 pub(crate) mod error;
 pub(crate) mod harpoon;
@@ -70,7 +73,7 @@ impl HostConfiguration {
         let require_root_mount_point = self.trident != Trident::default()
             || self.scripts != Scripts::default()
             || self.os != Os::default()
-            || self.os.network.is_some();
+            || self.os.netplan.is_some();
         let graph = self.storage.validate(require_root_mount_point)?;
         self.os.validate()?;
         self.scripts.validate()?;
@@ -103,11 +106,11 @@ impl HostConfiguration {
 
         // If self-upgrade is requested, ensure that root is not a RO verity filesystem b/c Trident
         // will not be able to copy itself into the FS.
-        if self.trident.self_upgrade {
+        if self.internal_params.get_flag(SELF_UPGRADE_TRIDENT) {
             return Err(HostConfigurationStaticValidationError::SelfUpgradeOnReadOnlyRootVerityFs);
         }
 
-        // Warn if SELinux is not `disbled.
+        // Warn if SELinux is not disabled.
         if let Some(selinux_mode) = self.os.selinux.mode {
             if selinux_mode != SelinuxMode::Disabled {
                 warn!(
@@ -200,7 +203,8 @@ mod tests {
             NewFileSystemType, Partition, PartitionTableType, PartitionType, VerityDevice,
         },
         constants::{
-            MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH, TRIDENT_DATASTORE_PATH_DEFAULT,
+            internal_params::SELF_UPGRADE_TRIDENT, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH,
+            TRIDENT_DATASTORE_PATH_DEFAULT,
         },
     };
 
@@ -405,16 +409,20 @@ mod tests {
 
         let graph = host_config.storage.build_graph().unwrap();
 
-        // Check that if 'selfUpgrade' is set, we return an error
-        host_config.trident.self_upgrade = true;
+        // Check that if self-upgrade internal parameter is set, we return an error
+        host_config
+            .internal_params
+            .set_flag(SELF_UPGRADE_TRIDENT.into());
         let validation_error = host_config.validate_root_verity_config(&graph).unwrap_err();
         assert_eq!(
             validation_error,
             HostConfigurationStaticValidationError::SelfUpgradeOnReadOnlyRootVerityFs
         );
 
-        // Check that if 'selfUpgrade' is not set, no error is returned
-        host_config.trident.self_upgrade = false;
+        // Check that if self-upgrade internal parameter is not set, no error is returned
+        host_config
+            .internal_params
+            .set_flag_false(SELF_UPGRADE_TRIDENT.into());
         host_config.validate_root_verity_config(&graph).unwrap();
     }
 }

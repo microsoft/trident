@@ -6,6 +6,7 @@ use crate::{
     constants::VAR_TMP_PATH,
     error::{InvalidInputError, TridentError},
 };
+use sysdefs::tpm2::Pcr;
 
 use super::storage::storage_graph::error::StorageGraphBuildError;
 
@@ -57,6 +58,12 @@ pub enum HostConfigurationStaticValidationError {
 
     #[error(transparent)]
     InvalidStorageGraph(#[from] StorageGraphBuildError),
+
+    #[error(
+        "List of PCRs to seal to in encryption configuration contains unsupported PCRs '{pcrs:?}'.\n
+        Only PCR 7 is currently supported."
+    )]
+    InvalidEncryptionPcrsUnsupported { pcrs: Vec<Pcr> },
 
     #[error("Encryption recovery key URL '{url}' has invalid scheme '{scheme}'")]
     InvalidEncryptionRecoveryKeyUrlScheme { url: String, scheme: String },

@@ -2,9 +2,12 @@ package reporter
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"storm/internal/devops"
 	"storm/internal/stormerror"
 	"storm/internal/testmgr"
+	"storm/pkg/storm/utils"
 	"strings"
 
 	"github.com/fatih/color"
@@ -34,6 +37,38 @@ func (tr *TestReporter) PrintReport() {
 	tr.printShortReport()
 	tr.printFailureReport()
 	tr.printFinalResult()
+}
+
+func (tr *TestReporter) SaveLogs(dir string) error {
+	for _, testCase := range tr.testManager.TestCases() {
+		filename := fmt.Sprintf("%s.log", testCase.Name())
+		filepath := filepath.Join(dir, filename)
+		err := saveTestCaseLogs(testCase, filepath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "failed to save logs for %s: %v\n", testCase.Name(), err)
+		}
+	}
+
+	return nil
+}
+
+func saveTestCaseLogs(testCase *testmgr.TestCase, path string) error {
+	file, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("failed to create log file for %s: %v", testCase.Name(), err)
+	}
+	defer file.Close()
+
+	logs := testCase.CollectedOutput()
+	for _, line := range logs {
+		line = strings.TrimSpace(utils.ANSI_CLEANER.ReplaceAllString(line, "")) + "\n"
+		_, err = file.WriteString(line)
+		if err != nil {
+			return fmt.Errorf("failed to write log line for %s: %v", testCase.Name(), err)
+		}
+	}
+
+	return nil
 }
 
 func (tr *TestReporter) ExitError() error {

@@ -549,6 +549,7 @@ mod tests {
         config::HostConfiguration,
         constants::{BOOT_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
     };
+    use sysdefs::tpm2::Pcr;
 
     use self::{
         abupdate::AbVolumePair,
@@ -641,6 +642,7 @@ mod tests {
                     device_name: "luks-srv".to_owned(),
                     device_id: "srv-enc".to_owned(),
                 }],
+                pcrs: vec![Pcr::Pcr7],
             }),
             raid: Raid {
                 software: vec![SoftwareRaidArray {

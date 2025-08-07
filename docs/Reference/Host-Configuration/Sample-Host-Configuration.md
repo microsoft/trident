@@ -41,6 +41,8 @@ storage:
     - id: srv
       deviceName: luks-srv
       deviceId: enc-srv
+    pcrs:
+    - secure-boot-policy
   raid:
     software:
     - id: some_raid
@@ -103,7 +105,7 @@ scripts:
     environmentVariables:
       SAMPLE_VARIABLE: sample-variable-value
 os:
-  network:
+  netplan:
     version: 2
     ethernets:
       eths:

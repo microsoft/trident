@@ -1,10 +1,10 @@
+internalParams:
+  selfUpgradeTrident: true
 image:
   url: http://NETLAUNCH_HOST_ADDRESS/files/regular.cosi
   sha384: ignored
-trident:
-  selfUpgrade: true
 os:
-  network:
+  netplan:
     ethernets:
       vmeths:
         match:

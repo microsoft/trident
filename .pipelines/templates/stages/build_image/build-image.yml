@@ -47,10 +47,6 @@ parameters:
     type: boolean
     default: true
 
-  - name: pushToAcr
-    type: boolean
-    default: false
-
 stages:
   - stage: TridentTestImg_${{ replace(parameters.imageName, '-', '_') }}
     displayName: Build ${{ parameters.imageName }}
@@ -96,9 +92,3 @@ stages:
               azureLinuxVersion: ${{ variables.BASEIMG_AZURE_LINUX_VERSION }}
               micBuildType: ${{ parameters.micBuildType }}
               micVersion: ${{ parameters.micVersion }}
-
-          - ${{ if parameters.pushToAcr }}:
-              - template: ../common_tasks/push_to_acr.yml
-                parameters:
-                  imageName: ${{ parameters.imageName }}
-                  registry: maritimuspublic

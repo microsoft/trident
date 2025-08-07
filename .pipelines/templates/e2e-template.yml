@@ -62,6 +62,10 @@ parameters:
     type: number
     default: 3
 
+  - name: osModifierBranch
+    type: string
+    default: "submodule"
+
 stages:
   # Trident Build/Download
   - template: stages/trident_rpms/trident-stage.yml
@@ -73,6 +77,7 @@ stages:
       baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
       baseImageArm64PipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
       forceTridentRebuild: ${{ parameters.forceTridentRebuild }}
+      osModifierBranch: ${{ parameters.osModifierBranch }}
 
   # Build tools (Go stuff)
   - template: stages/building_tools/building-tools.yml
@@ -80,6 +85,9 @@ stages:
   # Makefile validation, only for CI
   - ${{ if eq(parameters.stageType, 'ci') }}:
       - template: stages/validate_makefile/dev-build.yml
+        parameters:
+          osModifierBranch: ${{ parameters.osModifierBranch }}
+
 
   # Build FT base Image, only in CI
   - ${{ if eq(parameters.stageType, 'ci') }}:
@@ -139,8 +147,6 @@ stages:
       baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
-      ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pre')) }}:
-        pushToAcr: true
 
   # Build Trident test image (container)
   - template: stages/build_image/build-image.yml
@@ -151,8 +157,6 @@ stages:
       runtimeEnv: "container"
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
-      ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pre')) }}:
-        pushToAcr: true
 
   # Build Trident test image for verity (host)
   - template: stages/build_image/build-image.yml
@@ -293,6 +297,8 @@ stages:
       - template: stages/testing_functional/functional-testing.yml
         parameters:
           downloadPrebuiltImage: false
+          osModifierBranch: ${{ parameters.osModifierBranch }}
+
 
       # VM Testing (host, post_merge)
       - template: stages/testing_vm/netlaunch-testing.yml
@@ -333,11 +339,3 @@ stages:
           - template: stages/publishing/publish.yml
             parameters:
               stageType: ${{ parameters.stageType }}
-
-  # DELETE published images in ACR
-  - ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pre')) }}:
-      - template: stages/common_tasks/remove_from_acr.yml
-        parameters:
-          hostRepository: "trident-testimage"
-          containerRepository: "trident-container-testimage"
-          registry: "maritimuspublic"

@@ -117,6 +117,7 @@ fn generate_host_status(
     history: &[PrismHistoryEntry],
     mut lsblk_output: Vec<lsblk::BlockDevice>,
     lazy_partitions: &[String],
+    disk: &String,
 ) -> Result<HostStatus, TridentError> {
     let Some(prism_storage) = history
         .iter()
@@ -168,7 +169,7 @@ fn generate_host_status(
 
     host_config.storage.disks.push(Disk {
         id: "disk0".to_string(),
-        device: "/dev/sda".into(),
+        device: disk.into(),
         partition_table_type: PartitionTableType::Gpt,
         partitions,
         adopted_partitions: Vec::new(),
@@ -426,7 +427,12 @@ fn parse_lazy_partitions(
 
 /// Given a path to a Host Status file, initializes the datastore with the Host Status.
 /// This command can be executed offline in a chroot environment as part of MIC image customization.
-pub fn execute(hs_path: Option<&Path>, lazy_partitions: &[String]) -> Result<(), TridentError> {
+pub fn execute(
+    hs_path: Option<&Path>,
+    lazy_partitions: &[String],
+    disk: &String,
+    history_path: Option<&Path>,
+) -> Result<(), TridentError> {
     let host_status: HostStatus = if let Some(hs_path) = hs_path {
         info!("Reading Host Status from {:?}", hs_path);
         let host_status_yaml = fs::read_to_string(hs_path)
@@ -441,22 +447,22 @@ pub fn execute(hs_path: Option<&Path>, lazy_partitions: &[String]) -> Result<(),
             .set_flag("injectedHostStatus".into());
         host_status
     } else {
-        let history_file_path = "/usr/share/image-customizer/history.json";
-        let history_file = fs::read_to_string(history_file_path)
+        let history_file_paths = [Path::new("/usr/share/image-customizer/history.json")];
+        let history_file_path = find_history_file(history_path, &history_file_paths)?;
+        let history_file = fs::read_to_string(&history_file_path)
             .structured(InvalidInputError::ReadInputFile {
-                path: history_file_path.to_string(),
+                path: history_file_path.display().to_string(),
             })
             .message("Failed to read Prism history file")?;
 
         trace!("Prism history contents:\n{history_file}");
 
-        // TODO: Don't hardcode /dev/sda
-        let disk_path = Path::new("/dev/sda");
+        let disk_path = Path::new(disk);
         if !disk_path.exists() {
             return Err(TridentError::new(
                 ExecutionEnvironmentMisconfigurationError::PrismChrootEnvironment,
             ))
-            .message("Prism chroot environment doesn't contain /dev/sda");
+            .message(format!("Prism chroot environment doesn't contain {disk}"));
         }
 
         let history: Vec<PrismHistoryEntry> =
@@ -466,7 +472,7 @@ pub fn execute(hs_path: Option<&Path>, lazy_partitions: &[String]) -> Result<(),
             .structured(ExecutionEnvironmentMisconfigurationError::PrismChrootEnvironment)
             .message("Failed to run lsblk")?;
 
-        generate_host_status(&history, lsblk_output, lazy_partitions)?
+        generate_host_status(&history, lsblk_output, lazy_partitions, disk)?
     };
 
     debug!(
@@ -495,11 +501,45 @@ pub fn execute(hs_path: Option<&Path>, lazy_partitions: &[String]) -> Result<(),
     Ok(())
 }
 
+fn find_history_file(
+    provided_history_path: Option<&Path>,
+    default_history_paths: &[&Path],
+) -> Result<PathBuf, TridentError> {
+    match provided_history_path {
+        // If history path is passed in from the command line, use it
+        Some(history_file_path) => {
+            if !history_file_path.exists() {
+                return Err(TridentError::new(InvalidInputError::HistoryFileNotFound))
+                    .message("Configured history file does not exist");
+            }
+            Ok(history_file_path.to_path_buf())
+        }
+        // If no history is passed in, scan expected paths and use first existing
+        None => {
+            let history_file_path = default_history_paths
+                .iter()
+                .filter_map(|f| {
+                    let path = Path::new(f);
+                    if path.exists() {
+                        return Some(path.to_path_buf());
+                    }
+                    None
+                })
+                .next();
+            let Some(history_file_path) = history_file_path else {
+                return Err(TridentError::new(InvalidInputError::HistoryFileNotFound))
+                    .message("History file not found in default paths.");
+            };
+            Ok(history_file_path)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use osutils::lsblk::LsBlkOutput;
-
     use super::*;
+    use osutils::lsblk::LsBlkOutput;
+    use tempfile::NamedTempFile;
 
     // lsblk.json was adding a postCustomization step to the
     // usr-verity configuration in test-images
@@ -555,8 +595,10 @@ mod tests {
             serde_json::from_str(PRISM_HISTORY).expect("Failed to parse Prism history");
         let lsblk_output: LsBlkOutput =
             serde_json::from_str(LSBLK).expect("Failed to parse lsblk output");
+        let disk = "/dev/sda".to_string();
 
-        let host_status = generate_host_status(&history, lsblk_output.blockdevices, &[]).unwrap();
+        let host_status =
+            generate_host_status(&history, lsblk_output.blockdevices, &[], &disk).unwrap();
         print!(
             "host_status:\n{}",
             serde_yaml::to_string(&host_status).unwrap_or("Failed to serialize Host Status".into())
@@ -587,10 +629,11 @@ mod tests {
             serde_json::from_str(LAZY_PRISM_HISTORY).expect("Failed to parse Prism history");
         let lsblk_output: LsBlkOutput =
             serde_json::from_str(LAZY_LSBLK).expect("Failed to parse lsblk output");
+        let disk = "/dev/sda".to_string();
 
         // Validate that the '-b' partitions are not present in the history
         let host_status_without_lazy_command_line_overrides =
-            generate_host_status(&history, lsblk_output.clone().blockdevices, &[]).unwrap();
+            generate_host_status(&history, lsblk_output.clone().blockdevices, &[], &disk).unwrap();
         print!(
             "host_status_without_lazy_command_line_overrides:\n{}",
             serde_yaml::to_string(&host_status_without_lazy_command_line_overrides)
@@ -619,6 +662,7 @@ mod tests {
             &history,
             lsblk_output.clone().blockdevices,
             &lazy_partitions,
+            &disk,
         )
         .unwrap();
         print!(
@@ -736,5 +780,46 @@ mod tests {
             .to_string(),
             "No corresponding '-a' partition found for lazy partition 'foo-b'"
         );
+    }
+
+    #[test]
+    fn test_find_history_file() {
+        let nonexistent = Path::new("/foo/blah.json");
+        let existing_file = NamedTempFile::new().unwrap();
+
+        // test nothing exists
+        let history_file = find_history_file(None, &[nonexistent]);
+        history_file.unwrap_err();
+
+        // test nothing provided, first default exists
+        let history_file = find_history_file(None, &[existing_file.path(), nonexistent]);
+        assert_eq!(
+            history_file.unwrap().display().to_string(),
+            existing_file.path().display().to_string()
+        );
+
+        // test nothing provided, second default exists
+        let history_file = find_history_file(None, &[nonexistent, existing_file.path()]);
+        assert_eq!(
+            history_file.unwrap().display().to_string(),
+            existing_file.path().display().to_string()
+        );
+
+        // test use provided
+        let provided_file = NamedTempFile::new().unwrap();
+        let existing_file = NamedTempFile::new().unwrap();
+        let history_file = find_history_file(Some(provided_file.path()), &[existing_file.path()]);
+        assert_eq!(
+            history_file.unwrap().display().to_string(),
+            provided_file.path().display().to_string()
+        );
+
+        // test provided does not exist
+        let history_file = find_history_file(Some(nonexistent), &[existing_file.path()]);
+        history_file.unwrap_err();
+
+        // test default paths do not exist
+        let history_file = find_history_file(None, &[nonexistent]);
+        history_file.unwrap_err();
     }
 }

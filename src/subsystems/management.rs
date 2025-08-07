@@ -10,7 +10,9 @@ use log::info;
 use osutils::path;
 use trident_api::{
     config::HostConfigurationDynamicValidationError,
-    constants::{AGENT_CONFIG_PATH, TRIDENT_DATASTORE_PATH_DEFAULT},
+    constants::{
+        internal_params::SELF_UPGRADE_TRIDENT, AGENT_CONFIG_PATH, TRIDENT_DATASTORE_PATH_DEFAULT,
+    },
     error::{InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::ServicingType,
 };
@@ -55,7 +57,7 @@ impl Subsystem for ManagementSubsystem {
             return Ok(());
         }
 
-        if ctx.spec.trident.self_upgrade {
+        if ctx.spec.internal_params.get_flag(SELF_UPGRADE_TRIDENT) {
             info!("Copying Trident binary to runtime OS");
             fs::copy(
                 TRIDENT_BINARY_PATH,

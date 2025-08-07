@@ -7,7 +7,10 @@ use tokio::sync::mpsc;
 use osutils::{chroot, container, path::join_relative};
 use trident_api::{
     config::{HostConfiguration, Operations},
-    constants::{internal_params::NO_TRANSITION, ESP_MOUNT_POINT_PATH},
+    constants::{
+        internal_params::{ENABLE_UKI_SUPPORT, NO_TRANSITION},
+        ESP_MOUNT_POINT_PATH,
+    },
     error::{
         InternalError, InvalidInputError, ReportError, ServicingError, TridentError,
         TridentResultExt,
@@ -61,7 +64,7 @@ pub(crate) fn update(
         ab_active_volume: state.host_status().ab_active_volume,
         disk_uuids: state.host_status().disk_uuids.clone(),
         install_index: state.host_status().install_index,
-        is_uki: Some(image.is_uki()),
+        is_uki: Some(image.is_uki() || host_config.internal_params.get_flag(ENABLE_UKI_SUPPORT)),
         image: Some(image),
         storage_graph: engine::build_storage_graph(&host_config.storage)?, // Build storage graph
         filesystems: Vec::new(), // Will be populated after dynamic validation

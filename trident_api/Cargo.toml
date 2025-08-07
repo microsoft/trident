@@ -46,7 +46,7 @@ dangerous-options = []
 samples = []
 
 # Enables the schemars to produce JSON Schema
-schema = ["schemars", "serde_json", "indoc"]
+schema = ["schemars", "serde_json", "indoc", "sysdefs/schemars"]
 
 # Enables all required features for building docs
 documentation = ["schema", "samples", "documented"]

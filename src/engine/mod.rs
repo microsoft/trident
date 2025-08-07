@@ -292,7 +292,7 @@ fn configure(
     let use_overlay = (ctx.servicing_type == ServicingType::CleanInstall
         || ctx.servicing_type == ServicingType::AbUpdate)
         && ctx.storage_graph.root_fs_is_verity()
-        && !ctx.is_uki_image()?;
+        && !ctx.is_uki()?;
 
     info!("Starting step 'Configure'");
     for subsystem in subsystems {

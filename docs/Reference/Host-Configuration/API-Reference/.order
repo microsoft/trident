@@ -23,6 +23,7 @@ PartitionSize
 PartitionTableType
 PartitionType
 Password
+Pcr
 Raid
 RaidLevel
 Script

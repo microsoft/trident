@@ -123,7 +123,7 @@ impl Subsystem for OsConfigSubsystem {
                 self.name()
             );
             return Ok(());
-        } else if ctx.is_uki_image()? && ctx.storage_graph.root_fs_is_verity() {
+        } else if ctx.is_uki()? && ctx.storage_graph.root_fs_is_verity() {
             error!("Skipping OS configuration changes requested in Host Configuration because UKI root verity is in use.");
             return Ok(());
         }
@@ -176,7 +176,7 @@ impl Subsystem for OsConfigSubsystem {
 
         // If we have a UKI image, update SELinux mode here since it cannot be set via kernel
         // command line.
-        if ctx.is_uki_image()? && ctx.spec.os.selinux.mode.is_some() {
+        if ctx.is_uki()? && ctx.spec.os.selinux.mode.is_some() {
             debug!("Updating SELinux config");
             os_modifier_config.selinux = Some(ctx.spec.os.selinux.clone());
         }
@@ -292,7 +292,7 @@ mod tests {
         let mk_ctx = || EngineContext {
             spec: HostConfiguration {
                 os: Os {
-                    network: None,
+                    netplan: None,
                     selinux: Selinux::default(),
                     users: vec![],
                     additional_files: vec![],
@@ -355,7 +355,7 @@ mod tests {
         // changes in the future, forcing us to update this test.
         let mut mos = ManagementOs {
             users: vec![],
-            network: None,
+            netplan: None,
         };
         assert!(!mos_config_requires_os_modifier(&mos));
 

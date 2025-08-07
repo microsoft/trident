@@ -100,7 +100,7 @@ scripts:
 os:
   selinux:
     mode: permissive
-  network:
+  netplan:
     version: 2
     ethernets:
       vmeths:

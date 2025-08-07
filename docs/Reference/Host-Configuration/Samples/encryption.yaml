@@ -30,6 +30,8 @@ storage:
     - id: srv
       deviceName: srv
       deviceId: luks-srv
+    pcrs:
+    - secure-boot-policy
   filesystems:
   - deviceId: esp
     mountPoint:
@@ -55,7 +57,7 @@ scripts:
     - ab-update
     content: 'echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/wheel'
 os:
-  network:
+  netplan:
     version: 2
     ethernets:
       eths:

@@ -102,7 +102,7 @@ fn update_grub_config_azl3(
     // For azl 3.0, we need to disable cloud-init's network configuration when Trident is
     // configuring the network. This is done by setting the 'network-config' kernel parameter
     // to 'disabled'.
-    if ctx.spec.os.network.is_some() {
+    if ctx.spec.os.netplan.is_some() {
         info!("Disabling default cloud-init network config");
         let mut disable_default_cloud_init_network = GrubMkConfigScript::new("prefer-netplan");
         disable_default_cloud_init_network.add_kv_param("network-config", "disabled");

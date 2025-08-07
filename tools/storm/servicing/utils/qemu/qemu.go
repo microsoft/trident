@@ -10,7 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
+	"storm/pkg/storm/utils"
 	"strings"
 	"time"
 	"tridenttools/storm/servicing/utils/file"
@@ -348,19 +348,19 @@ func (cfg QemuConfig) WaitForLogin(vmName string, outputPath string, verbose boo
 	return waitErr
 }
 
-func printAndSave(line string, verbose bool, localSerialLog string, ansi_control_cleaner *regexp.Regexp, ansi_cleaner *regexp.Regexp) {
+func printAndSave(line string, verbose bool, localSerialLog string) {
 	if line == "" {
 		return
 	}
 
 	// Remove ANSI control codes
-	line = ansi_control_cleaner.ReplaceAllString(line, "")
+	line = utils.ANSI_CONTROL_CLEANER.ReplaceAllString(line, "")
 	if verbose {
 		logrus.Info(line)
 	}
 	if localSerialLog != "" {
 		// Remove all ANSI escape codes
-		line = ansi_cleaner.ReplaceAllString(line, "")
+		line = utils.ANSI_CLEANER.ReplaceAllString(line, "")
 		logFile, err := os.OpenFile(localSerialLog, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
 		if err != nil {
 			return
@@ -391,11 +391,6 @@ func analyzeSerialLog(serial string) error {
 }
 
 func innerWaitForLogin(vmSerialLog string, verbose bool, iteration int, localSerialLog string) error {
-	// ANSI escape code cleaner
-	ansi_cleaner := regexp.MustCompile(`(\x9B|\x1B\[)[0-?]*[ -\/]*[@-~]`)
-	// ANSI non-color escape code cleaner, matches only control codes
-	ansi_control_cleaner := regexp.MustCompile(`(\x9B|\x1B\[)[0-?]*[ -\/]*[@-ln-~]`)
-
 	// Timeout for monitoring serial log for login prompt
 	timeout := time.Second * 120
 	startTime := time.Now()
@@ -412,7 +407,7 @@ func innerWaitForLogin(vmSerialLog string, verbose bool, iteration int, localSer
 	for {
 		// Check if the current line contains the login prompt, and return if it does
 		if strings.Contains(lineBuffer, "login:") && !strings.Contains(lineBuffer, "mos") {
-			printAndSave(lineBuffer, verbose, localSerialLog, ansi_control_cleaner, ansi_cleaner)
+			printAndSave(lineBuffer, verbose, localSerialLog)
 			return nil
 		}
 
@@ -441,7 +436,7 @@ func innerWaitForLogin(vmSerialLog string, verbose bool, iteration int, localSer
 		if runeStr == "\n" {
 			// If the last character is a newline, print the line buffer
 			// and reset it
-			printAndSave(lineBuffer, verbose, localSerialLog, ansi_control_cleaner, ansi_cleaner)
+			printAndSave(lineBuffer, verbose, localSerialLog)
 			lineBuffer = ""
 		} else {
 			// If non-newline, append the output to the buffer
