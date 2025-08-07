@@ -84,15 +84,6 @@ def update_trident_host_config(
         "Final trident_yaml content post all the updates: %s", host_configuration
     )
 
-    # If there is an encryption section, which contains pcrs, replace the
-    # contents of the list with just a single PCR 4, i.e. kernel-boot
-    storage = host_configuration.get("storage")
-    if storage:
-        encryption = storage.get("encryption")
-        if encryption and "pcrs" in encryption:
-            logging.info("Replacing PCRs with kernel-boot PCR for BM testing")
-            encryption["pcrs"] = ["kernel-boot"]
-
 
 def is_root_verity(host_configuration: dict) -> bool:
     """
