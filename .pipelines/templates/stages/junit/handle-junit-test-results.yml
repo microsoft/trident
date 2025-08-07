@@ -1,0 +1,32 @@
+parameters:
+  - name: testRunName
+    type: string
+  - name: junitTestFile
+    type: string
+  - name: displayNameSpecifier
+    type: string
+  - name: artifactName
+    type: string
+
+steps:
+  - task: PublishTestResults@2
+    condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
+    inputs:
+      testResultsFormat: JUnit
+      testResultsFiles: ${{ parameters.junitTestFile }}
+      testRunTitle: ${{ parameters.testRunName }}
+    displayName: "Publish junit test results for ${{ parameters.displayNameSpecifier }}"
+
+  - bash: |
+     rm -rf /tmp/ONEBRANCH_ARTIFACT
+     mkdir -p /tmp/ONEBRANCH_ARTIFACT
+     cp ${{ parameters.junitTestFile }} /tmp/ONEBRANCH_ARTIFACT/
+    displayName: "Prepare JUnit XML for ${{ parameters.displayNameSpecifier }}"
+    condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
+
+  - task: PublishBuildArtifacts@1
+    displayName: "Publish JUnit XML for ${{ parameters.displayNameSpecifier }}"
+    condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
+    inputs:
+      pathToPublish: /tmp/ONEBRANCH_ARTIFACT/
+      artifactName: ${{ parameters.artifactName }}

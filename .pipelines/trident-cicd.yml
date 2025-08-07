@@ -51,3 +51,4 @@ extends:
           buildType: ${{ parameters.buildType }}
           baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
           baseImageArm64PipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
+          runBaremetalTests: true

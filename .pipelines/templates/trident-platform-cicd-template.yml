@@ -17,6 +17,10 @@ parameters:
     values:
     - dev
     - preview
+  - name: runBaremetalTests
+    displayName: "Specify whether to run BareMetal tests"
+    type: boolean
+    default: false
 
 stages:
     - template: e2e-template.yml
@@ -27,3 +31,4 @@ stages:
         baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
         baseImageArm64PipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
         forceTridentRebuild: true
+        runBaremetalTests: ${{ parameters.runBaremetalTests }}

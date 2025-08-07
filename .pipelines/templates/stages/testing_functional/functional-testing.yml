@@ -115,11 +115,13 @@ stages:
               installNativeDependencies: false
               rustup: false
 
-          - task: PublishTestResults@2
-            condition: succeededOrFailed()
-            inputs:
-              testResultsFormat: "JUnit"
-              testResultsFiles: "$(Build.SourcesDirectory)/target/trident_functional_tests.xml"
+
+          - template: ../junit/handle-junit-test-results.yml
+            parameters:
+              testRunName: "FunctionalTests_$(System.JobAttempt)"
+              junitTestFile: "$(Build.SourcesDirectory)/target/trident_functional_tests.xml"
+              displayNameSpecifier: "functional tests"
+              artifactName: "trident-functional"
 
           - bash: |
               set -eux

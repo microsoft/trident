@@ -66,6 +66,11 @@ parameters:
     type: string
     default: "submodule"
 
+  - name: runBaremetalTests
+    displayName: "Specify whether to run BareMetal tests"
+    type: boolean
+    default: true
+
 stages:
   # Trident Build/Download
   - template: stages/trident_rpms/trident-stage.yml
@@ -242,18 +247,19 @@ stages:
           buildPurpose: "daily"
           runtimeEnv: "host"
 
-      # BM Testing (host, daily)
-      - template: stages/testing_baremetal/baremetal-testing.yml
-        parameters:
-          buildPurpose: "daily"
-          runtimeEnv: "host"
+      - ${{ if parameters.runBaremetalTests }}:
+        # BM Testing (host, daily)
+        - template: stages/testing_baremetal/baremetal-testing.yml
+          parameters:
+            buildPurpose: "daily"
+            runtimeEnv: "host"
 
-      # BM Testing (container, daily)
-      - template: stages/testing_baremetal/baremetal-testing.yml
-        parameters:
-          buildPurpose: "daily"
-          runtimeEnv: "container"
-          extraDependsOn: "BaremetalDeploymentTesting_host"
+        # BM Testing (container, daily)
+        - template: stages/testing_baremetal/baremetal-testing.yml
+          parameters:
+            buildPurpose: "daily"
+            runtimeEnv: "container"
+            extraDependsOn: "BaremetalDeploymentTesting_host"
 
       # VM Testing (container, daily)
       - template: stages/testing_vm/netlaunch-testing.yml
@@ -278,18 +284,19 @@ stages:
           buildPurpose: "weekly"
           runtimeEnv: "container"
 
-      # BM Testing (host, weekly)
-      - template: stages/testing_baremetal/baremetal-testing.yml
-        parameters:
-          buildPurpose: "weekly"
-          runtimeEnv: "host"
+      - ${{ if parameters.runBaremetalTests }}:
+        # BM Testing (host, weekly)
+        - template: stages/testing_baremetal/baremetal-testing.yml
+          parameters:
+            buildPurpose: "weekly"
+            runtimeEnv: "host"
 
-      # BM Testing (container, weekly)
-      - template: stages/testing_baremetal/baremetal-testing.yml
-        parameters:
-          buildPurpose: "weekly"
-          runtimeEnv: "container"
-          extraDependsOn: "BaremetalDeploymentTesting_host"
+        # BM Testing (container, weekly)
+        - template: stages/testing_baremetal/baremetal-testing.yml
+          parameters:
+            buildPurpose: "weekly"
+            runtimeEnv: "container"
+            extraDependsOn: "BaremetalDeploymentTesting_host"
 
   # TESTING stages for CI
   - ${{ if eq(parameters.stageType, 'ci') }}:

@@ -100,13 +100,13 @@ steps:
     workingDirectory: $(Build.SourcesDirectory)/e2e_tests
     displayName: "🔬 Run Trident E2E tests after clean install of runtime OS"
 
-  - task: PublishTestResults@2
-    condition: succeededOrFailed()
-    inputs:
-      testResultsFormat: JUnit
-      testResultsFiles: ./e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_clean_install_$(System.JobAttempt).junit.xml
-      testRunTitle: ${{ parameters.deploymentEnvironment }}_trident_e2e_tests_${{ parameters.tridentConfigurationName }}_clean_install_$(System.JobAttempt)
-    displayName: "Publish test results for clean install of runtime OS"
+
+  - template: ../junit/handle-junit-test-results.yml
+    parameters:
+      testRunName: "${{ parameters.deploymentEnvironment }}_trident_e2e_tests_${{ parameters.tridentConfigurationName }}_clean_install_$(System.JobAttempt)"
+      junitTestFile: "./e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_clean_install_$(System.JobAttempt).junit.xml"
+      displayNameSpecifier: "clean install of runtime OS"
+      artifactName: "trident_clean_install_test_results"
 
   # If current config requires A/B update testing, execute script to ssh into the host, update
   # images in the custom Trident config, and re-run Trident to both stage and finalize A/B update.
@@ -204,13 +204,13 @@ steps:
     displayName: "🔬 Run Trident E2E tests after A/B update into runtime OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
-  - task: PublishTestResults@2
-    condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
-    inputs:
-      testResultsFormat: JUnit
-      testResultsFiles: ./e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_B_$(System.JobAttempt).junit.xml
-      testRunTitle: ${{ parameters.deploymentEnvironment }}_trident_e2e_tests_${{ parameters.tridentConfigurationName }}_ab_update_B_$(System.JobAttempt)
-    displayName: "Publish test results for A/B update into runtime OS B"
+
+  - template: ../junit/handle-junit-test-results.yml
+    parameters:
+      testRunName: "${{ parameters.deploymentEnvironment }}_trident_e2e_tests_${{ parameters.tridentConfigurationName }}_ab_update_B_$(System.JobAttempt)"
+      junitTestFile: "./e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_B_$(System.JobAttempt).junit.xml"
+      displayNameSpecifier: "A/B update into runtime OS B"
+      artifactName: "trident_ab_update_B_test_results"
 
   - bash: |
       set -eux
@@ -307,13 +307,13 @@ steps:
     displayName: "🔬 Run Trident E2E tests after A/B update into runtime OS A"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
-  - task: PublishTestResults@2
-    condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
-    inputs:
-      testResultsFormat: JUnit
-      testResultsFiles: ./e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_A_$(System.JobAttempt).junit.xml
-      testRunTitle: ${{ parameters.deploymentEnvironment }}_trident_e2e_tests_${{ parameters.tridentConfigurationName }}_ab_update_A_$(System.JobAttempt)
-    displayName: "Publish test results for A/B update into runtime OS A"
+
+  - template: ../junit/handle-junit-test-results.yml
+    parameters:
+      testRunName: "${{ parameters.deploymentEnvironment }}_trident_e2e_tests_${{ parameters.tridentConfigurationName }}_ab_update_A_$(System.JobAttempt)"
+      junitTestFile: "./e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_A_$(System.JobAttempt).junit.xml"
+      displayNameSpecifier: "A/B update into runtime OS A"
+      artifactName: "trident_ab_update_A_test_results"
 
   # Check the value of 'buildPurpose', to determine if we need to execute the
   # test scenario where A/B update is staged and finalized independently. This
