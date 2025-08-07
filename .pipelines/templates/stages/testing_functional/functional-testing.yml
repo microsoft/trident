@@ -117,8 +117,8 @@ stages:
               testResultsFiles: "$(Build.SourcesDirectory)/target/trident_functional_tests.xml"
 
           - bash: |
-             mkdir -p $(Build.ArtifactStagingDirectory)/ONEBRANCH_ARTIFACT
-             cp $(Build.SourcesDirectory)/target/trident_functional_tests.xml $(Build.ArtifactStagingDirectory)/ONEBRANCH_ARTIFACT/
+              mkdir -p $(Build.ArtifactStagingDirectory)/ONEBRANCH_ARTIFACT
+              cp $(Build.SourcesDirectory)/target/trident_functional_tests.xml $(Build.ArtifactStagingDirectory)/ONEBRANCH_ARTIFACT/
             displayName: "Prepare JUnit XML for artifact publishing"
 
           - task: PublishBuildArtifacts@1
@@ -142,24 +142,21 @@ stages:
             condition: and(succeeded(), eq('${{ parameters.rerunTests }}', 'true'))
             displayName: Rerun Functional Tests
 
-          - task: DownloadPipelineArtifact@1
-            displayName: 'Download JUnit test results for dashboard push'
-            inputs:
-              artifact: 'trident_test_results'
-              path: '$(Build.ArtifactStagingDirectory)/junits'
-
+          # Removed download; copy the JUnit produced earlier directly into filtered-junits
           - bash: |
-              mkdir -p $(Build.ArtifactStagingDirectory)/filtered-junits
-              cp $(Build.ArtifactStagingDirectory)/junits/*trident_functional_tests.xml $(Build.ArtifactStagingDirectory)/filtered-junits/
+              set -eux
+              mkdir -p "$(Build.ArtifactStagingDirectory)/filtered-junits"
+              cp "$(Build.SourcesDirectory)/target/trident_functional_tests.xml" \
+                 "$(Build.ArtifactStagingDirectory)/filtered-junits/"
               echo "Filtered JUnit files:"
-              ls -la $(Build.ArtifactStagingDirectory)/filtered-junits/
+              ls -la "$(Build.ArtifactStagingDirectory)/filtered-junits/"
             displayName: 'Filter JUnit files for dashboard push'
 
           # Generate build-number.config file
           - bash: |
-             set -eux
-             mkdir -p $(Build.ArtifactStagingDirectory)/build-number-trident-functional
-             echo "$(Build.BuildNumber)" &gt; $(Build.ArtifactStagingDirectory)/build-number-trident-functional/build-number.config
+              set -eux
+              mkdir -p $(Build.ArtifactStagingDirectory)/build-number-trident-functional
+              echo "$(Build.BuildNumber)" > $(Build.ArtifactStagingDirectory)/build-number-trident-functional/build-number.config
             displayName: "Generate build-number.config file"
 
           # Publish the artifact
@@ -168,7 +165,6 @@ stages:
             inputs:
               pathToPublish: "$(Build.ArtifactStagingDirectory)/build-number-trident-functional"
               ArtifactName: "build-number-trident-functional"
-
 
           - template: ../common/dbCommunication/push-test-results-to-db.yaml
             parameters:
