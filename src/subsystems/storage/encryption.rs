@@ -141,9 +141,8 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
             // On A/B update, use PCRs selected by the user through the API!
             ServicingType::AbUpdate => {
                 if ctx.is_uki()? {
-                    // TODO: Remove this internal override once container, BM, and "rerun" E2E
-                    // encryption tests are fixed. Related ADO tasks:
-                    // https://dev.azure.com/mariner-org/polar/_workitems/edit/13344/ and
+                    // TODO: Remove this internal override once BM encryption tests are fixed.
+                    // Related ADO task:
                     // https://dev.azure.com/mariner-org/polar/_workitems/edit/14269/.
                     let override_pcrlock_encryption = ctx
                         .spec

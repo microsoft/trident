@@ -514,8 +514,8 @@ def check_crypsetup_luks_dump(
 
     # Check Host Status to see if image is UKI or not
     host_status = get_host_status(connection, tridentCommand)
-    # TODO: Remove this override once UKI & encryption tests are fixed. ADO:
-    # https://dev.azure.com/mariner-org/polar/_workitems/edit/13344/.
+    # TODO: Remove this override once BM tests are fixed. Related ADO task:
+    # https://dev.azure.com/mariner-org/polar/_workitems/edit/14269/.
     override_uki = (
         host_status["spec"]
         .get("internalParams", {})
@@ -548,9 +548,9 @@ def check_crypsetup_luks_dump(
     # Validate that for UKI images, tpm2_pcrlock is true and tpm2-pcrs is an
     # empty vector, while for non-UKI images, tpm2_pcrlock is false and
     # tpm2-pcrs is a vector with PCR 7 or 0.
-    # # TODO: Once tests are fixed, we would only expect to see PCR 7 here.
+    # TODO: Once BM tests are fixed, we would only expect to see PCR 7 here.
     # Related ADO task:
-    # https://dev.azure.com/mariner-org/polar/_workitems/edit/13344/.
+    # https://dev.azure.com/mariner-org/polar/_workitems/edit/14269/.
     if is_uki:
         assert (
             dump["tokens"]["0"]["tpm2_pcrlock"] is True
