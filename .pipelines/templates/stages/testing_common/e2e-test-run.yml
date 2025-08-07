@@ -1,3 +1,4 @@
+
 parameters:
   - name: buildPurpose
     type: string
@@ -124,11 +125,12 @@ steps:
       if [ -n "${{ parameters.netlistenConfigFile }}" ]; then
         NETLISTEN_CONFIG_ARGS="--config ${{ parameters.netlistenConfigFile }}"
       fi
+
       ./bin/netlisten --force-color $NETLISTEN_CONFIG_ARGS \
         -m $(Build.SourcesDirectory)/trident-ab-update-metrics-runtime-os-B.jsonl \
         --full-logstream ./logstream-full.log \
         -s "${{ parameters.artifactsDirectory }}" \
-        -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-runtime-os-B.log 2>&1 &
+        -p ${{ parameters.netlistenPort }} &gt; ./stage-finalize-ab-update-runtime-os-B.log 2&gt;&amp;1 &amp;
 
       echo "Running script to stage and finalize A/B update..."
       ./bin/storm-trident helper ab-update \
@@ -229,7 +231,7 @@ steps:
   - bash: |
      set -eux
      mkdir -p $(Build.ArtifactStagingDirectory)/build-number-trident-stage-finalize
-     echo "$(Build.BuildNumber)" > $(Build.ArtifactStagingDirectory)/build-number-trident-stage-finalize/build-number.config
+     echo "$(Build.BuildNumber)" &gt; $(Build.ArtifactStagingDirectory)/build-number-trident-stage-finalize/build-number.config
     displayName: "Generate build-number.config for stage-finalize"
 
   # Publish the build-number artifact
@@ -241,15 +243,15 @@ steps:
 
   - bash: |
       set -eux
-      mkdir -p ${{ parameters.artifactsDirectory }}/junit
-      sudo cp "./e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_B_$(System.JobAttempt).junit.xml" "${{ parameters.artifactsDirectory }}/junit."
+      mkdir -p ${{ variables.artifactsDirectory }}/junit
+      sudo cp "./e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_B_$(System.JobAttempt).junit.xml" "${{ variables.artifactsDirectory }}/junit."
     displayName: Copy junit results to artifact directory
     condition: succeededOrFailed()
 
   - bash: |
       set -eux
       # If there is a netlisten process, kill it so there is no port clash in the instance
-      if pgrep netlisten > /dev/null; then pkill netlisten; fi
+      if pgrep netlisten &gt; /dev/null; then pkill netlisten; fi
 
       NETLISTEN_CONFIG_ARGS=""
       if [ -n "${{ parameters.netlistenConfigFile }}" ]; then
@@ -260,7 +262,7 @@ steps:
           -m $(Build.SourcesDirectory)/trident-ab-update-metrics-runtime-os-A.jsonl \
           --full-logstream ./logstream-full.log \
           -s "${{ parameters.artifactsDirectory }}" \
-          -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-runtime-os-A.log 2>&1 &
+          -p ${{ parameters.netlistenPort }} &gt; ./stage-finalize-ab-update-runtime-os-A.log 2&gt;&amp;1 &amp;
 
       echo "Running script to stage and finalize A/B update..."
       ./bin/storm-trident helper ab-update \
@@ -351,8 +353,8 @@ steps:
 
   - bash: |
       set -eux
-      mkdir -p ${{ parameters.artifactsDirectory }}/junit
-      sudo cp "./e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_A_$(System.JobAttempt).junit.xml" "${{ parameters.artifactsDirectory }}/junit."
+      mkdir -p ${{ variables.artifactsDirectory }}/junit
+      sudo cp "./e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_A_$(System.JobAttempt).junit.xml" "${{ variables.artifactsDirectory }}/junit."
     displayName: Copy junit results to artifact directory
     condition: succeededOrFailed()
 
@@ -385,18 +387,15 @@ steps:
       deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
       tridentConfigurationName: ${{ parameters.tridentConfigurationName }}
       
-  - task: DownloadBuildArtifacts@1
+  - task: DownloadPipelineArtifact@1
     displayName: 'Download JUnit test results for dashboard push'
     inputs:
-      buildType: current
-      downloadType: single
-      artifactName: 'junit_test_results_ab_update_B'
-      downloadPath: '$(Build.ArtifactStagingDirectory)/junits'
+      artifact: 'junit_test_results_ab_update_B'
+      path: '$(Build.ArtifactStagingDirectory)/junits'
 
   - bash: |
       mkdir -p $(Build.ArtifactStagingDirectory)/filtered-junits
-      cp $(Build.ArtifactStagingDirectory)/junits/junit_test_results_ab_update_B/*ab_update_B*.xml \
-        $(Build.ArtifactStagingDirectory)/filtered-junits/ || true
+      cp $(Build.ArtifactStagingDirectory)/junits/*stage_finalize_ab_update_B*.xml $(Build.ArtifactStagingDirectory)/filtered-junits/
       echo "Filtered JUnit files:"
       ls -la $(Build.ArtifactStagingDirectory)/filtered-junits/
     displayName: 'Filter JUnit files for dashboard push'
