@@ -399,8 +399,8 @@ allow trident_t root_t:file { create getattr map open read relabelfrom write };
 allow trident_t rpm_unit_t:file getattr;
 allow trident_t rpm_var_cache_t:dir relabelto;
 allow trident_t rpm_var_cache_t:file relabelto;
-allow trident_t rpm_var_lib_t:dir relabelto;
-allow trident_t rpm_var_lib_t:file relabelto;
+allow trident_t rpm_var_lib_t:dir { add_name relabelto };
+allow trident_t rpm_var_lib_t:file { create setattr write relabelto };
 allow trident_t security_t:file { map write };
 allow trident_t security_t:filesystem getattr;
 allow trident_t security_t:security read_policy;
@@ -866,7 +866,7 @@ allow lvm_t initrc_t:sem { associate read unix_read unix_write write };
 
 # These permissions are necessary for cryptsetup luksOpen to succeed.
 allow lvm_t init_t:key search; # Allows LVM to write to search the kernel keyring.
-allow lvm_t tpm_device_t:chr_file write; # Allows LVM to write to the TPM device.
+allow lvm_t tpm_device_t:chr_file { open write }; # Allows LVM to write to the TPM device.
 
 # This is necessary for veritysetup to be able to read a key file in /tmp.
 allow lvm_t tmp_t:file { getattr ioctl open read };

@@ -5,6 +5,7 @@ use std::{
 
 use clap::{Parser, Subcommand};
 use log::LevelFilter;
+
 use trident_api::config::{Operation, Operations};
 
 use crate::TRIDENT_VERSION;

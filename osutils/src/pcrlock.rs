@@ -12,15 +12,16 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256, Sha384, Sha512};
 use tempfile::NamedTempFile;
 
-use crate::{
-    bootloaders::{BOOT_EFI, GRUB_EFI},
-    dependencies::Dependency,
-    exe::RunAndCheck,
-};
 use sysdefs::tpm2::Pcr;
 use trident_api::{
     error::{ReportError, ServicingError, TridentError},
     primitives::hash::Sha256Hash,
+};
+
+use crate::{
+    bootloaders::{BOOT_EFI, GRUB_EFI},
+    dependencies::Dependency,
+    exe::RunAndCheck,
 };
 
 /// Path to the pcrlock directory where .pcrlock files are located.
