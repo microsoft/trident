@@ -216,4 +216,4 @@ steps:
       testRunName: "${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_stage_finalize_ab_update_B_$(System.JobAttempt)"
       junitTestFile: "./e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_stage_finalize_ab_update_B_$(System.JobAttempt).junit.xml"
       displayNameSpecifier: "A/B update into runtime OS A that was staged and finalized independently"
-      artifactName: "ab-update-stage"
+      artifactName: "junit_for_trident_ab_update_stage"

@@ -121,7 +121,7 @@ stages:
               testRunName: "FunctionalTests_$(System.JobAttempt)"
               junitTestFile: "$(Build.SourcesDirectory)/target/trident_functional_tests.xml"
               displayNameSpecifier: "functional tests"
-              artifactName: "trident-functional"
+              artifactName: "junit_for_trident_functionaltests"
 
           - bash: |
               set -eux
