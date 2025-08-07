@@ -83,9 +83,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
         // If this is a UKI image, then we need to re-generate pcrlock policy to include the PCRs
         // selected by the user for the current boot only.
         //
-        // TODO: Remove this internal override once container, BM, and "rerun" E2E
-        // encryption tests are fixed. Related ADO tasks:
-        // https://dev.azure.com/mariner-org/polar/_workitems/edit/13344/ and
+        // TODO: Remove this internal override once BM tests are fixed. Related ADO task:
         // https://dev.azure.com/mariner-org/polar/_workitems/edit/14269/.
         let override_pcrlock_encryption = ctx
             .spec

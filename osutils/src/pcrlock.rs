@@ -340,7 +340,7 @@ fn make_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
     Ok(())
 }
 
-/// Removes a previously generated pcrlock policy at the given path and deallocates the NV index.
+/// Removes the previously generated pcrlock policy and deallocates the NV index.
 pub fn remove_policy() -> Result<(), Error> {
     // Remove the pcrlock policy
     let mut pcrlock_policy = vec![PathBuf::from(PCRLOCK_POLICY_JSON_PATH)];
