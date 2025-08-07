@@ -267,7 +267,7 @@ impl HttpFile {
             img_ref.registry()
         );
         let auth = Self::get_auth(img_ref);
-        runtime
+        let res = runtime
             .block_on(client.auth(img_ref, &auth, oci_client::RegistryOperation::Pull))
             .with_context(|| {
                 format!(
@@ -275,7 +275,17 @@ impl HttpFile {
                     img_ref.registry()
                 )
             })?
-            .context("Failed to retrieve authorization token")
+            .context("Failed to retrieve authorization token");
+        if let Err(ref _res) = res {
+            let output = std::process::Command::new("journalctl")
+                .arg("-n")
+                .arg("300")
+                .arg("--no-pager")
+                .output()
+                .expect("Failed");
+            debug!("Last 300 lines of journal:\n{:?}", output);
+        }
+        res
     }
 
     /// Get authentication credentials for accessing registry. Unless "dangerous-options" flag is
