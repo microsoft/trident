@@ -4,7 +4,8 @@ use anyhow::{Context, Error};
 use enumflags2::BitFlags;
 use log::{debug, info, trace, warn};
 
-use osutils::{block_devices, efivar, encryption::DEFAULT_PCR, lsblk, pcrlock, veritysetup, virt};
+use osutils::{block_devices, efivar, lsblk, pcrlock, veritysetup, virt};
+use sysdefs::tpm2::Pcr;
 use trident_api::{
     constants::internal_params::{OVERRIDE_PCRLOCK_ENCRYPTION, VIRTDEPLOY_BOOT_ORDER_WORKAROUND},
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
@@ -93,15 +94,23 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
             if ctx.is_uki()? && !override_pcrlock_encryption {
                 debug!("Regenerating pcrlock policy for current boot");
 
-                let mut pcrs = BitFlags::empty();
-                if !encryption.pcrs.is_empty() {
-                    for pcr in &encryption.pcrs {
-                        pcrs |= BitFlags::from(*pcr);
-                    }
+                let pcrs = if !encryption.pcrs.is_empty() {
+                    encryption
+                        .pcrs
+                        .iter()
+                        .fold(BitFlags::empty(), |acc, &pcr| acc | BitFlags::from(pcr))
                 } else {
-                    // Use default PCR if none specified.
-                    pcrs |= BitFlags::from(DEFAULT_PCR);
-                }
+                    // TODO: Currently, we cannot seal to PCR 7 b/c not all measurements are
+                    // recognized by the .pcrlock file generation logic. Once that is resolved,
+                    // we want to have PCR 7 as the default. For now, we use PCRs 4 and 11. Related
+                    // ADO tasks:
+                    // https://dev.azure.com/mariner-org/polar/_workitems/edit/14523/ and
+                    // https://dev.azure.com/mariner-org/polar/_workitems/edit/14455/.
+                    //
+                    // Use default PCR 7 if none specified.
+                    //BitFlags::from(DEFAULT_PCR)
+                    BitFlags::from(Pcr::Pcr4) | BitFlags::from(Pcr::Pcr11)
+                };
 
                 // Get UKI and bootloader binaries for .pcrlock file generation
                 let (uki_binaries, bootloader_binaries) =
