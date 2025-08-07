@@ -7,7 +7,7 @@ use log::{debug, info, trace, warn};
 use osutils::{block_devices, efivar, lsblk, pcrlock, veritysetup, virt};
 use sysdefs::tpm2::Pcr;
 use trident_api::{
-    constants::internal_params::{OVERRIDE_PCRLOCK_ENCRYPTION, VIRTDEPLOY_BOOT_ORDER_WORKAROUND},
+    constants::internal_params::VIRTDEPLOY_BOOT_ORDER_WORKAROUND,
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::{AbVolumeSelection, ServicingState, ServicingType},
     BlockDeviceId,
@@ -83,15 +83,8 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
 
         // If this is a UKI image, then we need to re-generate pcrlock policy to include the PCRs
         // selected by the user for the current boot only.
-        //
-        // TODO: Remove this internal override once BM tests are fixed. Related ADO task:
-        // https://dev.azure.com/mariner-org/polar/_workitems/edit/14269/.
-        let override_pcrlock_encryption = ctx
-            .spec
-            .internal_params
-            .get_flag(OVERRIDE_PCRLOCK_ENCRYPTION);
         if let Some(ref encryption) = ctx.spec.storage.encryption {
-            if ctx.is_uki()? && !override_pcrlock_encryption {
+            if ctx.is_uki()? {
                 debug!("Regenerating pcrlock policy for current boot");
 
                 let pcrs = if !encryption.pcrs.is_empty() {
@@ -119,11 +112,6 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
 
                 // Generate a pcrlock policy
                 pcrlock::generate_pcrlock_policy(pcrs, uki_binaries, bootloader_binaries)?;
-            } else {
-                warn!(
-                    "Skipping pcrlock policy re-generation on boot validation \
-                    because '{OVERRIDE_PCRLOCK_ENCRYPTION}' is set"
-                );
             }
         }
     } else if datastore.host_status().servicing_state == ServicingState::CleanInstallStaged

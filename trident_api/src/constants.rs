@@ -194,12 +194,6 @@ pub mod internal_params {
     pub const ORCHESTRATOR_CONNECTION_TIMEOUT_SECONDS: &str =
         "orchestratorConnectionTimeoutSeconds";
 
-    /// Overrides the pcrlock policy encryption logic to use logic where encryption volumes are
-    /// sealed directly against a set of specific PCR values.
-    // TODO: Remove this override once BM tests are fixed. Related ADO task:
-    // https://dev.azure.com/mariner-org/polar/_workitems/edit/14269/.
-    pub const OVERRIDE_PCRLOCK_ENCRYPTION: &str = "overridePcrlockEncryption";
-
     /// Run extra partition and filesystem checks before reboot
     pub const PRE_REBOOT_CHECKS: &str = "preRebootChecks";
 
