@@ -30,12 +30,12 @@ resources:
     - repository: platform-pipelines
       type: git
       name: platform-pipelines
-      ref: refs/heads/main
+      ref: refs/heads/user/bfjelds/enable-idc-testing-artifact
 
     - repository: test-images
       type: git
       name: test-images
-      ref: refs/heads/main
+      ref: refs/heads/user/bfjelds/enable-idc-testing-artifact
 
     - repository: platform-telemetry
       name: platform-telemetry
@@ -46,9 +46,38 @@ extends:
   template: templates/MockOB.yml
   parameters:
     stages:
-      - template: templates/trident-platform-cicd-template.yml
+      - template: templates/stages/common_tasks/create-base-image-config-artifact.yml
         parameters:
-          buildType: ${{ parameters.buildType }}
+          stageSuffix: cicd
+          baseimgBuildType: ${{ parameters.buildType }}
           baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
           baseImageArm64PipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
-          runBaremetalTests: true
+
+      - template: templates/trident-platform-cicd-template.yml
+        parameters:
+          runBaremetalTests: false
+          previousStage: HandleBaseImageConfig_cicd
+          baseImagePipelineBuildId: ignore
+          baseImageArm64PipelineBuildId: ignore
+          createBaseImageConfigArtifact: false
+
+      - stage: ProcessJunit_Stage
+        displayName: Process junit files
+        dependsOn:
+          - FunctionalTesting
+          - DeploymentTesting_host
+          - DeploymentTesting_container
+
+        jobs:
+          - job: ProcessJunit_Job
+            displayName: Process junit files
+            pool:
+              type: linux
+            variables:
+              ob_outputDirectory: "$(Build.SourcesDirectory)/out"
+            steps:
+              - script: |
+                  set -eux
+                  echo "Collect junit and do stuff"
+                displayName: Process junit files
+

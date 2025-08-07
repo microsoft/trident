@@ -18,23 +18,6 @@ parameters:
   - name: tridentArtifactName
     type: string
 
-  - name: baseimgBuildType
-    displayName: Base Image build type
-    type: string
-    values:
-      - dev
-      - preview
-      - release
-    default: "release"
-
-  - name: baseImagePipelineBuildId
-    type: string
-    default: "latestFromBranch"
-
-  - name: baseImageArm64PipelineBuildId
-    type: string
-    default: "latestFromBranch"
-
   - name: forceTridentRebuild
     type: boolean
     default: false
@@ -42,6 +25,10 @@ parameters:
   - name: osModifierBranch
     type: string
     default: "submodule"
+
+  - name: dependsOnStage
+    type: string
+    default: ''
 
 stages:
   - ${{ if or(parameters.forceTridentRebuild, eq(parameters.stageType, 'pr'), eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e-azure')) }}:
@@ -51,10 +38,8 @@ stages:
             publishToDevFeed: true
           tridentArtifactName: ${{ parameters.tridentArtifactName }}
           codeCoverage: ${{ parameters.codeCoverage }}
-          baseimgBuildType: ${{ parameters.baseimgBuildType }}
-          baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
-          baseImageArm64PipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
           osModifierBranch: ${{ parameters.osModifierBranch }}
+          dependsOnStage: ${{ parameters.dependsOnStage }}
 
   - ${{ else }}:
       - template: ../download_staged/download-staged.yml
@@ -62,3 +47,4 @@ stages:
           artifactName: ${{ parameters.tridentArtifactName }}
           stageType: ${{ parameters.stageType }}
           packageName: rpms
+          dependsOnStage: ${{ parameters.dependsOnStage }}

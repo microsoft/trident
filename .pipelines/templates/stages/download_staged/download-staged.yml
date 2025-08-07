@@ -22,9 +22,15 @@ parameters:
       Specific version of the package to download, leave empty to download latest
     default: ""
 
+  - name: dependsOnStage
+    type: string
+    default: ''
+
 stages:
   - stage: GetTridentBinaries_${{ replace(parameters.packageName, '-', '_') }}
     displayName: Download staged ${{ parameters.packageName }} for ${{ parameters.stageType }}
+    ${{ if ne(parameters.dependsOnStage, '') }}:
+      dependsOn: ${{ parameters.dependsOnStage }}
 
     jobs:
       - job: DownloadTrident

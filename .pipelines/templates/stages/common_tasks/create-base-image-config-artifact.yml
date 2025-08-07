@@ -1,0 +1,63 @@
+parameters:
+  - name: stageSuffix
+    type: string
+    
+  - name: baseimgBuildType
+    type: string
+    values:
+      - dev
+      - preview
+      - release
+    default: "release"
+
+  - name: baseImagePipelineBuildId
+    type: string
+    default: "latestFromBranch"
+
+  - name: baseImageArm64PipelineBuildId
+    type: string
+    default: "latestFromBranch"
+
+  - name: createBaseImageConfigArtifact
+    type: boolean
+    default: true
+
+  - name: previousStage
+    type: string
+    default: ''
+    
+stages:
+  - stage: HandleBaseImageConfig_${{ parameters.stageSuffix }}
+    displayName: "Create BaseImage config artifact (${{ parameters.stageSuffix }})"
+    ${{ if ne(parameters.previousStage, '') }}:
+      dependsOn: ${{ parameters.previousStage }}
+    jobs:
+      - job: HandleBaseImageConfigJob_${{ parameters.stageSuffix }}
+        displayName: "Create BaseImage config artifact (${{ parameters.stageSuffix }})"
+        pool:
+          type: linux
+        variables:
+          - name: ob_outputDirectory
+            value: "$(Build.SourcesDirectory)/out"
+          - name: ob_artifactBaseName
+            value: "HandleBaseImageConfig_${{ parameters.stageSuffix }}"
+        steps:
+          - ${{ if parameters.createBaseImageConfigArtifact }}:
+            - bash: |
+                mkdir -p /tmp/config
+                cat << EOF > /tmp/config/baseimage.json
+                {
+                  "baseimgBuildType": "${{ parameters.baseimgBuildType }}",
+                  "baseImagePipelineBuildId": "${{ parameters.baseImagePipelineBuildId }}",
+                  "baseImageArm64PipelineBuildId": "${{ parameters.baseImageArm64PipelineBuildId }}"
+                }
+                EOF
+              displayName: "Create Base Image Config artifact"
+            - task: PublishBuildArtifacts@1
+              displayName: "Publish Base Image Config artifact"
+              inputs:
+                pathToPublish: /tmp/config
+                artifactName: base-image-config
+          - bash: |
+              echo "BaseImage config handled"
+            displayName: "BaseImage config"

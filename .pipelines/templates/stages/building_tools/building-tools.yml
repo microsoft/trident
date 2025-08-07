@@ -19,9 +19,15 @@ parameters:
     type: boolean
     default: true
 
+  - name: dependsOnStage
+    type: string
+    default: ''
+
 stages:
   - stage: BuildingTools
     displayName: Building Tools
+    ${{ if ne(parameters.dependsOnStage, '') }}:
+      dependsOn: ${{ parameters.dependsOnStage }}
 
     jobs:
       - job: BuildGoTools

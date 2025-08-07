@@ -25,15 +25,33 @@ parameters:
     displayName: Path in which the Dockerfile will be run, the base for the container image will be saved there.
 
 steps:
+  - template: ../common_tasks/read-base-image-config-artifact.yml
+  - bash: |
+      set -eux
+
+      RUN_VERSION=$(BASE_IMAGE_PIPELINE_BUILD_ID)
+      RUN_ID=''
+      if [[ "$RUN_VERSION" != "latestFromBranch" ]]; then
+        RUN_VERSION=specific
+        RUN_ID=$(BASE_IMAGE_PIPELINE_BUILD_ID)
+      fi
+
+      set +x
+      echo "##vso[task.setvariable variable=RUN_VERSION]$RUN_VERSION"
+      echo "##vso[task.setvariable variable=RUN_ID]$RUN_ID"
+    displayName: "Configure RUN_VERSION"
+    condition: eq(variables['BASEIMG_BUILD_TYPE'], 'preview')
+
   - task: DownloadPipelineArtifact@2
     displayName: "Download preview of azl container image"
+    condition: eq(variables['BASEIMG_BUILD_TYPE'], 'preview')
     inputs:
       buildType: "specific"
       project: "mariner"
       pipeline: ${{ parameters.previewContainerPipeline }}
-      runVersion: ${{ parameters.runVersion }}
+      runVersion: $(RUN_VERSION)
       branchName: "refs/heads/master"
-      runId: ${{ parameters.baseImagePipelineBuildId }}
+      runId: $(RUN_ID)
       tags: "3.0-preview"
       artifactName: "drop_build_rpms_build"
       patterns: "**/build-artifacts/container_base/core-*.tar.gz"
@@ -52,3 +70,4 @@ steps:
 
       cat ${{ parameters.dockerfilePath }}
     displayName: Replace azl container base with azl preview
+    condition: eq(variables['BASEIMG_BUILD_TYPE'], 'preview')

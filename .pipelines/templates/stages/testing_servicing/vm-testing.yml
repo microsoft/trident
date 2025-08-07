@@ -4,20 +4,6 @@ parameters:
     type: boolean
     default: false
 
-  - name: baseimgBuildType
-    displayName: Base Image build type
-    type: string
-    values:
-      - dev
-      - preview
-      - release
-    default: "release"
-
-  - name: baseImagePipelineBuildId
-    displayName: "Build Id of the pipeline run, default will select latest successful run from pipeline 2116 ([AMD64-6-OneBranch]-Prod-BuildImages) with tag 3.0-preview"
-    type: string
-    default: "latestFromBranch"
-
   - name: baseimgAzlVersion
     displayName: Base Image AZL version
     type: string
@@ -94,36 +80,30 @@ stages:
           jobs:
             - template: build-image.yml
               parameters:
-                baseimgBuildType: ${{ parameters.baseimgBuildType }}
                 label: "qemu-base"
                 makeTarget: "build/trident-vm-grub-verity-testimage.qcow2"
                 baseimgType: qemu_guest
                 baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-                baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
                 micBuildType: ${{ parameters.micBuildType }}
                 micVersion: ${{ parameters.micVersion }}
                 useStagedSshKeys: true
 
             - template: build-image.yml
               parameters:
-                baseimgBuildType: ${{ parameters.baseimgBuildType }}
                 label: "qemu-update-a"
                 makeTarget: "build/trident-vm-grub-verity-testimage.cosi"
                 baseimgType: qemu_guest
                 baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-                baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
                 micBuildType: ${{ parameters.micBuildType }}
                 micVersion: ${{ parameters.micVersion }}
                 useStagedSshKeys: true
 
             - template: build-image.yml
               parameters:
-                baseimgBuildType: ${{ parameters.baseimgBuildType }}
                 label: "qemu-update-b"
                 makeTarget: "build/trident-vm-grub-verity-testimage.cosi"
                 baseimgType: qemu_guest
                 baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-                baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
                 micBuildType: ${{ parameters.micBuildType }}
                 micVersion: ${{ parameters.micVersion }}
                 useStagedSshKeys: true
@@ -138,34 +118,28 @@ stages:
             jobs:
               - template: build-image.yml
                 parameters:
-                  baseimgBuildType: ${{ parameters.baseimgBuildType }}
                   label: "azure-base"
                   makeTarget: "build/trident-vm-grub-verity-azure-testimage.vhd"
                   baseimgType: core_selinux
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-                  baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
                   micBuildType: ${{ parameters.micBuildType }}
                   micVersion: ${{ parameters.micVersion }}
 
               - template: build-image.yml
                 parameters:
-                  baseimgBuildType: ${{ parameters.baseimgBuildType }}
                   label: "azure-update-a"
                   makeTarget: "build/trident-vm-grub-verity-azure-testimage.cosi"
                   baseimgType: core_selinux
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-                  baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
                   micBuildType: ${{ parameters.micBuildType }}
                   micVersion: ${{ parameters.micVersion }}
 
               - template: build-image.yml
                 parameters:
-                  baseimgBuildType: ${{ parameters.baseimgBuildType }}
                   label: "azure-update-b"
                   makeTarget: "build/trident-vm-grub-verity-azure-testimage.cosi"
                   baseimgType: core_selinux
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-                  baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
                   micBuildType: ${{ parameters.micBuildType }}
                   micVersion: ${{ parameters.micVersion }}
 
@@ -179,36 +153,30 @@ stages:
           jobs:
             - template: build-image.yml
               parameters:
-                baseimgBuildType: ${{ parameters.baseimgBuildType }}
                 label: "uki-base"
                 makeTarget: "build/trident-vm-usr-verity-testimage.qcow2"
                 baseimgType: qemu_guest
                 baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-                baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
                 micBuildType: ${{ parameters.micBuildType }}
                 micVersion: ${{ parameters.micVersion }}
                 useStagedSshKeys: true
 
             - template: build-image.yml
               parameters:
-                baseimgBuildType: ${{ parameters.baseimgBuildType }}
                 label: "uki-update-a"
                 makeTarget: "build/trident-vm-usr-verity-testimage.cosi"
                 baseimgType: qemu_guest
                 baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-                baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
                 micBuildType: ${{ parameters.micBuildType }}
                 micVersion: ${{ parameters.micVersion }}
                 useStagedSshKeys: true
 
             - template: build-image.yml
               parameters:
-                baseimgBuildType: ${{ parameters.baseimgBuildType }}
                 label: "uki-update-b"
                 makeTarget: "build/trident-vm-usr-verity-testimage.cosi"
                 baseimgType: qemu_guest
                 baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-                baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
                 micBuildType: ${{ parameters.micBuildType }}
                 micVersion: ${{ parameters.micVersion }}
                 useStagedSshKeys: true

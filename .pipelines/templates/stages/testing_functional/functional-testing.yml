@@ -22,12 +22,18 @@ parameters:
     type: string
     default: "submodule"
 
+  - name: dependsOnStage
+    type: string
+    default: ''
+
 stages:
   - stage: FunctionalTesting
     displayName: Functional Testing
     dependsOn:
       - ${{ if eq(parameters.downloadPrebuiltImage, false) }}:
           - TridentTestImg_trident_functest
+      - ${{ if ne(parameters.dependsOnStage, '') }}:
+          - ${{ parameters.dependsOnStage }}
       - ${{ else }}: []
 
     jobs:

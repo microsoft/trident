@@ -1,13 +1,4 @@
 parameters:
-  - name: baseimgBuildType
-    displayName: Base Image build type
-    type: string
-    values:
-      - dev
-      - preview
-      - release
-    default: "release"
-
   - name: label
     type: string
     displayName: "Label for the image"
@@ -21,11 +12,6 @@ parameters:
   - name: baseimgType
     type: string
     displayName: "Base image type"
-
-  - name: baseImagePipelineBuildId
-    displayName: "Build Id of the pipeline run, default will select latest successful run from pipeline 2116 ([AMD64-6-OneBranch]-Prod-BuildImages) with tag 3.0-preview"
-    type: string
-    default: "latestFromBranch"
 
   - name: baseimgAzlVersion
     displayName: Base Image AZL version
@@ -80,10 +66,6 @@ jobs:
         displayName: Download SSH Keys
 
       - template: ../common_tasks/find-base-image-version.yml
-        parameters:
-          baseimgBuildType: ${{ parameters.baseimgBuildType }}
-          baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
-
       - template: .pipelines/templates/trident-testimg-template.yml@test-images
         parameters:
           target: ${{ parameters.makeTarget }}
@@ -91,7 +73,7 @@ jobs:
           testImagesRepo: test-images
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
-          baseimgBuildType: ${{ parameters.baseimgBuildType }}
+          baseimgBuildType: $(BASEIMG_BUILD_TYPE)
           baseimgVersion: $(baseimgVersion)
           baseimgAzureLinuxVersion: ${{ parameters.baseimgAzlVersion }}
           downloadTrident: false
