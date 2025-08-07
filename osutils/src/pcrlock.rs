@@ -340,6 +340,41 @@ fn make_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
     Ok(())
 }
 
+/// Removes a previously generated pcrlock policy at the given path and deallocates the NV index.
+pub fn remove_policy() -> Result<(), Error> {
+    // // Remove the pcrlock policy
+    // let mut pcrlock_policy = vec![PathBuf::from(PCRLOCK_POLICY_JSON_PATH)];
+
+    // // If running from inside a container, also remove the pcrlock policy on the host
+    // if container::is_running_in_container()
+    //     .unstructured("Failed to determine if running in container")?
+    // {
+    //     let host_root =
+    //         container::get_host_root_path().unstructured("Failed to get host root path")?;
+    //     let host_pcrlock_json_path = path::join_relative(host_root, PCRLOCK_POLICY_JSON_PATH);
+    //     // Append this host path to vector
+    //     pcrlock_policy.push(host_pcrlock_json_path);
+    // }
+
+    // for policy_path in pcrlock_policy {
+    //     Dependency::SystemdPcrlock
+    //         .cmd()
+    //         .arg("remove-policy")
+    //         .arg(format!("--policy={}", policy_path.display()))
+    //         .run_and_check()
+    //         .context("Failed to run 'systemd-pcrlock remove-policy'")?;
+    // }
+
+    // Ok(())
+
+    Dependency::SystemdPcrlock
+        .cmd()
+        .arg("remove-policy")
+        .arg(format!("--policy={PCRLOCK_POLICY_JSON_PATH}"))
+        .run_and_check()
+        .context("Failed to run 'systemd-pcrlock remove-policy'")
+}
+
 /// Converts the provided PCR bitflags into the `--pcr=` argument for `systemd-pcrlock`. Returns a
 /// string with the PCR indices separated by `,`.
 fn to_pcr_arg(pcrs: BitFlags<Pcr>) -> String {
