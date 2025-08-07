@@ -141,9 +141,7 @@ pub(super) fn create_encrypted_devices(
         // If this is for a grub ROS, seal against the value of PCR 7; if this is for a UKI ROS,
         // seal against a "bootstrapping" pcrlock policy that exclusively contains PCR 0.
         // TODO: If this is a flow with an internal override, seal against the value of PCR 0
-        // directly. Remove this internal override once container, BM, and "rerun" E2E encryption
-        // tests are fixed. Related ADO tasks:
-        // https://dev.azure.com/mariner-org/polar/_workitems/edit/13344/ and
+        // directly. Remove this internal override once BM tests are fixed. Related ADO task:
         // https://dev.azure.com/mariner-org/polar/_workitems/edit/14269/.
         let pcr = if ctx.is_uki()? {
             if ctx
