@@ -12,7 +12,7 @@ EXECUTE_TRIDENT_CONTAINER = (
     "docker run --pull=never --rm --privileged "
     "-v /etc/trident:/etc/trident -v /var/lib/trident:/var/lib/trident "
     "-v /:/host -v /dev:/dev -v /run:/run -v /sys:/sys -v /var/log:/var/log "
-    "-v /etc/pki:/etc/pki:ro --pid host --ipc host trident/trident:latest"
+    "--pid host --ipc host trident/trident:latest"
 )
 
 
