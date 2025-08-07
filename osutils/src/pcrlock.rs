@@ -357,6 +357,10 @@ pub fn remove_policy() -> Result<(), Error> {
     }
 
     for policy_path in pcrlock_policy {
+        debug!(
+            "Removing pcrlock JSON policy at '{}'",
+            policy_path.display()
+        );
         Dependency::SystemdPcrlock
             .cmd()
             .arg("remove-policy")

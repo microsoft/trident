@@ -149,15 +149,23 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                         .internal_params
                         .get_flag(OVERRIDE_PCRLOCK_ENCRYPTION);
                     if !override_pcrlock_encryption {
-                        let mut bitflags = BitFlags::empty();
-                        if !encryption.pcrs.is_empty() {
-                            for pcr in &encryption.pcrs {
-                                bitflags |= BitFlags::from(*pcr);
-                            }
+                        let bitflags = if !encryption.pcrs.is_empty() {
+                            encryption
+                                .pcrs
+                                .iter()
+                                .fold(BitFlags::empty(), |acc, &pcr| acc | BitFlags::from(pcr))
                         } else {
+                            // TODO: Currently, we cannot seal to PCR 7 b/c not all measurements are
+                            // recognized by the .pcrlock file generation logic. Once that is resolved,
+                            // we want to have PCR 7 as the default. For now, we use PCRs 4 and 11. Related
+                            // ADO tasks:
+                            // https://dev.azure.com/mariner-org/polar/_workitems/edit/14523/ and
+                            // https://dev.azure.com/mariner-org/polar/_workitems/edit/14455/.
+                            //
                             // Use default PCR if none specified.
-                            bitflags |= BitFlags::from(osutils_encryption::DEFAULT_PCR);
-                        }
+                            //BitFlags::from(osutils_encryption::DEFAULT_PCR)
+                            BitFlags::from(Pcr::Pcr4) | BitFlags::from(Pcr::Pcr11)
+                        };
                         Some(bitflags)
                     } else {
                         debug!(
