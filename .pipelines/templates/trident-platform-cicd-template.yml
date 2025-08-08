@@ -7,9 +7,9 @@ parameters:
   - name: runBaremetalTests
     type: boolean
     default: false
-  - name: previousStage
+
+  - name: baseImageArtifactStage
     type: string
-    default: ''
 
 stages:
     - template: e2e-template.yml
@@ -18,4 +18,4 @@ stages:
         blockPublishing: true
         forceTridentRebuild: true
         runBaremetalTests: ${{ parameters.runBaremetalTests }}
-        previousStage: ${{ parameters.previousStage }}
+        baseImageArtifactStage: ${{ parameters.baseImageArtifactStage }}

@@ -23,9 +23,6 @@ parameters:
     type: string
     default: "main"
 
-  - name: baseImageArtifactStage
-    type: string
-
 stages:
     - template: e2e-extended-template.yml
       parameters:
@@ -35,4 +32,3 @@ stages:
         micBuildType: ${{ parameters.micBuildType }}
         micVersion: ${{ parameters.micVersion }}
         osModifierBranch: ${{ parameters.osModifierBranch }}
-        baseImageArtifactStage: ${{ parameters.baseImageArtifactStage }}
