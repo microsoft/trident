@@ -1,8 +1,6 @@
-steps:
+  steps:
   - template: read-base-image-config-artifact.yml
   - bash: |
-      set -eux
-
       echo "BASEIMG_BUILD_TYPE: $(BASEIMG_BUILD_TYPE)"
       echo "BASE_IMAGE_PIPELINE_BUILD_ID: $(BASE_IMAGE_PIPELINE_BUILD_ID)"
       printenv
@@ -10,25 +8,21 @@ steps:
   
   # baseimgBuildType == dev
   - script: |
-      set -eux
-      baseimgVersion="*.*.*"
+      BASEIMG_VERSION="*.*.*"
       if [[ "$(BASE_IMAGE_PIPELINE_BUILD_ID)" != "latestFromBranch" ]]; then
-        baseimgVersion="$(BASE_IMAGE_PIPELINE_BUILD_ID)"
+        BASEIMG_VERSION="$(BASE_IMAGE_PIPELINE_BUILD_ID)"
       fi
-
-      set +x
-      echo "##vso[task.setvariable variable=BASEIMG_VERSION]$baseimgVersion"
+      echo "##vso[task.setvariable variable=BASEIMG_VERSION]$BASEIMG_VERSION"
+      echo "BASEIMG_VERSION: $BASEIMG_VERSION"
     name: SetBaseImageVersionDev
     condition: eq(variables['BASEIMG_BUILD_TYPE'], 'dev')
     displayName: Set Base Image version variable for dev
 
   # baseimgBuildType == release
   - script: |
-      set -eux
-      baseimgVersion="*.*.*"
-
-      set +x
+      BASEIMG_VERSION="*.*.*
       echo "##vso[task.setvariable variable=BASEIMG_VERSION]$baseimgVersion"
+      echo "BASEIMG_VERSION: $BASEIMG_VERSION"
     name: SetBaseImageVersionRelease
     condition: eq(variables['BASEIMG_BUILD_TYPE'], 'release')
     displayName: Set Base Image version variable for release
@@ -49,21 +43,16 @@ steps:
       patterns: "**/build-config/version-full.config"
       targetPath: "$(Build.SourcesDirectory)/output"
   - script: |
-      set -eux
       versionFullConfigPath=$(find $(Build.SourcesDirectory) -name version-full.config)
-      baseimgVersion=$(cat $versionFullConfigPath)
-
-      set +x
-      echo "##vso[task.setvariable variable=BASEIMG_VERSION]$baseimgVersion"
+      BASEIMG_VERSION=$(cat $versionFullConfigPath)
+      echo "##vso[task.setvariable variable=BASEIMG_VERSION]$BASEIMG_VERSION"
+      echo "BASEIMG_VERSION: $BASEIMG_VERSION"
     name: SetBaseImageVersionPreview
     condition: eq(variables['BASEIMG_BUILD_TYPE'], 'preview')
     displayName: Set Base Image version variable for preview
 
   - bash: |
-      set -eux
-
       echo "BASEIMG_BUILD_TYPE: $(BASEIMG_BUILD_TYPE)"
       echo "BASE_IMAGE_PIPELINE_BUILD_ID: $(BASE_IMAGE_PIPELINE_BUILD_ID)"
       echo "BASEIMG_VERSION: $(BASEIMG_VERSION)"
-      printenv
     displayName: Show variables after
