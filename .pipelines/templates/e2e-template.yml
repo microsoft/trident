@@ -24,23 +24,6 @@ parameters:
       - rel
       - full-validation
 
-  - name: baseimgBuildType
-    displayName: Base Image build type
-    type: string
-    values:
-      - dev
-      - preview
-      - release
-    default: "release"
-
-  - name: baseImagePipelineBuildId
-    type: string
-    default: "latestFromBranch"
-
-  - name: baseImageArm64PipelineBuildId
-    type: string
-    default: "latestFromBranch"
-
   - name: blockPublishing
     displayName: "Block publishing to artifact feed"
     type: boolean
