@@ -74,7 +74,7 @@ jobs:
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
           baseimgBuildType: $(BASEIMG_BUILD_TYPE)
-          baseimgVersion: $(baseimgVersion)
+          baseimgVersion: $(BASEIMG_VERSION)
           baseimgAzureLinuxVersion: ${{ parameters.baseimgAzlVersion }}
           downloadTrident: false
           baseimgType: ${{ parameters.baseimgType }}
