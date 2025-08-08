@@ -13,6 +13,8 @@ pub enum BootType {
     PersistentStorage,
 }
 
+// Detects how the system was booted by examining `/proc/cmdline` and
+/// returns the BootType.
 pub fn detect_boot_type() -> Result<BootType, Error> {
     let cmdline = fs::read_to_string("/proc/cmdline")
         .with_context(|| "Failed to read /proc/cmdline to detect boot type")?;
@@ -29,28 +31,20 @@ pub fn detect_boot_type() -> Result<BootType, Error> {
     }
 }
 
-pub fn eject_media() -> Result<(), Error> {
+/// Ejects the installation media by using the eject command.
+fn eject_media() -> Result<(), Error> {
     info!("Attempting to eject installation media");
-
-    let result = Dependency::Eject
+    Dependency::Eject
         .cmd()
         .args(["--cdrom", "--force"])
-        .output_and_check()
-        .context("Failed to execute eject command");
-
-    match result {
-        Ok(_) => {
-            info!("Successfully ejected installation media");
-            Ok(())
-        }
-        Err(e) => {
-            warn!("Failed to eject installation media: {e:?}");
-            Err(e)
-        }
-    }
+        .run_and_check()
+        .context("Failed to execute eject command")
 }
 
-pub fn media_ejection() -> Result<(), Error> {
+/// Handles installation media cleanup for clean install based on
+/// the BootType before rebooting. Ejects for RAM disk, shows
+/// message for live CD, and does nothing for persistent storage.
+pub fn handle_installation_media() -> Result<(), Error> {
     info!("Attempting to eject installation media");
     match detect_boot_type() {
         Ok(BootType::RamDisk) => {
