@@ -78,11 +78,8 @@ stages:
           - template: ../common_tasks/build-osmodifier.yml
             parameters:
               osModifierBranch: ${{ parameters.osModifierBranch }}
-          - template: ../common_tasks/read-base-image-config-artifact.yml
           - template: release.yml
             parameters:
-              baseimgBuildType: $(BASEIMG_BUILD_TYPE)
-              baseImagePipelineBuildId: $(BASE_IMAGE_PIPELINE_BUILD_ID)
               previewContainerPipeline: "[AMD64-6-OneBranch]-Prod-BuildImages"
           - ${{ if eq(parameters.publishToDevFeed, true) }}:
               - template: publish-dev.yml
@@ -109,9 +106,6 @@ stages:
           - template: ../common_tasks/build-osmodifier.yml
             parameters:
               osModifierBranch: ${{ parameters.osModifierBranch }}
-          - template: ../common_tasks/read-base-image-config-artifact.yml
           - template: release.yml
             parameters:
-              baseimgBuildType: $(BASEIMG_BUILD_TYPE)
-              baseImagePipelineBuildId: $(BASE_IMAGE_ARM64_PIPELINE_BUILD_ID)
               previewContainerPipeline: "[ARM64-6-OneBranch]-Prod-BuildImages"

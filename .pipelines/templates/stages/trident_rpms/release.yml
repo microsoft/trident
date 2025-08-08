@@ -41,17 +41,10 @@ steps:
     workingDirectory: $(Build.SourcesDirectory)
     displayName: Start Docker
 
-  - ${{ if eq(parameters.baseimgBuildType, 'preview') }}:
-      - template: ../common_tasks/preview-container.yml
-        parameters:
-          dockerfilePath: $(Build.SourcesDirectory)/Dockerfile.full
-          dockerBuildContext: $(Build.SourcesDirectory)
-          previewContainerPipeline: ${{ parameters.previewContainerPipeline }}
-          ${{ if eq(parameters.baseImagePipelineBuildId, 'latestFromBranch') }}:
-            runVersion: ${{ parameters.baseImagePipelineBuildId }}
-          ${{ else }}:
-            runVersion: specific
-            baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
+  - template: ../common_tasks/preview-container.yml
+    parameters:
+      dockerfilePath: $(Build.SourcesDirectory)/Dockerfile.runtime
+      dockerBuildContext: $(Build.SourcesDirectory)
 
   - script: |
       set -eux
