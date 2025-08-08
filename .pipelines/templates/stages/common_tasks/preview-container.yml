@@ -1,18 +1,8 @@
 parameters:
-  - name: runVersion
-    type: string
-    default: latestFromBranch
-    displayName: Specific run or latest successful run
-
   - name: previewContainerPipeline
     type: string
     default: "[AMD64-6-OneBranch]-Prod-BuildImages"
     displayName: Name of preview container pipeline
-
-  - name: baseImagePipelineBuildId
-    type: string
-    default: ""
-    displayName: Build Id of the pipeline run
 
   - name: dockerfilePath
     type: string
