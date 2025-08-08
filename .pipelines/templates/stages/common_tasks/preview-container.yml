@@ -1,8 +1,10 @@
 parameters:
-  - name: previewContainerPipeline
+  - name: targetArchitecture
     type: string
-    default: "[AMD64-6-OneBranch]-Prod-BuildImages"
-    displayName: Name of preview container pipeline
+    default: "AMD64"
+    values:
+      - ARM64
+      - AMD64
 
   - name: dockerfilePath
     type: string
@@ -20,17 +22,27 @@ steps:
       set -eux
 
       RUN_VERSION=$(BASE_IMAGE_PIPELINE_BUILD_ID)
+      RUN_BRANCH='refs/heads/master'
       RUN_TAGS='3.0-preview'
       RUN_ID=''
       if [[ "$RUN_VERSION" != "latestFromBranch" ]]; then
         RUN_VERSION=specific
         RUN_ID=$(BASE_IMAGE_PIPELINE_BUILD_ID)
+        RUN_BRANCH=''
         RUN_TAGS=''
+      fi
+
+      PIPELINE_NAME="[AMD64-6-OneBranch]-Prod-BuildImages"
+      if [[ "${{ parameters.targetArchitecture }}" == "ARM64" ]]; then
+        PIPELINE_NAME="[ARM64-6-OneBranch]-Prod-BuildImages"
       fi
 
       set +x
       echo "##vso[task.setvariable variable=RUN_VERSION]$RUN_VERSION"
+      echo "##vso[task.setvariable variable=RUN_BRANCH]$RUN_BRANCH"
       echo "##vso[task.setvariable variable=RUN_ID]$RUN_ID"
+      echo "##vso[task.setvariable variable=RUN_TAGS]$RUN_TAGS"
+      echo "##vso[task.setvariable variable=PIPELINE_NAME]$PIPELINE_NAME"
     displayName: "Configure RUN_VERSION"
     condition: ne(variables['BASEIMG_BUILD_TYPE'], 'release')
 
@@ -41,9 +53,9 @@ steps:
     inputs:
       buildType: "specific"
       project: "mariner"
-      pipeline: ${{ parameters.previewContainerPipeline }}
+      pipeline: $(PIPELINE_NAME)
       runVersion: $(RUN_VERSION)
-      branchName: "refs/heads/master"
+      branchName: $(RUN_BRANCH)
       runId: $(RUN_ID)
       tags: $(RUN_TAGS)
       artifactName: "drop_build_rpms_build"

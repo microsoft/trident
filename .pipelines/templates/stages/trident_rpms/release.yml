@@ -1,8 +1,10 @@
 parameters:
-  - name: previewContainerPipeline
+  - name: targetArchitecture
     type: string
-    default: "[AMD64-6-OneBranch]-Prod-BuildImages"
-    displayName: Name of preview container pipeline
+    default: "AMD64"
+    values:
+      - ARM64
+      - AMD64
 
 
 steps:
@@ -32,7 +34,7 @@ steps:
     parameters:
       dockerfilePath: $(Build.SourcesDirectory)/Dockerfile.full
       dockerBuildContext: $(Build.SourcesDirectory)
-      previewContainerPipeline: ${{ parameters.previewContainerPipeline }}
+      targetArchitecture: ${{ parameters.targetArchitecture }}
 
   - script: |
       set -eux
