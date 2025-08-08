@@ -21,7 +21,12 @@ steps:
   - bash: |
       set -eux
 
-      RUN_VERSION=$(BASE_IMAGE_PIPELINE_BUILD_ID)
+      pipelineId=$(BASE_IMAGE_PIPELINE_BUILD_ID)
+      if [[ "${{ parameters.targetArchitecture }}" == "ARM64" ]]; then
+        pipelineId=$(BASE_IMAGE_ARM64_PIPELINE_BUILD_ID)
+      fi
+
+      RUN_VERSION=$pipelineId
       RUN_BRANCH='refs/heads/master'
       RUN_TAGS='3.0-preview'
       RUN_ID=''
