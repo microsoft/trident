@@ -201,7 +201,7 @@ steps:
       python3 -u -m pytest \
           -m "${{ parameters.buildPurpose }}" \
           --capture=no \
-          --junit-xml=${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_stage_finalize_ab_update_B_$(System.JobAttempt).junit.xml \
+          --junit-xml=${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_stage_finalize_ab_update_B_$(System.JobAttempt).junit.xml \
           --host ${{ parameters.hostIp }} \
           --runtime-env ${{ parameters.runtimeEnv }} \
           --configuration ${{ parameters.tridentConfigPath }} \
@@ -213,7 +213,7 @@ steps:
 
   - template: ../junit/handle-junit-test-results.yml
     parameters:
-      testRunName: "${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_stage_finalize_ab_update_B_$(System.JobAttempt)"
-      junitTestFile: "./e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_stage_finalize_ab_update_B_$(System.JobAttempt).junit.xml"
+      testRunName: "${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_stage_finalize_ab_update_B_$(System.JobAttempt)"
+      junitTestFile: "./e2e_tests/${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_stage_finalize_ab_update_B_$(System.JobAttempt).junit.xml"
       displayNameSpecifier: "A/B update into runtime OS A that was staged and finalized independently"
       artifactName: "junit_for_trident_ab_update_stage"

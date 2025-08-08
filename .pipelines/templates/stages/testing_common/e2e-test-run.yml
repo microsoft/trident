@@ -92,7 +92,7 @@ steps:
       python3 -u -m pytest \
           -m "${{ parameters.buildPurpose }}" \
           --capture=no \
-          --junit-xml=${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_clean_install_$(System.JobAttempt).junit.xml \
+          --junit-xml=${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_clean_install_$(System.JobAttempt).junit.xml \
           --host ${{ parameters.hostIp }} \
           --runtime-env ${{ parameters.runtimeEnv }} \
           --configuration ${{ parameters.tridentConfigPath }}
@@ -103,8 +103,8 @@ steps:
 
   - template: ../junit/handle-junit-test-results.yml
     parameters:
-      testRunName: "${{ parameters.deploymentEnvironment }}_trident_e2e_tests_${{ parameters.tridentConfigurationName }}_clean_install_$(System.JobAttempt)"
-      junitTestFile: "./e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_clean_install_$(System.JobAttempt).junit.xml"
+      testRunName: "${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_trident_e2e_tests_${{ parameters.tridentConfigurationName }}_clean_install_$(System.JobAttempt)"
+      junitTestFile: "./e2e_tests/${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_clean_install_$(System.JobAttempt).junit.xml"
       displayNameSpecifier: "clean install of runtime OS"
       artifactName: "junit_for_trident_clean_install"
 
@@ -194,7 +194,7 @@ steps:
       python3 -u -m pytest \
           -m "${{ parameters.buildPurpose }}" \
           --capture=no \
-          --junit-xml=${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_B_$(System.JobAttempt).junit.xml \
+          --junit-xml=${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_B_$(System.JobAttempt).junit.xml \
           --host ${{ parameters.hostIp }} \
           --runtime-env ${{ parameters.runtimeEnv }} \
           --configuration ${{ parameters.tridentConfigPath }} \
@@ -207,8 +207,8 @@ steps:
 
   - template: ../junit/handle-junit-test-results.yml
     parameters:
-      testRunName: "${{ parameters.deploymentEnvironment }}_trident_e2e_tests_${{ parameters.tridentConfigurationName }}_ab_update_B_$(System.JobAttempt)"
-      junitTestFile: "./e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_B_$(System.JobAttempt).junit.xml"
+      testRunName: "${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_trident_e2e_tests_${{ parameters.tridentConfigurationName }}_ab_update_B_$(System.JobAttempt)"
+      junitTestFile: "./e2e_tests/${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_B_$(System.JobAttempt).junit.xml"
       displayNameSpecifier: "A/B update into runtime OS B"
       artifactName: "junit_for_trident_ab_update_B"
 
@@ -297,7 +297,7 @@ steps:
       python3 -u -m pytest \
           -m "${{ parameters.buildPurpose }}" \
           --capture=no \
-          --junit-xml=${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_A_$(System.JobAttempt).junit.xml \
+          --junit-xml=${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_A_$(System.JobAttempt).junit.xml \
           --host ${{ parameters.hostIp }} \
           --runtime-env ${{ parameters.runtimeEnv }} \
           --configuration ${{ parameters.tridentConfigPath }} \
@@ -310,8 +310,8 @@ steps:
 
   - template: ../junit/handle-junit-test-results.yml
     parameters:
-      testRunName: "${{ parameters.deploymentEnvironment }}_trident_e2e_tests_${{ parameters.tridentConfigurationName }}_ab_update_A_$(System.JobAttempt)"
-      junitTestFile: "./e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_A_$(System.JobAttempt).junit.xml"
+      testRunName: "${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_trident_e2e_tests_${{ parameters.tridentConfigurationName }}_ab_update_A_$(System.JobAttempt)"
+      junitTestFile: "./e2e_tests/${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_A_$(System.JobAttempt).junit.xml"
       displayNameSpecifier: "A/B update into runtime OS A"
       artifactName: "junit_for_trident_ab_update_A"
 
