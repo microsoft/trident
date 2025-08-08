@@ -29,12 +29,13 @@ parameters:
 stages:
   - stage: FunctionalTesting
     displayName: Functional Testing
-    dependsOn:
-      - ${{ if eq(parameters.downloadPrebuiltImage, false) }}:
-          - TridentTestImg_trident_functest
-      - ${{ if ne(parameters.dependsOnStage, '') }}:
+    ${{ if eq(parameters.downloadPrebuiltImage, false) }}:
+      dependsOn:
+        - TridentTestImg_trident_functest
+        - ${{ if ne(parameters.dependsOnStage, '') }}:
           - ${{ parameters.dependsOnStage }}
-      - ${{ else }}: []
+    ${{ elseif ne(parameters.dependsOnStage, '') }}:
+      dependsOn: ${{ parameters.dependsOnStage }}
 
     jobs:
       - job: FunctionalTests

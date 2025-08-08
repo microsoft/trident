@@ -40,12 +40,12 @@ parameters:
 stages:
   - stage: TridentTestImg_${{ replace(parameters.imageName, '-', '_') }}
     displayName: Build ${{ parameters.imageName }}
-    dependsOn:
-      - ${{ if and(eq(parameters.runtimeEnv, 'host'), parameters.dependsOnTrident) }}:
-          - GetTridentBinaries_rpms
-      - ${{ elseif ne(parameters.dependsOnStage, '') }}:
-          - ${{ parameters.dependsOnStage }}
-      - ${{ else }}: []
+    ${{ if and(eq(parameters.runtimeEnv, 'host'), parameters.dependsOnTrident) }}:
+      dependsOn:
+        - GetTridentBinaries_rpms
+    ${{ elseif ne(parameters.dependsOnStage, '') }}:
+      dependsOn:
+        - ${{ parameters.dependsOnStage }}
 
     jobs:
       - job: BuildTridentTestImg
