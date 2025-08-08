@@ -1,9 +1,9 @@
 use std::{ffi::OsString, path::Path};
 
 use anyhow::Error;
+use tempfile::NamedTempFile;
 
 use sysdefs::partition_types::DiscoverablePartitionType;
-use tempfile::NamedTempFile;
 
 use crate::{
     dependencies::Dependency, filesystems::MkfsFileSystemType, mkfs, repart::RepartPartitionEntry,
