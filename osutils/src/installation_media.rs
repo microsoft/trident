@@ -49,11 +49,11 @@ pub fn handle_installation_media() -> Result<(), Error> {
     match detect_boot_type() {
         Ok(BootType::RamDisk) => {
             if let Err(e) = eject_media() {
-                warn!("Failed to eject installation media: {e:?}. Please remove the installation media when the system reboots.");
+                warn!("Failed to eject installation media: {e:?}. Please remove the installation media when the system reboots");
             }
         }
         Ok(BootType::LiveCdrom) => {
-            info!("Please remove the installation media when the system reboots.");
+            info!("Please remove the installation media when the system reboots");
         }
         Ok(BootType::PersistentStorage) => {
             debug!("No installation media ejection needed");
