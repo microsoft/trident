@@ -88,4 +88,4 @@ stages:
       micVersion: ${{ parameters.micVersion }}
       numberOfUpdateIterations: ${{ parameters.numberOfUpdateIterations }}
       osModifierBranch: ${{ parameters.osModifierBranch }}
-      baseImageArtifactStage: HandleBaseImageConfig_cicd
+      baseImageArtifactStage: HandleBaseImageConfig_e2e
