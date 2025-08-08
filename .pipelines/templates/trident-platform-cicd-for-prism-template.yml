@@ -24,7 +24,7 @@ parameters:
     default: "main"
 
 stages:
-    - template: e2e-template.yml
+    - template: e2e-extended-template.yml
       parameters:
         stageType: ci
         blockPublishing: true

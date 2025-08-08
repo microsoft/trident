@@ -43,7 +43,7 @@ stages:
   - ${{ if eq(parameters.targetStage, 'pr') }}:
       - template: pr-template.yml
   - ${{ else }}:
-      - template: e2e-template.yml
+      - template: e2e-extended-template.yml
         parameters:
           stageType: ${{ parameters.targetStage }}
           blockPublishing: ${{ parameters.blockPublishing }}

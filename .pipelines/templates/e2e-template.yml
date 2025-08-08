@@ -70,24 +70,11 @@ parameters:
     type: boolean
     default: true
 
-  - name: createBaseImageConfigArtifact
-    type: boolean
-    default: true
-
   - name: previousStage
     type: string
     default: ''
     
 stages:
-  - template: stages/common_tasks/create-base-image-config-artifact.yml
-    parameters:
-      stageSuffix: e2e
-      baseimgBuildType: ${{ parameters.baseimgBuildType }}
-      baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
-      baseImageArm64PipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
-      previousStage: ${{ parameters.previousStage }}
-      createBaseImageConfigArtifact: ${{ parameters.createBaseImageConfigArtifact }}
-
   # Trident Build/Download
   - template: stages/trident_rpms/trident-stage.yml
     parameters:
@@ -96,19 +83,19 @@ stages:
       codeCoverage: false
       forceTridentRebuild: ${{ parameters.forceTridentRebuild }}
       osModifierBranch: ${{ parameters.osModifierBranch }}
-      dependsOnStage: HandleBaseImageConfig_e2e
+      dependsOnStage: ${{ parameters.previousStage }}
 
   # Build tools (Go stuff)
   - template: stages/building_tools/building-tools.yml
     parameters:
-      dependsOnStage: HandleBaseImageConfig_e2e
+      dependsOnStage: ${{ parameters.previousStage }}
 
   # Makefile validation, only for CI
   - ${{ if eq(parameters.stageType, 'ci') }}:
       - template: stages/validate_makefile/dev-build.yml
         parameters:
           osModifierBranch: ${{ parameters.osModifierBranch }}
-          dependsOnStage: HandleBaseImageConfig_e2e
+          dependsOnStage: ${{ parameters.previousStage }}
 
 
   # Build FT base Image, only in CI
@@ -121,7 +108,7 @@ stages:
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
           clones: 1
-          dependsOnStage: HandleBaseImageConfig_e2e
+          dependsOnStage: ${{ parameters.previousStage }}
 
   # Build Trident container image (depends on GetTridentBinaries_rpms)
   - template: stages/build_docker_image/trident-container.yml
@@ -133,7 +120,7 @@ stages:
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
       clones: 1
-      dependsOnStage: HandleBaseImageConfig_e2e
+      dependsOnStage: ${{ parameters.previousStage }}
 
   # Build Trident split (stage and finalize separated) installer ISO (host)
   - template: stages/build_image/build-image.yml
@@ -142,7 +129,7 @@ stages:
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
       clones: 1
-      dependsOnStage: HandleBaseImageConfig_e2e
+      dependsOnStage: ${{ parameters.previousStage }}
 
   # Build Trident installer ISO (container)
   - template: stages/build_image/build-image.yml
@@ -152,7 +139,7 @@ stages:
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
       clones: 1
-      dependsOnStage: HandleBaseImageConfig_e2e
+      dependsOnStage: ${{ parameters.previousStage }}
 
   # Build Trident test image (regular)
   - template: stages/build_image/build-image.yml
@@ -160,7 +147,7 @@ stages:
       imageName: trident-testimage
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
-      dependsOnStage: HandleBaseImageConfig_e2e
+      dependsOnStage: ${{ parameters.previousStage }}
 
   # Build Trident test image (container)
   - template: stages/build_image/build-image.yml
@@ -169,7 +156,7 @@ stages:
       runtimeEnv: "container"
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
-      dependsOnStage: HandleBaseImageConfig_e2e
+      dependsOnStage: ${{ parameters.previousStage }}
 
   # Build Trident test image for verity (host)
   - template: stages/build_image/build-image.yml
@@ -177,7 +164,7 @@ stages:
       imageName: trident-verity-testimage
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
-      dependsOnStage: HandleBaseImageConfig_e2e
+      dependsOnStage: ${{ parameters.previousStage }}
 
   # Build Trident test image for verity (container)
   - template: stages/build_image/build-image.yml
@@ -186,7 +173,7 @@ stages:
       runtimeEnv: "container"
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
-      dependsOnStage: HandleBaseImageConfig_e2e
+      dependsOnStage: ${{ parameters.previousStage }}
 
   # Build Trident test image for usr-verity (host)
   - template: stages/build_image/build-image.yml
@@ -194,7 +181,7 @@ stages:
       imageName: trident-usrverity-testimage
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
-      dependsOnStage: HandleBaseImageConfig_e2e
+      dependsOnStage: ${{ parameters.previousStage }}
 
   # Build Trident test image for usr-verity (container)
   - template: stages/build_image/build-image.yml
@@ -203,7 +190,7 @@ stages:
       runtimeEnv: "container"
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
-      dependsOnStage: HandleBaseImageConfig_e2e
+      dependsOnStage: ${{ parameters.previousStage }}
 
   - ${{ if or(parameters.forceTridentRebuild, eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e-azure')) }}:
       # Build USB-ISO
@@ -241,7 +228,7 @@ stages:
       # Functional Testing
       - template: stages/testing_functional/functional-testing.yml
         parameters:
-          dependsOnStage: HandleBaseImageConfig_e2e
+          dependsOnStage: ${{ parameters.previousStage }}
 
       # VM Testing (host, daily)
       - template: stages/testing_vm/netlaunch-testing.yml
@@ -274,7 +261,7 @@ stages:
       # Functional Testing
       - template: stages/testing_functional/functional-testing.yml
         parameters:
-          dependsOnStage: HandleBaseImageConfig_e2e
+          dependsOnStage: ${{ parameters.previousStage }}
 
       # VM Testing (host, weekly)
       - template: stages/testing_vm/netlaunch-testing.yml
@@ -309,7 +296,7 @@ stages:
         parameters:
           downloadPrebuiltImage: false
           osModifierBranch: ${{ parameters.osModifierBranch }}
-          dependsOnStage: HandleBaseImageConfig_e2e
+          dependsOnStage: ${{ parameters.previousStage }}
 
 
       # VM Testing (host, post_merge)
@@ -330,7 +317,7 @@ stages:
       - template: stages/testing_functional/functional-testing.yml
         parameters:
           rerunTests: false
-          dependsOnStage: HandleBaseImageConfig_e2e
+          dependsOnStage: ${{ parameters.previousStage }}
 
       # VM Testing (host, pullrequest)
       - template: stages/testing_vm/netlaunch-testing.yml

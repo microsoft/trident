@@ -18,10 +18,6 @@ parameters:
     type: string
     default: "latestFromBranch"
 
-  - name: createBaseImageConfigArtifact
-    type: boolean
-    default: true
-
   - name: previousStage
     type: string
     default: ''
@@ -42,22 +38,18 @@ stages:
           - name: ob_artifactBaseName
             value: "HandleBaseImageConfig_${{ parameters.stageSuffix }}"
         steps:
-          - ${{ if parameters.createBaseImageConfigArtifact }}:
-            - bash: |
-                mkdir -p /tmp/config
-                cat << EOF > /tmp/config/baseimage.json
-                {
-                  "baseimgBuildType": "${{ parameters.baseimgBuildType }}",
-                  "baseImagePipelineBuildId": "${{ parameters.baseImagePipelineBuildId }}",
-                  "baseImageArm64PipelineBuildId": "${{ parameters.baseImageArm64PipelineBuildId }}"
-                }
-                EOF
-              displayName: "Create Base Image Config artifact"
-            - task: PublishBuildArtifacts@1
-              displayName: "Publish Base Image Config artifact"
-              inputs:
-                pathToPublish: /tmp/config
-                artifactName: base-image-config
           - bash: |
-              echo "BaseImage config handled"
-            displayName: "BaseImage config"
+              mkdir -p /tmp/config
+              cat << EOF > /tmp/config/baseimage.json
+              {
+                "baseimgBuildType": "${{ parameters.baseimgBuildType }}",
+                "baseImagePipelineBuildId": "${{ parameters.baseImagePipelineBuildId }}",
+                "baseImageArm64PipelineBuildId": "${{ parameters.baseImageArm64PipelineBuildId }}"
+              }
+              EOF
+            displayName: "Create Base Image Config artifact"
+          - task: PublishBuildArtifacts@1
+            displayName: "Publish Base Image Config artifact"
+            inputs:
+              pathToPublish: /tmp/config
+              artifactName: base-image-config

@@ -55,11 +55,8 @@ extends:
 
       - template: templates/trident-platform-cicd-template.yml
         parameters:
-          runBaremetalTests: false
           previousStage: HandleBaseImageConfig_cicd
-          baseImagePipelineBuildId: ignore
-          baseImageArm64PipelineBuildId: ignore
-          createBaseImageConfigArtifact: false
+          # runBaremetalTests: false
 
       - stage: ProcessJunit_Stage
         displayName: Process junit files

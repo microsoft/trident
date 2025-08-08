@@ -1,0 +1,88 @@
+parameters:
+  - name: "stageType"
+    displayName: "Pipeline configuration type"
+    type: string
+    default: ci
+    values:
+      - pr-e2e
+      - pr-e2e-azure
+      - ci
+      - pre
+      - rel
+      - full-validation
+
+  - name: baseimgBuildType
+    displayName: Base Image build type
+    type: string
+    values:
+      - dev
+      - preview
+      - release
+    default: "release"
+
+  - name: baseImagePipelineBuildId
+    type: string
+    default: "latestFromBranch"
+
+  - name: baseImageArm64PipelineBuildId
+    type: string
+    default: "latestFromBranch"
+
+  - name: blockPublishing
+    displayName: "Block publishing to artifact feed"
+    type: boolean
+    default: false
+
+  - name: forceTridentRebuild
+    displayName: "Force trident rebuild rather than downloading previously built."
+    type: boolean
+    default: false
+
+  - name: includeAzure
+    displayName: "Include Azure testing"
+    type: boolean
+    default: false
+
+  - name: micBuildType
+    displayName: MIC Build Type
+    type: string
+    values:
+      - dev
+      - preview
+      - release
+    default: release
+
+  - name: micVersion
+    displayName: MIC Version
+    type: string
+    default: "*.*.*"
+
+  - name: numberOfUpdateIterations
+    displayName: Number of times each worker invokes A/B Update
+    type: number
+    default: 3
+
+  - name: osModifierBranch
+    type: string
+    default: "submodule"
+    
+stages:
+  - template: stages/common_tasks/create-base-image-config-artifact.yml
+    parameters:
+      stageSuffix: e2e
+      baseimgBuildType: ${{ parameters.baseimgBuildType }}
+      baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
+      baseImageArm64PipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
+      previousStage: ${{ parameters.previousStage }}
+
+  - template: e2e-template.yml
+    parameters:
+      stageType: ${{ parameters.stageType }}
+      blockPublishing: ${{ parameters.blockPublishing }}
+      forceTridentRebuild: ${{ parameters.forceTridentRebuild }}
+      includeAzure: ${{ parameters.includeAzure }}
+      micBuildType: ${{ parameters.micBuildType }}
+      micVersion: ${{ parameters.micVersion }}
+      numberOfUpdateIterations: ${{ parameters.numberOfUpdateIterations }}
+      osModifierBranch: ${{ parameters.osModifierBranch }}
+      previousStage: HandleBaseImageConfig_cicd

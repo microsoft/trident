@@ -4,38 +4,18 @@
 # preview build.
 
 parameters:
-  - name: baseImagePipelineBuildId
-    displayName: "Build Id of the pipeline run, default will select latest successful run from pipeline 2116 ([AMD64-6-OneBranch]-Prod-BuildImages) with tag 3.0-preview"
-    type: string
-  - name: baseImageArm64PipelineBuildId
-    displayName: "Build Id of the pipeline run, default will select latest successful run from pipeline 2117 ([ARM64-6-OneBranch]-Prod-BuildImages) with tag 3.0-preview"
-    type: string
-  - name: buildType
-    displayName: "Pick build type, select 'dev' to pull images and rpms from specified build, select preview to find preview version from specified build and pull images and rpms from feeds and packages.microsoft.com"
-    type: string
-    default: dev
-    values:
-    - dev
-    - preview
   - name: runBaremetalTests
     type: boolean
     default: false
   - name: previousStage
     type: string
     default: ''
-  - name: createBaseImageConfigArtifact
-    type: boolean
-    default: true
 
 stages:
     - template: e2e-template.yml
       parameters:
         stageType: pre
         blockPublishing: true
-        baseimgBuildType: ${{ parameters.buildType }}
-        baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
-        baseImageArm64PipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
         forceTridentRebuild: true
         runBaremetalTests: ${{ parameters.runBaremetalTests }}
         previousStage: ${{ parameters.previousStage }}
-        createBaseImageConfigArtifact: ${{ parameters.createBaseImageConfigArtifact }}
