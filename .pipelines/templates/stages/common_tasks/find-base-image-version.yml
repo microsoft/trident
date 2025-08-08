@@ -21,7 +21,7 @@
   # baseimgBuildType == release
   - script: |
       BASEIMG_VERSION="*.*.*
-      echo "##vso[task.setvariable variable=BASEIMG_VERSION]$baseimgVersion"
+      echo "##vso[task.setvariable variable=BASEIMG_VERSION]$BASEIMG_VERSION"
       echo "BASEIMG_VERSION: $BASEIMG_VERSION"
     name: SetBaseImageVersionRelease
     condition: eq(variables['BASEIMG_BUILD_TYPE'], 'release')
