@@ -63,7 +63,7 @@ stages:
         timeoutInMinutes: 90
         pool:
           type: linux
-          name: trident-aods-conn-1es-pool
+          name: maritimus-ado-1es-pool-ubuntu2404-amd64
           hostArchitecture: amd64
 
         strategy:

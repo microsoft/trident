@@ -56,7 +56,7 @@ stages:
                     value: ${{ coalesce(variables.ob_artifactBaseName, format('drop_{0}_{1}', stage.stage, job.job)) }}${{ coalesce(variables.ob_artifactSuffix, '') }}
 
                 pool:
-                  name: ${{ coalesce(job.pool.name, 'trident-azl3-1es-pool-westus2') }}
+                  name: ${{ coalesce(job.pool.name, 'maritimus-ado-1es-pool-azl3-amd64') }}
 
                   ${{ if ne(job.pool.hostArchitecture, '') }}:
                     HostArchitecture: ${{ job.pool.hostArchitecture }}

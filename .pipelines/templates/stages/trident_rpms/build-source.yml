@@ -101,7 +101,7 @@ stages:
         displayName: Build Trident 3.0 RPMs for ARM64
         pool:
           type: linux
-          name: mariner-hci-ARM64-1es-pool-westcentralus
+          name: maritimus-ado-1es-pool-azl3-amd64
           hostArchitecture: arm64
 
         variables:

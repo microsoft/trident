@@ -42,7 +42,7 @@ parameters:
   - name: pool
     displayName: Agent pool
     type: string
-    default: "trident-ubuntu-1es-pool-eastus2"
+    default: "maritimus-ado-1es-pool-ubuntu2404-amd64"
 
 jobs:
   # For azure tests where there are multiple workers, use a dedicated job to publish the base

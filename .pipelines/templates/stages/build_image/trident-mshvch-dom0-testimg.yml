@@ -14,7 +14,7 @@ stages:
     timeoutInMinutes: 30
     pool:
       type: linux
-      name: ecf-ado-agent-linux-pool
+      name: maritimus-ado-1es-pool-ubuntu2404-amd64
 
     variables:
       - name: ob_outputDirectory
