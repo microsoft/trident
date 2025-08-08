@@ -1,3 +1,7 @@
+# e2e-extended-template will create the base image artifact and 
+# call e2e-template to run all trident tests for each of our scenarios.
+# This includes unit tests, integration tests, and end-to-end tests.
+
 parameters:
   - name: "stageType"
     displayName: "Pipeline configuration type"
@@ -85,4 +89,4 @@ stages:
       micVersion: ${{ parameters.micVersion }}
       numberOfUpdateIterations: ${{ parameters.numberOfUpdateIterations }}
       osModifierBranch: ${{ parameters.osModifierBranch }}
-      previousStage: HandleBaseImageConfig_cicd
+      baseImageArtifactStage: HandleBaseImageConfig_cicd

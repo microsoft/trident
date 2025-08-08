@@ -1,3 +1,8 @@
+# trident-cicd will create the base image artifact for a given azurelinux
+# set of builds and call e2e-template to run all trident tests for each of
+# our scenarios.
+#
+# This is a manual placeholder until an triggered solution is created.
 parameters:
   - name: baseImagePipelineBuildId
     displayName: "Build Id of the pipeline run, default will select latest successful run from pipeline 2116 ([AMD64-6-OneBranch]-Prod-BuildImages) with tag 3.0-preview"
@@ -55,26 +60,25 @@ extends:
 
       - template: templates/trident-platform-cicd-template.yml
         parameters:
-          previousStage: HandleBaseImageConfig_cicd
-          # runBaremetalTests: false
+          baseImageArtifactStage: HandleBaseImageConfig_cicd
 
-      - stage: ProcessJunit_Stage
-        displayName: Process junit files
-        dependsOn:
-          - FunctionalTesting
-          - DeploymentTesting_host
-          - DeploymentTesting_container
+      # - stage: ProcessJunit_Stage
+      #   displayName: Process junit files
+      #   dependsOn:
+      #     - FunctionalTesting
+      #     - DeploymentTesting_host
+      #     - DeploymentTesting_container
 
-        jobs:
-          - job: ProcessJunit_Job
-            displayName: Process junit files
-            pool:
-              type: linux
-            variables:
-              ob_outputDirectory: "$(Build.SourcesDirectory)/out"
-            steps:
-              - script: |
-                  set -eux
-                  echo "Collect junit and do stuff"
-                displayName: Process junit files
+      #   jobs:
+      #     - job: ProcessJunit_Job
+      #       displayName: Process junit files
+      #       pool:
+      #         type: linux
+      #       variables:
+      #         ob_outputDirectory: "$(Build.SourcesDirectory)/out"
+      #       steps:
+      #         - script: |
+      #             set -eux
+      #             echo "Collect and process junit files"
+      #           displayName: Process junit files
 
