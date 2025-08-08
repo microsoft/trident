@@ -90,8 +90,6 @@ stages:
       - template: stages/validate_makefile/dev-build.yml
         parameters:
           osModifierBranch: ${{ parameters.osModifierBranch }}
-          dependsOnStage: ${{ parameters.baseImageArtifactStage }}
-
 
   # Build FT base Image, only in CI
   - ${{ if eq(parameters.stageType, 'ci') }}:
