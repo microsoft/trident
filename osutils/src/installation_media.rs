@@ -49,7 +49,7 @@ pub fn handle_installation_media() -> Result<(), Error> {
     match detect_boot_type() {
         Ok(BootType::RamDisk) => {
             if let Err(e) = eject_media() {
-                warn!("Failed to eject installation media: {e:?}");
+                warn!("Failed to eject installation media: {e:?}. Please remove the installation media when the system reboots.");
             }
         }
         Ok(BootType::LiveCdrom) => {
@@ -59,7 +59,7 @@ pub fn handle_installation_media() -> Result<(), Error> {
             debug!("No installation media ejection needed");
         }
         Err(e) => {
-            warn!("Unable to detect boot type: {e:?} - skipping installation media ejection");
+            return Err(e).context("Unable to detect boot type for installation media ejection");
         }
     }
 

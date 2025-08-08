@@ -120,8 +120,7 @@ fn clean_install_safety_check(
             warn!("Trident is running from an OS installed on persistent storage");
         }
         Err(e) => {
-            return Err(TridentError::new(InitializationError::ReadCmdline))
-                .message(format!("Unable to detect boot type: {e:?}"));
+            return Err(e).structured(InitializationError::ReadCmdline);
         }
     }
 
@@ -376,7 +375,7 @@ pub(crate) fn finalize_clean_install(
             .get_flag(DISABLE_MEDIA_EJECTION)
         {
             if let Err(e) = installation_media::handle_installation_media() {
-                warn!("Media ejection failed: {e:?}");
+                return Err(e).structured(InitializationError::ReadCmdline);
             }
         } else {
             debug!(
