@@ -68,6 +68,9 @@ extends:
       #     - FunctionalTesting
       #     - DeploymentTesting_host
       #     - DeploymentTesting_container
+      #     - BaremetalDeploymentTesting_host
+      #     - BaremetalDeploymentTesting_container
+      #     - ServicingTesting
 
       #   jobs:
       #     - job: ProcessJunit_Job
