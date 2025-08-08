@@ -40,7 +40,6 @@ require {
         type cloud_init_exec_t;
         type cloud_init_state_t;
         type cloud_init_t;
-        type console_device_t;
         type container_conf_home_t;
         type container_unit_t;
         type container_var_lib_t;
@@ -189,7 +188,6 @@ require {
         type tmp_t;
         type tmpfs_t;
         type trident_t;
-        type tty_device_t;
         type udev_exec_t;
         type udev_t;
         type udevadm_t;
@@ -302,7 +300,6 @@ allow trident_t cloud_init_exec_t:file getattr;
 allow trident_t cloud_init_state_t:dir { list_dir_perms relabelto };
 allow trident_t cloud_init_state_t:lnk_file read_lnk_file_perms;
 allow trident_t cloud_init_state_t:file getattr;
-allow trident_t console_device_t:chr_file getattr;
 allow trident_t container_conf_home_t:dir search; # Allow access to ~/.docker directory
 allow trident_t container_conf_home_t:file { open read }; # Allow access to ~/.docker/config.json
 allow trident_t container_unit_t:file getattr;
@@ -499,7 +496,6 @@ allow trident_t tmp_t:file { append create getattr ioctl open read relabelfrom r
 allow trident_t tmp_t:lnk_file { create getattr read rename unlink };
 allow trident_t tmpfs_t:file { append create execute getattr ioctl link lock map mounton open read relabelto rename setattr unlink write };
 allow trident_t tmpfs_t:filesystem { getattr mount unmount };
-allow trident_t tty_device_t:chr_file getattr;
 allow trident_t udev_exec_t:file { execute execute_no_trans getattr map open read relabelto setattr unlink write };
 allow trident_t udev_runtime_t:dir { read watch };
 allow trident_t unlabeled_t:chr_file { create getattr link rename unlink };
