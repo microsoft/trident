@@ -1,17 +1,4 @@
 parameters:
-  - name: baseimgBuildType
-    displayName: Base Image build type
-    type: string
-    default: "release"
-    # values:
-    #   - dev
-    #   - preview
-    #   - release
-
-  - name: baseImagePipelineBuildId
-    type: string
-    default: "latestFromBranch"
-
   - name: previewContainerPipeline
     type: string
     default: "[AMD64-6-OneBranch]-Prod-BuildImages"
@@ -43,8 +30,9 @@ steps:
 
   - template: ../common_tasks/preview-container.yml
     parameters:
-      dockerfilePath: $(Build.SourcesDirectory)/Dockerfile.runtime
+      dockerfilePath: $(Build.SourcesDirectory)/Dockerfile.full
       dockerBuildContext: $(Build.SourcesDirectory)
+      previewContainerPipeline: ${{ parameters.previewContainerPipeline }}
 
   - script: |
       set -eux
