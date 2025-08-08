@@ -193,8 +193,7 @@ pub enum HostConfigurationDynamicValidationError {
     InvalidEncryptionPcrsForGrubImage { pcrs: String },
 
     #[error(
-        "Since update image is a UKI image, list of PCRs in encryption config contains invalid PCRs: '{pcrs}'. \
-        Only PCRs 4 and 11 are currently valid for UKI images"
+        "Since update image is a UKI image, list of PCRs in encryption config contains invalid PCRs: '{pcrs}'"
     )]
     InvalidEncryptionPcrsForUkiImage { pcrs: String },
 
