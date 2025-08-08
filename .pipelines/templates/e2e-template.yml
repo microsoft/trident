@@ -82,8 +82,6 @@ stages:
 
   # Build tools (Go stuff)
   - template: stages/building_tools/building-tools.yml
-    parameters:
-      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
   # Makefile validation, only for CI
   - ${{ if eq(parameters.stageType, 'ci') }}:

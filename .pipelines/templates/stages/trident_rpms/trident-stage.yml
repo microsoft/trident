@@ -47,4 +47,3 @@ stages:
           artifactName: ${{ parameters.tridentArtifactName }}
           stageType: ${{ parameters.stageType }}
           packageName: rpms
-          dependsOnStage: ${{ parameters.dependsOnStage }}
