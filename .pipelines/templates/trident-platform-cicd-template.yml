@@ -4,7 +4,7 @@
 # preview build.
 
 parameters:
-  - name: runBaremetalTests
+  - name: baremetalTestsEnabled
     type: boolean
     default: false
 
@@ -17,5 +17,5 @@ stages:
         stageType: pre
         blockPublishing: true
         forceTridentRebuild: true
-        runBaremetalTests: ${{ parameters.runBaremetalTests }}
+        baremetalTestsEnabled: ${{ parameters.baremetalTestsEnabled }}
         baseImageArtifactStage: ${{ parameters.baseImageArtifactStage }}

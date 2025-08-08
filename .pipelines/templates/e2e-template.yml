@@ -79,7 +79,7 @@ parameters:
     type: string
     default: "submodule"
 
-  - name: runBaremetalTests
+  - name: baremetalTestsEnabled
     type: boolean
     default: true
 
@@ -248,7 +248,7 @@ stages:
           buildPurpose: "daily"
           runtimeEnv: "host"
 
-      - ${{ if parameters.runBaremetalTests }}:
+      - ${{ if parameters.baremetalTestsEnabled }}:
         # BM Testing (host, daily)
         - template: stages/testing_baremetal/baremetal-testing.yml
           parameters:
@@ -287,7 +287,7 @@ stages:
           buildPurpose: "weekly"
           runtimeEnv: "container"
 
-      - ${{ if parameters.runBaremetalTests }}:
+      - ${{ if parameters.baremetalTestsEnabled }}:
         # BM Testing (host, weekly)
         - template: stages/testing_baremetal/baremetal-testing.yml
           parameters:
