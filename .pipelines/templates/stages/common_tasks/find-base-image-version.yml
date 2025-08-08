@@ -3,7 +3,6 @@
   - bash: |
       echo "BASEIMG_BUILD_TYPE: $(BASEIMG_BUILD_TYPE)"
       echo "BASE_IMAGE_PIPELINE_BUILD_ID: $(BASE_IMAGE_PIPELINE_BUILD_ID)"
-      printenv
     displayName: Show variables before
   
   # baseimgBuildType == dev
