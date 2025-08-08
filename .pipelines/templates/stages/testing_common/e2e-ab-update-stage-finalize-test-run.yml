@@ -138,11 +138,8 @@ steps:
           --version $(version) \
           --finalize-ab-update
 
-      current_version=$(echo $(version))
-      new_version=$((current_version + 1))
       # Un-set the 'x' flag to avoid errors.
       set +x
-      echo "##vso[task.setvariable variable=version]$new_version"
       echo "##vso[task.setvariable variable=abActiveVolume]volume-b"
     timeoutInMinutes: 15
     workingDirectory: $(Build.SourcesDirectory)
