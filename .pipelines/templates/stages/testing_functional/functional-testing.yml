@@ -32,10 +32,6 @@ stages:
     ${{ if eq(parameters.downloadPrebuiltImage, false) }}:
       dependsOn:
         - TridentTestImg_trident_functest
-        - ${{ if ne(parameters.dependsOnStage, '') }}:
-          - ${{ parameters.dependsOnStage }}
-    ${{ elseif ne(parameters.dependsOnStage, '') }}:
-      dependsOn: ${{ parameters.dependsOnStage }}
 
     jobs:
       - job: FunctionalTests
