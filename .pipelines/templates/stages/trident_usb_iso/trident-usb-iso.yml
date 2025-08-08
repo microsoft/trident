@@ -1,18 +1,4 @@
 parameters:
-  - name: baseimgBuildType
-    displayName: Base Image build type
-    type: string
-    values:
-      - dev
-      - preview
-      - release
-    default: "release"
-
-  - name: baseImagePipelineBuildId
-    displayName: "Build Id of the pipeline run, default will select latest successful run from pipeline 2116 ([AMD64-6-OneBranch]-Prod-BuildImages) with tag 3.0-preview"
-    type: string
-    default: "latestFromBranch"
-
   - name: baseimgAzlVersion
     displayName: Base Image AZL version
     type: string
