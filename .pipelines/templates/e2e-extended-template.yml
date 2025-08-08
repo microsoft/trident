@@ -77,7 +77,6 @@ stages:
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
       baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
       baseImageArm64PipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
-      previousStage: ${{ parameters.previousStage }}
 
   - template: e2e-template.yml
     parameters:
