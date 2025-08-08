@@ -25,7 +25,7 @@ parameters:
     displayName: Path in which the Dockerfile will be run, the base for the container image will be saved there.
 
 steps:
-  - template: ../common_tasks/read-base-image-config-artifact.yml
+  - template: ../base_image_config/read-base-image-config-artifact.yml
   - bash: |
       set -eux
 

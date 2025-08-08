@@ -68,9 +68,8 @@ parameters:
     default: false
 
 stages:
-  - template: stages/common_tasks/create-base-image-config-artifact.yml
+  - template: stages/base_image_config/create-base-image-config-artifact.yml
     parameters:
-      stageSuffix: scale
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
       baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
       baseImageArm64PipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
@@ -78,7 +77,7 @@ stages:
   # Build tools (Go stuff)
   - template: stages/building_tools/building-tools.yml
     parameters:
-      dependsOnStage: HandleBaseImageConfig_scale
+      dependsOnStage: CreateBaseImageConfig
 
   # Trident Build/Download
   - template: stages/trident_rpms/trident-stage.yml
@@ -87,7 +86,7 @@ stages:
       tridentArtifactName: trident-binaries
       codeCoverage: false
       forceTridentRebuild: ${{ or(eq(parameters.forceTridentRebuild, true), eq(parameters.baseimgBuildType, 'preview')) }}
-      dependsOnStage: HandleBaseImageConfig_scale
+      dependsOnStage: CreateBaseImageConfig
 
   # Test Servicing on VMs
   - template: stages/testing_servicing/vm-testing.yml

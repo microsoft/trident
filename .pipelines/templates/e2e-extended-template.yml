@@ -71,9 +71,8 @@ parameters:
     default: "submodule"
     
 stages:
-  - template: stages/common_tasks/create-base-image-config-artifact.yml
+  - template: stages/base_image_config/create-base-image-config-artifact.yml
     parameters:
-      stageSuffix: e2e
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
       baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
       baseImageArm64PipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
@@ -88,4 +87,4 @@ stages:
       micVersion: ${{ parameters.micVersion }}
       numberOfUpdateIterations: ${{ parameters.numberOfUpdateIterations }}
       osModifierBranch: ${{ parameters.osModifierBranch }}
-      baseImageArtifactStage: HandleBaseImageConfig_e2e
+      baseImageArtifactStage: CreateBaseImageConfig

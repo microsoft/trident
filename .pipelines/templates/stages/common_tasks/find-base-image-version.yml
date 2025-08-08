@@ -1,5 +1,5 @@
   steps:
-  - template: read-base-image-config-artifact.yml
+  - template: ../base_image_config/read-base-image-config-artifact.yml
   - bash: |
       echo "BASEIMG_BUILD_TYPE: $(BASEIMG_BUILD_TYPE)"
       echo "BASE_IMAGE_PIPELINE_BUILD_ID: $(BASE_IMAGE_PIPELINE_BUILD_ID)"

@@ -5,7 +5,7 @@
 # contains information about the base image being used.  This artifact
 # should be created by this template:
 #
-#   .pipelines/templates/stages/common_tasks/create-base-image-config-artifact.yml
+#   .pipelines/templates/stages/base_image_config/create-base-image-config-artifact.yml
 #
 # The stage that creates the artifact should be passed into e2e-template
 # as baseImageArtifactStage.  This will ensure that e2e-template waits for

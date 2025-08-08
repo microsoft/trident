@@ -1,7 +1,4 @@
 parameters:
-  - name: stageSuffix
-    type: string
-    
   - name: baseimgBuildType
     type: string
     values:
@@ -23,24 +20,24 @@ parameters:
     default: ''
     
 stages:
-  - stage: HandleBaseImageConfig_${{ parameters.stageSuffix }}
-    displayName: "Create BaseImage config artifact (${{ parameters.stageSuffix }})"
+  - stage: CreateBaseImageConfig
+    displayName: "Create BaseImage config artifact"
     ${{ if ne(parameters.previousStage, '') }}:
       dependsOn: ${{ parameters.previousStage }}
     jobs:
-      - job: HandleBaseImageConfigJob_${{ parameters.stageSuffix }}
-        displayName: "Create BaseImage config artifact (${{ parameters.stageSuffix }})"
+      - job: CreateBaseImageConfigJob
+        displayName: "Create BaseImage config artifact"
         pool:
           type: linux
         variables:
           - name: ob_outputDirectory
-            value: "$(Build.SourcesDirectory)/out"
+            value: "$(Build.SourcesDirectory)/base-image-config"
           - name: ob_artifactBaseName
-            value: "HandleBaseImageConfig_${{ parameters.stageSuffix }}"
+            value: "base-image-config"
         steps:
           - bash: |
-              mkdir -p /tmp/config
-              cat << EOF > /tmp/config/baseimage.json
+              mkdir -p $(ob_outputDirectory)
+              cat << EOF > $(ob_outputDirectory)/baseimage.json
               {
                 "baseimgBuildType": "${{ parameters.baseimgBuildType }}",
                 "baseImagePipelineBuildId": "${{ parameters.baseImagePipelineBuildId }}",
@@ -48,8 +45,3 @@ stages:
               }
               EOF
             displayName: "Create Base Image Config artifact"
-          - task: PublishBuildArtifacts@1
-            displayName: "Publish Base Image Config artifact"
-            inputs:
-              pathToPublish: /tmp/config
-              artifactName: base-image-config

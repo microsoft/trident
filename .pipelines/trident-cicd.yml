@@ -51,16 +51,15 @@ extends:
   template: templates/MockOB.yml
   parameters:
     stages:
-      - template: templates/stages/common_tasks/create-base-image-config-artifact.yml
+      - template: templates/stages/base_image_config/create-base-image-config-artifact.yml
         parameters:
-          stageSuffix: cicd
           baseimgBuildType: ${{ parameters.buildType }}
           baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
           baseImageArm64PipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
 
       - template: templates/trident-platform-cicd-template.yml
         parameters:
-          baseImageArtifactStage: HandleBaseImageConfig_cicd
+          baseImageArtifactStage: CreateBaseImageConfig
 
       # - stage: ProcessJunit_Stage
       #   displayName: Process junit files
