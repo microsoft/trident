@@ -66,6 +66,10 @@ parameters:
     type: boolean
     default: true
 
+  - name: forceFunctionalTestImageRebuild
+    type: boolean
+    default: false
+
   - name: baseImageArtifactStage
     type: string
     
@@ -89,8 +93,8 @@ stages:
         parameters:
           osModifierBranch: ${{ parameters.osModifierBranch }}
 
-  # Build FT base Image, only in CI
-  - ${{ if eq(parameters.stageType, 'ci') }}:
+  # Build FT base Image, only for CI or if forceFunctionalTestImageRebuild is true
+  - ${{ if or(eq(parameters.stageType, 'ci'), eq(parameters.forceFunctionalTestImageRebuild, true)) }}:
       # Build Trident installer ISO (host)
       - template: stages/build_image/build-image.yml
         parameters:
@@ -220,6 +224,8 @@ stages:
       - template: stages/testing_functional/functional-testing.yml
         parameters:
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+          ${{ if parameters.forceFunctionalTestImageRebuild }}:
+            downloadPrebuiltImage: false
 
       # VM Testing (host, daily)
       - template: stages/testing_vm/netlaunch-testing.yml
@@ -253,6 +259,9 @@ stages:
       - template: stages/testing_functional/functional-testing.yml
         parameters:
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+          ${{ if parameters.forceFunctionalTestImageRebuild }}:
+            downloadPrebuiltImage: false
+
 
       # VM Testing (host, weekly)
       - template: stages/testing_vm/netlaunch-testing.yml
@@ -309,6 +318,8 @@ stages:
         parameters:
           rerunTests: false
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+          ${{ if parameters.forceFunctionalTestImageRebuild }}:
+            downloadPrebuiltImage: false
 
       # VM Testing (host, pullrequest)
       - template: stages/testing_vm/netlaunch-testing.yml

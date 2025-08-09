@@ -17,5 +17,6 @@ stages:
         stageType: pre
         blockPublishing: true
         forceTridentRebuild: true
+        forceFunctionalTestImageRebuild: true
         baremetalTestsEnabled: ${{ parameters.baremetalTestsEnabled }}
         baseImageArtifactStage: ${{ parameters.baseImageArtifactStage }}
