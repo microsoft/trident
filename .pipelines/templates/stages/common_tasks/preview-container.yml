@@ -32,7 +32,7 @@ steps:
       RUN_ID=''
       if [[ "$RUN_VERSION" != "latestFromBranch" ]]; then
         RUN_VERSION=specific
-        RUN_ID=$(BASE_IMAGE_PIPELINE_BUILD_ID)
+        RUN_ID=$(pipelineId)
         RUN_BRANCH=''
         RUN_TAGS=''
       fi
