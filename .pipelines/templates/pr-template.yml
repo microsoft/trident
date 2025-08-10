@@ -1,7 +1,13 @@
 stages:
+  - template: stages/base_image_config/create-base-image-config-artifact.yml
+    parameters:
+      baseimgBuildType: release
+      baseImagePipelineBuildId: latestFromBranch
+      baseImageArm64PipelineBuildId: latestFromBranch
   - template: stages/trident_rpms/trident-stage.yml
     parameters:
       stageType: pr
       tridentArtifactName: trident-binaries
+      dependsOnStage: CreateBaseImageConfig
   - template: stages/validate_makefile/dev-build.yml
   - template: stages/building_tools/building-tools.yml
