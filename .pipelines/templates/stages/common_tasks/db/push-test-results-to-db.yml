@@ -1,0 +1,46 @@
+# .pipelines/templates/stages/common_tasks/db/push-test-results-to-db.yml
+parameters:
+  - name: marinertridentPipelinesSourceDirectory
+    type: string
+  - name: junitFilesDirectory
+    type: string
+  - name: isStaging
+    type: string           # pass "true"/"false" as string for simplicity
+  - name: buildNumber
+    type: string
+  - name: test_suite_name
+    type: string
+    default: ''
+  - name: architecture
+    type: string
+  - name: test_type_prefix
+    type: string
+    default: ''
+
+steps:
+  - task: Bash@3
+    displayName: 'Install Python dependencies for pushing results to DB'
+    inputs:
+      targetType: 'inline'
+      script: |
+        set -eux
+        sudo tdnf -y --rpmverbosity=debug install python3 python3-pip
+        python3 -m pip install --user -r ${{ parameters.marinertridentPipelinesSourceDirectory }}/scripts/tests/requirements.txt
+
+  - task: AzureCLI@2
+    displayName: "Push test results to DB"
+    condition: succeeded()
+    inputs:
+      azureSubscription: "bmp-azl-dashboard-service-connection"
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        set -eux
+        python3 ${{ parameters.marinertridentPipelinesSourceDirectory }}/scripts/tests/push-test-results-to-db.py \
+          --junits_dir "${{ parameters.junitFilesDirectory }}" \
+          --arch "${{ parameters.architecture }}" \
+          --build_number "${{ parameters.buildNumber }}" \
+          --run_pipeline-id "$(Build.BuildId)" \
+          --is_staging "${{ parameters.isStaging }}" \
+          --test_suite "${{ parameters.test_suite_name }}" \
+          --test_type_prefix "${{ parameters.test_type_prefix }}"

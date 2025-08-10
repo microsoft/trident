@@ -1,0 +1,51 @@
+# .pipelines/trident-pr-e2e-auto.yml
+trigger: none
+pr: none
+
+resources:
+  repositories:
+    - repository: argus-toolkit
+      type: git
+      name: argus-toolkit
+      ref: refs/heads/main
+    - repository: platform-tests
+      type: git
+      name: platform-tests
+      ref: refs/heads/main
+    - repository: test-images
+      type: git
+      name: test-images
+      ref: refs/heads/main
+    - repository: platform-pipelines
+      type: git
+      name: platform-pipelines
+      ref: refs/heads/main
+    - repository: platform-telemetry
+      type: git
+      name: platform-telemetry
+      ref: refs/heads/main
+
+extends:
+  template: templates/MockOB.yml
+  parameters:
+    stages:
+      - template: templates/trident-pr-e2e-auto-template.yml
+        parameters:
+          # base-image builds live in mariner-org/mariner
+          baseImageOrg: "mariner-org"
+          baseImageProject: "mariner"
+          amd64DefinitionId: 2116
+          arm64DefinitionId: 2117
+          baseImgTag: "3.0-preview"
+
+          # E2E controls (keeps existing trident-pr-e2e behavior)
+          buildType: preview            # preview | dev | release
+          includeAzure: false
+          runBaremetalTests: false
+          numberOfUpdateIterations: 3
+
+          # DB push controls
+          isStaging: true
+          testSuiteName: "trident-pr-e2e"
+          testTypePrefix: "pr"
+          architecture: "amd64"         # change if you want to label results as arm64
