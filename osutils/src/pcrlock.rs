@@ -1,6 +1,5 @@
 use std::{
     fs,
-    io::ErrorKind,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -13,13 +12,6 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256, Sha384, Sha512};
 use tempfile::NamedTempFile;
 
-use crate::{
-    bootloaders::{BOOT_EFI, GRUB_EFI},
-    container,
-    dependencies::Dependency,
-    exe::RunAndCheck,
-    path,
-};
 use sysdefs::tpm2::Pcr;
 use trident_api::{
     error::{ReportError, ServicingError, TridentError, TridentResultExt},
@@ -28,8 +20,10 @@ use trident_api::{
 
 use crate::{
     bootloaders::{BOOT_EFI, GRUB_EFI},
+    container,
     dependencies::Dependency,
     exe::RunAndCheck,
+    path,
 };
 
 /// Path to the pcrlock directory where .pcrlock files are located.
@@ -253,76 +247,11 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
 
     // Validate that all required PCR entries have a recognized component; otherwise,
     // a PCR cannot be included into the pcrlock policy
-    let mut unrecognized: Vec<_> = required_entries
+    let unrecognized: Vec<_> = required_entries
         .into_iter()
         .filter(|entry| entry.component.is_none())
         .collect();
 
-    // New: Try to remove files associated with 'File: ...' descriptions, and keep track of any entries that still remain
-    unrecognized.retain(|entry| {
-        if let Some(desc) = entry.description.as_ref() {
-            // If desc starts with "File: "
-            if let Some(efi_path) = desc.strip_prefix("File: ") {
-                // Clean up slashes and leading/trailing spaces
-                let efi_path = efi_path
-                    .trim_start_matches('\\')
-                    .replace('\\', "/")
-                    .trim()
-                    .to_owned();
-                // Compose from mountpoint
-                let esp_path = PathBuf::from("/boot/efi").join(&efi_path);
-
-                let full_file_path = match container::is_running_in_container() {
-                    Ok(true) => {
-                        match container::get_host_root_path() {
-                            Ok(host_root) => path::join_relative(host_root, esp_path),
-                            Err(e) => {
-                                warn!("Failed to get host root path: {:?}", e);
-                                return true; // Keep in list for reporting
-                            }
-                        }
-                    }
-                    Ok(false) => esp_path,
-                    Err(e) => {
-                        warn!("Failed to determine if running in container: {:?}", e);
-                        return true; // Keep in list for reporting
-                    }
-                };
-
-                debug!(
-                    "Attempting to remove unrecognized EFI boot file: {}",
-                    full_file_path.display()
-                );
-                // Try to remove
-                match fs::remove_file(&full_file_path) {
-                    Ok(_) => {
-                        debug!(
-                            "Removed unrecognized EFI boot file: {}",
-                            full_file_path.display()
-                        );
-                        return false; // Successfully removed, do not keep in error list
-                    }
-                    Err(e) if e.kind() == ErrorKind::NotFound => {
-                        debug!("EFI boot file already absent: {}", full_file_path.display());
-                        return false;
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Could not remove unrecognized EFI boot file ({}): {}",
-                            full_file_path.display(),
-                            e
-                        );
-                        // Keep in list for reporting
-                        return true;
-                    }
-                }
-            }
-        }
-        // Not a removable file, or no description
-        true
-    });
-
-    // If any entries remain after attempted cleanup, bail
     if unrecognized.is_empty() {
         return Ok(());
     }
