@@ -9,8 +9,8 @@ use crate::dependencies::Dependency;
 pub enum BootType {
     /// System is running from a RAM disk
     RamDisk,
-    /// System is running directly from CD-ROM/DVD
-    LiveCdrom,
+    /// System is running from live media
+    LiveMedia,
     /// System is running from persistent storage
     PersistentStorage,
 }
@@ -23,9 +23,9 @@ pub fn detect_boot_type() -> Result<BootType, Error> {
     if cmdline.contains("root=/dev/ram0") || !cmdline.contains("root=") {
         debug!("RAM disk boot detected");
         Ok(BootType::RamDisk)
-    } else if cmdline.contains("root=live:LABEL=CDROM") || cmdline.contains("root=live:") {
-        debug!("Live CD-ROM boot detected");
-        Ok(BootType::LiveCdrom)
+    } else if cmdline.contains("root=live:") {
+        debug!("Live media boot detected");
+        Ok(BootType::LiveMedia)
     } else {
         debug!("Persistent storage boot detected");
         Ok(BootType::PersistentStorage)
@@ -43,7 +43,7 @@ fn eject_media() -> Result<(), Error> {
 }
 
 /// Handles installation media cleanup for clean install based on the BootType before rebooting.
-/// Ejects for RAM disk, shows message for live CD, and does nothing for persistent storage.
+/// Ejects for RAM disk, shows message for live media, and does nothing for persistent storage.
 pub fn handle_installation_media() -> Result<(), Error> {
     info!("Attempting to eject installation media");
     match detect_boot_type() {
@@ -52,7 +52,7 @@ pub fn handle_installation_media() -> Result<(), Error> {
                 warn!("Failed to eject installation media. Please remove the installation media when the system reboots. Ejection error: {e:?}");
             }
         }
-        Ok(BootType::LiveCdrom) => {
+        Ok(BootType::LiveMedia) => {
             info!("Please remove the installation media when the system reboots");
         }
         Ok(BootType::PersistentStorage) => {
