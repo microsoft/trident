@@ -44,8 +44,6 @@ bareMetal:
     daily:
       - base
       - combined
-      - encrypted-partition
-      - encrypted-raid
       - encrypted-swap
       - misc
       - raid-mirrored
@@ -55,7 +53,6 @@ bareMetal:
       - root-verity
       - simple
       - usr-verity
-      - usr-verity-raid
     validation:
       - base
       - combined
