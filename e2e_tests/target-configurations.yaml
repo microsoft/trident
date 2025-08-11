@@ -46,11 +46,9 @@ bareMetal:
       - combined
       - encrypted-swap
       - misc
-      - raid-mirrored
-      - raid-resync-small
+      - raid-small
       - rerun
       - root-verity
-      - simple
     validation:
       - base
       - combined
