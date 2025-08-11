@@ -1,9 +1,11 @@
+use std::fs;
+
 use anyhow::{Context, Error};
 use log::{debug, info, warn};
-use std::fs;
 
 use crate::dependencies::Dependency;
 
+/// Enum representing the type of boot the system is running.
 pub enum BootType {
     /// System is running from a RAM disk
     RamDisk,
@@ -13,8 +15,7 @@ pub enum BootType {
     PersistentStorage,
 }
 
-// Detects how the system was booted by examining `/proc/cmdline` and
-/// returns the BootType.
+/// Detects how the system was booted by examining `/proc/cmdline` and returns the BootType.
 pub fn detect_boot_type() -> Result<BootType, Error> {
     let cmdline = fs::read_to_string("/proc/cmdline")
         .with_context(|| "Failed to read /proc/cmdline to detect boot type")?;
@@ -41,15 +42,14 @@ fn eject_media() -> Result<(), Error> {
         .context("Failed to execute eject command")
 }
 
-/// Handles installation media cleanup for clean install based on
-/// the BootType before rebooting. Ejects for RAM disk, shows
-/// message for live CD, and does nothing for persistent storage.
+/// Handles installation media cleanup for clean install based on the BootType before rebooting.
+/// Ejects for RAM disk, shows message for live CD, and does nothing for persistent storage.
 pub fn handle_installation_media() -> Result<(), Error> {
     info!("Attempting to eject installation media");
     match detect_boot_type() {
         Ok(BootType::RamDisk) => {
             if let Err(e) = eject_media() {
-                warn!("Failed to eject installation media: {e:?}. Please remove the installation media when the system reboots");
+                warn!("Failed to eject installation media. Please remove the installation media when the system reboots. Ejection error: {e:?}");
             }
         }
         Ok(BootType::LiveCdrom) => {
