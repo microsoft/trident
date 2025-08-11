@@ -117,7 +117,7 @@ fn clean_install_safety_check(
 ) -> Result<(), TridentError> {
     // Check if Trident is running from a live image
     match installation_media::detect_boot_type() {
-        Ok(BootType::RamDisk) | Ok(BootType::LiveCdrom) => {
+        Ok(BootType::RamDisk) | Ok(BootType::LiveMedia) => {
             debug!("Trident is running from a live image");
             return Ok(());
         }
