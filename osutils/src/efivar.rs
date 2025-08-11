@@ -223,6 +223,10 @@ mod functional_test {
     fn test_is_secure_boot_enabled() {
         let secure_boot_enabled = secure_boot_is_enabled();
 
+        // Print out the value of the SecureBoot EFI variable using read_efi_variable
+        let data = read_efi_variable(EFI_GLOBAL_VARIABLE_GUID, SECURE_BOOT).unwrap();
+        println!("SecureBoot EFI variable: {data:?}");
+
         // The function should return false b/c SecureBoot is disabled on FT VM
         assert!(!secure_boot_enabled);
     }
