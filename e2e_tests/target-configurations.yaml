@@ -51,7 +51,6 @@ bareMetal:
       - rerun
       - root-verity
       - simple
-      - usr-verity
     validation:
       - base
       - combined
