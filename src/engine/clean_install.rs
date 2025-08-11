@@ -8,7 +8,12 @@ use log::{debug, error, info, warn};
 #[cfg(feature = "grpc-dangerous")]
 use tokio::sync::mpsc;
 
-use osutils::{chroot, container, installation_media, mount, mountpoint, path::join_relative};
+use osutils::{
+    chroot, container,
+    installation_media::{self, BootType},
+    mount, mountpoint,
+    path::join_relative,
+};
 use trident_api::{
     config::{HostConfiguration, Operations},
     constants::{
@@ -112,11 +117,11 @@ fn clean_install_safety_check(
 ) -> Result<(), TridentError> {
     // Check if Trident is running from a live image
     match installation_media::detect_boot_type() {
-        Ok(installation_media::BootType::RamDisk) | Ok(installation_media::BootType::LiveCdrom) => {
+        Ok(BootType::RamDisk) | Ok(BootType::LiveCdrom) => {
             debug!("Trident is running from a live image");
             return Ok(());
         }
-        Ok(installation_media::BootType::PersistentStorage) => {
+        Ok(BootType::PersistentStorage) => {
             warn!("Trident is running from an OS installed on persistent storage");
         }
         Err(e) => {
