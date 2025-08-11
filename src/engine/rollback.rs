@@ -81,48 +81,55 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
                 .message("Failed to set default boot entry to current")?;
         }
 
-        // If this is a UKI image, then we need to re-generate pcrlock policy to include the PCRs
-        // selected by the user for the current boot only.
-        //
-        // TODO: Remove this internal override once BM tests are fixed. Related ADO task:
-        // https://dev.azure.com/mariner-org/polar/_workitems/edit/14269/.
-        let override_pcrlock_encryption = ctx
-            .spec
-            .internal_params
-            .get_flag(OVERRIDE_PCRLOCK_ENCRYPTION);
         if let Some(ref encryption) = ctx.spec.storage.encryption {
-            if ctx.is_uki()? && !override_pcrlock_encryption {
-                debug!("Regenerating pcrlock policy for current boot");
+            if ctx.is_uki()? {
+                // If this is a UKI image, then we need to re-generate pcrlock policy to include the PCRs
+                // selected by the user for the current boot only.
+                //
+                // TODO: Remove this internal override once BM tests are fixed. Related ADO task:
+                // https://dev.azure.com/mariner-org/polar/_workitems/edit/14269/.
+                let override_pcrlock_encryption = ctx
+                    .spec
+                    .internal_params
+                    .get_flag(OVERRIDE_PCRLOCK_ENCRYPTION);
+                if !override_pcrlock_encryption {
+                    debug!("Regenerating pcrlock policy for current boot");
 
-                let pcrs = if !encryption.pcrs.is_empty() {
-                    encryption
-                        .pcrs
-                        .iter()
-                        .fold(BitFlags::empty(), |acc, &pcr| acc | BitFlags::from(pcr))
+                    let pcrs = if !encryption.pcrs.is_empty() {
+                        encryption
+                            .pcrs
+                            .iter()
+                            .fold(BitFlags::empty(), |acc, &pcr| acc | BitFlags::from(pcr))
+                    } else {
+                        // TODO: Currently, we cannot seal to PCR 7 b/c not all measurements are
+                        // recognized by the .pcrlock file generation logic. Once that is resolved,
+                        // we want to have PCR 7 as the default. For now, we use PCRs 4 and 11. Related
+                        // ADO tasks:
+                        // https://dev.azure.com/mariner-org/polar/_workitems/edit/14523/ and
+                        // https://dev.azure.com/mariner-org/polar/_workitems/edit/14455/.
+                        //
+                        // Use default PCR 7 if none specified.
+                        //BitFlags::from(DEFAULT_PCR)
+                        BitFlags::from(Pcr::Pcr4) | BitFlags::from(Pcr::Pcr11)
+                    };
+
+                    // Get UKI and bootloader binaries for .pcrlock file generation
+                    let (uki_binaries, bootloader_binaries) =
+                        encryption::get_binary_paths_pcrlock(&ctx, pcrs, None)
+                            .structured(ServicingError::GetBinaryPathsForPcrlockEncryption)?;
+
+                    // Generate a pcrlock policy
+                    pcrlock::generate_pcrlock_policy(pcrs, uki_binaries, bootloader_binaries)?;
                 } else {
-                    // TODO: Currently, we cannot seal to PCR 7 b/c not all measurements are
-                    // recognized by the .pcrlock file generation logic. Once that is resolved,
-                    // we want to have PCR 7 as the default. For now, we use PCRs 4 and 11. Related
-                    // ADO tasks:
-                    // https://dev.azure.com/mariner-org/polar/_workitems/edit/14523/ and
-                    // https://dev.azure.com/mariner-org/polar/_workitems/edit/14455/.
-                    //
-                    // Use default PCR 7 if none specified.
-                    //BitFlags::from(DEFAULT_PCR)
-                    BitFlags::from(Pcr::Pcr4) | BitFlags::from(Pcr::Pcr11)
-                };
-
-                // Get UKI and bootloader binaries for .pcrlock file generation
-                let (uki_binaries, bootloader_binaries) =
-                    encryption::get_binary_paths_pcrlock(&ctx, pcrs, None)
-                        .structured(ServicingError::GetBinaryPathsForPcrlockEncryption)?;
-
-                // Generate a pcrlock policy
-                pcrlock::generate_pcrlock_policy(pcrs, uki_binaries, bootloader_binaries)?;
+                    debug!(
+                        "Runtime OS image is a UKI image, \
+                            but internal override '{OVERRIDE_PCRLOCK_ENCRYPTION}' is set to true, \
+                            so skipping re-generating pcrlock policy",
+                    );
+                }
             } else {
-                warn!(
-                    "Skipping pcrlock policy re-generation on boot validation \
-                    because '{OVERRIDE_PCRLOCK_ENCRYPTION}' is set"
+                debug!(
+                    "Runtime OS image is a grub image, so skipping re-generating pcrlock policy"
                 );
             }
         }

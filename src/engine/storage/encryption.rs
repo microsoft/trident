@@ -168,8 +168,16 @@ pub(super) fn create_encrypted_devices(
                 None
             }
         } else {
-            debug!("Runtime OS image is a grub image, so sealing against the default PCR 7");
-            Some(BitFlags::from(DEFAULT_PCR))
+            debug!(
+                "Runtime OS image is a grub image, so sealing against a pcrlock policy of default PCR 7"
+            );
+
+            // Remove any pre-existing policy
+            pcrlock::remove_policy().structured(ServicingError::RemovePcrlockPolicy)?;
+
+            // Generate a pcrlock policy of the default PCR 7
+            pcrlock::generate_pcrlock_policy(BitFlags::from(DEFAULT_PCR), vec![], vec![])?;
+            None
         };
 
         // Check if `REENCRYPT_ON_CLEAN_INSTALL` internal param is set to true; if so, re-encrypt
