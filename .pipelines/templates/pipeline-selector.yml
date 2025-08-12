@@ -55,5 +55,4 @@ stages:
       - template: e2e-arm64-template.yml
         parameters:
           stageType: ${{ parameters.targetStage }}
-          blockPublishing: ${{ parameters.blockPublishing }}
           baseImageArtifactStage: CreateBaseImageConfig
