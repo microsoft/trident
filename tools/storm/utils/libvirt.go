@@ -87,9 +87,9 @@ func (vm *LibvirtVm) SetFirmwareVars(boot_url string, secure_boot bool) error {
 
 	args := []string{"--inplace", nvram.NVRam, "--set-boot-uri", boot_url}
 	if secure_boot {
-		args = append(args, "--set-true", "SecureBootEnable")
+		args = append(args, "--set-true", "SecureBoot")
 	} else {
-		args = append(args, "--set-false", "SecureBootEnable")
+		args = append(args, "--set-false", "SecureBoot")
 	}
 
 	cmd := exec.Command("virt-fw-vars", args...)
