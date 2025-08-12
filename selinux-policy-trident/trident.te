@@ -866,7 +866,7 @@ allow lvm_t initrc_t:sem { associate read unix_read unix_write write };
 
 # These permissions are necessary for cryptsetup luksOpen to succeed.
 allow lvm_t init_t:key search; # Allows LVM to write to search the kernel keyring.
-allow lvm_t tpm_device_t:chr_file { open read write }; # Allows LVM to read from and write to the TPM device.
+allow lvm_t tpm_device_t:chr_file write; # Allows LVM to write to the TPM device.
 
 # This is necessary for veritysetup to be able to read a key file in /tmp.
 allow lvm_t tmp_t:file { getattr ioctl open read };
