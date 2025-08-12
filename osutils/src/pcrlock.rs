@@ -256,6 +256,12 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         return Ok(());
     }
 
+    // TODO: TEST IF THIS FILE ACTUALLY EXISTS
+    let found = find_dell_efi_file(Path::new("/"));
+    for file in found {
+        println!("Found: {}", file.display());
+    }
+
     let entries: Vec<String> = unrecognized
         .into_iter()
         .map(|entry| {
@@ -275,6 +281,38 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
             to recognized components:\n{}",
         entries.join("\n")
     );
+}
+
+/// Recursively search the entire filesystem for Dell System_Services EFI binary.
+fn find_dell_efi_file(root: &Path) -> Vec<PathBuf> {
+    let mut results = Vec::new();
+    let target_suffix = [
+        "Dell/System_Services/System_Services.efi",
+        "DELL/SYSTEM_SERVICES/SYSTEM_SERVICES.EFI",
+    ];
+
+    fn check_path(path: &Path, suffix_list: &[&str]) -> bool {
+        let path_str = path.to_string_lossy().replace('\\', "/").to_lowercase();
+        suffix_list
+            .iter()
+            .any(|pat| path_str.ends_with(&pat.to_lowercase()))
+    }
+
+    fn recurse(dir: &Path, suffix_list: &[&str], results: &mut Vec<PathBuf>) {
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.filter_map(|e| e.ok()) {
+                let path = entry.path();
+                if path.is_dir() {
+                    recurse(&path, suffix_list, results);
+                } else if check_path(&path, suffix_list) {
+                    results.push(path);
+                }
+            }
+        }
+    }
+
+    recurse(root, &target_suffix, &mut results);
+    results
 }
 
 /// Runs `systemd-pcrlock make-policy` command to predict the PCR state for future boots and then
