@@ -16,7 +16,7 @@ parameters:
 stages:
   - stage: Publishing
     dependsOn:
-      - GetTridentBinaries_rpms
+      - GetTridentBinaries_rpms_amd64
       - ${{ if eq(parameters.stageType, 'ci') }}:
         - TridentTestImg_azl_installer
       - ${{ else }}:

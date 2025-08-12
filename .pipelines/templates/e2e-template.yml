@@ -106,7 +106,7 @@ stages:
           clones: 1
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
-  # Build Trident container image (depends on GetTridentBinaries_rpms)
+  # Build Trident container image (depends on GetTridentBinaries_rpms_amd64)
   - template: stages/build_docker_image/trident-container.yml
 
   # Build Trident installer ISO (host)

@@ -25,7 +25,7 @@ parameters:
       - arm64
 
 stages:
-  - stage: GetTridentBinaries_rpms
+  - stage: GetTridentBinaries_rpms_${{ parameters.targetArchitecture }}
     displayName: Trident RPMs (Build)
     ${{ if ne(parameters.dependsOnStage, '') }}:
       dependsOn: ${{ parameters.dependsOnStage }}

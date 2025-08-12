@@ -22,7 +22,7 @@ stages:
 - stage: TridentTestImg_azl_installer
   displayName: Build azl-installer
   dependsOn:
-    - GetTridentBinaries_rpms
+    - GetTridentBinaries_rpms_amd64
     - BuildTridentContainerImage
 
   jobs:
