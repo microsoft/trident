@@ -1,8 +1,5 @@
 internalParams:
   uki: true
-  # TODO: Remove this internal parameter once UKI & encryption tests are fixed.
-  # https://dev.azure.com/mariner-org/polar/_workitems/edit/13344/.
-  overridePcrlockEncryption: true
 image:
   url: http://NETLAUNCH_HOST_ADDRESS/files/usrverity.cosi
   sha384: ignored
@@ -120,16 +117,14 @@ storage:
       - id: home-b
         deviceName: home-b
         deviceId: home-b-e
-    # TODO: Un-comment when pcrlock logic enabled for grub MOS + UKI ROS
-    # scenario; need to update API validation. Related ADO task:
-    # https://dev.azure.com/mariner-org/polar/_workitems/edit/14485.
-    # pcrs:
-    #   - boot-loader-code # 4
-    #   # TODO: Once UKI MOS is built and pcrlock policy can include PCR 7,
-    #   # un-comment. Related ADO task:
-    #   # https://dev.azure.com/mariner-org/polar/_workitems/edit/14286/.
-    #   #- secure-boot-policy # 7
-    #   - kernel-boot # 11
+    pcrs:
+      - boot-loader-code # 4
+      # TODO: Enable including PCR 7 in pcrlock policy when all the components
+      # related to SHIM and PCR 7 are recognized, for both SecureBoot enabled
+      # and disabled states. Related ADO task:
+      # https://dev.azure.com/mariner-org/polar/_workitems/edit/14523.
+      #- secure-boot-policy # 7
+      - kernel-boot # 11
   abUpdate:
     volumePairs:
       - id: boot
