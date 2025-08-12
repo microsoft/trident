@@ -1,10 +1,10 @@
 parameters:
   - name: targetArchitecture
     type: string
-    default: "AMD64"
+    default: "amd64"
     values:
-      - ARM64
-      - AMD64
+      - arm64
+      - amd64
 
   - name: dockerfilePath
     type: string
@@ -22,7 +22,7 @@ steps:
       set -eux
 
       pipelineId=$(BASE_IMAGE_PIPELINE_BUILD_ID)
-      if [[ "${{ parameters.targetArchitecture }}" == "ARM64" ]]; then
+      if [[ "${{ parameters.targetArchitecture }}" == "arm64" ]]; then
         pipelineId=$(BASE_IMAGE_ARM64_PIPELINE_BUILD_ID)
       fi
 
@@ -38,7 +38,7 @@ steps:
       fi
 
       PIPELINE_NAME="[AMD64-6-OneBranch]-Prod-BuildImages"
-      if [[ "${{ parameters.targetArchitecture }}" == "ARM64" ]]; then
+      if [[ "${{ parameters.targetArchitecture }}" == "arm64" ]]; then
         PIPELINE_NAME="[ARM64-6-OneBranch]-Prod-BuildImages"
       fi
 

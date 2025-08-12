@@ -17,11 +17,6 @@ parameters:
     values:
     - dev
     - preview
-  - name: targetArchitecture
-    type: string
-    values:
-      - amd64
-      - arm64
 
 trigger: none
 

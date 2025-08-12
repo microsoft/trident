@@ -46,6 +46,7 @@ stages:
           codeCoverage: ${{ parameters.codeCoverage }}
           osModifierBranch: ${{ parameters.osModifierBranch }}
           dependsOnStage: ${{ parameters.dependsOnStage }}
+          targetArchitecture: ${{ parameters.targetArchitecture }}
 
   - ${{ else }}:
       - template: ../download_staged/download-staged.yml

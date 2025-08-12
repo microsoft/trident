@@ -87,7 +87,7 @@ stages:
               osModifierBranch: ${{ parameters.osModifierBranch }}
           - template: release.yml
             parameters:
-              targetArchitecture: "AMD64"
+              targetArchitecture: "amd64"
           - ${{ if eq(parameters.publishToDevFeed, true) }}:
               - template: publish-dev.yml
 
@@ -116,4 +116,4 @@ stages:
               osModifierBranch: ${{ parameters.osModifierBranch }}
           - template: release.yml
             parameters:
-              targetArchitecture: "ARM64"
+              targetArchitecture: "arm64"
