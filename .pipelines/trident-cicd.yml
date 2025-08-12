@@ -17,6 +17,14 @@ parameters:
     values:
     - dev
     - preview
+  - name: targetArchitecture
+    displayName: "Pick architecture to test"
+    type: string
+    default: amd64
+    values:
+    - amd64
+    - arm64
+    - all
 
 trigger: none
 
@@ -54,18 +62,30 @@ extends:
       - template: templates/stages/base_image_config/create-base-image-config-artifact.yml
         parameters:
           baseimgBuildType: ${{ parameters.buildType }}
-          baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
-          baseImageArm64PipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
+          # Only add amd64 build id if targetArchitecture includes amd64
+          ${{ if eq(parameters.targetArchitecture, 'arm64') }}:
+            baseImagePipelineBuildId: will-be-ignored
+          ${{ else }}:
+            baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
+          # Only add arm64 build id if targetArchitecture includes arm64
+          ${{ if eq(parameters.targetArchitecture, 'amd64') }}:
+            baseImageArm64PipelineBuildId: will-be-ignored
+          ${{ else }}:
+            baseImageArm64PipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
 
-      - template: templates/trident-platform-cicd-template.yml
-        parameters:
-          baseImageArtifactStage: CreateBaseImageConfig
-          targetArchitecture: amd64
+      # Test amd64 if targetArchitecture is all or amd64 (i.e. !arm64)
+      - ${{ if ne(parameters.targetArchitecture, 'arm64') }}:
+        - template: templates/trident-platform-cicd-template.yml
+          parameters:
+            baseImageArtifactStage: CreateBaseImageConfig
+            targetArchitecture: amd64
 
-      - template: templates/trident-platform-cicd-template.yml
-        parameters:
-          baseImageArtifactStage: CreateBaseImageConfig
-          targetArchitecture: arm64
+      # Test amd64 if targetArchitecture is all or arm64 (i.e. !amd64)
+      - ${{ if ne(parameters.targetArchitecture, 'amd64') }}:
+        - template: templates/trident-platform-cicd-template.yml
+          parameters:
+            baseImageArtifactStage: CreateBaseImageConfig
+            targetArchitecture: arm64
 
       # - stage: ProcessJunit_Stage
       #   displayName: Process junit files
