@@ -220,7 +220,7 @@ mod functional_test {
     }
 
     #[functional_test(feature = "helpers")]
-    fn test_is_secure_boot_enabled() {
+    fn test_secure_boot_is_enabled() {
         let secure_boot_enabled = secure_boot_is_enabled();
 
         // Print out the value of the SecureBoot EFI variable using read_efi_variable
