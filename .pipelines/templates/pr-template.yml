@@ -9,5 +9,13 @@ stages:
       stageType: pr
       tridentArtifactName: trident-binaries
       dependsOnStage: CreateBaseImageConfig
+      targetArchitecture: amd64
+  - template: stages/trident_rpms/trident-stage.yml
+    parameters:
+      stageType: pr
+      tridentArtifactName: trident-binaries
+      codeCoverage: false
+      dependsOnStage: CreateBaseImageConfig
+      targetArchitecture: arm64
   - template: stages/validate_makefile/dev-build.yml
   - template: stages/building_tools/building-tools.yml
