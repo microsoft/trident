@@ -27,7 +27,7 @@ parameters:
     default: ''
 
 stages:
-  - stage: GetTridentBinaries_${{ replace(parameters.packageName, '-', '_') }}
+  - stage: GetTridentBinaries_${{ replace(parameters.packageName, '-', '_') }}_arm64
     displayName: Download staged ${{ parameters.packageName }} for ${{ parameters.stageType }}
     ${{ if ne(parameters.dependsOnStage, '') }}:
       dependsOn: ${{ parameters.dependsOnStage }}
