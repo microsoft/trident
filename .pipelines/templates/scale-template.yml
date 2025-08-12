@@ -85,6 +85,7 @@ stages:
       codeCoverage: false
       forceTridentRebuild: ${{ or(eq(parameters.forceTridentRebuild, true), eq(parameters.baseimgBuildType, 'preview')) }}
       dependsOnStage: CreateBaseImageConfig
+      targetArchitecture: amd64
 
   # Test Servicing on VMs
   - template: stages/testing_servicing/vm-testing.yml
