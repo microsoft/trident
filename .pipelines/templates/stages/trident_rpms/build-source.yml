@@ -32,8 +32,8 @@ stages:
 
     jobs:
     - ${{ if eq( parameters.targetArchitecture, 'amd64' ) }}:
-      - job: CheckTrident
-        displayName: Check
+      - job: CheckTrident_${{ parameters.targetArchitecture }}
+        displayName: Check ${{ parameters.targetArchitecture }}
         pool:
           type: linux
 
@@ -45,8 +45,8 @@ stages:
           - template: ../common_tasks/avoid-pypi-usage.yml
           - template: check.yml
 
-      - job: TestTrident
-        displayName: Unit Test
+      - job: TestTrident_${{ parameters.targetArchitecture }}
+        displayName: Unit Test ${{ parameters.targetArchitecture }}
         pool:
           type: linux
 
@@ -64,8 +64,8 @@ stages:
               codeCoverage: ${{ parameters.codeCoverage }}
               unitTestCoverageBaseline: 70 # Unit tests
 
-      - job: BuildTrident
-        displayName: Build Trident 3.0 RPMs
+      - job: BuildTrident_${{ parameters.targetArchitecture }}
+        displayName: Build Trident 3.0 ${{ parameters.targetArchitecture }} RPMs
         pool:
           type: linux
 
@@ -87,13 +87,13 @@ stages:
               osModifierBranch: ${{ parameters.osModifierBranch }}
           - template: release.yml
             parameters:
-              targetArchitecture: "amd64"
+              targetArchitecture: ${{ parameters.targetArchitecture }}
           - ${{ if eq(parameters.publishToDevFeed, true) }}:
               - template: publish-dev.yml
 
     - ${{ elseif eq( parameters.targetArchitecture, 'arm64' ) }}:
-      - job: BuildTridentARM64
-        displayName: Build Trident 3.0 RPMs for ARM64
+      - job: BuildTrident_${{ parameters.targetArchitecture }}
+        displayName: Build Trident 3.0 ${{ parameters.targetArchitecture }} RPMs
         pool:
           type: linux
           name: mariner-hci-ARM64-1es-pool-westcentralus
@@ -116,4 +116,4 @@ stages:
               osModifierBranch: ${{ parameters.osModifierBranch }}
           - template: release.yml
             parameters:
-              targetArchitecture: "arm64"
+              targetArchitecture: ${{ parameters.targetArchitecture }}
