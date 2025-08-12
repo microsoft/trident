@@ -33,7 +33,7 @@ stages:
       dependsOn: ${{ parameters.dependsOnStage }}
 
     jobs:
-      - job: DownloadTrident_arm64
+      - job: DownloadTrident_amd64
         displayName: Download Trident
         pool:
           type: linux
