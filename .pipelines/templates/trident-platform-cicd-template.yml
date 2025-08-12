@@ -27,8 +27,8 @@ stages:
         forceFunctionalTestImageRebuild: true
         baremetalTestsEnabled: ${{ parameters.baremetalTestsEnabled }}
         baseImageArtifactStage: ${{ parameters.baseImageArtifactStage }}
-  
-  - ${{ if eq( parameters.targetArchitecture, 'amd64') }}:
+
+  - ${{ if eq( parameters.targetArchitecture, 'arm64') }}:
     - template: e2e-arm64-template.yml
       parameters:
         stageType: pre
