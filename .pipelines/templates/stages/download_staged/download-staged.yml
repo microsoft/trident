@@ -27,13 +27,13 @@ parameters:
     default: ''
 
 stages:
-  - stage: GetTridentBinaries_${{ replace(parameters.packageName, '-', '_') }}_arm64
+  - stage: GetTridentBinaries_${{ replace(parameters.packageName, '-', '_') }}_amd64
     displayName: Download staged ${{ parameters.packageName }} for ${{ parameters.stageType }}
     ${{ if ne(parameters.dependsOnStage, '') }}:
       dependsOn: ${{ parameters.dependsOnStage }}
 
     jobs:
-      - job: DownloadTrident
+      - job: DownloadTrident_arm64
         displayName: Download Trident
         pool:
           type: linux
