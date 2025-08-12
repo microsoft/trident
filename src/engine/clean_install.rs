@@ -116,16 +116,13 @@ fn clean_install_safety_check(
     multiboot: bool,
 ) -> Result<(), TridentError> {
     // Check if Trident is running from a live image
-    match installation_media::detect_boot_type() {
-        Ok(BootType::RamDisk) | Ok(BootType::LiveMedia) => {
+    match installation_media::detect_boot_type()? {
+        BootType::RamDisk | BootType::LiveMedia => {
             debug!("Trident is running from a live image");
             return Ok(());
         }
-        Ok(BootType::PersistentStorage) => {
+        BootType::PersistentStorage => {
             warn!("Trident is running from an OS installed on persistent storage");
-        }
-        Err(e) => {
-            return Err(e).structured(InitializationError::ReadCmdline);
         }
     }
 
@@ -379,9 +376,7 @@ pub(crate) fn finalize_clean_install(
             .internal_params
             .get_flag(DISABLE_MEDIA_EJECTION)
         {
-            if let Err(e) = installation_media::handle_installation_media() {
-                return Err(e).structured(InitializationError::ReadCmdline);
-            }
+            installation_media::handle_installation_media()?;
         } else {
             debug!(
                 "Skipping media ejection as requested by internal parameter '{}'",
