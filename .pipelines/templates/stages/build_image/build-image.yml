@@ -42,7 +42,7 @@ stages:
     displayName: Build ${{ parameters.imageName }}
     ${{ if and(eq(parameters.runtimeEnv, 'host'), parameters.dependsOnTrident) }}:
       dependsOn:
-        - GetTridentBinaries_rpms_amd64_amd64
+        - GetTridentBinaries_rpms_amd64
     ${{ elseif ne(parameters.dependsOnStage, '') }}:
       dependsOn:
         - ${{ parameters.dependsOnStage }}
