@@ -47,7 +47,6 @@ fn eject_media() -> Result<(), Error> {
 /// Handles installation media cleanup for clean install based on the BootType before rebooting.
 /// Ejects for RAM disk, shows message for live media, and does nothing for persistent storage.
 pub fn handle_installation_media() -> Result<(), TridentError> {
-    info!("Attempting to eject installation media");
     match detect_boot_type()? {
         BootType::RamDisk => {
             if let Err(e) = eject_media() {
