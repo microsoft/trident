@@ -18,6 +18,12 @@ parameters:
     type: string
     default: ''
 
+  - name: targetArchitecture
+    type: string
+    values:
+      - amd64
+      - arm64
+
 stages:
   - stage: GetTridentBinaries_rpms
     displayName: Trident RPMs (Build)
@@ -25,6 +31,7 @@ stages:
       dependsOn: ${{ parameters.dependsOnStage }}
 
     jobs:
+    - ${{ if eq( parameters.targetArchitecture, 'amd64' ) }}:
       - job: CheckTrident
         displayName: Check
         pool:
@@ -84,6 +91,7 @@ stages:
           - ${{ if eq(parameters.publishToDevFeed, true) }}:
               - template: publish-dev.yml
 
+    - ${{ elseif eq( parameters.targetArchitecture, 'arm64' ) }}:
       - job: BuildTridentARM64
         displayName: Build Trident 3.0 RPMs for ARM64
         pool:

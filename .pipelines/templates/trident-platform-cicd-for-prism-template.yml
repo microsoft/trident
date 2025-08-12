@@ -24,7 +24,8 @@ parameters:
     default: "main"
 
 stages:
-    - template: e2e-extended-template.yml
+    - template: stages/base_image_config/create-base-image-config-artifact.yml
+    - template: e2e-template.yml
       parameters:
         stageType: ci
         blockPublishing: true
@@ -32,3 +33,13 @@ stages:
         micBuildType: ${{ parameters.micBuildType }}
         micVersion: ${{ parameters.micVersion }}
         osModifierBranch: ${{ parameters.osModifierBranch }}
+        baseImageArtifactStage: CreateBaseImageConfig
+    - template: e2e-arm64-template.yml
+      parameters:
+        stageType: ci
+        blockPublishing: true
+        forceTridentRebuild: true
+        micBuildType: ${{ parameters.micBuildType }}
+        micVersion: ${{ parameters.micVersion }}
+        osModifierBranch: ${{ parameters.osModifierBranch }}
+        baseImageArtifactStage: CreateBaseImageConfig

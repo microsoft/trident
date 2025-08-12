@@ -10,8 +10,15 @@ parameters:
 
   - name: baseImageArtifactStage
     type: string
+  
+  - name: targetArchitecture
+    type: string
+    values:
+      - amd64
+      - arm64
 
 stages:
+  - ${{ if eq( parameters.targetArchitecture, 'amd64') }}:
     - template: e2e-template.yml
       parameters:
         stageType: pre
@@ -19,4 +26,12 @@ stages:
         forceTridentRebuild: true
         forceFunctionalTestImageRebuild: true
         baremetalTestsEnabled: ${{ parameters.baremetalTestsEnabled }}
+        baseImageArtifactStage: ${{ parameters.baseImageArtifactStage }}
+  
+  - ${{ if eq( parameters.targetArchitecture, 'amd64') }}:
+    - template: e2e-arm64-template.yml
+      parameters:
+        stageType: pre
+        blockPublishing: true
+        forceTridentRebuild: true
         baseImageArtifactStage: ${{ parameters.baseImageArtifactStage }}

@@ -1,7 +1,16 @@
-# e2e-extended-template will create the base image artifact and 
-# call e2e-template to run all trident tests for each of our scenarios.
+# e2e-ARM64-template will run ARM64 trident tests for each of our scenarios.
 # This includes unit tests, integration tests, and end-to-end tests.
-
+#
+# Prior to invoking this template, an artifact must be created that
+# contains information about the base image being used.  This artifact
+# should be created by this template:
+#
+#   .pipelines/templates/stages/base_image_config/create-base-image-config-artifact.yml
+#
+# The stage that creates the artifact should be passed into e2e-arm64-template
+# as baseImageArtifactStage.  This will ensure that e2e-template waits for
+# the base image artifact to be created.
+#
 parameters:
   - name: "stageType"
     displayName: "Pipeline configuration type"
@@ -14,23 +23,6 @@ parameters:
       - pre
       - rel
       - full-validation
-
-  - name: baseimgBuildType
-    displayName: Base Image build type
-    type: string
-    values:
-      - dev
-      - preview
-      - release
-    default: "release"
-
-  - name: baseImagePipelineBuildId
-    type: string
-    default: "latestFromBranch"
-
-  - name: baseImageArm64PipelineBuildId
-    type: string
-    default: "latestFromBranch"
 
   - name: blockPublishing
     displayName: "Block publishing to artifact feed"
@@ -69,22 +61,26 @@ parameters:
   - name: osModifierBranch
     type: string
     default: "submodule"
+
+  - name: baremetalTestsEnabled
+    type: boolean
+    default: true
+
+  - name: forceFunctionalTestImageRebuild
+    type: boolean
+    default: false
+
+  - name: baseImageArtifactStage
+    type: string
     
 stages:
-  - template: stages/base_image_config/create-base-image-config-artifact.yml
-    parameters:
-      baseimgBuildType: ${{ parameters.baseimgBuildType }}
-      baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
-      baseImageArm64PipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
-
-  - template: e2e-template.yml
+  # Trident Build/Download
+  - template: stages/trident_rpms/trident-stage.yml
     parameters:
       stageType: ${{ parameters.stageType }}
-      blockPublishing: ${{ parameters.blockPublishing }}
+      tridentArtifactName: trident-binaries
+      codeCoverage: false
       forceTridentRebuild: ${{ parameters.forceTridentRebuild }}
-      includeAzure: ${{ parameters.includeAzure }}
-      micBuildType: ${{ parameters.micBuildType }}
-      micVersion: ${{ parameters.micVersion }}
-      numberOfUpdateIterations: ${{ parameters.numberOfUpdateIterations }}
       osModifierBranch: ${{ parameters.osModifierBranch }}
-      baseImageArtifactStage: CreateBaseImageConfig
+      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+      targetArchitecture: arm64

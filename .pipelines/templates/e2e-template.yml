@@ -1,4 +1,4 @@
-# e2e-template will run all trident tests for each of our scenarios.
+# e2e-template will run AMD64 trident tests for each of our scenarios.
 # This includes unit tests, integration tests, and end-to-end tests.
 #
 # Prior to invoking this template, an artifact must be created that
@@ -83,6 +83,7 @@ stages:
       forceTridentRebuild: ${{ parameters.forceTridentRebuild }}
       osModifierBranch: ${{ parameters.osModifierBranch }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+      targetArchitecture: amd64
 
   # Build tools (Go stuff)
   - template: stages/building_tools/building-tools.yml

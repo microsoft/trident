@@ -30,6 +30,12 @@ parameters:
     type: string
     default: ''
 
+  - name: targetArchitecture
+    type: string
+    values:
+      - amd64
+      - arm64 
+
 stages:
   - ${{ if or(parameters.forceTridentRebuild, eq(parameters.stageType, 'pr'), eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e-azure')) }}:
       - template: build-source.yml

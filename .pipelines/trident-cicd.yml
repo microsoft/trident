@@ -17,6 +17,11 @@ parameters:
     values:
     - dev
     - preview
+  - name: targetArchitecture
+    type: string
+    values:
+      - amd64
+      - arm64
 
 trigger: none
 
@@ -60,6 +65,12 @@ extends:
       - template: templates/trident-platform-cicd-template.yml
         parameters:
           baseImageArtifactStage: CreateBaseImageConfig
+          targetArchitecture: amd64
+
+      - template: templates/trident-platform-cicd-template.yml
+        parameters:
+          baseImageArtifactStage: CreateBaseImageConfig
+          targetArchitecture: arm64
 
       # - stage: ProcessJunit_Stage
       #   displayName: Process junit files
