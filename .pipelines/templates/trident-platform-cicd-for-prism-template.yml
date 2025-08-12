@@ -37,9 +37,6 @@ stages:
     - template: e2e-arm64-template.yml
       parameters:
         stageType: ci
-        blockPublishing: true
         forceTridentRebuild: true
-        micBuildType: ${{ parameters.micBuildType }}
-        micVersion: ${{ parameters.micVersion }}
         osModifierBranch: ${{ parameters.osModifierBranch }}
         baseImageArtifactStage: CreateBaseImageConfig
