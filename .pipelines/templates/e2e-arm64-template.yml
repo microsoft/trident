@@ -1,4 +1,4 @@
-# e2e-ARM64-template will run ARM64 trident tests for each of our scenarios.
+# e2e-arm64-template will run arm64 trident tests for each of our scenarios.
 # This includes unit tests, integration tests, and end-to-end tests.
 #
 # Prior to invoking this template, an artifact must be created that
@@ -24,51 +24,14 @@ parameters:
       - rel
       - full-validation
 
-  - name: blockPublishing
-    displayName: "Block publishing to artifact feed"
-    type: boolean
-    default: false
-
   - name: forceTridentRebuild
     displayName: "Force trident rebuild rather than downloading previously built."
     type: boolean
     default: false
 
-  - name: includeAzure
-    displayName: "Include Azure testing"
-    type: boolean
-    default: false
-
-  - name: micBuildType
-    displayName: MIC Build Type
-    type: string
-    values:
-      - dev
-      - preview
-      - release
-    default: release
-
-  - name: micVersion
-    displayName: MIC Version
-    type: string
-    default: "*.*.*"
-
-  - name: numberOfUpdateIterations
-    displayName: Number of times each worker invokes A/B Update
-    type: number
-    default: 3
-
   - name: osModifierBranch
     type: string
     default: "submodule"
-
-  - name: baremetalTestsEnabled
-    type: boolean
-    default: true
-
-  - name: forceFunctionalTestImageRebuild
-    type: boolean
-    default: false
 
   - name: baseImageArtifactStage
     type: string
