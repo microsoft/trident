@@ -1,10 +1,10 @@
 parameters:
   - name: targetArchitecture
     type: string
-    default: "AMD64"
+    default: "amd64"
     values:
-      - ARM64
-      - AMD64
+      - arm64
+      - amd64
 
 
 steps:
