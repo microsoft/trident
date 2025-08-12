@@ -37,6 +37,7 @@ parameters:
       - arm64 
 
 stages:
+- ${{ if eq(parameters.targetArchitecture, 'amd64') }}:
   - ${{ if or(parameters.forceTridentRebuild, eq(parameters.stageType, 'pr'), eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e-azure')) }}:
       - template: build-source.yml
         parameters:
