@@ -1,0 +1,31 @@
+parameters:
+  - name: baseimgBuildType
+    type: string
+    values:
+      - dev
+      - preview
+      - release
+    default: "release"
+
+  - name: baseImagePipelineBuildId
+    type: string
+    default: "latestFromBranch"
+
+  - name: baseImageArm64PipelineBuildId
+    type: string
+    default: "latestFromBranch"
+
+  - name: outputDirectory
+    type: string
+    
+steps:
+  - bash: |
+      mkdir -p ${{ parameters.outputDirectory }}
+      cat << EOF > ${{ parameters.outputDirectory }}/baseimage.json
+      {
+        "baseimgBuildType": "${{ parameters.baseimgBuildType }}",
+        "baseImagePipelineBuildId": "${{ parameters.baseImagePipelineBuildId }}",
+        "baseImageArm64PipelineBuildId": "${{ parameters.baseImageArm64PipelineBuildId }}"
+      }
+      EOF
+    displayName: "Create Base Image Config artifact"

@@ -35,13 +35,9 @@ stages:
           - name: ob_artifactBaseName
             value: "base-image-config"
         steps:
-          - bash: |
-              mkdir -p $(ob_outputDirectory)
-              cat << EOF > $(ob_outputDirectory)/baseimage.json
-              {
-                "baseimgBuildType": "${{ parameters.baseimgBuildType }}",
-                "baseImagePipelineBuildId": "${{ parameters.baseImagePipelineBuildId }}",
-                "baseImageArm64PipelineBuildId": "${{ parameters.baseImageArm64PipelineBuildId }}"
-              }
-              EOF
-            displayName: "Create Base Image Config artifact"
+          - template: create-base-image-config-artifact-steps.yml
+            parameters:
+              baseimgBuildType: ${{ parameters.baseimgBuildType }}
+              baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
+              baseImageArm64PipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
+              outputDirectory: ${{ parameters.outputDirectory }}

@@ -43,6 +43,8 @@ stages:
     ${{ if and(eq(parameters.runtimeEnv, 'host'), parameters.dependsOnTrident) }}:
       dependsOn:
         - GetTridentBinaries_rpms_amd64
+        - ${{ if ne(parameters.dependsOnStage, '') }}:
+          - ${{ parameters.dependsOnStage }}
     ${{ elseif ne(parameters.dependsOnStage, '') }}:
       dependsOn:
         - ${{ parameters.dependsOnStage }}
