@@ -1,6 +1,7 @@
 #[cfg(test)]
 use std::io::Cursor;
 use std::{
+    env,
     fs::File,
     io::{Error as IoError, ErrorKind as IoErrorKind, Read, Result as IoResult, Seek, SeekFrom},
     path::PathBuf,
@@ -9,7 +10,7 @@ use std::{
 };
 
 #[cfg(feature = "dangerous-options")]
-use std::{env, io::BufReader};
+use std::io::BufReader;
 
 use anyhow::{bail, ensure, Context, Error};
 use log::{debug, trace, warn};
@@ -149,14 +150,8 @@ impl HttpFile {
             })?)
             .with_context(|| format!("Failed to parse URL '{url}'"))?;
 
-        // debug!("Found env vars: {:?}", env::vars());
+        debug!("Found env vars: {:?}", env::vars());
 
-        // let oci_client = OciClient::new(ClientConfig {
-        //     http_proxy: env::var("HTTP_PROXY").ok(),
-        //     https_proxy: env::var("HTTPS_PROXY").ok(),
-        //     no_proxy: env::var("NO_PROXY").ok(),
-        //     ..Default::default()
-        // });
         let oci_client = OciClient::default();
         let rt = Runtime::new().context("Failed to create Tokio runtime")?;
         let token = Self::retrieve_access_token(&img_ref, &rt, &oci_client)?;

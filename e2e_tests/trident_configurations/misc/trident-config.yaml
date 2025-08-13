@@ -50,10 +50,10 @@ scripts:
     - name: test-proxy
       runOn:
         - clean-install
+        - ab-update
       content: |
         set -ux
         echo $HTTPS_PROXY
-        curl -v --proxy $HTTPS_PROXY https://maritimuspublic.azurecr.io/oauth2/token
   postConfigure:
     - name: testing-privilege
       runOn:
