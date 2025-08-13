@@ -1,10 +1,6 @@
 parameters:
   - name: baseimgBuildType
     type: string
-    values:
-      - dev
-      - preview
-      - release
     default: "release"
 
   - name: baseImagePipelineBuildId
