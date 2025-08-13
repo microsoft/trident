@@ -1,7 +1,6 @@
 #[cfg(test)]
 use std::io::Cursor;
 use std::{
-    env,
     fs::File,
     io::{Error as IoError, ErrorKind as IoErrorKind, Read, Result as IoResult, Seek, SeekFrom},
     path::PathBuf,
@@ -10,11 +9,11 @@ use std::{
 };
 
 #[cfg(feature = "dangerous-options")]
-use std::io::BufReader;
+use std::{env, io::BufReader};
 
 use anyhow::{bail, ensure, Context, Error};
 use log::{debug, trace, warn};
-use oci_client::{client::ClientConfig, secrets::RegistryAuth, Client as OciClient, Reference};
+use oci_client::{secrets::RegistryAuth, Client as OciClient, Reference};
 use reqwest::blocking::{Client, Response};
 use tokio::runtime::Runtime;
 use url::Url;
@@ -158,6 +157,7 @@ impl HttpFile {
         //     no_proxy: env::var("NO_PROXY").ok(),
         //     ..Default::default()
         // });
+        let oci_client = OciClient::default();
         let rt = Runtime::new().context("Failed to create Tokio runtime")?;
         let token = Self::retrieve_access_token(&img_ref, &rt, &oci_client)?;
         let digest = Self::retrieve_artifact_digest(&img_ref, &rt, &oci_client)?;
