@@ -150,14 +150,14 @@ impl HttpFile {
             })?)
             .with_context(|| format!("Failed to parse URL '{url}'"))?;
 
-        debug!("Found env vars: {:?}", env::vars());
+        // debug!("Found env vars: {:?}", env::vars());
 
-        let oci_client = OciClient::new(ClientConfig {
-            http_proxy: env::var("HTTP_PROXY").ok(),
-            https_proxy: env::var("HTTPS_PROXY").ok(),
-            no_proxy: env::var("NO_PROXY").ok(),
-            ..Default::default()
-        });
+        // let oci_client = OciClient::new(ClientConfig {
+        //     http_proxy: env::var("HTTP_PROXY").ok(),
+        //     https_proxy: env::var("HTTPS_PROXY").ok(),
+        //     no_proxy: env::var("NO_PROXY").ok(),
+        //     ..Default::default()
+        // });
         let rt = Runtime::new().context("Failed to create Tokio runtime")?;
         let token = Self::retrieve_access_token(&img_ref, &rt, &oci_client)?;
         let digest = Self::retrieve_artifact_digest(&img_ref, &rt, &oci_client)?;
