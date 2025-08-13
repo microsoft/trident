@@ -987,9 +987,5 @@ mod functional_test {
 
         // Clean up the generated pcrlock policy
         fs::remove_file(PCRLOCK_POLICY_JSON_PATH).unwrap();
-
-        // TODO: Add other/more test cases once helpers are implemented and statically defined
-        // .pcrlock files have been added. Related ADO task:
-        // https://dev.azure.com/mariner-org/ECF/_workitems/edit/12596.
     }
 }
