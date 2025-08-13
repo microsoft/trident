@@ -32,6 +32,5 @@ stages:
     - template: e2e-arm64-template.yml
       parameters:
         stageType: pre
-        blockPublishing: true
         forceTridentRebuild: true
         baseImageArtifactStage: ${{ parameters.baseImageArtifactStage }}
