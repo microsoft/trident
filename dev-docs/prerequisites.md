@@ -23,8 +23,8 @@
 
 - Install Rust and Cargo: `curl https://sh.rustup.rs -sSf | sh`.
   - The required version of Rust is 1.72.0. To install this version, run `rustup
-  install 1.72.0`. To set this as your default version, also run `rustup default
-  1.72.0`.
+  install 1.88.0`. To set this as your default version, also run `rustup default
+  1.88.0`.
 - Install `build-essential`, `pkg-config`, `libssl-dev`, `libclang-dev`, and
   `protobuf-compiler`. E.g. `sudo apt install build-essential pkg-config
   libssl-dev libclang-dev protobuf-compiler`.
