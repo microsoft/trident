@@ -74,15 +74,15 @@ extends:
             steps:
               - bash: |
                   BASEIMG_BUILD_TYPE="${{ parameters.buildType }}"
-                  # Only add amd64 build id if targetArchitecture includes amd64
-                  BASE_IMAGE_PIPELINE_BUILD_ID="will-be-ignored"
+                  # Only add amd64 build id if targetArchitecture includes amd64                  
+                  BASE_IMAGE_PIPELINE_BUILD_ID="${{ parameters.baseImagePipelineBuildId }}"
                   if [[ "${{ parameters.targetArchitecture }}" == 'arm64' ]]; then
-                    BASE_IMAGE_PIPELINE_BUILD_ID="${{ parameters.baseImagePipelineBuildId }}"
+                    BASE_IMAGE_PIPELINE_BUILD_ID="will-be-ignored"
                   fi
                   # Only add arm64 build id if targetArchitecture includes arm64
-                  BASE_IMAGE_ARM64_PIPELINE_BUILD_ID="will-be-ignored"
+                  BASE_IMAGE_ARM64_PIPELINE_BUILD_ID="${{ parameters.baseImageArm64PipelineBuildId }}"
                   if [[ "${{ parameters.targetArchitecture }}" == 'amd64' ]]; then
-                    BASE_IMAGE_ARM64_PIPELINE_BUILD_ID="${{ parameters.baseImageArm64PipelineBuildId }}"
+                    BASE_IMAGE_ARM64_PIPELINE_BUILD_ID="will-be-ignored"
                   fi
 
                   echo "##vso[task.setvariable variable=BASEIMG_BUILD_TYPE]$BASEIMG_BUILD_TYPE"
