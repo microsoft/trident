@@ -1,5 +1,4 @@
 use std::{
-    fs,
     path::{Path, PathBuf},
     sync::MutexGuard,
     time::Instant,
@@ -9,11 +8,16 @@ use log::{debug, error, info, warn};
 #[cfg(feature = "grpc-dangerous")]
 use tokio::sync::mpsc;
 
-use osutils::{chroot, container, mount, mountpoint, path::join_relative};
+use osutils::{
+    chroot, container,
+    installation_media::{self, BootType},
+    mount, mountpoint,
+    path::join_relative,
+};
 use trident_api::{
     config::{HostConfiguration, Operations},
     constants::{
-        internal_params::{ENABLE_UKI_SUPPORT, NO_TRANSITION},
+        internal_params::{DISABLE_MEDIA_EJECTION, ENABLE_UKI_SUPPORT, NO_TRANSITION},
         ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_PATH,
     },
     error::{
@@ -112,17 +116,15 @@ fn clean_install_safety_check(
     multiboot: bool,
 ) -> Result<(), TridentError> {
     // Check if Trident is running from a live image
-    let cmdline =
-        fs::read_to_string("/proc/cmdline").structured(InitializationError::ReadCmdline)?;
-    if cmdline.contains("root=/dev/ram0")
-        || cmdline.contains("root=live:LABEL=CDROM")
-        || !cmdline.contains("root=")
-    {
-        debug!("Trident is running from a live image.");
-        return Ok(());
+    match installation_media::detect_boot_type()? {
+        BootType::RamDisk | BootType::LiveMedia => {
+            debug!("Trident is running from a live image");
+            return Ok(());
+        }
+        BootType::PersistentStorage => {
+            warn!("Trident is running from an OS installed on persistent storage");
+        }
     }
-
-    warn!("Trident is running from an OS installed on persistent storage");
 
     // To go past this point in the safety check we NEED multiboot
     if !multiboot {
@@ -368,6 +370,19 @@ pub(crate) fn finalize_clean_install(
         .internal_params
         .get_flag(NO_TRANSITION)
     {
+        if !state
+            .host_status()
+            .spec
+            .internal_params
+            .get_flag(DISABLE_MEDIA_EJECTION)
+        {
+            installation_media::handle_installation_media()?;
+        } else {
+            debug!(
+                "Skipping media ejection as requested by internal parameter '{}'",
+                DISABLE_MEDIA_EJECTION
+            );
+        }
         Ok(ExitKind::NeedsReboot)
     } else {
         warn!(

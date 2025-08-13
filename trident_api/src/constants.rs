@@ -172,25 +172,28 @@ pub mod internal_params {
     /// Disable check that filesystem size does not exceed the size of its block device.
     pub const DISABLE_FS_BLOCK_DEVICE_SIZE_CHECK: &str = "disableFsBlockDeviceSizeCheck";
 
-    /// Disable check for grub-noprefix
+    /// Disable check for grub-noprefix.
     pub const DISABLE_GRUB_NOPREFIX_CHECK: &str = "disableGrubNoprefixCheck";
 
     /// Do not carry over existing machine hostname into the chroot during A/B update.
     pub const DISABLE_HOSTNAME_CARRY_OVER: &str = "disableHostnameCarryOver";
 
+    /// Disable automatic ejection of installation media after clean install.
+    pub const DISABLE_MEDIA_EJECTION: &str = "disableMediaEjection";
+
     /// Enable support for Harpoon to query for updated Host Config documents.
     pub const ENABLE_HARPOON_SUPPORT: &str = "harpoon";
 
-    /// Experimental support for UKIs
+    /// Experimental support for UKIs.
     pub const ENABLE_UKI_SUPPORT: &str = "uki";
 
-    /// Block Trident from closing encrypted volumes at the start of provisioning
+    /// Block Trident from closing encrypted volumes at the start of provisioning.
     pub const NO_CLOSE_ENCRYPTED_VOLUMES: &str = "noCloseEncryptedVolumes";
 
-    /// Block Trident from transitioning to the new OS after finalizing
+    /// Block Trident from transitioning to the new OS after finalizing.
     pub const NO_TRANSITION: &str = "noTransition";
 
-    /// Allow configuration of orchestrator connection timeout
+    /// Allow configuration of orchestrator connection timeout.
     pub const ORCHESTRATOR_CONNECTION_TIMEOUT_SECONDS: &str =
         "orchestratorConnectionTimeoutSeconds";
 
@@ -200,7 +203,7 @@ pub mod internal_params {
     // https://dev.azure.com/mariner-org/polar/_workitems/edit/14269/.
     pub const OVERRIDE_PCRLOCK_ENCRYPTION: &str = "overridePcrlockEncryption";
 
-    /// Run extra partition and filesystem checks before reboot
+    /// Run extra partition and filesystem checks before reboot.
     pub const PRE_REBOOT_CHECKS: &str = "preRebootChecks";
 
     /// Re-encrypt the encrypted LUKS2 volumes in-place on clean install, instead of initializing
@@ -234,7 +237,7 @@ pub mod internal_params {
     /// Use alternate boot order logic to work around virtdeploy limitations.
     pub const VIRTDEPLOY_BOOT_ORDER_WORKAROUND: &str = "virtdeployBootOrderWorkaround";
 
-    /// Force Trident to wait for systemd-networkd-wait-online
+    /// Force Trident to wait for systemd-networkd-wait-online.
     pub const WAIT_FOR_SYSTEMD_NETWORKD: &str = "waitForSystemdNetworkd";
 
     /// Mount a writable overlay for /etc for the hooks subsystem.
