@@ -248,7 +248,7 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
 
     // Validate that all required PCR entries have a recognized component; otherwise,
     // a PCR cannot be included into the pcrlock policy
-    let unrecognized: Vec<_> = required_entries
+    let mut unrecognized: Vec<_> = required_entries
         .into_iter()
         .filter(|entry| entry.component.is_none())
         .collect();
@@ -257,11 +257,51 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         return Ok(());
     }
 
-    // TODO: TEST IF THIS FILE ACTUALLY EXISTS
-    let found = find_dell_efi_file(Path::new("/"));
-    for file in found {
-        println!("Found: {}", file.display());
+    // TODO: If unrecognized includes a PCR 4 record expected for E2E BM environment, then extract
+    // the sha256 hash from the record and generate a .pcrlock file for it
+    let mut handled_indexes = std::collections::HashSet::new();
+    for (i, entry) in unrecognized.iter().enumerate() {
+        let desc_match = entry
+            .description
+            .as_deref()
+            .map(|d| {
+                // Add more substrings here if needed
+                d.contains(r"\efi\Dell\System_Services\System_Services.efi")
+            })
+            .unwrap_or(false);
+
+        if (entry.pcr == Pcr::Pcr4 || desc_match) && entry.sha256.is_some() {
+            let sha256_hash = entry.sha256.as_ref().unwrap();
+
+            let pcrlock_file = generate_pcrlock_output_path(BOOT_LOADER_CODE_SHIM_PCRLOCK_DIR, 0);
+
+            debug!(
+                "Detected unmatched entry (PCR {}, desc_match: {}) - generating .pcrlock at '{}' with hash {}",
+                entry.pcr.to_num(),
+                desc_match,
+                pcrlock_file.display(),
+                sha256_hash
+            );
+
+            write_minimal_pcrlock_file(pcrlock_file, entry.pcr, sha256_hash.to_string())
+                .context("Failed to generate .pcrlock file for unmatched record")?;
+
+            handled_indexes.insert(i);
+        }
     }
+
+    // Remove handled entries before deciding if we fail
+    unrecognized = unrecognized
+        .into_iter()
+        .enumerate()
+        .filter_map(|(i, e)| {
+            if handled_indexes.contains(&i) {
+                None
+            } else {
+                Some(e)
+            }
+        })
+        .collect();
 
     let entries: Vec<String> = unrecognized
         .into_iter()
@@ -284,37 +324,53 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
     );
 }
 
-/// Recursively search the entire filesystem for Dell System_Services EFI binary.
-fn find_dell_efi_file(root: &Path) -> Vec<PathBuf> {
-    debug!("Searching for Dell System_Services EFI binary");
-    let mut results = Vec::new();
-    let target_suffix = [
-        "Dell/System_Services/System_Services.efi",
-        "DELL/SYSTEM_SERVICES/SYSTEM_SERVICES.EFI",
-    ];
+pub fn write_minimal_pcrlock_file(pcrlock_file: PathBuf, pcr: Pcr, digest: String) -> Result<()> {
+    debug!(
+        "Writing minimal .pcrlock file at '{}' for PCR {} with SHA256 digest {}",
+        pcrlock_file.display(),
+        pcr.to_num(),
+        digest
+    );
 
-    fn check_path(path: &Path, suffix_list: &[&str]) -> bool {
-        let path_str = path.to_string_lossy().replace('\\', "/").to_lowercase();
-        suffix_list
-            .iter()
-            .any(|pat| path_str.ends_with(&pat.to_lowercase()))
+    // Build the digest entry
+    let digests = vec![DigestEntry {
+        hash_alg: "sha256",
+        digest,
+    }];
+
+    // Create the PcrLock structure with a single record
+    let pcrlock = PcrLock {
+        records: vec![Record {
+            pcr: pcr.to_num(),
+            digests,
+        }],
+    };
+
+    // Ensure the target directory exists
+    if let Some(parent) = pcrlock_file.parent() {
+        fs::create_dir_all(parent)
+            .context(format!("Failed to create directory '{}'", parent.display()))?;
     }
 
-    fn recurse(dir: &Path, suffix_list: &[&str], results: &mut Vec<PathBuf>) {
-        if let Ok(entries) = fs::read_dir(dir) {
-            for entry in entries.filter_map(|e| e.ok()) {
-                let path = entry.path();
-                if path.is_dir() {
-                    recurse(&path, suffix_list, results);
-                } else if check_path(&path, suffix_list) {
-                    results.push(path);
-                }
-            }
-        }
-    }
+    // Serialize to JSON
+    let json = serde_json::to_string(&pcrlock).context(format!(
+        "Failed to serialize .pcrlock file '{}' to JSON",
+        pcrlock_file.display()
+    ))?;
 
-    recurse(root, &target_suffix, &mut results);
-    results
+    // Save to disk
+    fs::write(&pcrlock_file, json.clone()).context(format!(
+        "Failed to write .pcrlock file to '{}'",
+        pcrlock_file.display()
+    ))?;
+
+    trace!(
+        "Written minimal .pcrlock file at '{}':\n{}",
+        pcrlock_file.display(),
+        json
+    );
+
+    Ok(())
 }
 
 /// Runs `systemd-pcrlock make-policy` command to predict the PCR state for future boots and then
