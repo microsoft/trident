@@ -40,4 +40,4 @@ stages:
               baseimgBuildType: ${{ parameters.baseimgBuildType }}
               baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
               baseImageArm64PipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
-              outputDirectory: ${{ parameters.outputDirectory }}
+              outputDirectory: $(ob_outputDirectory)
