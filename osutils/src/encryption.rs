@@ -2,13 +2,11 @@ use std::{
     fs::{self, File},
     io::Read,
     path::Path,
-    sync::Mutex,
 };
 
 use anyhow::{Context, Error};
 use enumflags2::BitFlags;
 use log::debug;
-use once_cell::sync::Lazy;
 
 use crate::{dependencies::Dependency, pcrlock::PCRLOCK_POLICY_JSON_PATH};
 use sysdefs::tpm2::Pcr;
@@ -26,15 +24,6 @@ pub const KEY_SIZE: &str = "512";
 
 /// Size of the temporary recovery key file in bytes.
 const TMP_RECOVERY_KEY_SIZE: usize = 64;
-
-/// Randomly generated key passphrase used for encryption and protected by a mutex. This passphrase
-/// is used to re-enroll the TPM 2.0 device using a pcrlock policy.
-///
-/// TODO: In systemd v256, `--unlock-tpm2-device` is added, which allows to use a TPM 2.0 device,
-/// instead of a key file, to unlock the volume. Once systemd v256 is available in AZL 4.0, remove
-/// ENCRYPTION_PASSPHRASE and use `--unlock-tpm2-device` instead. Related ADO task:
-/// https://dev.azure.com/mariner-org/polar/_workitems/edit/13057/.
-pub static ENCRYPTION_PASSPHRASE: Lazy<Mutex<Vec<u8>>> = Lazy::new(Default::default);
 
 /// Default PCR to seal encrypted volumes to. PCR 7 represents the `SecureBoot` state.
 pub const DEFAULT_PCR: Pcr = Pcr::Pcr7;
@@ -234,8 +223,7 @@ fn to_tpm2_pcrs_arg(pcrs: BitFlags<Pcr>) -> String {
 
 /// This function creates a file at the specified path and fills it with cryptographically secure
 /// random bytes sourced from `/dev/random`. It is intended for generating a recovery key file with
-/// a specified size `TMP_RECOVERY_KEY_SIZE`. The function returns the random bytes that were
-/// written to the file.
+/// a specified size `TMP_RECOVERY_KEY_SIZE`.
 ///
 /// `path` specifies the location and name of the file to be created, and must be accessible and
 /// writable by the process.
@@ -243,21 +231,19 @@ fn to_tpm2_pcrs_arg(pcrs: BitFlags<Pcr>) -> String {
 /// This function can return an error if opening or reading `/dev/random` fails. It can also error
 /// when writing to the specified file path fails, which could be due to permission issues,
 /// non-existent directories in the path, or other filesystem-related errors.
-pub fn generate_recovery_key_file(path: &Path) -> Result<Vec<u8>, Error> {
+pub fn generate_recovery_key_file(path: &Path) -> Result<(), Error> {
     let mut random_file =
         File::open(DEV_RANDOM_PATH).context("Failed to open '{DEV_RANDOM_PATH}'")?;
+    let mut random_buffer: [u8; TMP_RECOVERY_KEY_SIZE] = [0u8; TMP_RECOVERY_KEY_SIZE];
 
-    let mut random_buffer = vec![0u8; TMP_RECOVERY_KEY_SIZE];
     random_file
         .read_exact(&mut random_buffer)
         .context("Failed to read from '{DEV_RANDOM_PATH}'")?;
 
-    fs::write(path, &random_buffer).context(format!(
+    fs::write(path, random_buffer).context(format!(
         "Failed to write random data to recovery key file '{}'",
         path.display()
-    ))?;
-
-    Ok(random_buffer)
+    ))
 }
 
 #[cfg(test)]
