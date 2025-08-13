@@ -103,6 +103,27 @@ extends:
           parameters:
             baseImageArtifactStage: GetBaseImageBuildIds
             targetArchitecture: amd64
+        - stage: ProcessJunit_Stage_amd64
+          displayName: Process amd64 junit files
+          dependsOn:
+            - FunctionalTesting
+            - DeploymentTesting_host
+            - DeploymentTesting_container
+            - BaremetalDeploymentTesting_host
+            - BaremetalDeploymentTesting_container
+            - ServicingTesting
+          jobs:
+            - job: ProcessJunit_Job
+              displayName: Process junit files
+              pool:
+                type: linux
+              variables:
+                ob_outputDirectory: "$(Build.SourcesDirectory)/out"
+              steps:
+                - script: |
+                    set -eux
+                    echo "Collect and process junit files"
+                  displayName: Process junit files
 
       # Test amd64 if targetArchitecture is all or arm64 (i.e. !amd64)
       - ${{ if ne(parameters.targetArchitecture, 'amd64') }}:
@@ -110,27 +131,19 @@ extends:
           parameters:
             baseImageArtifactStage: GetBaseImageBuildIds
             targetArchitecture: arm64
-
-      # - stage: ProcessJunit_Stage
-      #   displayName: Process junit files
-      #   dependsOn:
-      #     - FunctionalTesting
-      #     - DeploymentTesting_host
-      #     - DeploymentTesting_container
-      #     - BaremetalDeploymentTesting_host
-      #     - BaremetalDeploymentTesting_container
-      #     - ServicingTesting
-
-      #   jobs:
-      #     - job: ProcessJunit_Job
-      #       displayName: Process junit files
-      #       pool:
-      #         type: linux
-      #       variables:
-      #         ob_outputDirectory: "$(Build.SourcesDirectory)/out"
-      #       steps:
-      #         - script: |
-      #             set -eux
-      #             echo "Collect and process junit files"
-      #           displayName: Process junit files
-
+        - stage: ProcessJunit_Stage_arm64
+          displayName: Process arm64 junit files
+          dependsOn:
+            - GetTridentBinaries_rpms_arm64
+          jobs:
+            - job: ProcessJunit_Job
+              displayName: Process junit files
+              pool:
+                type: linux
+              variables:
+                ob_outputDirectory: "$(Build.SourcesDirectory)/out"
+              steps:
+                - script: |
+                    set -eux
+                    echo "No junit tests to collect, if pipeline succeeds to this point, all good"
+                  displayName: Process junit files
