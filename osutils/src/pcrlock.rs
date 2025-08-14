@@ -92,9 +92,10 @@ pub fn generate_pcrlock_policy(
     bootloader_binaries: Vec<PathBuf>,
 ) -> Result<(), TridentError> {
     debug!(
-        "Generating a new pcrlock policy for the following PCRs: {:?}",
+        "Preparing to generate a new pcrlock policy for the following PCRs: {:?}",
         pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
     );
+
     // Generate .pcrlock files for runtime OS image A
     generate_pcrlock_files(pcrs, uki_binaries, bootloader_binaries)
         .structured(ServicingError::GeneratePcrlockFiles)?;
@@ -186,21 +187,6 @@ fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
     Ok(())
 }
 
-#[derive(Debug, Deserialize)]
-struct LogEntry {
-    pcr: Pcr,
-    pcrname: Option<String>,
-    event: Option<String>,
-    sha256: Option<Sha256Hash>,
-    component: Option<String>,
-    description: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct LogOutput {
-    log: Vec<LogEntry>,
-}
-
 /// Runs `systemd-pcrlock log` to get the combined TPM 2.0 event log, output as a "pretty" JSON.
 /// Parses the output and validates that every log entry related to `required_pcrs` has been
 /// matched to a recognized boot component.
@@ -214,6 +200,9 @@ struct LogOutput {
 /// Please refer to `systemd-pcrlock` doc for additional info:
 /// https://www.man7.org/linux/man-pages/man8/systemd-pcrlock.8.html.
 fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
+    // Print out combined TPM 2.0 event log
+    cel().context("Failed to print out combined TPM 2.0 event log")?;
+
     debug!(
         "Validating 'systemd-pcrlock log' output for required PCRs: {:?}",
         required_pcrs
@@ -222,40 +211,15 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
             .collect::<Vec<_>>()
     );
 
-    let output = Dependency::SystemdPcrlock
-        .cmd()
-        .arg("log")
-        .arg("--json=pretty")
-        .output_and_check()
-        .context("Failed to run 'systemd-pcrlock log'")?;
+    // Get parsed output of 'systemd-pcrlock log'
+    let mut parsed_log = log_parsed().context("Failed to get 'systemd-pcrlock log' output")?;
 
-    let parsed: LogOutput =
-        serde_json::from_str(&output).context("Failed to parse 'systemd-pcrlock log' output")?;
-
-    // Filter and log ONLY required PCR entries
-    let required_entries: Vec<_> = parsed
-        .log
-        .iter()
-        .filter(|entry| required_pcrs.contains(entry.pcr))
-        .collect();
-
-    debug!(
-        "Filtered 'systemd-pcrlock log' entries for required PCRs: {:?}\n{:#?}",
-        required_pcrs
-            .iter()
-            .map(|pcr| pcr.to_num())
-            .collect::<Vec<_>>(),
-        required_entries
-    );
-
-    // Validate that all required PCR entries have a recognized component; otherwise,
-    // a PCR cannot be included into the pcrlock policy
-    let unrecognized: Vec<_> = required_entries
-        .into_iter()
-        .filter(|entry| entry.component.is_none())
-        .collect();
-
+    // Fetch list of entries that are related to required PCRs, with components that are not
+    // recognized yet, if any
+    let mut unrecognized = unrecognized_log_entries(parsed_log.clone(), required_pcrs)
+        .context("Failed to get unrecognized log entries")?;
     if unrecognized.is_empty() {
+        debug!("All entries for required PCRs have recognized .pcrlock components");
         return Ok(());
     }
 
@@ -275,48 +239,31 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
             let sha256_hash = entry.sha256.as_ref().unwrap();
             let pcrlock_file = generate_pcrlock_output_path(HW_BOOTLOADER_PCRLOCK_DIR, 0);
 
+            debug!(
+                "Unrecognized entry matches a record we expect on Dell BM hardware, \
+                generating a .pcrlock file at '{}':\n \
+                pcr='{}', pcrname='{}', event='{}', sha256='{}', description='{}'",
+                pcrlock_file.display(),
+                entry.pcr.to_num(),
+                entry.pcrname.as_deref().unwrap_or("null"),
+                entry.event.as_deref().unwrap_or("null"),
+                entry.sha256.as_ref().map(|h| h.as_str()).unwrap_or("null"),
+                entry.description.as_deref().unwrap_or("null"),
+            );
             generate_pcrlock_file(pcrlock_file, entry.pcr, sha256_hash.to_string())
                 .expect("Failed to generate .pcrlock file for unmatched record");
         }
     }
 
-    // TODO: REBASE THIS!
-    // Need to get systemd-pcrlock log output again and confirm that all entries have now been
-    // recognized
-    let output = Dependency::SystemdPcrlock
-        .cmd()
-        .arg("log")
-        .arg("--json=pretty")
-        .output_and_check()
-        .context("Failed to run 'systemd-pcrlock log'")?;
+    // Get fresh parsed output of 'systemd-pcrlock log'
+    parsed_log = log_parsed().context("Failed to get 'systemd-pcrlock log' output")?;
 
-    let parsed: LogOutput =
-        serde_json::from_str(&output).context("Failed to parse 'systemd-pcrlock log' output")?;
-
-    // Filter and log ONLY required PCR entries
-    let required_entries: Vec<_> = parsed
-        .log
-        .iter()
-        .filter(|entry| required_pcrs.contains(entry.pcr))
-        .collect();
-
-    debug!(
-        "Filtered 'systemd-pcrlock log' entries for required PCRs: {:?}\n{:#?}",
-        required_pcrs
-            .iter()
-            .map(|pcr| pcr.to_num())
-            .collect::<Vec<_>>(),
-        required_entries
-    );
-
-    // Validate that all required PCR entries have a recognized component; otherwise,
-    // a PCR cannot be included into the pcrlock policy
-    let unrecognized: Vec<_> = required_entries
-        .into_iter()
-        .filter(|entry| entry.component.is_none())
-        .collect();
-
+    // Fetch list of entries that are related to required PCRs, with components that are not
+    // recognized yet, if any
+    unrecognized = unrecognized_log_entries(parsed_log.clone(), required_pcrs)
+        .context("Failed to get unrecognized log entries")?;
     if unrecognized.is_empty() {
+        debug!("All entries for required PCRs have recognized .pcrlock components");
         return Ok(());
     }
 
@@ -340,6 +287,87 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
             to recognized components:\n{}",
         entries.join("\n")
     );
+}
+/// Represents a single log entry from the 'systemd-pcrlock log' output.
+#[derive(Debug, Deserialize, Clone)]
+struct LogEntry {
+    pcr: Pcr,
+    pcrname: Option<String>,
+    event: Option<String>,
+    sha256: Option<Sha256Hash>,
+    component: Option<String>,
+    description: Option<String>,
+}
+
+/// Represents the output of the 'systemd-pcrlock log' command.
+#[derive(Debug, Deserialize, Clone)]
+struct LogOutput {
+    log: Vec<LogEntry>,
+}
+
+/// Parses the output of the 'systemd-pcrlock log' command as a LogOutput object.
+fn log_parsed() -> Result<LogOutput, Error> {
+    let output = Dependency::SystemdPcrlock
+        .cmd()
+        .arg("log")
+        .arg("--json=pretty")
+        .output_and_check()
+        .context("Failed to run 'systemd-pcrlock log'")?;
+
+    let parsed_log: LogOutput =
+        serde_json::from_str(&output).context("Failed to parse 'systemd-pcrlock log' output")?;
+
+    Ok(parsed_log)
+}
+
+/// Runs the `systemd-pcrlock cel` command to print out the combined TPM 2.0 event log in TCG
+/// Canonical Event Log Format (CEL-JSON).
+fn cel() -> Result<(), Error> {
+    let output = Dependency::SystemdPcrlock
+        .cmd()
+        .arg("cel")
+        .output_and_check()
+        .context("Failed to run 'systemd-pcrlock cel'")?;
+
+    debug!(
+        "Combined TPM 2.0 event log in TCG Canonical Event Log Format (CEL-JSON):\n{}",
+        output
+    );
+
+    Ok(())
+}
+
+/// Returns a list of entries from the 'systemd-pcrlock log' output that correspond to (1) PCRs
+/// required for the pcrlock policy and (2) have components that still are not recognized.
+fn unrecognized_log_entries(
+    parsed_log: LogOutput,
+    required_pcrs: BitFlags<Pcr>,
+) -> Result<Vec<LogEntry>, Error> {
+    // Filter and log ONLY required PCR entries
+    let required_entries: Vec<_> = parsed_log
+        .log
+        .iter()
+        .filter(|entry| required_pcrs.contains(entry.pcr))
+        .collect();
+
+    debug!(
+        "Filtered 'systemd-pcrlock log' entries for required PCRs: {:?}\n{:#?}",
+        required_pcrs
+            .iter()
+            .map(|pcr| pcr.to_num())
+            .collect::<Vec<_>>(),
+        required_entries
+    );
+
+    // Validate that all required PCR entries have a recognized component; otherwise,
+    // a PCR cannot be included into the pcrlock policy
+    let unrecognized: Vec<_> = required_entries
+        .into_iter()
+        .filter(|entry| entry.component.is_none())
+        .cloned()
+        .collect();
+
+    Ok(unrecognized)
 }
 
 /// Runs `systemd-pcrlock make-policy` command to predict the PCR state for future boots and then
