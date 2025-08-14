@@ -102,12 +102,12 @@ func (o *SshCmdOutput) Report() string {
 
 }
 
-func RunCommand(client *ssh.Client, command string) (*SshCmdOutput, error) {
+func RunCommand(client *ssh.Client, command string) (*SshCmdOutput, error) { // Create a separate RunCommandWithEnvVars, which RunCommand calls into & make sure not to overwrite env vars
 	if client == nil {
 		return nil, fmt.Errorf("SSH client is nil")
 	}
 
-	session, err := client.NewSession()
+	session, err := client.NewSession() // some where here add env variables
 	if err != nil {
 		return nil, fmt.Errorf("failed to create SSH session: %w", err)
 	}
@@ -123,7 +123,12 @@ func RunCommand(client *ssh.Client, command string) (*SshCmdOutput, error) {
 		return nil, fmt.Errorf("failed to create stderr pipe: %w", err)
 	}
 
-	err = session.Start(command)
+	err = session.Setenv("HTTPS_PROXY", "http://172.16.1.10:3128")
+	if err != nil {
+		return nil, fmt.Errorf("failed to set env variable: %w", err)
+	}
+
+	err = session.Start(command) // Can env vars be pre-pended to command?
 	if err != nil {
 		return nil, fmt.Errorf("failed to start command: %w", err)
 	}
