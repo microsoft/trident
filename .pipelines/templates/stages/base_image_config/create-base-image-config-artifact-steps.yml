@@ -23,5 +23,3 @@ steps:
           "${{ parameters.outputDirectory }}"
     workingDirectory: $(Build.SourcesDirectory)/.pipelines/templates/stages/base_image_config
     displayName: "Create Base Image Config artifact"
-    env:
-      AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
