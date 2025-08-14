@@ -125,9 +125,6 @@ pub(super) fn create_encrypted_devices(
         let pcr = if ctx.is_uki()? {
             debug!("Runtime OS image is a UKI image, so sealing against a pcrlock policy of PCR 0");
 
-            // Remove any pre-existing policy
-            pcrlock::remove_policy().structured(ServicingError::RemovePcrlockPolicy)?;
-
             // Generate a pcrlock policy
             pcrlock::generate_pcrlock_policy(BitFlags::from(Pcr::Pcr0), vec![], vec![])?;
             None
