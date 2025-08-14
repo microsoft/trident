@@ -1,6 +1,17 @@
+parameters:
+  - name: osModifierBranch
+    type: string
+    default: "submodule"
+
+  - name: dependsOnStage
+    type: string
+    default: ''
+
 stages:
   - stage: MakefileValidation
     displayName: Validate Makefile targets
+    ${{ if ne(parameters.dependsOnStage, '') }}:
+      dependsOn: ${{ parameters.dependsOnStage }}
 
     jobs:
       - job: Make
@@ -17,6 +28,8 @@ stages:
         steps:
           - template: ../common_tasks/avoid-pypi-usage.yml
           - template: ../common_tasks/build-osmodifier.yml
+            parameters:
+              osModifierBranch: ${{ parameters.osModifierBranch }}
 
           - script: |
               set -eux

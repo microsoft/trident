@@ -18,7 +18,13 @@ parameters:
     type: string
     default: "*.*.*"
 
+  - name: osModifierBranch
+    displayName: Branch to use for OS Modifier (specify 'submodule' to use trident's current submodule)
+    type: string
+    default: "main"
+
 stages:
+    - template: stages/base_image_config/create-base-image-config-artifact.yml
     - template: e2e-template.yml
       parameters:
         stageType: ci
@@ -26,3 +32,11 @@ stages:
         forceTridentRebuild: true
         micBuildType: ${{ parameters.micBuildType }}
         micVersion: ${{ parameters.micVersion }}
+        osModifierBranch: ${{ parameters.osModifierBranch }}
+        baseImageArtifactStage: CreateBaseImageConfig
+    - template: e2e-arm64-template.yml
+      parameters:
+        stageType: ci
+        forceTridentRebuild: true
+        osModifierBranch: ${{ parameters.osModifierBranch }}
+        baseImageArtifactStage: CreateBaseImageConfig

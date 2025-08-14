@@ -22,12 +22,18 @@ parameters:
       Specific version of the package to download, leave empty to download latest
     default: ""
 
+  - name: dependsOnStage
+    type: string
+    default: ''
+
 stages:
-  - stage: GetTridentBinaries_${{ replace(parameters.packageName, '-', '_') }}
+  - stage: GetTridentBinaries_${{ replace(parameters.packageName, '-', '_') }}_amd64
     displayName: Download staged ${{ parameters.packageName }} for ${{ parameters.stageType }}
+    ${{ if ne(parameters.dependsOnStage, '') }}:
+      dependsOn: ${{ parameters.dependsOnStage }}
 
     jobs:
-      - job: DownloadTrident
+      - job: DownloadTrident_amd64
         displayName: Download Trident
         pool:
           type: linux

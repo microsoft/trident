@@ -1,18 +1,10 @@
 parameters:
-  - name: runVersion
+  - name: targetArchitecture
     type: string
-    default: latestFromBranch
-    displayName: Specific run or latest successful run
-
-  - name: previewContainerPipeline
-    type: string
-    default: "[AMD64-6-OneBranch]-Prod-BuildImages"
-    displayName: Name of preview container pipeline
-
-  - name: baseImagePipelineBuildId
-    type: string
-    default: ""
-    displayName: Build Id of the pipeline run
+    default: "amd64"
+    values:
+      - arm64
+      - amd64
 
   - name: dockerfilePath
     type: string
@@ -25,16 +17,52 @@ parameters:
     displayName: Path in which the Dockerfile will be run, the base for the container image will be saved there.
 
 steps:
+  - template: ../base_image_config/read-base-image-config-artifact.yml
+  - bash: |
+      set -eux
+
+      pipelineId=$(BASE_IMAGE_PIPELINE_BUILD_ID)
+      if [[ "${{ parameters.targetArchitecture }}" == "arm64" ]]; then
+        pipelineId=$(BASE_IMAGE_ARM64_PIPELINE_BUILD_ID)
+      fi
+
+      RUN_VERSION=$pipelineId
+      RUN_BRANCH='refs/heads/master'
+      RUN_TAGS='3.0-preview'
+      RUN_ID=''
+      if [[ "$RUN_VERSION" != "latestFromBranch" ]]; then
+        RUN_VERSION=specific
+        RUN_ID=$pipelineId
+        RUN_BRANCH=''
+        RUN_TAGS=''
+      fi
+
+      PIPELINE_NAME="[AMD64-6-OneBranch]-Prod-BuildImages"
+      if [[ "${{ parameters.targetArchitecture }}" == "arm64" ]]; then
+        PIPELINE_NAME="[ARM64-6-OneBranch]-Prod-BuildImages"
+      fi
+
+      set +x
+      echo "##vso[task.setvariable variable=RUN_VERSION]$RUN_VERSION"
+      echo "##vso[task.setvariable variable=RUN_BRANCH]$RUN_BRANCH"
+      echo "##vso[task.setvariable variable=RUN_ID]$RUN_ID"
+      echo "##vso[task.setvariable variable=RUN_TAGS]$RUN_TAGS"
+      echo "##vso[task.setvariable variable=PIPELINE_NAME]$PIPELINE_NAME"
+    displayName: "Configure RUN_VERSION"
+    condition: ne(variables['BASEIMG_BUILD_TYPE'], 'release')
+
+  # BASEIMG_BUILD_TYPE != release
   - task: DownloadPipelineArtifact@2
     displayName: "Download preview of azl container image"
+    condition: ne(variables['BASEIMG_BUILD_TYPE'], 'release')
     inputs:
       buildType: "specific"
       project: "mariner"
-      pipeline: ${{ parameters.previewContainerPipeline }}
-      runVersion: ${{ parameters.runVersion }}
-      branchName: "refs/heads/master"
-      runId: ${{ parameters.baseImagePipelineBuildId }}
-      tags: "3.0-preview"
+      pipeline: $(PIPELINE_NAME)
+      runVersion: $(RUN_VERSION)
+      branchName: $(RUN_BRANCH)
+      runId: $(RUN_ID)
+      tags: $(RUN_TAGS)
       artifactName: "drop_build_rpms_build"
       patterns: "**/build-artifacts/container_base/core-*.tar.gz"
       targetPath: "$(Pipeline.Workspace)"
@@ -52,3 +80,4 @@ steps:
 
       cat ${{ parameters.dockerfilePath }}
     displayName: Replace azl container base with azl preview
+    condition: ne(variables['BASEIMG_BUILD_TYPE'], 'release')

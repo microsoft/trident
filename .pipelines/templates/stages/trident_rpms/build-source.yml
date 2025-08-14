@@ -10,30 +10,30 @@ parameters:
     type: boolean
     default: true
 
-  - name: baseimgBuildType
-    displayName: Base Image build type
+  - name: osModifierBranch
+    type: string
+    default: "submodule"
+
+  - name: dependsOnStage
+    type: string
+    default: ''
+
+  - name: targetArchitecture
     type: string
     values:
-      - dev
-      - preview
-      - release
-    default: "release"
-
-  - name: baseImagePipelineBuildId
-    type: string
-    default: "latestFromBranch"
-
-  - name: baseImageArm64PipelineBuildId
-    type: string
-    default: "latestFromBranch"
+      - amd64
+      - arm64
 
 stages:
-  - stage: GetTridentBinaries_rpms
-    displayName: Trident RPMs (Build)
+  - stage: GetTridentBinaries_rpms_${{ parameters.targetArchitecture }}
+    displayName: Trident ${{ parameters.targetArchitecture }} RPMs (Build)
+    ${{ if ne(parameters.dependsOnStage, '') }}:
+      dependsOn: ${{ parameters.dependsOnStage }}
 
     jobs:
-      - job: CheckTrident
-        displayName: Check
+    - ${{ if eq( parameters.targetArchitecture, 'amd64' ) }}:
+      - job: CheckTrident_${{ parameters.targetArchitecture }}
+        displayName: Check ${{ parameters.targetArchitecture }}
         pool:
           type: linux
 
@@ -45,8 +45,8 @@ stages:
           - template: ../common_tasks/avoid-pypi-usage.yml
           - template: check.yml
 
-      - job: TestTrident
-        displayName: Unit Test
+      - job: TestTrident_${{ parameters.targetArchitecture }}
+        displayName: Unit Test ${{ parameters.targetArchitecture }}
         pool:
           type: linux
 
@@ -64,8 +64,8 @@ stages:
               codeCoverage: ${{ parameters.codeCoverage }}
               unitTestCoverageBaseline: 70 # Unit tests
 
-      - job: BuildTrident
-        displayName: Build Trident 3.0 RPMs
+      - job: BuildTrident_${{ parameters.targetArchitecture }}
+        displayName: Build Trident 3.0 ${{ parameters.targetArchitecture }} RPMs
         pool:
           type: linux
 
@@ -83,16 +83,17 @@ stages:
           - template: ../common_tasks/avoid-pypi-usage.yml
           - template: ../common_tasks/cargo-auth.yml
           - template: ../common_tasks/build-osmodifier.yml
+            parameters:
+              osModifierBranch: ${{ parameters.osModifierBranch }}
           - template: release.yml
             parameters:
-              baseimgBuildType: ${{ parameters.baseimgBuildType }}
-              baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
-              previewContainerPipeline: "[AMD64-6-OneBranch]-Prod-BuildImages"
+              targetArchitecture: ${{ parameters.targetArchitecture }}
           - ${{ if eq(parameters.publishToDevFeed, true) }}:
               - template: publish-dev.yml
 
-      - job: BuildTridentARM64
-        displayName: Build Trident 3.0 RPMs for ARM64
+    - ${{ elseif eq( parameters.targetArchitecture, 'arm64' ) }}:
+      - job: BuildTrident_${{ parameters.targetArchitecture }}
+        displayName: Build Trident 3.0 ${{ parameters.targetArchitecture }} RPMs
         pool:
           type: linux
           name: mariner-hci-ARM64-1es-pool-westcentralus
@@ -111,8 +112,8 @@ stages:
           - template: ../common_tasks/avoid-pypi-usage.yml
           - template: ../common_tasks/cargo-auth.yml
           - template: ../common_tasks/build-osmodifier.yml
+            parameters:
+              osModifierBranch: ${{ parameters.osModifierBranch }}
           - template: release.yml
             parameters:
-              baseimgBuildType: ${{ parameters.baseimgBuildType }}
-              baseImagePipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
-              previewContainerPipeline: "[ARM64-6-OneBranch]-Prod-BuildImages"
+              targetArchitecture: ${{ parameters.targetArchitecture }}

@@ -158,7 +158,7 @@ impl Encryption {
 
         // The list of PCRs, if provided and not empty, must only contain currently supported PCRs.
         if !self.pcrs.is_empty() {
-            let supported_pcrs = [Pcr::Pcr7];
+            let supported_pcrs = [Pcr::Pcr4, Pcr::Pcr7, Pcr::Pcr11];
             let unsupported_pcrs: Vec<Pcr> = self
                 .pcrs
                 .iter()
@@ -166,9 +166,14 @@ impl Encryption {
                 .filter(|pcr| !supported_pcrs.contains(pcr))
                 .collect();
             if !unsupported_pcrs.is_empty() {
+                let pcrs_string = unsupported_pcrs
+                    .iter()
+                    .map(|pcr| pcr.to_num().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 return Err(
-                    HostConfigurationStaticValidationError::InvalidEncryptionPcrsUnsupported {
-                        pcrs: unsupported_pcrs,
+                    HostConfigurationStaticValidationError::UnsupportedEncryptionPcrs {
+                        pcrs: pcrs_string,
                     },
                 );
             }
@@ -191,7 +196,6 @@ mod tests {
     #[test]
     fn test_validate_encryption() {
         let mut config = Encryption {
-            pcrs: vec![Pcr::Pcr7],
             ..Default::default()
         };
         config.validate().unwrap();
@@ -210,7 +214,6 @@ mod tests {
     #[test]
     fn test_validate_encryption_fail_invalid_recovery_key_url() {
         let config = Encryption {
-            pcrs: vec![Pcr::Pcr7],
             recovery_key_url: Some(
                 Url::parse("http://example.com/invalid-recovery-key-http").unwrap(),
             ),
@@ -233,8 +236,8 @@ mod tests {
         };
         assert_eq!(
             config.validate().unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidEncryptionPcrsUnsupported {
-                pcrs: vec![Pcr::Pcr0],
+            HostConfigurationStaticValidationError::UnsupportedEncryptionPcrs {
+                pcrs: "0".to_string(),
             }
         );
     }

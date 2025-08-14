@@ -2,20 +2,6 @@ parameters:
   - name: imageName
     type: string
 
-  - name: baseimgBuildType
-    displayName: Base Image build type
-    type: string
-    values:
-      - dev
-      - preview
-      - release
-    default: "release"
-
-  - name: baseImagePipelineBuildId
-    displayName: "Build Id of the pipeline run, default will select latest successful run from pipeline 2116 ([AMD64-6-OneBranch]-Prod-BuildImages) with tag 3.0-preview"
-    type: string
-    default: "latestFromBranch"
-
   - name: runtimeEnv
     displayName: "Runtime environment (host vs container)"
     type: string
@@ -47,13 +33,21 @@ parameters:
     type: boolean
     default: true
 
+  - name: dependsOnStage
+    type: string
+    default: ''
+
 stages:
   - stage: TridentTestImg_${{ replace(parameters.imageName, '-', '_') }}
     displayName: Build ${{ parameters.imageName }}
-    dependsOn:
-      - ${{ if and(eq(parameters.runtimeEnv, 'host'), parameters.dependsOnTrident) }}:
-          - GetTridentBinaries_rpms
-      - ${{ else }}: []
+    ${{ if and(eq(parameters.runtimeEnv, 'host'), parameters.dependsOnTrident) }}:
+      dependsOn:
+        - GetTridentBinaries_rpms_amd64
+        - ${{ if ne(parameters.dependsOnStage, '') }}:
+          - ${{ parameters.dependsOnStage }}
+    ${{ elseif ne(parameters.dependsOnStage, '') }}:
+      dependsOn:
+        - ${{ parameters.dependsOnStage }}
 
     jobs:
       - job: BuildTridentTestImg
@@ -79,16 +73,12 @@ stages:
             condition: and(eq('${{ parameters.runtimeEnv }}', 'host'), eq('${{ parameters.dependsOnTrident }}', true))
 
           - template: ../common_tasks/find-base-image-version.yml
-            parameters:
-              baseimgBuildType: ${{ parameters.baseimgBuildType }}
-              baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
-
           - template: .pipelines/templates/build-image.yml@test-images
             parameters:
               imageName: ${{ parameters.imageName }}
               clones: ${{ parameters.clones }}
-              baseimgBuildType: ${{ parameters.baseimgBuildType }}
-              baseimgVersion: $(baseimgVersion)
+              baseimgBuildType: $(BASEIMG_BUILD_TYPE)
+              baseimgVersion: $(BASEIMG_VERSION)
               azureLinuxVersion: ${{ variables.BASEIMG_AZURE_LINUX_VERSION }}
               micBuildType: ${{ parameters.micBuildType }}
               micVersion: ${{ parameters.micVersion }}

@@ -96,6 +96,7 @@ pub enum Dependency {
     E2fsck,
     Efivar,
     Efibootmgr,
+    Eject,
     Findmnt,
     Iptables,
     Losetup,

@@ -279,13 +279,14 @@ impl Parser {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     use std::include_str;
     use std::io::Write;
 
     use indoc::indoc;
     use tempfile::NamedTempFile;
 
-    use super::*;
     use crate::{load_kickstart_string, sections::script::ScriptType, SetsailErrorType};
 
     #[test]

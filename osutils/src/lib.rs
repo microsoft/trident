@@ -18,6 +18,7 @@ pub mod grub_mkconfig;
 pub mod hashing_reader;
 pub mod hostname;
 pub mod image_streamer;
+pub mod installation_media;
 pub mod lsblk;
 pub mod lsof;
 pub mod machine_id;

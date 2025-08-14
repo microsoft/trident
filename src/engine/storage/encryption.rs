@@ -16,7 +16,7 @@ use osutils::{
     container,
     dependencies::{Dependency, DependencyResultExt},
     efivar,
-    encryption::{self, KeySlotType, ENCRYPTION_PASSPHRASE},
+    encryption::{self, KeySlotType, DEFAULT_PCR},
     lsblk::{self, BlockDeviceType},
     path::join_relative,
     pcrlock,
@@ -84,18 +84,8 @@ pub(super) fn create_encrypted_devices(
     if let Some(encryption) = &host_config.storage.encryption {
         let key_file_tmp: NamedTempFile;
         let key_file_path: PathBuf;
-
-        // Store key to update ENCRYPTION_PASSPHRASE static variable
-        let key_value: Vec<u8>;
-
         if let Some(recovery_key_url) = &encryption.recovery_key_url {
-            key_file_path = recovery_key_url.path().into();
-
-            // Read key from existing recovery key file
-            let key = fs::read(&key_file_path).structured(ServicingError::ReadRecoveryKeyFile {
-                key_file: key_file_path.to_string_lossy().to_string(),
-            })?;
-            key_value = key;
+            key_file_path = recovery_key_url.path().into()
         } else {
             // Create a temporary file to store the recovery key file.
             key_file_tmp =
@@ -106,18 +96,12 @@ pub(super) fn create_encrypted_devices(
                     key_file: key_file_path.to_string_lossy().to_string(),
                 },
             )?;
-            let key = encryption::generate_recovery_key_file(&key_file_path).structured(
+            encryption::generate_recovery_key_file(&key_file_path).structured(
                 ServicingError::GenerateRecoveryKeyFile {
                     key_file: key_file_path.to_string_lossy().to_string(),
                 },
             )?;
-
-            key_value = key.clone();
         };
-
-        // Store the key statically for later use, i.e. pcrlock policy enrollment
-        let mut static_key = ENCRYPTION_PASSPHRASE.lock().unwrap();
-        *static_key = key_value;
 
         debug!(
             "Using key file '{}' to initialize all encrypted volumes",
@@ -141,9 +125,7 @@ pub(super) fn create_encrypted_devices(
         // If this is for a grub ROS, seal against the value of PCR 7; if this is for a UKI ROS,
         // seal against a "bootstrapping" pcrlock policy that exclusively contains PCR 0.
         // TODO: If this is a flow with an internal override, seal against the value of PCR 0
-        // directly. Remove this internal override once container, BM, and "rerun" E2E encryption
-        // tests are fixed. Related ADO tasks:
-        // https://dev.azure.com/mariner-org/polar/_workitems/edit/13344/ and
+        // directly. Remove this internal override once BM tests are fixed. Related ADO task:
         // https://dev.azure.com/mariner-org/polar/_workitems/edit/14269/.
         let pcr = if ctx.is_uki()? {
             if ctx
@@ -161,12 +143,17 @@ pub(super) fn create_encrypted_devices(
                 debug!(
                     "Runtime OS image is a UKI image, so sealing against a pcrlock policy of PCR 0"
                 );
+
+                // Remove any pre-existing policy
+                pcrlock::remove_policy().structured(ServicingError::RemovePcrlockPolicy)?;
+
+                // Generate a pcrlock policy
                 pcrlock::generate_pcrlock_policy(BitFlags::from(Pcr::Pcr0), vec![], vec![])?;
                 None
             }
         } else {
-            debug!("Runtime OS image is a grub image, so sealing against PCR 7");
-            Some(BitFlags::from(Pcr::Pcr7))
+            debug!("Runtime OS image is a grub image, so sealing against the default PCR 7");
+            Some(BitFlags::from(DEFAULT_PCR))
         };
 
         // Check if `REENCRYPT_ON_CLEAN_INSTALL` internal param is set to true; if so, re-encrypt

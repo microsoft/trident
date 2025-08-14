@@ -8,30 +8,31 @@ use enumflags2::BitFlags;
 use log::{debug, info, trace};
 
 use osutils::{
-    encryption, files,
-    path::join_relative,
+    encryption as osutils_encryption, files, path,
     pcrlock::{self, PCRLOCK_POLICY_JSON_PATH},
 };
 use sysdefs::tpm2::Pcr;
 use trident_api::{
     config::{
-        HostConfiguration, HostConfigurationDynamicValidationError,
-        HostConfigurationStaticValidationError, PartitionType,
+        HostConfigurationDynamicValidationError, HostConfigurationStaticValidationError,
+        PartitionType,
     },
     constants::internal_params::OVERRIDE_PCRLOCK_ENCRYPTION,
     error::{InternalError, InvalidInputError, ReportError, ServicingError, TridentError},
 };
 
 use crate::{
-    engine::{storage::encryption as storage_encryption, EngineContext},
+    engine::{storage::encryption as engine_encryption, EngineContext},
     ServicingType,
 };
 
 const CRYPTTAB_PATH: &str = "/etc/crypttab";
 
-/// Validates the encryption configuration in Host Configuration.
-pub(super) fn validate_host_config(host_config: &HostConfiguration) -> Result<(), TridentError> {
-    if let Some(encryption) = &host_config.storage.encryption {
+/// Validates the encryption configuration.
+pub(super) fn validate_host_config(ctx: &EngineContext) -> Result<(), TridentError> {
+    if let Some(encryption) = &ctx.spec.storage.encryption {
+        // If a recovery key URL is specified, ensure that the file exists, is a regular file,
+        // is not empty, and is only accessible by the owner.
         if let Some(recovery_key_url) = &encryption.recovery_key_url {
             let key_file: PathBuf = recovery_key_url.path().into();
 
@@ -87,6 +88,58 @@ pub(super) fn validate_host_config(host_config: &HostConfiguration) -> Result<()
                 )));
             }
         }
+
+        // We've already validated that only supported PCRs, i.e. 4, 7, and/or 11, are specified;
+        // but we also need to ensure that only valid PCRs are specified for each image type.
+        if !encryption.pcrs.is_empty() {
+            if ctx.is_uki()? {
+                // TODO: Currently, we cannot seal to PCR 7 for grub MOS -> UKI ROS scenario b/c
+                // not all measurements are recognized by the .pcrlock file generation logic. Once
+                // that is resolved, we include PCR 7 into the valid list. For now, only PCRs 4 and
+                // 11 are valid. Related ADO tasks:
+                // https://dev.azure.com/mariner-org/polar/_workitems/edit/14523/ and
+                // https://dev.azure.com/mariner-org/polar/_workitems/edit/14455/.
+                let invalid_pcrs: Vec<_> = encryption
+                    .pcrs
+                    .iter()
+                    .filter(|&&pcr| pcr != Pcr::Pcr4 && pcr != Pcr::Pcr11)
+                    .cloned()
+                    .collect();
+
+                if !invalid_pcrs.is_empty() {
+                    let pcrs_string = invalid_pcrs
+                        .iter()
+                        .map(|pcr| pcr.to_num().to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    return Err(TridentError::new(InvalidInputError::from(
+                        HostConfigurationDynamicValidationError::InvalidEncryptionPcrsForUkiImage {
+                            pcrs: pcrs_string,
+                        },
+                    )));
+                }
+            } else {
+                let invalid_pcrs: Vec<_> = encryption
+                    .pcrs
+                    .iter()
+                    .filter(|&&pcr| pcr != Pcr::Pcr7)
+                    .cloned()
+                    .collect();
+
+                if !invalid_pcrs.is_empty() {
+                    let pcrs_string = invalid_pcrs
+                        .iter()
+                        .map(|pcr| pcr.to_num().to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    return Err(TridentError::new(InvalidInputError::from(
+                    HostConfigurationDynamicValidationError::InvalidEncryptionPcrsForGrubImage {
+                        pcrs: pcrs_string,
+                    },
+                )));
+                }
+            }
+        }
     }
 
     Ok(())
@@ -116,28 +169,31 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
             // On A/B update, use PCRs selected by the user through the API!
             ServicingType::AbUpdate => {
                 if ctx.is_uki()? {
-                    // TODO: Remove this internal override once container, BM, and "rerun" E2E
-                    // encryption tests are fixed. Related ADO tasks:
-                    // https://dev.azure.com/mariner-org/polar/_workitems/edit/13344/ and
+                    // TODO: Remove this internal override once BM encryption tests are fixed.
+                    // Related ADO task:
                     // https://dev.azure.com/mariner-org/polar/_workitems/edit/14269/.
                     let override_pcrlock_encryption = ctx
                         .spec
                         .internal_params
                         .get_flag(OVERRIDE_PCRLOCK_ENCRYPTION);
                     if !override_pcrlock_encryption {
-                        let mut bitflags = BitFlags::empty();
-                        if !encryption.pcrs.is_empty() {
-                            for pcr in &encryption.pcrs {
-                                bitflags |= BitFlags::from(*pcr);
-                            }
+                        let bitflags = if !encryption.pcrs.is_empty() {
+                            encryption
+                                .pcrs
+                                .iter()
+                                .fold(BitFlags::empty(), |acc, &pcr| acc | BitFlags::from(pcr))
                         } else {
-                            // Use default PCRs if none specified.
-                            // TODO: Before grub MOS + UKI ROS encryption flow is enabled &
-                            // announced, determine what should be the default, and update here.
-                            // Related ADO task:
-                            // https://dev.azure.com/mariner-org/polar/_workitems/edit/14485.
-                            bitflags |= BitFlags::from(Pcr::Pcr7);
-                        }
+                            // TODO: Currently, we cannot seal to PCR 7 b/c not all measurements are
+                            // recognized by the .pcrlock file generation logic. Once that is resolved,
+                            // we want to have PCR 7 as the default. For now, we use PCRs 4 and 11. Related
+                            // ADO tasks:
+                            // https://dev.azure.com/mariner-org/polar/_workitems/edit/14523/ and
+                            // https://dev.azure.com/mariner-org/polar/_workitems/edit/14455/.
+                            //
+                            // Use default PCR if none specified.
+                            //BitFlags::from(osutils_encryption::DEFAULT_PCR)
+                            BitFlags::from(Pcr::Pcr4) | BitFlags::from(Pcr::Pcr11)
+                        };
                         Some(bitflags)
                     } else {
                         debug!(
@@ -161,10 +217,13 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
 
         // If updated PCRs are specified, re-generate pcrlock policy
         if let Some(pcrs) = updated_pcrs {
-            debug!("Re-generating pcrlock policy to include PCRs: {:?}", pcrs);
+            debug!(
+                "Re-generating pcrlock policy to include PCRs: {:?}",
+                pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
+            );
             // Get UKI and bootloader binaries for .pcrlock file generation
             let (uki_binaries, bootloader_binaries) =
-                storage_encryption::get_binary_paths_pcrlock(ctx, pcrs, Some(mount_path))
+                engine_encryption::get_binary_paths_pcrlock(ctx, pcrs, Some(mount_path))
                     .structured(ServicingError::GetBinaryPathsForPcrlockEncryption)?;
 
             // Re-generate pcrlock policy
@@ -173,9 +232,10 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
 
         // If a pcrlock policy JSON file exists, copy it to the update volume
         if Path::new(PCRLOCK_POLICY_JSON_PATH).exists() {
-            let pcrlock_json_copy = join_relative(mount_path, PCRLOCK_POLICY_JSON_PATH);
+            let pcrlock_json_copy = path::join_relative(mount_path, PCRLOCK_POLICY_JSON_PATH);
             debug!(
-                "Copying pcrlock policy JSON to update volume at path '{}'",
+                "Copying pcrlock policy JSON from path '{}' to update volume at path '{}'",
+                PCRLOCK_POLICY_JSON_PATH,
                 pcrlock_json_copy.display()
             );
             fs::copy(PCRLOCK_POLICY_JSON_PATH, pcrlock_json_copy.clone()).structured(
@@ -232,9 +292,9 @@ pub fn configure(ctx: &EngineContext) -> Result<(), TridentError> {
                 "{}\t{}\t{}\tluks,swap,cipher={},size={}\n",
                 ev.device_name,
                 device_path.display(),
-                encryption::DEV_RANDOM_PATH,
-                encryption::CIPHER,
-                encryption::KEY_SIZE
+                osutils_encryption::DEV_RANDOM_PATH,
+                osutils_encryption::CIPHER,
+                osutils_encryption::KEY_SIZE
             ));
         } else {
             contents.push_str(&format!(
@@ -270,13 +330,14 @@ mod tests {
     use super::*;
 
     use std::{os::unix::fs::PermissionsExt, path::Path, str::FromStr};
+    use tempfile::NamedTempFile;
 
     use url::Url;
 
-    use sysdefs::tpm2::Pcr;
     use trident_api::{
         config::{
-            Disk, EncryptedVolume, Encryption, Partition, PartitionSize, PartitionType, Storage,
+            Disk, EncryptedVolume, Encryption, HostConfiguration, Partition, PartitionSize,
+            PartitionType, Storage,
         },
         error::ErrorKind,
     };
@@ -315,15 +376,19 @@ mod tests {
                     device_name: "luks-srv".to_owned(),
                     device_id: "srv-enc".to_owned(),
                 }],
-                pcrs: vec![Pcr::Pcr7],
+                ..Default::default()
             }),
             ..Default::default()
         }
     }
 
-    fn get_host_config(recovery_key_file: &tempfile::NamedTempFile) -> HostConfiguration {
-        HostConfiguration {
-            storage: get_storage(recovery_key_file),
+    fn get_ctx(recovery_key_file: &NamedTempFile) -> EngineContext {
+        EngineContext {
+            spec: HostConfiguration {
+                storage: get_storage(recovery_key_file),
+                ..Default::default()
+            },
+            is_uki: Some(false),
             ..Default::default()
         }
     }
@@ -332,32 +397,32 @@ mod tests {
     #[test]
     fn test_validate_host_config_pass() {
         let recovery_key_file = storage_tests::get_recovery_key_file();
-        let host_config = get_host_config(&recovery_key_file);
-        validate_host_config(&host_config).unwrap();
+        let ctx = get_ctx(&recovery_key_file);
+        validate_host_config(&ctx).unwrap();
     }
 
     // Encryption doesn't need to be configured at all.
     #[test]
     fn test_validate_host_config_encryption_none_pass() {
         let recovery_key_file = storage_tests::get_recovery_key_file();
-        let mut host_config = get_host_config(&recovery_key_file);
+        let mut ctx = get_ctx(&recovery_key_file);
 
-        host_config.storage.encryption = None;
+        ctx.spec.storage.encryption = None;
 
-        validate_host_config(&host_config).unwrap();
+        validate_host_config(&ctx).unwrap();
     }
 
     // Encryption recovery key file needs to exist on the system.
     #[test]
     fn test_validate_host_config_recovery_key_not_exist_fail() {
         let recovery_key_file = storage_tests::get_recovery_key_file();
-        let host_config = get_host_config(&recovery_key_file);
+        let ctx = get_ctx(&recovery_key_file);
 
         // Delete the recovery key file.
         fs::remove_file(recovery_key_file.path()).unwrap();
 
         assert_eq!(
-            validate_host_config(&host_config).unwrap_err().kind(),
+            validate_host_config(&ctx).unwrap_err().kind(),
             &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
                 inner: HostConfigurationDynamicValidationError::InvalidEncryptionKeyFilePath {
                     path: recovery_key_file.path().to_string_lossy().to_string()
@@ -370,15 +435,15 @@ mod tests {
     #[test]
     fn test_validate_host_config_recovery_key_not_file_fail() {
         let recovery_key_file = storage_tests::get_recovery_key_file();
-        let mut host_config = get_host_config(&recovery_key_file);
-        let encryption = host_config.storage.encryption.as_mut().unwrap();
+        let mut ctx = get_ctx(&recovery_key_file);
+        let encryption = ctx.spec.storage.encryption.as_mut().unwrap();
 
         // Point to the recovery key file's directory.
         let recovery_key_dir: &Path = recovery_key_file.path().parent().unwrap();
         encryption.recovery_key_url = Some(Url::from_directory_path(recovery_key_dir).unwrap());
 
         assert_eq!(
-            validate_host_config(&host_config).unwrap_err().kind(),
+            validate_host_config(&ctx).unwrap_err().kind(),
             &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
                 inner: HostConfigurationDynamicValidationError::EncryptionKeyNotRegularFile {
                     key_file: format!("{}/", recovery_key_dir.to_string_lossy())
@@ -391,7 +456,7 @@ mod tests {
     #[test]
     fn test_validate_host_config_recovery_key_perm_pass() {
         let recovery_key_file = storage_tests::get_recovery_key_file();
-        let host_config = get_host_config(&recovery_key_file);
+        let ctx = get_ctx(&recovery_key_file);
 
         // Loop through all possible permission modes.
         for owner_digit in 0..=7 {
@@ -409,7 +474,7 @@ mod tests {
                     perms.set_mode(mode);
                     fs::set_permissions(recovery_key_file.path(), perms).unwrap();
 
-                    validate_host_config(&host_config).unwrap();
+                    validate_host_config(&ctx).unwrap();
                 }
             }
         }
@@ -418,7 +483,7 @@ mod tests {
     #[test]
     fn test_validate_host_config_recovery_key_perm_fail() {
         let recovery_key_file = storage_tests::get_recovery_key_file();
-        let host_config = get_host_config(&recovery_key_file);
+        let ctx = get_ctx(&recovery_key_file);
 
         // Loop through all possible permission modes.
         for owner_digit in 0..=7 {
@@ -437,7 +502,7 @@ mod tests {
                     fs::set_permissions(recovery_key_file.path(), perms).unwrap();
 
                     assert_eq!(
-                        validate_host_config(&host_config).unwrap_err().kind(),
+                        validate_host_config(&ctx).unwrap_err().kind(),
                         &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
                             inner: HostConfigurationDynamicValidationError::EncryptionKeyInvalidPermissions {
                                 key_file: recovery_key_file.path().to_string_lossy().to_string(),
@@ -453,18 +518,80 @@ mod tests {
     #[test]
     fn test_validate_host_config_recovery_key_empty_fail() {
         let recovery_key_file = storage_tests::get_recovery_key_file();
-        let host_config = get_host_config(&recovery_key_file);
+        let ctx = get_ctx(&recovery_key_file);
 
         // Set the recovery key file's contents to empty.
         fs::write(recovery_key_file.path(), "").unwrap();
 
         assert_eq!(
-            validate_host_config(&host_config).unwrap_err().kind(),
+            validate_host_config(&ctx).unwrap_err().kind(),
             &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
                 inner: HostConfigurationDynamicValidationError::EncryptionKeyEmpty {
                     key_file: recovery_key_file.path().to_string_lossy().to_string()
                 }
             })
         );
+    }
+
+    #[test]
+    fn test_validate_host_config_encryption_pcrs() {
+        // Test case #0: If OS image is a grub image and PCRs include 4, 7, and 11, then fail b/c
+        // only PCR 7 is valid for non-UKI images.
+        let recovery_key_file = storage_tests::get_recovery_key_file();
+        let mut ctx = get_ctx(&recovery_key_file);
+
+        {
+            let encryption = ctx.spec.storage.encryption.as_mut().unwrap();
+            let pcrs = vec![Pcr::Pcr4, Pcr::Pcr7, Pcr::Pcr11];
+            encryption.pcrs = pcrs.clone();
+        }
+
+        let pcrs_str = [Pcr::Pcr4, Pcr::Pcr11]
+            .iter()
+            .map(|pcr| pcr.to_num().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        assert_eq!(
+            validate_host_config(&ctx).unwrap_err().kind(),
+            &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
+                inner: HostConfigurationDynamicValidationError::InvalidEncryptionPcrsForGrubImage {
+                    pcrs: pcrs_str,
+                }
+            })
+        );
+
+        // Test case #1: If OS image is a grub image AND PCRs only include 7, then pass.
+        {
+            let encryption = ctx.spec.storage.encryption.as_mut().unwrap();
+            encryption.pcrs = vec![Pcr::Pcr7];
+        }
+        validate_host_config(&ctx).unwrap();
+
+        // Test case #2: If OS image is a UKI image, then only PCRs 4 and 11 are allowed.
+        ctx.is_uki = Some(true);
+        {
+            let encryption = ctx.spec.storage.encryption.as_mut().unwrap();
+            encryption.pcrs = vec![Pcr::Pcr4, Pcr::Pcr7, Pcr::Pcr11];
+        }
+        let pcrs_str = [Pcr::Pcr7]
+            .iter()
+            .map(|pcr| pcr.to_num().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        assert_eq!(
+            validate_host_config(&ctx).unwrap_err().kind(),
+            &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
+                inner: HostConfigurationDynamicValidationError::InvalidEncryptionPcrsForUkiImage {
+                    pcrs: pcrs_str,
+                }
+            })
+        );
+
+        // Test case #3: If OS image is a UKI image AND PCRs only include 4 and 11, then pass.
+        {
+            let encryption = ctx.spec.storage.encryption.as_mut().unwrap();
+            encryption.pcrs = vec![Pcr::Pcr4, Pcr::Pcr11];
+        }
+        validate_host_config(&ctx).unwrap();
     }
 }

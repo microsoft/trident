@@ -1,5 +1,6 @@
 use harpoon::{EventResult, EventType, IdSource, QueryResult};
 use log::{debug, error};
+
 use trident_api::{
     config::{HarpoonConfig, HarpoonIdSource, HostConfiguration},
     constants::internal_params::ENABLE_HARPOON_SUPPORT,

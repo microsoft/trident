@@ -1,3 +1,16 @@
+# e2e-template will run AMD64 trident tests for each of our scenarios.
+# This includes unit tests, integration tests, and end-to-end tests.
+#
+# Prior to invoking this template, an artifact must be created that
+# contains information about the base image being used.  This artifact
+# should be created by this template:
+#
+#   .pipelines/templates/stages/base_image_config/create-base-image-config-artifact.yml
+#
+# The stage that creates the artifact should be passed into e2e-template
+# as baseImageArtifactStage.  This will ensure that e2e-template waits for
+# the base image artifact to be created.
+#
 parameters:
   - name: "stageType"
     displayName: "Pipeline configuration type"
@@ -10,23 +23,6 @@ parameters:
       - pre
       - rel
       - full-validation
-
-  - name: baseimgBuildType
-    displayName: Base Image build type
-    type: string
-    values:
-      - dev
-      - preview
-      - release
-    default: "release"
-
-  - name: baseImagePipelineBuildId
-    type: string
-    default: "latestFromBranch"
-
-  - name: baseImageArm64PipelineBuildId
-    type: string
-    default: "latestFromBranch"
 
   - name: blockPublishing
     displayName: "Block publishing to artifact feed"
@@ -62,6 +58,21 @@ parameters:
     type: number
     default: 3
 
+  - name: osModifierBranch
+    type: string
+    default: "submodule"
+
+  - name: baremetalTestsEnabled
+    type: boolean
+    default: true
+
+  - name: forceFunctionalTestImageRebuild
+    type: boolean
+    default: false
+
+  - name: baseImageArtifactStage
+    type: string
+    
 stages:
   # Trident Build/Download
   - template: stages/trident_rpms/trident-stage.yml
@@ -69,10 +80,10 @@ stages:
       stageType: ${{ parameters.stageType }}
       tridentArtifactName: trident-binaries
       codeCoverage: false
-      baseimgBuildType: ${{ parameters.baseimgBuildType }}
-      baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
-      baseImageArm64PipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
       forceTridentRebuild: ${{ parameters.forceTridentRebuild }}
+      osModifierBranch: ${{ parameters.osModifierBranch }}
+      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+      targetArchitecture: amd64
 
   # Build tools (Go stuff)
   - template: stages/building_tools/building-tools.yml
@@ -80,120 +91,107 @@ stages:
   # Makefile validation, only for CI
   - ${{ if eq(parameters.stageType, 'ci') }}:
       - template: stages/validate_makefile/dev-build.yml
+        parameters:
+          osModifierBranch: ${{ parameters.osModifierBranch }}
 
-  # Build FT base Image, only in CI
-  - ${{ if eq(parameters.stageType, 'ci') }}:
+  # Build FT base Image, only for CI or if forceFunctionalTestImageRebuild is true
+  - ${{ if or(eq(parameters.stageType, 'ci'), eq(parameters.forceFunctionalTestImageRebuild, true)) }}:
       # Build Trident installer ISO (host)
       - template: stages/build_image/build-image.yml
         parameters:
           imageName: trident-functest
           dependsOnTrident: false
-          baseimgBuildType: ${{ parameters.baseimgBuildType }}
-          baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
           clones: 1
+          dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
-  # Build Trident container image
+  # Build Trident container image (depends on GetTridentBinaries_rpms_amd64)
   - template: stages/build_docker_image/trident-container.yml
-    parameters:
-      baseimgBuildType: ${{ parameters.baseimgBuildType }}
-      baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
 
   # Build Trident installer ISO (host)
   - template: stages/build_image/build-image.yml
     parameters:
       imageName: trident-installer
-      baseimgBuildType: ${{ parameters.baseimgBuildType }}
-      baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
       clones: 1
+      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
   # Build Trident split (stage and finalize separated) installer ISO (host)
   - template: stages/build_image/build-image.yml
     parameters:
       imageName: trident-split-installer
-      baseimgBuildType: ${{ parameters.baseimgBuildType }}
-      baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
       clones: 1
+      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
   # Build Trident installer ISO (container)
   - template: stages/build_image/build-image.yml
     parameters:
       imageName: trident-container-installer
-      baseimgBuildType: ${{ parameters.baseimgBuildType }}
-      baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
       runtimeEnv: "container"
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
       clones: 1
+      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
   # Build Trident test image (regular)
   - template: stages/build_image/build-image.yml
     parameters:
       imageName: trident-testimage
-      baseimgBuildType: ${{ parameters.baseimgBuildType }}
-      baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
+      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
   # Build Trident test image (container)
   - template: stages/build_image/build-image.yml
     parameters:
       imageName: trident-container-testimage
-      baseimgBuildType: ${{ parameters.baseimgBuildType }}
-      baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
       runtimeEnv: "container"
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
+      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
   # Build Trident test image for verity (host)
   - template: stages/build_image/build-image.yml
     parameters:
       imageName: trident-verity-testimage
-      baseimgBuildType: ${{ parameters.baseimgBuildType }}
-      baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
+      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
   # Build Trident test image for verity (container)
   - template: stages/build_image/build-image.yml
     parameters:
       imageName: trident-container-verity-testimage
-      baseimgBuildType: ${{ parameters.baseimgBuildType }}
-      baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
       runtimeEnv: "container"
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
+      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
   # Build Trident test image for usr-verity (host)
   - template: stages/build_image/build-image.yml
     parameters:
       imageName: trident-usrverity-testimage
-      baseimgBuildType: ${{ parameters.baseimgBuildType }}
-      baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
+      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
   # Build Trident test image for usr-verity (container)
   - template: stages/build_image/build-image.yml
     parameters:
       imageName: trident-container-usrverity-testimage
       runtimeEnv: "container"
-      baseimgBuildType: ${{ parameters.baseimgBuildType }}
-      baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
+      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
   - ${{ if or(parameters.forceTridentRebuild, eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e-azure')) }}:
       # Build USB-ISO
       - template: stages/trident_usb_iso/trident-usb-iso.yml
         parameters:
-          baseimgBuildType: ${{ parameters.baseimgBuildType }}
-          baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
   - ${{ else }}:
@@ -213,8 +211,6 @@ stages:
   # Test Servicing on VMs
   - template: stages/testing_servicing/vm-testing.yml
     parameters:
-      baseimgBuildType: ${{ parameters.baseimgBuildType }}
-      baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
       includeQemu: true
       includeUKI: true
       includeAzure: ${{ parameters.includeAzure }}
@@ -227,6 +223,10 @@ stages:
   - ${{ if eq(parameters.stageType, 'pre') }}:
       # Functional Testing
       - template: stages/testing_functional/functional-testing.yml
+        parameters:
+          dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+          ${{ if parameters.forceFunctionalTestImageRebuild }}:
+            downloadPrebuiltImage: false
 
       # VM Testing (host, daily)
       - template: stages/testing_vm/netlaunch-testing.yml
@@ -234,18 +234,19 @@ stages:
           buildPurpose: "daily"
           runtimeEnv: "host"
 
-      # BM Testing (host, daily)
-      - template: stages/testing_baremetal/baremetal-testing.yml
-        parameters:
-          buildPurpose: "daily"
-          runtimeEnv: "host"
+      - ${{ if parameters.baremetalTestsEnabled }}:
+        # BM Testing (host, daily)
+        - template: stages/testing_baremetal/baremetal-testing.yml
+          parameters:
+            buildPurpose: "daily"
+            runtimeEnv: "host"
 
-      # BM Testing (container, daily)
-      - template: stages/testing_baremetal/baremetal-testing.yml
-        parameters:
-          buildPurpose: "daily"
-          runtimeEnv: "container"
-          extraDependsOn: "BaremetalDeploymentTesting_host"
+        # BM Testing (container, daily)
+        - template: stages/testing_baremetal/baremetal-testing.yml
+          parameters:
+            buildPurpose: "daily"
+            runtimeEnv: "container"
+            extraDependsOn: "BaremetalDeploymentTesting_host"
 
       # VM Testing (container, daily)
       - template: stages/testing_vm/netlaunch-testing.yml
@@ -257,6 +258,11 @@ stages:
   - ${{ if eq(parameters.stageType, 'full-validation') }}:
       # Functional Testing
       - template: stages/testing_functional/functional-testing.yml
+        parameters:
+          dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+          ${{ if parameters.forceFunctionalTestImageRebuild }}:
+            downloadPrebuiltImage: false
+
 
       # VM Testing (host, weekly)
       - template: stages/testing_vm/netlaunch-testing.yml
@@ -270,18 +276,19 @@ stages:
           buildPurpose: "weekly"
           runtimeEnv: "container"
 
-      # BM Testing (host, weekly)
-      - template: stages/testing_baremetal/baremetal-testing.yml
-        parameters:
-          buildPurpose: "weekly"
-          runtimeEnv: "host"
+      - ${{ if parameters.baremetalTestsEnabled }}:
+        # BM Testing (host, weekly)
+        - template: stages/testing_baremetal/baremetal-testing.yml
+          parameters:
+            buildPurpose: "weekly"
+            runtimeEnv: "host"
 
-      # BM Testing (container, weekly)
-      - template: stages/testing_baremetal/baremetal-testing.yml
-        parameters:
-          buildPurpose: "weekly"
-          runtimeEnv: "container"
-          extraDependsOn: "BaremetalDeploymentTesting_host"
+        # BM Testing (container, weekly)
+        - template: stages/testing_baremetal/baremetal-testing.yml
+          parameters:
+            buildPurpose: "weekly"
+            runtimeEnv: "container"
+            extraDependsOn: "BaremetalDeploymentTesting_host"
 
   # TESTING stages for CI
   - ${{ if eq(parameters.stageType, 'ci') }}:
@@ -289,6 +296,9 @@ stages:
       - template: stages/testing_functional/functional-testing.yml
         parameters:
           downloadPrebuiltImage: false
+          osModifierBranch: ${{ parameters.osModifierBranch }}
+          dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+
 
       # VM Testing (host, post_merge)
       - template: stages/testing_vm/netlaunch-testing.yml
@@ -308,6 +318,9 @@ stages:
       - template: stages/testing_functional/functional-testing.yml
         parameters:
           rerunTests: false
+          dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+          ${{ if parameters.forceFunctionalTestImageRebuild }}:
+            downloadPrebuiltImage: false
 
       # VM Testing (host, pullrequest)
       - template: stages/testing_vm/netlaunch-testing.yml

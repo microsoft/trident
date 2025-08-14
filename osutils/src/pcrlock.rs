@@ -12,15 +12,19 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256, Sha384, Sha512};
 use tempfile::NamedTempFile;
 
-use crate::{
-    bootloaders::{BOOT_EFI, GRUB_EFI},
-    dependencies::Dependency,
-    exe::RunAndCheck,
-};
 use sysdefs::tpm2::Pcr;
 use trident_api::{
-    error::{ReportError, ServicingError, TridentError},
+    error::{ReportError, ServicingError, TridentError, TridentResultExt},
     primitives::hash::Sha256Hash,
+};
+
+use crate::{
+    bootloaders::{BOOT_EFI, GRUB_EFI},
+    container,
+    dependencies::Dependency,
+    efivar,
+    exe::RunAndCheck,
+    path,
 };
 
 /// Path to the pcrlock directory where .pcrlock files are located.
@@ -109,15 +113,50 @@ fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
     );
 
+    // If running inside of a container AND pcrlock.json already exists in the ROS on the host,
+    // copy it from the host and into the container
+    if container::is_running_in_container()
+        .unstructured("Failed to determine if running in container")?
+    {
+        let host_root =
+            container::get_host_root_path().unstructured("Failed to get host root path")?;
+        let host_pcrlock_json_path = path::join_relative(host_root, PCRLOCK_POLICY_JSON_PATH);
+        if host_pcrlock_json_path.exists() {
+            debug!("Running inside of a container, so copying pcrlock policy JSON from the host at '{}' into the container at '{}'",
+            host_pcrlock_json_path.display(),
+            PCRLOCK_POLICY_JSON_PATH
+        );
+            fs::copy(host_pcrlock_json_path, PCRLOCK_POLICY_JSON_PATH)
+                .context("Failed to copy pcrlock policy JSON from host to container")?;
+        }
+    }
+
     make_policy(pcrs).context("Failed to run 'systemd-pcrlock make-policy' command")?;
 
     // Log pcrlock policy JSON contents
-    let pcrlock_policy = fs::read_to_string(PCRLOCK_POLICY_JSON_PATH)
-        .context("Failed to read pcrlock policy JSON")?;
+    let pcrlock_policy = fs::read_to_string(PCRLOCK_POLICY_JSON_PATH).context(format!(
+        "Failed to read pcrlock policy JSON at path '{PCRLOCK_POLICY_JSON_PATH}'"
+    ))?;
     trace!(
-        "Contents of pcrlock policy JSON at '{PCRLOCK_POLICY_JSON_PATH}':\n{}",
+        "Contents of pcrlock policy JSON at '{}':\n{}",
+        PCRLOCK_POLICY_JSON_PATH,
         pcrlock_policy
     );
+
+    // If running inside of a container, copy pcrlock policy JSON onto the host
+    if container::is_running_in_container()
+        .unstructured("Failed to determine if running in container")?
+    {
+        let host_root =
+            container::get_host_root_path().unstructured("Failed to get host root path")?;
+        let host_pcrlock_json_path = path::join_relative(host_root, PCRLOCK_POLICY_JSON_PATH);
+        debug!("Running inside of a container, so copying pcrlock policy JSON from the container at '{}' onto the host at '{}'",
+            PCRLOCK_POLICY_JSON_PATH,
+            host_pcrlock_json_path.display()
+        );
+        fs::copy(PCRLOCK_POLICY_JSON_PATH, host_pcrlock_json_path)
+            .context("Failed to copy pcrlock policy JSON from container to host")?;
+    }
 
     // Parse the policy JSON to validate that all requested PCRs are present
     let policy: PcrPolicy =
@@ -292,6 +331,38 @@ fn make_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
             Output:\n{}",
             output_str
         );
+    }
+
+    Ok(())
+}
+
+/// Removes the previously generated pcrlock policy and deallocates the NV index.
+pub fn remove_policy() -> Result<(), Error> {
+    // Remove the pcrlock policy
+    let mut pcrlock_policy = vec![PathBuf::from(PCRLOCK_POLICY_JSON_PATH)];
+
+    // If running from inside a container, also remove the pcrlock policy on the host
+    if container::is_running_in_container()
+        .unstructured("Failed to determine if running in container")?
+    {
+        let host_root =
+            container::get_host_root_path().unstructured("Failed to get host root path")?;
+        let host_pcrlock_json_path = path::join_relative(host_root, PCRLOCK_POLICY_JSON_PATH);
+        // Append this host path to vector
+        pcrlock_policy.push(host_pcrlock_json_path);
+    }
+
+    for policy_path in pcrlock_policy {
+        debug!(
+            "Removing pcrlock JSON policy at '{}'",
+            policy_path.display()
+        );
+        Dependency::SystemdPcrlock
+            .cmd()
+            .arg("remove-policy")
+            .arg(format!("--policy={}", policy_path.display()))
+            .run_and_check()
+            .context("Failed to run 'systemd-pcrlock remove-policy'")?;
     }
 
     Ok(())
@@ -601,27 +672,26 @@ fn generate_pcrlock_files(
                 bootloader_path.display()
             ))?;
         }
-        // Second, if SecureBoot is disabled, the authenticode of the .linux section of each UKI
-        // binary is measured into PCR 4 as well.
-        //
-        // TODO: Once SecureBoot is enabled, gate this logic with a conditional, or remove
-        // entirely, as SecureBoot will likely be enabled always.
-        // https://dev.azure.com/mariner-org/polar/_workitems/edit/14286/.
-        for (index, uki_path) in uki_binaries.into_iter().enumerate() {
-            let pcrlock_file =
-                generate_pcrlock_output_path(BOOT_LOADER_CODE_UKI_PCRLOCK_DIR, index);
-            debug!(
-                    "Generating .pcrlock file at '{}' to measure .linux section of UKI PE binary at '{}'",
+        // If SecureBoot is disabled, the authenticode of the .linux section of each UKI binary is
+        // measured into PCR 4 as well.
+        if !efivar::secure_boot_is_enabled() {
+            for (index, uki_path) in uki_binaries.into_iter().enumerate() {
+                let pcrlock_file =
+                    generate_pcrlock_output_path(BOOT_LOADER_CODE_UKI_PCRLOCK_DIR, index);
+                debug!(
+                    "SecureBoot is disabled, so generating .pcrlock file at '{}' \
+                    to measure .linux section of UKI PE binary at '{}'",
                     pcrlock_file.clone().display(),
                     uki_path.clone().display()
                 );
-            generate_linux_authenticode(uki_path.clone(), pcrlock_file.clone()).context(
+                generate_linux_authenticode(uki_path.clone(), pcrlock_file.clone()).context(
                     format!(
                         "Failed to generate .pcrlock file at '{}' for .linux section of UKI PE binary at '{}'",
                         pcrlock_file.display(),
                         uki_path.display()
                     ),
                 )?;
+            }
         }
     } else {
         debug!("Skipping generating bootloader and UKI .pcrlock files as PCR 4 is not requested");

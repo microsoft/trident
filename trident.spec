@@ -185,8 +185,7 @@ Statically defined .pcrlock files for PCR-based encryption. This is a workaround
 be removed once the fix is merged in AZL 4.0.
 
 %files static-pcrlock-files
-%dir %{_sharedstatedir}/pcrlock.d
-%{_sharedstatedir}/pcrlock.d/
+%{_sharedstatedir}/pcrlock.d
 
 # ------------------------------------------------------------------------------
 
