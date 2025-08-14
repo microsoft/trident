@@ -72,6 +72,8 @@ const KERNEL_CMDLINE_PCRLOCK_DIR: &str = "710-kernel-cmdline.pcrlock.d";
 #[allow(dead_code)]
 const KERNEL_INITRD_PCRLOCK_DIR: &str = "720-kernel-initrd.pcrlock.d";
 
+const HW_BOOTLOADER_PCRLOCK_DIR: &str = "670-hw-bootloader.pcrlock.d";
+
 #[derive(Debug, Deserialize)]
 struct PcrValue {
     pcr: Pcr,
@@ -248,7 +250,7 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
 
     // Validate that all required PCR entries have a recognized component; otherwise,
     // a PCR cannot be included into the pcrlock policy
-    let mut unrecognized: Vec<_> = required_entries
+    let unrecognized: Vec<_> = required_entries
         .into_iter()
         .filter(|entry| entry.component.is_none())
         .collect();
@@ -260,7 +262,7 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
     // Workaround to enable pcrlock encryption on Trident's BM E2E tests:
     // If unrecognized includes a PCR 4 record expected for E2E BM environment, then extract the
     // sha256 hash from the record and generate a .pcrlock file for it
-    unrecognized.retain(|entry| {
+    for entry in unrecognized.iter() {
         let desc_match = entry
             .description
             .as_deref()
@@ -271,16 +273,48 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
 
         if should_handle {
             let sha256_hash = entry.sha256.as_ref().unwrap();
-            let pcrlock_file = generate_pcrlock_output_path(BOOT_LOADER_CODE_SHIM_PCRLOCK_DIR, 0);
+            let pcrlock_file = generate_pcrlock_output_path(HW_BOOTLOADER_PCRLOCK_DIR, 0);
 
             generate_pcrlock_file(pcrlock_file, entry.pcr, sha256_hash.to_string())
                 .expect("Failed to generate .pcrlock file for unmatched record");
-
-            false
-        } else {
-            true
         }
-    });
+    }
+
+    // TODO: REBASE THIS!
+    // Need to get systemd-pcrlock log output again and confirm that all entries have now been
+    // recognized
+    let output = Dependency::SystemdPcrlock
+        .cmd()
+        .arg("log")
+        .arg("--json=pretty")
+        .output_and_check()
+        .context("Failed to run 'systemd-pcrlock log'")?;
+
+    let parsed: LogOutput =
+        serde_json::from_str(&output).context("Failed to parse 'systemd-pcrlock log' output")?;
+
+    // Filter and log ONLY required PCR entries
+    let required_entries: Vec<_> = parsed
+        .log
+        .iter()
+        .filter(|entry| required_pcrs.contains(entry.pcr))
+        .collect();
+
+    debug!(
+        "Filtered 'systemd-pcrlock log' entries for required PCRs: {:?}\n{:#?}",
+        required_pcrs
+            .iter()
+            .map(|pcr| pcr.to_num())
+            .collect::<Vec<_>>(),
+        required_entries
+    );
+
+    // Validate that all required PCR entries have a recognized component; otherwise,
+    // a PCR cannot be included into the pcrlock policy
+    let unrecognized: Vec<_> = required_entries
+        .into_iter()
+        .filter(|entry| entry.component.is_none())
+        .collect();
 
     if unrecognized.is_empty() {
         return Ok(());
