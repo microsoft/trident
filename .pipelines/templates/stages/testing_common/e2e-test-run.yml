@@ -127,6 +127,11 @@ steps:
         -s "${{ parameters.artifactsDirectory }}" \
         -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-runtime-os-B.log 2>&1 &
 
+      PROXY_ARG=""
+      if ${{ parameters.deploymentEnvironment}} == 'bareMetal'; then
+        PROXY_ARG="HTTPS_PROXY=http://172.16.1.10:3128"
+      fi
+
       echo "Running script to stage and finalize A/B update..."
       ./bin/storm-trident helper ab-update \
           "${{ parameters.sshKeyPath }}" \
@@ -137,7 +142,7 @@ steps:
           --version $(version) \
           --stage-ab-update \
           --finalize-ab-update \
-          ${{ if eq(parameters.deploymentEnvironment, 'bareMetal') }}--proxy HTTPS_PROXY=http://172.16.1.10:3128${{ else }}${{ end }}
+          --proxy $PROXY_ARG
 
       current_version=$(echo $(version))
       new_version=$((current_version + 1))
@@ -232,6 +237,11 @@ steps:
           -s "${{ parameters.artifactsDirectory }}" \
           -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-runtime-os-A.log 2>&1 &
 
+      PROXY_ARG=""
+      if ${{ parameters.deploymentEnvironment}} == 'bareMetal'; then
+        PROXY_ARG="HTTPS_PROXY=http://172.16.1.10:3128"
+      fi
+
       echo "Running script to stage and finalize A/B update..."
       ./bin/storm-trident helper ab-update \
           "${{ parameters.sshKeyPath }}" \
@@ -242,7 +252,7 @@ steps:
           --version $(version) \
           --stage-ab-update \
           --finalize-ab-update \
-          ${{ if eq(parameters.deploymentEnvironment, 'bareMetal') }}--proxy HTTPS_PROXY=http://172.16.1.10:3128${{ else }}${{ end }}
+          --proxy $PROXY_ARG
 
       current_version=$(echo $(version))
       new_version=$((current_version + 1))
