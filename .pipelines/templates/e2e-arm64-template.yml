@@ -36,7 +36,8 @@ parameters:
 
   - name: baseImageArtifactStage
     type: string
-    
+    default: ''
+
 stages:
   # Trident Build/Download
   - template: stages/trident_rpms/trident-stage.yml

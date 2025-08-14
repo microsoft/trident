@@ -73,6 +73,7 @@ parameters:
 
   - name: baseImageArtifactStage
     type: string
+    default: ''
     
 stages:
   # Trident Build/Download
