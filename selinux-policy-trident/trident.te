@@ -273,7 +273,7 @@ files_var_lib_filetrans(trident_t, trident_var_lib_t, { dir file lnk_file })
 # Allow trident_t domain to interact with files and directories labeled as trident_var_lib_t
 # Necessary so Trident can interact with the datastore at /var/lib/trident
 allow trident_t trident_var_lib_t:dir { getattr search read write add_name create remove_name open mounton relabelto };
-allow trident_t trident_var_lib_t:file { getattr setattr create open read write unlink lock };
+allow trident_t trident_var_lib_t:file { getattr setattr create open read write unlink lock relabelto };
 
 # Allow Trident to relabel its executable
 allow trident_t trident_exec_t:file relabelto;
