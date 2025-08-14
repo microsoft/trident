@@ -257,52 +257,36 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         return Ok(());
     }
 
-    // TODO: If unrecognized includes a PCR 4 record expected for E2E BM environment, then extract
-    // the sha256 hash from the record and generate a .pcrlock file for it
-    let mut handled_indexes = std::collections::HashSet::new();
-    for (i, entry) in unrecognized.iter().enumerate() {
+    // Workaround to enable pcrlock encryption on Trident's BM E2E tests:
+    // If unrecognized includes a PCR 4 record expected for E2E BM environment, then extract the
+    // sha256 hash from the record and generate a .pcrlock file for it
+    unrecognized.retain(|entry| {
         let desc_match = entry
             .description
             .as_deref()
-            .map(|d| {
-                // Add more substrings here if needed
-                d.contains(r"\efi\Dell\System_Services\System_Services.efi")
-            })
+            .map(|d| d.contains(r"\efi\Dell\System_Services\System_Services.efi"))
             .unwrap_or(false);
 
-        if (entry.pcr == Pcr::Pcr4 || desc_match) && entry.sha256.is_some() {
-            let sha256_hash = entry.sha256.as_ref().unwrap();
+        let should_handle = (entry.pcr == Pcr::Pcr4 || desc_match) && entry.sha256.is_some();
 
+        if should_handle {
+            let sha256_hash = entry.sha256.as_ref().unwrap();
             let pcrlock_file = generate_pcrlock_output_path(BOOT_LOADER_CODE_SHIM_PCRLOCK_DIR, 0);
 
-            debug!(
-                "Detected unmatched entry (PCR {}, desc_match: {}) - generating .pcrlock at '{}' with hash {}",
-                entry.pcr.to_num(),
-                desc_match,
-                pcrlock_file.display(),
-                sha256_hash
-            );
+            generate_pcrlock_file(pcrlock_file, entry.pcr, sha256_hash.to_string())
+                .expect("Failed to generate .pcrlock file for unmatched record");
 
-            write_minimal_pcrlock_file(pcrlock_file, entry.pcr, sha256_hash.to_string())
-                .context("Failed to generate .pcrlock file for unmatched record")?;
-
-            handled_indexes.insert(i);
+            false
+        } else {
+            true
         }
+    });
+
+    if unrecognized.is_empty() {
+        return Ok(());
     }
 
-    // Remove handled entries before deciding if we fail
-    unrecognized = unrecognized
-        .into_iter()
-        .enumerate()
-        .filter_map(|(i, e)| {
-            if handled_indexes.contains(&i) {
-                None
-            } else {
-                Some(e)
-            }
-        })
-        .collect();
-
+    // If any entries still not recognized, issue an error
     let entries: Vec<String> = unrecognized
         .into_iter()
         .map(|entry| {
@@ -322,55 +306,6 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
             to recognized components:\n{}",
         entries.join("\n")
     );
-}
-
-pub fn write_minimal_pcrlock_file(pcrlock_file: PathBuf, pcr: Pcr, digest: String) -> Result<()> {
-    debug!(
-        "Writing minimal .pcrlock file at '{}' for PCR {} with SHA256 digest {}",
-        pcrlock_file.display(),
-        pcr.to_num(),
-        digest
-    );
-
-    // Build the digest entry
-    let digests = vec![DigestEntry {
-        hash_alg: "sha256",
-        digest,
-    }];
-
-    // Create the PcrLock structure with a single record
-    let pcrlock = PcrLock {
-        records: vec![Record {
-            pcr: pcr.to_num(),
-            digests,
-        }],
-    };
-
-    // Ensure the target directory exists
-    if let Some(parent) = pcrlock_file.parent() {
-        fs::create_dir_all(parent)
-            .context(format!("Failed to create directory '{}'", parent.display()))?;
-    }
-
-    // Serialize to JSON
-    let json = serde_json::to_string(&pcrlock).context(format!(
-        "Failed to serialize .pcrlock file '{}' to JSON",
-        pcrlock_file.display()
-    ))?;
-
-    // Save to disk
-    fs::write(&pcrlock_file, json.clone()).context(format!(
-        "Failed to write .pcrlock file to '{}'",
-        pcrlock_file.display()
-    ))?;
-
-    trace!(
-        "Written minimal .pcrlock file at '{}':\n{}",
-        pcrlock_file.display(),
-        json
-    );
-
-    Ok(())
 }
 
 /// Runs `systemd-pcrlock make-policy` command to predict the PCR state for future boots and then
@@ -831,6 +766,57 @@ struct PcrLock<'a> {
     records: Vec<Record<'a>>,
 }
 
+/// Generates a single .pcrlock file at the given path, to capture one sha256 digest into a PCR.
+fn generate_pcrlock_file(pcrlock_file: PathBuf, pcr: Pcr, digest: String) -> Result<()> {
+    debug!(
+        "Writing .pcrlock file at '{}' for PCR '{}' with SHA256 digest '{}'",
+        pcrlock_file.display(),
+        pcr.to_num(),
+        digest
+    );
+
+    // Build the digest entry
+    let digests = vec![DigestEntry {
+        hash_alg: "sha256",
+        digest,
+    }];
+
+    // Create the PcrLock structure with a single record
+    let pcrlock = PcrLock {
+        records: vec![Record {
+            pcr: pcr.to_num(),
+            digests,
+        }],
+    };
+
+    // Ensure the target directory exists
+    if let Some(parent) = pcrlock_file.parent() {
+        fs::create_dir_all(parent)
+            .context(format!("Failed to create directory '{}'", parent.display()))?;
+    }
+
+    // Serialize to JSON
+    let json = serde_json::to_string(&pcrlock).context(format!(
+        "Failed to serialize .pcrlock file '{}' to JSON",
+        pcrlock_file.display()
+    ))?;
+
+    // Save to disk
+    fs::write(&pcrlock_file, json.clone()).context(format!(
+        "Failed to write .pcrlock file to '{}'",
+        pcrlock_file.display()
+    ))?;
+
+    // Print contents of .pcrlock file
+    trace!(
+        "Contents of .pcrlock file at '{}':\n{}",
+        pcrlock_file.display(),
+        json
+    );
+
+    Ok(())
+}
+
 /// Computes the authenticode of a PE binary at `pe_binary` path, and writes a .pcrlock file at
 /// `pcrlock_file` for the PCR. This file will later be used by `systemd-pcrlock` to predict the
 /// measurement of the PE binary into the specified PCR.
@@ -867,51 +853,16 @@ fn write_pe_binary_authenticode_pcrlock_file(
         sha512.update(slice);
     }
 
-    let digests: Vec<DigestEntry<'_>> = vec![
-        DigestEntry {
-            hash_alg: "sha256",
-            digest: format!("{:x}", sha256.finalize()),
-        },
-        DigestEntry {
-            hash_alg: "sha384",
-            digest: format!("{:x}", sha384.finalize()),
-        },
-        DigestEntry {
-            hash_alg: "sha512",
-            digest: format!("{:x}", sha512.finalize()),
-        },
-    ];
-
-    // Build .pcrlock file structure
-    let pcrlock = PcrLock {
-        records: vec![Record {
-            pcr: pcr.to_num(),
-            digests,
-        }],
-    };
-
-    if let Some(parent) = pcrlock_file.parent() {
-        fs::create_dir_all(parent).context(format!(
-            "Failed to create directory for .pcrlock file at '{}'",
-            pcrlock_file.display()
-        ))?;
-    }
-
-    let json = serde_json::to_string(&pcrlock).context(format!(
-        "Failed to serialize .pcrlock file '{}' as JSON",
-        pcrlock_file.display()
+    // Generate .pcrlock file
+    generate_pcrlock_file(
+        pcrlock_file.clone(),
+        pcr,
+        format!("{:x}", sha256.finalize()),
+    )
+    .context(format!(
+        "Failed to generate .pcrlock file for PE binary at '{}'",
+        pe_binary.display()
     ))?;
-    fs::write(&pcrlock_file, json.clone()).context(format!(
-        "Failed to write .pcrlock file at '{}'",
-        pcrlock_file.display()
-    ))?;
-
-    // Print contents of .pcrlock file
-    trace!(
-        "Contents of .pcrlock file at '{}':\n{}",
-        pcrlock_file.display(),
-        json
-    );
 
     Ok(())
 }
@@ -975,48 +926,16 @@ fn generate_720_kernel_initrd_pcrlock(uki_path: PathBuf, pcrlock_file: PathBuf) 
         )
     })?;
 
-    let digests = vec![
-        DigestEntry {
-            hash_alg: "sha256",
-            digest: hex::encode(Sha256::digest(&buffer)),
-        },
-        DigestEntry {
-            hash_alg: "sha384",
-            digest: hex::encode(Sha384::digest(&buffer)),
-        },
-        DigestEntry {
-            hash_alg: "sha512",
-            digest: hex::encode(Sha512::digest(&buffer)),
-        },
-    ];
-
-    // Write .pcrlock file
-    if let Some(parent) = pcrlock_file.parent() {
-        fs::create_dir_all(parent).context(format!(
-            "Failed to create directory for .pcrlock file at {}",
-            pcrlock_file.display()
-        ))?;
-    }
-
-    let pcrlock = PcrLock {
-        records: vec![Record { pcr: 9, digests }],
-    };
-
-    let json = serde_json::to_string(&pcrlock).context(format!(
-        "Failed to serialize .pcrlock file {} as JSON",
+    // Generate the .pcrlock file with the digest for PCR 9
+    generate_pcrlock_file(
+        pcrlock_file.clone(),
+        Pcr::Pcr9,
+        hex::encode(Sha256::digest(&buffer)),
+    )
+    .context(format!(
+        "Failed to generate .pcrlock file for initrd section at '{}'",
         pcrlock_file.display()
     ))?;
-    fs::write(&pcrlock_file, json.clone()).context(format!(
-        "Failed to write .pcrlock file at {}",
-        pcrlock_file.display()
-    ))?;
-
-    // Print contents of .pcrlock file
-    trace!(
-        "Contents of .pcrlock file at '{}':\n{}",
-        pcrlock_file.display(),
-        json
-    );
 
     Ok(())
 }
