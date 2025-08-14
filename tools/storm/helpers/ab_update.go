@@ -25,7 +25,7 @@ type AbUpdateHelper struct {
 		Version              string `short:"v" required:"" help:"Version of the Trident image to use for the A/B update."`
 		StageAbUpdate        bool   `short:"s" help:"Controls whether A/B update should be staged."`
 		FinalizeAbUpdate     bool   `short:"f" help:"Controls whether A/B update should be finalized."`
-		Proxy                string `short:"p" help:"Proxy address. Input should include the env var name, i.e. HTTPS_PROXY=http://0.0.0.0."`
+		Proxy                string `help:"Proxy address. Input should include the env var name, i.e. HTTPS_PROXY=http://0.0.0.0."`
 	}
 
 	client *ssh.Client
