@@ -41,7 +41,15 @@ func InvokeTrident(env TridentEnvironment, client *ssh.Client, proxy string, arg
 		return nil, fmt.Errorf("invalid environment: %s", env)
 	}
 
-	return RunCommand(client, fmt.Sprintf("%s sudo -E %s %s", proxy, cmd, arguments)) // possible to prepend env vars before "sudo"?
+	var cmdPrefix string
+	if proxy != "" {
+		envVar := strings.Split(proxy, "=")[0]
+		cmdPrefix = fmt.Sprintf("%s sudo --preserve-env=%s", proxy, envVar)
+	} else {
+		cmdPrefix = "sudo"
+	}
+
+	return RunCommand(client, fmt.Sprintf("%s %s %s", cmdPrefix, cmd, arguments)) // possible to prepend env vars before "sudo"?
 }
 
 // Loads the Trident container stored in DOCKER_IMAGE_PATH int the remote host's

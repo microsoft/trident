@@ -102,12 +102,12 @@ func (o *SshCmdOutput) Report() string {
 
 }
 
-func RunCommand(client *ssh.Client, command string) (*SshCmdOutput, error) { // Create a separate RunCommandWithEnvVars, which RunCommand calls into & make sure not to overwrite env vars
+func RunCommand(client *ssh.Client, command string) (*SshCmdOutput, error) {
 	if client == nil {
 		return nil, fmt.Errorf("SSH client is nil")
 	}
 
-	session, err := client.NewSession() // some where here add env variables
+	session, err := client.NewSession()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create SSH session: %w", err)
 	}
@@ -124,7 +124,7 @@ func RunCommand(client *ssh.Client, command string) (*SshCmdOutput, error) { // 
 	}
 
 	logrus.Debug("Running command: %w", command)
-	err = session.Start(command) // Can env vars be pre-pended to command?
+	err = session.Start(command)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start command: %w", err)
 	}
