@@ -125,9 +125,10 @@ func RunCommand(client *ssh.Client, command string) (*SshCmdOutput, error) { // 
 
 	err = session.Setenv("HTTPS_PROXY", "http://172.16.1.10:3128")
 	if err != nil {
-		return nil, fmt.Errorf("failed to set env variable: %w", err)
+		logrus.Errorf("Failed to run set env var: %s", err)
 	}
 
+	logrus.Debug("Running command: %w", command)
 	err = session.Start(command) // Can env vars be pre-pended to command?
 	if err != nil {
 		return nil, fmt.Errorf("failed to start command: %w", err)
