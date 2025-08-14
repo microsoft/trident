@@ -3,6 +3,8 @@ steps:
       ./read-base-image-config-artifact-if-exists.sh $(Build.BuildId)
     workingDirectory: $(Build.SourcesDirectory)/.pipelines/templates/stages/base_image_config
     displayName: "Read Base Image Config artifact into variables"
+    env:
+      AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
 
   - bash: |
       echo "base image config runtime variables:"
