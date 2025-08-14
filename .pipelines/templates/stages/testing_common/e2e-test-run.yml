@@ -129,7 +129,7 @@ steps:
 
       PROXY_ARG=""
       if ${{ parameters.deploymentEnvironment}} == 'bareMetal'; then
-        PROXY_ARG="HTTPS_PROXY=http://172.16.1.10:3128"
+        PROXY_ARG="--proxy HTTPS_PROXY=http://172.16.1.10:3128"
       fi
 
       echo "Running script to stage and finalize A/B update..."
@@ -142,7 +142,7 @@ steps:
           --version $(version) \
           --stage-ab-update \
           --finalize-ab-update \
-          --proxy $PROXY_ARG
+          $PROXY_ARG
 
       current_version=$(echo $(version))
       new_version=$((current_version + 1))
@@ -239,7 +239,7 @@ steps:
 
       PROXY_ARG=""
       if ${{ parameters.deploymentEnvironment}} == 'bareMetal'; then
-        PROXY_ARG="HTTPS_PROXY=http://172.16.1.10:3128"
+        PROXY_ARG="--proxy HTTPS_PROXY=http://172.16.1.10:3128"
       fi
 
       echo "Running script to stage and finalize A/B update..."
@@ -252,7 +252,7 @@ steps:
           --version $(version) \
           --stage-ab-update \
           --finalize-ab-update \
-          --proxy $PROXY_ARG
+          $PROXY_ARG
 
       current_version=$(echo $(version))
       new_version=$((current_version + 1))
