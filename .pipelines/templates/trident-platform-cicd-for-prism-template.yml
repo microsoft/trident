@@ -24,6 +24,7 @@ parameters:
     default: "main"
 
 stages:
+    - template: stages/base_image_config/create-base-image-config-artifact.yml
     - template: e2e-template.yml
       parameters:
         stageType: ci
@@ -32,3 +33,10 @@ stages:
         micBuildType: ${{ parameters.micBuildType }}
         micVersion: ${{ parameters.micVersion }}
         osModifierBranch: ${{ parameters.osModifierBranch }}
+        baseImageArtifactStage: CreateBaseImageConfig
+    - template: e2e-arm64-template.yml
+      parameters:
+        stageType: ci
+        forceTridentRebuild: true
+        osModifierBranch: ${{ parameters.osModifierBranch }}
+        baseImageArtifactStage: CreateBaseImageConfig

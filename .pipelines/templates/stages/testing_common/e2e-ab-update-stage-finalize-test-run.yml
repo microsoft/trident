@@ -198,7 +198,7 @@ steps:
       python3 -u -m pytest \
           -m "${{ parameters.buildPurpose }}" \
           --capture=no \
-          --junit-xml=${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_stage_finalize_ab_update_B_$(System.JobAttempt).junit.xml \
+          --junit-xml=${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_stage_finalize_ab_update_B_$(System.JobAttempt).junit.xml \
           --host ${{ parameters.hostIp }} \
           --runtime-env ${{ parameters.runtimeEnv }} \
           --configuration ${{ parameters.tridentConfigPath }} \
@@ -208,10 +208,9 @@ steps:
     displayName: "🔬 Run Trident E2E tests after A/B update into runtime OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
-  - task: PublishTestResults@2
-    condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
-    inputs:
-      testResultsFormat: JUnit
-      testResultsFiles: ./e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_stage_finalize_ab_update_B_$(System.JobAttempt).junit.xml
-      testRunTitle: ${{ parameters.deploymentEnvironment }}_trident_e2e_tests_${{ parameters.tridentConfigurationName }}_stage_finalize_ab_update_B_$(System.JobAttempt)
-    displayName: "Publish test results for A/B update into runtime OS A that was staged and finalized independently"
+  - template: ../junit/handle-junit-test-results.yml
+    parameters:
+      testRunName: "${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_stage_finalize_ab_update_B_$(System.JobAttempt)"
+      junitTestFile: "./e2e_tests/${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_stage_finalize_ab_update_B_$(System.JobAttempt).junit.xml"
+      displayNameSpecifier: "A/B update into runtime OS A that was staged and finalized independently"
+      artifactName: "junit_for_trident_ab_update_stage"

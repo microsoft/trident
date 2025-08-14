@@ -1,21 +1,10 @@
 parameters:
-  - name: baseimgBuildType
-    displayName: Base Image build type
+  - name: targetArchitecture
     type: string
+    default: "amd64"
     values:
-      - dev
-      - preview
-      - release
-    default: "release"
-
-  - name: baseImagePipelineBuildId
-    type: string
-    default: "latestFromBranch"
-
-  - name: previewContainerPipeline
-    type: string
-    default: "[AMD64-6-OneBranch]-Prod-BuildImages"
-    displayName: Name of preview container pipeline
+      - arm64
+      - amd64
 
 
 steps:
@@ -41,17 +30,11 @@ steps:
     workingDirectory: $(Build.SourcesDirectory)
     displayName: Start Docker
 
-  - ${{ if eq(parameters.baseimgBuildType, 'preview') }}:
-      - template: ../common_tasks/preview-container.yml
-        parameters:
-          dockerfilePath: $(Build.SourcesDirectory)/Dockerfile.full
-          dockerBuildContext: $(Build.SourcesDirectory)
-          previewContainerPipeline: ${{ parameters.previewContainerPipeline }}
-          ${{ if eq(parameters.baseImagePipelineBuildId, 'latestFromBranch') }}:
-            runVersion: ${{ parameters.baseImagePipelineBuildId }}
-          ${{ else }}:
-            runVersion: specific
-            baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
+  - template: ../common_tasks/preview-container.yml
+    parameters:
+      dockerfilePath: $(Build.SourcesDirectory)/Dockerfile.full
+      dockerBuildContext: $(Build.SourcesDirectory)
+      targetArchitecture: ${{ parameters.targetArchitecture }}
 
   - script: |
       set -eux

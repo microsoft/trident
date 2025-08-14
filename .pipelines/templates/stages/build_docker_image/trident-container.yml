@@ -1,21 +1,8 @@
-parameters:
-  - name: baseimgBuildType
-    displayName: Base Image build type
-    type: string
-    values:
-      - dev
-      - preview
-      - release
-    default: "release"
-  
-  - name: baseImagePipelineBuildId
-    type: string
-    default: "latestFromBranch"
-
 stages:
   - stage: BuildTridentContainerImage
     displayName: Build Docker Image
-    dependsOn: GetTridentBinaries_rpms
+    dependsOn:
+      - GetTridentBinaries_rpms_amd64
 
     jobs:
       - job: BuildImage
@@ -44,16 +31,10 @@ stages:
               patterns: "**/*.rpm"
               targetPath: "$(Build.SourcesDirectory)/bin/RPMS/x86_64"
 
-          - ${{ if eq(parameters.baseimgBuildType, 'preview') }}:
-            - template: ../common_tasks/preview-container.yml
-              parameters:
-                dockerfilePath: $(Build.SourcesDirectory)/Dockerfile.runtime
-                dockerBuildContext: $(Build.SourcesDirectory)
-                ${{ if eq(parameters.baseImagePipelineBuildId, 'latestFromBranch') }}:
-                  runVersion: ${{ parameters.baseImagePipelineBuildId }}
-                ${{ else }}:
-                  runVersion: specific
-                  baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
+          - template: ../common_tasks/preview-container.yml
+            parameters:
+              dockerfilePath: $(Build.SourcesDirectory)/Dockerfile.runtime
+              dockerBuildContext: $(Build.SourcesDirectory)
 
           - script: |
               set -euxo pipefail

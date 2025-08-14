@@ -22,13 +22,16 @@ parameters:
     type: string
     default: "submodule"
 
+  - name: dependsOnStage
+    type: string
+    default: ''
+
 stages:
   - stage: FunctionalTesting
     displayName: Functional Testing
-    dependsOn:
-      - ${{ if eq(parameters.downloadPrebuiltImage, false) }}:
-          - TridentTestImg_trident_functest
-      - ${{ else }}: []
+    ${{ if eq(parameters.downloadPrebuiltImage, false) }}:
+      dependsOn:
+        - TridentTestImg_trident_functest
 
     jobs:
       - job: FunctionalTests
@@ -115,11 +118,13 @@ stages:
               installNativeDependencies: false
               rustup: false
 
-          - task: PublishTestResults@2
-            condition: succeededOrFailed()
-            inputs:
-              testResultsFormat: "JUnit"
-              testResultsFiles: "$(Build.SourcesDirectory)/target/trident_functional_tests.xml"
+
+          - template: ../junit/handle-junit-test-results.yml
+            parameters:
+              testRunName: "FunctionalTests_$(System.JobAttempt)"
+              junitTestFile: "$(Build.SourcesDirectory)/target/trident_functional_tests.xml"
+              displayNameSpecifier: "functional tests"
+              artifactName: "junit_for_trident_functionaltests"
 
           - bash: |
               set -eux

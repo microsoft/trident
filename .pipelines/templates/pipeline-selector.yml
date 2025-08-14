@@ -43,12 +43,16 @@ stages:
   - ${{ if eq(parameters.targetStage, 'pr') }}:
       - template: pr-template.yml
   - ${{ else }}:
+      - template: stages/base_image_config/create-base-image-config-artifact.yml
       - template: e2e-template.yml
         parameters:
           stageType: ${{ parameters.targetStage }}
           blockPublishing: ${{ parameters.blockPublishing }}
-          baseimgBuildType: ${{ parameters.baseimgBuildType }}
-          baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
           # Only perform Azure testing from official pipelines, as only those have access to the Azure subscription.
           includeAzure: ${{ or(eq(parameters.targetStage, 'pre'), eq(parameters.targetStage, 'ci'), eq(parameters.targetStage, 'pr-e2e-azure')) }}
           numberOfUpdateIterations: ${{ parameters.numberOfUpdateIterations }}
+          baseImageArtifactStage: CreateBaseImageConfig
+      - template: e2e-arm64-template.yml
+        parameters:
+          stageType: ${{ parameters.targetStage }}
+          baseImageArtifactStage: CreateBaseImageConfig

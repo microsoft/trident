@@ -1,0 +1,39 @@
+parameters:
+  - name: baseimgBuildType
+    type: string
+    default: "release"
+
+  - name: baseImagePipelineBuildId
+    type: string
+    default: "latestFromBranch"
+
+  - name: baseImageArm64PipelineBuildId
+    type: string
+    default: "latestFromBranch"
+
+  - name: previousStage
+    type: string
+    default: ''
+    
+stages:
+  - stage: CreateBaseImageConfig
+    displayName: "Create BaseImage config artifact"
+    ${{ if ne(parameters.previousStage, '') }}:
+      dependsOn: ${{ parameters.previousStage }}
+    jobs:
+      - job: CreateBaseImageConfigJob
+        displayName: "Create BaseImage config artifact"
+        pool:
+          type: linux
+        variables:
+          - name: ob_outputDirectory
+            value: "$(Build.SourcesDirectory)/base-image-config"
+          - name: ob_artifactBaseName
+            value: "base-image-config"
+        steps:
+          - template: create-base-image-config-artifact-steps.yml
+            parameters:
+              baseimgBuildType: ${{ parameters.baseimgBuildType }}
+              baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
+              baseImageArm64PipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
+              outputDirectory: $(ob_outputDirectory)

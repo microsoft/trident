@@ -1,3 +1,8 @@
+# trident-cicd will create the base image artifact for a given azurelinux
+# set of builds and call e2e-template to run all trident tests for each of
+# our scenarios.
+#
+# This is a manual placeholder until an triggered solution is created.
 parameters:
   - name: baseImagePipelineBuildId
     displayName: "Build Id of the pipeline run, default will select latest successful run from pipeline 2116 ([AMD64-6-OneBranch]-Prod-BuildImages) with tag 3.0-preview"
@@ -12,6 +17,14 @@ parameters:
     values:
     - dev
     - preview
+  - name: targetArchitecture
+    displayName: "Pick architecture to test"
+    type: string
+    default: amd64
+    values:
+    - amd64
+    - arm64
+    - all
 
 trigger: none
 
@@ -46,8 +59,91 @@ extends:
   template: templates/MockOB.yml
   parameters:
     stages:
-      - template: templates/trident-platform-cicd-template.yml
-        parameters:
-          buildType: ${{ parameters.buildType }}
-          baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
-          baseImageArm64PipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
+      - stage: GetBaseImageBuildIds
+        displayName: "Create BaseImage config artifact"
+        jobs:
+          - job: GetBaseImageBuildIdsJob
+            displayName: "Create BaseImage config artifact"
+            pool:
+              type: linux
+            variables:
+              - name: ob_outputDirectory
+                value: "$(Build.SourcesDirectory)/base-image-config"
+              - name: ob_artifactBaseName
+                value: "base-image-config"
+            steps:
+              - bash: |
+                  BASEIMG_BUILD_TYPE="${{ parameters.buildType }}"
+                  # Only add amd64 build id if targetArchitecture includes amd64                  
+                  BASE_IMAGE_PIPELINE_BUILD_ID="${{ parameters.baseImagePipelineBuildId }}"
+                  if [[ "${{ parameters.targetArchitecture }}" == 'arm64' ]]; then
+                    BASE_IMAGE_PIPELINE_BUILD_ID="will-be-ignored"
+                  fi
+                  # Only add arm64 build id if targetArchitecture includes arm64
+                  BASE_IMAGE_ARM64_PIPELINE_BUILD_ID="${{ parameters.baseImageArm64PipelineBuildId }}"
+                  if [[ "${{ parameters.targetArchitecture }}" == 'amd64' ]]; then
+                    BASE_IMAGE_ARM64_PIPELINE_BUILD_ID="will-be-ignored"
+                  fi
+
+                  echo "##vso[task.setvariable variable=BASEIMG_BUILD_TYPE]$BASEIMG_BUILD_TYPE"
+                  echo "##vso[task.setvariable variable=BASE_IMAGE_PIPELINE_BUILD_ID]$BASE_IMAGE_PIPELINE_BUILD_ID"
+                  echo "##vso[task.setvariable variable=BASE_IMAGE_ARM64_PIPELINE_BUILD_ID]$BASE_IMAGE_ARM64_PIPELINE_BUILD_ID"
+                displayName: Validate variables for our templates
+
+              - template: stages/base_image_config/create-base-image-config-artifact-steps.yml
+                parameters:
+                  baseimgBuildType: $(BASEIMG_BUILD_TYPE)
+                  baseImagePipelineBuildId: $(BASE_IMAGE_PIPELINE_BUILD_ID)
+                  baseImageArm64PipelineBuildId: $(BASE_IMAGE_ARM64_PIPELINE_BUILD_ID)
+                  outputDirectory: $(ob_outputDirectory)
+
+      # Test amd64 if targetArchitecture is all or amd64 (i.e. !arm64)
+      - ${{ if ne(parameters.targetArchitecture, 'arm64') }}:
+        - template: templates/trident-platform-cicd-template.yml
+          parameters:
+            baseImageArtifactStage: GetBaseImageBuildIds
+            targetArchitecture: amd64
+        - stage: ProcessJunit_Stage_amd64
+          displayName: Process amd64 junit files
+          dependsOn:
+            - FunctionalTesting
+            - DeploymentTesting_host
+            - DeploymentTesting_container
+            # - BaremetalDeploymentTesting_host
+            # - BaremetalDeploymentTesting_container
+            - ServicingTesting
+          jobs:
+            - job: ProcessJunit_Job
+              displayName: Process junit files
+              pool:
+                type: linux
+              variables:
+                ob_outputDirectory: "$(Build.SourcesDirectory)/out"
+              steps:
+                - script: |
+                    set -eux
+                    echo "Collect and process junit files"
+                  displayName: Process junit files
+
+      # Test amd64 if targetArchitecture is all or arm64 (i.e. !amd64)
+      - ${{ if ne(parameters.targetArchitecture, 'amd64') }}:
+        - template: templates/trident-platform-cicd-template.yml
+          parameters:
+            baseImageArtifactStage: GetBaseImageBuildIds
+            targetArchitecture: arm64
+        - stage: ProcessJunit_Stage_arm64
+          displayName: Process arm64 junit files
+          dependsOn:
+            - GetTridentBinaries_rpms_arm64
+          jobs:
+            - job: ProcessJunit_Job
+              displayName: Process junit files
+              pool:
+                type: linux
+              variables:
+                ob_outputDirectory: "$(Build.SourcesDirectory)/out"
+              steps:
+                - script: |
+                    set -eux
+                    echo "No junit tests to collect, if pipeline succeeds to this point, all good"
+                  displayName: Process junit files

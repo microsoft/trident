@@ -3,9 +3,15 @@ parameters:
     type: string
     default: "submodule"
 
+  - name: dependsOnStage
+    type: string
+    default: ''
+
 stages:
   - stage: MakefileValidation
     displayName: Validate Makefile targets
+    ${{ if ne(parameters.dependsOnStage, '') }}:
+      dependsOn: ${{ parameters.dependsOnStage }}
 
     jobs:
       - job: Make
