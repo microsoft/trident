@@ -211,9 +211,9 @@ def generate_netlaunch_config() -> Path:
 
       serviceOverride: |
         [Service]
-            Environment="HTTP_PROXY=http://172.16.1.10:3128"
-            Environment="HTTPS_PROXY=https://172.16.1.10:3128"
-            Environment="NO_PROXY={JUMPBOX_IP},10.96.0.0/12,10.244.0.0/16,172.27.254.0/24,.svc,127.0.0.1,localhost"
+        Environment="HTTP_PROXY=http://172.16.1.10:3128"
+        Environment="HTTPS_PROXY=http://172.16.1.10:3128"
+        Environment="NO_PROXY=10.248.0.0/24,localhost"
     """
     contents = inspect.cleandoc(contents)
     log.info(f"Generated {netlaunch_config_file}:\n{contents}")

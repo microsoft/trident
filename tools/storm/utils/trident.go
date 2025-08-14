@@ -49,7 +49,7 @@ func InvokeTrident(env TridentEnvironment, client *ssh.Client, proxy string, arg
 		cmdPrefix = "sudo"
 	}
 
-	return RunCommand(client, fmt.Sprintf("%s %s %s", cmdPrefix, cmd, arguments)) // possible to prepend env vars before "sudo"?
+	return RunCommand(client, fmt.Sprintf("%s %s %s", cmdPrefix, cmd, arguments))
 }
 
 // Loads the Trident container stored in DOCKER_IMAGE_PATH int the remote host's

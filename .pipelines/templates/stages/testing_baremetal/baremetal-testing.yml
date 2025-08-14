@@ -84,6 +84,10 @@ stages:
             value: "c8:4b:d6:7a:73:c6"
           - name: BAREMETAL_LAB_CANARY_IP
             value: "10.8.6.1"
+          - name: BAREMETAL_HTTPS_PROXY
+            value: "http://172.16.1.10:3128"
+          - name: BAREMETAL_HTTPS_PROXY_ALTERNATE
+            value: "http://192.168.229.51:3128"
 
           # Sourced from the matrix
           - name: TRIDENT_CONFIGURATION_NAME
@@ -225,8 +229,8 @@ stages:
               iso:
                 serviceOverride: |
                   [Service]
-                  Environment="HTTP_PROXY=http://172.16.1.10:3128"
-                  Environment="HTTPS_PROXY=http://172.16.1.10:3128"
+                  Environment="HTTP_PROXY=${{ variables.BAREMETAL_HTTPS_PROXY }}"
+                  Environment="HTTPS_PROXY=${{ variables.BAREMETAL_HTTPS_PROXY }}"
                   Environment="NO_PROXY=${{ variables.BAREMETAL_BMC_IP }},10.248.0.0/24,localhost"
               EOF
 

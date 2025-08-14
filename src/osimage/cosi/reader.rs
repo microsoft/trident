@@ -149,8 +149,6 @@ impl HttpFile {
             })?)
             .with_context(|| format!("Failed to parse URL '{url}'"))?;
 
-        // debug!("Found env vars: {:?}", env::vars());
-
         let oci_client = OciClient::default();
         let rt = Runtime::new().context("Failed to create Tokio runtime")?;
         let token = Self::retrieve_access_token(&img_ref, &rt, &oci_client)?;
