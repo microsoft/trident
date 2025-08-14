@@ -212,21 +212,33 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
     );
 
     // Get parsed output of 'systemd-pcrlock log'
-    let mut parsed_log = log_parsed().context("Failed to get 'systemd-pcrlock log' output")?;
+    let parsed_log = log_parsed().context("Failed to get 'systemd-pcrlock log' output")?;
 
     // Fetch list of entries that are related to required PCRs, with components that are not
     // recognized yet, if any
-    let mut unrecognized = unrecognized_log_entries(parsed_log.clone(), required_pcrs)
+    let unrecognized = unrecognized_log_entries(parsed_log.clone(), required_pcrs)
         .context("Failed to get unrecognized log entries")?;
     if unrecognized.is_empty() {
         debug!("All entries for required PCRs have recognized .pcrlock components");
         return Ok(());
     }
 
+    debug!(
+        "Some entries for required PCRs have unrecognized .pcrlock components, so trying to recognize"
+    );
     // Workaround to enable pcrlock encryption on Trident's BM E2E tests:
     // If unrecognized includes a PCR 4 record expected for E2E BM environment, then extract the
     // sha256 hash from the record and generate a .pcrlock file for it
     for entry in unrecognized.iter() {
+        debug!(
+            "Trying to recognize the following entry:\n\
+            pcr='{}', pcrname='{}', event='{}', sha256='{}', description='{}'",
+            entry.pcr.to_num(),
+            entry.pcrname.as_deref().unwrap_or("null"),
+            entry.event.as_deref().unwrap_or("null"),
+            entry.sha256.as_ref().map(|h| h.as_str()).unwrap_or("null"),
+            entry.description.as_deref().unwrap_or("null"),
+        );
         let desc_match = entry
             .description
             .as_deref()
@@ -241,7 +253,7 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
 
             debug!(
                 "Unrecognized entry matches a record we expect on Dell BM hardware, \
-                generating a .pcrlock file at '{}':\n \
+                generating a .pcrlock file at '{}':\n\
                 pcr='{}', pcrname='{}', event='{}', sha256='{}', description='{}'",
                 pcrlock_file.display(),
                 entry.pcr.to_num(),
@@ -256,11 +268,12 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
     }
 
     // Get fresh parsed output of 'systemd-pcrlock log'
-    parsed_log = log_parsed().context("Failed to get 'systemd-pcrlock log' output")?;
+    debug!("Trying to validate 'systemd-pcrlock log' output again");
+    let parsed_log = log_parsed().context("Failed to get 'systemd-pcrlock log' output")?;
 
     // Fetch list of entries that are related to required PCRs, with components that are not
     // recognized yet, if any
-    unrecognized = unrecognized_log_entries(parsed_log.clone(), required_pcrs)
+    let unrecognized = unrecognized_log_entries(parsed_log.clone(), required_pcrs)
         .context("Failed to get unrecognized log entries")?;
     if unrecognized.is_empty() {
         debug!("All entries for required PCRs have recognized .pcrlock components");
@@ -288,6 +301,7 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         entries.join("\n")
     );
 }
+
 /// Represents a single log entry from the 'systemd-pcrlock log' output.
 #[derive(Debug, Deserialize, Clone)]
 struct LogEntry {
