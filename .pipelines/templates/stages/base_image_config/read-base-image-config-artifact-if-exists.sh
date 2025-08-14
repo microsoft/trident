@@ -1,5 +1,3 @@
-set -eux
-
 BUILD_ID=$1
 
 ARTIFACT_NAME=base-image-config
@@ -29,12 +27,11 @@ else
     BASE_IMAGE_ARM64_PIPELINE_BUILD_ID="latestFromBranch"
 fi
 
-echo "base image config read from artifact:"
+echo "base image config:"
 echo "BASEIMG_BUILD_TYPE = $BASEIMG_BUILD_TYPE"
 echo "BASE_IMAGE_PIPELINE_BUILD_ID = $BASE_IMAGE_PIPELINE_BUILD_ID"
 echo "BASE_IMAGE_ARM64_PIPELINE_BUILD_ID = $BASE_IMAGE_ARM64_PIPELINE_BUILD_ID"
 
-set +e
 echo "##vso[task.setvariable variable=BASEIMG_BUILD_TYPE]$BASEIMG_BUILD_TYPE"
 echo "##vso[task.setvariable variable=BASE_IMAGE_PIPELINE_BUILD_ID]$BASE_IMAGE_PIPELINE_BUILD_ID"
 echo "##vso[task.setvariable variable=BASE_IMAGE_ARM64_PIPELINE_BUILD_ID]$BASE_IMAGE_ARM64_PIPELINE_BUILD_ID"
