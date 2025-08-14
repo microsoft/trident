@@ -96,9 +96,6 @@ pub fn generate_pcrlock_policy(
         pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
     );
 
-    // Remove any pre-existing policy
-    remove_policy().structured(ServicingError::RemovePcrlockPolicy)?;
-
     // Generate .pcrlock files for runtime OS image A
     generate_pcrlock_files(pcrs, uki_binaries, bootloader_binaries)
         .structured(ServicingError::GeneratePcrlockFiles)?;
@@ -326,18 +323,11 @@ fn log_parsed() -> Result<LogOutput, Error> {
 /// Runs the `systemd-pcrlock cel` command to print out the combined TPM 2.0 event log in TCG
 /// Canonical Event Log Format (CEL-JSON).
 fn cel() -> Result<(), Error> {
-    let output = Dependency::SystemdPcrlock
+    Dependency::SystemdPcrlock
         .cmd()
         .arg("cel")
-        .output_and_check()
-        .context("Failed to run 'systemd-pcrlock cel'")?;
-
-    debug!(
-        "Combined TPM 2.0 event log in TCG Canonical Event Log Format (CEL-JSON):\n{}",
-        output
-    );
-
-    Ok(())
+        .run_and_check()
+        .context("Failed to run 'systemd-pcrlock cel'")
 }
 
 /// Returns a list of entries from the 'systemd-pcrlock log' output that correspond to (1) PCRs
