@@ -16,6 +16,9 @@ parameters:
   - name: deploymentEnvironment
     type: string
     default: virtualMachine
+    values:
+      - virtualMachine
+      - bareMetal
 
   - name: runtimeEnv
     displayName: "Runtime environment (host vs container)"
@@ -51,7 +54,7 @@ parameters:
   - name: netlistenPort
     type: number
     default: 4000
-  
+
   - name: netlistenConfigFile
     type: string
     default: ""
@@ -133,7 +136,8 @@ steps:
           --trident-config $(tridentConfigFile) \
           --version $(version) \
           --stage-ab-update \
-          --finalize-ab-update
+          --finalize-ab-update \
+          ${{ if eq(parameters.deploymentEnvironment, 'bareMetal') }}--proxy HTTPS_PROXY=http://172.16.1.10:3128${{ else }}${{ end }}
 
       current_version=$(echo $(version))
       new_version=$((current_version + 1))
@@ -237,7 +241,8 @@ steps:
           --trident-config $(tridentConfigFile) \
           --version $(version) \
           --stage-ab-update \
-          --finalize-ab-update
+          --finalize-ab-update \
+          ${{ if eq(parameters.deploymentEnvironment, 'bareMetal') }}--proxy HTTPS_PROXY=http://172.16.1.10:3128${{ else }}${{ end }}
 
       current_version=$(echo $(version))
       new_version=$((current_version + 1))

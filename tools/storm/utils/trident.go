@@ -28,7 +28,7 @@ const (
 // - The SSH session cannot be created
 // - There was an error starting the command.
 // - Some IO error occurred while reading stdout or stderr.
-func InvokeTrident(env TridentEnvironment, client *ssh.Client, arguments string) (*SshCmdOutput, error) {
+func InvokeTrident(env TridentEnvironment, client *ssh.Client, proxy string, arguments string) (*SshCmdOutput, error) {
 	var cmd string
 	switch env {
 	case TridentEnvironmentHost:
@@ -41,7 +41,7 @@ func InvokeTrident(env TridentEnvironment, client *ssh.Client, arguments string)
 		return nil, fmt.Errorf("invalid environment: %s", env)
 	}
 
-	return RunCommand(client, fmt.Sprintf("HTTPS_PROXY=http://172.16.1.10:3128 sudo --preserve-env=HTTPS_PROXY %s %s", cmd, arguments)) // possible to prepend env vars before "sudo"?
+	return RunCommand(client, fmt.Sprintf("%s sudo -E %s %s", proxy, cmd, arguments)) // possible to prepend env vars before "sudo"?
 }
 
 // Loads the Trident container stored in DOCKER_IMAGE_PATH int the remote host's

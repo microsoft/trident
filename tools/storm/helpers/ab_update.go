@@ -25,6 +25,7 @@ type AbUpdateHelper struct {
 		Version              string `short:"v" required:"" help:"Version of the Trident image to use for the A/B update."`
 		StageAbUpdate        bool   `short:"s" help:"Controls whether A/B update should be staged."`
 		FinalizeAbUpdate     bool   `short:"f" help:"Controls whether A/B update should be finalized."`
+		Proxy                string `short:"p" help:"Proxy address. Input should include the env var name, i.e. HTTPS_PROXY=http://0.0.0.0."`
 	}
 
 	client *ssh.Client
@@ -64,7 +65,7 @@ func (h *AbUpdateHelper) getHostConfig(tc storm.TestCase) error {
 		}
 	})
 
-	out, err := utils.InvokeTrident(h.args.Env, h.client, "get configuration")
+	out, err := utils.InvokeTrident(h.args.Env, h.client, h.args.Proxy, "get configuration")
 	if err != nil {
 		return fmt.Errorf("failed to invoke Trident: %w", err)
 	}
@@ -228,7 +229,7 @@ func (h *AbUpdateHelper) triggerTridentUpdate(tc storm.TestCase) error {
 	for i := 1; ; i++ {
 		logrus.Infof("Invoking Trident attempt #%d with args: %s", i, args)
 
-		out, err := utils.InvokeTrident(h.args.Env, h.client, args)
+		out, err := utils.InvokeTrident(h.args.Env, h.client, h.args.Proxy, args)
 		if err != nil {
 			if err, ok := err.(*ssh.ExitMissingError); ok && strings.Contains(out.Stderr, "Rebooting system") {
 				// The connection closed without an exit code, and the output contains "Rebooting system".
