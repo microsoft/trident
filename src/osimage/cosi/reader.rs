@@ -1,7 +1,6 @@
 #[cfg(test)]
 use std::io::Cursor;
 use std::{
-    env,
     fs::File,
     io::{Error as IoError, ErrorKind as IoErrorKind, Read, Result as IoResult, Seek, SeekFrom},
     path::PathBuf,
@@ -10,7 +9,7 @@ use std::{
 };
 
 #[cfg(feature = "dangerous-options")]
-use std::io::BufReader;
+use std::{env, io::BufReader};
 
 use anyhow::{bail, ensure, Context, Error};
 use log::{debug, trace, warn};
@@ -150,7 +149,7 @@ impl HttpFile {
             })?)
             .with_context(|| format!("Failed to parse URL '{url}'"))?;
 
-        debug!("Found env vars: {:?}", env::vars());
+        // debug!("Found env vars: {:?}", env::vars());
 
         let oci_client = OciClient::default();
         let rt = Runtime::new().context("Failed to create Tokio runtime")?;
@@ -262,7 +261,7 @@ impl HttpFile {
             img_ref.registry()
         );
         let auth = Self::get_auth(img_ref);
-        let res = runtime
+        runtime
             .block_on(client.auth(img_ref, &auth, oci_client::RegistryOperation::Pull))
             .with_context(|| {
                 format!(
@@ -270,17 +269,7 @@ impl HttpFile {
                     img_ref.registry()
                 )
             })?
-            .context("Failed to retrieve authorization token");
-        if let Err(ref _res) = res {
-            let output = std::process::Command::new("journalctl")
-                .arg("-n")
-                .arg("300")
-                .arg("--no-pager")
-                .output()
-                .expect("Failed");
-            debug!("Last 300 lines of journal:\n{:?}", output);
-        }
-        res
+            .context("Failed to retrieve authorization token")
     }
 
     /// Get authentication credentials for accessing registry. Unless "dangerous-options" flag is

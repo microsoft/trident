@@ -46,14 +46,6 @@ storage:
       source: new
       mountPoint: /var/lib/trident
 scripts:
-  preServicing:
-    - name: test-proxy
-      runOn:
-        - clean-install
-        - ab-update
-      content: |
-        set -ux
-        echo $HTTPS_PROXY
   postConfigure:
     - name: testing-privilege
       runOn:
@@ -62,7 +54,7 @@ scripts:
       content: echo "testing-user ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/testing-user
 os:
   selinux:
-    mode: disabled
+    mode: enforcing
   netplan:
     version: 2
     ethernets:
