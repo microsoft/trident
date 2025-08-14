@@ -128,7 +128,7 @@ steps:
         -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-runtime-os-B.log 2>&1 &
 
       PROXY_ARG=""
-      if ${{ parameters.deploymentEnvironment}} == 'bareMetal'; then
+      if [ "${{ parameters.deploymentEnvironment }}" == "bareMetal" ]; then
         PROXY_ARG="--proxy HTTPS_PROXY=http://172.16.1.10:3128"
       fi
 
@@ -238,7 +238,7 @@ steps:
           -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-runtime-os-A.log 2>&1 &
 
       PROXY_ARG=""
-      if ${{ parameters.deploymentEnvironment}} == 'bareMetal'; then
+      if [ "${{ parameters.deploymentEnvironment }}" == "bareMetal" ]; then
         PROXY_ARG="--proxy HTTPS_PROXY=http://172.16.1.10:3128"
       fi
 
