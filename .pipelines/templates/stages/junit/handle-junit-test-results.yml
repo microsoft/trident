@@ -9,6 +9,12 @@ parameters:
     type: string
 
 steps:
+  # PublishTestResults can handle missing JUnit files, it has always run
+  # with succeededOrFailed().  This is good because we want to upload when
+  # the test step fails and there are JUnit files containing failures.
+  #
+  # PublishTestResults can handle a failure to the point that the JUnit
+  # file does not exist.
   - task: PublishTestResults@2
     condition: and(succeededOrFailed(), ne(variables['skipJunitHandling'], 'true'))
     inputs:
@@ -17,10 +23,15 @@ steps:
       testRunTitle: ${{ parameters.testRunName }}
     displayName: "Publish junit test results for ${{ parameters.displayNameSpecifier }}"
 
+  # Because the JUnit handling needs to run when failed(), and because this means
+  # that the JUnit xml file may not exist, ensure that this code can handle a missing
+  # file.
   - bash: |
      rm -rf /tmp/ONEBRANCH_ARTIFACT
      mkdir -p /tmp/ONEBRANCH_ARTIFACT
-     cp ${{ parameters.junitTestFile }} /tmp/ONEBRANCH_ARTIFACT/
+     if [[ -f ${{ parameters.junitTestFile }} ]]; then
+       cp ${{ parameters.junitTestFile }} /tmp/ONEBRANCH_ARTIFACT/
+     fi
     displayName: "Prepare JUnit XML for ${{ parameters.displayNameSpecifier }}"
     condition: and(succeededOrFailed(), ne(variables['skipJunitHandling'], 'true'))
 
