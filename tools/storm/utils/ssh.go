@@ -123,7 +123,6 @@ func RunCommand(client *ssh.Client, command string) (*SshCmdOutput, error) {
 		return nil, fmt.Errorf("failed to create stderr pipe: %w", err)
 	}
 
-	logrus.Debug("Running command: %w", command)
 	err = session.Start(command)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start command: %w", err)
