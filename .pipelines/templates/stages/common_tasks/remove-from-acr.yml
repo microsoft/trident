@@ -17,7 +17,7 @@ parameters:
 steps:
   - task: AzureCLI@2
     inputs:
-      azureSubscription: maritimus-dev-acr-write-umi
+      azureSubscription: maritimus-dev-acr-write-umi-ECF
       scriptType: bash
       scriptLocation: inlineScript
       inlineScript: |
