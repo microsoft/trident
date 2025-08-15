@@ -50,12 +50,12 @@ bareMetal:
       - rerun
       - root-verity
     validation:
-      - base
       # - combined
       # - encrypted-partition
       # - encrypted-raid
       # - encrypted-swap
       - misc
+      - base
       # - raid-mirrored
       # - raid-resync-small
       # - raid-small
