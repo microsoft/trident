@@ -395,6 +395,13 @@ func innerWaitForLogin(vmSerialLog string, verbose bool, iteration int, localSer
 	timeout := time.Second * 120
 	startTime := time.Now()
 
+	// Wait for serial log
+	for {
+		if _, err := os.Stat(vmSerialLog); err == nil {
+			break
+		}
+	}
+
 	// Create the file if it doesn't exist
 	file, err := os.OpenFile(vmSerialLog, os.O_RDWR, 0644)
 	if err != nil {
