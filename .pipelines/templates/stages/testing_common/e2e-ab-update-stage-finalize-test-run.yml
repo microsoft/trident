@@ -137,6 +137,11 @@ steps:
           -p ${{ parameters.netlistenPort }} \
           -s "${{ parameters.artifactsDirectory }}" > ./finalize-ab-update.log 2>&1 &
 
+      PROXY_ARG=""
+      if [ "${{ parameters.deploymentEnvironment }}" == "bareMetal" ]; then
+        PROXY_ARG="--proxy HTTPS_PROXY=http://172.16.1.10:3128"
+      fi
+
       echo "Running script to finalize A/B update..."
       ./bin/storm-trident helper ab-update \
           "${{ parameters.sshKeyPath }}" \
@@ -145,7 +150,8 @@ steps:
           "${{ parameters.runtimeEnv }}" \
           --trident-config $(tridentConfigFile) \
           --version $(version) \
-          --finalize-ab-update
+          --finalize-ab-update \
+          $PROXY_ARG
 
       # Un-set the 'x' flag to avoid errors.
       set +x
