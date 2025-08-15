@@ -49,6 +49,7 @@ func InvokeTrident(env TridentEnvironment, client *ssh.Client, proxy string, arg
 		cmdPrefix = "sudo"
 	}
 
+	logrus.Debug(fmt.Sprintf("Running command: %s %s %s", cmdPrefix, cmd, arguments))
 	return RunCommand(client, fmt.Sprintf("%s %s %s", cmdPrefix, cmd, arguments))
 }
 
