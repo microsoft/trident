@@ -125,10 +125,12 @@ func innerUpdateLoop(cfg config.ServicingConfig, rollback bool) error {
 		logrus.Infof("Update attempt #%d for VM '%s' (%s)", i, cfg.VMConfig.Name, cfg.VMConfig.Platform)
 
 		if cfg.VMConfig.Platform == config.PlatformQEMU {
-			if _, err := os.Stat(cfg.QemuConfig.SerialLog); err == nil {
-				if err := os.Remove(cfg.QemuConfig.SerialLog); err != nil {
-					return fmt.Errorf("failed to remove serial log file: %w", err)
+			if stat, err := os.Stat(cfg.QemuConfig.SerialLog); err == nil {
+				logrus.Tracef("BFJELDS: Found serial log file: %+v: %d", stat.Name(), stat.Size())
+				if err := exec.Command("truncate", "-s", "0", cfg.QemuConfig.SerialLog).Run(); err != nil {
+					return fmt.Errorf("failed to truncate serial log file: %w", err)
 				}
+				logrus.Tracef("BFJELDS: Truncated serial log file: %+v: %d", stat.Name(), stat.Size())
 			}
 
 			if i%10 == 0 {
@@ -372,6 +374,7 @@ func startNetListenAndWait(ctx context.Context, port int, partition string, arti
 		"--force-color",
 		"--full-logstream", fmt.Sprintf("logstream-full-update-%s.log", partition),
 	}
+	logrus.Tracef("netlisten started with args: %v", cmdArgs)
 	cmd := exec.CommandContext(ctx, cmdPath, cmdArgs...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
