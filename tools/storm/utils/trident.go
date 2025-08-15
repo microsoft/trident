@@ -10,13 +10,23 @@ import (
 )
 
 const (
-	TRIDENT_BINARY    = "/usr/bin/trident"
-	TRIDENT_CONTAINER = "docker run --pull=never --rm --privileged " +
+	TRIDENT_BINARY      = "/usr/bin/trident"
+	DOCKER_COMMAND_BASE = "docker run --pull=never --rm --privileged " +
 		"-v /etc/trident:/etc/trident -v /var/lib/trident:/var/lib/trident " +
 		"-v /:/host -v /dev:/dev -v /run:/run -v /sys:/sys -v /var/log:/var/log " +
-		"-v /etc/pki:/etc/pki:ro --pid host --ipc host trident/trident:latest"
+		"-v /etc/pki:/etc/pki:ro --pid host --ipc host trident/trident:latest "
+	TRIDENT_CONTAINER = "trident/trident:latest"
 	DOCKER_IMAGE_PATH = "/var/lib/trident/trident-container.tar.gz"
 )
+
+func BuildTridentContainerCommand(env string) string {
+	cmd := DOCKER_COMMAND_BASE
+	if env != "" {
+		cmd += fmt.Sprintf("--env %s ", env)
+	}
+	cmd += TRIDENT_CONTAINER
+	return cmd
+}
 
 // Invokes Trident in the specified environment using the provided SSH session with the given arguments.
 // It returns the output of the command execution, including stdout, stderr, and exit status.
@@ -34,7 +44,7 @@ func InvokeTrident(env TridentEnvironment, client *ssh.Client, proxy string, arg
 	case TridentEnvironmentHost:
 		cmd = TRIDENT_BINARY
 	case TridentEnvironmentContainer:
-		cmd = TRIDENT_CONTAINER
+		cmd = BuildTridentContainerCommand(proxy)
 	case TridentEnvironmentNone:
 		return nil, fmt.Errorf("trident service is not running")
 	default:
