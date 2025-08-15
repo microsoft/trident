@@ -217,7 +217,6 @@ stages:
               SERVICE_OVERRIDE=""
               if [ "${{ parameters.runtimeEnv }}" == "host" ]; then 
                 SERVICE_OVERRIDE="[Service]
-                  Environment=\"HTTP_PROXY=${{ variables.BAREMETAL_HTTPS_PROXY }}\"
                   Environment=\"HTTPS_PROXY=${{ variables.BAREMETAL_HTTPS_PROXY }}\"
                   Environment=\"NO_PROXY=${{ variables.BAREMETAL_BMC_IP }},10.248.0.0/24,localhost\""
               else
