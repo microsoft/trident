@@ -8,7 +8,7 @@ parameters:
 
   - name: "registry"
     type: string
-    default: maritimuspublic
+    default: maritimusdev
 
   - name: "config"
     displayName: "Trident configuration"
@@ -17,7 +17,7 @@ parameters:
 steps:
   - task: AzureCLI@2
     inputs:
-      azureSubscription: maritimus-staging-eastus-cr-service-connection
+      azureSubscription: maritimus-dev-acr-write-umi
       scriptType: bash
       scriptLocation: inlineScript
       inlineScript: |
