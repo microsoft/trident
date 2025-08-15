@@ -16,6 +16,9 @@ parameters:
   - name: deploymentEnvironment
     type: string
     default: virtualMachine
+    values:
+      - virtualMachine
+      - bareMetal
 
   - name: runtimeEnv
     displayName: "Runtime environment (host vs container)"
@@ -66,6 +69,11 @@ steps:
           -p ${{ parameters.netlistenPort }} \
           -s "${{ parameters.artifactsDirectory }}" > ./stage-ab-update-deployment.log 2>&1 &
 
+      PROXY_ARG=""
+      if [ "${{ parameters.deploymentEnvironment }}" == "bareMetal" ]; then
+        PROXY_ARG="--proxy HTTPS_PROXY=http://172.16.1.10:3128"
+      fi
+
       echo "Running script to stage A/B update..."
       ./bin/storm-trident helper ab-update \
           "${{ parameters.sshKeyPath }}" \
@@ -74,7 +82,8 @@ steps:
           "${{ parameters.runtimeEnv }}" \
           --trident-config $(tridentConfigFile) \
           --version $(version) \
-          --stage-ab-update
+          --stage-ab-update \
+          $PROXY_ARG
     timeoutInMinutes: 5
     workingDirectory: $(Build.SourcesDirectory)
     displayName: "🔄 Stage A/B update"
