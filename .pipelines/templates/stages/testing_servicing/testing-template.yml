@@ -215,6 +215,7 @@ jobs:
             --ssh-public-key-path $(SSH_PUBLIC_KEY_PATH) \
             --retry-count ${{ parameters.updateIterationCount }} \
             --build-id $(Build.BuildId) \
+            --update-port-a 8123 --update-port-b 8124 \
             --force-cleanup
 
           set +x

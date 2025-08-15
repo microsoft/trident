@@ -131,6 +131,16 @@ func innerUpdateLoop(cfg config.ServicingConfig, rollback bool) error {
 					return fmt.Errorf("failed to truncate serial log file: %w", err)
 				}
 				logrus.Tracef("BFJELDS: Truncated serial log file: %+v: %d", stat.Name(), stat.Size())
+				if dfOutput, err := exec.Command("df", "-h").Output(); err != nil {
+					return fmt.Errorf("failed to check disk space: %w", err)
+				} else {
+					logrus.Tracef("BFJELDS: Disk space usage:\n%s", dfOutput)
+				}
+				if freeOutput, err := exec.Command("free", "-h").Output(); err != nil {
+					return fmt.Errorf("failed to check memory usage: %w", err)
+				} else {
+					logrus.Tracef("BFJELDS: Memory usage:\n%s", freeOutput)
+				}
 			}
 
 			if i%10 == 0 {
