@@ -7,7 +7,7 @@ bareMetal:
       - split
       - usr-verity
     validation:
-      # - base
+      - base
       # - combined
       # - encrypted-partition
       # - encrypted-raid
@@ -50,7 +50,7 @@ bareMetal:
       - rerun
       - root-verity
     validation:
-      # - base
+      - base
       # - combined
       # - encrypted-partition
       # - encrypted-raid
