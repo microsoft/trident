@@ -124,13 +124,21 @@ func innerUpdateLoop(cfg config.ServicingConfig, rollback bool) error {
 	for i := 1; i <= loopCount; i++ {
 		logrus.Infof("Update attempt #%d for VM '%s' (%s)", i, cfg.VMConfig.Name, cfg.VMConfig.Platform)
 
-		if cfg.VMConfig.Platform == config.PlatformQEMU && i%10 == 0 {
-			// For every 10th update, reboot the VM (QEMU only)
-			if err := cfg.QemuConfig.RebootQemuVm(cfg.VMConfig.Name, i, cfg.TestConfig.OutputPath, cfg.TestConfig.Verbose); err != nil {
-				return fmt.Errorf("failed to reboot QEMU VM before update attempt #%d: %w", i, err)
+		if cfg.VMConfig.Platform == config.PlatformQEMU {
+			if _, err := os.Stat(cfg.QemuConfig.SerialLog); err == nil {
+				if err := os.Remove(cfg.QemuConfig.SerialLog); err != nil {
+					return fmt.Errorf("failed to remove serial log file: %w", err)
+				}
 			}
-			if err := cfg.QemuConfig.TruncateLog(cfg.VMConfig.Name); err != nil {
-				return fmt.Errorf("failed to truncate log file before update attempt #%d: %w", i, err)
+
+			if i%10 == 0 {
+				// For every 10th update, reboot the VM (QEMU only)
+				if err := cfg.QemuConfig.RebootQemuVm(cfg.VMConfig.Name, i, cfg.TestConfig.OutputPath, cfg.TestConfig.Verbose); err != nil {
+					return fmt.Errorf("failed to reboot QEMU VM before update attempt #%d: %w", i, err)
+				}
+				if err := cfg.QemuConfig.TruncateLog(cfg.VMConfig.Name); err != nil {
+					return fmt.Errorf("failed to truncate log file before update attempt #%d: %w", i, err)
+				}
 			}
 		}
 
