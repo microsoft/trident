@@ -214,6 +214,36 @@ stages:
           - bash: |
               set -eux
 
+              SERVICE_OVERRIDE=""
+              if [ "${{ parameters.runtimeEnv }}" == "host" ]; then 
+                SERVICE_OVERRIDE="[Service]
+                  Environment=\"HTTP_PROXY=${{ variables.BAREMETAL_HTTPS_PROXY }}\"
+                  Environment=\"HTTPS_PROXY=${{ variables.BAREMETAL_HTTPS_PROXY }}\"
+                  Environment=\"NO_PROXY=${{ variables.BAREMETAL_BMC_IP }},10.248.0.0/24,localhost\""
+              else
+                SERVICE_OVERRIDE="[Service]
+                  Environment=\"HTTPS_PROXY=http://172.16.1.10:3128\"
+                  ExecStart=
+                  ExecStart=docker run \\
+                    --env HTTPS_PROXY \\
+                    --name trident_container \\
+                    --pull=never \\
+                    --rm \\
+                    --privileged \\
+                    -v /etc/trident:/etc/trident \\
+                    -v /etc/pki:/etc/pki:ro \\
+                    -v /run/initramfs/live:/trident_cdrom \\
+                    -v /var/lib/trident:/var/lib/trident \\
+                    -v /var/log:/var/log \\
+                    -v /:/host \\
+                    -v /dev:/dev \\
+                    -v /run:/run \\
+                    -v /sys:/sys \\
+                    --pid host \\
+                    --ipc host trident/trident:latest install \\
+                    --verbosity TRACE"
+              fi
+
               cat << EOF > $(TRIDENT_SOURCE_DIR)/baremetal-netlaunch.yaml
               netlaunch:
                 bmc:
@@ -228,10 +258,7 @@ stages:
               # Set up proxy variables
               iso:
                 serviceOverride: |
-                  [Service]
-                  Environment="HTTP_PROXY=${{ variables.BAREMETAL_HTTPS_PROXY }}"
-                  Environment="HTTPS_PROXY=${{ variables.BAREMETAL_HTTPS_PROXY }}"
-                  Environment="NO_PROXY=${{ variables.BAREMETAL_BMC_IP }},10.248.0.0/24,localhost"
+                  $SERVICE_OVERRIDE
               EOF
 
               cat $(TRIDENT_SOURCE_DIR)/baremetal-netlaunch.yaml | grep -v password
