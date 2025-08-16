@@ -210,7 +210,7 @@ func innerUpdateLoop(cfg config.ServicingConfig, rollback bool) error {
 				// Check for known unmount failure and signal
 				return fmt.Errorf("unmount failure (iteration %d: %v)", i, stageErr)
 			}
-			return fmt.Errorf("failed to stage update for iteration %d: %w", i, stageErr)
+			return fmt.Errorf("failed to stage update #%d: %w", i, stageErr)
 		}
 
 		logrus.Tracef("Running Trident update finalize command on VM")
