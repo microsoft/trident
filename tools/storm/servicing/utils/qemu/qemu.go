@@ -13,7 +13,6 @@ import (
 	"storm/pkg/storm/utils"
 	"strings"
 	"time"
-	"tridenttools/storm/servicing/utils/ado"
 	"tridenttools/storm/servicing/utils/file"
 
 	"github.com/digitalocean/go-libvirt"
@@ -328,7 +327,9 @@ func (cfg QemuConfig) WaitForLogin(vmName string, outputPath string, verbose boo
 		// Create fairly generic error message
 		logrus.Errorf("Failed to reach login prompt for the VM for iteration %d: %v", iteration, waitErr)
 		// Attempt to create more meaningful error messages based on the serial log
-		analyzeSerialLog(cfg.SerialLog)
+		if err := analyzeSerialLog(cfg.SerialLog); err != nil {
+			return err
+		}
 
 		// Output qemu domain info to try to help debug failure
 		dominfoOut, err := exec.Command("virsh", "dominfo", vmName).Output()
@@ -377,16 +378,10 @@ func printAndSave(line string, verbose bool, localSerialLog string) {
 
 func analyzeSerialLog(serial string) error {
 	// Read the last line of the serial log
-	lastLine, err := exec.Command("tail", "-n", "1", serial).Output()
-	if err != nil {
-		return fmt.Errorf("failed to read last line of serial log: %w", err)
-	}
+	lastLines, err := exec.Command("tail", "-n", "100", serial).Output()
 	// Watch for specific failures and create error messages accordingly
-	if strings.Contains(string(lastLine), "tpm tpm0: Operation Timed out") {
-		ado.LogError("tpm tpm0: Operation Timed out")
-	} else {
-		// More generic error message based on last serial log line
-		ado.LogError("Last line of serial log: %s", lastLine)
+	if err == nil && strings.Contains(string(lastLines), "tpm tpm0: Operation Timed out") {
+		return fmt.Errorf("tpm tpm0: Operation Timed out")
 	}
 	return nil
 }

@@ -10,7 +10,6 @@ import (
 	"regexp"
 	"strings"
 	"time"
-	"tridenttools/storm/servicing/utils/ado"
 	"tridenttools/storm/servicing/utils/config"
 	"tridenttools/storm/servicing/utils/file"
 	"tridenttools/storm/servicing/utils/ssh"
@@ -209,7 +208,7 @@ func innerUpdateLoop(cfg config.ServicingConfig, rollback bool) error {
 		if stageErr != nil {
 			if strings.Contains(combinedStagingOutput, "umount: /var/lib/trident-overlay/newroot/: target is busy") {
 				// Check for known unmount failure and signal
-				ado.LogError("Unmount failure (iteration %d: %v)", i, stageErr)
+				return fmt.Errorf("unmount failure (iteration %d: %v)", i, stageErr)
 			}
 			return fmt.Errorf("failed to stage update for iteration %d: %w", i, stageErr)
 		}
@@ -239,9 +238,9 @@ func innerUpdateLoop(cfg config.ServicingConfig, rollback bool) error {
 			}
 
 			if !success {
-				logrus.Info("VM did not come back up after update")
-				ado.LogError("VM did not come back up after update for iteration %d", i)
-				return fmt.Errorf("VM did not come back up after update for iteration %d", i)
+				logrus.Info("Azure VM did not come back up after update")
+				logrus.Errorf("Azure VM did not come back up after update for iteration %d", i)
+				return fmt.Errorf("azure VM did not come back up after update for iteration %d", i)
 			}
 		}
 
@@ -378,7 +377,7 @@ func killUpdateServer(port int) error {
 func startNetListenAndWait(ctx context.Context, port int, partition string, artifactsDir string, startedChannel chan bool) error {
 	cmdPath := "bin/netlisten"
 	if _, err := os.Stat(cmdPath); os.IsNotExist(err) {
-		ado.LogError("bin/netlisten not found")
+		logrus.Error("bin/netlisten not found")
 		return fmt.Errorf("netlisten not found at %s: %w", cmdPath, err)
 	}
 
@@ -426,21 +425,21 @@ func validateRollback(cfg config.VMConfig, vmIP string) error {
 	category, ok := hostStatus["lastError"].(map[interface{}]interface{})["category"].(string)
 	if ok && category != "servicing" {
 		logrus.Tracef("Host status: %s", hostStatusStr)
-		ado.LogError("Category of last error is not 'servicing', but '%s'", category)
+		logrus.Errorf("Category of last error is not 'servicing', but '%s'", category)
 		return fmt.Errorf("category of last error is not 'servicing', but '%s'", category)
 	}
 
 	// Validate that lastError.error contains the expected content
 	error, ok := hostStatus["lastError"].(map[interface{}]interface{})["error"].(string)
 	if ok && !strings.Contains(error, "!ab-update-reboot-check") {
-		ado.LogError("Type of last error is not '!ab-update-reboot-check', but '%s'", error)
+		logrus.Errorf("Type of last error is not '!ab-update-reboot-check', but '%s'", error)
 		return fmt.Errorf("type of last error is not '!ab-update-reboot-check', but '%s'", error)
 	}
 
 	// Validate that lastError.message matches the expected format
 	message, ok := hostStatus["lastError"].(map[interface{}]interface{})["message"].(string)
 	if ok && !regexp.MustCompile(`^A/B update failed as host booted from .+ instead of the expected device .+$`).MatchString(message) {
-		ado.LogError("Message of last error does not match the expected format: '%s'", message)
+		logrus.Errorf("Message of last error does not match the expected format: '%s'", message)
 		return fmt.Errorf("message of last error does not match the expected format: '%s'", message)
 	}
 
