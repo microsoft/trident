@@ -141,11 +141,11 @@ func innerSshCommand(cfg config.VMConfig, vmIP, command string, combineOutput bo
 			} else {
 				output, err = session.Output(command)
 			}
-			if err != nil {
-				return nil, fmt.Errorf("failed to run command '%s': %w\nOutput: %s", command, err, output)
-			}
-
 			sanitizedOutput := strings.TrimSpace(string(output))
+
+			if err != nil {
+				return &sanitizedOutput, fmt.Errorf("failed to run command '%s': %w\nOutput: %s", command, err, output)
+			}
 			return &sanitizedOutput, nil
 		},
 	)
