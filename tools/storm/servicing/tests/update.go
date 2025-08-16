@@ -196,7 +196,6 @@ func innerUpdateLoop(cfg config.ServicingConfig, rollback bool) error {
 			logrus.Tracef("Staging output for iteration %d:\n%s", i, combinedStagingOutput)
 		}
 
-		stageLogFileName := fmt.Sprintf("%s-staged-trident-full.log", fmt.Sprintf("%03d", i))
 		stageLogLocalTmpFile, err := os.CreateTemp("", "staged-trident-full")
 		if err != nil {
 			return fmt.Errorf("failed to create temp staging log file: %w", err)
@@ -211,9 +210,15 @@ func innerUpdateLoop(cfg config.ServicingConfig, rollback bool) error {
 
 		if cfg.TestConfig.OutputPath != "" {
 			logrus.Tracef("Download staging trident logs for iteration %d", i)
-			stageLogPath := filepath.Join(cfg.TestConfig.OutputPath, stageLogFileName)
+			stageLogPath := filepath.Join(cfg.TestConfig.OutputPath, fmt.Sprintf("%s-staged-trident-full.log", fmt.Sprintf("%03d", i)))
 			if err := exec.Command("cp", stageLogLocalTmpPath, stageLogPath).Run(); err != nil {
 				return fmt.Errorf("failed to copy staged trident log to output path: %w", err)
+			}
+			if err := os.Chmod(stageLogPath, 0644); err != nil {
+				logrus.Errorf("failed to change permissions for staged trident log: %w", err)
+			}
+			if lsOut, err := exec.Command("ls", "-lh", stageLogPath).Output(); err == nil {
+				logrus.Tracef("Staged trident log details for iteration %d:\n%s", i, lsOut)
 			}
 		}
 
