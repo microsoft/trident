@@ -13,6 +13,7 @@ import (
 	"storm/pkg/storm/utils"
 	"strings"
 	"time"
+	"tridenttools/storm/servicing/utils/ado"
 	"tridenttools/storm/servicing/utils/file"
 
 	"github.com/digitalocean/go-libvirt"
@@ -382,10 +383,10 @@ func analyzeSerialLog(serial string) error {
 	}
 	// Watch for specific failures and create error messages accordingly
 	if strings.Contains(string(lastLine), "tpm tpm0: Operation Timed out") {
-		logrus.Error("tpm tpm0: Operation Timed out")
+		ado.LogError("tpm tpm0: Operation Timed out")
 	} else {
 		// More generic error message based on last serial log line
-		logrus.Errorf("Last line of serial log: %s", lastLine)
+		ado.LogError("Last line of serial log: %s", lastLine)
 	}
 	return nil
 }

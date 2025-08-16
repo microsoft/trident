@@ -2,6 +2,7 @@ package tests
 
 import (
 	"fmt"
+	"tridenttools/storm/servicing/utils/ado"
 	"tridenttools/storm/servicing/utils/config"
 	"tridenttools/storm/utils"
 
@@ -23,7 +24,7 @@ func CheckDeployment(cfg config.ServicingConfig) error {
 	// fail explicitly if multiple IPs are found
 	if cfg.VMConfig.Platform == config.PlatformQEMU {
 		if len(vmIPs) > 1 {
-			logrus.Errorf("Multiple IPs found: %v", vmIPs)
+			ado.LogError("Multiple IPs found: %v", vmIPs)
 			logrus.Error("Multiple IPs found, expected only one IP address")
 			return fmt.Errorf("multiple IPs found, expected only one IP address")
 		}
