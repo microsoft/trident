@@ -196,17 +196,29 @@ func innerUpdateLoop(cfg config.ServicingConfig, rollback bool) error {
 			logrus.Tracef("Staging output for iteration %d:\n%s", i, combinedStagingOutput)
 		}
 
+		stageLogFileName := fmt.Sprintf("%s-staged-trident-full.log", fmt.Sprintf("%03d", i))
+		stageLogLocalTmpFile, err := os.CreateTemp("", "staged-trident-full")
+		if err != nil {
+			return fmt.Errorf("failed to create temp staging log file: %w", err)
+		}
+		stageLogLocalTmpPath := stageLogLocalTmpFile.Name()
+		defer os.Remove(stageLogLocalTmpPath)
+
+		err = ssh.ScpDownloadFile(cfg.VMConfig, vmIP, "/var/log/trident-full.log", stageLogLocalTmpPath)
+		if err != nil {
+			return fmt.Errorf("failed to download staged trident log: %w", err)
+		}
+
 		if cfg.TestConfig.OutputPath != "" {
 			logrus.Tracef("Download staging trident logs for iteration %d", i)
-			localPath := filepath.Join(cfg.TestConfig.OutputPath, fmt.Sprintf("%s-staged-trident-full.log", fmt.Sprintf("%03d", i)))
-			err = ssh.ScpDownloadFile(cfg.VMConfig, vmIP, "/var/log/trident-full.log", localPath)
-			if err != nil {
-				return fmt.Errorf("failed to download staged trident log: %w", err)
+			stageLogPath := filepath.Join(cfg.TestConfig.OutputPath, stageLogFileName)
+			if err := exec.Command("cp", stageLogLocalTmpPath, stageLogPath).Run(); err != nil {
+				return fmt.Errorf("failed to copy staged trident log to output path: %w", err)
 			}
 		}
 
 		if stageErr != nil {
-			if strings.Contains(combinedStagingOutput, "umount: /var/lib/trident-overlay/newroot/: target is busy") {
+			if err := exec.Command("grep", "umount: /var/lib/trident-overlay/newroot/: target is busy", stageLogLocalTmpPath).Run(); err == nil {
 				// Check for known unmount failure and signal
 				return fmt.Errorf("unmount failure (iteration %d: %v)", i, stageErr)
 			}
