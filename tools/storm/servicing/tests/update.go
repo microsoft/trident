@@ -223,9 +223,10 @@ func innerUpdateLoop(cfg config.ServicingConfig, rollback bool) error {
 		}
 
 		if stageErr != nil {
-			if err := exec.Command("grep", "umount: /var/lib/trident-overlay/newroot/: target is busy", stageLogLocalTmpPath).Run(); err == nil {
+			if egrepOut, err := exec.Command("egrep", "umount: .*: target is busy", stageLogLocalTmpPath).Output(); err == nil {
 				// Check for known unmount failure and signal
-				return fmt.Errorf("unmount failure (iteration %d: %v)", i, stageErr)
+				logrus.Errorf("umount failure (iteration %d: %v): %s", i, stageErr, egrepOut)
+				return fmt.Errorf("umount failure (iteration %d: %v)", i, stageErr)
 			}
 			return fmt.Errorf("failed to stage update #%d: %w", i, stageErr)
 		}
