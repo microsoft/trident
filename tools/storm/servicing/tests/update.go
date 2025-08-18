@@ -223,10 +223,12 @@ func innerUpdateLoop(cfg config.ServicingConfig, rollback bool) error {
 		}
 
 		if stageErr != nil {
-			if egrepOut, err := exec.Command("bin/sh", "-c", fmt.Sprintf("grep 'target is busy' %s | grep umount", stageLogLocalTmpPath)).Output(); err == nil {
+			if egrepOut, err := exec.Command("/bin/sh", "-c", fmt.Sprintf("grep 'target is busy' %s | grep umount", stageLogLocalTmpPath)).CombinedOutput(); err == nil {
 				// Check for known unmount failure and signal
 				logrus.Errorf("umount failure (iteration %d: %v): %s", i, stageErr, egrepOut)
 				return fmt.Errorf("umount failure (iteration %d: %v)", i, stageErr)
+			} else {
+				logrus.Tracef("grep output: %s", egrepOut)
 			}
 			return fmt.Errorf("failed to stage update #%d: %w", i, stageErr)
 		}
