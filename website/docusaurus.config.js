@@ -96,18 +96,18 @@ const config = {
           {
             title: 'Community',
             items: [
-              {
-                label: 'Stack Overflow',
-                href: 'https://stackoverflow.com/questions/tagged/tridentagent',
-              },
-              {
-                label: 'Discord',
-                href: 'https://discordapp.com/invite/tridentagent',
-              },
-              {
-                label: 'X',
-                href: 'https://x.com/tridentagent',
-              },
+              // {
+              //   label: 'Stack Overflow',
+              //   href: 'https://stackoverflow.com/questions/tagged/tridentagent',
+              // },
+              // {
+              //   label: 'Discord',
+              //   href: 'https://discordapp.com/invite/tridentagent',
+              // },
+              // {
+              //   label: 'X',
+              //   href: 'https://x.com/tridentagent',
+              // },
             ],
           },
           {
@@ -137,20 +137,14 @@ const config = {
       /** @type {import("@easyops-cn/docusaurus-search-local").PluginOptions} */
       {
         hashed: true,
+        indexBlog: false,
         indexDocs: false,
         docsRouteBasePath: "docs",
         docsDir: "docs",
-        indexBlog: false,
-        blogRouteBasePath: "blog",
-        blogDir: "blog",
         searchContextByPaths: [
           {
             label: "Documents",
             path: "docs",
-          },
-          {
-            label: "Blog",
-            path: "blog",
           },
         ],
         // hideSearchBarWithNoSearchContext: true,
