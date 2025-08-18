@@ -82,6 +82,7 @@ jobs:
             set -eux
             az login --identity
             printenv
+            sudo printenv
             ./bin/storm-trident run servicing -a \
               --output-path $(ob_outputDirectory) \
               --platform ${{ parameters.platform }} \
@@ -203,7 +204,7 @@ jobs:
           fi
 
           printenv
-
+          sudo printenv
           $SUDO ./bin/storm-trident run servicing -a $FLAGS \
             --artifacts-dir $(Build.ArtifactStagingDirectory) \
             --output-path $(ob_outputDirectory) \
@@ -258,6 +259,7 @@ jobs:
               fi
 
               printenv
+              sudo printenv
               ./bin/storm-trident run servicing -a $FLAGS \
                 --output-path $(ob_outputDirectory) \
                 --subscription $(SUBSCRIPTION) \
