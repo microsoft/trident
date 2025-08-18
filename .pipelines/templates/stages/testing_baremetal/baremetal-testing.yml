@@ -381,7 +381,7 @@ stages:
               tridentConfigPath: $(TRIDENT_CONFIG_PATH)
               netlistenPort: ${{ variables.NETLAUNCH_PORT }}
               runtimeEnv: ${{ parameters.runtimeEnv }}
-              netlistenConfigFile: $(TRIDENT_SOURCE_DIR)/baremetal-netlisten.yaml\
+              netlistenConfigFile: $(TRIDENT_SOURCE_DIR)/baremetal-netlisten.yaml
               httpsProxy: ${{ variables.BAREMETAL_HTTPS_PROXY }}
 
           - template: ../common_tasks/remove-from-acr.yml
