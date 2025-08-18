@@ -47,6 +47,7 @@ const config = {
       /** @type {import('@docusaurus/preset-classic').Options} */
       ({
         docs: {
+          path: '../docs',
           sidebarPath: './sidebars.js',
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
@@ -87,13 +88,7 @@ const config = {
           src: 'img/logo.svg',
         },
         items: [
-          {
-            type: 'docSidebar',
-            sidebarId: 'tutorialSidebar',
-            position: 'left',
-            label: 'Docs',
-          },
-          // { to: '/blog', label: 'Blog', position: 'left' },
+          { to: '/docs/trident', label: 'Docs', position: 'left' },
           {
             href: 'https://github.com/microsoft/trident',
             label: 'GitHub',
