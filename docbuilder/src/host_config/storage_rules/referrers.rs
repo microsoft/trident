@@ -17,7 +17,7 @@ pub(super) fn referrer_description_table() -> RuleDefinition {
             referrer_kind
                 .get_variant_docs()
                 .unwrap_or("No description available")
-                .replace("\n\n", "<br>")
+                .replace("\n\n", "<br />")
                 .replace("\n", " "),
         ]);
     }
