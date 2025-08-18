@@ -1,6 +1,8 @@
 name: gh-pages-docs
 
 on:
+  workflow_dispatch:
+
   release:
     types: [published]
   # push:
