@@ -61,6 +61,7 @@ parameters:
 
   - name: httpsProxy
     type: string
+    default: ""
 
 steps:
   - bash: |
