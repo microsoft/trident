@@ -92,11 +92,20 @@ pub struct Encryption {
 
     /// Optional list of PCRs in TPM 2.0 device to seal to. If not specified, Trident will seal
     /// encrypted volumes against the following default options:
-    /// - If doing a clean install of a grub ROS image, seal to PCR 7.
+    /// - If doing a clean install of a grub ROS image, seal to PCR 7 while inside the MOS,
+    /// - If doing a clean install of a UKI ROS image, seal to PCRs 4 and 11 after booting into
+    ///   the ROS A.
     ///
     /// Each PCR may be specified either as a digit or a string representation. If specified, at
-    /// least one PCR must be provided, and any combination of the following PCRs may be used:
+    /// least one PCR must be provided.
+    ///
+    /// When doing a clean install of a grub ROS image, the following options are valid:
     /// - 7, or `secure-boot-policy`.
+    ///
+    /// When doing a clean install of a UKI ROS image, the following options are valid:
+    /// - 4, or `boot-loader-code`,
+    /// - 11, or `kernel-boot`,
+    /// - 4 and 11.
     ///
     /// More encryption flows, with additional PCR options, will be added in the future.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

@@ -102,10 +102,6 @@ impl Subsystem for OsConfigSubsystem {
 
     #[tracing::instrument(name = "osconfig_configuration", skip_all)]
     fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
-        // TODO: When we switch to MIC, figure out a strategy for handling
-        // other kinds of updates. Limit operation to:
-        // 1. ServicingType::CleanInstall,
-        // 2. ServicingType::AbUpdate, to be able to do E2E A/B update testing.
         if ctx.servicing_type != ServicingType::CleanInstall
             && ctx.servicing_type != ServicingType::AbUpdate
         {

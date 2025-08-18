@@ -475,16 +475,13 @@ impl BlkDevReferrerKind {
                 AllowBlockList::Block(vec![PartitionType::Esp])
             }
             Self::FileSystemEsp => AllowBlockList::Allow(vec![PartitionType::Esp]),
-            Self::VerityDevice => {
-                // TODO: Add usr when it's supported.
-                AllowBlockList::Allow(vec![
-                    PartitionType::Root,
-                    PartitionType::RootVerity,
-                    PartitionType::Usr,
-                    PartitionType::UsrVerity,
-                    PartitionType::LinuxGeneric,
-                ])
-            }
+            Self::VerityDevice => AllowBlockList::Allow(vec![
+                PartitionType::Root,
+                PartitionType::RootVerity,
+                PartitionType::Usr,
+                PartitionType::UsrVerity,
+                PartitionType::LinuxGeneric,
+            ]),
             Self::FileSystemImage => AllowBlockList::Any,
             Self::Swap => AllowBlockList::Allow(vec![PartitionType::Swap]),
         }
