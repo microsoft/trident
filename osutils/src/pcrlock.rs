@@ -72,8 +72,6 @@ const KERNEL_CMDLINE_PCRLOCK_DIR: &str = "710-kernel-cmdline.pcrlock.d";
 #[allow(dead_code)]
 const KERNEL_INITRD_PCRLOCK_DIR: &str = "720-kernel-initrd.pcrlock.d";
 
-const HW_BOOTLOADER_PCRLOCK_DIR: &str = "670-hw-bootloader.pcrlock.d";
-
 #[derive(Debug, Deserialize)]
 struct PcrValue {
     pcr: Pcr,
@@ -223,64 +221,7 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         return Ok(());
     }
 
-    debug!(
-        "Some entries for required PCRs have unrecognized .pcrlock components, so trying to recognize"
-    );
-    // Workaround to enable pcrlock encryption on Trident's BM E2E tests:
-    // If unrecognized includes a PCR 4 record expected for E2E BM environment, then extract the
-    // sha256 hash from the record and generate a .pcrlock file for it
-    for entry in unrecognized.iter() {
-        debug!(
-            "Trying to recognize the following entry:\n\
-            pcr='{}', pcrname='{}', event='{}', sha256='{}', description='{}'",
-            entry.pcr.to_num(),
-            entry.pcrname.as_deref().unwrap_or("null"),
-            entry.event.as_deref().unwrap_or("null"),
-            entry.sha256.as_ref().map(|h| h.as_str()).unwrap_or("null"),
-            entry.description.as_deref().unwrap_or("null"),
-        );
-        let desc_match = entry
-            .description
-            .as_deref()
-            .map(|d| d.contains(r"\efi\Dell\System_Services\System_Services.efi"))
-            .unwrap_or(false);
-
-        let should_handle = (entry.pcr == Pcr::Pcr4 || desc_match) && entry.sha256.is_some();
-
-        if should_handle {
-            let sha256_hash = entry.sha256.as_ref().unwrap();
-            let pcrlock_file = generate_pcrlock_output_path(HW_BOOTLOADER_PCRLOCK_DIR, 0);
-
-            debug!(
-                "Unrecognized entry matches a record we expect on Dell BM hardware, \
-                generating a .pcrlock file at '{}':\n\
-                pcr='{}', pcrname='{}', event='{}', sha256='{}', description='{}'",
-                pcrlock_file.display(),
-                entry.pcr.to_num(),
-                entry.pcrname.as_deref().unwrap_or("null"),
-                entry.event.as_deref().unwrap_or("null"),
-                entry.sha256.as_ref().map(|h| h.as_str()).unwrap_or("null"),
-                entry.description.as_deref().unwrap_or("null"),
-            );
-            generate_pcrlock_file(pcrlock_file, entry.pcr, sha256_hash.to_string())
-                .expect("Failed to generate .pcrlock file for unmatched record");
-        }
-    }
-
-    // Get fresh parsed output of 'systemd-pcrlock log'
-    debug!("Trying to validate 'systemd-pcrlock log' output again");
-    let parsed_log = log_parsed().context("Failed to get 'systemd-pcrlock log' output")?;
-
-    // Fetch list of entries that are related to required PCRs, with components that are not
-    // recognized yet, if any
-    let unrecognized = unrecognized_log_entries(parsed_log.clone(), required_pcrs)
-        .context("Failed to get unrecognized log entries")?;
-    if unrecognized.is_empty() {
-        debug!("All entries for required PCRs have recognized .pcrlock components");
-        return Ok(());
-    }
-
-    // If any entries still not recognized, issue an error
+    // If any entries not recognized, issue an error
     let entries: Vec<String> = unrecognized
         .into_iter()
         .map(|entry| {
@@ -296,8 +237,8 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         .collect();
 
     bail!(
-        "Failed to validate 'systemd-pcrlock log' output as some log entries cannot be matched \
-            to recognized components:\n{}",
+        "Failed to validate 'systemd-pcrlock log' output as some log entries for requested PCRs \
+        cannot be matched to recognized components. Consider dropping these PCRs from the list:\n{}",
         entries.join("\n")
     );
 }
