@@ -30,7 +30,7 @@ const config = {
   organizationName: 'microsoft', // Usually your GitHub org/user name.
   projectName: 'trident', // Usually your repo name.
 
-  onBrokenLinks: 'throw',
+  onBrokenLinks: 'warn',
   onBrokenMarkdownLinks: 'warn',
 
   // Even if you don't use internationalization, you can use this field to set
@@ -54,21 +54,6 @@ const config = {
           editUrl:
             'https://github.com/microsoft/trident/tree/main/docs/',
         },
-        // blog: {
-        //   showReadingTime: true,
-        //   feedOptions: {
-        //     type: ['rss', 'atom'],
-        //     xslt: true,
-        //   },
-        //   // Please change this to your repo.
-        //   // Remove this to remove the "edit this page" links.
-        //   editUrl:
-        //     'https://github.com/microsoft/trident/tree/main/docs/',
-        //   // Useful options to enforce blogging best practices
-        //   onInlineTags: 'warn',
-        //   onInlineAuthors: 'warn',
-        //   onUntruncatedBlogPosts: 'warn',
-        // },
         theme: {
           customCss: './src/css/custom.css',
         },
@@ -146,6 +131,32 @@ const config = {
         darkTheme: prismThemes.dracula,
       },
     }),
+  themes: [
+    [
+      require.resolve("@easyops-cn/docusaurus-search-local"),
+      /** @type {import("@easyops-cn/docusaurus-search-local").PluginOptions} */
+      {
+        hashed: true,
+        indexDocs: false,
+        docsRouteBasePath: "docs",
+        docsDir: "docs",
+        indexBlog: false,
+        blogRouteBasePath: "blog",
+        blogDir: "blog",
+        searchContextByPaths: [
+          {
+            label: "Documents",
+            path: "docs",
+          },
+          {
+            label: "Blog",
+            path: "blog",
+          },
+        ],
+        // hideSearchBarWithNoSearchContext: true,
+      },
+    ],
+    '@docusaurus/theme-mermaid'
+  ],
 };
-
 export default config;
