@@ -1,19 +1,12 @@
 name: gh-pages-docs
 
 on:
+  # Manual trigger
   workflow_dispatch:
 
+  # Trigger on release
   release:
     types: [published]
-  # push:
-  #   branches: [main]
-  #   path:
-  #     - 'website/*'
-  #     - 'docs/*'
-  #     - '.github/workflows/deploy-website.yml'
-  # workflow_dispatch:
-  # merge_group:
-  #   types: [checks_requested]
 
 jobs:
   gh-release:
