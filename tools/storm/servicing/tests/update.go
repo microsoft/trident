@@ -227,8 +227,10 @@ func innerUpdateLoop(cfg config.ServicingConfig, rollback bool) error {
 				// Check for known unmount failure and signal
 				logrus.Errorf("umount failure (iteration %d: %v): %s", i, stageErr, egrepOut)
 				return fmt.Errorf("umount failure (iteration %d: %v)", i, stageErr)
-			} else {
-				logrus.Tracef("grep output: %s", egrepOut)
+			} else if cosiDownloadOut, err := exec.Command("/bin/sh", "-c", fmt.Sprintf("grep 'Failed to load COSI file from' %s && grep 'HTTP request failed: error sending request for url' %s", stageLogLocalTmpPath, stageLogLocalTmpPath)).CombinedOutput(); err == nil {
+				// Check for known download COSI failure
+				logrus.Errorf("COSI download failure (iteration %d: %v): %s", i, stageErr, cosiDownloadOut)
+				return fmt.Errorf("COSI download failure (iteration %d: %v)", i, stageErr)
 			}
 			return fmt.Errorf("failed to stage update #%d: %w", i, stageErr)
 		}
