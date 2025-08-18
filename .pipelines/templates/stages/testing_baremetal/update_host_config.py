@@ -84,6 +84,19 @@ def update_trident_host_config(
         "Final trident_yaml content post all the updates: %s", host_configuration
     )
 
+    # TODO: If this is a BM test with grub MOS -> UKI ROS flow, then only
+    # request PCR 11 in the PCRs section b/c we cannot currently include PCR 4
+    # into pcrlock policy on Dell hardware. Related ADO task:
+    # https://dev.azure.com/mariner-org/polar/_workitems/edit/14736
+    storage = host_configuration.get("storage")
+    if storage and host_configuration.get("internalParams", {}).get("uki", False):
+        encryption = storage.get("encryption")
+        if encryption and "pcrs" in encryption:
+            logging.info(
+                "Detected UKI image, overwriting PCRs section to only include PCR 11"
+            )
+            encryption["pcrs"] = ["kernel-boot"]
+
 
 def is_root_verity(host_configuration: dict) -> bool:
     """
