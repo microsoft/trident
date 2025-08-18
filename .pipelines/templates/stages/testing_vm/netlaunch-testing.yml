@@ -118,6 +118,7 @@ stages:
               imageName: ${{ variables.testImageName }}
               registry: maritimuspublic
               config: ${{ variables.tridentConfigurationName }}
+              deploymentEnvironment: "virtualMachine"
 
           - template: netlaunch-prep.yml
 
@@ -270,6 +271,7 @@ stages:
               repository: ${{ variables.testImageName }}
               registry: "maritimuspublic"
               config: ${{ variables.tridentConfigurationName }}
+              deploymentEnvironment: "bareMetal"
 
           - bash: |
               set -eux

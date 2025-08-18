@@ -15,6 +15,12 @@ parameters:
     displayName: "Trident configuration"
     type: string
 
+  - name: "deploymentEnvironment"
+    type: string
+    values:
+      - virtualMachine
+      - bareMetal
+
 steps:
   - bash: |
       set -eux
@@ -61,7 +67,7 @@ steps:
             filename="regular_v${version}.cosi"
           fi
 
-          tag="v${build_id}.${{ parameters.config }}.${version}"
+          tag="v${build_id}.${{ parameters.config }}.${{ parameters.deploymentEnvironment }}.${version}"
 
           if [[ -f "$filename" ]]; then
             echo "Pushing $filename with tag $tag to ${{ parameters.registry }}.azurecr.io"
