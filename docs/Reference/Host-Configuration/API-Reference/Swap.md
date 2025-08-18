@@ -8,7 +8,7 @@
 
 ## Properties
 
-### `deviceId` **<span style="color:orange;">(required)</span>**
+### `deviceId` **<span>(required)</span>**
 
 The ID of the block device to use for this swap area.
 

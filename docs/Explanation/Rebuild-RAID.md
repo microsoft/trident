@@ -1,4 +1,5 @@
-# Table of Contents
+# Rebuild RAID
+## Table of Contents
 
 - [Table of Contents](#table-of-contents)
   - [RAID and Rebuild-RAID](#raid-and-rebuild-raid)

@@ -1,4 +1,6 @@
 
+# Adopt Existing Partitions
+
 <!--
 DELETE ME AFTER COMPLETING THE DOCUMENT!
 ---

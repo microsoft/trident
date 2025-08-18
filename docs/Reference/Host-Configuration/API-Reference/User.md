@@ -10,7 +10,7 @@ Configuration for a specific user.
 
 ## Properties
 
-### `name` **<span style="color:orange;">(required)</span>**
+### `name` **<span>(required)</span>**
 
 Username
 

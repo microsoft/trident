@@ -1,3 +1,7 @@
+---
+sidebar_position: 1
+---
+
 <!--
 DELETE ME AFTER COMPLETING THE DOCUMENT!
 ---

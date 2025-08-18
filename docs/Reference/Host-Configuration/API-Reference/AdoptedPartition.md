@@ -12,7 +12,7 @@ Only ONE match criteria should be provided.
 
 ## Properties
 
-### `id` **<span style="color:orange;">(required)</span>**
+### `id` **<span>(required)</span>**
 
 A unique identifier for the partition.
 

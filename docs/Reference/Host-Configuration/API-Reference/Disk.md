@@ -10,7 +10,7 @@ Per disk configuration.
 
 ## Properties
 
-### `device` **<span style="color:orange;">(required)</span>**
+### `device` **<span>(required)</span>**
 
 The device path of the disk. Points to the disk device in the host. It is recommended to use stable paths, such as the ones under `/dev/disk/by-path/` or [WWNs](https://en.wikipedia.org/wiki/World_Wide_Name).
 
@@ -18,7 +18,7 @@ The device path of the disk. Points to the disk device in the host. It is recomm
 | -------------- | -------- |
 | Type           | `string` |
 
-### `id` **<span style="color:orange;">(required)</span>**
+### `id` **<span>(required)</span>**
 
 A unique identifier for the disk. This is a user defined string that allows to link the disk to what is consuming it and also to results in the Host Status. The identifier needs to be unique across all types of devices, not just disks.
 
@@ -29,7 +29,7 @@ TBD: At the moment, the partition table is created from scratch. In the future, 
 | Type           | `string`          |
 | Format         | `Block Device ID` |
 
-### `partitionTableType` **<span style="color:orange;">(required)</span>**
+### `partitionTableType` **<span>(required)</span>**
 
 The partition table type of the disk. Supported values are: `gpt`.
 
@@ -38,7 +38,7 @@ The partition table type of the disk. Supported values are: `gpt`.
 | Type           | `PartitionTableType`                          |
 | Link           | [PartitionTableType](./PartitionTableType.md) |
 
-### `partitions` **<span style="color:orange;">(required)</span>**
+### `partitions` **<span>(required)</span>**
 
 A list of partitions that will be created on the disk.
 
