@@ -83,6 +83,7 @@ JUMPBOX_IP = "10.249.132.138"
 BAREMETAL_MACHINE_IP = "10.8.4.50/23"
 BAREMETAL_MACHINE_GATEWAY = "10.8.4.1"
 BAREMETAL_MACHINE_DEFAULT_INTERFACE = "eth0"
+BAREMETAL_MACHINE_HTTPS_PROXY = "http://172.16.1.10:3128"
 
 
 logging.basicConfig(level=logging.INFO)
@@ -211,8 +212,7 @@ def generate_netlaunch_config() -> Path:
 
       serviceOverride: |
         [Service]
-        Environment="HTTPS_PROXY=http://172.16.1.10:3128"
-        Environment="NO_PROXY=10.248.0.0/24,localhost"
+        Environment="{BAREMETAL_MACHINE_HTTPS_PROXY}"
     """
     contents = inspect.cleandoc(contents)
     log.info(f"Generated {netlaunch_config_file}:\n{contents}")

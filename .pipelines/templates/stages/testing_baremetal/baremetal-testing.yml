@@ -218,7 +218,6 @@ stages:
               if [ "${{ parameters.runtimeEnv }}" == "host" ]; then 
                 SERVICE_OVERRIDE="[Service]
                   Environment=\"HTTPS_PROXY=${{ variables.BAREMETAL_HTTPS_PROXY }}\"
-                  Environment=\"NO_PROXY=${{ variables.BAREMETAL_BMC_IP }},10.248.0.0/24,localhost\""
               else
                 # When running containerized Trident, we must directly embed the proxy in the docker command
                 SERVICE_OVERRIDE="[Service]
