@@ -222,7 +222,7 @@ stages:
               else
                 # When running containerized Trident, we must directly embed the proxy in the docker command
                 SERVICE_OVERRIDE="[Service]
-                  Environment=\"HTTPS_PROXY=http://172.16.1.10:3128\"
+                  Environment=\"HTTPS_PROXY=${{ variables.BAREMETAL_HTTPS_PROXY }}\"
                   ExecStart=
                   ExecStart=docker run \\
                     --env HTTPS_PROXY \\
