@@ -705,7 +705,7 @@
       ]
     },
     "PartitionType": {
-      "description": "Partition types as defined by The Discoverable Partitions Specification (<https://uapi-group.org/specifications/specs/discoverable_partitions_specification/>).",
+      "description": "Partition types as defined by [The Discoverable Partitions Specification](<https://uapi-group.org/specifications/specs/discoverable_partitions_specification/>).",
       "oneOf": [
         {
           "title": "EFI System Partition",
