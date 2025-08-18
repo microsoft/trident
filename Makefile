@@ -750,3 +750,16 @@ recreate-verity-image: bin/trident-rpms.tar.gz
 	$(MAKE) -C $(TEST_IMAGES_PATH) trident-verity-testimage
 	make copy-runtime-images
 
+.PHONY: website-prereqs
+website-prereqs:
+	npm install --save docusaurus
+	npm install --save @easyops-cn/docusaurus-search-local
+	npm install --save @docusaurus/theme-mermaid
+
+.PHONY: website-build
+website-build: website-prereqs
+	cd ./website && npm run build
+
+.PHONY: website-serve
+website-serve: website-build
+	cd ./website && npm run serve
