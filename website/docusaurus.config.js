@@ -27,7 +27,7 @@ const config = {
 
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
-  organizationName: 'microsoft', // Usually your GitHub org/user name.
+  organizationName: 'Microsoft', // Usually your GitHub org/user name.
   projectName: 'trident', // Usually your repo name.
 
   onBrokenLinks: 'warn',
