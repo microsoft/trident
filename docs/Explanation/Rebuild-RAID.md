@@ -61,7 +61,7 @@ This is a step-by-step explanation of how RAID-rebuild works, using RAID 1 (mirr
 
 **Note**: Trident does not handle Steps 1 and 2; these must be performed by the user.
 
-Please refer to [Trident Rebuild RAID](./docs/How-To-Guides/Trident-Rebuild-RAID.md) for more details on how to run Trident Rebuild-RAID.
+Please refer to [Trident Rebuild RAID](../How-To-Guides/Trident-Rebuild-RAID.md) for more details on how to run Trident Rebuild-RAID.
 
 ### What Is Trident Doing Internally
 

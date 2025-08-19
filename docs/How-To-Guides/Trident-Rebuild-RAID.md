@@ -1,7 +1,7 @@
 # Trident Rebuild RAID
 
 Trident supports the `rebuild-raid` subcommand to rebuild RAID arrays. Refer to
-[Rebuild RAID](/docs/Explanation/Rebuild-RAID.md) for a detailed explanation of
+[Rebuild RAID](../Explanation/Rebuild-RAID.md) for a detailed explanation of
 the term.
 
 ## Prerequisites
