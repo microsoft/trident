@@ -60,6 +60,7 @@ steps:
 
         cd $(Build.SourcesDirectory)/artifacts/test-image
 
+        tag_base="v${build_id}.${{ parameters.config }}.${{ parameters.deploymentEnvironment }}"
         for version in {1..4}; do
           if [[ $version == 1 ]]; then
             filename="regular.cosi"
@@ -67,7 +68,7 @@ steps:
             filename="regular_v${version}.cosi"
           fi
 
-          tag="v${build_id}.${{ parameters.config }}.${{ parameters.deploymentEnvironment }}.${version}"
+          tag="$tag_base.${version}"
 
           if [[ -f "$filename" ]]; then
             echo "Pushing $filename with tag $tag to ${{ parameters.registry }}.azurecr.io"
@@ -79,5 +80,8 @@ steps:
             echo "File $filename not found"
           fi
         done
+
+        # Set variable for tag base of pushed images
+        echo ##vso[task.setvariable variable=TAG_BASE]$tag_base
     displayName: "Push to ACR"
     retryCountOnTaskFailure: 3
