@@ -1,6 +1,11 @@
 name: gh-pages-docs
 
 on:
+  # temp trigger for push
+  push:
+    branches:
+      - user/bfjelds/docusaurus-poc
+
   # Manual trigger
   workflow_dispatch:
 
