@@ -33,7 +33,7 @@ jobs:
       - name: Install dependencies
         run: |
           cd website
-          npm install --force
+          npm ci
       - name: Build website
         run: |
           cd website
