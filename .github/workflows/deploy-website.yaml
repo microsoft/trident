@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   build:
-    name: Build Docusaurus
+    name: Build Github Pages artifact
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -42,7 +42,7 @@ jobs:
           path: ./website/build
 
   deploy:
-    name: Deploy to Github Pages
+    name: Deploy website artifact to Github Pages
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
