@@ -74,7 +74,7 @@ steps:
           -s "${{ parameters.artifactsDirectory }}" > ./stage-ab-update-deployment.log 2>&1 &
 
       PROXY_ARG=""
-      if [ "${{ parameters.httpsProxy }}" != "" ]; then
+      if [ -n "${{ parameters.httpsProxy }}" ]; then
         PROXY_ARG="--proxy HTTPS_PROXY=${{ parameters.httpsProxy }}"
       fi
 
@@ -142,7 +142,7 @@ steps:
           -s "${{ parameters.artifactsDirectory }}" > ./finalize-ab-update.log 2>&1 &
 
       PROXY_ARG=""
-      if [ "${{ parameters.httpsProxy }}" != "" ]; then
+      if [ -n "${{ parameters.httpsProxy }}" ]; then
         PROXY_ARG="--proxy HTTPS_PROXY=${{ parameters.httpsProxy }}"
       fi
 

@@ -133,7 +133,7 @@ steps:
         -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-runtime-os-B.log 2>&1 &
 
       PROXY_ARG=""
-      if [ "${{ parameters.httpsProxy }}" != "" ]; then
+      if [ -n "${{ parameters.httpsProxy }}" ]; then
         PROXY_ARG="--proxy HTTPS_PROXY=${{ parameters.httpsProxy }}"
       fi
 
@@ -242,7 +242,7 @@ steps:
           -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-runtime-os-A.log 2>&1 &
 
       PROXY_ARG=""
-      if [ "${{ parameters.httpsProxy }}" != "" ]; then
+      if [ -n "${{ parameters.httpsProxy }}" ]; then
         PROXY_ARG="--proxy HTTPS_PROXY=${{ parameters.httpsProxy }}"
       fi
 
