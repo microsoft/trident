@@ -28,18 +28,14 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20.x
 
-      - name: Install dependencies
-        run: |
-          cd website
-          npm ci
-          npm install
       - name: Build website
         run: |
           cd website
+          npm ci
           npm run build
-      - name: Upload Build Artifact
+      - name: Upload website artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: website/build
