@@ -36,12 +36,10 @@ jobs:
           npm ci
           npm run build
 
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
+      - name: Upload website artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          # Build output to publish to the `gh-pages` branch:
-          publish_dir: ./website/build
+          path: ./website/build
 
   deploy:
     name: Deploy to Github Pages
