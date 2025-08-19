@@ -272,7 +272,7 @@ stages:
               repository: ${{ variables.testImageName }}
               registry: "maritimuspublic"
               config: ${{ variables.tridentConfigurationName }}
-              deploymentEnvironment: "bareMetal"
+              deploymentEnvironment: "virtualMachine"
 
           - bash: |
               set -eux
