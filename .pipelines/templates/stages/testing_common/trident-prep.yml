@@ -24,12 +24,6 @@ parameters:
   - name: config
     type: string
 
-  - name: deploymentEnvironment
-    type: string
-    values:
-      - virtualMachine
-      - bareMetal
-
 steps:
   - bash: |
       set -eux

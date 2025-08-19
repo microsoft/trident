@@ -14,12 +14,6 @@ parameters:
     displayName: "Trident configuration"
     type: string
 
-  - name: "deploymentEnvironment"
-    type: string
-    values:
-      - virtualMachine
-      - bareMetal
-
 steps:
   - task: AzureCLI@2
     inputs:
