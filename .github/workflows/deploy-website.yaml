@@ -1,4 +1,4 @@
-name: gh-pages-docs
+name: Deploy to GitHub Pages
 
 on:
   # temp trigger for push
@@ -19,35 +19,36 @@ permissions:
   id-token: write
 
 jobs:
-  docusaurs-build-and-upload:
+  build:
     name: Build Docusaurus
-
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Use Node.js
-        uses: actions/setup-node@v4
         with:
-          node-version: 20.x
-      - name: Build website
-        working-directory: ./website
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install dependencies
         run: |
-          npm install --force
+          cd website
+          npm ci
+      - name: Build website
+        run: |
+          cd website
           npm run build
       - name: Upload Build Artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./website/build
+          path: website/build
 
-  gh-pages-deploy:
-    name: Deploy to GitHub Pages
-    needs: docusaurs-build-and-upload
-
+  deploy:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-
     runs-on: ubuntu-latest
+    needs: build
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
