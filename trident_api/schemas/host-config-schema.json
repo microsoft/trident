@@ -370,7 +370,7 @@
         },
         {
           "title": "NTFS file system",
-          "description": "Using NTFS on Linux comes with some limitations. For more information, see: [Limitations of NTFS](/docs/Explanation/Limitations-Of-NTFS.md)",
+          "description": "Using NTFS on Linux comes with some limitations. For more information, see: [Limitations of NTFS](../../../Explanation/Limitations-Of-NTFS.md)",
           "type": "string",
           "enum": [
             "ntfs"

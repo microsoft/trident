@@ -28,7 +28,7 @@ pub enum FileSystemType {
     ///
     /// Using NTFS on Linux comes with some limitations. For more information,
     /// see:
-    /// [Limitations of NTFS](/docs/Explanation/Limitations-Of-NTFS.md)
+    /// [Limitations of NTFS](../../../Explanation/Limitations-Of-NTFS.md)
     Ntfs,
 
     /// # Tmpfs
