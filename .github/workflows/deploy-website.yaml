@@ -48,7 +48,10 @@ jobs:
     environment: wait-for-approval
     runs-on: ubuntu-latest
     needs: build
-    steps: []
+    steps:
+      - name: Approved
+        run: |
+          echo "approved :)"
 
   deploy:
     name: Deploy website artifact to Github Pages
