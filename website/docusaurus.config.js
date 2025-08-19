@@ -141,17 +141,15 @@ const config = {
       /** @type {import("@easyops-cn/docusaurus-search-local").PluginOptions} */
       {
         hashed: true,
-        indexBlog: false,
-        indexDocs: false,
         docsRouteBasePath: "docs",
-        docsDir: "docs",
+        docsDir: "../docs",
         searchContextByPaths: [
           {
             label: "Documents",
             path: "docs",
           },
         ],
-        // hideSearchBarWithNoSearchContext: true,
+        hideSearchBarWithNoSearchContext: true,
       },
     ],
     '@docusaurus/theme-mermaid'
