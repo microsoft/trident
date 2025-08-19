@@ -392,4 +392,3 @@ stages:
               repository: ${{ variables.IMAGE_NAME }}
               registry: "maritimuspublic"
               config: $(TRIDENT_CONFIGURATION_NAME)
-              deploymentEnvironment: "bareMetal"

@@ -271,7 +271,6 @@ stages:
               repository: ${{ variables.testImageName }}
               registry: "maritimuspublic"
               config: ${{ variables.tridentConfigurationName }}
-              deploymentEnvironment: "virtualMachine"
 
           - bash: |
               set -eux
