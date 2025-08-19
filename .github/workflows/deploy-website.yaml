@@ -13,11 +13,14 @@ on:
   release:
     types: [published]
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
 jobs:
   docusaurs-build-and-upload:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     defaults:
       run:
         working-directory: website
