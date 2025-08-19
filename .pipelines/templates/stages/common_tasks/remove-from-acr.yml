@@ -44,7 +44,7 @@ steps:
 
         # Delete repository with COSI images
         for i in {1..4}; do
-          tag="${{ variables.TAG_BASE }}.${i}"
+          tag="$(TAG_BASE).${i}"
           if az acr repository show --name ${{ parameters.registry }} --image ${repository_name}:${tag} &> /dev/null; then
             az acr repository delete --name ${{ parameters.registry }} --image ${repository_name}:${tag} --yes
           fi

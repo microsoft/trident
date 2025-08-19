@@ -49,7 +49,7 @@ steps:
 
       if [ "${{ parameters.config }}" == "misc" ]; then
         build_id="$(Build.BuildId)"
-        oci_url="oci://maritimuspublic.azurecr.io/${{ parameters.imageName }}:${{ variables.TAG_BASE }}.1"
+        oci_url="oci://maritimuspublic.azurecr.io/${{ parameters.imageName }}:$(TAG_BASE).1"
         cmd+=(--ociUrl "$oci_url")
       fi
 
