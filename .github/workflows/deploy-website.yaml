@@ -1,17 +1,13 @@
 name: Deploy to GitHub Pages
 
 on:
-  # temp trigger for push
-  push:
-    branches:
-      - user/bfjelds/docusaurus-poc
 
   # Manual trigger
   workflow_dispatch:
 
-  # Trigger on release
-  release:
-    types: [published]
+  # # Trigger on release
+  # release:
+  #   types: [published]
 
 permissions:
   contents: write
