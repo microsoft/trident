@@ -20,7 +20,6 @@ permissions:
 jobs:
   docusaurs-build-and-upload:
     name: Build Docusaurus
-    runs-on: ubuntu-latest
 
     runs-on: ubuntu-latest
     steps:
