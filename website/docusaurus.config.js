@@ -32,7 +32,7 @@ const config = {
   organizationName: 'Microsoft', // Usually your GitHub org/user name.
   projectName: 'trident', // Usually your repo name.
 
-  onBrokenLinks: 'warn',
+  onBrokenLinks: 'throw',
   onBrokenMarkdownLinks: 'warn',
 
   // Even if you don't use internationalization, you can use this field to set
@@ -50,6 +50,7 @@ const config = {
       ({
         docs: {
           path: '../docs',
+          routeBasePath: '/docs/',
           sidebarPath: './sidebars.js',
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
@@ -75,7 +76,12 @@ const config = {
           src: 'img/logo.svg',
         },
         items: [
-          { to: '/docs/trident', label: 'Docs', position: 'left' },
+          {
+            type: 'doc',
+            docId: 'Trident',
+            position: 'left',
+            label: 'Docs',
+          },
           {
             href: 'https://github.com/microsoft/trident',
             label: 'GitHub',
@@ -91,7 +97,7 @@ const config = {
             items: [
               {
                 label: 'Docs',
-                to: '/docs/trident',
+                to: '/docs/Trident',
               },
             ],
           },
