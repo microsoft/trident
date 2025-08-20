@@ -2,11 +2,6 @@ name: Deploy to GitHub Pages
 
 on:
 
-  # Temporary push trigger
-  push:
-    branches:
-      - user/bfjelds/docusaurus-poc
-
   # Manual trigger
   workflow_dispatch:
 
