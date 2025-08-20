@@ -91,12 +91,12 @@ func innerUpdateLoop(cfg config.ServicingConfig, rollback bool) error {
 		fmt.Sprintf("sudo sed -i 's!verity.cosi!files/%s!' /var/lib/trident/update-config.yaml && ", cosiFileBase) +
 			// use localhost as update server address
 			"sudo sed -i 's/192.168.122.1/localhost/' /var/lib/trident/update-config.yaml &&" +
-			// create second config file for b update
+			// use update port a for first config (for rollback following update test, this will be no-op)
+			fmt.Sprintf("sudo sed -i 's/8000/%d/' /var/lib/trident/update-config.yaml && ", cfg.TestConfig.UpdatePortA) +
+			// create second config file for b update (for rollback following update test, this will align both update yamls)
 			"sudo cp /var/lib/trident/update-config.yaml /var/lib/trident/update-config2.yaml && " +
-			// use update port b for second config
-			fmt.Sprintf("sudo sed -i 's/8000/%d/' /var/lib/trident/update-config2.yaml && ", cfg.TestConfig.UpdatePortB) +
-			// use udpate port a for first config
-			fmt.Sprintf("sudo sed -i 's/8000/%d/' /var/lib/trident/update-config.yaml", cfg.TestConfig.UpdatePortA)
+			// use update port b for second config (for all cases, including rollback after update, this will set port correctly)
+			fmt.Sprintf("sudo sed -i 's/%d/%d/' /var/lib/trident/update-config2.yaml", cfg.TestConfig.UpdatePortA, cfg.TestConfig.UpdatePortB)
 	configChangesOutput, err := ssh.SshCommand(cfg.VMConfig, vmIP, configChanges)
 	if err != nil {
 		logrus.Tracef("Failed to update config files:\n%s", configChangesOutput)
@@ -231,6 +231,10 @@ func innerUpdateLoop(cfg config.ServicingConfig, rollback bool) error {
 				return fmt.Errorf("COSI download failure (iteration %d: %v)", i, stageErr)
 			}
 			return fmt.Errorf("failed to stage update #%d: %w", i, stageErr)
+		} else if cosiDownloadOut, err := exec.Command("/bin/sh", "-c", fmt.Sprintf("grep 'No update servicing required' %s", stageLogLocalTmpPath)).CombinedOutput(); err == nil {
+			// Check for no-update-required
+			logrus.Errorf("No update servicing required (iteration %d: %v): %s", i, stageErr, cosiDownloadOut)
+			return fmt.Errorf("no update servicing required (iteration %d: %v)", i, stageErr)
 		}
 
 		logrus.Tracef("Running Trident update finalize command on VM")

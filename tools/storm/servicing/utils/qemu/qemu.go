@@ -393,6 +393,9 @@ func innerWaitForLogin(vmSerialLog string, verbose bool, iteration int, localSer
 
 	// Wait for serial log
 	for {
+		if time.Since(startTime) >= timeout {
+			return fmt.Errorf("timeout waiting for serial log after %d seconds", int(timeout.Seconds()))
+		}
 		if _, err := os.Stat(vmSerialLog); err == nil {
 			break
 		}
