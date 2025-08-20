@@ -182,7 +182,7 @@ stages:
           - template: ../common_tasks/push-to-acr.yml
             parameters:
               imageName: ${{ variables.IMAGE_NAME }}
-              registry: maritimuspublic
+              registry: maritimusdev
               config: $(TRIDENT_CONFIGURATION_NAME)
               deploymentEnvironment: "bareMetal"
 
@@ -192,6 +192,7 @@ stages:
               tridentConfigPath: $(TRIDENT_CONFIG_PATH)
               runtimeEnv: ${{ parameters.runtimeEnv }}
               config: $(TRIDENT_CONFIGURATION_NAME)
+              registry: maritimusdev
               imageName: ${{ variables.IMAGE_NAME }}
 
           - bash: |
@@ -390,5 +391,5 @@ stages:
           - template: ../common_tasks/remove-from-acr.yml
             parameters:
               repository: ${{ variables.IMAGE_NAME }}
-              registry: "maritimuspublic"
+              registry: "maritimusdev"
               config: $(TRIDENT_CONFIGURATION_NAME)

@@ -21,6 +21,11 @@ parameters:
       - trident-testimage
       - trident-container-testimage
 
+  - name: "registry"
+    displayName: "Container registry to push to"
+    type: string
+    default: "maritimusdev"
+
   - name: config
     type: string
 
@@ -43,7 +48,7 @@ steps:
 
       if [ "${{ parameters.config }}" == "misc" ]; then
         build_id="$(Build.BuildId)"
-        oci_url="oci://maritimusdev.azurecr.io/${{ parameters.imageName }}:$(TAG_BASE).1"
+        oci_url="oci://${{ parameters.registry }}.azurecr.io/${{ parameters.imageName }}:$(TAG_BASE).1"
         cmd+=(--ociUrl "$oci_url")
       fi
 
