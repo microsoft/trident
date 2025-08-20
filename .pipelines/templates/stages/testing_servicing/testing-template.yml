@@ -81,7 +81,7 @@ jobs:
         - bash: |
             set -eux
             az login --identity
-            ./bin/storm-trident run servicing \
+            ./bin/storm-trident run servicing -a \
               --output-path $(ob_outputDirectory) \
               --platform ${{ parameters.platform }} \
               --artifacts-dir $ARTIFACTS \
@@ -201,7 +201,7 @@ jobs:
             FLAGS="$FLAGS --rollback-retry-count ${{ parameters.updateIterationCount }} --rollback"
           fi
 
-          $SUDO ./bin/storm-trident run servicing $FLAGS \
+          $SUDO ./bin/storm-trident run servicing -a $FLAGS \
             --artifacts-dir $(Build.ArtifactStagingDirectory) \
             --output-path $(ob_outputDirectory) \
             --subscription $(SUBSCRIPTION) \
@@ -215,6 +215,7 @@ jobs:
             --ssh-public-key-path $(SSH_PUBLIC_KEY_PATH) \
             --retry-count ${{ parameters.updateIterationCount }} \
             --build-id $(Build.BuildId) \
+            --update-port-a 8123 --update-port-b 8124 \
             --force-cleanup
 
           set +x
@@ -253,7 +254,7 @@ jobs:
                 FLAGS="$FLAGS --verbose"
               fi
 
-              ./bin/storm-trident run servicing $FLAGS \
+              ./bin/storm-trident run servicing -a $FLAGS \
                 --output-path $(ob_outputDirectory) \
                 --subscription $(SUBSCRIPTION) \
                 --test-resource-group $(TEST_RESOURCE_GROUP) \
