@@ -12,9 +12,6 @@ use sys_mount::{Mount, MountFlags, Unmount, UnmountDrop, UnmountFlags};
 
 use trident_api::error::{ReportError, ServicingError, TridentError, TridentResultExt};
 
-// TODO: Implement drop for Chroot that panics if the chroot has not been
-// exited. Tracked by: https://dev.azure.com/mariner-org/ECF/_workitems/edit/6265
-
 /// Create a chroot environment.
 ///
 /// Note: Dropping this object does *not* exit the chroot. You must call `exit()` manually.

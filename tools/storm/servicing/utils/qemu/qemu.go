@@ -327,7 +327,9 @@ func (cfg QemuConfig) WaitForLogin(vmName string, outputPath string, verbose boo
 		// Create fairly generic error message
 		logrus.Errorf("Failed to reach login prompt for the VM for iteration %d: %v", iteration, waitErr)
 		// Attempt to create more meaningful error messages based on the serial log
-		analyzeSerialLog(cfg.SerialLog)
+		if err := analyzeSerialLog(cfg.SerialLog); err != nil {
+			return err
+		}
 
 		// Output qemu domain info to try to help debug failure
 		dominfoOut, err := exec.Command("virsh", "dominfo", vmName).Output()
@@ -376,16 +378,10 @@ func printAndSave(line string, verbose bool, localSerialLog string) {
 
 func analyzeSerialLog(serial string) error {
 	// Read the last line of the serial log
-	lastLine, err := exec.Command("tail", "-n", "1", serial).Output()
-	if err != nil {
-		return fmt.Errorf("failed to read last line of serial log: %w", err)
-	}
+	lastLines, err := exec.Command("tail", "-n", "100", serial).Output()
 	// Watch for specific failures and create error messages accordingly
-	if strings.Contains(string(lastLine), "tpm tpm0: Operation Timed out") {
-		logrus.Error("tpm tpm0: Operation Timed out")
-	} else {
-		// More generic error message based on last serial log line
-		logrus.Errorf("Last line of serial log: %s", lastLine)
+	if err == nil && strings.Contains(string(lastLines), "tpm tpm0: Operation Timed out") {
+		return fmt.Errorf("tpm tpm0: Operation Timed out")
 	}
 	return nil
 }
@@ -394,6 +390,16 @@ func innerWaitForLogin(vmSerialLog string, verbose bool, iteration int, localSer
 	// Timeout for monitoring serial log for login prompt
 	timeout := time.Second * 120
 	startTime := time.Now()
+
+	// Wait for serial log
+	for {
+		if time.Since(startTime) >= timeout {
+			return fmt.Errorf("timeout waiting for serial log after %d seconds", int(timeout.Seconds()))
+		}
+		if _, err := os.Stat(vmSerialLog); err == nil {
+			break
+		}
+	}
 
 	// Create the file if it doesn't exist
 	file, err := os.OpenFile(vmSerialLog, os.O_RDWR, 0644)

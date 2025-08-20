@@ -116,7 +116,7 @@ stages:
           - template: ../common_tasks/push-to-acr.yml
             parameters:
               imageName: ${{ variables.testImageName }}
-              registry: maritimuspublic
+              registry: maritimusdev
               config: ${{ variables.tridentConfigurationName }}
               deploymentEnvironment: "virtualMachine"
 
@@ -269,7 +269,7 @@ stages:
           - template: ../common_tasks/remove-from-acr.yml
             parameters:
               repository: ${{ variables.testImageName }}
-              registry: "maritimuspublic"
+              registry: "maritimusdev"
               config: ${{ variables.tridentConfigurationName }}
 
           - bash: |
