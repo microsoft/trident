@@ -84,10 +84,10 @@ stages:
             value: "c8:4b:d6:7a:73:c6"
           - name: BAREMETAL_LAB_CANARY_IP
             value: "10.8.6.1"
+
+          # Alternate HTTP(S) proxy which can be used with AEP02 is "http://192.168.229.51:3128"
           - name: BAREMETAL_HTTPS_PROXY
             value: "http://172.16.1.10:3128"
-          - name: BAREMETAL_HTTPS_PROXY_ALTERNATE
-            value: "http://192.168.229.51:3128"
 
           # Sourced from the matrix
           - name: TRIDENT_CONFIGURATION_NAME
