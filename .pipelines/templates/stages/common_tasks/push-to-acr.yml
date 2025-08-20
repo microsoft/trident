@@ -9,7 +9,7 @@ parameters:
   - name: "registry"
     displayName: "Container registry to push to"
     type: string
-    default: "maritimuspublic"
+    default: "maritimusdev"
 
   - name: "config"
     displayName: "Trident configuration"
@@ -35,7 +35,7 @@ steps:
 
   - task: AzureCLI@2
     inputs:
-      azureSubscription: maritimus-staging-eastus-cr-service-connection
+      azureSubscription: maritimus-dev-acr-write-umi-ECF
       scriptType: bash
       scriptLocation: inlineScript
       inlineScript: |

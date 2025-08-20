@@ -46,7 +46,7 @@ steps:
 
       if [ "${{ parameters.config }}" == "misc" ] && [ "${{ parameters.baremetal }}" != "True" ]; then
         build_id="$(Build.BuildId)"
-        oci_url="oci://maritimuspublic.azurecr.io/${{ parameters.imageName }}:v${build_id}.${{ parameters.config }}.1"
+        oci_url="oci://maritimusdev.azurecr.io/${{ parameters.imageName }}:v${build_id}.${{ parameters.config }}.1"
         cmd+=(--ociUrl "$oci_url")
       fi
 
