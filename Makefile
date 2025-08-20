@@ -763,3 +763,19 @@ website-build: website-prereqs
 .PHONY: website-serve
 website-serve: website-build
 	cd ./website && npm run serve
+
+PYTHON_CMD ?= python3
+SERVER_PORT ?= 8133
+
+.PHONY: validate-pipeline-website-artifact
+validate-pipeline-website-artifact:
+	if ! which gh > /dev/null; then \
+		sudo apt install gh; \
+	fi
+	$(eval STAGING_DIR := $(shell mktemp -d))
+	$(eval RUN_ID ?= $(shell gh run list --workflow 'Deploy to GitHub Pages' --repo microsoft/trident --json conclusion,databaseId --jq '.[] | select(.conclusion == "success") | .databaseId' | sort -n | tail -n 1))
+	@echo "Downloading GitHub Pages artifact from $(RUN_ID)"
+	gh run download $(RUN_ID) --name github-pages --repo microsoft/trident --dir $(STAGING_DIR)
+	cd $(STAGING_DIR) && \
+		tar -xvf ./artifact.tar && \
+		$(PYTHON_CMD) -m http.server $(SERVER_PORT)
