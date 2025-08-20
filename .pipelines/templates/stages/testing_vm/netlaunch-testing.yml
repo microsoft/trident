@@ -132,6 +132,13 @@ stages:
 
           - bash: |
               set -eux
+
+              # increase virtlogd max size to 10MB
+              cat /etc/libvirt/virtlogd.conf
+              echo "max_size = 10485760" >> /etc/libvirt/virtlogd.conf
+              cat /etc/libvirt/virtlogd.conf
+              sudo systemctl restart virtlogd.socket
+
               ./virt-deploy create --mem 12 --disks 32,32
             workingDirectory: $(argusToolkitSourceDirectory)
             displayName: "Creating virt-deploy VM"
