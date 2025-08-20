@@ -58,7 +58,10 @@ steps:
         repository_name=${{ parameters.imageName }}
         build_id="$(Build.BuildId)"
 
-        cd $(Build.SourcesDirectory)/artifacts/test-image
+
+        cd $(Build.SourcesDirectory)/artifacts
+        ls -la
+        cd test-image
 
         tag_base="v${build_id}.${{ parameters.config }}.${{ parameters.deploymentEnvironment }}"
         for version in {1..4}; do
