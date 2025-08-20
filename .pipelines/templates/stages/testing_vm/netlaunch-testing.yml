@@ -133,9 +133,9 @@ stages:
           - bash: |
               set -eux
 
-              # increase virtlogd max size to 10MB
+              # Disable virtlogd rollover by setting max_size to 0
               cat /etc/libvirt/virtlogd.conf
-              echo "max_size = 10485760" >> /etc/libvirt/virtlogd.conf
+              echo "max_size = 0" | sudo tee -a /etc/libvirt/virtlogd.conf
               cat /etc/libvirt/virtlogd.conf
               sudo systemctl restart virtlogd.socket
 
