@@ -1,5 +1,5 @@
 
-# Performing an ABUpdate
+# Performing an A/B Update
 
 <!--
 DELETE ME AFTER COMPLETING THE DOCUMENT!

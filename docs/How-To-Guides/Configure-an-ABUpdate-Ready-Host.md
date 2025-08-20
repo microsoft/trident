@@ -1,4 +1,4 @@
-# Configure an ABUpdate Ready Host
+# Configure an A/B Update Ready Host
 <!--
 DELETE ME AFTER COMPLETING THE DOCUMENT!
 ---
