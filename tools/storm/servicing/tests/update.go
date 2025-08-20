@@ -91,11 +91,11 @@ func innerUpdateLoop(cfg config.ServicingConfig, rollback bool) error {
 		fmt.Sprintf("sudo sed -i 's!verity.cosi!files/%s!' /var/lib/trident/update-config.yaml && ", cosiFileBase) +
 			// use localhost as update server address
 			"sudo sed -i 's/192.168.122.1/localhost/' /var/lib/trident/update-config.yaml &&" +
-			// use update port a for first config
+			// use update port a for first config (for rollback following update test, this will be no-op)
 			fmt.Sprintf("sudo sed -i 's/8000/%d/' /var/lib/trident/update-config.yaml && ", cfg.TestConfig.UpdatePortA) +
-			// create second config file for b update
+			// create second config file for b update (for rollback following update test, this will align both update yamls)
 			"sudo cp /var/lib/trident/update-config.yaml /var/lib/trident/update-config2.yaml && " +
-			// use update port b for second config
+			// use update port b for second config (for all cases, including rollback after update, this will set port correctly)
 			fmt.Sprintf("sudo sed -i 's/%d/%d/' /var/lib/trident/update-config2.yaml", cfg.TestConfig.UpdatePortA, cfg.TestConfig.UpdatePortB)
 	configChangesOutput, err := ssh.SshCommand(cfg.VMConfig, vmIP, configChanges)
 	if err != nil {
