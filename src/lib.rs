@@ -185,7 +185,10 @@ impl Trident {
         }
 
         if let Ok(selinux_context) = fs::read_to_string("/proc/self/attr/current") {
-            debug!("selinux debug: Trident is running in SELinux domain '{selinux_context}'");
+            debug!(
+                "selinux debug: Trident is running in SELinux domain '{}'",
+                selinux_context.trim()
+            );
         } else {
             error!(
                 "selinux debug: Failed to retrieve the SELinux context in which Trident is running"
