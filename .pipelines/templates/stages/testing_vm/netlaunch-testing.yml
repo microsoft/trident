@@ -132,6 +132,13 @@ stages:
 
           - bash: |
               set -eux
+
+              # Disable virtlogd rollover by setting max_size to 0
+              cat /etc/libvirt/virtlogd.conf
+              echo "max_size = 0" | sudo tee -a /etc/libvirt/virtlogd.conf
+              cat /etc/libvirt/virtlogd.conf
+              sudo systemctl restart virtlogd.socket
+
               ./virt-deploy create --mem 12 --disks 32,32
             workingDirectory: $(argusToolkitSourceDirectory)
             displayName: "Creating virt-deploy VM"
