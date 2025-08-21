@@ -85,6 +85,10 @@ stages:
           - name: BAREMETAL_LAB_CANARY_IP
             value: "10.8.6.1"
 
+          # Alternate HTTP(S) proxy which can be used with AEP02 is "http://192.168.229.51:3128"
+          - name: BAREMETAL_HTTPS_PROXY
+            value: "http://172.16.1.10:3128"
+
           # Sourced from the matrix
           - name: TRIDENT_CONFIGURATION_NAME
             value: $(configuration)
@@ -162,14 +166,6 @@ stages:
             displayName: "Install dependencies"
             retryCountOnTaskFailure: 3
 
-          # Run trident prep
-          - template: ../testing_common/trident-prep.yml
-            parameters:
-              tridentConfigPath: $(TRIDENT_CONFIG_PATH)
-              runtimeEnv: ${{ parameters.runtimeEnv }}
-              config: $(TRIDENT_CONFIGURATION_NAME)
-              baremetal: true
-
           # Download all test images
           - template: ../testing_common/download-test-images.yml
             parameters:
@@ -179,6 +175,25 @@ stages:
               tridentTestImageUsrVerity: ${{ variables.USRVERITY_IMAGE_NAME }}
               ${{ if eq(parameters.runtimeEnv, 'container') }}:
                 downloadTridentContainer: true
+
+          # Push (regular or container) testimage to ACR.
+          # This step must occur before trident prep, since the ACR image tag
+          # variable is set in this template.
+          - template: ../common_tasks/push-to-acr.yml
+            parameters:
+              imageName: ${{ variables.IMAGE_NAME }}
+              registry: maritimusdev
+              config: $(TRIDENT_CONFIGURATION_NAME)
+              deploymentEnvironment: "bareMetal"
+
+          # Run trident prep
+          - template: ../testing_common/trident-prep.yml
+            parameters:
+              tridentConfigPath: $(TRIDENT_CONFIG_PATH)
+              runtimeEnv: ${{ parameters.runtimeEnv }}
+              config: $(TRIDENT_CONFIGURATION_NAME)
+              registry: maritimusdev
+              imageName: ${{ variables.IMAGE_NAME }}
 
           - bash: |
               set -xe
@@ -203,6 +218,35 @@ stages:
           - bash: |
               set -eux
 
+              SERVICE_OVERRIDE=""
+              if [ "${{ parameters.runtimeEnv }}" == "host" ]; then 
+                SERVICE_OVERRIDE="[Service]
+                  Environment=\"HTTPS_PROXY=${{ variables.BAREMETAL_HTTPS_PROXY }}\""
+              else
+                # When running containerized Trident, we must directly embed the proxy in the docker command
+                SERVICE_OVERRIDE="[Service]
+                  Environment=\"HTTPS_PROXY=${{ variables.BAREMETAL_HTTPS_PROXY }}\"
+                  ExecStart=
+                  ExecStart=docker run \\
+                    --env HTTPS_PROXY \\
+                    --name trident_container \\
+                    --pull=never \\
+                    --rm \\
+                    --privileged \\
+                    -v /etc/trident:/etc/trident \\
+                    -v /etc/pki:/etc/pki:ro \\
+                    -v /run/initramfs/live:/trident_cdrom \\
+                    -v /var/lib/trident:/var/lib/trident \\
+                    -v /var/log:/var/log \\
+                    -v /:/host \\
+                    -v /dev:/dev \\
+                    -v /run:/run \\
+                    -v /sys:/sys \\
+                    --pid host \\
+                    --ipc host trident/trident:latest install \\
+                    --verbosity TRACE"
+              fi
+
               cat << EOF > $(TRIDENT_SOURCE_DIR)/baremetal-netlaunch.yaml
               netlaunch:
                 bmc:
@@ -213,6 +257,11 @@ stages:
                     sshPort: 22
                     comPort: com2
                     output:  "baremetal-serial.log"
+
+              # Set up proxy variables
+              iso:
+                serviceOverride: |
+                  $SERVICE_OVERRIDE
               EOF
 
               cat $(TRIDENT_SOURCE_DIR)/baremetal-netlaunch.yaml | grep -v password
@@ -337,3 +386,10 @@ stages:
               netlistenPort: ${{ variables.NETLAUNCH_PORT }}
               runtimeEnv: ${{ parameters.runtimeEnv }}
               netlistenConfigFile: $(TRIDENT_SOURCE_DIR)/baremetal-netlisten.yaml
+              httpsProxy: ${{ variables.BAREMETAL_HTTPS_PROXY }}
+
+          - template: ../common_tasks/remove-from-acr.yml
+            parameters:
+              repository: ${{ variables.IMAGE_NAME }}
+              registry: "maritimusdev"
+              config: $(TRIDENT_CONFIGURATION_NAME)

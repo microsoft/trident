@@ -11,6 +11,7 @@ type NetLaunchConfig struct {
 	}
 	Iso struct {
 		PreTridentScript *string
+		ServiceOverride  *string
 	}
 }
 

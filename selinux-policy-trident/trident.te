@@ -69,6 +69,7 @@ require {
         type gpg_secret_t;
         type groupadd_exec_t;
         type home_root_t;
+        type http_cache_port_t;
         type http_port_t;
         type init_t;
         type init_exec_t;
@@ -273,7 +274,7 @@ files_var_lib_filetrans(trident_t, trident_var_lib_t, { dir file lnk_file })
 # Allow trident_t domain to interact with files and directories labeled as trident_var_lib_t
 # Necessary so Trident can interact with the datastore at /var/lib/trident
 allow trident_t trident_var_lib_t:dir { getattr search read write add_name create remove_name open mounton relabelto };
-allow trident_t trident_var_lib_t:file { getattr setattr create open read write unlink lock };
+allow trident_t trident_var_lib_t:file { getattr setattr create open read write unlink lock relabelto };
 
 # Allow Trident to relabel its executable
 allow trident_t trident_exec_t:file relabelto;
@@ -342,6 +343,7 @@ allow trident_t gpg_secret_t:file getattr;
 allow trident_t groupadd_exec_t:file getattr;
 allow trident_t home_root_t:dir { mounton read relabelto add_name create relabelfrom setattr write };
 allow trident_t home_root_t:file { create getattr ioctl open relabelfrom setattr read write };
+allow trident_t http_cache_port_t:tcp_socket name_connect; # Allow Trident to initiate connection to HTTP proxy port
 allow trident_t http_port_t:tcp_socket name_connect;
 allow trident_t init_exec_t:file { execute getattr map open read relabelto setattr unlink write };
 allow trident_t init_t:system { reboot start status };

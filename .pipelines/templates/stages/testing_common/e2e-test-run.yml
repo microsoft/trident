@@ -16,6 +16,9 @@ parameters:
   - name: deploymentEnvironment
     type: string
     default: virtualMachine
+    values:
+      - virtualMachine
+      - bareMetal
 
   - name: runtimeEnv
     displayName: "Runtime environment (host vs container)"
@@ -51,8 +54,12 @@ parameters:
   - name: netlistenPort
     type: number
     default: 4000
-  
+
   - name: netlistenConfigFile
+    type: string
+    default: ""
+
+  - name: httpsProxy
     type: string
     default: ""
 
@@ -102,7 +109,6 @@ steps:
     workingDirectory: $(Build.SourcesDirectory)/e2e_tests
     displayName: "🔬 Run Trident E2E tests after clean install of runtime OS"
 
-
   - template: ../junit/handle-junit-test-results.yml
     parameters:
       testRunName: "${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_trident_e2e_tests_${{ parameters.tridentConfigurationName }}_clean_install_$(System.JobAttempt)"
@@ -126,6 +132,11 @@ steps:
         -s "${{ parameters.artifactsDirectory }}" \
         -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-runtime-os-B.log 2>&1 &
 
+      PROXY_ARG=""
+      if [ -n "${{ parameters.httpsProxy }}" ]; then
+        PROXY_ARG="--proxy HTTPS_PROXY=${{ parameters.httpsProxy }}"
+      fi
+
       echo "Running script to stage and finalize A/B update..."
       ./bin/storm-trident helper ab-update \
           "${{ parameters.sshKeyPath }}" \
@@ -135,7 +146,8 @@ steps:
           --trident-config $(tridentConfigFile) \
           --version $(version) \
           --stage-ab-update \
-          --finalize-ab-update
+          --finalize-ab-update \
+          $PROXY_ARG
 
       current_version=$(echo $(version))
       new_version=$((current_version + 1))
@@ -206,7 +218,6 @@ steps:
     displayName: "🔬 Run Trident E2E tests after A/B update into runtime OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
-
   - template: ../junit/handle-junit-test-results.yml
     parameters:
       testRunName: "${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_trident_e2e_tests_${{ parameters.tridentConfigurationName }}_ab_update_B_$(System.JobAttempt)"
@@ -230,6 +241,11 @@ steps:
           -s "${{ parameters.artifactsDirectory }}" \
           -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-runtime-os-A.log 2>&1 &
 
+      PROXY_ARG=""
+      if [ -n "${{ parameters.httpsProxy }}" ]; then
+        PROXY_ARG="--proxy HTTPS_PROXY=${{ parameters.httpsProxy }}"
+      fi
+
       echo "Running script to stage and finalize A/B update..."
       ./bin/storm-trident helper ab-update \
           "${{ parameters.sshKeyPath }}" \
@@ -239,7 +255,8 @@ steps:
           --trident-config $(tridentConfigFile) \
           --version $(version) \
           --stage-ab-update \
-          --finalize-ab-update
+          --finalize-ab-update \
+          $PROXY_ARG
 
       current_version=$(echo $(version))
       new_version=$((current_version + 1))
@@ -309,7 +326,6 @@ steps:
     displayName: "🔬 Run Trident E2E tests after A/B update into runtime OS A"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
-
   - template: ../junit/handle-junit-test-results.yml
     parameters:
       testRunName: "${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_trident_e2e_tests_${{ parameters.tridentConfigurationName }}_ab_update_A_$(System.JobAttempt)"
@@ -318,7 +334,7 @@ steps:
       artifactName: "junit_for_trident_ab_update_A"
 
   # Check the value of 'buildPurpose', to determine if we need to execute the
-  # test scenario where A/B update is staged and finalized independently. For 
+  # test scenario where A/B update is staged and finalized independently. For
   # lower frequency, this test is to be run only when 'buildPurpose' is:
   #  - daily
   #  - validation
@@ -337,6 +353,7 @@ steps:
           deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
           netlistenPort: ${{ parameters.netlistenPort }}
           netlistenConfigFile: ${{ parameters.netlistenConfigFile }}
+          httpsProxy: ${{ parameters.httpsProxy }}
 
   - template: ../testing_common/trident-rebuild.yml
     parameters:
