@@ -78,9 +78,17 @@ jobs:
             artifactName: image-${{ parameters.platform }}-base
             targetPath: "$(Build.ArtifactStagingDirectory)/"
           displayName: Download Base Image
+        - task: AzureCLI@2
+          inputs:
+            azureSubscription: trident-servicing-test
+            scriptType: bash
+            scriptLocation: inlineScript
+            inlineScript: |
+              echo "use AzureCLI to login to az cli using trident-servicing-test service connection"
+
         - bash: |
             set -eux
-            az login --identity
+
             ./bin/storm-trident run servicing -a \
               --output-path $(ob_outputDirectory) \
               --platform ${{ parameters.platform }} \
@@ -181,12 +189,20 @@ jobs:
           echo "##vso[task.setvariable variable=STORM_SCENARIO_FINISHED;]false"
         displayName: "Initialize STORM_SCENARIO_FINISHED=false"
 
+      - ${{ if eq(parameters.platform, 'azure') }}:
+        - task: AzureCLI@2
+          inputs:
+            azureSubscription: trident-servicing-test
+            scriptType: bash
+            scriptLocation: inlineScript
+            inlineScript: |
+              echo "use AzureCLI to login to az cli using trident-servicing-test service connection"
+
       - bash: |
           set -eux
 
           SUDO="sudo"
           if [ "${{ parameters.platform }}" == "azure" ]; then
-            az login --identity
             SUDO=""
           fi
 
@@ -215,7 +231,6 @@ jobs:
             --ssh-public-key-path $(SSH_PUBLIC_KEY_PATH) \
             --retry-count ${{ parameters.updateIterationCount }} \
             --build-id $(Build.BuildId) \
-            --update-port-a 8123 --update-port-b 8124 \
             --force-cleanup
 
           set +x
@@ -241,14 +256,20 @@ jobs:
         timeoutInMinutes: 5
 
       - ${{ if eq(parameters.platform, 'azure') }}:
+        - task: AzureCLI@2
+          inputs:
+            azureSubscription: trident-servicing-test
+            scriptType: bash
+            scriptLocation: inlineScript
+            inlineScript: |
+              echo "use AzureCLI to login to az cli using trident-servicing-test service connection"
+
         - bash: |
             set -eux
 
             # If platform is azure AND the test failed to finish, run cleanup to
             # ensure there are no azure resources left behind
             if [ "${STORM_SCENARIO_FINISHED}" != "true" ]; then
-              az login --identity
-
               FLAGS=""
               if [ "${{ parameters.verboseLogging }}" == "True" ]; then
                 FLAGS="$FLAGS --verbose"
@@ -261,7 +282,6 @@ jobs:
                 --platform ${{ parameters.platform }} \
                 --test-case-to-run cleanup-vm
             fi
-
           displayName: "Cleanup even if timeout"
           retryCountOnTaskFailure: 3
           timeoutInMinutes: 20
