@@ -84,21 +84,18 @@ jobs:
             scriptType: bash
             scriptLocation: inlineScript
             inlineScript: |
-              echo "use AzureCLI to login to az cli using trident-servicing-test service connection"
+              set -eux
 
-        - bash: |
-            set -eux
-
-            ./bin/storm-trident run servicing -a \
-              --output-path $(ob_outputDirectory) \
-              --platform ${{ parameters.platform }} \
-              --artifacts-dir $ARTIFACTS \
-              --build-id $(Build.BuildId) \
-              --subscription $(SUBSCRIPTION) \
-              --image-definition $(IMAGE_DEFINITION) \
-              --storage-account $(STORAGE_ACCOUNT) \
-              --storage-account-resource-group $(RESOURCE_GROUP) \
-              --test-case-to-run publish-sig-image
+              ./bin/storm-trident run servicing -a \
+                --output-path $(ob_outputDirectory) \
+                --platform ${{ parameters.platform }} \
+                --artifacts-dir $ARTIFACTS \
+                --build-id $(Build.BuildId) \
+                --subscription $(SUBSCRIPTION) \
+                --image-definition $(IMAGE_DEFINITION) \
+                --storage-account $(STORAGE_ACCOUNT) \
+                --storage-account-resource-group $(RESOURCE_GROUP) \
+                --test-case-to-run publish-sig-image
           displayName: Publish Base Image
           env:
             ARTIFACTS: $(Build.ArtifactStagingDirectory)
@@ -262,26 +259,23 @@ jobs:
             scriptType: bash
             scriptLocation: inlineScript
             inlineScript: |
-              echo "use AzureCLI to login to az cli using trident-servicing-test service connection"
+              set -eux
 
-        - bash: |
-            set -eux
+              # If platform is azure AND the test failed to finish, run cleanup to
+              # ensure there are no azure resources left behind
+              if [ "${STORM_SCENARIO_FINISHED}" != "true" ]; then
+                FLAGS=""
+                if [ "${{ parameters.verboseLogging }}" == "True" ]; then
+                  FLAGS="$FLAGS --verbose"
+                fi
 
-            # If platform is azure AND the test failed to finish, run cleanup to
-            # ensure there are no azure resources left behind
-            if [ "${STORM_SCENARIO_FINISHED}" != "true" ]; then
-              FLAGS=""
-              if [ "${{ parameters.verboseLogging }}" == "True" ]; then
-                FLAGS="$FLAGS --verbose"
+                ./bin/storm-trident run servicing -a $FLAGS \
+                  --output-path $(ob_outputDirectory) \
+                  --subscription $(SUBSCRIPTION) \
+                  --test-resource-group $(TEST_RESOURCE_GROUP) \
+                  --platform ${{ parameters.platform }} \
+                  --test-case-to-run cleanup-vm
               fi
-
-              ./bin/storm-trident run servicing -a $FLAGS \
-                --output-path $(ob_outputDirectory) \
-                --subscription $(SUBSCRIPTION) \
-                --test-resource-group $(TEST_RESOURCE_GROUP) \
-                --platform ${{ parameters.platform }} \
-                --test-case-to-run cleanup-vm
-            fi
           displayName: "Cleanup even if timeout"
           retryCountOnTaskFailure: 3
           timeoutInMinutes: 20
