@@ -229,9 +229,9 @@ jobs:
                 --force-cleanup
               set +x
               echo "##vso[task.setvariable variable=STORM_SCENARIO_FINISHED;]true"
-            displayName: "Servicing test (${{ parameters.platform }})"
-            env:
-              AZCOPY_AUTO_LOGIN_TYPE: "AZCLI"
+          displayName: "Servicing test (${{ parameters.platform }})"
+          env:
+            AZCOPY_AUTO_LOGIN_TYPE: "AZCLI"
         - task: AzureCLI@2
           inputs:
             azureSubscription: trident-servicing-test
