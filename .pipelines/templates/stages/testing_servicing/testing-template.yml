@@ -99,7 +99,7 @@ jobs:
           displayName: Publish Base Image
           env:
             ARTIFACTS: $(Build.ArtifactStagingDirectory)
-            AZCOPY_AUTO_LOGIN_TYPE: "MSI"
+            AZCOPY_AUTO_LOGIN_TYPE: "AZCLI"
 
   - job: UpdateTesting_${{ parameters.flavor }}
     displayName: Update Testing - ${{ parameters.flavor }}
