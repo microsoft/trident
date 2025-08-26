@@ -11,6 +11,7 @@ import logging
 def update_trident_host_config(
     *,
     host_configuration: dict,
+    test_selection: dict,
     interface_name: str,
     interface_ip: str,
     interface_mac: Optional[str] = None,
@@ -89,7 +90,7 @@ def update_trident_host_config(
     # into pcrlock policy on Dell hardware. Related ADO task:
     # https://dev.azure.com/mariner-org/polar/_workitems/edit/14736
     storage = host_configuration.get("storage")
-    if storage and host_configuration.get("internalParams", {}).get("uki", False):
+    if storage and "uki" in test_selection.get("compatible", []):
         encryption = storage.get("encryption")
         if encryption and "pcrs" in encryption:
             logging.info(
@@ -147,6 +148,11 @@ def main():
         help="Path to the trident.yaml to use for provisioning",
     )
     parser.add_argument(
+        "--test-selection",
+        required=True,
+        help="Path to the test-selection.yaml to define tests to run",
+    )
+    parser.add_argument(
         "--oam-ip", required=True, help="IP address of the OAM interface."
     )
     parser.add_argument(
@@ -172,8 +178,12 @@ def main():
     with open(args.trident_yaml) as f:
         trident_yaml_content = yaml.safe_load(f)
 
+    with open(args.test_selection) as f:
+        test_selection_content = yaml.safe_load(f)
+
     update_trident_host_config(
         host_configuration=trident_yaml_content,
+        test_selection=test_selection_content,
         interface_name=args.interface_name,
         interface_ip=args.oam_ip,
         interface_mac=args.oam_mac,

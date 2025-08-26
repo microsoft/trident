@@ -102,6 +102,9 @@ stages:
           - name: TRIDENT_CONFIG_FILE
             value: $(TRIDENT_CONFIG_PATH)/trident-config.yaml
 
+          - name: TEST_SELECTION_FILE
+            value: $(TRIDENT_CONFIG_PATH)/test-selection.yaml
+
           - name: ob_outputDirectory
             value: $(Build.SourcesDirectory)/deployment_logs
 
@@ -206,6 +209,7 @@ stages:
               # Run script to update the trident.yaml file
               python3 ./.pipelines/templates/stages/testing_baremetal/update_host_config.py \
                     --trident-yaml $(TRIDENT_CONFIG_FILE) \
+                    --test-selection $(TEST_SELECTION_FILE) \
                     --oam-ip ${{ variables.BAREMETAL_OAM_IP }} \
                     --oam-gateway ${{ variables.BAREMETAL_OAM_GATEWAY }} \
                     --interface-name ${{ variables.BAREMETAL_OAM_INTERFACE }} \
