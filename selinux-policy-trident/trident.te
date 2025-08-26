@@ -241,6 +241,7 @@ optional_policy(`
     role ci_unconfined_r types trident_t;
 
     allow trident_t ci_unconfined_t:fd use;
+    seutil_run_setfiles(trident_t, ci_unconfined_r);
 ')
 
 # Allow transition between unconfined_t and trident_t domains; necessary for an interactive run
@@ -401,8 +402,8 @@ allow trident_t root_t:file { create getattr map open read relabelfrom write };
 allow trident_t rpm_unit_t:file getattr;
 allow trident_t rpm_var_cache_t:dir relabelto;
 allow trident_t rpm_var_cache_t:file relabelto;
-allow trident_t rpm_var_lib_t:dir relabelto;
-allow trident_t rpm_var_lib_t:file relabelto;
+allow trident_t rpm_var_lib_t:dir { add_name relabelto };
+allow trident_t rpm_var_lib_t:file { create relabelto setattr write };
 allow trident_t security_t:file { map write };
 allow trident_t security_t:filesystem getattr;
 allow trident_t security_t:security read_policy;
@@ -717,6 +718,8 @@ seutil_manage_file_contexts(trident_t)
 seutil_manage_module_store(trident_t)
 seutil_read_default_contexts(trident_t)
 seutil_read_bin_policy(trident_t)
+seutil_run_setfiles(trident_t, system_r)
+seutil_run_setfiles(trident_t, unconfined_r)
 udev_relabel_rules_files(trident_t)
 
 ###########################################
