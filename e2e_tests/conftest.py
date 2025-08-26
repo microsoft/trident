@@ -132,6 +132,7 @@ def isUki(request):
 
     return "uki" in test_Selection.get("compatible", [])
 
+
 @pytest.fixture
 def abActiveVolume(request):
     return request.config.getoption("--ab-active-volume")

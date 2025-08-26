@@ -327,7 +327,10 @@ def get_block_dev_path_by_partlabel(
 
 
 def check_crypsetup_luks_dump(
-    connection: fabric.Connection, tridentCommand: str, cryptDevPath: str, isUki: bool,
+    connection: fabric.Connection,
+    tridentCommand: str,
+    cryptDevPath: str,
+    isUki: bool,
 ) -> None:
     """
     Check the output of `cryptsetup luksDump --dump-json-metadata` for the
