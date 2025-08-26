@@ -145,6 +145,7 @@ stages:
               set -xe
               ping -c 3 "${{ variables.BAREMETAL_LAB_CANARY_IP }}"
             displayName: "Validate if the Baremetal lab is up and running"
+            retryCountOnTaskFailure: 10
 
           - bash: |
               set -xe
