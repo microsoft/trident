@@ -225,6 +225,7 @@ jobs:
                 --ssh-private-key-path $(SSH_PRIVATE_KEY_PATH) \
                 --ssh-public-key-path $(SSH_PUBLIC_KEY_PATH) \
                 --retry-count ${{ parameters.updateIterationCount }} \
+                --update-port-a 8123 --update-port-b 8124 \
                 --build-id $(Build.BuildId) \
                 --force-cleanup
               set +x
@@ -243,7 +244,7 @@ jobs:
               # If platform is azure AND the test failed to finish, run cleanup to
               # ensure there are no azure resources left behind
               if [ "${STORM_SCENARIO_FINISHED}" != "true" ]; then
-                FLAGS=""
+                FLAGS="-a"
                 if [ "${{ parameters.verboseLogging }}" == "True" ]; then
                   FLAGS="$FLAGS --verbose"
                 fi
