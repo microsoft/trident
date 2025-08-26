@@ -1,5 +1,3 @@
-internalParams:
-  uki: true
 image:
   url: http://NETLAUNCH_HOST_ADDRESS/files/usrverity.cosi
   sha384: ignored

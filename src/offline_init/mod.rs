@@ -332,17 +332,6 @@ fn generate_host_status(
         .flat_map(|f| f.iter().cloned())
         .collect();
 
-    if history
-        .iter()
-        .filter_map(|h| h.config.os.as_ref())
-        .any(|os| !os.uki.is_null())
-        || preview_features.contains("uki")
-    {
-        host_config
-            .internal_params
-            .set_flag(ENABLE_UKI_SUPPORT.into());
-    }
-
     Ok(HostStatus {
         spec: host_config,
         disk_uuids: hashmap!["disk0".to_string() => disk_uuid],

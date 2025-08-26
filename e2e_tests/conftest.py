@@ -120,6 +120,20 @@ def hostConfiguration(request):
 
 
 @pytest.fixture
+def isUki(request):
+    file_path = request.config.getoption("--configuration")
+    testselection_path = os.path.join(file_path, "test-selection.yaml")
+    with open(testselection_path, "r") as stream:
+        try:
+            test_Selection = yaml.safe_load(stream)
+        except yaml.YAMLError as exc:
+            print(exc)
+            return {}
+
+    return "uki" in test_Selection.get("compatible", [])
+
+
+@pytest.fixture
 def abActiveVolume(request):
     return request.config.getoption("--ab-active-volume")
 

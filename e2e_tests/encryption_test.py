@@ -327,7 +327,10 @@ def get_block_dev_path_by_partlabel(
 
 
 def check_crypsetup_luks_dump(
-    connection: fabric.Connection, tridentCommand: str, cryptDevPath: str
+    connection: fabric.Connection,
+    tridentCommand: str,
+    cryptDevPath: str,
+    isUki: bool,
 ) -> None:
     """
     Check the output of `cryptsetup luksDump --dump-json-metadata` for the
@@ -514,7 +517,6 @@ def check_crypsetup_luks_dump(
 
     # Check Host Status to see if image is UKI or not
     host_status = get_host_status(connection, tridentCommand)
-    is_uki = host_status["spec"].get("internalParams", {}).get("uki", False)
 
     # For both UKI and grub ROS images, we expect to see a single token 1
     assert (
@@ -538,7 +540,7 @@ def check_crypsetup_luks_dump(
     # Validate that for UKI images, tpm2_pcrlock is true and tpm2-pcrs is an
     # empty vector, while for non-UKI images, tpm2_pcrlock is false and
     # tpm2-pcrs is a vector with PCR 7.
-    if is_uki:
+    if isUki:
         assert (
             dump["tokens"]["0"]["tpm2_pcrlock"] is True
         ), f"Expected tpm2_pcrlock to be True for UKI image, got {dump['tokens']['0']['tpm2_pcrlock']!r}"
@@ -594,6 +596,7 @@ def check_crypsetup_luks_dump(
 def check_parent_devices(
     connection: fabric.Connection,
     hostConfiguration: dict,
+    isUki: bool,
     tridentCommand: str,
     blockDevs: dict,
     cryptDevId: str,
@@ -622,12 +625,13 @@ def check_parent_devices(
         actualType == expectedType
     ), f"Expected TYPE to be {expectedType!r}, got {actualType!r}"
 
-    check_crypsetup_luks_dump(connection, tridentCommand, cryptDevPath)
+    check_crypsetup_luks_dump(connection, tridentCommand, cryptDevPath, isUki)
 
 
 def check_crypt_device(
     connection: fabric.Connection,
     hostConfiguration: dict,
+    isUki: bool,
     tridentCommand: str,
     abActiveVolume: str,
     blockDevs: dict,
@@ -638,7 +642,7 @@ def check_crypt_device(
     cryptDevicePath = f"/dev/mapper/{cryptDevName}"
 
     check_parent_devices(
-        connection, hostConfiguration, tridentCommand, blockDevs, cryptDevId
+        connection, hostConfiguration, isUki, tridentCommand, blockDevs, cryptDevId
     )
 
     swap = False
@@ -705,6 +709,7 @@ def check_crypt_device(
 def test_encryption(
     connection: fabric.Connection,
     hostConfiguration: dict,
+    isUki: bool,
     tridentCommand: str,
     abActiveVolume: str,
 ) -> None:
@@ -716,6 +721,7 @@ def test_encryption(
         check_crypt_device(
             connection,
             hostConfiguration,
+            isUki,
             tridentCommand,
             abActiveVolume,
             blockDevs,
