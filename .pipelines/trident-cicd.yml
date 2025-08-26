@@ -97,7 +97,7 @@ extends:
                   baseImageArm64PipelineBuildId: $(BASE_IMAGE_ARM64_PIPELINE_BUILD_ID)
                   outputDirectory: $(ob_outputDirectory)
 
-      # Test amd64 if targetArchitecture is all or amd64 (i.e. !arm64)
+      # Test amd64 if targetArchitecture is "all" or "amd64" (i.e. !arm64)
       - ${{ if ne(parameters.targetArchitecture, 'arm64') }}:
         - template: templates/trident-platform-cicd-template.yml
           parameters:
@@ -125,7 +125,7 @@ extends:
                     echo "Collect and process junit files"
                   displayName: Process junit files
 
-      # Test amd64 if targetArchitecture is all or arm64 (i.e. !amd64)
+      # Test arm64 if targetArchitecture is "all" or "arm64" (i.e. !amd64)
       - ${{ if ne(parameters.targetArchitecture, 'amd64') }}:
         - template: templates/trident-platform-cicd-template.yml
           parameters:
