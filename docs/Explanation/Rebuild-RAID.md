@@ -1,18 +1,4 @@
 # Rebuild RAID
-## Table of Contents
-
-- [Table of Contents](#table-of-contents)
-  - [RAID and Rebuild-RAID](#raid-and-rebuild-raid)
-  - [Use Cases](#use-cases)
-    - [When Should This Feature Be Used?](#when-should-this-feature-be-used)
-    - [When Is It Valuable?](#when-is-it-valuable)
-    - [When Is It Not?](#when-is-it-not)
-  - [Capabilities \& Limitations](#capabilities--limitations)
-    - [Capabilities](#capabilities)
-    - [Limitations](#limitations)
-  - [Implementation](#implementation)
-    - [What Is Trident Doing Internally](#what-is-trident-doing-internally)
-    - [Sample Host Configuration](#sample-host-configuration)
 
 ## RAID and Rebuild-RAID
 

@@ -3,7 +3,6 @@
 Trident supports the `validate` subcommand to validate a Host Configuration YAML
 file.
 
-- [Host Configuration Validation](#host-configuration-validation)
   - [Validate a Host Configuration YAML File](#validate-a-host-configuration-yaml-file)
   - [Online Validation](#online-validation)
   - [Expected Output](#expected-output)

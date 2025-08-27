@@ -1,8 +1,8 @@
 {
-    "label": "How to Guides",
+    "label": "Explanation",
     "position": 3,
     "link": {
         "type": "generated-index",
-        "description": "How to guides for Trident."
+        "description": "Explanation of Trident concepts."
     }
 }
