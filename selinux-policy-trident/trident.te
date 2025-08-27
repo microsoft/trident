@@ -906,6 +906,7 @@ libs_manage_lib_files(semanage_t)
 
 #============= setfiles_t ==============
 allow setfiles_t proc_t:filesystem getattr;
+allow setfiles_t unlabeled_t:file { map open read };
 
 #============= systemd_generator_t ==============
 allow systemd_generator_t home_root_t:dir read;

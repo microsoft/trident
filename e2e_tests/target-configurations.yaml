@@ -122,6 +122,7 @@ virtualMachine:
       - raid-mirrored
       - raid-resync-small
       - rerun
+      - root-verity
       - simple
       - split
       - usr-verity
