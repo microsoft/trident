@@ -24,7 +24,7 @@ resources:
     - repository: test-images
       type: git
       name: test-images
-      ref: refs/heads/main
+      ref: refs/heads/jiria/fixbase
 
     - repository: platform-pipelines
       type: git
