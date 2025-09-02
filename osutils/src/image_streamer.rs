@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    io::{self, BufWriter, Read},
+    io::{self, BufReader, BufWriter, Read},
     path::Path,
     time::Instant,
 };
@@ -17,7 +17,7 @@ where
     R: Read + HashingReader,
 {
     // Instantiate decoder for ZSTD stream
-    let mut decoder = zstd::stream::read::Decoder::new(&mut reader)?;
+    let mut decoder = zstd::stream::read::Decoder::new(BufReader::new(&mut reader))?;
 
     // Open the partition for writing.
     let file = File::options()
