@@ -8,9 +8,7 @@ use log::{debug, info, trace, warn};
 
 use osutils::{e2fsck, hashing_reader::HashingReader384, image_streamer, lsblk, resize2fs};
 use trident_api::{
-    error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
-    status::ServicingType,
-    BlockDeviceId,
+    error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt}, primitives::bytes::ByteCount, status::ServicingType, BlockDeviceId
 };
 
 use crate::{
@@ -64,8 +62,9 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
 
             // Deploy the data image to the underlying data device.
             info!(
-                "Initializing '{}': writing image for filesystem at '{}' from '{}'",
+                "Initializing '{}': writing {} image for filesystem at '{}' from '{}'",
                 verity_device.data_device_id,
+                ByteCount::from(image.image_file.uncompressed_size).to_human_readable_approx(),
                 image.mount_point.display(),
                 os_img.source()
             );
@@ -93,8 +92,9 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
         } else {
             // For non-verity devices, we can deploy the image directly.
             info!(
-                "Initializing '{id}': writing image for filesystem at '{}' from '{}'",
+                "Initializing '{id}': writing {} image for filesystem at '{}' from '{}'",
                 image.mount_point.display(),
+                ByteCount::from(image.image_file.uncompressed_size).to_human_readable_approx(),
                 os_img.source()
             );
 
