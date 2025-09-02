@@ -2,7 +2,7 @@ use std::{
     fs::File,
     io::{self, BufReader, BufWriter, Read},
     path::Path,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use anyhow::{bail, Context, Error};
@@ -12,12 +12,45 @@ use trident_api::primitives::bytes::ByteCount;
 
 use crate::hashing_reader::HashingReader;
 
+const PRINT_FREQUENCY: Duration = Duration::from_secs(60);
+
+struct ProgressLogger<R: Read> {
+    start: Instant,
+    next_print: Duration,
+
+    bytes: u64,
+    reader: R,
+}
+impl<R: Read> Read for ProgressLogger<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let bytes_read = self.reader.read(buf)?;
+        self.bytes += bytes_read as u64;
+
+        if self.start.elapsed() >= self.next_print {
+            debug!(
+                "Streamed {} [{}] in {:.1} seconds",
+                ByteCount::from(self.bytes).to_human_readable_approx(),
+                self.bytes,
+                self.start.elapsed().as_secs_f32()
+            );
+            self.next_print += PRINT_FREQUENCY;
+        }
+
+        Ok(bytes_read)
+    }
+}
+
 pub fn stream_zstd<R>(mut reader: R, destination_path: &Path) -> Result<String, Error>
 where
     R: Read + HashingReader,
 {
     // Instantiate decoder for ZSTD stream
-    let mut decoder = zstd::stream::read::Decoder::new(BufReader::new(&mut reader))?;
+    let mut decoder = zstd::stream::read::Decoder::new(BufReader::new(ProgressLogger {
+        start: Instant::now(),
+        next_print: PRINT_FREQUENCY,
+        bytes: 0,
+        reader: &mut reader,
+    }))?;
 
     // Open the partition for writing.
     let file = File::options()
