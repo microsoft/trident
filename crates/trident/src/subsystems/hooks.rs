@@ -315,6 +315,21 @@ impl HooksSubsystem {
             })?;
         Ok(())
     }
+
+    /// This function will be called outside the standard subsystem flow
+    /// before Trident commits a target OS.
+    pub fn execute_pre_commit_scripts(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
+        if !ctx.spec.scripts.pre_commit.is_empty() {
+            debug!("Running pre-commit scripts");
+        }
+        ctx.spec.scripts.pre_commit.iter().try_for_each(|script| {
+            self.run_script(script, ctx, Path::new(ROOT_MOUNT_POINT_PATH))
+                .structured(ServicingError::RunPreCommitScript {
+                    script_name: script.name.clone(),
+                })
+        })?;
+        Ok(())
+    }
 }
 
 fn match_servicing_type_env_var(servicing_type: &ServicingType) -> &OsStr {
