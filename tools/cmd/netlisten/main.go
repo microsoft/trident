@@ -89,9 +89,10 @@ var rootCmd = &cobra.Command{
 		result := make(chan phonehome.PhoneHomeResult)
 		// Create server that does not timeout
 		server := &http.Server{
-			ReadTimeout:  0,
-			WriteTimeout: 0,
-			IdleTimeout:  0,
+			ReadTimeout:       0,
+			ReadHeaderTimeout: 0,
+			WriteTimeout:      0,
+			IdleTimeout:       0,
 		}
 
 		// Set up listening for phonehome
