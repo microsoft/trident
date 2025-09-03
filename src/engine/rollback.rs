@@ -19,6 +19,7 @@ use crate::{
         context::EngineContext,
         storage::{encryption, verity},
     },
+    subsystems::hooks::HooksSubsystem,
     DataStore,
 };
 
@@ -58,6 +59,16 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
         .message("Host failed to boot from expected root device")?
     {
         info!("Host successfully booted from updated runtime OS image");
+
+        // Execute pre-commit scripts, if one fails, trigger rollback
+        match HooksSubsystem::default().execute_pre_commit_scripts(&ctx) {
+            Ok(()) => {}
+            // TODO: need to create mechanism for rollback reboot
+            Err(e) => {
+                error!("Failed to execute pre-commit scripts: {}", e);
+                return Err(TridentError::new(e));
+            }
+        };
 
         // If it's virtdeploy, after confirming that we have booted into the correct image, we need
         // to update the `BootOrder` to boot from the correct image next time.
