@@ -155,7 +155,12 @@ var rootCmd = &cobra.Command{
 		defer terminateFunc()
 
 		result := make(chan phonehome.PhoneHomeResult)
-		server := &http.Server{}
+		// Create server that does not timeout
+		server := &http.Server{
+			ReadTimeout:  0,
+			WriteTimeout: 0,
+			IdleTimeout:  0,
+		}
 
 		// Create the final address that will be announced to the BMC and Trident.
 		var announceIp string
