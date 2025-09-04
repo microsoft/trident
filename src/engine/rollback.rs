@@ -23,13 +23,21 @@ use crate::{
     DataStore,
 };
 
+#[must_use]
+pub enum BootValidationResult {
+    /// Target OS boot successfully, pre-commit scripts succeeded
+    CorrectBootProvisioned,
+    /// Target OS boot successfully, pre-commit scripts failed
+    CorrectBootInvalid(TridentError),
+}
+
 /// Validates that the firmware did not perform a rollback, i.e. correctly booted from the updated
 /// runtime OS image.
 ///
 /// If the firmware did not boot from the expected root device, this function will return an error.
 /// In either case, the function will update the Host Status.
 #[tracing::instrument(skip_all)]
-pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
+pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, TridentError> {
     info!("Validating whether host correctly booted from updated runtime OS image");
 
     // Create an EngineContext based on the Host Status
@@ -65,8 +73,8 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
             Ok(()) => {}
             // TODO: need to create mechanism for rollback reboot
             Err(e) => {
-                error!("Failed to execute pre-commit scripts: {}", e);
-                return Err(TridentError::new(e));
+                // error!("Failed to execute pre-commit scripts: {:?}", e.into());
+                return Ok(BootValidationResult::CorrectBootInvalid(e));
             }
         };
 
@@ -190,7 +198,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
         };
     })?;
 
-    Ok(())
+    Ok(BootValidationResult::CorrectBootProvisioned)
 }
 
 /// Returns the current root device path, i.e., the path of the root block device that the host
