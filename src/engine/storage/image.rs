@@ -8,7 +8,10 @@ use log::{debug, info, trace, warn};
 
 use osutils::{e2fsck, hashing_reader::HashingReader384, image_streamer, lsblk, resize2fs};
 use trident_api::{
-    error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt}, primitives::bytes::ByteCount, status::ServicingType, BlockDeviceId
+    error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
+    primitives::bytes::ByteCount,
+    status::ServicingType,
+    BlockDeviceId,
 };
 
 use crate::{
