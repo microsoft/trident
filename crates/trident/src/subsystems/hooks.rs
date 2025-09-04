@@ -322,12 +322,17 @@ impl HooksSubsystem {
         if !ctx.spec.scripts.pre_commit.is_empty() {
             debug!("Running pre-commit scripts");
         }
-        ctx.spec.scripts.pre_commit.iter().try_for_each(|script| {
-            self.run_script(script, ctx, Path::new(ROOT_MOUNT_POINT_PATH))
-                .structured(ServicingError::RunPreCommitScript {
-                    script_name: script.name.clone(),
-                })
-        })?;
+        ctx.spec
+            .scripts
+            .pre_commit
+            .iter()
+            .filter(|script| script.should_run(ctx.servicing_type))
+            .try_for_each(|script| {
+                self.run_script(script, ctx, Path::new(ROOT_MOUNT_POINT_PATH))
+                    .structured(ServicingError::RunPreCommitScript {
+                        script_name: script.name.clone(),
+                    })
+            })?;
         Ok(())
     }
 }
