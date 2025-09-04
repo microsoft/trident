@@ -12,7 +12,7 @@ use trident_api::primitives::bytes::ByteCount;
 
 use crate::hashing_reader::HashingReader;
 
-const PRINT_FREQUENCY: Duration = Duration::from_secs(60);
+const PRINT_FREQUENCY: Duration = Duration::from_secs(5);
 
 struct ProgressLogger<R: Read> {
     start: Instant,
