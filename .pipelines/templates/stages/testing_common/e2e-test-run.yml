@@ -236,7 +236,7 @@ steps:
       artifactName: "junit_for_trident_ab_update_B"
 
   - bash: |
-      set -eux
+      set -eu
       if [ ${{ parameters.tridentConfigurationName }} == 'auto-rollback' ]; then
         # for auto-rollback, only run the first update to test rollback
         echo "##vso[task.setvariable variable=abActiveVolume]null"
