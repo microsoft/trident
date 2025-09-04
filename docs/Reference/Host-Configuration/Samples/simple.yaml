@@ -46,6 +46,12 @@ scripts:
     content: /var/config-script.sh
     environmentVariables:
       SAMPLE_VARIABLE: sample-variable-value
+  preCommit:
+  - name: sample-commit-script
+    runOn:
+    - clean-install
+    - ab-update
+    content: echo 'success'
 os:
   netplan:
     version: 2
