@@ -235,7 +235,7 @@ steps:
       displayNameSpecifier: "A/B update into target OS B"
       artifactName: "junit_for_trident_ab_update_B"
 
-  - ${{ eq(parameters.tridentConfigurationName, 'auto-rollback') }}:
+  - ${{ if eq(parameters.tridentConfigurationName, 'auto-rollback') }}:
     - bash: |
         set -eux
         # for auto-rollback, only run the first update to test rollback
