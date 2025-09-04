@@ -1,5 +1,3 @@
-import json
-import typing
 import fabric
 import pytest
 
@@ -10,9 +8,14 @@ pytestmark = [pytest.mark.rollback]
 
 def test_rollback(
     connection: fabric.Connection,
-    hostConfiguration: dict,
-    isUki: bool,
     tridentCommand: str,
     abActiveVolume: str,
 ) -> None:
-    assert (True, f"Test to be written")
+    # Check Host Status
+    host_status = get_host_status(connection, tridentCommand)
+
+    # Assert that servicing state is correct
+    assert host_status["servicingState"] == "provisioned"
+
+    # Assert that the active volume has not changed
+    assert host_status["abActiveVolume"] == abActiveVolume
