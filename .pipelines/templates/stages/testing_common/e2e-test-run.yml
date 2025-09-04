@@ -138,7 +138,7 @@ steps:
       fi
 
       FORCED_ROLLBACK_ARG=""
-      if [ ${{ variables['tridentConfigurationName'] }} == 'auto-rollback' ]; then
+      if [ ${{ parameters.tridentConfigurationName }} == 'auto-rollback' ]; then
         FORCED_ROLLBACK_ARG="--forced-rollback"
       fi
 
@@ -160,7 +160,7 @@ steps:
       set +x
       echo "##vso[task.setvariable variable=version]$new_version"
 
-      if [ ${{ variables['tridentConfigurationName'] }} == 'auto-rollback' ]; then
+      if [ ${{ parameters.tridentConfigurationName }} == 'auto-rollback' ]; then
         # for auto-rollback, only run the first update to test rollback
         echo "##vso[task.setvariable variable=abActiveVolume]null"
       else
