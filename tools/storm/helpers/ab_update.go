@@ -291,7 +291,7 @@ func (h *AbUpdateHelper) checkTridentService(tc storm.TestCase) error {
 			logrus.Infof("SSH dial to '%s' succeeded", h.args.SshCliSettings.FullHost())
 
 			if h.args.ForcedRollback {
-				logrus.Infof("Forced rollback is expected")
+				logrus.Infof("Forced rollback is expected, skip service check as commit should fail")
 				// Check for rollback
 				out, err := utils.InvokeTrident(h.args.Env, client, h.args.Proxy, "get status")
 				if err != nil {
@@ -308,7 +308,6 @@ func (h *AbUpdateHelper) checkTridentService(tc storm.TestCase) error {
 				if err != nil {
 					return nil, fmt.Errorf("failed to unmarshal YAML: %w", err)
 				}
-
 				return nil, nil
 			}
 
