@@ -600,14 +600,14 @@ impl Trident {
         })
     }
 
-    pub fn commit(&mut self, datastore: &mut DataStore) -> Result<(), TridentError> {
+    pub fn commit(&mut self, datastore: &mut DataStore) -> Result<ExitKind, TridentError> {
         // If host's servicing state is Finalized, need to validate that the firmware correctly
         // booted from the updated target OS image.
         if datastore.host_status().servicing_state != ServicingState::CleanInstallFinalized
             && datastore.host_status().servicing_state != ServicingState::AbUpdateFinalized
         {
             info!("No update in progress, skipping commit");
-            return Ok(());
+            return Ok(ExitKind::Done);
         }
 
         let rollback_result = self.execute_and_record_error(datastore, |datastore| {
@@ -616,17 +616,59 @@ impl Trident {
             )
         });
 
+<<<<<<< HEAD:crates/trident/src/lib.rs
         if rollback_result.is_ok() {
             if let Some(ref orchestrator) = self.orchestrator {
                 orchestrator.report_success(Some(
                     serde_yaml::to_string(&datastore.host_status())
                         .unwrap_or("Failed to serialize Host Status".into()),
                 ))
+=======
+        harpoon_hc::on_harpoon_enabled_event(
+            &datastore.host_status().spec,
+            harpoon::EventType::Update,
+            match rollback_result {
+                Ok(rollback::BootValidationResult::CorrectBootProvisioned) => {
+                    harpoon::EventResult::SuccessReboot
+                }
+                Ok(rollback::BootValidationResult::CorrectBootInvalid(_)) => {
+                    harpoon::EventResult::ErrorRollback
+                }
+                Err(_) => harpoon::EventResult::Error,
+            },
+        );
+
+        if let Some(ref orchestrator) = self.orchestrator {
+            match rollback_result {
+                Ok(rollback::BootValidationResult::CorrectBootProvisioned) => orchestrator
+                    .report_success(Some(
+                        serde_yaml::to_string(&datastore.host_status())
+                            .unwrap_or("Failed to serialize Host Status".into()),
+                    )),
+                Ok(rollback::BootValidationResult::CorrectBootInvalid(ref _e)) => orchestrator
+                    .report_error(
+                        "Correct boot, validation failed".to_string(),
+                        Some(
+                            serde_yaml::to_string(&datastore.host_status())
+                                .unwrap_or("Failed to serialize Host Status".into()),
+                        ),
+                    ),
+                Err(_) => {}
+>>>>>>> bf8874b7 (pass reboot along):src/lib.rs
             }
         }
 
-        // Re"throw" the error if there was one.
-        rollback_result
+        match rollback_result {
+            Ok(rollback::BootValidationResult::CorrectBootProvisioned) => Ok(ExitKind::Done),
+            Ok(rollback::BootValidationResult::CorrectBootInvalid(_e)) => {
+                // error!("Correct boot, but validation failed: {}", e);
+                Ok(ExitKind::NeedsReboot)
+            }
+            Err(e) => {
+                // error!("Boot validation failed: {}", e);
+                Err(e)
+            }
+        }
     }
 
     pub fn get(
