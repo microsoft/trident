@@ -40,11 +40,17 @@ pub enum BootValidationResult {
 pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, TridentError> {
     info!("Validating whether host correctly booted from updated runtime OS image");
 
+    let servicing_type = match datastore.host_status().servicing_state {
+        ServicingState::AbUpdateFinalized => ServicingType::AbUpdate,
+        ServicingState::CleanInstallFinalized => ServicingType::CleanInstall,
+        _ => ServicingType::NoActiveServicing,
+    };
+
     // Create an EngineContext based on the Host Status
     let ctx = EngineContext {
         spec: datastore.host_status().spec.clone(),
         spec_old: datastore.host_status().spec_old.clone(),
-        servicing_type: ServicingType::AbUpdate,
+        servicing_type,
         ab_active_volume: datastore.host_status().ab_active_volume,
         partition_paths: datastore.host_status().partition_paths.clone(),
         disk_uuids: datastore.host_status().disk_uuids.clone(),
