@@ -29,6 +29,7 @@ use crate::{
         osconfig::{MosConfigSubsystem, OsConfigSubsystem},
         selinux::SelinuxSubsystem,
         storage::StorageSubsystem,
+        sysexts::SysextsSubsystem,
     },
     TRIDENT_BACKGROUND_LOG_PATH, TRIDENT_METRICS_FILE_PATH,
 };
@@ -115,6 +116,7 @@ lazy_static::lazy_static! {
         Box::<HooksSubsystem>::default(),
         Box::<InitrdSubsystem>::default(),
         Box::<SelinuxSubsystem>::default(),
+        Box::<SysextsSubsystem>::default(),
     ]);
 }
 
