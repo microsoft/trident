@@ -16,6 +16,7 @@ pub(crate) mod internal_params;
 pub(crate) mod os;
 pub(crate) mod scripts;
 pub(crate) mod storage;
+pub(crate) mod sysexts;
 pub(crate) mod trident;
 
 use error::HostConfigurationStaticValidationError;
@@ -24,6 +25,7 @@ use internal_params::InternalParams;
 use os::{ManagementOs, Os, SelinuxMode};
 use scripts::Scripts;
 use storage::Storage;
+use sysexts::Sysexts;
 use trident::Trident;
 
 /// HostConfiguration is the configuration for a host. Trident agent will use this to configure the host.
@@ -66,6 +68,10 @@ pub struct HostConfiguration {
     /// integrity information.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image: Option<OsImage>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "schemars", schemars(skip))]
+    pub sysexts: Option<Sysexts>,
 }
 
 impl HostConfiguration {
