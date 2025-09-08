@@ -19,7 +19,7 @@ impl Subsystem for NetworkSubsystem {
     }
 
     #[tracing::instrument(name = "network_configuration", skip_all)]
-    fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
+    fn configure(&mut self, ctx: &mut EngineContext) -> Result<(), TridentError> {
         match ctx.spec.os.netplan.as_ref() {
             Some(config) => {
                 debug!("Configuring network");

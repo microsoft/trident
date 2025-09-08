@@ -63,9 +63,9 @@ pub struct HostStatus {
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct SysextInfo {
-    id: String,
-    version: String,
-    location: String,
+    pub id: Option<String>,
+    pub version: Option<String>,
+    pub location: Option<PathBuf>,
 }
 
 /// Servicing type is the type of servicing that the Trident agent is executing on the host.

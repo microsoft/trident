@@ -68,6 +68,7 @@ pytest = { path = "pytest", optional = true }
 prost = { version = "0.13.4", optional = true }
 tonic = { version = "0.12.3", optional = true }
 tokio-stream = { version = "0.1.17", optional = true }
+etc-os-release = "0.1.0"
 
 [build-dependencies]
 tonic-build = { version = "0.12.3", optional = true }

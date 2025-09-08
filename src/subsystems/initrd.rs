@@ -17,7 +17,7 @@ impl Subsystem for InitrdSubsystem {
     }
 
     #[tracing::instrument(name = "initrd_regeneration", skip_all)]
-    fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
+    fn configure(&mut self, ctx: &mut EngineContext) -> Result<(), TridentError> {
         if ctx.is_uki()? {
             debug!("Skipping initrd regeneration because UKI is in use");
             return Ok(());

@@ -1,12 +1,15 @@
-use std::{path::PathBuf, time::Instant};
+use std::{
+    path::{Path, PathBuf},
+    time::Instant,
+};
 
 use log::{debug, info, warn};
 #[cfg(feature = "grpc-dangerous")]
 use tokio::sync::mpsc;
 
-use osutils::{chroot, container, path::join_relative};
+use osutils::{chroot, container, osmodifier::OSModifierConfig, path::join_relative};
 use trident_api::{
-    config::{HostConfiguration, Operations},
+    config::{HostConfiguration, Operations, Services},
     constants::{
         internal_params::{ENABLE_UKI_SUPPORT, NO_TRANSITION},
         ESP_MOUNT_POINT_PATH,
@@ -28,7 +31,7 @@ use crate::{
     harpoon_hc, monitor_metrics,
     osimage::OsImage,
     subsystems::hooks::HooksSubsystem,
-    ExitKind,
+    ExitKind, OS_MODIFIER_NEWROOT_PATH,
 };
 #[cfg(feature = "grpc-dangerous")]
 use crate::{grpc, GrpcSender};
@@ -68,7 +71,7 @@ pub(crate) fn update(
         image: Some(image),
         storage_graph: engine::build_storage_graph(&host_config.storage)?, // Build storage graph
         filesystems: Vec::new(), // Will be populated after dynamic validation
-        sysexts: Vec::new(),
+        sysexts: state.host_status().sysexts.clone(),
     };
 
     // Before starting an update servicing, need to validate that the active volume is set
@@ -119,7 +122,7 @@ pub(crate) fn update(
     // Stage update
     stage_update(
         &mut subsystems,
-        ctx,
+        &mut ctx,
         state,
         #[cfg(feature = "grpc-dangerous")]
         sender,
@@ -191,7 +194,7 @@ pub(crate) fn update(
 #[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", ctx.servicing_type)))]
 fn stage_update(
     subsystems: &mut [Box<dyn Subsystem>],
-    ctx: EngineContext,
+    ctx: &mut EngineContext,
     state: &mut DataStore,
     #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
@@ -247,7 +250,7 @@ fn stage_update(
         debug!("Entering '{}' chroot", newroot_mount.path().display());
         let result = chroot::enter_update_chroot(newroot_mount.path())
             .message("Failed to enter chroot")?
-            .execute_and_exit(|| engine::configure(subsystems, &ctx));
+            .execute_and_exit(|| engine::configure(subsystems, ctx));
 
         if let Err(original_error) = result {
             if let Err(e) = newroot_mount.unmount_all() {
@@ -258,7 +261,7 @@ fn stage_update(
 
         newroot_mount.unmount_all()?;
     } else {
-        engine::configure(subsystems, &ctx)?;
+        engine::configure(subsystems, ctx)?;
     };
 
     // At this point, deployment has been staged, so update servicing state
@@ -268,16 +271,16 @@ fn stage_update(
     );
     state.with_host_status(|hs| {
         *hs = HostStatus {
-            spec: ctx.spec,
-            spec_old: ctx.spec_old,
+            spec: ctx.spec.clone(),
+            spec_old: ctx.spec_old.clone(),
             servicing_state: ServicingState::AbUpdateStaged,
             ab_active_volume: ctx.ab_active_volume,
-            partition_paths: ctx.partition_paths,
-            disk_uuids: ctx.disk_uuids,
+            partition_paths: ctx.partition_paths.clone(),
+            disk_uuids: ctx.disk_uuids.clone(),
             install_index: ctx.install_index,
             last_error: None,
             is_management_os: false,
-            sysexts: ctx.sysexts,
+            sysexts: ctx.sysexts.clone(),
         };
     })?;
     #[cfg(feature = "grpc-dangerous")]
@@ -329,6 +332,35 @@ pub(crate) fn finalize_update(
         is_uki: None,
         sysexts: state.host_status().sysexts.clone(),
     };
+
+    let newroot_mount = NewrootMount::create_and_mount(
+        &ctx.spec,
+        &ctx.partition_paths,
+        ctx.get_ab_update_volume()
+            .structured(InternalError::Internal(
+                "No update volume despite there being an A/B update in progress",
+            ))?,
+    )?;
+
+    // Have this step in finalize
+    // Call OS Modifier to enable systemd-sysext
+    debug!("Finalize: enable systemd-sysext");
+    chroot::enter_update_chroot(newroot_mount.path())
+        .message("Failed to enter chroot")?
+        .execute_and_exit(|| {
+            let os_modifier_config = OSModifierConfig {
+                services: Some(Services {
+                    enable: ["systemd-sysext".to_string()].to_vec(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            };
+            os_modifier_config
+                .call_os_modifier(Path::new(OS_MODIFIER_NEWROOT_PATH))
+                .structured(ServicingError::RunOsModifier)
+        })?;
+
+    newroot_mount.unmount_all()?;
 
     let esp_path = if container::is_running_in_container()
         .message("Failed to check if Trident is running in a container")?

@@ -1,8 +1,15 @@
-use std::{fs, os::unix::fs as fs_unix, path::Path};
+use std::{
+    fs, io,
+    os::unix::fs as fs_unix,
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
+use anyhow::{Context, Error};
+use etc_os_release::OsRelease;
 use log::{debug, error};
 
-use osutils::{osmodifier::OSModifierConfig, path};
+use osutils::{dependencies::Dependency, osmodifier::OSModifierConfig, path};
 use trident_api::{
     config::Services,
     error::{InternalError, ReportError, ServicingError, TridentError},
@@ -92,7 +99,7 @@ impl Subsystem for SysextsSubsystem {
     }
 
     // Inside chroot
-    fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
+    fn configure(&mut self, ctx: &mut EngineContext) -> Result<(), TridentError> {
         let Some(sysexts) = &ctx.spec.sysexts else {
             debug!("No sysexts found in HC. Returning early.");
             return Ok(());
@@ -104,6 +111,8 @@ impl Subsystem for SysextsSubsystem {
         fs::create_dir_all("/var/lib/extensions").structured(InternalError::Internal(
             "failed to create directory for extensions in newroot at /var/lib/extensions",
         ))?;
+
+        let mut sysext_info_vec = Vec::new();
 
         // Place sysexts in shared partition
         for sysext in &sysexts.add {
@@ -123,24 +132,111 @@ impl Subsystem for SysextsSubsystem {
             debug!("Add symlink from {new_file_path:?} to {symlink_path:?}");
             fs_unix::symlink(&new_file_path, symlink_path)
                 .structured(InternalError::Internal("Failed to make symlink"))?;
+
+            sysext_info_vec.push(get_sysext_info(&new_file_path).structured(
+                InternalError::Internal("Failed to get extension release info"),
+            )?);
         }
 
-        // Call OS Modifier to enable systemd-sysext
-        let os_modifier_config = OSModifierConfig {
-            services: Some(Services {
-                enable: ["systemd-sysext".to_string()].to_vec(),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        os_modifier_config
-            .call_os_modifier(Path::new(OS_MODIFIER_NEWROOT_PATH))
-            .structured(ServicingError::RunOsModifier)?;
-
-        let sysext_info_vec: Vec<SysextInfo>;
+        debug!(
+            "Found the following in engine context for existing sysexts: {:?}",
+            ctx.sysexts
+        );
+        // Activate existing sysexts from previous volume
+        for sysext in &ctx.sysexts {
+            let current_location = sysext.location.clone().unwrap_or_default();
+            let sysext_file_name = Path::new(&current_location)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or_default();
+            let symlink_path = Path::new("/var/lib/extensions").join(sysext_file_name);
+            debug!("Add symlink from {current_location:?} to {symlink_path:?}");
+            fs_unix::symlink(&current_location, symlink_path)
+                .structured(InternalError::Internal("Failed to make symlink"))?;
+        }
 
         // Write to ctx.sysexts
+        ctx.sysexts.extend(sysext_info_vec);
 
         Ok(())
     }
+}
+
+fn get_sysext_info(img_path: &PathBuf) -> Result<SysextInfo, Error> {
+    let mount_point = "/mnt/tmp";
+    fs::create_dir_all(mount_point)
+        .context(format!("Failed to create directory at '{mount_point}'"))?;
+    let release_dir = Path::new(mount_point).join("usr/lib/extension-release.d/");
+    let loop_device_output = Dependency::Losetup
+        .cmd()
+        .arg("-f")
+        .arg("--show")
+        .arg(img_path)
+        .output_and_check()
+        .with_context(|| "Failed to setup loop device")?;
+    let loop_device = loop_device_output.trim();
+    debug!("Created loop device: {}", loop_device);
+    Dependency::Mount
+        .cmd()
+        .arg("-t")
+        .arg("ddi")
+        .arg(loop_device)
+        .arg(mount_point)
+        .run_and_check()
+        .with_context(|| {
+            format!("Failed to mount loop device '{loop_device}' at '{mount_point}'")
+        })?;
+    debug!("Successfully mounted loop device '{loop_device}' at '{mount_point}'");
+
+    // Get extension release file
+    let mut sysext_info = read_extension_release(release_dir)?;
+    sysext_info.location = Some(img_path.to_path_buf());
+
+    Dependency::Umount
+        .cmd()
+        .arg(mount_point)
+        .run_and_check()
+        .context("Failed to unmount")?;
+    Dependency::Losetup
+        .cmd()
+        .arg("-d")
+        .arg(loop_device)
+        .run_and_check()
+        .context("Failed to detach loop device")?;
+
+    debug!("Returning extension_release: {sysext_info:?}");
+
+    Ok(sysext_info)
+}
+
+fn read_extension_release(directory: PathBuf) -> Result<SysextInfo, Error> {
+    // Get extension release file
+    debug!(
+        "Attempting to read from directory '{}'",
+        directory.display()
+    );
+    let files = fs::read_dir(&directory)?
+        .map(|res| res.map(|e| e.path()))
+        .collect::<Result<Vec<_>, io::Error>>()?;
+
+    let path = &files[0];
+    debug!("Evaluating path: '{}'", path.display());
+    // Find the file whose `SYSEXT_ID` matches `name` parameter
+    let extension_release_file_content = fs::read_to_string(path).context(format!(
+        "Failed to read extension-release file content from '{}'",
+        &path.display()
+    ))?;
+    debug!("Found extension release file content:\n {extension_release_file_content}");
+    let extension_release_obj = OsRelease::from_str(&extension_release_file_content)
+        .with_context(|| "Failed to convert extension release file content to OsRelease object")?;
+
+    Ok(SysextInfo {
+        id: extension_release_obj
+            .get_value("SYSEXT_ID")
+            .map(|s| s.to_string()),
+        version: extension_release_obj
+            .get_value("SYSEXT_VERSION_ID")
+            .map(|s| s.to_string()),
+        location: None,
+    })
 }

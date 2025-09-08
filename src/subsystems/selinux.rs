@@ -78,7 +78,7 @@ impl Subsystem for SelinuxSubsystem {
     }
 
     #[tracing::instrument(name = "selinux_configuration", skip_all)]
-    fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
+    fn configure(&mut self, ctx: &mut EngineContext) -> Result<(), TridentError> {
         // Only continue if the servicing type is a clean install or AB update.
         if !(ctx.servicing_type == ServicingType::CleanInstall
             || ctx.servicing_type == ServicingType::AbUpdate)

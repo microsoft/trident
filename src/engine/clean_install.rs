@@ -12,10 +12,11 @@ use osutils::{
     chroot, container,
     installation_media::{self, BootType},
     mount, mountpoint,
+    osmodifier::OSModifierConfig,
     path::join_relative,
 };
 use trident_api::{
-    config::{HostConfiguration, Operations},
+    config::{HostConfiguration, Operations, Services},
     constants::{
         internal_params::{DISABLE_MEDIA_EJECTION, ENABLE_UKI_SUPPORT, NO_TRANSITION},
         ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_PATH,
@@ -33,7 +34,7 @@ use crate::{
     monitor_metrics,
     osimage::OsImage,
     subsystems::hooks::HooksSubsystem,
-    ExitKind, SAFETY_OVERRIDE_CHECK_PATH,
+    ExitKind, OS_MODIFIER_NEWROOT_PATH, SAFETY_OVERRIDE_CHECK_PATH,
 };
 #[cfg(feature = "grpc-dangerous")]
 use crate::{grpc, GrpcSender};
@@ -242,7 +243,7 @@ fn stage_clean_install(
     debug!("Entering '{}' chroot", newroot_mount.path().display());
     let result = chroot::enter_update_chroot(newroot_mount.path())
         .message("Failed to enter chroot")?
-        .execute_and_exit(|| engine::configure(subsystems, &ctx));
+        .execute_and_exit(|| engine::configure(subsystems, &mut ctx));
 
     if let Some(mut monitor) = monitor {
         // If the monitor was created successfully, stop it after execution
@@ -324,6 +325,24 @@ pub(crate) fn finalize_clean_install(
                 ))?,
         )?,
     };
+
+    // Have this step in finalize
+    // Call OS Modifier to enable systemd-sysext
+    debug!("Finalize: enable systemd-sysext");
+    chroot::enter_update_chroot(new_root.path())
+        .message("Failed to enter chroot")?
+        .execute_and_exit(|| {
+            let os_modifier_config = OSModifierConfig {
+                services: Some(Services {
+                    enable: ["systemd-sysext".to_string()].to_vec(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            };
+            os_modifier_config
+                .call_os_modifier(Path::new(OS_MODIFIER_NEWROOT_PATH))
+                .structured(ServicingError::RunOsModifier)
+        })?;
 
     // On clean install, need to verify that AZLA entry exists in /mnt/newroot/boot/efi
     let esp_path = join_relative(new_root.path(), ESP_MOUNT_POINT_PATH);

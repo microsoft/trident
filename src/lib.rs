@@ -438,6 +438,7 @@ impl Trident {
             storage_graph: engine::build_storage_graph(&host_config.storage)?, // Build storage graph
             filesystems: Vec::new(), // Left empty since context does not have image
             is_uki: None,
+            sysexts: Vec::new(),
         };
 
         if ctx.ab_active_volume.is_none() {
