@@ -24,9 +24,9 @@ steps:
       git submodule update
 
       if [[ "${{ parameters.osModifierBranch }}" != "submodule" ]]; then
+        git submodule set-branch --branch ${{ parameters.osModifierBranch }} azure-linux-image-tools
+        git submodule update --remote
         pushd azure-linux-image-tools
-        git fetch --all
-        git checkout ${{ parameters.osModifierBranch }}
         git log -1
         popd
       fi
