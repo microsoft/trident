@@ -29,7 +29,11 @@ steps:
         git submodule update --remote
       fi
 
-      export GOEXPERIMENT=nosystemcrypto
+      if command -v tdnf && go version | grep 1.25; then
+        # For msft 1.25, set GOEXPERIMENT to nosystemcrypto to
+        # enable previous default crypto behavior
+        export GOEXPERIMENT=nosystemcrypto
+      fi
 
       mkdir -p artifacts
       mkdir -p azure-linux-image-tools/SPECS
