@@ -27,7 +27,7 @@ stages:
 
         steps:
           - checkout: self
-            submodules: recursive
+            submodules: true
             fetchDepth: 0
             path: s
           - template: ../common_tasks/avoid-pypi-usage.yml
