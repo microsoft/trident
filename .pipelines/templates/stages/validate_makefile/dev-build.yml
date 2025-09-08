@@ -26,6 +26,8 @@ stages:
           ob_outputDirectory: $(Build.SourcesDirectory)/build
 
         steps:
+          - checkout: self
+            submodules: recursive
           - template: ../common_tasks/avoid-pypi-usage.yml
           - template: ../common_tasks/build-osmodifier.yml
             parameters:
