@@ -25,7 +25,7 @@ steps:
 
       if [[ "${{ parameters.osModifierBranch }}" != "submodule" ]]; then
         pushd azure-linux-image-tools
-        git fetch --all --unshallow --verbose
+        git fetch --all --verbose
         git branch
         popd
         git submodule set-branch --branch ${{ parameters.osModifierBranch }} azure-linux-image-tools
