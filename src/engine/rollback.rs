@@ -44,6 +44,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
         storage_graph: engine::build_storage_graph(&datastore.host_status().spec.storage)?, // Build storage graph
         filesystems: Vec::new(), // Left empty since context does not have image
         is_uki: Some(efivar::current_var_is_uki()),
+        sysexts: Vec::new(),
     };
 
     // Get the block device path of the current root

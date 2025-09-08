@@ -6,6 +6,7 @@ use osutils::{osmodifier::OSModifierConfig, path};
 use trident_api::{
     config::Services,
     error::{InternalError, ReportError, ServicingError, TridentError},
+    status::{ServicingType, SysextInfo},
 };
 
 use crate::{
@@ -52,16 +53,26 @@ impl Subsystem for SysextsSubsystem {
         };
         debug!("provision: Found the following sysexts from the HC: {sysexts:?}");
 
-        // Create directory for sysexts in shared partition if it doesn't exist already
-        let provisioned_os_shared_partition_path =
-            path::join_relative(mount_path, SHARED_PARTITION_PATH);
-        fs::create_dir_all(provisioned_os_shared_partition_path.join("extensions")).structured(
-            InternalError::Internal(
-                "failed to create directory for extensions in shared partition",
-            ),
-        )?;
+        let extensions_dir = if ctx.servicing_type == ServicingType::CleanInstall {
+            // Create directory for sysexts in shared partition if it doesn't exist already
+            let provisioned_os_shared_partition_path =
+                path::join_relative(mount_path, SHARED_PARTITION_PATH);
+            fs::create_dir_all(provisioned_os_shared_partition_path.join("extensions"))
+                .structured(InternalError::Internal(
+                    "failed to create directory for extensions in shared partition",
+                ))?;
+            provisioned_os_shared_partition_path.join("extensions")
+        } else {
+            // Create directory for sysexts in shared partition if it doesn't exist already
+            fs::create_dir_all(Path::new(SHARED_PARTITION_PATH).join("extensions")).structured(
+                InternalError::Internal(
+                    "failed to create directory for extensions in shared partition",
+                ),
+            )?;
+            Path::new(SHARED_PARTITION_PATH).join("extensions")
+        };
 
-        // Move the sysext files from the MOS to the ROS
+        // Move the sysext files to the shared partition
         for sysext in &sysexts.add {
             let current_file_path = sysext
                 .url
@@ -70,9 +81,7 @@ impl Subsystem for SysextsSubsystem {
                 .display()
                 .to_string();
             let sysext_file_name = &current_file_path.split("/").last().unwrap_or_default();
-            let new_file_path = &provisioned_os_shared_partition_path
-                .join("extensions")
-                .join(sysext_file_name);
+            let new_file_path = &extensions_dir.join(sysext_file_name);
             debug!("Attempting to move sysext from {current_file_path} to {new_file_path:?}");
             fs::copy(&current_file_path, new_file_path).structured(InternalError::Internal(
                 "Failed to move sysext to the directory for sysexts",
@@ -89,13 +98,6 @@ impl Subsystem for SysextsSubsystem {
             return Ok(());
         };
         debug!("configure: Found the following sysexts from the HC: {sysexts:?}");
-
-        // Create directory for sysexts in shared partition if it doesn't exist already
-        fs::create_dir_all(Path::new(SHARED_PARTITION_PATH).join("extensions")).structured(
-            InternalError::Internal(
-                "failed to create directory for extensions in shared partition",
-            ),
-        )?;
 
         // Create directory for sysexts in /var/lib/extensions if it doesn't exist already
         debug!("Ensure /var/lib/extensions exists");
@@ -134,6 +136,11 @@ impl Subsystem for SysextsSubsystem {
         os_modifier_config
             .call_os_modifier(Path::new(OS_MODIFIER_NEWROOT_PATH))
             .structured(ServicingError::RunOsModifier)?;
+
+        let sysext_info_vec: Vec<SysextInfo>;
+
+        // Write to ctx.sysexts
+
         Ok(())
     }
 }

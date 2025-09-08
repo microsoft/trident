@@ -55,6 +55,17 @@ pub struct HostStatus {
     /// Whether this HostStatus is stored on the management OS.
     #[serde(default, skip_serializing_if = "is_default")]
     pub is_management_os: bool,
+
+    /// Store state of sysexts managed by Trident
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub sysexts: Vec<SysextInfo>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct SysextInfo {
+    id: String,
+    version: String,
+    location: String,
 }
 
 /// Servicing type is the type of servicing that the Trident agent is executing on the host.

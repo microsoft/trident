@@ -11,7 +11,7 @@ use trident_api::{
     config::{HostConfiguration, Partition, VerityDevice},
     constants::ROOT_MOUNT_POINT_PATH,
     error::{InternalError, ReportError, TridentError},
-    status::{AbVolumeSelection, ServicingType},
+    status::{AbVolumeSelection, ServicingType, SysextInfo},
     storage_graph::graph::StorageGraph,
     BlockDeviceId,
 };
@@ -75,6 +75,9 @@ pub struct EngineContext {
 
     /// Whether the image will use a UKI or not.
     pub is_uki: Option<bool>,
+
+    /// List of sysexts info
+    pub sysexts: Vec<SysextInfo>,
 }
 impl EngineContext {
     /// Returns the update volume selection for all A/B volume pairs. The update volume is the one

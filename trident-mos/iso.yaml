@@ -83,6 +83,10 @@ os:
       destination: /usr/share/selinux/packages/trident/trident.fc
     - source: ../selinux-policy-trident/trident.te
       destination: /usr/share/selinux/packages/trident/trident.te
+    - source: files/mytool_1.2.0.raw
+      destination: /mytool_1.2.0.raw
+    - source: files/mytool_1.5.0.raw
+      destination: /mytool_1.5.0.raw
 
   services:
     enable:
