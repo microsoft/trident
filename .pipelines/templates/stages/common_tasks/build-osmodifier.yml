@@ -21,7 +21,7 @@ steps:
   - bash: |
       set -ex
       git submodule init
-      git submodule update
+      git submodule update --remote
 
       if [[ "${{ parameters.osModifierBranch }}" != "submodule" ]]; then
         pushd azure-linux-image-tools
