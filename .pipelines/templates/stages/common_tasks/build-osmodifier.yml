@@ -20,19 +20,13 @@ steps:
     retryCountOnTaskFailure: 3
   - bash: |
       set -ex
-      git submodule init
-      git submodule update --remote
 
       if [[ "${{ parameters.osModifierBranch }}" != "submodule" ]]; then
-        pushd azure-linux-image-tools
-        git fetch --all --verbose
-        git branch
-        popd
-        git submodule set-branch --branch ${{ parameters.osModifierBranch }} azure-linux-image-tools
+        rm -rf azure-linux-image-tools
+        git clone --branch ${{ parameters.osModifierBranch }} https://github.com/microsoft/azure-linux-image-tools azure-linux-image-tools
+      else
+        git submodule init
         git submodule update --remote
-        pushd azure-linux-image-tools
-        git log -1
-        popd
       fi
 
       # Only check for tdnf case, where msft golang is installed
