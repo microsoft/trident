@@ -37,7 +37,7 @@ steps:
         # is a version greater than 1.25.0
 
         go_min_version_needing_change=go1.25.0
-        go_current_version=$(go version | awk '{print $$3}')
+        go_current_version=$(go version | awk '{print $3}')
 
         # Check if the go version is greater than 1.25.0, if it is, set GOEXPERIMENT.
         # The 'sort' command is used to compare the versions (with -V which sorts by 
