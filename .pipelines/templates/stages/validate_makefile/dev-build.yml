@@ -28,6 +28,7 @@ stages:
         steps:
           - checkout: self
             submodules: recursive
+            path: s
           - template: ../common_tasks/avoid-pypi-usage.yml
           - template: ../common_tasks/build-osmodifier.yml
             parameters:

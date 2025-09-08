@@ -81,6 +81,7 @@ stages:
         steps:
           - checkout: self
             submodules: recursive
+            path: s
           - template: ../common_tasks/os-info.yml
           - template: ../common_tasks/avoid-pypi-usage.yml
           - template: ../common_tasks/cargo-auth.yml
@@ -113,6 +114,7 @@ stages:
         steps:
           - checkout: self
             submodules: recursive
+            path: s
           - template: ../common_tasks/avoid-pypi-usage.yml
           - template: ../common_tasks/cargo-auth.yml
           - template: ../common_tasks/build-osmodifier.yml
