@@ -47,10 +47,6 @@ stages:
           baseImageDirectory: "$(Build.SourcesDirectory)/artifacts"
 
         steps:
-          - checkout: self
-            submodules: true
-            fetchDepth: 0
-            path: s
           - checkout: argus-toolkit
             fetchDepth: 1
           - checkout: platform-tests

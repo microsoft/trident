@@ -79,10 +79,6 @@ stages:
               buildType: auto
 
         steps:
-          - checkout: self
-            submodules: true
-            fetchDepth: 0
-            path: s
           - template: ../common_tasks/os-info.yml
           - template: ../common_tasks/avoid-pypi-usage.yml
           - template: ../common_tasks/cargo-auth.yml
@@ -113,10 +109,6 @@ stages:
               buildType: auto
 
         steps:
-          - checkout: self
-            submodules: true
-            fetchDepth: 0
-            path: s
           - template: ../common_tasks/avoid-pypi-usage.yml
           - template: ../common_tasks/cargo-auth.yml
           - template: ../common_tasks/build-osmodifier.yml

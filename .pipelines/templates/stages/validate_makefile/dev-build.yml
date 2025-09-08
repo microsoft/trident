@@ -26,10 +26,6 @@ stages:
           ob_outputDirectory: $(Build.SourcesDirectory)/build
 
         steps:
-          - checkout: self
-            submodules: true
-            fetchDepth: 0
-            path: s
           - template: ../common_tasks/avoid-pypi-usage.yml
           - template: ../common_tasks/build-osmodifier.yml
             parameters:
