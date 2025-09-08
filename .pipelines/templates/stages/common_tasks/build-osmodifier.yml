@@ -16,9 +16,9 @@ steps:
           export GOLANG_PLATFORM="aarch64"
         fi
         # golang = msft-golang
-        sudo tdnf list --showduplicates golang
-        sudo tdnf list --showduplicates golang | grep ${GOLANG_VERSION}
-        export GOLANG_TDNF_VERSION=$(sudo tdnf list --showduplicates golang | grep ${GOLANG_VERSION} | grep ${GOLANG_PLATFORM} | awk '{print $3}')
+        sudo tdnf list golang
+        sudo tdnf list golang | grep ${GOLANG_VERSION}
+        export GOLANG_TDNF_VERSION=$(sudo tdnf list golang | grep ${GOLANG_VERSION} | grep ${GOLANG_PLATFORM} | awk '{print $3}')
         sudo tdnf upgrade ${GOLANG_TDNF_VERSION} -y
       else
         export GOLANG_PLATFORM="amd64"
