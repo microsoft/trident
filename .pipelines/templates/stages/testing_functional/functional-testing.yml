@@ -48,7 +48,7 @@ stages:
 
         steps:
           - checkout: self
-            submodules: recursive
+            submodules: true
             fetchDepth: 0
             path: s
           - checkout: argus-toolkit
