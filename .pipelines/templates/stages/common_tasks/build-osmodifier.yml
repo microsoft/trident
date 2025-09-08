@@ -11,7 +11,7 @@ steps:
         sudo tdnf remove golang -y
         sudo tdnf install msft-golang -y
       else
-        sudo snap install --classic go
+        sudo snap install --classic go --channel=latest/stable
       fi
 
       # Verify installation
