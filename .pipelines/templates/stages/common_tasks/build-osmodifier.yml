@@ -30,6 +30,8 @@ steps:
         popd
       fi
 
+      export GOEXPERIMENT=nosystemcrypto
+
       mkdir -p artifacts
       mkdir -p azure-linux-image-tools/SPECS
       make -C azure-linux-image-tools/toolkit go-osmodifier REBUILD_TOOLS=y
