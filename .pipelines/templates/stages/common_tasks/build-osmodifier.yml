@@ -29,10 +29,25 @@ steps:
         git submodule update --remote
       fi
 
-      if command -v tdnf && go version | grep 1.25; then
-        # For msft 1.25, set GOEXPERIMENT to nosystemcrypto to
-        # enable previous default crypto behavior
-        export GOEXPERIMENT=nosystemcrypto
+      # Only check for tdnf case, where msft golang is installed
+      if command -v tdnf; then
+        # Ideas taken from azure-linux-image-tools/toolkit/scripts/tools.mk, and
+        # reapplied here to only set GOEXPERIMENT=nosystemcrypto when msft golang
+        # is a version greater than 1.25.0
+
+        go_min_version_needing_change = go1.25.0
+        go_current_version = $(shell go version | awk '{print $$3}')
+
+        # Check if the go version is greater than 1.25.0, if it is, set GOEXPERIMENT.
+        # The 'sort' command is used to compare the versions (with -V which sorts by 
+        # version number). If the highest version in the sort is the same as the current
+        # version, then GOEXPERIMENT must be set.
+        go_version_check = $(printf '%s\n%s\n' "$go_min_version_needing_change" "$go_current_version" | sort -V | head -n1)
+        if [[ "$go_version_check" == "$go_current_version" ]]; then
+          # For msft golang, set GOEXPERIMENT to nosystemcrypto to
+          # enable previous default crypto behavior
+          export GOEXPERIMENT=nosystemcrypto
+        fi
       fi
 
       mkdir -p artifacts
