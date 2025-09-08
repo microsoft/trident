@@ -41,9 +41,9 @@ steps:
 
         # Check if the go version is greater than 1.25.0, if it is, set GOEXPERIMENT.
         # The 'sort' command is used to compare the versions (with -V which sorts by 
-        # version number). If the highest version in the sort is the same as the current
-        # version, then GOEXPERIMENT must be set.
-        go_version_check=$(printf '%s\n%s\n' "$go_min_version_needing_change" "$go_current_version" | sort -V | head -n1)
+        # version number). If the highest version in the reverse sort is the same as
+        # the current version, then GOEXPERIMENT must be set.
+        go_version_check=$(printf '%s\n%s\n' "$go_min_version_needing_change" "$go_current_version" | sort -V -r | head -n1)
         if [[ "$go_version_check" == "$go_current_version" ]]; then
           # For msft golang, set GOEXPERIMENT to nosystemcrypto to
           # enable previous default crypto behavior
