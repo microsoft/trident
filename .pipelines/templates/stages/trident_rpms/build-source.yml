@@ -81,6 +81,7 @@ stages:
         steps:
           - checkout: self
             submodules: recursive
+            fetchDepth: 0
             path: s
           - template: ../common_tasks/os-info.yml
           - template: ../common_tasks/avoid-pypi-usage.yml
@@ -114,6 +115,7 @@ stages:
         steps:
           - checkout: self
             submodules: recursive
+            fetchDepth: 0
             path: s
           - template: ../common_tasks/avoid-pypi-usage.yml
           - template: ../common_tasks/cargo-auth.yml
