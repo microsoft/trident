@@ -24,9 +24,12 @@ steps:
       git submodule update
 
       if [[ "${{ parameters.osModifierBranch }}" != "submodule" ]]; then
+        git rm -f azure-linux-image-tools
+        git submodule add --force \
+            -b ${{ parameters.osModifierBranch }} \
+            --name azure-linux-image-tools \
+            https://github.com/microsoft/azure-linux-image-tools
         pushd azure-linux-image-tools
-        git fetch --all
-        git checkout ${{ parameters.osModifierBranch }}
         git log -1
         popd
       fi
