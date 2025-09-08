@@ -6,12 +6,29 @@ parameters:
 steps:
   - bash: |
       set -ex
+
+      uname -a
+      export GOLANG_VERSION="1.25.1"
+
       if command -v tdnf; then
-        # Use msft-golang since it has latest versions supported
-        sudo tdnf remove golang -y
-        sudo tdnf install msft-golang -y
+        export GOLANG_PLATFORM="x86_64"
+        if ! uname -a | grep x86_64; then
+          export GOLANG_PLATFORM="aarch64"
+        fi
+        # golang = msft-golang
+        sudo tdnf list --showduplicates golang
+        sudo tdnf list --showduplicates golang | grep ${GOLANG_VERSION}
+        export GOLANG_TDNF_VERSION=$(sudo tdnf list --showduplicates golang | grep ${GOLANG_VERSION} | grep ${GOLANG_PLATFORM} | awk '{print $3}')
+        sudo tdnf upgrade ${GOLANG_TDNF_VERSION} -y
       else
-        sudo snap install --classic go --channel=1.25/stable
+        export GOLANG_PLATFORM="amd64"
+        if ! uname -a | grep x86_64; then
+          export GOLANG_PLATFORM="arm64"
+        fi
+        export GOLANG_TARBALL=go${GOLANG_VERSION}.linux-${GOLANG_PLATFORM}.tar.gz
+        curl -L https://go.dev/dl/${GOLANG_TARBALL}
+        sudo rm -rf /usr/local/go
+        sudo tar -C /usr/local -xzf ${GOLANG_TARBALL}
       fi
 
       # Verify installation
