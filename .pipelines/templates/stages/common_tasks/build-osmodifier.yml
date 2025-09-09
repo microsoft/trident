@@ -33,6 +33,7 @@ steps:
       fi
 
       # Verify installation
+      which go
       go version
     displayName: "Install golang to build Image Customizer"
     retryCountOnTaskFailure: 3
