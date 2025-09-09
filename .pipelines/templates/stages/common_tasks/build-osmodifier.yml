@@ -7,43 +7,6 @@ steps:
   - bash: |
       set -ex
 
-      uname -a
-      export GOLANG_VERSION="1.25.1"
-
-      if command -v tdnf; then
-        export GOLANG_PLATFORM="x86_64"
-        if ! uname -a | grep x86_64; then
-          export GOLANG_PLATFORM="aarch64"
-        fi
-        # golang = msft-golang
-        sudo tdnf list golang
-        sudo tdnf list golang | grep ${GOLANG_VERSION}
-        export GOLANG_TDNF_VERSION=$(sudo tdnf list golang | grep ${GOLANG_VERSION} | grep ${GOLANG_PLATFORM} | awk '{print $2}' | tail -n 1)
-        sudo tdnf remove golang -y
-        sudo tdnf install golang-${GOLANG_TDNF_VERSION} -y
-      else
-        export GOLANG_PLATFORM="amd64"
-        if ! uname -a | grep x86_64; then
-          export GOLANG_PLATFORM="arm64"
-        fi
-        export GOLANG_TARBALL=go${GOLANG_VERSION}.linux-${GOLANG_PLATFORM}.tar.gz
-        curl -L https://go.dev/dl/${GOLANG_TARBALL} -o ${GOLANG_TARBALL}
-        sudo rm -rf /usr/local/go
-        sudo tar -C /usr/local -xzf ${GOLANG_TARBALL}
-        find /usr/local/go -name go
-        sudo rm -rf /usr/bin/go
-        sudo ln -s /usr/local/go/bin/go /usr/bin/go
-      fi
-
-      # Verify installation
-      which go
-      ls -l /usr/bin/go
-      go version
-    displayName: "Install golang to build Image Customizer"
-    retryCountOnTaskFailure: 3
-  - bash: |
-      set -ex
-
       if [[ "${{ parameters.osModifierBranch }}" != "submodule" ]]; then
         rm -rf azure-linux-image-tools
         git clone --branch ${{ parameters.osModifierBranch }} https://github.com/microsoft/azure-linux-image-tools azure-linux-image-tools
@@ -53,10 +16,7 @@ steps:
       fi
 
       mkdir -p artifacts
-      mkdir -p azure-linux-image-tools/SPECS
-      make -C azure-linux-image-tools/toolkit go-osmodifier REBUILD_TOOLS=y
-      rm -rf azure-linux-image-tools/SPECS
-      mv azure-linux-image-tools/toolkit/out/tools/osmodifier artifacts/
+      make artifacts/osmodifier
     displayName: "Build OSModifier"
     workingDirectory: $(Build.SourcesDirectory)
     retryCountOnTaskFailure: 3

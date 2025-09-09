@@ -140,11 +140,14 @@ ARTIFACTS_DIR="artifacts"
 # submodule, via:
 #
 # git submodule update --init
-artifacts/osmodifier:
+artifacts/osmodifier: Dockerfile-osmodifier.azl3
+	@docker build -t trident/osmodifier-build:latest \
+		-f Dockerfile-osmodifier.azl3 \
+		.
 	@mkdir -p "$(ARTIFACTS_DIR)"
-	$(MAKE) -C $(TOOLKIT_DIR) go-osmodifier REBUILD_TOOLS=y
-	sudo mv "$(AZL_TOOLS_OUT_DIR)/osmodifier" "$(ARTIFACTS_DIR)/"
-	echo "osmodifier binary moved to $(ARTIFACTS_DIR)"
+	@id=$$(docker create trident/osmodifier-build:latest) && \
+	    docker cp -q $$id:/work/azure-linux-image-tools/toolkit/out/tools/osmodifier $@ || \
+	    docker rm -v $$id
 
 bin/trident: build
 	@mkdir -p bin
@@ -749,4 +752,3 @@ recreate-verity-image: bin/trident-rpms.tar.gz
 	$(MAKE) -C $(TEST_IMAGES_PATH) copy-trident-rpms
 	$(MAKE) -C $(TEST_IMAGES_PATH) trident-verity-testimage
 	make copy-runtime-images
-
