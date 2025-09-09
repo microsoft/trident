@@ -6,20 +6,6 @@ parameters:
 steps:
   - bash: |
       set -ex
-      if command -v tdnf; then
-        # Use msft-golang since it has latest versions supported
-        sudo tdnf remove golang -y
-        sudo tdnf install msft-golang -y
-      else
-        sudo snap install --classic go
-      fi
-
-      # Verify installation
-      go version
-    displayName: "Install golang to build Image Customizer"
-    retryCountOnTaskFailure: 3
-  - bash: |
-      set -ex
 
       if [[ "${{ parameters.osModifierBranch }}" != "submodule" ]]; then
         rm -rf azure-linux-image-tools
@@ -30,10 +16,7 @@ steps:
       fi
 
       mkdir -p artifacts
-      mkdir -p azure-linux-image-tools/SPECS
-      make -C azure-linux-image-tools/toolkit go-osmodifier REBUILD_TOOLS=y
-      rm -rf azure-linux-image-tools/SPECS
-      mv azure-linux-image-tools/toolkit/out/tools/osmodifier artifacts/
+      make artifacts/osmodifier
     displayName: "Build OSModifier"
     workingDirectory: $(Build.SourcesDirectory)
     retryCountOnTaskFailure: 3
