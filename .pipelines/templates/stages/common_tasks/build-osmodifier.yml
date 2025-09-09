@@ -20,7 +20,7 @@ steps:
         sudo tdnf list golang | grep ${GOLANG_VERSION}
         export GOLANG_TDNF_VERSION=$(sudo tdnf list golang | grep ${GOLANG_VERSION} | grep ${GOLANG_PLATFORM} | awk '{print $2}' | tail -n 1)
         sudo tdnf remove golang -y
-        sudo tdnf upgrade golang-${GOLANG_TDNF_VERSION} -y
+        sudo tdnf install golang-${GOLANG_TDNF_VERSION} -y
       else
         export GOLANG_PLATFORM="amd64"
         if ! uname -a | grep x86_64; then
