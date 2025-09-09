@@ -34,6 +34,7 @@ steps:
 
       # Verify installation
       which go
+      ls -l /usr/bin/go
       go version
     displayName: "Install golang to build Image Customizer"
     retryCountOnTaskFailure: 3
