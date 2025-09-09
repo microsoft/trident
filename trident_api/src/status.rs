@@ -59,11 +59,16 @@ pub struct HostStatus {
     /// Store state of sysexts managed by Trident
     #[serde(default, skip_serializing_if = "is_default")]
     pub sysexts: Vec<SysextInfo>,
+
+    /// Store state of sysexts managed by Trident
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub sysexts_old: Vec<SysextInfo>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct SysextInfo {
-    pub id: Option<String>,
+    pub id: String,
+    pub name: String,
     pub version: Option<String>,
     pub location: Option<PathBuf>,
 }

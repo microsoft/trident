@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fs, io,
     os::unix::fs as fs_unix,
     path::{Path, PathBuf},
@@ -9,17 +10,13 @@ use anyhow::{Context, Error};
 use etc_os_release::OsRelease;
 use log::{debug, error};
 
-use osutils::{dependencies::Dependency, osmodifier::OSModifierConfig, path};
+use osutils::{dependencies::Dependency, path};
 use trident_api::{
-    config::Services,
-    error::{InternalError, ReportError, ServicingError, TridentError},
+    error::{InternalError, ReportError, TridentError},
     status::{ServicingType, SysextInfo},
 };
 
-use crate::{
-    engine::{EngineContext, Subsystem},
-    OS_MODIFIER_NEWROOT_PATH,
-};
+use crate::engine::{EngineContext, Subsystem};
 
 const SHARED_PARTITION_PATH: &str = "/var/lib/trident";
 
@@ -112,7 +109,7 @@ impl Subsystem for SysextsSubsystem {
             "failed to create directory for extensions in newroot at /var/lib/extensions",
         ))?;
 
-        let mut sysext_info_vec = Vec::new();
+        let mut sysext_info_hashmap = HashMap::new();
 
         // Place sysexts in shared partition
         for sysext in &sysexts.add {
@@ -128,22 +125,35 @@ impl Subsystem for SysextsSubsystem {
                 .join(sysext_file_name);
             debug!("Attempting to move sysext from {current_file_path} to {new_file_path:?}");
 
-            let symlink_path = Path::new("/var/lib/extensions").join(sysext_file_name);
-            debug!("Add symlink from {new_file_path:?} to {symlink_path:?}");
-            fs_unix::symlink(&new_file_path, symlink_path)
-                .structured(InternalError::Internal("Failed to make symlink"))?;
-
-            sysext_info_vec.push(get_sysext_info(&new_file_path).structured(
+            let sysext_info = get_sysext_info(&new_file_path).structured(
                 InternalError::Internal("Failed to get extension release info"),
-            )?);
+            )?;
+            sysext_info_hashmap.insert(sysext_info.id.clone(), sysext_info.clone());
         }
 
         debug!(
             "Found the following in engine context for existing sysexts: {:?}",
-            ctx.sysexts
+            ctx.sysexts_old
         );
-        // Activate existing sysexts from previous volume
-        for sysext in &ctx.sysexts {
+        // Add existing sysexts to the list of sysexts to activate
+        for sysext in &ctx.sysexts_old {
+            // Replace with new ones if they are passed in
+            if !sysext_info_hashmap.contains_key(&sysext.id) {
+                debug!("Updating sysext with id: {}", sysext.id);
+                sysext_info_hashmap.insert(sysext.id.clone(), sysext.clone());
+            }
+        }
+
+        debug!("Check for sysexts that should be removed");
+        for id_to_remove in &sysexts.remove {
+            if let Some(removed) = sysext_info_hashmap.remove(id_to_remove) {
+                debug!("Removed sysext with id: {}", removed.id);
+            }
+        }
+
+        // Update symlinks
+        debug!("Adding symlinks for all sysexts now");
+        for sysext in sysext_info_hashmap.values() {
             let current_location = sysext.location.clone().unwrap_or_default();
             let sysext_file_name = Path::new(&current_location)
                 .file_name()
@@ -156,7 +166,7 @@ impl Subsystem for SysextsSubsystem {
         }
 
         // Write to ctx.sysexts
-        ctx.sysexts.extend(sysext_info_vec);
+        ctx.sysexts.extend(sysext_info_hashmap.values().cloned());
 
         Ok(())
     }
@@ -233,7 +243,8 @@ fn read_extension_release(directory: PathBuf) -> Result<SysextInfo, Error> {
     Ok(SysextInfo {
         id: extension_release_obj
             .get_value("SYSEXT_ID")
-            .map(|s| s.to_string()),
+            .map(|s| s.to_string())
+            .context("Could not find ID")?,
         version: extension_release_obj
             .get_value("SYSEXT_VERSION_ID")
             .map(|s| s.to_string()),

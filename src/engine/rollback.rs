@@ -1,10 +1,11 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Error};
+use clap::Command;
 use enumflags2::BitFlags;
 use log::{debug, info, trace, warn};
 
-use osutils::{block_devices, efivar, lsblk, pcrlock, veritysetup, virt};
+use osutils::{block_devices, efivar, exe::RunAndCheck, lsblk, pcrlock, veritysetup, virt};
 use sysdefs::tpm2::Pcr;
 use trident_api::{
     constants::internal_params::VIRTDEPLOY_BOOT_ORDER_WORKAROUND,
@@ -45,6 +46,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
         filesystems: Vec::new(), // Left empty since context does not have image
         is_uki: Some(efivar::current_var_is_uki()),
         sysexts: Vec::new(),
+        sysexts_old: Vec::new(),
     };
 
     // Get the block device path of the current root
@@ -524,6 +526,34 @@ fn get_verity_data_device_path(
     );
 
     Ok(verity_status.data_device_path)
+}
+
+pub fn validate_sysexts(ctx: &EngineContext) -> Result<(), TridentError> {
+    let sysexts_hashmap: std::collections::HashMap<String, trident_api::status::SysextInfo> = ctx
+        .sysexts
+        .clone()
+        .into_iter()
+        .map(|sysext| (sysext.id.clone(), sysext))
+        .collect();
+
+    let output = std::process::Command::new("systemd-sysext")
+        .arg("status")
+        .arg("--json")
+        .arg("pretty")
+        .output_and_check()
+        .structured(InternalError::Internal("Failed to run systemd-sysext"))?;
+    let structured_output: Vec<SysextStatus> = serde_json::from_str(&output)
+        .structured(InternalError::Internal("Failed to deserialize json"))?;
+    for status in structured_output {}
+
+    Ok(())
+}
+
+#[derive(serde::Deserialize)]
+struct SysextStatus {
+    hierarchy: String,
+    extensions: Vec<String>,
+    since: Option<u64>,
 }
 
 #[cfg(test)]

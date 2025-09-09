@@ -208,6 +208,7 @@ fn stage_clean_install(
         storage_graph: engine::build_storage_graph(&host_config.storage)?, // Build storage graph
         filesystems: Vec::new(), // Will be populated after dynamic validation
         sysexts: Vec::new(),
+        sysexts_old: Vec::new(),
     };
 
     // Execute pre-servicing scripts
@@ -276,6 +277,7 @@ fn stage_clean_install(
             last_error: None,
             is_management_os: true,
             sysexts: ctx.sysexts,
+            sysexts_old: Default::default(),
         }
     })?;
     #[cfg(feature = "grpc-dangerous")]
@@ -311,7 +313,8 @@ pub(crate) fn finalize_clean_install(
         storage_graph: engine::build_storage_graph(&state.host_status().spec.storage)?, // Build storage graph
         filesystems: Vec::new(), // Left empty since context does not have image
         is_uki: None,
-        sysexts: state.host_status().sysexts.clone(),
+        sysexts: Vec::new(),     // Not utilized
+        sysexts_old: Vec::new(), // Not utilized
     };
 
     let new_root = match new_root {

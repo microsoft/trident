@@ -78,6 +78,9 @@ pub struct EngineContext {
 
     /// List of sysexts info
     pub sysexts: Vec<SysextInfo>,
+
+    /// List of sysexts info
+    pub sysexts_old: Vec<SysextInfo>,
 }
 impl EngineContext {
     /// Returns the update volume selection for all A/B volume pairs. The update volume is the one

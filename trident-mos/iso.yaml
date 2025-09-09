@@ -87,6 +87,8 @@ os:
       destination: /mytool_1.2.0.raw
     - source: files/mytool_1.5.0.raw
       destination: /mytool_1.5.0.raw
+    - source: files/invalid_1.0.0.raw
+      destination: /invalid_1.0.0.raw
 
   services:
     enable:

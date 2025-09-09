@@ -5,7 +5,7 @@ use url::Url;
 #[serde(deny_unknown_fields)]
 pub struct Sysexts {
     pub add: Vec<Sysext>,
-    pub remove: Vec<Sysext>,
+    pub remove: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]

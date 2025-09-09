@@ -439,6 +439,7 @@ impl Trident {
             filesystems: Vec::new(), // Left empty since context does not have image
             is_uki: None,
             sysexts: Vec::new(),
+            sysexts_old: Vec::new(),
         };
 
         if ctx.ab_active_volume.is_none() {
