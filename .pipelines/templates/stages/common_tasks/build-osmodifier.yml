@@ -27,7 +27,7 @@ steps:
           export GOLANG_PLATFORM="arm64"
         fi
         export GOLANG_TARBALL=go${GOLANG_VERSION}.linux-${GOLANG_PLATFORM}.tar.gz
-        curl -L https://go.dev/dl/${GOLANG_TARBALL}
+        curl -L https://go.dev/dl/${GOLANG_TARBALL} -o ${GOLANG_TARBALL}
         sudo rm -rf /usr/local/go
         sudo tar -C /usr/local -xzf ${GOLANG_TARBALL}
       fi
