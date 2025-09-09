@@ -30,6 +30,8 @@ steps:
         curl -L https://go.dev/dl/${GOLANG_TARBALL} -o ${GOLANG_TARBALL}
         sudo rm -rf /usr/local/go
         sudo tar -C /usr/local -xzf ${GOLANG_TARBALL}
+        find /usr/local/go -name go
+        ln -s /usr/local/go/bin/go/usr/bin/go
       fi
 
       # Verify installation
