@@ -7,6 +7,12 @@ set -euo pipefail
 
 WEBSITE_SCRIPTS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
+DEBUG_USE_DEV_BRANCH=${DEBUG_USE_DEV_BRANCH:-false}
+DEBUG_USE_RELEASE_BRANCHES=${DEBUG_USE_RELEASE_BRANCHES:-false}
+MAX_VERSION_COUNT=${MAX_VERSION_COUNT:-'-1'}
+
+EXCLUDED_VERSIONS=${EXCLUDED_VERSIONS:-''}
+
 # Configuration
 REPO="microsoft/trident"
 DOCS_NAME=docs
@@ -62,10 +68,13 @@ check_gh_cli() {
 
 # Get all releases using GitHub CLI
 get_releases() {
-    # Get all releases (excluding pre-releases by default)
-    releases=$(gh api "repos/${REPO}/releases" --jq ".[] | select(.prerelease=false) | .name" --paginate)
-    if [[ "${1:-}" != "--include-prerelease" ]]; then
+    local include_prerelease="$1"
+    if [[ "$include_prerelease" != "true" ]]; then
+        # Get all releases (excluding pre-releases by default)
         releases=$(gh api "repos/${REPO}/releases" --jq ".[] | .name" --paginate)
+    else
+        # Get all releases (excluding pre-releases by default)
+        releases=$(gh api "repos/${REPO}/releases" --jq ".[] | select(.prerelease=false) | .name" --paginate)
     fi
     echo "$releases"
 }
@@ -78,6 +87,28 @@ get_branches() {
     echo "$branches"
 }
 
+# Avoid specified excluded versions
+exclude_versions() {
+    local all_versions="$1"
+
+    if [[ "$EXCLUDED_VERSIONS" == "" ]]; then
+        echo "$all_versions"
+    else
+        while read -r unfiltered_version; do
+            found=false
+            while read -r excluded_version; do
+                if [[ "$unfiltered_version" == "$excluded_version" ]]; then
+                    found=true
+                    break
+                fi
+            done <<< "$(echo ${EXCLUDED_VERSIONS} | tr ' ' '\n')"
+            if ! $found; then
+                echo "$unfiltered_version"
+            fi
+        done <<< "$all_versions"
+    fi
+}
+
 # Create version directory structure
 create_version_docs() {
     local version="$1"
@@ -85,7 +116,12 @@ create_version_docs() {
     cd "${tmp_dir}"
     
     log_info "Checkout ${version} in ${tmp_dir}"
-    git clone --depth 1 --branch "${version}" "https://github.com/${REPO}.git" "${tmp_dir}"
+    if [[ "$DEBUG_USE_DEV_BRANCH" == "true" ]]; then
+        # Debug: clone the dev branch
+        git clone --depth 1 --branch "${DEV_BRANCH}" "https://github.com/${REPO}.git" "${tmp_dir}"
+    else
+        git clone --depth 1 --branch "${version}" "https://github.com/${REPO}.git" "${tmp_dir}"
+    fi
     cd "${tmp_dir}"/website
     npm install
 
@@ -123,18 +159,13 @@ update_versions_file() {
 
 # Main function
 main() {
-    local include_prerelease=""
-    local force_recreate=""
+    local include_prerelease="false"
     
     # Parse command line arguments
     while [[ $# -gt 0 ]]; do
         case $1 in
             --include-prerelease)
-                include_prerelease="--include-prerelease"
-                shift
-                ;;
-            --force)
-                force_recreate="--force"
+                include_prerelease="true"
                 shift
                 ;;
             --help)
@@ -142,7 +173,6 @@ main() {
                 echo ""
                 echo "Options:"
                 echo "  --include-prerelease    Include pre-release versions"
-                echo "  --force                 Force recreate existing version directories"
                 echo "  --help                  Show this help message"
                 exit 0
                 ;;
@@ -158,16 +188,26 @@ main() {
     # Check prerequisites
     check_gh_cli
 
-    #
-    # Can use branches for testing
-    #
-    # versions=$(get_branches "releases/")
-    # log_info "Found branches: ${versions[*]}"
+    if [[ "$DEBUG_USE_RELEASE_BRANCHES" == "true" ]]; then
+        #
+        # Can use branches for testing
+        #
+        versions=$(get_branches "releases/" 3)
+        log_info "Found branches: ${versions[*]}"
+    else
+        # Get releases
+        versions=$(get_releases $include_prerelease 3)
+        log_info "Found releases: ${versions[*]}"
+    fi
 
-    # Get releases
-    versions=$(get_releases $include_prerelease)
-    log_info "Found releases: ${versions[*]}"
+    versions=$(exclude_versions "$versions")
+    log_info "Filtered versions: ${versions[*]}"
     
+    if [[ "$MAX_VERSION_COUNT" != "-1" ]]; then
+        versions=$(echo "$versions" | head -n "$MAX_VERSION_COUNT")
+        log_info "Count-limited versions: ${versions[*]}"
+    fi
+
     # Create versioned docs directory if it doesn't exist
     mkdir -p "$VERSIONED_DOCS_DIR"
     mkdir -p "$VERSIONED_SIDEBARS_DIR"
