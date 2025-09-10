@@ -25,6 +25,7 @@ type AbUpdateHelper struct {
 		Version              string `short:"v" required:"" help:"Version of the Trident image to use for the A/B update."`
 		StageAbUpdate        bool   `short:"s" help:"Controls whether A/B update should be staged."`
 		FinalizeAbUpdate     bool   `short:"f" help:"Controls whether A/B update should be finalized."`
+		Proxy                string `help:"Proxy address. Input should include the env var name, i.e. HTTPS_PROXY=http://0.0.0.0."`
 	}
 
 	client *ssh.Client
@@ -64,7 +65,7 @@ func (h *AbUpdateHelper) getHostConfig(tc storm.TestCase) error {
 		}
 	})
 
-	out, err := utils.InvokeTrident(h.args.Env, h.client, "get configuration")
+	out, err := utils.InvokeTrident(h.args.Env, h.client, h.args.Proxy, "get configuration")
 	if err != nil {
 		return fmt.Errorf("failed to invoke Trident: %w", err)
 	}
@@ -112,18 +113,19 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 
 	logrus.Debugf("Base name: %s", base)
 
-	// Match form <repository>:v<build ID>.<config>.<version number>
-	matches_oci := regexp.MustCompile(`^(.+):v(\d+)\.(.+)\.(\d+)$`).FindStringSubmatch(base)
+	// Match form <repository>:v<build ID>.<config>.<deployment env>.<version number>
+	matches_oci := regexp.MustCompile(`^(.+):v(\d+)\.(.+)\.(.+)\.(\d+)$`).FindStringSubmatch(base)
 	// Match form <name>_v<version number>.<file extension> (note that "_v<version number>" is optional)
 	matches := regexp.MustCompile(`^(.*?)(_v\d+)?\.(.+)$`).FindStringSubmatch(base)
 
 	var newCosiName string
 
-	if strings.HasPrefix(oldUrl, "oci://") && len(matches_oci) == 5 {
+	if strings.HasPrefix(oldUrl, "oci://") && len(matches_oci) == 6 {
 		name := matches_oci[1]
 		buildId := matches_oci[2]
 		config := matches_oci[3]
-		newCosiName = fmt.Sprintf("%s:v%s.%s.%s", name, buildId, config, h.args.Version)
+		deploymentEnv := matches_oci[4]
+		newCosiName = fmt.Sprintf("%s:v%s.%s.%s.%s", name, buildId, config, deploymentEnv, h.args.Version)
 	} else if len(matches) == 4 {
 		name := matches[1]
 		ext := matches[3]
@@ -228,7 +230,7 @@ func (h *AbUpdateHelper) triggerTridentUpdate(tc storm.TestCase) error {
 	for i := 1; ; i++ {
 		logrus.Infof("Invoking Trident attempt #%d with args: %s", i, args)
 
-		out, err := utils.InvokeTrident(h.args.Env, h.client, args)
+		out, err := utils.InvokeTrident(h.args.Env, h.client, h.args.Proxy, args)
 		if err != nil {
 			if err, ok := err.(*ssh.ExitMissingError); ok && strings.Contains(out.Stderr, "Rebooting system") {
 				// The connection closed without an exit code, and the output contains "Rebooting system".

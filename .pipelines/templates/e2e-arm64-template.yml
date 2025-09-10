@@ -1,15 +1,15 @@
 # e2e-arm64-template will run arm64 trident tests for each of our scenarios.
 # This includes unit tests, integration tests, and end-to-end tests.
 #
-# Prior to invoking this template, an artifact must be created that
-# contains information about the base image being used.  This artifact
-# should be created by this template:
+# This pipeline will use the latest release versions of base images unless,
+# prior to invoking this template, an artifact has been created with information
+# about the desired base image.  This artifact should be created by one of these
+# templates:
 #
 #   .pipelines/templates/stages/base_image_config/create-base-image-config-artifact.yml
 #
-# The stage that creates the artifact should be passed into e2e-arm64-template
-# as baseImageArtifactStage.  This will ensure that e2e-template waits for
-# the base image artifact to be created.
+# With this template, set baseImageArtifactStage=CreateBaseImageConfig. This will
+# ensure that e2e-template waits for the base image artifact to be created.
 #
 parameters:
   - name: "stageType"
@@ -35,7 +35,8 @@ parameters:
 
   - name: baseImageArtifactStage
     type: string
-    
+    default: ''
+
 stages:
   # Trident Build/Download
   - template: stages/trident_rpms/trident-stage.yml

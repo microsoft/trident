@@ -91,12 +91,12 @@ func innerUpdateLoop(cfg config.ServicingConfig, rollback bool) error {
 		fmt.Sprintf("sudo sed -i 's!verity.cosi!files/%s!' /var/lib/trident/update-config.yaml && ", cosiFileBase) +
 			// use localhost as update server address
 			"sudo sed -i 's/192.168.122.1/localhost/' /var/lib/trident/update-config.yaml &&" +
-			// create second config file for b update
+			// use update port a for first config (for rollback following update test, this will be no-op)
+			fmt.Sprintf("sudo sed -i 's/8000/%d/' /var/lib/trident/update-config.yaml && ", cfg.TestConfig.UpdatePortA) +
+			// create second config file for b update (for rollback following update test, this will align both update yamls)
 			"sudo cp /var/lib/trident/update-config.yaml /var/lib/trident/update-config2.yaml && " +
-			// use update port b for second config
-			fmt.Sprintf("sudo sed -i 's/8000/%d/' /var/lib/trident/update-config2.yaml && ", cfg.TestConfig.UpdatePortB) +
-			// use udpate port a for first config
-			fmt.Sprintf("sudo sed -i 's/8000/%d/' /var/lib/trident/update-config.yaml", cfg.TestConfig.UpdatePortA)
+			// use update port b for second config (for all cases, including rollback after update, this will set port correctly)
+			fmt.Sprintf("sudo sed -i 's/%d/%d/' /var/lib/trident/update-config2.yaml", cfg.TestConfig.UpdatePortA, cfg.TestConfig.UpdatePortB)
 	configChangesOutput, err := ssh.SshCommand(cfg.VMConfig, vmIP, configChanges)
 	if err != nil {
 		logrus.Tracef("Failed to update config files:\n%s", configChangesOutput)
@@ -124,13 +124,31 @@ func innerUpdateLoop(cfg config.ServicingConfig, rollback bool) error {
 	for i := 1; i <= loopCount; i++ {
 		logrus.Infof("Update attempt #%d for VM '%s' (%s)", i, cfg.VMConfig.Name, cfg.VMConfig.Platform)
 
-		if cfg.VMConfig.Platform == config.PlatformQEMU && i%10 == 0 {
-			// For every 10th update, reboot the VM (QEMU only)
-			if err := cfg.QemuConfig.RebootQemuVm(cfg.VMConfig.Name, i, cfg.TestConfig.OutputPath, cfg.TestConfig.Verbose); err != nil {
-				return fmt.Errorf("failed to reboot QEMU VM before update attempt #%d: %w", i, err)
+		if cfg.VMConfig.Platform == config.PlatformQEMU {
+			if _, err := os.Stat(cfg.QemuConfig.SerialLog); err == nil {
+				if err := exec.Command("truncate", "-s", "0", cfg.QemuConfig.SerialLog).Run(); err != nil {
+					return fmt.Errorf("failed to truncate serial log file: %w", err)
+				}
+				dfOutput, err := exec.Command("df", "-h").Output()
+				if err != nil {
+					return fmt.Errorf("failed to check disk space: %w", err)
+				}
+				logrus.Tracef("Disk space usage:\n%s", dfOutput)
+				freeOutput, err := exec.Command("free", "-h").Output()
+				if err != nil {
+					return fmt.Errorf("failed to check memory usage: %w", err)
+				}
+				logrus.Tracef("Memory usage:\n%s", freeOutput)
 			}
-			if err := cfg.QemuConfig.TruncateLog(cfg.VMConfig.Name); err != nil {
-				return fmt.Errorf("failed to truncate log file before update attempt #%d: %w", i, err)
+
+			if i%10 == 0 {
+				// For every 10th update, reboot the VM (QEMU only)
+				if err := cfg.QemuConfig.RebootQemuVm(cfg.VMConfig.Name, i, cfg.TestConfig.OutputPath, cfg.TestConfig.Verbose); err != nil {
+					return fmt.Errorf("failed to reboot QEMU VM before update attempt #%d: %w", i, err)
+				}
+				if err := cfg.QemuConfig.TruncateLog(cfg.VMConfig.Name); err != nil {
+					return fmt.Errorf("failed to truncate log file before update attempt #%d: %w", i, err)
+				}
 			}
 		}
 
@@ -176,18 +194,47 @@ func innerUpdateLoop(cfg config.ServicingConfig, rollback bool) error {
 			logrus.Tracef("Staging output for iteration %d:\n%s", i, combinedStagingOutput)
 		}
 
+		stageLogLocalTmpFile, err := os.CreateTemp("", "staged-trident-full")
+		if err != nil {
+			return fmt.Errorf("failed to create temp staging log file: %w", err)
+		}
+		stageLogLocalTmpPath := stageLogLocalTmpFile.Name()
+		defer os.Remove(stageLogLocalTmpPath)
+
+		err = ssh.ScpDownloadFile(cfg.VMConfig, vmIP, "/var/log/trident-full.log", stageLogLocalTmpPath)
+		if err != nil {
+			return fmt.Errorf("failed to download staged trident log: %w", err)
+		}
+
 		if cfg.TestConfig.OutputPath != "" {
 			logrus.Tracef("Download staging trident logs for iteration %d", i)
-			localPath := filepath.Join(cfg.TestConfig.OutputPath, fmt.Sprintf("%s-staged-trident-full.log", fmt.Sprintf("%03d", i)))
-			err = ssh.ScpDownloadFile(cfg.VMConfig, vmIP, "/var/log/trident-full.log", localPath)
-			if err != nil {
-				return fmt.Errorf("failed to download staged trident log: %w", err)
+			stageLogPath := filepath.Join(cfg.TestConfig.OutputPath, fmt.Sprintf("%s-staged-trident-full.log", fmt.Sprintf("%03d", i)))
+			if err := exec.Command("cp", stageLogLocalTmpPath, stageLogPath).Run(); err != nil {
+				return fmt.Errorf("failed to copy staged trident log to output path: %w", err)
+			}
+			if err := os.Chmod(stageLogPath, 0644); err != nil {
+				logrus.Errorf("failed to change permissions for staged trident log: %w", err)
+			}
+			if lsOut, err := exec.Command("ls", "-lh", stageLogPath).Output(); err == nil {
+				logrus.Tracef("Staged trident log details for iteration %d:\n%s", i, lsOut)
 			}
 		}
 
 		if stageErr != nil {
-			logrus.Errorf("Failed to stage update for iteration %d: %v", i, stageErr)
-			return fmt.Errorf("failed to stage update for iteration %d: %w", i, stageErr)
+			if egrepOut, err := exec.Command("/bin/sh", "-c", fmt.Sprintf("grep 'target is busy' %s | grep umount", stageLogLocalTmpPath)).CombinedOutput(); err == nil {
+				// Check for known unmount failure and signal
+				logrus.Errorf("umount failure (iteration %d: %v): %s", i, stageErr, egrepOut)
+				return fmt.Errorf("umount failure (iteration %d: %v)", i, stageErr)
+			} else if cosiDownloadOut, err := exec.Command("/bin/sh", "-c", fmt.Sprintf("grep 'Failed to load COSI file from' %s && grep 'HTTP request failed: error sending request for url' %s", stageLogLocalTmpPath, stageLogLocalTmpPath)).CombinedOutput(); err == nil {
+				// Check for known download COSI failure
+				logrus.Errorf("COSI download failure (iteration %d: %v): %s", i, stageErr, cosiDownloadOut)
+				return fmt.Errorf("COSI download failure (iteration %d: %v)", i, stageErr)
+			}
+			return fmt.Errorf("failed to stage update #%d: %w", i, stageErr)
+		} else if cosiDownloadOut, err := exec.Command("/bin/sh", "-c", fmt.Sprintf("grep 'No update servicing required' %s", stageLogLocalTmpPath)).CombinedOutput(); err == nil {
+			// Check for no-update-required
+			logrus.Errorf("No update servicing required (iteration %d: %v): %s", i, stageErr, cosiDownloadOut)
+			return fmt.Errorf("no update servicing required (iteration %d: %v)", i, stageErr)
 		}
 
 		logrus.Tracef("Running Trident update finalize command on VM")
@@ -215,9 +262,9 @@ func innerUpdateLoop(cfg config.ServicingConfig, rollback bool) error {
 			}
 
 			if !success {
-				logrus.Info("VM did not come back up after update")
-				logrus.Errorf("VM did not come back up after update for iteration %d", i)
-				return fmt.Errorf("VM did not come back up after update for iteration %d", i)
+				logrus.Info("Azure VM did not come back up after update")
+				logrus.Errorf("Azure VM did not come back up after update for iteration %d", i)
+				return fmt.Errorf("azure VM did not come back up after update for iteration %d", i)
 			}
 		}
 
@@ -364,6 +411,7 @@ func startNetListenAndWait(ctx context.Context, port int, partition string, arti
 		"--force-color",
 		"--full-logstream", fmt.Sprintf("logstream-full-update-%s.log", partition),
 	}
+	logrus.Tracef("netlisten started with args: %v", cmdArgs)
 	cmd := exec.CommandContext(ctx, cmdPath, cmdArgs...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

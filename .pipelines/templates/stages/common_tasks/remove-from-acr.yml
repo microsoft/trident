@@ -8,7 +8,7 @@ parameters:
 
   - name: "registry"
     type: string
-    default: maritimuspublic
+    default: maritimusdev
 
   - name: "config"
     displayName: "Trident configuration"
@@ -17,7 +17,7 @@ parameters:
 steps:
   - task: AzureCLI@2
     inputs:
-      azureSubscription: maritimus-staging-eastus-cr-service-connection
+      azureSubscription: maritimus-dev-acr-write-umi-ECF
       scriptType: bash
       scriptLocation: inlineScript
       inlineScript: |
@@ -38,7 +38,7 @@ steps:
 
         # Delete repository with COSI images
         for i in {1..4}; do
-          tag="v${build_id}.${{ parameters.config }}.${i}"
+          tag="$(TAG_BASE).${i}"
           if az acr repository show --name ${{ parameters.registry }} --image ${repository_name}:${tag} &> /dev/null; then
             az acr repository delete --name ${{ parameters.registry }} --image ${repository_name}:${tag} --yes
           fi

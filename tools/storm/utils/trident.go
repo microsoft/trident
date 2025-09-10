@@ -10,13 +10,23 @@ import (
 )
 
 const (
-	TRIDENT_BINARY    = "/usr/bin/trident"
-	TRIDENT_CONTAINER = "docker run --pull=never --rm --privileged " +
+	TRIDENT_BINARY      = "/usr/bin/trident"
+	DOCKER_COMMAND_BASE = "docker run --pull=never --rm --privileged " +
 		"-v /etc/trident:/etc/trident -v /var/lib/trident:/var/lib/trident " +
 		"-v /:/host -v /dev:/dev -v /run:/run -v /sys:/sys -v /var/log:/var/log " +
-		"-v /etc/pki:/etc/pki:ro --pid host --ipc host trident/trident:latest"
+		"-v /etc/pki:/etc/pki:ro --pid host --ipc host "
+	TRIDENT_CONTAINER = "trident/trident:latest"
 	DOCKER_IMAGE_PATH = "/var/lib/trident/trident-container.tar.gz"
 )
+
+func BuildTridentContainerCommand(env string) string {
+	cmd := DOCKER_COMMAND_BASE
+	if env != "" {
+		cmd += fmt.Sprintf("--env %s ", env)
+	}
+	cmd += TRIDENT_CONTAINER
+	return cmd
+}
 
 // Invokes Trident in the specified environment using the provided SSH session with the given arguments.
 // It returns the output of the command execution, including stdout, stderr, and exit status.
@@ -28,20 +38,29 @@ const (
 // - The SSH session cannot be created
 // - There was an error starting the command.
 // - Some IO error occurred while reading stdout or stderr.
-func InvokeTrident(env TridentEnvironment, client *ssh.Client, arguments string) (*SshCmdOutput, error) {
+func InvokeTrident(env TridentEnvironment, client *ssh.Client, proxy string, arguments string) (*SshCmdOutput, error) {
 	var cmd string
 	switch env {
 	case TridentEnvironmentHost:
 		cmd = TRIDENT_BINARY
 	case TridentEnvironmentContainer:
-		cmd = TRIDENT_CONTAINER
+		cmd = BuildTridentContainerCommand(proxy)
 	case TridentEnvironmentNone:
 		return nil, fmt.Errorf("trident service is not running")
 	default:
 		return nil, fmt.Errorf("invalid environment: %s", env)
 	}
 
-	return RunCommand(client, fmt.Sprintf("sudo %s %s", cmd, arguments))
+	var cmdPrefix string
+	if proxy != "" {
+		envVar := strings.Split(proxy, "=")[0]
+		cmdPrefix = fmt.Sprintf("%s sudo --preserve-env=%s", proxy, envVar)
+	} else {
+		cmdPrefix = "sudo"
+	}
+
+	logrus.Debug(fmt.Sprintf("Running command: %s %s %s", cmdPrefix, cmd, arguments))
+	return RunCommand(client, fmt.Sprintf("%s %s %s", cmdPrefix, cmd, arguments))
 }
 
 // Loads the Trident container stored in DOCKER_IMAGE_PATH int the remote host's

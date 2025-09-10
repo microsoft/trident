@@ -9,11 +9,17 @@ parameters:
   - name: "registry"
     displayName: "Container registry to push to"
     type: string
-    default: "maritimuspublic"
+    default: "maritimusdev"
 
   - name: "config"
     displayName: "Trident configuration"
     type: string
+
+  - name: "deploymentEnvironment"
+    type: string
+    values:
+      - virtualMachine
+      - bareMetal
 
 steps:
   - bash: |
@@ -35,7 +41,7 @@ steps:
 
   - task: AzureCLI@2
     inputs:
-      azureSubscription: maritimus-staging-eastus-cr-service-connection
+      azureSubscription: maritimus-dev-acr-write-umi-ECF
       scriptType: bash
       scriptLocation: inlineScript
       inlineScript: |
@@ -52,8 +58,10 @@ steps:
         repository_name=${{ parameters.imageName }}
         build_id="$(Build.BuildId)"
 
+
         cd $(Build.SourcesDirectory)/artifacts/test-image
 
+        tag_base="v${build_id}.${{ parameters.config }}.${{ parameters.deploymentEnvironment }}"
         for version in {1..4}; do
           if [[ $version == 1 ]]; then
             filename="regular.cosi"
@@ -61,7 +69,7 @@ steps:
             filename="regular_v${version}.cosi"
           fi
 
-          tag="v${build_id}.${{ parameters.config }}.${version}"
+          tag="$tag_base.${version}"
 
           if [[ -f "$filename" ]]; then
             echo "Pushing $filename with tag $tag to ${{ parameters.registry }}.azurecr.io"
@@ -73,5 +81,8 @@ steps:
             echo "File $filename not found"
           fi
         done
+
+        # Set variable for tag base of pushed images
+        echo "##vso[task.setvariable variable=TAG_BASE]$tag_base"
     displayName: "Push to ACR"
     retryCountOnTaskFailure: 3

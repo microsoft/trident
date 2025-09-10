@@ -23,9 +23,8 @@ func CheckDeployment(cfg config.ServicingConfig) error {
 	// fail explicitly if multiple IPs are found
 	if cfg.VMConfig.Platform == config.PlatformQEMU {
 		if len(vmIPs) > 1 {
-			logrus.Errorf("Multiple IPs found: %v", vmIPs)
-			logrus.Error("Multiple IPs found, expected only one IP address")
-			return fmt.Errorf("multiple IPs found, expected only one IP address")
+			logrus.Errorf("Multiple IPs found, expected only one: %v", vmIPs)
+			return fmt.Errorf("multiple IPs found, expected only one: %v", vmIPs)
 		}
 	}
 

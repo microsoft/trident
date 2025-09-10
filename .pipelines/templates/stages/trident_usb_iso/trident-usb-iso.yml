@@ -69,13 +69,13 @@ stages:
             --input $(Build.ArtifactStagingDirectory)/trident-docker-image/trident-container.tar.gz
 
         ls -l $(Pipeline.Workspace)/s/test-images/platform-integration-images/azl-installer/mos/files
-        cat $(Pipeline.Workspace)/s/test-images/platform-integration-images/azl-installer/mos/files/default-trident-config.yaml
+        cat $(Pipeline.Workspace)/s/test-images/platform-integration-images/azl-installer/mos/files/default-trident-config-iso.yaml
 
         docker \
             run \
             -v $(Pipeline.Workspace)/s/test-images/platform-integration-images/azl-installer/mos/files:/etc/trident_config \
             trident/trident:latest \
-            validate /etc/trident_config/default-trident-config.yaml
+            validate /etc/trident_config/default-trident-config-iso.yaml
 
       displayName: "Validate usb-iso trident configuration."
       # There is a bit of chicken and egg related to trident and test-images.  To minimize this, use
@@ -95,6 +95,9 @@ stages:
         baseimgVersion: $(BASEIMG_VERSION)
         baseimgAzureLinuxVersion: ${{ parameters.baseimgAzlVersion }}
         downloadTrident: false
+        baseimgTypes:
+          - minimal
+          - baremetal
     
 - stage: Test_azl_installer
   displayName: Test azl-installer

@@ -90,9 +90,10 @@ pub fn generate_pcrlock_policy(
     bootloader_binaries: Vec<PathBuf>,
 ) -> Result<(), TridentError> {
     debug!(
-        "Generating a new pcrlock policy for the following PCRs: {:?}",
+        "Preparing to generate a new pcrlock policy for the following PCRs: {:?}",
         pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
     );
+
     // Generate .pcrlock files for runtime OS image A
     generate_pcrlock_files(pcrs, uki_binaries, bootloader_binaries)
         .structured(ServicingError::GeneratePcrlockFiles)?;
@@ -184,21 +185,6 @@ fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
     Ok(())
 }
 
-#[derive(Debug, Deserialize)]
-struct LogEntry {
-    pcr: Pcr,
-    pcrname: Option<String>,
-    event: Option<String>,
-    sha256: Option<Sha256Hash>,
-    component: Option<String>,
-    description: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct LogOutput {
-    log: Vec<LogEntry>,
-}
-
 /// Runs `systemd-pcrlock log` to get the combined TPM 2.0 event log, output as a "pretty" JSON.
 /// Parses the output and validates that every log entry related to `required_pcrs` has been
 /// matched to a recognized boot component.
@@ -212,6 +198,9 @@ struct LogOutput {
 /// Please refer to `systemd-pcrlock` doc for additional info:
 /// https://www.man7.org/linux/man-pages/man8/systemd-pcrlock.8.html.
 fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
+    // Print out combined TPM 2.0 event log
+    cel().context("Failed to print out combined TPM 2.0 event log")?;
+
     debug!(
         "Validating 'systemd-pcrlock log' output for required PCRs: {:?}",
         required_pcrs
@@ -220,6 +209,59 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
             .collect::<Vec<_>>()
     );
 
+    // Get parsed output of 'systemd-pcrlock log'
+    let parsed_log = log_parsed().context("Failed to get 'systemd-pcrlock log' output")?;
+
+    // Fetch list of entries that are related to required PCRs, with components that are not
+    // recognized yet, if any
+    let unrecognized = unrecognized_log_entries(parsed_log.clone(), required_pcrs)
+        .context("Failed to get unrecognized log entries")?;
+    if unrecognized.is_empty() {
+        debug!("All entries for required PCRs have recognized .pcrlock components");
+        return Ok(());
+    }
+
+    // If any entries not recognized, issue an error
+    let entries: Vec<String> = unrecognized
+        .into_iter()
+        .map(|entry| {
+            format!(
+                "pcr='{}', pcrname='{}', event='{}', sha256='{}', description='{}'",
+                entry.pcr.to_num(),
+                entry.pcrname.as_deref().unwrap_or("null"),
+                entry.event.as_deref().unwrap_or("null"),
+                entry.sha256.as_ref().map(|h| h.as_str()).unwrap_or("null"),
+                entry.description.as_deref().unwrap_or("null"),
+            )
+        })
+        .collect();
+
+    bail!(
+        "Failed to validate 'systemd-pcrlock log' output as some log entries for requested PCRs \
+        cannot be matched to recognized components. Consider dropping these PCRs from the list:\n{}",
+        entries.join("\n")
+    );
+}
+
+/// Represents a single log entry from the 'systemd-pcrlock log' output.
+#[derive(Debug, Deserialize, Clone)]
+struct LogEntry {
+    pcr: Pcr,
+    pcrname: Option<String>,
+    event: Option<String>,
+    sha256: Option<Sha256Hash>,
+    component: Option<String>,
+    description: Option<String>,
+}
+
+/// Represents the output of the 'systemd-pcrlock log' command.
+#[derive(Debug, Deserialize, Clone)]
+struct LogOutput {
+    log: Vec<LogEntry>,
+}
+
+/// Parses the output of the 'systemd-pcrlock log' command as a LogOutput object.
+fn log_parsed() -> Result<LogOutput, Error> {
     let output = Dependency::SystemdPcrlock
         .cmd()
         .arg("log")
@@ -227,11 +269,30 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         .output_and_check()
         .context("Failed to run 'systemd-pcrlock log'")?;
 
-    let parsed: LogOutput =
+    let parsed_log: LogOutput =
         serde_json::from_str(&output).context("Failed to parse 'systemd-pcrlock log' output")?;
 
+    Ok(parsed_log)
+}
+
+/// Runs the `systemd-pcrlock cel` command to print out the combined TPM 2.0 event log in TCG
+/// Canonical Event Log Format (CEL-JSON).
+fn cel() -> Result<(), Error> {
+    Dependency::SystemdPcrlock
+        .cmd()
+        .arg("cel")
+        .run_and_check()
+        .context("Failed to run 'systemd-pcrlock cel'")
+}
+
+/// Returns a list of entries from the 'systemd-pcrlock log' output that correspond to (1) PCRs
+/// required for the pcrlock policy and (2) have components that still are not recognized.
+fn unrecognized_log_entries(
+    parsed_log: LogOutput,
+    required_pcrs: BitFlags<Pcr>,
+) -> Result<Vec<LogEntry>, Error> {
     // Filter and log ONLY required PCR entries
-    let required_entries: Vec<_> = parsed
+    let required_entries: Vec<_> = parsed_log
         .log
         .iter()
         .filter(|entry| required_pcrs.contains(entry.pcr))
@@ -251,31 +312,10 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
     let unrecognized: Vec<_> = required_entries
         .into_iter()
         .filter(|entry| entry.component.is_none())
+        .cloned()
         .collect();
 
-    if unrecognized.is_empty() {
-        return Ok(());
-    }
-
-    let entries: Vec<String> = unrecognized
-        .into_iter()
-        .map(|entry| {
-            format!(
-                "pcr='{}', pcrname='{}', event='{}', sha256='{}', description='{}'",
-                entry.pcr.to_num(),
-                entry.pcrname.as_deref().unwrap_or("null"),
-                entry.event.as_deref().unwrap_or("null"),
-                entry.sha256.as_ref().map(|h| h.as_str()).unwrap_or("null"),
-                entry.description.as_deref().unwrap_or("null"),
-            )
-        })
-        .collect();
-
-    bail!(
-        "Failed to validate 'systemd-pcrlock log' output as some log entries cannot be matched \
-            to recognized components:\n{}",
-        entries.join("\n")
-    );
+    Ok(unrecognized)
 }
 
 /// Runs `systemd-pcrlock make-policy` command to predict the PCR state for future boots and then
@@ -736,6 +776,57 @@ struct PcrLock<'a> {
     records: Vec<Record<'a>>,
 }
 
+/// Generates a single .pcrlock file at the given path, to capture one sha256 digest into a PCR.
+fn generate_pcrlock_file(pcrlock_file: PathBuf, pcr: Pcr, digest: String) -> Result<()> {
+    debug!(
+        "Writing .pcrlock file at '{}' for PCR '{}' with SHA256 digest '{}'",
+        pcrlock_file.display(),
+        pcr.to_num(),
+        digest
+    );
+
+    // Build the digest entry
+    let digests = vec![DigestEntry {
+        hash_alg: "sha256",
+        digest,
+    }];
+
+    // Create the PcrLock structure with a single record
+    let pcrlock = PcrLock {
+        records: vec![Record {
+            pcr: pcr.to_num(),
+            digests,
+        }],
+    };
+
+    // Ensure the target directory exists
+    if let Some(parent) = pcrlock_file.parent() {
+        fs::create_dir_all(parent)
+            .context(format!("Failed to create directory '{}'", parent.display()))?;
+    }
+
+    // Serialize to JSON
+    let json = serde_json::to_string(&pcrlock).context(format!(
+        "Failed to serialize .pcrlock file '{}' to JSON",
+        pcrlock_file.display()
+    ))?;
+
+    // Save to disk
+    fs::write(&pcrlock_file, json.clone()).context(format!(
+        "Failed to write .pcrlock file to '{}'",
+        pcrlock_file.display()
+    ))?;
+
+    // Print contents of .pcrlock file
+    trace!(
+        "Contents of .pcrlock file at '{}':\n{}",
+        pcrlock_file.display(),
+        json
+    );
+
+    Ok(())
+}
+
 /// Computes the authenticode of a PE binary at `pe_binary` path, and writes a .pcrlock file at
 /// `pcrlock_file` for the PCR. This file will later be used by `systemd-pcrlock` to predict the
 /// measurement of the PE binary into the specified PCR.
@@ -772,51 +863,16 @@ fn write_pe_binary_authenticode_pcrlock_file(
         sha512.update(slice);
     }
 
-    let digests: Vec<DigestEntry<'_>> = vec![
-        DigestEntry {
-            hash_alg: "sha256",
-            digest: format!("{:x}", sha256.finalize()),
-        },
-        DigestEntry {
-            hash_alg: "sha384",
-            digest: format!("{:x}", sha384.finalize()),
-        },
-        DigestEntry {
-            hash_alg: "sha512",
-            digest: format!("{:x}", sha512.finalize()),
-        },
-    ];
-
-    // Build .pcrlock file structure
-    let pcrlock = PcrLock {
-        records: vec![Record {
-            pcr: pcr.to_num(),
-            digests,
-        }],
-    };
-
-    if let Some(parent) = pcrlock_file.parent() {
-        fs::create_dir_all(parent).context(format!(
-            "Failed to create directory for .pcrlock file at '{}'",
-            pcrlock_file.display()
-        ))?;
-    }
-
-    let json = serde_json::to_string(&pcrlock).context(format!(
-        "Failed to serialize .pcrlock file '{}' as JSON",
-        pcrlock_file.display()
+    // Generate .pcrlock file
+    generate_pcrlock_file(
+        pcrlock_file.clone(),
+        pcr,
+        format!("{:x}", sha256.finalize()),
+    )
+    .context(format!(
+        "Failed to generate .pcrlock file for PE binary at '{}'",
+        pe_binary.display()
     ))?;
-    fs::write(&pcrlock_file, json.clone()).context(format!(
-        "Failed to write .pcrlock file at '{}'",
-        pcrlock_file.display()
-    ))?;
-
-    // Print contents of .pcrlock file
-    trace!(
-        "Contents of .pcrlock file at '{}':\n{}",
-        pcrlock_file.display(),
-        json
-    );
 
     Ok(())
 }
@@ -880,48 +936,16 @@ fn generate_720_kernel_initrd_pcrlock(uki_path: PathBuf, pcrlock_file: PathBuf) 
         )
     })?;
 
-    let digests = vec![
-        DigestEntry {
-            hash_alg: "sha256",
-            digest: hex::encode(Sha256::digest(&buffer)),
-        },
-        DigestEntry {
-            hash_alg: "sha384",
-            digest: hex::encode(Sha384::digest(&buffer)),
-        },
-        DigestEntry {
-            hash_alg: "sha512",
-            digest: hex::encode(Sha512::digest(&buffer)),
-        },
-    ];
-
-    // Write .pcrlock file
-    if let Some(parent) = pcrlock_file.parent() {
-        fs::create_dir_all(parent).context(format!(
-            "Failed to create directory for .pcrlock file at {}",
-            pcrlock_file.display()
-        ))?;
-    }
-
-    let pcrlock = PcrLock {
-        records: vec![Record { pcr: 9, digests }],
-    };
-
-    let json = serde_json::to_string(&pcrlock).context(format!(
-        "Failed to serialize .pcrlock file {} as JSON",
+    // Generate the .pcrlock file with the digest for PCR 9
+    generate_pcrlock_file(
+        pcrlock_file.clone(),
+        Pcr::Pcr9,
+        hex::encode(Sha256::digest(&buffer)),
+    )
+    .context(format!(
+        "Failed to generate .pcrlock file for initrd section at '{}'",
         pcrlock_file.display()
     ))?;
-    fs::write(&pcrlock_file, json.clone()).context(format!(
-        "Failed to write .pcrlock file at {}",
-        pcrlock_file.display()
-    ))?;
-
-    // Print contents of .pcrlock file
-    trace!(
-        "Contents of .pcrlock file at '{}':\n{}",
-        pcrlock_file.display(),
-        json
-    );
 
     Ok(())
 }
@@ -987,9 +1011,5 @@ mod functional_test {
 
         // Clean up the generated pcrlock policy
         fs::remove_file(PCRLOCK_POLICY_JSON_PATH).unwrap();
-
-        // TODO: Add other/more test cases once helpers are implemented and statically defined
-        // .pcrlock files have been added. Related ADO task:
-        // https://dev.azure.com/mariner-org/ECF/_workitems/edit/12596.
     }
 }

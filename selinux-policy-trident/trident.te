@@ -69,6 +69,7 @@ require {
         type gpg_secret_t;
         type groupadd_exec_t;
         type home_root_t;
+        type http_cache_port_t;
         type http_port_t;
         type init_t;
         type init_exec_t;
@@ -165,6 +166,7 @@ require {
         type systemd_networkd_t;
         type systemd_networkd_unit_t;
         type systemd_networkd_exec_t;
+        type systemd_networkd_runtime_t;
         type systemd_notify_exec_t;
         type systemd_passwd_agent_exec_t;
         type systemd_pcrphase_t;
@@ -240,6 +242,7 @@ optional_policy(`
     role ci_unconfined_r types trident_t;
 
     allow trident_t ci_unconfined_t:fd use;
+    seutil_run_setfiles(trident_t, ci_unconfined_r);
 ')
 
 # Allow transition between unconfined_t and trident_t domains; necessary for an interactive run
@@ -273,7 +276,7 @@ files_var_lib_filetrans(trident_t, trident_var_lib_t, { dir file lnk_file })
 # Allow trident_t domain to interact with files and directories labeled as trident_var_lib_t
 # Necessary so Trident can interact with the datastore at /var/lib/trident
 allow trident_t trident_var_lib_t:dir { getattr search read write add_name create remove_name open mounton relabelto };
-allow trident_t trident_var_lib_t:file { getattr setattr create open read write unlink lock };
+allow trident_t trident_var_lib_t:file { getattr setattr create open read write unlink lock relabelto };
 
 # Allow Trident to relabel its executable
 allow trident_t trident_exec_t:file relabelto;
@@ -342,14 +345,17 @@ allow trident_t gpg_secret_t:file getattr;
 allow trident_t groupadd_exec_t:file getattr;
 allow trident_t home_root_t:dir { mounton read relabelto add_name create relabelfrom setattr write };
 allow trident_t home_root_t:file { create getattr ioctl open relabelfrom setattr read write };
+allow trident_t http_cache_port_t:tcp_socket name_connect; # Allow Trident to initiate connection to HTTP proxy port
 allow trident_t http_port_t:tcp_socket name_connect;
 allow trident_t init_exec_t:file { execute getattr map open read relabelto setattr unlink write };
-allow trident_t init_t:system { reboot start status };
+allow trident_t init_t:system { reboot reload start status };
 allow trident_t init_t:key search;
 allow trident_t init_t:unix_stream_socket connectto;
 allow trident_t initctl_t:fifo_file getattr;
-allow trident_t init_runtime_t:dir { add_name write };
-allow trident_t init_runtime_t:file { create getattr open write };
+allow trident_t init_runtime_t:dir { add_name remove_name write };
+allow trident_t init_runtime_t:file { create getattr open setattr read rename unlink write };
+allow trident_t init_runtime_t:lnk_file { create unlink };
+allow trident_t init_runtime_t:service { start status };
 allow trident_t init_var_lib_t:dir { add_name getattr open read relabelto remove_name search write };
 allow trident_t init_var_lib_t:file { create getattr open read rename setattr unlink write };
 allow trident_t iptables_unit_t:file getattr;
@@ -377,6 +383,7 @@ allow trident_t lvm_unit_t:file getattr;
 allow trident_t mail_spool_t:dir { list_dir_perms relabelto };
 allow trident_t memory_pressure_t:file { read open getattr setattr };
 allow trident_t mnt_t:dir { add_name create getattr mounton open read search write };
+allow trident_t mnt_t:lnk_file read;
 allow trident_t modules_conf_t:file { create relabelto setattr unlink write };
 allow trident_t modules_conf_t:dir { write add_name };
 allow trident_t modules_dep_t:file { getattr ioctl map open read relabelto setattr unlink };
@@ -399,8 +406,8 @@ allow trident_t root_t:file { create getattr map open read relabelfrom write };
 allow trident_t rpm_unit_t:file getattr;
 allow trident_t rpm_var_cache_t:dir relabelto;
 allow trident_t rpm_var_cache_t:file relabelto;
-allow trident_t rpm_var_lib_t:dir relabelto;
-allow trident_t rpm_var_lib_t:file relabelto;
+allow trident_t rpm_var_lib_t:dir { add_name relabelto };
+allow trident_t rpm_var_lib_t:file { create relabelto setattr write };
 allow trident_t security_t:file { map write };
 allow trident_t security_t:filesystem getattr;
 allow trident_t security_t:security read_policy;
@@ -467,6 +474,8 @@ allow trident_t systemd_machine_id_setup_exec_t:file getattr;
 allow trident_t systemd_modules_load_exec_t:file { execute getattr map open read relabelto setattr unlink write };
 allow trident_t systemd_networkd_unit_t:service { start status };
 allow trident_t systemd_networkd_exec_t:file { execute getattr };
+allow trident_t systemd_networkd_runtime_t:dir { add_name getattr open read remove_name search write };
+allow trident_t systemd_networkd_runtime_t:file { create getattr open read rename setattr unlink write };
 allow trident_t systemd_notify_exec_t:file getattr;
 allow trident_t systemd_passwd_agent_exec_t:file { execute getattr map open read relabelto setattr unlink write };
 allow trident_t systemd_pcrphase_exec_t:file { execute execute_no_trans getattr map open read };
@@ -497,7 +506,9 @@ allow trident_t tmp_t:lnk_file { create getattr read rename unlink };
 allow trident_t tmpfs_t:file { append create execute getattr ioctl link lock map mounton open read relabelto rename setattr unlink write };
 allow trident_t tmpfs_t:filesystem { getattr mount unmount };
 allow trident_t udev_exec_t:file { execute execute_no_trans getattr map open read relabelto setattr unlink write };
-allow trident_t udev_runtime_t:dir { read watch };
+allow trident_t udev_runtime_t:dir { add_name create read remove_name watch write };
+allow trident_t udev_runtime_t:file { create rename setattr unlink write };
+allow trident_t udev_runtime_t:sock_file write;
 allow trident_t unlabeled_t:chr_file { create getattr link rename unlink };
 allow trident_t unlabeled_t:dir { create add_name getattr setattr open read remove_name search write mounton relabelfrom ioctl rename reparent rmdir };
 allow trident_t unlabeled_t:file { create getattr lock open read setattr unlink write ioctl relabelfrom append execute execute_no_trans link map relabelto rename };
@@ -715,6 +726,8 @@ seutil_manage_file_contexts(trident_t)
 seutil_manage_module_store(trident_t)
 seutil_read_default_contexts(trident_t)
 seutil_read_bin_policy(trident_t)
+seutil_run_setfiles(trident_t, system_r)
+seutil_run_setfiles(trident_t, unconfined_r)
 udev_relabel_rules_files(trident_t)
 
 ###########################################
@@ -901,6 +914,7 @@ libs_manage_lib_files(semanage_t)
 
 #============= setfiles_t ==============
 allow setfiles_t proc_t:filesystem getattr;
+allow setfiles_t unlabeled_t:file { map open read };
 
 #============= systemd_generator_t ==============
 allow systemd_generator_t home_root_t:dir read;

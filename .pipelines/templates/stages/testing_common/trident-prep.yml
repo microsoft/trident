@@ -21,11 +21,13 @@ parameters:
       - trident-testimage
       - trident-container-testimage
 
+  - name: "registry"
+    displayName: "Container registry to push to"
+    type: string
+    default: "maritimusdev"
+
   - name: config
     type: string
-
-  - name: baremetal
-    type: boolean
 
 steps:
   - bash: |
@@ -44,9 +46,9 @@ steps:
           --runtimeEnv ${{ parameters.runtimeEnv }}
       )
 
-      if [ "${{ parameters.config }}" == "misc" ] && [ "${{ parameters.baremetal }}" != "True" ]; then
+      if [ "${{ parameters.config }}" == "misc" ]; then
         build_id="$(Build.BuildId)"
-        oci_url="oci://maritimuspublic.azurecr.io/${{ parameters.imageName }}:v${build_id}.${{ parameters.config }}.1"
+        oci_url="oci://${{ parameters.registry }}.azurecr.io/${{ parameters.imageName }}:$(TAG_BASE).1"
         cmd+=(--ociUrl "$oci_url")
       fi
 

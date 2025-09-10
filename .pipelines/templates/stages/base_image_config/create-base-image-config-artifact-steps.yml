@@ -16,12 +16,10 @@ parameters:
     
 steps:
   - bash: |
-      mkdir -p ${{ parameters.outputDirectory }}
-      cat << EOF > ${{ parameters.outputDirectory }}/baseimage.json
-      {
-        "baseimgBuildType": "${{ parameters.baseimgBuildType }}",
-        "baseImagePipelineBuildId": "${{ parameters.baseImagePipelineBuildId }}",
-        "baseImageArm64PipelineBuildId": "${{ parameters.baseImageArm64PipelineBuildId }}"
-      }
-      EOF
+      ./create-base-image-config.sh \
+          "${{ parameters.baseimgBuildType }}" \
+          "${{ parameters.baseImagePipelineBuildId }}" \
+          "${{ parameters.baseImageArm64PipelineBuildId }}" \
+          "${{ parameters.outputDirectory }}"
+    workingDirectory: $(Build.SourcesDirectory)/.pipelines/templates/stages/base_image_config
     displayName: "Create Base Image Config artifact"

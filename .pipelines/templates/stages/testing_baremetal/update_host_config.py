@@ -11,6 +11,7 @@ import logging
 def update_trident_host_config(
     *,
     host_configuration: dict,
+    test_selection: dict,
     interface_name: str,
     interface_ip: str,
     interface_mac: Optional[str] = None,
@@ -84,17 +85,18 @@ def update_trident_host_config(
         "Final trident_yaml content post all the updates: %s", host_configuration
     )
 
-    # TODO: Remove this logic once pcrlock encryption is enabled for the BM
-    # scenario. For now, if this is a UKI image, add an internal param to
-    # disable pcrlock encryption. Related ADO task:
-    # https://dev.azure.com/mariner-org/polar/_workitems/edit/14269/.
-    if host_configuration.get("internalParams", {}).get("uki", False):
-        logging.info(
-            "Detected UKI image, setting 'overridePcrlockEncryption' internal param."
-        )
-        host_configuration.setdefault("internalParams", {})[
-            "overridePcrlockEncryption"
-        ] = True
+    # TODO: If this is a BM test with grub MOS -> UKI ROS flow, then only
+    # request PCR 11 in the PCRs section b/c we cannot currently include PCR 4
+    # into pcrlock policy on Dell hardware. Related ADO task:
+    # https://dev.azure.com/mariner-org/polar/_workitems/edit/14736
+    storage = host_configuration.get("storage")
+    if storage and "uki" in test_selection.get("compatible", []):
+        encryption = storage.get("encryption")
+        if encryption and "pcrs" in encryption:
+            logging.info(
+                "Detected UKI image, overwriting PCRs section to only include PCR 11"
+            )
+            encryption["pcrs"] = ["kernel-boot"]
 
 
 def is_root_verity(host_configuration: dict) -> bool:
@@ -146,6 +148,11 @@ def main():
         help="Path to the trident.yaml to use for provisioning",
     )
     parser.add_argument(
+        "--test-selection",
+        required=True,
+        help="Path to the test-selection.yaml to define tests to run",
+    )
+    parser.add_argument(
         "--oam-ip", required=True, help="IP address of the OAM interface."
     )
     parser.add_argument(
@@ -171,8 +178,12 @@ def main():
     with open(args.trident_yaml) as f:
         trident_yaml_content = yaml.safe_load(f)
 
+    with open(args.test_selection) as f:
+        test_selection_content = yaml.safe_load(f)
+
     update_trident_host_config(
         host_configuration=trident_yaml_content,
+        test_selection=test_selection_content,
         interface_name=args.interface_name,
         interface_ip=args.oam_ip,
         interface_mac=args.oam_mac,

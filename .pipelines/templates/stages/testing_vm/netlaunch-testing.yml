@@ -116,8 +116,9 @@ stages:
           - template: ../common_tasks/push-to-acr.yml
             parameters:
               imageName: ${{ variables.testImageName }}
-              registry: maritimuspublic
+              registry: maritimusdev
               config: ${{ variables.tridentConfigurationName }}
+              deploymentEnvironment: "virtualMachine"
 
           - template: netlaunch-prep.yml
 
@@ -127,11 +128,18 @@ stages:
               tridentConfigPath: $(tridentConfigPath)
               runtimeEnv: ${{ parameters.runtimeEnv }}
               config: ${{ variables.tridentConfigurationName }}
+              registry: maritimusdev
               imageName: ${{ variables.testImageName }}
-              baremetal: false
 
           - bash: |
               set -eux
+
+              # Disable virtlogd rollover by setting max_size to 0
+              cat /etc/libvirt/virtlogd.conf
+              echo "max_size = 0" | sudo tee -a /etc/libvirt/virtlogd.conf
+              cat /etc/libvirt/virtlogd.conf
+              sudo systemctl restart virtlogd.socket
+
               ./virt-deploy create --mem 12 --disks 32,32
             workingDirectory: $(argusToolkitSourceDirectory)
             displayName: "Creating virt-deploy VM"
@@ -269,7 +277,7 @@ stages:
           - template: ../common_tasks/remove-from-acr.yml
             parameters:
               repository: ${{ variables.testImageName }}
-              registry: "maritimuspublic"
+              registry: "maritimusdev"
               config: ${{ variables.tridentConfigurationName }}
 
           - bash: |

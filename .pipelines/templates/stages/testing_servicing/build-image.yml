@@ -77,5 +77,6 @@ jobs:
           baseimgVersion: $(BASEIMG_VERSION)
           baseimgAzureLinuxVersion: ${{ parameters.baseimgAzlVersion }}
           downloadTrident: false
-          baseimgType: ${{ parameters.baseimgType }}
+          baseimgTypes: 
+            - ${{ parameters.baseimgType }}
           useStagedSshKeys: ${{ parameters.useStagedSshKeys }}

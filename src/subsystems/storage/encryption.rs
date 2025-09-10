@@ -17,7 +17,6 @@ use trident_api::{
         HostConfigurationDynamicValidationError, HostConfigurationStaticValidationError,
         PartitionType,
     },
-    constants::internal_params::OVERRIDE_PCRLOCK_ENCRYPTION,
     error::{InternalError, InvalidInputError, ReportError, ServicingError, TridentError},
 };
 
@@ -166,43 +165,27 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
         // Determine if pcrlock policy should be re-generated to include updated PCRs
         let updated_pcrs = match ctx.servicing_type {
             ServicingType::CleanInstall => None,
-            // On A/B update, use PCRs selected by the user through the API!
+            // On A/B update, use PCRs selected by the user through the API
             ServicingType::AbUpdate => {
                 if ctx.is_uki()? {
-                    // TODO: Remove this internal override once BM encryption tests are fixed.
-                    // Related ADO task:
-                    // https://dev.azure.com/mariner-org/polar/_workitems/edit/14269/.
-                    let override_pcrlock_encryption = ctx
-                        .spec
-                        .internal_params
-                        .get_flag(OVERRIDE_PCRLOCK_ENCRYPTION);
-                    if !override_pcrlock_encryption {
-                        let bitflags = if !encryption.pcrs.is_empty() {
-                            encryption
-                                .pcrs
-                                .iter()
-                                .fold(BitFlags::empty(), |acc, &pcr| acc | BitFlags::from(pcr))
-                        } else {
-                            // TODO: Currently, we cannot seal to PCR 7 b/c not all measurements are
-                            // recognized by the .pcrlock file generation logic. Once that is resolved,
-                            // we want to have PCR 7 as the default. For now, we use PCRs 4 and 11. Related
-                            // ADO tasks:
-                            // https://dev.azure.com/mariner-org/polar/_workitems/edit/14523/ and
-                            // https://dev.azure.com/mariner-org/polar/_workitems/edit/14455/.
-                            //
-                            // Use default PCR if none specified.
-                            //BitFlags::from(osutils_encryption::DEFAULT_PCR)
-                            BitFlags::from(Pcr::Pcr4) | BitFlags::from(Pcr::Pcr11)
-                        };
-                        Some(bitflags)
+                    let bitflags = if !encryption.pcrs.is_empty() {
+                        encryption
+                            .pcrs
+                            .iter()
+                            .fold(BitFlags::empty(), |acc, &pcr| acc | BitFlags::from(pcr))
                     } else {
-                        debug!(
-                            "Runtime OS image is a UKI image, \
-                            but internal override '{OVERRIDE_PCRLOCK_ENCRYPTION}' is set to true, \
-                            so skipping re-generating pcrlock policy",
-                        );
-                        None
-                    }
+                        // TODO: Currently, we cannot seal to PCR 7 b/c not all measurements are
+                        // recognized by the .pcrlock file generation logic. Once that is resolved,
+                        // we want to have PCR 7 as the default. For now, we use PCRs 4 and 11. Related
+                        // ADO tasks:
+                        // https://dev.azure.com/mariner-org/polar/_workitems/edit/14523/ and
+                        // https://dev.azure.com/mariner-org/polar/_workitems/edit/14455/.
+                        //
+                        // Use default PCR if none specified.
+                        //BitFlags::from(osutils_encryption::DEFAULT_PCR)
+                        BitFlags::from(Pcr::Pcr4) | BitFlags::from(Pcr::Pcr11)
+                    };
+                    Some(bitflags)
                 } else {
                     debug!("Runtime OS image is a grub image, so skipping re-generating pcrlock policy");
                     None

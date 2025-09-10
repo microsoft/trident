@@ -140,11 +140,14 @@ ARTIFACTS_DIR="artifacts"
 # submodule, via:
 #
 # git submodule update --init
-artifacts/osmodifier:
+artifacts/osmodifier: Dockerfile-osmodifier.azl3
+	@docker build -t trident/osmodifier-build:latest \
+		-f Dockerfile-osmodifier.azl3 \
+		.
 	@mkdir -p "$(ARTIFACTS_DIR)"
-	$(MAKE) -C $(TOOLKIT_DIR) go-osmodifier REBUILD_TOOLS=y
-	sudo mv "$(AZL_TOOLS_OUT_DIR)/osmodifier" "$(ARTIFACTS_DIR)/"
-	echo "osmodifier binary moved to $(ARTIFACTS_DIR)"
+	@id=$$(docker create trident/osmodifier-build:latest) && \
+	    docker cp -q $$id:/work/azure-linux-image-tools/toolkit/out/tools/osmodifier $@ || \
+	    docker rm -v $$id
 
 bin/trident: build
 	@mkdir -p bin
@@ -779,3 +782,4 @@ validate-pipeline-website-artifact:
 	cd $(STAGING_DIR) && \
 		tar -xvf ./artifact.tar && \
 		$(PYTHON_CMD) -m http.server $(SERVER_PORT)
+

@@ -25,9 +25,7 @@ use sysdefs::tpm2::Pcr;
 use trident_api::{
     config::{HostConfiguration, HostConfigurationStaticValidationError, PartitionSize},
     constants::{
-        internal_params::{
-            NO_CLOSE_ENCRYPTED_VOLUMES, OVERRIDE_PCRLOCK_ENCRYPTION, REENCRYPT_ON_CLEAN_INSTALL,
-        },
+        internal_params::{NO_CLOSE_ENCRYPTED_VOLUMES, REENCRYPT_ON_CLEAN_INSTALL},
         ESP_EFI_DIRECTORY, ESP_MOUNT_POINT_PATH,
     },
     error::{InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt},
@@ -124,33 +122,15 @@ pub(super) fn create_encrypted_devices(
 
         // If this is for a grub ROS, seal against the value of PCR 7; if this is for a UKI ROS,
         // seal against a "bootstrapping" pcrlock policy that exclusively contains PCR 0.
-        // TODO: If this is a flow with an internal override, seal against the value of PCR 0
-        // directly. Remove this internal override once BM tests are fixed. Related ADO task:
-        // https://dev.azure.com/mariner-org/polar/_workitems/edit/14269/.
         let pcr = if ctx.is_uki()? {
-            if ctx
-                .spec
-                .internal_params
-                .get_flag(OVERRIDE_PCRLOCK_ENCRYPTION)
-            {
-                debug!(
-                    "Runtime OS image is a UKI image, \
-                    but internal override '{OVERRIDE_PCRLOCK_ENCRYPTION}' is set to true, \
-                    so sealing against PCR 0"
-                );
-                Some(BitFlags::from(Pcr::Pcr0))
-            } else {
-                debug!(
-                    "Runtime OS image is a UKI image, so sealing against a pcrlock policy of PCR 0"
-                );
+            debug!("Runtime OS image is a UKI image, so sealing against a pcrlock policy of PCR 0");
 
-                // Remove any pre-existing policy
-                pcrlock::remove_policy().structured(ServicingError::RemovePcrlockPolicy)?;
+            // Remove any pre-existing policy
+            pcrlock::remove_policy().structured(ServicingError::RemovePcrlockPolicy)?;
 
-                // Generate a pcrlock policy
-                pcrlock::generate_pcrlock_policy(BitFlags::from(Pcr::Pcr0), vec![], vec![])?;
-                None
-            }
+            // Generate a pcrlock policy for the first time
+            pcrlock::generate_pcrlock_policy(BitFlags::from(Pcr::Pcr0), vec![], vec![])?;
+            None
         } else {
             debug!("Runtime OS image is a grub image, so sealing against the default PCR 7");
             Some(BitFlags::from(DEFAULT_PCR))
@@ -414,10 +394,6 @@ fn get_bootloader_paths(
     let active_volume = match mount_path {
         // Currently, not executing pcrlock encryption or this logic on clean install, so active
         // volume has to be non-null on encryption provisioning.
-        // TODO: Once pcrlock encryption is enabled on clean install, need to adjust the logic, to
-        // correctly construct the binary paths. Related ADO tasks:
-        // https://dev.azure.com/mariner-org/polar/_workitems/edit/14286/ and
-        // https://dev.azure.com/mariner-org/polar/_workitems/edit/13059/.
         Some(_) => ctx.ab_active_volume.ok_or_else(|| {
             anyhow::anyhow!("Active volume is not set outside of clean install servicing")
         })?,

@@ -78,23 +78,28 @@ jobs:
             artifactName: image-${{ parameters.platform }}-base
             targetPath: "$(Build.ArtifactStagingDirectory)/"
           displayName: Download Base Image
-        - bash: |
-            set -eux
-            az login --identity
-            ./bin/storm-trident run servicing \
-              --output-path $(ob_outputDirectory) \
-              --platform ${{ parameters.platform }} \
-              --artifacts-dir $ARTIFACTS \
-              --build-id $(Build.BuildId) \
-              --subscription $(SUBSCRIPTION) \
-              --image-definition $(IMAGE_DEFINITION) \
-              --storage-account $(STORAGE_ACCOUNT) \
-              --storage-account-resource-group $(RESOURCE_GROUP) \
-              --test-case-to-run publish-sig-image
+        - task: AzureCLI@2
+          inputs:
+            azureSubscription: trident-servicing-test
+            scriptType: bash
+            scriptLocation: inlineScript
+            inlineScript: |
+              set -eux
+
+              ./bin/storm-trident run servicing -a \
+                --output-path $(ob_outputDirectory) \
+                --platform ${{ parameters.platform }} \
+                --artifacts-dir $ARTIFACTS \
+                --build-id $(Build.BuildId) \
+                --subscription $(SUBSCRIPTION) \
+                --image-definition $(IMAGE_DEFINITION) \
+                --storage-account $(STORAGE_ACCOUNT) \
+                --storage-account-resource-group $(RESOURCE_GROUP) \
+                --test-case-to-run publish-sig-image
           displayName: Publish Base Image
           env:
             ARTIFACTS: $(Build.ArtifactStagingDirectory)
-            AZCOPY_AUTO_LOGIN_TYPE: "MSI"
+            AZCOPY_AUTO_LOGIN_TYPE: "AZCLI"
 
   - job: UpdateTesting_${{ parameters.flavor }}
     displayName: Update Testing - ${{ parameters.flavor }}
@@ -184,13 +189,7 @@ jobs:
       - bash: |
           set -eux
 
-          SUDO="sudo"
-          if [ "${{ parameters.platform }}" == "azure" ]; then
-            az login --identity
-            SUDO=""
-          fi
-
-          FLAGS=""
+          FLAGS="-a"
           if [ "${{ parameters.verboseLogging }}" == "True" ]; then
             FLAGS="$FLAGS --verbose"
           fi
@@ -200,29 +199,84 @@ jobs:
           if [ "${{ parameters.rollbackTesting }}" == "True" ]; then
             FLAGS="$FLAGS --rollback-retry-count ${{ parameters.updateIterationCount }} --rollback"
           fi
-
-          $SUDO ./bin/storm-trident run servicing $FLAGS \
-            --artifacts-dir $(Build.ArtifactStagingDirectory) \
-            --output-path $(ob_outputDirectory) \
-            --subscription $(SUBSCRIPTION) \
-            --image-definition $(IMAGE_DEFINITION) \
-            --storage-account $(STORAGE_ACCOUNT) \
-            --storage-account-resource-group $(RESOURCE_GROUP) \
-            --test-resource-group $(TEST_RESOURCE_GROUP) \
-            --platform ${{ parameters.platform }} \
-            --subnet-id $(SUBNET_ID) \
-            --ssh-private-key-path $(SSH_PRIVATE_KEY_PATH) \
-            --ssh-public-key-path $(SSH_PUBLIC_KEY_PATH) \
-            --retry-count ${{ parameters.updateIterationCount }} \
-            --build-id $(Build.BuildId) \
-            --force-cleanup
-
           set +x
-          echo "##vso[task.setvariable variable=STORM_SCENARIO_FINISHED;]true"
+          echo "##vso[task.setvariable variable=STORM_FLAGS;]$FLAGS"
+        displayName: "Set flags"
 
-        displayName: "Servicing test"
-        env:
-          AZCOPY_AUTO_LOGIN_TYPE: "MSI"
+      - ${{ if eq(parameters.platform, 'azure') }}:
+        - task: AzureCLI@2
+          inputs:
+            azureSubscription: trident-servicing-test
+            scriptType: bash
+            scriptLocation: inlineScript
+            inlineScript: |
+              set -eux
+
+              ./bin/storm-trident run servicing $(STORM_FLAGS) \
+                --artifacts-dir $(Build.ArtifactStagingDirectory) \
+                --output-path $(ob_outputDirectory) \
+                --subscription $(SUBSCRIPTION) \
+                --image-definition $(IMAGE_DEFINITION) \
+                --storage-account $(STORAGE_ACCOUNT) \
+                --storage-account-resource-group $(RESOURCE_GROUP) \
+                --test-resource-group $(TEST_RESOURCE_GROUP) \
+                --platform ${{ parameters.platform }} \
+                --subnet-id $(SUBNET_ID) \
+                --ssh-private-key-path $(SSH_PRIVATE_KEY_PATH) \
+                --ssh-public-key-path $(SSH_PUBLIC_KEY_PATH) \
+                --retry-count ${{ parameters.updateIterationCount }} \
+                --update-port-a 8123 --update-port-b 8124 \
+                --build-id $(Build.BuildId) \
+                --force-cleanup
+              set +x
+              echo "##vso[task.setvariable variable=STORM_SCENARIO_FINISHED;]true"
+          displayName: "Servicing test (${{ parameters.platform }})"
+          env:
+            AZCOPY_AUTO_LOGIN_TYPE: "AZCLI"
+        - task: AzureCLI@2
+          inputs:
+            azureSubscription: trident-servicing-test
+            scriptType: bash
+            scriptLocation: inlineScript
+            inlineScript: |
+              set -eux
+
+              # If platform is azure AND the test failed to finish, run cleanup to
+              # ensure there are no azure resources left behind
+              if [ "${STORM_SCENARIO_FINISHED}" != "true" ]; then
+                FLAGS="-a"
+                if [ "${{ parameters.verboseLogging }}" == "True" ]; then
+                  FLAGS="$FLAGS --verbose"
+                fi
+
+                ./bin/storm-trident run servicing -a $FLAGS \
+                  --output-path $(ob_outputDirectory) \
+                  --subscription $(SUBSCRIPTION) \
+                  --test-resource-group $(TEST_RESOURCE_GROUP) \
+                  --platform ${{ parameters.platform }} \
+                  --test-case-to-run cleanup-vm
+              fi
+          displayName: "Cleanup even if timeout"
+          retryCountOnTaskFailure: 3
+          timeoutInMinutes: 20
+          condition: always()
+      
+      - ${{ else }}:
+        - bash: |
+            set -eux
+            sudo ./bin/storm-trident run servicing $(STORM_FLAGS) \
+              --artifacts-dir $(Build.ArtifactStagingDirectory) \
+              --output-path $(ob_outputDirectory) \
+              --platform ${{ parameters.platform }} \
+              --subnet-id $(SUBNET_ID) \
+              --ssh-private-key-path $(SSH_PRIVATE_KEY_PATH) \
+              --ssh-public-key-path $(SSH_PUBLIC_KEY_PATH) \
+              --retry-count ${{ parameters.updateIterationCount }} \
+              --build-id $(Build.BuildId) \
+              --force-cleanup
+            set +x
+            echo "##vso[task.setvariable variable=STORM_SCENARIO_FINISHED;]true"
+          displayName: "Servicing test (${{ parameters.platform }})"
           
       - bash: |
           set -eux
@@ -238,29 +292,3 @@ jobs:
         condition: failed()
         displayName: "Publish logs and OS disk on failure"
         timeoutInMinutes: 5
-
-      - ${{ if eq(parameters.platform, 'azure') }}:
-        - bash: |
-            set -eux
-
-            # If platform is azure AND the test failed to finish, run cleanup to
-            # ensure there are no azure resources left behind
-            if [ "${STORM_SCENARIO_FINISHED}" != "true" ]; then
-              az login --identity
-
-              FLAGS=""
-              if [ "${{ parameters.verboseLogging }}" == "True" ]; then
-                FLAGS="$FLAGS --verbose"
-              fi
-
-              ./bin/storm-trident run servicing $FLAGS \
-                --output-path $(ob_outputDirectory) \
-                --subscription $(SUBSCRIPTION) \
-                --test-resource-group $(TEST_RESOURCE_GROUP) \
-                --platform ${{ parameters.platform }} \
-                --test-case-to-run cleanup-vm
-            fi
-
-          displayName: "Cleanup even if timeout"
-          timeoutInMinutes: 20
-          condition: always()

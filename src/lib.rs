@@ -185,11 +185,12 @@ impl Trident {
         }
 
         if let Ok(selinux_context) = fs::read_to_string("/proc/self/attr/current") {
-            debug!("selinux debug: Trident is running in SELinux domain '{selinux_context}'");
-        } else {
-            error!(
-                "selinux debug: Failed to retrieve the SELinux context in which Trident is running"
+            debug!(
+                "Trident is running in SELinux domain '{}'",
+                selinux_context.trim()
             );
+        } else {
+            error!("Failed to retrieve the SELinux context in which Trident is running");
         }
 
         if !Uid::effective().is_root() {

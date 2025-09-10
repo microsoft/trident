@@ -111,6 +111,11 @@ stages:
         steps:
           - template: ../common_tasks/avoid-pypi-usage.yml
           - template: ../common_tasks/cargo-auth.yml
+          - script: |
+              set -eux
+              sudo systemctl start docker
+            workingDirectory: $(Build.SourcesDirectory)
+            displayName: Start Docker
           - template: ../common_tasks/build-osmodifier.yml
             parameters:
               osModifierBranch: ${{ parameters.osModifierBranch }}
