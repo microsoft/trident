@@ -95,9 +95,17 @@ impl Chroot {
         debug!("Exited chroot. Unmounting special directories");
 
         for mount in self.mounts {
+            debug!(
+                "Exited chroot. Unmounting {:?}",
+                mount.target_path().as_os_str()
+            );
             mount
                 .unmount(UnmountFlags::empty())
                 .structured(ServicingError::ChrootUnmountSpecialDir)?;
+            debug!(
+                "Exited chroot. Unmounted {:?}",
+                mount.target_path().as_os_str()
+            );
             mem::forget(mount);
         }
         Ok(())

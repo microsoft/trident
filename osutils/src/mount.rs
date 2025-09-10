@@ -50,9 +50,12 @@ pub fn umount(mount_dir: impl AsRef<Path>, recursive: bool) -> Result<(), Error>
         cmd.arg("-R");
     }
 
+    // Look at all mounts before umount, inspect logs for remaining nested mounts
+    let _result = Command::new("mount").run_and_check();
+
     // Try to unmount the directory
     if let Err(e) = cmd.arg(mount_dir.as_ref()).run_and_check() {
-        // Look at all mounts, inspect logs for remaining nested mounts
+        // Look at all mounts after umount, inspect logs for remaining nested mounts
         let _result = Command::new("mount").run_and_check();
 
         // List all processes with fuser (hoping for different results from lsof)
