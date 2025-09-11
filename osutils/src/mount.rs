@@ -1,10 +1,8 @@
 use std::path::Path;
-use std::process::Command;
 
 use anyhow::{Context, Error};
 use log::{error, info};
 
-use crate::exe::RunAndCheck;
 use crate::{dependencies::Dependency, filesystems::MountFileSystemType, lsof};
 
 /// Mounts file or block device in path to a dir mount_dir.
@@ -50,23 +48,8 @@ pub fn umount(mount_dir: impl AsRef<Path>, recursive: bool) -> Result<(), Error>
         cmd.arg("-R");
     }
 
-    // Look at all mounts before umount, inspect logs for remaining nested mounts
-    let _result = Command::new("mount").run_and_check();
-
     // Try to unmount the directory
     if let Err(e) = cmd.arg(mount_dir.as_ref()).run_and_check() {
-        // Look at all mounts after umount, inspect logs for remaining nested mounts
-        let _result = Command::new("mount").run_and_check();
-
-        // List all processes with fuser (hoping for different results from lsof)
-        let _result = Command::new("fuser")
-            .arg("-vm")
-            .arg(mount_dir.as_ref())
-            .run_and_check();
-
-        // Kill all process accessing mount_dir
-        // fuser -k mount_dir
-
         // If umount returns an error, do best effort to log open files while ignoring failures,
         // such as missing external dependency
         let opened_process_files = lsof::run(mount_dir.as_ref());
