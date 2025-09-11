@@ -98,13 +98,11 @@ impl Chroot {
 
         for mount in self.mounts {
             for retry_count in 1..6 {
-                if retry_count != 1 {
-                    trace!(
-                        "Unmounting '{}' attempt {}",
-                        mount.target_path().display(),
-                        retry_count
-                    );
-                }
+                trace!(
+                    "Unmounting '{}' attempt {}",
+                    mount.target_path().display(),
+                    retry_count
+                );
                 let ret = mount.unmount(UnmountFlags::empty());
                 if ret.is_ok() {
                     mem::forget(mount);
