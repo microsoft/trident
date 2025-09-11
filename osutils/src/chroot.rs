@@ -98,7 +98,7 @@ impl Chroot {
             if mount.unmount(UnmountFlags::empty()).is_err() {
                 trace!(
                     "Unmount failed for {}, trying lazy unmount",
-                    mount.target_path().as_os_str().to_string_lossy()
+                    mount.target_path().display()
                 );
                 mount
                     .unmount(UnmountFlags::DETACH)
