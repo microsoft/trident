@@ -88,6 +88,10 @@ stages:
           # Alternate HTTP(S) proxy which can be used with AEP02 is "http://192.168.229.51:3128"
           - name: BAREMETAL_HTTPS_PROXY
             value: "http://172.16.1.10:3128"
+          - name: NO_PROXY_ADDRESSES
+            value: "${{ variables.BAREMETAL_BMC_IP }},localhost"
+          - name: BAREMETAL_ENV_VARS
+            value: "HTTPS_PROXY=${{ variables.BAREMETAL_HTTPS_PROXY }} NO_PROXY=${{ variables.NO_PROXY_ADDRESSES }}"
 
           # Sourced from the matrix
           - name: TRIDENT_CONFIGURATION_NAME
@@ -226,14 +230,15 @@ stages:
               SERVICE_OVERRIDE=""
               if [ "${{ parameters.runtimeEnv }}" == "host" ]; then 
                 SERVICE_OVERRIDE="[Service]
-                  Environment=\"HTTPS_PROXY=${{ variables.BAREMETAL_HTTPS_PROXY }}\""
+                  Environment=\"${{ variables.BAREMETAL_ENV_VARS }}\""
               else
                 # When running containerized Trident, we must directly embed the proxy in the docker command
                 SERVICE_OVERRIDE="[Service]
-                  Environment=\"HTTPS_PROXY=${{ variables.BAREMETAL_HTTPS_PROXY }}\"
+                  Environment=\"${{ variables.BAREMETAL_ENV_VARS }}\"
                   ExecStart=
                   ExecStart=docker run \\
                     --env HTTPS_PROXY \\
+                    --env NO_PROXY \\
                     --name trident_container \\
                     --pull=never \\
                     --rm \\
@@ -391,7 +396,7 @@ stages:
               netlistenPort: ${{ variables.NETLAUNCH_PORT }}
               runtimeEnv: ${{ parameters.runtimeEnv }}
               netlistenConfigFile: $(TRIDENT_SOURCE_DIR)/baremetal-netlisten.yaml
-              httpsProxy: ${{ variables.BAREMETAL_HTTPS_PROXY }}
+              envVars: ${{ variables.BAREMETAL_ENV_VARS }}
 
           - template: ../common_tasks/remove-from-acr.yml
             parameters:

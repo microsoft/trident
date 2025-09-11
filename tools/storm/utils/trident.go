@@ -38,13 +38,13 @@ func BuildTridentContainerCommand(env string) string {
 // - The SSH session cannot be created
 // - There was an error starting the command.
 // - Some IO error occurred while reading stdout or stderr.
-func InvokeTrident(env TridentEnvironment, client *ssh.Client, proxy string, arguments string) (*SshCmdOutput, error) {
+func InvokeTrident(env TridentEnvironment, client *ssh.Client, envVars string, arguments string) (*SshCmdOutput, error) {
 	var cmd string
 	switch env {
 	case TridentEnvironmentHost:
 		cmd = TRIDENT_BINARY
 	case TridentEnvironmentContainer:
-		cmd = BuildTridentContainerCommand(proxy)
+		cmd = BuildTridentContainerCommand(envVars)
 	case TridentEnvironmentNone:
 		return nil, fmt.Errorf("trident service is not running")
 	default:
@@ -52,9 +52,16 @@ func InvokeTrident(env TridentEnvironment, client *ssh.Client, proxy string, arg
 	}
 
 	var cmdPrefix string
-	if proxy != "" {
-		envVar := strings.Split(proxy, "=")[0]
-		cmdPrefix = fmt.Sprintf("%s sudo --preserve-env=%s", proxy, envVar)
+	if envVars != "" {
+		vars := strings.Split(envVars, " ")
+		var envKeys []string
+		for _, v := range vars {
+			if key := strings.Split(v, "=")[0]; key != "" {
+				envKeys = append(envKeys, key)
+			}
+		}
+		preservedEnvs := strings.Join(envKeys, ",")
+		cmdPrefix = fmt.Sprintf("%s sudo --preserve-env=%s", envVars, preservedEnvs)
 	} else {
 		cmdPrefix = "sudo"
 	}
