@@ -7,7 +7,7 @@ use std::{
     path::Path,
 };
 
-use log::{debug, warn};
+use log::{debug, trace, warn};
 use sys_mount::{Mount, MountFlags, Unmount, UnmountDrop, UnmountFlags};
 
 use trident_api::error::{ReportError, ServicingError, TridentError, TridentResultExt};
@@ -96,6 +96,10 @@ impl Chroot {
 
         for mount in self.mounts {
             if mount.unmount(UnmountFlags::empty()).is_err() {
+                trace!(
+                    "Unmout failed for {}, trying lazy unmount",
+                    mount.target_path().as_os_str().to_string_lossy()
+                );
                 mount
                     .unmount(UnmountFlags::DETACH)
                     .structured(ServicingError::ChrootUnmountSpecialDir)?;
