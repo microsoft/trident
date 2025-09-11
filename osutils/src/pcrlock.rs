@@ -113,6 +113,10 @@ fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         }
     }
 
+    // TODO: IS THIS ACTUALLY HELPFUL?
+    // Run predict command to view predictions, to then compare to the generated pcrlock policy
+    predict().context("Failed to run 'systemd-pcrlock predict' command")?;
+
     make_policy(pcrs).context("Failed to run 'systemd-pcrlock make-policy' command")?;
 
     // Log pcrlock policy JSON contents
@@ -355,6 +359,17 @@ fn make_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
     }
 
     Ok(())
+}
+
+/// Runs the `systemd-pcrlock predict` command to show the prediction of the PCR state for the
+/// future boots. Analyzes the TPM 2.0 event log, recognizes components, and then generates all
+/// possible resulting PCR values for all combinations of component variants.
+fn predict() -> Result<(), Error> {
+    Dependency::SystemdPcrlock
+        .cmd()
+        .arg("predict")
+        .run_and_check()
+        .context("Failed to run 'systemd-pcrlock predict'")
 }
 
 /// Removes the previously generated pcrlock policy and deallocates the NV index.
