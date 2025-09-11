@@ -171,7 +171,7 @@ impl HttpFile {
         ignore_ranges_header_absence: bool,
     ) -> IoResult<Self> {
         debug!("Opening HTTP file '{}'", url);
-        let timeout_in_seconds = 30;
+        let timeout_in_seconds = 10;
 
         // Create a new client for this file.
         let client = Client::new();
