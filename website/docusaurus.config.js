@@ -12,7 +12,7 @@ import { themes as prismThemes } from 'prism-react-renderer';
 const config = {
   title: 'Trident',
   tagline: 'Azure Linux deployment and update agent',
-  favicon: 'img/favicon.ico',
+  // favicon: 'img/favicon.ico',
 
   // Future flags, see https://docusaurus.io/docs/api/docusaurus-config#future
   future: {
@@ -67,14 +67,13 @@ const config = {
   themeConfig:
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
-      // Replace with your project's social card
-      image: 'img/docusaurus-social-card.jpg',
+      // image: 'img/trident-social-card.jpg',
       navbar: {
         title: 'Trident',
-        logo: {
-          alt: 'Trident Logo',
-          src: 'img/logo.svg',
-        },
+        // logo: {
+        //   alt: 'Trident Logo',
+        //   src: 'img/logo.svg',
+        // },
         items: [
           {
             type: 'doc',
@@ -106,15 +105,15 @@ const config = {
             items: [
               // {
               //   label: 'Stack Overflow',
-              //   href: 'https://stackoverflow.com/questions/tagged/tridentagent',
+              //   href: 'https://stackoverflow.com/questions/tagged/trident',
               // },
               // {
               //   label: 'Discord',
-              //   href: 'https://discordapp.com/invite/tridentagent',
+              //   href: 'https://discordapp.com/invite/trident',
               // },
               // {
               //   label: 'X',
-              //   href: 'https://x.com/tridentagent',
+              //   href: 'https://x.com/trident',
               // },
             ],
           },
@@ -128,7 +127,7 @@ const config = {
             ],
           },
         ],
-        // copyright: `Copyright © ${new Date().getFullYear()} My Project, Inc. Built with Docusaurus.`,
+        // copyright: `Copyright © ${new Date().getFullYear()} Microsoft.`,
       },
       prism: {
         theme: prismThemes.github,
