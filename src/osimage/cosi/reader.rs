@@ -171,7 +171,7 @@ impl HttpFile {
         ignore_ranges_header_absence: bool,
     ) -> IoResult<Self> {
         debug!("Opening HTTP file '{}'", url);
-        let timeout_in_seconds = 5;
+        let timeout_in_seconds = 30;
 
         // Create a new client for this file.
         let client = Client::new();
@@ -430,7 +430,9 @@ impl HttpFile {
                 ));
             }
             thread::sleep(sleep_duration);
-            sleep_duration *= 2;
+            if retry % 3 == 2 {
+                sleep_duration *= 2;
+            }
             retry += 1;
         }
     }
