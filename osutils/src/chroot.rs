@@ -97,7 +97,7 @@ impl Chroot {
         for mount in self.mounts {
             if mount.unmount(UnmountFlags::empty()).is_err() {
                 trace!(
-                    "Unmout failed for {}, trying lazy unmount",
+                    "Unmount failed for {}, trying lazy unmount",
                     mount.target_path().as_os_str().to_string_lossy()
                 );
                 mount
