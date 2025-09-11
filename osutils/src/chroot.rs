@@ -99,9 +99,19 @@ impl Chroot {
                 "Exited chroot. Unmounting {:?}",
                 mount.target_path().as_os_str()
             );
-            mount
-                .unmount(UnmountFlags::empty())
-                .structured(ServicingError::ChrootUnmountSpecialDir)?;
+            if mount.unmount(UnmountFlags::empty()).is_err() {
+                debug!(
+                    "Exited chroot. Umounting-detach {:?}",
+                    mount.target_path().as_os_str()
+                );
+                mount
+                    .unmount(UnmountFlags::DETACH)
+                    .structured(ServicingError::ChrootUnmountSpecialDir)?;
+                debug!(
+                    "Exited chroot. Umounted-detach {:?}",
+                    mount.target_path().as_os_str()
+                );
+            }
             debug!(
                 "Exited chroot. Unmounted {:?}",
                 mount.target_path().as_os_str()
