@@ -5,6 +5,8 @@ use std::{
         unix,
     },
     path::Path,
+    thread,
+    time::Duration,
 };
 
 use log::{debug, trace, warn};
@@ -95,16 +97,24 @@ impl Chroot {
         debug!("Exited chroot. Unmounting special directories");
 
         for mount in self.mounts {
-            if mount.unmount(UnmountFlags::empty()).is_err() {
-                trace!(
-                    "Unmount failed for {}, trying lazy unmount",
-                    mount.target_path().display()
-                );
-                mount
-                    .unmount(UnmountFlags::DETACH)
-                    .structured(ServicingError::ChrootUnmountSpecialDir)?;
+            for retry_count in 1..6 {
+                if retry_count != 1 {
+                    trace!(
+                        "Unmounting '{}' attempt {}",
+                        mount.target_path().display(),
+                        retry_count
+                    );
+                }
+                let ret = mount.unmount(UnmountFlags::empty());
+                if ret.is_ok() {
+                    mem::forget(mount);
+                    break;
+                } else if retry_count == 5 {
+                    return ret.structured(ServicingError::ChrootUnmountSpecialDir);
+                } else {
+                    thread::sleep(Duration::from_secs(1));
+                }
             }
-            mem::forget(mount);
         }
         Ok(())
     }
