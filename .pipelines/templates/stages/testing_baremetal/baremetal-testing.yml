@@ -88,10 +88,8 @@ stages:
           # Alternate HTTP(S) proxy which can be used with AEP02 is "http://192.168.229.51:3128"
           - name: BAREMETAL_HTTPS_PROXY
             value: "http://172.16.1.10:3128"
-          - name: NO_PROXY_ADDRESSES
-            value: "${{ variables.BAREMETAL_BMC_IP }},localhost"
           - name: BAREMETAL_ENV_VARS
-            value: "HTTPS_PROXY=${{ variables.BAREMETAL_HTTPS_PROXY }} NO_PROXY=${{ variables.NO_PROXY_ADDRESSES }}"
+            value: "HTTPS_PROXY=${{ variables.BAREMETAL_HTTPS_PROXY }}"
 
           # Sourced from the matrix
           - name: TRIDENT_CONFIGURATION_NAME
