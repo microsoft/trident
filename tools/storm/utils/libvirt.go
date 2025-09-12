@@ -97,7 +97,7 @@ func (vm *LibvirtVm) SetFirmwareVars(boot_url string, secure_boot bool, key_loca
 		args = append(args, "--set-false", "SecureBootEnable")
 	}
 
-	// Enroll the verity vertificate if path is provided
+	// Enroll the key if a path is provided
 	if key_location != "" {
 		db_guid := "8BE4DF61-93CA-11d2-AA0D00E098032B8C"
 		args = append(args, "--enroll-cert", key_location)
