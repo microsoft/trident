@@ -236,7 +236,6 @@ stages:
                   ExecStart=
                   ExecStart=docker run \\
                     --env HTTPS_PROXY \\
-                    --env NO_PROXY \\
                     --name trident_container \\
                     --pull=never \\
                     --rm \\
