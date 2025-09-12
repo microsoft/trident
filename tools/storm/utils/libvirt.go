@@ -5,7 +5,6 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"path/filepath"
 
 	libvirtxml "libvirt.org/libvirt-go-xml"
 
@@ -88,11 +87,7 @@ func (vm *LibvirtVm) SetFirmwareVars(boot_url string, secure_boot bool, key_loca
 		}
 	}
 
-	nvramPath := nvram.NVRam
-	baseName := filepath.Base(nvramPath)
-	tempNvramPath := filepath.Join(os.TempDir(), baseName)
-
-	args := []string{"--input", nvramPath, "--output", tempNvramPath, "--set-boot-uri", boot_url}
+	args := []string{"--inplace", nvram.NVRam, "--set-boot-uri", boot_url}
 	if secure_boot {
 		args = append(args, "--set-true", "SecureBootEnable")
 	} else {
@@ -110,12 +105,6 @@ func (vm *LibvirtVm) SetFirmwareVars(boot_url string, secure_boot bool, key_loca
 	if output, err := cmd.CombinedOutput(); err != nil {
 		logrus.Debugf("virt-fw-vars output:\n%s\n", output)
 		return fmt.Errorf("failed to set boot URI: %w", err)
-	}
-
-	moveCmd := exec.Command("sudo", "mv", tempNvramPath, nvramPath)
-	if output, err := moveCmd.CombinedOutput(); err != nil {
-		logrus.Debugf("sudo mv output:\n%s\n", output)
-		return fmt.Errorf("failed to move temporary nvram file %s: %w", nvramPath, err)
 	}
 
 	logrus.Infof("Set boot URI to %s and set SecureBoot to %t", boot_url, secure_boot)
