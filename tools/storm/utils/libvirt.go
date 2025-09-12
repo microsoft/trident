@@ -106,7 +106,6 @@ func (vm *LibvirtVm) SetFirmwareVars(boot_url string, secure_boot bool, key_loca
 		logrus.Debugf("virt-fw-vars output:\n%s\n", output)
 		return fmt.Errorf("failed to set boot URI: %w", err)
 	}
-
 	logrus.Infof("Set boot URI to %s and set SecureBoot to %t", boot_url, secure_boot)
 
 	return nil
