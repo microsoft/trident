@@ -430,9 +430,7 @@ impl HttpFile {
                 ));
             }
             thread::sleep(sleep_duration);
-            if retry % 3 == 2 {
-                sleep_duration *= 2;
-            }
+            sleep_duration *= 2;
             retry += 1;
         }
     }
