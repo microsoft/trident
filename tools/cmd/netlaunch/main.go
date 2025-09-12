@@ -280,7 +280,13 @@ var rootCmd = &cobra.Command{
 		iso_location := fmt.Sprintf("http://%s/provision.iso", announceAddress)
 
 		if config.Netlaunch.LocalVmUuid != nil {
-			startLocalVm(*config.Netlaunch.LocalVmUuid, iso_location, *config.Netlaunch.KeyLocation)
+			var keyLocation string
+			if config.Netlaunch.KeyLocation != nil {
+				keyLocation = *config.Netlaunch.KeyLocation
+			} else {
+				keyLocation = ""
+			}
+			startLocalVm(*config.Netlaunch.LocalVmUuid, iso_location, keyLocation)
 		} else {
 			if config.Netlaunch.Bmc != nil && config.Netlaunch.Bmc.SerialOverSsh != nil {
 				serial, err := config.Netlaunch.Bmc.ListenForSerialOutput()
