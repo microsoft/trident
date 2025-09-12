@@ -55,7 +55,7 @@ pub(crate) mod install_index;
 pub(crate) use clean_install::{clean_install, finalize_clean_install};
 pub(crate) use context::{filesystem, EngineContext};
 pub use newroot::NewrootMount;
-pub(crate) use update::{finalize_update, update};
+pub(crate) use update::{finalize_update, update, update_sysexts_only};
 
 pub(crate) trait Subsystem: Send {
     fn name(&self) -> &'static str;
@@ -116,6 +116,12 @@ lazy_static::lazy_static! {
         Box::<HooksSubsystem>::default(),
         Box::<InitrdSubsystem>::default(),
         Box::<SelinuxSubsystem>::default(),
+        Box::<SysextsSubsystem>::default(),
+    ]);
+}
+
+lazy_static::lazy_static! {
+    static ref SYSEXT_SUBSYSTEM: Mutex<Vec<Box<dyn Subsystem>>> = Mutex::new(vec![
         Box::<SysextsSubsystem>::default(),
     ]);
 }

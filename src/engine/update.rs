@@ -7,7 +7,9 @@ use log::{debug, info, warn};
 #[cfg(feature = "grpc-dangerous")]
 use tokio::sync::mpsc;
 
-use osutils::{chroot, container, osmodifier::OSModifierConfig, path::join_relative};
+use osutils::{
+    chroot, container, exe::RunAndCheck, osmodifier::OSModifierConfig, path::join_relative,
+};
 use trident_api::{
     config::{HostConfiguration, Operations, Services},
     constants::{
@@ -26,7 +28,7 @@ use crate::{
     engine::{
         self, bootentries, rollback,
         storage::{self, verity},
-        EngineContext, NewrootMount, SUBSYSTEMS,
+        EngineContext, NewrootMount, SUBSYSTEMS, SYSEXT_SUBSYSTEM,
     },
     harpoon_hc, monitor_metrics,
     osimage::OsImage,
@@ -37,6 +39,68 @@ use crate::{
 use crate::{grpc, GrpcSender};
 
 use super::Subsystem;
+
+pub(crate) fn update_sysexts_only(
+    host_config: &HostConfiguration,
+    state: &mut DataStore,
+) -> Result<ExitKind, TridentError> {
+    let mut ctx = EngineContext {
+        spec: host_config.clone(),
+        spec_old: state.host_status().spec.clone(),
+        servicing_type: ServicingType::NoActiveServicing,
+        partition_paths: state.host_status().partition_paths.clone(),
+        ab_active_volume: state.host_status().ab_active_volume,
+        disk_uuids: state.host_status().disk_uuids.clone(),
+        install_index: state.host_status().install_index,
+        is_uki: None,
+        image: None,
+        storage_graph: engine::build_storage_graph(&host_config.storage)?, // Build storage graph
+        filesystems: Vec::new(), // Will be populated after dynamic validation
+        sysexts: Vec::new(),
+        sysexts_old: state.host_status().sysexts.clone(),
+    };
+
+    let mut subsystems = SYSEXT_SUBSYSTEM.lock().unwrap();
+    engine::validate_host_config(&subsystems, &ctx)?;
+    engine::prepare(&mut subsystems, &ctx)?;
+    engine::provision(&mut subsystems, &ctx, Path::new("/"))?;
+    engine::configure(&mut subsystems, &mut ctx)?;
+
+    debug!(
+        "Updating host's servicing state to '{:?}'",
+        ServicingState::AbUpdateStaged
+    );
+
+    let spec_old = state.host_status().spec_old.clone();
+    let mut most_recent_spec = state.host_status().spec.clone();
+    most_recent_spec.sysexts = ctx.spec.sysexts.clone();
+
+    state.with_host_status(|hs| {
+        *hs = HostStatus {
+            spec: most_recent_spec,
+            spec_old,
+            servicing_state: ServicingState::AbUpdateFinalized,
+            ab_active_volume: ctx.ab_active_volume,
+            partition_paths: ctx.partition_paths.clone(),
+            disk_uuids: ctx.disk_uuids.clone(),
+            install_index: ctx.install_index,
+            last_error: None,
+            is_management_os: false,
+            sysexts: ctx.sysexts.clone(),
+            sysexts_old: ctx.sysexts_old.clone(),
+        };
+    })?;
+
+    debug!("Finalize: run systemd-sysext refresh");
+    std::process::Command::new("systemd-sysext")
+        .arg("refresh")
+        .run_and_check()
+        .structured(InternalError::Internal("Failed to run systemd-sysext"))?;
+
+    rollback::validate_sysexts(state)?;
+
+    Ok(ExitKind::Done)
+}
 
 #[tracing::instrument(skip_all)]
 pub(crate) fn update(

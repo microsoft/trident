@@ -28,6 +28,17 @@ impl Subsystem for SysextsSubsystem {
         "sysexts"
     }
 
+    fn select_servicing_type(
+        &self,
+        ctx: &EngineContext,
+    ) -> Result<Option<ServicingType>, TridentError> {
+        if ctx.spec.sysexts.is_some() {
+            return Ok(Some(ServicingType::AbUpdate));
+        };
+
+        Ok(Some(ServicingType::NoActiveServicing))
+    }
+
     fn validate_host_config(&self, ctx: &EngineContext) -> Result<(), TridentError> {
         let Some(sysexts) = &ctx.spec.sysexts else {
             debug!("No sysexts found in HC. Returning early.");
@@ -65,6 +76,10 @@ impl Subsystem for SysextsSubsystem {
                 .structured(InternalError::Internal(
                     "failed to create directory for extensions in shared partition",
                 ))?;
+            fs::create_dir_all(provisioned_os_shared_partition_path.join("extensions-old"))
+                .structured(InternalError::Internal(
+                    "failed to create directory for extensions in shared partition",
+                ))?;
             provisioned_os_shared_partition_path.join("extensions")
         } else {
             // Create directory for sysexts in shared partition if it doesn't exist already
@@ -73,6 +88,10 @@ impl Subsystem for SysextsSubsystem {
                     "failed to create directory for extensions in shared partition",
                 ),
             )?;
+            fs::create_dir_all(Path::new(SHARED_PARTITION_PATH).join("extensions-old"))
+                .structured(InternalError::Internal(
+                    "failed to create directory for extensions in shared partition",
+                ))?;
             Path::new(SHARED_PARTITION_PATH).join("extensions")
         };
 
@@ -123,7 +142,6 @@ impl Subsystem for SysextsSubsystem {
             let new_file_path = Path::new(SHARED_PARTITION_PATH)
                 .join("extensions")
                 .join(sysext_file_name);
-            debug!("Attempting to move sysext from {current_file_path} to {new_file_path:?}");
 
             let sysext_info = get_sysext_info(&new_file_path).structured(
                 InternalError::Internal("Failed to get extension release info"),
@@ -131,38 +149,95 @@ impl Subsystem for SysextsSubsystem {
             sysext_info_hashmap.insert(sysext_info.id.clone(), sysext_info.clone());
         }
 
-        debug!(
-            "Found the following in engine context for existing sysexts: {:?}",
-            ctx.sysexts_old
-        );
+        debug!("Engine context sysexts_old: {:?}", ctx.sysexts_old);
+        debug!("Contents of sysext_info_hasmap {sysext_info_hashmap:?}");
         // Add existing sysexts to the list of sysexts to activate
-        for sysext in &ctx.sysexts_old {
+        for old_sysext in &mut ctx.sysexts_old {
+            debug!("Checking if {} should be replaced", old_sysext.id);
             // Replace with new ones if they are passed in
-            if !sysext_info_hashmap.contains_key(&sysext.id) {
-                debug!("Updating sysext with id: {}", sysext.id);
-                sysext_info_hashmap.insert(sysext.id.clone(), sysext.clone());
+            if sysext_info_hashmap.contains_key(&old_sysext.id) {
+                debug!("Updating sysext with id: {}", old_sysext.id);
+
+                debug!(
+                    "Check if sysext has a symlink on the current volume that should be replaced."
+                );
+                // Note, only need to remove symlink if runtime OS update without reboot
+                let symlink_path =
+                    Path::new("/var/lib/extensions").join(format!("{}.raw", old_sysext.name));
+                debug!("Checking path: {symlink_path:?}");
+                if symlink_path.exists() {
+                    debug!("Removing symlink at {symlink_path:?}");
+                    fs::remove_file(symlink_path)
+                        .structured(InternalError::Internal("Failed to remove symlink"))?;
+                }
+
+                // move old sysext to the sysexts-old directory
+                let new_file_path = Path::new(SHARED_PARTITION_PATH)
+                    .join("extensions-old")
+                    .join(format!("{}.raw", old_sysext.name));
+                debug!(
+                    "Moving sysext from {:?} to {new_file_path:?}",
+                    old_sysext.location
+                );
+                fs::rename(&old_sysext.location, &new_file_path).structured(
+                    InternalError::Internal(
+                        "Failed to move sysext to extensions-old directory for sysexts",
+                    ),
+                )?;
+
+                old_sysext.location = new_file_path;
+            } else {
+                sysext_info_hashmap.insert(old_sysext.id.clone(), old_sysext.clone());
             }
         }
 
         debug!("Check for sysexts that should be removed");
+        let mut removed_ids: HashMap<String, PathBuf> = HashMap::new();
         for id_to_remove in &sysexts.remove {
             if let Some(removed) = sysext_info_hashmap.remove(id_to_remove) {
                 debug!("Removed sysext with id: {}", removed.id);
+
+                // move old sysext to the sysexts-old directory
+                let new_file_path = Path::new(SHARED_PARTITION_PATH)
+                    .join("extensions-old")
+                    .join(format!("{}.raw", removed.name));
+                debug!(
+                    "Attempting to move sysext from {:?} to {new_file_path:?}",
+                    removed.location
+                );
+                fs::rename(&removed.location, &new_file_path).structured(
+                    InternalError::Internal(
+                        "Failed to move sysext to extensions-old directory for sysexts",
+                    ),
+                )?;
+
+                removed_ids.insert(removed.id, new_file_path);
+            }
+        }
+        for sysext in &mut ctx.sysexts_old {
+            if let Some(found) = removed_ids.get(&sysext.id) {
+                sysext.location = found.to_path_buf();
             }
         }
 
         // Update symlinks
-        debug!("Adding symlinks for all sysexts now");
+        debug!("Adding symlinks for all sysexts now. Final list is: {sysext_info_hashmap:?}");
         for sysext in sysext_info_hashmap.values() {
-            let current_location = sysext.location.clone().unwrap_or_default();
+            let current_location = &sysext.location;
             let sysext_file_name = Path::new(&current_location)
                 .file_name()
                 .and_then(|name| name.to_str())
                 .unwrap_or_default();
             let symlink_path = Path::new("/var/lib/extensions").join(sysext_file_name);
-            debug!("Add symlink from {current_location:?} to {symlink_path:?}");
-            fs_unix::symlink(&current_location, symlink_path)
-                .structured(InternalError::Internal("Failed to make symlink"))?;
+
+            // Check if symlink already exists
+            if symlink_path.exists() {
+                debug!("Symlink at {symlink_path:?} alredy exists.")
+            } else {
+                debug!("Add symlink from {current_location:?} to {symlink_path:?}");
+                fs_unix::symlink(current_location, symlink_path)
+                    .structured(InternalError::Internal("Failed to make symlink"))?;
+            }
         }
 
         // Write to ctx.sysexts
@@ -199,8 +274,7 @@ fn get_sysext_info(img_path: &PathBuf) -> Result<SysextInfo, Error> {
     debug!("Successfully mounted loop device '{loop_device}' at '{mount_point}'");
 
     // Get extension release file
-    let mut sysext_info = read_extension_release(release_dir)?;
-    sysext_info.location = Some(img_path.to_path_buf());
+    let mut sysext_info = read_extension_release(release_dir, img_path.to_path_buf())?;
 
     Dependency::Umount
         .cmd()
@@ -219,7 +293,10 @@ fn get_sysext_info(img_path: &PathBuf) -> Result<SysextInfo, Error> {
     Ok(sysext_info)
 }
 
-fn read_extension_release(directory: PathBuf) -> Result<SysextInfo, Error> {
+fn read_extension_release(
+    directory: PathBuf,
+    sysext_location: PathBuf,
+) -> Result<SysextInfo, Error> {
     // Get extension release file
     debug!(
         "Attempting to read from directory '{}'",
@@ -239,15 +316,23 @@ fn read_extension_release(directory: PathBuf) -> Result<SysextInfo, Error> {
     debug!("Found extension release file content:\n {extension_release_file_content}");
     let extension_release_obj = OsRelease::from_str(&extension_release_file_content)
         .with_context(|| "Failed to convert extension release file content to OsRelease object")?;
+    let file_name = path
+        .display()
+        .to_string()
+        .split("extension-release.")
+        .last()
+        .ok_or_else(|| Error::msg("Failed to get extension-release ending"))?
+        .to_string();
 
     Ok(SysextInfo {
         id: extension_release_obj
             .get_value("SYSEXT_ID")
             .map(|s| s.to_string())
             .context("Could not find ID")?,
+        name: file_name,
         version: extension_release_obj
             .get_value("SYSEXT_VERSION_ID")
             .map(|s| s.to_string()),
-        location: None,
+        location: sysext_location,
     })
 }

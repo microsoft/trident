@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Error};
-use clap::Command;
 use enumflags2::BitFlags;
 use log::{debug, info, trace, warn};
 
@@ -528,13 +527,17 @@ fn get_verity_data_device_path(
     Ok(verity_status.data_device_path)
 }
 
-pub fn validate_sysexts(ctx: &EngineContext) -> Result<(), TridentError> {
-    let sysexts_hashmap: std::collections::HashMap<String, trident_api::status::SysextInfo> = ctx
+pub fn validate_sysexts(datastore: &mut DataStore) -> Result<(), TridentError> {
+    let sysexts_name_list: Vec<(_, _)> = datastore
+        .host_status()
         .sysexts
         .clone()
         .into_iter()
-        .map(|sysext| (sysext.id.clone(), sysext))
+        .map(|sysext| (sysext.name.clone(), sysext.location.clone()))
         .collect();
+    if sysexts_name_list.is_empty() {
+        return Ok(());
+    }
 
     let output = std::process::Command::new("systemd-sysext")
         .arg("status")
@@ -542,18 +545,133 @@ pub fn validate_sysexts(ctx: &EngineContext) -> Result<(), TridentError> {
         .arg("pretty")
         .output_and_check()
         .structured(InternalError::Internal("Failed to run systemd-sysext"))?;
+    debug!("Output is: {output}");
     let structured_output: Vec<SysextStatus> = serde_json::from_str(&output)
         .structured(InternalError::Internal("Failed to deserialize json"))?;
-    for status in structured_output {}
+    let mut status_exts = Vec::new();
+    for status in &structured_output {
+        if let ExtensionsField::List(extvec) = &status.extensions {
+            status_exts.extend(extvec.iter().cloned())
+        }
+    }
+    debug!("Found the following extensions from systemd-sysext status: {status_exts:?}");
+
+    if let Some(valid) = sysexts_name_list
+        .into_iter()
+        .map(|(sysext_name, _)| {
+            if status_exts.contains(&sysext_name) {
+                0
+            } else {
+                1
+            }
+        })
+        .reduce(|acc, e| acc + e)
+    {
+        if valid == 0 {
+            debug!("All of the sysexts are valid, returning OK");
+            debug!("Removing directory /var/lib/trident/extensions-old");
+            std::fs::remove_dir_all("/var/lib/trident/extensions-old").structured(
+                InternalError::Internal("Failed to remove dir /var/lib/trident/extensions-old"),
+            )?;
+            return Ok(());
+        }
+    }
+
+    // If we got this far, need to roll back. Find the sysexts that need to be removed from
+    // /var/lib/trident/extensions and find the sysexts that need to be added back
+    debug!("Preparing to roll back to previous state");
+    debug!("sysexts_old is: {:?}", datastore.host_status().sysexts_old);
+    debug!("sysexts is: {:?}", datastore.host_status().sysexts);
+    let prev_sysext_state = &datastore.host_status().sysexts_old;
+    let current_sysext_state = &datastore.host_status().sysexts;
+
+    let mut sysexts_to_add_back = Vec::new();
+    for sysext in prev_sysext_state {
+        if !status_exts.contains(&sysext.name) {
+            sysexts_to_add_back.push(sysext);
+        }
+    }
+    debug!("The sysexts that should be added back are: {sysexts_to_add_back:?}");
+    let mut sysexts_to_remove = Vec::new();
+    for sysext in current_sysext_state {
+        debug!("Evaluating if {sysext:?} should be removed");
+        if prev_sysext_state
+            .iter()
+            .filter(|x| *x.id == *sysext.id && x.name == sysext.name && x.version == sysext.version)
+            .collect::<Vec<_>>()
+            .is_empty()
+        {
+            sysexts_to_remove.push(sysext);
+        }
+    }
+    debug!("The sysexts that should be removed are: {sysexts_to_remove:?}");
+
+    for sysext in &sysexts_to_add_back {
+        std::fs::rename(
+            sysext.location.clone(),
+            std::path::Path::new("/var/lib/trident/extensions")
+                .join(format!("{}.raw", sysext.name)),
+        )
+        .structured(InternalError::Internal("Failed to move file"))?;
+    }
+
+    for sysext in &datastore.host_status().sysexts {
+        if sysexts_to_remove.contains(&sysext) {
+            debug!("Removing file {:?}", sysext.location);
+            std::fs::remove_file(sysext.location.clone())
+                .structured(InternalError::Internal("Failed to remove file"))?;
+        }
+    }
+
+    debug!("Now running systemd-sysext refresh");
+    std::process::Command::new("systemd-sysext")
+        .arg("refresh")
+        .run_and_check()
+        .structured(InternalError::Internal(
+            "Failed to run systemd-sysext refresh",
+        ))?;
+
+    // update datastore
+    if datastore.host_status().servicing_state == ServicingState::CleanInstallStaged
+        || datastore.host_status().servicing_state == ServicingState::CleanInstallFinalized
+    {
+        debug!("Updating the host status");
+        // If Trident was executing a clean install, need to re-set the Host Status.
+        datastore.with_host_status(|host_status| {
+            host_status.sysexts = Default::default();
+            host_status.sysexts_old = Default::default();
+        })?;
+
+        return Err(TridentError::new(InternalError::Internal(
+            "Failed to install sysexts successfully. Removing all sysexts.",
+        )));
+    } else if datastore.host_status().servicing_state == ServicingState::AbUpdateStaged
+        || datastore.host_status().servicing_state == ServicingState::AbUpdateFinalized
+    {
+        // If Trident was executing a clean install, need to re-set the Host Status.
+        datastore.with_host_status(|host_status| {
+            host_status.sysexts = host_status.sysexts_old.clone();
+            host_status.sysexts_old = Default::default();
+        })?;
+
+        return Err(TridentError::new(InternalError::Internal(
+            "Failed to install sysexts successfully. Removing all sysexts.",
+        )));
+    }
 
     Ok(())
 }
 
 #[derive(serde::Deserialize)]
 struct SysextStatus {
-    hierarchy: String,
-    extensions: Vec<String>,
-    since: Option<u64>,
+    extensions: ExtensionsField,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(untagged)]
+enum ExtensionsField {
+    List(Vec<String>),
+    None(String),
 }
 
 #[cfg(test)]

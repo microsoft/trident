@@ -619,6 +619,12 @@ impl Trident {
                         .unwrap_or("Failed to serialize Storage Configuration".into()));
             }
 
+            let mut host_config_without_sysext = host_config.clone();
+            host_config_without_sysext.sysexts = None;
+            if host_config_without_sysext == HostConfiguration::default() {
+                return engine::update_sysexts_only(&host_config, datastore)
+            }
+
             host_config
                 .validate()
                 .map_err(Into::into)
@@ -688,6 +694,10 @@ impl Trident {
             rollback::validate_boot(datastore).message(
                 "Failed to validate that firmware correctly booted from updated runtime OS image",
             )
+        });
+
+        let _rollback_result_2 = self.execute_and_record_error(datastore, |datastore| {
+            rollback::validate_sysexts(datastore).message("Failed to validate sysexts")
         });
 
         harpoon_hc::on_harpoon_enabled_event(
