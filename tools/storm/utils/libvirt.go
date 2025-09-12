@@ -52,7 +52,7 @@ func InitializeVm(vmUuid uuid.UUID) (*LibvirtVm, error) {
 	return &LibvirtVm{l, domain}, nil
 }
 
-func (vm *LibvirtVm) SetFirmwareVars(boot_url string, secure_boot bool, verity_cert_path string) error {
+func (vm *LibvirtVm) SetFirmwareVars(boot_url string, secure_boot bool, key_location string) error {
 	// Get the domain XML
 	domainXml, err := vm.libvirt.DomainGetXMLDesc(vm.domain, libvirt.DomainXMLUpdateCPU)
 	if err != nil {
@@ -98,11 +98,11 @@ func (vm *LibvirtVm) SetFirmwareVars(boot_url string, secure_boot bool, verity_c
 	}
 
 	// Enroll the verity vertificate if path is provided
-	if verity_cert_path != "" {
+	if key_location != "" {
 		db_guid := "8BE4DF61-93CA-11d2-AA0D00E098032B8C"
-		args = append(args, "--enroll-cert", verity_cert_path)
-		args = append(args, "--add-db", db_guid, verity_cert_path)
-		logrus.Infof("Enrolling verity certificate from %s", verity_cert_path)
+		args = append(args, "--enroll-cert", key_location)
+		args = append(args, "--add-db", db_guid, key_location)
+		logrus.Infof("Enrolling key from %s", key_location)
 	}
 
 	cmd := exec.Command("virt-fw-vars", args...)
