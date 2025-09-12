@@ -280,7 +280,7 @@ var rootCmd = &cobra.Command{
 		iso_location := fmt.Sprintf("http://%s/provision.iso", announceAddress)
 
 		if config.Netlaunch.LocalVmUuid != nil {
-			startLocalVm(*config.Netlaunch.LocalVmUuid, iso_location)
+			startLocalVm(*config.Netlaunch.LocalVmUuid, iso_location, *config.Netlaunch.KeyLocation)
 		} else {
 			if config.Netlaunch.Bmc != nil && config.Netlaunch.Bmc.SerialOverSsh != nil {
 				serial, err := config.Netlaunch.Bmc.ListenForSerialOutput()
@@ -352,7 +352,7 @@ var rootCmd = &cobra.Command{
 	},
 }
 
-func startLocalVm(localVmUuidStr string, isoLocation string) {
+func startLocalVm(localVmUuidStr string, isoLocation string, keyLocation string) {
 	log.Info("Using local VM")
 
 	// TODO: Parse the UUID directly when reading the config file
@@ -367,7 +367,7 @@ func startLocalVm(localVmUuidStr string, isoLocation string) {
 	}
 	defer vm.Disconnect()
 
-	if err = vm.SetFirmwareVars(isoLocation, false); err != nil {
+	if err = vm.SetFirmwareVars(isoLocation, false, "/home/ayaegashi/trident/trident-mos/files/verity_cert.crt"); err != nil {
 		log.WithError(err).Fatalf("failed to set UEFI variables")
 	}
 

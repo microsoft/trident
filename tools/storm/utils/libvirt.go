@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 
 	libvirtxml "libvirt.org/libvirt-go-xml"
 
@@ -51,7 +52,7 @@ func InitializeVm(vmUuid uuid.UUID) (*LibvirtVm, error) {
 	return &LibvirtVm{l, domain}, nil
 }
 
-func (vm *LibvirtVm) SetFirmwareVars(boot_url string, secure_boot bool) error {
+func (vm *LibvirtVm) SetFirmwareVars(boot_url string, secure_boot bool, verity_cert_path string) error {
 	// Get the domain XML
 	domainXml, err := vm.libvirt.DomainGetXMLDesc(vm.domain, libvirt.DomainXMLUpdateCPU)
 	if err != nil {
@@ -85,18 +86,39 @@ func (vm *LibvirtVm) SetFirmwareVars(boot_url string, secure_boot bool) error {
 		}
 	}
 
-	args := []string{"--inplace", nvram.NVRam, "--set-boot-uri", boot_url}
+	nvramPath := nvram.NVRam
+	baseName := filepath.Base(nvramPath)
+	tempNvramPath := filepath.Join(os.TempDir(), baseName)
+
+	args := []string{"--input", nvramPath, "--output", tempNvramPath, "--set-boot-uri", boot_url}
 	if secure_boot {
 		args = append(args, "--set-true", "SecureBootEnable")
 	} else {
 		args = append(args, "--set-false", "SecureBootEnable")
 	}
 
+	// Enroll the verity vertificate if path is provided
+	if verity_cert_path != "" {
+		db_guid := "8BE4DF61-93CA-11d2-AA0D00E098032B8C"
+		args = append(args, "--enroll-cert", verity_cert_path)
+		args = append(args, "--add-db", db_guid, verity_cert_path)
+		logrus.Infof("Enrolling verity certificate from %s", verity_cert_path)
+	}
+
+	logrus.Infof("Running: \n virt-fw-vars %s", args)
+
 	cmd := exec.Command("virt-fw-vars", args...)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		logrus.Debugf("virt-fw-vars output:\n%s\n", output)
 		return fmt.Errorf("failed to set boot URI: %w", err)
 	}
+
+	moveCmd := exec.Command("sudo", "mv", tempNvramPath, nvramPath)
+	if output, err := moveCmd.CombinedOutput(); err != nil {
+		logrus.Debugf("sudo mv output:\n%s\n", output)
+		return fmt.Errorf("failed to move new nvram file into place: %w", err)
+	}
+
 	logrus.Infof("Set boot URI to %s and set SecureBoot to %t", boot_url, secure_boot)
 
 	return nil

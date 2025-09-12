@@ -8,6 +8,7 @@ type NetLaunchConfig struct {
 		AnnouncePort *uint16
 		Bmc          *bmc.Bmc
 		LocalVmUuid  *string
+		KeyLocation  *string
 	}
 	Iso struct {
 		PreTridentScript *string
