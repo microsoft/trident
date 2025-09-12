@@ -14,6 +14,8 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+const EFI_GLOBAL_VARIABLE_GUID = "8BE4DF61-93CA-11d2-AA0D00E098032B8C"
+
 type LibvirtVm struct {
 	libvirt *libvirt.Libvirt
 	domain  libvirt.Domain
@@ -99,9 +101,8 @@ func (vm *LibvirtVm) SetFirmwareVars(boot_url string, secure_boot bool, key_loca
 
 	// Enroll the key if a path is provided
 	if key_location != "" {
-		db_guid := "8BE4DF61-93CA-11d2-AA0D00E098032B8C"
 		args = append(args, "--enroll-cert", key_location)
-		args = append(args, "--add-db", db_guid, key_location)
+		args = append(args, "--add-db", EFI_GLOBAL_VARIABLE_GUID, key_location)
 		logrus.Infof("Enrolling key from %s", key_location)
 	}
 
