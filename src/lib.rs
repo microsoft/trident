@@ -12,7 +12,8 @@ use osutils::{block_devices, container, dependencies::Dependency};
 use trident_api::{
     config::{GrpcConfiguration, HostConfiguration, HostConfigurationSource, Operations},
     constants::internal_params::{
-        ORCHESTRATOR_CONNECTION_TIMEOUT_SECONDS, WAIT_FOR_SYSTEMD_NETWORKD,
+        COSI_HTTP_CONNECTION_TIMEOUT, ORCHESTRATOR_CONNECTION_TIMEOUT_SECONDS,
+        WAIT_FOR_SYSTEMD_NETWORKD,
     },
     error::{
         ExecutionEnvironmentMisconfigurationError, InitializationError, InternalError,
@@ -397,6 +398,17 @@ impl Trident {
         }
     }
 
+    fn get_cosi_image(host_config: &mut HostConfiguration) -> Result<OsImage, TridentError> {
+        let cosi_timeout_in_seconds = match host_config
+            .internal_params
+            .get_u64(COSI_HTTP_CONNECTION_TIMEOUT)
+        {
+            Some(Ok(timeout)) => timeout,
+            _ => 10, // Default timeout
+        };
+        OsImage::load(&mut host_config.image, cosi_timeout_in_seconds)
+    }
+
     /// Rebuilds RAID devices on replaced disks on the host
     pub fn rebuild_raid(&mut self, datastore: &mut DataStore) -> Result<(), TridentError> {
         info!("Rebuilding RAID devices");
@@ -514,7 +526,7 @@ impl Trident {
                 }
             }
 
-            let image = OsImage::load(&mut host_config.image)?;
+            let image = Self::get_cosi_image(&mut host_config)?;
 
             if datastore.host_status().spec != host_config {
                 debug!("Host Configuration has been updated");
@@ -622,7 +634,7 @@ impl Trident {
                 .map_err(Into::into)
                 .message("Invalid Host Configuration provided")?;
 
-            let image = OsImage::load(&mut host_config.image)?;
+            let image = Self::get_cosi_image(&mut host_config)?;
 
             // If HS.spec in the datastore is different from the new HC, need to both stage and
             // finalize the update, regardless of state

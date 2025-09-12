@@ -50,7 +50,7 @@ pub(super) enum CosiReader {
 
 impl CosiReader {
     /// Creates a new COSI file reader from the given source URL.
-    pub(super) fn new(source: &Url) -> Result<Self, Error> {
+    pub(super) fn new(source: &Url, timeout_in_seconds: u64) -> Result<Self, Error> {
         Ok(match source.scheme() {
             "file" => {
                 // Load COSI from local file
@@ -69,12 +69,12 @@ impl CosiReader {
             "http" | "https" => {
                 // Load COSI from remote URL
                 debug!("Loading COSI file from URL: '{}'", source);
-                Self::Http(HttpFile::new(source)?)
+                Self::Http(HttpFile::new(source, timeout_in_seconds)?)
             }
             "oci" => {
                 // Load COSI from container registry
                 debug!("Loading COSI file from URL: '{}'", source);
-                Self::Http(HttpFile::new_from_oci(source)?)
+                Self::Http(HttpFile::new_from_oci(source, timeout_in_seconds)?)
             }
             _ => {
                 bail!("Unsupported URL scheme: {}", source.scheme());
@@ -137,12 +137,12 @@ pub struct HttpFile {
 
 impl HttpFile {
     /// Creates a new HTTP file reader from a standard HTTP URL.
-    pub fn new(url: &Url) -> IoResult<Self> {
-        Self::new_inner(url, None, false)
+    pub fn new(url: &Url, timeout_in_seconds: u64) -> IoResult<Self> {
+        Self::new_inner(url, None, false, timeout_in_seconds)
     }
 
     /// Creates a new HTTP file reader from an OCI URL.
-    pub fn new_from_oci(url: &Url) -> Result<Self, Error> {
+    pub fn new_from_oci(url: &Url, timeout_in_seconds: u64) -> Result<Self, Error> {
         let img_ref =
             Reference::try_from(url.to_string().strip_prefix("oci://").with_context(|| {
                 format!("URL has incorrect scheme: expected to start with 'oci://', got '{url}'")
@@ -162,16 +162,17 @@ impl HttpFile {
             "https://{registry}/v2/{repository}/blobs/{digest}"
         ))?;
 
-        Self::new_inner(&http_url, Some(token), true).context("Failed to create HTTP file reader")
+        Self::new_inner(&http_url, Some(token), true, timeout_in_seconds)
+            .context("Failed to create HTTP file reader")
     }
 
     fn new_inner(
         url: &Url,
         token: Option<String>,
         ignore_ranges_header_absence: bool,
+        timeout_in_seconds: u64,
     ) -> IoResult<Self> {
         debug!("Opening HTTP file '{}'", url);
-        let timeout_in_seconds = 10;
 
         // Create a new client for this file.
         let client = Client::new();
@@ -693,7 +694,7 @@ mod tests {
         file.flush().expect("Failed to flush file");
 
         let url = Url::from_file_path(file.path()).expect("Failed to create file:// URL");
-        let reader_factory = CosiReader::new(&url).unwrap();
+        let reader_factory = CosiReader::new(&url, 5).unwrap();
 
         // Check full file reader
         let mut reader = reader_factory.reader().expect("Failed to create reader");
@@ -812,7 +813,7 @@ mod tests {
         let file_url = Url::parse(&server.url()).unwrap().join(file_name).unwrap();
 
         // Create a new HTTP Cosi reader.
-        let cosi_reader = CosiReader::new(&file_url).unwrap();
+        let cosi_reader = CosiReader::new(&file_url, 5).unwrap();
 
         // Get a reference to the inner HTTP file reader
         let CosiReader::Http(ref http_file) = cosi_reader else {
