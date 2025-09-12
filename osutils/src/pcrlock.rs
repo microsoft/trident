@@ -211,7 +211,7 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
     for (index, entry) in unrecognized.into_iter().enumerate() {
         // Only handle entries with a known digest (sha256) and missing component
         if let Some(sha256) = entry.sha256.as_ref() {
-            let subdir = "670-manual";
+            let subdir = "670-manual.pcrlock.d";
             let pcrlock_file = generate_pcrlock_output_path(subdir, index);
             debug!(
                 "Manually generating .pcrlock file for PCR {}, digest '{}' at '{}'",
