@@ -19,10 +19,10 @@ const (
 	DOCKER_IMAGE_PATH = "/var/lib/trident/trident-container.tar.gz"
 )
 
-func BuildTridentContainerCommand(env string) string {
+func BuildTridentContainerCommand(envVars []string) string {
 	cmd := DOCKER_COMMAND_BASE
-	if env != "" {
-		cmd += fmt.Sprintf("--env %s ", env)
+	if len(envVars) != 0 {
+		cmd += fmt.Sprintf("--env %s ", strings.Join(envVars, " "))
 	}
 	cmd += TRIDENT_CONTAINER
 	return cmd
@@ -38,7 +38,7 @@ func BuildTridentContainerCommand(env string) string {
 // - The SSH session cannot be created
 // - There was an error starting the command.
 // - Some IO error occurred while reading stdout or stderr.
-func InvokeTrident(env TridentEnvironment, client *ssh.Client, envVars string, arguments string) (*SshCmdOutput, error) {
+func InvokeTrident(env TridentEnvironment, client *ssh.Client, envVars []string, arguments string) (*SshCmdOutput, error) {
 	var cmd string
 	switch env {
 	case TridentEnvironmentHost:
@@ -52,16 +52,15 @@ func InvokeTrident(env TridentEnvironment, client *ssh.Client, envVars string, a
 	}
 
 	var cmdPrefix string
-	if envVars != "" {
-		vars := strings.Split(envVars, " ")
+	if len(envVars) != 0 {
 		var envKeys []string
-		for _, v := range vars {
+		for _, v := range envVars {
 			if key := strings.Split(v, "=")[0]; key != "" {
 				envKeys = append(envKeys, key)
 			}
 		}
 		preservedEnvs := strings.Join(envKeys, ",")
-		cmdPrefix = fmt.Sprintf("%s sudo --preserve-env=%s", envVars, preservedEnvs)
+		cmdPrefix = fmt.Sprintf("%s sudo --preserve-env=%s", strings.Join(envVars, " "), preservedEnvs)
 	} else {
 		cmdPrefix = "sudo"
 	}

@@ -21,11 +21,11 @@ type AbUpdateHelper struct {
 	args struct {
 		utils.SshCliSettings `embed:""`
 		utils.EnvCliSettings `embed:""`
-		TridentConfig        string `short:"c" required:"" help:"File name of the custom read-write Trident config on the host to point Trident to."`
-		Version              string `short:"v" required:"" help:"Version of the Trident image to use for the A/B update."`
-		StageAbUpdate        bool   `short:"s" help:"Controls whether A/B update should be staged."`
-		FinalizeAbUpdate     bool   `short:"f" help:"Controls whether A/B update should be finalized."`
-		EnvVars              string `short:"e" help:"Environment variables separated by spaces. Input should include the env var name, i.e. HTTPS_PROXY=http://0.0.0.0."`
+		TridentConfig        string   `short:"c" required:"" help:"File name of the custom read-write Trident config on the host to point Trident to."`
+		Version              string   `short:"v" required:"" help:"Version of the Trident image to use for the A/B update."`
+		StageAbUpdate        bool     `short:"s" help:"Controls whether A/B update should be staged."`
+		FinalizeAbUpdate     bool     `short:"f" help:"Controls whether A/B update should be finalized."`
+		EnvVars              []string `short:"e" help:"Environment variables, as a list of strings. Each var should include the env var name, i.e. HTTPS_PROXY=http://0.0.0.0."`
 	}
 
 	client *ssh.Client
