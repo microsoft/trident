@@ -13,6 +13,8 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+const EFI_GLOBAL_VARIABLE_GUID = "8BE4DF61-93CA-11d2-AA0D00E098032B8C"
+
 type LibvirtVm struct {
 	libvirt *libvirt.Libvirt
 	domain  libvirt.Domain
@@ -51,7 +53,7 @@ func InitializeVm(vmUuid uuid.UUID) (*LibvirtVm, error) {
 	return &LibvirtVm{l, domain}, nil
 }
 
-func (vm *LibvirtVm) SetFirmwareVars(boot_url string, secure_boot bool) error {
+func (vm *LibvirtVm) SetFirmwareVars(boot_url string, secure_boot bool, key_location string) error {
 	// Get the domain XML
 	domainXml, err := vm.libvirt.DomainGetXMLDesc(vm.domain, libvirt.DomainXMLUpdateCPU)
 	if err != nil {
@@ -90,6 +92,13 @@ func (vm *LibvirtVm) SetFirmwareVars(boot_url string, secure_boot bool) error {
 		args = append(args, "--set-true", "SecureBootEnable")
 	} else {
 		args = append(args, "--set-false", "SecureBootEnable")
+	}
+
+	// Enroll the key if a path is provided
+	if key_location != "" {
+		args = append(args, "--enroll-cert", key_location)
+		args = append(args, "--add-db", EFI_GLOBAL_VARIABLE_GUID, key_location)
+		logrus.Infof("Enrolling key from %s", key_location)
 	}
 
 	cmd := exec.Command("virt-fw-vars", args...)
