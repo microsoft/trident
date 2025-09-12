@@ -126,7 +126,7 @@ impl NewrootMount {
                         dir: mount.to_string_lossy().into(),
                     });
                 } else {
-                    thread::sleep(Duration::from_secs(1));
+                    thread::sleep(Duration::from_millis(100));
                 }
             }
             trace!("Unmounted '{}' successfully", mount.display());
