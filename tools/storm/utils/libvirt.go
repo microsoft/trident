@@ -105,8 +105,6 @@ func (vm *LibvirtVm) SetFirmwareVars(boot_url string, secure_boot bool, verity_c
 		logrus.Infof("Enrolling verity certificate from %s", verity_cert_path)
 	}
 
-	logrus.Infof("Running: \n virt-fw-vars %s", args)
-
 	cmd := exec.Command("virt-fw-vars", args...)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		logrus.Debugf("virt-fw-vars output:\n%s\n", output)
@@ -116,7 +114,7 @@ func (vm *LibvirtVm) SetFirmwareVars(boot_url string, secure_boot bool, verity_c
 	moveCmd := exec.Command("sudo", "mv", tempNvramPath, nvramPath)
 	if output, err := moveCmd.CombinedOutput(); err != nil {
 		logrus.Debugf("sudo mv output:\n%s\n", output)
-		return fmt.Errorf("failed to move new nvram file into place: %w", err)
+		return fmt.Errorf("failed to move temporary nvram file %s: %w", nvramPath, err)
 	}
 
 	logrus.Infof("Set boot URI to %s and set SecureBoot to %t", boot_url, secure_boot)
