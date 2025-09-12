@@ -367,7 +367,7 @@ func startLocalVm(localVmUuidStr string, isoLocation string, keyLocation string)
 	}
 	defer vm.Disconnect()
 
-	if err = vm.SetFirmwareVars(isoLocation, false, "/home/ayaegashi/trident/trident-mos/files/verity_cert.crt"); err != nil {
+	if err = vm.SetFirmwareVars(isoLocation, false, keyLocation); err != nil {
 		log.WithError(err).Fatalf("failed to set UEFI variables")
 	}
 
