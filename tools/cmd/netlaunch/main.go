@@ -373,7 +373,8 @@ func startLocalVm(localVmUuidStr string, isoLocation string, keyLocation string)
 	}
 	defer vm.Disconnect()
 
-	if err = vm.SetFirmwareVars(isoLocation, false, keyLocation); err != nil {
+	// Set SecureBoot to true
+	if err = vm.SetFirmwareVars(isoLocation, true, keyLocation); err != nil {
 		log.WithError(err).Fatalf("failed to set UEFI variables")
 	}
 
