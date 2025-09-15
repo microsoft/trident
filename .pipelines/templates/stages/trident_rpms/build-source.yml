@@ -96,7 +96,7 @@ stages:
         displayName: Build Trident 3.0 ${{ parameters.targetArchitecture }} RPMs
         pool:
           type: linux
-          name: mariner-hci-ARM64-1es-pool-westcentralus
+          name: azl3-hci-ARM64-1es-pool-westcentralus
           hostArchitecture: arm64
 
         variables:
