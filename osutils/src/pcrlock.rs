@@ -425,6 +425,10 @@ enum LockCommand {
     /// Generates .pcrlock files covering all records for PCRs 0 ("platform-code") and 2
     /// ("external-code"). Allows locking the boot process to the current version of the firmware
     /// of the system and its extension cards.
+    ///
+    /// Upon investigation, also generates .pcrlock files for some measurements made by firmware
+    /// into PCR 4 ("boot-loader-code"). E.g. on Dell BMs, firmware might measure Dell FW utility
+    /// files into PCR 4, and these entries can be recognized by running `lock-firmware-code`.
     FirmwareCode,
 
     /// Locks down the firmware configuration, i.e. PCRs 1 ("platform-config") and 3
