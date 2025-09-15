@@ -7,7 +7,7 @@ use std::{
 use anyhow::{bail, Context, Error, Result};
 use enumflags2::BitFlags;
 use log::{debug, error, trace, warn};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use tempfile::NamedTempFile;
 
 use sysdefs::tpm2::Pcr;
@@ -113,7 +113,6 @@ fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         }
     }
 
-    // TODO: IS THIS ACTUALLY HELPFUL?
     // Run predict command to view predictions, to then compare to the generated pcrlock policy
     predict().context("Failed to run 'systemd-pcrlock predict' command")?;
 
@@ -206,33 +205,7 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         return Ok(());
     }
 
-    // If any entries not recognized, then extract the hash from the log, and manually generate a
-    // .pcrlock file to have it recognized
-    for (index, entry) in unrecognized.into_iter().enumerate() {
-        // Only handle entries with a known digest (sha256) and missing component
-        if let Some(sha256) = entry.sha256.as_ref() {
-            let subdir = "670-manual.pcrlock.d";
-            let pcrlock_file = generate_pcrlock_output_path(subdir, index);
-            debug!(
-                "Manually generating .pcrlock file for PCR {}, digest '{}' at '{}'",
-                entry.pcr.to_num(),
-                sha256.as_str(),
-                pcrlock_file.display()
-            );
-            generate_pcrlock_file(pcrlock_file, entry.pcr, sha256.as_str().to_string())?;
-        }
-    }
-
-    // Re-parse the log and check again
-    let parsed_log = log_parsed().context("Failed to get 'systemd-pcrlock log' output")?;
-    let unrecognized = unrecognized_log_entries(parsed_log.clone(), required_pcrs)
-        .context("Failed to get unrecognized log entries")?;
-    if unrecognized.is_empty() {
-        debug!("All entries for required PCRs now have recognized .pcrlock components");
-        return Ok(());
-    }
-
-    // If any entries still not recognized, issue an error
+    // If any entries are unrecognized, print them out and return an error
     let entries: Vec<String> = unrecognized
         .into_iter()
         .map(|entry| {
@@ -252,78 +225,6 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         cannot be matched to recognized components. Consider dropping these PCRs from the list:\n{}",
         entries.join("\n")
     );
-}
-
-/// Represents a single digest entry in a .pcrlock file.
-#[derive(Serialize)]
-struct DigestEntry<'a> {
-    #[serde(rename = "hashAlg")] // Rename to match the .pcrlock file format
-    hash_alg: &'a str,
-    digest: String,
-}
-
-/// Represents a single record in a .pcrlock file.
-#[derive(Serialize)]
-struct Record<'a> {
-    pcr: u32,
-    digests: Vec<DigestEntry<'a>>,
-}
-
-/// Represents a .pcrlock file.
-#[derive(Serialize)]
-struct PcrLock<'a> {
-    records: Vec<Record<'a>>,
-}
-
-/// Generates a single .pcrlock file at the given path, to capture one sha256 digest into a PCR.
-fn generate_pcrlock_file(pcrlock_file: PathBuf, pcr: Pcr, digest: String) -> Result<()> {
-    debug!(
-        "Writing .pcrlock file at '{}' for PCR '{}' with SHA256 digest '{}'",
-        pcrlock_file.display(),
-        pcr.to_num(),
-        digest
-    );
-
-    // Build the digest entry
-    let digests = vec![DigestEntry {
-        hash_alg: "sha256",
-        digest,
-    }];
-
-    // Create the PcrLock structure with a single record
-    let pcrlock = PcrLock {
-        records: vec![Record {
-            pcr: pcr.to_num(),
-            digests,
-        }],
-    };
-
-    // Ensure the target directory exists
-    if let Some(parent) = pcrlock_file.parent() {
-        fs::create_dir_all(parent)
-            .context(format!("Failed to create directory '{}'", parent.display()))?;
-    }
-
-    // Serialize to JSON
-    let json = serde_json::to_string(&pcrlock).context(format!(
-        "Failed to serialize .pcrlock file '{}' to JSON",
-        pcrlock_file.display()
-    ))?;
-
-    // Save to disk
-    fs::write(&pcrlock_file, json.clone()).context(format!(
-        "Failed to write .pcrlock file to '{}'",
-        pcrlock_file.display()
-    ))?;
-
-    // Print contents of .pcrlock file
-    trace!(
-        "Contents of .pcrlock file at '{}':\n{}",
-        pcrlock_file.display(),
-        json
-    );
-
-    Ok(())
 }
 
 /// Represents a single log entry from the 'systemd-pcrlock log' output.
