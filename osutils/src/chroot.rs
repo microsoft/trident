@@ -112,7 +112,7 @@ impl Chroot {
                 } else if retry_count == 5 {
                     return ret.structured(ServicingError::ChrootUnmountSpecialDir);
                 } else {
-                    thread::sleep(Duration::from_secs(1));
+                    thread::sleep(Duration::from_millis(100));
                 }
             }
         }
