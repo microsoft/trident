@@ -78,8 +78,7 @@ func (vm *LibvirtVm) SetFirmwareVars(boot_url string, secure_boot bool, key_loca
 	// Check if a file exists at the NVRAM path
 	if _, err := os.Stat(nvram.NVRam); err == nil {
 		// If so, delete the file so it can be re-created.
-		if err := exec.Command("sudo", "rm", nvram.NVRam).Run(); err != nil {
-			return fmt.Errorf("failed to remove existing NVRAM file ' %s': %w", nvram.NVRam, err)
+		if err := os.Remove(nvram.NVRam); err != nil {
 		}
 	}
 	// Start the VM in a paused state and then immediately stop it.
@@ -91,21 +90,21 @@ func (vm *LibvirtVm) SetFirmwareVars(boot_url string, secure_boot bool, key_loca
 		return fmt.Errorf("failed to destroy domain '%s': %w", vm.domain.Name, err)
 	}
 
-	virtFwVarsArgs := []string{"virt-fw-vars", "--inplace", nvram.NVRam, "--set-boot-uri", boot_url}
+	args := []string{"--inplace", nvram.NVRam, "--set-boot-uri", boot_url}
 	if secure_boot {
-		virtFwVarsArgs = append(virtFwVarsArgs, "--set-true", "SecureBootEnable")
+		args = append(args, "--set-true", "SecureBootEnable")
 	} else {
-		virtFwVarsArgs = append(virtFwVarsArgs, "--set-false", "SecureBootEnable")
+		args = append(args, "--set-false", "SecureBootEnable")
 	}
 
 	// Enroll the key if a path is provided
 	if key_location != "" {
-		virtFwVarsArgs = append(virtFwVarsArgs, "--enroll-cert", key_location)
-		virtFwVarsArgs = append(virtFwVarsArgs, "--add-db", EFI_GLOBAL_VARIABLE_GUID, key_location)
+		args = append(args, "--enroll-cert", key_location)
+		args = append(args, "--add-db", EFI_GLOBAL_VARIABLE_GUID, key_location)
 		logrus.Infof("Enrolling key from %s", key_location)
 	}
 
-	cmd := exec.Command("sudo", virtFwVarsArgs...)
+	cmd := exec.Command("virt-fw-vars", args...)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		logrus.Debugf("virt-fw-vars output:\n%s\n", output)
 		return fmt.Errorf("failed to set boot URI: %w", err)
