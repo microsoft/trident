@@ -206,8 +206,8 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         return Ok(());
     }
 
-    // TODO: If any entries not recognized, then extract the hash from the log, and manually
-    // generate a .pcrlock file to have it recognized
+    // If any entries not recognized, then extract the hash from the log, and manually generate a
+    // .pcrlock file to have it recognized
     for (index, entry) in unrecognized.into_iter().enumerate() {
         // Only handle entries with a known digest (sha256) and missing component
         if let Some(sha256) = entry.sha256.as_ref() {
@@ -227,6 +227,10 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
     let parsed_log = log_parsed().context("Failed to get 'systemd-pcrlock log' output")?;
     let unrecognized = unrecognized_log_entries(parsed_log.clone(), required_pcrs)
         .context("Failed to get unrecognized log entries")?;
+    if unrecognized.is_empty() {
+        debug!("All entries for required PCRs now have recognized .pcrlock components");
+        return Ok(());
+    }
 
     // If any entries still not recognized, issue an error
     let entries: Vec<String> = unrecognized
