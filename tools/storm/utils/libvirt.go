@@ -79,7 +79,7 @@ func (vm *LibvirtVm) SetFirmwareVars(boot_url string, secure_boot bool, key_loca
 	if _, err := os.Stat(nvram.NVRam); err == nil {
 		// If so, delete the file so it can be re-created.
 		if err := exec.Command("sudo", "rm", nvram.NVRam).Run(); err != nil {
-			return fmt.Errorf("failed to remove existing nvram file ' %s': %w", nvram.NVRam, err)
+			return fmt.Errorf("failed to remove existing NVRAM file ' %s': %w", nvram.NVRam, err)
 		}
 	}
 	// Start the VM in a paused state and then immediately stop it.
