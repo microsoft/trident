@@ -113,6 +113,9 @@ fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         }
     }
 
+    // Run predict command to view predictions, to then compare to the generated pcrlock policy
+    predict().context("Failed to run 'systemd-pcrlock predict' command")?;
+
     make_policy(pcrs).context("Failed to run 'systemd-pcrlock make-policy' command")?;
 
     // Log pcrlock policy JSON contents
@@ -202,7 +205,7 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         return Ok(());
     }
 
-    // If any entries not recognized, issue an error
+    // If any entries are unrecognized, print them out and return an error
     let entries: Vec<String> = unrecognized
         .into_iter()
         .map(|entry| {
@@ -267,7 +270,7 @@ fn cel() -> Result<(), Error> {
 }
 
 /// Returns a list of entries from the 'systemd-pcrlock log' output that correspond to (1) PCRs
-/// required for the pcrlock policy and (2) have components that still are not recognized.
+/// required for the pcrlock policy and (2) have components that are not recognized.
 fn unrecognized_log_entries(
     parsed_log: LogOutput,
     required_pcrs: BitFlags<Pcr>,
@@ -357,6 +360,17 @@ fn make_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
     Ok(())
 }
 
+/// Runs the `systemd-pcrlock predict` command to show the prediction of the PCR state for the
+/// future boots. Analyzes the TPM 2.0 event log, recognizes components, and then generates all
+/// possible resulting PCR values for all combinations of component variants.
+fn predict() -> Result<(), Error> {
+    Dependency::SystemdPcrlock
+        .cmd()
+        .arg("predict")
+        .run_and_check()
+        .context("Failed to run 'systemd-pcrlock predict'")
+}
+
 /// Removes the previously generated pcrlock policy and deallocates the NV index.
 pub fn remove_policy() -> Result<(), Error> {
     // Remove the pcrlock policy
@@ -411,6 +425,10 @@ enum LockCommand {
     /// Generates .pcrlock files covering all records for PCRs 0 ("platform-code") and 2
     /// ("external-code"). Allows locking the boot process to the current version of the firmware
     /// of the system and its extension cards.
+    ///
+    /// Upon investigation, also generates .pcrlock files for some measurements made by firmware
+    /// into PCR 4 ("boot-loader-code"). E.g. on Dell BMs, firmware might measure Dell FW utility
+    /// files into PCR 4, and these entries can be recognized by running `lock-firmware-code`.
     FirmwareCode,
 
     /// Locks down the firmware configuration, i.e. PCRs 1 ("platform-config") and 3
@@ -530,7 +548,7 @@ fn generate_pcrlock_files(
 
     // Define PCR coverage for each command
     let basic_cmds: Vec<(LockCommand, BitFlags<Pcr>)> = vec![
-        (LockCommand::FirmwareCode, Pcr::Pcr0 | Pcr::Pcr2),
+        (LockCommand::FirmwareCode, Pcr::Pcr0 | Pcr::Pcr2 | Pcr::Pcr4),
         (LockCommand::FirmwareConfig, Pcr::Pcr1 | Pcr::Pcr3),
         (LockCommand::SecureBootPolicy, Pcr::Pcr7.into()),
         (LockCommand::SecureBootAuthority, Pcr::Pcr7.into()),
