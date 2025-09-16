@@ -80,26 +80,33 @@ func (vm *LibvirtVm) SetFirmwareVars(boot_url string, secure_boot bool, key_loca
 		return fmt.Errorf("failed to remove existing NVRAM file: %w", err)
 	}
 	// Create a new instance of the VM based on domainXml.
-	// This will cause libvirt to create a new NVRAM file.
 	if vm.domain, err = vm.libvirt.DomainDefineXML(domainXml); err != nil {
+		return fmt.Errorf("failed to define domain with XML '%s': %w", domainXml, err)
+	}
+	// Start the VM in a paused state and then immediately stop it.
+	// This will cause libvirt to create the NVRAM file.
+	if vm.domain, err = vm.libvirt.DomainCreateWithFlags(vm.domain, uint32(libvirt.DomainStartPaused)); err != nil {
 		return fmt.Errorf("failed to create domain '%s': %w", vm.domain.Name, err)
 	}
+	if err = vm.libvirt.DomainDestroy(vm.domain); err != nil {
+		return fmt.Errorf("failed to destroy domain '%s': %w", vm.domain.Name, err)
+	}
 
-	args := []string{"--inplace", nvram.NVRam, "--set-boot-uri", boot_url}
+	virtFwVarsArgs := []string{"virt-fw-vars", "--inplace", nvram.NVRam, "--set-boot-uri", boot_url}
 	if secure_boot {
-		args = append(args, "--set-true", "SecureBootEnable")
+		virtFwVarsArgs = append(virtFwVarsArgs, "--set-true", "SecureBootEnable")
 	} else {
-		args = append(args, "--set-false", "SecureBootEnable")
+		virtFwVarsArgs = append(virtFwVarsArgs, "--set-false", "SecureBootEnable")
 	}
 
 	// Enroll the key if a path is provided
 	if key_location != "" {
-		args = append(args, "--enroll-cert", key_location)
-		args = append(args, "--add-db", EFI_GLOBAL_VARIABLE_GUID, key_location)
+		virtFwVarsArgs = append(virtFwVarsArgs, "--enroll-cert", key_location)
+		virtFwVarsArgs = append(virtFwVarsArgs, "--add-db", EFI_GLOBAL_VARIABLE_GUID, key_location)
 		logrus.Infof("Enrolling key from %s", key_location)
 	}
 
-	cmd := exec.Command("virt-fw-vars", args...)
+	cmd := exec.Command("sudo", virtFwVarsArgs...)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		logrus.Debugf("virt-fw-vars output:\n%s\n", output)
 		return fmt.Errorf("failed to set boot URI: %w", err)
