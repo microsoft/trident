@@ -78,7 +78,7 @@ func (vm *LibvirtVm) SetFirmwareVars(boot_url string, secure_boot bool, key_loca
 	// Check if a file exists at the NVRAM path
 	if _, err := os.Stat(nvram.NVRam); err == nil {
 		// If so, delete the file so it can be re-created.
-		if err := os.Remove(nvram.NVRam); err != nil {
+		if err := exec.Command("sudo", "rm", nvram.NVRam).Run(); err != nil {
 			return fmt.Errorf("failed to remove existing NVRAM file ' %s': %w", nvram.NVRam, err)
 		}
 	}
