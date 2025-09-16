@@ -414,7 +414,7 @@ go.sum: go.mod
 .PHONY: go-tools
 go-tools: bin/netlaunch bin/netlisten bin/miniproxy
 
-bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum tools/pkg/*
+bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum tools/pkg/* tools/storm/utils/*
 	@mkdir -p bin
 	cd tools && go build -o ../bin/netlaunch ./cmd/netlaunch
 

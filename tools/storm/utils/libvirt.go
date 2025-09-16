@@ -76,15 +76,19 @@ func (vm *LibvirtVm) SetFirmwareVars(boot_url string, secure_boot bool, key_loca
 	}
 
 	// Check if a file exists at the NVRAM path
-	if _, err := os.Stat(nvram.NVRam); err != nil {
-		// If not, start the VM in a paused state and then immediately stop it.
-		// This will cause libvirt to create the NVRAM file.
-		if vm.domain, err = vm.libvirt.DomainCreateWithFlags(vm.domain, uint32(libvirt.DomainStartPaused)); err != nil {
-			return fmt.Errorf("failed to create domain '%s': %w", vm.domain.Name, err)
+	if _, err := os.Stat(nvram.NVRam); err == nil {
+		// If so, delete the file so it can be re-created.
+		if err := os.Remove(nvram.NVRam); err != nil {
+			return fmt.Errorf("failed to remove existing NVRAM file ' %s': %w", nvram.NVRam, err)
 		}
-		if err = vm.libvirt.DomainDestroy(vm.domain); err != nil {
-			return fmt.Errorf("failed to destroy domain '%s': %w", vm.domain.Name, err)
-		}
+	}
+	// Start the VM in a paused state and then immediately stop it.
+	// This will cause libvirt to create the NVRAM file.
+	if vm.domain, err = vm.libvirt.DomainCreateWithFlags(vm.domain, uint32(libvirt.DomainStartPaused)); err != nil {
+		return fmt.Errorf("failed to create domain '%s': %w", vm.domain.Name, err)
+	}
+	if err = vm.libvirt.DomainDestroy(vm.domain); err != nil {
+		return fmt.Errorf("failed to destroy domain '%s': %w", vm.domain.Name, err)
 	}
 
 	args := []string{"--inplace", nvram.NVRam, "--set-boot-uri", boot_url}
