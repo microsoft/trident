@@ -13,7 +13,7 @@ pub(super) fn block_device_description_table() -> RuleDefinition {
             block_device_kind
                 .get_variant_docs()
                 .unwrap_or("No description available")
-                .replace("\n\n", "<br>")
+                .replace("\n\n", "<br />")
                 .replace("\n", " "),
         ]);
     }

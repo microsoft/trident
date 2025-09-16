@@ -12,7 +12,7 @@ Per A/B update volume pair configuration. Points to the underlying block devices
 
 ## Properties
 
-### `id` **<span style="color:orange;">(required)</span>**
+### `id` **<span>(required)</span>**
 
 A unique identifier for the volume pair.
 
@@ -23,7 +23,7 @@ This is a user defined string that allows to link the volume pair to the results
 | Type           | `string`          |
 | Format         | `Block Device ID` |
 
-### `volumeAId` **<span style="color:orange;">(required)</span>**
+### `volumeAId` **<span>(required)</span>**
 
 The ID of the partition that will be used as the A volume.
 
@@ -32,7 +32,7 @@ The ID of the partition that will be used as the A volume.
 | Type           | `string`          |
 | Format         | `Block Device ID` |
 
-### `volumeBId` **<span style="color:orange;">(required)</span>**
+### `volumeBId` **<span>(required)</span>**
 
 The ID of the partition that will be used as the B volume.
 

@@ -1,4 +1,6 @@
 
+# Perform a Clean Install
+
 <!--
 DELETE ME AFTER COMPLETING THE DOCUMENT!
 ---

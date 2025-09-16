@@ -24,7 +24,7 @@ Lock the user's password. (equivalent to `passwd -l`)
 
 #### Properties
 
-##### `type` **<span style="color:orange;">(required)</span>**
+##### `type` **<span>(required)</span>**
 
 | Characteristic | Value    |
 | -------------- | -------- |

@@ -10,7 +10,7 @@ Configure encrypted volumes of underlying disk partitions or software RAID array
 
 ## Properties
 
-### `volumes` **<span style="color:orange;">(required)</span>**
+### `volumes` **<span>(required)</span>**
 
 The list of LUKS2-encrypted volumes to create.
 

@@ -478,7 +478,7 @@ impl SchemaNodeModel {
                     .map(|v| serde_yaml::to_string(v).map(|s| format!("`{}`", s.trim())))
                     .collect::<Result<Vec<_>, _>>()
                     .context("Could not serialize examples")?
-                    .join("<br>"),
+                    .join("<br />"),
             );
         }
 

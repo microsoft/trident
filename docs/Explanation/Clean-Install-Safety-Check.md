@@ -1,4 +1,6 @@
 
+# Clean Install Safety Check
+
 <!--
 DELETE ME AFTER COMPLETING THE DOCUMENT!
 ---

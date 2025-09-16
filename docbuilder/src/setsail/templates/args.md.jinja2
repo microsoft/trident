@@ -1,4 +1,4 @@
-#### <span style="color:#d96125;font-family:monospace;">{{ arg.show_name | escape }}</span>{% if arg.required %} (REQUIRED){% endif %}
+#### <span>{{ arg.show_name | escape }}</span>{% if arg.required %} (REQUIRED){% endif %}
 
 {% if arg.aliases -%}
 **Aka:{% for alias in arg.aliases %} `--{{alias}}`,{% endfor %}**

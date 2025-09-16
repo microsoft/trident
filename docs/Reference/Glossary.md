@@ -1,26 +1,13 @@
-- [A/B Update](#ab-update)
-- [A/B Volume Pair](#ab-volume-pair)
-- [Block Device](#block-device)
-- [Clean Install](#clean-install)
-- [Dualboot](#dualboot)
-- [Execroot](#execroot)
-- [Install](#install)
-- [Multiboot](#multiboot)
-- [Newroot](#newroot)
-- [Servicing](#servicing)
-- [Servicing Type](#servicing-type)
-- [Unformatted Partition](#unformatted-partition)
-- [Terms to Define](#terms-to-define)
+# Glossary
 
-
-# A/B Update
+## A/B Update
 
 A [servicing type](#servicing-type) where two copies of the OS are kept on the
 device in [A/B Volume Pairs](#ab-volume-pair), and only one is active at a
 time. When an update is performed, the inactive copy is updated, and then the
 device is rebooted into the updated copy.
 
-# A/B Volume Pair
+## A/B Volume Pair
 
 A pair of [block devices](#block-device) that are used for an [A/B
 update](#ab-update). One volume is the 'A' volume, and the other is the 'B'
@@ -36,7 +23,7 @@ mount point on the device. All pairs in an [install](#install) are updated in
 lockstep, meaning all pairs will have their A volume be the active one, or all
 pairs will have their B volume be the active one.
 
-# Block Device
+## Block Device
 
 Kernel abstraction generally used for non-volatile storage devices, such as hard
 drives, SSDs, and USB drives.
@@ -48,7 +35,7 @@ drives, SSDs, and USB drives.
 > ([Block Special
 > File](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_79))
 
-# Clean Install
+## Clean Install
 
 A [servicing type](#servicing-type) where a new [install](#install) is
 performed.
@@ -59,11 +46,11 @@ new install on the device.
 A clean install is what you do when you install an OS for the first time, or
 when you are replacing an existing OS with a new one.
 
-# Dualboot
+## Dualboot
 
 See [Multiboot](#multiboot).
 
-# Execroot
+## Execroot
 
 Execution root. The root file system of the environment where Trident was run.
 Generally the Management OS, the OS that is being updated, or a container
@@ -78,7 +65,7 @@ this, Trident will bind mount the current OS's file systems inside of newroot to
 provide a mechanism to escape the chroot jail for reading files in the execution
 root.
 
-# Install
+## Install
 
 A full deployment of a Azure Linux made with Trident.
 
@@ -88,37 +75,37 @@ associated partitions, and any other partitions that are part of the install.
 
 _Note: This definition does not consider other OSes or distros._
 
-# Multiboot
+## Multiboot
 
 The capability of having multiple [installs](#install) on the same device, even
 on the same disk.
 
-# Newroot
+## Newroot
 
 Root file system of the OS that is being deployed.
 
 When Trident is deploying a new OS, it will mount the new OS's file systems and
 prepare them for a chroot. This mount of the new OS is called `newroot`.
 
-# Servicing
+## Servicing
 
 The general process of performing an action on an [install](#install).
 There are several [types of servicing](#servicing-type).
 
-# Servicing Type
+## Servicing Type
 
 The specific kind of [Servicing](#servicing) that is being performed on an
 install, such as [clean install](#clean-install), or an [A/B
 update](#ab-update).
 
-# Unformatted Partition
+## Unformatted Partition
 
 An unformatted partition is a partition on a storage device that has been
 created but does not yet contain a filesystem. It is not associated with any
 filesystem, verity-filesystem, RAID array, or encryption volume.
 
 
-# Terms to Define
+## Terms to Define
 
 - Operation
 - Stage

@@ -1,3 +1,7 @@
+---
+sidebar_position: 1
+---
+
 <!--
 DELETE ME AFTER COMPLETING THE DOCUMENT!
 ---
@@ -104,6 +108,3 @@ These are features that exist outside of the normal servicing flows in Trident.
 | --------- | ------------ | ------ | ----------------------------------------------------------------- |
 | 💽 Storage | RAID Rebuild | ✅      | Rebuild a software RAID array after a physical drive replacement. |
 
-## Subpages
-
-[[_TOSP_]]

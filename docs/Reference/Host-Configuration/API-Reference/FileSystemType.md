@@ -33,7 +33,7 @@ File system types.
 
 ### NTFS file system
 
-Using NTFS on Linux comes with some limitations. For more information, see: [Limitations of NTFS](/docs/Explanation/Limitations-Of-NTFS.md)
+Using NTFS on Linux comes with some limitations. For more information, see: [Limitations of NTFS](../../../Explanation/Limitations-Of-NTFS.md)
 
 | Characteristic | Value    |
 | -------------- | -------- |

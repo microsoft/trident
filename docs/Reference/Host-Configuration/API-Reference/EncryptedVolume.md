@@ -10,7 +10,7 @@ A LUKS2-encrypted volume configuration.
 
 ## Properties
 
-### `deviceId` **<span style="color:orange;">(required)</span>**
+### `deviceId` **<span>(required)</span>**
 
 The id of the disk partition or software RAID array to encrypt.
 
@@ -25,7 +25,7 @@ If it refers to a software RAID array, the first disk partition of the software 
 | Type           | `string`          |
 | Format         | `Block Device ID` |
 
-### `deviceName` **<span style="color:orange;">(required)</span>**
+### `deviceName` **<span>(required)</span>**
 
 The name of the device to create under `/dev/mapper` when opening the volume.
 
@@ -35,7 +35,7 @@ This parameter is required. It must be a valid file name and unique among the li
 | -------------- | -------- |
 | Type           | `string` |
 
-### `id` **<span style="color:orange;">(required)</span>**
+### `id` **<span>(required)</span>**
 
 The id of the LUKS-encrypted volumes to create.
 
