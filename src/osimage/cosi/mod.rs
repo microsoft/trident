@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     io::{Read, Seek},
     path::{Path, PathBuf},
+    time::Duration,
 };
 
 use anyhow::{bail, ensure, Context, Error};
@@ -47,13 +48,13 @@ struct CosiEntry {
 
 impl Cosi {
     /// Creates a new COSI file instance from the given source URL.
-    pub(super) fn new(source: &OsImage, timeout_in_seconds: u64) -> Result<Self, Error> {
+    pub(super) fn new(source: &OsImage, timeout: Duration) -> Result<Self, Error> {
         trace!("Scanning COSI file from '{}'", source.url);
 
         // Create a new COSI reader factory. This will let us cleverly build
         // readers for the COSI file regardless of its location.
-        let cosi_reader = CosiReader::new(&source.url, timeout_in_seconds)
-            .context("Failed to create COSI reader.")?;
+        let cosi_reader =
+            CosiReader::new(&source.url, timeout).context("Failed to create COSI reader.")?;
 
         // Scan all entries in the COSI file by seeking to all headers in the file.
         let entries = read_entries_from_tar_archive(cosi_reader.reader()?)?;
@@ -540,8 +541,11 @@ mod tests {
         temp_file.write_all(sample_metadata.as_bytes()).unwrap();
 
         // Create a COSI reader from the temp file.
-        let cosi_reader =
-            CosiReader::new(&Url::from_file_path(temp_file.path()).unwrap(), 5).unwrap();
+        let cosi_reader = CosiReader::new(
+            &Url::from_file_path(temp_file.path()).unwrap(),
+            Duration::from_secs(5),
+        )
+        .unwrap();
 
         // Create mock entries in a "hypothetical" COSI file. We will only read
         // the metadata from the file, so this is the only entry where accurate
@@ -638,7 +642,7 @@ mod tests {
                 url: url.clone(),
                 sha384: ImageSha384::Ignored,
             },
-            5,
+            Duration::from_secs(5),
         )
         .unwrap();
 
