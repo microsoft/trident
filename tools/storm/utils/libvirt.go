@@ -3,7 +3,6 @@ package utils
 import (
 	"fmt"
 	"net/url"
-	"os"
 	"os/exec"
 
 	libvirtxml "libvirt.org/libvirt-go-xml"
@@ -75,23 +74,18 @@ func (vm *LibvirtVm) SetFirmwareVars(boot_url string, secure_boot bool, key_loca
 		return fmt.Errorf("no <nvram> node found in domain XML")
 	}
 
-	// Check if a file exists at the NVRAM path
-	if _, err := os.Stat(nvram.NVRam); err == nil {
-		// If so, delete the file so it can be re-created.
-		if err := exec.Command("sudo", "rm", nvram.NVRam).Run(); err != nil {
-			return fmt.Errorf("failed to remove existing NVRAM file ' %s': %w", nvram.NVRam, err)
-		}
+	// Destroy old instance of VM and its NVRAM file.
+	// NVRAM path should stay the same.
+	if err := vm.libvirt.DomainUndefineFlags(vm.domain, libvirt.DomainUndefineNvram); err != nil {
+		return fmt.Errorf("failed to remove existing NVRAM file: %w", err)
 	}
-	// Start the VM in a paused state and then immediately stop it.
-	// This will cause libvirt to create the NVRAM file.
-	if vm.domain, err = vm.libvirt.DomainCreateWithFlags(vm.domain, uint32(libvirt.DomainStartPaused)); err != nil {
+	// Create a new instance of the VM based on domainXml.
+	// This will cause libvirt to create a new NVRAM file.
+	if vm.domain, err = vm.libvirt.DomainDefineXML(domainXml); err != nil {
 		return fmt.Errorf("failed to create domain '%s': %w", vm.domain.Name, err)
 	}
-	if err = vm.libvirt.DomainDestroy(vm.domain); err != nil {
-		return fmt.Errorf("failed to destroy domain '%s': %w", vm.domain.Name, err)
-	}
 
-	args := []string{"virt-fw-vars", "--inplace", nvram.NVRam, "--set-boot-uri", boot_url}
+	args := []string{"--inplace", nvram.NVRam, "--set-boot-uri", boot_url}
 	if secure_boot {
 		args = append(args, "--set-true", "SecureBootEnable")
 	} else {
@@ -105,7 +99,7 @@ func (vm *LibvirtVm) SetFirmwareVars(boot_url string, secure_boot bool, key_loca
 		logrus.Infof("Enrolling key from %s", key_location)
 	}
 
-	cmd := exec.Command("sudo", args...)
+	cmd := exec.Command("virt-fw-vars", args...)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		logrus.Debugf("virt-fw-vars output:\n%s\n", output)
 		return fmt.Errorf("failed to set boot URI: %w", err)
