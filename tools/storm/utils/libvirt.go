@@ -91,7 +91,7 @@ func (vm *LibvirtVm) SetFirmwareVars(boot_url string, secure_boot bool, key_loca
 		return fmt.Errorf("failed to destroy domain '%s': %w", vm.domain.Name, err)
 	}
 
-	args := []string{"--inplace", nvram.NVRam, "--set-boot-uri", boot_url}
+	args := []string{"virt-fw-vars", "--inplace", nvram.NVRam, "--set-boot-uri", boot_url}
 	if secure_boot {
 		args = append(args, "--set-true", "SecureBootEnable")
 	} else {
@@ -105,7 +105,7 @@ func (vm *LibvirtVm) SetFirmwareVars(boot_url string, secure_boot bool, key_loca
 		logrus.Infof("Enrolling key from %s", key_location)
 	}
 
-	cmd := exec.Command("virt-fw-vars", args...)
+	cmd := exec.Command("sudo", args...)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		logrus.Debugf("virt-fw-vars output:\n%s\n", output)
 		return fmt.Errorf("failed to set boot URI: %w", err)
