@@ -63,6 +63,10 @@ parameters:
     type: string
     default: "*.*.*"
 
+  - name: dependsOnStage
+    type: string
+    default: ''
+
 stages:
   - ${{ if eq(parameters.testingRun, false) }}:
       - stage: PrepareSSHKeys
@@ -76,6 +80,8 @@ stages:
           dependsOn:
             - PrepareSSHKeys
             - GetTridentBinaries_rpms_amd64
+            - ${{ if ne(parameters.dependsOnStage, '') }}:
+              - ${{ parameters.dependsOnStage }}
 
           jobs:
             - template: build-image.yml
@@ -114,6 +120,8 @@ stages:
             dependsOn:
               - PrepareSSHKeys
               - GetTridentBinaries_rpms_amd64
+              - ${{ if ne(parameters.dependsOnStage, '') }}:
+                - ${{ parameters.dependsOnStage }}
 
             jobs:
               - template: build-image.yml
@@ -149,6 +157,8 @@ stages:
           dependsOn:
             - PrepareSSHKeys
             - GetTridentBinaries_rpms_amd64
+            - ${{ if ne(parameters.dependsOnStage, '') }}:
+              - ${{ parameters.dependsOnStage }}
 
           jobs:
             - template: build-image.yml
