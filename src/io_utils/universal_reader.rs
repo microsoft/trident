@@ -45,7 +45,7 @@ pub(super) enum UniversalReader {
 }
 
 impl UniversalReader {
-    /// Creates a new COSI file reader from the given source URL.
+    /// Creates a new file reader from the given source URL.
     pub(super) fn new(source: &Url, timeout: Duration) -> Result<Self, Error> {
         Ok(match source.scheme() {
             "file" => {
@@ -722,18 +722,18 @@ mod tests {
 
         let file_url = Url::parse(&server.url()).unwrap().join(file_name).unwrap();
 
-        // Create a new HTTP Cosi reader.
-        let cosi_reader = UniversalReader::new(&file_url, Duration::from_secs(5)).unwrap();
+        // Create a new HTTP file reader.
+        let universal_reader = UniversalReader::new(&file_url, Duration::from_secs(5)).unwrap();
 
         // Get a reference to the inner HTTP file reader
-        let UniversalReader::Http(ref http_file) = cosi_reader else {
-            panic!("Expected a HTTP file reader, got {cosi_reader:?}");
+        let UniversalReader::Http(ref http_file) = universal_reader else {
+            panic!("Expected a HTTP file reader, got {universal_reader:?}");
         };
 
         // Clone the file to test that the server is only called once.
         let _ = http_file.clone();
         // This function also just clones the http_file.
-        let _ = cosi_reader.reader().unwrap();
+        let _ = universal_reader.reader().unwrap();
 
         // Check that size_mock was called exactly once
         size_mock.assert();
