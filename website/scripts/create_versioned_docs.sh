@@ -118,9 +118,9 @@ create_version_docs() {
     log_info "Checkout ${version} in ${tmp_dir}"
     if [[ "$DEBUG_USE_DEV_BRANCH" == "true" ]]; then
         # Debug: clone the dev branch
-        git clone --depth 1 --branch "${DEV_BRANCH}" "https://github.com/${REPO}.git" "${tmp_dir}"
+        gh repo clone "https://github.com/${REPO}.git" "${tmp_dir}" -- --depth 1 --branch "${DEV_BRANCH}"
     else
-        git clone --depth 1 --branch "${version}" "https://github.com/${REPO}.git" "${tmp_dir}"
+        gh repo clone "https://github.com/${REPO}.git" "${tmp_dir}" -- --depth 1 --branch "${version}" 
     fi
     cd "${tmp_dir}"/website
     npm install
