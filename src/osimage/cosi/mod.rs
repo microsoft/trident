@@ -7,15 +7,16 @@ use std::{
 
 use anyhow::{bail, ensure, Context, Error};
 use log::{debug, trace};
-use osutils::hashing_reader::{HashingReader, HashingReader384};
 use tar::Archive;
+use url::Url;
+
+use sysdefs::arch::SystemArchitecture;
 use trident_api::{
     config::{ImageSha384, OsImage},
     primitives::hash::Sha384Hash,
 };
-use url::Url;
 
-use sysdefs::arch::SystemArchitecture;
+use crate::io_utils::hashing_reader::{HashingReader, HashingReader384};
 
 mod metadata;
 mod reader;

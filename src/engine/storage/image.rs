@@ -6,7 +6,7 @@ use std::{
 use anyhow::{bail, ensure, Context, Error};
 use log::{debug, info, trace, warn};
 
-use osutils::{e2fsck, hashing_reader::HashingReader384, image_streamer, lsblk, resize2fs};
+use osutils::{e2fsck, lsblk, resize2fs};
 use trident_api::{
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::ServicingType,
@@ -15,6 +15,7 @@ use trident_api::{
 
 use crate::{
     engine::{context::filesystem::FileSystemDataImage, EngineContext},
+    io_utils::{hashing_reader::HashingReader384, image_streamer},
     osimage::OsImageFile,
 };
 

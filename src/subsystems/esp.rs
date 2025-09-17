@@ -12,8 +12,6 @@ use tempfile::{NamedTempFile, TempDir};
 use osutils::{
     bootloaders::{BOOT_EFI, GRUB_EFI, GRUB_NOPREFIX_EFI},
     filesystems::MountFileSystemType,
-    hashing_reader::{HashingReader, HashingReader384},
-    image_streamer,
     mount::{self, MountGuard},
     path,
 };
@@ -26,9 +24,15 @@ use trident_api::{
     error::{ReportError, ServicingError, TridentError, TridentResultExt},
 };
 
-use crate::engine::{
-    boot::{self, uki, ESP_EXTRACTION_DIRECTORY},
-    EngineContext, Subsystem,
+use crate::{
+    engine::{
+        boot::{self, uki, ESP_EXTRACTION_DIRECTORY},
+        EngineContext, Subsystem,
+    },
+    io_utils::{
+        hashing_reader::{HashingReader, HashingReader384},
+        image_streamer,
+    },
 };
 
 #[derive(Default, Debug)]

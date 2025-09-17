@@ -33,6 +33,7 @@ pub mod cli;
 mod datastore;
 mod engine;
 mod harpoon_hc;
+mod io_utils;
 mod logging;
 mod monitor_metrics;
 pub mod offline_init;
