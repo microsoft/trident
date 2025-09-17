@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: write
+  contents: read
   pages: write
   id-token: write
 
@@ -30,6 +31,8 @@ jobs:
         run: |
           # Go to website folder
           cd website
+          # Authenticate GitHub CLI
+          gh auth login --with-token <<< "${{ secrets.GITHUB_TOKEN }}"
           # Construct multi-version docs
           ./scripts/create_versioned_docs.sh
           # Install dependencies
