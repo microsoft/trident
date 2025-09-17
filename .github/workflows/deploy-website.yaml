@@ -38,6 +38,8 @@ jobs:
           npm ci
           # Build website
           npm run build
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload website artifact
         uses: actions/upload-pages-artifact@v3
