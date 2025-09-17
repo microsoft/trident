@@ -44,6 +44,11 @@ impl InternalParams {
         self.get(key)
     }
 
+    /// Get the value of a key as a u64.
+    pub fn get_u64(&self, key: impl AsRef<str>) -> Parameter<u64> {
+        self.get(key)
+    }
+
     /// Get the value of a key as a u16.
     pub fn get_u16(&self, key: impl AsRef<str>) -> Parameter<u16> {
         self.get(key)
