@@ -28,8 +28,6 @@ jobs:
 
       - name: Build website
         run: |
-          # Temporary: use the only working branch
-          git checkout user/bfjelds/docusaurus-multiversion
           # Go to website folder
           cd website
           # Construct multi-version docs
