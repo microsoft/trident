@@ -10,6 +10,7 @@ use crate::{
 };
 
 pub(crate) mod error;
+pub(crate) mod extensions;
 pub(crate) mod harpoon;
 pub(crate) mod image;
 pub(crate) mod internal_params;
@@ -19,6 +20,7 @@ pub(crate) mod storage;
 pub(crate) mod trident;
 
 use error::HostConfigurationStaticValidationError;
+use extensions::Extension;
 use image::OsImage;
 use internal_params::InternalParams;
 use os::{ManagementOs, Os, SelinuxMode};
@@ -66,6 +68,11 @@ pub struct HostConfiguration {
     /// integrity information.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image: Option<OsImage>,
+
+    /// Optional Extension Images (sysexts or confexts) for Trident to apply.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "schemars", schemars(skip))] // Skip from docs for now
+    pub extensions: Vec<Extension>,
 }
 
 impl HostConfiguration {

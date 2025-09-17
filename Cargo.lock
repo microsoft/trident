@@ -785,6 +785,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "etc-os-release"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a5bb34d25272a56dd40b5397182de049d19e8a2145313a606b7112e7f9343c51"
+dependencies = [
+ "indexmap 2.7.0",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "fastrand"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3365,6 +3375,7 @@ dependencies = [
  "duct",
  "enumflags2",
  "env_logger 0.11.5",
+ "etc-os-release",
  "glob",
  "harpoon",
  "indoc",

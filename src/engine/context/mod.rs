@@ -75,6 +75,9 @@ pub struct EngineContext {
 
     /// Whether the image will use a UKI or not.
     pub is_uki: Option<bool>,
+
+    /// All of the sysexts and confexts in the system.
+    pub extensions: Extensions,
 }
 impl EngineContext {
     /// Returns the update volume selection for all A/B volume pairs. The update volume is the one
