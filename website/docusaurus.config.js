@@ -9,6 +9,7 @@ import { themes as prismThemes } from 'prism-react-renderer';
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
 const VERSIONS = require('./versions.json');
 function getDocsVersions() {
+  let currentVersion = getLatestVersion();
   const result = {};
   VERSIONS.map(version => {
     if (version === 'current') {
@@ -17,7 +18,7 @@ function getDocsVersions() {
         banner: 'unreleased',
         badge: false,
       };
-    } else if (version != VERSIONS[0]) {
+    } else if (version != currentVersion) {
       result[version] = {
         banner: 'unmaintained',
         badge: false,
@@ -33,6 +34,9 @@ function getDocsVersions() {
 }
 
 function getLatestVersion() {
+  if (VERSIONS.length < 1) {
+    return 'current';
+  }
   return VERSIONS[0];
 }
 
