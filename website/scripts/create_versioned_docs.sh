@@ -23,47 +23,22 @@ VERSIONED_SIDEBARS_NAME=versioned_sidebars
 VERSIONED_SIDEBARS_DIR="$WEBSITE_SCRIPTS_DIR/../$VERSIONED_SIDEBARS_NAME"
 VERSIONS_FILE="$WEBSITE_SCRIPTS_DIR/../versions.json"
 
-# DEV_BRANCH="main"
-DEV_BRANCH="user/bfjelds/docusaurus-poc"
-
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
-
-# Logging functions
-log_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
-
-log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-log_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
+DEV_BRANCH="main"
 
 # Check if gh CLI is installed
 check_gh_cli() {
     if ! command -v gh &> /dev/null; then
-        log_error "GitHub CLI (gh) is not installed. Please install it first."
+        echo "GitHub CLI (gh) is not installed. Please install it first."
         exit 1
     fi
     
     # Check if authenticated
     if ! gh auth status &> /dev/null; then
-        log_error "GitHub CLI is not authenticated. Please run 'gh auth login' first."
+        echo "GitHub CLI is not authenticated. Please run 'gh auth login' first."
         exit 1
     fi
     
-    log_success "GitHub CLI is installed and authenticated"
+    echo "GitHub CLI is installed and authenticated"
 }
 
 # Get all releases using GitHub CLI
@@ -115,7 +90,7 @@ create_version_docs() {
     local tmp_dir=$(mktemp -d)
     cd "${tmp_dir}"
     
-    log_info "Checkout ${version} in ${tmp_dir}"
+    echo "Checkout ${version} in ${tmp_dir}"
     if [[ "$DEBUG_USE_DEV_BRANCH" == "true" ]]; then
         # Debug: clone the dev branch
         gh repo clone "https://github.com/${REPO}.git" "${tmp_dir}" -- --depth 1 --branch "${DEV_BRANCH}"
@@ -125,18 +100,18 @@ create_version_docs() {
     cd "${tmp_dir}"/website
     npm install
 
-    log_info "Creating documentation for version ${version}"
+    echo "Creating documentation for version ${version}"
 
     if [[ "$version" != "$DEV_BRANCH" ]]; then
         local normalized_version=$(echo "$version" | sed 's|/|-|')
-        log_info "Move version docs folder to website/docs"
-        log_info "Use docusaurus versioning to create versioned_*"
+        echo "Move version docs folder to website/docs"
+        echo "Use docusaurus versioning to create versioned_*"
         npm run docusaurus docs:version $normalized_version
-        log_info "Copy versioned_* to website"
+        echo "Copy versioned_* to website"
         cp -r "${tmp_dir}/website/$VERSIONED_DOCS_NAME/version-$normalized_version" "${VERSIONED_DOCS_DIR}/"
         cp -r "${tmp_dir}/website/$VERSIONED_SIDEBARS_NAME/version-$normalized_version-sidebars.json" "${VERSIONED_SIDEBARS_DIR}/"
     else
-        log_info "For dev branch, copy docs to website"
+        echo "For dev branch, copy docs to website"
         # For dev branch, copy docs to website/docs
         cp -r "${tmp_dir}/docs" "$WEBSITE_DIR/"
     fi
@@ -148,13 +123,13 @@ create_version_docs() {
 update_versions_file() {
     local versions=("$1")
     
-    log_info "Updating ${VERSIONS_FILE}"
+    echo "Updating ${VERSIONS_FILE}"
     
     # Create versions.json with all version tags
     echo "$(echo "$versions" | jq -R -s 'split("\n")[:-1]')" > "$VERSIONS_FILE"
     cat $VERSIONS_FILE
     
-    log_success "Updated ${VERSIONS_FILE}"
+    echo "Updated ${VERSIONS_FILE}"
 }
 
 # Main function
@@ -177,13 +152,13 @@ main() {
                 exit 0
                 ;;
             *)
-                log_error "Unknown option: $1"
+                echo "Unknown option: $1"
                 exit 1
                 ;;
         esac
     done
     
-    log_info "Starting versioned docs creation..."
+    echo "Starting versioned docs creation..."
     
     # Check prerequisites
     check_gh_cli
@@ -193,19 +168,19 @@ main() {
         # Can use branches for testing
         #
         versions=$(get_branches "releases/" 3)
-        log_info "Found branches: ${versions[*]}"
+        echo "Found branches: ${versions[*]}"
     else
         # Get releases
         versions=$(get_releases $include_prerelease 3)
-        log_info "Found releases: ${versions[*]}"
+        echo "Found releases: ${versions[*]}"
     fi
 
     versions=$(exclude_versions "$versions")
-    log_info "Filtered versions: ${versions[*]}"
+    echo "Filtered versions: ${versions[*]}"
     
     if [[ "$MAX_VERSION_COUNT" != "-1" ]]; then
         versions=$(echo "$versions" | head -n "$MAX_VERSION_COUNT")
-        log_info "Count-limited versions: ${versions[*]}"
+        echo "Count-limited versions: ${versions[*]}"
     fi
 
     # Create versioned docs directory if it doesn't exist
@@ -234,8 +209,8 @@ main() {
     # Update versions.json
     update_versions_file "$(echo -e "$versions" | sed 's|/|-|')"
     
-    log_success "Versioned documentation creation completed!"
-    log_info "Created versions: $(echo $versions)"
+    echo "Versioned documentation creation completed!"
+    echo "Created versions: $(echo $versions)"
 }
 
 # Run main function with all arguments
