@@ -217,8 +217,8 @@ fn deploy_os_image_file(
             .context("Failed to create reader for filesystem image file")?,
     );
 
-    let computed_sha384 =
-        image_streamer::stream_zstd(stream, &block_device_path).context(format!(
+    let computed_sha384 = image_streamer::stream_zstd_and_hash(stream, &block_device_path)
+        .context(format!(
             "Failed to stream image to block device '{id}' at '{}'",
             block_device_path.display()
         ))?;

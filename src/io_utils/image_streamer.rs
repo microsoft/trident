@@ -16,14 +16,14 @@ use crate::io_utils::hashing_reader::HashingReader;
 /// to the specified destination path.
 ///
 /// Returns the hash of the compressed input stream.
-pub fn stream_zstd<R>(mut reader: R, destination_path: &Path) -> Result<String, Error>
+pub fn stream_zstd_and_hash<R>(mut reader: R, destination_path: &Path) -> Result<String, Error>
 where
     R: Read + HashingReader,
 {
     // Instantiate decoder for ZSTD stream
     let mut decoder = zstd::stream::read::Decoder::new(BufReader::new(&mut reader))?;
 
-    copy_to_destination(&mut decoder, destination_path)?;
+    write_to_path(&mut decoder, destination_path)?;
 
     Ok(reader.hash())
 }
@@ -31,16 +31,16 @@ where
 /// Streams data from a reader to a new file at the specificed destination path.
 ///
 /// Returns the hash of the input stream.
-pub fn stream_reader<R>(mut reader: R, destination_path: &Path) -> Result<String, Error>
+pub fn stream_and_hash<R>(mut reader: R, destination_path: &Path) -> Result<String, Error>
 where
     R: Read + HashingReader,
 {
-    copy_to_destination(&mut reader, destination_path)?;
+    write_to_path(&mut reader, destination_path)?;
 
     Ok(reader.hash())
 }
 
-fn copy_to_destination<R>(mut reader: R, destination_path: &Path) -> Result<(), Error>
+fn write_to_path<R>(mut reader: R, destination_path: &Path) -> Result<(), Error>
 where
     R: Read,
 {
