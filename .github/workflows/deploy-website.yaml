@@ -32,7 +32,7 @@ jobs:
           # Go to website folder
           cd website
           # Authenticate GitHub CLI
-          gh auth login --with-token <<< "${{ secrets.GITHUB_TOKEN }}"
+          echo ${{ secrets.GITHUB_TOKEN }} | gh auth login --with-token
           # Construct multi-version docs
           ./scripts/create_versioned_docs.sh
           # Install dependencies
