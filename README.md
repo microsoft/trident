@@ -9,19 +9,24 @@ Tags: comma,separated,list,of,tags
 
 # Trident
 
-Trident is a declarative, security first, OS lifecycle agent designed primarily for Azure Linux, capable of clean install / provisioning of baremetal nodes and performing A/B style updates and runtime configuration of baremetal and virtual machines. At the heart of Trident is its Host Configuration API, a declarative YAML-based interface that defines the desired state of a machine across storage, OS, networking, and firmware layers.  Among the features that Trident supports are:
+**Trident** is a declarative, security-first OS lifecycle agent designed primarily for [Azure Linux](https://github.com/microsoft/azurelinux/?tab=readme-ov-file#azure-linux). It supports clean installation and provisioning of bare-metal nodes, as well as A/B-style updates and runtime configuration for both bare-metal and virtual machines.
 
-- Disk partitioning and imaging
-- RAID configuration
-- Encrypted volumes with TPM/PCR support
-- dm-verity support
-- A/B update
-- Bootloader configuration
-- Networking configuration
-- User management
-- SELinux configuration
-- Custom hooks
-- and more
+At the heart of Trident is its **Host Configuration API**, a declarative YAML-based interface that defines the desired state of a machine across storage, OS, networking, and firmware layers.
+
+Trident supports a wide range of lifecycle and configuration capabilities:
+
+- ✅ Disk partitioning and imaging  
+- ✅ RAID configuration  
+- ✅ Encrypted volumes with TPM/PCR support  
+- ✅ dm-verity support  
+- ✅ A/B update  
+- ✅ Bootloader configuration  
+- ✅ Networking configuration  
+- ✅ User management  
+- ✅ SELinux configuration  
+- ✅ Custom hooks  
+- ✅ ...and more
+
 
 ## Getting Started
 
@@ -49,3 +54,4 @@ Guidelines](https://www.microsoft.com/en-us/legal/intellectualproperty/trademark
 Use of Microsoft trademarks or logos in modified versions of this project must
 not cause confusion or imply Microsoft sponsorship. Any use of third-party
 trademarks or logos are subject to those third-party's policies.
+
