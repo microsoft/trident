@@ -8,7 +8,8 @@ set -euo pipefail
 WEBSITE_SCRIPTS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
 DEBUG_USE_DEV_BRANCH=${DEBUG_USE_DEV_BRANCH:-false}
-DEBUG_USE_RELEASE_BRANCHES=${DEBUG_USE_RELEASE_BRANCHES:-false}
+DEBUG_USE_BRANCHES=${DEBUG_USE_BRANCHES:-false}
+DEBUG_BRANCH_PATTERN=${DEBUG_BRANCH_PATTERN:-'releases/'}
 MAX_VERSION_COUNT=${MAX_VERSION_COUNT:-'-1'}
 
 EXCLUDED_VERSIONS=${EXCLUDED_VERSIONS:-''}
@@ -163,15 +164,15 @@ main() {
     # Check prerequisites
     check_gh_cli
 
-    if [[ "$DEBUG_USE_RELEASE_BRANCHES" == "true" ]]; then
+    if [[ "$DEBUG_USE_BRANCHES" == "true" ]]; then
         #
         # Can use branches for testing
         #
-        versions=$(get_branches "releases/" 3)
+        versions=$(get_branches "$DEBUG_BRANCH_PATTERN")
         echo "Found branches: ${versions[*]}"
     else
         # Get releases
-        versions=$(get_releases $include_prerelease 3)
+        versions=$(get_releases $include_prerelease)
         echo "Found releases: ${versions[*]}"
     fi
 
