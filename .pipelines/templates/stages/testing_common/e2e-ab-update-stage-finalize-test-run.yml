@@ -73,9 +73,9 @@ steps:
           -p ${{ parameters.netlistenPort }} \
           -s "${{ parameters.artifactsDirectory }}" > ./stage-ab-update-deployment.log 2>&1 &
 
-      ENV_VAR_ARGS=""
+      PROXY_ARG=""
       if [ -n "${{ parameters.httpsProxy }}" ]; then
-        ENV_VAR_ARGS="--env-vars HTTPS_PROXY=${{ parameters.httpsProxy }}"
+        PROXY_ARG="--env-vars HTTPS_PROXY=${{ parameters.httpsProxy }}"
       fi
 
       echo "Running script to stage A/B update..."
@@ -87,7 +87,7 @@ steps:
           --trident-config $(tridentConfigFile) \
           --version $(version) \
           --stage-ab-update \
-          $ENV_VAR_ARGS
+          $PROXY_ARG
     timeoutInMinutes: 5
     workingDirectory: $(Build.SourcesDirectory)
     displayName: "🔄 Stage A/B update"
