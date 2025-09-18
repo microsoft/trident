@@ -209,8 +209,8 @@ def wipe_sdb(vm: SshNode):
     res = vm.execute(f"sudo mount")
     print(f"mount:\n{res.stdout}\n{res.stderr}")
 
-    res = vm.execute(f"sudo cat /proc/mdstat")
-    print(f"cat /proc/mdstat:\n{res.stdout}\n{res.stderr}")
+    # res = vm.execute(f"sudo cat /proc/mdstat")
+    # print(f"cat /proc/mdstat:\n{res.stdout}\n{res.stderr}")
 
     """Wipes the SDB on the VM."""
     res = vm.execute("sudo wipefs -af /dev/sdb")
