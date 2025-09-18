@@ -200,6 +200,12 @@ def wipe_sdb(vm: SshNode):
 
     yield
 
+    res = vm.execute(f"sudo mount")
+    print(f"mount:\n{res.stdout}\n{res.stderr}")
+
+    res = vm.execute(f"sudo cat /proc/mdstat")
+    print(f"cat /proc/mdstat:\n{res.stdout}\n{res.stderr}")
+
     # Look at sda and sdb
     for disk in ["sda", "sdb"]:
         res = vm.execute(f"sudo lsblk /dev/{disk} --json --bytes --output-all")
