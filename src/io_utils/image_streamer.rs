@@ -36,7 +36,10 @@ pub fn stream_and_hash<R>(mut reader: R, destination_path: &Path) -> Result<Stri
 where
     R: Read + HashingReader,
 {
-    write_to_path(&mut reader, destination_path)?;
+    // Instantiate bufreader for stream to read more efficiently
+    let mut bufreader = BufReader::new(&mut reader);
+
+    write_to_path(&mut bufreader, destination_path)?;
 
     Ok(reader.hash())
 }
