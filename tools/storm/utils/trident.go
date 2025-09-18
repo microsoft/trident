@@ -22,7 +22,9 @@ const (
 func BuildTridentContainerCommand(envVars []string) string {
 	cmd := DOCKER_COMMAND_BASE
 	if len(envVars) != 0 {
-		cmd += fmt.Sprintf("--env %s ", strings.Join(envVars, " "))
+		for _, envVar := range envVars {
+			cmd += fmt.Sprintf("--env %s ", envVar)
+		}
 	}
 	cmd += TRIDENT_CONTAINER
 	return cmd
