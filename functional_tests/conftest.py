@@ -148,9 +148,9 @@ class RustModule(Collector):
         test_index = 0
         # Yield a function for each test case
         for test_name, test_data in self.module_data.get("test_cases", {}).items():
-            if "raid" in test_name:
-                print(f"bcf: skip raid test: {test_name}")
-                continue
+            # if "raid" in test_name:
+            #     print(f"bcf: skip raid test: {test_name}")
+            #     continue
 
             node = Function.from_parent(
                 self,
