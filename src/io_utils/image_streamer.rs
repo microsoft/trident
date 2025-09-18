@@ -59,10 +59,11 @@ where
 
     let t = Instant::now();
 
-    // Decompress the image and write it to the block device
+    // (If the reader is a Decoder, decompress the image and) write to the block
+    // device
     let bytes_copied = io::copy(&mut reader, &mut file).context("Failed to copy image")?;
 
-    trace!("Decompressed {} bytes.", bytes_copied);
+    trace!("Streamed {} bytes.", bytes_copied);
 
     // Attempt to read an additional byte from the stream to see whether the whole image was
     // consumed.
