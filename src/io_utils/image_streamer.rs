@@ -63,7 +63,7 @@ where
     // device
     let bytes_copied = io::copy(&mut reader, &mut file).context("Failed to copy image")?;
 
-    trace!("Streamed {} bytes.", bytes_copied);
+    trace!("Copied {} bytes.", bytes_copied);
 
     // Attempt to read an additional byte from the stream to see whether the whole image was
     // consumed.
