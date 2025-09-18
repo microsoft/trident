@@ -2,7 +2,7 @@
 use std::io::Cursor;
 use std::{
     fs::File,
-    io::{Error as IoError, ErrorKind as IoErrorKind, Read, Result as IoResult, Seek},
+    io::{Error as IoError, ErrorKind as IoErrorKind, Read, Result as IoResult, Seek, SeekFrom},
     path::PathBuf,
     thread,
     time::{Duration, Instant},
@@ -21,7 +21,7 @@ use url::Url;
 #[cfg(feature = "dangerous-options")]
 use docker_credential::{self, DockerCredential};
 
-pub(super) trait ReadSeek: Read + Seek {}
+pub(crate) trait ReadSeek: Read + Seek {}
 
 impl ReadSeek for HttpFile {}
 impl ReadSeek for File {}
@@ -32,25 +32,29 @@ impl ReadSeek for Cursor<Vec<u8>> {}
 #[cfg(feature = "dangerous-options")]
 const DOCKER_CONFIG_FILE_PATH: &str = ".docker/config.json";
 
-/// An abstraction over a universal file reader that can be either a local file
-/// or an HTTP request.
+/// An abstraction over a file reader that can be either a local file or an
+/// HTTP request.
 ///
-/// This abstraction contains the minimum required information to open and read
-/// a file, it does not carry any complex types and can be safely and
+/// This abstraction contains the minimum required information to open a COSI
+/// file, it does not carry any complex types and can be safely and
 /// inexpensively cloned.
 #[derive(Debug, Clone)]
-pub(super) enum UniversalReader {
+pub(crate) enum FileReader {
     File(PathBuf),
     Http(HttpFile),
+
+    /// Variant reserved for testing purposes only.
+    #[cfg(test)]
+    Buffer(Cursor<Vec<u8>>),
 }
 
-impl UniversalReader {
-    /// Creates a new file reader from the given source URL.
-    pub(super) fn new(source: &Url, timeout: Duration) -> Result<Self, Error> {
+impl FileReader {
+    /// Creates a new COSI file reader from the given source URL.
+    pub(crate) fn new(source: &Url, timeout: Duration) -> Result<Self, Error> {
         Ok(match source.scheme() {
             "file" => {
-                // Load from local file
-                debug!("Loading file: '{}'", source.path());
+                // Load COSI from local file
+                debug!("Loading COSI file: '{}'", source.path());
                 let path = PathBuf::from(source.path());
                 ensure!(
                     path.exists(),
@@ -63,13 +67,13 @@ impl UniversalReader {
                 Self::File(path)
             }
             "http" | "https" => {
-                // Load from remote URL
-                debug!("Loading file from URL: '{}'", source);
+                // Load COSI from remote URL
+                debug!("Loading COSI file from URL: '{}'", source);
                 Self::Http(HttpFile::new(source, timeout)?)
             }
             "oci" => {
-                // Load from container registry
-                debug!("Loading file from URL: '{}'", source);
+                // Load COSI from container registry
+                debug!("Loading COSI file from URL: '{}'", source);
                 Self::Http(HttpFile::new_from_oci(source, timeout)?)
             }
             _ => {
@@ -78,11 +82,37 @@ impl UniversalReader {
         })
     }
 
-    /// Returns an implementation of `Read` + `Seek` over the entire file.
-    pub(super) fn reader(&self) -> Result<Box<dyn ReadSeek>, IoError> {
+    /// Returns an implementation of `Read` + `Seek` over the entire COSI file.
+    pub(crate) fn reader(&self) -> Result<Box<dyn ReadSeek>, IoError> {
         Ok(match self {
             Self::File(file) => Box::new(File::open(file)?),
             Self::Http(http_file) => Box::new(http_file.clone()),
+            #[cfg(test)]
+            Self::Buffer(cursor) => Box::new(cursor.clone()),
+        })
+    }
+
+    /// Returns an implementation of `Read` for the given section of the COSI file.
+    pub(crate) fn section_reader(&self, section_offset: u64, size: u64) -> IoResult<Box<dyn Read>> {
+        Ok(match self {
+            Self::File(file) => {
+                // Open the file and seek to the section
+                let mut file = File::open(file)?;
+                file.seek(SeekFrom::Start(section_offset))?;
+                // Return a reader that is limited to the section size
+                Box::new(file.take(size))
+            }
+
+            Self::Http(http_file) => Box::new(http_file.section_reader(section_offset, size)?),
+
+            #[cfg(test)]
+            Self::Buffer(cursor) => {
+                // Clone the cursor and seek to the section
+                let mut cursor = cursor.clone();
+                cursor.seek(SeekFrom::Start(section_offset))?;
+                // Return a reader that is limited to the section size
+                Box::new(cursor.take(size))
+            }
         })
     }
 }
@@ -408,7 +438,7 @@ impl HttpFile {
 
     /// Performs a request of a specific section of the file. Returns the HTTP
     /// response.
-    pub(crate) fn section_reader(&self, section_offset: u64, size: u64) -> IoResult<Response> {
+    fn section_reader(&self, section_offset: u64, size: u64) -> IoResult<Response> {
         let end = section_offset + size - 1;
         trace!(
             "Reading HTTP file '{}' from {} to {} (inclusive) [{} bytes]",
@@ -510,12 +540,14 @@ mod tests {
     use super::*;
 
     use std::{
-        io::SeekFrom,
+        io::{SeekFrom, Write},
         sync::{
             atomic::{AtomicU16, Ordering},
             Arc,
         },
     };
+
+    use tempfile::NamedTempFile;
 
     #[test]
     fn test_retrieve_access_token() {
@@ -650,6 +682,64 @@ mod tests {
     }
 
     #[test]
+    fn test_cosi_reader_factory_file() {
+        let mut file = NamedTempFile::new().expect("Failed to create temp file");
+        let original_data: &'static str = "Hello, World!";
+        assert_eq!(
+            file.write(original_data.as_bytes())
+                .expect("Failed to write data to file"),
+            original_data.len(),
+            "Did not write expected number of bytes"
+        );
+        file.flush().expect("Failed to flush file");
+
+        let url = Url::from_file_path(file.path()).expect("Failed to create file:// URL");
+        let reader_factory = FileReader::new(&url, Duration::from_secs(5)).unwrap();
+
+        // Check full file reader
+        let mut reader = reader_factory.reader().expect("Failed to create reader");
+        let mut buf = String::new();
+        let read = reader
+            .read_to_string(&mut buf)
+            .expect("Failed to read data from file");
+        assert_eq!(
+            read as u64,
+            original_data.len() as u64,
+            "Did not read expected number of bytes, expected {} but got {}.",
+            original_data.len(),
+            read
+        );
+        assert_eq!(
+            original_data, &buf,
+            "Did not read expected data, expected '{original_data}' but got '{buf}'"
+        );
+
+        // Helper to check specific sections
+        let check_section = |start: u64, size: u64| {
+            let expected_slice = &original_data[start as usize..(start + size) as usize];
+            let mut reader = reader_factory
+                .section_reader(start, size)
+                .expect("Failed to create section reader");
+            let mut buf = String::new();
+            let read = reader
+                .read_to_string(&mut buf)
+                .expect("Failed to read data from file");
+            assert_eq!(
+                read as u64, size,
+                "Did not read expected number of bytes, expected {size} but got {read}. Buffer '{buf}'"
+            );
+            assert_eq!(
+                expected_slice, &buf,
+                "Did not read expected slice, expected '{expected_slice}' but got '{buf}'"
+            );
+        };
+        check_section(0, 5); // Hello
+        check_section(7, 6); // World!
+        check_section(3, 6); // llo, W
+        check_section(0, 13); // Hello, World!
+    }
+
+    #[test]
     fn test_http_file() {
         env_logger::builder()
             .filter_level(log::LevelFilter::Trace)
@@ -722,18 +812,18 @@ mod tests {
 
         let file_url = Url::parse(&server.url()).unwrap().join(file_name).unwrap();
 
-        // Create a new HTTP file reader.
-        let universal_reader = UniversalReader::new(&file_url, Duration::from_secs(5)).unwrap();
+        // Create a new HTTP Cosi reader.
+        let cosi_reader = FileReader::new(&file_url, Duration::from_secs(5)).unwrap();
 
         // Get a reference to the inner HTTP file reader
-        let UniversalReader::Http(ref http_file) = universal_reader else {
-            panic!("Expected a HTTP file reader, got {universal_reader:?}");
+        let FileReader::Http(ref http_file) = cosi_reader else {
+            panic!("Expected a HTTP file reader, got {cosi_reader:?}");
         };
 
         // Clone the file to test that the server is only called once.
         let _ = http_file.clone();
         // This function also just clones the http_file.
-        let _ = universal_reader.reader().unwrap();
+        let _ = cosi_reader.reader().unwrap();
 
         // Check that size_mock was called exactly once
         size_mock.assert();
