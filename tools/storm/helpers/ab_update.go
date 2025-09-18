@@ -25,7 +25,7 @@ type AbUpdateHelper struct {
 		Version              string   `short:"v" required:"" help:"Version of the Trident image to use for the A/B update."`
 		StageAbUpdate        bool     `short:"s" help:"Controls whether A/B update should be staged."`
 		FinalizeAbUpdate     bool     `short:"f" help:"Controls whether A/B update should be finalized."`
-		EnvVars              []string `short:"e" help:"Environment variables. Multiple env vars can be passed as a list of comma-separated strings, or this flag can be used multiple times. Each var should include the env var name, i.e. HTTPS_PROXY=http://0.0.0.0."`
+		EnvVars              []string `short:"e" help:"Environment variables. Multiple vars can be passed as a list of comma-separated strings, or this flag can be used multiple times. Each var should include the env var name, i.e. HTTPS_PROXY=http://0.0.0.0."`
 	}
 
 	client *ssh.Client
