@@ -22,10 +22,6 @@ parameters:
     type: boolean
     default: false
 
-  - name: osModifierBranch
-    type: string
-    default: "submodule"
-
   - name: dependsOnStage
     type: string
     default: ''
@@ -44,7 +40,6 @@ stages:
             publishToDevFeed: true
           tridentArtifactName: ${{ parameters.tridentArtifactName }}
           codeCoverage: ${{ parameters.codeCoverage }}
-          osModifierBranch: ${{ parameters.osModifierBranch }}
           dependsOnStage: ${{ parameters.dependsOnStage }}
           targetArchitecture: ${{ parameters.targetArchitecture }}
 

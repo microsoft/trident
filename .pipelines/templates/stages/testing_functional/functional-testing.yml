@@ -18,10 +18,6 @@ parameters:
     default: 5067 # [GITHUB]-trident-ci
     displayName: Where to download prebuilt image from
 
-  - name: osModifierBranch
-    type: string
-    default: "submodule"
-
   - name: dependsOnStage
     type: string
     default: ''
@@ -84,9 +80,9 @@ stages:
             displayName: Install dependencies
             retryCountOnTaskFailure: 3
 
-          - template: ../common_tasks/build-osmodifier.yml
+          - template: ../common_tasks/download-osmodifier.yml
             parameters:
-              osModifierBranch: ${{ parameters.osModifierBranch }}
+              osModifierBranch: preview
 
           - bash: |
               set -eux

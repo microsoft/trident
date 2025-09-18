@@ -58,10 +58,6 @@ parameters:
     type: number
     default: 3
 
-  - name: osModifierBranch
-    type: string
-    default: "submodule"
-
   - name: baremetalTestsEnabled
     type: boolean
     default: true
@@ -82,7 +78,6 @@ stages:
       tridentArtifactName: trident-binaries
       codeCoverage: false
       forceTridentRebuild: ${{ parameters.forceTridentRebuild }}
-      osModifierBranch: ${{ parameters.osModifierBranch }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
       targetArchitecture: amd64
 
@@ -92,8 +87,6 @@ stages:
   # Makefile validation, only for CI
   - ${{ if eq(parameters.stageType, 'ci') }}:
       - template: stages/validate_makefile/dev-build.yml
-        parameters:
-          osModifierBranch: ${{ parameters.osModifierBranch }}
 
   # Build FT base Image, only for CI or if forceFunctionalTestImageRebuild is true
   - ${{ if or(eq(parameters.stageType, 'ci'), eq(parameters.forceFunctionalTestImageRebuild, true)) }}:
@@ -298,7 +291,6 @@ stages:
       - template: stages/testing_functional/functional-testing.yml
         parameters:
           downloadPrebuiltImage: false
-          osModifierBranch: ${{ parameters.osModifierBranch }}
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
 

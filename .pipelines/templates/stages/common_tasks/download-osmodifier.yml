@@ -1,0 +1,49 @@
+parameters:
+  - name: osmodifierBuildType
+    displayName: OSModifier build type
+    type: string
+    values:
+      - main
+      - preview
+
+  - name: osModifierVersion
+    displayName: OSModifier version
+    type: string
+    default: ""
+
+steps:
+  - bash: |
+      set -ex
+
+      if [[ "${{ parameters.osmodifierBuildType }}" == "preview" ]]; then
+        ARTIFACT_NAME="osmodifier_preview"
+        if [[ -n "${{ parameters.osModifierVersion }}" ]]; then
+          VERSION="${{ parameters.osModifierVersion }}"
+        else
+          # Get latest main version
+          VERSION="*"
+        fi
+      else
+        ARTIFACT_NAME="osmodifier"
+        if [[ -n "${{ parameters.osModifierVersion }}" ]]; then
+          VERSION="${{ parameters.osModifierVersion }}"
+        else
+          # Get latest main version
+          VERSION="*"
+        fi
+      fi
+
+      echo "Downloading ${ARTIFACT_NAME} version ${VERSION}..."
+      
+      az artifacts universal download \
+        --organization "https://dev.azure.com/mariner-org/" \
+        --project "2afa5696-2a1d-438f-ac9e-db12e0b4ae27" \
+        --scope project \
+        --feed "PolarCoreArtifacts" \
+        --name "${ARTIFACT_NAME}" \
+        --version "${VERSION}" \
+        --path "artifacts/azure-linux-image-tools"
+
+    displayName: "Download OSModifier from Artifact Feed"
+    workingDirectory: $(Build.SourcesDirectory)
+    retryCountOnTaskFailure: 3

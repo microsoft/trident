@@ -133,21 +133,19 @@ clean-coverage:
 TOOLKIT_DIR="azure-linux-image-tools/toolkit"
 AZL_TOOLS_OUT_DIR="$(TOOLKIT_DIR)/out/tools"
 ARTIFACTS_DIR="artifacts"
+OSMODIFIER_ARTIFACT_VERSION := 1.1.0
 
-# Build OSModifier from the azure-linux-image-tools submodule.
-# Before building OSModifier, you need to initialize the local .git/config with
-# the submodules listed in .gitmodules and then fetch the actual content of the
-# submodule, via:
-#
-# git submodule update --init
-artifacts/osmodifier: Dockerfile-osmodifier.azl3
-	@docker build -t trident/osmodifier-build:latest \
-		-f Dockerfile-osmodifier.azl3 \
-		.
+artifacts/osmodifier:
+	@az artifacts universal download \
+		--organization "https://dev.azure.com/mariner-org/" \
+		--project "2afa5696-2a1d-438f-ac9e-db12e0b4ae27" \
+		--scope project \
+		--feed "PolarCoreArtifacts" \
+		--name "osmodifier" \
+		--version "$(OSMODIFIER_ARTIFACT_VERSION)" \
+		--path "$(ARTIFACTS_DIR)/azure-linux-image-tools"
 	@mkdir -p "$(ARTIFACTS_DIR)"
-	@id=$$(docker create trident/osmodifier-build:latest) && \
-	    docker cp -q $$id:/work/azure-linux-image-tools/toolkit/out/tools/osmodifier $@ || \
-	    docker rm -v $$id
+	@cp "$(AZL_TOOLS_OUT_DIR)/osmodifier" $@
 
 bin/trident: build
 	@mkdir -p bin

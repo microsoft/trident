@@ -29,10 +29,6 @@ parameters:
     type: boolean
     default: false
 
-  - name: osModifierBranch
-    type: string
-    default: "submodule"
-
   - name: baseImageArtifactStage
     type: string
     default: ''
@@ -45,6 +41,5 @@ stages:
       tridentArtifactName: trident-binaries
       codeCoverage: false
       forceTridentRebuild: ${{ parameters.forceTridentRebuild }}
-      osModifierBranch: ${{ parameters.osModifierBranch }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
       targetArchitecture: arm64

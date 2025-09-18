@@ -1,8 +1,4 @@
 parameters:
-  - name: osModifierBranch
-    type: string
-    default: "submodule"
-
   - name: dependsOnStage
     type: string
     default: ''
@@ -27,9 +23,9 @@ stages:
 
         steps:
           - template: ../common_tasks/avoid-pypi-usage.yml
-          - template: ../common_tasks/build-osmodifier.yml
+          - template: ../common_tasks/download-osmodifier.yml
             parameters:
-              osModifierBranch: ${{ parameters.osModifierBranch }}
+              osModifierBranch: main
 
           - script: |
               set -eux

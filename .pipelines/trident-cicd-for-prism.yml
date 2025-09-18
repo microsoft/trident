@@ -13,11 +13,6 @@ parameters:
     type: string
     default: "*.*.*"
 
-  - name: osModifierBranch
-    displayName: Branch to use for OS Modifier (specify 'submodule' to use trident's current submodule)
-    type: string
-    default: "main"
-
 schedules:
   - cron: "0 9 * * *" # avoid trident-prerelease time
     displayName: Daily build
@@ -63,4 +58,3 @@ extends:
         parameters:
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
-          osModifierBranch: ${{ parameters.osModifierBranch }}
