@@ -132,9 +132,9 @@ steps:
         -s "${{ parameters.artifactsDirectory }}" \
         -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-runtime-os-B.log 2>&1 &
 
-      ENV_VAR_ARGS=""
+      PROXY_ARG=""
       if [ -n "${{ parameters.httpsProxy }}" ]; then
-        ENV_VAR_ARGS="--env-vars HTTPS_PROXY=${{ parameters.httpsProxy }}"
+        PROXY_ARG="--env-vars HTTPS_PROXY=${{ parameters.httpsProxy }}"
       fi
 
       echo "Running script to stage and finalize A/B update..."
@@ -147,7 +147,7 @@ steps:
           --version $(version) \
           --stage-ab-update \
           --finalize-ab-update \
-          $ENV_VAR_ARGS
+          $PROXY_ARG
 
       current_version=$(echo $(version))
       new_version=$((current_version + 1))
@@ -241,9 +241,9 @@ steps:
           -s "${{ parameters.artifactsDirectory }}" \
           -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-runtime-os-A.log 2>&1 &
 
-      ENV_VAR_ARGS=""
+      PROXY_ARG=""
       if [ -n "${{ parameters.httpsProxy }}" ]; then
-        ENV_VAR_ARGS="--env-vars HTTPS_PROXY=${{ parameters.httpsProxy }}"
+        PROXY_ARG="--env-vars HTTPS_PROXY=${{ parameters.httpsProxy }}"
       fi
 
       echo "Running script to stage and finalize A/B update..."
@@ -256,7 +256,7 @@ steps:
           --version $(version) \
           --stage-ab-update \
           --finalize-ab-update \
-          $ENV_VAR_ARGS
+          $PROXY_ARG
 
       current_version=$(echo $(version))
       new_version=$((current_version + 1))

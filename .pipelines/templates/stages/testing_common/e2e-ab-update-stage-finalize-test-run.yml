@@ -141,9 +141,9 @@ steps:
           -p ${{ parameters.netlistenPort }} \
           -s "${{ parameters.artifactsDirectory }}" > ./finalize-ab-update.log 2>&1 &
 
-      ENV_VARS_ARG=""
+      PROXY_ARG=""
       if [ -n "${{ parameters.httpsProxy }}" ]; then
-        ENV_VARS_ARG="--env-vars HTTPS_PROXY=${{ parameters.httpsProxy }}"
+        PROXY_ARG="--env-vars HTTPS_PROXY=${{ parameters.httpsProxy }}"
       fi
 
       echo "Running script to finalize A/B update..."
@@ -155,7 +155,7 @@ steps:
           --trident-config $(tridentConfigFile) \
           --version $(version) \
           --finalize-ab-update \
-          $ENV_VARS_ARG
+          $PROXY_ARG
 
       # Un-set the 'x' flag to avoid errors.
       set +x
