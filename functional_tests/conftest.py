@@ -136,7 +136,9 @@ class RustModule(Collector):
 
     def collect(self) -> Iterable[Union[Item, Collector]]:
         # Yield a new collector for each submodule
-        for module_name, module_data in self.module_data.get("submodules", {}).items():
+        for module_name, module_data in dict(
+            sorted(self.module_data.get("submodules", {}).items())
+        ).items():
             yield RustModule.from_parent(
                 self,
                 crate=self.crate,
@@ -146,7 +148,9 @@ class RustModule(Collector):
             )
 
         # Yield a function for each test case
-        for test_name, test_data in self.module_data.get("test_cases", {}).items():
+        for test_name, test_data in dict(
+            sorted(self.module_data.get("test_cases", {}).items())
+        ).items():
             node = Function.from_parent(
                 self,
                 name=test_name,
