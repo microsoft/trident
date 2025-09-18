@@ -1943,6 +1943,7 @@ dependencies = [
  "trident_api",
  "uuid",
  "which",
+ "zstd",
 ]
 
 [[package]]
