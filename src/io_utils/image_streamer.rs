@@ -31,6 +31,7 @@ where
 /// Streams data from a reader to a new file at the specificed destination path.
 ///
 /// Returns the hash of the input stream.
+#[allow(dead_code)]
 pub fn stream_and_hash<R>(mut reader: R, destination_path: &Path) -> Result<String, Error>
 where
     R: Read + HashingReader,
