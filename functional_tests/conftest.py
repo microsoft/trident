@@ -136,9 +136,7 @@ class RustModule(Collector):
 
     def collect(self) -> Iterable[Union[Item, Collector]]:
         # Yield a new collector for each submodule
-        for module_name, module_data in dict(
-            sorted(self.module_data.get("submodules", {}).items())
-        ).items():
+        for module_name, module_data in self.module_data.get("submodules", {}).items():
             yield RustModule.from_parent(
                 self,
                 crate=self.crate,
@@ -148,9 +146,7 @@ class RustModule(Collector):
             )
 
         # Yield a function for each test case
-        for test_name, test_data in dict(
-            sorted(self.module_data.get("test_cases", {}).items())
-        ).items():
+        for test_name, test_data in self.module_data.get("test_cases", {}).items():
             node = Function.from_parent(
                 self,
                 name=test_name,
@@ -200,6 +196,13 @@ def wipe_sdb(vm: SshNode):
 
     yield
 
+    # Look at sda and sdb
+    for disk in ["sda", "sdb"]:
+        res = vm.execute(f"sudo lsblk /dev/{disk} --json --bytes --output-all")
+        res.assert_exit_code()
+        info = json.loads(res.stdout)
+        print(f"Disk {disk} info:\n{json.dumps(info, indent=2)}\n")
+
     # Clean sdb
     assert_disk_has_no_mounts(vm, "sdb")
     vm.execute("sudo wipefs -af /dev/sdb")
@@ -210,7 +213,6 @@ def assert_clean_disk(vm: SshNode, kernel_name: str):
     res = vm.execute(f"sudo lsblk /dev/{kernel_name} --json --bytes --output-all")
     res.assert_exit_code()
     info = json.loads(res.stdout)["blockdevices"][0]
-    print(f"Disk {kernel_name} info:\n{json.dumps(info, indent=2)}")
 
     children = [child for child in info.get("children", []) if child]
     assert len(children) == 0, f"Disk {kernel_name} is not clean!"
