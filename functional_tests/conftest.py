@@ -145,6 +145,7 @@ class RustModule(Collector):
                 module_path=self.module_path + [module_name],
             )
 
+        test_index = 0
         # Yield a function for each test case
         for test_name, test_data in self.module_data.get("test_cases", {}).items():
             if "raid" in test_name:
@@ -159,10 +160,13 @@ class RustModule(Collector):
                     crate=self.crate,
                     module_path="::".join(self.module_path),
                     test_case=test_name,
+                    order=test_index,
                     skip=test_data.get("skip", None),
                     xfail=test_data.get("xfail", None),
                 ),
             )
+            test_index += 1
+
             for marker in test_data.get("markers", []):
                 node.add_marker(marker)
             yield node
@@ -175,6 +179,7 @@ def run_rust_functional_test(
     crate,
     module_path,
     test_case,
+    test_index,
     skip=Optional[str],
     xfail=Optional[str],
 ):
@@ -190,15 +195,16 @@ def run_rust_functional_test(
     testRunner.run(
         crate,
         f"{module_path}::{test_case}",
+        test_index,
     )
 
 
 @pytest.fixture(scope="function")
 def wipe_sdb(vm: SshNode):
-    """Wipes the SDB on the VM."""
-    vm.execute("sudo wipefs -af /dev/sdb")
-
-    yield
+    """View disks on the VM."""
+    for disk in ["sda", "sdb"]:
+        res = vm.execute(f"sudo lsblk /dev/{disk} --json --bytes --output-all")
+        print(f"Disk {disk} info:\n{res.stdout}\n{res.stderr}")
 
     res = vm.execute(f"sudo mount")
     print(f"mount:\n{res.stdout}\n{res.stderr}")
@@ -206,16 +212,16 @@ def wipe_sdb(vm: SshNode):
     res = vm.execute(f"sudo cat /proc/mdstat")
     print(f"cat /proc/mdstat:\n{res.stdout}\n{res.stderr}")
 
-    # Look at sda and sdb
-    for disk in ["sda", "sdb"]:
-        res = vm.execute(f"sudo lsblk /dev/{disk} --json --bytes --output-all")
-        res.assert_exit_code()
-        info = json.loads(res.stdout)
-        print(f"Disk {disk} info:\n{json.dumps(info, indent=2)}\n")
+    """Wipes the SDB on the VM."""
+    res = vm.execute("sudo wipefs -af /dev/sdb")
+    print(f"wipefs -af /dev/sdb:\n{res.stdout}\n{res.stderr}")
+
+    yield
 
     # Clean sdb
     assert_disk_has_no_mounts(vm, "sdb")
-    vm.execute("sudo wipefs -af /dev/sdb")
+    res = vm.execute("sudo wipefs -af /dev/sdb")
+    print(f"(second) wipefs -af /dev/sdb:\n{res.stdout}\n{res.stderr}")
     assert_clean_disk(vm, "sdb")
 
 

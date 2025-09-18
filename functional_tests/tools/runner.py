@@ -26,7 +26,9 @@ class RunnerTool:
     def __init__(self, node: INode):
         self.node: INode = node
 
-    def run(self, module_name, test_name=None, parallel: bool = False) -> None:
+    def run(
+        self, module_name, test_name=None, test_index=None, parallel: bool = False
+    ) -> None:
         # For some reason, passing RUST_BACKTRACE=1 here works, while passing it
         # via the `update_envs` parameter in `execute()` does not.
         cmd = f"RUST_BACKTRACE=1 tests/{module_name} --exact"
@@ -36,6 +38,9 @@ class RunnerTool:
             cmd += f" {test_name}"
 
         result = self.node.execute(cmd, no_info_log=False, sudo=True)
+        print(
+            f"bcf: {test_index} {module_name} {test_name} exit_code={result.exit_code}"
+        )
         print(result.stdout)
         print(result.stderr, file=sys.stderr)
         if result.exit_code != 0:
