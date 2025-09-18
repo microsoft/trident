@@ -1,28 +1,7 @@
 
 ## Contents
 
-- [Trident](#trident)
-  - [Contents](#contents)
-  - [Getting Started](#getting-started)
-    - [Install Trident](#install-trident)
-    - [Dependencies](#dependencies)
-  - [Running Trident](#running-trident)
-    - [Trident Environments](#trident-environments)
-    - [Safety check](#safety-check)
-  - [Trident Configuration](#trident-configuration)
-    - [Host Configuration](#host-configuration)
-    - [Command Line Options](#command-line-options)
-      - [Allowed Operations](#allowed-operations)
-      - [Other Options](#other-options)
-    - [Agent Configuration](#agent-configuration)
-  - [A/B Update](#ab-update)
-    - [Getting Started with A/B Update](#getting-started-with-ab-update)
-      - [Staging and Finalizing A/B Update](#staging-and-finalizing-ab-update)
-  - [dm-verity Support](#dm-verity-support)
-  - [Running from container](#running-from-container)
-  - [Running from Azure VM](#running-from-azure-vm)
-  - [gRPC Interface](#grpc-interface)
-
+Please use the [auto-generated table of contents](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-readmes#auto-generated-table-of-contents-for-readme-files) GitHub creates. To reveal it, select the three bar menu icon at the top of the page.
 ## Getting Started
 
 
