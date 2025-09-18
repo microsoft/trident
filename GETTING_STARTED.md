@@ -22,13 +22,6 @@
   - [Running from container](#running-from-container)
   - [Running from Azure VM](#running-from-azure-vm)
   - [gRPC Interface](#grpc-interface)
-  - [Development](#development)
-  - [Contributing](#contributing)
-  - [Versioning and changelog](#versioning-and-changelog)
-  - [Authors](#authors)
-  - [License](#license)
-  - [Acknowledgments](#acknowledgments)
-
 
 ## Getting Started
 
