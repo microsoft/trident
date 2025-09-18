@@ -160,7 +160,7 @@ class RustModule(Collector):
                     crate=self.crate,
                     module_path="::".join(self.module_path),
                     test_case=test_name,
-                    order=test_index,
+                    test_index=test_index,
                     skip=test_data.get("skip", None),
                     xfail=test_data.get("xfail", None),
                 ),
