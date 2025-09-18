@@ -59,7 +59,7 @@ parameters:
     type: string
     default: ""
 
-  - name: envVars
+  - name: httpsProxy
     type: string
     default: ""
 
@@ -74,8 +74,8 @@ steps:
           -s "${{ parameters.artifactsDirectory }}" > ./stage-ab-update-deployment.log 2>&1 &
 
       ENV_VAR_ARGS=""
-      if [ -n "${{ parameters.envVars }}" ]; then
-        ENV_VAR_ARGS="--env-vars ${{ parameters.envVars }}"
+      if [ -n "${{ parameters.httpsProxy }}" ]; then
+        ENV_VAR_ARGS="--env-vars HTTPS_PROXY=${{ parameters.httpsProxy }}"
       fi
 
       echo "Running script to stage A/B update..."
@@ -142,8 +142,8 @@ steps:
           -s "${{ parameters.artifactsDirectory }}" > ./finalize-ab-update.log 2>&1 &
 
       ENV_VARS_ARG=""
-      if [ -n "${{ parameters.envVars }}" ]; then
-        ENV_VARS_ARG="--env-vars ${{ parameters.envVars }}"
+      if [ -n "${{ parameters.httpsProxy }}" ]; then
+        ENV_VARS_ARG="--env-vars HTTPS_PROXY=${{ parameters.httpsProxy }}"
       fi
 
       echo "Running script to finalize A/B update..."

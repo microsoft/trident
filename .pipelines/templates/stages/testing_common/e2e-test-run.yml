@@ -59,7 +59,7 @@ parameters:
     type: string
     default: ""
 
-  - name: envVars
+  - name: httpsProxy
     type: string
     default: ""
 
@@ -133,8 +133,8 @@ steps:
         -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-runtime-os-B.log 2>&1 &
 
       ENV_VAR_ARGS=""
-      if [ -n "${{ parameters.envVars }}" ]; then
-        ENV_VAR_ARGS="--env-vars ${{ parameters.envVars }}"
+      if [ -n "${{ parameters.httpsProxy }}" ]; then
+        ENV_VAR_ARGS="--env-vars HTTPS_PROXY=${{ parameters.httpsProxy }}"
       fi
 
       echo "Running script to stage and finalize A/B update..."
@@ -242,8 +242,8 @@ steps:
           -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-runtime-os-A.log 2>&1 &
 
       ENV_VAR_ARGS=""
-      if [ -n "${{ parameters.envVars }}" ]; then
-        ENV_VAR_ARGS="--env-vars ${{ parameters.envVars }}"
+      if [ -n "${{ parameters.httpsProxy }}" ]; then
+        ENV_VAR_ARGS="--env-vars HTTPS_PROXY=${{ parameters.httpsProxy }}"
       fi
 
       echo "Running script to stage and finalize A/B update..."
@@ -353,7 +353,7 @@ steps:
           deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
           netlistenPort: ${{ parameters.netlistenPort }}
           netlistenConfigFile: ${{ parameters.netlistenConfigFile }}
-          envVars: ${{ parameters.envVars }}
+          httpsProxy: ${{ parameters.httpsProxy }}
 
   - template: ../testing_common/trident-rebuild.yml
     parameters:
