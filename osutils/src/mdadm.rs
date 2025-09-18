@@ -200,10 +200,8 @@ pub fn remove(raid_path: impl AsRef<Path>, device: impl AsRef<Path>) -> Result<(
 
     let retry_count = 100;
     let pause_duration = Duration::from_millis(100);
-    retriable_mdadm(mdm_cmd, retry_count, pause_duration).context(format!(
-        "Failed to run mdadm remove device after {} retries",
-        retry_count
-    ))
+    retriable_mdadm(mdm_cmd, retry_count, pause_duration)
+        .context("Failed to run mdadm remove device")
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Hash, Eq, PartialEq, Default)]
