@@ -147,7 +147,8 @@ steps:
           --version $(version) \
           --stage-ab-update \
           --finalize-ab-update \
-          $PROXY_ARG
+          --env-vars TEST_ONE="testvalue", TEST_TWO="testvalue2"
+          --env-vars TEST_THREE="testvalue3"
 
       current_version=$(echo $(version))
       new_version=$((current_version + 1))
