@@ -374,6 +374,8 @@ func startLocalVm(localVmUuidStr string, isoLocation string, keyLocation string)
 	defer vm.Disconnect()
 
 	// Set SecureBoot to true
+	// TODO: HOW DO I SET IT FOR UKI TESTS ONLY????
+	// TODO: WHAT SHOULD KEYLOCATION POINT TO???
 	if err = vm.SetFirmwareVars(isoLocation, true, keyLocation); err != nil {
 		log.WithError(err).Fatalf("failed to set UEFI variables")
 	}
