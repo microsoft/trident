@@ -13,14 +13,12 @@ use std::{env, io::BufReader};
 
 use anyhow::{bail, ensure, Context, Error};
 use log::{debug, trace, warn};
-use maplit::hashmap;
 use oci_client::{secrets::RegistryAuth, Client as OciClient, Reference};
 use reqwest::{
     blocking::{Client, ClientBuilder, Response},
     header::{HeaderMap, HeaderValue, AUTHORIZATION},
 };
 use tokio::runtime::Runtime;
-use trident_api::error::InternalError;
 use url::Url;
 
 #[cfg(feature = "dangerous-options")]
@@ -137,7 +135,6 @@ pub struct HttpFile {
     size: u64,
     client: Client,
     timeout: Duration,
-    token: Option<String>,
 }
 
 impl HttpFile {
@@ -256,7 +253,6 @@ impl HttpFile {
             size,
             client,
             timeout,
-            token,
         })
     }
 
@@ -642,7 +638,6 @@ mod tests {
             size: 100, // We have indices from 0 to 99
             client: Client::new(),
             timeout: Duration::from_secs(1),
-            token: None,
         };
 
         assert_eq!(http_file.seek(SeekFrom::Start(50)).unwrap(), 50);
