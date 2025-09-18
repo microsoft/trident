@@ -13,9 +13,14 @@ use std::{env, io::BufReader};
 
 use anyhow::{bail, ensure, Context, Error};
 use log::{debug, trace, warn};
+use maplit::hashmap;
 use oci_client::{secrets::RegistryAuth, Client as OciClient, Reference};
-use reqwest::blocking::{Client, Response};
+use reqwest::{
+    blocking::{Client, ClientBuilder, Response},
+    header::{HeaderMap, HeaderValue, AUTHORIZATION},
+};
 use tokio::runtime::Runtime;
+use trident_api::error::InternalError;
 use url::Url;
 
 #[cfg(feature = "dangerous-options")]
@@ -137,7 +142,7 @@ pub struct HttpFile {
 
 impl HttpFile {
     /// Creates a new HTTP file reader from a standard HTTP URL.
-    pub fn new(url: &Url, timeout: Duration) -> IoResult<Self> {
+    pub fn new(url: &Url, timeout: Duration) -> Result<Self, Error> {
         Self::new_inner(url, None, false, timeout)
     }
 
@@ -171,19 +176,25 @@ impl HttpFile {
         token: Option<String>,
         ignore_ranges_header_absence: bool,
         timeout: Duration,
-    ) -> IoResult<Self> {
+    ) -> Result<Self, Error> {
         debug!("Opening HTTP file '{}'", url);
 
         // Create a new client for this file.
-        let client = Client::new();
-        let request_sender = || {
-            let mut request = client.head(url.as_str());
-            if let Some(token) = &token {
-                request = request.header("Authorization", format!("Bearer {token}"));
-            }
-            request.send()
-        };
-        let response = Self::retriable_request_sender(request_sender, timeout)?;
+        let mut client_builder = ClientBuilder::new()
+            .user_agent("azl-trident")
+            .connect_timeout(Duration::from_secs(1));
+        if let Some(token) = &token {
+            let mut value = HeaderValue::from_str(&format!("Bearer {token}"))
+                .context("Failed to parse authorization header")?;
+            value.set_sensitive(true);
+            let mut headers = HeaderMap::new();
+            headers.insert(AUTHORIZATION, value);
+            client_builder = client_builder.default_headers(headers);
+        }
+        let client = client_builder.build()?;
+
+        let response =
+            Self::retriable_request_sender(|| client.head(url.as_str()).send(), timeout)?;
         trace!("HTTP file '{}' has status: {}", url, response.status());
 
         // Get the file size from the response headers
@@ -234,7 +245,8 @@ impl HttpFile {
             return Err(IoError::new(
                 IoErrorKind::Other,
                 "Server does not support range requests: 'Accept-Ranges: none'",
-            ));
+            )
+            .into());
         }
 
         debug!("Successfully queried HTTP file '{}' of size: {}", url, size);
@@ -365,10 +377,6 @@ impl HttpFile {
     fn reader(&self, start: Option<u64>, end: Option<u64>) -> IoResult<Response> {
         let request_sender = || {
             let mut request = self.client.get(self.url.as_str());
-
-            if let Some(token) = self.token.clone() {
-                request = request.header("Authorization", format!("Bearer {token}"));
-            }
 
             // Generate the range header when appropriate
             let range_header = match (start, end) {
