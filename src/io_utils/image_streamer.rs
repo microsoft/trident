@@ -28,7 +28,7 @@ where
     Ok(reader.hash())
 }
 
-/// Streams data from a reader to a new file at the specificed destination path.
+/// Streams data from a reader to a new file at the specified destination path.
 ///
 /// Returns the hash of the input stream.
 #[allow(dead_code)]
