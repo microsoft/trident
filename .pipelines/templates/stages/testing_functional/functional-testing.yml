@@ -42,7 +42,7 @@ stages:
           name: trident-ubuntu-1es-pool-eastus2
           hostArchitecture: amd64
         strategy:
-          parallel: 25
+          parallel: 256
 
         variables:
           ob_outputDirectory: $(Build.SourcesDirectory)/build
