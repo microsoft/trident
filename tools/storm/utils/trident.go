@@ -57,7 +57,7 @@ func InvokeTrident(env TridentEnvironment, client *ssh.Client, envVars []string,
 	if len(envVars) != 0 {
 		var envKeys []string
 		for _, v := range envVars {
-			if key := strings.Split(v, "=")[0]; key != "" {
+			if key, _, _ := strings.Cut(v, "="); key != "" {
 				envKeys = append(envKeys, key)
 			}
 		}
