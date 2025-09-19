@@ -45,11 +45,11 @@ check_gh_cli() {
 # Get all releases using GitHub CLI
 get_releases() {
     local include_prerelease="$1"
-    if [[ "$include_prerelease" != "true" ]]; then
-        # Get all releases (excluding pre-releases by default)
+    if [[ "$include_prerelease" == "true" ]]; then
+        # Get all releases (including prereleases)
         releases=$(gh api "repos/${REPO}/releases" --jq ".[] | .name" --paginate)
     else
-        # Get all releases (excluding pre-releases by default)
+        # Get only non-prerelease releases (exclude prereleases)
         releases=$(gh api "repos/${REPO}/releases" --jq ".[] | select(.prerelease==false) | .name" --paginate)
     fi
     echo "$releases"
