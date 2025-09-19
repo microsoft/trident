@@ -1,7 +1,7 @@
 import clsx from 'clsx';
 import Heading from '@theme/Heading';
 import styles from './styles.module.css';
-const { sprintf } = require('sprintf-js');
+import { sprintf } from 'sprintf-js';
 
 const FeatureList = [
   {
