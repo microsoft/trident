@@ -77,7 +77,7 @@ exclude_versions() {
                     found=true
                     break
                 fi
-            done <<< "$(echo ${EXCLUDED_VERSIONS} | tr ' ' '\n')"
+            done <<< "$(echo "${EXCLUDED_VERSIONS}" | tr ' ' '\n')"
             if ! $found; then
                 echo "$unfiltered_version"
             fi
