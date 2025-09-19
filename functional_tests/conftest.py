@@ -8,6 +8,7 @@ import tempfile
 import fnmatch
 import json
 
+from datetime import datetime
 from functools import partial
 from typing import Any, Dict, Iterable, List, Optional, Union
 from pytest import Collector, File, Function, Item
@@ -191,12 +192,23 @@ def run_rust_functional_test(
 
     from functional_tests.tools.runner import RunnerTool
 
+    start_time = datetime.now()
+    with open("/tmp/tests_execution.txt", "a") as file:
+        file.write(
+            f"++ {test_index} {crate} {module_path}::{test_case}  {start_time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+        )
+
     testRunner = RunnerTool(vm)
     testRunner.run(
         crate,
         f"{module_path}::{test_case}",
         test_index,
     )
+
+    end_time = datetime.now()
+    duration = end_time - start_time
+    with open("/tmp/tests_execution.txt", "a") as file:
+        file.write(f"-- {test_index} {crate} {module_path}::{test_case} {duration}\n")
 
 
 @pytest.fixture(scope="function")
