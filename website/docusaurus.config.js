@@ -5,8 +5,8 @@
 // See: https://docusaurus.io/docs/api/docusaurus-config
 
 import { themes as prismThemes } from 'prism-react-renderer';
-const path = require("path");
-const fs = require("fs");
+import path from "path";
+import fs from "fs";
 
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
 function getVersions() {
