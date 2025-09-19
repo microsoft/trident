@@ -23,7 +23,7 @@ func BuildTridentContainerCommand(envVars []string) string {
 	cmd := DOCKER_COMMAND_BASE
 	if len(envVars) != 0 {
 		for _, envVar := range envVars {
-			cmd += fmt.Sprintf("--env %s ", envVar)
+			cmd += fmt.Sprintf("--env '%s' ", envVar)
 		}
 	}
 	cmd += TRIDENT_CONTAINER
@@ -61,8 +61,12 @@ func InvokeTrident(env TridentEnvironment, client *ssh.Client, envVars []string,
 				envKeys = append(envKeys, key)
 			}
 		}
+		var quotedEnvVars []string
+		for _, v := range envVars {
+			quotedEnvVars = append(quotedEnvVars, fmt.Sprintf("'%s'", v))
+		}
 		preservedEnvs := strings.Join(envKeys, ",")
-		cmdPrefix = fmt.Sprintf("%s sudo --preserve-env=%s", strings.Join(envVars, " "), preservedEnvs)
+		cmdPrefix = fmt.Sprintf("%s sudo --preserve-env=%s", strings.Join(quotedEnvVars, " "), preservedEnvs)
 	} else {
 		cmdPrefix = "sudo"
 	}
