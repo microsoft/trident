@@ -240,7 +240,7 @@ def wipe_sdb(vm: SshNode):
     yield
 
     # Clean sdb
-    assert_disk_has_no_mounts("sdb", info)
+    assert_disk_has_no_mounts("sdb", children)
     assert_clean_disk(mounts, "sdb")
 
 
