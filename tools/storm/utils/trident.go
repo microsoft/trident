@@ -55,17 +55,10 @@ func InvokeTrident(env TridentEnvironment, client *ssh.Client, envVars []string,
 
 	var cmdPrefix string
 	if len(envVars) != 0 {
-		// var envKeys []string
-		// for _, v := range envVars {
-		// 	if key, _, _ := strings.Cut(v, "="); key != "" {
-		// 		envKeys = append(envKeys, key)
-		// 	}
-		// }
 		var quotedEnvVars = ""
 		for _, v := range envVars {
 			quotedEnvVars += fmt.Sprintf("'%s' ", v)
 		}
-		// preservedEnvs := strings.Join(envKeys, ",")
 		cmdPrefix = fmt.Sprintf("sudo %s", quotedEnvVars)
 	} else {
 		cmdPrefix = "sudo"
