@@ -240,21 +240,14 @@ def wipe_sdb(vm: SshNode):
     yield
 
     # Clean sdb
-    assert_disk_has_no_mounts("sdb", children)
-    assert_clean_disk(mounts, "sdb")
-
-
-def assert_clean_disk(kernel_name: str, children: Any):
-    assert len(children) == 0, f"Disk {kernel_name} is not clean!"
-    assert children.get("pttype", None) is None, f"Disk {kernel_name} is not clean!"
-
-
-def assert_disk_has_no_mounts(mounts: List[str], kernel_name: str):
     for mount in mounts:
         source, target = mount.split()
         assert not source.startswith(
-            f"/dev/{kernel_name}"
+            f"/dev/sdb"
         ), f"Partition '{source}' is mounted at '{target}'"
+
+    assert len(children) == 0, f"Disk sdb is not clean!"
+    assert children.get("pttype", None) is None, f"Disk sdb is not clean!"
 
 
 def fetch_code_coverage(ssh_node):
