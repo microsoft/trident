@@ -10,15 +10,44 @@ use log::{debug, trace};
 
 use trident_api::primitives::bytes::ByteCount;
 
-use crate::hashing_reader::HashingReader;
+use crate::io_utils::hashing_reader::HashingReader;
 
-pub fn stream_zstd<R>(mut reader: R, destination_path: &Path) -> Result<String, Error>
+/// Decompresses a ZSTD-compressed stream from a reader and writes the output
+/// to the specified destination path.
+///
+/// Returns the hash of the compressed input stream.
+pub fn stream_zstd_and_hash<R>(mut reader: R, destination_path: &Path) -> Result<String, Error>
 where
     R: Read + HashingReader,
 {
     // Instantiate decoder for ZSTD stream
     let mut decoder = zstd::stream::read::Decoder::new(BufReader::new(&mut reader))?;
 
+    write_to_path(&mut decoder, destination_path)?;
+
+    Ok(reader.hash())
+}
+
+/// Streams data from a reader to a new file at the specified destination path.
+///
+/// Returns the hash of the input stream.
+#[allow(dead_code)]
+pub fn stream_and_hash<R>(mut reader: R, destination_path: &Path) -> Result<String, Error>
+where
+    R: Read + HashingReader,
+{
+    // Instantiate bufreader for stream to read more efficiently
+    let mut bufreader = BufReader::new(&mut reader);
+
+    write_to_path(&mut bufreader, destination_path)?;
+
+    Ok(reader.hash())
+}
+
+fn write_to_path<R>(mut reader: R, destination_path: &Path) -> Result<(), Error>
+where
+    R: Read,
+{
     // Open the partition for writing.
     let file = File::options()
         .write(true)
@@ -30,14 +59,15 @@ where
 
     let t = Instant::now();
 
-    // Decompress the image and write it to the block device
-    let bytes_copied = io::copy(&mut decoder, &mut file).context("Failed to copy image")?;
+    // (If the reader is a Decoder, decompress the image and) write to the block
+    // device
+    let bytes_copied = io::copy(&mut reader, &mut file).context("Failed to copy image")?;
 
-    trace!("Decompressed {} bytes.", bytes_copied);
+    trace!("Copied {} bytes.", bytes_copied);
 
     // Attempt to read an additional byte from the stream to see whether the whole image was
     // consumed.
-    if decoder.read(&mut [0])? != 0 {
+    if reader.read(&mut [0])? != 0 {
         bail!("Image is larger than destination ({} bytes already copied, however additional bytes remaining)", bytes_copied);
     }
 
@@ -66,5 +96,5 @@ where
         t.elapsed().as_secs_f32()
     );
 
-    Ok(reader.hash())
+    Ok(())
 }

@@ -6,7 +6,7 @@ use std::{
 use anyhow::{bail, ensure, Context, Error};
 use log::{debug, info, trace, warn};
 
-use osutils::{e2fsck, hashing_reader::HashingReader384, image_streamer, lsblk, resize2fs};
+use osutils::{e2fsck, lsblk, resize2fs};
 use trident_api::{
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::ServicingType,
@@ -15,6 +15,7 @@ use trident_api::{
 
 use crate::{
     engine::{context::filesystem::FileSystemDataImage, EngineContext},
+    io_utils::{hashing_reader::HashingReader384, image_streamer},
     osimage::OsImageFile,
 };
 
@@ -216,8 +217,8 @@ fn deploy_os_image_file(
             .context("Failed to create reader for filesystem image file")?,
     );
 
-    let computed_sha384 =
-        image_streamer::stream_zstd(stream, &block_device_path).context(format!(
+    let computed_sha384 = image_streamer::stream_zstd_and_hash(stream, &block_device_path)
+        .context(format!(
             "Failed to stream image to block device '{id}' at '{}'",
             block_device_path.display()
         ))?;

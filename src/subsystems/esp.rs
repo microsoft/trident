@@ -12,8 +12,6 @@ use tempfile::{NamedTempFile, TempDir};
 use osutils::{
     bootloaders::{BOOT_EFI, GRUB_EFI, GRUB_NOPREFIX_EFI},
     filesystems::MountFileSystemType,
-    hashing_reader::{HashingReader, HashingReader384},
-    image_streamer,
     mount::{self, MountGuard},
     path,
 };
@@ -26,9 +24,15 @@ use trident_api::{
     error::{ReportError, ServicingError, TridentError, TridentResultExt},
 };
 
-use crate::engine::{
-    boot::{self, uki, ESP_EXTRACTION_DIRECTORY},
-    EngineContext, Subsystem,
+use crate::{
+    engine::{
+        boot::{self, uki, ESP_EXTRACTION_DIRECTORY},
+        EngineContext, Subsystem,
+    },
+    io_utils::{
+        hashing_reader::{HashingReader, HashingReader384},
+        image_streamer,
+    },
 };
 
 #[derive(Default, Debug)]
@@ -120,7 +124,7 @@ where
     debug!("Extracting ESP image to {}", temp_image_path.display());
 
     // Stream image to the temporary file.
-    let computed_hash = image_streamer::stream_zstd(reader, &temp_image_path)
+    let computed_hash = image_streamer::stream_zstd_and_hash(reader, &temp_image_path)
         .context(format!("Failed to stream ESP image from {source}"))?;
 
     Ok((temp_image, computed_hash))

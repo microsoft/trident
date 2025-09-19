@@ -1,12 +1,14 @@
 use log::{debug, info, trace, warn};
 
-use osutils::{e2fsck, hashing_reader::compute_file_hash, lsblk};
+use osutils::{e2fsck, lsblk};
 use sysdefs::filesystems::{KernelFilesystemType, RealFilesystemType};
 use trident_api::{
     constants::internal_params::PRE_REBOOT_CHECKS,
     error::{ReportError, ServicingError, TridentError, TridentResultExt},
     status::HostStatus,
 };
+
+use crate::io_utils::hashing_reader::compute_file_hash;
 
 mod common;
 pub mod encryption;

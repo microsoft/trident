@@ -15,6 +15,7 @@ pub trait HashingReader {
 /// SHA256 hashes are used in most images except OS images.
 pub struct HashingReader256<R: Read>(R, sha2::Sha256);
 impl<R: Read> HashingReader256<R> {
+    #[allow(dead_code)]
     pub fn new(reader: R) -> Self {
         Self(reader, sha2::Sha256::new())
     }
