@@ -1,7 +1,7 @@
 use std::{
     path::{Path, PathBuf},
-    thread,
-    time::Duration,
+    // thread,
+    // time::Duration,
 };
 
 use anyhow::{Context, Error};
@@ -156,25 +156,25 @@ pub fn fail(raid_path: impl AsRef<Path>, device: impl AsRef<Path>) -> Result<(),
         .context("Failed to run mdadm fail device")
 }
 
-fn retriable_mdadm<F>(mdadm_cmd: F, retry_count: u8, pause_duration: Duration) -> Result<(), Error>
-where
-    F: Fn() -> Result<(), Error>,
-{
-    let mut attempts = 0;
-    loop {
-        match mdadm_cmd() {
-            Ok(_) => return Ok(()),
-            Err(e) => {
-                attempts += 1;
-                if attempts > retry_count {
-                    return Err(e);
-                }
-                trace!("Retrying mdadm command after failure: {e}");
-            }
-        }
-        thread::sleep(pause_duration);
-    }
-}
+// fn retriable_mdadm<F>(mdadm_cmd: F, retry_count: u8, pause_duration: Duration) -> Result<(), Error>
+// where
+//     F: Fn() -> Result<(), Error>,
+// {
+//     let mut attempts = 0;
+//     loop {
+//         match mdadm_cmd() {
+//             Ok(_) => return Ok(()),
+//             Err(e) => {
+//                 attempts += 1;
+//                 if attempts > retry_count {
+//                     return Err(e);
+//                 }
+//                 trace!("Retrying mdadm command after failure: {e}");
+//             }
+//         }
+//         thread::sleep(pause_duration);
+//     }
+// }
 
 /// Removes a device from a RAID array.
 ///
@@ -188,20 +188,20 @@ pub fn remove(raid_path: impl AsRef<Path>, device: impl AsRef<Path>) -> Result<(
         raid_path.as_ref().display()
     );
 
-    let mdm_cmd = || {
-        Dependency::Mdadm
-            .cmd()
-            .arg(raid_path.as_ref())
-            .arg("--remove")
-            .arg(device.as_ref())
-            .run_and_check()
-            .context("Failed to run mdadm remove device")
-    };
-
-    let retry_count = 10;
-    let pause_duration = Duration::from_millis(100);
-    retriable_mdadm(mdm_cmd, retry_count, pause_duration)
+    // let mdm_cmd = || {
+    Dependency::Mdadm
+        .cmd()
+        .arg(raid_path.as_ref())
+        .arg("--remove")
+        .arg(device.as_ref())
+        .run_and_check()
         .context("Failed to run mdadm remove device")
+    // };
+
+    // let retry_count = 10;
+    // let pause_duration = Duration::from_millis(100);
+    // retriable_mdadm(mdm_cmd, retry_count, pause_duration)
+    //     .context("Failed to run mdadm remove device")
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Hash, Eq, PartialEq, Default)]
