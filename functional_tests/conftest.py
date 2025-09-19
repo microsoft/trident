@@ -194,32 +194,37 @@ def wipe_sdb(vm: SshNode):
     # View disks on the VM
     for disk in ["sda", "sdb"]:
         res = vm.execute(f"sudo lsblk /dev/{disk} --json --bytes --output-all")
-        print(f"Disk {disk} info:\n{res.stdout}\n{res.stderr}")
+        print(f"Disk {disk} info:\nstdout:\n{res.stdout}\nstderr:\n{res.stderr}")
     # View mounts on the VM
     res = vm.execute(f"sudo mount")
-    print(f"mount:\n{res.stdout}\n{res.stderr}")
+    print(f"mount:\nstdout:\n{res.stdout}\nstderr:\n{res.stderr}")
     # Wipe SDB on the VM
     res = vm.execute("sudo wipefs -af /dev/sdb")
-    print(f"wipefs -af /dev/sdb:\n{res.stdout}\n{res.stderr}")
+    print(f"wipefs -af /dev/sdb:\nstdout:\n{res.stdout}\nstderr:\n{res.stderr}")
 
     yield
 
     kernel_name = "sdb"
     res = vm.execute(f"sudo findmnt -o SOURCE,TARGET -r")
     res.assert_exit_code()
-    # mounts: List[str] = res.stdout.splitlines()
-    # for mount in mounts:
-    #     source, target = mount.split()
-    #     assert not source.startswith(
-    #         f"/dev/{kernel_name}"
-    #     ), f"Partition '{source}' is mounted at '{target}'"
+    mounts: List[str] = res.stdout.splitlines()
+    for mount in mounts:
+        source, target = mount.split()
+        assert not source.startswith(
+            f"/dev/{kernel_name}"
+        ), f"Partition '{source}' is mounted at '{target}'"
+
+    res = vm.execute("sudo wipefs -af /dev/sdb")
+    print(
+        f"(second) wipefs -af /dev/sdb:\nstdout:\n{res.stdout}\nstderr:\n{res.stderr}"
+    )
 
     res = vm.execute(f"sudo lsblk /dev/{kernel_name} --json --bytes --output-all")
     res.assert_exit_code()
-    # info = json.loads(res.stdout)["blockdevices"][0]
-    # children = [child for child in info.get("children", []) if child]
-    # assert len(children) == 0, f"Disk {kernel_name} is not clean!"
-    # assert info.get("pttype", None) is None, f"Disk {kernel_name} is not clean!"
+    info = json.loads(res.stdout)["blockdevices"][0]
+    children = [child for child in info.get("children", []) if child]
+    assert len(children) == 0, f"Disk {kernel_name} is not clean!"
+    assert info.get("pttype", None) is None, f"Disk {kernel_name} is not clean!"
 
 
 def fetch_code_coverage(ssh_node):
