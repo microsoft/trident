@@ -113,12 +113,6 @@ stages:
               sg libvirt "make functional-test-core ARGUS_TOOLKIT_PATH=argus-toolkit"
             displayName: Execute Functional Tests
 
-          - bash: |
-              set -eux
-              sudo cat /tmp/tests_execution.txt
-            condition: always()
-            displayName: Examine Functional Tests execution
-
           - template: ../common_tasks/coverage.yml
             parameters:
               codeCoverageBaseline: 78 # Unit + functional tests

@@ -8,7 +8,6 @@ import tempfile
 import fnmatch
 import json
 
-from datetime import datetime
 from functools import partial
 from typing import Any, Dict, Iterable, List, Optional, Union
 from pytest import Collector, File, Function, Item
@@ -146,13 +145,8 @@ class RustModule(Collector):
                 module_path=self.module_path + [module_name],
             )
 
-        test_index = 0
         # Yield a function for each test case
         for test_name, test_data in self.module_data.get("test_cases", {}).items():
-            # if "raid" in test_name:
-            #     print(f"bcf: skip raid test: {test_name}")
-            #     continue
-
             node = Function.from_parent(
                 self,
                 name=test_name,
@@ -161,12 +155,10 @@ class RustModule(Collector):
                     crate=self.crate,
                     module_path="::".join(self.module_path),
                     test_case=test_name,
-                    test_index=test_index,
                     skip=test_data.get("skip", None),
                     xfail=test_data.get("xfail", None),
                 ),
             )
-            test_index += 1
 
             for marker in test_data.get("markers", []):
                 node.add_marker(marker)
@@ -180,7 +172,6 @@ def run_rust_functional_test(
     crate,
     module_path,
     test_case,
-    test_index,
     skip=Optional[str],
     xfail=Optional[str],
 ):
@@ -192,23 +183,11 @@ def run_rust_functional_test(
 
     from functional_tests.tools.runner import RunnerTool
 
-    start_time = datetime.now()
-    with open("/tmp/tests_execution.txt", "a") as file:
-        file.write(
-            f"++ {test_index} {crate} {module_path}::{test_case}  {start_time.strftime('%Y-%m-%d %H:%M:%S')}\n"
-        )
-
     testRunner = RunnerTool(vm)
     testRunner.run(
         crate,
         f"{module_path}::{test_case}",
-        test_index,
     )
-
-    end_time = datetime.now()
-    duration = end_time - start_time
-    with open("/tmp/tests_execution.txt", "a") as file:
-        file.write(f"-- {test_index} {crate} {module_path}::{test_case} {duration}\n")
 
 
 @pytest.fixture(scope="function")
@@ -228,8 +207,10 @@ def wipe_sdb(vm: SshNode):
     res = vm.execute("sudo wipefs -af /dev/sdb")
     print(f"wipefs -af /dev/sdb:\n{res.stdout}\n{res.stderr}")
 
+    # Get disk info prior to yielding, assert after yielding.  This
+    # ensures that the next test (which starts after the yield) will
+    # not encounter a busy disk while findmnt or lsblk is run here.
     kernel_name = "sdb"
-
     res = vm.execute(f"sudo findmnt -o SOURCE,TARGET -r")
     res.assert_exit_code()
     mounts: List[str] = res.stdout.splitlines()
