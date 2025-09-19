@@ -5,13 +5,24 @@
 // See: https://docusaurus.io/docs/api/docusaurus-config
 
 import { themes as prismThemes } from 'prism-react-renderer';
+const path = require("path");
+const fs = require("fs");
 
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
-const VERSIONS = require('./versions.json');
+function getVersions() {
+  const versionsPath = path.resolve(__dirname, "versions.json");
+  if (fs.existsSync(versionsPath)) {
+    return require(versionsPath);
+  } else {
+    return ["current"];
+  }
+}
 function getDocsVersions() {
   let currentVersion = getLatestVersion();
+  let versions = getVersions();
   const result = {};
-  VERSIONS.map(version => {
+
+  versions.forEach(version => {
     if (version === 'current') {
       result[version] = {
         label: 'dev',
@@ -34,10 +45,11 @@ function getDocsVersions() {
 }
 
 function getLatestVersion() {
-  if (VERSIONS.length < 1) {
+  let versions = getVersions();
+  if (versions.length < 1) {
     return 'current';
   }
-  return VERSIONS[0];
+  return versions[0];
 }
 
 /** @type {import('@docusaurus/types').Config} */
