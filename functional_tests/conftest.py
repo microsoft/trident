@@ -228,29 +228,28 @@ def wipe_sdb(vm: SshNode):
     res = vm.execute("sudo wipefs -af /dev/sdb")
     print(f"wipefs -af /dev/sdb:\n{res.stdout}\n{res.stderr}")
 
-    yield
-
-    # Clean sdb
-    assert_disk_has_no_mounts(vm, "sdb")
-    res = vm.execute("sudo wipefs -af /dev/sdb")
-    print(f"(second) wipefs -af /dev/sdb:\n{res.stdout}\n{res.stderr}")
-    assert_clean_disk(vm, "sdb")
-
-
-def assert_clean_disk(vm: SshNode, kernel_name: str):
-    res = vm.execute(f"sudo lsblk /dev/{kernel_name} --json --bytes --output-all")
+    res = vm.execute(f"sudo lsblk /dev/sdb --json --bytes --output-all")
     res.assert_exit_code()
     info = json.loads(res.stdout)["blockdevices"][0]
 
+    res = vm.execute(f"sudo findmnt -o SOURCE,TARGET -r")
+    res.assert_exit_code()
+    mounts: List[str] = res.stdout.splitlines()
+
+    yield
+
+    # Clean sdb
+    assert_disk_has_no_mounts("sdb", info)
+    assert_clean_disk(mounts, "sdb")
+
+
+def assert_clean_disk(kernel_name: str, info: Dict[str, Any]):
     children = [child for child in info.get("children", []) if child]
     assert len(children) == 0, f"Disk {kernel_name} is not clean!"
     assert info.get("pttype", None) is None, f"Disk {kernel_name} is not clean!"
 
 
-def assert_disk_has_no_mounts(vm: SshNode, kernel_name: str):
-    res = vm.execute(f"sudo findmnt -o SOURCE,TARGET -r")
-    res.assert_exit_code()
-    mounts: List[str] = res.stdout.splitlines()
+def assert_disk_has_no_mounts(mounts: List[str], kernel_name: str):
     for mount in mounts:
         source, target = mount.split()
         assert not source.startswith(
