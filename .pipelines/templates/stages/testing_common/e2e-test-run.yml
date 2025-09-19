@@ -134,7 +134,7 @@ steps:
 
       PROXY_ARG=""
       if [ -n "${{ parameters.httpsProxy }}" ]; then
-        PROXY_ARG="--proxy HTTPS_PROXY=${{ parameters.httpsProxy }}"
+        PROXY_ARG="--env-vars HTTPS_PROXY=${{ parameters.httpsProxy }}"
       fi
 
       echo "Running script to stage and finalize A/B update..."
@@ -147,6 +147,7 @@ steps:
           --version $(version) \
           --stage-ab-update \
           --finalize-ab-update \
+          --env-vars TEST_ONE="test one",TEST_TWO="testtwo" \
           $PROXY_ARG
 
       current_version=$(echo $(version))
@@ -243,7 +244,7 @@ steps:
 
       PROXY_ARG=""
       if [ -n "${{ parameters.httpsProxy }}" ]; then
-        PROXY_ARG="--proxy HTTPS_PROXY=${{ parameters.httpsProxy }}"
+        PROXY_ARG="--env-vars HTTPS_PROXY=${{ parameters.httpsProxy }}"
       fi
 
       echo "Running script to stage and finalize A/B update..."
