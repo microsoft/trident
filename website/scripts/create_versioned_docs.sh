@@ -169,19 +169,19 @@ main() {
         # Can use branches for testing
         #
         versions=$(get_branches "$DEBUG_BRANCH_PATTERN")
-        echo "Found branches: ${versions[*]}"
+        echo "Found branches: ${versions}"
     else
         # Get releases
         versions=$(get_releases $include_prerelease)
-        echo "Found releases: ${versions[*]}"
+        echo "Found releases: ${versions}"
     fi
 
     versions=$(exclude_versions "$versions")
-    echo "Filtered versions: ${versions[*]}"
+    echo "Filtered versions: ${versions}"
     
     if [[ "$MAX_VERSION_COUNT" != "-1" ]]; then
         versions=$(echo "$versions" | head -n "$MAX_VERSION_COUNT")
-        echo "Count-limited versions: ${versions[*]}"
+        echo "Count-limited versions: ${versions}"
     fi
 
     # Create versioned docs directory if it doesn't exist
