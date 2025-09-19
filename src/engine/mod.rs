@@ -36,7 +36,7 @@ use crate::{
 // Engine functionality
 pub mod bootentries;
 mod clean_install;
-mod context;
+pub mod context;
 mod kexec;
 mod newroot;
 pub mod provisioning_network;

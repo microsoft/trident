@@ -4,11 +4,10 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
-use filesystem::FileSystemData;
 use log::{debug, trace};
 
 use trident_api::{
-    config::{HostConfiguration, Partition, VerityDevice},
+    config::{ExtensionData, HostConfiguration, Partition, VerityDevice},
     constants::ROOT_MOUNT_POINT_PATH,
     error::{InternalError, ReportError, TridentError},
     status::{AbVolumeSelection, ServicingType},
@@ -18,8 +17,11 @@ use trident_api::{
 
 use crate::osimage::OsImage;
 
+pub mod extension;
 #[allow(dead_code)]
 pub mod filesystem;
+
+use filesystem::FileSystemData;
 
 #[cfg(test)]
 mod test_utils;
@@ -76,8 +78,11 @@ pub struct EngineContext {
     /// Whether the image will use a UKI or not.
     pub is_uki: Option<bool>,
 
-    /// All of the sysexts and confexts in the system.
-    pub extensions: Extensions,
+    /// All of the new sysexts and confexts to add to the system.
+    pub extensions: Vec<ExtensionData>,
+
+    /// All of the existing sysexts and confexts in the system.
+    pub extensions_old: Vec<ExtensionData>,
 }
 impl EngineContext {
     /// Returns the update volume selection for all A/B volume pairs. The update volume is the one

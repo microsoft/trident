@@ -206,6 +206,8 @@ fn stage_clean_install(
         image: Some(image),
         storage_graph: engine::build_storage_graph(&host_config.storage)?, // Build storage graph
         filesystems: Vec::new(), // Will be populated after dynamic validation
+        extensions: Vec::new(),  // TODO(15251): Support servicing extensions in clean install
+        extensions_old: Vec::new(), // TODO(15251): Support servicing extensions in clean install
     };
 
     // Execute pre-servicing scripts
@@ -273,6 +275,7 @@ fn stage_clean_install(
             install_index: ctx.install_index,
             last_error: None,
             is_management_os: true,
+            extensions: Default::default(), // TODO(15251): Support servicing extensions in clean install
         }
     })?;
     #[cfg(feature = "grpc-dangerous")]
@@ -308,6 +311,8 @@ pub(crate) fn finalize_clean_install(
         storage_graph: engine::build_storage_graph(&state.host_status().spec.storage)?, // Build storage graph
         filesystems: Vec::new(), // Left empty since context does not have image
         is_uki: None,
+        extensions: Vec::new(), // TODO(15251): Support servicing extensions in clean install
+        extensions_old: Vec::new(), // TODO(15251): Support servicing extensions in clean install
     };
 
     let new_root = match new_root {

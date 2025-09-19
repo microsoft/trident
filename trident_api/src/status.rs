@@ -8,7 +8,10 @@ use serde::{Deserialize, Serialize};
 use strum_macros::EnumIter;
 use uuid::Uuid;
 
-use crate::{config::HostConfiguration, is_default, BlockDeviceId};
+use crate::{
+    config::{ExtensionData, HostConfiguration},
+    is_default, BlockDeviceId,
+};
 
 /// HostStatus is the status of a host. Reflects the current state of the host and any encountered
 /// errors.
@@ -55,6 +58,8 @@ pub struct HostStatus {
     /// Whether this HostStatus is stored on the management OS.
     #[serde(default, skip_serializing_if = "is_default")]
     pub is_management_os: bool,
+
+    pub extensions: Vec<ExtensionData>,
 }
 
 /// Servicing type is the type of servicing that the Trident agent is executing on the host.

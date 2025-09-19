@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -25,9 +27,9 @@ pub struct Extension {
     /// The Sha384 of the entire Extension Image.
     #[cfg_attr(
         feature = "schemars",
-        schemars(schema_with = "unit_enum_with_untagged_variant::<ImageSha384, Sha384Hash>")
+        schemars(schema_with = "unit_enum_with_untagged_variant::<ExtSha384, Sha384Hash>")
     )]
-    pub sha384: ImageSha384,
+    pub sha384: ExtSha384,
 
     /// The ID of the sysext or confext. This should align with the field `SYSEXT_ID` or
     /// `CONFEXT_ID` in the Extension Image's extension-release file.
@@ -38,7 +40,7 @@ pub struct Extension {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
-pub enum ImageSha384 {
+pub enum ExtSha384 {
     /// # Ignored
     ///
     /// You can pass `ignored` to skip the checksum verification.
@@ -51,11 +53,29 @@ pub enum ImageSha384 {
     Checksum(Sha384Hash),
 }
 
-impl std::fmt::Display for ImageSha384 {
+impl std::fmt::Display for ExtSha384 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ImageSha384::Ignored => write!(f, "ignored"),
-            ImageSha384::Checksum(hash) => write!(f, "{hash}"),
+            ExtSha384::Ignored => write!(f, "ignored"),
+            ExtSha384::Checksum(hash) => write!(f, "{hash}"),
         }
     }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq)]
+pub struct ExtensionData {
+    pub id: String,
+    pub version_id: String,
+    pub name: String,
+    pub url: Url,
+    pub sha384: ExtSha384,
+    pub location: PathBuf,
+    pub temp_location: Option<PathBuf>,
+    pub ext_type: ExtensionType,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq)]
+pub enum ExtensionType {
+    Sysext,
+    Confext,
 }
