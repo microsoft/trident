@@ -111,11 +111,13 @@ stages:
               # target is meant for local use and does extra setup not required
               # here.
               sg libvirt "make functional-test-core ARGUS_TOOLKIT_PATH=argus-toolkit"
-
-              echo "bcf ... start"
-              sudo cat /tmp/tests_execution.txt
-              echo "bcf ... end"
             displayName: Execute Functional Tests
+
+          - bash: |
+              set -eux
+              sudo cat /tmp/tests_execution.txt
+            condition: always()
+            displayName: Examine Functional Tests execution
 
           - template: ../common_tasks/coverage.yml
             parameters:
