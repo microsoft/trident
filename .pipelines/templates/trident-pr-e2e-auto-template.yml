@@ -1,0 +1,201 @@
+# .pipelines/templates/trident-pr-e2e-auto-template.yml
+parameters:
+  # cross-org/project for base-image builds
+  - name: baseImageOrg
+    type: string
+  - name: baseImageProject
+    type: string
+  - name: amd64DefinitionId
+    type: number
+  - name: arm64DefinitionId
+    type: number
+  - name: baseImgTag
+    type: string
+    default: "3.0-preview"
+
+  # e2e controls
+  - name: buildType
+    type: string
+    default: preview
+    values: [preview, dev, release]
+  - name: includeAzure
+    type: boolean
+    default: false
+  - name: runBaremetalTests
+    type: boolean
+    default: false
+  - name: numberOfUpdateIterations
+    type: number
+    default: 3
+
+  # DB push controls
+  - name: isStaging
+    type: boolean
+    default: true
+  - name: testSuiteName
+    type: string
+    default: "trident-pr-e2e"
+  - name: testTypePrefix
+    type: string
+    default: "pr"
+  - name: architecture
+    type: string
+    default: "amd64"
+
+# ---------- Stage 1: Resolve base-image run IDs ----------
+- stage: ResolveBaseImages
+  displayName: "Resolve latest base-image run IDs"
+  jobs:
+    - job: ResolveIDs
+      displayName: "Fetch latest succeeded (tag-filtered)"
+      variables:
+        - key: ob_outputDirectory
+          value: $(Build.ArtifactStagingDirectory)/resolve-baseimg
+      steps:
+        - bash: |
+            set -euo pipefail
+
+            ORG="${{ parameters.baseImageOrg }}"
+            PROJ="${{ parameters.baseImageProject }}"
+            AMD=${{ parameters.amd64DefinitionId }}
+            ARM=${{ parameters.arm64DefinitionId }}
+            TAG="${{ parameters.baseImgTag }}"
+            API="https://dev.azure.com/${ORG}/${PROJ}/_apis/build/builds"
+            AUTH="Authorization: Bearer $(System.AccessToken)"
+            ACCEPT="Accept: application/json; api-version=7.1-preview.7"
+
+            fetch_latest_with_tag () {
+              local defId="$1" tag="$2"
+              curl -sS -H "$AUTH" -H "$ACCEPT" \
+                "${API}?definitions=${defId}&resultFilter=succeeded&statusFilter=completed&queryOrder=finishTimeDescending&`echo '$'`top=50" \
+              | python3 - "$tag" << 'PY'
+import sys, json
+tag = sys.argv[1]
+data = json.load(sys.stdin)
+for b in data.get("value", []):
+    if tag in (b.get("tags") or []):
+        print(b["id"]); sys.exit(0)
+# fallback: first succeeded
+if data.get("value"): print(data["value"][0]["id"])
+PY
+            }
+
+            AMD_RUNID="$(fetch_latest_with_tag "$AMD" "$TAG")"
+            ARM_RUNID="$(fetch_latest_with_tag "$ARM" "$TAG")"
+
+            echo "AMD64(${AMD}) runId: ${AMD_RUNID}"
+            echo "ARM64(${ARM}) runId: ${ARM_RUNID}"
+
+            echo "##vso[task.setvariable variable=ResolvedBaseImagePipelineBuildId;isOutput=true]${AMD_RUNID}"
+            echo "##vso[task.setvariable variable=ResolvedBaseImageArm64PipelineBuildId;isOutput=true]${ARM_RUNID}"
+          displayName: "Resolve run IDs (tag: ${{ parameters.baseImgTag }})"
+          env:
+            SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+
+# ---------- Stage 2: Run the standard PR-E2E flow ----------
+- stage: PR_E2E
+  displayName: "PR E2E (auto base-image)"
+  dependsOn: ResolveBaseImages
+  variables:
+    - name: AMD_RUNID
+      value: $[ stageDependencies.ResolveBaseImages.ResolveIDs.outputs['ResolveIDs.ResolvedBaseImagePipelineBuildId'] ]
+    - name: ARM_RUNID
+      value: $[ stageDependencies.ResolveBaseImages.ResolveIDs.outputs['ResolveIDs.ResolvedBaseImageArm64PipelineBuildId'] ]
+  jobs:
+    - job: KickE2E
+      displayName: "Execute e2e-template (pr-e2e)"
+      variables:
+        - key: ob_outputDirectory
+          value: $(Build.ArtifactStagingDirectory)/e2e
+      steps:
+        - template: e2e-template.yml
+          parameters:
+            stageType: pr-e2e
+            blockPublishing: true
+            includeAzure: ${{ parameters.includeAzure }}
+            baseimgBuildType: ${{ parameters.buildType }}
+            baseImagePipelineBuildId: "$(AMD_RUNID)"
+            baseImageArm64PipelineBuildId: "$(ARM_RUNID)"
+            runBaremetalTests: ${{ parameters.runBaremetalTests }}
+            numberOfUpdateIterations: ${{ parameters.numberOfUpdateIterations }}
+
+# ---------- Stage 3: Collect only the expected JUnit XMLs & Push ----------
+- stage: CollectAndPushResults
+  displayName: "Collect JUnit XMLs and push to DB"
+  dependsOn: PR_E2E
+  condition: succeededOrFailed()
+  jobs:
+    - job: CollectAndPush
+      displayName: "Aggregate JUnit & call DB API"
+      variables:
+        - key: ob_outputDirectory
+          value: $(Build.ArtifactStagingDirectory)/junit
+        - name: JUNIT_DIR
+          value: $(Pipeline.Workspace)/junit-xmls
+      steps:
+        - bash: |
+            set -eux
+            mkdir -p "$(JUNIT_DIR)"
+          displayName: "Create JUnit directory"
+
+        # Download ONLY the known JUnit artifacts produced by the 3 test families
+        - download: current
+          artifact: junit_for_trident_functionaltests
+          path: "$(JUNIT_DIR)"
+          displayName: "Grab: functional tests"
+          continueOnError: true
+          condition: succeededOrFailed()
+
+        - download: current
+          artifact: junit_for_trident_clean_install
+          path: "$(JUNIT_DIR)"
+          displayName: "Grab: e2e clean install"
+          continueOnError: true
+          condition: succeededOrFailed()
+
+        - download: current
+          artifact: junit_for_trident_ab_update_A
+          path: "$(JUNIT_DIR)"
+          displayName: "Grab: e2e AB update A"
+          continueOnError: true
+          condition: succeededOrFailed()
+
+        - download: current
+          artifact: junit_for_trident_ab_update_B
+          path: "$(JUNIT_DIR)"
+          displayName: "Grab: e2e AB update B"
+          continueOnError: true
+          condition: succeededOrFailed()
+
+        - download: current
+          artifact: junit_for_trident_ab_update_stage
+          path: "$(JUNIT_DIR)"
+          displayName: "Grab: e2e AB stage+finalize"
+          continueOnError: true
+          condition: succeededOrFailed()
+
+        # Only push if we actually found XMLs
+        - bash: |
+            set -eux
+            shopt -s nullglob
+            files=($(ls -1 "$(JUNIT_DIR)"/*.xml 2>/dev/null || true))
+            if [ "${#files[@]}" -eq 0 ]; then
+              echo "No JUnit XMLs found. Skipping DB push."
+              echo "##vso[task.setvariable variable=HAS_JUNIT;isOutput=true]false"
+            else
+              echo "JUnit XMLs found: ${#files[@]}"
+              echo "##vso[task.setvariable variable=HAS_JUNIT;isOutput=true]true"
+            fi
+          name: DetectJUnit
+          displayName: "Detect any JUnit files"
+
+        - ${{ if eq(variables['DetectJUnit.HAS_JUNIT'], 'true') }}:
+          - template: stages/common_tasks/db/push-test-results-to-db.yml
+            parameters:
+              marinertridentPipelinesSourceDirectory: "$(Build.SourcesDirectory)"
+              junitFilesDirectory: "$(JUNIT_DIR)"
+              isStaging: '${{ parameters.isStaging }}'
+              buildNumber: "$(Build.BuildNumber)"
+              test_suite_name: "${{ parameters.testSuiteName }}"
+              architecture: "${{ parameters.architecture }}"
+              test_type_prefix: "${{ parameters.testTypePrefix }}"
