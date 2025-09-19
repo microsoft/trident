@@ -231,6 +231,7 @@ def wipe_sdb(vm: SshNode):
     res = vm.execute(f"sudo lsblk /dev/sdb --json --bytes --output-all")
     res.assert_exit_code()
     info = json.loads(res.stdout)["blockdevices"][0]
+    children = [child for child in info.get("children", []) if child]
 
     res = vm.execute(f"sudo findmnt -o SOURCE,TARGET -r")
     res.assert_exit_code()
@@ -243,10 +244,9 @@ def wipe_sdb(vm: SshNode):
     assert_clean_disk(mounts, "sdb")
 
 
-def assert_clean_disk(kernel_name: str, info: Dict[str, Any]):
-    children = [child for child in info.get("children", []) if child]
+def assert_clean_disk(kernel_name: str, children: Any):
     assert len(children) == 0, f"Disk {kernel_name} is not clean!"
-    assert info.get("pttype", None) is None, f"Disk {kernel_name} is not clean!"
+    assert children.get("pttype", None) is None, f"Disk {kernel_name} is not clean!"
 
 
 def assert_disk_has_no_mounts(mounts: List[str], kernel_name: str):
