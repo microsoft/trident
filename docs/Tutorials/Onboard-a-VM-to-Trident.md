@@ -1,4 +1,6 @@
 
+# Onboard a VM to Trident
+
 <!--
 DELETE ME AFTER COMPLETING THE DOCUMENT!
 ---

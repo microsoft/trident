@@ -2,25 +2,28 @@ use std::{
     collections::HashMap,
     io::{Read, Seek},
     path::{Path, PathBuf},
+    time::Duration,
 };
 
 use anyhow::{bail, ensure, Context, Error};
 use log::{debug, trace};
-use osutils::hashing_reader::{HashingReader, HashingReader384};
 use tar::Archive;
+use url::Url;
+
+use sysdefs::arch::SystemArchitecture;
 use trident_api::{
     config::{ImageSha384, OsImage},
     primitives::hash::Sha384Hash,
 };
-use url::Url;
 
-use sysdefs::arch::SystemArchitecture;
+use crate::io_utils::{
+    file_reader::FileReader,
+    hashing_reader::{HashingReader, HashingReader384},
+};
 
 mod metadata;
-mod reader;
 
 use metadata::{CosiMetadata, CosiMetadataVersion, ImageFile, MetadataVersion};
-use reader::CosiReader;
 
 use super::{OsImageFile, OsImageFileSystem, OsImageVerityHash};
 
@@ -35,7 +38,7 @@ pub(super) struct Cosi {
     entries: HashMap<PathBuf, CosiEntry>,
     metadata: CosiMetadata,
     metadata_sha384: Sha384Hash,
-    reader: CosiReader,
+    reader: FileReader,
 }
 
 /// Entry inside the COSI file.
@@ -47,12 +50,13 @@ struct CosiEntry {
 
 impl Cosi {
     /// Creates a new COSI file instance from the given source URL.
-    pub(super) fn new(source: &OsImage) -> Result<Self, Error> {
+    pub(super) fn new(source: &OsImage, timeout: Duration) -> Result<Self, Error> {
         trace!("Scanning COSI file from '{}'", source.url);
 
         // Create a new COSI reader factory. This will let us cleverly build
         // readers for the COSI file regardless of its location.
-        let cosi_reader = CosiReader::new(&source.url).context("Failed to create COSI reader.")?;
+        let cosi_reader =
+            FileReader::new(&source.url, timeout).context("Failed to create COSI reader.")?;
 
         // Scan all entries in the COSI file by seeking to all headers in the file.
         let entries = read_entries_from_tar_archive(cosi_reader.reader()?)?;
@@ -113,7 +117,7 @@ impl Cosi {
 
 /// Converts a COSI metadata Image to an OsImageFileSystem.
 fn cosi_image_to_os_image_filesystem<'a>(
-    cosi_reader: &'a CosiReader,
+    cosi_reader: &'a FileReader,
     image: &metadata::Image,
 ) -> OsImageFileSystem<'a> {
     // Make an early copy so the borrow checker knows that we are not keeping a reference to the
@@ -211,7 +215,7 @@ fn read_entries_from_tar_archive<R: Read + Seek>(
 /// - Ensures that all images defined in the metadata are present in the COSI file.
 /// - Populates metadata with the actual content location of the images.
 fn read_cosi_metadata(
-    cosi_reader: &CosiReader,
+    cosi_reader: &FileReader,
     entries: &HashMap<PathBuf, CosiEntry>,
     expected_sha384: ImageSha384,
 ) -> Result<(CosiMetadata, Sha384Hash), Error> {
@@ -539,7 +543,11 @@ mod tests {
         temp_file.write_all(sample_metadata.as_bytes()).unwrap();
 
         // Create a COSI reader from the temp file.
-        let cosi_reader = CosiReader::new(&Url::from_file_path(temp_file.path()).unwrap()).unwrap();
+        let cosi_reader = FileReader::new(
+            &Url::from_file_path(temp_file.path()).unwrap(),
+            Duration::from_secs(5),
+        )
+        .unwrap();
 
         // Create mock entries in a "hypothetical" COSI file. We will only read
         // the metadata from the file, so this is the only entry where accurate
@@ -631,10 +639,13 @@ mod tests {
 
         // Create a COSI instance from the temp file.
         let url = Url::from_file_path(temp_file.path()).unwrap();
-        let cosi = Cosi::new(&OsImage {
-            url: url.clone(),
-            sha384: ImageSha384::Ignored,
-        })
+        let cosi = Cosi::new(
+            &OsImage {
+                url: url.clone(),
+                sha384: ImageSha384::Ignored,
+            },
+            Duration::from_secs(5),
+        )
         .unwrap();
 
         assert_eq!(
@@ -649,7 +660,7 @@ mod tests {
     #[test]
     fn test_cosi_image_to_os_image_filesystem() {
         let data = "some data";
-        let reader = CosiReader::Mock(Cursor::new(data.as_bytes().to_vec()));
+        let reader = FileReader::Buffer(Cursor::new(data.as_bytes().to_vec()));
         let mut cosi_img = Image {
             file: ImageFile {
                 path: PathBuf::from("some/path"),
@@ -695,7 +706,7 @@ mod tests {
         // Now test with verity.
         let root_hash = "some-root-hash-1234";
         let verity_data = "some data";
-        let reader = CosiReader::Mock(Cursor::new(verity_data.as_bytes().to_vec()));
+        let reader = FileReader::Buffer(Cursor::new(verity_data.as_bytes().to_vec()));
         cosi_img.verity = Some(VerityMetadata {
             file: ImageFile {
                 path: PathBuf::from("some/verity/path"),
@@ -800,7 +811,7 @@ mod tests {
                 images,
                 bootloader: None,
             },
-            reader: CosiReader::Mock(data),
+            reader: FileReader::Buffer(data),
             metadata_sha384: Sha384Hash::from("0".repeat(96)),
         }
     }
@@ -820,7 +831,7 @@ mod tests {
                 os_packages: None,
                 bootloader: None,
             },
-            reader: CosiReader::Mock(Cursor::new(Vec::<u8>::new())),
+            reader: FileReader::Buffer(Cursor::new(Vec::<u8>::new())),
             metadata_sha384: Sha384Hash::from("0".repeat(96)),
         };
 

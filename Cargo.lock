@@ -1914,7 +1914,6 @@ dependencies = [
  "trident_api",
  "uuid",
  "which",
- "zstd",
 ]
 
 [[package]]
@@ -3418,6 +3417,7 @@ dependencies = [
  "trident_api",
  "url",
  "uuid",
+ "zstd",
 ]
 
 [[package]]
@@ -4138,9 +4138,9 @@ dependencies = [
 
 [[package]]
 name = "zstd"
-version = "0.13.2"
+version = "0.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fcf2b778a664581e31e389454a7072dab1647606d44f7feea22cd5abb9c9f3f9"
+checksum = "e91ee311a569c327171651566e07972200e76fcfe2242a4fa446149a3881c08a"
 dependencies = [
  "zstd-safe",
 ]

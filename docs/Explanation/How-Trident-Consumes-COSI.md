@@ -1,3 +1,5 @@
+# How Trident Consumes COSI
+
 <!--
 DELETE ME AFTER COMPLETING THE DOCUMENT!
 ---

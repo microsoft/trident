@@ -10,7 +10,7 @@ A/B update configuration. Carries information about the A/B update volume pairs 
 
 ## Properties
 
-### `volumePairs` **<span style="color:orange;">(required)</span>**
+### `volumePairs` **<span>(required)</span>**
 
 A list of volume pairs that will be used for A/B Update.
 

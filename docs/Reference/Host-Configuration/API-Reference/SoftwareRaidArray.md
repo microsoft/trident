@@ -18,7 +18,7 @@ To learn more about `mdadm`, please refer to the [mdadm guide](https://raid.wiki
 
 ## Properties
 
-### `devices` **<span style="color:orange;">(required)</span>**
+### `devices` **<span>(required)</span>**
 
 Devices that will be used for the RAID array.
 
@@ -35,7 +35,7 @@ See the reference links for picking the right number of devices. Devices are par
    | Type           | `string`          |
    | Format         | `Block Device ID` |
 
-### `id` **<span style="color:orange;">(required)</span>**
+### `id` **<span>(required)</span>**
 
 A unique identifier for the RAID array.
 
@@ -46,7 +46,7 @@ This is a user defined string that allows to link the RAID array to the mount po
 | Type           | `string`          |
 | Format         | `Block Device ID` |
 
-### `level` **<span style="color:orange;">(required)</span>**
+### `level` **<span>(required)</span>**
 
 RAID level.
 
@@ -57,7 +57,7 @@ RAID level.
 | Type           | `RaidLevel`                 |
 | Link           | [RaidLevel](./RaidLevel.md) |
 
-### `name` **<span style="color:orange;">(required)</span>**
+### `name` **<span>(required)</span>**
 
 Name of the RAID array.
 

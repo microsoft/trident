@@ -21,7 +21,7 @@ use url::Url;
 #[cfg(feature = "dangerous-options")]
 use docker_credential::{self, DockerCredential};
 
-pub(super) trait ReadSeek: Read + Seek {}
+pub(crate) trait ReadSeek: Read + Seek {}
 
 impl ReadSeek for HttpFile {}
 impl ReadSeek for File {}
@@ -32,29 +32,29 @@ impl ReadSeek for Cursor<Vec<u8>> {}
 #[cfg(feature = "dangerous-options")]
 const DOCKER_CONFIG_FILE_PATH: &str = ".docker/config.json";
 
-/// An abstraction over a COSI file reader that can be either a local file or an
+/// An abstraction over a file reader that can be either a local file or an
 /// HTTP request.
 ///
-/// This abstraction contains the minimum required information to open a COSI
-/// file, it does not carry any complex types and can be safely and
-/// inexpensively cloned.
+/// This abstraction contains the minimum required information to open a file,
+/// it does not carry any complex types and can be safely and inexpensively
+/// cloned.
 #[derive(Debug, Clone)]
-pub(super) enum CosiReader {
+pub(crate) enum FileReader {
     File(PathBuf),
     Http(HttpFile),
 
     /// Variant reserved for testing purposes only.
     #[cfg(test)]
-    Mock(Cursor<Vec<u8>>),
+    Buffer(Cursor<Vec<u8>>),
 }
 
-impl CosiReader {
-    /// Creates a new COSI file reader from the given source URL.
-    pub(super) fn new(source: &Url) -> Result<Self, Error> {
+impl FileReader {
+    /// Creates a new file reader from the given source URL.
+    pub(crate) fn new(source: &Url, timeout: Duration) -> Result<Self, Error> {
         Ok(match source.scheme() {
             "file" => {
-                // Load COSI from local file
-                debug!("Loading COSI file: '{}'", source.path());
+                // Load from local file
+                debug!("Loading file: '{}'", source.path());
                 let path = PathBuf::from(source.path());
                 ensure!(
                     path.exists(),
@@ -67,14 +67,14 @@ impl CosiReader {
                 Self::File(path)
             }
             "http" | "https" => {
-                // Load COSI from remote URL
-                debug!("Loading COSI file from URL: '{}'", source);
-                Self::Http(HttpFile::new(source)?)
+                // Load from remote URL
+                debug!("Loading file from URL: '{}'", source);
+                Self::Http(HttpFile::new(source, timeout)?)
             }
             "oci" => {
-                // Load COSI from container registry
-                debug!("Loading COSI file from URL: '{}'", source);
-                Self::Http(HttpFile::new_from_oci(source)?)
+                // Load from container registry
+                debug!("Loading file from URL: '{}'", source);
+                Self::Http(HttpFile::new_from_oci(source, timeout)?)
             }
             _ => {
                 bail!("Unsupported URL scheme: {}", source.scheme());
@@ -82,18 +82,18 @@ impl CosiReader {
         })
     }
 
-    /// Returns an implementation of `Read` + `Seek` over the entire COSI file.
-    pub(super) fn reader(&self) -> Result<Box<dyn ReadSeek>, IoError> {
+    /// Returns an implementation of `Read` + `Seek` over the entire file.
+    pub(crate) fn reader(&self) -> Result<Box<dyn ReadSeek>, IoError> {
         Ok(match self {
             Self::File(file) => Box::new(File::open(file)?),
             Self::Http(http_file) => Box::new(http_file.clone()),
             #[cfg(test)]
-            Self::Mock(cursor) => Box::new(cursor.clone()),
+            Self::Buffer(cursor) => Box::new(cursor.clone()),
         })
     }
 
-    /// Returns an implementation of `Read` for the given section of the COSI file.
-    pub(super) fn section_reader(&self, section_offset: u64, size: u64) -> IoResult<Box<dyn Read>> {
+    /// Returns an implementation of `Read` for the given section of the file.
+    pub(crate) fn section_reader(&self, section_offset: u64, size: u64) -> IoResult<Box<dyn Read>> {
         Ok(match self {
             Self::File(file) => {
                 // Open the file and seek to the section
@@ -106,7 +106,7 @@ impl CosiReader {
             Self::Http(http_file) => Box::new(http_file.section_reader(section_offset, size)?),
 
             #[cfg(test)]
-            Self::Mock(cursor) => {
+            Self::Buffer(cursor) => {
                 // Clone the cursor and seek to the section
                 let mut cursor = cursor.clone();
                 cursor.seek(SeekFrom::Start(section_offset))?;
@@ -131,18 +131,18 @@ pub struct HttpFile {
     position: u64,
     size: u64,
     client: Client,
-    timeout_in_seconds: u64,
+    timeout: Duration,
     token: Option<String>,
 }
 
 impl HttpFile {
     /// Creates a new HTTP file reader from a standard HTTP URL.
-    pub fn new(url: &Url) -> IoResult<Self> {
-        Self::new_inner(url, None, false)
+    pub fn new(url: &Url, timeout: Duration) -> IoResult<Self> {
+        Self::new_inner(url, None, false, timeout)
     }
 
     /// Creates a new HTTP file reader from an OCI URL.
-    pub fn new_from_oci(url: &Url) -> Result<Self, Error> {
+    pub fn new_from_oci(url: &Url, timeout: Duration) -> Result<Self, Error> {
         let img_ref =
             Reference::try_from(url.to_string().strip_prefix("oci://").with_context(|| {
                 format!("URL has incorrect scheme: expected to start with 'oci://', got '{url}'")
@@ -162,16 +162,17 @@ impl HttpFile {
             "https://{registry}/v2/{repository}/blobs/{digest}"
         ))?;
 
-        Self::new_inner(&http_url, Some(token), true).context("Failed to create HTTP file reader")
+        Self::new_inner(&http_url, Some(token), true, timeout)
+            .context("Failed to create HTTP file reader")
     }
 
     fn new_inner(
         url: &Url,
         token: Option<String>,
         ignore_ranges_header_absence: bool,
+        timeout: Duration,
     ) -> IoResult<Self> {
         debug!("Opening HTTP file '{}'", url);
-        let timeout_in_seconds = 5;
 
         // Create a new client for this file.
         let client = Client::new();
@@ -182,7 +183,7 @@ impl HttpFile {
             }
             request.send()
         };
-        let response = Self::retriable_request_sender(request_sender, timeout_in_seconds)?;
+        let response = Self::retriable_request_sender(request_sender, timeout)?;
         trace!("HTTP file '{}' has status: {}", url, response.status());
 
         // Get the file size from the response headers
@@ -242,7 +243,7 @@ impl HttpFile {
             position: 0,
             size,
             client,
-            timeout_in_seconds,
+            timeout,
             token,
         })
     }
@@ -385,21 +386,21 @@ impl HttpFile {
             request.send()
         };
 
-        Self::retriable_request_sender(request_sender, self.timeout_in_seconds)
+        Self::retriable_request_sender(request_sender, self.timeout)
     }
 
-    /// Performs an HTTP request and retries it for up to `timeout_in_seconds` if
+    /// Performs an HTTP request and retries it for up to `timeout` if
     /// it fails. The HTTP request is created and invoked by `request_sender`, a
     /// closure that that returns a `reqwest::Result<Response>`. If the request is
     /// successful, it returns the response. If the request fails after all retries,
     /// it returns an IO error.
-    fn retriable_request_sender<F>(request_sender: F, timeout_in_seconds: u64) -> IoResult<Response>
+    fn retriable_request_sender<F>(request_sender: F, timeout: Duration) -> IoResult<Response>
     where
         F: Fn() -> reqwest::Result<Response>,
     {
         let mut retry = 0;
         let now = Instant::now();
-        let timeout_time = now + Duration::from_secs(timeout_in_seconds);
+        let timeout_time = now + timeout;
         let mut sleep_duration = Duration::from_millis(10);
         loop {
             if retry != 0 {
@@ -585,7 +586,7 @@ mod tests {
             let client = Client::new();
             client.get("").send()
         };
-        HttpFile::retriable_request_sender(request_sender, 2).unwrap_err();
+        HttpFile::retriable_request_sender(request_sender, Duration::from_secs(2)).unwrap_err();
         assert!(tries.load(Ordering::SeqCst) > 1);
     }
 
@@ -616,7 +617,7 @@ mod tests {
             let client = Client::new();
             client.get(&request_url).send()
         };
-        let document = HttpFile::retriable_request_sender(request_sender, 5)
+        let document = HttpFile::retriable_request_sender(request_sender, Duration::from_secs(5))
             .unwrap()
             .text()
             .unwrap();
@@ -632,7 +633,7 @@ mod tests {
             position: 0,
             size: 100, // We have indices from 0 to 99
             client: Client::new(),
-            timeout_in_seconds: 1,
+            timeout: Duration::from_secs(1),
             token: None,
         };
 
@@ -681,7 +682,7 @@ mod tests {
     }
 
     #[test]
-    fn test_cosi_reader_factory_file() {
+    fn test_file_reader_factory_file() {
         let mut file = NamedTempFile::new().expect("Failed to create temp file");
         let original_data: &'static str = "Hello, World!";
         assert_eq!(
@@ -693,7 +694,7 @@ mod tests {
         file.flush().expect("Failed to flush file");
 
         let url = Url::from_file_path(file.path()).expect("Failed to create file:// URL");
-        let reader_factory = CosiReader::new(&url).unwrap();
+        let reader_factory = FileReader::new(&url, Duration::from_secs(5)).unwrap();
 
         // Check full file reader
         let mut reader = reader_factory.reader().expect("Failed to create reader");
@@ -811,18 +812,18 @@ mod tests {
 
         let file_url = Url::parse(&server.url()).unwrap().join(file_name).unwrap();
 
-        // Create a new HTTP Cosi reader.
-        let cosi_reader = CosiReader::new(&file_url).unwrap();
+        // Create a new HTTP file reader.
+        let file_reader = FileReader::new(&file_url, Duration::from_secs(5)).unwrap();
 
         // Get a reference to the inner HTTP file reader
-        let CosiReader::Http(ref http_file) = cosi_reader else {
-            panic!("Expected a HTTP file reader, got {cosi_reader:?}");
+        let FileReader::Http(ref http_file) = file_reader else {
+            panic!("Expected a HTTP file reader, got {file_reader:?}");
         };
 
         // Clone the file to test that the server is only called once.
         let _ = http_file.clone();
         // This function also just clones the http_file.
-        let _ = cosi_reader.reader().unwrap();
+        let _ = file_reader.reader().unwrap();
 
         // Check that size_mock was called exactly once
         size_mock.assert();

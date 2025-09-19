@@ -1,0 +1,61 @@
+name: Deploy to GitHub Pages
+
+on:
+
+  # Manual trigger
+  workflow_dispatch:
+
+  # # Trigger on release
+  # release:
+  #   types: [published]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    name: Build Github Pages artifact
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+
+      - name: Build website
+        run: |
+          cd website
+          npm ci
+          npm run build
+
+      - name: Upload website artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./website/build
+
+  wait-for-approval:
+    name: Wait for validation and approval
+    # This job will require approval for the 'wait-for-approval' environment
+    environment: wait-for-approval
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Approved
+        run: |
+          echo "approved :)"
+
+  deploy:
+    name: Deploy website artifact to Github Pages
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: wait-for-approval
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4 

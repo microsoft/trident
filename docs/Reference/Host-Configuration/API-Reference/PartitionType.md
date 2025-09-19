@@ -2,7 +2,7 @@
 
 # PartitionType
 
-Partition types as defined by The Discoverable Partitions Specification (<https://uapi-group.org/specifications/specs/discoverable_partitions_specification/>).
+Partition types as defined by [The Discoverable Partitions Specification](<https://uapi-group.org/specifications/specs/discoverable_partitions_specification/>).
 
 | Characteristic | Value  |
 | -------------- | ------ |

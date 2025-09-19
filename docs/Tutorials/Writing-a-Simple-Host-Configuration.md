@@ -1,4 +1,6 @@
 
+# Writing a Simple Host Configuration
+
 <!--
 DELETE ME AFTER COMPLETING THE DOCUMENT!
 ---

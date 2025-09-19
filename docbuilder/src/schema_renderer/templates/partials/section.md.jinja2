@@ -1,7 +1,7 @@
 {% if type is defined -%}
 {% if level is defined %}{{ level | header_level }} {% else %}### {% endif %}
 {%- if type == "property" -%}
-`{{ name }}` {% if required %}**<span style="color:orange;">(required)</span>**{% else %}(optional){% endif %}
+`{{ name }}` {% if required %}**<span>(required)</span>**{% else %}(optional){% endif %}
 {%- elif type == "variant" -%}
 {%- if docfx -%}
 [{{ name }}](#/tab/{{ name | lower | slugify }})

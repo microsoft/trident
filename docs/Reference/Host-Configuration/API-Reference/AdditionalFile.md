@@ -8,7 +8,7 @@
 
 ## Properties
 
-### `destination` **<span style="color:orange;">(required)</span>**
+### `destination` **<span>(required)</span>**
 
 Location on the target image to place the file.
 

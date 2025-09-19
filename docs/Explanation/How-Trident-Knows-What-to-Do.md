@@ -1,4 +1,6 @@
 
+# How Trident Knows What to Do
+
 <!--
 DELETE ME AFTER COMPLETING THE DOCUMENT!
 ---

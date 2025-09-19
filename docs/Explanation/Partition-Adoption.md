@@ -1,4 +1,6 @@
 
+# Partition Adoption
+
 <!--
 DELETE ME AFTER COMPLETING THE DOCUMENT!
 ---

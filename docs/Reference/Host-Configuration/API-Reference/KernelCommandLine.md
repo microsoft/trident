@@ -10,7 +10,7 @@ Additional kernel command line options to add to the image.
 
 ## Properties
 
-### `extraCommandLine` **<span style="color:orange;">(required)</span>**
+### `extraCommandLine` **<span>(required)</span>**
 
 | Characteristic | Value   |
 | -------------- | ------- |

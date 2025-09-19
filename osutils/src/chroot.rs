@@ -5,9 +5,11 @@ use std::{
         unix,
     },
     path::Path,
+    thread,
+    time::Duration,
 };
 
-use log::{debug, warn};
+use log::{debug, trace, warn};
 use sys_mount::{Mount, MountFlags, Unmount, UnmountDrop, UnmountFlags};
 
 use trident_api::error::{ReportError, ServicingError, TridentError, TridentResultExt};
@@ -95,10 +97,24 @@ impl Chroot {
         debug!("Exited chroot. Unmounting special directories");
 
         for mount in self.mounts {
-            mount
-                .unmount(UnmountFlags::empty())
-                .structured(ServicingError::ChrootUnmountSpecialDir)?;
-            mem::forget(mount);
+            for retry_count in 1..6 {
+                if retry_count != 1 {
+                    trace!(
+                        "Unmounting '{}' attempt {}",
+                        mount.target_path().display(),
+                        retry_count
+                    );
+                }
+                let ret = mount.unmount(UnmountFlags::empty());
+                if ret.is_ok() {
+                    mem::forget(mount);
+                    break;
+                } else if retry_count == 5 {
+                    return ret.structured(ServicingError::ChrootUnmountSpecialDir);
+                } else {
+                    thread::sleep(Duration::from_millis(100));
+                }
+            }
         }
         Ok(())
     }

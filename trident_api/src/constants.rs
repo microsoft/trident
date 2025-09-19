@@ -169,6 +169,9 @@ pub mod internal_params {
     /// Allow unused images in a COSI file.
     pub const ALLOW_UNUSED_FILESYSTEMS_IN_COSI: &str = "allowUnusedFilesystems";
 
+    /// Enable configuration of http timeout for COSI download.
+    pub const COSI_HTTP_CONNECTION_TIMEOUT_SECONDS: &str = "cosiHttpConnectionTimeoutSeconds";
+
     /// Disable check that filesystem size does not exceed the size of its block device.
     pub const DISABLE_FS_BLOCK_DEVICE_SIZE_CHECK: &str = "disableFsBlockDeviceSizeCheck";
 
