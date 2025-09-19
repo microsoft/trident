@@ -19,11 +19,18 @@ const SYSEXT_DIRECTORY_PATH: &str = "/var/lib/extensions/";
 const CONFEXT_DIRECTORY_PATH: &str = "/var/lib/confexts/";
 
 #[derive(Default)]
-pub struct SysextsSubsystem;
+pub struct ExtensionsSubsystem;
 
-impl Subsystem for SysextsSubsystem {
+impl Subsystem for ExtensionsSubsystem {
     fn name(&self) -> &'static str {
-        "sysexts"
+        "extensions"
+    }
+
+    fn select_servicing_type(
+        &self,
+        _ctx: &EngineContext,
+    ) -> Result<Option<ServicingType>, TridentError> {
+        Ok(Some(ServicingType::HotPatch))
     }
 
     // Outside of chroot

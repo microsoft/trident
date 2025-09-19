@@ -95,6 +95,8 @@ pub enum ServicingState {
     CleanInstallStaged,
     /// A/B update has been staged. The new runtime OS images have been deployed onto block devices.
     AbUpdateStaged,
+    /// Hot-Patch Update has been staged.
+    HotPatchStaged,
     /// Clean install has been finalized, i.e., UEFI variables have been set, so that firmware boots
     /// from the runtime OS image after reboot.
     CleanInstallFinalized,
