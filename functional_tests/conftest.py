@@ -191,15 +191,16 @@ def run_rust_functional_test(
 
 @pytest.fixture(scope="function")
 def wipe_sdb(vm: SshNode):
-    """View disks on the VM."""
+    """Wipes the SDB on the VM."""
+
+    # View disks on the VM
     for disk in ["sda", "sdb"]:
         res = vm.execute(f"sudo lsblk /dev/{disk} --json --bytes --output-all")
         print(f"Disk {disk} info:\n{res.stdout}\n{res.stderr}")
-
+    # View mounts on the VM
     res = vm.execute(f"sudo mount")
     print(f"mount:\n{res.stdout}\n{res.stderr}")
-
-    """Wipes the SDB on the VM."""
+    # Wipe SDB on the VM
     res = vm.execute("sudo wipefs -af /dev/sdb")
     print(f"wipefs -af /dev/sdb:\n{res.stdout}\n{res.stderr}")
 
