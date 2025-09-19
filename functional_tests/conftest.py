@@ -167,7 +167,6 @@ class RustModule(Collector):
 @pytest.mark.depends("test_deploy_vm")
 def run_rust_functional_test(
     vm,
-    wipe_sdb,
     crate,
     module_path,
     test_case,
@@ -182,15 +181,25 @@ def run_rust_functional_test(
 
     from functional_tests.tools.runner import RunnerTool
 
+    wipe_sdb_pre(vm)
+
     testRunner = RunnerTool(vm)
     testRunner.run(
         crate,
         f"{module_path}::{test_case}",
     )
 
+    wipe_sdb_post(vm)
 
-@pytest.fixture(scope="function")
-def wipe_sdb(vm: SshNode):
+
+# @pytest.fixture(scope="function")
+# def wipe_sdb(vm: SshNode):
+#     wipe_sdb_pre(vm)
+#     yield
+#     wipe_sdb_post(vm)
+
+
+def wipe_sdb_pre(vm: SshNode):
     # View disks on the VM
     for disk in ["sda", "sdb"]:
         res = vm.execute(f"sudo lsblk /dev/{disk} --json --bytes --output-all")
@@ -202,8 +211,8 @@ def wipe_sdb(vm: SshNode):
     res = vm.execute("sudo wipefs -af /dev/sdb")
     print(f"wipefs -af /dev/sdb:\nstdout:\n{res.stdout}\nstderr:\n{res.stderr}")
 
-    yield
 
+def wipe_sdb_post(vm: SshNode):
     kernel_name = "sdb"
     res = vm.execute(f"sudo findmnt -o SOURCE,TARGET -r")
     res.assert_exit_code()
