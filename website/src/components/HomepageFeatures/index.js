@@ -45,7 +45,7 @@ export default function HomepageFeatures() {
   // features.
   let featureRowClass = 'col col--3';
   if (FeatureList.length > 0 && FeatureList.length < 4) {
-    featureRowClass = sprintf("col col--%d", 12 / (FeatureList.length))
+    featureRowClass = sprintf("col col--%d", 12 / (FeatureList.length));
   }
 
   return (
