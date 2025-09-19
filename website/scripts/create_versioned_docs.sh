@@ -117,7 +117,7 @@ create_version_docs() {
         cp -r "${tmp_dir}/docs" "$WEBSITE_DIR/"
     fi
 
-    rm -rf ${tmp_dir}
+    rm -rf "${tmp_dir}"
 }
 
 # Update versions.json file
