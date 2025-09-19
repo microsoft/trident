@@ -107,7 +107,7 @@ create_version_docs() {
         local normalized_version=$(echo "$version" | sed 's|/|-|')
         echo "Move version docs folder to website/docs"
         echo "Use docusaurus versioning to create versioned_*"
-        npm run docusaurus docs:version $normalized_version
+        npm run docusaurus docs:version "$normalized_version"
         echo "Copy versioned_* to website"
         cp -r "${tmp_dir}/website/$VERSIONED_DOCS_NAME/version-$normalized_version" "${VERSIONED_DOCS_DIR}/"
         cp -r "${tmp_dir}/website/$VERSIONED_SIDEBARS_NAME/version-$normalized_version-sidebars.json" "${VERSIONED_SIDEBARS_DIR}/"
