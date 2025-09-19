@@ -181,7 +181,7 @@ def run_rust_functional_test(
 
     from functional_tests.tools.runner import RunnerTool
 
-    wipe_sdb_pre(vm)
+    pre_test(vm)
 
     testRunner = RunnerTool(vm)
     testRunner.run(
@@ -189,17 +189,11 @@ def run_rust_functional_test(
         f"{module_path}::{test_case}",
     )
 
-    wipe_sdb_post(vm)
+    post_test(vm)
 
 
-# @pytest.fixture(scope="function")
-# def wipe_sdb(vm: SshNode):
-#     wipe_sdb_pre(vm)
-#     yield
-#     wipe_sdb_post(vm)
-
-
-def wipe_sdb_pre(vm: SshNode):
+def pre_test(vm: SshNode):
+    """Before test, check and clean sdb state."""
     # View disks on the VM
     for disk in ["sda", "sdb"]:
         res = vm.execute(f"sudo lsblk /dev/{disk} --json --bytes --output-all")
@@ -212,8 +206,25 @@ def wipe_sdb_pre(vm: SshNode):
     print(f"wipefs -af /dev/sdb:\nstdout:\n{res.stdout}\nstderr:\n{res.stderr}")
 
 
-def wipe_sdb_post(vm: SshNode):
-    kernel_name = "sdb"
+def post_test(vm: SshNode):
+    """After test, check and clean sdb state."""
+    assert_disk_has_no_mounts(vm, "sdb")
+    vm.execute("sudo wipefs -af /dev/sdb")
+    assert_clean_disk(vm, "sdb")
+
+
+def assert_clean_disk(vm: SshNode, kernel_name: str):
+    res = vm.execute(f"sudo lsblk /dev/{kernel_name} --json --bytes --output-all")
+    res.assert_exit_code()
+    info = json.loads(res.stdout)["blockdevices"][0]
+    print(f"Disk {kernel_name} info:\n{json.dumps(info, indent=2)}")
+
+    children = [child for child in info.get("children", []) if child]
+    assert len(children) == 0, f"Disk {kernel_name} is not clean!"
+    assert info.get("pttype", None) is None, f"Disk {kernel_name} is not clean!"
+
+
+def assert_disk_has_no_mounts(vm: SshNode, kernel_name: str):
     res = vm.execute(f"sudo findmnt -o SOURCE,TARGET -r")
     res.assert_exit_code()
     mounts: List[str] = res.stdout.splitlines()
@@ -222,18 +233,6 @@ def wipe_sdb_post(vm: SshNode):
         assert not source.startswith(
             f"/dev/{kernel_name}"
         ), f"Partition '{source}' is mounted at '{target}'"
-
-    res = vm.execute("sudo wipefs -af /dev/sdb")
-    print(
-        f"(second) wipefs -af /dev/sdb:\nstdout:\n{res.stdout}\nstderr:\n{res.stderr}"
-    )
-
-    res = vm.execute(f"sudo lsblk /dev/{kernel_name} --json --bytes --output-all")
-    res.assert_exit_code()
-    info = json.loads(res.stdout)["blockdevices"][0]
-    children = [child for child in info.get("children", []) if child]
-    assert len(children) == 0, f"Disk {kernel_name} is not clean!"
-    assert info.get("pttype", None) is None, f"Disk {kernel_name} is not clean!"
 
 
 def fetch_code_coverage(ssh_node):
