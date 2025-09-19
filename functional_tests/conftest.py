@@ -159,7 +159,6 @@ class RustModule(Collector):
                     xfail=test_data.get("xfail", None),
                 ),
             )
-
             for marker in test_data.get("markers", []):
                 node.add_marker(marker)
             yield node
