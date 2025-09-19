@@ -18,7 +18,7 @@ function getDocsVersions() {
         banner: 'unreleased',
         badge: false,
       };
-    } else if (version != currentVersion) {
+    } else if (version !== currentVersion) {
       result[version] = {
         banner: 'unmaintained',
         badge: false,
