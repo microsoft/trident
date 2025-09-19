@@ -176,8 +176,8 @@ stages:
                   --force-color \
                   --full-logstream logstream-full.log \
                   --wait-for-provisioned-state \
-                  --port ${{variables.netlaunchPort}} 2>&1 | tee ./clean-install-deployment.log \
-                  $SIGNING_CERT
+                  $SIGNING_CERT \
+                  --port ${{variables.netlaunchPort}} 2>&1 | tee ./clean-install-deployment.log
             workingDirectory: $(tridentSourceDirectory)
             displayName: "🚀 Run netlaunch for testing"
             timeoutInMinutes: 20
