@@ -50,7 +50,7 @@ get_releases() {
         releases=$(gh api "repos/${REPO}/releases" --jq ".[] | .name" --paginate)
     else
         # Get all releases (excluding pre-releases by default)
-        releases=$(gh api "repos/${REPO}/releases" --jq ".[] | select(.prerelease=false) | .name" --paginate)
+        releases=$(gh api "repos/${REPO}/releases" --jq ".[] | select(.prerelease==false) | .name" --paginate)
     fi
     echo "$releases"
 }
