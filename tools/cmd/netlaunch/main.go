@@ -51,6 +51,7 @@ var (
 	traceFile           string
 	forceColor          bool
 	waitForProvisioned  bool
+	signingCert         string
 )
 
 var backgroundLogstreamFull string
@@ -280,13 +281,7 @@ var rootCmd = &cobra.Command{
 		iso_location := fmt.Sprintf("http://%s/provision.iso", announceAddress)
 
 		if config.Netlaunch.LocalVmUuid != nil {
-			var keyLocation string
-			if config.Netlaunch.KeyLocation != nil {
-				keyLocation = *config.Netlaunch.KeyLocation
-			} else {
-				keyLocation = ""
-			}
-			startLocalVm(*config.Netlaunch.LocalVmUuid, iso_location, keyLocation)
+			startLocalVm(*config.Netlaunch.LocalVmUuid, iso_location, signingCert)
 		} else {
 			if config.Netlaunch.Bmc != nil && config.Netlaunch.Bmc.SerialOverSsh != nil {
 				serial, err := config.Netlaunch.Bmc.ListenForSerialOutput()
@@ -358,7 +353,7 @@ var rootCmd = &cobra.Command{
 	},
 }
 
-func startLocalVm(localVmUuidStr string, isoLocation string, keyLocation string) {
+func startLocalVm(localVmUuidStr string, isoLocation string, signingCert string) {
 	log.Info("Using local VM")
 
 	// TODO: Parse the UUID directly when reading the config file
@@ -373,10 +368,9 @@ func startLocalVm(localVmUuidStr string, isoLocation string, keyLocation string)
 	}
 	defer vm.Disconnect()
 
-	// Set SecureBoot to true
-	// TODO: HOW DO I SET IT FOR UKI TESTS ONLY????
-	// TODO: WHAT SHOULD KEYLOCATION POINT TO???
-	if err = vm.SetFirmwareVars(isoLocation, true, keyLocation); err != nil {
+	// If a signing certificate is provided, enable SecureBoot
+	secureBoot := len(signingCert) > 0
+	if err = vm.SetFirmwareVars(isoLocation, secureBoot, signingCert); err != nil {
 		log.WithError(err).Fatalf("failed to set UEFI variables")
 	}
 
@@ -397,6 +391,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&backgroundLogstreamFull, "full-logstream", "b", "logstream-full.log", "File to write full logstream output to. (Requires -l)")
 	rootCmd.PersistentFlags().BoolVarP(&waitForProvisioned, "wait-for-provisioned-state", "", false, "Wait for Host Status servicingState to be 'provisioned'")
 	rootCmd.PersistentFlags().BoolVarP(&forceColor, "force-color", "", false, "Force colored output.")
+	rootCmd.PersistentFlags().StringVarP(&signingCert, "signing-cert", "", "", "Path to signing certificate for SecureBoot.")
 	rootCmd.Flags().StringVarP(&iso, "iso", "i", "", "ISO for Netlaunch testing.")
 	rootCmd.MarkFlagRequired("iso-template")
 }
