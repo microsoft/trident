@@ -228,26 +228,27 @@ def wipe_sdb(vm: SshNode):
     res = vm.execute("sudo wipefs -af /dev/sdb")
     print(f"wipefs -af /dev/sdb:\n{res.stdout}\n{res.stderr}")
 
-    res = vm.execute(f"sudo lsblk /dev/sdb --json --bytes --output-all")
-    res.assert_exit_code()
-    info = json.loads(res.stdout)["blockdevices"][0]
-    children = [child for child in info.get("children", []) if child]
+    kernel_name = "sdb"
 
     res = vm.execute(f"sudo findmnt -o SOURCE,TARGET -r")
     res.assert_exit_code()
     mounts: List[str] = res.stdout.splitlines()
 
+    res = vm.execute(f"sudo lsblk /dev/{kernel_name} --json --bytes --output-all")
+    res.assert_exit_code()
+    info = json.loads(res.stdout)["blockdevices"][0]
+
     yield
 
-    # Clean sdb
     for mount in mounts:
         source, target = mount.split()
         assert not source.startswith(
-            f"/dev/sdb"
+            f"/dev/{kernel_name}"
         ), f"Partition '{source}' is mounted at '{target}'"
 
-    assert len(children) == 0, f"Disk sdb is not clean!"
-    assert children.get("pttype", None) is None, f"Disk sdb is not clean!"
+    children = [child for child in info.get("children", []) if child]
+    assert len(children) == 0, f"Disk {kernel_name} is not clean!"
+    assert info.get("pttype", None) is None, f"Disk {kernel_name} is not clean!"
 
 
 def fetch_code_coverage(ssh_node):
