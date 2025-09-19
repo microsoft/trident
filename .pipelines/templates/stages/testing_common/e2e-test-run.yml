@@ -137,6 +137,11 @@ steps:
         PROXY_ARG="--proxy HTTPS_PROXY=${{ parameters.httpsProxy }}"
       fi
 
+      FORCED_ROLLBACK_ARG=""
+      if [ ${{ parameters.tridentConfigurationName }} == 'auto-rollback' ]; then
+        FORCED_ROLLBACK_ARG="--forced-rollback"
+      fi
+
       echo "Running script to stage and finalize A/B update..."
       ./bin/storm-trident helper ab-update \
           "${{ parameters.sshKeyPath }}" \
@@ -147,14 +152,19 @@ steps:
           --version $(version) \
           --stage-ab-update \
           --finalize-ab-update \
-          $PROXY_ARG
+          $PROXY_ARG $FORCED_ROLLBACK_ARG
 
       current_version=$(echo $(version))
       new_version=$((current_version + 1))
       # Un-set the 'x' flag to avoid errors.
       set +x
       echo "##vso[task.setvariable variable=version]$new_version"
-      echo "##vso[task.setvariable variable=abActiveVolume]volume-b"
+      if [ ${{ parameters.tridentConfigurationName }} == 'auto-rollback' ]; then
+        # auto-rollback should maintain active volume as volume-a
+        echo "##vso[task.setvariable variable=abActiveVolume]volume-a"
+      else
+        echo "##vso[task.setvariable variable=abActiveVolume]volume-b"
+      fi
     timeoutInMinutes: 15
     workingDirectory: $(Build.SourcesDirectory)
     displayName: "🅱️🔄 Stage and finalize A/B update into runtime OS B"
@@ -224,6 +234,16 @@ steps:
       junitTestFile: "./e2e_tests/${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_B_$(System.JobAttempt).junit.xml"
       displayNameSpecifier: "A/B update into runtime OS B"
       artifactName: "junit_for_trident_ab_update_B"
+
+  - bash: |
+      set -eu
+      if [ ${{ parameters.tridentConfigurationName }} == 'auto-rollback' ]; then
+        # for auto-rollback, only run the first update to test rollback
+        echo "##vso[task.setvariable variable=abActiveVolume]null"
+        echo "##vso[task.setvariable variable=skipJunitHandling]true"
+      fi
+    workingDirectory: $(Build.SourcesDirectory)
+    displayName: "Limit subsequent testing for auto-rollback scenario"
 
   - bash: |
       set -eux

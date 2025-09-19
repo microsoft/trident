@@ -74,6 +74,9 @@ pub enum EventResult {
 
     #[serde(rename = "2")]
     SuccessReboot,
+
+    #[serde(rename = "3")]
+    ErrorRollback,
 }
 
 #[derive(Debug, Deserialize)]

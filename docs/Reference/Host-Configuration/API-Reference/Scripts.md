@@ -44,6 +44,23 @@ These scripts are run with the root filesystem of the target OS mounted at `$TAR
    | Type           | `Script`              |
    | Link           | [Script](./Script.md) |
 
+### `preCommit` (optional)
+
+Scripts to be run before Trident commits a target OS as 'provisioned'.  If any of the scripts fail, commit will not be completed and rollback will be triggered.
+
+These scripts are run in the target OS. The `$TARGET_ROOT` variable will be set to '/' for consistency with postProvision scripts.
+
+| Characteristic | Value   |
+| -------------- | ------- |
+| Type           | `array` |
+
+- Items of the array must have the type:
+
+   | Characteristic | Value                 |
+   | -------------- | --------------------- |
+   | Type           | `Script`              |
+   | Link           | [Script](./Script.md) |
+
 ### `preServicing` (optional)
 
 Scripts to be run before Trident begins servicing the host.

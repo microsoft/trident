@@ -1,0 +1,79 @@
+image:
+  url: http://NETLAUNCH_HOST_ADDRESS/files/regular.cosi
+  sha384: ignored
+storage:
+  disks:
+    - id: os
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
+      partitionTableType: gpt
+      partitions:
+        - id: root-a
+          type: root
+          size: 8G
+        - id: root-b
+          type: root
+          size: 8G
+        - id: esp
+          type: esp
+          size: 1G
+        - id: swap
+          type: swap
+          size: 2G
+        - id: home
+          type: home
+          size: 1G
+        - id: trident
+          type: linux-generic
+          size: 1G
+    - id: disk2
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
+      partitionTableType: gpt
+      partitions: []
+  abUpdate:
+    volumePairs:
+      - id: root
+        volumeAId: root-a
+        volumeBId: root-b
+  filesystems:
+    - deviceId: trident
+      source: new
+      mountPoint: /var/lib/trident
+    - deviceId: home
+      source: new
+      mountPoint: /home
+    - deviceId: esp
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+    - deviceId: root
+      mountPoint: /
+  swap:
+    - swap
+scripts:
+  postConfigure:
+    - name: testing-privilege
+      runOn:
+        - clean-install
+        - ab-update
+      content: echo 'testing-user ALL=(ALL:ALL) NOPASSWD:ALL' > /etc/sudoers.d/testing-user
+  preCommit:
+    - name: invoke-rollback
+      runOn:
+        - ab-update
+      content: |
+        echo 'failure for ab update'
+        exit 1
+os:
+  selinux:
+    mode: enforcing
+  netplan:
+    version: 2
+    ethernets:
+      vmeths:
+        match:
+          name: enp*
+        dhcp4: true
+  users:
+    - name: testing-user
+      sshPublicKeys: []
+      sshMode: key-only

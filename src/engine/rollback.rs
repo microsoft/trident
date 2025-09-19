@@ -19,8 +19,17 @@ use crate::{
         context::EngineContext,
         storage::{encryption, verity},
     },
+    subsystems::hooks::HooksSubsystem,
     DataStore,
 };
+
+#[must_use]
+pub enum BootValidationResult {
+    /// Target OS boot successfully, pre-commit scripts succeeded
+    CorrectBootProvisioned,
+    /// Target OS boot successfully, pre-commit scripts failed
+    CorrectBootInvalid(TridentError),
+}
 
 /// Validates that the firmware did not perform a rollback, i.e. correctly booted from the updated
 /// runtime OS image.
@@ -28,14 +37,20 @@ use crate::{
 /// If the firmware did not boot from the expected root device, this function will return an error.
 /// In either case, the function will update the Host Status.
 #[tracing::instrument(skip_all)]
-pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
+pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, TridentError> {
     info!("Validating whether host correctly booted from updated runtime OS image");
+
+    let servicing_type = match datastore.host_status().servicing_state {
+        ServicingState::AbUpdateFinalized => ServicingType::AbUpdate,
+        ServicingState::CleanInstallFinalized => ServicingType::CleanInstall,
+        _ => ServicingType::NoActiveServicing,
+    };
 
     // Create an EngineContext based on the Host Status
     let ctx = EngineContext {
         spec: datastore.host_status().spec.clone(),
         spec_old: datastore.host_status().spec_old.clone(),
-        servicing_type: ServicingType::AbUpdate,
+        servicing_type,
         ab_active_volume: datastore.host_status().ab_active_volume,
         partition_paths: datastore.host_status().partition_paths.clone(),
         disk_uuids: datastore.host_status().disk_uuids.clone(),
@@ -58,6 +73,16 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
         .message("Host failed to boot from expected root device")?
     {
         info!("Host successfully booted from updated runtime OS image");
+
+        // Execute pre-commit scripts, if one fails, trigger rollback
+        match HooksSubsystem::default().execute_pre_commit_scripts(&ctx) {
+            Ok(()) => {}
+            // TODO: need to create mechanism for rollback reboot
+            Err(e) => {
+                // error!("Failed to execute pre-commit scripts: {:?}", e.into());
+                return Ok(BootValidationResult::CorrectBootInvalid(e));
+            }
+        };
 
         // If it's virtdeploy, after confirming that we have booted into the correct image, we need
         // to update the `BootOrder` to boot from the correct image next time.
@@ -179,7 +204,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
         };
     })?;
 
-    Ok(())
+    Ok(BootValidationResult::CorrectBootProvisioned)
 }
 
 /// Returns the current root device path, i.e., the path of the root block device that the host
