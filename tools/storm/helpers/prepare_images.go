@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 
-	"storm"
+	"github.com/microsoft/storm"
 
 	"github.com/sirupsen/logrus"
 )

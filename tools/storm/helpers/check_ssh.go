@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"storm"
+	"github.com/microsoft/storm"
 
 	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
