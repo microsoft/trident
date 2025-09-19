@@ -147,21 +147,41 @@ class RustModule(Collector):
 
         # Yield a function for each test case
         for test_name, test_data in self.module_data.get("test_cases", {}).items():
-            node = Function.from_parent(
-                self,
-                name=test_name,
-                callobj=partial(
-                    run_rust_functional_test,
-                    crate=self.crate,
-                    module_path="::".join(self.module_path),
-                    test_case=test_name,
-                    skip=test_data.get("skip", None),
-                    xfail=test_data.get("xfail", None),
-                ),
-            )
-            for marker in test_data.get("markers", []):
-                node.add_marker(marker)
-            yield node
+            if "test_open_temporary_persist_reopen" in test_name:
+                node = Function.from_parent(
+                    self,
+                    name=test_name,
+                    callobj=partial(
+                        run_rust_functional_test,
+                        crate=self.crate,
+                        module_path="::".join(self.module_path),
+                        test_case=test_name,
+                        skip=test_data.get("skip", None),
+                        xfail=test_data.get("xfail", None),
+                    ),
+                )
+                for marker in test_data.get("markers", []):
+                    node.add_marker(marker)
+                yield node
+
+        # Yield a function for each test case
+        for test_name, test_data in self.module_data.get("test_cases", {}).items():
+            if not "test_open_temporary_persist_reopen" in test_name:
+                node = Function.from_parent(
+                    self,
+                    name=test_name,
+                    callobj=partial(
+                        run_rust_functional_test,
+                        crate=self.crate,
+                        module_path="::".join(self.module_path),
+                        test_case=test_name,
+                        skip=test_data.get("skip", None),
+                        xfail=test_data.get("xfail", None),
+                    ),
+                )
+                for marker in test_data.get("markers", []):
+                    node.add_marker(marker)
+                yield node
 
 
 @pytest.mark.depends("test_deploy_vm")
