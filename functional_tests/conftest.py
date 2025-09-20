@@ -134,20 +134,24 @@ class RustModule(Collector):
         self.module_path = module_path
         super().__init__(**kwargs)
 
-    def collect(self) -> Iterable[Union[Item, Collector]]:
-        # Yield a new collector for each submodule
-        for module_name, module_data in self.module_data.get("submodules", {}).items():
-            yield RustModule.from_parent(
-                self,
-                crate=self.crate,
-                name=module_name,
-                module_data=module_data,
-                module_path=self.module_path + [module_name],
-            )
+    def collect(self) -> Iterable[Item]:
+        def inner_collect(self) -> Iterable[Item]:
+            item_list: List[Item] = []
+            # Yield a new collector for each submodule
+            for module_name, module_data in self.module_data.get(
+                "submodules", {}
+            ).items():
+                submodule_item_list = RustModule.from_parent(
+                    self,
+                    crate=self.crate,
+                    name=module_name,
+                    module_data=module_data,
+                    module_path=self.module_path + [module_name],
+                ).collect()
+                item_list.extend(submodule_item_list)
 
-        # Yield a function for each test case
-        for test_name, test_data in self.module_data.get("test_cases", {}).items():
-            if "test_open_temporary_persist_reopen" in test_name:
+            # Yield a function for each test case
+            for test_name, test_data in self.module_data.get("test_cases", {}).items():
                 node = Function.from_parent(
                     self,
                     name=test_name,
@@ -162,26 +166,27 @@ class RustModule(Collector):
                 )
                 for marker in test_data.get("markers", []):
                     node.add_marker(marker)
-                yield node
+                item_list.append(node)
 
-        # Yield a function for each test case
-        for test_name, test_data in self.module_data.get("test_cases", {}).items():
-            if not "test_open_temporary_persist_reopen" in test_name:
-                node = Function.from_parent(
-                    self,
-                    name=test_name,
-                    callobj=partial(
-                        run_rust_functional_test,
-                        crate=self.crate,
-                        module_path="::".join(self.module_path),
-                        test_case=test_name,
-                        skip=test_data.get("skip", None),
-                        xfail=test_data.get("xfail", None),
-                    ),
+            if len(item_list) > 0:
+                print(
+                    f"Collected {len(item_list)} items in module {self.name}: first item is {item_list[0].name}"
                 )
-                for marker in test_data.get("markers", []):
-                    node.add_marker(marker)
-                yield node
+            else:
+                print(f"Collected no items in module {self.name}")
+            return item_list
+
+        ordered_list: List[Item] = []
+        first_item_name = "test_open_temporary_persist_reopen"
+        for item in inner_collect(self):
+            if first_item_name in item.name:
+                ordered_list.append(item)
+
+        for item in inner_collect(self):
+            if not first_item_name in item.name:
+                ordered_list.append(item)
+
+        return ordered_list
 
 
 @pytest.mark.depends("test_deploy_vm")
