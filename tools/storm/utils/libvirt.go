@@ -93,7 +93,7 @@ func (vm *LibvirtVm) SetFirmwareVars(bootUrl string, secureBoot bool, sbSigningC
 	}
 
 	virtFwVarsArgs := []string{"virt-fw-vars", "--inplace", nvram.NVRam, "--set-boot-uri", bootUrl}
-	if secureBoot {
+	if secureBoot && sbSigningCert != "" {
 		logrus.Infof("Setting SecureBoot to enabled")
 		virtFwVarsArgs = append(virtFwVarsArgs, "--set-true", "SecureBootEnable")
 
