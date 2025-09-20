@@ -156,13 +156,13 @@ stages:
                 MAX_FAILURES_FLAG="--max-failures 1"
               fi
 
-              # If $(ob_artifactBaseName)/cert.pem exists, set --signing-cert
+              # If $(ob_artifactBaseName)/cert.pem exists, set --sb-signing-cert
               # to use it; otherwise, set it to an empty string. This is signing
               # certificate for SecureBoot.
               if [ -f $(ob_artifactBaseName)/cert.pem ]; then
-                SIGNING_CERT="--signing-cert $(ob_artifactBaseName)/cert.pem"
+                SB_SIGNING_CERT="--sb-signing-cert $(ob_artifactBaseName)/cert.pem"
               else
-                SIGNING_CERT=""
+                SB_SIGNING_CERT=""
               fi
 
               ./bin/netlaunch \
@@ -176,7 +176,7 @@ stages:
                   --force-color \
                   --full-logstream logstream-full.log \
                   --wait-for-provisioned-state \
-                  $SIGNING_CERT \
+                  $SB_SIGNING_CERT \
                   --port ${{variables.netlaunchPort}} 2>&1 | tee ./clean-install-deployment.log
             workingDirectory: $(tridentSourceDirectory)
             displayName: "🚀 Run netlaunch for testing"
