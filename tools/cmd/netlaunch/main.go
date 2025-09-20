@@ -281,7 +281,7 @@ var rootCmd = &cobra.Command{
 		iso_location := fmt.Sprintf("http://%s/provision.iso", announceAddress)
 
 		// Validate that file at sbSigningCert exists and can be read
-		if len(sbSigningCert) > 0 {
+		if sbSigningCert != "" {
 			file, err := os.Open(sbSigningCert)
 			if err != nil {
 				log.WithError(err).Fatalf("failed to open SecureBoot signing certificate for reading")
@@ -378,7 +378,7 @@ func startLocalVm(localVmUuidStr string, isoLocation string, sbSigningCert strin
 	defer vm.Disconnect()
 
 	// If a signing certificate is provided, enable SecureBoot
-	secureBoot := len(sbSigningCert) > 0
+	secureBoot := sbSigningCert != ""
 	if err = vm.SetFirmwareVars(isoLocation, secureBoot, sbSigningCert); err != nil {
 		log.WithError(err).Fatalf("failed to set UEFI variables")
 	}
