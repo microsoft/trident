@@ -33,6 +33,7 @@ This how-to-guide explains how to create a new encrypted volume with Trident on 
 1. Update the `encryption` configuration to include optional settings. For example, you can set a `recoveryKeyUrl` to read the recovery key from and choose `pcrs` to seal the encrypted volumes to. Remember that these settings apply to **all** encrypted volumes at once. More information about these settings can be found in [the API doc on encryption](docs/Reference/Host-Configuration/API-Reference/Encryption.md).
 
 1. Run Trident to create the encrypted volume on clean install. Trident will:
+   - Generate a recovery key, or use the provided recovery key.
    - Create the LUKS-encrypted volume on the specified device.
-   - Generate encryption keys, or use the provided recovery keys, and seal them to the state of the TPM 2.0 device.
+   - Seal the encryption key to the state of the TPM 2.0 device.
    - Make the encrypted volume available under `/dev/mapper/{deviceName}`.
