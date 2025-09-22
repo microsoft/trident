@@ -73,7 +73,7 @@ macro_rules! impl_common_sha2 {
                 generator: &mut schemars::gen::SchemaGenerator,
             ) -> schemars::schema::Schema {
                 let mut base = String::json_schema(generator).into_object();
-                base.format = Some(format!("[a-fA-F0-9]{}", $length));
+                base.format = Some(format!("[a-fA-F0-9]{{{}}}", $length));
                 base.metadata().description = Some(format!(
                     "The {} is a {}-character hexadecimal string.",
                     stringify!($name),

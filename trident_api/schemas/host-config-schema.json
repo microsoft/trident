@@ -409,7 +409,7 @@
           "title": "Checksum",
           "description": "The SHA384 checksum of the image.\n\n*Details:*\n\nThe Sha384Hash is a 96-character hexadecimal string.",
           "type": "string",
-          "format": "[a-fA-F0-9]96"
+          "format": "[a-fA-F0-9]{96}"
         }
       ]
     },
