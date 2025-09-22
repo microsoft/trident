@@ -1,14 +1,16 @@
 
 # Creating AzL Images to Deploy with Trident
 
-<!--
-DELETE ME AFTER COMPLETING THE DOCUMENT!
----
-Task: https://dev.azure.com/mariner-org/polar/_workitems/edit/13149
-Title: Creating AzL Images to Deploy with Trident
-Type: How-To Guide
-Objective:
+## Goals
 
-Guide the user through the process of creating AzL images to deploy with
-Trident.
--->
+To deploy an operating system, Trident requires [COSI](../Reference/COSI.md) files. This document describes how to create a COSI file.
+
+## Prerequisites
+
+1. [Install Image Customizer](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/quick-start/quick-start.html).
+
+## Instructions
+
+### Create OS Image
+
+Follow the Image Customizer [documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/quick-start/quick-start-binary.html) to configure and create an OS image, paying special attention to [specify](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/api/cli.html#--output-image-formatformat) `--output-image-format=cosi`.
