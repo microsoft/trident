@@ -10,12 +10,7 @@ This how-to-guide explains how to create a new encrypted volume with Trident on 
    - Disk partition of a supported type.
    - Software RAID array, whose first disk partition is of a supported type.
 
-   **Supported type** refers to any partition type, excluding the following blocked partition types:
-   - `esp`
-   - `root`
-   - `root-verity`
-   - `usr-verity`
-   - `home`
+   **Supported type** refers to any partition type, excluding a list of blocked types, as described in [the API doc on encrypted volumes](docs/Reference/Host-Configuration/API-Reference/EncryptedVolume.md).
 
 1. Add a new encrypted volume to the `encryption` config under `volumes`, with these three **required** fields:
 
@@ -35,7 +30,7 @@ This how-to-guide explains how to create a new encrypted volume with Trident on 
 
    The naming convention for encrypted volumes in Trident is to prefix the id of the partition or RAID array with `enc-<device_id>` to create the id of the encrypted volume, and prefix it with `luks-<device_id>` to create its device name.
 
-1. Update the `encryption` configuration to include optional settings. For example, you can set a `recoveryKeyUrl` to read the recovery key from and choose `pcrs` to seal the encrypted volumes to. Remember that these settings apply to **all** encrypted volumes at once.
+1. Update the `encryption` configuration to include optional settings. For example, you can set a `recoveryKeyUrl` to read the recovery key from and choose `pcrs` to seal the encrypted volumes to. Remember that these settings apply to **all** encrypted volumes at once. More information about these settings can be found in [the API doc on encryption](docs/Reference/Host-Configuration/API-Reference/Encryption.md).
 
 1. Run Trident to create the encrypted volume on clean install. Trident will:
    - Create the LUKS-encrypted volume on the specified device.
