@@ -3,7 +3,7 @@
 
 The Trident Agent Configuration file contains configuration details for Trident. It is used for all Trident commands. The Agent Configuration file path must be `/etc/trident/trident.conf`.
 
-In most cases, the default values of Agent Configuration are sufficient and should not need to be changed.
+> In most cases, the default values of Agent Configuration are sufficient and should not need to be changed.
 
 ## Setting Custom Datastore Path
 
@@ -12,4 +12,5 @@ By default, Trident will use `/var/lib/trident/datastore.sqlite` as the path for
 ```
 DatastorePath=/special/path/to/my-datastore.sqlite
 ```
-> Note: the datastore path cannot be hosted on an A/B volume and must be an absolute path
+
+> The datastore path cannot be hosted on an [A/B volume pair](./Glossary#ab-volume-pair) and must be an absolute path
