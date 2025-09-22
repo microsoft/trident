@@ -29,18 +29,23 @@ OS. This operation relabels all of the files in the new OS (what will become the
 Trident allows users to configure the state of SELinux in the [runtime
 OS](../Reference/Glossary.md#runtime-os) using the [`os.selinux`
 API](../Reference/Host-Configuration/API-Reference/Selinux.md). SELinux can be
-configured to be in `enforcing`, `permissive`, or `disabled` mode. In `enforcing` mode, all SELinux policies are enforcing and any denials from the SELinux security module will result in processes being terminated. In `permissive` mode, SELinux policies are not enforced and any denials are instead logged at `/var/log/audit/audit.log`. Lastly, in `disabled` mode, SELinux policies are neither enforced or logged.
+configured to be in `enforcing`, `permissive`, or `disabled` mode. In
+`enforcing` mode, all SELinux policies are enforcing and any denials from the
+SELinux security module will result in processes being terminated. In
+`permissive` mode, SELinux policies are not enforced and any denials are instead
+logged at `/var/log/audit/audit.log`. Lastly, in `disabled` mode, SELinux
+policies are neither enforced or logged.
 
 Note that in order for the SELinux configuration in the Host Configuration to
 take effect, SELinux must be present in the [runtime OS
 OS](../Reference/Glossary.md#runtime-os)'s image.
 
-| Host Configuration \ Provisioning OS       | NOT PRESENT | DISABLED  | PERMISSIVE | ENFORCING |
-|---------------|-------------|-----------|------------|-----------|
-| NOT PRESENT   | NOT PRESENT | DISABLED  | PERMISSIVE | ENFORCING |
-| DISABLED      | NOT PRESENT | DISABLED  | DISABLED   | DISABLED  |
-| PERMISSIVE    | Error       | PERMISSIVE| PERMISSIVE | PERMISSIVE|
-| ENFORCING     | Error       | ENFORCING | ENFORCING  | ENFORCING |
+| Host Configuration \ Provisioning OS | NOT PRESENT | DISABLED  | PERMISSIVE | ENFORCING |
+|--------------------------------------|-------------|-----------|------------|-----------|
+| NOT PRESENT                          | NOT PRESENT | DISABLED  | PERMISSIVE | ENFORCING |
+| DISABLED                             | NOT PRESENT | DISABLED  | DISABLED   | DISABLED  |
+| PERMISSIVE                           | Error       | PERMISSIVE| PERMISSIVE | PERMISSIVE|
+| ENFORCING                            | Error       | ENFORCING | ENFORCING  | ENFORCING |
 
-Trident will determine whether or not SELinux is available on the [runtime OS
+Trident will determine whether or not SELinux is available on the [runtime
 OS](../Reference/Glossary.md#runtime-os) by checking for `/etc/selinux/config`.
