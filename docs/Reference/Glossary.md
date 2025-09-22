@@ -56,14 +56,11 @@ Execution root. The root file system of the environment where Trident was run.
 Generally the Management OS, the OS that is being updated, or a container
 running on top of one of the former environments.
 
-The term is also used inside the context of [newroot](#newroot), where it
-represents a bind mount point to the execroot inside of newroot.
+## Finalize (Operation)
 
-Newroot is used for a chroot, however, access to the current OS is sometimes
-still desired for accessing data, copying files, or other tasks. To achieve
-this, Trident will bind mount the current OS's file systems inside of newroot to
-provide a mechanism to escape the chroot jail for reading files in the execution
-root.
+The final operation performed as part of a [servicing](#servicing). The finalize
+operation performs any final steps needed to complete the servicing and have the
+host reboot into the new image.
 
 ## Install
 
@@ -87,6 +84,12 @@ Root file system of the OS that is being deployed.
 When Trident is deploying a new OS, it will mount the new OS's file systems and
 prepare them for a chroot. This mount of the new OS is called `newroot`.
 
+## Operation
+
+Operations are the top level actions performed inside a [servicing](#servicing).
+Trident installations and updates perform the [stage](#stage-operation) and
+[finalize](#finalize-operation) operations.
+
 ## Servicing
 
 The general process of performing an action on an [install](#install).
@@ -98,16 +101,26 @@ The specific kind of [Servicing](#servicing) that is being performed on an
 install, such as [clean install](#clean-install), or an [A/B
 update](#ab-update).
 
+## Stage (Operation)
+
+Stage is an [operation](#operation) that downloads, writes and prepares an OS
+image as part of a [servicing](#servicing).
+
+## Step
+
+Steps are logical stages of an operation. On each step, [subsystems](#subsystem)
+are run in a specific order to perform the work needed for that step.
+
+## Subsystem
+
+A logical grouping of related functionality within Trident. Each subsystem is in
+charge of a specific aspect of the servicing process and configuration of the
+[newroot](#newroot).
+Subsystems run the corresponding logic for each [step](#step) of an
+[operation](#operation).
+
 ## Unformatted Partition
 
 An unformatted partition is a partition on a storage device that has been
 created but does not yet contain a filesystem. It is not associated with any
 filesystem, verity-filesystem, RAID array, or encryption volume.
-
-
-## Terms to Define
-
-- Operation
-- Stage
-- State
-- Step
