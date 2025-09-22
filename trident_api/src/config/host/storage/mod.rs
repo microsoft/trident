@@ -1594,9 +1594,9 @@ mod tests {
             storage.validate(true).unwrap_err(),
             HostConfigurationStaticValidationError::InvalidStorageGraph(
                 StorageGraphBuildError::InvalidPartitionType {
-                    node_identifier: NodeIdentifier::block_device("usr-verity"),
+                    node_identifier: NodeIdentifier::block_device("enc-usr-verity"),
                     kind: BlkDevReferrerKind::EncryptedVolume,
-                    partition_id: "enc-usr-verity".into(),
+                    partition_id: "usr-verity".into(),
                     partition_type: PartitionType::UsrVerity,
                     valid_types: BlkDevReferrerKind::EncryptedVolume.allowed_partition_types()
                 }
