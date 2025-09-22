@@ -13,4 +13,4 @@ By default, Trident will use `/var/lib/trident/datastore.sqlite` as the path for
 DatastorePath=/special/path/to/my-datastore.sqlite
 ```
 
-> The datastore path cannot be hosted on an [A/B volume pair](./Glossary#ab-volume-pair) and must be an absolute path
+> The datastore path cannot be hosted on an [A/B volume pair](./Glossary#ab-volume-pair) and must be an absolute path.
