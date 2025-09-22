@@ -14,9 +14,14 @@ Note: this guide will use `docker` for all code snippets.
    all the necessary dependencies. You can find a compressed form of
    containerized Trident at `artifacts/test-image/trident-container.tar.gz`.
 
-2. Load the Trident container image. `docker load --input
-   trident-container.tar.gz`. Depending on where you choose to place the Trident
-   container image, change the file path in the provided code sample.
+2. Load the Trident container image:
+
+   ```bash
+   docker load --input trident-container.tar.gz
+   ```
+
+   Depending on where you choose to place the Trident container image, change
+   the file path in the provided code sample.
 
 3. Run Trident:
 
