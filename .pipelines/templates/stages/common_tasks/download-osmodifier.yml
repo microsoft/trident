@@ -12,38 +12,22 @@ parameters:
     default: ""
 
 steps:
-  - bash: |
-      set -ex
+  - ${{ if eq(parameters.osmodifierBuildType, 'main') }}:
+    - task: UniversalPackages@0
+      displayName: "Download OSModifier (main)"
+      inputs:
+        command: download
+        vstsFeed: polar/PolarCoreArtifacts
+        vstsFeedPackage: osmodifier
+        vstsPackageVersion: ${{ parameters.osModifierVersion != '' && parameters.osModifierVersion || '*' }}
+        downloadDirectory: "$(Build.SourcesDirectory)/artifacts"
 
-      if [[ "${{ parameters.osmodifierBuildType }}" == "preview" ]]; then
-        ARTIFACT_NAME="osmodifier_preview"
-        if [[ -n "${{ parameters.osModifierVersion }}" ]]; then
-          VERSION="${{ parameters.osModifierVersion }}"
-        else
-          # Get latest main version
-          VERSION="*"
-        fi
-      else
-        ARTIFACT_NAME="osmodifier"
-        if [[ -n "${{ parameters.osModifierVersion }}" ]]; then
-          VERSION="${{ parameters.osModifierVersion }}"
-        else
-          # Get latest main version
-          VERSION="*"
-        fi
-      fi
-
-      echo "Downloading ${ARTIFACT_NAME} version ${VERSION}..."
-      
-      az artifacts universal download \
-        --organization "https://dev.azure.com/mariner-org/" \
-        --project "2afa5696-2a1d-438f-ac9e-db12e0b4ae27" \
-        --scope project \
-        --feed "PolarCoreArtifacts" \
-        --name "${ARTIFACT_NAME}" \
-        --version "${VERSION}" \
-        --path "artifacts/azure-linux-image-tools"
-
-    displayName: "Download OSModifier from Artifact Feed"
-    workingDirectory: $(Build.SourcesDirectory)
-    retryCountOnTaskFailure: 3
+  - ${{ if eq(parameters.osmodifierBuildType, 'preview') }}:
+    - task: UniversalPackages@0
+      displayName: "Download OSModifier (preview)"
+      inputs:
+        command: download
+        vstsFeed: polar/PolarCoreArtifacts
+        vstsFeedPackage: osmodifier_preview
+        vstsPackageVersion: ${{ parameters.osModifierVersion != '' && parameters.osModifierVersion || '*' }}
+        downloadDirectory: "$(Build.SourcesDirectory)/artifacts"

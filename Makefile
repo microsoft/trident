@@ -82,7 +82,7 @@ build: .cargo/config version-vars
 .PHONY: format
 format:
 	cargo fmt
-	python3 -m black . --exclude "azure-linux-image-tools"
+	python3 -m black .
 	gofmt -w -s tools/
 	gofmt -w -s storm/
 
@@ -133,7 +133,7 @@ clean-coverage:
 TOOLKIT_DIR="azure-linux-image-tools/toolkit"
 AZL_TOOLS_OUT_DIR="$(TOOLKIT_DIR)/out/tools"
 ARTIFACTS_DIR="artifacts"
-OSMODIFIER_ARTIFACT_VERSION := 1.1.0
+OSMODIFIER_ARTIFACT_VERSION := 1.*
 
 artifacts/osmodifier:
 	@az artifacts universal download \
