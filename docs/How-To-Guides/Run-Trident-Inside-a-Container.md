@@ -43,6 +43,8 @@ Note: this guide will use `docker` for all code snippets.
    of `/etc/trident/`, please replace `/etc/trident/hostconf.yaml` with the path
    to your Host Configuration file.
 
+   Replace `[TRIDENT VERB]` with the desired verb. For a complete explanation of the Trident CLI, please see the [Reference guide](../Reference/Trident-CLI.md).
+
 ## Explanation of Docker Command
 
 Trident must be run in `--privileged` mode so that it has access to devices on
