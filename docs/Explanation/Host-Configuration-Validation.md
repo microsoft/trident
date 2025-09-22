@@ -1,13 +1,13 @@
 
 # Host Configuration Validation
 
-<!--
-DELETE ME AFTER COMPLETING THE DOCUMENT!
----
-Task: https://dev.azure.com/mariner-org/polar/_workitems/edit/13156
-Title: Host Configuration Validation
-Type: Explanation
-Objective:
+The Trident binary can validate the syntax and structure of a Host Configuration without applying it
+to the host:
 
-Explain how trident validates the host configuration.
--->
+```
+trident validate /path/to/host-configuration.yaml
+```
+
+This checks only aspects of the Host Configuration file itself. When Trident runs an install or
+update, it does further validation to ensure that the provided configuration is compatible with the
+host's hardware and current state.
