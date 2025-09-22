@@ -3,7 +3,7 @@
 
 SELinux is a security module in the Linux kernel that locks down the operations
 that all processes and users are allowed to perform. SELinux operates as a
-Mandatory Access Control system (MAC), meaning that the kernel enforces the
+Mandatory Access Control (MAC) system, meaning that the kernel enforces the
 access control, defined by policy rules that are currently enabled. Users and
 processes do not have permission to change the security rules. SELinux is useful
 for ensuring that processes and users do not perform actions they are not
@@ -24,7 +24,7 @@ OS. This operation relabels all of the files in the new OS (what will become the
 [runtime OS](../Reference/Glossary.md)) according to the labels specified at
 `/etc/selinux/targeted/contexts/files/file_contexts`.
 
-## Configuring Trident for the Runtime OS
+## Configuring SELinux for the Runtime OS
 
 Trident allows users to configure the state of SELinux in the [runtime
 OS](../Reference/Glossary.md#runtime-os) using the [`os.selinux`
@@ -34,7 +34,7 @@ configured to be in `enforcing`, `permissive`, or `disabled` mode. In
 SELinux security module will result in processes being terminated. In
 `permissive` mode, SELinux policies are not enforced and any denials are instead
 logged at `/var/log/audit/audit.log`. Lastly, in `disabled` mode, SELinux
-policies are neither enforced or logged.
+policies are neither enforced nor logged.
 
 Note that in order for the SELinux configuration in the Host Configuration to
 take effect, SELinux must be present in the [runtime OS
