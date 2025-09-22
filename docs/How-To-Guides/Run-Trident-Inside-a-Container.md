@@ -43,7 +43,9 @@ Note: this guide will use `docker` for all code snippets.
    of `/etc/trident/`, please replace `/etc/trident/hostconf.yaml` with the path
    to your Host Configuration file.
 
-   Replace `[TRIDENT VERB]` with the desired verb. For a complete explanation of the Trident CLI, please see the [Reference guide](../Reference/Trident-CLI.md).
+   Replace `[TRIDENT VERB]` with the desired verb. For a complete explanation of
+   the Trident CLI, please see the [Reference
+   guide](../Reference/Trident-CLI.md).
 
 ## Explanation of Docker Command
 
@@ -77,4 +79,4 @@ and `/var/log/trident-metrics.jsonl`.
 `/run`.
 
 `/sys`: Trident makes use of various systemd services which require access to
-`/sys`/
+`/sys`.
