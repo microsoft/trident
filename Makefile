@@ -756,9 +756,7 @@ recreate-verity-image: bin/trident-rpms.tar.gz
 .PHONY: website-prereqs
 website-prereqs:
 	cd ./website && \
-		npm install --save docusaurus && \
-		npm install --save @easyops-cn/docusaurus-search-local && \
-		npm install --save @docusaurus/theme-mermaid
+		npm install --save docusaurus @easyops-cn/docusaurus-search-local @docusaurus/theme-mermaid
 
 .PHONY: website-build
 website-build: website-prereqs
