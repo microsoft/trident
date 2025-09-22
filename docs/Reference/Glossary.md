@@ -115,9 +115,10 @@ for that step.
 
 A logical grouping of related functionality within Trident. Each subsystem is in
 charge of a specific aspect of the servicing process and configuration of the
-[newroot](#newroot).
-Subsystems run the corresponding logic for each [step](#step) of an
-[operation](#operation).
+[newroot](#newroot). Subsystems run the corresponding logic for each
+[step](#step) of an [operation](#operation). Trident contains several subsystems
+handling different aspects of the servicing process, such as storage
+configuration, OS configuration, network configuration.
 
 ## Unformatted Partition
 
