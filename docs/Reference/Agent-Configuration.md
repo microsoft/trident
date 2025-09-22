@@ -9,7 +9,7 @@ The Trident Agent Configuration file contains configuration details for Trident.
 
 By default, Trident will use `/var/lib/trident/datastore.sqlite` as the path for the datastore. To configure a non-default path, the Agent Configuration file must contain a line defining the path like this:
 
-```
+``` conf
 DatastorePath=/special/path/to/my-datastore.sqlite
 ```
 
