@@ -7,8 +7,8 @@ This how-to-guide explains how to create a new encrypted volume with Trident on 
 
 1. Create a new device to encrypt using the host configuration, or get info on the existing device. Right now, Trident supports encrypting devices of the following types:
 
-   - Disk partition of a supported type
-   - Software RAID array, whose first disk partition is of a supported type
+   - Disk partition of a supported type.
+   - Software RAID array, whose first disk partition is of a supported type.
 
    **Supported type** refers to any partition type, excluding `root` and `efi` partitions.
 
@@ -31,6 +31,6 @@ This how-to-guide explains how to create a new encrypted volume with Trident on 
 1. Optionally, update the `encryption` configuration to modify other settings. In particular, you can set a `recoveryKeyUrl` to read the recovery key from and choose `pcrs` to seal the encrypted volumes to. Remember that these settings apply to **all** encrypted volumes at once.
 
 1. Run Trident to create the encrypted volume on clean install. Trident will:
-   - Create the LUKS-encrypted volume on the specified device
-   - Generate encryption keys, or use the provided recovery keys, and seal them to the state of the TPM 2.0 device,
+   - Create the LUKS-encrypted volume on the specified device.
+   - Generate encryption keys, or use the provided recovery keys, and seal them to the state of the TPM 2.0 device.
    - Make the encrypted volume available under `/dev/mapper/{deviceName}`.
