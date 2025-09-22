@@ -107,8 +107,9 @@ image as part of a [servicing](#servicing).
 
 ## Step
 
-Steps are logical stages of an operation. On each step, [subsystems](#subsystem)
-are run in a specific order to perform the work needed for that step.
+Steps are logical phases of an operation. On each step, the method of each
+[subsystem](#subsystem) relevant to the step is run to perform the work needed
+for that step.
 
 ## Subsystem
 
