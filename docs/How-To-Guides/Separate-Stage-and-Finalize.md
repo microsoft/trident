@@ -1,5 +1,5 @@
 
-# Run Specific Operations
+# Separate Stage and Finalize
 
 In addition to running `trident install` and `trident update` fully to completion, Trident allows
 breaking these commands into separate stage and finalize operations. The intent is that staging can
