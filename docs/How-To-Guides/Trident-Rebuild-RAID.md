@@ -29,15 +29,14 @@ First, you need to physically replace the failed disk with a new one. Follow the
 Once the new disk is installed, you’ll need to use Trident to initiate the rebuild process. Here’s how you do it:
 
 1. **Run the Command**: Use the following command to start the rebuild process:
-   
+
    ```bash
    trident rebuild-raid
    ```
 
-2. **Monitor the Process**: Watch the rebuild process to ensure it completes successfully. 
- 
+2. **Monitor the Process**: Watch the rebuild process to ensure it completes successfully.
+
    On successful validation, Trident will exit silently with a zero exit code.
 
    On validation failure, Trident will exit with a non-zero exit code and print
    the error that caused the rebuild process to fail.
-   
