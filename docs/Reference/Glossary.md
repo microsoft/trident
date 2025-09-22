@@ -87,6 +87,10 @@ Root file system of the OS that is being deployed.
 When Trident is deploying a new OS, it will mount the new OS's file systems and
 prepare them for a chroot. This mount of the new OS is called `newroot`.
 
+## Runtime OS
+
+The OS being installed and intended for production workloads.
+
 ## Servicing
 
 The general process of performing an action on an [install](#install).
