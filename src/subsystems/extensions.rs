@@ -30,6 +30,7 @@ impl Subsystem for ExtensionsSubsystem {
         &self,
         _ctx: &EngineContext,
     ) -> Result<Option<ServicingType>, TridentError> {
+        debug!("Servicing type required for extensions subsystem is Hot Patch");
         Ok(Some(ServicingType::HotPatch))
     }
 
