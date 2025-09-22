@@ -1,19 +1,13 @@
 
 # SELinux Configuration
 
-<!--
-DELETE ME AFTER COMPLETING THE DOCUMENT!
----
-Task: https://dev.azure.com/mariner-org/polar/_workitems/edit/13168
-Title: SELinux Configuration
-Type: Explanation
-Objective:
-
-Explanation of the SELinux configuration done by Trident.
--->
-
 SELinux is a security module in the Linux kernel that locks down the operations
-that all processes and users are allowed to perform.
+that all processes and users are allowed to perform. SELinux operates as a
+Mandatory Access Control system (MAC), meaning that the kernel enforces the
+access control, defined by policy rules that are currently enabled. Users and
+processes do not have permission to change the security rules. SELinux is useful
+for ensuring that processes and users do not perform actions they are not
+explicitly allowed to perform, and wards against malware.
 
 ## Trident SELinux Domain
 
@@ -33,12 +27,13 @@ OS. This operation relabels all of the files in the new OS (what will become the
 ## Configuring Trident for the Runtime OS
 
 Trident allows users to configure the state of SELinux in the [runtime
-OS](../Reference/Glossary.md) using the [`os.selinux`
+OS](../Reference/Glossary.md#runtime-os) using the [`os.selinux`
 API](../Reference/Host-Configuration/API-Reference/Selinux.md). SELinux can be
-configured to be in `enforcing`, `permissive`, or `disabled` mode. Note that in
-order for the SELinux configuration in the Host Configuration to take effect,
-SELinux must be present on the underlying [provisioning
-OS](../Reference/Glossary.md).
+configured to be in `enforcing`, `permissive`, or `disabled` mode. In `enforcing` mode, all SELinux policies are enforcing and any denials from the SELinux security module will result in processes being terminated. In `permissive` mode, SELinux policies are not enforced and any denials are instead logged at `/var/log/audit/audit.log`. Lastly, in `disabled` mode, SELinux policies are neither enforced or logged.
+
+Note that in order for the SELinux configuration in the Host Configuration to
+take effect, SELinux must be present in the [runtime OS
+OS](../Reference/Glossary.md#runtime-os)'s image.
 
 | Host Configuration \ Provisioning OS       | NOT PRESENT | DISABLED  | PERMISSIVE | ENFORCING |
 |---------------|-------------|-----------|------------|-----------|
@@ -46,3 +41,6 @@ OS](../Reference/Glossary.md).
 | DISABLED      | NOT PRESENT | DISABLED  | DISABLED   | DISABLED  |
 | PERMISSIVE    | Error       | PERMISSIVE| PERMISSIVE | PERMISSIVE|
 | ENFORCING     | Error       | ENFORCING | ENFORCING  | ENFORCING |
+
+Trident will determine whether or not SELinux is available on the [runtime OS
+OS](../Reference/Glossary.md#runtime-os) by checking for `/etc/selinux/config`.
