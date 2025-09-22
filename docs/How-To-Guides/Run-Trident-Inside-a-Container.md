@@ -20,7 +20,7 @@ Note: this guide will use `docker` for all code snippets.
 
 3. Run Trident:
 
-   ```docker
+   ```bash
    docker run --name trident_container \
               --pull=never \
               --rm \
