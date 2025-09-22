@@ -24,21 +24,21 @@ Use Trident to perform a [clean installation](../Reference/Glossary.md#clean-ins
 Build a runtime OS image, i.e. a COSI file. Please reference this (Tutorial
 on Building a Deployable Image)[../Tutorials/Building-a-Deployable-Image.md].
 
-### Step 2: Create an installation ISO
+### Step 2: Create a Management OS ISO
 
-Build an installer ISO. Please reference this (Tutorial on Building a
+Build a management OS ISO. Please reference this (Tutorial on Building a
 Provisioning ISO)[../Tutorials/Building-a-Provisioning-ISO.md] for steps on
-how to use Prism to build an installer ISO. This is the ISO from which the
-provisioning/management OS will run
+how to use Image Customizer to build an installer ISO. This is the ISO from 
+which the management OS will run.
 
-### Step 3: Create bootable media
+### Step 3: Create Bootable Media
 
-For bare metal installations, use the tool of your choice to create bootable media from the installation ISO.
+For bare metal installations, use the tool of your choice to create bootable media from the management OS ISO.
 
-For virtual machine installations, the ISO can be used directly.
+For virtual machine installations, the management OS ISO can be used directly.
 
-### Step 4: Boot from media
+### Step 4: Boot from Media
 
 Ensure that the bootable media is in the boot order or select the boot media during subsequent boot.
 
-When the ISO is booted, Trident will apply the included Host Configuration and COSI file, staging and booting into the desired runtime operating system.  
+When the management OS ISO is booted, Trident will apply the included Host Configuration and COSI file, staging and booting into the desired runtime operating system.
