@@ -59,7 +59,7 @@ running on top of one of the former environments.
 ## Finalize (Operation)
 
 The finalize [operation](#operation) performs any final pre-reboot actions
-needed for the servicing.
+needed for the servicing, as well as the reboot itself.
 
 ## Install
 
