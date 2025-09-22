@@ -18,7 +18,7 @@ This how-to-guide explains how to create a new encrypted volume with Trident on 
    - `deviceName` is the name of an encrypted device to create under `/dev/mapper` when opening the volume. It should be a valid file name and unique among all encrypted volumes, as well as among the Device Mapper devices.
    - `deviceId` must correspond to a Trident-registered id of the device in the host configuration. In other words, it is the id of the partition or RAID array to encrypt. It also must be unique among the list of encrypted volumes.
 
-   For example, the following configuration creates a new encrypted volume with id `web-encrypted` and device name `web`. It encrypts another block device, a partition with an id `web-partition`.
+   For example, the following configuration creates a new encrypted volume with id `enc-web-partition` and device name `luks-web-partition`. It encrypts another block device, a partition with an id `web-partition`.
 
    ```yaml
    encryption:
