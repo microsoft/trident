@@ -21,20 +21,20 @@ Note: this guide will use `docker` for all code snippets.
 3. Run Trident:
 
    ```docker
-   docker run --name trident_container 
-              --pull=never 
-              --rm 
-              --privileged 
-              -v /etc/trident:/etc/trident 
-              -v /etc/pki:/etc/pki:ro 
-              -v /var/lib/trident:/var/lib/trident 
-              -v /var/log:/var/log 
-              -v /:/host 
-              -v /dev:/dev 
-              -v /run:/run 
-              -v /sys:/sys 
-              --pid host 
-              --ipc host 
+   docker run --name trident_container \
+              --pull=never \
+              --rm \
+              --privileged \
+              -v /etc/trident:/etc/trident \
+              -v /etc/pki:/etc/pki:ro \
+              -v /var/lib/trident:/var/lib/trident \
+              -v /var/log:/var/log \
+              -v /:/host \
+              -v /dev:/dev \
+              -v /run:/run \
+              -v /sys:/sys \
+              --pid host \
+              --ipc host \
               trident/trident:latest [TRIDENT VERB] /etc/trident/hostconf.yaml --verbosity TRACE
    ```
 
