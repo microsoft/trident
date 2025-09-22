@@ -9,45 +9,27 @@ parameters:
   - name: osModifierVersion
     displayName: OSModifier version
     type: string
-    default: ""
+    default: "*"
 
 steps:
-  - ${{ if and(eq(parameters.osmodifierBuildType, 'main'), ne(parameters.osModifierVersion, '')) }}:
+  - ${{ if eq(parameters.osmodifierBuildType, 'main') }}:
     - task: UniversalPackages@0
-      displayName: "Download OSModifier (main - exact version)"
+      displayName: "Download OSModifier (main)"
       inputs:
         command: download
         vstsFeed: polar/PolarCoreArtifacts
         vstsFeedPackage: osmodifier
         vstsPackageVersion: ${{ parameters.osModifierVersion }}
+        includePrerelease: true
         downloadDirectory: "$(Build.SourcesDirectory)/artifacts"
 
-  - ${{ if and(eq(parameters.osmodifierBuildType, 'main'), eq(parameters.osModifierVersion, '')) }}:
+  - ${{ if eq(parameters.osmodifierBuildType, 'preview') }}:
     - task: UniversalPackages@0
-      displayName: "Download OSModifier (main - latest)"
-      inputs:
-        command: download
-        vstsFeed: polar/PolarCoreArtifacts
-        vstsFeedPackage: osmodifier
-        vstsPackageVersion: '*'
-        downloadDirectory: "$(Build.SourcesDirectory)/artifacts"
-
-  - ${{ if and(eq(parameters.osmodifierBuildType, 'preview'), ne(parameters.osModifierVersion, '')) }}:
-    - task: UniversalPackages@0
-      displayName: "Download OSModifier (preview - exact version)"
+      displayName: "Download OSModifier (preview)"
       inputs:
         command: download
         vstsFeed: polar/PolarCoreArtifacts
         vstsFeedPackage: osmodifier_preview
         vstsPackageVersion: ${{ parameters.osModifierVersion }}
-        downloadDirectory: "$(Build.SourcesDirectory)/artifacts"
-
-  - ${{ if and(eq(parameters.osmodifierBuildType, 'preview'), eq(parameters.osModifierVersion, '')) }}:
-    - task: UniversalPackages@0
-      displayName: "Download OSModifier (preview - latest)"
-      inputs:
-        command: download
-        vstsFeed: polar/PolarCoreArtifacts
-        vstsFeedPackage: osmodifier_preview
-        vstsPackageVersion: '*'
+        includePrerelease: true
         downloadDirectory: "$(Build.SourcesDirectory)/artifacts"
