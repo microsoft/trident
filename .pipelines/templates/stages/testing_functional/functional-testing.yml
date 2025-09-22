@@ -82,7 +82,7 @@ stages:
 
           - template: ../common_tasks/download-osmodifier.yml
             parameters:
-              osModifierBranch: preview
+              osmodifierBuildType: preview
 
           - bash: |
               set -eux

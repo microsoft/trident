@@ -25,7 +25,7 @@ stages:
           - template: ../common_tasks/avoid-pypi-usage.yml
           - template: ../common_tasks/download-osmodifier.yml
             parameters:
-              osModifierBranch: main
+              osmodifierBuildType: main
 
           - script: |
               set -eux
