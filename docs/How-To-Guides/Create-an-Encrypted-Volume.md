@@ -1,11 +1,11 @@
 
 # Create an Encrypted Volume
 
-This how-to-guide explains how to create a new encrypted volume with Trident on clean install, using the `encryption` configuration inside the Host Configuration API. Currently, Trident does **not** support adopting an existing encrypted volume or creating a new encrypted devices on A/B update.
+This how-to-guide explains how to create a new encrypted volume with Trident on clean install, using the `encryption` configuration inside the Host Configuration API. Currently, Trident does **not** support adopting an existing encrypted volume or creating a new encrypted device on A/B update.
 
 ## Steps
 
-1. Create a new device to encrypt using the host configuration, or get info on the existing device. Right now, Trident supports encrypting devices of the following types:
+1. Create a new device to encrypt using the host configuration, or identify an existing device. Right now, Trident supports encrypting devices of the following types:
 
    - Disk partition of a supported type.
    - Software RAID array, whose first disk partition is of a supported type.
