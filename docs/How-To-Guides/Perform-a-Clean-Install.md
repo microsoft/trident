@@ -9,13 +9,13 @@ Use Trident to perform a [clean installation](../Reference/Glossary.md#clean-ins
 
 ### Step 1: Create Runtime OS Image
 
-Build a runtime OS image, i.e. a COSI file. Please reference this (Tutorial
-on Building a Deployable Image)[../Tutorials/Building-a-Deployable-Image.md].
+Build a runtime OS image, i.e. a COSI file. Please reference this [Tutorial
+on Building a Deployable Image](../Tutorials/Building-a-Deployable-Image.md).
 
 ### Step 2: Create Management OS ISO
 
-Build a management OS ISO. Please reference this (Tutorial on Building a
-Provisioning ISO)[../Tutorials/Building-a-Provisioning-ISO.md] for steps on
+Build a management OS ISO. Please reference this [Tutorial on Building a
+Provisioning ISO](../Tutorials/Building-a-Provisioning-ISO.md) for steps on
 how to use Image Customizer to build an installer ISO. This is the ISO from 
 which the management OS will run.
 
