@@ -1,8 +1,7 @@
 
 # Run Trident Inside a Container
 
-This guide shows you how to run Trident inside a container for clean install and
-A/B Update.
+This guide explains how to run Trident inside a container.
 
 ## Steps for Clean Install
 
