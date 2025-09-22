@@ -30,10 +30,11 @@ This how-to-guide explains how to create a new encrypted volume with Trident on 
 
    The naming convention for encrypted volumes in Trident is to prefix the id of the partition or RAID array with `enc-<device_id>` to create the id of the encrypted volume, and prefix it with `luks-<device_id>` to create its device name.
 
-1. Update the `encryption` configuration to include optional settings. For example, you can set a `recoveryKeyUrl` to read the recovery key from and choose `pcrs` to seal the encrypted volumes to. Remember that these settings apply to **all** encrypted volumes at once. More information about these settings can be found in [the API doc on encryption](docs/Reference/Host-Configuration/API-Reference/Encryption.md).
+1. Update the `encryption` configuration to include optional settings. For example, the user can set a `recoveryKeyUrl` to read the recovery key from and choose `pcrs` to seal the encrypted volumes to. Remember that these settings apply to **all** encrypted volumes at once. More information about these settings can be found in [the API doc on encryption](docs/Reference/Host-Configuration/API-Reference/Encryption.md).
 
 1. Run Trident to create the encrypted volume on clean install. Trident will:
    - Generate a recovery key, or use the provided recovery key.
    - Create the LUKS-encrypted volume on the specified device.
    - Seal the encryption key to the state of the TPM 2.0 device.
-   - Make the encrypted volume available under `/dev/mapper/{deviceName}`.
+
+   Once the host boots into the runtime OS, the encrypted volume will be automatically unlocked, as long as the TPM 2.0 state is as expected. If the boot sequence is somehow corrupted, then the user will be able to manually input the recovery key to unlock the encrypted volume.
