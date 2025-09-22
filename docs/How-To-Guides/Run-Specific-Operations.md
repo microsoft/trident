@@ -1,13 +1,20 @@
 
 # Run Specific Operations
 
-<!--
-DELETE ME AFTER COMPLETING THE DOCUMENT!
----
-Task: https://dev.azure.com/mariner-org/polar/_workitems/edit/13153
-Title: Run Specific Operations
-Type: How-To Guide
-Objective:
+In addition to running `trident install` and `trident update` fully to completion, Trident allows
+breaking these commands into separate stage and finalize operations. The intent is that staging can
+happen without workload disruption and finalizing can be delayed until the user is ready to reboot.
 
-How to run specific operations.
--->
+Staging an update involves streaming partition images and applying the indicated OS and bootloader
+configuration. It generally takes on the order of 1-5 minutes, but the workload can continue running
+while staging is in progress:
+
+```
+trident update --allowed-operations stage /etc/trident/config.yaml
+```
+
+Finalizing an update just sets the new boot order and triggers a reboot:
+
+```
+trident update --allowed-operations finalize /etc/trident/config.yaml
+```
