@@ -1,5 +1,5 @@
 
-# Create an Encrypted Volume
+# Create Encrypted Volume
 
 This how-to-guide explains how to create a new encrypted volume with Trident on clean install, using the `encryption` configuration inside the Host Configuration API. Currently, Trident does **not** support adopting an existing encrypted volume or creating a new encrypted device on A/B update.
 
