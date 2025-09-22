@@ -460,6 +460,7 @@ impl BlkDevReferrerKind {
                 PartitionType::Esp,
                 PartitionType::Root,
                 PartitionType::RootVerity,
+                PartitionType::UsrVerity,
                 // Blocking the home partition type is a temporary
                 // workaround for a conflict between
                 // systemd-gpt-auto-generator and
