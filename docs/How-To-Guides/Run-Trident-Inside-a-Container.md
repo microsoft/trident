@@ -57,13 +57,13 @@ other system-level tools.
 
 ### Mounted Volumes
 
-`/etc/trident`: This is required so that Trident has access to the Host
-Configuration. If the Host Configuration is not located in this directory, this
+`/etc/trident`: By default, Trident expects to find the Host Configuration in
+this directory. If the Host Configuration is not located in this directory, this
 option is not required.
 
-`/etc/pki`: This is required for Trident to be able to authenticate container
-registries, in which COSI files may be stored. If the COSI file is stored or
-hosted locally, it is not required to mount this certificate volume.
+`/etc/pki`: Trident requires access to certificates in this directory to be able
+to authenticate container registries, in which COSI files may be stored. If the
+COSI file is stored or hosted locally, it is not required to mount this.
 
 `/var/lib/trident`: This is the default location of the Trident datastore and
 must be accessible to Trident.
@@ -71,9 +71,10 @@ must be accessible to Trident.
 `/var/log`: Trident logs and metrics are stored at `/var/log/trident-full.log`
 and `/var/log/trident-metrics.jsonl`.
 
-`/`: This is required for all Trident operations.
+`/`: Trident requires access to the root filesystem for operations such as
+device discovery, partitioning, and mounting and unmounting filesystems.
 
-`/dev`: This is required for Trident's access to devices.
+`/dev`: Trident must access devices.
 
 `/run`: Trident makes use of various systemd services which require access to
 `/run`.
