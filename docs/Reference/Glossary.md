@@ -58,9 +58,8 @@ running on top of one of the former environments.
 
 ## Finalize (Operation)
 
-The final operation performed as part of a [servicing](#servicing). The finalize
-operation performs any final steps needed to complete the servicing and have the
-host reboot into the new image.
+The finalize [operation](#operation) performs any final pre-reboot actions
+needed for the servicing.
 
 ## Install
 
