@@ -27,8 +27,8 @@ The SHA384 checksum of the image.
 
 The Sha384Hash is a 96-character hexadecimal string.
 
-| Characteristic | Value           |
-| -------------- | --------------- |
-| Type           | `string`        |
-| Format         | `[a-fA-F0-9]96` |
+| Characteristic | Value             |
+| -------------- | ----------------- |
+| Type           | `string`          |
+| Format         | `[a-fA-F0-9]{96}` |
 
