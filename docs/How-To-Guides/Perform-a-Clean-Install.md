@@ -15,17 +15,21 @@ an ISO. Refer to guide on creating install media and runtime images.
 
 ## Goals
 
-Use Trident to perform a clean installation of a runtime operating system.
+Use Trident to perform a [clean installation](../Reference/Glossary.md#clean-install) of a runtime operating system.
 
 ## Instructions
 
 ### Step 1: Create an Azure Linux image
 
-Create an [Azure Linux image COSI file](../Tutorials/Building-a-Deployable-Image.md)
+Build a runtime OS image, i.e. a COSI file. Please reference this (Tutorial
+on Building a Deployable Image)[../Tutorials/Building-a-Deployable-Image.md].
 
 ### Step 2: Create an installation ISO
 
-Create an [installation ISO](../Tutorials/Building-a-Provisioning-ISO.md)
+Build an installer ISO. Please reference this (Tutorial on Building a
+Provisioning ISO)[../Tutorials/Building-a-Provisioning-ISO.md] for steps on
+how to use Prism to build an installer ISO. This is the ISO from which the
+provisioning/management OS will run
 
 ### Step 3: Create bootable media
 
