@@ -85,7 +85,7 @@ prepare them for a chroot. This mount of the new OS is called `newroot`.
 
 ## Operation
 
-Operations are the top level actions performed inside a [servicing](#servicing).
+Operations are the top level actions performed during [servicing](#servicing).
 Trident installations and updates perform the [stage](#stage-operation) and
 [finalize](#finalize-operation) operations.
 
