@@ -19,12 +19,12 @@ Use Trident to perform a [clean installation](../Reference/Glossary.md#clean-ins
 
 ## Instructions
 
-### Step 1: Create an Azure Linux image
+### Step 1: Create Runtime OS Image
 
 Build a runtime OS image, i.e. a COSI file. Please reference this (Tutorial
 on Building a Deployable Image)[../Tutorials/Building-a-Deployable-Image.md].
 
-### Step 2: Create a Management OS ISO
+### Step 2: Create Management OS ISO
 
 Build a management OS ISO. Please reference this (Tutorial on Building a
 Provisioning ISO)[../Tutorials/Building-a-Provisioning-ISO.md] for steps on
@@ -37,7 +37,7 @@ For bare metal installations, use the tool of your choice to create bootable med
 
 For virtual machine installations, the management OS ISO can be used directly.
 
-### Step 4: Boot from Media
+### Step 4: Install Runtime OS
 
 Ensure that the bootable media is in the boot order or select the boot media during subsequent boot.
 
