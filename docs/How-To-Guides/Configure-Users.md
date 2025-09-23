@@ -44,26 +44,7 @@ os:
 
 [sshMode](../Reference/Host-Configuration/API-Reference/SshMode.md) controls SSH access: block (default) or key-only. The user will be created with a locked password (no password can be used to login) and SSH key-only authentication.
 
-### Step 2: Add users to administrative groups
-
-1. Add the `secondaryGroups` property to assign users to existing system groups:
-
-```yaml
-os:
-  users:
-    - name: <Desired User Name>
-      sshMode: key-only
-      sshPublicKeys:
-        - <Public SSH Key content>
-      secondaryGroups:
-        - wheel
-        - docker
-```
-
-2. The `wheel` group typically provides sudo access.
-3. Add other groups as needed for your use case.
-
-### Step 3: Configure multiple users
+### Step 2: Configure multiple users
 
 To create multiple users just add multiple users under the user section. Example:
 
@@ -87,29 +68,28 @@ os:
 ```
 
 2. Replace with the desired usernames
-3. Replace the SSH keys with your actual public keys content of each respective user.
+3. Replace the SSH keys with the actual public keys content of each respective user.
 
-### Step 4: Set custom user properties
+### Step 3: Set custom user properties
 
-Configure advanced user properties for specific requirements:
+#### Add users to administrative groups
+
+1. Add the `secondaryGroups` property to assign users to existing system groups:
+
 ```yaml
 os:
   users:
     - name: <Desired User Name>
-      uid: 1001
-      homeDirectory: /opt/custom-user
-      primaryGroup: developers
       sshMode: key-only
       sshPublicKeys:
         - <Public SSH Key content>
       secondaryGroups:
-        - wheel
+        - <Desired group1>
+        - <Desired group1>
 ```
 
-#### Available user properties:
-- **`uid`**: Specific user ID. If not provided, the system will automatically assign a UID.
-- **`homeDirectory`**: Custom home directory path.
-- **`primaryGroup`**: Primary group (must exist on system).
+1. Replace the `secondaryGroups` entries with groups that exist on your target system (for example, `wheel`, which typically provides sudo access).
+2. Add other groups as needed for your use case.
 
 #### Configure startup command
 
@@ -128,6 +108,28 @@ os:
       startupCommand: /bin/bash
 ```
 
+#### Canfigure more available user properties
+
+Configure advanced user properties for specific requirements:
+
+```yaml
+os:
+  users:
+    - name: <Desired User Name>
+      uid: 1001
+      homeDirectory: /opt/custom-user
+      primaryGroup: developers
+      sshMode: key-only
+      sshPublicKeys:
+        - <Public SSH Key content>
+      secondaryGroups:
+        - wheel
+```
+
+- **`uid`**: Specific user ID. If not provided, the system will automatically assign a UID.
+- **`homeDirectory`**: Custom home directory path.
+- **`primaryGroup`**: The primary group (there can be only one and must exist on system).
+
 #### Disable SSH access
 
 To create a user without SSH access:
@@ -139,20 +141,23 @@ os:
       sshMode: block
 ```
 
-## Password Authentication: 
+## Password Authentication
 
 Trident has no built-in mechanisms to provision a [user password](../Reference/Host-Configuration/API-Reference/Password.md) in the user section for security reasons.
 
 ## Troubleshooting
 
 **User cannot login via SSH**:
+
 - Verify the SSH key is correctly formatted in the `sshPublicKeys` array.
 - Ensure `sshMode` is set to `key-only`
 - Check that the used private key corresponds to the public key in the Host Configuration file.
 
 **User cannot access required resources**:
+
 - Verify the groups specified in `primaryGroup` and `secondaryGroups` exist on the **target system**.
 
 **Custom startup command fails**:
+
 - Ensure the specified command/shell exists on the target system.
 - Verify the path is correct (e.g., `/bin/bash`, `/usr/scripts/startup.sh`)
