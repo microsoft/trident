@@ -87,7 +87,7 @@ pub(crate) trait Subsystem: Send {
         Ok(())
     }
 
-    /// Initialize state on the Runtime OS from the Provisioning OS, or migrate state from
+    /// Initialize state on the target OS from the servicing OS, or migrate state from
     /// A-partition to B-partition (or vice versa).
     ///
     /// This method is called before the chroot is entered, and is used to perform any
@@ -118,7 +118,7 @@ lazy_static::lazy_static! {
     ]);
 }
 
-/// Persists the Trident background log and metrics files to the updated runtime OS, by copying the
+/// Persists the Trident background log and metrics files to the updated target OS, by copying the
 /// TRIDENT_BACKGROUND_LOG_PATH and TRIDENT_METRICS_FILE_PATH to the directory adjacent to the
 /// datastore. On failure, only prints out an error message.
 ///

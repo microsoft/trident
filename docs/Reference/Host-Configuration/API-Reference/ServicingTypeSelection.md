@@ -12,7 +12,7 @@ The selection of servicing types performed by Trident that can be used for any u
 
 ### Clean Install
 
-This selection only includes CleanInstall, a clean install of the runtime OS image when the host is booted from the provisioning OS.
+This selection only includes CleanInstall, a clean install of the target OS image when the host is booted from the provisioning OS.
 
 | Characteristic | Value           |
 | -------------- | --------------- |

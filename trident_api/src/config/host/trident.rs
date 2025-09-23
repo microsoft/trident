@@ -14,17 +14,17 @@ use crate::{
 use super::error::HostConfigurationStaticValidationError;
 
 /// The Trident Management configuration controls the installation of the
-/// Trident agent onto the runtime OS.
+/// Trident agent onto the target OS.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct Trident {
-    /// When set to `true`, prevents Trident from being enabled on the runtime OS.
+    /// When set to `true`, prevents Trident from being enabled on the target OS.
     /// In that case, the remaining fields are ignored.
     #[serde(default)]
     pub disable: bool,
 
-    /// Whether Trident should start a gRPC server to listen for commands when the runtime OS boots.
+    /// Whether Trident should start a gRPC server to listen for commands when the target OS boots.
     /// Defaults to `false`.
     #[serde(default, skip_serializing_if = "is_default")]
     pub enable_grpc: bool,
@@ -39,7 +39,7 @@ pub struct Trident {
     )]
     pub datastore_path: PathBuf,
 
-    /// URL to reach out to when runtime OS networking is up, so Trident can report
+    /// URL to reach out to when target OS networking is up, so Trident can report
     /// its status. If not specified, the value from the Trident configuration will
     /// be used. This is useful for debugging and monitoring purposes, say by an
     /// orchestrator.

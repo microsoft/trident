@@ -14,7 +14,7 @@ validating an image running Trident from a container.
    that this step is optional since the Trident container image will be
    downloaded as part of the command you run in Step 7.
 
-3. Download the runtime OS images from Trident's artifacts feed by running `make
+3. Download the target OS images from Trident's artifacts feed by running `make
    download-runtime-images` so that we can deploy the container COSI file
    `container.cosi` with Trident. The OS images will be downloaded to
    `artifacts/test-images` and can be used by Trident for clean install
@@ -77,8 +77,8 @@ validating an image running Trident from a container.
    the VM.
 
 5. If you are using `container.cosi` for your testing image, it is necessary to
-   copy over the `trident-container.tar.gz` file from the Provisioning OS to the
-   Runtime OS via `additionalFiles`. Note that `trident-container.tar.gz` is the
+   copy over the `trident-container.tar.gz` file from the servicing OS to the
+   target OS via `additionalFiles`. Note that `trident-container.tar.gz` is the
    container image with Trident installed into it. This is because
    `trident-container.tar.gz` is not inside the OS image (`container.cosi`).
    This step is also necessary if you are using your own OS image that does not

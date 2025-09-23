@@ -37,4 +37,4 @@ This how-to-guide explains how to create a new encrypted volume with Trident on 
    - Create the LUKS-encrypted volume on the specified device.
    - Seal the encryption key to the state of the TPM 2.0 device.
 
-   Once the host boots into the runtime OS, the encrypted volume will be automatically unlocked, as long as the TPM 2.0 state is as expected. If the boot sequence is somehow corrupted, then the user will be able to manually input the recovery key to unlock the encrypted volume.
+   Once the host boots into the target OS, the encrypted volume will be automatically unlocked, as long as the TPM 2.0 state is as expected. If the boot sequence is somehow corrupted, then the user will be able to manually input the recovery key to unlock the encrypted volume.

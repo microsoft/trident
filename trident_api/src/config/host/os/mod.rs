@@ -26,7 +26,7 @@ use users::User;
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct Os {
-    /// Netplan network configuration for the runtime OS.
+    /// Netplan network configuration for the target OS.
     ///
     /// See [Netplan YAML Configuration](https://netplan.readthedocs.io/en/stable/netplan-yaml/) for more information.
     #[serde(default, skip_serializing_if = "Option::is_none")]
