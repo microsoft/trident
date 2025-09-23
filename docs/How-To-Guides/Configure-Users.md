@@ -17,7 +17,7 @@ By following this guide, you will:
 
 1. **Trident Host Configuration file**
    1. Have an existing Host Configuration file or create a new one.
-   2. Ensure the HC file has the basic structure with [os section](../Reference/Host-Configuration/API-Reference/Os.md).
+   2. Ensure the Host Configuration file has the basic structure with [os section](../Reference/Host-Configuration/API-Reference/Os.md).
 2. **SSH Public Keys**
    1. Have the SSH key pairs that will be used for ssh authentication.
    2. Obtain the public key content (`.pub` file).
