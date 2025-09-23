@@ -68,7 +68,7 @@ os:
 ```
 
 1. Replace with the desired usernames
-2. Replace the SSH keys with the actual public keys content of each respective user.
+2. Replace the SSH keys with the actual public keys' content of each respective user.
 
 ### Step 3: Set custom user properties
 
