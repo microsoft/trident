@@ -15,7 +15,7 @@ To deploy an operating system, Trident requires [COSI](../Reference/COSI.md) fil
 
 Follow the Image Customizer [documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/quick-start/quick-start-binary.html) to configure and create an OS image, paying special attention to [specify](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/api/cli.html#--output-image-formatformat) `--output-image-format=cosi`.
 
-#### For a simple image
+#### Simple Image
 
 ##### Step 1: Download Base Image
 
