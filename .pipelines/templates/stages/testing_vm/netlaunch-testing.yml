@@ -148,17 +148,24 @@ stages:
               set -euxo pipefail
               MAX_FAILURES_FLAG=""
 
-              # rerun is expected to fail ONCE
-              if [ ${{ variables['tridentConfigurationName'] }} == 'rerun' ]; then 
+              # rerun and memory-constraint-combined are expected to fail ONCE.
+              # In latter test, first run modifies the service file and exits
+              # prematurely, so that the second run has memory constraints
+              # applied.
+              if [[ "${{ variables['tridentConfigurationName'] }}" == 'rerun' || "${{ variables['tridentConfigurationName'] }}" == 'memory-constraint-combined' ]]; then
                 MAX_FAILURES_FLAG="--max-failures 1"
               fi
 
-              # memory-constraint-combined is meant to produce ONE failure
-              # because the first run modifies the service file and exits
-              # prematurely, so that the second run will have the memory
-              # constraints applied.
-              if [ ${{ variables['tridentConfigurationName'] }} == 'memory-constraint-combined' ]; then 
-                MAX_FAILURES_FLAG="--max-failures 1"
+              # TODO: Enable SecureBoot for E2E tests that require it.
+              SECURE_BOOT=""
+
+              # If $(ob_artifactBaseName)/cert.pem exists, set --signing-cert
+              # to use it; otherwise, set it to an empty string. This can be
+              # used for SecureBoot and sysext signing.
+              if [ -f $(ob_artifactBaseName)/cert.pem ]; then
+                SIGNING_CERT="--signing-cert $(ob_artifactBaseName)/cert.pem"
+              else
+                SIGNING_CERT=""
               fi
 
               ./bin/netlaunch \
@@ -166,11 +173,14 @@ stages:
                   --config $(argusToolkitSourceDirectory)/vm-netlaunch.yaml \
                   --trident $(tridentConfigPath)/trident-config.yaml \
                   --servefolder ./artifacts/test-image \
-                  --logstream $MAX_FAILURES_FLAG \
+                  --logstream \
+                  $MAX_FAILURES_FLAG \
                   --trace-file $(tridentSourceDirectory)/trident-clean-install-metrics.jsonl \
                   --force-color \
                   --full-logstream logstream-full.log \
                   --wait-for-provisioned-state \
+                  $SECURE_BOOT \
+                  $SIGNING_CERT \
                   --port ${{variables.netlaunchPort}} 2>&1 | tee ./clean-install-deployment.log
             workingDirectory: $(tridentSourceDirectory)
             displayName: "🚀 Run netlaunch for testing"
