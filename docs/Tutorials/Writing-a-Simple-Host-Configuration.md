@@ -30,10 +30,10 @@ Image](./Building-a-Deployable-Image.md).
 The `image` section requires a `url`, where the COSI file is actually located or
 hosted, and a `sha384` hash of the metadata of the COSI file. For the purposes
 of this tutorial, assume we have a COSI file available at
-`http://example.com/regular.cosi`. Note that in addition to the `http://` and
-`https://` URL schemes, Trident also accepts the `file://` scheme for local
-files and the `oci://` scheme for images stored in container registries. Please
-reference the [API
+`http://example.com/regular.cosi`. Please replace this URL with your actual COSI
+file's URL. Note that in addition to the `http://` and `https://` URL schemes,
+Trident also accepts the `file://` scheme for local files and the `oci://`
+scheme for images stored in container registries. Please reference the [API
 documentation](../Reference/Host-Configuration/API-Reference/OsImage.md) for
 more information. In order to calculate the hash of the metadata of the COSI
 file, we need to extract the `metadata.json` file and then calculate the SHA384
