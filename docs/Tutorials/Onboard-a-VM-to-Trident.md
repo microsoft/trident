@@ -24,7 +24,7 @@ trident-install-service-0.3.DATESTRING-dev.COMMITHASH.azl3.x86_64.rpm
 trident-provisioning-0.3.DATESTRING-dev.COMMITHASH.azl3.x86_64.rpm
 trident-service-0.3.DATESTRING-dev.COMMITHASH.azl3.x86_64.rpm
 trident-static-pcrlock-files-0.3.DATESTRING-dev.COMMITHASH.azl3.x86_64.rpm
-trident-update-poll-0.3.DATESTRIN-dev.COMMITHASH.azl3.x86_64.rpm
+trident-update-poll-0.3.DATESTRING-dev.COMMITHASH.azl3.x86_64.rpm
 ```
 
 ### Step 2: Download the minimal base image
