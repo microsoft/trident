@@ -175,7 +175,7 @@ should look as follows:
 ```yaml
 image:
   url: http://example.com/regular.cosi
-  sha384: ignored
+  sha384: <Calculated SHA384 hash>
 storage:
   disks:
     - id: os
