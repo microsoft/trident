@@ -99,9 +99,6 @@ The `startupCommand` property sets the default command/shell to be first execute
 os:
   users:
     - name: <Desired User Name>
-      uid: 1001
-      homeDirectory: /var/service-user
-      primaryGroup: services
       sshMode: key-only
       sshPublicKeys:
         - <Public SSH Key content>
