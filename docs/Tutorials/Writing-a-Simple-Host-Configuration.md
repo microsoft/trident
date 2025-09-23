@@ -98,6 +98,17 @@ storage:
           size: 1G
 ```
 
+Note that any other disks on the machine will be ignored by Trident, since it is
+not listed in the Host Configuration. If you were to list another empty disk (as
+below), the Trident would completely wipe the contents of this disk.
+
+```yaml
+  - id: disk2
+    device: /dev/sdb
+    partitionTableType: gpt
+    partitions: []
+```
+
 Next, we'll configure A/B servicing in the `abUpdate` section. For more detailed
 information on A/B updates, please reference the [How-To guide on A/B
 Updates](../How-To-Guides/Configure-an-ABUpdate-Ready-Host.md). In this section,
@@ -179,7 +190,7 @@ image:
 storage:
   disks:
     - id: os
-      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
+      device: /dev/sda
       partitionTableType: gpt
       partitions:
         - id: root-a
@@ -197,10 +208,6 @@ storage:
         - id: trident
           type: linux-generic
           size: 1G
-    - id: disk2
-      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
-      partitionTableType: gpt
-      partitions: []
   abUpdate:
     volumePairs:
       - id: root
