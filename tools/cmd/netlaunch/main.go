@@ -285,7 +285,7 @@ var rootCmd = &cobra.Command{
 		if signingCert != "" {
 			file, err := os.Open(signingCert)
 			if err != nil {
-				log.WithError(err).Fatalf("failed to open signing certificate for reading")
+				log.WithError(err).Fatalf("failed to open signing certificate for reading: %s", signingCert)
 			}
 			file.Close()
 		}
