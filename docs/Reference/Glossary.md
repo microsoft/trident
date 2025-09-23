@@ -75,6 +75,10 @@ associated partitions, and any other partitions that are part of the install.
 
 _Note: This definition does not consider other OSes or distros._
 
+## Management OS
+
+The OS from which a new installation is initiated.
+
 ## Multiboot
 
 The capability of having multiple [installs](#install) on the same device, even
