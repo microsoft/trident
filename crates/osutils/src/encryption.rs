@@ -368,10 +368,10 @@ mod functional_test {
         fs::create_dir_all(format!("{PCRLOCK_DIR}/500-separator.pcrlock.d")).unwrap();
 
         let pcrlock_330 = include_str!(
-            "../../packaging/static-pcrlock-files/500-separator.pcrlock.d/300-0x00000000.pcrlock"
+            "../../../packaging/static-pcrlock-files/500-separator.pcrlock.d/300-0x00000000.pcrlock"
         );
         let pcrlock_600 = include_str!(
-            "../../packaging/static-pcrlock-files/500-separator.pcrlock.d/600-0xffffffff.pcrlock"
+            "../../../packaging/static-pcrlock-files/500-separator.pcrlock.d/600-0xffffffff.pcrlock"
         );
         // Write the .pcrlock files to the expected location
         fs::write(
