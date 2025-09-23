@@ -34,7 +34,7 @@ line, with the following fields:
 
 In addition to the full Trident log file from the current servicing, the user can also view the logs
 from any **past** servicing executed by Trident. These logs are persisted from the MOS or old
-runtime OS to **the directory adjacent** **to the datastore** in the updated target OS.
+target OS to **the directory adjacent** **to the datastore** in the updated target OS.
 
 After each servicing, the full Trident log is persisted to a file named
 `trident-<servicing_state>-<timestamp>.log`, where the timestamp corresponds to the time when the

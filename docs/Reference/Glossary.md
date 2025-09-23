@@ -88,14 +88,14 @@ When Trident is deploying a target OS, it will mount the target OS's file
 systems and prepare them for a chroot. This mount of the target OS is called
 `newroot`.
 
-## Runtime OS
-
-The OS being installed and intended for production workloads.
-
 ## Servicing
 
 The general process of performing an action on an [install](#install).
 There are several [types of servicing](#servicing-type).
+
+## Servicing OS
+
+The OS where Trident is running.
 
 ## Servicing Type
 
@@ -105,8 +105,11 @@ update](#ab-update).
 
 ## Target OS
 
-The resulting OS of a Trident servicing operation. After the operation is
-complete, the target OS becomes the active, running OS.
+The OS being serviced.
+
+On a clean install, this is the new OS being installed to disk. On A/B update,
+this is the new partition being provisioned. For runtime configurations, this is
+the active OS, which is also running Trident.
 
 ## Unformatted Partition
 
