@@ -138,7 +138,7 @@ os:
 
 ## Password Authentication
 
-or security reasons, Trident has no built-in mechanisms to provision a [user password](../Reference/Host-Configuration/API-Reference/Password.md) in the user section.
+For security reasons, Trident has no built-in mechanisms to provision a [user password](../Reference/Host-Configuration/API-Reference/Password.md) in the user section.
 
 ## Troubleshooting
 
