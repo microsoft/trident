@@ -123,7 +123,7 @@ pub(super) fn create_encrypted_devices(
         // If this is for a grub ROS, seal against the value of PCR 7; if this is for a UKI ROS,
         // seal against a "bootstrapping" pcrlock policy that exclusively contains PCR 0.
         let pcr = if ctx.is_uki()? {
-            debug!("Runtime OS image is a UKI image, so sealing against a pcrlock policy of PCR 0");
+            debug!("Target OS image is a UKI image, so sealing against a pcrlock policy of PCR 0");
 
             // Remove any pre-existing policy
             pcrlock::remove_policy().structured(ServicingError::RemovePcrlockPolicy)?;
@@ -132,7 +132,7 @@ pub(super) fn create_encrypted_devices(
             pcrlock::generate_pcrlock_policy(BitFlags::from(Pcr::Pcr0), vec![], vec![])?;
             None
         } else {
-            debug!("Runtime OS image is a grub image, so sealing against the default PCR 7");
+            debug!("Target OS image is a grub image, so sealing against the default PCR 7");
             Some(BitFlags::from(DEFAULT_PCR))
         };
 

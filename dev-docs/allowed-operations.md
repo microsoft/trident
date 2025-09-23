@@ -33,7 +33,7 @@ based on Host Status and Host Configuration. This object has the following value
    - `UpdateAndReboot`: Update that requires rebooting the host.
    - `AbUpdate`:  Update that requires switching to a different root partition
       and rebooting.
-   - `CleanInstall`: Clean install of the runtime OS image when the host is
+   - `CleanInstall`: Clean install of the target OS image when the host is
       booted from the provisioning OS.
    - `NoActiveServicing`: No servicing is currently in progress.
 
@@ -45,16 +45,16 @@ executing. This object has the following values:
    - `NotProvisioned`: The host is running from the provisioning OS and has
       not yet been provisioned by Trident.
    - `CleanInstallStaged`: Clean install has been staged, i.e., the initial
-      runtime OS images have been deployed onto block devices.
-   - `AbUpdateStaged`: A/B update has been staged. The new runtime OS images
+      target OS images have been deployed onto block devices.
+   - `AbUpdateStaged`: A/B update has been staged. The target OS images
       have been deployed onto block devices.
    - `CleanInstallFinalized`: Clean install has been finalized, i.e., UEFI
-      variables have been set, so that firmware boots from the runtime OS image
+      variables have been set, so that firmware boots from the target OS image
       after reboot.
    - `AbUpdateFinalized`: A/B update has been finalized. For the next boot, the
-      firmware will boot from the updated runtime OS image.
-   - `Provisioned`: Servicing has been completed, and the host succesfully
-      booted from the updated runtime OS image. Trident is ready to begin a new
+      firmware will boot from the updated target OS image.
+   - `Provisioned`: Servicing has been completed, and the host successfully
+      booted from the updated target OS image. Trident is ready to begin a new
       servicing.
 
 ## State Diagrams
@@ -73,8 +73,8 @@ graph TD
     C --> |'finalize'<br/>Finalizing succeeded|E[clean-install-finalized]
     C --> |'finalize'<br/>Finalizing failed|A
     C --> |'stage'<br/>Updated HC received|B
-    E --> |Successfully booted from<br/>runtime OS image|G[provisioned]
-    E --> |Failed to boot from<br/>runtime OS image|A
+    E --> |Successfully booted from<br/>target OS image|G[provisioned]
+    E --> |Failed to boot from<br/>target OS image|A
 
     %% Adjust node styles dynamically for content fitting
     style A white-space:normal,overflow-wrap:break-word,padding:10px
@@ -103,8 +103,8 @@ graph TD
     C --> |'finalize'<br/>Finalizing succeeded|E[ab-update-finalized]
     C --> |'finalize'<br/>Finalizing failed|A
     C --> |'stage'<br/>Updated HC received|B
-    E --> |Successfully booted from<br/>updated runtime OS|A
-    E --> |Failed to boot from<br/>updated runtime OS<br/>and performed a rollback|A
+    E --> |Successfully booted from<br/>updated target OS|A
+    E --> |Failed to boot from<br/>updated target OS<br/>and performed a rollback|A
 
     style A white-space:normal,overflow-wrap:break-word,padding:10px
     style B white-space:normal,overflow-wrap:break-word,padding:10px

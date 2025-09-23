@@ -32,7 +32,7 @@ use trident::Trident;
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct HostConfiguration {
     /// The Trident Management configuration controls the installation of the
-    /// Trident agent onto the runtime OS.
+    /// Trident agent onto the target OS.
     #[serde(default, skip_serializing_if = "is_default")]
     pub trident: Trident,
 
@@ -44,7 +44,7 @@ pub struct HostConfiguration {
     #[serde(default, skip_serializing_if = "is_default")]
     pub scripts: Scripts,
 
-    /// OS Configuration for the runtime OS.
+    /// OS Configuration for the target OS.
     #[serde(default, skip_serializing_if = "is_default")]
     pub os: Os,
 

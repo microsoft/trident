@@ -4,7 +4,7 @@ Trident uses the [tracing](https://crates.io/crates/tracing) crate to create and
 process metric events during its execution. Trident sets up a tracing subscriber
 with a custom processing layer that takes tracing events and structures them as
 a metric event. Each metric is a JSON object that is written to a .jsonl file in
-the /var/lib/trident folder on the host runtime OS and if applicable, sent to
+the /var/lib/trident folder on the target OS and if applicable, sent to
 the tracestream endpoint of netlaunch/netlisten.
 
 ## Common Terminology

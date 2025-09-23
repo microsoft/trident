@@ -120,7 +120,7 @@ impl Script {
 pub enum ServicingTypeSelection {
     /// # Clean Install
     ///
-    /// This selection only includes CleanInstall, a clean install of the runtime OS image when the
+    /// This selection only includes CleanInstall, a clean install of the target OS image when the
     /// host is booted from the provisioning OS.
     CleanInstall,
 

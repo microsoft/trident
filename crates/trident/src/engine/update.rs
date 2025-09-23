@@ -163,7 +163,7 @@ pub(crate) fn update(
             #[cfg(feature = "grpc-dangerous")]
             grpc::send_host_status_state(sender, state)?;
 
-            // Persist the Trident background log and metrics file to the updated runtime OS
+            // Persist the Trident background log and metrics file to the updated target OS
             engine::persist_background_log_and_metrics(
                 &state.host_status().spec.trident.datastore_path,
                 None,
