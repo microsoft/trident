@@ -52,7 +52,7 @@ func InitializeVm(vmUuid uuid.UUID) (*LibvirtVm, error) {
 	return &LibvirtVm{l, domain}, nil
 }
 
-func (vm *LibvirtVm) SetFirmwareVars(bootUrl string, secureBoot bool, sbSigningCert string) error {
+func (vm *LibvirtVm) SetFirmwareVars(bootUrl string, secureBoot bool, signingCert string) error {
 	// Get the domain XML
 	domainXml, err := vm.libvirt.DomainGetXMLDesc(vm.domain, libvirt.DomainXMLUpdateCPU)
 	if err != nil {
@@ -93,16 +93,20 @@ func (vm *LibvirtVm) SetFirmwareVars(bootUrl string, secureBoot bool, sbSigningC
 	}
 
 	virtFwVarsArgs := []string{"virt-fw-vars", "--inplace", nvram.NVRam, "--set-boot-uri", bootUrl}
-	if secureBoot && sbSigningCert != "" {
+
+	// Enable SecureBoot, if needed
+	if secureBoot {
 		logrus.Infof("Setting SecureBoot to enabled")
 		virtFwVarsArgs = append(virtFwVarsArgs, "--set-true", "SecureBootEnable")
-
-		// Enroll the SecureBoot signing certificate
-		virtFwVarsArgs = append(virtFwVarsArgs, "--enroll-cert", sbSigningCert)
-		virtFwVarsArgs = append(virtFwVarsArgs, "--add-db", EFI_GLOBAL_VARIABLE_GUID, sbSigningCert)
-		logrus.Infof("Enrolling signing certificate from %s", sbSigningCert)
 	} else {
 		virtFwVarsArgs = append(virtFwVarsArgs, "--set-false", "SecureBootEnable")
+	}
+
+	// Enroll the signing certificate
+	if signingCert != "" {
+		logrus.Infof("Enrolling signing certificate from %s", signingCert)
+		virtFwVarsArgs = append(virtFwVarsArgs, "--enroll-cert", signingCert)
+		virtFwVarsArgs = append(virtFwVarsArgs, "--add-db", EFI_GLOBAL_VARIABLE_GUID, signingCert)
 	}
 
 	cmd := exec.Command("sudo", virtFwVarsArgs...)

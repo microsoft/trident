@@ -51,7 +51,8 @@ var (
 	traceFile           string
 	forceColor          bool
 	waitForProvisioned  bool
-	sbSigningCert       string
+	secureBoot          bool
+	signingCert         string
 )
 
 var backgroundLogstreamFull string
@@ -280,17 +281,22 @@ var rootCmd = &cobra.Command{
 		log.WithField("address", listen.Addr().String()).Info("Listening...")
 		iso_location := fmt.Sprintf("http://%s/provision.iso", announceAddress)
 
-		// Validate that file at sbSigningCert exists and can be read
-		if sbSigningCert != "" {
-			file, err := os.Open(sbSigningCert)
+		// Validate that if file at signingCert exists, it can be read
+		if signingCert != "" {
+			file, err := os.Open(signingCert)
 			if err != nil {
-				log.WithError(err).Fatalf("failed to open SecureBoot signing certificate for reading")
+				log.WithError(err).Fatalf("failed to open signing certificate for reading")
 			}
 			file.Close()
 		}
 
+		// Validate that if SecureBoot is enabled, a signing certificate is provided
+		if secureBoot && signingCert == "" {
+			log.Fatal("SecureBoot is enabled, but no signing certificate was provided")
+		}
+
 		if config.Netlaunch.LocalVmUuid != nil {
-			startLocalVm(*config.Netlaunch.LocalVmUuid, iso_location, sbSigningCert)
+			startLocalVm(*config.Netlaunch.LocalVmUuid, iso_location, secureBoot, signingCert)
 		} else {
 			if config.Netlaunch.Bmc != nil && config.Netlaunch.Bmc.SerialOverSsh != nil {
 				serial, err := config.Netlaunch.Bmc.ListenForSerialOutput()
@@ -362,7 +368,7 @@ var rootCmd = &cobra.Command{
 	},
 }
 
-func startLocalVm(localVmUuidStr string, isoLocation string, sbSigningCert string) {
+func startLocalVm(localVmUuidStr string, isoLocation string, secureBoot bool, signingCert string) {
 	log.Info("Using local VM")
 
 	// TODO: Parse the UUID directly when reading the config file
@@ -377,9 +383,7 @@ func startLocalVm(localVmUuidStr string, isoLocation string, sbSigningCert strin
 	}
 	defer vm.Disconnect()
 
-	// If a signing certificate is provided, enable SecureBoot
-	secureBoot := sbSigningCert != ""
-	if err = vm.SetFirmwareVars(isoLocation, secureBoot, sbSigningCert); err != nil {
+	if err = vm.SetFirmwareVars(isoLocation, secureBoot, signingCert); err != nil {
 		log.WithError(err).Fatalf("failed to set UEFI variables")
 	}
 
@@ -392,16 +396,17 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&netlaunchConfigFile, "config", "c", "netlaunch.yaml", "Netlaunch config file")
 	rootCmd.PersistentFlags().StringVarP(&tridentConfigFile, "trident", "t", "", "Trident local config file")
 	rootCmd.PersistentFlags().BoolVarP(&logstream, "logstream", "l", false, "Enable log streaming. (Requires --trident || --port)")
-	rootCmd.PersistentFlags().Uint16VarP(&listenPort, "port", "p", 0, "Port to listen on for logstream & phonehome. Random if not specified.")
-	rootCmd.PersistentFlags().StringVarP(&remoteAddressFile, "remoteaddress", "r", "", "File for writing remote address of the Trident instance.")
+	rootCmd.PersistentFlags().Uint16VarP(&listenPort, "port", "p", 0, "Port to listen on for logstream & phonehome. Random if not specified")
+	rootCmd.PersistentFlags().StringVarP(&remoteAddressFile, "remoteaddress", "r", "", "File for writing remote address of the Trident instance")
 	rootCmd.PersistentFlags().StringVarP(&serveFolder, "servefolder", "s", "", "Optional folder to serve files from at /files")
-	rootCmd.PersistentFlags().UintVarP(&maxFailures, "max-failures", "e", 0, "Maximum number of failures allowed before terminating. Default 0: no failures are tolerated.")
+	rootCmd.PersistentFlags().UintVarP(&maxFailures, "max-failures", "e", 0, "Maximum number of failures allowed before terminating. Default 0: no failures are tolerated")
 	rootCmd.PersistentFlags().StringVarP(&traceFile, "trace-file", "m", "", "File for writing metrics collected from Trident.")
 	rootCmd.PersistentFlags().StringVarP(&backgroundLogstreamFull, "full-logstream", "b", "logstream-full.log", "File to write full logstream output to. (Requires -l)")
 	rootCmd.PersistentFlags().BoolVarP(&waitForProvisioned, "wait-for-provisioned-state", "", false, "Wait for Host Status servicingState to be 'provisioned'")
-	rootCmd.PersistentFlags().BoolVarP(&forceColor, "force-color", "", false, "Force colored output.")
-	rootCmd.PersistentFlags().StringVarP(&sbSigningCert, "sb-signing-cert", "", "", "Path to signing certificate for SecureBoot.")
-	rootCmd.Flags().StringVarP(&iso, "iso", "i", "", "ISO for Netlaunch testing.")
+	rootCmd.PersistentFlags().BoolVarP(&forceColor, "force-color", "", false, "Force colored output")
+	rootCmd.PersistentFlags().BoolVarP(&secureBoot, "secure-boot", "", false, "Enable SecureBoot")
+	rootCmd.PersistentFlags().StringVarP(&signingCert, "signing-cert", "", "", "Path to signing certificate")
+	rootCmd.Flags().StringVarP(&iso, "iso", "i", "", "ISO for Netlaunch testing")
 	rootCmd.MarkFlagRequired("iso-template")
 }
 
