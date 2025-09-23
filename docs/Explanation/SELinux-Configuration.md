@@ -1,13 +1,18 @@
 
 # SELinux Configuration
 
-SELinux is a security module in the Linux kernel that locks down the operations
-that all processes and users are allowed to perform. SELinux operates as a
-Mandatory Access Control (MAC) system, meaning that the kernel enforces the
-access control, defined by policy rules that are currently enabled. Users and
-processes do not have permission to change the security rules. SELinux is useful
-for ensuring that processes and users do not perform actions they are not
-explicitly allowed to perform, and wards against malware.
+SELinux is an access control system on Linux, officially supported by the Azure
+Linux distribution. SELinux is a Mandatory Access Control (MAC) system, meaning
+that the policy is set by a security administrator and cannot be changed by
+users. SELinux works in tandem with other secuirty mechanism; it cannot grant
+access that is denied by other mechanisms. SELinux is useful for achieving
+security goals such as:
+
+- Least privilege
+- Integrity
+- Isolation
+- Confidentiality
+- Role separation
 
 ## Trident SELinux Domain
 
