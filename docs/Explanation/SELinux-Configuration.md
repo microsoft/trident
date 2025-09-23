@@ -77,9 +77,9 @@ OS](../Reference/Glossary.md#runtime-os) by checking for `/etc/selinux/config`.
 
 ## Debugging SELinux Denials
 
-SELinux emits messages using the Linux kernel audit subsystemd. If the system
-has an auditd service running, the audit logs are available in
-`/var/log/audit/audit.log`. To search for SELinux denial messages, use: 
+SELinux emits messages using the Linux kernel audit subsystem. If the system has
+an auditd service running, the audit logs are available in
+`/var/log/audit/audit.log`. To search for SELinux denial messages, use:
 
 ```bash
 ausearch -m AVC
