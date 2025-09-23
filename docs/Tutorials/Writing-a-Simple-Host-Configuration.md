@@ -241,8 +241,8 @@ trident validate hostconf.yaml -v trace
 
 The trace logs show how Trident builds a storage graph in order to validate the
 Host Configuration we have passed it. For more information on validating a Host
-Configuration, you can reference (this How-To
-guide)[../How-To-Guides/Host-Configuration-Validation.md]. You should see a log
+Configuration, you can reference [this How-To
+guide](../How-To-Guides/Host-Configuration-Validation.md). You should see a log
 similar to the following:
 
 `[INFO  trident::validation] Host Configuration is valid`
