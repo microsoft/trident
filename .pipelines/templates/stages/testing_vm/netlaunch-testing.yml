@@ -161,7 +161,7 @@ stages:
 
               # If $(ob_artifactBaseName)/cert.pem exists, set --signing-cert
               # to use it; otherwise, set it to an empty string. This can be
-              used for SecureBoot and sysext signing.
+              # used for SecureBoot and sysext signing.
               if [ -f $(ob_artifactBaseName)/cert.pem ]; then
                 SIGNING_CERT="--signing-cert $(ob_artifactBaseName)/cert.pem"
               else
