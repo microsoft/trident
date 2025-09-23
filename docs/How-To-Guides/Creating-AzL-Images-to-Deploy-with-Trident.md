@@ -1,5 +1,5 @@
 
-# Creating AzL Images to Deploy with Trident
+# Creating Azure Linux Images to Deploy with Trident
 
 ## Goals
 
