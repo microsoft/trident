@@ -85,7 +85,7 @@ os:
         - <Public SSH Key content>
       secondaryGroups:
         - <Desired group1>
-        - <Desired group1>
+        - <Desired group2>
 ```
 
 1. Replace the `secondaryGroups` entries with groups that exist on your target system (for example, `wheel`, which typically provides sudo access).
@@ -108,7 +108,7 @@ os:
       startupCommand: /bin/bash
 ```
 
-#### Canfigure more available user properties
+#### Configure more available user properties
 
 Configure advanced user properties for specific requirements:
 
