@@ -3,7 +3,7 @@
 
 ## Goals
 
-Use Trident to perform a [clean installation](../Reference/Glossary.md#clean-install) of a runtime operating system.
+Use Trident to perform a [clean install](../Reference/Glossary.md#clean-install) of a [runtime operating system](../Reference/Glossary.md#runtime-os).
 
 ## Instructions
 
@@ -21,12 +21,10 @@ which the management OS will run.
 
 ### Step 3: Create Bootable Media
 
-For bare metal installations, use the tool of your choice to create bootable media from the management OS ISO.
-
-For virtual machine installations, the management OS ISO can be used directly.
+Use the tool of your choice to create bootable media from the management OS ISO.
 
 ### Step 4: Install Runtime OS
 
-Ensure that the bootable media is in the boot order or select the boot media during subsequent boot.
+Ensure that the bootable media is in the boot order or select the boot media during subsequent boot.  For example, if a bootable USB ISO was created in [step 3](#step-3-create-bootable-media), the boot order could be modified with efibootmgr or, commonly, using F12 (often) during boot.
 
 When the management OS ISO is booted, Trident will apply the included Host Configuration and COSI file, staging and booting into the desired runtime operating system.
