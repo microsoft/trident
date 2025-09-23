@@ -144,7 +144,9 @@ Note that for the root filesystem, we use the `deviceId` `root`, instead of
 
 Lastly, we will create two new filesystems for the `home` and `trident`
 partitions. Note that the filesystem on the `trident` partition should be
-mounted at `/var/lib/trident` by default.
+mounted at `/var/lib/trident` by default. Note that the path of the Trident
+datastore may be changed with the [`trident`
+API](../Reference/Host-Configuration/API-Reference/Trident.md).
 
 By now, your `filesystems` section should look as follows:
 
