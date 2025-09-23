@@ -25,6 +25,6 @@ Use the tool of your choice to create bootable media from the management OS ISO.
 
 ### Step 4: Install Runtime OS
 
-Ensure that the bootable media is in the boot order or select the boot media during subsequent boot.  For example, if a bootable USB ISO was created in [step 3](#step-3-create-bootable-media), the boot order could be modified with efibootmgr or, commonly, using F12 (often) during boot.
+Ensure that the bootable media is at the top of the boot order using a tool like efibootmgr or select the media during the subsequent boot using the appropriate key (often F12).
 
-When the management OS ISO is booted, Trident will apply the included Host Configuration and COSI file, staging and booting into the desired runtime operating system.
+When the management OS ISO is booted, Trident will stage and boot into the desired runtime operating system.
