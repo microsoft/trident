@@ -151,7 +151,7 @@ Trident has no built-in mechanisms to provision a [user password](../Reference/H
 - Check that the used private key corresponds to the public key in the Host Configuration file.
 
 **User cannot access required resources**:
-- Verify the groups specified in  in `primaryGroup` and `secondaryGroups` exist on the **target system**.
+- Verify the groups specified in `primaryGroup` and `secondaryGroups` exist on the **target system**.
 
 **Custom startup command fails**:
 - Ensure the specified command/shell exists on the target system.
