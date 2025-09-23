@@ -53,7 +53,7 @@ executing. This object has the following values:
       after reboot.
    - `AbUpdateFinalized`: A/B update has been finalized. For the next boot, the
       firmware will boot from the updated target OS image.
-   - `Provisioned`: Servicing has been completed, and the host succesfully
+   - `Provisioned`: Servicing has been completed, and the host successfully
       booted from the updated target OS image. Trident is ready to begin a new
       servicing.
 
