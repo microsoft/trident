@@ -205,18 +205,20 @@ storage:
         volumeAId: root-a
         volumeBId: root-b
   filesystems:
+    - deviceId: esp
+      source: image
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+    - deviceId: root
+      source: image
+      mountPoint: /
     - deviceId: trident
       source: new
       mountPoint: /var/lib/trident
     - deviceId: home
       source: new
       mountPoint: /home
-    - deviceId: esp
-      mountPoint:
-        path: /boot/efi
-        options: umask=0077
-    - deviceId: root
-      mountPoint: /
 ```
 
 ## Validating the Host Configuration with Trident
