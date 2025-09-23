@@ -44,7 +44,7 @@ tar -xvf artifacts/test-image/regular.cosi metadata.json
 sha384sum metadata.json
 ```
 
- We can now tell Trident this location:
+We can now specify our OS image to Trident:
 
 ```yaml
 image:
