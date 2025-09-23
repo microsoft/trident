@@ -14,6 +14,24 @@ security goals such as:
 - Confidentiality
 - Role separation
 
+The primary mechanism in SELinux is Type Enforcement (TE). In this mechanism,
+every process and object in the system has a type​. TE rules allow access
+between types​. This can be thought of like an access matrix. All access that is
+not explicitly allowed is denied​. TE rules comprise over 99% of the SELinux
+policy​. In order for processes and objects to have the correct type, the
+`setfiles` command relabels files with the appropriate type.
+
+An example rule from the [Trident SELinux
+policy](../../selinux-policy-trident/trident.te):
+
+```te
+allow trident_t tmpfs_t:filesystem { getattr mount unmount };
+```
+
+This rules allow processes with the `trident_t` type, i.e. Trident, to access
+filesystems with type `tmpfs_t` and perform the operations `getattr`, `mount`,
+and `unmount`.
+
 ## Trident SELinux Domain
 
 When run directly on the host with SELinux enabled, Trident will run in the
