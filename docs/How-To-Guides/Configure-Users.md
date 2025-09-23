@@ -40,7 +40,7 @@ os:
 ```
 
 1. Replace `<Desired User Name>` with your desired username.
-2. Replace the `<Public SSH Key content>` with your actual public key content (e.g. `ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... user@hostname`). Notice that more than one key can be associated to one user.
+2. Replace the `<Public SSH Key content>` with your actual public key content (e.g. `ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... user@hostname`). Note that more than one key can be associated to one user.
 
 [sshMode](../Reference/Host-Configuration/API-Reference/SshMode.md) controls SSH access: block (default) or key-only. The user will be created with a locked password (no password can be used to login) and SSH key-only authentication.
 
