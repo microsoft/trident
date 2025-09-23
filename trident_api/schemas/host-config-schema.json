@@ -611,7 +611,7 @@
       ],
       "properties": {
         "sha384": {
-          "description": "The Sha384 of the entire COSI file.",
+          "description": "The Sha384 of the metadata in the COSI file.",
           "allOf": [
             {
               "$ref": "#/definitions/ImageSha384"
