@@ -4,7 +4,7 @@
 SELinux is an access control system on Linux, officially supported by the Azure
 Linux distribution. SELinux is a Mandatory Access Control (MAC) system, meaning
 that the policy is set by a security administrator and cannot be changed by
-users. SELinux works in tandem with other secuirty mechanism; it cannot grant
+users. SELinux works in tandem with other security mechanisms; it cannot grant
 access that is denied by other mechanisms. SELinux is useful for achieving
 security goals such as:
 
