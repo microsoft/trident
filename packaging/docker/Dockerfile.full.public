@@ -1,0 +1,39 @@
+### This file is used in pipelines to build Trident RPMs.
+
+FROM mcr.microsoft.com/azurelinux/base/core:3.0
+
+RUN tdnf install -y rpmdevtools openssl-devel clang-devel protobuf-devel rust sed ca-certificates perl build-essential selinux-policy-devel
+
+WORKDIR /work
+
+COPY trident.spec .
+COPY systemd ./systemd
+COPY artifacts/osmodifier /usr/src/azl/SOURCES/osmodifier
+COPY selinux-policy-trident/trident.te /usr/src/azl/SOURCES/trident.te
+COPY selinux-policy-trident/trident.fc /usr/src/azl/SOURCES/trident.fc
+COPY selinux-policy-trident/trident.if /usr/src/azl/SOURCES/trident.if
+COPY packaging/static-pcrlock-files/ /usr/src/azl/SOURCES/static-pcrlock-files/
+
+COPY .cargo/config ./.cargo/config
+COPY build.rs .
+COPY Cargo.toml .
+COPY Cargo.lock .
+COPY src ./src
+COPY osutils ./osutils
+COPY trident_api ./trident_api
+COPY setsail ./setsail
+COPY pytest ./pytest
+COPY pytest_gen ./pytest_gen
+COPY docbuilder ./docbuilder
+COPY harpoon ./harpoon
+COPY sysdefs ./sysdefs
+
+ARG TRIDENT_VERSION=dev-build
+ARG RPM_VER=0.1.0
+ARG RPM_REL=1
+
+RUN rpmbuild -bb --build-in-place trident.spec \
+    --define="trident_version $TRIDENT_VERSION" \
+    --define="rpm_ver $RPM_VER" \
+    --define="rpm_rel $RPM_REL" && \
+    tar -czvf trident-rpms.tar.gz -C /usr/src/azl ./RPMS

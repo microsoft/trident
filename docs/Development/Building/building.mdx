@@ -1,0 +1,35 @@
+---
+sidebar_position: 2
+---
+
+# Building Trident
+
+By default, this repo is configured to pull crates from a private mirror, run
+this to use public mirrors. It will create a new file `.cargo/config` that
+removes the private mirror configuration.
+
+```bash
+make .cargo/config
+```
+
+## Building Binary
+
+To build Trident as a binary, run:
+
+```bash
+cargo build --release
+```
+
+The binary will be placed at `target/release/trident`.
+
+
+## Building RPMs for Azure Linux
+
+```bash
+docker build -t trident/trident-build:latest \
+    -f packaging/docker/Dockerfile.full.public \
+    .
+ID=$(docker create trident/trident-build:latest)
+docker cp -q $ID:/work/trident-rpms.tar.gz trident-rpms.tar.gz
+docker rm -v $ID
+```
