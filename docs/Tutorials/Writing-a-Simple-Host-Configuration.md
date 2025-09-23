@@ -99,7 +99,7 @@ storage:
           size: 1G
 ```
 
-Note that any other disks on the machine will be ignored by Trident, since it is
+Note that any other disks on the machine will be ignored by Trident, since they are
 not listed in the Host Configuration. If you were to list another empty disk (as
 below), the Trident would completely wipe the contents of this disk.
 
