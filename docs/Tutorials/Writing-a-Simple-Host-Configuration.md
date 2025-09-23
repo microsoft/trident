@@ -14,7 +14,8 @@ Configuration](../Reference/Host-Configuration/Sample-Host-Configuration.md).
 
 ## Prerequisites
 
-1. An OS with Trident installed.
+1. An OS with the Trident binary installed. To check if Trident is available on
+   your OS, try running `trident --version`.
 2. A COSI file. Please complete the tutorial on [Building a Deployable
    Image](./Building-a-Deployable-Image.md) if you have not already.
 
