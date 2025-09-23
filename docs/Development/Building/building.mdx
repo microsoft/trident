@@ -12,12 +12,24 @@ removes the private mirror configuration.
 make .cargo/config
 ```
 
+:::note
+
+Cargo only expects one config file, so this will cause cargo to complain about finding two. This is expected.
+
+:::
+
 ## Building Binary
 
 To build Trident as a binary, run:
 
 ```bash
 cargo build --release
+```
+
+or
+
+```bash
+make build
 ```
 
 The binary will be placed at `target/release/trident`.
