@@ -59,7 +59,8 @@ Documentation](../Reference/Host-Configuration/API-Reference/Storage.md). The
 `storage` section should describe the disk layout of the provisioned OS. Three
 sections should be populated: `disks`, including information about the
 `partitions` on each disk; `abUpdate` to specify which partitions should be
-updated by Trident; and `filesystems`, which maps filesystems to partitions.
+serviced by Trident in a future A/B update; and `filesystems`, which maps
+filesystems to partitions.
 
 First, we will define the disks and partitions. In the disks section, we list
 each disk and the partitions we want to create on it. Each disk needs a unique
