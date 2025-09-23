@@ -8,8 +8,7 @@ For a detailed breakdown of all available configurations, refer to the [Host
 Configuration API
 documentation](../Reference/Host-Configuration/API-Reference/HostConfiguration.md).
 You can also view a complete [sample Host
-Configuration](../Reference/Host-Configuration/Sample-Host-Configuration.md) to
-see a finished example.
+Configuration](../Reference/Host-Configuration/Sample-Host-Configuration.md).
 
 ## Writing the Host Configuration
 
