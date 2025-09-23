@@ -110,7 +110,9 @@ below), the Trident would completely wipe the contents of this disk.
     partitions: []
 ```
 
-It is also important to note that while in this tutorial we have used device paths `/dev/sda` and `/dev/sdb`, in a production setting it is preferable to use more predictable device paths to ensure that the correct device is serviced.
+It is also important to note that while in this tutorial we have used device
+paths `/dev/sda` and `/dev/sdb`, in a production setting it is preferable to use
+more predictable device paths to ensure that the correct device is serviced.
 
 Next, we'll configure A/B servicing in the `abUpdate` section. For more detailed
 information on A/B updates, please reference the [How-To guide on A/B
@@ -154,7 +156,9 @@ only specify the `mountPoint` path, as with the root filesystem:
 ```
 
 Note that for the root filesystem, we use the `deviceId` `root`, instead of
-`root-a` or `root-b`.
+`root-a` or `root-b`. This is because Trident will internally treat `root-a` and
+`root-b` as one device under the ID `root`, since only one of `root-a` and
+`root-b` is active at any time.
 
 Lastly, we will create two new filesystems for the `home` and `trident`
 partitions. Note that the filesystem on the `trident` partition should be
