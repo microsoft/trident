@@ -52,19 +52,19 @@ tracing-subscriber = { version = "0.3.19", features = ["json"] }
 url = { version = "2.5.4", features = ["serde"] }
 uuid = { version = "1.11.0", features = ["v4", "serde"] }
 
-sysdefs = { path = "sysdefs" }
-osutils = { path = "osutils" }
-setsail = { path = "setsail", optional = true }
-trident_api = { path = "trident_api" }
-harpoon = { path = "harpoon" }
+sysdefs = { path = "../sysdefs" }
+osutils = { path = "../osutils" }
+setsail = { path = "../setsail", optional = true }
+trident_api = { path = "../trident_api" }
+harpoon = { path = "../harpoon" }
 
 # Optional dependencies used by functional tests
 indoc = { version = "2.0.5", optional = true }
 inventory = { version = "0.3.15", optional = true }
-pytest_gen = { path = "pytest_gen", optional = true }
+pytest_gen = { path = "../pytest_gen", optional = true }
 
 # Optional dependencies used for grpc
-pytest = { path = "pytest", optional = true }
+pytest = { path = "../pytest", optional = true }
 prost = { version = "0.13.4", optional = true }
 tonic = { version = "0.12.3", optional = true }
 tokio-stream = { version = "0.1.17", optional = true }
@@ -73,13 +73,13 @@ zstd = "0.13.3"
 
 [build-dependencies]
 tonic-build = { version = "0.12.3", optional = true }
-osutils = { path = "osutils" }
+osutils = { path = "../osutils" }
 
 [dev-dependencies]
 indoc = "2"
 maplit = "1.0.2"
 mockito = "1.6.1"
-osutils = { path = "osutils", features = ["test-utilities"] }
+osutils = { path = "../osutils", features = ["test-utilities"] }
 sha2 = "0.10.8"
 
 
@@ -100,15 +100,3 @@ functional-test = [
 pytest-generator = ["pytest", "osutils/pytest-generator"]
 grpc-dangerous = ["prost", "tonic", "tokio-stream", "tonic-build"]
 setsail = ["dep:setsail", "trident_api/setsail"]
-
-[workspace]
-members = [
-    "trident_api",
-    "setsail",
-    "osutils",
-    "docbuilder",
-    "pytest",
-    "pytest_gen",
-    "harpoon",
-    "sysdefs",
-]
