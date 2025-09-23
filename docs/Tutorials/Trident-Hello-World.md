@@ -4,7 +4,7 @@ In this tutorial, we will install Azure Linux on a virtual machine using Trident
 
 ## Introduction
 
-We will create a complete Azure Linux system using Trident. You will see how Trident transforms a blank virtual machine into a fully configured Azure Linux system in just a few minutes.
+We will create a complete Azure Linux system using Trident. You will see how Trident transforms a blank virtual machine into a fully configured Azure Linux system in just a few minutes!!!
 
 ## Prerequisites
 
@@ -35,7 +35,7 @@ After completing your section, continue to "Start the Installation"
 
 ### Step 1: Set up virtualization environment
 
-First, let's verify that your Linux system supports virtualization:
+First, let's verify that your Linux system supports virtualization.
 
 ```bash
 sudo apt-get update
@@ -43,9 +43,14 @@ sudo apt-get install -y cpu-checker
 kvm-ok
 ```
 
-You will see output confirming that KVM acceleration is available.
+You will see output confirming that KVM acceleration is available. Example:
 
-Now we'll install the virtualization tools:
+```bash
+INFO: /dev/kvm exists
+KVM acceleration can be used
+```
+
+Now we lets install the virtualization tools:
 
 ```bash
 sudo NEEDRESTART_MODE=a apt-get install -y \
@@ -64,15 +69,6 @@ sudo usermod -a -G libvirt $USER
 newgrp libvirt
 ```
 
-Configure libvirt:
-
-```bash
-mkdir -p ~/.config/libvirt
-cat << EOF > ~/.config/libvirt/libvirt.conf
-uri_default = "qemu:///system"
-EOF
-```
-
 Test that libvirt is working:
 
 ```bash
@@ -83,7 +79,7 @@ You will see an empty list, confirming libvirt is ready.
 
 ### Step 2: Create the virtual machine
 
-First, we'll prepare our installation files. Copy your Provisioning ISO and create a disk:
+First, we wil prepare our installation files. Copy your Provisioning ISO and create a disk:
 
 ```bash
 # Replace 'trident-provisioning.iso' with the actual name of your ISO file
@@ -237,9 +233,9 @@ First, let's see what disk Trident will install to:
 lsblk
 ```
 
-You will see `/dev/sda` or similat as a 16GB disk. This is our installation target.
+You will see something similar to `/dev/sda` for a 16GB disk. This is the installation target disk.
+We need to update the Trident Host Configuration for the VM's disk.
 
-We need to update the Trident configuration for our VM's disk.
 
 **Using vim see/modify the Host Configuration:**
 
@@ -247,7 +243,7 @@ We need to update the Trident configuration for our VM's disk.
 vim /etc/trident/config.yaml
 ```
 
-In vim, find the line with `device: /dev/nvme0n1` and change it to the correct device, for example: `device: /dev/sda`; then save and exit (`:wq`).
+In vim, find the line with `device: <disk>` and change it to the correct device, for example: `device: /dev/sda`; then save and exit (`:wq`).
 
 Now start the installation:
 
