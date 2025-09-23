@@ -35,7 +35,12 @@ The minimal base image will be saved as `image.vhdx` in the current directory.
 
 ### Step 3: Create Image Customizer configuration including offline-initialize
 
-ic-config.yaml:
+Add the `trident-service` package to the Image Customizer configuration. This will add the trident services needed for update and the `trident` package used for `offline-initialize`.
+
+To invoke `trident offline-initialize` during image creation, add it in the postCustomization scripts.
+
+These steps are shown below in a simple Image Customizer configuration (assumed as contents of `./ic-config.yaml`):
+
 ``` yaml
 storage:
   disks:
@@ -108,10 +113,10 @@ os:
 
 scripts:
   postCustomization:
-    - path: |
+    - content: |
         # Add the necessary directories for the audit logs so that auditd can start
         mkdir -p /var/log/audit
-    - path: |
+    - content: |
         trident offline-initialize
 ```
 
