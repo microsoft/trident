@@ -241,12 +241,20 @@ trident validate hostconf.yaml -v trace
 ```
 
 The trace logs show how Trident builds a storage graph in order to validate the
-Host Configuration we have passed it. For more information on validating a Host
-Configuration, you can reference [this How-To
+relationships between the filesystems and partitions in the Host Configuration
+we have passed it. For more information on validating a Host Configuration, you
+can reference [this How-To
 guide](../How-To-Guides/Host-Configuration-Validation.md). You should see a log
 similar to the following:
 
 `[INFO  trident::validation] Host Configuration is valid`
 
 With this log line, we know that we have successfully written a valid Trident
-Host Configuration that can be used to provision an OS
+Host Configuration that can be used to provision an OS.
+
+Note that there are several important limitations to using Trident's offline
+validation functionality. First, since this operation occurs offline Trident
+does not load the COSI file into memory and therefore cannot validate the COSI
+file's contents against the `storage` section of the Host Configuration. Second,
+Trident also cannot validate the SHA384 hash of the COSI metadata file since
+this similarly requires loading the COSI file into memory.
