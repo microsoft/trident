@@ -62,7 +62,7 @@ also logged at `/var/log/audit/audit.log`.
 - `disabled`: SELinux policies are neither enforced nor logged.
 
 Note that in order for the SELinux configuration in the Host Configuration to
-take effect, SELinux must be present in the [runtime OS
+take effect, SELinux must be present in the [runtime
 OS](../Reference/Glossary.md#runtime-os)'s image.
 
 | Host Configuration \ Provisioning OS | NOT PRESENT | DISABLED  | PERMISSIVE | ENFORCING |
