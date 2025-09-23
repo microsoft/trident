@@ -68,7 +68,9 @@ each disk and the partitions we want to create on it. Each disk needs a unique
 supports `gpt` partition tables). For each partition, we provide an `id`, a
 [Discoverable
 Partition](https://uapi-group.org/specifications/specs/discoverable_partitions_specification/)
-`type`, and its `size`.
+`type`, and its `size`. Full details on how to specify a partition can be found
+in the [API
+documentation](../Reference/Host-Configuration/API-Reference/Partition.md).
 
 For this tutorial, we'll set up a disk with `esp`, `root-a`, `root-b`, `home`,
 and `trident` partitions. The `trident` partition, used solely for storing the
@@ -99,9 +101,9 @@ storage:
           size: 1G
 ```
 
-Note that any other disks on the machine will be ignored by Trident, since they are
-not listed in the Host Configuration. If you were to list another empty disk (as
-below), the Trident would completely wipe the contents of this disk.
+Note that any other disks on the machine will be ignored by Trident, since they
+are not listed in the Host Configuration. If you were to list another empty disk
+(as below), the Trident would completely wipe the contents of this disk.
 
 ```yaml
   - id: disk2
@@ -130,13 +132,15 @@ we define `volumePairs` that link two partitions together. Here, we'll pair
 ```
 
 Finally, we'll set up the `filesystems` section. This is where we map our
-partitions (or A/B volume pairs) to mount points in the OS. The `deviceId`
-refers to the `id` of a partition or an A/B volume pair. For filesystems that
-are sourced from the COSI file, we specify this with `source: image`. For
-filesystems that Trident should newly create, we specify this with `source:
-new`. Lastly, each filesystem must also have a `mountPoint`. If you need to
-specify mount options, as with the `esp` partition, use the `path` and `options`
-fields:
+partitions (or A/B volume pairs) to mount points in the OS. Full details on how
+to specify a filesystem can be found in the [API
+documentation](../Reference/Host-Configuration/API-Reference/FileSystem.md). The
+`deviceId` refers to the `id` of a partition or an A/B volume pair. For
+filesystems that are sourced from the COSI file, we specify this with `source:
+image`. For filesystems that Trident should newly create, we specify this with
+`source: new`. Lastly, each filesystem must also have a `mountPoint`. If you
+need to specify mount options, as with the `esp` partition, use the `path` and
+`options` fields:
 
 ```yaml
 - deviceId: esp
