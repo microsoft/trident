@@ -1,18 +1,22 @@
 
 # Create an Encrypted Volume
 
-This how-to-guide explains how to create a new encrypted volume with Trident on [clean install](docs/How-To-Guides/Perform-Clean-Install), using the `encryption` configuration inside the Host Configuration API.Trident does **not** support adopting an existing encrypted volume or creating a new encrypted device on A/B update.
+This how-to-guide explains how to create a new encrypted volume with Trident on [clean install](../Perform-a-Clean-Install.md), using the `encryption` configuration inside the Host Configuration API. Trident does **not** support adopting an existing encrypted volume or creating a new encrypted device on A/B update.
 
 ## Steps
 
-1. Create a new device to encrypt using the Host Configuration, or identify an existing device. Trident supports encrypting devices of the following types:
+1. Create a new device to encrypt using the Host Configuration API. [This tutorial](../../Tutorials/Writing-a-Simple-Host-Configuration.md) guides the reader through creating a simple host configuration.
+
+   Trident supports encrypting devices of the following types:
 
    - Disk partition of a supported type.
    - Software RAID array, whose first disk partition is of a supported type.
 
    **Supported type** refers to any partition type, excluding a list of blocked types, as described in [the API doc on encrypted volumes](docs/Reference/Host-Configuration/API-Reference/EncryptedVolume.md).
 
-1. Add a new encrypted volume to the `encryption` config under `volumes`, with these three **required** fields:
+   [This how-to-guide](../Create-a-RAID-Array.md) outlines how to create a new RAID array.
+
+1. Inside the host configuration, under `storage`, add a new encrypted volume to the `encryption.volumes` section, completing these three **required** fields:
 
    - `id` is the id of the LUKS-encrypted volume to create. It must be non-empty and unique among the ids of all block devices in the host configuration. This includes the ids of all disk partitions, encrypted volumes, software RAID arrays, and A/B volume pairs.
    - `deviceName` is the name of an encrypted device to create under `/dev/mapper` when opening the volume. It should be a valid file name and unique among all encrypted volumes, as well as among the Device Mapper devices.
