@@ -1,15 +1,6 @@
 
 # Create RAID Arrays
 
-<!--
-DELETE ME AFTER COMPLETING THE DOCUMENT!
----
-Task: https://dev.azure.com/mariner-org/polar/_workitems/edit/13128
-Title: Create RAID Arrays
-Type: How-To Guide
-Objective:
+This how-to-guide explains how to create a new RAID array with Trident on [clean install](../Perform-a-Clean-Install.md), using the `storage.raid` configuration inside the Host Configuration API. Trident does **not** support adopting an existing encrypted volume or creating a new encrypted device on A/B update.
 
-Guide the user through the process of creating RAID arrays on AzL 3.0. The guide
-should exclusively talk about the host configuration configuration and how to
-craft it.
--->
+## Steps

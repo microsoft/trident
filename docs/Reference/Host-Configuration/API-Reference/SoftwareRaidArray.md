@@ -8,9 +8,9 @@ The RAID array will be created using the `mdadm` package. During a clean install
 
 The RAID arrays that are defined in the host configuration will be created, and mounted if specified in `mount-points`.
 
-To learn more about RAID, please refer to the [RAID wiki](https://wiki.archlinux.org/title/RAID)
+To learn more about RAID, please refer to the [RAID wiki](https://wiki.archlinux.org/title/RAID).
 
-To learn more about `mdadm`, please refer to the [mdadm guide](https://raid.wiki.kernel.org/index.php/A_guide_to_mdadm)
+To learn more about `mdadm`, please refer to the [mdadm guide](https://raid.wiki.kernel.org/index.php/A_guide_to_mdadm).
 
 | Characteristic | Value    |
 | -------------- | -------- |
@@ -39,7 +39,7 @@ See the reference links for picking the right number of devices. Devices are par
 
 A unique identifier for the RAID array.
 
-This is a user defined string that allows to link the RAID array to the mount points and also to results in the Host Status. The identifier needs to be unique across all types of devices, not just RAID arrays.
+This is a user-defined string that allows to link the RAID array to the mount points and also to results in the Host Status. The identifier needs to be unique across all types of devices, not just RAID arrays.
 
 | Characteristic | Value             |
 | -------------- | ----------------- |
@@ -50,7 +50,9 @@ This is a user defined string that allows to link the RAID array to the mount po
 
 RAID level.
 
-`raid1` is supported and tested. Other possible values yet to be tested are: `raid0`, `raid5`, `raid6`, `raid10`.
+`raid1` is supported and tested.
+
+Other possible values yet to be tested are: `raid0`, `raid5`, `raid6`, `raid10`.
 
 | Characteristic | Value                       |
 | -------------- | --------------------------- |
