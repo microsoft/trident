@@ -4,10 +4,12 @@
 In this tutorial, we will write a simple Host Configuration and use Trident to
 validate it.
 
-Please also reference the API documentation for the [Host
-Configuration](../Reference/Host-Configuration/API-Reference/HostConfiguration.md).
-We also provide a [sample Host
-Configuration](../Reference/Host-Configuration/Sample-Host-Configuration.md).
+For a detailed breakdown of all available configurations, refer to the [Host
+Configuration API
+documentation](../Reference/Host-Configuration/API-Reference/HostConfiguration.md).
+You can also view a complete [sample Host
+Configuration](../Reference/Host-Configuration/Sample-Host-Configuration.md) to
+see a finished example.
 
 ## Writing the Host Configuration
 
