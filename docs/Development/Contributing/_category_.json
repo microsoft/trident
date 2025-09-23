@@ -1,8 +1,8 @@
 {
-    "label": "Building",
+    "label": "Contributing",
     "position": 2,
     "link": {
         "type": "generated-index",
-        "description": "Building Trident."
+        "description": "Contributing Trident."
     }
 }

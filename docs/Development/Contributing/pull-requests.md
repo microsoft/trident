@@ -1,3 +1,7 @@
+---
+sidebar_position: 1
+---
+
 # Pull Request Guidelines
 
 This document describes the process for submitting pull requests (PRs) to the
