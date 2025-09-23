@@ -1,6 +1,8 @@
 
 # Writing a Simple Host Configuration
 
+## Introduction
+
 In this tutorial, we will write a simple Host Configuration and use Trident to
 validate it.
 
@@ -10,12 +12,20 @@ documentation](../Reference/Host-Configuration/API-Reference/HostConfiguration.m
 You can also view a complete [sample Host
 Configuration](../Reference/Host-Configuration/Sample-Host-Configuration.md).
 
-## Writing the Host Configuration
+## Prerequisites
+
+1. An OS with Trident installed.
+2. A COSI file. Please complete the tutorial on [Building a Deployable
+   Image](./Building-a-Deployable-Image.md) if you have not already.
+
+## Instructions
 
 First, create a new YAML file called `hostconf.yaml`. This will be the file in
 which we write our Host Configuration.
 
-### Image Section
+### Step 1: Writing the Host Configuration
+
+#### Image Section
 
 We will start with the `image` section of our Host Configuration, which tells
 Trident where to source the COSI file from. For a complete description of this
@@ -52,7 +62,7 @@ image:
   sha384: <Calculated SHA384 hash>
 ```
 
-### Storage Section
+#### Storage Section
 
 Next, we will define the `storage` section, which describes the disk layout of
 the target OS. Please reference the [API
@@ -241,7 +251,7 @@ storage:
       mountPoint: /home
 ```
 
-## Validating the Host Configuration with Trident
+### Step 2: Validating the Host Configuration with Trident
 
 We will now use Trident to validate our Host Configuration with the following
 command:
@@ -267,3 +277,25 @@ therefore cannot validate the COSI file's contents against the `storage` section
 of the Host Configuration. Second, Trident also cannot validate the SHA384 hash
 of the COSI metadata file since this similarly requires loading the COSI file
 into memory.
+
+## Conclusion
+
+Congratulations! You have successfully written and validated a complete Trident
+Host Configuration.
+
+In this tutorial, you learned how to:
+
+- Define the OS image source using the `image` section.
+- Describe a disk layout with disks, partitions, and filesystems in the
+  `storage` section.
+- Configure a volume pair for A/B updates.
+- Use the `trident validate` command to check your configuration for errors.
+
+### Next Steps
+
+Now that you have a valid Host Configuration, you are ready to use it to
+provision a device. Here are some tutorials to explore next:
+
+- [Perform a clean install](./Onboard-a-VM-to-Trident.md)
+- [Perform an A/B Update](./Performing-an-ABUpdate.md)
+- [Run a custom script with Trident](./Running-Custom-Scripts.md)
