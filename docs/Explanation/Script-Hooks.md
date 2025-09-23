@@ -17,7 +17,7 @@ Pre-servicing scripts are useful for:
 Post-provision scripts are run inside the current OS. In a clean install, the
 script would run inside the [management
 OS](../Reference/Glossary.md#management-os). In an A/B Update, the script would
-run inside the current active volume. This script is run with with root
+run inside the current active volume. This script is run with root
 filesystem of the target OS mounted at `$TARGET_ROOT` and other partitions
 specified for the target OS mounted relative to that. Post-provision scripts are
 useful for:
