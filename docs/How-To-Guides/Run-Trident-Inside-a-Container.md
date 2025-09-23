@@ -81,7 +81,7 @@ and creating filesystems. `--pid host` and `--ipc host` allow Trident to share
 the host's PID namespace and IPC resources, necessary for communicating with
 other system-level tools.
 
-**Mounted Volumes**
+#### Mounted Volumes
 
 `/etc/trident`: By default, Trident expects to find the Host Configuration in
 this directory. If the Host Configuration is not located in this directory, this
