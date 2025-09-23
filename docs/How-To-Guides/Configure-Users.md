@@ -1,7 +1,7 @@
 
 # Configure Users
 
-This guide shows you how to configure users in your Trident's Host Configuration. If you want to create secure user accounts with SSH access and customize their properties you can follow this file.
+This guide shows you how to configure users in Trident's Host Configuration. If you want to create secure user accounts with SSH access and customize their properties you can follow this file.
 
 For complete configuration reference, see the [User API Reference](../Reference/Host-Configuration/API-Reference/User.md).
 
