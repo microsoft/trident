@@ -110,6 +110,8 @@ below), the Trident would completely wipe the contents of this disk.
     partitions: []
 ```
 
+It is also important to note that while in this tutorial we have used device paths `/dev/sda` and `/dev/sdb`, in a production setting it is preferable to use more predictable device paths to ensure that the correct device is serviced.
+
 Next, we'll configure A/B servicing in the `abUpdate` section. For more detailed
 information on A/B updates, please reference the [How-To guide on A/B
 Updates](../How-To-Guides/Configure-an-ABUpdate-Ready-Host.md). In this section,
