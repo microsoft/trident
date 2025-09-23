@@ -15,7 +15,13 @@ To deploy an operating system, Trident requires [COSI](../Reference/COSI.md) fil
 
 Follow the Image Customizer [documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/quick-start/quick-start-binary.html) to configure and create an OS image, paying special attention to [specify](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/api/cli.html#--output-image-formatformat) `--output-image-format=cosi`.
 
-For example, an Image Customizer configuration creating a simple image might look like:
+#### For a simple image
+
+##### Step 1: Download Base Image
+
+Follow the instructions in the Image Customizer [documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/how-to/download-marketplace-image.html) to download a base image.
+
+##### Step 2: Create Image Customizer Configuration
 
 ``` yaml
 storage:
@@ -81,7 +87,9 @@ os:
       - trident
 ```
 
-could be built with Image Customizer using a command like this (assuming a base image `image.vhdx` and Image Customizer configuration `image-config.yaml` found in `$HOME/staging`):
+##### Step 3: Invoke Image Customizer
+
+Assuming a base image `image.vhdx` and Image Customizer configuration `image-config.yaml` found in `$HOME/staging`.
 
 ``` bash
  docker run \
