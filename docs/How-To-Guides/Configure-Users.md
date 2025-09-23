@@ -46,7 +46,7 @@ os:
 
 ### Step 2: Configure multiple users
 
-To create multiple users just add multiple users under the user section. Example:
+To create multiple users, just add multiple users under the user section. Example:
 
 ```yaml
 os:
