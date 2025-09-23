@@ -13,24 +13,24 @@ see a finished example.
 
 ## Writing the Host Configuration
 
-First, create a blank new YAML file called `hostconf.yaml`. This will be the
-file in which we write our Host Configuration.
+First, create a new YAML file called `hostconf.yaml`. This will be the file in
+which we write our Host Configuration.
 
 ### Image Section
 
-We will start with the `image` section of our Host Configuration. Please
-reference the [API
-documentation](../Reference/Host-Configuration/API-Reference/OsImage.md). The
-`image` section tells Trident where to source the COSI file from.
+We will start with the `image` section of our Host Configuration, which tells
+Trident where to source the COSI file from. For a complete description of this
+section, please reference the [API
+documentation](../Reference/Host-Configuration/API-Reference/OsImage.md).
 
-To learn more about COSI files, please see its [Reference
+Additionally, to learn more about COSI files, please see its [Reference
 page](../Reference/COSI.md). You can also learn how to create a COSI file in
 this tutorial on [Building a Deployable
 Image](./Building-a-Deployable-Image.md).
 
-The API asks for a `url`, where the COSI file is actually located or hosted, and
-a `sha384` which should contain the SHA384 hash of the metadata of the COSI
-file. For the purposes of this tutorial, assume we have a COSI file available at
+The `image` section requires a `url`, where the COSI file is actually located or
+hosted, and a `sha384` hash of the metadata of the COSI file. For the purposes
+of this tutorial, assume we have a COSI file available at
 `http://example.com/regular.cosi`. Note that in addition to the `http://` and
 `https://` URL schemes, Trident also accepts the `file://` scheme for local
 files and the `oci://` scheme for images stored in container registries. Please
@@ -55,14 +55,13 @@ image:
 
 ### Storage Section
 
-Next, we will populate the `storage` section of our Host Configuration. Please
-reference the [API
-Documentation](../Reference/Host-Configuration/API-Reference/Storage.md). The
-`storage` section should describe the disk layout of the provisioned OS. Three
-sections should be populated: `disks`, including information about the
-`partitions` on each disk; `abUpdate` to specify which partitions should be
-serviced by Trident in a future A/B update; and `filesystems`, which maps
-filesystems to partitions.
+Next, we will define the `storage` section, which describes the disk layout of
+the target OS. Please reference the [API
+Documentation](../Reference/Host-Configuration/API-Reference/Storage.md) for a
+complete description of this section. Three sections should be populated:
+`disks`, including information about the `partitions` on each disk; `abUpdate`
+to specify which partitions should be serviced by Trident in a future A/B
+update; and `filesystems`, which maps filesystems to partitions.
 
 First, we will define the disks and partitions. In the disks section, we list
 each disk and the partitions we want to create on it. Each disk needs a unique
@@ -73,9 +72,9 @@ Partition](https://uapi-group.org/specifications/specs/discoverable_partitions_s
 `type`, and its `size`.
 
 For this tutorial, we'll set up a disk with a `root-a`, `root-b`, `esp`, `home`,
-and `trident` partition. The `trident` partition will be used solely for storing
-Trident's datastore. This must be a separate partition so that it is not
-over-written during A/B update.
+and `trident` partition. The `trident` partition, used solely for storing the
+Trident datastore, must be a separate partition to ensure it is not over-written
+during an A/B update.
 
 ```yaml
 storage:
@@ -112,9 +111,9 @@ below), the Trident would completely wipe the contents of this disk.
     partitions: []
 ```
 
-It is also important to note that while in this tutorial we have used device
-paths `/dev/sda` and `/dev/sdb`, in a production setting it is preferable to use
-more predictable device paths to ensure that the correct device is serviced.
+While this tutorial uses device paths `/dev/sda` and `/dev/sdb`, in a production
+setting it is best to use more predictable device paths (i.e.
+`/dev/disk/by-id/...`) as kernel device naming can be unpredictable.
 
 Next, we'll configure A/B servicing in the `abUpdate` section. For more detailed
 information on A/B updates, please reference the [How-To guide on A/B
@@ -136,9 +135,9 @@ partitions (or A/B volume pairs) to mount points in the OS. The `deviceId`
 refers to the `id` of a partition or an A/B volume pair. For filesystems that
 are sourced from the COSI file, we specify this with `source: image`. For
 filesystems that Trident should newly create, we specify this with `source:
-new`. Lastly, each filesystem must also have a `mountPoint`. If specific mount
-options are necessary, as with the `esp` partition, we specify the filesystem as
-follows:
+new`. Lastly, each filesystem must also have a `mountPoint`. If you need to
+specify mount options, as with the `esp` partition, use the `path` and `options`
+fields:
 
 ```yaml
 - deviceId: esp
@@ -257,12 +256,11 @@ similar to the following:
 
 `[INFO  trident::validation] Host Configuration is valid`
 
-With this log line, we know that we have successfully written a valid Trident
-Host Configuration that can be used to provision an OS.
+This message confirms you have a valid Host Configuration.
 
-Note that there are several important limitations to using Trident's offline
-validation functionality. First, since this operation occurs offline Trident
-does not load the COSI file into memory and therefore cannot validate the COSI
-file's contents against the `storage` section of the Host Configuration. Second,
-Trident also cannot validate the SHA384 hash of the COSI metadata file since
-this similarly requires loading the COSI file into memory.
+Keep in mind that offline validation has limitations. First, since this
+operation occurs offline Trident does not load the COSI file into memory and
+therefore cannot validate the COSI file's contents against the `storage` section
+of the Host Configuration. Second, Trident also cannot validate the SHA384 hash
+of the COSI metadata file since this similarly requires loading the COSI file
+into memory.
