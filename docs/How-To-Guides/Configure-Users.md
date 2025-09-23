@@ -36,7 +36,7 @@ By following this guide, you will:
    1. Have an existing Host Configuration file or create a new one.
    2. Ensure the HC file has the basic structure with [os section](../Reference/Host-Configuration/API-Reference/Os.md).
 2. **SSH Public Keys**
-   1. Have the SSH key pairs that will be used for ssh authentication (you can generate them by using `ssh-keygen -t ed25519 -C "user@host"`).
+   1. Have the SSH key pairs that will be used for ssh authentication.
    2. Obtain the public key content (`.pub` file).
 3. **System Groups Knowledge**
    1. Know which groups exist on your target system (e.g., `wheel`, `docker`)
@@ -53,11 +53,11 @@ os:
     - name: myuser
       sshMode: key-only
       sshPublicKeys:
-        - "ssh-ed25519 AAAAC3NzlZDI1NuBFQm70bWQQwC6Qkm user@host"
+        - <Public Key content>
 ```
 
 2. Replace `myuser` with your desired username.
-3. Replace the SSH key with your actual public key content. Notice that more than one key can be associated to one user.
+3. Replace the SSH key with your actual public key content (e.g. `ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... user@hostname`). Notice that more than one key can be associated to one user.
 
 The user will be created with a locked password (no password can be used to login) and SSH key-only authentication.
 
@@ -71,7 +71,7 @@ os:
     - name: admin-user
       sshMode: key-only
       sshPublicKeys:
-        - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFyWtgGE06d/uBFQm70tYKvJKwJfRDoh06bWQQwC6Qkm admin@host"
+        - <Public Key content>
       secondaryGroups:
         - wheel
         - docker
@@ -90,17 +90,17 @@ os:
     - name: admin-user
       sshMode: key-only
       sshPublicKeys:
-        - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5KdbWQQwC6Qkm admin@host"
+        - <Public Key content>
       secondaryGroups:
         - wheel
     - name: developer
       sshMode: key-only
       sshPublicKeys:
-        - "ssh-ed25519 AAAAC3NzaC1lZDI1NTEfE9dS57bN1mX0yZ dev@host"
+        - <Public Key content>
     - name: readonly-user
       sshMode: key-only
       sshPublicKeys:
-        - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AeT6dW8cY2nZ1aB ro@host"
+        - <Public Key content>
 ```
 
 2. Replace with the desired usernames
@@ -118,7 +118,7 @@ os:
       primaryGroup: developers
       sshMode: key-only
       sshPublicKeys:
-        - "ssh-ed25519 AAAAC3NzaC1lZDIRDoh06bWQQwC6Qkm custom@host"
+        - <Public Key content>
       secondaryGroups:
         - wheel
 ```
@@ -141,7 +141,7 @@ os:
       primaryGroup: services
       sshMode: key-only
       sshPublicKeys:
-        - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDefGhI7J service@host"
+        - <Public Key content>
       startupCommand: /bin/bash
 ```
 
