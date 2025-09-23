@@ -34,12 +34,14 @@ OS. This operation relabels all of the files in the new OS (what will become the
 Trident allows users to configure the state of SELinux in the [runtime
 OS](../Reference/Glossary.md#runtime-os) using the [`os.selinux`
 API](../Reference/Host-Configuration/API-Reference/Selinux.md). SELinux can be
-configured to be in `enforcing`, `permissive`, or `disabled` mode. In
-`enforcing` mode, all SELinux policies are enforcing and any denials from the
-SELinux security module will result in processes being terminated. In
-`permissive` mode, SELinux policies are not enforced and any denials are instead
-logged at `/var/log/audit/audit.log`. Lastly, in `disabled` mode, SELinux
-policies are neither enforced nor logged.
+configured to be in the following modes:
+
+- `enforcing`: All SELinux policies are enforced and any denials from the
+SELinux security module will result in processes being terminated. Denials are
+also logged at `/var/log/audit/audit.log`.
+- `permissive`: SELinux policies are not enforced. All denials are logged at
+`/var/log/audit/audit.log`.
+- `disabled`: SELinux policies are neither enforced nor logged.
 
 Note that in order for the SELinux configuration in the Host Configuration to
 take effect, SELinux must be present in the [runtime OS
@@ -54,3 +56,21 @@ OS](../Reference/Glossary.md#runtime-os)'s image.
 
 Trident will determine whether or not SELinux is available on the [runtime
 OS](../Reference/Glossary.md#runtime-os) by checking for `/etc/selinux/config`.
+
+## Debugging SELinux Denials
+
+SELinux emits messages using the Linux kernel audit subsystemd. If the system
+has an auditd service running, the audit logs are available in
+`/var/log/audit/audit.log`. To search for SELinux denial messages, use: 
+
+```bash
+ausearch -m AVC
+```
+
+If auditd is not running, the messages will be in the system log, typically in
+`/var/log/messages`. On systemd systems, search for SELinux denial messages
+using journalctl, filtering on the SELinux denial audit type:
+
+```bash
+journalctl _AUDIT_TYPE_NAME=AVC
+```
