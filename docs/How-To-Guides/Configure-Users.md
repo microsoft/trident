@@ -114,13 +114,11 @@ os:
   users:
     - name: <Desired User Name>
       uid: 1001
-      homeDirectory: /opt/custom-user
+      homeDirectory: <Custom home directory path>
       primaryGroup: developers
       sshMode: key-only
       sshPublicKeys:
         - <Public SSH Key content>
-      secondaryGroups:
-        - wheel
 ```
 
 - **`uid`**: Specific user ID. If not provided, the system will automatically assign a UID.
@@ -134,7 +132,7 @@ To create a user without SSH access:
 ```yaml
 os:
   users:
-    - name: local-only-user
+    - name: <Desired User Name>
       sshMode: block
 ```
 
