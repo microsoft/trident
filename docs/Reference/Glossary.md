@@ -108,8 +108,8 @@ update](#ab-update).
 The OS being serviced.
 
 On a clean install, this is the new OS being installed to disk. On A/B update,
-this is the new partition being provisioned. For runtime configurations, this is
-the active OS, which is also running Trident.
+this is the new partition being provisioned. For runtime configurations, the
+servicing OS and the target OS are the same.
 
 ## Unformatted Partition
 
@@ -121,6 +121,7 @@ filesystem, verity-filesystem, RAID array, or encryption volume.
 ## Terms to Define
 
 - Operation
+- runtime configurations
 - Stage
 - State
 - Step
