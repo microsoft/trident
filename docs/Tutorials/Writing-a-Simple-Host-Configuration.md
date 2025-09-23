@@ -70,8 +70,8 @@ supports `gpt` partition tables). For each partition, we provide an `id`, a
 Partition](https://uapi-group.org/specifications/specs/discoverable_partitions_specification/)
 `type`, and its `size`.
 
-For this tutorial, we'll set up a disk with a `root-a`, `root-b`, `esp`, `home`,
-and `trident` partition. The `trident` partition, used solely for storing the
+For this tutorial, we'll set up a disk with `esp`, `root-a`, `root-b`, `home`,
+and `trident` partitions. The `trident` partition, used solely for storing the
 Trident datastore, must be a separate partition to ensure it is not over-written
 during an A/B update.
 
