@@ -84,8 +84,9 @@ on the same disk.
 
 Root file system of the OS that is being deployed.
 
-When Trident is deploying a new OS, it will mount the new OS's file systems and
-prepare them for a chroot. This mount of the new OS is called `newroot`.
+When Trident is deploying a target OS, it will mount the target OS's file
+systems and prepare them for a chroot. This mount of the target OS is called
+`newroot`.
 
 ## Runtime OS
 

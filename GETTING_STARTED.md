@@ -444,7 +444,7 @@ Trident from a non-live OS. To override this, create an empty override file
 `sudo touch /override-trident-safety-check`.
 
 Unless the `--allowed-operations` option only includes `stage`, upon completing
-the deployment, Trident will reboot the VM into the new OS.
+the deployment, Trident will reboot the VM into the target OS.
 
 ## gRPC Interface
 

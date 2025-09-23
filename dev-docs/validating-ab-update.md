@@ -9,7 +9,7 @@ how to manually validate the A/B update flow with Trident.
 
 ## Validation steps
 
-1. First, make the runtime OS image payload available for Trident to operate
+1. First, make the target OS image payload available for Trident to operate
    on. An easy way to do so is to use the following command:
    `make download-runtime-images`. This will download the latest Trident
    images to the `artifacts/test-image` folder: `regular.cosi`, `verity.cosi`,
