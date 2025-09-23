@@ -102,6 +102,11 @@ The specific kind of [Servicing](#servicing) that is being performed on an
 install, such as [clean install](#clean-install), or an [A/B
 update](#ab-update).
 
+## Target OS
+
+The resulting OS of a Trident servicing operation. After the operation is
+complete, the target OS becomes the active, running OS.
+
 ## Unformatted Partition
 
 An unformatted partition is a partition on a storage device that has been
