@@ -28,3 +28,9 @@ Use the tool of your choice to create bootable media from the servicing OS ISO.
 Ensure that the bootable media is at the top of the boot order using a tool like efibootmgr or select the media during the subsequent boot using the appropriate key (often F12).
 
 When the servicing OS ISO is booted, Trident will stage and boot into the target operating system.
+
+### Optional Step: Simulate with a Virtual Machine
+
+The servicing ISO can be validated using a virtual machine to simulate a clean install. To do so, create a virtual machine with an empty disk (this can be created using something like: `qemu-img create -f qcow2 osdisk.qcow2 10G`) and mount the servicing ISO as a CD. When the virtual machine starts, it will boot into the servicing ISO and invoke `trident install`.
+
+> Ensure that the Host Configuration file in the servicing ISO references the virtual machine's disk properly (i.e. for a sata disk, use something like `/dev/sda`).
