@@ -1,27 +1,5 @@
 # Glossary
 
-- [Glossary](#glossary)
-  - [A/B Update](#ab-update)
-  - [A/B Volume Pair](#ab-volume-pair)
-  - [Block Device](#block-device)
-  - [Clean Install](#clean-install)
-  - [Dualboot](#dualboot)
-  - [Execroot](#execroot)
-  - [Finalize (Operation)](#finalize-operation)
-  - [Install](#install)
-  - [Multiboot](#multiboot)
-  - [Newroot](#newroot)
-  - [Operation](#operation)
-  - [Servicing](#servicing)
-  - [Servicing OS](#servicing-os)
-  - [Servicing Type](#servicing-type)
-  - [Stage (Operation)](#stage-operation)
-  - [Step](#step)
-  - [Subsystem](#subsystem)
-  - [Target OS](#target-os)
-  - [Unformatted Partition](#unformatted-partition)
-  - [Terms to Define](#terms-to-define)
-
 ## A/B Update
 
 A [servicing type](#servicing-type) where two copies of the OS are kept on the

@@ -11,3 +11,5 @@ Objective: Discuss with Prism where the "one true source" of the COSI spec
     If the spec should live here, clean it up and put here, if not, describe dryly
     what COSI is and link to the spec.
 -->
+
+[COSI Specification](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/api/cosi.html)
