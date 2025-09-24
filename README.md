@@ -34,9 +34,10 @@ Trident supports a wide range of lifecycle and configuration capabilities:
 
 Our [documentation](docs/Trident.md) is still underconstruction. For now, please use the [Getting Started Guide](GETTING_STARTED.md).
 
-### Developer Quickstart
+### Developing and Contributing
 
-Go to the [Quickstart Guide](dev-docs/quickstart.md) to get started with development. This guide will help you set up your evelopment environment and build Trident.
+For detailed information about contributing to this project please read the
+[contributing guide](./docs/Development/Contributing/contribuiting-guidelines.md).
 
 ## Getting Help
 
