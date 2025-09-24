@@ -7,21 +7,22 @@ This guide explains how to configure the host to be ready for [A/B updates](../R
 
 By following this guide, you will:
 
-1. Create A/B volume pairs on top of other devices using the Host Configuration.
+1. Declare A/B volume pairs on top of other devices using the Host Configuration.
 1. Configure a host so that Trident can service it with A/B updates.
 
 ## Prerequisites
 
 1. A host that has not yet been serviced by Trident.
-1. A host configuration with the basic structure, including the [`storage`](../Reference/Host-Configuration/API-Reference/Storage.md) section.
+1. A host configuration with the basic structure, including the [`storage`](../Reference/Host-Configuration/API-Reference/Storage.md) section. The configuration should contain A and B copies of a device that will be targeted with an A/B update.
+1. A target OS image, i.e. a COSI file, which can be built by referencing this [tutorial](../Tutorials/Building-a-Deployable-Image.md), for [a clean install](../Reference/Glossary.md#clean-install). OR, a VM with an A/B disk layout that can be adopted via [`offline-init`](../Explanation/Offline-Init.md).
 
 ## Instructions
 
 ### Step 1: Add `abUpdate` configuration
 
-1. Add a `storage.abUpdate` configuration to the host configuration. [`abUpdate`](../Reference/Host-Configuration/API-Reference/AbUpdate.md) configuration carries information about the [A/B volume pairs](../Reference/Glossary.md#ab-volume-pair) that are used to perform A/B updates.
+1. Add a `storage.abUpdate` configuration to the host configuration. The [`abUpdate`](../Reference/Host-Configuration/API-Reference/AbUpdate.md) configuration carries information about the [A/B volume pairs](../Reference/Glossary.md#ab-volume-pair) that are used to perform A/B updates.
 
-1. In the `abUpdate` configuration, add `volumePairs`. There can be multiple A/B volume pairs, as long as they are mounted at different mount points. This is a list of A/B volume pairs that will targeted by A/B updates. Each A/B volume pair consists of two devices, A and B.
+1. In the `abUpdate` configuration, add `volumePairs`. There can be multiple A/B volume pairs, as long as they are mounted at different mount points. This is a list of A/B volume pairs that will be targeted by A/B updates. Each A/B volume pair consists of two devices, A and B, that have the same type and size and are located in the same disk.
 
 1. Add A/B volume pairs to [`volumePairs`](../Reference/Host-Configuration/API-Reference/AbVolumePair.md). Each A/B volume pair added to `volumePairs` must contain the following three **required** fields:
 
@@ -71,9 +72,10 @@ By following this guide, you will:
 
 ### Step 2: Run Trident to enable A/B update servicing
 
-1. Run Trident to create the A/B volume pair on clean install. Trident will:
+1. Run Trident to create the A/B volume pair on [clean install](../Reference/Glossary.md#clean-install), or adopt the A/B volume pair on [`offline-init`](../Explanation/Offline-Init.md). Trident will:
 
-   - Create underlying A/B volume devices: disk partitions, RAID arrays, and/or encrypted volumes.
+   - On clean install, create underlying A/B volume devices: disk partitions, RAID arrays, and/or encrypted volumes. On `offline-init`, adopt underlying A/B volume devices.
+   - Link each pair of devices into a logical A/B volume pair.
    - Service volume A in each pair, so that it becomes active in the target OS.
    - If needed, mount volume A at the requested mount point after booting into the target OS.
 
