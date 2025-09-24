@@ -38,8 +38,9 @@ in the previous step - into your local Docker image repository:
 docker load --input artifacts/test-image/trident-container.tar.gz
 ```
 
-If you have renamed or changed the location of your Trident container image, make sure to change the
-file path after the `--input` flag in the provided code sample above.
+If you have renamed or changed the location of your Trident container image,
+make sure to change the file path after the `--input` flag in the provided code
+sample above.
 
 ### Step 3: Run Trident
 
