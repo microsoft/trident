@@ -28,11 +28,23 @@ Build the Trident container image using:
 make artifacts/test-image/trident-container.tar.gz
 ```
 
-This Make target will build the
-Trident RPMs (`make bin/trident-rpms-azl3.tar.gz`) and then use
+This Make target will build the Trident RPMs (`make
+bin/trident-rpms-azl3.tar.gz`) and then use
 [Dockerfile.runtime](../../Dockerfile.runtime) to build the container image with
 all the necessary dependencies. You will find a compressed form of containerized
 Trident at `artifacts/test-image/trident-container.tar.gz`.
+
+#### Note
+
+If you plan to run to Trident in the same environment in which you build the
+Trident container image, you can instead use:
+
+```bash
+make docker-build
+```
+
+This command will create the container image and save it to your local Docker
+image repository. If you use this command, you can skip Step 2.
 
 ### Step 2: Load the Image
 
