@@ -21,9 +21,9 @@ virtual machines.
   - [How can I get started?](#how-can-i-get-started)
     - [Found an issue or missing a feature?](#found-an-issue-or-missing-a-feature)
     - [Try out Trident](#try-out-trident)
-      - [Do you want to deploy a bare metal host?](#do-you-want-to-deploy-a-bare-metal-host)
+    - [Do you want to author a sample Host Configuration?](#do-you-want-to-author-a-sample-host-configuration)
+    - [Do you want to make sure the VM image you built with Image Customizer is ready for servicing?](#do-you-want-to-make-sure-the-vm-image-you-built-with-image-customizer-is-ready-for-servicing)
       - [Do you want to update a bare metal host or a virtual machine?](#do-you-want-to-update-a-bare-metal-host-or-a-virtual-machine)
-      - [Do you want to orchestrate Trident servicing operations across your fleet?](#do-you-want-to-orchestrate-trident-servicing-operations-across-your-fleet)
     - [Contribute to Trident](#contribute-to-trident)
   - [Future developments](#future-developments)
 
@@ -68,10 +68,11 @@ updates, but these methods lack robust rollback capabilities and can result in
 inconsistencies across nodes due to timing and package variations.
 
 A more reliable approach is to use image-based A/B style in-place atomic
-updates, similar to those used by Android. With [A/B updates](Reference/Glossary.md#ab-update), rollback is
-straightforward—either during servicing or at any later point—without requiring
-extra resources. Additionally, servicing downtime is reduced, as the B set of
-images can be pre-staged while the A set remains operational.
+updates, similar to those used by Android. With [A/B
+updates](Reference/Glossary.md#ab-update), rollback is straightforward—either
+during servicing or at any later point—without requiring extra resources.
+Additionally, servicing downtime is reduced, as the B set of images can be
+pre-staged while the A set remains operational.
 
 Traditionally, Linux distributions provide distinct mechanisms for initial
 installation and subsequent servicing of the operating system. Trident
@@ -90,9 +91,9 @@ operations efficiently on your behalf.
 
 Trident operates as a servicing agent, drawing inspiration from the declarative
 API principles established by Kubernetes. It ingests a [Host Configuration
-specification](Reference/Host-Configuration/HostConfiguration.md) as input, and, as it progresses, updates the Host Status to
-accurately reflect all changes applied in accordance with the provided Host
-Configuration.
+specification](Reference/Host-Configuration/HostConfiguration.md) as input, and,
+as it progresses, updates the Host Status to accurately reflect all changes
+applied in accordance with the provided Host Configuration.
 
 The Host Configuration defines the intended state of the host that Trident
 manages, serving as the authoritative specification from initial installation
@@ -171,13 +172,13 @@ ensuring minimal consumption of system resources.
 
 ## How does Trident work?
 
-Trident operates based on two primary concepts: OS installation and update, each
-corresponding to dedicated CLI commands. Upon invocation, Trident receives a
-command along with a Host Configuration that defines the desired state of the
-host. During initial installation—or when performing offline initialization for
-a VM image—Trident establishes its own datastore (implemented as a SQLite
-database) on the OS filesystem, capturing the current state via the Host Status
-API.
+Trident operates based on two primary concepts: [OS
+installation](Reference/Glossary.md#install) and update, each corresponding to
+dedicated CLI commands. Upon invocation, Trident receives a command along with a
+Host Configuration that defines the desired state of the host. During initial
+installation—or when performing offline initialization for a VM image—Trident
+establishes its own datastore (implemented as a SQLite database) on the OS
+filesystem, capturing the current state via the Host Status API.
 
 For subsequent servicing operations, Trident compares the provided Host
 Configuration against the most recent Host Status stored in its datastore. It
@@ -199,26 +200,28 @@ operations, including the Host Configuration and Host Status for each operation.
 This helps to diagnose any issues that may arise during servicing and provides a
 clear audit trail of changes made to the host over time.
 
-Trident supports a two-phase servicing workflow: **stage** and **finalize**.
-During the **stage** phase, updated OS images are pre-staged onto the host
-without interrupting running workloads, enabling preparation for servicing with
-minimal disruption. Once staging is complete, workloads can be gracefully
-stopped, and the **finalize** phase is initiated. In this phase, Trident updates
-the firmware configuration to select the appropriate OS version for boot, and
-the host is rebooted to complete the servicing operation. While both phases can
-be performed right after another, they can also be separated by an arbitrary
-amount of time, allowing for flexible scheduling and coordination with other
-maintenance tasks. This two-phase approach minimizes workload downtime and
-ensures a smooth transition to the updated OS.
+Trident supports a two-phase servicing workflow:
+[**stage**](Reference/Glossary.md#stage-operation) and
+[**finalize**](Reference/Glossary.md#finalize-operation). During the **stage**
+phase, updated OS images are pre-staged onto the host without interrupting
+running workloads, enabling preparation for servicing with minimal disruption.
+Once staging is complete, workloads can be gracefully stopped, and the
+**finalize** phase is initiated. In this phase, Trident updates the firmware
+configuration to select the appropriate OS version for boot, and the host is
+rebooted to complete the servicing operation. While both phases can be performed
+right after another, they can also be separated by an arbitrary amount of time,
+allowing for flexible scheduling and coordination with other maintenance tasks.
+This two-phase approach minimizes workload downtime and ensures a smooth
+transition to the updated OS.
 
-To stage OS images, Trident utilizes the COSI specification to enable efficient
-transfer and reliable deployment of the OS images. Trident can query COSI
-metadata without downloading the entire COSI file, then stream individual
-filesystem images directly from the specified source—such as a local file, HTTPS
-endpoint, or OCI registry—into the target block device (partition, RAID array,
-LUKS volume, etc.). During this process, Trident performs on-the-fly hashing and
-decompression of filesystem blocks, ensuring rapid transfer without requiring
-additional storage or memory for intermediate placement.
+To stage OS images, Trident utilizes the [COSI specification](Reference/COSI.md)
+to enable efficient transfer and reliable deployment of the OS images. Trident
+can query COSI metadata without downloading the entire COSI file, then stream
+individual filesystem images directly from the specified source—such as a local
+file, HTTPS endpoint, or OCI registry—into the target block device (partition,
+RAID array, LUKS volume, etc.). During this process, Trident performs on-the-fly
+hashing and decompression of filesystem blocks, ensuring rapid transfer without
+requiring additional storage or memory for intermediate placement.
 
 Leveraging COSI metadata, Trident validates key aspects of the source images,
 such as verifying that required dependencies are present, and provides precise
@@ -281,7 +284,8 @@ installation and servicing operations. The CLI supports the following commands:
   it is well-formed and applicable. Note that this validation is host
   context-free and may not detect all potential issues.
 
-Please consult [CLI reference](Reference/Trident-CLI.md) for detailed information on each command and its usage.
+Please consult [CLI reference](Reference/Trident-CLI.md) for detailed
+information on each command and its usage.
 
 Trident is designed for both interactive use by administrators and
 non-interactive integration with orchestration systems. In automated
@@ -321,7 +325,8 @@ Trident builds are available for `x86_64` and `aarch64` architectures.
 
 ## See a prerecorded demo of Trident in action
 
-[![Trident Demo](https://img.youtube.com/vi/0/0.jpg)](https://www.youtube.com/watch?v=0)
+[![Trident
+Demo](https://img.youtube.com/vi/0/0.jpg)](https://www.youtube.com/watch?v=0)
 
 ## How can I get started?
 
@@ -332,17 +337,28 @@ If you found a bug or want to request a feature, please file an issue in the
 
 ### Try out Trident
 
-#### Do you want to deploy a bare metal host?
+<!-- #### Do you want to deploy a bare metal host?
 
-[Get started with bare metal deployment](Trident-BareMetal.md)
+[Get started with bare metal deployment](Trident-BareMetal.md) -->
+
+### Do you want to author a sample Host Configuration?
+
+You can start with the [Writing a Simple Host
+Configuration](Tutorials/Writing-a-Simple-Host-Configuration.md) tutorial.
+
+### Do you want to make sure the VM image you built with Image Customizer is ready for servicing?
+
+You can start with the [Onboard a VM to
+Trident](Tutorials/Onboard-a-VM-to-Trident.md) tutorial.
 
 #### Do you want to update a bare metal host or a virtual machine?
 
-[Get started with updates](Tutorials/Performing-an-ABUpdate.md).
+You can start with the [Performing an A/B
+update](Tutorials/Performing-an-ABUpdate.md) tutorial.
 
-#### Do you want to orchestrate Trident servicing operations across your fleet?
+<!-- #### Do you want to orchestrate Trident servicing operations across your fleet?
 
-[Get started with orchestration](Trident-Orchestration.md).
+[Get started with orchestration](Trident-Orchestration.md). -->
 
 ### Contribute to Trident
 
