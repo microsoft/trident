@@ -20,7 +20,7 @@ steps:
         project: 'polar'
         definition: '5139'
         buildVersionToDownload: 'latestFromBranch'
-        branchName: 'refs/heads/main'
+        branchName: 'user/elaine/add-emu-pipeline'
         artifactName: 'osmodifier'
         targetPath: "$(Build.SourcesDirectory)/artifacts"
 
@@ -32,7 +32,7 @@ steps:
         project: 'polar'
         definition: '5142'
         buildVersionToDownload: 'latestFromBranch'
-        branchName: 'refs/heads/main'
+        branchName: 'user/elaine/add-emu-pipeline'
         artifactName: 'osmodifier_preview'
         targetPath: "$(Build.SourcesDirectory)/artifacts"
 
