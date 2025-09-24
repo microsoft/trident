@@ -147,3 +147,5 @@ filesystem, verity-filesystem, RAID array, or encryption volume.
 - Stage
 - State
 - Step
+- Host Configuration
+- Host Status
