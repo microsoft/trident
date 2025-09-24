@@ -187,7 +187,9 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                     };
                     Some(bitflags)
                 } else {
-                    debug!("Runtime OS image is a grub image, so skipping re-generating pcrlock policy");
+                    debug!(
+                        "Target OS image is a grub image, so skipping re-generating pcrlock policy"
+                    );
                     None
                 }
             }
