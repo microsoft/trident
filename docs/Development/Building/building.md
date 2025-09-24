@@ -16,7 +16,8 @@ make .cargo/config
 
 :::note
 
-Cargo only expects one config file, so this will cause cargo to complain about finding two. This is expected.
+Cargo only expects one config file, so this will cause cargo to complain about
+finding two. This is expected.
 
 :::
 
