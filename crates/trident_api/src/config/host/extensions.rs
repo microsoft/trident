@@ -36,6 +36,7 @@ pub struct Extension {
     pub id: String,
 }
 
+/// TODO: import instead of copying over!!! make it a primitive
 /// Image SHA384 checksum.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
