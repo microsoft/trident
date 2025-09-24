@@ -2,7 +2,7 @@
 
 # AbVolumePair
 
-Per A/B update volume pair configuration. Points to the underlying block devices in the A/B volume pair.
+Per A/B volume pair configuration. Points to the underlying block devices in the A/B volume volume pair.
 
 | Characteristic | Value    |
 | -------------- | -------- |
@@ -14,7 +14,7 @@ Per A/B update volume pair configuration. Points to the underlying block devices
 
 A unique identifier for the A/B volume pair.
 
-This is a user-defined string that allows to link the A/B volume pair to the results in the Host Status and to the `filesystems` config. The identifier needs to be unique across devices of all types, not just A/B volume pairs.
+This is a user-defined string that links the A/B volume pair to the results in the Host Status and to the `filesystems` config. The identifier needs to be unique across devices of all types, not just A/B volume pairs.
 
 | Characteristic | Value             |
 | -------------- | ----------------- |

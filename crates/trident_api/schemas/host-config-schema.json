@@ -74,7 +74,7 @@
       "additionalProperties": false
     },
     "AbVolumePair": {
-      "description": "Per A/B update volume pair configuration. Points to the underlying block devices in the A/B volume pair.",
+      "description": "Per A/B volume pair configuration. Points to the underlying block devices in the A/B volume volume pair.",
       "type": "object",
       "required": [
         "id",
@@ -83,7 +83,7 @@
       ],
       "properties": {
         "id": {
-          "description": "A unique identifier for the A/B volume pair.\n\nThis is a user-defined string that allows to link the A/B volume pair to the results in the Host Status and to the `filesystems` config. The identifier needs to be unique across devices of all types, not just A/B volume pairs.",
+          "description": "A unique identifier for the A/B volume pair.\n\nThis is a user-defined string that links the A/B volume pair to the results in the Host Status and to the `filesystems` config. The identifier needs to be unique across devices of all types, not just A/B volume pairs.",
           "type": "string",
           "format": "Block Device ID"
         },

@@ -18,7 +18,7 @@ pub struct AbUpdate {
     pub volume_pairs: Vec<AbVolumePair>,
 }
 
-/// Per A/B update volume pair configuration. Points to the underlying block devices in the A/B
+/// Per A/B volume pair configuration. Points to the underlying block devices in the A/B volume
 /// volume pair.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -26,9 +26,9 @@ pub struct AbUpdate {
 pub struct AbVolumePair {
     /// A unique identifier for the A/B volume pair.
     ///
-    /// This is a user-defined string that allows to link the A/B volume pair to the results in the
-    /// Host Status and to the `filesystems` config. The identifier needs to be unique across
-    /// devices of all types, not just A/B volume pairs.
+    /// This is a user-defined string that links the A/B volume pair to the results in the Host
+    /// Status and to the `filesystems` config. The identifier needs to be unique across devices of
+    /// all types, not just A/B volume pairs.
     #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
     pub id: BlockDeviceId,
 
