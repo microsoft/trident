@@ -1,11 +1,11 @@
 
 # Create a RAID Array
 
-This how-to guide explains how to create a new [software RAID array](../../Reference/Host-Configuration/API-Reference/SoftwareRaidArray.md) with Trident on [clean install](../Perform-a-Clean-Install.md), using the Host Configuration API. Trident does **not** support adopting an existing RAID array or creating a new RAID array on A/B update.
+This how-to guide explains how to create a new [software RAID array](../Reference/Host-Configuration/API-Reference/SoftwareRaidArray.md) with Trident on [clean install](../Reference/Glossary.md/#clean-install), using the Host Configuration API. Trident does **not** support adopting an existing RAID array or creating a new RAID array on A/B update.
 
 ## Steps
 
-1. Create devices to be used for the RAID array using the Host Configuration API. [This tutorial](../../Tutorials/Writing-a-Simple-Host-Configuration.md) guides you through creating a simple host configuration.
+1. Create devices to be used for the RAID array using the Host Configuration API. [This tutorial](../Tutorials/Writing-a-Simple-Host-Configuration.md) guides you through creating a simple host configuration.
 
    [The RAID wiki](https://wiki.archlinux.org/title/RAID) contains more information on RAID arrays, including how many devices are needed. These requirements differ for different RAID levels; however, Trident only tests RAID 1. For RAID 1, devices underlying a RAID array must adhere to the following guidelines:
 
@@ -66,7 +66,7 @@ This how-to guide explains how to create a new [software RAID array](../../Refer
          mountPoint: /
    ```
 
-   For example, this configuration specifies that the RAID array with ID `root` from above should be mounted at `/`, using the filesystem provided in the host configuration. [The API documentation on filesystems](../../Reference/Host-Configuration/API-Reference/FileSystem.md) contains more information on the filesystems configuration.
+   For example, this configuration specifies that the RAID array with ID `root` from above should be mounted at `/`, using the filesystem provided in the host configuration. [The API documentation on filesystems](../Reference/Host-Configuration/API-Reference/FileSystem.md) contains more information on the filesystems configuration.
 
 1. The `storage.raid` configuration also has an optional field called `syncTimeout` that applies to all RAID arrays created with Trident. `syncTimeout` is the timeout in seconds to wait for RAID arrays to sync.
 
@@ -89,7 +89,7 @@ This how-to guide explains how to create a new [software RAID array](../../Refer
 
 1. Run Trident to create the software RAID array on clean install. Trident will:
 
-   - Stop and unmount all existing RAID arrays that are on the disks defined in the host configuration
-   - Create the RAID arrays defined in the host configuration via the `mdadm` package, and mount them if specified in the `storage.filesystems` configuration
+   - Stop and unmount all existing RAID arrays that are on the disks declared in the host configuration.
+   - Create the RAID arrays declared in the host configuration via the `mdadm` package, and mount them if requested in the `storage.filesystems` configuration.
 
    To learn more about `mdadm`, please refer to the [mdadm guide](https://raid.wiki.kernel.org/index.php/A_guide_to_mdadm).

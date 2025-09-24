@@ -1,18 +1,18 @@
 
 # Create an Encrypted Volume
 
-This how-to guide explains how to create a new [encrypted volume](../../Reference/Host-Configuration/API-Reference/EncryptedVolume.md) with Trident on [clean install](../Perform-a-Clean-Install.md), using the Host Configuration API. Trident does **not** support adopting an existing encrypted volume or creating a new encrypted device on A/B update.
+This how-to guide explains how to create a new [encrypted volume](../Reference/Host-Configuration/API-Reference/EncryptedVolume.md) with Trident on [clean install](../Reference/Glossary.md/#clean-install), using the Host Configuration API. Trident does **not** support adopting an existing encrypted volume or creating a new encrypted device on A/B update.
 
 ## Steps
 
-1. Create a device to encrypt using the Host Configuration API. [This tutorial](../../Tutorials/Writing-a-Simple-Host-Configuration.md) guides the reader through creating a simple host configuration.
+1. Create a device to encrypt using the Host Configuration API. [This tutorial](../Tutorials/Writing-a-Simple-Host-Configuration.md) guides the reader through creating a simple host configuration.
 
    Trident supports encrypting devices of the following types:
 
    - Disk partition of a supported type.
    - Software RAID array, whose first disk partition is of a supported type.
 
-   **Supported type** refers to any partition type, excluding a list of blocked types, as described in [the API doc on encrypted volumes](../../Reference/Host-Configuration/API-Reference/EncryptedVolume.md). [This how-to-guide](../Create-a-RAID-Array.md) outlines how to create a new RAID array.
+   **Supported type** refers to any partition type, excluding a list of blocked types, as described in [the API doc on encrypted volumes](../Reference/Host-Configuration/API-Reference/EncryptedVolume.md). [This how-to-guide](./Create-a-RAID-Array.md) outlines how to create a new RAID array.
 
 1. Inside the host configuration, under `storage`, add a new encrypted volume to the `encryption.volumes` section, completing these three **required** fields:
 
@@ -43,9 +43,9 @@ This how-to guide explains how to create a new [encrypted volume](../../Referenc
             mountPoint: /web
    ```
 
-   For example, this configuration describes that the encrypted volume with id `enc-web-partition` from above should be mounted at `/web`, by creating a new filesystem. [The API on filesystems](../../Reference/Host-Configuration/API-Reference/FileSystem.md) contains more information on the flesystems config.
+   For example, this configuration describes that the encrypted volume with id `enc-web-partition` from above should be mounted at `/web`, by creating a new filesystem. [The API on filesystems](../Reference/Host-Configuration/API-Reference/FileSystem.md) contains more information on the flesystems config.
 
-1. Update the `encryption` configuration to include optional settings. For example, the user can set a `recoveryKeyUrl` to read the recovery key from and choose `pcrs` to seal the encrypted volumes to. Remember that these settings apply to **all** encrypted volumes at once. More information about these settings can be found in [the API doc on encryption](../../Reference/Host-Configuration/API-Reference/Encryption.md).
+1. Update the `encryption` configuration to include optional settings. For example, the user can set a `recoveryKeyUrl` to read the recovery key from and choose `pcrs` to seal the encrypted volumes to. Remember that these settings apply to **all** encrypted volumes at once. More information about these settings can be found in [the API doc on encryption](../Reference/Host-Configuration/API-Reference/Encryption.md).
 
 1. Run Trident to create the encrypted volume on clean install. Trident will:
 
