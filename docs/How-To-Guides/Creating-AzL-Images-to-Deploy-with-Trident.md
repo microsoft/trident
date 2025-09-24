@@ -7,7 +7,8 @@ To deploy an operating system, Trident requires [COSI](../Reference/COSI.md) fil
 
 ## Prerequisites
 
-1. [Install Image Customizer](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/quick-start/quick-start.html).
+1. Ensure that [oras](https://oras.land/docs/installation/) is installed.
+2. Ensure [Image Customizer container is accessible](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/quick-start/quick-start.html).
 
 ## Instructions
 
