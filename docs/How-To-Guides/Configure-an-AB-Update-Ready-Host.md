@@ -1,9 +1,23 @@
 
 # Configure an A/B Update Ready Host
 
-This how-to guide explains how to configure the host to be ready for [A/B updates](../Reference/Glossary.md#ab-update), using the Host Configuration API. This has to be done on [clean install](../Reference/Glossary.md/#clean-install); otherwise, Trident will not be able to service the host with an A/B update.
+This guide explains how to configure the host to be ready for [A/B updates](../Reference/Glossary.md#ab-update), using the Host Configuration API.
 
-## Steps
+## Goals
+
+By following this guide, you will:
+
+1. Create A/B volume pairs on top of other devices using the Host Configuration.
+1. Configure a host so that Trident can service it with A/B updates.
+
+## Prerequisites
+
+1. A host that has not yet been serviced by Trident.
+1. A host configuration with the basic structure, including the [`storage`](../Reference/Host-Configuration/API-Reference/Storage.md) section.
+
+## Instructions
+
+### Step 1: Add `abUpdate` section
 
 1. Add a `storage.abUpdate` section to the host configuration. [`abUpdate`](../Reference/Host-Configuration/API-Reference/AbUpdate.md) configuration carries information about the [A/B volume pairs](../Reference/Glossary.md#ab-volume-pair) that are used to perform A/B updates.
 
@@ -54,6 +68,8 @@ This how-to guide explains how to configure the host to be ready for [A/B update
    ```
 
    **Naming Convention**: In Trident, it is conventional to choose a short, descriptive string as the id for an A/B volume pair. Then, to create the ids for the A/B volumes inside the pair, the id is suffixed with `<ab_volume_pair_id>-a` or `<ab_volume_pair_id>-b`. For instance, an A/B volume pair comprised of two RAID arrays, `root-a` and `root-b`, would have an id `root`.
+
+### Step 2: Run Trident to enable A/B update servicing
 
 1. Run Trident to create the A/B volume pair on clean install. Trident will:
 
