@@ -149,10 +149,10 @@ In case of **a non-fatal error**, no `TridentError` is returned, hence, an
 *Example 1.*
 
 The snippet below is taken from the logic in `src/lib.rs`, where Trident
-validates whether the firmware correctly booted from the updated runtime OS
-after a clean install. Here, Trident detected that the firmware failed to boot
-from the expected device. Because the contents of the `CleanInstallRebootCheck`
-error already summarize the failure, an `ERROR` log is *not* needed.
+validates whether the firmware correctly booted from the updated target OS after
+a clean install. Here, Trident detected that the firmware failed to boot from
+the expected device. Because the contents of the `CleanInstallRebootCheck` error
+already summarize the failure, an `ERROR` log is *not* needed.
 
 ```rust
 datastore.with_host_status(|host_status| {
@@ -288,7 +288,7 @@ message in the same way, to maintain consistency:
 *Example 2.*
 
 The example below comes from the logic in `src/lib.rs`, where Trident has
-validated that the host had correctly booted from the updated runtime OS. Here,
+validated that the host had correctly booted from the updated target OS. Here,
 Trident uses **two** different levels of logging:
 
 - First, an `INFO` log announces that the higher-level process, i.e. a clean
@@ -300,7 +300,7 @@ Trident uses **two** different levels of logging:
 
 ```rust
 if datastore.host_status().servicing_type == ServicingType::CleanInstall {
-    info!("Clean install of runtime OS succeeded");
+    info!("Clean install of target OS succeeded");
     tracing::info!(metric_name = "clean_install_success", value = true);
 } else {
     info!("A/B update succeeded");

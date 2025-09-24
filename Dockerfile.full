@@ -15,18 +15,17 @@ COPY selinux-policy-trident/trident.if /usr/src/azl/SOURCES/trident.if
 COPY packaging/static-pcrlock-files/ /usr/src/azl/SOURCES/static-pcrlock-files/
 
 COPY .cargo/config.toml ./.cargo/config.toml
-COPY build.rs .
 COPY Cargo.toml .
 COPY Cargo.lock .
-COPY src ./src
-COPY osutils ./osutils
-COPY trident_api ./trident_api
-COPY setsail ./setsail
-COPY pytest ./pytest
-COPY pytest_gen ./pytest_gen
-COPY docbuilder ./docbuilder
-COPY harpoon ./harpoon
-COPY sysdefs ./sysdefs
+COPY crates/trident ./crates/trident
+COPY crates/osutils ./crates/osutils
+COPY crates/trident_api ./crates/trident_api
+COPY crates/setsail ./crates/setsail
+COPY crates/pytest ./crates/pytest
+COPY crates/pytest_gen ./crates/pytest_gen
+COPY crates/docbuilder ./crates/docbuilder
+COPY crates/harpoon ./crates/harpoon
+COPY crates/sysdefs ./crates/sysdefs
 
 ARG TRIDENT_VERSION=dev-build
 ARG RPM_VER=0.1.0

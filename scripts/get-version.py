@@ -47,7 +47,7 @@ parser.add_argument(
 
 args = parser.parse_args()
 
-with open("Cargo.toml", "r") as file:
+with open("crates/trident/Cargo.toml", "r") as file:
     content = file.read()
 version = get_version(content)
 

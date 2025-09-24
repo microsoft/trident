@@ -90,7 +90,7 @@ format:
 test: .cargo/config
 	cargo test --all --no-fail-fast
 
-COVERAGE_EXCLUDED_FILES_REGEX='docbuilder|pytest|setsail'
+COVERAGE_EXCLUDED_FILES_REGEX='crates/docbuilder|crates/pytest|crates/setsail'
 
 .PHONY: coverage
 coverage: .cargo/config coverage-llvm
@@ -119,7 +119,7 @@ ut-coverage: .cargo/config
 .PHONY: coverage-report
 coverage-report: .cargo/config
 	# cargo install grcov
-	grcov . --binary-path ./target/coverage/debug/deps/ -s . -t html,covdir,cobertura --branch --ignore-not-existing --ignore '../*' --ignore "/*" --ignore "docbuilder/*" --ignore "target/*" -o target/coverage
+	grcov . --binary-path ./target/coverage/debug/deps/ -s . -t html,covdir,cobertura --branch --ignore-not-existing --ignore '../*' --ignore "/*" --ignore "crates/docbuilder/*" --ignore "target/*" -o target/coverage
 	jq .coveragePercent target/coverage/covdir
 
 .PHONY: grcov-coverage
@@ -156,7 +156,7 @@ bin/trident: build
 # This will do a proper build on azl3, exactly as the pipelines would, with the custom registry and all.
 bin/trident-rpms-azl3.tar.gz: Dockerfile.full systemd/*.service trident.spec artifacts/osmodifier selinux-policy-trident/* version-vars
 	$(eval CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN := $(shell az account get-access-token --query "join(' ', ['Bearer', accessToken])" --output tsv))
-
+	
 	@export CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN="$(CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN)" &&\
 		docker build -t trident/trident-build:latest \
 			--secret id=registry_token,env=CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN \
@@ -258,7 +258,7 @@ docbuilder: .cargo/config
 
 
 TRIDENT_API_HC_SCHEMA_GENERATED  := target/trident-api-docs/host-config-schema.json
-TRIDENT_API_HC_SCHEMA_CHECKED_IN := trident_api/schemas/host-config-schema.json
+TRIDENT_API_HC_SCHEMA_CHECKED_IN := crates/trident_api/schemas/host-config-schema.json
 
 TRIDENT_API_HC_MARKDOWN_DIR := docs/Reference/Host-Configuration/API-Reference
 TRIDENT_API_HC_EXAMPLE_FILE := docs/Reference/Host-Configuration/Sample-Host-Configuration.md
@@ -755,9 +755,8 @@ recreate-verity-image: bin/trident-rpms.tar.gz
 
 .PHONY: website-prereqs
 website-prereqs:
-	npm install --save docusaurus
-	npm install --save @easyops-cn/docusaurus-search-local
-	npm install --save @docusaurus/theme-mermaid
+	cd ./website && \
+		npm install --save docusaurus @easyops-cn/docusaurus-search-local @docusaurus/theme-mermaid
 
 .PHONY: website-build
 website-build: website-prereqs
