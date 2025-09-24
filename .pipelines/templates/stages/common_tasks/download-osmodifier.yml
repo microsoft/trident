@@ -9,27 +9,47 @@ parameters:
   - name: osModifierVersion
     displayName: OSModifier version
     type: string
-    default: "*"
+    default: ""
 
 steps:
-  - ${{ if eq(parameters.osmodifierBuildType, 'main') }}:
-    - task: UniversalPackages@0
-      displayName: "Download OSModifier (main)"
-      inputs:
-        command: download
-        vstsFeed: polar/PolarCoreArtifacts
-        vstsFeedPackage: osmodifier
-        vstsPackageVersion: ${{ parameters.osModifierVersion }}
-        includePrerelease: true
-        downloadDirectory: "$(Build.SourcesDirectory)/artifacts"
+- ${{ if and(eq(parameters.osmodifierBuildType, 'main'), eq(parameters.osModifierVersion, '')) }}:
+  - task: DownloadPipelineArtifact@2
+    displayName: "Download OSModifier artifact (main - latest)"
+    inputs:
+      project: polar
+      pipeline: 5139
+      branch: refs/heads/main
+      runVersion: latestFromBranch
+      artifact: osmodifier
+      path: "$(Build.SourcesDirectory)/artifacts"
 
-  - ${{ if eq(parameters.osmodifierBuildType, 'preview') }}:
-    - task: UniversalPackages@0
-      displayName: "Download OSModifier (preview)"
-      inputs:
-        command: download
-        vstsFeed: polar/PolarCoreArtifacts
-        vstsFeedPackage: osmodifier_preview
-        vstsPackageVersion: ${{ parameters.osModifierVersion }}
-        includePrerelease: true
-        downloadDirectory: "$(Build.SourcesDirectory)/artifacts"
+- ${{ if and(eq(parameters.osmodifierBuildType, 'preview'), eq(parameters.osModifierVersion, '')) }}:
+  - task: DownloadPipelineArtifact@2
+    displayName: "Download OSModifier artifact (preview - latest)"
+    inputs:
+      project: polar
+      pipeline: 5142
+      branch: refs/heads/preview
+      runVersion: latestFromBranch
+      artifact: osmodifier_preview
+      path: "$(Build.SourcesDirectory)/artifacts"
+
+- ${{ if and(eq(parameters.osmodifierBuildType, 'main'), ne(parameters.osModifierVersion, '')) }}:
+  - task: UniversalPackages@0
+    displayName: "Download OSModifier (main - pinned version)"
+    inputs:
+      command: download
+      vstsFeed: polar/PolarCoreArtifacts
+      vstsFeedPackage: osmodifier
+      vstsPackageVersion: ${{ parameters.osModifierVersion }}
+      downloadDirectory: "$(Build.SourcesDirectory)/artifacts"
+
+- ${{ if and(eq(parameters.osmodifierBuildType, 'preview'), ne(parameters.osModifierVersion, '')) }}:
+  - task: UniversalPackages@0
+    displayName: "Download OSModifier (preview - pinned version)"
+    inputs:
+      command: download
+      vstsFeed: polar/PolarCoreArtifacts
+      vstsFeedPackage: osmodifier_preview
+      vstsPackageVersion: ${{ parameters.osModifierVersion }}
+      downloadDirectory: "$(Build.SourcesDirectory)/artifacts"
