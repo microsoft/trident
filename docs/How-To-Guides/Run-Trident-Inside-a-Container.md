@@ -104,8 +104,9 @@ the Trident CLI, please see the [Reference guide](../Reference/Trident-CLI.md).
 ### Mounted Volumes
 
 - `-v /path/to/your/host-config:/etc/trident`: Trident expects to find the Host
-Configuration in the `/etc/trident` directory. Ensure that the correct host
-directory is mounted to `/etc/trident` in your Docker command.
+Configuration and [Agent Configuration](../Reference/Agent-Configuration.md)
+files in the `/etc/trident` directory. Ensure that the correct host directory is
+mounted to `/etc/trident` in your Docker command.
 - `-v /etc/pki:/etc/pki:ro`: Trident requires access to certificates in
 `/etc/pki` to be able to authenticate with container registries, in which COSI
 files may be stored. If the COSI file is stored or hosted locally, it is not
