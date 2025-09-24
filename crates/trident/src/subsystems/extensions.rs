@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::{Context, Error};
-use log::{debug, error};
+use log::debug;
 
 use trident_api::{
     config::ExtensionType,
@@ -96,18 +96,18 @@ fn set_up_extensions(
     }
 
     let extensions_to_add: Vec<_> = new_exts_hashmap
-        .into_iter()
+        .iter()
         .filter(|(k, _)| ids_to_add.contains(&k))
         .map(|(_, ext)| ext)
         .collect();
     let extensions_to_remove: Vec<_> = curr_exts_hashmap
-        .into_iter()
+        .iter()
         .filter(|(k, _)| ids_to_remove.contains(&k))
         .map(|(_, ext)| ext)
         .collect();
     let extensions_to_keep_as_is: Vec<_> = curr_exts_hashmap
-        .into_iter()
-        .filter(|(k, _)| ids_to_keep_as_is.contains(&k))
+        .iter()
+        .filter(|(k, _)| ids_to_keep_as_is.contains(k))
         .map(|(_, ext)| ext)
         .collect();
 
