@@ -14,7 +14,7 @@ Configure networking in the target OS.
 2. Netplan must be installed on the target OS.
 
    With Image Customizer, you can add netplan to your image by adding the
-   following to your IC file:
+   following to your Image Customizer configuration:
 
    ```yaml
    os:
@@ -34,8 +34,8 @@ you are experiencing network configuration issues.
 
 ### Step 1: Add a Networking Section to the HC
 
-To configure networking in the target OS, you need to add the `netplan` section
-to the `os:` section of your HC file.
+To configure networking in the target OS, you need to add the `netplan:` section
+to the `os:` section of your Host Configuration file.
 
 ```yaml
 os:
@@ -49,11 +49,12 @@ os:
 The `version` field is required and must always be set to `2`.
 :::
 
-### Step 2: Configure Network Interfaces
+### Step 2: Configure Network Interfaces in Host Configuration
 
-Trident uses netplan under the hood to configure networking. Netplan YAML
-documentation is available here: [Netplan YAML
-configuration](https://netplan.readthedocs.io/en/stable/netplan-yaml/).
+Enter any valid netplan configuration under the `netplan:` section of your Host
+Configuration file to configure networking and interfaces as desired. Netplan
+YAML documentation is available here:
+[Netplan YAML configuration](https://netplan.readthedocs.io/en/stable/netplan-yaml/).
 
 Here is an example configuration for setting up eth0 to use DHCP:
 
