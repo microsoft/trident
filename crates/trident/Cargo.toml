@@ -70,6 +70,7 @@ tonic = { version = "0.12.3", optional = true }
 tokio-stream = { version = "0.1.17", optional = true }
 sha2 = "0.10.8"
 zstd = "0.13.3"
+etc-os-release = "0.1.0"
 
 [build-dependencies]
 tonic-build = { version = "0.12.3", optional = true }
