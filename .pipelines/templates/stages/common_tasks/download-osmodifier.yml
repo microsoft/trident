@@ -30,7 +30,7 @@ steps:
       inputs:
         buildType: 'specific'
         project: 'polar'
-        definition: '5140'
+        definition: '5142'
         buildVersionToDownload: 'latestFromBranch'
         branchName: 'refs/heads/main'
         artifactName: 'osmodifier_preview'
