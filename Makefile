@@ -90,7 +90,7 @@ format:
 test: .cargo/config
 	cargo test --all --no-fail-fast
 
-COVERAGE_EXCLUDED_FILES_REGEX='docbuilder|pytest|setsail'
+COVERAGE_EXCLUDED_FILES_REGEX='crates/docbuilder|crates/pytest|crates/setsail'
 
 .PHONY: coverage
 coverage: .cargo/config coverage-llvm
@@ -119,7 +119,7 @@ ut-coverage: .cargo/config
 .PHONY: coverage-report
 coverage-report: .cargo/config
 	# cargo install grcov
-	grcov . --binary-path ./target/coverage/debug/deps/ -s . -t html,covdir,cobertura --branch --ignore-not-existing --ignore '../*' --ignore "/*" --ignore "docbuilder/*" --ignore "target/*" -o target/coverage
+	grcov . --binary-path ./target/coverage/debug/deps/ -s . -t html,covdir,cobertura --branch --ignore-not-existing --ignore '../*' --ignore "/*" --ignore "crates/docbuilder/*" --ignore "target/*" -o target/coverage
 	jq .coveragePercent target/coverage/covdir
 
 .PHONY: grcov-coverage
@@ -392,7 +392,7 @@ generate-functional-test-manifest: .cargo/config
 
 .PHONY: validate-configs
 validate-configs: bin/trident
-	$(eval DETECTED_HC_FILES := $(shell grep -R 'storage:' . --include '*.yaml' --exclude-dir=trident-mos --exclude-dir=target --exclude-dir=dev --exclude-dir=azure-linux-image-tools --exclude-dir=docbuilder -l))
+	$(eval DETECTED_HC_FILES := $(shell grep -R 'storage:' . --include '*.yaml' --exclude-dir=trident-mos --exclude-dir=target --exclude-dir=dev --exclude-dir=azure-linux-image-tools --exclude-dir=crates/docbuilder -l))
 	@for file in $(DETECTED_HC_FILES); do \
 		echo "Validating $$file"; \
 		$< validate $$file -v info || exit 1; \
