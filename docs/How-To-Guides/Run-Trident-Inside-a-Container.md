@@ -49,7 +49,7 @@ docker run --name trident_container \
            --pull=never \
            --rm \
            --privileged \
-           -v /etc/trident:/etc/trident \
+           -v /path/to/your/host-config:/etc/trident \
            -v /etc/pki:/etc/pki:ro \
            -v /var/lib/trident:/var/lib/trident \
            -v /var/log:/var/log \
@@ -59,53 +59,50 @@ docker run --name trident_container \
            -v /sys:/sys \
            --pid host \
            --ipc host \
-           trident/trident:latest [TRIDENT VERB] /etc/trident/hostconf.yaml --verbosity TRACE
+           trident/trident:latest <TRIDENT VERB> /etc/trident/hostconf.yaml --verbosity TRACE
 ```
 
-Note: By default, the Host Configuration should be placed inside
-`/etc/trident/`. However, if you have placed your Host Configuration outside of
-`/etc/trident/`, please mount the appropriate directory to `/etc/trident`:
+Note: Ensure that you replace `/path/to/your/host-config` with the actual path
+to your Host Configuration on your host machine.
 
-```bash
--v <directory containing your Host Configuration>:/etc/trident`
-```
-
-Replace `[TRIDENT VERB]` with the desired verb. For a complete explanation of
+Replace `<TRIDENT VERB>` with the desired verb. For a complete explanation of
 the Trident CLI, please see the [Reference guide](../Reference/Trident-CLI.md).
 
-#### Explanation of Docker Command
+## Explanation of Docker Command
 
-Trident must be run in `--privileged` mode so that it has access to devices on
-the host, and allows Trident to perform operations such as partitioning disks
-and creating filesystems. `--pid host` and `--ipc host` allow Trident to share
-the host's PID namespace and IPC resources, necessary for communicating with
-other system-level tools.
+### Key Flags
 
-#### Mounted Volumes
+- `--privileged`: Trident requires access to devices on the host to perform
+  operations such as partitioning disks and creating filesystems.
+- `--pid host` and `--ipc host`: Allows the container to share the host's
+  process and inter-process communication namespaces. This is necessary for
+  Trident to interact with other system services.
+- `--rm`: Automatically removes the container when it exits, which is useful for
+  cleanup.
+- `--pull=never`: Ensures the command uses the local `trident/trident:latest`
+  image and does not try to download it from a remote registry.
 
-`-v /etc/trident:/etc/trident`: By default, Trident expects to find the Host
+### Mounted Volumes
+
+- `-v /etc/trident:/etc/trident`: By default, Trident expects to find the Host
 Configuration in this directory. If the Host Configuration is not located in
-this directory, this option is not required.
-
-`-v /etc/pki:/etc/pki:ro`: Trident requires access to certificates in this
+`/etc/trident` on your host OS, this option should be configured different such
+that the directory containing your Host Configuration is mounted to
+`/etc/trident`.
+- `-v /etc/pki:/etc/pki:ro`: Trident requires access to certificates in this
 directory to be able to authenticate container registries, in which COSI files
 may be stored. If the COSI file is stored or hosted locally, it is not required
 to mount this. In addition, note that Trident only requires read access to this
 directory, which is why we recommend mounting `ro`.
-
-`-v /var/lib/trident:/var/lib/trident`: This is the default location of the
+- `-v /var/lib/trident:/var/lib/trident`: This is the default location of the
 Trident datastore and must be accessible to Trident.
-
-`-v /var/log:/var/log`: Trident logs and metrics are stored at
+- `-v /var/log:/var/log`: Trident logs and metrics are stored at
 `/var/log/trident-full.log` and `/var/log/trident-metrics.jsonl`.
-
-`-v /:/host`: Trident requires access to the root filesystem for operations such
-as device discovery, partitioning, and mounting and unmounting filesystems.
-
-`-v /dev:/dev`: Trident must access devices.
-
-`-v /run:/run`: Trident makes use of various systemd services which require
+- `-v /:/host`: Trident requires access to the host machine's root filesystem
+for operations such as device discovery, partitioning, and mounting and
+unmounting filesystems.
+- `-v /dev:/dev`: Trident must access devices.
+- `-v /run:/run`: Trident makes use of various systemd services which require
 access to `/run`.
-
-`-v /sys:/sys`: Trident makes use of various systemd services which require
+- `-v /sys:/sys`: Trident makes use of various systemd services which require
 access to `/sys`.
