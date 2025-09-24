@@ -127,8 +127,8 @@ mod tests {
 
     #[test]
     fn test_validate_embedded_host_configuration() {
-        let func_test_trident_config =
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("functional_tests/trident-setup.yaml");
+        let func_test_trident_config = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../functional_tests/trident-setup.yaml");
         validate_host_config_file(func_test_trident_config)
             .expect("Failed to validate functional test Host Configuration");
     }

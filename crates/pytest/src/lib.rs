@@ -74,7 +74,7 @@ pub fn generate_functional_test_manifest() {
 
 fn get_functional_test_dir() -> PathBuf {
     let func_test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
+        .join("../..")
         .join("functional_tests")
         .canonicalize()
         .expect("failed to canonicalize functional_tests dir");
