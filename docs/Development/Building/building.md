@@ -43,9 +43,13 @@ Tools](https://github.com/microsoft/azure-linux-image-tools) git submodule to
 perform OS image modifications. To build `osmodifier`, run:
 
 ```bash
+# Ensure the git submodule is initialized
+git submodule update --init --recursive
+
+# Build osmodifier
 docker build -t trident/osmodifier-build:latest \
-	-f Dockerfile-osmodifier.azl3 \
-	.
+    -f Dockerfile-osmodifier.azl3 \
+    .
 mkdir -p artifacts
 ID=$(docker create trident/osmodifier-build:latest)
 docker cp -q $ID:/work/azure-linux-image-tools/toolkit/out/tools/osmodifier artifacts/osmodifier
