@@ -345,8 +345,8 @@ build-functional-test-cc: .cargo/config
 
 .PHONY: functional-test
 functional-test: artifacts/trident-functest.qcow2
-	cp $(PLATFORM_TESTS_PATH)/tools/marinerhci_test_tools/node_interface.py functional_tests/
-	cp $(PLATFORM_TESTS_PATH)/tools/marinerhci_test_tools/ssh_node.py functional_tests/
+	cp $(PLATFORM_TESTS_PATH)/tools/marinerhci_test_tools/node_interface.py tests/functional_tests/
+	cp $(PLATFORM_TESTS_PATH)/tools/marinerhci_test_tools/ssh_node.py tests/functional_tests/
 	$(MAKE) functional-test-core
 
 # A target for pipelines that skips all setup and building steps that are not
@@ -357,8 +357,8 @@ functional-test-core: artifacts/osmodifier build-functional-test-cc generate-fun
 		pytest --color=yes \
 		--log-level=INFO \
 		--force-upload \
-		functional_tests/test_setup.py \
-		functional_tests/$(FILTER) \
+		tests/functional_tests/test_setup.py \
+		tests/functional_tests/$(FILTER) \
 		--keep-duplicates \
 		-v \
 		-o junit_logging=all \
@@ -374,7 +374,7 @@ patch-functional-test: artifacts/osmodifier build-functional-test-cc generate-fu
 		pytest --color=yes \
 		--log-level=INFO \
 		--force-upload \
-		functional_tests/$(FILTER) \
+		tests/functional_tests/$(FILTER) \
 		-v \
 		-o junit_logging=all \
 		--junitxml $(FUNCTIONAL_TEST_JUNIT_XML) \
@@ -698,7 +698,7 @@ copy-runtime-images: $(TEST_IMAGES_PATH)/build/trident-testimage/*.cosi $(TEST_I
 .PHONY: starter-configuration
 starter-configuration:
 	@mkdir -p $$(dirname $(TRIDENT_CONFIG))
-	@cp e2e_tests/trident_configurations/simple/trident-config.yaml $(TRIDENT_CONFIG)
+	@cp tests/e2e_tests/trident_configurations/simple/trident-config.yaml $(TRIDENT_CONFIG)
 	@echo "\033[33mCreated \033[36m$(TRIDENT_CONFIG)\033[33m. Please review and modify as needed! :)"
 	@echo "\033[33mDon't forget to add your SSH public key to the host configuration!"
 
@@ -734,7 +734,7 @@ artifacts/imagecustomizer:
 	@chmod +x artifacts/imagecustomizer
 	@touch artifacts/imagecustomizer
 
-bin/trident-mos.iso: artifacts/baremetal.vhdx artifacts/imagecustomizer packaging/systemd/trident-install.service trident-mos/iso.yaml trident-mos/files/* trident-mos/post-install.sh packaging/selinux-policy-trident/*
+bin/trident-mos.iso: artifacts/baremetal.vhdx artifacts/imagecustomizer packaging/systemd/trident-install.service tests/trident-mos/iso.yaml tests/trident-mos/files/* tests/trident-mos/post-install.sh packaging/selinux-policy-trident/*
 	@mkdir -p bin
 	BUILD_DIR=`mktemp -d` && \
 		trap 'sudo rm -rf $$BUILD_DIR' EXIT; \
@@ -743,7 +743,7 @@ bin/trident-mos.iso: artifacts/baremetal.vhdx artifacts/imagecustomizer packagin
 			--build-dir $$BUILD_DIR \
 			--image-file $< \
 			--output-image-file $@ \
-			--config-file trident-mos/iso.yaml \
+			--config-file tests/trident-mos/iso.yaml \
 			--output-image-format iso
 
 .PHONY: recreate-verity-image
