@@ -20,7 +20,7 @@ pub struct OsImage {
     /// `oci://`. COSI files stored as an OCI image must allow for anonymous pulls.
     pub url: Url,
 
-    /// The Sha384 of the entire COSI file.
+    /// The Sha384 of the metadata in the COSI file.
     #[cfg_attr(
         feature = "schemars",
         schemars(schema_with = "unit_enum_with_untagged_variant::<ImageSha384, Sha384Hash>")

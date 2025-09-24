@@ -22,7 +22,7 @@
       ]
     },
     "os": {
-      "description": "OS Configuration for the runtime OS.",
+      "description": "OS Configuration for the target OS.",
       "allOf": [
         {
           "$ref": "#/definitions/Os"
@@ -46,7 +46,7 @@
       ]
     },
     "trident": {
-      "description": "The Trident Management configuration controls the installation of the Trident agent onto the runtime OS.",
+      "description": "The Trident Management configuration controls the installation of the Trident agent onto the target OS.",
       "allOf": [
         {
           "$ref": "#/definitions/Trident"
@@ -226,12 +226,12 @@
       ],
       "properties": {
         "deviceId": {
-          "description": "The id of the disk partition or software RAID array to encrypt.\n\nThis parameter is required. It must be unique among the list of encrypted volumes.\n\nIf it refers to a disk partition, it must be of a supported type. Supported types are all but `root` and `efi`.\n\nIf it refers to a software RAID array, the first disk partition of the software RAID array must be of a supported type.",
+          "description": "The id of the disk partition or software RAID array to encrypt.\n\nThis parameter is required. It must be unique among the list of encrypted volumes.\n\nIf it refers to a disk partition, it must be of a supported type. Supported types are all but the following blocked partition types: - `esp` - `root` - `root-verity` - `usr-verity` - `home`\n\nIf it refers to a software RAID array, the first disk partition of the software RAID array must be of a supported type.",
           "type": "string",
           "format": "Block Device ID"
         },
         "deviceName": {
-          "description": "The name of the device to create under `/dev/mapper` when opening the volume.\n\nThis parameter is required. It must be a valid file name and unique among the list of encrypted volumes.",
+          "description": "The name of the device to create under `/dev/mapper` when opening the volume.\n\nThis parameter is required. It must be a valid file name and unique among all encrypted volumes, as well as among the Device Mapper devices.",
           "type": "string"
         },
         "id": {
@@ -409,7 +409,7 @@
           "title": "Checksum",
           "description": "The SHA384 checksum of the image.\n\n*Details:*\n\nThe Sha384Hash is a 96-character hexadecimal string.",
           "type": "string",
-          "format": "[a-fA-F0-9]96"
+          "format": "[a-fA-F0-9]{96}"
         }
       ]
     },
@@ -567,7 +567,7 @@
           }
         },
         "netplan": {
-          "description": "Netplan network configuration for the runtime OS.\n\nSee [Netplan YAML Configuration](https://netplan.readthedocs.io/en/stable/netplan-yaml/) for more information.",
+          "description": "Netplan network configuration for the target OS.\n\nSee [Netplan YAML Configuration](https://netplan.readthedocs.io/en/stable/netplan-yaml/) for more information.",
           "type": "object",
           "format": "Netplan YAML",
           "nullable": true
@@ -611,7 +611,7 @@
       ],
       "properties": {
         "sha384": {
-          "description": "The Sha384 of the entire COSI file.",
+          "description": "The Sha384 of the metadata in the COSI file.",
           "allOf": [
             {
               "$ref": "#/definitions/ImageSha384"
@@ -1235,7 +1235,7 @@
       "oneOf": [
         {
           "title": "Clean Install",
-          "description": "This selection only includes CleanInstall, a clean install of the runtime OS image when the host is booted from the provisioning OS.",
+          "description": "This selection only includes CleanInstall, a clean install of the target OS image when the host is booted from the provisioning OS.",
           "type": "string",
           "enum": [
             "clean-install"
@@ -1425,7 +1425,7 @@
       "additionalProperties": false
     },
     "Trident": {
-      "description": "The Trident Management configuration controls the installation of the Trident agent onto the runtime OS.",
+      "description": "The Trident Management configuration controls the installation of the Trident agent onto the target OS.",
       "type": "object",
       "properties": {
         "datastorePath": {
@@ -1433,12 +1433,12 @@
           "type": "string"
         },
         "disable": {
-          "description": "When set to `true`, prevents Trident from being enabled on the runtime OS. In that case, the remaining fields are ignored.",
+          "description": "When set to `true`, prevents Trident from being enabled on the target OS. In that case, the remaining fields are ignored.",
           "default": false,
           "type": "boolean"
         },
         "enableGrpc": {
-          "description": "Whether Trident should start a gRPC server to listen for commands when the runtime OS boots. Defaults to `false`.",
+          "description": "Whether Trident should start a gRPC server to listen for commands when the target OS boots. Defaults to `false`.",
           "type": "boolean"
         },
         "logstream": {
@@ -1447,7 +1447,7 @@
           "nullable": true
         },
         "phonehome": {
-          "description": "URL to reach out to when runtime OS networking is up, so Trident can report its status. If not specified, the value from the Trident configuration will be used. This is useful for debugging and monitoring purposes, say by an orchestrator.",
+          "description": "URL to reach out to when target OS networking is up, so Trident can report its status. If not specified, the value from the Trident configuration will be used. This is useful for debugging and monitoring purposes, say by an orchestrator.",
           "type": "string",
           "nullable": true
         }

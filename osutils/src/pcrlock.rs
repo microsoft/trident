@@ -75,7 +75,7 @@ pub fn generate_pcrlock_policy(
         pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
     );
 
-    // Generate .pcrlock files for runtime OS image A
+    // Generate .pcrlock files for target OS image A
     generate_pcrlock_files(pcrs, uki_binaries, bootloader_binaries)
         .structured(ServicingError::GeneratePcrlockFiles)?;
 

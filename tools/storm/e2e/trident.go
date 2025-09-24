@@ -3,7 +3,7 @@ package trident
 import (
 	"fmt"
 
-	"storm"
+	"github.com/microsoft/storm"
 
 	"github.com/sirupsen/logrus"
 )

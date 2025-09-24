@@ -74,7 +74,7 @@ pub enum ServicingType {
     UpdateAndReboot = 3,
     /// Update that requires switching to a different root partition and rebooting.
     AbUpdate = 4,
-    /// Clean install of the runtime OS image when the host is booted from the provisioning OS.
+    /// Clean install of the target OS image when the host is booted from the provisioning OS.
     CleanInstall = 5,
     /// No servicing is currently in progress.
     #[default]
@@ -90,20 +90,20 @@ pub enum ServicingState {
     /// The host is running from the provisioning OS and has not yet been provisioned by Trident.
     #[default]
     NotProvisioned,
-    /// Clean install has been staged, i.e., the initial runtime OS images have been deployed onto
+    /// Clean install has been staged, i.e., the initial target OS images have been deployed onto
     /// block devices.
     CleanInstallStaged,
-    /// A/B update has been staged. The new runtime OS images have been deployed onto block devices.
+    /// A/B update has been staged. The new target OS images have been deployed onto block devices.
     AbUpdateStaged,
     /// Hot-Patch Update has been staged.
     HotPatchStaged,
     /// Clean install has been finalized, i.e., UEFI variables have been set, so that firmware boots
-    /// from the runtime OS image after reboot.
+    /// from the target OS image after reboot.
     CleanInstallFinalized,
     /// A/B update has been finalized. For the next boot, the firmware will boot from the updated
-    /// runtime OS image.
+    /// target OS image.
     AbUpdateFinalized,
-    /// Servicing has been completed, and the host succesfully booted from the updated runtime OS
+    /// Servicing has been completed, and the host successfully booted from the updated target OS
     /// image. Trident is ready to begin a new servicing.
     Provisioned,
 }

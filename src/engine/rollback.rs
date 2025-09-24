@@ -23,13 +23,13 @@ use crate::{
 };
 
 /// Validates that the firmware did not perform a rollback, i.e. correctly booted from the updated
-/// runtime OS image.
+/// target OS image.
 ///
 /// If the firmware did not boot from the expected root device, this function will return an error.
 /// In either case, the function will update the Host Status.
 #[tracing::instrument(skip_all)]
 pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
-    info!("Validating whether host correctly booted from updated runtime OS image");
+    info!("Validating whether host correctly booted from updated target OS image");
 
     // Create an EngineContext based on the Host Status
     let ctx = EngineContext {
@@ -59,7 +59,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
     if compare_root_device_paths(current_root_path.clone(), expected_root_path.clone())
         .message("Host failed to boot from expected root device")?
     {
-        info!("Host successfully booted from updated runtime OS image");
+        info!("Host successfully booted from updated target OS image");
 
         // If it's virtdeploy, after confirming that we have booted into the correct image, we need
         // to update the `BootOrder` to boot from the correct image next time.
@@ -116,7 +116,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
                 pcrlock::generate_pcrlock_policy(pcrs, uki_binaries, bootloader_binaries)?;
             } else {
                 debug!(
-                    "Runtime OS image is a grub image, \
+                    "Target OS image is a grub image, \
                     so skipping re-generating pcrlock policy for current boot"
                 );
             }
@@ -150,7 +150,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
 
     match datastore.host_status().servicing_state {
         ServicingState::CleanInstallFinalized => {
-            info!("Clean install of runtime OS succeeded");
+            info!("Clean install of target OS succeeded");
             tracing::info!(metric_name = "clean_install_success", value = true);
         }
         ServicingState::AbUpdateFinalized => {

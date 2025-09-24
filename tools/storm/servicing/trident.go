@@ -9,7 +9,7 @@ import (
 	"tridenttools/storm/servicing/utils/config"
 	"tridenttools/storm/servicing/utils/qemu"
 
-	"storm"
+	"github.com/microsoft/storm"
 
 	"github.com/sirupsen/logrus"
 )

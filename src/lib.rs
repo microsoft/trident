@@ -690,7 +690,7 @@ impl Trident {
 
     pub fn commit(&mut self, datastore: &mut DataStore) -> Result<(), TridentError> {
         // If host's servicing state is Finalized, need to validate that the firmware correctly
-        // booted from the updated runtime OS image.
+        // booted from the updated target OS image.
         if datastore.host_status().servicing_state != ServicingState::CleanInstallFinalized
             && datastore.host_status().servicing_state != ServicingState::AbUpdateFinalized
         {
@@ -700,7 +700,7 @@ impl Trident {
 
         let rollback_result = self.execute_and_record_error(datastore, |datastore| {
             rollback::validate_boot(datastore).message(
-                "Failed to validate that firmware correctly booted from updated runtime OS image",
+                "Failed to validate that firmware correctly booted from updated target OS image",
             )
         });
 
