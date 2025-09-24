@@ -3,8 +3,6 @@
 
 This guide explains how to run Trident inside a container.
 
-Note: this guide will use `docker` for all code snippets.
-
 ## Goals
 
 This guide will show you how to:
@@ -12,9 +10,8 @@ This guide will show you how to:
 - Build a container image containing Trident.
 - Load the image into your local container runtime.
 - Run Trident from within a container.
-- Understand the purpose of each flag and mounted directory required for the
-  container to function correctly.
-
+- Understand the purpose of each flag and mounted directory required for Trident
+  to function correctly.
 
 ## Prerequisites
 
@@ -65,10 +62,13 @@ docker run --name trident_container \
            trident/trident:latest [TRIDENT VERB] /etc/trident/hostconf.yaml --verbosity TRACE
 ```
 
-Note: By default, the Trident Host Configuration should be placed inside
+Note: By default, the Host Configuration should be placed inside
 `/etc/trident/`. However, if you have placed your Host Configuration outside of
-`/etc/trident/`, please replace `/etc/trident/hostconf.yaml` with the path to
-your Host Configuration file.
+`/etc/trident/`, please mount the appropriate directory to `/etc/trident`:
+
+```bash
+-v <directory containing your Host Configuration>:/etc/trident`
+```
 
 Replace `[TRIDENT VERB]` with the desired verb. For a complete explanation of
 the Trident CLI, please see the [Reference guide](../Reference/Trident-CLI.md).
@@ -83,27 +83,29 @@ other system-level tools.
 
 #### Mounted Volumes
 
-`/etc/trident`: By default, Trident expects to find the Host Configuration in
-this directory. If the Host Configuration is not located in this directory, this
-option is not required.
+`-v /etc/trident:/etc/trident`: By default, Trident expects to find the Host
+Configuration in this directory. If the Host Configuration is not located in
+this directory, this option is not required.
 
-`/etc/pki`: Trident requires access to certificates in this directory to be able
-to authenticate container registries, in which COSI files may be stored. If the
-COSI file is stored or hosted locally, it is not required to mount this.
+`-v /etc/pki:/etc/pki:ro`: Trident requires access to certificates in this
+directory to be able to authenticate container registries, in which COSI files
+may be stored. If the COSI file is stored or hosted locally, it is not required
+to mount this. In addition, note that Trident only requires read access to this
+directory, which is why we recommend mounting `ro`.
 
-`/var/lib/trident`: This is the default location of the Trident datastore and
-must be accessible to Trident.
+`-v /var/lib/trident:/var/lib/trident`: This is the default location of the
+Trident datastore and must be accessible to Trident.
 
-`/var/log`: Trident logs and metrics are stored at `/var/log/trident-full.log`
-and `/var/log/trident-metrics.jsonl`.
+`-v /var/log:/var/log`: Trident logs and metrics are stored at
+`/var/log/trident-full.log` and `/var/log/trident-metrics.jsonl`.
 
-`/`: Trident requires access to the root filesystem for operations such as
-device discovery, partitioning, and mounting and unmounting filesystems.
+`-v /:/host`: Trident requires access to the root filesystem for operations such
+as device discovery, partitioning, and mounting and unmounting filesystems.
 
-`/dev`: Trident must access devices.
+`-v /dev:/dev`: Trident must access devices.
 
-`/run`: Trident makes use of various systemd services which require access to
-`/run`.
+`-v /run:/run`: Trident makes use of various systemd services which require
+access to `/run`.
 
-`/sys`: Trident makes use of various systemd services which require access to
-`/sys`.
+`-v /sys:/sys`: Trident makes use of various systemd services which require
+access to `/sys`.
