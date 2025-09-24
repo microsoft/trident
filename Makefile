@@ -153,7 +153,7 @@ bin/trident: build
 	@cp -u target/release/trident bin/
 
 # This will do a proper build on azl3, exactly as the pipelines would, with the custom registry and all.
-bin/trident-rpms-azl3.tar.gz: packaging/docker/Dockerfile.full systemd/*.service trident.spec artifacts/osmodifier selinux-policy-trident/* version-vars
+bin/trident-rpms-azl3.tar.gz: packaging/docker/Dockerfile.full systemd/*.service packaging/rpm/trident.spec artifacts/osmodifier selinux-policy-trident/* version-vars
 	$(eval CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN := $(shell az account get-access-token --query "join(' ', ['Bearer', accessToken])" --output tsv))
 	
 	@export CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN="$(CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN)" &&\
@@ -173,7 +173,7 @@ bin/trident-rpms-azl3.tar.gz: packaging/docker/Dockerfile.full systemd/*.service
 	@tar xf $@ -C bin/
 
 # This one does a fast trick-build where we build locally and inject the binary into the container to add it to the RPM.
-bin/trident-rpms.tar.gz: packaging/docker/Dockerfile.azl3 systemd/*.service trident.spec artifacts/osmodifier bin/trident selinux-policy-trident/*
+bin/trident-rpms.tar.gz: packaging/docker/Dockerfile.azl3 systemd/*.service packaging/rpm/trident.spec artifacts/osmodifier bin/trident selinux-policy-trident/*
 	@docker build -t trident/trident-build:latest \
 		--build-arg TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
 		--build-arg RPM_VER="$(TRIDENT_CARGO_VERSION)" \
