@@ -95,7 +95,7 @@ the Trident CLI, please see the [Reference guide](../Reference/Trident-CLI.md).
 Configuration in the `/etc/trident` directory. Ensure that the correct host
 directory is mounted to `/etc/trident` in your Docker command.
 - `-v /etc/pki:/etc/pki:ro`: Trident requires access to certificates in
-`/etc/pki` to be able to authenticate container registries, in which COSI files
+`/etc/pki` to be able to authenticate with container registries, in which COSI files
 may be stored. If the COSI file is stored or hosted locally, it is not required
 to mount this. In addition, note that Trident only requires read access to this
 directory, which is why we recommend mounting with `ro`.
