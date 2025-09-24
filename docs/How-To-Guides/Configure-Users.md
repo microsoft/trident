@@ -1,7 +1,7 @@
 
 # Configure Users
 
-This guide shows you how to configure users in your Trident's Host Configuration. Follow the steps bellow to create secure user accounts with SSH access and customize their properties.
+This guide shows you how to configure users in your Trident's Host Configuration. Follow the steps below to create secure user accounts with SSH access and customize their properties.
 
 For a complete configuration reference, see the [User API Reference](../Reference/Host-Configuration/API-Reference/User.md).
 
@@ -40,13 +40,13 @@ os:
 ```
 
 1. Replace `<Desired User Name>` with your desired username.
-2. Replace the `<Public SSH Key content>` with your actual public key content (e.g. `ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... user@hostname`). Notice that more than one key can be associated to one user.
+2. Replace the `<Public SSH Key content>` with your actual public key content (e.g. `ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... user@hostname`). Notice that more than one key can be associated with one user.
 
 [sshMode](../Reference/Host-Configuration/API-Reference/SshMode.md) controls SSH access: block (default) or key-only. The user will be created with a locked password (no password can be used to login) and SSH key-only authentication.
 
 ### Step 2: Configure multiple users
 
-To create multiple users just add multiple users under the user section. Example:
+To create multiple users, just add multiple users under the user section. Example:
 
 ```yaml
 os:
@@ -67,8 +67,8 @@ os:
         - <User3 public SSH Key content>
 ```
 
-2. Replace with the desired usernames
-3. Replace the SSH keys with the actual public keys content of each respective user.
+1. Replace with the desired usernames
+2. Replace the SSH keys with the actual public keys content of each respective user.
 
 ### Step 3: Set custom user properties
 
