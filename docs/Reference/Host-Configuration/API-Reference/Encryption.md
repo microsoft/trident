@@ -78,7 +78,7 @@ Ensuring the recovery key's confidentiality and integrity is paramount. Employ s
 
 One way to create a recovery key file on Linux systems is using the `dd` utility:
 
-> Note: The following example is for illustration purposes only. > Be sure to generate recovery keys with diligence and attention > to security principles. Please adjust the following example > according to your own security policies and operational > environment to fit your specific security requirements and > constraints.
+> Note: The following example is for illustration purposes only. Be sure to generate > recovery keys with diligence and attention to security principles. Please adjust the > following example according to your own security policies and operational environment to > fit your specific security requirements and constraints.
 
 ```sh touch ./recovery.key chmod 0400 ./recovery.key dd if=/dev/random of=./recovery.key bs=1 count=256 ```
 

@@ -8,6 +8,8 @@ This guide explains how to create a new [software RAID array](../Reference/Host-
 By following this guide, you will:
 
 1. Declare RAID arrays using the Host Configuration API.
+1. Configure RAID arrays to be mounted at specified mount points in the target OS.
+1. Set an optional timeout so that Trident waits for RAID arrays to finish syncing before continuing with provisioning.
 1. Create RAID arrays on the target OS with Trident.
 
 This guide will not cover adopting an existing RAID array or creating a new RAID array on A/B update, as Trident does **not** support these features.
@@ -103,7 +105,7 @@ This guide will not cover adopting an existing RAID array or creating a new RAID
        syncTimeout: 10
    ```
 
-### Step 3: Run Trident to create RAID arrays on the system
+### Step 3: Run Trident to create RAID arrays in the target OS
 
 1. Run Trident to create the software RAID array on clean install. Trident will:
 

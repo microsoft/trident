@@ -1,18 +1,36 @@
 
 # Create an Encrypted Volume
 
-This how-to guide explains how to create a new [encrypted volume](../Reference/Host-Configuration/API-Reference/EncryptedVolume.md) with Trident on [clean install](../Reference/Glossary.md/#clean-install), using the Host Configuration API. Trident does **not** support adopting an existing encrypted volume or creating a new encrypted device on A/B update.
+This guide explains how to create a new [encrypted volume](../Reference/Host-Configuration/API-Reference/EncryptedVolume.md) with Trident, using the Host Configuration API.
+
+## Goals
+
+By following this guide, you will:
+
+1. Declare encrypted volumes using the Host Configuration API.
+1. Configure encrypted volumes to be mounted at specified mount points in the target OS.
+1. Set optional settings: recovery key and PCR encryption.
+1. Create encrypted volumes on the target OS with Trident.
+
+This guide will not cover adopting an existing encrypted volume or creating a new encrypted device on A/B update, as Trident does **not** support these features.
+
+## Prerequisites
+
+1. A host that has not yet been serviced by Trident.
+1. A host configuration with the basic structure, including the [`storage`](../Reference/Host-Configuration/API-Reference/Storage.md) section.
 
 ## Steps
 
-1. Create a device to encrypt using the Host Configuration API. [This tutorial](../Tutorials/Writing-a-Simple-Host-Configuration.md) guides the reader through creating a simple host configuration.
+### Step 1: Create devices to encrypt
 
-   Trident supports encrypting devices of the following types:
+1. Create a device to encrypt using the Host Configuration API. Trident supports encrypting devices of the following types:
 
    - Disk partition of a supported type.
    - Software RAID array, whose first disk partition is of a supported type.
 
    **Supported type** refers to any partition type, excluding a list of blocked types, as described in [the API doc on encrypted volumes](../Reference/Host-Configuration/API-Reference/EncryptedVolume.md). [This how-to-guide](./Create-a-RAID-Array.md) outlines how to create a new RAID array.
+
+### Step 2: Add `encryption` configuration
 
 1. Inside the host configuration, under `storage`, add a new encrypted volume to the `encryption.volumes` section, completing these three **required** fields:
 
@@ -45,12 +63,23 @@ This how-to guide explains how to create a new [encrypted volume](../Reference/H
 
    For example, this configuration describes that the encrypted volume with id `enc-web-partition` from above should be mounted at `/web`, by creating a new filesystem. [The API on filesystems](../Reference/Host-Configuration/API-Reference/FileSystem.md) contains more information on the flesystems config.
 
-1. Update the `encryption` configuration to include optional settings. For example, the user can set a `recoveryKeyUrl` to read the recovery key from and choose `pcrs` to seal the encrypted volumes to. Remember that these settings apply to **all** encrypted volumes at once. More information about these settings can be found in [the API doc on encryption](../Reference/Host-Configuration/API-Reference/Encryption.md).
+### Step 3: Configure additional encryption settings
 
-1. Run Trident to create the encrypted volume on clean install. Trident will:
+1. It is strongly advised to configure a recovery key file, as it plays a pivotal role in data
+recovery. To do so, update the `encryption` configuration to include a `recoveryKeyUrl`, a local
+URL to read the recovery key from. The recovery key file serves as an essential fallback to recover
+data should TPM 2.0 automatic decryption fail. If not specified, only the TPM 2.0 device will be
+enrolled. Please refer to [the API doc on the `encryption` configuration](../Reference/Host-Configuration/API-Reference/Encryption.md) for additional information on `recoveryKeyUrl`.
+
+1. You can also configure which TPM 2.0 PCRs to seal the encrypted volumes to, by updating the
+`pcrs` field. Please refer to [the API doc on the `encryption` configuration](../Reference/Host-Configuration/API-Reference/Encryption.md) for additional information on `pcrs`.
+
+### Step 4: Run Trident to create encrypted volumes in the target OS
+
+1. Run Trident to create the encrypted volume. Trident will:
 
    - Generate a recovery key, or use the provided recovery key.
    - Create the LUKS-encrypted volume on the specified device.
    - Seal the encryption key to the state of the TPM 2.0 device.
 
-   Once the host boots into the target OS, the encrypted volume will be automatically unlocked, as long as the TPM 2.0 state is as expected. If the boot sequence is somehow corrupted, then the user will be able to manually input the recovery key to unlock the encrypted volume.
+1. Once the host boots into the target OS, the encrypted volume will be automatically unlocked, as long as the TPM 2.0 state is as expected. If the boot sequence is somehow corrupted, then the user will be able to manually input the recovery key to unlock the encrypted volume.

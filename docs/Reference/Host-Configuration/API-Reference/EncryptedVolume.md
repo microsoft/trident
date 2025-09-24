@@ -37,7 +37,7 @@ This parameter is required. It must be a valid file name and unique among all en
 
 ### `id` **<span>(required)</span>**
 
-The id of the LUKS-encrypted volumes to create.
+The id of the LUKS-encrypted volume to create.
 
 This parameter is required. It must be non-empty and unique among the ids of all block devices in the host configuration. This includes the ids of all disk partitions, encrypted volumes, software RAID arrays, and A/B volume pairs.
 
