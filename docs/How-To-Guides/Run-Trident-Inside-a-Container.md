@@ -29,7 +29,7 @@ make artifacts/test-image/trident-container.tar.gz
 ```
 
 This Make target will build the
-Trident RPMs (`make bin/trident-rpms/azl3.tar.gz`) and then use
+Trident RPMs (`make bin/trident-rpms-azl3.tar.gz`) and then use
 [Dockerfile.runtime](../../Dockerfile.runtime) to build the container image with
 all the necessary dependencies. You will find a compressed form of containerized
 Trident at `artifacts/test-image/trident-container.tar.gz`.
