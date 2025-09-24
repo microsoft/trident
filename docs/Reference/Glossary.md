@@ -140,7 +140,6 @@ An unformatted partition is a partition on a storage device that has been
 created but does not yet contain a filesystem. It is not associated with any
 filesystem, verity-filesystem, RAID array, or encryption volume.
 
-
 ## Terms to Define
 
 - Operation
