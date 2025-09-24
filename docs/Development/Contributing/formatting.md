@@ -1,5 +1,11 @@
 # Formatting
 
+Formatting guidelines in the repository.
+
+Formatting is enforced by Pull Requests checks.
+
+## Overview
+
 You can use this make target to format all code in the project automatically.
 
 ```bash
@@ -8,7 +14,9 @@ make format
 
 ## Rust
 
-Use cargo to format your code.
+We adhere to the [Rust style
+guide](https://doc.rust-lang.org/nightly/style-guide/). Use cargo to format your
+code.
 
 ```bash
 cargo fmt
@@ -16,7 +24,8 @@ cargo fmt
 
 ## Go
 
-Use `gofmt` to format your code.
+We adhere to the style produced by the `gofmt` tool. Use this tool to format all
+Go code.
 
 ```bash
 gofmt -w -s tools/
@@ -24,7 +33,8 @@ gofmt -w -s tools/
 
 ## Python
 
-Use [black](https://pypi.org/project/black/) to format your code.
+We adhere to the style produced by [black](https://pypi.org/project/black/) to
+format all Python code.
 
 ```bash
 python3 -m black . --exclude "azure-linux-image-tools"
