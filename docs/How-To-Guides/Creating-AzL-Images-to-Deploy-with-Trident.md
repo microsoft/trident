@@ -21,7 +21,28 @@ Follow the Image Customizer [documentation](https://microsoft.github.io/azure-li
 
 Follow the instructions in the Image Customizer [documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/how-to/download-marketplace-image.html) to download a base image.
 
-##### Step 2: Create Image Customizer Configuration
+##### Step 2: Get Trident RPMs
+
+Build the Trident RPMs using `make bin/trident-rpms.tar.gz`.  After running this make command, the RPMs will be built and packaged into bin/trident-rpms.tar.gz and unpacked into bin/RPMS/x86_64:
+
+``` bash
+$ ls bin/RPMS/x86_64/
+trident-0.3.DATESTRING-dev.COMMITHASH.azl3.x86_64.rpm
+trident-install-service-0.3.DATESTRING-dev.COMMITHASH.azl3.x86_64.rpm
+trident-provisioning-0.3.DATESTRING-dev.COMMITHASH.azl3.x86_64.rpm
+trident-service-0.3.DATESTRING-dev.COMMITHASH.azl3.x86_64.rpm
+trident-static-pcrlock-files-0.3.DATESTRING-dev.COMMITHASH.azl3.x86_64.rpm
+trident-update-poll-0.3.DATESTRING-dev.COMMITHASH.azl3.x86_64.rpm
+```
+
+Copy RPMs to staging folder:
+
+``` bash
+mkdir -p $HOME/staging
+cp -r bin/RPMS $HOME/staging
+```
+
+##### Step 3: Create Image Customizer Configuration
 
 ``` yaml
 storage:
@@ -87,9 +108,9 @@ os:
       - trident
 ```
 
-##### Step 3: Invoke Image Customizer
+##### Step 4: Invoke Image Customizer
 
-Assuming a base image `image.vhdx` and Image Customizer configuration `image-config.yaml` found in `$HOME/staging`.
+Assuming RPMs, a base image `image.vhdx` and Image Customizer configuration `image-config.yaml` found in `$HOME/staging`.
 
 ``` bash
  docker run \
@@ -100,6 +121,7 @@ Assuming a base image `image.vhdx` and Image Customizer configuration `image-con
    mcr.microsoft.com/azurelinux/imagecustomizer:0.18.0 \
      --image-file "/mnt/staging/image.vhdx" \
      --config-file "/mnt/staging/image-config.yaml" \
+     --rpm-source "/mnt/staging/RPMS/x86_64" \
      --build-dir "/build" \
      --output-image-format "cosi" \
      --output-image-file "/mnt/staging/out/image.cosi"
