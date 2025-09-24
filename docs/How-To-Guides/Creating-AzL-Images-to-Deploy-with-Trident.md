@@ -17,9 +17,16 @@ Follow the Image Customizer [documentation](https://microsoft.github.io/azure-li
 
 #### Simple Image
 
-##### Step 1: Download Base Image
+##### Step 1: Download the minimal base image
 
-Follow the instructions in the Image Customizer [documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/how-to/download-marketplace-image.html) to download a base image.
+Pull the minimal base image from mcr by running
+
+``` bash
+mkdir -p $HOME/staging
+pushd $HOME/staging
+oras pull mcr.microsoft.com/azurelinux/3.0/image/minimal-os:latest
+popd
+```
 
 ##### Step 2: Get Trident RPMs
 
@@ -38,7 +45,6 @@ trident-update-poll-0.3.DATESTRING-dev.COMMITHASH.azl3.x86_64.rpm
 Copy RPMs to staging folder:
 
 ``` bash
-mkdir -p $HOME/staging
 cp -r bin/RPMS $HOME/staging
 ```
 
