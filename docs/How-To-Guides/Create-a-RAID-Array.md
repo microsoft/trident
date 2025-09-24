@@ -1,17 +1,33 @@
 
 # Create a RAID Array
 
-This how-to guide explains how to create a new [software RAID array](../Reference/Host-Configuration/API-Reference/SoftwareRaidArray.md) with Trident on [clean install](../Reference/Glossary.md/#clean-install), using the Host Configuration API. Trident does **not** support adopting an existing RAID array or creating a new RAID array on A/B update.
+This guide explains how to create a new [software RAID array](../Reference/Host-Configuration/API-Reference/SoftwareRaidArray.md) with Trident, using the Host Configuration API.
 
-## Steps
+## Goals
 
-1. Create devices to be used for the RAID array using the Host Configuration API. [This tutorial](../Tutorials/Writing-a-Simple-Host-Configuration.md) guides you through creating a simple host configuration.
+By following this guide, you will:
 
-   [The RAID wiki](https://wiki.archlinux.org/title/RAID) contains more information on RAID arrays, including how many devices are needed. These requirements differ for different RAID levels; however, Trident only tests RAID 1. For RAID 1, devices underlying a RAID array must adhere to the following guidelines:
+1. Declare RAID arrays using the Host Configuration API.
+1. Create RAID arrays on the target OS with Trident.
+
+This guide will not cover adopting an existing RAID array or creating a new RAID array on A/B update, as Trident does **not** support these features.
+
+## Prerequisites
+
+1. A host that has not yet been serviced by Trident.
+1. A host configuration with the basic structure, including the [`storage`](../Reference/Host-Configuration/API-Reference/Storage.md) section.
+
+## Instructions
+
+### Step 1: Create devices underlying the RAID array
+
+1. Create devices to be used for the RAID array using the Host Configuration API. [The RAID wiki](https://wiki.archlinux.org/title/RAID) contains more information on RAID arrays, including how many devices are needed. These requirements differ for different RAID levels; however, Trident only tests RAID 1. For RAID 1, devices underlying a RAID array must adhere to the following guidelines:
 
    - Any disk partition types are allowed, but all underlying devices must be of the same partition type.
    - All underlying disk partitions must be of the same size.
    - Each RAID array should be based on 2+ disk partitions that are located on different disks.
+
+### Step 2: Add `raid` configuration
 
 1. Inside the host configuration, under `storage`, add a new software RAID configuration under the `raid` section, completing these four **required** fields:
 
@@ -86,6 +102,8 @@ This how-to guide explains how to create a new [software RAID array](../Referenc
              - root2
        syncTimeout: 10
    ```
+
+### Step 3: Run Trident to create RAID arrays on the system
 
 1. Run Trident to create the software RAID array on clean install. Trident will:
 
