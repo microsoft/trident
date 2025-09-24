@@ -38,7 +38,7 @@ The binary will be placed at `target/release/trident`.
 
 ## Building OS Modifier
 
-Trident depends on `osmodifier`, a tool comming from the [Azure Linux Image
+Trident depends on `osmodifier`, a tool coming from the [Azure Linux Image
 Tools](https://github.com/microsoft/azure-linux-image-tools) git submodule to
 perform OS image modifications. To build `osmodifier`, run:
 
