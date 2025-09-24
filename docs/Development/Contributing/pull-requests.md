@@ -41,16 +41,16 @@ implementation.
 
 When making a PR you are attempting to merge, make sure that:
 
-- Code is formatted correctly. (`make format`) (See: [Python](./python.md))
+- Code is formatted correctly. (`make format`) (See: [Formatting](./formatting.md))
 - Clippy is happy. (`make check`)
 - The build works. (`make check`)
 - API docs are up to date. (`make build-api-docs`)
-- Unit tests pass. (`make test`)
+- Unit tests pass. (`make test`) (See: [Testing](../Building/testing.md))
 - Functional tests pass. (`make functional-test`)
-- Local make targets work: **(THESE ARE NOT RUN BY CI, CHECK MANUALLY)**
+- Local make targets work.
   - `make rpm`
   - `make docker-build`
-- Coverage is above the baseline. (`make coverage`)
+- Coverage is above the baseline. (See: [Coverage](../Building/coverage.md))
 
 *Note: Running `make all` will perform these checks.*
 
