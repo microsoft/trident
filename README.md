@@ -27,16 +27,9 @@ Trident supports a wide range of lifecycle and configuration capabilities:
 - ✅ Custom hooks  
 - ✅ ...and more
 
-
 ## Getting Started
 
-### Documentation
-
-Our [documentation](docs/Trident.md) is still underconstruction. For now, please use the [Getting Started Guide](GETTING_STARTED.md).
-
-### Developer Quickstart
-
-Go to the [Quickstart Guide](dev-docs/quickstart.md) to get started with development. This guide will help you set up your evelopment environment and build Trident.
+Have a look at our [documentation](docs/Trident.md) to learn more and get started.
 
 ## Getting Help
 
@@ -54,4 +47,3 @@ Guidelines](https://www.microsoft.com/en-us/legal/intellectualproperty/trademark
 Use of Microsoft trademarks or logos in modified versions of this project must
 not cause confusion or imply Microsoft sponsorship. Any use of third-party
 trademarks or logos are subject to those third-party's policies.
-
