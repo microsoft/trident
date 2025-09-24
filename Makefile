@@ -84,7 +84,6 @@ format:
 	cargo fmt
 	python3 -m black . --exclude "azure-linux-image-tools"
 	gofmt -w -s tools/
-	gofmt -w -s storm/
 
 .PHONY: test
 test: .cargo/config
@@ -414,7 +413,7 @@ go.sum: go.mod
 .PHONY: go-tools
 go-tools: bin/netlaunch bin/netlisten bin/miniproxy
 
-bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum tools/pkg/* tools/storm/utils/*
+bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum tools/pkg/*
 	@mkdir -p bin
 	cd tools && go build -o ../bin/netlaunch ./cmd/netlaunch
 
@@ -430,7 +429,7 @@ bin/mkcosi: tools/cmd/mkcosi/* tools/go.sum tools/pkg/* tools/cmd/mkcosi/**/*
 	@mkdir -p bin
 	cd tools && go build -o ../bin/mkcosi ./cmd/mkcosi
 
-bin/storm-trident: $(shell find storm -type f) tools/go.sum
+bin/storm-trident: tools/cmd/storm-trident/main.go tools/storm/**/*
 	@mkdir -p bin
 	cd tools && go generate storm/e2e/discover.go
 	cd tools && go build -o ../bin/storm-trident ./cmd/storm-trident/main.go
