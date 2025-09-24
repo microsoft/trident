@@ -35,11 +35,11 @@ Load the Trident container image - `trident-container.tar.gz`, which you created
 in the previous step - into your local Docker image repository:
 
 ```bash
-docker load --input trident-container.tar.gz
+docker load --input artifacts/test-image/trident-container.tar.gz
 ```
 
-Depending on where you choose to place the Trident container image, change the
-file path in the provided code sample.
+If you have renamed or changed the location of your Trident container image, make sure to change the
+file path after the `--input` flag in the provided code sample above.
 
 ### Step 3: Run Trident
 
