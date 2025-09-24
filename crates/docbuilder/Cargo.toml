@@ -26,7 +26,7 @@ textwrap = "0.16.2"
 
 
 setsail = { path = "../setsail" }
-trident = { path = "../" }
+trident = { path = "../trident" }
 trident_api = { path = "../trident_api", features = ["documentation"] }
 osutils = { path = "../osutils" }
 

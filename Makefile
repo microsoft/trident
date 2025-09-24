@@ -84,13 +84,12 @@ format:
 	cargo fmt
 	python3 -m black . --exclude "azure-linux-image-tools"
 	gofmt -w -s tools/
-	gofmt -w -s storm/
 
 .PHONY: test
 test: .cargo/config
 	cargo test --all --no-fail-fast
 
-COVERAGE_EXCLUDED_FILES_REGEX='docbuilder|pytest|setsail'
+COVERAGE_EXCLUDED_FILES_REGEX='crates/docbuilder|crates/pytest|crates/setsail'
 
 .PHONY: coverage
 coverage: .cargo/config coverage-llvm
@@ -119,7 +118,7 @@ ut-coverage: .cargo/config
 .PHONY: coverage-report
 coverage-report: .cargo/config
 	# cargo install grcov
-	grcov . --binary-path ./target/coverage/debug/deps/ -s . -t html,covdir,cobertura --branch --ignore-not-existing --ignore '../*' --ignore "/*" --ignore "docbuilder/*" --ignore "target/*" -o target/coverage
+	grcov . --binary-path ./target/coverage/debug/deps/ -s . -t html,covdir,cobertura --branch --ignore-not-existing --ignore '../*' --ignore "/*" --ignore "crates/docbuilder/*" --ignore "target/*" -o target/coverage
 	jq .coveragePercent target/coverage/covdir
 
 .PHONY: grcov-coverage
@@ -156,7 +155,7 @@ bin/trident: build
 # This will do a proper build on azl3, exactly as the pipelines would, with the custom registry and all.
 bin/trident-rpms-azl3.tar.gz: Dockerfile.full systemd/*.service trident.spec artifacts/osmodifier selinux-policy-trident/* version-vars
 	$(eval CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN := $(shell az account get-access-token --query "join(' ', ['Bearer', accessToken])" --output tsv))
-
+	
 	@export CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN="$(CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN)" &&\
 		docker build -t trident/trident-build:latest \
 			--secret id=registry_token,env=CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN \
@@ -258,7 +257,7 @@ docbuilder: .cargo/config
 
 
 TRIDENT_API_HC_SCHEMA_GENERATED  := target/trident-api-docs/host-config-schema.json
-TRIDENT_API_HC_SCHEMA_CHECKED_IN := trident_api/schemas/host-config-schema.json
+TRIDENT_API_HC_SCHEMA_CHECKED_IN := crates/trident_api/schemas/host-config-schema.json
 
 TRIDENT_API_HC_MARKDOWN_DIR := docs/Reference/Host-Configuration/API-Reference
 TRIDENT_API_HC_EXAMPLE_FILE := docs/Reference/Host-Configuration/Sample-Host-Configuration.md
@@ -414,7 +413,7 @@ go.sum: go.mod
 .PHONY: go-tools
 go-tools: bin/netlaunch bin/netlisten bin/miniproxy
 
-bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum tools/pkg/* tools/storm/utils/*
+bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum tools/pkg/*
 	@mkdir -p bin
 	cd tools && go build -o ../bin/netlaunch ./cmd/netlaunch
 
@@ -430,7 +429,7 @@ bin/mkcosi: tools/cmd/mkcosi/* tools/go.sum tools/pkg/* tools/cmd/mkcosi/**/*
 	@mkdir -p bin
 	cd tools && go build -o ../bin/mkcosi ./cmd/mkcosi
 
-bin/storm-trident: $(shell find storm -type f) tools/go.sum
+bin/storm-trident: tools/cmd/storm-trident/main.go tools/storm/**/*
 	@mkdir -p bin
 	cd tools && go generate storm/e2e/discover.go
 	cd tools && go build -o ../bin/storm-trident ./cmd/storm-trident/main.go
