@@ -23,7 +23,7 @@ use crate::{
     engine::{
         self, bootentries, rollback,
         storage::{self, verity},
-        EngineContext, NewrootMount, SUBSYSTEMS,
+        EngineContext, NewrootMount, SUBSYSTEMS, SUBSYSTEMS_HOTPATCH,
     },
     harpoon_hc, monitor_metrics,
     osimage::OsImage,
@@ -100,6 +100,10 @@ pub(crate) fn update(
         "Update of servicing type '{:?}' is required",
         servicing_type
     );
+
+    if servicing_type == ServicingType::HotPatch {
+        subsystems = SUBSYSTEMS_HOTPATCH.lock().unwrap();
+    }
 
     ctx.servicing_type = servicing_type;
 

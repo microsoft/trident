@@ -120,6 +120,12 @@ lazy_static::lazy_static! {
     ]);
 }
 
+lazy_static::lazy_static! {
+    static ref SUBSYSTEMS_HOTPATCH: Mutex<Vec<Box<dyn Subsystem>>> = Mutex::new(vec![
+        Box::<ExtensionsSubsystem>::default(),
+    ]);
+}
+
 /// Persists the Trident background log and metrics files to the updated target OS, by copying the
 /// TRIDENT_BACKGROUND_LOG_PATH and TRIDENT_METRICS_FILE_PATH to the directory adjacent to the
 /// datastore. On failure, only prints out an error message.

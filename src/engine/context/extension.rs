@@ -34,15 +34,15 @@ impl EngineContext {
         ))?;
 
         for ext in &self.spec.extensions {
-            let temporary_extension_path = NamedTempFile::new()
+            let temp_extension_file = NamedTempFile::new()
                 .structured(InternalError::Internal("Failed to create temp file"))?;
             let reader = FileReader::new(&ext.url, Duration::from_secs(10))
                 .structured(InternalError::Internal("Failed to create reader"))?;
             let inner_reader = reader
-                .reader()
+                .complete_reader()
                 .structured(InternalError::Internal("Failed to obtain inner reader"))?;
             let hash_reader = HashingReader384::new(inner_reader);
-            let hash = stream_and_hash(hash_reader, temporary_extension_path.path())
+            let hash = stream_and_hash(hash_reader, temp_extension_file.path())
                 .structured(InternalError::Internal("Failed to read and write"))?;
             match &ext.sha384 {
                 ExtSha384::Ignored => (),
@@ -56,18 +56,25 @@ impl EngineContext {
             }
 
             // Attach a device and mount the extension
-            let device_path =
-                attach_device_and_mount(temporary_extension_path.path(), temp_mp.path())
-                    .structured(InternalError::Internal("Failed to mount"))?;
+            let device_path = attach_device_and_mount(temp_extension_file.path(), temp_mp.path())
+                .structured(InternalError::Internal("Failed to mount"))?;
 
-            // Get extension release file
-            let ext_data =
-                read_extension_release(temp_mp.path(), temporary_extension_path.path(), &ext)
+            // Persist the temporary file and get its path.
+            let extension_path =
+                temp_extension_file
+                    .into_temp_path()
+                    .keep()
                     .structured(InternalError::Internal(
-                        "Failed to get extension release information",
+                        "Failed to persist temporary extension file",
                     ))?;
 
-            &self.extensions.push(ext_data);
+            // Get extension release file
+            let ext_data = read_extension_release(temp_mp.path(), &extension_path, ext)
+                .structured(InternalError::Internal(
+                    "Failed to get extension release information",
+                ))?;
+
+            self.extensions.push(ext_data);
 
             // Clean-Up: unmount and detach the device
             detach_device_and_unmount(device_path, temp_mp.path())
@@ -123,9 +130,9 @@ fn read_extension_release(
         .with_context(|| "Failed to convert extension release file content to OsRelease object")?;
 
     let extension_id = extension_release_obj
-        .get_value(&format!("{}_ID", prefix))
+        .get_value(&format!("{prefix}ID"))
         .map(|s| s.to_string())
-        .ok_or_else(|| Error::msg(format!("Could not find {}_ID in extension release", prefix)))?;
+        .ok_or_else(|| Error::msg(format!("Could not find {prefix}ID in extension release")))?;
     if extension_id != ext.id {
         return Err(Error::msg("Extension ID from Host Configuration does not match that found in extension-release file"));
     }
@@ -141,16 +148,16 @@ fn read_extension_release(
     Ok(ExtensionData {
         id: extension_id,
         version_id: extension_release_obj
-            .get_value(&format!("{}_VERSION_ID", prefix))
+            .get_value(&format!("{prefix}VERSION_ID"))
             .map(|s| s.to_string())
             .unwrap_or_default(),
         name: file_name.clone(),
         url: ext.url.clone(),
         sha384: ext.sha384.clone(),
         location: if prefix == "SYSEXT_" {
-            PathBuf::from("/var/lib/extensions").join(format!("{}.raw", file_name))
+            PathBuf::from("/var/lib/extensions").join(format!("{file_name}.raw"))
         } else {
-            PathBuf::from("/var/lib/confexts").join(format!("{}.raw", file_name))
+            PathBuf::from("/var/lib/confexts").join(format!("{file_name}.raw"))
         },
         temp_location: Some(curr_location.to_path_buf()),
         ext_type: if prefix == "SYSEXT_" {
