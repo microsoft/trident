@@ -9,12 +9,23 @@ The goal of this document is to produce an installation ISO that utilizes Triden
 
 1. Ensure that [oras](https://oras.land/docs/installation/) is installed.
 2. Ensure [Image Customizer container is accessible](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/quick-start/quick-start.html).
-3. Create an [Azure Linux image COSI file](./Building-a-Deployable-Image.md), assuming the output COSI file is `file/osimage.cosi`.
-4. Create a [Trident host configuration file](./Writing-a-Simple-Host-Configuration.md), assuming the file is `file/host-config.yaml`. For this document, the host configuration is assumed to reference the COSI file as being contained in the installer ISO at `/images/azure-linux.cosi`
+3. Create an [Azure Linux image COSI file](./Building-a-Deployable-Image.md), assuming the output COSI file is `$HOME/staging/osimage.cosi`.
+4. Create a [Trident host configuration file](./Writing-a-Simple-Host-Configuration.md), assuming the file is `$HOME/staging/host-config.yaml`. For this document, the host configuration is assumed to reference the COSI file as being contained in the installer ISO at `/images/azure-linux.cosi`.
 
 ## Instructions
 
-### Step 1: Get Trident RPMs
+### Step 1: Download the minimal base image
+
+Pull the minimal base image from mcr by running
+
+``` bash
+mkdir -p $HOME/staging
+pushd $HOME/staging
+oras pull mcr.microsoft.com/azurelinux/3.0/image/minimal-os:latest
+popd
+```
+
+### Step 2: Get Trident RPMs
 
 Build the Trident RPMs using `make bin/trident-rpms.tar.gz`.  After running this make command, the RPMs will be built and packaged into bin/trident-rpms.tar.gz and unpacked into bin/RPMS/x86_64:
 
@@ -27,23 +38,15 @@ trident-service-0.3.DATESTRING-dev.COMMITHASH.azl3.x86_64.rpm
 trident-static-pcrlock-files-0.3.DATESTRING-dev.COMMITHASH.azl3.x86_64.rpm
 trident-update-poll-0.3.DATESTRING-dev.COMMITHASH.azl3.x86_64.rpm
 ```
-
-### Step 2: Download the minimal base image
-
-Pull the minimal base image from mcr by running `oras pull mcr.microsoft.com/azurelinux/3.0/image/minimal-os:latest`
-
-The minimal base image will be saved as `image.vhdx` in the current directory.
+Copy RPMs to staging folder:
 
 ``` bash
-$ ls -lh image*
--rw-rw-r-- 1 bfjelds bfjelds 600M Sep 23 18:02 image.vhdx
--rw-rw-r-- 1 bfjelds bfjelds  97K Sep 23 18:02 image.vhdx.spdx.json
--rw-rw-r-- 1 bfjelds bfjelds  11K Sep 23 18:02 image.vhdx.spdx.json.sig
+cp -r bin/RPMS $HOME/staging
 ```
 
 ### Step 3: Create an Image Customizer Configuration
 
-Assuming locations for the Azure Linux image COSI file (`./files/osimage.cosi`) and the Trident host configuration file (`./files/host-config.yaml`), create a configuration file for the Image Customizer, following the [Image Customizer documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/how-to/live-iso.html).
+Assuming locations for the Azure Linux image COSI file (`$HOME/staging/osimage.cosi`) and the Trident host configuration file (`$HOME/staging/host-config.yaml`), create a configuration file for the Image Customizer, following the [Image Customizer documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/how-to/live-iso.html).
 
 ``` yaml
 storage:
@@ -94,7 +97,7 @@ os:
       - trident-install.service
       - trident-network.service
   additionalFiles:
-    - source: files/host-config.yaml
+    - source: host-config.yaml
       destination: /etc/trident/config.yaml
 scripts:
   postCustomization:
@@ -103,26 +106,28 @@ scripts:
         ln -s /run/initramfs/live /mnt/trident_cdrom
 iso:
   additionalFiles:
-    - source: files/osimage.cosi
+    - source: osimage.cosi
       destination: /images/azure-linux.cosi
 ```
 
 ### Step 4: Invoke Image Customizer to Create Installation ISO
 
-Assuming locations for the base image file (`./files/image.vhdx`) and the Image Customizer configuration file (`./files/ic-config.yaml`), invoke Image Customizer, following the [Image Customizer documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/quick-start/quick-start.html).
+Assuming locations for the base image file (`$HOME/staging/image.vhdx`) and the Image Customizer configuration file (`$HOME/staging/ic-config.yaml`), invoke Image Customizer, following the [Image Customizer documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/quick-start/quick-start.html).
 
-``` bash
+``` 
+pushd $HOME/staging
 docker run --rm \
     --privileged \
-    -v "./files:/files:z" \
+    -v ".:/files:z" \
     -v "/dev:/dev" \
     --platform linux/amd64 \
     mcr.microsoft.com/azurelinux/imagecustomizer:0.18.0 \
     --log-level debug \
     --build-dir /build \
-    --image-file /files/image.vhdx \
-    --output-image-file /files/installer.iso \
-    --config-file /files/ic-config.yaml \
+    --image-file "/files/image.vhdx" \
+    --rpm-source "/files/RPMS/x86_64" \
+    --output-image-file "/files/installer.iso" \
+    --config-file "/files/ic-config.yaml" \
     --output-image-format iso
-
+popd
 ```
