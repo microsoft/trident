@@ -9,11 +9,11 @@ Use Trident to perform a [clean install](../Reference/Glossary.md#clean-install)
 
 ### Step 1: Create Target OS Image
 
-Build a target OS image, i.e. a COSI file. Please reference this [Tutorial on Building a Deployable Image](../Tutorials/Building-a-Deployable-Image.md).
+Build a target OS image, i.e. a COSI file. Reference this [Tutorial on Building a Deployable Image](../Tutorials/Building-a-Deployable-Image.md).
 
 ### Step 2: Create Servicing OS ISO
 
-Build a servicing OS ISO. Please reference this [Tutorial on Building a Servicing ISO](../Tutorials/Building-a-Servicing-ISO.md) for steps on how to use [Image Customizer](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/README.html) to build an installer ISO. This is the ISO from which the servicing OS will run.
+Build a servicing OS ISO. Reference this [Tutorial on Building a Servicing ISO](../Tutorials/Building-a-Servicing-ISO.md) for steps on how to use [Image Customizer](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/README.html) to build an installer ISO. This is the ISO from which the servicing OS will run.
 
 ### Step 3: Create Bootable Media
 
