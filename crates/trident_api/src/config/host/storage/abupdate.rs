@@ -19,7 +19,7 @@ pub struct AbUpdate {
 }
 
 /// Per A/B volume pair configuration. Points to the underlying block devices in the A/B volume
-/// volume pair.
+/// pair.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]

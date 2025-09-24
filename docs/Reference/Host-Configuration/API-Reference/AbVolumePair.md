@@ -2,7 +2,7 @@
 
 # AbVolumePair
 
-Per A/B volume pair configuration. Points to the underlying block devices in the A/B volume volume pair.
+Per A/B volume pair configuration. Points to the underlying block devices in the A/B volume pair.
 
 | Characteristic | Value    |
 | -------------- | -------- |

@@ -13,12 +13,30 @@ By following this guide, you will:
 ## Prerequisites
 
 1. A host that has not yet been serviced by Trident.
-1. A host configuration with the basic structure, including the [`storage`](../Reference/Host-Configuration/API-Reference/Storage.md) section. The configuration should contain A and B copies of a device that will be targeted with an A/B update.
-1. A target OS image, i.e. a COSI file, which can be built by referencing this [tutorial](../Tutorials/Building-a-Deployable-Image.md), for [a clean install](../Reference/Glossary.md#clean-install). OR, a VM with an A/B disk layout that can be adopted via [`offline-init`](../Explanation/Offline-Init.md).
+1. A host configuration with the basic structure, including the [`storage`](../Reference/Host-Configuration/API-Reference/Storage.md) section.
 
 ## Instructions
 
-### Step 1: Add `abUpdate` configuration
+### Step 0: Build a Target OS Suitable for A/B Updates
+
+1. Build a target OS image that is suitable for A/B update servicing. As explained in the [glossary](../Reference/Glossary.md#ab-update), A/B update servicing requires **an A/B partition scheme**: two copies, or partitions, of the OS are kept on the system, and only one is active at a time. When an update is performed, the inactive copy is updated, and then the host is rebooted into the updated copy. Each volume that will be targeted with A/B updates must have two identical copies, A and B, present in the disk, forming a logical [A/B volume pair](../Reference/Glossary.md#ab-volume-pair). This means different things for the two main runtime flows:
+
+- If you're following the [`offline-init`](../Explanation/Offline-Init.md) scenario, then the VM's disk layout must follow the A/B partition scheme, and the active partition A must have the initial OS image deployed onto it.
+- If you're doing [a clean install](../Reference/Glossary.md#clean-install), then Trident will implement the A/B partition scheme for you.
+
+  The target OS image, i.e. a COSI file, can be built by referencing this [tutorial](../Tutorials/Building-a-Deployable-Image.md). The OS image will target a single partition, A or B, at a time, so it must contain only a single set of volume copies.
+
+### Step 1: Implement A/B Partition Scheme in `storage` Configuration
+
+1. Add two copies of each volume to the `storage` configuration. To have Trident target a device with A/B updates, then the `storage` section must contain **exactly two** copies of that device that:
+
+- Are disk partitions of any type, [RAID arrays](../Reference/Host-Configuration/API-Reference/Raid.md), or [encrypted volumes](../Reference/Host-Configuration/API-Reference/EncryptedVolume.md).
+- Are of the **same** device type.
+- Have the same size.
+
+**Naming Convention**: In Trident, it is conventional to choose a short, descriptive string as the id for an A/B volume pair. Then, to create the ids for the device copies inside the pair, the id is suffixed with `<ab_volume_pair_id>-a` or `<ab_volume_pair_id>-b`. For instance, an A/B volume pair comprised of two RAID arrays, `root-a` and `root-b`, would have an id `root`.
+
+### Step 2: Add `abUpdate` configuration
 
 1. Add a `storage.abUpdate` configuration to the host configuration. The [`abUpdate`](../Reference/Host-Configuration/API-Reference/AbUpdate.md) configuration carries information about the [A/B volume pairs](../Reference/Glossary.md#ab-volume-pair) that are used to perform A/B updates.
 
@@ -26,17 +44,11 @@ By following this guide, you will:
 
 1. Add A/B volume pairs to [`volumePairs`](../Reference/Host-Configuration/API-Reference/AbVolumePair.md). Each A/B volume pair added to `volumePairs` must contain the following three **required** fields:
 
-   - `id` is a unique identifier for the A/B volume pair. This is a user-defined string that links the A/B volume pair to the results in the Host Status and to the [`filesystems`](../Reference/Host-Configuration/API-Reference/FileSystem.md) configuration. The identifier needs to be unique across devices of all types, not just A/B volume pairs.
-   - `volumeAId` is the id of the device that will be used as the A volume.
-   - `volumeBId` is the id of the device that will be used as the B volume.
+- `id` is a unique identifier for the A/B volume pair. This is a user-defined string that links the A/B volume pair to the results in the Host Status and to the [`filesystems`](../Reference/Host-Configuration/API-Reference/FileSystem.md) configuration. The identifier needs to be unique across devices of all types, not just A/B volume pairs.
+- `volumeAId` is the id of the device that will be used as the A volume.
+- `volumeBId` is the id of the device that will be used as the B volume.
 
-   `volumeAId` and `volumeBId` must correspond to two devices that are declared in the same host configuration, following these rules:
-
-   - A/B volumes must be disk partitions of any type, [RAID arrays](../Reference/Host-Configuration/API-Reference/Raid.md), or [encrypted volumes](../Reference/Host-Configuration/API-Reference/EncryptedVolume.md).
-   - Each A/B volume pair must consist of exactly two devices of the same type.
-   - Both volumes in an A/B volume pair must have the same size.
-
-   For example, the host configuration below declares one A/B volume pair with id `root`. This A/B volume pair consists of two volumes, `root-a` and `root-b`, that are disk partitions. They have the same partition type `root` and are of the same size (8G). Because the `root` A/B volume pair needs to be mounted, the `filesystems` configuration lists `root` with the mount point at `/`.
+  For example, the host configuration below declares one A/B volume pair with id `root`. This A/B volume pair consists of two volumes, `root-a` and `root-b`, that are disk partitions. They have the same partition type `root` and are of the same size (8G). Because the `root` A/B volume pair needs to be mounted, the `filesystems` configuration lists `root` with the mount point at `/`.
 
    ```yaml
    storage:
@@ -68,20 +80,25 @@ By following this guide, you will:
          mountPoint: /
    ```
 
-   **Naming Convention**: In Trident, it is conventional to choose a short, descriptive string as the id for an A/B volume pair. Then, to create the ids for the A/B volumes inside the pair, the id is suffixed with `<ab_volume_pair_id>-a` or `<ab_volume_pair_id>-b`. For instance, an A/B volume pair comprised of two RAID arrays, `root-a` and `root-b`, would have an id `root`.
+### Step 3: Run Trident to Start A/B Update Servicing
 
-### Step 2: Run Trident to enable A/B update servicing
+1. Run Trident to create A/B volume pairs.
 
-1. Run Trident to create the A/B volume pair on [clean install](../Reference/Glossary.md#clean-install), or adopt the A/B volume pair on [`offline-init`](../Explanation/Offline-Init.md). Trident will:
+On a clean install, Trident will:
 
-   - On clean install, create underlying A/B volume devices: disk partitions, RAID arrays, and/or encrypted volumes. On `offline-init`, adopt underlying A/B volume devices.
-   - Link each pair of devices into a logical A/B volume pair.
-   - Service volume A in each pair, so that it becomes active in the target OS.
-   - If needed, mount volume A at the requested mount point after booting into the target OS.
+- Create underlying device copies: disk partitions, RAID arrays, and/or encrypted volumes.
+- Link each pair of device copies into a logical A/B volume pair.
+- Service volume A in each pair, so that it becomes active in the target OS.
+- If needed, mount volume A at the requested mount point after booting into the target OS.
 
-1. Run an A/B update with Trident. During an A/B update, Trident will:
+On `offline-init`, Trident will:
 
-   - Service the inactive volume, so that it becomes active in the target OS.
-   - If needed, mount the newly active volume at the mount point.
+- Adopt underlying device copies.
+- Link each pair of device copies into a logical A/B volume pair.
+
+1. Run an A/B update with Trident. Trident will:
+
+   - Update the OS image on the inactive partition, so that it becomes active after reboot.
+   - If needed, mount the updated partitions at the mount point.
 
    **Important**: All A/B volume pairs will be updated in lockstep, meaning all pairs will have their A volumes be the active ones, or all pairs will have their B volumes be the active ones. This ensures system consistency across all A/B volumes.

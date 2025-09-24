@@ -74,7 +74,7 @@
       "additionalProperties": false
     },
     "AbVolumePair": {
-      "description": "Per A/B volume pair configuration. Points to the underlying block devices in the A/B volume volume pair.",
+      "description": "Per A/B volume pair configuration. Points to the underlying block devices in the A/B volume pair.",
       "type": "object",
       "required": [
         "id",
