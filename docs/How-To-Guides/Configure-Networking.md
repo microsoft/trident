@@ -11,6 +11,24 @@ Configure networking in the target OS.
 ## Prerequisites
 
 1. Trident installed on the servicing OS.
+2. Netplan must be installed on the target OS.
+
+   With Image Customizer, you can add netplan to your image by adding the
+   following to your IC file:
+
+   ```yaml
+   os:
+     packages:
+       install:
+         - netplan
+   ```
+
+:::warning
+cloud-init also supports configuring networking. If cloud-init is installed on
+the target OS, it may override netplan configuration. Trident will attempt to
+disable cloud-init networking, but you may want to disable it completely if
+you are experiencing network configuration issues.
+:::
 
 ## Instructions
 
