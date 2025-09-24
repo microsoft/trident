@@ -17,9 +17,9 @@ By following this guide, you will:
 
 ## Instructions
 
-### Step 1: Add `abUpdate` section
+### Step 1: Add `abUpdate` configuration
 
-1. Add a `storage.abUpdate` section to the host configuration. [`abUpdate`](../Reference/Host-Configuration/API-Reference/AbUpdate.md) configuration carries information about the [A/B volume pairs](../Reference/Glossary.md#ab-volume-pair) that are used to perform A/B updates.
+1. Add a `storage.abUpdate` configuration to the host configuration. [`abUpdate`](../Reference/Host-Configuration/API-Reference/AbUpdate.md) configuration carries information about the [A/B volume pairs](../Reference/Glossary.md#ab-volume-pair) that are used to perform A/B updates.
 
 1. In the `abUpdate` configuration, add `volumePairs`. There can be multiple A/B volume pairs, as long as they are mounted at different mount points. This is a list of A/B volume pairs that will targeted by A/B updates. Each A/B volume pair consists of two devices, A and B.
 
