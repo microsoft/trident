@@ -1,9 +1,9 @@
 
 # Configure Users
 
-This guide shows you how to configure users in your Trident's Host Configuration. If you want to create secure user accounts with SSH access and customize their properties you can follow this file.
+This guide shows you how to configure users in your Trident's Host Configuration. Follow the steps bellow to create secure user accounts with SSH access and customize their properties.
 
-For complete configuration reference, see the [User API Reference](../Reference/Host-Configuration/API-Reference/User.md).
+For a complete configuration reference, see the [User API Reference](../Reference/Host-Configuration/API-Reference/User.md).
 
 ## Goals
 
@@ -93,7 +93,7 @@ os:
 
 #### Configure startup command
 
-The `startupCommand` property sets the default command/shell to be first executed when the user logs in. This is equivalent (and replaces) the shell field in `/etc/passwd`. Example:
+The `startupCommand` property sets the default command/shell to be automatically executed at login. This is equivalent (and replaces) the shell field in `/etc/passwd`. Example:
 
 ```yaml
 os:
@@ -123,7 +123,7 @@ os:
 
 - **`uid`**: Specific user ID. If not provided, the system will automatically assign a UID.
 - **`homeDirectory`**: Custom home directory path.
-- **`primaryGroup`**: The primary group (there can be only one and must exist on system).
+- **`primaryGroup`**: The user's primary group. Only one primary group can be assigned per user (must exist on the target system).
 
 #### Disable SSH access
 
@@ -150,9 +150,14 @@ For security reasons, Trident has no built-in mechanisms to provision a [user pa
 
 **User cannot access required resources**:
 
-- Verify the groups specified in `primaryGroup` and `secondaryGroups` exist on the **target system**.
+- Verify the groups specified in `primaryGroup` and `secondaryGroups` exist on the **target system**. You can check available groups by executing the following command on the deployed system:
+
+```bash
+cat /etc/group 
+```
 
 **Custom startup command fails**:
 
-- Ensure the specified command/shell exists on the target system.
-- Verify the path is correct (e.g., `/bin/bash`, `/usr/scripts/startup.sh`)
+- Ensure the specified command, shell, or referenced script exists on the target system.
+- Verify the path is correct (e.g., `/bin/bash`, `/usr/scripts/startup.sh`). 
+- Use `ls -la /path/to/executable` to check if the file exists and has executable permissions.
