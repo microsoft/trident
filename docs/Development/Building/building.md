@@ -4,7 +4,9 @@ sidebar_position: 2
 
 # Building Trident
 
-By default, this repo is configured to pull crates from a private mirror, run
+By default, this repo is configured to pull crates from an internal Microsoft mirror.
+
+To build this using public mirrors, run
 this to use public mirrors. It will create a new file `.cargo/config` that
 removes the private mirror configuration.
 
