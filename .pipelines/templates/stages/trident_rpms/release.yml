@@ -32,7 +32,7 @@ steps:
 
   - template: ../common_tasks/preview-container.yml
     parameters:
-      dockerfilePath: $(Build.SourcesDirectory)/Dockerfile.full
+      dockerfilePath: $(Build.SourcesDirectory)/packaging/docker/Dockerfile.full
       dockerBuildContext: $(Build.SourcesDirectory)
       targetArchitecture: ${{ parameters.targetArchitecture }}
 
@@ -47,7 +47,7 @@ steps:
 
       # Run docker build to create the RPMs
       # CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN is populated by the CargoAuthenticate task
-      docker build -f Dockerfile.full -t trident/trident-build:latest \
+      docker build -f packaging/docker/Dockerfile.full -t trident/trident-build:latest \
         --secret id=registry_token,env=CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN \
         --build-arg TRIDENT_VERSION="$full_version" \
         --build-arg RPM_VER="$version"\
