@@ -7,7 +7,7 @@ RUN tdnf install -y rpmdevtools openssl-devel clang-devel protobuf-devel rust se
 WORKDIR /work
 
 COPY packaging/rpm/trident.spec .
-COPY systemd ./systemd
+COPY packaging/systemd ./systemd
 COPY bin/trident ./target/release/trident
 COPY artifacts/osmodifier /usr/src/azl/SOURCES/osmodifier
 COPY packaging/selinux-policy-trident/trident.te /usr/src/azl/SOURCES/trident.te
