@@ -109,7 +109,7 @@ Depending on the servicing type being performed, this will be a call to either
 Netplan supports a wide variety of configurations. When running into issues with
 more complicated setups, you may want to test your configuration using netplan
 directly by extracting the netplan section from your HC file, putting it into
-it's own YAML file in `/etc/netplan/`, and running:
+its own YAML file in `/etc/netplan/`, and running:
 
 ```bash
 sudo netplan generate
