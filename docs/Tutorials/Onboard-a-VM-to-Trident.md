@@ -110,7 +110,6 @@ os:
     install:
       - dnf
       - efibootmgr
-      # Note: grub2-efi-binary-noprefix package is going to be the default grub package for azl3
       - grub2-efi-binary
       - iproute
       - iptables
