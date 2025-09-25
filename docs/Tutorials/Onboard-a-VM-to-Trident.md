@@ -3,7 +3,7 @@
 
 ## Introduction
 
-For Trident to be able to update an existing installation of Azure Linux, it needs to track information such as partition and disk layout.  This information can be discovered for Trident using `trident offline-initialize`.
+For Trident to be able to update an existing installation of Azure Linux, it needs to track information such as partition and disk layout. This information can be discovered for Trident using `trident offline-initialize`.
 
 This document will outline the steps required to enable this during image creation with Image Customizer.
 
@@ -15,7 +15,7 @@ This document will outline the steps required to enable this during image creati
 
 ### Step 1: Get Trident RPMs
 
-Build the Trident RPMs using `make bin/trident-rpms.tar.gz`.  After running this make command, the RPMs will be built and packaged into bin/trident-rpms.tar.gz and unpacked into bin/RPMS/x86_64:
+Build the Trident RPMs using `make bin/trident-rpms.tar.gz`. After running this make command, the RPMs will be built and packaged into bin/trident-rpms.tar.gz and unpacked into bin/RPMS/x86_64:
 
 ``` bash
 $ ls bin/RPMS/x86_64/
