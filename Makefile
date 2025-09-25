@@ -84,13 +84,12 @@ format:
 	cargo fmt
 	python3 -m black . --exclude "azure-linux-image-tools"
 	gofmt -w -s tools/
-	gofmt -w -s storm/
 
 .PHONY: test
 test: .cargo/config
 	cargo test --all --no-fail-fast
 
-COVERAGE_EXCLUDED_FILES_REGEX='docbuilder|pytest|setsail'
+COVERAGE_EXCLUDED_FILES_REGEX='crates/docbuilder|crates/pytest|crates/setsail'
 
 .PHONY: coverage
 coverage: .cargo/config coverage-llvm
@@ -119,7 +118,7 @@ ut-coverage: .cargo/config
 .PHONY: coverage-report
 coverage-report: .cargo/config
 	# cargo install grcov
-	grcov . --binary-path ./target/coverage/debug/deps/ -s . -t html,covdir,cobertura --branch --ignore-not-existing --ignore '../*' --ignore "/*" --ignore "docbuilder/*" --ignore "target/*" -o target/coverage
+	grcov . --binary-path ./target/coverage/debug/deps/ -s . -t html,covdir,cobertura --branch --ignore-not-existing --ignore '../*' --ignore "/*" --ignore "crates/docbuilder/*" --ignore "target/*" -o target/coverage
 	jq .coveragePercent target/coverage/covdir
 
 .PHONY: grcov-coverage
@@ -140,9 +139,9 @@ ARTIFACTS_DIR="artifacts"
 # submodule, via:
 #
 # git submodule update --init
-artifacts/osmodifier: Dockerfile-osmodifier.azl3
+artifacts/osmodifier: packaging/docker/Dockerfile-osmodifier.azl3
 	@docker build -t trident/osmodifier-build:latest \
-		-f Dockerfile-osmodifier.azl3 \
+		-f packaging/docker/Dockerfile-osmodifier.azl3 \
 		.
 	@mkdir -p "$(ARTIFACTS_DIR)"
 	@id=$$(docker create trident/osmodifier-build:latest) && \
@@ -154,9 +153,9 @@ bin/trident: build
 	@cp -u target/release/trident bin/
 
 # This will do a proper build on azl3, exactly as the pipelines would, with the custom registry and all.
-bin/trident-rpms-azl3.tar.gz: Dockerfile.full systemd/*.service trident.spec artifacts/osmodifier selinux-policy-trident/* version-vars
+bin/trident-rpms-azl3.tar.gz: packaging/docker/Dockerfile.full packaging/systemd/*.service packaging/rpm/trident.spec artifacts/osmodifier packaging/selinux-policy-trident/* version-vars
 	$(eval CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN := $(shell az account get-access-token --query "join(' ', ['Bearer', accessToken])" --output tsv))
-
+	
 	@export CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN="$(CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN)" &&\
 		docker build -t trident/trident-build:latest \
 			--secret id=registry_token,env=CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN \
@@ -164,7 +163,7 @@ bin/trident-rpms-azl3.tar.gz: Dockerfile.full systemd/*.service trident.spec art
 			--build-arg TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
 			--build-arg RPM_VER="$(TRIDENT_CARGO_VERSION)" \
 			--build-arg RPM_REL="dev.$(GIT_COMMIT)" \
-			-f Dockerfile.full \
+			-f packaging/docker/Dockerfile.full \
 			.
 	@mkdir -p bin/
 	@id=$$(docker create trident/trident-build:latest) && \
@@ -174,12 +173,12 @@ bin/trident-rpms-azl3.tar.gz: Dockerfile.full systemd/*.service trident.spec art
 	@tar xf $@ -C bin/
 
 # This one does a fast trick-build where we build locally and inject the binary into the container to add it to the RPM.
-bin/trident-rpms.tar.gz: Dockerfile.azl3 systemd/*.service trident.spec artifacts/osmodifier bin/trident selinux-policy-trident/*
+bin/trident-rpms.tar.gz: packaging/docker/Dockerfile.azl3 packaging/systemd/*.service packaging/rpm/trident.spec artifacts/osmodifier bin/trident packaging/selinux-policy-trident/*
 	@docker build -t trident/trident-build:latest \
 		--build-arg TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
 		--build-arg RPM_VER="$(TRIDENT_CARGO_VERSION)" \
 		--build-arg RPM_REL="dev.$(GIT_COMMIT)" \
-		-f Dockerfile.azl3 \
+		-f packaging/docker/Dockerfile.azl3 \
 		.
 	@mkdir -p bin/
 	@id=$$(docker create trident/trident-build:latest) && \
@@ -220,8 +219,8 @@ publish-dev-rpms: bin/trident-rpms-azl3.tar.gz
 
 # Grabs bin/trident-rpms.tar.gz from the local build directory and builds a Docker image with it.
 .PHONY: docker-build
-docker-build: Dockerfile.runtime bin/trident-rpms.tar.gz
-	@docker build --quiet -f Dockerfile.runtime -t trident/trident:latest .
+docker-build: packaging/docker/Dockerfile.runtime bin/trident-rpms.tar.gz
+	@docker build --quiet -f packaging/docker/Dockerfile.runtime -t trident/trident:latest .
 
 artifacts/test-image/trident-container.tar.gz: docker-build
 	@mkdir -p artifacts/test-image
@@ -258,7 +257,7 @@ docbuilder: .cargo/config
 
 
 TRIDENT_API_HC_SCHEMA_GENERATED  := target/trident-api-docs/host-config-schema.json
-TRIDENT_API_HC_SCHEMA_CHECKED_IN := trident_api/schemas/host-config-schema.json
+TRIDENT_API_HC_SCHEMA_CHECKED_IN := crates/trident_api/schemas/host-config-schema.json
 
 TRIDENT_API_HC_MARKDOWN_DIR := docs/Reference/Host-Configuration/API-Reference
 TRIDENT_API_HC_EXAMPLE_FILE := docs/Reference/Host-Configuration/Sample-Host-Configuration.md
@@ -414,7 +413,7 @@ go.sum: go.mod
 .PHONY: go-tools
 go-tools: bin/netlaunch bin/netlisten bin/miniproxy
 
-bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum tools/pkg/* tools/storm/utils/*
+bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum tools/pkg/*
 	@mkdir -p bin
 	cd tools && go build -o ../bin/netlaunch ./cmd/netlaunch
 
@@ -430,7 +429,7 @@ bin/mkcosi: tools/cmd/mkcosi/* tools/go.sum tools/pkg/* tools/cmd/mkcosi/**/*
 	@mkdir -p bin
 	cd tools && go build -o ../bin/mkcosi ./cmd/mkcosi
 
-bin/storm-trident: $(shell find storm -type f) tools/go.sum
+bin/storm-trident: tools/cmd/storm-trident/main.go tools/storm/**/*
 	@mkdir -p bin
 	cd tools && go generate storm/e2e/discover.go
 	cd tools && go build -o ../bin/storm-trident ./cmd/storm-trident/main.go
@@ -735,7 +734,7 @@ artifacts/imagecustomizer:
 	@chmod +x artifacts/imagecustomizer
 	@touch artifacts/imagecustomizer
 
-bin/trident-mos.iso: artifacts/baremetal.vhdx artifacts/imagecustomizer systemd/trident-install.service trident-mos/iso.yaml trident-mos/files/* trident-mos/post-install.sh selinux-policy-trident/*
+bin/trident-mos.iso: artifacts/baremetal.vhdx artifacts/imagecustomizer packaging/systemd/trident-install.service trident-mos/iso.yaml trident-mos/files/* trident-mos/post-install.sh packaging/selinux-policy-trident/*
 	@mkdir -p bin
 	BUILD_DIR=`mktemp -d` && \
 		trap 'sudo rm -rf $$BUILD_DIR' EXIT; \

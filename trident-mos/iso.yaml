@@ -77,11 +77,11 @@ os:
       destination: /usr/lib/systemd/system/trident-install.service
     - source: files/download-trident.service
       destination: /usr/lib/systemd/system/download-trident.service
-    - source: ../selinux-policy-trident/trident.if
+    - source: ../packaging/selinux-policy-trident/trident.if
       destination: /usr/share/selinux/packages/trident/trident.if
-    - source: ../selinux-policy-trident/trident.fc
+    - source: ../packaging/selinux-policy-trident/trident.fc
       destination: /usr/share/selinux/packages/trident/trident.fc
-    - source: ../selinux-policy-trident/trident.te
+    - source: ../packaging/selinux-policy-trident/trident.te
       destination: /usr/share/selinux/packages/trident/trident.te
 
   services:

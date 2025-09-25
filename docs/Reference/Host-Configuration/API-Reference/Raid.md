@@ -12,7 +12,7 @@ RAID configuration for a host.
 
 ### `software` (optional)
 
-Individual software raid configurations.
+Individual software RAID configurations.
 
 | Characteristic | Value   |
 | -------------- | ------- |
@@ -27,7 +27,9 @@ Individual software raid configurations.
 
 ### `syncTimeout` (optional)
 
-Timeout in seconds to wait for RAID arrays to sync. By default, Trident will NOT wait for RAID arrays to finish syncing before continuing on with provisioning. This is because RAID arrays are supposed to be usable immediately after creation. If the user provides a value for this field and the RAID arrays do NOT finish syncing within the specified timeout, Trident will fail the provisioning process and return an error. The user will need to increase their timeout value if the RAID arrays are taking longer to sync than expected.
+Timeout in seconds to wait for RAID arrays to sync.
+
+By default, Trident will NOT wait for RAID arrays to finish syncing before continuing on with provisioning. This is because RAID arrays are supposed to be usable immediately after creation. If the user provides a value for this field and the RAID arrays do NOT finish syncing within the specified timeout, Trident will fail the provisioning process and return an error. The user will need to increase their timeout value if the RAID arrays are taking longer to sync than expected.
 
 | Characteristic | Value     |
 | -------------- | --------- |

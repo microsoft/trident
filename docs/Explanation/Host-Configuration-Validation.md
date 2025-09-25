@@ -4,7 +4,7 @@
 The Trident binary can validate the syntax and structure of a host configuration without applying it
 to the host:
 
-```
+``` bash
 trident validate /path/to/host-configuration.yaml
 ```
 

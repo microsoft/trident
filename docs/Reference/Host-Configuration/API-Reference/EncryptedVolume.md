@@ -12,7 +12,7 @@ A LUKS2-encrypted volume configuration.
 
 ### `deviceId` **<span>(required)</span>**
 
-The id of the disk partition or software RAID array to encrypt.
+The ID of the disk partition or software RAID array to encrypt.
 
 This parameter is required. It must be unique among the list of encrypted volumes.
 
@@ -37,9 +37,9 @@ This parameter is required. It must be a valid file name and unique among all en
 
 ### `id` **<span>(required)</span>**
 
-The id of the LUKS-encrypted volumes to create.
+The ID of the LUKS-encrypted volume to create.
 
-This parameter is required. It must be non-empty and unique among the ids of all block devices in the host configuration. This includes the ids of all disk partitions, encrypted volumes, software RAID arrays, and A/B volume pairs.
+This parameter is required. It must be non-empty and unique among the IDs of all block devices in the host configuration. This includes the IDs of all disk partitions, encrypted volumes, software RAID arrays, and A/B volume pairs.
 
 | Characteristic | Value             |
 | -------------- | ----------------- |

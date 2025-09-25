@@ -15,9 +15,9 @@ storage:
         - id: boot-b
           size: 200M
         - id: root-a-1
-          size: 4G
+          size: 3G
         - id: root-b-1
-          size: 4G
+          size: 3G
         - id: usr-data-a-1
           size: 2G
         - id: usr-data-b-1
@@ -39,9 +39,9 @@ storage:
       partitionTableType: gpt
       partitions:
         - id: root-a-2
-          size: 4G
+          size: 3G
         - id: root-b-2
-          size: 4G
+          size: 3G
         - id: usr-data-a-2
           size: 2G
         - id: usr-data-b-2
