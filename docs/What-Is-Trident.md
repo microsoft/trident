@@ -1,10 +1,12 @@
 # What is Trident?
 
-Trident operates as a servicing agent, drawing inspiration from the declarative
-API principles established by Kubernetes. It ingests a [Host Configuration
+Trident is a servicing agent, drawing inspiration from the declarative
+API principles established by Kubernetes. It ingests a [**Host Configuration**
 specification](Reference/Host-Configuration/HostConfiguration.md) as input, and,
-as it progresses, updates the Host Status to accurately reflect all changes
+as it progresses, updates the **Host Status** to accurately reflect all changes
 applied in accordance with the provided Host Configuration.
+
+## Host Configuration
 
 The Host Configuration defines the desired state of the host that Trident
 manages, serving as the authoritative specification from initial installation
@@ -42,10 +44,14 @@ image:
   sha384: ec9a9aa23f02b30f4ec6a168b9bc24733b652eeab4f8abc243630666a5e34cea1667c34313a13ec1564ac4871b80112f
 ```
 
+## Host Status
+
 The Host Status provides a snapshot of the current configuration as managed by
 Trident. This enables Trident to accurately report the operational state to
 users and facilitates precise determination of required changes when a new Host
 Configuration is supplied.
+
+## Simplifying complexity through integration and reuse
 
 Trident offers a streamlined abstraction layer over established upstream Linux
 utilities, including `systemd-repart`, `mdadm`, `cryptsetup`, `grub2`,
@@ -53,6 +59,8 @@ utilities, including `systemd-repart`, `mdadm`, `cryptsetup`, `grub2`,
 consistent and dependable servicing experience while minimizing complexity.
 Developed in Rust, Trident benefits from enhanced memory safety and performance,
 ensuring robust and efficient operation.
+
+## Architectural principles
 
 Trident is architected for seamless integration into larger solutions. Its
 primary responsibility is single-host servicing, delegating orchestration
@@ -66,6 +74,8 @@ the common servicing logic to be reused across various products and
 environments, while product-specific logic is handled externally. This
 separation of concerns simplifies maintenance and enables consistent servicing
 practices across diverse deployments.
+
+## Operating modes
 
 Trident is capable of operating in two distinct modes: it can execute from a
 live management operating system to facilitate initial OS installation, or it
