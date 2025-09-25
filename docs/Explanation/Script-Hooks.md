@@ -12,6 +12,8 @@ inside the [servicing OS](../Reference/Glossary.md#servicing-os). Pre-servicing
 scripts are useful for:
 
 - Pre-saving the state of the servicing OS.
+- Validating the state of the system before Trident starts servicing, i.e.
+  checking for the presence of certain services.
 
 ## Post-Provision Scripts
 
