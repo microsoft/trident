@@ -3,7 +3,7 @@
 
 ## Introduction
 
-For Trident to be able to update an existing installation of Azure Linux, it needs to track information such as partition and disk layout. This information can be discovered for Trident using [offline-initialize](../Reference/Trident-CLI.md#offline-initialize).
+For Trident to be able to update an existing installation of Azure Linux, it needs to track information such as partition and disk layout. This information is discovered by [offline-initialize](../Reference/Trident-CLI.md#offline-initialize).
 
 This document will outline the steps required to enable this during image creation with Image Customizer.
 
