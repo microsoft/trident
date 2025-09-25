@@ -38,7 +38,7 @@ servicing.
 - OS configuration management, including [network
   settings](How-To-Guides/Configure-Networking.md), hostname, [user
   accounts](How-To-Guides/Configure-Users.md), SSH, and SELinux policies.
-- Execution of user-provided scripts for custom OS image modifications.
+- [Execution of user-provided scripts for custom OS image modifications](Tutorials/Running-Custom-Scripts.md).
 - Reliable rollback to the previous OS version in case of servicing issues.
 - Unified Kernel Image (UKI) support (preview).
 
@@ -75,7 +75,7 @@ Install](How-To-Guides/Perform-a-Clean-Install.md) tutorial.
 You can start with the [Onboard a VM to
 Trident](Tutorials/Onboard-a-VM-to-Trident.md) tutorial.
 
-##### Do you want to update a bare-metal host or a virtual machine?
+#### Do you want to update a bare-metal host or a virtual machine?
 
 You can start with the [Performing an A/B
 update](Tutorials/Performing-an-ABUpdate.md) tutorial.
@@ -90,7 +90,7 @@ Trident is an open source project and we welcome contributions. If you want to
 contribute, please check out the [contributing
 guide](https://github.com/microsoft/trident/blob/main/CONTRIBUTING.md).
 
-## Useful links
+## Do you want to learn more?
 
 - [Motivation](Motivation.md)
 - [What is Trident?](What-Is-Trident.md)
