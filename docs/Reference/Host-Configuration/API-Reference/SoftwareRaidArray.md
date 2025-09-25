@@ -22,7 +22,7 @@ To learn more about `mdadm`, please refer to the [mdadm guide](https://raid.wiki
 
 Devices that will be used for the RAID array.
 
-See the reference links for picking the right number of devices. Devices are partition ids from the `disks` section.
+See the reference links for picking the right number of devices. Devices are partition IDs from the `disks` section.
 
 | Characteristic | Value   |
 | -------------- | ------- |

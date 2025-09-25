@@ -226,7 +226,7 @@
       ],
       "properties": {
         "deviceId": {
-          "description": "The id of the disk partition or software RAID array to encrypt.\n\nThis parameter is required. It must be unique among the list of encrypted volumes.\n\nIf it refers to a disk partition, it must be of a supported type. Supported types are all but the following blocked partition types: - `esp` - `root` - `root-verity` - `usr-verity` - `home`\n\nIf it refers to a software RAID array, the first disk partition of the software RAID array must be of a supported type.",
+          "description": "The ID of the disk partition or software RAID array to encrypt.\n\nThis parameter is required. It must be unique among the list of encrypted volumes.\n\nIf it refers to a disk partition, it must be of a supported type. Supported types are all but the following blocked partition types: - `esp` - `root` - `root-verity` - `usr-verity` - `home`\n\nIf it refers to a software RAID array, the first disk partition of the software RAID array must be of a supported type.",
           "type": "string",
           "format": "Block Device ID"
         },
@@ -235,7 +235,7 @@
           "type": "string"
         },
         "id": {
-          "description": "The id of the LUKS-encrypted volume to create.\n\nThis parameter is required. It must be non-empty and unique among the ids of all block devices in the host configuration. This includes the ids of all disk partitions, encrypted volumes, software RAID arrays, and A/B volume pairs.",
+          "description": "The ID of the LUKS-encrypted volume to create.\n\nThis parameter is required. It must be non-empty and unique among the IDs of all block devices in the host configuration. This includes the IDs of all disk partitions, encrypted volumes, software RAID arrays, and A/B volume pairs.",
           "type": "string",
           "format": "Block Device ID"
         }
@@ -1286,7 +1286,7 @@
       ],
       "properties": {
         "devices": {
-          "description": "Devices that will be used for the RAID array.\n\nSee the reference links for picking the right number of devices. Devices are partition ids from the `disks` section.",
+          "description": "Devices that will be used for the RAID array.\n\nSee the reference links for picking the right number of devices. Devices are partition IDs from the `disks` section.",
           "type": "array",
           "items": {
             "type": "string",

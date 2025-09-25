@@ -72,7 +72,7 @@ pub struct SoftwareRaidArray {
 
     /// Devices that will be used for the RAID array.
     ///
-    /// See the reference links for picking the right number of devices. Devices are partition ids
+    /// See the reference links for picking the right number of devices. Devices are partition IDs
     /// from the `disks` section.
     #[cfg_attr(
         feature = "schemars",

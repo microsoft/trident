@@ -108,10 +108,10 @@ pub struct Encryption {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct EncryptedVolume {
-    /// The id of the LUKS-encrypted volume to create.
+    /// The ID of the LUKS-encrypted volume to create.
     ///
-    /// This parameter is required. It must be non-empty and unique among the ids of all block
-    /// devices in the host configuration. This includes the ids of all disk partitions, encrypted
+    /// This parameter is required. It must be non-empty and unique among the IDs of all block
+    /// devices in the host configuration. This includes the IDs of all disk partitions, encrypted
     /// volumes, software RAID arrays, and A/B volume pairs.
     #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
     pub id: BlockDeviceId,
@@ -122,7 +122,7 @@ pub struct EncryptedVolume {
     /// volumes, as well as among the Device Mapper devices.
     pub device_name: String,
 
-    /// The id of the disk partition or software RAID array to encrypt.
+    /// The ID of the disk partition or software RAID array to encrypt.
     ///
     /// This parameter is required. It must be unique among the list of encrypted volumes.
     ///

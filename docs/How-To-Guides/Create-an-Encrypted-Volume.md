@@ -34,11 +34,11 @@ This guide will not cover adopting an existing encrypted volume in the [`offline
 
 1. Inside the host configuration, under `storage`, add a new encrypted volume to the `encryption.volumes` section, completing these three **required** fields:
 
-   - `id` is the id of the LUKS-encrypted volume to create. It must be non-empty and unique among the ids of all block devices in the host configuration. This includes the ids of all disk partitions, encrypted volumes, software RAID arrays, and A/B volume pairs.
+   - `id` is the ID of the LUKS-encrypted volume to create. It must be non-empty and unique among the IDs of all block devices in the host configuration. This includes the IDs of all disk partitions, encrypted volumes, software RAID arrays, and A/B volume pairs.
    - `deviceName` is the name of an encrypted device to create under `/dev/mapper` when opening the volume. It should be a valid file name and unique among all encrypted volumes, as well as among the Device Mapper devices.
-   - `deviceId` must correspond to a Trident-registered id of the device in the host configuration. In other words, it is the id of the partition or RAID array to encrypt. It also must be unique among the list of encrypted volumes.
+   - `deviceId` must correspond to a Trident-registered ID of the device in the host configuration. In other words, it is the ID of the partition or RAID array to encrypt. It also must be unique among the list of encrypted volumes.
 
-   For example, the following configuration creates a new encrypted volume with id `enc-web-partition` and device name `luks-web-partition`. It encrypts another block device, a partition with an id `web-partition`.
+   For example, the following configuration creates a new encrypted volume with ID `enc-web-partition` and device name `luks-web-partition`. It encrypts another block device, a partition with an ID `web-partition`.
 
    ```yaml
    storage:
@@ -49,7 +49,7 @@ This guide will not cover adopting an existing encrypted volume in the [`offline
                deviceId: web-partition
    ```
 
-   The naming convention for encrypted volumes in Trident is to prefix the id of the partition or RAID array with `enc-<device_id>` to create the id of the encrypted volume, and prefix it with `luks-<device_id>` to create its device name.
+   The naming convention for encrypted volumes in Trident is to prefix the ID of the partition or RAID array with `enc-<device_id>` to create the ID of the encrypted volume, and prefix it with `luks-<device_id>` to create its device name.
 
 1. If the encrypted volume needs to be mounted, the `storage.filesystems` configuration must be updated to request that.
 
@@ -61,7 +61,7 @@ This guide will not cover adopting an existing encrypted volume in the [`offline
             mountPoint: /web
    ```
 
-   For example, this configuration describes that the encrypted volume with id `enc-web-partition` from above should be mounted at `/web`, by creating a new filesystem. [The API on filesystems](../Reference/Host-Configuration/API-Reference/FileSystem.md) contains more information on the flesystems config.
+   For example, this configuration describes that the encrypted volume with ID `enc-web-partition` from above should be mounted at `/web`, by creating a new filesystem. [The API on filesystems](../Reference/Host-Configuration/API-Reference/FileSystem.md) contains more information on the flesystems config.
 
 ### Step 3: Configure Encryption Settings
 
