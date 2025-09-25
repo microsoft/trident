@@ -32,7 +32,7 @@ Build the Trident RPMs by running:
 make bin/trident-rpms.tar.gz
 ```
 
-After running this make command, the RPMs will be built and packaged into bin/trident-rpms.tar.gz and unpacked into bin/RPMS/x86_64:
+After running this make command, the RPMs will be built and packaged into `bin/trident-rpms.tar.gz` and unpacked into `bin/RPMS/x86_64`:
 
 ``` bash
 $ ls bin/RPMS/x86_64/
@@ -129,7 +129,7 @@ scripts:
 
 ### Step 4: Invoke Image Customizer
 
-Assuming RPMs, a base image `image.vhdx` and Image Customizer configuration `ic-config.yaml` found in `$HOME/staging`.
+Assuming the RPMs, a base image (`image.vhdx`) and the Image Customizer configuration file (`ic-config.yaml`) are found in `$HOME/staging`, invoke Image Customizer to create a qcow2 file:
 
 ``` bash
 pushd $HOME/staging
