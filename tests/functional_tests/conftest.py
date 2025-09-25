@@ -27,7 +27,7 @@ def __get_argus_toolkit_path():
     envvar = os.environ.get("ARGUS_TOOLKIT_PATH", None)
     if envvar:
         return Path(envvar).resolve()
-    return Path(__file__).resolve().parent.parent.parent / "argus-toolkit"
+    return Path(__file__).resolve().parent.parent.parent.parent / "argus-toolkit"
 
 
 """Location of the argus-toolkit repository."""
