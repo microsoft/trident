@@ -179,9 +179,7 @@ stages:
               # TODO: Enable SecureBoot for all E2E tests.
               SECURE_BOOT=""
               TRIDENT_CONFIG="$(tridentConfigPath)/trident-config.yaml"
-              ls -l "$TRIDENT_CONFIG"
-              sudo chmod 777 "$TRIDENT_CONFIG"
-              IMAGE_URL=$(yq '.image.url' "$TRIDENT_CONFIG")
+              IMAGE_URL=$(sudo yq '.image.url' "$TRIDENT_CONFIG")
               if [[ "$IMAGE_URL" == *usrverity.cosi ]]; then
                 SECURE_BOOT="--secure-boot"
               fi
