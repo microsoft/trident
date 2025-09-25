@@ -4,12 +4,17 @@ sidebar_position: 1
 
 # Trident - Azure Linux Servicing Agent
 
-**Trident** is a declarative, security-first OS lifecycle agent designed
+**Trident** is an OS lifecycle agent designed
 primarily for [Azure
 Linux](https://github.com/microsoft/azurelinux/?tab=readme-ov-file#azure-linux).
 It supports installation and provisioning of bare-metal hosts, as well as
 A/B-style atomic updates and runtime configuration for both bare-metal and
 virtual machines.
+
+Trident is built around its **Host Configuration API**, a declarative YAML-based
+interface that defines the desired state of a machine across storage, OS,
+networking, and firmware layers. Trident performs image-based atomic installation and updates using compressed, minimized OS images to ensure consistency and
+reliability across deployments. Trident emphasizes security and robustness, while reducing the downtime during servicing operations.
 
 ## What can Trident do?
 
@@ -93,7 +98,7 @@ guide](https://github.com/microsoft/trident/blob/main/CONTRIBUTING.md).
 
 ## Do you want to learn more?
 
-- [Motivation](Motivation.md)
+- [Background](Background.md)
 - [What is Trident?](What-Is-Trident.md)
 - [How does Trident work?](How-Does-Trident-Work.md)
 - [How do I interact with Trident?](How-Do-I-Interact-With-Trident.md)

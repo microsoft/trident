@@ -1,4 +1,4 @@
-# Motivation
+# Background
 
 Linux distributions typically provide two primary types of bootable images: an
 installer image and a virtual machine (VM) image.
