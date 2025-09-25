@@ -80,23 +80,23 @@ By following this guide, you will:
 
 ### Step 3: Run Trident to Start A/B Update Servicing
 
-1. Run Trident to create A/B volume pairs.
+1. Run Trident to create A/B volume pairs and prepare the host for A/B update servicing.
 
-On a clean install, Trident will:
+Follow [this guide](./Perform-a-Clean-Install.md) to perform a clean install. On a clean install, Trident will:
 
 - Create underlying device copies: disk partitions, RAID arrays, and/or encrypted volumes.
 - Link each pair of device copies into a logical A/B volume pair.
 - Service volume A in each pair, so that it becomes active in the target OS.
 - If needed, mount volume A at the requested mount point after booting into the target OS.
 
-On `offline-init`, Trident will:
+To onboard a VM to Trident, follow [this tutorial](../Tutorials/Onboard-a-VM-to-Trident.md). On `offline-init`, Trident will:
 
 - Adopt underlying device copies.
 - Link each pair of device copies into a logical A/B volume pair.
 
-1. Run an A/B update with Trident. Trident will:
+1. Run A/B updates with Trident by following [this tutorial](../Tutorials/Performing-an-ABUpdate.md). On an A/N update, Trident will:
 
-   - Update the OS image on the inactive partition, so that it becomes active after reboot.
+   - Update the OS image on the inactive partitions, so that it becomes active after reboot.
    - If needed, mount the updated partitions at the mount point.
 
    **Important**: All A/B volume pairs will be updated in lockstep, meaning all pairs will have their A volumes be the active ones, or all pairs will have their B volumes be the active ones. This ensures system consistency across all A/B volumes.
