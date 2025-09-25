@@ -14,7 +14,7 @@ To deploy an operating system, Trident requires [COSI](../Reference/COSI.md) fil
 
 ### Step 1: Download the minimal base image
 
-Pull the minimal base image from mcr by running
+`minimal-os` is an Azure Linux vhdx maintained by Microsoft, comprised of the minimal components to be bootable. Pull minimal-os as a base image from MCR by running:
 
 ``` bash
 mkdir -p $HOME/staging
