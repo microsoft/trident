@@ -1,13 +1,7 @@
 
 # Clean Install Safety Check
 
-<!--
-DELETE ME AFTER COMPLETING THE DOCUMENT!
----
-Task: https://dev.azure.com/mariner-org/polar/_workitems/edit/13155
-Title: Clean Install Safety Check
-Type: Explanation
-Objective:
+When `trident install` is invoked, Trident ensures that it is running from either ramdisk or live media. If this is not the case, an error is returned immediately unless one of the following is true:
 
-Explain the safety check that is done before a clean install.
--->
+* multiboot with adopted partitions is configured
+* multiboot is configured and the safety check override file (`/override-trident-safety-check`) is present
