@@ -3,6 +3,10 @@ parameters:
     type: string
     default: ''
 
+  - name: osModifierBranch
+    type: string
+    default: "main"
+
 stages:
   - stage: MakefileValidation
     displayName: Validate Makefile targets
@@ -26,6 +30,7 @@ stages:
           - template: ../common_tasks/download-osmodifier.yml
             parameters:
               osmodifierBuildType: main
+              osModifierBranch: ${{ parameters.osModifierBranch }}
 
           - script: |
               set -eux

@@ -50,6 +50,11 @@ resources:
       type: git
       ref: refs/heads/main
 
+    - name: osModifierBranch
+      displayName: OSModifier branch to build from (if not main)
+      type: string
+      default: "main"
+
 extends:
   template: templates/MockOB.yml
   parameters:
@@ -58,3 +63,4 @@ extends:
         parameters:
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
+          osModifierBranch: ${{ parameters.osModifierBranch }}

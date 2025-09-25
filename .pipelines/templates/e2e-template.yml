@@ -70,6 +70,10 @@ parameters:
     type: string
     default: ''
     
+  - name: osModifierBranch
+    type: string
+    default: "main"
+
 stages:
   # Trident Build/Download
   - template: stages/trident_rpms/trident-stage.yml
@@ -79,6 +83,7 @@ stages:
       codeCoverage: false
       forceTridentRebuild: ${{ parameters.forceTridentRebuild }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+      osModifierBranch: ${{ parameters.osModifierBranch }}
       targetArchitecture: amd64
 
   # Build tools (Go stuff)
@@ -87,6 +92,8 @@ stages:
   # Makefile validation, only for CI
   - ${{ if eq(parameters.stageType, 'ci') }}:
       - template: stages/validate_makefile/dev-build.yml
+      - parameters:
+          osModifierBranch: ${{ parameters.osModifierBranch }}
 
   # Build FT base Image, only for CI or if forceFunctionalTestImageRebuild is true
   - ${{ if or(eq(parameters.stageType, 'ci'), eq(parameters.forceFunctionalTestImageRebuild, true)) }}:
@@ -220,6 +227,7 @@ stages:
       - template: stages/testing_functional/functional-testing.yml
         parameters:
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+          osModifierBranch: ${{ parameters.osModifierBranch }}
           ${{ if parameters.forceFunctionalTestImageRebuild }}:
             downloadPrebuiltImage: false
 

@@ -133,19 +133,20 @@ clean-coverage:
 TOOLKIT_DIR="azure-linux-image-tools/toolkit"
 AZL_TOOLS_OUT_DIR="$(TOOLKIT_DIR)/out/tools"
 ARTIFACTS_DIR="artifacts"
-OSMODIFIER_ARTIFACT_VERSION := 1.*
 
-artifacts/osmodifier:
-	@az artifacts universal download \
-		--organization "https://dev.azure.com/mariner-org/" \
-		--project "2afa5696-2a1d-438f-ac9e-db12e0b4ae27" \
-		--scope project \
-		--feed "PolarCoreArtifacts" \
-		--name "osmodifier" \
-		--version "$(OSMODIFIER_ARTIFACT_VERSION)" \
-		--path "$(ARTIFACTS_DIR)/azure-linux-image-tools"
-	@mkdir -p "$(ARTIFACTS_DIR)"
-	@cp "$(AZL_TOOLS_OUT_DIR)/osmodifier" $@
+# Build OSModifier from a local clone of azure-linux-image-tools.
+# Make sure the repo has been cloned manually, via:
+#
+# git clone https://github.com/microsoft/azure-linux-image-tools
+
+artifacts/osmodifier: Dockerfile-osmodifier.azl3
+	@docker build -t trident/osmodifier-build:latest \
+		-f Dockerfile-osmodifier.azl3 \
+		.
+		@mkdir -p "$(ARTIFACTS_DIR)"
+	@id=$$(docker create trident/osmodifier-build:latest) && \
+	    docker cp -q $$id:/work/azure-linux-image-tools/toolkit/out/tools/osmodifier $@ || \
+	    docker rm -v $$id
 
 bin/trident: build
 	@mkdir -p bin

@@ -10,6 +10,10 @@ parameters:
     type: boolean
     default: true
 
+  - name: osModifierBranch
+    type: string
+    default: "main"
+
   - name: dependsOnStage
     type: string
     default: ''
@@ -80,7 +84,9 @@ stages:
           - template: ../common_tasks/cargo-auth.yml
           - template: ../common_tasks/download-osmodifier.yml
             parameters:
-              osmodifierBuildType: preview
+              osmodifierBuildType: main
+              targetArchitecture: ${{ parameters.targetArchitecture }}
+              osModifierBranch: ${{ parameters.osModifierBranch }}
           - template: release.yml
             parameters:
               targetArchitecture: ${{ parameters.targetArchitecture }}
@@ -114,7 +120,9 @@ stages:
             displayName: Start Docker
           - template: ../common_tasks/download-osmodifier.yml
             parameters:
-              osmodifierBuildType: preview
+              osmodifierBuildType: main
+              targetArchitecture: ${{ parameters.targetArchitecture }}
+              osModifierBranch: ${{ parameters.osModifierBranch }}
           - template: release.yml
             parameters:
               targetArchitecture: ${{ parameters.targetArchitecture }}
