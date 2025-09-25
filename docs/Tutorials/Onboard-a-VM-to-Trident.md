@@ -15,7 +15,7 @@ This document will outline the steps required to enable this during image creati
 
 ### Step 1: Download the minimal base image
 
-`minimal-os` is an Azure Linux vhdx maintained by Microsoft, comprised of the minimal components to be bootable. Pull minimal-os as a base image from MCR by running:
+Pull [minimal-os](../Reference/Glossary.md#minimal-os) as a base image from MCR by running:
 
 ``` bash
 mkdir -p $HOME/staging
