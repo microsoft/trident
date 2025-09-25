@@ -93,7 +93,7 @@ This will set up the required partitions, but this is only half of the required 
 
 A/B partition pairs must exist for any partitions that are serviced as part of an update.
 
-While these A/B partition pairs are vital to A/B Update, there are a some filesystems that cannot be hosted on A/B partitions. These filesystems retain state between the A and B operating systems.
+While these A/B partition pairs are vital to A/B Update, there are some filesystems that cannot be hosted on A/B partitions. These filesystems retain state between the A and B operating systems.
 
 `/boot/efi` contains state that dictates boot and can be defined like this:
 
