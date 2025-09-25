@@ -31,7 +31,7 @@ policy](../../selinux-policy-trident/trident.te):
 allow trident_t tmpfs_t:filesystem { getattr mount unmount };
 ```
 
-This rule allow processes with the `trident_t` type, i.e. Trident, to access
+This rule allows processes with the `trident_t` type, i.e. Trident, to access
 filesystems with type `tmpfs_t` and perform the operations `getattr`, `mount`,
 and `unmount`.
 
