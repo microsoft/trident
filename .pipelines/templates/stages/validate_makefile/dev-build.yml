@@ -30,7 +30,6 @@ stages:
           - template: ../common_tasks/download-osmodifier.yml
             parameters:
               osModifierBuildType: main
-              osModifierVersion: ""
               osModifierBranch: ${{ parameters.osModifierBranch }}
               targetArchitecture: amd64
 

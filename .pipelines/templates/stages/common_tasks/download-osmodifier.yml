@@ -35,7 +35,7 @@ steps:
       workingDirectory: $(Build.SourcesDirectory)
       retryCountOnTaskFailure: 3
 
-  - ${{ if and(eq(parameters.osModifierBuildType, 'main'), ne(parameters.osModifierVersion, '')) }}:
+  - ${{ if and(eq(parameters.osModifierBuildType, 'main')) }}:
     - task: DownloadPipelineArtifact@2
       displayName: "Download OSModifier artifact (main - latest)"
       inputs:
