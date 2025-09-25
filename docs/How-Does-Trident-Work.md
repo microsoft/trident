@@ -17,16 +17,22 @@ pre-stages the OS image, applies additional OS configuration (including state
 migration), updates the firmware boot configuration, and reboots into the newly
 installed OS.
 
+## Reliable deployment with safe rollback
+
 If any issues arise during servicing, Trident configures the firmware to
 automatically roll back to the previous OS version, ensuring system reliability.
 Once the deployment is verified as successful, the user or orchestrator can
 certify the deployment, prompting Trident to mark it accordingly and update the
 firmware configuration to reflect the new state.
 
+## Comprehensive state tracking
+
 The Trident datastore maintains a comprehensive record of all servicing
 operations, including the Host Configuration and Host Status for each operation.
 This helps to diagnose any issues that may arise during servicing and provides a
 clear audit trail of changes made to the host over time.
+
+## Two-phase servicing workflow
 
 Trident supports a two-phase servicing workflow:
 [**stage**](Reference/Glossary.md#stage-operation) and
@@ -51,6 +57,8 @@ RAID array, LUKS volume, etc.). During this process, Trident performs on-the-fly
 hashing and decompression of filesystem blocks, ensuring rapid transfer without
 requiring additional storage or memory for intermediate placement.
 
+## Image validation and configuration
+
 Leveraging COSI metadata, Trident validates key aspects of the source images,
 such as verifying that required dependencies are present, and provides precise
 error reporting when issues are detected. Since COSI files can be generated as
@@ -58,11 +66,15 @@ an output format by Image Customizer, producing them is straightforward. Trident
 employs COSI files for both OS installation and updates, with the source
 location specified in the Host Configuration.
 
+## Consistent desired state from first boot
+
 Trident allows users to preconfigure all required changes during the staging
 phase. As a result, after reboot, the OS boots directly into its desired
 state—identical to any subsequent boot—eliminating the need for special handling
 of the initial boot or post-boot configuration using tools like `cloud-init`
 (although such tools can still be used if desired).
+
+## State separation and controlled migration
 
 Trident empowers users to separate the runtime state of the operating system
 from the deployment image, as well as between the A and B OS instances. This is
@@ -76,6 +88,8 @@ issues, Trident supports safe rollback to the previous OS state. Additionally,
 where appropriate, Trident facilitates deduplication of data—such as container
 image caches—between A and B instances, enabling workloads to resume rapidly
 following a servicing reboot.
+
+## Integration with Image Customizer
 
 Trident seamlessly integrates with Image Customizer, enabling it to retrieve
 image configuration details from both the COSI file and the separate Image

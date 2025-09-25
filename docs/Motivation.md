@@ -3,6 +3,8 @@
 Linux distributions typically provide two primary types of bootable images: an
 installer image and a virtual machine (VM) image.
 
+## Installer image vs. VM image
+
 The installer image, typically distributed in ISO format, boots into a live
 servicing operating system and can be executed in either attended or unattended
 modes. During installation, users are able to configure disk partitioning,
@@ -20,6 +22,8 @@ However, configuration changes can only be applied after the initial
 boot—typically using tools such as `cloud-init`—which may necessitate additional
 reboots to fully realize the desired system state.
 
+## The need for ongoing servicing
+
 Regardless of the image type selected, ongoing servicing is essential to address
 security vulnerabilities (CVEs) and apply updates. For environments with spare
 resources, scale-out servicing can be performed by deploying a new OS version
@@ -33,6 +37,8 @@ instance, replacing the OS disk (either by deploying a new VM image or rerunning
 the installer), and booting into the updated OS. This process is time-consuming
 and requires additional orchestration from the underlying infrastructure.
 
+## The advantages of in-place servicing
+
 To minimize downtime and avoid reliance on spare resources, in-place servicing
 is preferable. Traditional Linux distributions typically support package-based
 updates, but these methods lack robust rollback capabilities and can result in
@@ -44,6 +50,8 @@ updates](Reference/Glossary.md#ab-update), rollback is straightforward—either
 during servicing or at any later point—without requiring extra resources.
 Additionally, servicing downtime is reduced, as the B set of images can be
 pre-staged while the A set remains operational.
+
+## The Trident solution
 
 Traditionally, Linux distributions provide distinct mechanisms for initial
 installation and subsequent servicing of the operating system. Trident
