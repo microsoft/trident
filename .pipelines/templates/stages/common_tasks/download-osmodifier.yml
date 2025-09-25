@@ -53,6 +53,10 @@ steps:
       inputs:
         command: download
         vstsFeed: polar/PolarCoreArtifacts
+        if eq(parameters.targetArchitecture, 'arm64') :
+            vstsFeedPackage: osmodifier_arm64
+        ${{ else }}:
+            vstsFeedPackage: osmodifier
         vstsFeedPackage: osmodifier
         vstsPackageVersion: ${{ parameters.osModifierVersion }}
         downloadDirectory: "$(Build.SourcesDirectory)/artifacts"
@@ -63,6 +67,9 @@ steps:
       inputs:
         command: download
         vstsFeed: polar/PolarCoreArtifacts
-        vstsFeedPackage: osmodifier_preview
+        if eq(parameters.targetArchitecture, 'arm64') :
+            vstsFeedPackage: osmodifier_arm64_preview
+        ${{ else }}:
+            vstsFeedPackage: osmodifier_preview
         vstsPackageVersion: ${{ parameters.osModifierVersion }}
         downloadDirectory: "$(Build.SourcesDirectory)/artifacts"
