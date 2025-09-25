@@ -1,7 +1,7 @@
 
 # Create a RAID Array
 
-This guide explains how to create a new [software RAID array](../Reference/Host-Configuration/API-Reference/SoftwareRaidArray.md) with Trident, using the Host Configuration API.
+This guide explains how to create a new [software RAID array](../Reference/Host-Configuration/API-Reference/SoftwareRaidArray.md) on [clean install](../Reference/Glossary.md/#clean-install) with Trident, using the Host Configuration API.
 
 ## Goals
 
@@ -12,7 +12,7 @@ By following this guide, you will:
 1. Set an optional timeout so that Trident waits for RAID arrays to finish syncing before continuing with provisioning.
 1. Create RAID arrays on the target OS with Trident.
 
-This guide will not cover adopting an existing RAID array or creating a new RAID array on A/B update, as Trident does **not** support these features.
+This guide will not cover adopting an existing software RAID array in the [`offline-init`](../Explanation/Offline-Init.md) scenario or creating a new software RAID array on A/B updates, as Trident does **not** support these features.
 
 ## Prerequisites
 
@@ -21,17 +21,17 @@ This guide will not cover adopting an existing RAID array or creating a new RAID
 
 ## Instructions
 
-### Step 1: Create devices underlying the RAID array
+### Step 1: Declare Devices Underlying the RAID Array
 
-1. Create devices to be used for the RAID array using the Host Configuration API. [The RAID wiki](https://wiki.archlinux.org/title/RAID) contains more information on RAID arrays, including how many devices are needed. These requirements differ for different RAID levels; however, Trident only tests RAID 1. For RAID 1, devices underlying a RAID array must adhere to the following guidelines:
+1. Declare devices to be used for the RAID array using the Host Configuration API. [The RAID wiki](https://wiki.archlinux.org/title/RAID) contains more information on RAID arrays, including how many devices are needed. These requirements differ for different RAID levels; however, Trident only tests RAID 1. For RAID 1, devices underlying a RAID array must adhere to the following guidelines:
 
    - Any disk partition types are allowed, but all underlying devices must be of the same partition type.
    - All underlying disk partitions must be of the same size.
    - Each RAID array should be based on 2+ disk partitions that are located on different disks.
 
-### Step 2: Add `raid` configuration
+### Step 2: Add `raid` Configuration
 
-1. Inside the host configuration, under `storage`, add a new software RAID configuration under the `raid` section, completing these four **required** fields:
+1. Inside the `storage` configuration, add a new software RAID config under the `raid` section, completing these four **required** fields:
 
    - `devices` is a list of block device IDs corresponding to the disk partitions underlying the RAID array.
    - `id` is the unique identifier for the RAID array. The ID must be unique across all types of devices in the host configuration.
@@ -86,7 +86,7 @@ This guide will not cover adopting an existing RAID array or creating a new RAID
 
    For example, this configuration specifies that the RAID array with ID `root` from above should be mounted at `/`, using the filesystem provided in the host configuration. [The API documentation on filesystems](../Reference/Host-Configuration/API-Reference/FileSystem.md) contains more information on the filesystems configuration.
 
-1. The `storage.raid` configuration also has an optional field called `syncTimeout` that applies to all RAID arrays created with Trident. `syncTimeout` is the timeout in seconds to wait for RAID arrays to sync.
+1. The `raid` configuration also has an optional field called `syncTimeout` that applies to all RAID arrays created with Trident. `syncTimeout` is the timeout in seconds to wait for RAID arrays to sync.
 
    By default, Trident will **not** wait for RAID arrays to finish syncing before continuing with provisioning. This is because RAID arrays are supposed to be usable immediately after creation. If you provide a value for this field and the RAID arrays do **not** finish syncing within the specified timeout, Trident will fail the provisioning process and return an error. You will need to increase the timeout value if the RAID arrays are taking longer to sync than expected.
 
@@ -105,9 +105,9 @@ This guide will not cover adopting an existing RAID array or creating a new RAID
        syncTimeout: 10
    ```
 
-### Step 3: Run Trident to create RAID arrays in the target OS
+### Step 3: Run Trident to Create RAID Arrays
 
-1. Run Trident to create the software RAID array on clean install. Trident will:
+1. [Run `trident install`](./Perform-a-Clean-Install.md) to create the software RAID array on clean install. Trident will:
 
    - Stop and unmount all existing RAID arrays that are on the disks declared in the host configuration.
    - Create the RAID arrays declared in the host configuration via the `mdadm` package, and mount them if requested in the `storage.filesystems` configuration.

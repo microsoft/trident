@@ -4,7 +4,7 @@
 
 Software RAID configuration.
 
-The RAID array will be created using the `mdadm` package. During a clean install, all the existing RAID arrays that are on disks defined in the host configuration will be stopped and unmounted.
+The RAID array will be created using the `mdadm` package. During a clean install, all the existing RAID arrays that are on disks defined in the host configuration will be unmounted, and then stopped.
 
 The RAID arrays that are defined in the host configuration will be created, and mounted if requested in the `storage.filesystems` config.
 
