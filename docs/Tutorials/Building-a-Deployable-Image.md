@@ -133,7 +133,7 @@ While these A/B partition pairs are vital to A/B Update, there are a some filesy
 
 ```
 
-In addition to partition and filesystem definition, Trident must be added to the image.  This can be accomplished by including the `trident-service` package and enabling the `trident` service:
+In addition to partition and filesystem definition, Trident must be added to the image.  As the final step in install and update, [trident commit](../Reference/Trident-CLI.md#commit) must be invoked to validate an update and ensure the machine's boot order is correct.  To enable commit, Trident needs the `trident-service` package to be installed and the `trident` service to be enabled:
 
 ``` yaml
   packages:
