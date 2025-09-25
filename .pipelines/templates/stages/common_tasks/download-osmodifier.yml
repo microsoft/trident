@@ -47,26 +47,6 @@ steps:
         artifactName: "osmodifier_${{ parameters.targetArchitecture }}"
         targetPath: "$(Build.SourcesDirectory)/artifacts"
 
-  - ${{ if and(eq(parameters.osModifierBuildType, 'main'), eq(parameters.targetArchitecture, 'arm64'), ne(parameters.osModifierVersion, '')) }}:
-    - task: UniversalPackages@0
-      displayName: "Download OSModifier (main - pinned version for arm64)"
-      inputs:
-        command: download
-        vstsFeed: polar/PolarCoreArtifacts
-        vstsFeedPackage: osmodifier_arm64
-        vstsPackageVersion: ${{ parameters.osModifierVersion }}
-        downloadDirectory: "$(Build.SourcesDirectory)/artifacts"
-
-  - ${{ if and(eq(parameters.osModifierBuildType, 'main'), ne(parameters.targetArchitecture, 'arm64')) }}:
-    - task: UniversalPackages@0
-      displayName: "Download OSModifier (main - pinned version for amd64)"
-      inputs:
-        command: download
-        vstsFeed: polar/PolarCoreArtifacts
-        vstsFeedPackage: osmodifier
-        vstsPackageVersion: ${{ parameters.osModifierVersion }}
-        downloadDirectory: "$(Build.SourcesDirectory)/artifacts"
-
   - ${{ if and(eq(parameters.osModifierBuildType, 'preview'), eq(parameters.targetArchitecture, 'arm64')) }}:
     - task: UniversalPackages@0
       displayName: "Download OSModifier (preview - pinned version for arm64)"
