@@ -16,7 +16,7 @@ The goal of this document is to produce an installation ISO that utilizes Triden
 
 ### Step 1: Download the minimal base image
 
-Pull the minimal base image from mcr by running
+`minimal-os` is an Azure Linux vhdx maintained by Microsoft, comprised of the minimal components to be bootable. Pull minimal-os as a base image from mcr by running:
 
 ``` bash
 mkdir -p $HOME/staging
