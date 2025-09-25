@@ -1,7 +1,7 @@
 
 # Clean Install Safety Check
 
-When `trident install` is invoked, Trident ensures that it is running from either ramdisk or live media. This is an important safeguard and keeps Trident from overwriting the operating system that Trident is running in.
+When [`trident install`](../Reference/Trident-CLI.md#install) is invoked, Trident ensures that it is running from either ramdisk or live media. This is an important safeguard and keeps Trident from overwriting the operating system that Trident is running in.
 
 If Trident is not running in a ramdisk or live media, an error is returned immediately unless one of the following is true:
 
