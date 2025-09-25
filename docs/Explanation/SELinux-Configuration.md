@@ -1,18 +1,21 @@
 
 # SELinux Configuration
 
-SELinux is an access control system on Linux, officially supported by the Azure
-Linux distribution. SELinux is a Mandatory Access Control (MAC) system, meaning
-that the policy is set by a security administrator and cannot be changed by
-users. SELinux works in tandem with other security mechanisms; it cannot grant
-access that is denied by other mechanisms. SELinux is useful for achieving
-security goals such as:
+[SELinux](https://github.com/SELinuxProject) is an access control system on
+Linux, officially supported by the Azure Linux distribution. SELinux is a
+Mandatory Access Control (MAC) system, meaning that the policy is set by a
+security administrator and cannot be changed by users. SELinux works in tandem
+with other security mechanisms; it cannot grant access that is denied by other
+mechanisms. SELinux is useful for achieving security goals such as:
 
 - Least privilege
 - Integrity
 - Isolation
 - Confidentiality
 - Role separation
+
+More background on SELinux can be found in [What is
+SELinux?](https://www.redhat.com/en/topics/linux/what-is-selinux).
 
 The primary mechanism in SELinux is Type Enforcement (TE). In this mechanism,
 every process and object in the system has a type​. TE rules allow access
@@ -28,14 +31,14 @@ policy](../../selinux-policy-trident/trident.te):
 allow trident_t tmpfs_t:filesystem { getattr mount unmount };
 ```
 
-This rules allow processes with the `trident_t` type, i.e. Trident, to access
+This rule allow processes with the `trident_t` type, i.e. Trident, to access
 filesystems with type `tmpfs_t` and perform the operations `getattr`, `mount`,
 and `unmount`.
 
 ## Trident SELinux Domain
 
 When run directly on the host with SELinux enabled, Trident will run in the
-domain `trident_t`. The Trident SELinux policy is defined in
+domain `trident_t`. The Trident SELinux policy is defined in the
 `selinux-policy-trident/` directory. On the other hand, the Trident container
 image runs in privileged mode and thus runs in the `spc_t` domain, i.e "Super
 Privileged Container". As a result, the policies related to `trident_t` do not
@@ -67,13 +70,14 @@ OS](../Reference/Glossary.md#runtime-os)'s image.
 
 | Host Configuration \ Provisioning OS | NOT PRESENT | DISABLED  | PERMISSIVE | ENFORCING |
 |--------------------------------------|-------------|-----------|------------|-----------|
-| NOT PRESENT                          | NOT PRESENT | DISABLED  | PERMISSIVE | ENFORCING |
+| NOT SPECIFIED IN HOST CONFIGURATION  | NOT PRESENT | DISABLED  | PERMISSIVE | ENFORCING |
 | DISABLED                             | NOT PRESENT | DISABLED  | DISABLED   | DISABLED  |
 | PERMISSIVE                           | Error       | PERMISSIVE| PERMISSIVE | PERMISSIVE|
 | ENFORCING                            | Error       | ENFORCING | ENFORCING  | ENFORCING |
 
 Trident will determine whether or not SELinux is available on the [runtime
-OS](../Reference/Glossary.md#runtime-os) by checking for `/etc/selinux/config`.
+OS](../Reference/Glossary.md#runtime-os) by checking for a file at
+`/etc/selinux/config`.
 
 ## Debugging SELinux Denials
 
