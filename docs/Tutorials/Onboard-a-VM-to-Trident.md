@@ -52,7 +52,7 @@ cp -r bin/RPMS $HOME/staging
 
 ### Step 3: Create Image Customizer configuration including offline-initialize
 
-Add the `trident-service` package to the Image Customizer configuration. This will add the trident services needed for update and the `trident` package used for `offline-initialize`.
+Add the `trident-service` package to the Image Customizer configuration. This will add the Trident services needed for update and the `trident` package used for `offline-initialize`.
 
 To invoke `trident offline-initialize` during image creation, add it in the `postCustomization` scripts.
 
