@@ -32,7 +32,7 @@ By following this guide, you will:
 - Are of the **same** device type.
 - Have the same size.
 
-**Naming Convention**: In Trident, it is conventional to choose a short, descriptive string as the ID for an A/B volume pair. Then, to create the ids for the device copies inside the pair, the ID is suffixed with `<ab_volume_pair_id>-a` or `<ab_volume_pair_id>-b`. For instance, an A/B volume pair comprised of two RAID arrays, `root-a` and `root-b`, would have an ID `root`.
+**Naming Convention**: In Trident, it is conventional to choose a short, descriptive string as the ID for an A/B volume pair. Then, to create the IDs for the device copies inside the pair, the ID is suffixed with `<ab_volume_pair_id>-a` or `<ab_volume_pair_id>-b`. For instance, an A/B volume pair comprised of two RAID arrays, `root-a` and `root-b`, would have an ID `root`.
 
 ### Step 2: Add `abUpdate` configuration
 
