@@ -1,9 +1,9 @@
 
-# Creating Azure Linux Images to Deploy with Trident
+# Creating Azure Linux Images with Image Customizer
 
 ## Goals
 
-To deploy an operating system, Trident requires [COSI](../Reference/COSI.md) files. This document describes how to create a COSI file.
+To deploy an operating system, Trident requires [COSI](../Reference/COSI.md) files. This document describes how to create a COSI file with [Image Customizer](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/README.html).
 
 ## Prerequisites
 
