@@ -9,7 +9,7 @@ parameters:
 
   - name: osModifierVersion
     type: string
-    default: ""
+    default: "1.1.0-preview.937762"
 
   - name: targetArchitecture
     type: string
