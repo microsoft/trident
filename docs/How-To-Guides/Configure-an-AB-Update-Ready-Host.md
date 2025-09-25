@@ -95,7 +95,7 @@ To onboard a VM to Trident, follow [this tutorial](../Tutorials/Onboard-a-VM-to-
 - Adopt underlying device copies.
 - Link each pair of device copies into a logical A/B volume pair.
 
-1. Run A/B updates with Trident by following [this tutorial](../Tutorials/Performing-an-ABUpdate.md). On an A/N update, Trident will:
+1. Run A/B updates with Trident by following [this tutorial](../Tutorials/Performing-an-ABUpdate.md). On an A/B update, Trident will:
 
    - Update the OS image on the inactive partitions, so that it becomes active after reboot.
    - If needed, mount the updated partitions at the mount point.
