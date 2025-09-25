@@ -10,7 +10,7 @@ By following this guide, you will:
 - Build a container image containing Trident.
 - Load the image into your local container runtime.
 - Run Trident inside a container.
-- Understand the purpose of each flag and mounted directory required for Trident
+- Understand the purpose of each flag and mounted directory required for Trident.
   to function correctly.
 
 ## Prerequisites
@@ -36,7 +36,7 @@ form of containerized Trident at
 
 #### Note
 
-If you plan to run to Trident in the same environment in which you build the
+If you plan to run Trident in the same environment in which you build the
 Trident container image, you can instead use:
 
 ```bash
