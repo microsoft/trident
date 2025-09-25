@@ -8,17 +8,11 @@ To deploy an operating system, Trident requires [COSI](../Reference/COSI.md) fil
 ## Prerequisites
 
 1. Ensure that [oras](https://oras.land/docs/installation/) is installed.
-2. Ensure [Image Customizer container is accessible](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/quick-start/quick-start.html).
+2. Ensure [Image Customizer container](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/quick-start/quick-start.html) is accessible.
 
 ## Instructions
 
-### Create OS Image
-
-Follow the Image Customizer [documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/quick-start/quick-start-binary.html) to configure and create an OS image, paying special attention to [specify](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/api/cli.html#--output-image-formatformat) `--output-image-format=cosi`.
-
-#### Simple Image
-
-##### Step 1: Download the minimal base image
+### Step 1: Download the minimal base image
 
 Pull the minimal base image from mcr by running
 
@@ -29,7 +23,7 @@ oras pull mcr.microsoft.com/azurelinux/3.0/image/minimal-os:latest
 popd
 ```
 
-##### Step 2: Get Trident RPMs
+### Step 2: Get Trident RPMs
 
 Build the Trident RPMs using `make bin/trident-rpms.tar.gz`.  After running this make command, the RPMs will be built and packaged into bin/trident-rpms.tar.gz and unpacked into bin/RPMS/x86_64:
 
@@ -49,7 +43,9 @@ Copy RPMs to staging folder:
 cp -r bin/RPMS $HOME/staging
 ```
 
-##### Step 3: Create Image Customizer Configuration
+### Step 3: Create Image Customizer Configuration
+
+Follow the Image Customizer [documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/README.html) to configure `$HOME/staging/ic-config.yaml`:
 
 ``` yaml
 storage:
@@ -115,21 +111,25 @@ os:
       - trident
 ```
 
-##### Step 4: Invoke Image Customizer
+### Step 4: Invoke Image Customizer
 
-Assuming RPMs, a base image `image.vhdx` and Image Customizer configuration `image-config.yaml` found in `$HOME/staging`.
+Assuming RPMs, a base image `image.vhdx` and Image Customizer configuration `ic-config.yaml` found in `$HOME/staging`.
+
+Invoke Image Customizer, paying special attention to [specify](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/api/cli.html#--output-image-formatformat) `--output-image-format=cosi`:
 
 ``` bash
- docker run \
-   --rm \
-   --privileged=true \
-   -v /dev:/dev \
-   -v "$HOME/staging:/mnt/staging:z" \
-   mcr.microsoft.com/azurelinux/imagecustomizer:0.18.0 \
-     --image-file "/mnt/staging/image.vhdx" \
-     --config-file "/mnt/staging/image-config.yaml" \
-     --rpm-source "/mnt/staging/RPMS/x86_64" \
-     --build-dir "/build" \
-     --output-image-format "cosi" \
-     --output-image-file "/mnt/staging/out/image.cosi"
+pushd $HOME/staging
+docker run \
+    --rm \
+    --privileged=true \
+    -v /dev:/dev \
+    -v ".:/staging:z" \
+    mcr.microsoft.com/azurelinux/imagecustomizer:0.18.0 \
+        --image-file "/staging/image.vhdx" \
+        --config-file "/staging/ic-config.yaml" \
+        --rpm-source "/staging/RPMS/x86_64" \
+        --build-dir "/build" \
+        --output-image-format "cosi" \
+        --output-image-file "/staging/out/image.cosi"
+popd
 ```
