@@ -28,6 +28,14 @@ parameters:
     type: string
     default: "1.1.0-preview.937762"
 
+  - name: osModifierBuildType
+    displayName: OSModifier build type to download from osmodifier pipelines
+    type: string
+    values:
+      - main
+      - preview
+    default: preview
+
 stages:
   - stage: GetTridentBinaries_rpms_${{ parameters.targetArchitecture }}
     displayName: Trident ${{ parameters.targetArchitecture }} RPMs (Build)
@@ -91,6 +99,7 @@ stages:
               osModifierVersion: ${{ parameters.osModifierVersion }}
               targetArchitecture: ${{ parameters.targetArchitecture }}
               osModifierBranch: ${{ parameters.osModifierBranch }}
+              osModifierBuildType: ${{ parameters.osModifierBuildType }}
           - template: release.yml
             parameters:
               targetArchitecture: ${{ parameters.targetArchitecture }}
@@ -127,6 +136,7 @@ stages:
               osModifierVersion: ${{ parameters.osModifierVersion }}
               targetArchitecture: ${{ parameters.targetArchitecture }}
               osModifierBranch: ${{ parameters.osModifierBranch }}
+              osModifierBuildType: ${{ parameters.osModifierBuildType }}
           - template: release.yml
             parameters:
               targetArchitecture: ${{ parameters.targetArchitecture }}

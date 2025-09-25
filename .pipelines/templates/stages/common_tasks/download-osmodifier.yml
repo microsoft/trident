@@ -5,6 +5,7 @@ parameters:
     values:
       - main
       - preview
+    default: preview
 
   - name: osModifierVersion
     type: string
