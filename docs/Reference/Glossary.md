@@ -75,6 +75,10 @@ associated partitions, and any other partitions that are part of the install.
 
 _Note: This definition does not consider other OSes or distros._
 
+## minimal-os
+
+`minimal-os` is an Azure Linux vhdx maintained by Microsoft, comprised of the minimal components to be bootable.
+
 ## Multiboot
 
 The capability of having multiple [installs](#install) on the same device, even
