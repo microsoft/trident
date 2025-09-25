@@ -32,7 +32,7 @@ This guide will not cover adopting an existing encrypted volume in the [`offline
 
 ### Step 2: Add `encryption` Configuration
 
-1. Inside the host configuration, under `storage`, add a new encrypted volume to the `encryption.volumes` section, completing these three **required** fields:
+1. Inside the host configuration, under `storage`, add a new [`encryption` config](../Reference/Host-Configuration/API-Reference/Encryption.md). Add a new encrypted volume to the `encryption.volumes` section, completing these three **required** fields:
 
    - `id` is the ID of the LUKS-encrypted volume to create. It must be non-empty and unique among the IDs of all block devices in the host configuration. This includes the IDs of all disk partitions, encrypted volumes, software RAID arrays, and A/B volume pairs.
    - `deviceName` is the name of an encrypted device to create under `/dev/mapper` when opening the volume. It should be a valid file name and unique among all encrypted volumes, as well as among the Device Mapper devices.
