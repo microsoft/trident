@@ -14,7 +14,7 @@ Currently, the only format supported by Trident is Composable OS Image (COSI). C
 
 ### `sha384` **<span>(required)</span>**
 
-The Sha384 of the entire COSI file.
+The Sha384 of the metadata in the COSI file.
 
 | Characteristic | Value                           |
 | -------------- | ------------------------------- |

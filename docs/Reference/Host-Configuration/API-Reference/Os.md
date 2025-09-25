@@ -59,7 +59,7 @@ Kernel modules to configure.
 
 ### `netplan` (optional)
 
-Netplan network configuration for the runtime OS.
+Netplan network configuration for the target OS.
 
 See [Netplan YAML Configuration](https://netplan.readthedocs.io/en/stable/netplan-yaml/) for more information.
 

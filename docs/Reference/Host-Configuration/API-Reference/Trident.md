@@ -2,7 +2,7 @@
 
 # Trident
 
-The Trident Management configuration controls the installation of the Trident agent onto the runtime OS.
+The Trident Management configuration controls the installation of the Trident agent onto the target OS.
 
 | Characteristic | Value    |
 | -------------- | -------- |
@@ -20,7 +20,7 @@ Describes where to place the datastore Trident will use to store its state. Defa
 
 ### `disable` (optional)
 
-When set to `true`, prevents Trident from being enabled on the runtime OS. In that case, the remaining fields are ignored.
+When set to `true`, prevents Trident from being enabled on the target OS. In that case, the remaining fields are ignored.
 
 | Characteristic | Value     |
 | -------------- | --------- |
@@ -29,7 +29,7 @@ When set to `true`, prevents Trident from being enabled on the runtime OS. In th
 
 ### `enableGrpc` (optional)
 
-Whether Trident should start a gRPC server to listen for commands when the runtime OS boots. Defaults to `false`.
+Whether Trident should start a gRPC server to listen for commands when the target OS boots. Defaults to `false`.
 
 | Characteristic | Value     |
 | -------------- | --------- |
@@ -45,7 +45,7 @@ Optional URL to stream logs to. TODO: document the interface.
 
 ### `phonehome` (optional)
 
-URL to reach out to when runtime OS networking is up, so Trident can report its status. If not specified, the value from the Trident configuration will be used. This is useful for debugging and monitoring purposes, say by an orchestrator.
+URL to reach out to when target OS networking is up, so Trident can report its status. If not specified, the value from the Trident configuration will be used. This is useful for debugging and monitoring purposes, say by an orchestrator.
 
 | Characteristic | Value    |
 | -------------- | -------- |

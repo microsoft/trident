@@ -8,6 +8,7 @@ parameters:
 
   - name: osModifierVersion
     type: string
+    default: ""
 
   - name: targetArchitecture
     type: string

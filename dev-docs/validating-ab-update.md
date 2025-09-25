@@ -9,12 +9,13 @@ how to manually validate the A/B update flow with Trident.
 
 ## Validation steps
 
-1. First, make the runtime OS image payload available for Trident to operate
-   on. An easy way to do so is to use the following command:
-   `make download-runtime-images`. This will download the latest Trident
-   images to the `artifacts/test-image` folder: `regular.cosi`, `verity.cosi`,
-   and `container.cosi`, which is the host OS image for container testing. For
-   more details on container testing, please reference [Validating Container](/dev-docs/validating-container.md).
+1. First, make the target OS image payload available for Trident to operate on.
+   An easy way to do so is to use the following command: `make
+   download-runtime-images`. This will download the latest Trident images to the
+   `artifacts/test-image` folder: `regular.cosi`, `verity.cosi`, and
+   `container.cosi`, which is the host OS image for container testing. For more
+   details on container testing, please reference [Validating
+   Container](/dev-docs/validating-container.md).
 
    The downloaded OS image can then be referenced in Host Configuration as
    follows: `http://NETLAUNCH_HOST_ADDRESS/files/<image_file_name>`. Netlaunch
@@ -115,9 +116,9 @@ how to manually validate the A/B update flow with Trident.
 4. Boot the VM simulating a Bare Metal host with the Provisioning OS using the
    standard command `make run-netlaunch`.
 
-5. When the clean install, i.e. the installation of the initial runtime OS is
-   completed, log into the VM using SSH: `ssh root@<IP_address>`. The IP
-   address and the port number of the VM will be exposed in the Netlaunch logs:
+5. When the clean install, i.e. the installation of the initial target OS is
+   completed, log into the VM using SSH: `ssh root@<IP_address>`. The IP address
+   and the port number of the VM will be exposed in the Netlaunch logs:
 
    `INFO[0019] Trident connected from <IP_address>:<port_number>`
 
@@ -129,8 +130,8 @@ how to manually validate the A/B update flow with Trident.
 
 7. Make a copy of `input/trident.yaml` used for the clean install servicing and
    update the URL to point to the update OS image. An easy way to make the
-   updated payload available is to use Netlisten to serve them at a local
-   server for Trident to pull from.
+   updated payload available is to use Netlisten to serve them at a local server
+   for Trident to pull from.
 
    ```bash
    cp input/trident.yaml input/trident-update.yaml
@@ -157,11 +158,11 @@ how to manually validate the A/B update flow with Trident.
    sudo /usr/bin/trident update -v trace trident-update.yaml
    ```
 
-9. Confirm that the VM simulating a BM host reboots into the new runtime OS
-   image. SSH back into the host and view the changes to the system by fetching
-   the Host Status with `trident get`. Specifically, make sure that
-   `abActiveVolume` is set to `volume-b`; that the image URLs have been
-   updated; and that there are no failures, i.e. `lastError` is empty.
+9. Confirm that the VM simulating a BM host reboots into the target OS image.
+   SSH back into the host and view the changes to the system by fetching the
+   Host Status with `trident get`. Specifically, make sure that `abActiveVolume`
+   is set to `volume-b`; that the image URLs have been updated; and that there
+   are no failures, i.e. `lastError` is empty.
 
 10. You can view the full background log under `/var/log/trident-full.log`, as
    well as any log files persisted from the previous servicing, for more info.
@@ -171,10 +172,10 @@ how to manually validate the A/B update flow with Trident.
 
 ## Staging and Finalizing A/B Update
 
-In addition to testing the standard A/B update flow, where the new OS images
-are staged and then, immediately, finalized, it is also important to validate
-the scenario where the deployment is staged and finalized separately. This can
-be done with the `--allowed-operations` option in the following way:
+In addition to testing the standard A/B update flow, where the new OS images are
+staged and then, immediately, finalized, it is also important to validate the
+scenario where the deployment is staged and finalized separately. This can be
+done with the `--allowed-operations` option in the following way:
 
 - To only stage a new deployment, set `--allowed-operations stage`.
 - To only finalize the staged deployment, set `--allowed-operations finalize`.

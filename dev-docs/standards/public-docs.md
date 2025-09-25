@@ -104,18 +104,17 @@ The following structure is recommended:
 1. **Title**: A clear and descriptive title that reflects the content of the
     tutorial. For example, "Performing a deployment with Trident" or "Creating a
     Trident-ready image".
-2. **Table of Contents**
-3. **Introduction**: A brief overview of the tutorial's purpose and what users
+2. **Introduction**: A brief overview of the tutorial's purpose and what users
     will learn. This should inform a user if the tutorial is relevant to them
     and what they can expect to achieve by the end of it.
-4. **Prerequisites**: A list of any prerequisites or requirements for the
+3. **Prerequisites**: A list of any prerequisites or requirements for the
     tutorial. This may include software versions, hardware requirements, or
     any other necessary tools or information.
-5. **Instructions**: A clear and concise set of instructions
+4. **Instructions**: A clear and concise set of instructions
     for completing the tutorial. Use numbered lists or bullet points to
     break down complex tasks into manageable steps. Include code snippets,
     screenshots, or diagrams as needed to illustrate the process.
-6. **Conclusion**: A summary of what the user has learned and any next steps
+5. **Conclusion**: A summary of what the user has learned and any next steps
     they can take. This may include links to related tutorials, documentation,
     or resources for further learning.
 
@@ -141,17 +140,16 @@ The following structure is recommended:
 
 1. **Title**: A clear and descriptive title that reflects the content of the
     how-to guide. For example, "Configure Root Verity" or "Validate Host Configuration".
-2. **Table of Contents**
-3. **Goals**: A brief an concise list of the specific goals that a user will
+2. **Goals**: A brief an concise list of the specific goals that a user will
     achieve if they follow this guide.
-4. **Prerequisites**: A list of any prerequisites or requirements for the
+3. **Prerequisites**: A list of any prerequisites or requirements for the
     how-to guide. This may include software versions, hardware requirements, or
     any other necessary tools or information.
-5. **Instructions**: A clear and concise set of instructions for completing the
+4. **Instructions**: A clear and concise set of instructions for completing the
     how-to guide. Use numbered lists or bullet points to break down complex
     tasks into manageable steps. Include code snippets, screenshots, or diagrams
     as needed to illustrate the process.
-6. **Troubleshooting**: A section that provides troubleshooting tips and common
+5. **Troubleshooting**: A section that provides troubleshooting tips and common
     pitfalls to avoid. This may include links to related documentation or
     resources for further learning.
 
@@ -182,11 +180,10 @@ The following structure is recommended:
 1. **Title**: A clear and descriptive title that reflects the content of the
     explanation. It should generally be the name of the feature or concept
     being explained. For example, "Root Verity" or "Trident Architecture".
-2. **Table of Contents**
-3. **Overview**: A brief overview of the feature or concept being explained.
+2. **Overview**: A brief overview of the feature or concept being explained.
     This should include a high-level description of what it is and why it is
     important.
-4. (Whatever is needed to explain the feature or concept)
+3. (Whatever is needed to explain the feature or concept)
 
 ### Reference Structure
 
