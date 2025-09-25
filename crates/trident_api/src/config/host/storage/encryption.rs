@@ -21,52 +21,45 @@ use crate::schema_helpers::block_device_id_schema;
 pub struct Encryption {
     /// A URL to read the recovery key from.
     ///
-    /// This parameter allows specifying a local file path to a recovery
-    /// key file via a `file://` URL scheme. The recovery key file serves
-    /// as an essential fallback to recover data should TPM 2.0 automatic
-    /// decryption fail. If not specified, only the TPM 2.0 device will be
+    /// This parameter allows specifying a local file path to a recovery key file via a `file://`
+    /// URL scheme. The recovery key file serves as an essential fallback to recover data should
+    /// TPM 2.0 automatic decryption fail. If not specified, only the TPM 2.0 device will be
     /// enrolled.
     ///
-    /// The URL must be non-empty if provided. Other URL schemes are not
-    /// supported at this time.
+    /// The URL must be non-empty if provided. Other URL schemes are not supported at this time.
     ///
     /// # Recommended Configuration
     ///
-    /// It is strongly advised to configure a recovery key file, as it
-    /// plays a pivotal role in data recovery.
+    /// It is strongly advised to configure a recovery key file, as it plays a pivotal role in
+    /// data recovery.
     ///
     /// # File Format Expectations
     ///
-    /// The recovery key file must be a binary file without any encoding.
-    /// This direct format ensures compatibility with cryptsetup and
-    /// systemd APIs. Be mindful that all file content, including any
-    /// potential whitespace or newline characters, is considered part of
-    /// the recovery key.
+    /// The recovery key file must be a binary file without any encoding. This direct format
+    /// ensures compatibility with cryptsetup and systemd APIs. Be mindful that all file content,
+    /// including any potential whitespace or newline characters, is considered part of the
+    /// recovery key.
     ///
     /// # Security Considerations
     ///
-    /// Ensuring the recovery key's confidentiality and integrity is
-    /// paramount. Employ secure storage and rigorous access control
-    /// measures. Specifically:
+    /// Ensuring the recovery key's confidentiality and integrity is paramount. Employ secure
+    /// storage and rigorous access control measures. Specifically:
     ///
-    /// - The file containing the key should only be accessible by the
-    ///   root user and have `0400` permissions set.
+    /// - The file containing the key should only be accessible by the root user and have `0400`
+    ///   permissions set.
     ///
-    /// - The recovery key should be a minimum of 32 bytes long and should
-    ///   be generated with enough high entropy to defend against brute
-    ///   force or cryptographic attacks targeting on-disk hash values.
+    /// - The recovery key should be a minimum of 32 bytes long and should be generated with a high
+    ///   enough entropy to defend against brute force or cryptographic attacks targeting on-disk
+    ///   hash values.
     ///
     /// # Generating a Recovery Key
     ///
-    /// One way to create a recovery key file on Linux systems is using
-    /// the `dd` utility:
+    /// One way to create a recovery key file on Linux systems is using the `dd` utility:
     ///
-    /// > Note: The following example is for illustration purposes only.
-    /// > Be sure to generate recovery keys with diligence and attention
-    /// > to security principles. Please adjust the following example
-    /// > according to your own security policies and operational
-    /// > environment to fit your specific security requirements and
-    /// > constraints.
+    /// > Note: The following example is for illustration purposes only. Be sure to generate
+    /// > recovery keys with diligence and attention to security principles. Please adjust the
+    /// > following example according to your own security policies and operational environment to
+    /// > fit your specific security requirements and constraints.
     ///
     /// ```sh
     /// touch ./recovery.key
@@ -74,19 +67,17 @@ pub struct Encryption {
     /// dd if=/dev/random of=./recovery.key bs=1 count=256
     /// ```
     ///
-    /// This command generates 256 bytes of random data for the recovery
-    /// key, sourcing entropy from `/dev/random`. Be aware, in
-    /// environments with limited entropy sources, such as certain
-    /// embedded systems, `/dev/random` may not provide sufficient data
-    /// promptly. Alternative entropy sources or methods may be required.
+    /// This command generates 256 bytes of random data for the recovery key, sourcing entropy from
+    /// `/dev/random`. Be aware, in environments with limited entropy sources, such as certain
+    /// embedded systems, `/dev/random` may not provide sufficient data promptly. Alternative
+    /// entropy sources or methods may be required.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub recovery_key_url: Option<Url>,
 
     /// The list of LUKS2-encrypted volumes to create.
     ///
-    /// This parameter is required and must not be empty. Each item is an
-    /// object that will contain the configuration for a given partition
-    /// or RAID array.
+    /// This parameter is required and must not be empty. Each item is an object that will contain
+    /// the configuration for a given partition or RAID array.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub volumes: Vec<EncryptedVolume>,
 
@@ -117,10 +108,10 @@ pub struct Encryption {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct EncryptedVolume {
-    /// The id of the LUKS-encrypted volumes to create.
+    /// The ID of the LUKS-encrypted volume to create.
     ///
-    /// This parameter is required. It must be non-empty and unique among the ids of all block
-    /// devices in the host configuration. This includes the ids of all disk partitions, encrypted
+    /// This parameter is required. It must be non-empty and unique among the IDs of all block
+    /// devices in the host configuration. This includes the IDs of all disk partitions, encrypted
     /// volumes, software RAID arrays, and A/B volume pairs.
     #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
     pub id: BlockDeviceId,
@@ -131,7 +122,7 @@ pub struct EncryptedVolume {
     /// volumes, as well as among the Device Mapper devices.
     pub device_name: String,
 
-    /// The id of the disk partition or software RAID array to encrypt.
+    /// The ID of the disk partition or software RAID array to encrypt.
     ///
     /// This parameter is required. It must be unique among the list of encrypted volumes.
     ///
