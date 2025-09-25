@@ -47,7 +47,7 @@ apply to the Trident container image.
 As part of its operations, Trident will run
 [`setfiles`](https://man7.org/linux/man-pages/man8/setfiles.8.html) on the new
 OS. This operation relabels all of the files in the new OS (what will become the
-[runtime OS](../Reference/Glossary.md)) according to the labels specified at
+[target OS](../Reference/Glossary.md)) according to the labels specified at
 `/etc/selinux/targeted/contexts/files/file_contexts`.
 
 ## Configuring SELinux for the Runtime OS
