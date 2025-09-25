@@ -32,7 +32,7 @@ By following this guide, you will:
 - Are of the **same** device type.
 - Have the same size.
 
-**Naming Convention**: In Trident, it is conventional to choose a short, descriptive string as the id for an A/B volume pair. Then, to create the ids for the device copies inside the pair, the id is suffixed with `<ab_volume_pair_id>-a` or `<ab_volume_pair_id>-b`. For instance, an A/B volume pair comprised of two RAID arrays, `root-a` and `root-b`, would have an id `root`.
+**Naming Convention**: In Trident, it is conventional to choose a short, descriptive string as the ID for an A/B volume pair. Then, to create the ids for the device copies inside the pair, the ID is suffixed with `<ab_volume_pair_id>-a` or `<ab_volume_pair_id>-b`. For instance, an A/B volume pair comprised of two RAID arrays, `root-a` and `root-b`, would have an ID `root`.
 
 ### Step 2: Add `abUpdate` configuration
 
@@ -43,10 +43,10 @@ By following this guide, you will:
 1. Add A/B volume pairs to [`volumePairs`](../Reference/Host-Configuration/API-Reference/AbVolumePair.md). Each A/B volume pair added to `volumePairs` must contain the following three **required** fields:
 
 - `id` is a unique identifier for the A/B volume pair. This is a user-defined string that links the A/B volume pair to the results in the Host Status and to the [`filesystems`](../Reference/Host-Configuration/API-Reference/FileSystem.md) configuration. The identifier needs to be unique across devices of all types, not just A/B volume pairs.
-- `volumeAId` is the id of the device that will be used as the A volume.
-- `volumeBId` is the id of the device that will be used as the B volume.
+- `volumeAId` is the ID of the device that will be used as the A volume.
+- `volumeBId` is the ID of the device that will be used as the B volume.
 
-  For example, the host configuration below declares one A/B volume pair with id `root`. This A/B volume pair consists of two volumes, `root-a` and `root-b`, that are disk partitions. They have the same partition type `root` and are of the same size (8G). Because the `root` A/B volume pair needs to be mounted, the `filesystems` configuration lists `root` with the mount point at `/`.
+  For example, the host configuration below declares one A/B volume pair with ID `root`. This A/B volume pair consists of two volumes, `root-a` and `root-b`, that are disk partitions. They have the same partition type `root` and are of the same size (8G). Because the `root` A/B volume pair needs to be mounted, the `filesystems` configuration lists `root` with the mount point at `/`.
 
    ```yaml
    storage:

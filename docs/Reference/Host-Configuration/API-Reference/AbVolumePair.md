@@ -23,7 +23,7 @@ This is a user-defined string that links the A/B volume pair to the results in t
 
 ### `volumeAId` **<span>(required)</span>**
 
-The id of the device that will be used as the A volume.
+The ID of the device that will be used as the A volume.
 
 | Characteristic | Value             |
 | -------------- | ----------------- |
@@ -32,7 +32,7 @@ The id of the device that will be used as the A volume.
 
 ### `volumeBId` **<span>(required)</span>**
 
-The id of the device that will be used as the B volume.
+The ID of the device that will be used as the B volume.
 
 | Characteristic | Value             |
 | -------------- | ----------------- |

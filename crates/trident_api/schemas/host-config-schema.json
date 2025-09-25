@@ -88,12 +88,12 @@
           "format": "Block Device ID"
         },
         "volumeAId": {
-          "description": "The id of the device that will be used as the A volume.",
+          "description": "The ID of the device that will be used as the A volume.",
           "type": "string",
           "format": "Block Device ID"
         },
         "volumeBId": {
-          "description": "The id of the device that will be used as the B volume.",
+          "description": "The ID of the device that will be used as the B volume.",
           "type": "string",
           "format": "Block Device ID"
         }

@@ -32,11 +32,11 @@ pub struct AbVolumePair {
     #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
     pub id: BlockDeviceId,
 
-    /// The id of the device that will be used as the A volume.
+    /// The ID of the device that will be used as the A volume.
     #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
     pub volume_a_id: BlockDeviceId,
 
-    /// The id of the device that will be used as the B volume.
+    /// The ID of the device that will be used as the B volume.
     #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
     pub volume_b_id: BlockDeviceId,
 }
