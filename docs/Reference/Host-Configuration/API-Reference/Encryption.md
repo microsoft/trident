@@ -72,7 +72,7 @@ Ensuring the recovery key's confidentiality and integrity is paramount. Employ s
 
 - The file containing the key should only be accessible by the root user and have `0400` permissions set.
 
-- The recovery key should be a minimum of 32 bytes long and should be generated with enough high entropy to defend against brute force or cryptographic attacks targeting on-disk hash values.
+- The recovery key should be a minimum of 32 bytes long and should be generated with a high enough entropy to defend against brute force or cryptographic attacks targeting on-disk hash values.
 
 # Generating a Recovery Key
 

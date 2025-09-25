@@ -39,7 +39,7 @@ See the reference links for picking the right number of devices. Devices are par
 
 A unique identifier for the RAID array.
 
-This is a user-defined string that allows to link the RAID array to the mount points and also to results in the Host Status. The identifier must be unique across all devices in the host configuration.
+This is a user-defined string that links the RAID array to the `filesystemms` config in the configuration. The identifier must be unique across devices of all types in the host configuration.
 
 | Characteristic | Value             |
 | -------------- | ----------------- |

@@ -51,9 +51,9 @@ pub struct Raid {
 pub struct SoftwareRaidArray {
     /// A unique identifier for the RAID array.
     ///
-    /// This is a user-defined string that allows to link the RAID array to the mount points and
-    /// also to results in the Host Status. The identifier must be unique across all devices in the
-    /// host configuration.
+    /// This is a user-defined string that links the RAID array to the `filesystemms` config in the
+    /// configuration. The identifier must be unique across devices of all types in the host
+    /// configuration.
     #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
     pub id: BlockDeviceId,
 
