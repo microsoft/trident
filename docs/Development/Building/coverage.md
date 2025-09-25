@@ -7,17 +7,7 @@ gates ensure we maintain a high level of code coverage.
 
 ## Requirements
 
-1. Install `cargo-llvm-cov` if you haven't already:
-
-   ```bash
-   cargo install cargo-llvm-cov --locked
-   ```
-
-2. Install `cargo-nextest` if you haven't already:
-
-   ```bash
-   cargo install cargo-nextest --locked
-   ```
+See [Code Coverage Dependencies](dependencies#code-coverage-dependencies).
 
 ## Running Coverage
 

@@ -4,13 +4,16 @@ sidebar_position: 1
 
 # Requirements
 
-Trident's build-time dependencies.
+Trident's dependencies.
 
-## Rust
+## Build Dependencies
 
-- Rust (latest stable)
+### Compilers
 
-## Packages
+- Rust: latest stable
+- Go: 1.25+ (for osmodifier)
+
+### Packages
 
 - Ubuntu/Debian:
 
@@ -18,8 +21,28 @@ Trident's build-time dependencies.
   sudo apt install build-essential pkg-config libssl-dev libclang-dev protobuf-compiler
   ```
 
-- Python
+- Docker (follow the instructions at [Install Docker Engine on Ubuntu](https://docs.docker.com/engine/install/ubuntu/))
+
+## Test Dependencies
+
+- Python 3.8+
+- Python packages:
 
   ```bash
   sudo pip3 install virt-firmware
   ```
+
+## Code Coverage Dependencies
+
+- `cargo-llvm-cov`
+
+  ```bash
+  cargo install cargo-llvm-cov --locked
+  ```
+
+- `cargo-nextest`
+
+  ```bash
+  cargo install cargo-nextest --locked
+  ```
+

@@ -18,7 +18,7 @@ make .cargo/config
 :::note
 
 Cargo only expects one config file, so this will cause cargo to complain about
-finding two. This is expected.
+finding two. This is expected. `.cargo/config` will take precedence.
 
 :::
 
@@ -40,9 +40,9 @@ The binary will be placed at `target/release/trident`.
 
 ## Building OS Modifier
 
-Trident depends on `osmodifier`, a tool coming from the [Azure Linux Image
-Tools](https://github.com/microsoft/azure-linux-image-tools) git submodule to
-perform OS image modifications. To build `osmodifier`, run:
+Trident depends on `osmodifier`, a tool coming from the
+[Azure Linux Image Tools](https://github.com/microsoft/azure-linux-image-tools)
+repository, to perform OS image modifications. To build `osmodifier`, run:
 
 ```bash
 # Ensure the git submodule is initialized
