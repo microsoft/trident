@@ -5,8 +5,52 @@
 // See: https://docusaurus.io/docs/api/docusaurus-config
 
 import { themes as prismThemes } from 'prism-react-renderer';
+import path from "path";
+import fs from "fs";
 
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
+function getVersions() {
+  const versionsPath = path.resolve(__dirname, "versions.json");
+  if (fs.existsSync(versionsPath)) {
+    return require(versionsPath);
+  } else {
+    return ["current"];
+  }
+}
+function getDocsVersions() {
+  let currentVersion = getLatestVersion();
+  let versions = getVersions();
+  const result = {};
+
+  versions.forEach(version => {
+    if (version === 'current') {
+      result[version] = {
+        label: 'dev',
+        banner: 'unreleased',
+        badge: false,
+      };
+    } else if (version !== currentVersion) {
+      result[version] = {
+        banner: 'unmaintained',
+        badge: false,
+      };
+    } else {
+      result[version] = {
+        banner: 'none',
+        badge: false,
+      };
+    }
+  });
+  return result;
+}
+
+function getLatestVersion() {
+  let versions = getVersions();
+  if (versions.length < 1) {
+    return 'current';
+  }
+  return versions[0];
+}
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
@@ -49,8 +93,9 @@ const config = {
       /** @type {import('@docusaurus/preset-classic').Options} */
       ({
         docs: {
-          path: '../docs',
           routeBasePath: '/docs/',
+          lastVersion: getLatestVersion(),
+          versions: getDocsVersions(),
           sidebarPath: './sidebars.js',
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
@@ -80,6 +125,10 @@ const config = {
             docId: 'Trident',
             position: 'left',
             label: 'Docs',
+          },
+          {
+            type: "docsVersionDropdown",
+            position: "left",
           },
           {
             href: 'https://github.com/microsoft/trident',
@@ -140,15 +189,6 @@ const config = {
       /** @type {import("@easyops-cn/docusaurus-search-local").PluginOptions} */
       {
         hashed: true,
-        docsRouteBasePath: "docs",
-        docsDir: "../docs",
-        searchContextByPaths: [
-          {
-            label: "Documents",
-            path: "docs",
-          },
-        ],
-        hideSearchBarWithNoSearchContext: true,
       },
     ],
     '@docusaurus/theme-mermaid'
