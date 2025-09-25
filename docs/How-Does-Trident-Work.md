@@ -96,3 +96,11 @@ image configuration details from both the COSI file and the separate Image
 History file. This approach minimizes duplication of configuration data between
 build and deployment phases, streamlining the overall workflow and ensuring
 consistency.
+
+## Reducing downtime
+
+Trident is designed to minimize downtime during servicing operations. By
+staging OS images in advance and allowing for a two-phase servicing workflow,
+Trident ensures that workloads experience minimal disruption. Additionally,
+Trident's efficient image transfer and deployment mechanisms further reduce the
+time required for servicing operations.

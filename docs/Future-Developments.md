@@ -10,3 +10,4 @@ future releases. Key areas of focus include:
 - Implementation of a Host Report API to provide detailed hardware and software
   inventory.
 - Addition of a pre-reboot hook for advanced servicing workflows.
+- Kexec support to enable faster reboots during servicing operations.
