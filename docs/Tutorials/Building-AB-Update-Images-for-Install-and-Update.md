@@ -1,5 +1,5 @@
 
-# Building a Deployable Image
+# Building A/B Update Images for Install and Update
 
 ## Introduction
 
