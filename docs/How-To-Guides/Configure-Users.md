@@ -47,7 +47,7 @@ The user will be created with a locked password (no password can be used to logi
 
 ### Step 2: Configure multiple users
 
-To create multiple users just add multiple users under the user section. Example:
+To create multiple users, simply add additional user entries under the `users` section. Example:
 
 ```yaml
 os:
@@ -69,7 +69,7 @@ os:
 ```
 
 1. Replace with the desired usernames
-2. Replace the SSH keys with the actual content of the public keys of each respective user.
+2. Replace the SSH keys entries with the actual content of the public keys of each respective user.
 
 ### Step 3: Set custom user properties
 
@@ -160,5 +160,5 @@ cat /etc/group
 **Custom startup command fails**:
 
 - Ensure the specified command, shell, or referenced script exists on the target system.
-- Verify the path is correct (e.g., `/bin/bash`, `/usr/scripts/startup.sh`). 
+- Verify the path is correct (e.g., `/bin/bash`, `/usr/scripts/startup.sh`).
 - Use `ls -la /path/to/executable` to check if the file exists and has executable permissions.
