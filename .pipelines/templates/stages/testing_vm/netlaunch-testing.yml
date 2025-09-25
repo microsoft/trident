@@ -191,7 +191,7 @@ stages:
               # tests.
               CERT_SEARCH_PATH="$(System.ArtifactsDirectory)/usrverity-testimage"
               CERT_PATTERN="cert_${{ variables.usrVerityTestImageName }}_[0-9].pem"
-              FOUND_CERT=$(find "$CERT_SEARCH_PATH" -type f -name "$CERT_PATTERN" | head -n 1)
+              FOUND_CERT=$(find "$CERT_SEARCH_PATH" -type f -name "$CERT_PATTERN" | sort | head -n 1)
               if [ -n "$FOUND_CERT" ]; then
                 SIGNING_CERT="--signing-cert $FOUND_CERT"
               else
