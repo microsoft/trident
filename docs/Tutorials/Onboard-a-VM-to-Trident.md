@@ -102,15 +102,6 @@ os:
       - trident-service
       - vim
 
-  additionalFiles:
-    # TODO: DO WE NEED THIS??
-    # - source: files/sshd-keygen.service
-    #   destination: /usr/lib/systemd/system/sshd-keygen.service
-    # - source: files/99-dhcp-eth0.network
-    #   destination: /etc/systemd/network/99-dhcp-eth0.network
-    # - source: files/sudoers-wheel
-    #   destination: /etc/sudoers.d/wheel
-
 scripts:
   postCustomization:
     - content: |
