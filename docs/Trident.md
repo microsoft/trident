@@ -19,14 +19,14 @@ servicing.
 **Installation Features:**
 
 - Disk partitioning and formatting using the GUID Partition Table (GPT).
-- [Creation of software RAID arrays](How-To-Guides/Create-RAID-Arrays.md),
-  [including support for ESP redundancy](How-To-Guides/Set-Up-Redundant-ESP.md).
-- [Provisioning of encrypted volumes, with optional PCR
-  sealing](How-To-Guides/Create-Encrypted-Volume.md).
-- [DM-verity integration for root](How-To-Guides/Set-Up-Root-Verity.md) and
+- Creation of [software RAID arrays](How-To-Guides/Create-RAID-Arrays.md),
+  including support for [ESP redundancy](How-To-Guides/Set-Up-Redundant-ESP.md).
+- Provisioning of [encrypted volumes](How-To-Guides/Create-Encrypted-Volume.md),
+  with optional PCR sealing.
+- [DM-verity](How-To-Guides/Set-Up-Root-Verity.md) integration for root and
   `/usr` filesystems.
-- [Adoption of existing partitions and filesystems
-  (preview)](How-To-Guides/Adopt-Existing-Partitions.md).
+- [Adoption of existing partitions](How-To-Guides/Adopt-Existing-Partitions.md)
+  and filesystems (preview).
 - Multiboot support for side-by-side installation of multiple OS images
   (preview).
 
@@ -38,7 +38,8 @@ servicing.
 - OS configuration management, including [network
   settings](How-To-Guides/Configure-Networking.md), hostname, [user
   accounts](How-To-Guides/Configure-Users.md), SSH, and SELinux policies.
-- [Execution of user-provided scripts for custom OS image modifications](Tutorials/Running-Custom-Scripts.md).
+- [Execution of user-provided scripts](Tutorials/Running-Custom-Scripts.md) for
+  custom OS image modifications.
 - Reliable rollback to the previous OS version in case of servicing issues.
 - Unified Kernel Image (UKI) support (preview).
 
