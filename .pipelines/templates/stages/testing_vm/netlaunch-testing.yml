@@ -175,14 +175,24 @@ stages:
                 MAX_FAILURES_FLAG="--max-failures 1"
               fi
 
-              # TODO: Enable SecureBoot for E2E tests that require it.
+              # Enable SecureBoot for E2E tests that use usr-verity image.
+              # TODO: Enable SecureBoot for all E2E tests.
               SECURE_BOOT=""
+              IMAGE_URL=$(yq '.image.url' "$(tridentConfigPath)/trident-config.yaml")
+              if [[ "$IMAGE_URL" == *usrverity.cosi ]]; then
+                SECURE_BOOT="--secure_boot"
+              fi
 
-              # If $(ob_artifactBaseName)/cert.pem exists, set --signing-cert
-              # to use it; otherwise, set it to an empty string. This can be
-              # used for SecureBoot and sysext signing.
-              if [ -f $(ob_artifactBaseName)/cert.pem ]; then
-                SIGNING_CERT="--signing-cert $(ob_artifactBaseName)/cert.pem"
+              # If a signing certificate exists, set --signing-cert to use it;
+              # otherwise, set it to an empty string. This can be used for
+              # SecureBoot and sysext signing.
+              # TODO: This needs to be updated to enable SecureBoot for all E2E
+              # tests.
+              CERT_SEARCH_PATH="$(System.ArtifactsDirectory)/usrverity-testimage"
+              CERT_PATTERN="cert_${{ variables.usrVerityTestImageName }}_[0-9].pem"
+              FOUND_CERT=$(find "$CERT_SEARCH_PATH" -type f -name "$CERT_PATTERN" | head -n 1)
+              if [ -n "$FOUND_CERT" ]; then
+                SIGNING_CERT="--signing-cert $FOUND_CERT"
               else
                 SIGNING_CERT=""
               fi
