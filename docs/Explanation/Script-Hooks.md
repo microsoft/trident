@@ -29,4 +29,4 @@ Post-configure scripts are run inside the [target
 OS](../Reference/Glossary.md#target-os). Post-configure scripts are useful for:
 
 - Setting attributes or permissions for users
-- Installing packages
+- Installing packages required for expected workloads
