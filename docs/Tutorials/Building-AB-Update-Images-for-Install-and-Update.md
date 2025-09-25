@@ -81,7 +81,7 @@ This will set up the required partitions, but this is only half of the required 
 
 [A/B volume pairs](../Reference/Glossary.md#ab-volume-pair) must exist for any volumes that are going to be serviced as part of an update.
 
-While these A/B volume pairs are vital to A/B Update, there are a some filesystems that cannot be hosted on A/B volumes. These filesystems retain state between the A and B operating systems.
+While these A/B volume pairs are vital to A/B Update, there are some filesystems that cannot be hosted on A/B volumes. These filesystems retain state between the A and B operating systems.
 
 `/boot/efi` contains state that dictates boot and can be defined like this:
 
