@@ -150,19 +150,19 @@ This is a set of operations that Trident is allowed to perform on the host.
 
 Supported flags are:
 
-- **stage**: Trident will stage a new runtime OS as required by the updated
+- **stage**: Trident will stage a new target OS as required by the updated
   Host Configuration. However, Trident will not reboot the host into the newly
-  staged runtime OS. This is useful if you want to drive additional operations
+  staged target OS. This is useful if you want to drive additional operations
   on the host outside of Trident or delay the reboot until a later point in
-  time. After the new runtime OS image has been staged, Trident will update the
+  time. After the new target OS image has been staged, Trident will update the
   host's servicing state to `CleanInstallStaged` or `AbUpdateStaged`.
-- **finalize**: Trident will reboot the host into the newly staged runtime OS
+- **finalize**: Trident will reboot the host into the newly staged target OS
   image to finalize a clean install or A/B update. Trident will first manage
   the UEFI firmware variables, to ensure that post reboot, the firmware boots
-  into the updated runtime OS image. Then, Trident will set the host's
+  into the updated target OS image. Then, Trident will set the host's
   servicing state to `CleanInstallFinalized` or `AbUpdateFinalized` and reboot.
   After the host comes back up, Trident will validate that the firmware
-  correctly booted from the updated runtime OS image and change the host's
+  correctly booted from the updated target OS image and change the host's
   servicing state to `Provisioned`. Otherwise, if the host failed to boot from
   the expected device, Trident will issue an error to the user.
 
@@ -315,7 +315,7 @@ For feature testing, the config should be modified to contain RAID arrays,
 verity, encryption, etc., to ensure that the A/B upgrade flow succeeds when
 these features are enabled.
 
-When the installation of the initial runtime OS is completed, the user will be
+When the installation of the initial target OS is completed, the user will be
 able to log or ssh into the baremetal host or the VM instance. The user can now
 request an A/B update by applying an edited Trident config. To do so, the user
 needs to update the `filesystems` section with the info on the new OS images,
@@ -423,7 +423,7 @@ Please note, while this has been manually tested, it is not generally supported.
 You can start Trident from an Azure VM, perhaps for testing use case. You will
 need to create Generation 2 VM, as Trident requires UEFI boot. You will also
 want to include additional data disk, where Trident can deploy the
-target/runtime OS to. For simple installations, 16GB disk should be sufficient.
+target OS to. For simple installations, 16GB disk should be sufficient.
 
 You can boot from Ubuntu and start Trident in a container, you can use Mariner
 gallery image and then you can run Trident natively or from a container. Or you
@@ -444,7 +444,7 @@ Trident from a non-live OS. To override this, create an empty override file
 `sudo touch /override-trident-safety-check`.
 
 Unless the `--allowed-operations` option only includes `stage`, upon completing
-the deployment, Trident will reboot the VM into the new OS.
+the deployment, Trident will reboot the VM into the target OS.
 
 ## gRPC Interface
 

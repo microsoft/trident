@@ -52,7 +52,7 @@ func InitializeVm(vmUuid uuid.UUID) (*LibvirtVm, error) {
 	return &LibvirtVm{l, domain}, nil
 }
 
-func (vm *LibvirtVm) SetFirmwareVars(boot_url string, secure_boot bool, key_location string) error {
+func (vm *LibvirtVm) SetFirmwareVars(bootUrl string, secureBoot bool, signingCert string) error {
 	// Get the domain XML
 	domainXml, err := vm.libvirt.DomainGetXMLDesc(vm.domain, libvirt.DomainXMLUpdateCPU)
 	if err != nil {
@@ -92,18 +92,21 @@ func (vm *LibvirtVm) SetFirmwareVars(boot_url string, secure_boot bool, key_loca
 		return fmt.Errorf("failed to destroy domain '%s': %w", vm.domain.Name, err)
 	}
 
-	virtFwVarsArgs := []string{"virt-fw-vars", "--inplace", nvram.NVRam, "--set-boot-uri", boot_url}
-	if secure_boot {
+	virtFwVarsArgs := []string{"virt-fw-vars", "--inplace", nvram.NVRam, "--set-boot-uri", bootUrl}
+
+	// Enable SecureBoot, if needed
+	if secureBoot {
+		logrus.Infof("Setting SecureBoot to enabled")
 		virtFwVarsArgs = append(virtFwVarsArgs, "--set-true", "SecureBootEnable")
 	} else {
 		virtFwVarsArgs = append(virtFwVarsArgs, "--set-false", "SecureBootEnable")
 	}
 
-	// Enroll the key if a path is provided
-	if key_location != "" {
-		virtFwVarsArgs = append(virtFwVarsArgs, "--enroll-cert", key_location)
-		virtFwVarsArgs = append(virtFwVarsArgs, "--add-db", EFI_GLOBAL_VARIABLE_GUID, key_location)
-		logrus.Infof("Enrolling key from %s", key_location)
+	// Enroll the signing certificate
+	if signingCert != "" {
+		logrus.Infof("Enrolling signing certificate from %s", signingCert)
+		virtFwVarsArgs = append(virtFwVarsArgs, "--enroll-cert", signingCert)
+		virtFwVarsArgs = append(virtFwVarsArgs, "--add-db", EFI_GLOBAL_VARIABLE_GUID, signingCert)
 	}
 
 	cmd := exec.Command("sudo", virtFwVarsArgs...)
@@ -111,7 +114,7 @@ func (vm *LibvirtVm) SetFirmwareVars(boot_url string, secure_boot bool, key_loca
 		logrus.Debugf("virt-fw-vars output:\n%s\n", output)
 		return fmt.Errorf("failed to set boot URI: %w", err)
 	}
-	logrus.Infof("Set boot URI to %s and set SecureBoot to %t", boot_url, secure_boot)
+	logrus.Infof("Set boot URI to %s and set SecureBoot to %t", bootUrl, secureBoot)
 
 	return nil
 }

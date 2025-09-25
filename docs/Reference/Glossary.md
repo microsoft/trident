@@ -2,21 +2,28 @@
 
 ## A/B Update
 
-A [servicing type](#servicing-type) where two copies of the OS are kept on the
-device in [A/B Volume Pairs](#ab-volume-pair), and only one is active at a
-time. When an update is performed, the inactive copy is updated, and then the
-device is rebooted into the updated copy.
+A [servicing type](#servicing-type) where the host follows the A/B partition
+scheme: volumes are present as identical copies, A and B, and while the
+active partition is running workloads, the OS image on the inactive one is
+updated. The host will then reboot into the updated partition, while the other
+one becomes inactive.
+
+To be eligible for A/B updates, a volume must be present as two identical
+block device copies on the disk: A and B. These device copies form a
+logical [A/B Volume Pair](#ab-volume-pair). Other volumes might be present as a
+single copy shared between the A and B partitions, but they are then ineligible
+for A/B updates.
 
 ## A/B Volume Pair
 
 A pair of [block devices](#block-device) that are used for an [A/B
-update](#ab-update). One volume is the 'A' volume, and the other is the 'B'
+update](#ab-update). One volume is the A volume, and the other is the B
 volume. At any point in time, only one volume is active, and the other is
 inactive.
 
 An [A/B Update](#ab-update) is performed by updating the inactive volume, and
 then rebooting the device into the updated volume. When this happens, the active
-volume swaps from 'A' to 'B', or from 'B' to 'A'.
+volume swaps from A to B, or from B to A.
 
 A system can have multiple A/B volume pairs, each pair representing a different
 mount point on the device. All pairs in an [install](#install) are updated in
@@ -56,14 +63,10 @@ Execution root. The root file system of the environment where Trident was run.
 Generally the Management OS, the OS that is being updated, or a container
 running on top of one of the former environments.
 
-The term is also used inside the context of [newroot](#newroot), where it
-represents a bind mount point to the execroot inside of newroot.
+## Finalize (Operation)
 
-Newroot is used for a chroot, however, access to the current OS is sometimes
-still desired for accessing data, copying files, or other tasks. To achieve
-this, Trident will bind mount the current OS's file systems inside of newroot to
-provide a mechanism to escape the chroot jail for reading files in the execution
-root.
+The finalize [operation](#operation) performs any final pre-reboot actions
+needed for the servicing, as well as the reboot itself.
 
 ## Install
 
@@ -84,17 +87,24 @@ on the same disk.
 
 Root file system of the OS that is being deployed.
 
-When Trident is deploying a new OS, it will mount the new OS's file systems and
-prepare them for a chroot. This mount of the new OS is called `newroot`.
+When Trident is deploying a target OS, it will mount the target OS's file
+systems and prepare them for a chroot. This mount of the target OS is called
+`newroot`.
 
-## Runtime OS
+## Operation
 
-The OS being installed and intended for production workloads.
+Operations are the top level actions performed during [servicing](#servicing).
+Trident installations and updates perform the [stage](#stage-operation) and
+[finalize](#finalize-operation) operations.
 
 ## Servicing
 
 The general process of performing an action on an [install](#install).
 There are several [types of servicing](#servicing-type).
+
+## Servicing OS
+
+The OS where Trident is running.
 
 ## Servicing Type
 
@@ -102,16 +112,47 @@ The specific kind of [Servicing](#servicing) that is being performed on an
 install, such as [clean install](#clean-install), or an [A/B
 update](#ab-update).
 
+## Stage (Operation)
+
+Stage is an [operation](#operation) that downloads, writes and prepares an OS
+image as part of a [servicing](#servicing).
+
+## Step
+
+Steps are logical phases of an operation. On each step, the method of each
+[subsystem](#subsystem) relevant to the step is run to perform the work needed
+for that step.
+
+## Subsystem
+
+A logical grouping of related functionality within Trident. Each subsystem is in
+charge of a specific aspect of the servicing process and configuration of the
+[newroot](#newroot). Subsystems run the corresponding logic for each
+[step](#step) of an [operation](#operation). Trident contains several subsystems
+handling different aspects of the servicing process, such as storage
+configuration, OS configuration, network configuration.
+
+## Target OS
+
+The OS being serviced to reach the desired state, defined in the Host
+Configuration.
+
+On a clean install, this is the new OS being installed to disk. On A/B update,
+this is the new partition being provisioned. For runtime configurations, the
+servicing OS and the target OS are the same.
+
 ## Unformatted Partition
 
 An unformatted partition is a partition on a storage device that has been
 created but does not yet contain a filesystem. It is not associated with any
 filesystem, verity-filesystem, RAID array, or encryption volume.
 
-
 ## Terms to Define
 
 - Operation
+- runtime configurations
 - Stage
 - State
 - Step
+- Host Configuration
+- Host Status
