@@ -157,4 +157,4 @@ const config = {
         mermaid: true,
     },
 }
-export default config
+export default config;
