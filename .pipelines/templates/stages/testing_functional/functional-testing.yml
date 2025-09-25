@@ -87,6 +87,7 @@ stages:
           - template: ../common_tasks/download-osmodifier.yml
             parameters:
               osModifierBranch: ${{ parameters.osModifierBranch }}
+              targetArchitecture: amd64
 
           - bash: |
               set -eux
