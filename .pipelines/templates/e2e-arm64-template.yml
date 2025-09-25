@@ -29,13 +29,13 @@ parameters:
     type: boolean
     default: false
 
-  - name: baseImageArtifactStage
-    type: string
-    default: ''
-
   - name: osModifierBranch
     type: string
     default: "main"
+
+  - name: baseImageArtifactStage
+    type: string
+    default: ''
 
 stages:
   # Trident Build/Download
@@ -45,6 +45,6 @@ stages:
       tridentArtifactName: trident-binaries
       codeCoverage: false
       forceTridentRebuild: ${{ parameters.forceTridentRebuild }}
+      osModifierBranch: ${{ parameters.osModifierBranch }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
       targetArchitecture: arm64
-      osModifierBranch: ${{ parameters.osModifierBranch }}

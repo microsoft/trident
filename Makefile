@@ -82,7 +82,7 @@ build: .cargo/config version-vars
 .PHONY: format
 format:
 	cargo fmt
-	python3 -m black .
+	python3 -m black . --exclude "azure-linux-image-tools"
 	gofmt -w -s tools/
 	gofmt -w -s storm/
 
@@ -143,7 +143,7 @@ artifacts/osmodifier: Dockerfile-osmodifier.azl3
 	@docker build -t trident/osmodifier-build:latest \
 		-f Dockerfile-osmodifier.azl3 \
 		.
-		@mkdir -p "$(ARTIFACTS_DIR)"
+	@mkdir -p "$(ARTIFACTS_DIR)"
 	@id=$$(docker create trident/osmodifier-build:latest) && \
 	    docker cp -q $$id:/work/azure-linux-image-tools/toolkit/out/tools/osmodifier $@ || \
 	    docker rm -v $$id

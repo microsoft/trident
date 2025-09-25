@@ -13,6 +13,11 @@ parameters:
     type: string
     default: "*.*.*"
 
+  - name: osModifierBranch
+    displayName: OSModifier branch to build from (if not main)
+    type: string
+    default: "main"
+
 schedules:
   - cron: "0 9 * * *" # avoid trident-prerelease time
     displayName: Daily build
@@ -49,11 +54,6 @@ resources:
       name: platform-telemetry
       type: git
       ref: refs/heads/main
-
-    - name: osModifierBranch
-      displayName: OSModifier branch to build from (if not main)
-      type: string
-      default: "main"
 
 extends:
   template: templates/MockOB.yml

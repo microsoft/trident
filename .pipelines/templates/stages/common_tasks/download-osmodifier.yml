@@ -24,9 +24,8 @@ steps:
   - ${{ if ne(parameters.osModifierBranch, 'main') }}:
     - bash: |
         set -ex
-        if [[ "${{ parameters.osModifierBranch }}" != "main" ]]; then
-          rm -rf azure-linux-image-tools
-          git clone --branch ${{ parameters.osModifierBranch }} https://github.com/microsoft/azure-linux-image-tools azure-linux-image-tools
+        rm -rf azure-linux-image-tools
+        git clone --branch ${{ parameters.osModifierBranch }} https://github.com/microsoft/azure-linux-image-tools azure-linux-image-tools
 
         mkdir -p artifacts
         make artifacts/osmodifier

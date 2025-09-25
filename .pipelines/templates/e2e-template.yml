@@ -58,6 +58,10 @@ parameters:
     type: number
     default: 3
 
+  - name: osModifierBranch
+    type: string
+    default: "main"
+
   - name: baremetalTestsEnabled
     type: boolean
     default: true
@@ -69,10 +73,6 @@ parameters:
   - name: baseImageArtifactStage
     type: string
     default: ''
-    
-  - name: osModifierBranch
-    type: string
-    default: "main"
 
 stages:
   # Trident Build/Download
@@ -82,8 +82,8 @@ stages:
       tridentArtifactName: trident-binaries
       codeCoverage: false
       forceTridentRebuild: ${{ parameters.forceTridentRebuild }}
-      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
       osModifierBranch: ${{ parameters.osModifierBranch }}
+      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
       targetArchitecture: amd64
 
   # Build tools (Go stuff)
@@ -92,7 +92,7 @@ stages:
   # Makefile validation, only for CI
   - ${{ if eq(parameters.stageType, 'ci') }}:
       - template: stages/validate_makefile/dev-build.yml
-      - parameters:
+        parameters:
           osModifierBranch: ${{ parameters.osModifierBranch }}
 
   # Build FT base Image, only for CI or if forceFunctionalTestImageRebuild is true
@@ -227,7 +227,6 @@ stages:
       - template: stages/testing_functional/functional-testing.yml
         parameters:
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
-          osModifierBranch: ${{ parameters.osModifierBranch }}
           ${{ if parameters.forceFunctionalTestImageRebuild }}:
             downloadPrebuiltImage: false
 
@@ -299,8 +298,8 @@ stages:
       - template: stages/testing_functional/functional-testing.yml
         parameters:
           downloadPrebuiltImage: false
+          osModifierBranch: ${{ parameters.osModifierBranch }}
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
-
 
       # VM Testing (host, post_merge)
       - template: stages/testing_vm/netlaunch-testing.yml

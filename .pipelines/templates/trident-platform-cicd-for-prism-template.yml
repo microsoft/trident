@@ -32,11 +32,11 @@ stages:
         forceTridentRebuild: true
         micBuildType: ${{ parameters.micBuildType }}
         micVersion: ${{ parameters.micVersion }}
-        baseImageArtifactStage: CreateBaseImageConfig
         osModifierBranch: ${{ parameters.osModifierBranch }}
+        baseImageArtifactStage: CreateBaseImageConfig
     - template: e2e-arm64-template.yml
       parameters:
         stageType: ci
         forceTridentRebuild: true
-        baseImageArtifactStage: CreateBaseImageConfig
         osModifierBranch: ${{ parameters.osModifierBranch }}
+        baseImageArtifactStage: CreateBaseImageConfig

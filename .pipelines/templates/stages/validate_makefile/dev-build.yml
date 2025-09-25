@@ -1,11 +1,11 @@
 parameters:
-  - name: dependsOnStage
-    type: string
-    default: ''
-
   - name: osModifierBranch
     type: string
     default: "main"
+
+  - name: dependsOnStage
+    type: string
+    default: ''
 
 stages:
   - stage: MakefileValidation
