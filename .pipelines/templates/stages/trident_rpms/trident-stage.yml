@@ -50,8 +50,10 @@ stages:
           # trident-cicd-for-prism should run against the lastest main build of osmodifier.
           ${{ if eq(parameters.stageType, 'ci') }}:
             osModifierVersion: ""
+            osModifierBuildType: main
           ${{ else }}:
             osModifierVersion: "1.1.0-preview.937762"
+            osModifierBuildType: preview
 
   - ${{ elseif eq(parameters.targetArchitecture, 'amd64') }}:
       - template: ../download_staged/download-staged.yml

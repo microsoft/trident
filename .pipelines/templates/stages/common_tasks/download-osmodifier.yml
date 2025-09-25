@@ -1,5 +1,5 @@
 parameters:
-  - name: osmodifierBuildType
+  - name: osModifierBuildType
     displayName: OSModifier build type to download from osmodifier pipelines
     type: string
     values:
@@ -34,7 +34,7 @@ steps:
       workingDirectory: $(Build.SourcesDirectory)
       retryCountOnTaskFailure: 3
 
-  - ${{ if and(eq(parameters.osmodifierBuildType, 'main'), eq(parameters.osModifierVersion, '')) }}:
+  - ${{ if and(eq(parameters.osModifierBuildType, 'main'), eq(parameters.osModifierVersion, '')) }}:
     - task: DownloadPipelineArtifact@2
       displayName: "Download OSModifier artifact (main - latest)"
       inputs:
@@ -46,7 +46,7 @@ steps:
         artifactName: "osmodifier_${{ parameters.targetArchitecture }}"
         targetPath: "$(Build.SourcesDirectory)/artifacts"
 
-  - ${{ if and(eq(parameters.osmodifierBuildType, 'main'), ne(parameters.osModifierVersion, '')) }}:
+  - ${{ if and(eq(parameters.osModifierBuildType, 'main'), ne(parameters.osModifierVersion, '')) }}:
     - task: UniversalPackages@0
       displayName: "Download OSModifier (main - pinned version)"
       inputs:
@@ -56,7 +56,7 @@ steps:
         vstsPackageVersion: ${{ parameters.osModifierVersion }}
         downloadDirectory: "$(Build.SourcesDirectory)/artifacts"
 
-  - ${{ if eq(parameters.osmodifierBuildType, 'preview') }}:
+  - ${{ if eq(parameters.osModifierBuildType, 'preview') }}:
     - task: UniversalPackages@0
       displayName: "Download OSModifier (preview - pinned version)"
       inputs:

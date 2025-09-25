@@ -29,8 +29,9 @@ stages:
           - template: ../common_tasks/avoid-pypi-usage.yml
           - template: ../common_tasks/download-osmodifier.yml
             parameters:
-              osmodifierBuildType: main
+              osModifierBuildType: main
               osModifierBranch: ${{ parameters.osModifierBranch }}
+              targetArchitecture: amd64
 
           - script: |
               set -eux

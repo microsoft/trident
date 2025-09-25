@@ -88,8 +88,7 @@ stages:
           - template: ../common_tasks/cargo-auth.yml
           - template: ../common_tasks/download-osmodifier.yml
             parameters:
-              osmodifierVersion: ${{ parameters.osModifierVersion }}
-              osmodifierBuildType: main
+              osModifierVersion: ${{ parameters.osModifierVersion }}
               targetArchitecture: ${{ parameters.targetArchitecture }}
               osModifierBranch: ${{ parameters.osModifierBranch }}
           - template: release.yml
@@ -125,8 +124,7 @@ stages:
             displayName: Start Docker
           - template: ../common_tasks/download-osmodifier.yml
             parameters:
-              osmodifierVersion: ${{ parameters.osModifierVersion }}
-              osmodifierBuildType: main
+              osModifierVersion: ${{ parameters.osModifierVersion }}
               targetArchitecture: ${{ parameters.targetArchitecture }}
               osModifierBranch: ${{ parameters.osModifierBranch }}
           - template: release.yml
