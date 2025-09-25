@@ -28,11 +28,11 @@ Build the Trident container image using:
 make artifacts/test-image/trident-container.tar.gz
 ```
 
-This Make target will build the Trident RPMs (`make
-bin/trident-rpms-azl3.tar.gz`) and then use
-[Dockerfile.runtime](../../Dockerfile.runtime) to build the container image with
-all the necessary dependencies. You will find a compressed form of containerized
-Trident at `artifacts/test-image/trident-container.tar.gz`.
+This Make target will build the Trident RPMs (`make bin/trident-rpms.tar.gz`)
+and then use [Dockerfile.runtime](../../Dockerfile.runtime) to build the
+container image with all the necessary dependencies. You will find a compressed
+form of containerized Trident at
+`artifacts/test-image/trident-container.tar.gz`.
 
 #### Note
 
@@ -99,7 +99,8 @@ the Trident CLI, please see the [Reference guide](../Reference/Trident-CLI.md).
 - `--rm`: Automatically removes the container when it exits, which is useful for
   cleanup.
 - `--pull=never`: Ensures the command uses the local `trident/trident:latest`
-  image and does not try to download it from a remote registry.
+  image (built in Step 1) and does not try to download it from a remote
+  registry.
 
 ### Mounted Volumes
 
@@ -109,7 +110,8 @@ files in the `/etc/trident` directory. Ensure that the correct host directory is
 mounted to `/etc/trident` in your Docker command.
 - `-v /etc/pki:/etc/pki:ro`: Trident requires access to certificates in
 `/etc/pki` to be able to authenticate with container registries, in which COSI
-files may be stored. If the COSI file is stored or hosted locally, it is not
+files may be stored. If the COSI file is stored locally or hosted at an
+`http://` or `https://` URL which does not require authentication, it is not
 required to mount this. In addition, note that Trident only requires read access
 to this directory, which is why we recommend mounting with `ro`.
 - `-v /var/lib/trident:/var/lib/trident`: This is the default location of the
