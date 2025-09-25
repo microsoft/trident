@@ -9,7 +9,7 @@ Reporting issues and bugs.
 ## Security Issues and Bugs
 
 If the bug is security related, refer to the
-[security guidelines](./Contributing/contribuiting-guidelines#security).
+[security guidelines](./Contributing/contributing-guidelines#security).
 
 ## Other Issues and Bugs
 
