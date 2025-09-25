@@ -31,7 +31,7 @@ This guide will not cover adopting an existing software RAID array in the [`offl
 
 ### Step 2: Add `raid` Configuration
 
-1. Inside the `storage` configuration, add a new software RAID config under the `raid` section, completing these four **required** fields:
+1. Inside the `storage` config, add a new software RAID to [the `raid` configuration](../Reference/Host-Configuration/API-Reference/Raid.md), completing these four **required** fields:
 
    - `devices` is a list of block device IDs corresponding to the disk partitions underlying the RAID array.
    - `id` is the unique identifier for the RAID array. The ID must be unique across all types of devices in the host configuration.
