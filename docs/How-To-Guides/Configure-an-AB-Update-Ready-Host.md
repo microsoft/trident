@@ -42,7 +42,8 @@ By following this guide, you will:
 
 1. Add A/B volume pairs to [`volumePairs`](../Reference/Host-Configuration/API-Reference/AbVolumePair.md). Each A/B volume pair added to `volumePairs` must contain the following three **required** fields:
 
-- `id` is a unique identifier for the A/B volume pair. This is a user-defined string that links the A/B volume pair to the results in the Host Status and to the [`filesystems`](../Reference/Host-Configuration/API-Reference/FileSystem.md) configuration. The identifier needs to be unique across devices of all types, not just A/B volume pairs.
+- `id` is a unique identifier for the A/B volume pair. This is a user-defined string that links the A/B volume pair to the [`filesystems`](../Reference/Host-Configuration/API-Reference/FileSystem.md) configuration. The identifier needs to be unique across devices of all types, not just A/B volume pairs.
+
 - `volumeAId` is the ID of the device that will be used as the A volume.
 - `volumeBId` is the ID of the device that will be used as the B volume.
 
