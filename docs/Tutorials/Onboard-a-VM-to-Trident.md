@@ -9,13 +9,30 @@ This document will outline the steps required to enable this during image creati
 
 ## Prerequisites
 
-1. Ensure [Image Customizer container is accessible](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/quick-start/quick-start.html).
+1. Ensure [Image Customizer container](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/quick-start/quick-start.html) is accessible.
 
 ## Instructions
 
-### Step 1: Get Trident RPMs
+### Step 1: Download the minimal base image
 
-Build the Trident RPMs using `make bin/trident-rpms.tar.gz`. After running this make command, the RPMs will be built and packaged into bin/trident-rpms.tar.gz and unpacked into bin/RPMS/x86_64:
+Pull the minimal base image from mcr by running
+
+``` bash
+mkdir -p $HOME/staging
+pushd $HOME/staging
+oras pull mcr.microsoft.com/azurelinux/3.0/image/minimal-os:latest
+popd
+```
+
+### Step 2: Get Trident RPMs
+
+Build the Trident RPMs by running:
+
+``` bash
+make bin/trident-rpms.tar.gz
+```
+
+After running this make command, the RPMs will be built and packaged into bin/trident-rpms.tar.gz and unpacked into bin/RPMS/x86_64:
 
 ``` bash
 $ ls bin/RPMS/x86_64/
@@ -27,11 +44,11 @@ trident-static-pcrlock-files-0.3.DATESTRING-dev.COMMITHASH.azl3.x86_64.rpm
 trident-update-poll-0.3.DATESTRING-dev.COMMITHASH.azl3.x86_64.rpm
 ```
 
-### Step 2: Download the minimal base image
+Copy RPMs to staging folder:
 
-Pull the minimal base image from mcr by running `oras pull mcr.microsoft.com/azurelinux/3.0/image/minimal-os:latest`
-
-The minimal base image will be saved as `image.vhdx` in the current directory.
+``` bash
+cp -r bin/RPMS $HOME/staging
+```
 
 ### Step 3: Create Image Customizer configuration including offline-initialize
 
@@ -39,7 +56,7 @@ Add the `trident-service` package to the Image Customizer configuration. This wi
 
 To invoke `trident offline-initialize` during image creation, add it in the postCustomization scripts.
 
-These steps are shown below in a simple Image Customizer configuration (assumed as contents of `./ic-config.yaml`):
+These steps are shown below in a simple Image Customizer configuration (assumed as contents of `$HOME/staging/ic-config.yaml`):
 
 ``` yaml
 storage:
@@ -111,18 +128,24 @@ scripts:
         trident offline-initialize
 ```
 
+### Step 4: Invoke Image Customizer
+
+Assuming RPMs, a base image `image.vhdx` and Image Customizer configuration `ic-config.yaml` found in `$HOME/staging`.
+
 ``` bash
+pushd $HOME/staging
 docker run --rm \
     --privileged \
-    -v ".:/repo:z" \
+    -v ".:/staging:z" \
     -v "/dev:/dev" \
     mcr.microsoft.com/azurelinux/imagecustomizer:0.18.0 \
-        --rpm-source /repo/bin/RPMS/x86_64 \
+        --rpm-source /staging/RPMS/x86_64 \
         --build-dir /build \
-        --image-file /repo/image.vhdx \
-        --output-image-file /repo/image.qcow2 \
+        --image-file /staging/image.vhdx \
+        --output-image-file /staging/image.qcow2 \
         --output-image-format qcow2 \
-        --config-file /repo/ic-config.yaml
+        --config-file /staging/ic-config.yaml
+popd
 ```
 
 ## Conclusion
