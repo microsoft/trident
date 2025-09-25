@@ -47,13 +47,13 @@ apply to the Trident container image.
 As part of its operations, Trident will run
 [`setfiles`](https://man7.org/linux/man-pages/man8/setfiles.8.html) on the new
 OS. This operation relabels all of the files in the new OS (what will become the
-[target OS](../Reference/Glossary.md)) according to the labels specified at
-`/etc/selinux/targeted/contexts/files/file_contexts`.
+[target OS](../Reference/Glossary.md#target-os)) according to the labels
+specified at `/etc/selinux/targeted/contexts/files/file_contexts`.
 
-## Configuring SELinux for the Runtime OS
+## Configuring SELinux for the Target OS
 
-Trident allows users to configure the state of SELinux in the [runtime
-OS](../Reference/Glossary.md#runtime-os) using the [`os.selinux`
+Trident allows users to configure the state of SELinux in the [target
+OS](../Reference/Glossary.md#target-os) using the [`os.selinux`
 API](../Reference/Host-Configuration/API-Reference/Selinux.md). SELinux can be
 configured to be in the following modes:
 
@@ -65,18 +65,18 @@ also logged at `/var/log/audit/audit.log`.
 - `disabled`: SELinux policies are neither enforced nor logged.
 
 Note that in order for the SELinux configuration in the Host Configuration to
-take effect, SELinux must be present in the [runtime
-OS](../Reference/Glossary.md#runtime-os)'s image.
+take effect, SELinux must be present in the [target
+OS](../Reference/Glossary.md#target-os)'s image.
 
-| Host Configuration \ Provisioning OS | NOT PRESENT | DISABLED  | PERMISSIVE | ENFORCING |
+| Host Configuration \ Servicing OS    | NOT PRESENT | DISABLED  | PERMISSIVE | ENFORCING |
 |--------------------------------------|-------------|-----------|------------|-----------|
 | NOT SPECIFIED IN HOST CONFIGURATION  | NOT PRESENT | DISABLED  | PERMISSIVE | ENFORCING |
 | DISABLED                             | NOT PRESENT | DISABLED  | DISABLED   | DISABLED  |
 | PERMISSIVE                           | Error       | PERMISSIVE| PERMISSIVE | PERMISSIVE|
 | ENFORCING                            | Error       | ENFORCING | ENFORCING  | ENFORCING |
 
-Trident will determine whether or not SELinux is available on the [runtime
-OS](../Reference/Glossary.md#runtime-os) by checking for a file at
+Trident will determine whether or not SELinux is available on the [target
+OS](../Reference/Glossary.md#target-os) by checking for a file at
 `/etc/selinux/config`.
 
 ## Debugging SELinux Denials
