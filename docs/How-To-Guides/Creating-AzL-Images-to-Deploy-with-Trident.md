@@ -25,7 +25,13 @@ popd
 
 ### Step 2: Get Trident RPMs
 
-Build the Trident RPMs using `make bin/trident-rpms.tar.gz`.  After running this make command, the RPMs will be built and packaged into bin/trident-rpms.tar.gz and unpacked into bin/RPMS/x86_64:
+Build the Trident RPMs by running:
+
+``` bash
+make bin/trident-rpms.tar.gz
+```
+
+After running this make command, the RPMs will be built and packaged into `bin/trident-rpms.tar.gz` and unpacked into `bin/RPMS/x86_64`:
 
 ``` bash
 $ ls bin/RPMS/x86_64/
