@@ -14,22 +14,43 @@ This document explains the process Trident follows to read the COSI metadata and
 stream the partition images to disk. For complete information on the structure
 of a COSI file, please see the [COSI Reference Guide](../Reference/COSI.md).
 
+## Important Requirements & Points of Caution
+
+Trident checks for several requirements from the COSI URL to ensure that Trident
+will be able to successfully read the COSI file.
+
+1. If the COSI file is hosted on an HTTP server (`http://` or `https://`
+   scheme), the server hosting the images **must** support HTTP Range Requests.
+   This is necessary for Trident to read individual partition images from the
+   COSI file. This functionality is elaborated on below. Trident will search for
+   an `Accept-Ranges` header in the server's response, and will return an error
+   if none is found. An explanation for why HTTP Range Requests are necessary
+   can be found below under [Streaming and Verifying
+   Images](#streaming-and-verifying-images).
+2. If the COSI file is hosted in an OCI registry (`oci://` scheme), that registry
+   **must** allow for anonymous image pulls. In addition, Trident expects that
+   the referenced artifact contains exactly one layer.
+3. Should your machine require a proxy to access a remoted hosted COSI image,
+   ensure that the correct `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY`
+   environment variables are set **and** are available to Trident at runtime. If
+   running Trident from a container, ensure that the environment variables are
+   passed to the container. Please see the [Docker CLI
+   reference](https://docs.docker.com/reference/cli/docker/container/run/#env)
+   on setting environment variables.
+
+### Known Compatible Servers for Hosting COSI Files
+
+- Azure Container Registry (use `oci://` scheme)
+
+### Known Incompatible Servers for Hosting COSI Files
+
+- Python3 `http.server`
+
 ## Reading the COSI Metadata
 
 At the beginning of Trident's operations, Trident will load the COSI
-`metadata.json` file into memory. At this point, Trident performs several checks
-on the provided URL to ensure that Trident will be able to successfully read the
-COSI file. These requirements differ by URL scheme:
-
-- **HTTP/HTTPS (`http://`, `https://`)**: The web server hosting the images must
-  support HTTP Range Requests. Trident will search for an `Accept-Ranges` header
-  in the server's response, and will return an error if none is found.
-- **OCI (`oci://`)**: The OCI registry must allow for anonymous image pulls. In
-  addition, Trident expects that the referenced artifact contains exactly one
-  layer.
-
-At this point, Trident also calculates the hash of the COSI metadata. If a hash
-was provided in the [`image`
+`metadata.json` file into memory. Trident calculates the hash of the COSI
+metadata. If a hash was provided in the [`image`
 section](../Reference/Host-Configuration/API-Reference/OsImage.md) of the Host
 Configuration, the calculated hash is compared with the provided hash to verify
 the integrity of the COSI file.
