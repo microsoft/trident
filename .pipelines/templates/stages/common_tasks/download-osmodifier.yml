@@ -37,7 +37,7 @@ steps:
 
   - ${{ if eq(parameters.osModifierBuildType, 'preview') }}:
     - task: UniversalPackages@0
-      displayName: "Download OSModifier (preview - pinned version for arm64)"
+      displayName: "Download OSModifier (preview - pinned version)"
       inputs:
         command: download
         vstsFeed: polar/PolarCoreArtifacts
