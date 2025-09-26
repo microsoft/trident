@@ -13,8 +13,9 @@ NETLAUNCH_CONFIG ?= input/netlaunch.yaml
 
 OVERRIDE_RUST_FEED ?= true
 
-SERVER_PORT ?= 8133
+PYTHON_CMD ?= python3
 
+SERVER_PORT ?= 8133
 
 .PHONY: all
 all: format check test build-api-docs bin/trident-rpms.tar.gz docker-build build-functional-test coverage validate-configs generate-mermaid-diagrams
@@ -796,5 +797,5 @@ validate-pipeline-website-artifact:
 	gh run download $(RUN_ID) --name github-pages --repo microsoft/trident --dir $(STAGING_DIR)
 	cd $(STAGING_DIR) && \
 		tar -xvf ./artifact.tar && \
-		npm run serve -- --port $(SERVER_PORT)
+		$(PYTHON_CMD) -m http.server $(SERVER_PORT)
 
