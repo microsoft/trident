@@ -26,13 +26,9 @@ use trident_api::{
 #[cfg(feature = "grpc-dangerous")]
 use grpc::GrpcSender;
 
-#[cfg(feature = "setsail")]
-use setsail::KsTranslator;
-
 pub mod cli;
 mod datastore;
 mod engine;
-mod harpoon_hc;
 mod io_utils;
 mod logging;
 mod monitor_metrics;
@@ -46,7 +42,6 @@ pub mod validation;
 mod grpc;
 
 use engine::{rollback, storage::rebuild};
-use harpoon_hc::HostConfigUpdate;
 
 pub use datastore::DataStore;
 pub use engine::{provisioning_network, reboot};
@@ -232,26 +227,6 @@ impl Trident {
 
             // Use the embedded Host Configuration.
             HostConfigurationSource::Embedded(contents) => *contents.clone(),
-
-            // When enabled, load a kickstart body from the local config and translate it to a host
-            // configuration.
-            #[cfg(feature = "setsail")]
-            HostConfigurationSource::KickstartEmbedded(contents) => KsTranslator::new()
-                .run_pre_scripts(true)
-                .translate(setsail::load_kickstart_string(contents))
-                .structured(InvalidInputError::TranslateKickstart)?,
-
-            // When enabled, load a kickstart file from the local config and translate it to a host
-            // configuration.
-            #[cfg(feature = "setsail")]
-            HostConfigurationSource::KickstartFile(ref file) => KsTranslator::new()
-                .run_pre_scripts(true)
-                .translate(setsail::load_kickstart_file(file).structured(
-                    InvalidInputError::LoadKickstart {
-                        path: file.display().to_string(),
-                    },
-                )?)
-                .structured(InvalidInputError::TranslateKickstart)?,
         };
 
         info!(
@@ -264,19 +239,6 @@ impl Trident {
     }
 
     pub fn start_network(config_source: HostConfigurationSource) -> Result<(), TridentError> {
-        // If we have kickstart it means we don't have networking config readily available. We
-        // _could_ try parsing now, but we are in an early stage of boot and we want to parse on a
-        // later stage so %pre scripts can run and do their thing. It would also mean parsing twice,
-        // unless we updated the config file in place. That sounds like a can of worms and we still
-        // have the issue about being too early.
-        #[cfg(feature = "setsail")]
-        if let HostConfigurationSource::KickstartFile(_)
-        | HostConfigurationSource::KickstartEmbedded(_) = config_source
-        {
-            warn!("Cannot set up network early when using kickstart");
-            return Ok(());
-        }
-
         let host_config = Self::load_host_config(&config_source)?;
 
         info!("Starting network");
@@ -287,50 +249,6 @@ impl Trident {
 
     /// Listen for incoming commands from an orchestrator, and execute the first one.
     pub fn listen(&mut self, datastore: &mut DataStore) -> Result<(), TridentError> {
-        // ONLY IF:
-        // - Harpoon support is enabled+configured AND
-        // - The host is provisioned
-        //
-        // Then query Harpoon for an updated HC.
-        harpoon_hc::try_on_harpoon_enabled(
-            &datastore.host_status().spec.clone(),
-            |harpoon_config| -> Result<(), TridentError> {
-                // We only check if the system is provisioned.
-                if datastore.host_status().servicing_state != ServicingState::Provisioned {
-                    return Ok(());
-                }
-
-                info!(
-                        "Querying server for updated Host Configuration. URL: {}, App ID: {}, Track: {}, Document Version: {}",
-                        harpoon_config.url, harpoon_config.app_id, harpoon_config.track, harpoon_config.document_version
-                    );
-
-                // Call into harpoon module to get an updated HC.
-                match harpoon_hc::query_and_fetch_host_config(harpoon_config)? {
-                    HostConfigUpdate::Updated {
-                        host_config,
-                        version,
-                    } => {
-                        info!("Server replied with new Host configuration v{version}, applying...");
-                        self.host_config = Some(*host_config);
-                        if let ExitKind::NeedsReboot = self.update(
-                            datastore,
-                            Operations::all(),
-                            #[cfg(feature = "grpc-dangerous")]
-                            &mut None,
-                        )? {
-                            reboot().message("Failed to reboot after harpoon update")?;
-                        }
-                    }
-                    HostConfigUpdate::NoUpdate => {
-                        warn!("No update available. No action will be taken.");
-                    }
-                }
-
-                Ok(())
-            },
-        )?;
-
         #[cfg(feature = "grpc-dangerous")]
         if let Some(grpc) = &self.grpc {
             let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
@@ -345,6 +263,10 @@ impl Trident {
                 }
             }
         }
+
+        // Avoid unused variable warning if grpc-dangerous is not enabled
+        #[cfg(not(feature = "grpc-dangerous"))]
+        let _ = datastore;
 
         Ok(())
     }
@@ -385,14 +307,6 @@ impl Trident {
                         ),
                     );
                 }
-
-                // Report error to Harpoon if enabled.
-                harpoon_hc::on_harpoon_enabled_event(
-                    &datastore.host_status().spec,
-                    harpoon::EventType::Install,
-                    harpoon::EventResult::Error,
-                );
-
                 // TODO: report gPRC error
 
                 Err(e)
@@ -701,15 +615,6 @@ impl Trident {
                 "Failed to validate that firmware correctly booted from updated target OS image",
             )
         });
-
-        harpoon_hc::on_harpoon_enabled_event(
-            &datastore.host_status().spec,
-            harpoon::EventType::Update,
-            match rollback_result {
-                Ok(_) => harpoon::EventResult::SuccessReboot,
-                Err(_) => harpoon::EventResult::Error,
-            },
-        );
 
         if rollback_result.is_ok() {
             if let Some(ref orchestrator) = self.orchestrator {

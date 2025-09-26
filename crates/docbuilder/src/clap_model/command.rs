@@ -63,7 +63,7 @@ impl From<&clap::Command> for CommandModel {
     fn from(cmd: &clap::Command) -> Self {
         Self::from_cmd(
             cmd,
-            Some(include_str!("../templates/command_usage.template")),
+            Some(include_str!("./templates/command_usage.template")),
         )
     }
 }

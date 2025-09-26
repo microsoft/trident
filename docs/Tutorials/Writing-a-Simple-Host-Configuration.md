@@ -16,8 +16,7 @@ Configuration](../Reference/Host-Configuration/Sample-Host-Configuration.md).
 
 1. An OS with the Trident binary installed. To check if Trident is available on
    your OS, try running `trident --version`.
-2. A COSI file. Please complete the tutorial on [Building a Deployable
-   Image](./Building-a-Deployable-Image.md) if you have not already.
+2. A COSI file. Please complete the tutorial on [Building A/B Update Images for Install and Update](./Building-AB-Update-Images-for-Install-and-Update.md) if you have not already.
 
 ## Instructions
 
@@ -33,10 +32,10 @@ Trident where to source the COSI file from. For a complete description of this
 section, please reference the [API
 documentation](../Reference/Host-Configuration/API-Reference/OsImage.md).
 
-Additionally, to learn more about COSI files, please see its
-[reference page](../Reference/Composable-OS-Image.md). You can also learn how to
-create a COSI file in this tutorial on
-[Building a Deployable Image](./Building-a-Deployable-Image.md).
+Additionally, to learn more about COSI files, please see its [Reference
+page](../Reference/COSI.md). You can also learn how to create a COSI file in
+this tutorial on
+[Building A/B Update Images for Install and Update](./Building-AB-Update-Images-for-Install-and-Update.md).
 
 The `image` section requires a `url`, where the COSI file is actually located or
 hosted, and a `sha384` hash of the metadata of the COSI file. For the purposes

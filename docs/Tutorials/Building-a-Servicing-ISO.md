@@ -9,7 +9,7 @@ The goal of this document is to produce an installation ISO that utilizes Triden
 
 1. Ensure that [oras](https://oras.land/docs/installation/) is installed.
 2. Ensure [Image Customizer container](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/quick-start/quick-start.html) is accessible.
-3. Create an [Azure Linux image COSI file](./Building-a-Deployable-Image.md), assuming the output COSI file is `$HOME/staging/osimage.cosi`.
+3. Create an [Azure Linux image COSI file](./Building-AB-Update-Images-for-Install-and-Update.md), assuming the output COSI file is `$HOME/staging/osimage.cosi`.
 4. Create a [Trident host configuration file](./Writing-a-Simple-Host-Configuration.md), assuming the file is `$HOME/staging/host-config.yaml`. For this document, the host configuration is assumed to reference the COSI file as being contained in the installer ISO at `/images/azure-linux.cosi`.
 
 ## Instructions

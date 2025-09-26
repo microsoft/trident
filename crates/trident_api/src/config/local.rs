@@ -13,10 +13,6 @@ use super::host::HostConfiguration;
 pub enum HostConfigurationSource {
     File(PathBuf),
     Embedded(Box<HostConfiguration>),
-    #[cfg(feature = "setsail")]
-    KickstartFile(PathBuf),
-    #[cfg(feature = "setsail")]
-    KickstartEmbedded(String),
 }
 
 impl std::fmt::Display for HostConfigurationSource {
@@ -24,12 +20,6 @@ impl std::fmt::Display for HostConfigurationSource {
         match self {
             HostConfigurationSource::File(path) => write!(f, "file: {}", path.display()),
             HostConfigurationSource::Embedded(_) => write!(f, "embedded"),
-            #[cfg(feature = "setsail")]
-            HostConfigurationSource::KickstartFile(path) => {
-                write!(f, "kickstart file: {}", path.display())
-            }
-            #[cfg(feature = "setsail")]
-            HostConfigurationSource::KickstartEmbedded(_) => write!(f, "kickstart embedded"),
         }
     }
 }

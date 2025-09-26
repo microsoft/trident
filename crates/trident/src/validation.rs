@@ -7,61 +7,6 @@ use trident_api::{
     error::{InternalError, InvalidInputError, ReportError, TridentError, TridentResultExt},
 };
 
-#[cfg(feature = "setsail")]
-#[allow(unused)]
-pub fn validate_setsail(conents: impl AsRef<str>) -> Result<(), anyhow::Error> {
-    use anyhow::bail;
-    use log::error;
-    use setsail::KsTranslator;
-
-    info!("Validating embedded kickstart.");
-    let translator = KsTranslator::new().include_fail_is_error(false);
-    match translator.translate(setsail::load_kickstart_string(conents.as_ref())) {
-        Ok(hc) => {
-            info!("Kickstart is valid.");
-            println!("{}", serde_yaml::to_string(&hc)?);
-        }
-        Err(e) => {
-            error!(
-                "Failed to translate kickstart:\n{}",
-                serde_json::to_string_pretty(&e.0)?
-            );
-            bail!("Failed to translate kickstart");
-        }
-    };
-
-    Ok(())
-}
-
-#[cfg(feature = "setsail")]
-#[allow(unused)]
-pub fn validate_setsail_file(path: impl AsRef<Path>) -> Result<(), anyhow::Error> {
-    use anyhow::{bail, Context};
-    use log::error;
-    use setsail::KsTranslator;
-
-    info!("Validating kickstart file: {}", path.as_ref().display());
-    let translator = KsTranslator::new().include_fail_is_error(false);
-    match translator.translate(
-        setsail::load_kickstart_file(path.as_ref())
-            .context(format!("Failed to read {}", path.as_ref().display()))?,
-    ) {
-        Ok(hc) => {
-            info!("Kickstart is valid.");
-            println!("{}", serde_yaml::to_string(&hc)?);
-        }
-        Err(e) => {
-            error!(
-                "Failed to translate kickstart:\n{}",
-                serde_json::to_string_pretty(&e.0)?
-            );
-            bail!("Failed to translate kickstart");
-        }
-    };
-
-    Ok(())
-}
-
 pub(crate) fn parse_host_config(
     contents: &str,
     path: impl AsRef<Path>,

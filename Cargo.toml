@@ -7,11 +7,9 @@ default-members = [
 members = [
     "crates/trident",
     "crates/trident_api",
-    "crates/setsail",
     "crates/osutils",
     "crates/docbuilder",
     "crates/pytest",
     "crates/pytest_gen",
-    "crates/harpoon",
     "crates/sysdefs",
 ]

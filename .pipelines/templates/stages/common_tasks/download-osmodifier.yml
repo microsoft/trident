@@ -1,0 +1,49 @@
+parameters:
+  - name: osModifierBuildType
+    displayName: OSModifier build type to download from osmodifier pipelines
+    type: string
+    values:
+      - dev
+      - preview
+    default: preview
+
+  - name: osModifierVersion
+    type: string
+    default: "1.1.0-preview.937762"
+
+  - name: targetArchitecture
+    type: string
+    values:
+      - amd64
+      - arm64
+
+  - name: osModifierBranch
+    displayName: OSModifier branch to use for dev build type
+    type: string
+    default: "main"
+
+steps:
+  - ${{ if eq(parameters.osModifierBuildType, 'dev') }}:
+    - bash: |
+        set -ex
+        rm -rf azure-linux-image-tools
+        git clone --branch ${{ parameters.osModifierBranch }} https://github.com/microsoft/azure-linux-image-tools azure-linux-image-tools
+
+        mkdir -p artifacts
+        make artifacts/osmodifier
+      displayName: "Build OSModifier from ${{ parameters.osModifierBranch }}"
+      workingDirectory: $(Build.SourcesDirectory)
+      retryCountOnTaskFailure: 3
+
+  - ${{ if eq(parameters.osModifierBuildType, 'preview') }}:
+    - task: UniversalPackages@0
+      displayName: "Download OSModifier (preview - pinned version)"
+      inputs:
+        command: download
+        vstsFeed: polar/PolarCoreArtifacts
+        ${{ if eq(parameters.targetArchitecture, 'amd64') }}:
+          vstsFeedPackage: osmodifier_preview
+        ${{ if eq(parameters.targetArchitecture, 'arm64') }}:
+          vstsFeedPackage: osmodifier_arm64_preview
+        vstsPackageVersion: ${{ parameters.osModifierVersion }}
+        downloadDirectory: "$(Build.SourcesDirectory)/artifacts"
