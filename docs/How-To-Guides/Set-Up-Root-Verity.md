@@ -11,7 +11,7 @@ An alternative (both cannot be configured) is to instead configure [usr-verity](
 
 :::
 
-The goal of this document is to create a [Trident host configuration](../Reference/Host-Configuration/API-Reference/HostConfiguration.md) file and a [COSI](../Reference/COSI.md) file that can be used to install and service an image with a root-verity partition.
+The goal of this document is to create a [Trident host configuration](../Reference/Host-Configuration/API-Reference/HostConfiguration.md) file and a [COSI](../Reference/Composable-OS-Image.md) file that can be used to install and service an image with a root-verity partition.
 
 ## Prerequisites
 
