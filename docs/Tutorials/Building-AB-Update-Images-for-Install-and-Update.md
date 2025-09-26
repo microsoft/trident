@@ -76,7 +76,7 @@ This will set up the required partition, but this is only half of the required c
         path: /
 ```
 
-The same approach is followed for volumes that are not servicable, like `/boot/efi`, which contains state that dictates boot, and `/var/lib/trident`, which is the default location Trident uses for its datastore. These volumes can be defined like this:
+The same approach is followed for volumes that are not serviceable, like `/boot/efi`, which contains state that dictates boot, and `/var/lib/trident`, which is the default location Trident uses for its datastore. These volumes can be defined like this:
 
 ``` yaml
   disks:
