@@ -37,7 +37,7 @@ Our [documentation](docs/Trident.md) is still underconstruction. For now, please
 ### Developing and Contributing
 
 For detailed information about contributing to this project please read the
-[contributing guide](./docs/Development/Contributing/contribuiting-guidelines.md).
+[contributing guide](./docs/Development/Contributing/contributing-guidelines.md).
 
 ## Getting Help
 
