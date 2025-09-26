@@ -18,10 +18,6 @@ parameters:
     type: string
     default: "main"
 
-variables:
-  - name: osModifierVersion
-    value: "1.1.0-preview.939023"
-
 steps:
   - ${{ if ne(parameters.osModifierBranch, 'main') }}:
     - bash: |
@@ -54,7 +50,7 @@ steps:
         command: download
         vstsFeed: polar/PolarCoreArtifacts
         vstsFeedPackage: osmodifier_arm64_preview
-        vstsPackageVersion: $(osModifierVersion)
+        vstsPackageVersion: "1.1.0-preview.939023"
         downloadDirectory: "$(Build.SourcesDirectory)/artifacts"
 
   - ${{ if and(eq(parameters.osModifierBuildType, 'preview'), eq(parameters.targetArchitecture, 'amd64')) }}:
@@ -64,5 +60,5 @@ steps:
         command: download
         vstsFeed: polar/PolarCoreArtifacts
         vstsFeedPackage: osmodifier_amd64_preview
-        vstsPackageVersion: $(osModifierVersion)
+        vstsPackageVersion: "1.1.0-preview.939023"
         downloadDirectory: "$(Build.SourcesDirectory)/artifacts"
