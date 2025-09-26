@@ -7,10 +7,6 @@ parameters:
       - preview
     default: preview
 
-  - name: osModifierVersion
-    type: string
-    default: "1.1.0-preview.937762"
-
   - name: targetArchitecture
     type: string
     values:
@@ -42,8 +38,8 @@ steps:
         command: download
         vstsFeed: polar/PolarCoreArtifacts
         ${{ if eq(parameters.targetArchitecture, 'amd64') }}:
-          vstsFeedPackage: osmodifier_preview
+          vstsFeedPackage: osmodifier_amd64_preview
         ${{ if eq(parameters.targetArchitecture, 'arm64') }}:
           vstsFeedPackage: osmodifier_arm64_preview
-        vstsPackageVersion: ${{ parameters.osModifierVersion }}
+        vstsPackageVersion: "1.1.0-preview.939023"
         downloadDirectory: "$(Build.SourcesDirectory)/artifacts"
