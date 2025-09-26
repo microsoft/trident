@@ -68,7 +68,7 @@ stages:
           # Sourced from the matrix
           tridentConfigurationName: $(configuration)
 
-          tridentConfigPath: $(tridentSourceDirectory)/e2e_tests/trident_configurations/$(tridentConfigurationName)
+          tridentConfigPath: $(tridentSourceDirectory)/tests/e2e_tests/trident_configurations/$(tridentConfigurationName)
 
           tridentSourceDirectory: $(Build.SourcesDirectory)
           argusToolkitSourceDirectory: $(Build.SourcesDirectory)/argus-toolkit
@@ -205,7 +205,7 @@ stages:
               echo "Found VM serial log file: $VM_SERIAL_LOG"
               echo "VM serial log:"
 
-              sudo $(tridentSourceDirectory)/e2e_tests/helpers/wait_for_login.py \
+              sudo $(tridentSourceDirectory)/tests/e2e_tests/helpers/wait_for_login.py \
                   -d "$VM_SERIAL_LOG" \
                   -o ./serial.log \
                   -t 250 \
@@ -227,7 +227,7 @@ stages:
 
               HOST_IP=$(jq -r '.virtualmachines[0].ip' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)
               ./bin/storm-trident helper check-selinux \
-                  "$(tridentSourceDirectory)/e2e_tests/helpers/key" \
+                  "$(tridentSourceDirectory)/tests/e2e_tests/helpers/key" \
                   "$HOST_IP" \
                   "testing-user" \
                   "${{ parameters.runtimeEnv }}" \
@@ -239,9 +239,9 @@ stages:
           - bash: |
               set -eux
               HOST_IP=$(jq -r '.virtualmachines[0].ip' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)
-              ssh -o StrictHostKeyChecking=no -i $(tridentSourceDirectory)/e2e_tests/helpers/key testing-user@$HOST_IP \
+              ssh -o StrictHostKeyChecking=no -i $(tridentSourceDirectory)/tests/e2e_tests/helpers/key testing-user@$HOST_IP \
                 'sudo journalctl -u docker.service'
-              ssh -o StrictHostKeyChecking=no -i $(tridentSourceDirectory)/e2e_tests/helpers/key testing-user@$HOST_IP \
+              ssh -o StrictHostKeyChecking=no -i $(tridentSourceDirectory)/tests/e2e_tests/helpers/key testing-user@$HOST_IP \
                 'sudo journalctl -u trident-container.service'
             condition: eq('${{ parameters.runtimeEnv }}', 'container')
             displayName: "📄 Display Container logs"
@@ -250,7 +250,7 @@ stages:
               set -eux
               HOST_IP=$(jq -r '.virtualmachines[0].ip' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)
               ./bin/storm-trident helper boot-metrics \
-                  "$(tridentSourceDirectory)/e2e_tests/helpers/key" \
+                  "$(tridentSourceDirectory)/tests/e2e_tests/helpers/key" \
                   "$HOST_IP" \
                   "testing-user" \
                   "${{ parameters.runtimeEnv }}" \
@@ -279,7 +279,7 @@ stages:
               hostIp: $(jq -r '.virtualmachines[0].ip' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)
               runtimeEnv: ${{ parameters.runtimeEnv }}
               tridentConfigPath: $(tridentConfigPath)
-              sshKeyPath: $(tridentSourceDirectory)/e2e_tests/helpers/key
+              sshKeyPath: $(tridentSourceDirectory)/tests/e2e_tests/helpers/key
               userName: testing-user
               artifactsDirectory: artifacts/test-image
               netlistenPort: ${{variables.netlaunchPort}}
@@ -296,7 +296,7 @@ stages:
               mkdir -p $(ob_outputDirectory)
               sudo cp /var/lib/libvirt/images/virtdeploy-pool/virtdeploy-vm-0-0-volume.qcow2 $(ob_outputDirectory)/
               sudo zstd -T0 $(ob_outputDirectory)/virtdeploy-vm-0-0-volume.qcow2
-              sudo cp $(tridentSourceDirectory)/e2e_tests/helpers/key $(ob_outputDirectory)
+              sudo cp $(tridentSourceDirectory)/tests/e2e_tests/helpers/key $(ob_outputDirectory)
               sudo chmod 777 $(ob_outputDirectory)/key
             workingDirectory: $(tridentSourceDirectory)
             condition: failed()

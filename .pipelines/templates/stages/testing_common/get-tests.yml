@@ -37,8 +37,8 @@ jobs:
     steps:
       - template: ../common_tasks/avoid-pypi-usage.yml
       - bash: |
-          python3 ./e2e_tests/helpers/read_target_configurations.py \
-              --configurations ./e2e_tests/target-configurations.yaml \
+          python3 ./tests/e2e_tests/helpers/read_target_configurations.py \
+              --configurations ./tests/e2e_tests/target-configurations.yaml \
               --env ${{ parameters.deploymentEnvironment }} \
               --runtimeEnv ${{ parameters.runtimeEnv }} \
               --purpose ${{ parameters.buildPurpose }} \

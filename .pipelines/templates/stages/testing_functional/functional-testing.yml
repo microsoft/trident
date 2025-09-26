@@ -102,8 +102,8 @@ stages:
               set -eux
 
               # Copy files from platform-tests to functional_tests
-              cp platform-tests/tools/marinerhci_test_tools/node_interface.py functional_tests/
-              cp platform-tests/tools/marinerhci_test_tools/ssh_node.py functional_tests/
+              cp platform-tests/tools/marinerhci_test_tools/node_interface.py tests/functional_tests/
+              cp platform-tests/tools/marinerhci_test_tools/ssh_node.py tests/functional_tests/
 
               # Run the core of the functional tests, which means only
               # rebuilding the test binaries and invoking pytest. The regular
