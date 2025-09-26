@@ -41,7 +41,7 @@ Follow the [Building a Servicing ISO](./Building-a-Servicing-ISO.md) guide to cr
 
 This prevents automatically running Trident when the ISO boots. This allows us to:
   - Select the specific disk for installation.
-  - Observe the Host Configuration.  
+  - Observe the Host Configuration.
   - Execute the installation ourselves.
 
 ### Step 2: Boot from the Servicing ISO
