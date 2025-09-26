@@ -11,32 +11,32 @@ Reporting issues and bugs.
 For all non-security related issues and bugs, please use the
 [issues page](https://github.com/microsoft/trident/issues) on Trident to report them.
 
-<!-- BEGIN MICROSOFT SECURITY.MD V0.0.3 BLOCK -->
-
 ## Reporting Security Issues and Vulnerabilities
+
+<!-- BEGIN MICROSOFT SECURITY.MD V0.0.9 BLOCK -->
 
 Microsoft takes the security of our software products and services seriously,
 which includes all source code repositories managed through our GitHub
 organizations, which include [Microsoft](https://github.com/Microsoft),
 [Azure](https://github.com/Azure), [DotNet](https://github.com/dotnet),
-[AspNet](https://github.com/aspnet), [Xamarin](https://github.com/xamarin), and
-[our GitHub organizations](https://opensource.microsoft.com/).
+[AspNet](https://github.com/aspnet) and [Xamarin](https://github.com/xamarin).
 
 If you believe you have found a security vulnerability in any Microsoft-owned
-repository that meets Microsoft's [Microsoft's definition of a security
-vulnerability](https://docs.microsoft.com/en-us/previous-versions/tn-archive/cc751383(v=technet.10))
-of a security vulnerability, please report it to us as described below.
+repository that meets
+[Microsoft's definition of a security vulnerability](https://aka.ms/security.md/definition),
+please report it to us as described below.
 
-### Reporting Security Issues
+## Reporting Security Issues
 
 **Please do not report security vulnerabilities through public GitHub issues.**
 
-Instead, please report them to the Microsoft Security Response Center (MSRC) at [https://msrc.microsoft.com/create-report](https://msrc.microsoft.com/create-report).
+Instead, please report them to the Microsoft Security Response Center (MSRC) at
+[https://msrc.microsoft.com/create-report](https://aka.ms/security.md/msrc/create-report).
 
 If you prefer to submit without logging in, send email to
 [secure@microsoft.com](mailto:secure@microsoft.com).  If possible, encrypt your
-message with our PGP key; please download it from the the
-[Microsoft Security Response Center PGP Key page](https://www.microsoft.com/en-us/msrc/pgp-key-msrc).
+message with our PGP key; please download it from the
+[Microsoft Security Response Center PGP Key page](https://aka.ms/security.md/msrc/pgp).
 
 You should receive a response within 24 hours. If for some reason you do not,
 please follow up via email to ensure we received your original message.
@@ -59,15 +59,16 @@ This information will help us triage your report more quickly.
 
 If you are reporting for a bug bounty, more complete reports can contribute to a
 higher bounty award. Please visit our
-[Microsoft Bug Bounty Program](https://microsoft.com/msrc/bounty) page for more
-details about our active programs.
+[Microsoft Bug Bounty Program](https://aka.ms/security.md/msrc/bounty) page for
+more details about our active programs.
 
-### Preferred Languages
+## Preferred Languages
 
 We prefer all communications to be in English.
 
-### Policy
+## Policy
 
-Microsoft follows the principle of [Coordinated Vulnerability Disclosure](https://www.microsoft.com/en-us/msrc/cvd).
+Microsoft follows the principle of
+[Coordinated Vulnerability Disclosure](https://aka.ms/security.md/cvd).
 
 <!-- END MICROSOFT SECURITY.MD BLOCK -->
