@@ -137,7 +137,7 @@ storage:
       mountPoint:
         path: /boot/efi
         options: umask=0077
-    - deviceId: root-a
+    - deviceId: root
       type: ext4
       mountPoint:
         path: /
