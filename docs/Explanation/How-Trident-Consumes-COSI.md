@@ -23,7 +23,7 @@ COSI file. These requirements differ by URL scheme:
 
 - **HTTP/HTTPS (`http://`, `https://`)**: The web server hosting the images must
   support HTTP Range Requests. Trident will search for an `Accept-Ranges` header
-  in the server's response.
+  in the server's response, and will return and error if none is found.
 - **OCI (`oci://`)**: The OCI registry must allow for anonymous image pulls. In
   addition, Trident expects that the referenced artifact contains exactly one
   layer.
