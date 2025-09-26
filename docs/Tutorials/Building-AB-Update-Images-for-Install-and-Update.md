@@ -56,43 +56,37 @@ cp -r bin/RPMS $HOME/staging
 
 Follow the Image Customizer [documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/README.html) to create a configuration file.
 
-To support [A/B update](../Reference/Glossary.md#ab-update), updatable filesystems require both an A and a B volume.  This allows Trident to stage a new update while the current operating system runs uninterrupted.  For example, to configure A and B volumes for root (`/`), we follow the `-a` and `-b` suffix convention like this when defining disks:
+To support [A/B update](../Reference/Glossary.md#ab-update), COSI files need to support the desired volumes, not the underlying A/B volume pair. So, root (`/`) is defined like this:
 
 ``` yaml
   disks:
     - partitionTableType: gpt
-      maxSize: 10G
       partitions:
-        - id: root-a
-          size: 4G
-        - id: root-b
+        - id: root
           size: 4G
 ```
 
-This will set up the required partitions, but this is only half of the required configuration.  We need to tell Image Customizer where to put the root filesystem.  To do so, configure the filesystem to use `root-a` like this:
+This will set up the required partition, but this is only half of the required configuration. We need to tell Image Customizer where to put the root filesystem. To do so, configure the filesystem to use `root` like this:
 
 ``` yaml
   filesystems:
-    - deviceId: root-a
+    - deviceId: root
       type: ext4
       mountPoint:
         path: /
 ```
 
-[A/B volume pairs](../Reference/Glossary.md#ab-volume-pair) must exist for any volumes that are going to be serviced as part of an update.
-
-While these A/B volume pairs are vital to A/B Update, there are some filesystems that cannot be hosted on A/B volumes. These filesystems retain state between the A and B operating systems.
-
-`/boot/efi` contains state that dictates boot and can be defined like this:
+The same approach is followed for volumes that are not servicable, like `/boot/efi`, which contains state that dictates boot, and `/var/lib/trident`, which is the default location Trident uses for its datastore. These volumes can be defined like this:
 
 ``` yaml
   disks:
     - partitionTableType: gpt
-      maxSize: 10G
       partitions:
         - id: esp
           type: esp
           size: 8M
+        - id: trident
+          size: 100M
 
   filesystems:
     - deviceId: esp
@@ -100,28 +94,13 @@ While these A/B volume pairs are vital to A/B Update, there are some filesystems
       mountPoint:
         path: /boot/efi
         options: umask=0077
-```
-
-`/var/lib/trident` is the default location Trident uses for its datastore and can be defined like this:
-
-``` yaml
-  disks:
-    - partitionTableType: gpt
-      maxSize: 10G
-      partitions:
-        - id: trident
-          size: 100M
-          type: linux-generic
-
-  filesystems:
     - deviceId: trident
       type: ext4
       mountPoint:
         path: /var/lib/trident
-
 ```
 
-In addition to partition and filesystem definition, Trident must be added to the image.  As the final step in install, [trident commit](../Reference/Trident-CLI.md#commit) must be invoked to validate and ensure the machine's boot order is correct.  To enable commit, Trident needs the `trident-service` package to be installed and the `trident` service to be enabled:
+In addition to partition and filesystem definition, Trident must be added to the image. As the final step in install, [trident commit](../Reference/Trident-CLI.md#commit) must be invoked to validate and ensure the machine's boot order is correct. To enable commit, Trident needs the `trident-service` package to be installed and the `trident` service to be enabled:
 
 ``` yaml
   packages:
@@ -142,19 +121,15 @@ storage:
 
   disks:
     - partitionTableType: gpt
-      maxSize: 10G
+      maxSize: 5G
       partitions:
         - id: esp
           type: esp
           size: 8M
-        - id: root-a
-          size: 4G
-        - id: root-b
+        - id: root
           size: 4G
         - id: trident
           size: 100M
-          type: linux-generic
-          label: trident
 
   filesystems:
     - deviceId: esp
@@ -234,17 +209,37 @@ popd
 
 ### Step 5: Create Trident Host Configuration for Install
 
-Create a Trident host configuration file that aligns to the Image Customizer COSI that was created in step 4.  The esp, root A/B volume pair, and trident partitions/filesystems should reflect what was specified in the Image Customizer configuration.
+Create a Trident host configuration file that aligns to the Image Customizer COSI that was created in step 4. The esp, root, and trident partitions/filesystems should reflect what was specified in the Image Customizer configuration.
 
-Trident does require a little more information about the A/B volume pair.  For that, we create an `abUpdate` section where the underlying `root-a` and `root-b` are linked to a logical `root` volume:
+Trident does require a little more information about volumes that are intended to be serviced. For that, we do 2 things:
 
-``` yaml
-  abUpdate:
-    volumePairs:
-      - id: root
-        volumeAId: root-a
-        volumeBId: root-b
-```
+* Define an [A/B volume pair](../Reference/Glossary.md#ab-volume-pair), in this case `root-a` and `root-b`, for `root`
+
+  ``` yaml
+  storage:
+    disks:
+      - id: os
+        partitions:
+          - id: root-a
+            type: root
+            size: 8G
+          - id: root-b
+            type: root
+            size: 8G
+    filesystems:
+      - deviceId: root
+        mountPoint: /
+  ```
+
+* create an `abUpdate` section where the underlying `root-a` and `root-b` are linked to a logical `root` volume:
+
+  ``` yaml
+    abUpdate:
+      volumePairs:
+        - id: root
+          volumeAId: root-a
+          volumeBId: root-b
+  ```
 
 The remainder of the Trident host configuration file describes things like where to find the COSI file (in this case, the url will be a local path), what the disk device path is (in this case, /dev/sda), some user data (including the public key `$HOME/.ssh/id_rsa.pub`), some network setup, and an selinux configuration:
 
@@ -309,7 +304,7 @@ EOF
 
 To install the COSI we created in step 4, we need to create a servicing ISO. Follow the [Building a Servicing ISO tutorial](./Building-a-Servicing-ISO.md), using the COSI created in step 4 and the host configuration created in step 5 as the tutorial's prerequisites.
 
-You can create a bootable USB stick from the servicing ISO by using a tool like Rufus (or any similar tool).  This USB stick can be used to install the `A` operating system.
+You can create a bootable USB stick from the servicing ISO by using a tool like Rufus (or any similar tool). This USB stick can be used to install the `A` operating system.
 
 Alternatively, to simulate an installation, you can create a virtual machine with an empty disk and mount the ISO directly as a CD.
 
@@ -317,7 +312,9 @@ Alternatively, to simulate an installation, you can create a virtual machine wit
 
 The process for creating an update COSI file is similar to what we did for Install.
 
-An important difference is that for update, we only need to provide an esp and the updated partitions (note that `root` is specified, there is no `root-a` or `root-b`, there is no `trident`):
+For an update COSI, we only need to provide an esp and the updated partitions.
+
+> Note that `root` is specified for Image Customizer unlike the `root-a` or `root-b` found in the Trident host configuration. Also that there is no `trident` partition.
 
 ``` yaml
   disks:
@@ -344,7 +341,7 @@ Similarly, filesystems should only contain entries for esp and the updated files
       type: ext4
 ```
 
-As for the install COSI, Trident must be added.  The final step for update is [trident commit](../Reference/Trident-CLI.md#commit), which must be invoked to validate and ensure the machine's boot order is correct.  To enable commit, Trident needs the `trident-service` package to be installed and the `trident` service to be enabled:
+As for the install COSI, Trident must be added. The final step for update is [trident commit](../Reference/Trident-CLI.md#commit), which must be invoked to validate and ensure the machine's boot order is correct. To enable commit, Trident needs the `trident-service` package to be installed and the `trident` service to be enabled:
 
 ``` yaml
   packages:
@@ -475,4 +472,4 @@ ssh -i $HOME/.ssh/id_rsa tutorial-user@$TARGET_MACHINE_IP trident update /tmp/ho
 
 ## Conclusion
 
-We have created A/B Update capable COSI files for both install and update.  We have seen how to create Image Customizer configurations, how to invoke Image Customizer, and how to create matching Trident host configuration files.
+We have created A/B Update capable COSI files for both install and update. We have seen how to create Image Customizer configurations, how to invoke Image Customizer, and how to create matching Trident host configuration files.
