@@ -769,7 +769,8 @@ website-prereqs:
 	cd ./website && \
 		npm install --save docusaurus @easyops-cn/docusaurus-search-local @docusaurus/theme-mermaid
 
-website/docs:
+DOCS_CONTENTS = $(shell find ./docs -type f)
+website/docs: $(DOCS_CONTENTS)
 	rm -rf ./website/docs && \
 		cp -r ./docs ./website
 
