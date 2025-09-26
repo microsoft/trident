@@ -208,11 +208,11 @@ popd
 
 Create a Trident host configuration file that aligns to the Image Customizer COSI that was created in step 4. The esp, root, root-hash, and var partitions/filesystems should reflect what was specified in the Image Customizer configuration.
 
-Some things to note in the host configuration below:
+Some things to note that are defined in the host configuration below:
 
-* Define [A/B volume pairs](../Reference/Glossary.md#ab-volume-pair) for `root-data` and `root-hash`
-* Define an [`abUpdate`](../Reference/Host-Configuration/API-Reference/AbUpdate.md) section for `root-data` and `root-hash`:
-* Define [verity](../Reference/Host-Configuration/API-Reference/VerityDevice.md) section to connect root data and hash:
+* [A/B volume pairs](../Reference/Glossary.md#ab-volume-pair) for `root-data` and `root-hash`
+* [abUpdate section](../Reference/Host-Configuration/API-Reference/AbUpdate.md) for `root-data` and `root-hash`
+* [verity section](../Reference/Host-Configuration/API-Reference/VerityDevice.md) to connect `root` data and hash
 
 The remainder of the Trident host configuration file describes things like where to find the COSI file (can be a local path, an HTTP url, or an OCI url) and what the disk device path is (in this case, /dev/sda):
 
