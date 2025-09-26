@@ -14,7 +14,7 @@ parameters:
     default: "*.*.*"
 
   - name: osModifierBranch
-    displayName: Branch to use for OS Modifier (specify 'submodule' to use trident's current submodule)
+    displayName: OSModifier branch to use for dev build type
     type: string
     default: "main"
 

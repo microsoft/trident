@@ -133,12 +133,11 @@ TOOLKIT_DIR="azure-linux-image-tools/toolkit"
 AZL_TOOLS_OUT_DIR="$(TOOLKIT_DIR)/out/tools"
 ARTIFACTS_DIR="artifacts"
 
-# Build OSModifier from the azure-linux-image-tools submodule.
-# Before building OSModifier, you need to initialize the local .git/config with
-# the submodules listed in .gitmodules and then fetch the actual content of the
-# submodule, via:
+# Build OSModifier from a local clone of azure-linux-image-tools.
+# Make sure the repo has been cloned manually, via:
 #
-# git submodule update --init
+# git clone https://github.com/microsoft/azure-linux-image-tools
+
 artifacts/osmodifier: packaging/docker/Dockerfile-osmodifier.azl3
 	@docker build -t trident/osmodifier-build:latest \
 		-f packaging/docker/Dockerfile-osmodifier.azl3 \

@@ -20,7 +20,7 @@ parameters:
 
   - name: osModifierBranch
     type: string
-    default: "submodule"
+    default: "main"
 
   - name: dependsOnStage
     type: string
@@ -84,9 +84,10 @@ stages:
             displayName: Install dependencies
             retryCountOnTaskFailure: 3
 
-          - template: ../common_tasks/build-osmodifier.yml
+          - template: ../common_tasks/download-osmodifier.yml
             parameters:
               osModifierBranch: ${{ parameters.osModifierBranch }}
+              targetArchitecture: amd64
 
           - bash: |
               set -eux

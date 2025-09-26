@@ -1,7 +1,7 @@
 parameters:
   - name: osModifierBranch
     type: string
-    default: "submodule"
+    default: "main"
 
   - name: dependsOnStage
     type: string
@@ -27,9 +27,11 @@ stages:
 
         steps:
           - template: ../common_tasks/avoid-pypi-usage.yml
-          - template: ../common_tasks/build-osmodifier.yml
+          - template: ../common_tasks/download-osmodifier.yml
             parameters:
+              osModifierBuildType: dev
               osModifierBranch: ${{ parameters.osModifierBranch }}
+              targetArchitecture: amd64
 
           - script: |
               set -eux
