@@ -4,7 +4,7 @@ In this tutorial, we will install Azure Linux on a virtual machine using Trident
 
 ## Introduction
 
-We will create a complete Azure Linux system using Trident. You will see how Trident transforms a blank virtual machine into a fully configured Azure Linux system in just a few minutes!
+In this tutorial, we will install Azure Linux using Trident. Trident is a declarative OS lifecycle agent. You will see firsthand how Trident transforms a blank virtual machine into a fully configured Azure Linux system in just a few minutes!
 
 ## Prerequisites
 
@@ -82,7 +82,7 @@ Now start the installation:
 trident install
 ```
 
-Watch as Trident performs the automated installation process. After 2-3 minutes, you will see the installation completed succesfully and the system will reboot automatically.
+Watch as Trident performs the automated installation process. After 2-3 minutes, you will see the installation completed successfully and the system will reboot automatically.
 
 ### Step 4: Boot into Azure Linux
 
