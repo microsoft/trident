@@ -1,10 +1,10 @@
 # Trident Hello World
 
-In this tutorial, we will install Azure Linux on a virtual machine using Trident. Trident is designed to perform clean installs on bare metal hosts, but for demonstration purposes, a virtual machine can also be used. We'll boot from the [Servicing ISO](./Building-a-Servicing-ISO.md), and use Trident to install and configure Azure Linux.
+In this tutorial, we will install Azure Linux on a virtual machine using Trident. Trident is designed to perform clean installs on bare-metal hosts, but for learning/demonstration purposes, a virtual machine can also be used. We'll boot from the [Servicing ISO](./Building-a-Servicing-ISO.md), and use Trident to install and configure Azure Linux.
 
 ## Introduction
 
-We will create a complete Azure Linux system using Trident. You will see how Trident transforms a blank virtual machine into a fully configured Azure Linux system in just a few minutes!!!
+We will create a complete Azure Linux system using Trident. You will see how Trident transforms a blank virtual machine into a fully configured Azure Linux system in just a few minutes!
 
 ## Prerequisites
 
@@ -16,7 +16,7 @@ Before we start, you'll need:
      - Select the specific disk for installation.
      - Observe the Host Configuration.  
      - Execute the installation ourselves.
-   - **Modification required**: In Step 3 of the "Building a Servicing ISO" tutorial, remove this line from the `services` section in `ic-config.yaml`:
+   - **Modification required**: In Step 3 of the "Building a Servicing ISO" tutorial, remove the `trident-install.service` from the `services` section in `ic-config.yaml`:
      ```yaml
      services:
        enable:
@@ -41,7 +41,7 @@ Before we start, you'll need:
 **Create Servicing ISO**
 Follow the [Building a Servicing ISO](./Building-a-Servicing-ISO.md) tutorial (remember to remove the `trident-install.service` line from the Image Customizer configuration, as described in the Prerequisites) and use the tool of your choice to create bootable media from it.
 
-Insert the bootable media (USB drive or CD/DVD) into your target system and power it on. Make sure to configure it to boot from the media first or select the media during the subsequent boot using the appropriate key (often F12).
+Insert the bootable media (USB, CD, etc.) into your target system and power it on. Make sure to configure it to boot from the media first or select the media during the subsequent boot using the appropriate key (often F12).
 
 The system will boot into the Azure Linux installer environment.
 
@@ -95,7 +95,7 @@ trident-testimg login:
 
 The system will present a login prompt. Since the default configuration uses SSH key-only authentication (no password login), you can access the system via SSH once the installation is complete.
 
-We now have Azure Linux running!
+We now have Azure Linux running!!!
 
 ### Step 5: Explore your system
 
