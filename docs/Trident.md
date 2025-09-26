@@ -4,8 +4,7 @@ sidebar_position: 1
 
 # Trident - Azure Linux Servicing Agent
 
-**Trident** is an OS lifecycle agent designed
-primarily for [Azure
+**Trident** is an OS lifecycle agent designed primarily for [Azure
 Linux](https://github.com/microsoft/azurelinux/?tab=readme-ov-file#azure-linux).
 It supports installation and provisioning of bare-metal hosts, as well as
 A/B-style atomic updates and runtime configuration for both bare-metal and
@@ -13,8 +12,10 @@ virtual machines.
 
 Trident is built around its **Host Configuration API**, a declarative YAML-based
 interface that defines the desired state of a machine across storage, OS,
-networking, and firmware layers. Trident performs image-based atomic installation and updates using compressed, minimized OS images to ensure consistency and
-reliability across deployments. Trident emphasizes security and robustness, while reducing the downtime during servicing operations.
+networking, and firmware layers. Trident performs image-based atomic
+installation and updates using compressed, minimized OS images to ensure
+consistency and reliability across deployments. Trident emphasizes security and
+robustness, while reducing the downtime during servicing operations.
 
 ## What can Trident do?
 
@@ -26,8 +27,9 @@ servicing.
 - Disk partitioning and formatting using the GUID Partition Table (GPT).
 - Creation of [software RAID arrays](How-To-Guides/Create-a-RAID-Array.md),
   including support for [ESP redundancy](How-To-Guides/Set-Up-Redundant-ESP.md).
-- Provisioning of [encrypted volumes](How-To-Guides/Create-an-Encrypted-Volume.md),
-  with optional PCR sealing.
+- Provisioning of [encrypted
+  volumes](How-To-Guides/Create-an-Encrypted-Volume.md), with optional PCR
+  sealing.
 - [DM-verity](How-To-Guides/Set-Up-Root-Verity.md) integration for root and
   `/usr` filesystems.
 - [Adoption of existing partitions](How-To-Guides/Adopt-Existing-Partitions.md)
