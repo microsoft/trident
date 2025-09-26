@@ -52,6 +52,8 @@ Trident supports servicing both bare-metal hosts and virtual machines.
 
 Trident runs on both `x86_64` and `aarch64` architectures.
 
+Please consult [Feature Matrix](Feature-Matrix.md) for more details.
+
 <!-- ## See a prerecorded demo of Trident in action
 
 [![Trident

@@ -19,7 +19,7 @@ installed OS.
 
 ## Reliable deployment with safe rollback
 
-If any issues arise during servicing, Trident configures the firmware to
+In case issues arise during servicing, Trident configures the firmware to
 automatically roll back to the previous OS version, ensuring system reliability.
 Once the deployment is verified as successful, the user or orchestrator can
 certify the deployment, prompting Trident to mark it accordingly and update the
@@ -48,23 +48,23 @@ allowing for flexible scheduling and coordination with other maintenance tasks.
 This two-phase approach minimizes workload downtime and ensures a smooth
 transition to the updated OS.
 
-To stage OS images, Trident utilizes the [COSI specification](Reference/COSI.md)
-to enable efficient transfer and reliable deployment of the OS images. Trident
-can query COSI metadata without downloading the entire COSI file, then stream
-individual filesystem images directly from the specified source—such as a local
-file, HTTPS endpoint, or OCI registry—into the target block device (partition,
-RAID array, LUKS volume, etc.). During this process, Trident performs on-the-fly
-hashing and decompression of filesystem blocks, ensuring rapid transfer without
-requiring additional storage or memory for intermediate placement.
+To stage OS images, Trident utilizes the [COSI](Reference/COSI.md) file format
+to enable efficient transfer and reliable deployment of the OS images. The file
+format is designed so that Trident can stream individual filesystem images
+directly from the specified source—such as a local file, HTTPS endpoint, or OCI
+registry—into the target block device (partition, RAID array, LUKS volume,
+etc.). During this process, Trident performs on-the-fly hashing and
+decompression of filesystem blocks, ensuring rapid transfer without requiring
+additional storage or memory for intermediate placement.
 
 ## Image validation and configuration
 
-Leveraging COSI metadata, Trident validates key aspects of the source images,
-such as verifying that required dependencies are present, and provides precise
-error reporting when issues are detected. Since COSI files can be generated as
-an output format by Image Customizer, producing them is straightforward. Trident
-employs COSI files for both OS installation and updates, with the source
-location specified in the Host Configuration.
+Leveraging metadata from the COSI file, Trident validates key aspects of the
+source images, such as verifying that required dependencies are present, and
+provides precise error reporting when issues are detected. Since COSI files can
+be generated as an output format by Image Customizer, producing them is
+straightforward. Trident employs COSI files for both OS installation and
+updates, with the source location specified in the Host Configuration.
 
 ## Consistent desired state from first boot
 
@@ -99,8 +99,8 @@ consistency.
 
 ## Reducing downtime
 
-Trident is designed to minimize downtime during servicing operations. By
-staging OS images in advance and allowing for a two-phase servicing workflow,
-Trident ensures that workloads experience minimal disruption. Additionally,
-Trident's efficient image transfer and deployment mechanisms further reduce the
-time required for servicing operations.
+Trident is designed to minimize downtime during servicing operations. By staging
+OS images in advance and allowing for a two-phase servicing workflow, Trident
+ensures that workloads experience minimal disruption. Additionally, Trident's
+efficient image transfer and deployment mechanisms further reduce the time
+required for servicing operations.

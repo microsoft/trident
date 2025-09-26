@@ -24,10 +24,10 @@ installation and servicing operations. The CLI supports the following commands:
   software RAID array following physical drive replacement.
 - `get`: Retrieves the most recent Host Configuration, Host Status, or error
   details. This is particularly useful for non-interactive scenarios.
-- [`validate`](How-To-Guides/Host-Configuration-Validation.md): Performs an
-  offline validation of a Host Configuration to ensure it is well-formed and
-  applicable. Note that this validation is host context-free and may not detect
-  all potential issues.
+- [`validate`](How-To-Guides/Host-Configuration-Validation.md): Validates that a
+  provided Host Configuration is syntactically correct and self consistent. Can
+  be run on any system including a development machine, and thus does not
+  consider the current system state.
 
 Please consult [CLI reference](Reference/Trident-CLI.md) for detailed
 information on each command and its usage.

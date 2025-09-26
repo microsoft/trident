@@ -1,7 +1,7 @@
 # What is Trident?
 
-Trident is a servicing agent, drawing inspiration from the declarative
-API principles established by Kubernetes. It ingests a [**Host Configuration**
+Trident is a servicing agent, drawing inspiration from the declarative API
+principles established by Kubernetes. It ingests a [**Host Configuration**
 specification](Reference/Host-Configuration/HostConfiguration.md) as input, and,
 as it progresses, updates the **Host Status** to accurately reflect all changes
 applied in accordance with the provided Host Configuration.
@@ -54,11 +54,12 @@ Configuration is supplied.
 ## Simplifying complexity through integration and reuse
 
 Trident offers a streamlined abstraction layer over established upstream Linux
-utilities, including `systemd-repart`, `mdadm`, `cryptsetup`, `grub2`,
-`veritysetup`, and others. By integrating these proven tools, Trident delivers a
-consistent and dependable servicing experience while minimizing complexity.
-Developed in Rust, Trident benefits from enhanced memory safety and performance,
-ensuring robust and efficient operation.
+utilities, including `systemd-repart`, `mdadm`, `cryptsetup`, `veritysetup`, and
+others and leverages standard upstream components such as `grub2` and
+`systemd-boot`. By integrating these proven tools, Trident delivers a consistent
+and dependable servicing experience while minimizing complexity. Developed in
+Rust, Trident benefits from enhanced memory safety and performance, ensuring
+robust and efficient operation.
 
 ## Architectural principles
 
