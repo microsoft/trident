@@ -51,7 +51,7 @@ After a few moments, the screen will show:
 
 ```
 Welcome to Azure Linux 3.0!
-azl-installer login: root 
+installer-iso-mos login: root 
 ```
 
 You're now in the installer environment. Since we removed the automatic installation service when creating the ISO, Trident will not run automatically, allowing us to configure and execute the installation manually.
@@ -87,27 +87,19 @@ Watch as Trident performs the automated installation process. After 2-3 minutes,
 ### Step 4: Boot into Azure Linux
 
 After the reboot, we'll see the GRUB bootloader, then Azure Linux starting up.
-The installation is complete when you see the login prompt:
-
-```
-trident-testimg login:
-```
-
-The system will present a login prompt. Since the default configuration uses SSH key-only authentication (no password login), you can access the system via SSH once the installation is complete.
+The installation is complete when you see the login prompt.
 
 We now have Azure Linux running!!!
 
-### Step 5: Explore your system
+**We have successfully created a complete Azure Linux system using Trident!**
+Now you can explore your new Azure Linux system.
 
-If you have SSH access configured (with SSH keys in your Servicing ISO configuration), you can connect to explore the system:
+The system will present a login prompt. Default configuration uses SSH key-only authentication (no password login). If you have SSH access configured for your user, you can connect to explore the system:
 
 ```bash
 # From your host machine, if SSH is configured:
-ssh testing-user@<system-ip-address>
+ssh <user>@<system-ip-address>
 ```
-
-**We have successfully created a complete Azure Linux system using Trident!**
-Now you can explore your new Azure Linux system.
 
 ## Appendix: Virtual Machine Setup
 
