@@ -9,7 +9,7 @@ parameters:
 
   - name: osModifierVersion
     type: string
-    default: "1.1.0-preview.937762"
+    default: "1.1.0-preview.939023"
 
   - name: targetArchitecture
     type: string
@@ -43,7 +43,7 @@ steps:
         project: "polar"
         definition: "5139"
         buildVersionToDownload: "latestFromBranch"
-        branchName: "refs/heads/user/elaine/add-emu-pipeline"
+        branchName: "refs/heads/main"
         artifactName: "osmodifier_${{ parameters.targetArchitecture }}"
         targetPath: "$(Build.SourcesDirectory)/artifacts"
 
@@ -57,12 +57,12 @@ steps:
         vstsPackageVersion: ${{ parameters.osModifierVersion }}
         downloadDirectory: "$(Build.SourcesDirectory)/artifacts"
 
-  - ${{ if and(eq(parameters.osModifierBuildType, 'preview'), ne(parameters.targetArchitecture, 'arm64')) }}:
+  - ${{ if and(eq(parameters.osModifierBuildType, 'preview'), eq(parameters.targetArchitecture, 'amd64')) }}:
     - task: UniversalPackages@0
       displayName: "Download OSModifier (preview - pinned version for amd64)"
       inputs:
         command: download
         vstsFeed: polar/PolarCoreArtifacts
-        vstsFeedPackage: osmodifier_preview
+        vstsFeedPackage: osmodifier_amd64_preview
         vstsPackageVersion: ${{ parameters.osModifierVersion }}
         downloadDirectory: "$(Build.SourcesDirectory)/artifacts"

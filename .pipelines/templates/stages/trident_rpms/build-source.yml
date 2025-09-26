@@ -26,7 +26,6 @@ parameters:
 
   - name: osModifierVersion
     type: string
-    default: "1.1.0-preview.937762"
 
   - name: osModifierBuildType
     displayName: OSModifier build type to download from osmodifier pipelines

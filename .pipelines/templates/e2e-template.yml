@@ -299,6 +299,7 @@ stages:
         parameters:
           downloadPrebuiltImage: false
           osModifierBranch: ${{ parameters.osModifierBranch }}
+          osModifierBuildType: main
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
       # VM Testing (host, post_merge)

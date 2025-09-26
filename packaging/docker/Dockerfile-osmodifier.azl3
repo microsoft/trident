@@ -2,12 +2,13 @@
 
 FROM mcr.microsoft.com/azurelinux/base/core:3.0
 ARG GOLANG_VERSION=1.25.1
+ARG OSMODIFIER_TAG=main
 
 RUN tdnf install -y make awk util-linux git python3 ca-certificates
 
 WORKDIR /work
 
-COPY azure-linux-image-tools ./azure-linux-image-tools
+RUN git clone -b $OSMODIFIER_TAG https://github.com/microsoft/azure-linux-image-tools
 
 RUN \
     tdnf list golang && \

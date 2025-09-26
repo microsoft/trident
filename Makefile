@@ -132,19 +132,22 @@ clean-coverage:
 TOOLKIT_DIR="azure-linux-image-tools/toolkit"
 AZL_TOOLS_OUT_DIR="$(TOOLKIT_DIR)/out/tools"
 ARTIFACTS_DIR="artifacts"
+OSMODIFIER_TAG ?= main
 
-# Build OSModifier from a local clone of azure-linux-image-tools.
-# Make sure the repo has been cloned manually, via:
+# Build OSModifier from a specific branch (tag) of the azure-linux-image-tools repository.
 #
-# git clone https://github.com/microsoft/azure-linux-image-tools
-
+# You can control which branch or tag is used by setting the `OSMODIFIER_TAG` Make variable:
+#   make artifacts/osmodifier OSMODIFIER_TAG=main
+#   make artifacts/osmodifier OSMODIFIER_TAG=my-feature-branch
+.PHONY: artifacts/osmodifier
 artifacts/osmodifier: packaging/docker/Dockerfile-osmodifier.azl3
 	@docker build -t trident/osmodifier-build:latest \
+		--build-arg OSMODIFIER_TAG=$(OSMODIFIER_TAG) \
 		-f packaging/docker/Dockerfile-osmodifier.azl3 \
 		.
 	@mkdir -p "$(ARTIFACTS_DIR)"
 	@id=$$(docker create trident/osmodifier-build:latest) && \
-	    docker cp -q $$id:/work/azure-linux-image-tools/toolkit/out/tools/osmodifier $@ || \
+	    docker cp -q $$id:/work/azure-linux-image-tools/toolkit/out/tools/osmodifier $@ && \
 	    docker rm -v $$id
 
 bin/trident: build
