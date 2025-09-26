@@ -5,7 +5,7 @@ use clap::CommandFactory;
 use tera::{Context as TeraCtx, Tera};
 use trident::cli::Cli;
 
-use crate::setsail::models::command::CommandModel;
+use crate::clap_model::command::CommandModel;
 
 pub(crate) fn build_docs() -> Result<String, Error> {
     let cli_root = CommandModel::from(&Cli::command());
