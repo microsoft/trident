@@ -1,22 +1,9 @@
 
 # Set Up Root Verity
 
-<!--
-DELETE ME AFTER COMPLETING THE DOCUMENT!
----
-Task: https://dev.azure.com/mariner-org/polar/_workitems/edit/13138
-Title: Set Up Root Verity
-Type: How-To Guide
-Objective:
-
-Guide the user through the process of setting up root verity on AzL 3.0. The
-guide should exclusively talk about the host configuration configuration and how
-to craft it.
--->
-
 ## Goals
 
-Verity is blah. Configuring verity for the root (`/`) partition offers good protection against modification of the installed operating system. Applying verity to root does make configuring system processes and services more difficult.
+Configuring verity for the root (`/`) partition offers good protection against modification of the installed operating system. Applying verity to root does make configuring system processes and services more difficult.
 
 > Note: Another option is using verity for the [usr (`/usr`) partition](./Usr-Verity.md) which offers good protection for executables, while allowing configuration.
 
@@ -68,7 +55,33 @@ cp -r bin/RPMS $HOME/staging
 
 ### Step 3: Create Image Customizer Configuration
 
-Follow the Image Customizer [documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/README.html) to configure `$HOME/staging/ic-config.yaml`:
+To create a root-verity volume, there are a few Image Customization configuration sections that are important.
+
+In addition to the typical `root` parition definition, a `root-hash` partition is needed like this:
+
+``` yaml
+storage:
+  disks:
+  - partitionTableType: gpt
+    partitions:
+    - label: root-hash
+      id: verityhash
+      size: 128M
+```
+
+Image Customizer needs some information to coordinate the `root` and `root-hash` partitions as part of a verity volume:
+
+``` yaml
+verity:
+  - id: rootverity
+    name: root
+    dataDeviceId: root
+    hashDeviceId: verityhash
+    dataDeviceMountIdType: part-label
+    hashDeviceMountIdType: part-label
+```
+
+Putting that all together and following the Image Customizer [documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/README.html), the full configuration `$HOME/staging/ic-config.yaml` can look like this:
 
 ``` yaml
 storage:
@@ -163,22 +176,8 @@ os:
       - veritysetup
       - vim
 
-  additionalFiles:
-    # Early boot one shot service to activate secondary rw /etc overlay
-  - source: etc-mount.service
-    destination: /etc/systemd/system/etc-mount.service
-    # Script invoked by the service above to mount the /etc rw overlay
-  - source: etc-mount.sh
-    destination: /usr/local/bin/etc-mount.sh
-  # SSH user needs sudo access for tests, and scripts cannot modify /etc
-  # directly, so modifying the wheel group as part of the image creation (note
-  # scripts could mount the rw etc from below instead)
-  - source: sudoers-wheel
-    destination: /etc/sudoers.d/wheel
-
   services:
     enable:
-    - etc-mount
     - trident
 ```
 
@@ -204,9 +203,3 @@ docker run \
         --output-image-file "/staging/out/image.cosi"
 popd
 ```
-
-## Troubleshooting
-
-<!-- (DELETE) A section that provides troubleshooting tips and common
-    pitfalls to avoid. This may include links to related documentation or
-    resources for further learning.-->
