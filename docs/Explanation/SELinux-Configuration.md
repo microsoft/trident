@@ -24,8 +24,7 @@ not explicitly allowed is denied​. TE rules comprise over 99% of the SELinux
 policy​. In order for processes and objects to have the correct type, the
 `setfiles` command relabels files with the appropriate type.
 
-An example rule from the [Trident SELinux
-policy](../../selinux-policy-trident/trident.te):
+An example rule from the [Trident SELinux policy](https://github.com/microsoft/trident/blob/main/packaging/selinux-policy-trident/trident.te):
 
 ```te
 allow trident_t tmpfs_t:filesystem { getattr mount unmount };

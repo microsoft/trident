@@ -13,9 +13,8 @@ function getVersions() {
   const versionsPath = path.resolve(__dirname, "versions.json");
   if (fs.existsSync(versionsPath)) {
     return require(versionsPath);
-  } else {
-    return ["current"];
   }
+  return ["current"];
 }
 function getDocsVersions() {
   let currentVersion = getLatestVersion();

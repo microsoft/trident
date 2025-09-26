@@ -757,8 +757,11 @@ website-prereqs:
 	cd ./website && \
 		npm install --save docusaurus @easyops-cn/docusaurus-search-local @docusaurus/theme-mermaid
 
+website/versions.json:
+	./website/scripts/create_versioned_docs.sh
+
 .PHONY: website-build
-website-build: website-prereqs
+website-build: website-prereqs website/versions.json
 	cd ./website && npm run build
 
 .PHONY: website-serve
