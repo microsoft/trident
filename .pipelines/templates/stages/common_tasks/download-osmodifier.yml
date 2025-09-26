@@ -7,10 +7,6 @@ parameters:
       - preview
     default: preview
 
-  - name: osModifierVersion
-    type: string
-    default: "1.1.0-preview.939023"
-
   - name: targetArchitecture
     type: string
     values:
@@ -21,6 +17,10 @@ parameters:
     displayName: OSModifier branch to build from (if not main)
     type: string
     default: "main"
+
+variables:
+  - name: osModifierVersion
+    value: "1.1.0-preview.939023"
 
 steps:
   - ${{ if ne(parameters.osModifierBranch, 'main') }}:
@@ -41,7 +41,7 @@ steps:
       inputs:
         buildType: "specific"
         project: "polar"
-        definition: "5139"
+        definition: "5177"
         buildVersionToDownload: "latestFromBranch"
         branchName: "refs/heads/main"
         artifactName: "osmodifier_${{ parameters.targetArchitecture }}"
@@ -54,7 +54,7 @@ steps:
         command: download
         vstsFeed: polar/PolarCoreArtifacts
         vstsFeedPackage: osmodifier_arm64_preview
-        vstsPackageVersion: ${{ parameters.osModifierVersion }}
+        vstsPackageVersion: $(osModifierVersion)
         downloadDirectory: "$(Build.SourcesDirectory)/artifacts"
 
   - ${{ if and(eq(parameters.osModifierBuildType, 'preview'), eq(parameters.targetArchitecture, 'amd64')) }}:
@@ -64,5 +64,5 @@ steps:
         command: download
         vstsFeed: polar/PolarCoreArtifacts
         vstsFeedPackage: osmodifier_amd64_preview
-        vstsPackageVersion: ${{ parameters.osModifierVersion }}
+        vstsPackageVersion: $(osModifierVersion)
         downloadDirectory: "$(Build.SourcesDirectory)/artifacts"
