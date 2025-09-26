@@ -21,7 +21,7 @@ Before we start, you'll need:
 
 ## Instructions
 
-### Step 1: BUild a Servicing ISO
+### Step 1: Build a Servicing ISO
 
 #### Building a Servicing ISO Tutorial
 
@@ -31,15 +31,15 @@ Follow the [Building a Servicing ISO](./Building-a-Servicing-ISO.md) guide to cr
 
 **Modify the Image Customizer Configuration**: Follow [Step 3: Create an Image Customizer Configuration](./Building-a-Servicing-ISO.md#step-3-create-an-image-customizer-configuration), but remove the `trident-install.service` line from the `services` section in `ic-config.yaml`:
 
-    ``` yaml
-    os:
-      services:
-        enable:
-          - trident-install.service # <-- Remove this line
-          - trident-network.service
-    ```
+``` yaml
+os:
+  services:
+    enable:
+      - trident-install.service # <-- Remove this line
+      - trident-network.service
+```
 
-This prevents automatically running Trident when the ISO boots. This allows us to:
+This prevents automatically running Trident when the ISO boots, and allows us to:
   - Select the specific disk for installation.
   - Observe the Host Configuration.
   - Execute the installation ourselves.
