@@ -25,7 +25,7 @@ Before we start, you'll need:
 
 #### Building a Servicing ISO Tutorial
 
-Follow the [Building a Servicing ISO](./Building-a-Servicing-ISO.md) guide to create your installer until [Step 3: Create an Image Customizer Configuration](./Building-a-Servicing-ISO.mdd#step-3-create-an-image-customizer-configuration)
+Follow the [Building a Servicing ISO](./Building-a-Servicing-ISO.md) guide to create your installer until [Step 3: Create an Image Customizer Configuration](./Building-a-Servicing-ISO.md#step-3-create-an-image-customizer-configuration).
 
 #### Image Customizer Configuration
 
@@ -66,23 +66,31 @@ You're now in the installer environment. Since we removed the automatic installa
 
 ### Step 4: Configure the installation
 
-First, let's see what disk Trident will install to:
+First, let's identify the target disk for installation:
 
 ```bash
 lsblk
 ```
 
-You will see something similar to `/dev/sda` for the target disk. This is where Azure Linux will be installed.
+Look for the main disk where you want to install Azure Linux (e.g. `/dev/sda`, `/dev/vda`, `/dev/nvme0n1`) with at least 16GB of space.
 
-We need to update the Trident Host Configuration to specify the correct disk device.
-
-**Using vim to see/modify the Host Configuration:**
+If your selected disk is not `/dev/sda`, update the Trident Host Configuration to specify the correct disk device:
 
 ```bash
-vim /etc/trident/config.yaml
+# Set your disk device (replace with your actual disk from lsblk output)
+DISK_PATH="</dev/your-disk>"  # Change this to your actual disk!
+
+# Update the Host Configuration
+sed -i "s|device: /dev/sda|device: ${DISK_PATH}|g" /etc/trident/config.yaml
 ```
 
-In vim, find the line with `device: <disk>` and change it to the correct device, for example: `device: /dev/sda`; then save and exit (`:wq`).
+You can verify the change was applied correctly:
+
+```bash
+cat /etc/trident/config.yaml
+```
+
+This will show the complete Host Configuration. Look for the `device:` line under the `storage` section to confirm your disk path is correct.
 
 Now start the installation:
 
