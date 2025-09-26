@@ -1,6 +1,6 @@
 # Trident Hello World
 
-In this tutorial, we will install Azure Linux on a virtual machine using Trident. Trident is designed to perform clean installs on bare metal hosts, but for demonstration purposes, a virtual machine can also be used. We'll boot from the [Provisioning ISO](./Building-a-Provisioning-ISO.md), and use Trident to install and configure Azure Linux.
+In this tutorial, we will install Azure Linux on a virtual machine using Trident. Trident is designed to perform clean installs on bare metal hosts, but for demonstration purposes, a virtual machine can also be used. We'll boot from the [Servicing ISO](./Building-a-Servicing-ISO.md), and use Trident to install and configure Azure Linux.
 
 ## Introduction
 
@@ -10,8 +10,20 @@ We will create a complete Azure Linux system using Trident. You will see how Tri
 
 Before we start, you'll need:
 
-1. **Provisioning ISO**
-   - Follow the [Building a Provisioning ISO](./Building-a-Provisioning-ISO.md) guide to create your installer
+1. **Servicing ISO**
+   - Follow the [Building a Servicing ISO](./Building-a-Servicing-ISO.md) guide to create your installer
+   - **Important**: For this tutorial, we need to modify the ISO creation process to disable automatic installation. This allows us to:
+     - Select the specific disk for installation.
+     - Observe the Host Configuration.  
+     - Execute the installation ourselves.
+   - **Modification required**: In Step 3 of the "Building a Servicing ISO" tutorial, remove this line from the `services` section in `ic-config.yaml`:
+     ```yaml
+     services:
+       enable:
+         - trident-install.service  # <-- Remove this line
+         - trident-network.service
+     ```
+   - This prevents automatically running Trident when the ISO boots, so we can do it ourselves.
 
 2. **A test target system**
    - Either a physical machine for bare-metal installation, OR
@@ -24,10 +36,10 @@ Before we start, you'll need:
 
 ## Instructions
 
-### Step 1: Boot from the Provisioning ISO
+### Step 1: Boot from the Servicing ISO
 
-**Create Provisioning ISO**
-Follow the [Building a Provisioning ISO](./Building-a-Provisioning-ISO.md) tutorial and use the tool of your choice to create bootable media from it.
+**Create Servicing ISO**
+Follow the [Building a Servicing ISO](./Building-a-Servicing-ISO.md) tutorial (remember to remove the `trident-install.service` line from the Image Customizer configuration, as described in the Prerequisites) and use the tool of your choice to create bootable media from it.
 
 Insert the bootable media (USB drive or CD/DVD) into your target system and power it on. Make sure to configure it to boot from the media first or select the media during the subsequent boot using the appropriate key (often F12).
 
@@ -42,7 +54,7 @@ Welcome to Azure Linux 3.0!
 azl-installer login: root 
 ```
 
-You're now in the installer environment, ready to configure and run the installation.
+You're now in the installer environment. Since we removed the automatic installation service when creating the ISO, Trident will not run automatically, allowing us to configure and execute the installation manually.
 
 ### Step 3: Configure the installation
 
@@ -87,7 +99,7 @@ We now have Azure Linux running!
 
 ### Step 5: Explore your system
 
-If you have SSH access configured (with SSH keys in your Provisioning ISO configuration), you can connect to explore the system:
+If you have SSH access configured (with SSH keys in your Servicing ISO configuration), you can connect to explore the system:
 
 ```bash
 # From your host machine, if SSH is configured:
@@ -145,8 +157,8 @@ You will see an empty list, confirming libvirt is ready.
 Prepare installation files and create a disk:
 
 ```bash
-# Replace '<provisioning.iso>' with the actual name of your ISO file
-sudo cp <provisioning.iso> /tmp/trident-installer.iso
+# Replace '<servicing.iso>' with the actual name of your ISO file
+sudo cp <servicing.iso> /tmp/trident-installer.iso
 sudo qemu-img create -f qcow2 /tmp/azure-linux-vm.qcow2 16G
 ```
 
@@ -195,7 +207,7 @@ sudo rm /tmp/azure-linux-vm.qcow2 /tmp/trident-installer.iso
 6. Memory: `4096 MB`
 7. Network: **Default Switch**
 8. Create a new virtual hard disk: `16 GB`
-9. **Install from bootable image file**: Browse and select your Provisioning ISO
+9. **Install from bootable image file**: Browse and select your Servicing ISO
 10. Click **Finish**
 
 **Start the VM:**
