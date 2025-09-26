@@ -795,5 +795,5 @@ validate-pipeline-website-artifact:
 	gh run download $(RUN_ID) --name github-pages --repo microsoft/trident --dir $(STAGING_DIR)
 	cd $(STAGING_DIR) && \
 		tar -xvf ./artifact.tar && \
-		npm run serve -- -port $(SERVER_PORT)
+		npm run serve -- --port $(SERVER_PORT)
 
