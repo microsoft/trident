@@ -11,7 +11,7 @@ An alternative (both cannot be configured) is to instead configure [usr-verity](
 
 :::
 
-The goal of this document is to enable you to create a [COSI](../Reference/COSI.md) file that sets up root-verity.
+The goal of this document is to create a [Trident host configuration](../Reference/Host-Configuration/API-Reference/HostConfiguration.md) file and a [COSI](../Reference/COSI.md) file that can be used to install and service an image with a root-verity partition.
 
 ## Prerequisites
 
@@ -101,7 +101,7 @@ storage:
       size: 1G
 
     - label: root-data
-      id: root
+      id: root-data
       size: 2G
 
     - label: root-hash

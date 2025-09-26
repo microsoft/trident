@@ -5,7 +5,7 @@
 
 Configuring [usr-verity](../Explanation/Usr-Verity.md) offers good protection against modification of the root (`/usr`) partition.
 
-The goal of this document is to enable you to create a [COSI](../Reference/COSI.md) file that sets up usr-verity.
+The goal of this document is to create a [Trident host configuration](../Reference/Host-Configuration/API-Reference/HostConfiguration.md) file and a [COSI](../Reference/COSI.md) file that can be used to install and service an image with a usr-verity partition.
 
 ## Prerequisites
 
@@ -124,7 +124,7 @@ storage:
           size: 2G
 
         - id: usr-data
-          label: usr
+          label: usr-data
           size: 1G
 
         - id: usr-hash
