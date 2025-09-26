@@ -121,6 +121,7 @@ testimage login:
 ```
 
 **We have successfully installed Azure Linux using Trident!**
+
 Now you can explore your new Azure Linux system.
 
 The system presented a login prompt, but default configuration uses SSH key-only authentication (no password login available). To explore the system, you can use the configured SSH access given to the `tutorial-user` (as shown in the `users` section of the Host Configuration at [Step 5: Create Trident Host Configuration for Install](./Building-AB-Update-Images-for-Install-and-Update.md#step-5-create-trident-host-configuration-for-install)). You can connect from your host machine as follows:
