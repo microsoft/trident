@@ -16,8 +16,7 @@ Configuration](../Reference/Host-Configuration/Sample-Host-Configuration.md).
 
 1. An OS with the Trident binary installed. To check if Trident is available on
    your OS, try running `trident --version`.
-2. A COSI file. Please complete the tutorial on [Building a Deployable
-   Image](./Buil) if you have not already.
+2. A COSI file. Please complete the tutorial on [Building A/B Update Images for Install and Update](./Building-AB-Update-Images-for-Install-and-Update.md) if you have not already.
 
 ## Instructions
 

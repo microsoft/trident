@@ -767,7 +767,7 @@ website-prereqs:
 
 website/docs:
 	rm -rf ./website/docs && \
-		cp -r ../docs ./website
+		cp -r ./docs ./website
 
 website/versions.json:
 	./website/scripts/create_versioned_docs.sh
