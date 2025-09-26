@@ -132,6 +132,7 @@ const config = {
             prism: {
                 theme: prismThemes.github,
                 darkTheme: prismThemes.dracula,
+                additionalLanguages: ["bash"],
             },
         }),
     themes: [
@@ -157,4 +158,4 @@ const config = {
         mermaid: true,
     },
 }
-export default config;
+export default config

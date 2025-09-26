@@ -71,7 +71,7 @@ saves these logs to the following location:
 
 `/var/log/trident-full.log`
 
-Refer to [Viewing Trident's Background Log](/docs/How-To-Guides/View-Trident's-Background-Log.md)
+Refer to [Viewing Trident's Background Log](../../How-To-Guides/View-Trident's-Background-Log.md)
 for more detailed guidelines on how to use the background log file.
 
 ### Log Levels
@@ -133,13 +133,14 @@ error is non-fatal. Another type of non-fatal errors is when the failure
 *would be* fatal but another failure error has already occurred, so we're
 reporting any subsequent errors as non-fatal.
 
-In case of **a fatal error**, Trident must return a `TridentError` object,
-which is automatically printed as `error!(...)` in the runtime and also
-included in the Host Status under the `lastError` section. Because
-`TridentError` already carries the error context, the callstack, and the
-error type, an `ERROR` log should **only** be printed if there is any
-additional context that must be shared with the customer. Refer to
-[Structured Error in Trident](/dev-docs/structured-error.md) for more details on `TridentError`.
+In case of **a fatal error**, Trident must return a `TridentError` object, which
+is automatically printed as `error!(...)` in the runtime and also included in
+the Host Status under the `lastError` section. Because `TridentError` already
+carries the error context, the callstack, and the error type, an `ERROR` log
+should **only** be printed if there is any additional context that must be
+shared with the customer. Refer to
+[Structured Error in Trident](structured-error.md) for more details on
+`TridentError`.
 
 In case of **a non-fatal error**, no `TridentError` is returned, hence, an
 `ERROR` log must be printed.
