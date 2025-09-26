@@ -53,7 +53,7 @@ cp -r bin/RPMS $HOME/staging
 
 ### Step 3: Create Image Customizer Configuration
 
-To create a usr-verity volume, there are a few Image Customization configuration sections that are important.
+To create a usr-verity volume, there are a few Image Customizer configuration sections that are important.
 
 In addition to the typical `usr` partition definition, a `usr-hash` partition is needed like this:
 

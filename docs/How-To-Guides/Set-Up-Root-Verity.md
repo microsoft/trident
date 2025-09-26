@@ -55,7 +55,7 @@ cp -r bin/RPMS $HOME/staging
 
 ### Step 3: Create Image Customizer Configuration
 
-To create a root-verity volume, there are a few Image Customization configuration sections that are important.
+To create a root-verity volume, there are a few Image Customizer configuration sections that are important.
 
 In addition to the typical `root` partition definition, a `root-hash` partition is needed like this:
 
