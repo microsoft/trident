@@ -634,7 +634,6 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
- "setsail",
  "strum 0.26.3",
  "svg",
  "tera",
@@ -1019,29 +1018,6 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
-]
-
-[[package]]
-name = "harpoon"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "indoc",
- "log",
- "maplit",
- "mockito",
- "osutils",
- "quick-xml",
- "reqwest",
- "semver",
- "serde",
- "serde_json",
- "serde_path_to_error",
- "sha2",
- "sysdefs",
- "thiserror 1.0.69",
- "url",
- "uuid",
 ]
 
 [[package]]
@@ -2262,16 +2238,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "quick-xml"
-version = "0.37.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f22f29bdff3987b4d8632ef95fd6424ec7e4e0a57e2f4fc63e489e75357f6a03"
-dependencies = [
- "memchr",
- "serde",
-]
-
-[[package]]
 name = "quote"
 version = "1.0.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2640,16 +2606,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde_path_to_error"
-version = "0.1.16"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af99884400da37c88f5e9146b7f1fd0fbcae8f6eec4e9da38b67d05486f814a6"
-dependencies = [
- "itoa",
- "serde",
-]
-
-[[package]]
 name = "serde_urlencoded"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2672,23 +2628,6 @@ dependencies = [
  "ryu",
  "serde",
  "unsafe-libyaml",
-]
-
-[[package]]
-name = "setsail"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "indoc",
- "log",
- "netplan-types",
- "osutils",
- "serde",
- "serde_json",
- "shellwords",
- "tempfile",
- "trident_api",
 ]
 
 [[package]]
@@ -2719,16 +2658,6 @@ checksum = "09fa9338aed9a1df411814a5b2252f7cd206c55ae9bf2fa763f8de84603aa60c"
 dependencies = [
  "libc",
  "windows-sys 0.59.0",
-]
-
-[[package]]
-name = "shellwords"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89e515aa4699a88148ed5ef96413ceef0048ce95b43fbc955a33bde0a70fcae6"
-dependencies = [
- "lazy_static",
- "regex",
 ]
 
 [[package]]
@@ -3365,7 +3294,6 @@ dependencies = [
  "enumflags2",
  "env_logger 0.11.5",
  "glob",
- "harpoon",
  "indoc",
  "inventory",
  "lazy_static",
@@ -3387,7 +3315,6 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
- "setsail",
  "sha2",
  "sqlite",
  "strum 0.26.3",

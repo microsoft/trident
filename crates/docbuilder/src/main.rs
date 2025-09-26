@@ -6,10 +6,10 @@ use log::info;
 
 use crate::schema_renderer::SchemaDocSettings;
 
+mod clap_model;
 mod host_config;
 mod markdown;
 mod schema_renderer;
-mod setsail;
 mod trident_arch;
 mod trident_cli;
 
@@ -21,9 +21,6 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// Build markdown docs for setsail
-    Setsail(SetsailOpts),
-
     /// Build markdown docs for Host Configuration
     HostConfig(HostConfigCli),
 
@@ -147,7 +144,6 @@ fn main() -> Result<(), Error> {
     let opts = Cli::parse();
 
     match opts.command {
-        Commands::Setsail(opts) => build_setsail_docs(opts).context("Failed to build setsail docs"),
         Commands::HostConfig(opts) => match opts.command {
             HostConfigCommands::Markdown(opts) => {
                 build_host_config_docs(opts).context("Failed to build host config docs")
@@ -172,22 +168,6 @@ fn main() -> Result<(), Error> {
             build_trident_arch_diagram(opts).context("Failed to build arch diagram")
         }
     }
-}
-
-fn build_setsail_docs(opts: SetsailOpts) -> Result<(), Error> {
-    info!("Building setsail docs");
-    let doc = setsail::build_docs();
-
-    if let Some(parent) = opts.output.as_ref().and_then(|p| p.parent()) {
-        std::fs::create_dir_all(parent).context(format!(
-            "Failed to create parent directory {}",
-            parent.display()
-        ))?;
-    } else {
-        println!("{doc}");
-    }
-
-    Ok(())
 }
 
 fn build_host_config_docs(opts: HostConfigMarkdownOpts) -> Result<(), Error> {
