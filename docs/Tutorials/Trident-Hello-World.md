@@ -21,7 +21,15 @@ Before we start, you'll need:
 
 ## Instructions
 
-### Step 1: Build a Servicing ISO
+### Step 1: Create the COSI file and Host Configuration
+
+Follow the [Building A/B Update Images for Install and Update](./Building-AB-Update-Images-for-Install-and-Update.md) tutorial through [Step 5: Create Trident Host Configuration for Install](./Building-AB-Update-Images-for-Install-and-Update.md#step-5-create-trident-host-configuration-for-install). This will give you:
+- The [COSI](../Reference/COSI.md) file (`osimage.cosi`)
+- The Host Configuration file (`host-config.yaml`)
+
+**Stop after completing Step 5** - You can stop at to Step 6 (Create Servicing ISO). We'll create our own modified Servicing ISO in the next step.
+
+### Step 2: Build a Servicing ISO
 
 #### Building a Servicing ISO Tutorial
 
@@ -44,7 +52,10 @@ This prevents automatically running Trident when the ISO boots, and allows us to
   - Observe the Host Configuration.
   - Execute the installation ourselves.
 
-### Step 2: Boot from the Servicing ISO
+#### Create Installation ISO
+Procced with [Step 4: Invoke Image Customizer to Create Installation ISO](./Building-a-Servicing-ISO.md#step-4-invoke-image-customizer-to-create-installation-iso) to create your installation ISO.
+
+### Step 3: Boot from the Servicing ISO
 
 **Create Servicing ISO**
 Use the tool of your choice to create bootable media from the Servicing ISO.
@@ -108,11 +119,11 @@ The installation is complete when you see the login prompt.
 **We have successfully created a complete Azure Linux system using Trident!**
 Now you can explore your new Azure Linux system.
 
-The system will present a login prompt. Default configuration uses SSH key-only authentication (no password login). If you have SSH access configured for your user, you can connect to explore the system:
+The system will present a login prompt. Default configuration uses SSH key-only authentication (no password login). If you have SSH access configured for the `tutorial-user` (as explained in [Step 5: Create Trident Host Configuration for Install](./Building-AB-Update-Images-for-Install-and-Update.md#step-5-create-trident-host-configuration-for-install)), you can connect to explore the system:
 
 ```bash
-# From your host machine, if SSH is configured:
-ssh <user>@<system-ip-address>
+# From your host machine:
+ssh tutorial-user@<system-ip-address>
 ```
 
 ## Appendix: Virtual Machine Setup
