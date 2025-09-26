@@ -13,6 +13,7 @@ DEBUG_BRANCH_PATTERN=${DEBUG_BRANCH_PATTERN:-'releases/'}
 MAX_VERSION_COUNT=${MAX_VERSION_COUNT:-'-1'}
 
 EXCLUDED_VERSIONS=${EXCLUDED_VERSIONS:-''}
+DEV_BRANCH=${DEV_BRANCH:-'main"}
 
 # Configuration
 REPO="microsoft/trident"
@@ -24,7 +25,6 @@ VERSIONED_SIDEBARS_NAME=versioned_sidebars
 VERSIONED_SIDEBARS_DIR="$WEBSITE_SCRIPTS_DIR/../$VERSIONED_SIDEBARS_NAME"
 VERSIONS_FILE="$WEBSITE_SCRIPTS_DIR/../versions.json"
 
-DEV_BRANCH="main"
 
 # Check if gh CLI is installed
 check_gh_cli() {
