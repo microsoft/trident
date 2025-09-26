@@ -1,3 +1,7 @@
+---
+sidebar_position: 1
+---
+
 # What is Trident?
 
 Trident is a servicing agent, drawing inspiration from the declarative API

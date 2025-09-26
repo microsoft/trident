@@ -1,3 +1,7 @@
+---
+sidebar_position: 5
+---
+
 # How does Trident work?
 
 Trident operates based on two primary concepts: [OS

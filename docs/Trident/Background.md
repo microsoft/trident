@@ -1,3 +1,7 @@
+---
+sidebar_position: 2
+---
+
 # Background
 
 Linux distributions typically provide two primary types of bootable images: an

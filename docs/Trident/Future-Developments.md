@@ -1,3 +1,7 @@
+---
+sidebar_position: 6
+---
+
 # Future developments
 
 Trident is under active development, with several enhancements planned for

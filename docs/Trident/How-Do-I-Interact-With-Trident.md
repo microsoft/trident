@@ -1,3 +1,7 @@
+---
+sidebar_position: 4
+---
+
 # How do I interact with Trident?
 
 Trident is architected for seamless integration into larger solutions. Its
