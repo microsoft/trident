@@ -216,7 +216,7 @@ Some things to note in the host configuration below:
 
 The remainder of the Trident host configuration file describes things like where to find the COSI file (can be a local path, an HTTP url, or an OCI url) and what the disk device path is (in this case, /dev/sda):
 
-``` bash
+```yaml
 image:
   url: image.cosi
   sha384: ignored
