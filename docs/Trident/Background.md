@@ -4,10 +4,20 @@ sidebar_position: 2
 
 # Background
 
-Linux distributions typically provide two primary types of bootable images: an
-installer image and a virtual machine (VM) image.
+Historically, Linux distributions have utilized package managers for both
+initial installation and ongoing updates. While this approach offers flexibility
+for individual users, it presents challenges for large-scale deployments where
+service dependencies are well defined. Image-based deployment and servicing
+provide a more robust solution, enabling atomic updates, reliable rollback, and
+reduced downtime. Trident introduces a unified, declarative workflow for
+installation and servicing of Linux distributions—particularly Azure Linux—by
+leveraging image-based A/B style updates to ensure consistency, reliability, and
+operational efficiency.
 
 ## Installer image vs. VM image
+
+Linux distributions typically provide two primary types of bootable images: an
+installer image and a virtual machine (VM) image.
 
 The installer image, typically distributed in ISO format, boots into a live
 servicing operating system and can be executed in either attended or unattended
