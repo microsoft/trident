@@ -57,7 +57,7 @@ Proceed with [Step 4: Invoke Image Customizer to Create Installation ISO](./Buil
 
 ### Step 3: Boot from the Servicing ISO
 
-**Create Servicing ISO**: Use the tool of your choice to create bootable media from the Servicing ISO.
+Use the tool of your choice to create bootable media from the Servicing ISO.
 
 Insert the bootable media (USB, CD, etc.) into your target system and power it on. Make sure to configure it to boot from the media first or select the media during the subsequent boot using the appropriate key (often F12).
 
