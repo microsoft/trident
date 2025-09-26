@@ -18,6 +18,13 @@ parameters:
     default: 5067 # [GITHUB]-trident-ci
     displayName: Where to download prebuilt image from
 
+  - name: osModifierBuildType
+    type: string
+    values:
+      - dev
+      - preview
+    default: preview
+
   - name: osModifierBranch
     type: string
     default: "main"
@@ -87,6 +94,7 @@ stages:
           - template: ../common_tasks/download-osmodifier.yml
             parameters:
               osModifierBranch: ${{ parameters.osModifierBranch }}
+              osModifierBuildType: ${{ parameters.osModifierBuildType }}
               targetArchitecture: amd64
 
           - bash: |
