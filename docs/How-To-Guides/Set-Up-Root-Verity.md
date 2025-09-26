@@ -69,7 +69,7 @@ storage:
       size: 128M
 ```
 
-Image Customizer needs some information to coordinate the `root` and `root-hash` partitions as part of a verity volume:
+The [Image Customizer verity section](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/api/configuration/verity.html) is required as well:
 
 ``` yaml
 verity:
