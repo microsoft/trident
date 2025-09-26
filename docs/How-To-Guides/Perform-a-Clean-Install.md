@@ -9,7 +9,7 @@ Use Trident to perform a [clean install](../Reference/Glossary.md#clean-install)
 
 ### Step 1: Create Target OS Image
 
-Build a target OS image, i.e. a COSI file. Reference this [Tutorial on Building a Deployable Image](../Tutorials/Building-a-Deployable-Image.md).
+Build a target OS image, i.e. a COSI file. Reference this [Tutorial on Building A/B Update Images for Install and Update](../Tutorials/Building-AB-Update-Images-for-Install-and-Update.md).
 
 ### Step 2: Create Servicing OS ISO
 

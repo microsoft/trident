@@ -31,7 +31,7 @@ parameters:
 
   - name: osModifierBranch
     type: string
-    default: "submodule"
+    default: "main"
 
   - name: baseImageArtifactStage
     type: string

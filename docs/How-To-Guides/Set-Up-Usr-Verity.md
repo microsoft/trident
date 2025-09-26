@@ -1,17 +1,11 @@
 
-# Set Up Root Verity
+# Set Up Usr Verity
 
 ## Goals
 
-Configuring [root-verity](../Explanation/Root-Verity.md) offers good protection against modification of the root (`/`) partition.
+Configuring [usr-verity](../Explanation/Usr-Verity.md) offers good protection against modification of the root (`/usr`) partition.
 
-:::info
-
-An alternative (both cannot be configured) is to instead configure [usr-verity](../Explanation/Usr-Verity.md) to protect against modification of the usr (`/usr`) partition.
-
-:::
-
-The goal of this document is to create a [Trident host configuration](../Reference/Host-Configuration/API-Reference/HostConfiguration.md) file and a [COSI](../Reference/Composable-OS-Image.md) file that can be used to install and service an image with a root-verity partition.
+The goal of this document is to create a [Trident host configuration](../Reference/Host-Configuration/API-Reference/HostConfiguration.md) file and a [COSI](../Reference/Composable-OS-Image.md) file that can be used to install and service an image with a usr-verity partition.
 
 ## Prerequisites
 
@@ -59,30 +53,55 @@ cp -r bin/RPMS $HOME/staging
 
 ### Step 3: Create Image Customizer Configuration
 
-To create a root-verity volume, there are a few Image Customizer configuration sections that are important.
+To create a usr-verity volume, there are a few Image Customizer configuration sections that are important.
 
-In addition to the typical `root` partition definition, a `root-hash` partition is needed like this:
+In addition to the typical `usr` partition definition, a `usr-hash` partition is needed like this:
 
 ``` yaml
 storage:
   disks:
-  - partitionTableType: gpt
-    partitions:
-    - label: root-hash
-      id: root-hash
-      size: 128M
+    - partitionTableType: gpt
+      partitions:
+        - id: usr-hash
+          label: usr-hash
+          size: 128M
 ```
 
 The [Image Customizer verity section](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/api/configuration/verity.html) is required as well:
 
 ``` yaml
 verity:
-  - id: root
-    name: root
-    dataDeviceId: root-data
-    hashDeviceId: root-hash
-    dataDeviceMountIdType: part-label
-    hashDeviceMountIdType: part-label
+  - id: usr
+    name: usr
+    dataDeviceId: usr-data
+    hashDeviceId: usr-hash
+    dataDeviceMountIdType: uuid
+    hashDeviceMountIdType: uuid
+```
+
+Verity filesystems should be created as read-only:
+
+``` yaml
+- deviceId: usr
+  type: ext4
+  mountPoint:
+    path: /usr
+    options: defaults,ro
+```
+
+And finally, usr-verity requires some changes to support UKI rather than grub:
+
+``` yaml
+os:
+  kernelCommandLine:
+    extraCommandLine:
+      - rd.hostonly=0
+
+  uki:
+    kernels: auto
+
+previewFeatures:
+  - uki
 ```
 
 Putting that all together and following the Image Customizer [documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/README.html), the full configuration `$HOME/staging/ic-config.yaml` can look like this:
@@ -90,59 +109,60 @@ Putting that all together and following the Image Customizer [documentation](htt
 ``` yaml
 storage:
   disks:
-  - partitionTableType: gpt
-    maxSize: 5G
-    partitions:
-    - id: esp
-      type: esp
-      size: 8M
+    - partitionTableType: gpt
+      maxSize: 5G
+      partitions:
+        - id: esp
+          type: esp
+          size: 500M
+          label: esp
 
-    - id: boot
-      size: 1G
+        - id: boot
+          size: 150M
 
-    - label: root-data
-      id: root-data
-      size: 2G
+        - id: root
+          size: 2G
 
-    - label: root-hash
-      id: root-hash
-      size: 128M
+        - id: usr-data
+          label: usr-data
+          size: 1G
 
-    - id: var
-      size: grow
+        - id: usr-hash
+          label: usr-hash
+          size: 128M
 
   bootType: efi
 
   verity:
-  - id: root
-    name: root
-    dataDeviceId: root-data
-    hashDeviceId: root-hash
-    dataDeviceMountIdType: part-label
-    hashDeviceMountIdType: part-label
+    - id: usr
+      name: usr
+      dataDeviceId: usr-data
+      hashDeviceId: usr-hash
+      dataDeviceMountIdType: uuid
+      hashDeviceMountIdType: uuid
 
   filesystems:
-  - deviceId: esp
-    type: fat32
-    mountPoint:
-      path: /boot/efi
-      options: umask=0077
+    - deviceId: esp
+      type: fat32
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
 
-  - deviceId: boot
-    type: ext4
-    mountPoint:
-      path: /boot
+    - deviceId: boot
+      type: ext4
+      mountPoint:
+        path: /boot
 
-  - deviceId: root
-    type: ext4
-    mountPoint:
-      path: /
-      options: defaults,ro
+    - deviceId: root
+      type: ext4
+      mountPoint:
+        path: /
 
-  - deviceId: var
-    type: ext4
-    mountPoint:
-      path: /var
+    - deviceId: usr
+      type: ext4
+      mountPoint:
+        path: /usr
+        options: defaults,ro
 
 os:
   bootloader:
@@ -154,22 +174,20 @@ os:
 
   kernelCommandLine:
     extraCommandLine:
-    - log_buf_len=1M
+      - log_buf_len=1M
+      - rd.hostonly=0
 
   packages:
     remove:
       - grub2-efi-binary
 
     install:
-      # replace grub2-efi-binary with grub2-efi-binary-noprefix
-      - grub2-efi-binary-noprefix
+      - binutils
       - curl
       - device-mapper
-      - dracut-overlayfs
       - efibootmgr
       - iproute
       - iptables
-      - lsof
       - lvm2
       - mdadm
       - netplan
@@ -177,12 +195,22 @@ os:
       - systemd-udev
       - tpm2-tools
       - trident-service
+      - trident-static-pcrlock-files
       - veritysetup
       - vim
+      - systemd-ukify
+      - systemd-boot
+      - audit
+      - selinux-policy-devel
 
   services:
     enable:
-    - trident
+      - trident
+  uki:
+    kernels: auto
+
+previewFeatures:
+  - uki
 ```
 
 ### Step 4: Invoke Image Customizer
@@ -210,17 +238,17 @@ popd
 
 ### Step 5: Trident Host Configuration
 
-Create a Trident host configuration file that aligns to the Image Customizer COSI that was created in step 4. The esp, root, root-hash, and var partitions/filesystems should reflect what was specified in the Image Customizer configuration.
+Create a Trident host configuration file that aligns to the Image Customizer COSI that was created in step 4. The esp, boot, root, usr, and usr-hash partitions/filesystems should reflect what was specified in the Image Customizer configuration.
 
 Some things to note that are defined in the host configuration below:
 
-* [A/B volume pairs](../Reference/Glossary.md#ab-volume-pair) for `root-data` and `root-hash`
-* [abUpdate section](../Reference/Host-Configuration/API-Reference/AbUpdate.md) for `root-data` and `root-hash`
-* [verity section](../Reference/Host-Configuration/API-Reference/VerityDevice.md) to connect `root` data and hash
+* [A/B volume pairs](../Reference/Glossary.md#ab-volume-pair) for `usr-data` and `usr-hash`
+* [abUpdate section](../Reference/Host-Configuration/API-Reference/AbUpdate.md) for `usr-data` and `usr-hash`
+* [verity section](../Reference/Host-Configuration/API-Reference/VerityDevice.md) to connect `usr` data and hash
 
 The remainder of the Trident host configuration file describes things like where to find the COSI file (can be a local path, an HTTP url, or an OCI url) and what the disk device path is (in this case, /dev/sda):
 
-```yaml
+``` yaml
 image:
   url: image.cosi
   sha384: ignored
@@ -236,36 +264,39 @@ storage:
         - id: boot
           type: xbootldr
           size: 200M
-        - id: root-data-a
+        - id: root
           type: root
-          size: 4G
-        - id: root-data-b
-          type: root
-          size: 4G
-        - id: root-hash-a
-          type: root-verity
+          size: 5G
+        - id: usr-data-a
+          type: usr
+          size: 5G
+        - id: usr-data-b
+          type: usr
+          size: 5G
+        - id: usr-hash-a
+          type: usr-verity
           size: 1G
-        - id: root-hash-b
-          type: root-verity
+        - id: usr-hash-b
+          type: usr-verity
           size: 1G
-        - id: var
+        - id: trident
           type: linux-generic
           size: 1G
 
   abUpdate:
     volumePairs:
-      - id: root-data
-        volumeAId: root-data-a
-        volumeBId: root-data-b
-      - id: root-hash
-        volumeAId: root-hash-a
-        volumeBId: root-hash-b
+      - id: usr-data
+        volumeAId: usr-data-a
+        volumeBId: usr-data-b
+      - id: usr-hash
+        volumeAId: usr-hash-a
+        volumeBId: usr-hash-b
 
   verity:
-    - id: root
-      name: root
-      dataDeviceId: root-data
-      hashDeviceId: root-hash
+    - id: usr
+      name: usr
+      dataDeviceId: usr-data
+      hashDeviceId: usr-hash
 
   filesystems:
     - deviceId: esp
@@ -274,12 +305,15 @@ storage:
         options: umask=0077
     - deviceId: boot
       mountPoint: /boot
-    - deviceId: var
-      mountPoint: /var
     - deviceId: root
+      mountPoint: /
+    - deviceId: usr
       mountPoint:
-        path: /
-        options: defaults,ro
+        path: /usr
+        options: ro
+    - deviceId: trident
+      source: new
+      mountPoint: /var/lib/trident
 
 os:
   selinux:
@@ -292,7 +326,3 @@ os:
           name: enp*
         dhcp4: true
 ```
-
-## Troubleshooting
-
-With root-verity, configurations can be difficult as the configuration files are often on the root partition.  In the future, this section will be expanded to include learnings and hints for how to navigate these challenges.

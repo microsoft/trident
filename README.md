@@ -39,6 +39,11 @@ Trident supports a wide range of lifecycle and configuration capabilities:
 For comprehensive guidance on installation, configuration, and usage, please
 refer to our [official documentation](docs/Trident.md).
 
+### Developing and Contributing
+
+For detailed information about contributing to this project please read the
+[contributing guide](./docs/Development/Contributing/contributing-guidelines.md).
+
 ## Getting Help
 
 Have questions, found a bug, or need a new feature? Open an issue in our [GitHub

@@ -60,7 +60,7 @@ parameters:
 
   - name: osModifierBranch
     type: string
-    default: "submodule"
+    default: "main"
 
   - name: baremetalTestsEnabled
     type: boolean
@@ -73,7 +73,7 @@ parameters:
   - name: baseImageArtifactStage
     type: string
     default: ''
-    
+
 stages:
   # Trident Build/Download
   - template: stages/trident_rpms/trident-stage.yml
@@ -300,7 +300,6 @@ stages:
           downloadPrebuiltImage: false
           osModifierBranch: ${{ parameters.osModifierBranch }}
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
-
 
       # VM Testing (host, post_merge)
       - template: stages/testing_vm/netlaunch-testing.yml

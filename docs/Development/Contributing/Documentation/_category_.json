@@ -1,0 +1,8 @@
+{
+    "label": "Documentation",
+    "position": 7,
+    "link": {
+        "type": "doc",
+        "id": "Development/Contributing/Documentation/public-docs"
+    }
+}
