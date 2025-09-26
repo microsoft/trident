@@ -27,7 +27,7 @@ Follow the [Building A/B Update Images for Install and Update](./Building-AB-Upd
 - The [COSI](../Reference/COSI.md) file (`osimage.cosi`)
 - The Host Configuration file (`host-config.yaml`)
 
-**Stop after completing Step 5** - You can stop at to Step 6 (Create Servicing ISO). We'll create our own modified Servicing ISO in the next step.
+**Stop after completing Step 5** - You can stop before Step 6 (Create Servicing ISO). We'll create our own modified Servicing ISO in the next step.
 
 ### Step 2: Build a Servicing ISO
 
@@ -53,7 +53,7 @@ This prevents automatically running Trident when the ISO boots, and allows us to
   - Execute the installation ourselves.
 
 #### Create Installation ISO
-Procced with [Step 4: Invoke Image Customizer to Create Installation ISO](./Building-a-Servicing-ISO.md#step-4-invoke-image-customizer-to-create-installation-iso) to create your installation ISO.
+Proceed with [Step 4: Invoke Image Customizer to Create Installation ISO](./Building-a-Servicing-ISO.md#step-4-invoke-image-customizer-to-create-installation-iso) to create your installation ISO.
 
 ### Step 3: Boot from the Servicing ISO
 
