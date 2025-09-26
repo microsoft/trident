@@ -3,11 +3,11 @@
 
 ## Goals
 
-Configuring verity for the root (`/`) partition offers good protection against modification of the installed operating system. Applying verity to root does make configuring system processes and services more difficult.
+Configuring [root-verity](../Explanation/Root-Verity.md) offers good protection against modification of the root (`/`) partition.
 
 > Note: Another option is using verity for the [usr (`/usr`) partition](./Usr-Verity.md) which offers good protection for executables, while allowing configuration.
 
-This goal of this document is to enable you to create a [COSI](../Refernce/COSI.md) file that sets up root-verity.
+The goal of this document is to enable you to create a [COSI](../Reference/COSI.md) file that sets up root-verity.
 
 ## Prerequisites
 
@@ -57,7 +57,7 @@ cp -r bin/RPMS $HOME/staging
 
 To create a root-verity volume, there are a few Image Customization configuration sections that are important.
 
-In addition to the typical `root` parition definition, a `root-hash` partition is needed like this:
+In addition to the typical `root` partition definition, a `root-hash` partition is needed like this:
 
 ``` yaml
 storage:
