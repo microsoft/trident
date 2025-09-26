@@ -47,7 +47,7 @@ stages:
           osModifierBranch: ${{ parameters.osModifierBranch }}
           dependsOnStage: ${{ parameters.dependsOnStage }}
           targetArchitecture: ${{ parameters.targetArchitecture }}
-          # trident-cicd-for-prism should run against the lastest main build of osmodifier.
+          # trident-cicd-for-prism should run against the latest main build of osmodifier.
           ${{ if eq(parameters.stageType, 'ci') }}:
             osModifierBuildType: dev
           ${{ else }}:
