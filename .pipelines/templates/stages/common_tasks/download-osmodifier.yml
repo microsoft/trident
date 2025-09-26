@@ -18,7 +18,7 @@ parameters:
       - arm64
 
   - name: osModifierBranch
-    displayName: OSModifier branch to build from (for dev build type)
+    displayName: OSModifier branch to use for dev build type
     type: string
     default: "main"
 

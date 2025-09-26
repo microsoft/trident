@@ -14,7 +14,7 @@ parameters:
     default: "*.*.*"
 
   - name: osModifierBranch
-    displayName: OSModifier branch to build from (if not main)
+    displayName: OSModifier branch to use for dev build type
     type: string
     default: "main"
 
