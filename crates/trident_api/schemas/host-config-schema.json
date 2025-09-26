@@ -57,14 +57,14 @@
   "additionalProperties": false,
   "definitions": {
     "AbUpdate": {
-      "description": "A/B update configuration. Carries information about the A/B update volume pairs that are used to perform A/B updates.",
+      "description": "A/B update configuration. Carries information about the A/B volume pairs that are used to perform A/B updates.",
       "type": "object",
       "required": [
         "volumePairs"
       ],
       "properties": {
         "volumePairs": {
-          "description": "A list of volume pairs that will be used for A/B Update.\n\nYou can target the A/B Update volume pair from the `images` and `mount-points` and Trident will pick the right volume to use based on the A/B Update state of the host.",
+          "description": "A list of A/B volume pairs that will be used for A/B update.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/AbVolumePair"
@@ -74,7 +74,7 @@
       "additionalProperties": false
     },
     "AbVolumePair": {
-      "description": "Per A/B update volume pair configuration. Points to the underlying block devices used for the A/B update.\n\n**Under development, initial logic for illustration purposes only.**",
+      "description": "Per A/B volume pair configuration. Points to the underlying block devices in the A/B volume pair.",
       "type": "object",
       "required": [
         "id",
@@ -83,17 +83,17 @@
       ],
       "properties": {
         "id": {
-          "description": "A unique identifier for the volume pair.\n\nThis is a user defined string that allows to link the volume pair to the results in the Host Status and to the mount points. The identifier needs to be unique across all types of devices, not just A/B Volume Pairs.",
+          "description": "A unique identifier for the A/B volume pair.\n\nThis is a user-defined string that links the A/B volume pair to the `filesystems` config in the Host Configuration. The identifier needs to be unique across devices of all types, not just A/B volume pairs.",
           "type": "string",
           "format": "Block Device ID"
         },
         "volumeAId": {
-          "description": "The ID of the partition that will be used as the A volume.",
+          "description": "The ID of the device that will be used as the A volume.",
           "type": "string",
           "format": "Block Device ID"
         },
         "volumeBId": {
-          "description": "The ID of the partition that will be used as the B volume.",
+          "description": "The ID of the device that will be used as the B volume.",
           "type": "string",
           "format": "Block Device ID"
         }
@@ -226,7 +226,7 @@
       ],
       "properties": {
         "deviceId": {
-          "description": "The id of the disk partition or software RAID array to encrypt.\n\nThis parameter is required. It must be unique among the list of encrypted volumes.\n\nIf it refers to a disk partition, it must be of a supported type. Supported types are all but the following blocked partition types: - `esp` - `root` - `root-verity` - `usr-verity` - `home`\n\nIf it refers to a software RAID array, the first disk partition of the software RAID array must be of a supported type.",
+          "description": "The ID of the disk partition or software RAID array to encrypt.\n\nThis parameter is required. It must be unique among the list of encrypted volumes.\n\nIf it refers to a disk partition, it must be of a supported type. Supported types are all but the following blocked partition types: - `esp` - `root` - `root-verity` - `usr-verity` - `home`\n\nIf it refers to a software RAID array, the first disk partition of the software RAID array must be of a supported type.",
           "type": "string",
           "format": "Block Device ID"
         },
@@ -235,7 +235,7 @@
           "type": "string"
         },
         "id": {
-          "description": "The id of the LUKS-encrypted volumes to create.\n\nThis parameter is required. It must be non-empty and unique among the ids of all block devices in the host configuration. This includes the ids of all disk partitions, encrypted volumes, software RAID arrays, and A/B volume pairs.",
+          "description": "The ID of the LUKS-encrypted volume to create.\n\nThis parameter is required. It must be non-empty and unique among the IDs of all block devices in the host configuration. This includes the IDs of all disk partitions, encrypted volumes, software RAID arrays, and A/B volume pairs.",
           "type": "string",
           "format": "Block Device ID"
         }
@@ -257,7 +257,7 @@
           }
         },
         "recoveryKeyUrl": {
-          "description": "A URL to read the recovery key from.\n\nThis parameter allows specifying a local file path to a recovery key file via a `file://` URL scheme. The recovery key file serves as an essential fallback to recover data should TPM 2.0 automatic decryption fail. If not specified, only the TPM 2.0 device will be enrolled.\n\nThe URL must be non-empty if provided. Other URL schemes are not supported at this time.\n\n# Recommended Configuration\n\nIt is strongly advised to configure a recovery key file, as it plays a pivotal role in data recovery.\n\n# File Format Expectations\n\nThe recovery key file must be a binary file without any encoding. This direct format ensures compatibility with cryptsetup and systemd APIs. Be mindful that all file content, including any potential whitespace or newline characters, is considered part of the recovery key.\n\n# Security Considerations\n\nEnsuring the recovery key's confidentiality and integrity is paramount. Employ secure storage and rigorous access control measures. Specifically:\n\n- The file containing the key should only be accessible by the root user and have `0400` permissions set.\n\n- The recovery key should be a minimum of 32 bytes long and should be generated with enough high entropy to defend against brute force or cryptographic attacks targeting on-disk hash values.\n\n# Generating a Recovery Key\n\nOne way to create a recovery key file on Linux systems is using the `dd` utility:\n\n> Note: The following example is for illustration purposes only. > Be sure to generate recovery keys with diligence and attention > to security principles. Please adjust the following example > according to your own security policies and operational > environment to fit your specific security requirements and > constraints.\n\n```sh touch ./recovery.key chmod 0400 ./recovery.key dd if=/dev/random of=./recovery.key bs=1 count=256 ```\n\nThis command generates 256 bytes of random data for the recovery key, sourcing entropy from `/dev/random`. Be aware, in environments with limited entropy sources, such as certain embedded systems, `/dev/random` may not provide sufficient data promptly. Alternative entropy sources or methods may be required.",
+          "description": "A URL to read the recovery key from.\n\nThis parameter allows specifying a local file path to a recovery key file via a `file://` URL scheme. The recovery key file serves as an essential fallback to recover data should TPM 2.0 automatic decryption fail. If not specified, only the TPM 2.0 device will be enrolled.\n\nThe URL must be non-empty if provided. Other URL schemes are not supported at this time.\n\n# Recommended Configuration\n\nIt is strongly advised to configure a recovery key file, as it plays a pivotal role in data recovery.\n\n# File Format Expectations\n\nThe recovery key file must be a binary file without any encoding. This direct format ensures compatibility with cryptsetup and systemd APIs. Be mindful that all file content, including any potential whitespace or newline characters, is considered part of the recovery key.\n\n# Security Considerations\n\nEnsuring the recovery key's confidentiality and integrity is paramount. Employ secure storage and rigorous access control measures. Specifically:\n\n- The file containing the key should only be accessible by the root user and have `0400` permissions set.\n\n- The recovery key should be a minimum of 32 bytes long and should be generated with a high enough entropy to defend against brute force or cryptographic attacks targeting on-disk hash values.\n\n# Generating a Recovery Key\n\nOne way to create a recovery key file on Linux systems is using the `dd` utility:\n\n> Note: The following example is for illustration purposes only. Be sure to generate > recovery keys with diligence and attention to security principles. Please adjust the > following example according to your own security policies and operational environment to > fit your specific security requirements and constraints.\n\n```sh touch ./recovery.key chmod 0400 ./recovery.key dd if=/dev/random of=./recovery.key bs=1 count=256 ```\n\nThis command generates 256 bytes of random data for the recovery key, sourcing entropy from `/dev/random`. Be aware, in environments with limited entropy sources, such as certain embedded systems, `/dev/random` may not provide sufficient data promptly. Alternative entropy sources or methods may be required.",
           "type": "string",
           "format": "uri",
           "nullable": true
@@ -1011,14 +1011,14 @@
       "type": "object",
       "properties": {
         "software": {
-          "description": "Individual software raid configurations.",
+          "description": "Individual software RAID configurations.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/SoftwareRaidArray"
           }
         },
         "syncTimeout": {
-          "description": "Timeout in seconds to wait for RAID arrays to sync. By default, Trident will NOT wait for RAID arrays to finish syncing before continuing on with provisioning. This is because RAID arrays are supposed to be usable immediately after creation. If the user provides a value for this field and the RAID arrays do NOT finish syncing within the specified timeout, Trident will fail the provisioning process and return an error. The user will need to increase their timeout value if the RAID arrays are taking longer to sync than expected.",
+          "description": "Timeout in seconds to wait for RAID arrays to sync.\n\nBy default, Trident will NOT wait for RAID arrays to finish syncing before continuing on with provisioning. This is because RAID arrays are supposed to be usable immediately after creation. If the user provides a value for this field and the RAID arrays do NOT finish syncing within the specified timeout, Trident will fail the provisioning process and return an error. The user will need to increase their timeout value if the RAID arrays are taking longer to sync than expected.",
           "type": "integer",
           "format": "uint64",
           "minimum": 0.0,
@@ -1276,7 +1276,7 @@
       ]
     },
     "SoftwareRaidArray": {
-      "description": "Software RAID configuration.\n\nThe RAID array will be created using the `mdadm` package. During a clean install, all the existing RAID arrays that are on disks defined in the host configuration will be unmounted, and stopped.\n\nThe RAID arrays that are defined in the host configuration will be created, and mounted if specified in `mount-points`.\n\nTo learn more about RAID, please refer to the [RAID wiki](https://wiki.archlinux.org/title/RAID)\n\nTo learn more about `mdadm`, please refer to the [mdadm guide](https://raid.wiki.kernel.org/index.php/A_guide_to_mdadm)",
+      "description": "Software RAID configuration.\n\nThe RAID array will be created using the `mdadm` package. During a clean install, all the existing RAID arrays that are on disks defined in the host configuration will be unmounted, and then stopped.\n\nThe RAID arrays that are defined in the host configuration will be created, and mounted if requested in the `storage.filesystems` config.\n\nTo learn more about RAID, please refer to the [RAID wiki](https://wiki.archlinux.org/title/RAID).\n\nTo learn more about `mdadm`, please refer to the [mdadm guide](https://raid.wiki.kernel.org/index.php/A_guide_to_mdadm).",
       "type": "object",
       "required": [
         "devices",
@@ -1286,7 +1286,7 @@
       ],
       "properties": {
         "devices": {
-          "description": "Devices that will be used for the RAID array.\n\nSee the reference links for picking the right number of devices. Devices are partition ids from the `disks` section.",
+          "description": "Devices that will be used for the RAID array.\n\nSee the reference links for picking the right number of devices. Devices are partition IDs from the `disks` section.",
           "type": "array",
           "items": {
             "type": "string",
@@ -1294,12 +1294,12 @@
           }
         },
         "id": {
-          "description": "A unique identifier for the RAID array.\n\nThis is a user defined string that allows to link the RAID array to the mount points and also to results in the Host Status. The identifier needs to be unique across all types of devices, not just RAID arrays.",
+          "description": "A unique identifier for the RAID array.\n\nThis is a user-defined string that links the RAID array to the `filesystems` config in the configuration. The identifier must be unique across devices of all types in the host configuration.",
           "type": "string",
           "format": "Block Device ID"
         },
         "level": {
-          "description": "RAID level.\n\n`raid1` is supported and tested. Other possible values yet to be tested are: `raid0`, `raid5`, `raid6`, `raid10`.",
+          "description": "RAID level.\n\n`raid1` is supported and tested.\n\nOther possible values yet to be tested are: `raid0`, `raid5`, `raid6`, `raid10`.",
           "allOf": [
             {
               "$ref": "#/definitions/RaidLevel"

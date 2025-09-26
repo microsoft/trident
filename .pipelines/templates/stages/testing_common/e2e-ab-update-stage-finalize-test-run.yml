@@ -41,7 +41,7 @@ parameters:
 
   - name: sshKeyPath
     type: string
-    default: $(Build.SourcesDirectory)/e2e_tests/helpers/key
+    default: $(Build.SourcesDirectory)/tests/e2e_tests/helpers/key
 
   - name: userName
     type: string
@@ -108,7 +108,7 @@ steps:
           --configuration ${{ parameters.tridentConfigPath }} \
           --ab-active-volume $(abActiveVolume)
     timeoutInMinutes: 10
-    workingDirectory: $(Build.SourcesDirectory)/e2e_tests
+    workingDirectory: $(Build.SourcesDirectory)/tests/e2e_tests
     displayName: "🔬 Run tests to validate staging of A/B update"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
@@ -223,13 +223,13 @@ steps:
           --configuration ${{ parameters.tridentConfigPath }} \
           --ab-active-volume $(abActiveVolume)
     timeoutInMinutes: 5
-    workingDirectory: $(Build.SourcesDirectory)/e2e_tests
+    workingDirectory: $(Build.SourcesDirectory)/tests/e2e_tests
     displayName: "🔬 Run Trident E2E tests after A/B update into runtime OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - template: ../junit/handle-junit-test-results.yml
     parameters:
       testRunName: "${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_stage_finalize_ab_update_B_$(System.JobAttempt)"
-      junitTestFile: "./e2e_tests/${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_stage_finalize_ab_update_B_$(System.JobAttempt).junit.xml"
+      junitTestFile: "./tests/e2e_tests/${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_stage_finalize_ab_update_B_$(System.JobAttempt).junit.xml"
       displayNameSpecifier: "A/B update into runtime OS A that was staged and finalized independently"
       artifactName: "junit_for_trident_ab_update_stage"

@@ -139,9 +139,9 @@ ARTIFACTS_DIR="artifacts"
 # submodule, via:
 #
 # git submodule update --init
-artifacts/osmodifier: Dockerfile-osmodifier.azl3
+artifacts/osmodifier: packaging/docker/Dockerfile-osmodifier.azl3
 	@docker build -t trident/osmodifier-build:latest \
-		-f Dockerfile-osmodifier.azl3 \
+		-f packaging/docker/Dockerfile-osmodifier.azl3 \
 		.
 	@mkdir -p "$(ARTIFACTS_DIR)"
 	@id=$$(docker create trident/osmodifier-build:latest) && \
@@ -153,7 +153,7 @@ bin/trident: build
 	@cp -u target/release/trident bin/
 
 # This will do a proper build on azl3, exactly as the pipelines would, with the custom registry and all.
-bin/trident-rpms-azl3.tar.gz: Dockerfile.full systemd/*.service trident.spec artifacts/osmodifier selinux-policy-trident/* version-vars
+bin/trident-rpms-azl3.tar.gz: packaging/docker/Dockerfile.full packaging/systemd/*.service packaging/rpm/trident.spec artifacts/osmodifier packaging/selinux-policy-trident/* version-vars
 	$(eval CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN := $(shell az account get-access-token --query "join(' ', ['Bearer', accessToken])" --output tsv))
 	
 	@export CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN="$(CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN)" &&\
@@ -163,7 +163,7 @@ bin/trident-rpms-azl3.tar.gz: Dockerfile.full systemd/*.service trident.spec art
 			--build-arg TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
 			--build-arg RPM_VER="$(TRIDENT_CARGO_VERSION)" \
 			--build-arg RPM_REL="dev.$(GIT_COMMIT)" \
-			-f Dockerfile.full \
+			-f packaging/docker/Dockerfile.full \
 			.
 	@mkdir -p bin/
 	@id=$$(docker create trident/trident-build:latest) && \
@@ -173,12 +173,12 @@ bin/trident-rpms-azl3.tar.gz: Dockerfile.full systemd/*.service trident.spec art
 	@tar xf $@ -C bin/
 
 # This one does a fast trick-build where we build locally and inject the binary into the container to add it to the RPM.
-bin/trident-rpms.tar.gz: Dockerfile.azl3 systemd/*.service trident.spec artifacts/osmodifier bin/trident selinux-policy-trident/*
+bin/trident-rpms.tar.gz: packaging/docker/Dockerfile.azl3 packaging/systemd/*.service packaging/rpm/trident.spec artifacts/osmodifier bin/trident packaging/selinux-policy-trident/*
 	@docker build -t trident/trident-build:latest \
 		--build-arg TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
 		--build-arg RPM_VER="$(TRIDENT_CARGO_VERSION)" \
 		--build-arg RPM_REL="dev.$(GIT_COMMIT)" \
-		-f Dockerfile.azl3 \
+		-f packaging/docker/Dockerfile.azl3 \
 		.
 	@mkdir -p bin/
 	@id=$$(docker create trident/trident-build:latest) && \
@@ -219,8 +219,8 @@ publish-dev-rpms: bin/trident-rpms-azl3.tar.gz
 
 # Grabs bin/trident-rpms.tar.gz from the local build directory and builds a Docker image with it.
 .PHONY: docker-build
-docker-build: Dockerfile.runtime bin/trident-rpms.tar.gz
-	@docker build --quiet -f Dockerfile.runtime -t trident/trident:latest .
+docker-build: packaging/docker/Dockerfile.runtime bin/trident-rpms.tar.gz
+	@docker build --quiet -f packaging/docker/Dockerfile.runtime -t trident/trident:latest .
 
 artifacts/test-image/trident-container.tar.gz: docker-build
 	@mkdir -p artifacts/test-image
@@ -345,8 +345,8 @@ build-functional-test-cc: .cargo/config
 
 .PHONY: functional-test
 functional-test: artifacts/trident-functest.qcow2
-	cp $(PLATFORM_TESTS_PATH)/tools/marinerhci_test_tools/node_interface.py functional_tests/
-	cp $(PLATFORM_TESTS_PATH)/tools/marinerhci_test_tools/ssh_node.py functional_tests/
+	cp $(PLATFORM_TESTS_PATH)/tools/marinerhci_test_tools/node_interface.py tests/functional_tests/
+	cp $(PLATFORM_TESTS_PATH)/tools/marinerhci_test_tools/ssh_node.py tests/functional_tests/
 	$(MAKE) functional-test-core
 
 # A target for pipelines that skips all setup and building steps that are not
@@ -357,8 +357,8 @@ functional-test-core: artifacts/osmodifier build-functional-test-cc generate-fun
 		pytest --color=yes \
 		--log-level=INFO \
 		--force-upload \
-		functional_tests/test_setup.py \
-		functional_tests/$(FILTER) \
+		tests/functional_tests/test_setup.py \
+		tests/functional_tests/$(FILTER) \
 		--keep-duplicates \
 		-v \
 		-o junit_logging=all \
@@ -374,7 +374,7 @@ patch-functional-test: artifacts/osmodifier build-functional-test-cc generate-fu
 		pytest --color=yes \
 		--log-level=INFO \
 		--force-upload \
-		functional_tests/$(FILTER) \
+		tests/functional_tests/$(FILTER) \
 		-v \
 		-o junit_logging=all \
 		--junitxml $(FUNCTIONAL_TEST_JUNIT_XML) \
@@ -698,7 +698,7 @@ copy-runtime-images: $(TEST_IMAGES_PATH)/build/trident-testimage/*.cosi $(TEST_I
 .PHONY: starter-configuration
 starter-configuration:
 	@mkdir -p $$(dirname $(TRIDENT_CONFIG))
-	@cp e2e_tests/trident_configurations/simple/trident-config.yaml $(TRIDENT_CONFIG)
+	@cp tests/e2e_tests/trident_configurations/simple/trident-config.yaml $(TRIDENT_CONFIG)
 	@echo "\033[33mCreated \033[36m$(TRIDENT_CONFIG)\033[33m. Please review and modify as needed! :)"
 	@echo "\033[33mDon't forget to add your SSH public key to the host configuration!"
 
@@ -734,7 +734,7 @@ artifacts/imagecustomizer:
 	@chmod +x artifacts/imagecustomizer
 	@touch artifacts/imagecustomizer
 
-bin/trident-mos.iso: artifacts/baremetal.vhdx artifacts/imagecustomizer systemd/trident-install.service trident-mos/iso.yaml trident-mos/files/* trident-mos/post-install.sh selinux-policy-trident/*
+bin/trident-mos.iso: artifacts/baremetal.vhdx artifacts/imagecustomizer packaging/systemd/trident-install.service tests/trident-mos/iso.yaml tests/trident-mos/files/* tests/trident-mos/post-install.sh packaging/selinux-policy-trident/*
 	@mkdir -p bin
 	BUILD_DIR=`mktemp -d` && \
 		trap 'sudo rm -rf $$BUILD_DIR' EXIT; \
@@ -743,7 +743,7 @@ bin/trident-mos.iso: artifacts/baremetal.vhdx artifacts/imagecustomizer systemd/
 			--build-dir $$BUILD_DIR \
 			--image-file $< \
 			--output-image-file $@ \
-			--config-file trident-mos/iso.yaml \
+			--config-file tests/trident-mos/iso.yaml \
 			--output-image-format iso
 
 .PHONY: recreate-verity-image
@@ -757,8 +757,11 @@ website-prereqs:
 	cd ./website && \
 		npm install --save docusaurus @easyops-cn/docusaurus-search-local @docusaurus/theme-mermaid
 
+website/versions.json:
+	./website/scripts/create_versioned_docs.sh
+
 .PHONY: website-build
-website-build: website-prereqs
+website-build: website-prereqs website/versions.json
 	cd ./website && npm run build
 
 .PHONY: website-serve
