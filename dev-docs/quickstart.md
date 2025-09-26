@@ -45,15 +45,12 @@ developing and testing with Trident in your local dev environment.
       - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDZ6...
     ```
 
-7. Run `git submodule update --init` to initialize the azure-linux-image-tools
-   submodule.
-
-8. Run `make run-netlaunch` to execute the Trident deployment. You should see
+7. Run `make run-netlaunch` to execute the Trident deployment. You should see
    the Trident deployment logs in the terminal.
    - Note: To watch the serial console logs for the VM, run `make
      watch-virtdeploy` in a different shell.
 
-9. Once the deployment is complete, you can connect to the VM over `ssh` if it
+8. Once the deployment is complete, you can connect to the VM over `ssh` if it
    was provided in the Trident configuration file such as: `ssh
    user@192.168.242.2`.
     - Note: The IP of the VM by default is `192.168.242.2`, unless explicitly
