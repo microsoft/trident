@@ -752,23 +752,36 @@ recreate-verity-image: bin/trident-rpms.tar.gz
 	$(MAKE) -C $(TEST_IMAGES_PATH) trident-verity-testimage
 	make copy-runtime-images
 
+.PHONY: website-clear
+website-clear:
+	cd ./website && \
+		rm -rf ./docs && \
+		rm -rf ./versioned_* && \
+		rm -rf ./versions.json && \
+		rm -rf ./node_modules
+
 .PHONY: website-prereqs
 website-prereqs:
 	cd ./website && \
 		npm install --save docusaurus @easyops-cn/docusaurus-search-local @docusaurus/theme-mermaid
 
+website/docs:
+	rm -rf ./website/docs && \
+		cp -r ../docs ./website
+
 website/versions.json:
 	./website/scripts/create_versioned_docs.sh
 
 .PHONY: website-build
-website-build: website-prereqs website/versions.json
-	cd ./website && npm run build
+website-build: website-prereqs website/docs website/versions.json
+	cd ./website && \
+		npm run build
 
 .PHONY: website-serve
 website-serve: website-build
-	cd ./website && npm run serve
+	cd ./website && \
+		npm run serve
 
-PYTHON_CMD ?= python3
 SERVER_PORT ?= 8133
 
 .PHONY: validate-pipeline-website-artifact
@@ -782,5 +795,5 @@ validate-pipeline-website-artifact:
 	gh run download $(RUN_ID) --name github-pages --repo microsoft/trident --dir $(STAGING_DIR)
 	cd $(STAGING_DIR) && \
 		tar -xvf ./artifact.tar && \
-		$(PYTHON_CMD) -m http.server $(SERVER_PORT)
+		npm run serve -- -port $(SERVER_PORT)
 
