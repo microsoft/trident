@@ -69,7 +69,7 @@ storage:
   - partitionTableType: gpt
     partitions:
     - label: root-hash
-      id: verityhash
+      id: root-hash
       size: 128M
 ```
 
@@ -77,7 +77,7 @@ The [Image Customizer verity section](https://microsoft.github.io/azure-linux-im
 
 ``` yaml
 verity:
-  - id: rootverity
+  - id: root
     name: root
     dataDeviceId: root-data
     hashDeviceId: root-hash
@@ -105,7 +105,7 @@ storage:
       size: 2G
 
     - label: root-hash
-      id: verityhash
+      id: root-hash
       size: 128M
 
     - id: var
@@ -114,7 +114,7 @@ storage:
   bootType: efi
 
   verity:
-  - id: rootverity
+  - id: root
     name: root
     dataDeviceId: root-data
     hashDeviceId: root-hash
@@ -133,7 +133,7 @@ storage:
     mountPoint:
       path: /boot
 
-  - deviceId: rootverity
+  - deviceId: root
     type: ext4
     mountPoint:
       path: /
