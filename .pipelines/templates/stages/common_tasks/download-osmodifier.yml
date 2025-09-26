@@ -51,7 +51,7 @@ steps:
         vstsFeed: polar/PolarCoreArtifacts
         vstsFeedPackage: osmodifier_arm64_preview
         vstsPackageVersion: "1.1.0-preview.939023"
-        downloadDirectory: "$(Build.SourcesDirectory)/artifacts"
+        downloadDirectory: "$(Build.SourcessDirectory)/artifacts"
 
   - ${{ if and(eq(parameters.osModifierBuildType, 'preview'), eq(parameters.targetArchitecture, 'amd64')) }}:
     - task: UniversalPackages@0
