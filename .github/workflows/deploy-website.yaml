@@ -39,8 +39,11 @@ jobs:
           # Authenticate GitHub CLI
           echo ${{ secrets.GITHUB_TOKEN }} | gh auth login --with-token
           # For pull requests, use branch as dev version so branch docs are validated
+          echo "Github event name: ${{github.event_name}}"
+          echo "Github ref: $GITHUB_HEAD_REF"
           if [[ "${{github.event_name}}" == "pull_request" ]]; then
             export DEV_BRANCH=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}
+            echo "Using dev branch: $DEV_BRANCH"
           fi
           # Construct multi-version docs
           ./scripts/create_versioned_docs.sh
