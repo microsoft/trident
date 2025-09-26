@@ -115,10 +115,10 @@ pub(super) fn create_encrypted_devices(
         // Clear the TPM 2.0 device to ensure that it is in a known state. By clearing the lockout
         // value, Trident prevents the TPM 2.0 device from being placed into DA lockout mode due to
         // repeated successive provisioning attempts.
-        Dependency::Tpm2Clear
-            .cmd()
-            .run_and_check()
-            .message("Failed to clear TPM 2.0 device")?;
+        // Dependency::Tpm2Clear
+        //     .cmd()
+        //     .run_and_check()
+        //     .message("Failed to clear TPM 2.0 device")?;
 
         // If this is for a grub ROS, seal against the value of PCR 7; if this is for a UKI ROS,
         // seal against a "bootstrapping" pcrlock policy that exclusively contains PCR 0.
