@@ -72,13 +72,13 @@ Ensuring the recovery key's confidentiality and integrity is paramount. Employ s
 
 - The file containing the key should only be accessible by the root user and have `0400` permissions set.
 
-- The recovery key should be a minimum of 32 bytes long and should be generated with enough high entropy to defend against brute force or cryptographic attacks targeting on-disk hash values.
+- The recovery key should be a minimum of 32 bytes long and should be generated with a high enough entropy to defend against brute force or cryptographic attacks targeting on-disk hash values.
 
 # Generating a Recovery Key
 
 One way to create a recovery key file on Linux systems is using the `dd` utility:
 
-> Note: The following example is for illustration purposes only. > Be sure to generate recovery keys with diligence and attention > to security principles. Please adjust the following example > according to your own security policies and operational > environment to fit your specific security requirements and > constraints.
+> Note: The following example is for illustration purposes only. Be sure to generate > recovery keys with diligence and attention to security principles. Please adjust the > following example according to your own security policies and operational environment to > fit your specific security requirements and constraints.
 
 ```sh touch ./recovery.key chmod 0400 ./recovery.key dd if=/dev/random of=./recovery.key bs=1 count=256 ```
 

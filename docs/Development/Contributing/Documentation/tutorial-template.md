@@ -5,16 +5,6 @@
 
 <!-- (DELETE) YOU MAY ADD A SUBTITLE HERE -->
 
-## Table of Contents
-
-- [\>TITLE GOES HERE\<](#title-goes-here)
-  - [Table of Contents](#table-of-contents)
-  - [Introduction](#introduction)
-  - [Prerequisites](#prerequisites)
-  - [Instructions](#instructions)
-    - [Step 1: Step Title](#step-1-step-title)
-  - [Conclusion](#conclusion)
-
 ## Introduction
 
 <!-- (DELETE) A brief overview of the tutorial's purpose and what users

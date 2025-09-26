@@ -5,16 +5,6 @@
 
 <!-- (DELETE) YOU MAY ADD A SUBTITLE HERE -->
 
-## Table of Contents
-
-- [\>TITLE GOES HERE\<](#title-goes-here)
-  - [Table of Contents](#table-of-contents)
-  - [Goals](#goals)
-  - [Prerequisites](#prerequisites)
-  - [Instructions](#instructions)
-    - [Step 1: Step Title](#step-1-step-title)
-  - [Troubleshooting](#troubleshooting)
-
 ## Goals
 
 <!-- (DELETE) A brief an concise list of the specific goals that a user will
