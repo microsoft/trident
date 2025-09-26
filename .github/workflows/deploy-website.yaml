@@ -5,9 +5,15 @@ on:
   # Manual trigger
   workflow_dispatch:
 
+  # Triggers the workflow on push or pull request events but only for the master branch
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    branches: [main]
+
   # # Trigger on release
   # release:
   #   types: [published]
+  #   branches: [main]
 
 permissions:
   contents: write
@@ -45,6 +51,8 @@ jobs:
           path: ./website/build
 
   wait-for-approval:
+    # Do not run publishing flow for pull requests
+    if: github.event_name != 'pull_request'
     name: Wait for validation and approval
     # This job will require approval for the 'wait-for-approval' environment
     environment: wait-for-approval
@@ -56,6 +64,8 @@ jobs:
           echo "approved :)"
 
   deploy:
+    # Do not run publishing flow for pull requests
+    if: github.event_name != 'pull_request'
     name: Deploy website artifact to Github Pages
     environment:
       name: github-pages
