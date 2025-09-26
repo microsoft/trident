@@ -116,14 +116,14 @@ def test_verity_root(connection, hostConfiguration, tridentCommand, abActiveVolu
     #   contents: !image
     #     sha256: 764292ca5261af4d68217381d5e2520f453ca22d2af38c081dfc93aeda075d0b
     #     length: 705090048
-    #     url: http://10.1.6.1:36439/files/verity_root.rawzst
+    #     url: http://myblob/files/verity_root.rawzst
     # root-hash:
     #   path: /dev/disk/by-partuuid/290ddc62-c339-457c-989d-5551153fcb9c
     #   size: 1073741824
     #   contents: !image
     #     sha256: b63a60a5c6d172cf11d0aec785f50414d2d46206a64e95639804b85c8fa0f3e5
     #     length: 25321984
-    #     url: http://10.1.6.1:36439/files/verity_roothash.rawzst
+    #     url: http://myblob/files/verity_roothash.rawzst
     # verity-0:
     #   path: /dev/mapper/root
     #   size: 0
