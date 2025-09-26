@@ -12,10 +12,9 @@ import fs from "fs";
 function getVersions() {
   const versionsPath = path.resolve(__dirname, "versions.json");
   if (!fs.existsSync(versionsPath)) {
-    fs.writeFileSync(versionsPath, JSON.stringify(["current"]));
+    return require(versionsPath);
   }
-
-  return require(versionsPath);
+  return ["current"];
 }
 function getDocsVersions() {
   let currentVersion = getLatestVersion();
