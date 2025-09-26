@@ -60,23 +60,48 @@ In addition to the typical `usr` partition definition, a `usr-hash` partition is
 ``` yaml
 storage:
   disks:
-  - partitionTableType: gpt
-    partitions:
-    - label: usr-hash
-      id: verityhash
-      size: 128M
+    - partitionTableType: gpt
+      partitions:
+        - id: usr-hash
+          label: usr-hash
+          size: 128M
 ```
 
 The [Image Customizer verity section](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/api/configuration/verity.html) is required as well:
 
 ``` yaml
 verity:
-  - id: usrverity
+  - id: usr
     name: usr
     dataDeviceId: usr-data
     hashDeviceId: usr-hash
-    dataDeviceMountIdType: part-label
-    hashDeviceMountIdType: part-label
+    dataDeviceMountIdType: uuid
+    hashDeviceMountIdType: uuid
+```
+
+Verity filesystems should be created as read-only:
+
+``` yaml
+- deviceId: usr
+  type: ext4
+  mountPoint:
+    path: /usr
+    options: defaults,ro
+```
+
+And finally, usr-verity requires some changes to support UKI rather than grub:
+
+``` yaml
+os:
+  kernelCommandLine:
+    extraCommandLine:
+      - rd.hostonly=0
+
+  uki:
+    kernels: auto
+
+previewFeatures:
+  - uki
 ```
 
 Putting that all together and following the Image Customizer [documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/README.html), the full configuration `$HOME/staging/ic-config.yaml` can look like this:
@@ -84,60 +109,60 @@ Putting that all together and following the Image Customizer [documentation](htt
 ``` yaml
 storage:
   disks:
-  - partitionTableType: gpt
-    maxSize: 5G
-    partitions:
-    - id: esp
-      type: esp
-      size: 8M
+    - partitionTableType: gpt
+      maxSize: 5G
+      partitions:
+        - id: esp
+          type: esp
+          size: 500M
+          label: esp
 
-    - id: boot
-      size: 1G
+        - id: boot
+          size: 150M
 
-    - label: root
-      id: root
-      size: 2G
+        - id: root
+          size: 2G
 
-    - id: usr-data
-      label: usr
-      size: 1G
+        - id: usr-data
+          label: usr
+          size: 1G
 
-    - id: usr-hash
-      label: usr-hash
-      size: 128M
+        - id: usr-hash
+          label: usr-hash
+          size: 128M
 
   bootType: efi
 
   verity:
-  - id: usrverity
-    name: usr
-    dataDeviceId: usr-data
-    hashDeviceId: usr-hash
-    dataDeviceMountIdType: part-label
-    hashDeviceMountIdType: part-label
+    - id: usr
+      name: usr
+      dataDeviceId: usr-data
+      hashDeviceId: usr-hash
+      dataDeviceMountIdType: uuid
+      hashDeviceMountIdType: uuid
 
   filesystems:
-  - deviceId: esp
-    type: fat32
-    mountPoint:
-      path: /boot/efi
-      options: umask=0077
+    - deviceId: esp
+      type: fat32
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
 
-  - deviceId: boot
-    type: ext4
-    mountPoint:
-      path: /boot
+    - deviceId: boot
+      type: ext4
+      mountPoint:
+        path: /boot
 
-  - deviceId: root
-    type: ext4
-    mountPoint:
-      path: /
+    - deviceId: root
+      type: ext4
+      mountPoint:
+        path: /
 
-  - deviceId: usr
-    type: ext4
-    mountPoint:
-      path: /usr
-      options: defaults,ro
+    - deviceId: usr
+      type: ext4
+      mountPoint:
+        path: /usr
+        options: defaults,ro
 
 os:
   bootloader:
@@ -149,22 +174,20 @@ os:
 
   kernelCommandLine:
     extraCommandLine:
-    - log_buf_len=1M
+      - log_buf_len=1M
+      - rd.hostonly=0
 
   packages:
     remove:
       - grub2-efi-binary
 
     install:
-      # replace grub2-efi-binary with grub2-efi-binary-noprefix
-      - grub2-efi-binary-noprefix
+      - binutils
       - curl
       - device-mapper
-      - dracut-overlayfs
       - efibootmgr
       - iproute
       - iptables
-      - lsof
       - lvm2
       - mdadm
       - netplan
@@ -172,12 +195,23 @@ os:
       - systemd-udev
       - tpm2-tools
       - trident-service
+      - trident-static-pcrlock-files
       - veritysetup
       - vim
+      - systemd-ukify
+      - systemd-boot
+      - efibootmgr
+      - audit
+      - selinux-policy-devel
 
   services:
     enable:
-    - trident
+      - trident
+  uki:
+    kernels: auto
+
+previewFeatures:
+  - uki
 ```
 
 ### Step 4: Invoke Image Customizer
@@ -293,4 +327,3 @@ os:
           name: enp*
         dhcp4: true
 ```
-
