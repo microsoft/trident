@@ -1,8 +1,8 @@
 # How Trident Consumes COSI
 
-Trident uses a Composite OS Image ([COSI](../Reference/COSI.md)) file to
-provision the contents of file systems that are not being newly created or
-adopted. (Note that the
+Trident uses a Composable Operating System Image ([COSI](../Reference/COSI.md))
+file to provision the contents of file systems that are not being newly created
+or adopted. (Note that the
 [`source`](../Reference/Host-Configuration/API-Reference/FileSystemSource.md) of
 the file system can be specified in the Host Configuration.) A URL to this COSI
 file as well as a hash of the COSI file's `metadata.json` file should be placed
