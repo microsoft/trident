@@ -12,6 +12,13 @@ You can use this make target to format all code in the project automatically.
 make format
 ```
 
+:::note
+
+The repository includes a `.vscode/settings.json` file that will format code on save
+if you are using Visual Studio Code.
+
+:::
+
 ## Rust
 
 We adhere to the [Rust style
