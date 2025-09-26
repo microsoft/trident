@@ -70,13 +70,7 @@ Now start the installation:
 trident install
 ```
 
-Watch as Trident performs the automated installation process. After 2-3 minutes, you will see:
-
-```
-Installation completed successfully!
-```
-
-The system will reboot automatically.
+Watch as Trident performs the automated installation process. After 2-3 minutes, you will see the installation completed succesfully and the system will reboot automatically.
 
 ### Step 4: Boot into Azure Linux
 
