@@ -69,7 +69,7 @@ The system will boot into the Azure Linux installer environment.
 After a few moments, the screen will show:
 
 ```
-Welcome to Azure Linux 3.0!
+Welcome to Microsoft Azure Linux 3.0!
 installer-iso-mos login: root 
 ```
 
@@ -114,12 +114,17 @@ Watch as Trident performs the automated installation process. After 2-3 minutes,
 ### Step 5: Boot into Azure Linux
 
 After the reboot, we'll see the GRUB bootloader, then Azure Linux starting up.
-The installation is complete when you see the login prompt.
+The installation is complete when you see the login prompt:
 
-**We have successfully created a complete Azure Linux system using Trident!**
+```
+Welcome to Microsoft Azure Linux 3.0!
+testimage login: 
+```
+
+**We have successfully installed Azure Linux using Trident!**
 Now you can explore your new Azure Linux system.
 
-The system will present a login prompt. Default configuration uses SSH key-only authentication (no password login). If you have SSH access configured for the `tutorial-user` (as explained in [Step 5: Create Trident Host Configuration for Install](./Building-AB-Update-Images-for-Install-and-Update.md#step-5-create-trident-host-configuration-for-install)), you can connect to explore the system:
+The system presented a login prompt, but default configuration uses SSH key-only authentication (no password login avialable). To explore the system, you can use the configured SSH access given to the `tutorial-user` (as shown in the `users` section of the Host Configuration at [Step 5: Create Trident Host Configuration for Install](./Building-AB-Update-Images-for-Install-and-Update.md#step-5-create-trident-host-configuration-for-install)). You can connect from your host machine as follows:
 
 ```bash
 # From your host machine:
