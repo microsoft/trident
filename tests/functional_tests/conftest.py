@@ -19,7 +19,7 @@ from .ssh_node import SshNode
 pytest_plugins = ["functional_tests.depends"]
 
 """Location of the Trident repository."""
-TRIDENT_REPO_DIR_PATH = Path(__file__).resolve().parent.parent
+TRIDENT_REPO_DIR_PATH = Path(__file__).resolve().parent.parent.parent
 
 
 def __get_argus_toolkit_path():
@@ -27,7 +27,7 @@ def __get_argus_toolkit_path():
     envvar = os.environ.get("ARGUS_TOOLKIT_PATH", None)
     if envvar:
         return Path(envvar).resolve()
-    return Path(__file__).resolve().parent.parent.parent / "argus-toolkit"
+    return Path(__file__).resolve().parent.parent.parent.parent / "argus-toolkit"
 
 
 """Location of the argus-toolkit repository."""
