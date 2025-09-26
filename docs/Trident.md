@@ -24,9 +24,9 @@ servicing.
 **Installation Features:**
 
 - Disk partitioning and formatting using the GUID Partition Table (GPT).
-- Creation of [software RAID arrays](How-To-Guides/Create-RAID-Arrays.md),
+- Creation of [software RAID arrays](How-To-Guides/Create-a-RAID-Array.md),
   including support for [ESP redundancy](How-To-Guides/Set-Up-Redundant-ESP.md).
-- Provisioning of [encrypted volumes](How-To-Guides/Create-Encrypted-Volume.md),
+- Provisioning of [encrypted volumes](How-To-Guides/Create-an-Encrypted-Volume.md),
   with optional PCR sealing.
 - [DM-verity](How-To-Guides/Set-Up-Root-Verity.md) integration for root and
   `/usr` filesystems.

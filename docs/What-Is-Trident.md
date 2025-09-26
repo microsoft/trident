@@ -2,9 +2,9 @@
 
 Trident is a servicing agent, drawing inspiration from the declarative API
 principles established by Kubernetes. It ingests a [**Host Configuration**
-specification](Reference/Host-Configuration/HostConfiguration.md) as input, and,
-as it progresses, updates the **Host Status** to accurately reflect all changes
-applied in accordance with the provided Host Configuration.
+specification](Reference/Host-Configuration/API-Reference/HostConfiguration.md)
+as input, and, as it progresses, updates the **Host Status** to accurately
+reflect all changes applied in accordance with the provided Host Configuration.
 
 ## Host Configuration
 
