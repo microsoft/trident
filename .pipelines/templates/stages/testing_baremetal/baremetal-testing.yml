@@ -71,24 +71,6 @@ stages:
           maxParallel: 1
 
         variables:
-          # Definition of what server to use for the test and related settings!
-          - name: BAREMETAL_BMC_IP
-            value: "10.8.3.20"
-          - name: BAREMETAL_OAM_INTERFACE
-            value: "eno8303"
-          - name: BAREMETAL_OAM_IP
-            value: "10.8.4.50"
-          - name: BAREMETAL_OAM_GATEWAY
-            value: "10.8.4.1"
-          - name: BAREMETAL_OAM_MAC
-            value: "c8:4b:d6:7a:73:c6"
-          - name: BAREMETAL_LAB_CANARY_IP
-            value: "10.8.6.1"
-
-          # Alternate HTTP(S) proxy which can be used with AEP02 is "http://192.168.229.51:3128"
-          - name: BAREMETAL_HTTPS_PROXY
-            value: "http://172.16.1.10:3128"
-
           # Sourced from the matrix
           - name: TRIDENT_CONFIGURATION_NAME
             value: $(configuration)
