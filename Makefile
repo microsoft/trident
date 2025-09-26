@@ -13,6 +13,8 @@ NETLAUNCH_CONFIG ?= input/netlaunch.yaml
 
 OVERRIDE_RUST_FEED ?= true
 
+SERVER_PORT ?= 8133
+
 .PHONY: all
 all: format check test build-api-docs bin/trident-rpms.tar.gz docker-build build-functional-test coverage validate-configs generate-mermaid-diagrams
 
@@ -770,7 +772,7 @@ website/docs:
 		cp -r ./docs ./website
 
 website/versions.json:
-	./website/scripts/create_versioned_docs.sh
+	echo '[]' > website/versions.json
 
 .PHONY: website-build
 website-build: website-prereqs website/docs website/versions.json
@@ -780,9 +782,7 @@ website-build: website-prereqs website/docs website/versions.json
 .PHONY: website-serve
 website-serve: website-build
 	cd ./website && \
-		npm run serve
-
-SERVER_PORT ?= 8133
+		npm run serve -- --port $(SERVER_PORT)
 
 .PHONY: validate-pipeline-website-artifact
 validate-pipeline-website-artifact:
