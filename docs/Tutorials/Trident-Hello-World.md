@@ -23,11 +23,9 @@ Before we start, you'll need:
 
 ### Step 1: Create the COSI file and Host Configuration
 
-Follow the [Building A/B Update Images for Install and Update](./Building-AB-Update-Images-for-Install-and-Update.md) tutorial through [Step 5: Create Trident Host Configuration for Install](./Building-AB-Update-Images-for-Install-and-Update.md#step-5-create-trident-host-configuration-for-install). This will give you:
+Follow the [Building A/B Update Images for Install and Update](./Building-AB-Update-Images-for-Install-and-Update.md) tutorial through [Step 5: Create Trident Host Configuration for Install](./Building-AB-Update-Images-for-Install-and-Update.md#step-5-create-trident-host-configuration-for-install). **Stop after completing Step 5** (do not create the Servicing ISO of Step 6, we will create our own modified Servicing ISO in the next step). After following those steps you will have:
 - The [COSI](../Reference/COSI.md) file (`osimage.cosi`)
 - The Host Configuration file (`host-config.yaml`)
-
-**Stop after completing Step 5** - You can stop before Step 6 (Create Servicing ISO). We'll create our own modified Servicing ISO in the next step.
 
 ### Step 2: Build a Servicing ISO
 
