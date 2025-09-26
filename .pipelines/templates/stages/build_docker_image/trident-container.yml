@@ -33,14 +33,14 @@ stages:
 
           - template: ../common_tasks/preview-container.yml
             parameters:
-              dockerfilePath: $(Build.SourcesDirectory)/Dockerfile.runtime
+              dockerfilePath: $(Build.SourcesDirectory)/packaging/docker/Dockerfile.runtime
               dockerBuildContext: $(Build.SourcesDirectory)
 
           - script: |
               set -euxo pipefail
 
               mkdir -p $(ob_outputDirectory)
-              DOCKER_BUILDKIT=1 docker build -f Dockerfile.runtime --progress plain -t trident/trident:latest .
+              DOCKER_BUILDKIT=1 docker build -f packaging/docker/Dockerfile.runtime --progress plain -t trident/trident:latest .
               docker save trident/trident:latest | gzip > $(ob_outputDirectory)/trident-container.tar.gz
             workingDirectory: $(Build.SourcesDirectory)
             displayName: Build Docker image

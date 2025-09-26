@@ -1,0 +1,1599 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "HostConfiguration",
+  "description": "HostConfiguration is the configuration for a host. Trident agent will use this to configure the host.",
+  "type": "object",
+  "properties": {
+    "image": {
+      "description": "Data about the image to deploy on the host, including sourcing and integrity information.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/OsImage"
+        }
+      ],
+      "nullable": true
+    },
+    "managementOs": {
+      "description": "OS Configuration for the management OS.\n\nThese settings are only applicable for clean install servicing. They are ignored on updates.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/ManagementOs"
+        }
+      ]
+    },
+    "os": {
+      "description": "OS Configuration for the target OS.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/Os"
+        }
+      ]
+    },
+    "scripts": {
+      "description": "Optional scripts to be run after different Trident stages have completed.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/Scripts"
+        }
+      ]
+    },
+    "storage": {
+      "description": "Describes the storage configuration of the host.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/Storage"
+        }
+      ]
+    },
+    "trident": {
+      "description": "The Trident Management configuration controls the installation of the Trident agent onto the target OS.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/Trident"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "AbUpdate": {
+      "description": "A/B update configuration. Carries information about the A/B volume pairs that are used to perform A/B updates.",
+      "type": "object",
+      "required": [
+        "volumePairs"
+      ],
+      "properties": {
+        "volumePairs": {
+          "description": "A list of A/B volume pairs that will be used for A/B update.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/AbVolumePair"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "AbVolumePair": {
+      "description": "Per A/B volume pair configuration. Points to the underlying block devices in the A/B volume pair.",
+      "type": "object",
+      "required": [
+        "id",
+        "volumeAId",
+        "volumeBId"
+      ],
+      "properties": {
+        "id": {
+          "description": "A unique identifier for the A/B volume pair.\n\nThis is a user-defined string that links the A/B volume pair to the `filesystems` config in the Host Configuration. The identifier needs to be unique across devices of all types, not just A/B volume pairs.",
+          "type": "string",
+          "format": "Block Device ID"
+        },
+        "volumeAId": {
+          "description": "The ID of the device that will be used as the A volume.",
+          "type": "string",
+          "format": "Block Device ID"
+        },
+        "volumeBId": {
+          "description": "The ID of the device that will be used as the B volume.",
+          "type": "string",
+          "format": "Block Device ID"
+        }
+      },
+      "additionalProperties": false
+    },
+    "AdditionalFile": {
+      "type": "object",
+      "required": [
+        "destination"
+      ],
+      "properties": {
+        "content": {
+          "description": "The contents of the script. Conflicts with `source`.",
+          "type": "string",
+          "nullable": true
+        },
+        "destination": {
+          "description": "Location on the target image to place the file.",
+          "type": "string"
+        },
+        "permissions": {
+          "description": "Permissions to set on the file.\n\nIf not specified, this will default to the permissions of the source file when `source` is used and to 0644 when `content` is used.",
+          "type": "string",
+          "nullable": true
+        },
+        "source": {
+          "description": "Path to the script file. Conflicts with content.\n\nThe file must be located on the host's filesystem.",
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "AdoptedPartition": {
+      "description": "Settings to adopt a pre-existing partition.\n\nOnly ONE match criteria should be provided.",
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "description": "A unique identifier for the partition.\n\nThis is a user defined string that allows to link the partition to the mount points and also to results in the Host Status. The identifier needs to be unique across all types of devices, not just partitions.",
+          "type": "string",
+          "format": "Block Device ID"
+        },
+        "matchLabel": {
+          "description": "Partition label to look for when matching against the existing partitions.",
+          "type": "string",
+          "nullable": true
+        },
+        "matchUuid": {
+          "description": "Partition UUID to look for when matching against the existing partitions.",
+          "type": "string",
+          "format": "uuid",
+          "nullable": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "ByteCount": {
+      "description": "A byte count with an optional suffix (K, M, G, T, to the base of 1024).",
+      "examples": [
+        0,
+        1,
+        102,
+        104576,
+        "1K",
+        "1M",
+        "5G",
+        "4T"
+      ],
+      "type": [
+        "string",
+        "number"
+      ],
+      "format": "\\d+\\s*[KMGT]?"
+    },
+    "Disk": {
+      "description": "Per disk configuration.",
+      "type": "object",
+      "required": [
+        "device",
+        "id",
+        "partitionTableType",
+        "partitions"
+      ],
+      "properties": {
+        "adoptedPartitions": {
+          "description": "A list of pre-existing partitions that will be adopted from the disk.\n\nSeveral options are available to match a partition to adopt. If more than one option is specified, ALL the provided criteria will be used to match the partition.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/AdoptedPartition"
+          }
+        },
+        "device": {
+          "description": "The device path of the disk. Points to the disk device in the host. It is recommended to use stable paths, such as the ones under `/dev/disk/by-path/` or [WWNs](https://en.wikipedia.org/wiki/World_Wide_Name).",
+          "type": "string"
+        },
+        "id": {
+          "description": "A unique identifier for the disk. This is a user defined string that allows to link the disk to what is consuming it and also to results in the Host Status. The identifier needs to be unique across all types of devices, not just disks.\n\nTBD: At the moment, the partition table is created from scratch. In the future, it will be possible to consume an existing partition table.",
+          "type": "string",
+          "format": "Block Device ID"
+        },
+        "partitionTableType": {
+          "description": "The partition table type of the disk. Supported values are: `gpt`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/PartitionTableType"
+            }
+          ]
+        },
+        "partitions": {
+          "description": "A list of partitions that will be created on the disk.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Partition"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "EncryptedVolume": {
+      "description": "A LUKS2-encrypted volume configuration.",
+      "type": "object",
+      "required": [
+        "deviceId",
+        "deviceName",
+        "id"
+      ],
+      "properties": {
+        "deviceId": {
+          "description": "The ID of the disk partition or software RAID array to encrypt.\n\nThis parameter is required. It must be unique among the list of encrypted volumes.\n\nIf it refers to a disk partition, it must be of a supported type. Supported types are all but the following blocked partition types: - `esp` - `root` - `root-verity` - `usr-verity` - `home`\n\nIf it refers to a software RAID array, the first disk partition of the software RAID array must be of a supported type.",
+          "type": "string",
+          "format": "Block Device ID"
+        },
+        "deviceName": {
+          "description": "The name of the device to create under `/dev/mapper` when opening the volume.\n\nThis parameter is required. It must be a valid file name and unique among all encrypted volumes, as well as among the Device Mapper devices.",
+          "type": "string"
+        },
+        "id": {
+          "description": "The ID of the LUKS-encrypted volume to create.\n\nThis parameter is required. It must be non-empty and unique among the IDs of all block devices in the host configuration. This includes the IDs of all disk partitions, encrypted volumes, software RAID arrays, and A/B volume pairs.",
+          "type": "string",
+          "format": "Block Device ID"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Encryption": {
+      "description": "Configure encrypted volumes of underlying disk partitions or software RAID arrays.",
+      "type": "object",
+      "required": [
+        "volumes"
+      ],
+      "properties": {
+        "pcrs": {
+          "description": "Optional list of PCRs in TPM 2.0 device to seal to. If not specified, Trident will seal encrypted volumes against the following default options: - If doing a clean install of a grub ROS image, seal to PCR 7 while inside the MOS, - If doing a clean install of a UKI ROS image, seal to PCRs 4 and 11 after booting into the ROS A.\n\nEach PCR may be specified either as a digit or a string representation. If specified, at least one PCR must be provided.\n\nWhen doing a clean install of a grub ROS image, the following options are valid: - 7, or `secure-boot-policy`.\n\nWhen doing a clean install of a UKI ROS image, the following options are valid: - 4, or `boot-loader-code`, - 11, or `kernel-boot`, - 4 and 11.\n\nMore encryption flows, with additional PCR options, will be added in the future.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Pcr"
+          }
+        },
+        "recoveryKeyUrl": {
+          "description": "A URL to read the recovery key from.\n\nThis parameter allows specifying a local file path to a recovery key file via a `file://` URL scheme. The recovery key file serves as an essential fallback to recover data should TPM 2.0 automatic decryption fail. If not specified, only the TPM 2.0 device will be enrolled.\n\nThe URL must be non-empty if provided. Other URL schemes are not supported at this time.\n\n# Recommended Configuration\n\nIt is strongly advised to configure a recovery key file, as it plays a pivotal role in data recovery.\n\n# File Format Expectations\n\nThe recovery key file must be a binary file without any encoding. This direct format ensures compatibility with cryptsetup and systemd APIs. Be mindful that all file content, including any potential whitespace or newline characters, is considered part of the recovery key.\n\n# Security Considerations\n\nEnsuring the recovery key's confidentiality and integrity is paramount. Employ secure storage and rigorous access control measures. Specifically:\n\n- The file containing the key should only be accessible by the root user and have `0400` permissions set.\n\n- The recovery key should be a minimum of 32 bytes long and should be generated with a high enough entropy to defend against brute force or cryptographic attacks targeting on-disk hash values.\n\n# Generating a Recovery Key\n\nOne way to create a recovery key file on Linux systems is using the `dd` utility:\n\n> Note: The following example is for illustration purposes only. Be sure to generate > recovery keys with diligence and attention to security principles. Please adjust the > following example according to your own security policies and operational environment to > fit your specific security requirements and constraints.\n\n```sh touch ./recovery.key chmod 0400 ./recovery.key dd if=/dev/random of=./recovery.key bs=1 count=256 ```\n\nThis command generates 256 bytes of random data for the recovery key, sourcing entropy from `/dev/random`. Be aware, in environments with limited entropy sources, such as certain embedded systems, `/dev/random` may not provide sufficient data promptly. Alternative entropy sources or methods may be required.",
+          "type": "string",
+          "format": "uri",
+          "nullable": true
+        },
+        "volumes": {
+          "description": "The list of LUKS2-encrypted volumes to create.\n\nThis parameter is required and must not be empty. Each item is an object that will contain the configuration for a given partition or RAID array.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/EncryptedVolume"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "FileSystem": {
+      "type": "object",
+      "properties": {
+        "deviceId": {
+          "description": "The ID of the block device on which to place this file system.",
+          "type": "string",
+          "format": "Block Device ID"
+        },
+        "mountPoint": {
+          "description": "The mount point of the file system.\n\nIt can be provided as an object for more control over the mount options, or as a just a string when `defaults` is sufficient.",
+          "oneOf": [
+            {
+              "$ref": "#/definitions/MountPoint"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "nullable": true,
+          "string_shortcut": "path"
+        },
+        "source": {
+          "description": "The source of the file system.\n\nIf not specified, this field will default to image.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/FileSystemSource"
+            }
+          ]
+        },
+        "type": {
+          "description": "The type of the file system.\n\nFile system type must *not* be specified if the source of the file system is `image`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/FileSystemType"
+            }
+          ],
+          "nullable": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "FileSystemSource": {
+      "oneOf": [
+        {
+          "title": "New",
+          "description": "Create a new file system.",
+          "type": "string",
+          "enum": [
+            "new"
+          ]
+        },
+        {
+          "title": "Adopted",
+          "description": "Use an existing file system from an adopted partition.",
+          "type": "string",
+          "enum": [
+            "adopted"
+          ]
+        },
+        {
+          "title": "Image",
+          "description": "Use an existing file system from an image.",
+          "type": "string",
+          "enum": [
+            "image"
+          ]
+        }
+      ]
+    },
+    "FileSystemType": {
+      "description": "File system types.",
+      "oneOf": [
+        {
+          "title": "Ext4 file system",
+          "type": "string",
+          "enum": [
+            "ext4"
+          ]
+        },
+        {
+          "title": "XFS file system",
+          "type": "string",
+          "enum": [
+            "xfs"
+          ]
+        },
+        {
+          "title": "Vfat file system",
+          "type": "string",
+          "enum": [
+            "vfat"
+          ]
+        },
+        {
+          "title": "NTFS file system",
+          "description": "Using NTFS on Linux comes with some limitations. For more information, see: [Limitations of NTFS](../../../Explanation/Limitations-Of-NTFS.md)",
+          "type": "string",
+          "enum": [
+            "ntfs"
+          ]
+        },
+        {
+          "title": "Tmpfs",
+          "description": "[Kernel documentation](https://www.kernel.org/doc/html/latest/filesystems/tmpfs.html)\n\nTmpfs is only valid if the filesystem `source` is `new`.",
+          "type": "string",
+          "enum": [
+            "tmpfs"
+          ]
+        },
+        {
+          "title": "Auto",
+          "description": "Passed to `mount` to automatically detect the filesystem type.\n\nAuto is only valid if the filesystem `source` is `adopted`.",
+          "type": "string",
+          "enum": [
+            "auto"
+          ]
+        }
+      ]
+    },
+    "ImageSha384": {
+      "description": "Image SHA384 checksum.",
+      "oneOf": [
+        {
+          "title": "Ignored",
+          "description": "You can pass `ignored` to skip the checksum verification.",
+          "type": "string",
+          "enum": [
+            "ignored"
+          ]
+        },
+        {
+          "title": "Checksum",
+          "description": "The SHA384 checksum of the image.\n\n*Details:*\n\nThe Sha384Hash is a 96-character hexadecimal string.",
+          "type": "string",
+          "format": "[a-fA-F0-9]{96}"
+        }
+      ]
+    },
+    "KernelCommandLine": {
+      "description": "Additional kernel command line options to add to the image.",
+      "type": "object",
+      "required": [
+        "extraCommandLine"
+      ],
+      "properties": {
+        "extraCommandLine": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "LoadMode": {
+      "description": "Load mode of the kernel module.",
+      "oneOf": [
+        {
+          "title": "Always",
+          "description": "Set kernel modules to be loaded automatically at boot time.",
+          "type": "string",
+          "enum": [
+            "always"
+          ]
+        },
+        {
+          "title": "Auto",
+          "description": "Used for modules that are automatically loaded by the kernel as needed, without explicit configuration to load them at boot.",
+          "type": "string",
+          "enum": [
+            "auto"
+          ]
+        },
+        {
+          "title": "Disable",
+          "description": "Configures kernel modules to be explicitly disabled, preventing them from loading automatically.",
+          "type": "string",
+          "enum": [
+            "disable"
+          ]
+        },
+        {
+          "title": "Inherit",
+          "description": "Configures kernel modules to inherit the loading behavior set in the base image. Only applying new options where they are explicitly provided and applicable.",
+          "type": "string",
+          "enum": [
+            "inherit"
+          ]
+        }
+      ]
+    },
+    "ManagementOs": {
+      "description": "Configuration for the management OS.",
+      "type": "object",
+      "properties": {
+        "netplan": {
+          "description": "Netplan network configuration for the management OS.\n\nSee [Netplan YAML Configuration](https://netplan.readthedocs.io/en/stable/netplan-yaml/) for more information.",
+          "type": "object",
+          "format": "Netplan YAML",
+          "nullable": true
+        },
+        "users": {
+          "description": "Users to configure on the management OS.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/User"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Module": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "loadMode": {
+          "description": "Load mode of the kernel module.\n\nThe load mode setting for kernel modules dictates how and when these modules are loaded or disabled in the system.",
+          "default": "inherit",
+          "allOf": [
+            {
+              "$ref": "#/definitions/LoadMode"
+            }
+          ]
+        },
+        "name": {
+          "description": "Name of the module.",
+          "type": "string"
+        },
+        "options": {
+          "description": "Kernel options.\n\nKernel options for modules can specify how these modules interact with the system, and adjust performance or security settings specific to each module.",
+          "default": {},
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "MountPoint": {
+      "type": "object",
+      "required": [
+        "path"
+      ],
+      "properties": {
+        "options": {
+          "description": "The mount options.",
+          "default": "defaults",
+          "type": "string"
+        },
+        "path": {
+          "description": "The path to mount the file system.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Os": {
+      "description": "Configuration for the host OS.",
+      "type": "object",
+      "properties": {
+        "additionalFiles": {
+          "description": "Additional Files to add to the image.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/AdditionalFile"
+          }
+        },
+        "hostname": {
+          "description": "Hostname of the system.",
+          "type": "string",
+          "nullable": true
+        },
+        "kernelCommandLine": {
+          "description": "Options for configuring the kernel.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/KernelCommandLine"
+            }
+          ]
+        },
+        "modules": {
+          "description": "Kernel modules to configure.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Module"
+          }
+        },
+        "netplan": {
+          "description": "Netplan network configuration for the target OS.\n\nSee [Netplan YAML Configuration](https://netplan.readthedocs.io/en/stable/netplan-yaml/) for more information.",
+          "type": "object",
+          "format": "Netplan YAML",
+          "nullable": true
+        },
+        "selinux": {
+          "description": "SELinux configuration for the host.\n\nNote: SELinux cannot be used in conjunction with vfat or NTFS filesystems. When SELinux is set to permissive or enforcing, the setfiles operation will be skipped for any filesystems of type vfat or NTFS.",
+          "default": {
+            "mode": null
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/Selinux"
+            }
+          ]
+        },
+        "services": {
+          "description": "Options for configuring systemd services.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Services"
+            }
+          ]
+        },
+        "users": {
+          "description": "Users to configure on the host.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/User"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "OsImage": {
+      "description": "Data about the image to deploy on the host, including sourcing and integrity information.\n\nCurrently, the only format supported by Trident is Composable OS Image (COSI). COSI files can be generated with PRISM.",
+      "type": "object",
+      "required": [
+        "sha384",
+        "url"
+      ],
+      "properties": {
+        "sha384": {
+          "description": "The Sha384 of the metadata in the COSI file.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ImageSha384"
+            }
+          ]
+        },
+        "url": {
+          "description": "The path to the COSI file.\n\nURLs may have one of the following four schemes: `http://`, `https://`, `file://`, or `oci://`. COSI files stored as an OCI image must allow for anonymous pulls.",
+          "type": "string",
+          "format": "uri"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Partition": {
+      "description": "Per partition configuration.",
+      "type": "object",
+      "required": [
+        "id",
+        "size"
+      ],
+      "properties": {
+        "id": {
+          "description": "A unique identifier for the partition.\n\nThis is a user defined string that allows to link the partition to the mount points and also to results in the Host Status. The identifier needs to be unique across all types of devices, not just partitions.",
+          "type": "string",
+          "format": "Block Device ID"
+        },
+        "size": {
+          "description": "Size of the partition.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/PartitionSize"
+            }
+          ]
+        },
+        "type": {
+          "description": "The type of the partition.\n\nAs defined by the [Discoverable Partitions Specification](https://uapi-group.org/specifications/specs/discoverable_partitions_specification/).",
+          "default": "linux-generic",
+          "allOf": [
+            {
+              "$ref": "#/definitions/PartitionType"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "PartitionSize": {
+      "description": "Partition size enum.",
+      "oneOf": [
+        {
+          "title": "Grow",
+          "description": "Grow a partition to use all available space.",
+          "type": "string",
+          "enum": [
+            "grow"
+          ]
+        },
+        {
+          "title": "Fixed",
+          "description": "Fixed size in bytes. Must be a non-zero multiple of 4096 bytes.\n\n*Details:*\n\nA byte count with an optional suffix (K, M, G, T, to the base of 1024).",
+          "examples": [
+            0,
+            1,
+            102,
+            104576,
+            "1K",
+            "1M",
+            "5G",
+            "4T"
+          ],
+          "type": [
+            "string",
+            "number"
+          ],
+          "format": "\\d+\\s*[KMGT]?"
+        }
+      ]
+    },
+    "PartitionTableType": {
+      "description": "Partition table type. Currently only GPT is supported.",
+      "oneOf": [
+        {
+          "title": "GPT",
+          "description": "Disk should be formatted with a GUID Partition Table (GPT).",
+          "type": "string",
+          "enum": [
+            "gpt"
+          ]
+        }
+      ]
+    },
+    "PartitionType": {
+      "description": "Partition types as defined by [The Discoverable Partitions Specification](<https://uapi-group.org/specifications/specs/discoverable_partitions_specification/>).",
+      "oneOf": [
+        {
+          "title": "EFI System Partition",
+          "description": "`C12A7328-F81F-11D2-BA4B-00A0C93EC93B`\n\nIf ESP is not on `raid1`, Trident will use the first partition of this type found in the Host Configuration.",
+          "type": "string",
+          "enum": [
+            "esp"
+          ]
+        },
+        {
+          "title": "Root partition",
+          "description": "x64: `4F68BCE3-E8CD-4DB1-96E7-FBCAF984B709`",
+          "type": "string",
+          "enum": [
+            "root"
+          ]
+        },
+        {
+          "title": "Swap partition",
+          "description": "`0657fd6d-a4ab-43c4-84e5-0933c84b4f4f`",
+          "type": "string",
+          "enum": [
+            "swap"
+          ]
+        },
+        {
+          "title": "Root verity hash partition",
+          "description": "x64: `2c7357ed-ebd2-46d9-aec1-23d437ec2bf5`",
+          "type": "string",
+          "enum": [
+            "root-verity"
+          ]
+        },
+        {
+          "title": "Home partition",
+          "description": "`933ac7e1-2eb4-4f13-b844-0e14e2aef915`",
+          "type": "string",
+          "enum": [
+            "home"
+          ]
+        },
+        {
+          "title": "Var partition",
+          "description": "`4d21b016-b534-45c2-a9fb-5c16e091fd2d`",
+          "type": "string",
+          "enum": [
+            "var"
+          ]
+        },
+        {
+          "title": "Usr partition",
+          "description": "x64: `8484680c-9521-48c6-9c11-b0720656f69e`",
+          "type": "string",
+          "enum": [
+            "usr"
+          ]
+        },
+        {
+          "title": "Usr verity hash partition (NOT ENABLED YET!)",
+          "description": "x64: `77ff5f63-e7b6-4633-acf4-1565b864c0e6`",
+          "type": "string",
+          "enum": [
+            "usr-verity"
+          ]
+        },
+        {
+          "title": "Tmp partition",
+          "description": "`7ec6f557-3bc5-4aca-b293-16ef5df639d1`",
+          "type": "string",
+          "enum": [
+            "tmp"
+          ]
+        },
+        {
+          "title": "Generic Linux partition",
+          "description": "`0fc63daf-8483-4772-8e79-3d69d8477de4`",
+          "type": "string",
+          "enum": [
+            "linux-generic"
+          ]
+        },
+        {
+          "title": "Server Data partition",
+          "description": "`3b8f8425-20e0-4f3b-907f-1a25a76f98e8`\n\nTo use this partition type on the disk with the root volume, make sure to not have `/srv` symlink present in your root volume filesystem. If you do, remove it before running Trident (e.g. by using MIC).",
+          "type": "string",
+          "enum": [
+            "srv"
+          ]
+        },
+        {
+          "title": "Extended Boot Loader Partition",
+          "description": "`bc13c2ff-59e6-4262-a352-b275fd6f7172`",
+          "type": "string",
+          "enum": [
+            "xbootldr"
+          ]
+        },
+        {
+          "title": "Other",
+          "description": "Use a partition type UUID not covered by the predefined options.",
+          "type": "string",
+          "format": "uuid"
+        }
+      ]
+    },
+    "Password": {
+      "description": "Password configuration for a user.\n\n**NOTICE:**\n\nAs a security measure, **Trident does NOT support passwords** for Trident-created users. The only allowed value for this field is a locked password, which is the default when this field is skipped. A locked password means that the user account does not allow logging in using password authentication. It is recommended to use SSH keys for authentication instead.",
+      "oneOf": [
+        {
+          "title": "\\[DEFAULT\\] Locked Password",
+          "description": "Lock the user's password. (equivalent to `passwd -l`)",
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "locked"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Pcr": {
+      "description": "Represents the Platform Configuration Registers (PCRs) in the TPM. Each PCR is associated with a digit number and a string name.\n\nNOTE: In the current encryption logic, only the following PCRs are supported when sealing encrypted volumes against the state of TPM 2.0 device: - 4, or `boot-loader-code` - 7, or `secure-boot-policy` - 11, or `kernel-boot`.",
+      "oneOf": [
+        {
+          "description": "PCR 0, or `platform-code`.",
+          "type": "string",
+          "enum": [
+            "Pcr0"
+          ]
+        },
+        {
+          "description": "PCR 1, or `platform-config`.",
+          "type": "string",
+          "enum": [
+            "Pcr1"
+          ]
+        },
+        {
+          "description": "PCR 2, or `external-code`.",
+          "type": "string",
+          "enum": [
+            "Pcr2"
+          ]
+        },
+        {
+          "description": "PCR 3, or `external-config`.",
+          "type": "string",
+          "enum": [
+            "Pcr3"
+          ]
+        },
+        {
+          "description": "PCR 4, or `boot-loader-code`.",
+          "type": "string",
+          "enum": [
+            "Pcr4"
+          ]
+        },
+        {
+          "description": "PCR 5, or `boot-loader-config`.",
+          "type": "string",
+          "enum": [
+            "Pcr5"
+          ]
+        },
+        {
+          "description": "PCR 6, or `host-platform`.",
+          "type": "string",
+          "enum": [
+            "Pcr6"
+          ]
+        },
+        {
+          "description": "PCR 7, or `secure-boot-policy`.",
+          "type": "string",
+          "enum": [
+            "Pcr7"
+          ]
+        },
+        {
+          "description": "PCR 8.",
+          "type": "string",
+          "enum": [
+            "Pcr8"
+          ]
+        },
+        {
+          "description": "PCR 9, or `kernel-initrd`.",
+          "type": "string",
+          "enum": [
+            "Pcr9"
+          ]
+        },
+        {
+          "description": "PCR 10, or `ima`.",
+          "type": "string",
+          "enum": [
+            "Pcr10"
+          ]
+        },
+        {
+          "description": "PCR 11, or `kernel-boot`.",
+          "type": "string",
+          "enum": [
+            "Pcr11"
+          ]
+        },
+        {
+          "description": "PCR 12, or `kernel-config`.",
+          "type": "string",
+          "enum": [
+            "Pcr12"
+          ]
+        },
+        {
+          "description": "PCR 13, or `sysexts`.",
+          "type": "string",
+          "enum": [
+            "Pcr13"
+          ]
+        },
+        {
+          "description": "PCR 14, or `shim-policy`.",
+          "type": "string",
+          "enum": [
+            "Pcr14"
+          ]
+        },
+        {
+          "description": "PCR 15, or `system-identity`.",
+          "type": "string",
+          "enum": [
+            "Pcr15"
+          ]
+        },
+        {
+          "description": "PCR 16, or `debug`.",
+          "type": "string",
+          "enum": [
+            "Pcr16"
+          ]
+        },
+        {
+          "description": "PCR 17.",
+          "type": "string",
+          "enum": [
+            "Pcr17"
+          ]
+        },
+        {
+          "description": "PCR 18.",
+          "type": "string",
+          "enum": [
+            "Pcr18"
+          ]
+        },
+        {
+          "description": "PCR 19.",
+          "type": "string",
+          "enum": [
+            "Pcr19"
+          ]
+        },
+        {
+          "description": "PCR 20.",
+          "type": "string",
+          "enum": [
+            "Pcr20"
+          ]
+        },
+        {
+          "description": "PCR 21.",
+          "type": "string",
+          "enum": [
+            "Pcr21"
+          ]
+        },
+        {
+          "description": "PCR 22.",
+          "type": "string",
+          "enum": [
+            "Pcr22"
+          ]
+        },
+        {
+          "description": "PCR 23, or `application-support`.",
+          "type": "string",
+          "enum": [
+            "Pcr23"
+          ]
+        }
+      ]
+    },
+    "Raid": {
+      "description": "RAID configuration for a host.",
+      "type": "object",
+      "properties": {
+        "software": {
+          "description": "Individual software RAID configurations.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SoftwareRaidArray"
+          }
+        },
+        "syncTimeout": {
+          "description": "Timeout in seconds to wait for RAID arrays to sync.\n\nBy default, Trident will NOT wait for RAID arrays to finish syncing before continuing on with provisioning. This is because RAID arrays are supposed to be usable immediately after creation. If the user provides a value for this field and the RAID arrays do NOT finish syncing within the specified timeout, Trident will fail the provisioning process and return an error. The user will need to increase their timeout value if the RAID arrays are taking longer to sync than expected.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0,
+          "nullable": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "RaidLevel": {
+      "oneOf": [
+        {
+          "title": "Striping",
+          "type": "string",
+          "enum": [
+            "raid0"
+          ]
+        },
+        {
+          "title": "Mirroring",
+          "type": "string",
+          "enum": [
+            "raid1"
+          ]
+        },
+        {
+          "title": "Striping with parity",
+          "type": "string",
+          "enum": [
+            "raid5"
+          ]
+        },
+        {
+          "title": "Striping with double parity",
+          "type": "string",
+          "enum": [
+            "raid6"
+          ]
+        },
+        {
+          "title": "Stripe of mirrors",
+          "type": "string",
+          "enum": [
+            "raid10"
+          ]
+        }
+      ]
+    },
+    "Script": {
+      "description": "A script that can be run on the host during Trident stages.",
+      "type": "object",
+      "oneOf": [
+        {
+          "description": "Raw contents of the script.",
+          "type": "object",
+          "required": [
+            "content"
+          ],
+          "properties": {
+            "content": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Path to a script in the execution OS.",
+          "type": "object",
+          "required": [
+            "path"
+          ],
+          "properties": {
+            "path": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      ],
+      "required": [
+        "name",
+        "runOn"
+      ],
+      "properties": {
+        "arguments": {
+          "description": "Arguments to pass to the script.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "environmentVariables": {
+          "description": "Environment variables that are needed by the script. These will be set before running the script. UPDATE_KIND and TARGET_ROOT values are set by default to use.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "interpreter": {
+          "description": "Binary to run the script with. The default is `/bin/sh`.",
+          "type": "string",
+          "nullable": true
+        },
+        "name": {
+          "description": "Name of the script.",
+          "type": "string"
+        },
+        "runOn": {
+          "description": "List of servicing types that the script should run on.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ServicingTypeSelection"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Scripts": {
+      "description": "Scripts that can be run on the host during Trident stages. These scripts are run in the order they are defined. Ensure that the scripts are idempotent as they may be run multiple times.",
+      "type": "object",
+      "properties": {
+        "postConfigure": {
+          "description": "Scripts to be run after step 'Configure' in Trident is complete.\n\nThese scripts are run from within a chroot of the target OS. The `$TARGET_ROOT` variable will be set to '/' for consistency with postProvision scripts.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Script"
+          }
+        },
+        "postProvision": {
+          "description": "Scripts to be run after step 'Provision' in Trident is complete.\n\nThese scripts are run with the root filesystem of the target OS mounted at `$TARGET_ROOT` and other partitions specified for the target OS mounted relative to that.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Script"
+          }
+        },
+        "preServicing": {
+          "description": "Scripts to be run before Trident begins servicing the host.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Script"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Selinux": {
+      "description": "Configuration for SELinux mode",
+      "type": "object",
+      "properties": {
+        "mode": {
+          "description": "Override the SELinux mode. When not provided, no changes will be made to the existing configuration.\n\nNote: Trident only supports SELinux and root verity together when running in UKI-mode. Otherwise when using verity, SELinux must not be enabled in the OS image or SELinux should be explicitly set to `disabled`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/SelinuxMode"
+            }
+          ],
+          "nullable": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "SelinuxMode": {
+      "description": "SELinux mode",
+      "oneOf": [
+        {
+          "title": "Disabled",
+          "description": "Set SELinux to disabled. The mode is set by appending `selinux=0` to the kernel command line.",
+          "type": "string",
+          "enum": [
+            "disabled"
+          ]
+        },
+        {
+          "title": "Permissive",
+          "description": "Set SELinux to permissive. The mode is set by appending `selinux=1 enforcing=0` to the kernel command line.",
+          "type": "string",
+          "enum": [
+            "permissive"
+          ]
+        },
+        {
+          "title": "Enforcing",
+          "description": "Set SELinux to enforcing. The mode is set by appending `selinux=1 enforcing=1` to the kernel command line.",
+          "type": "string",
+          "enum": [
+            "enforcing"
+          ]
+        }
+      ]
+    },
+    "Services": {
+      "type": "object",
+      "properties": {
+        "disable": {
+          "description": "List of services to disable.\n\nThe services listed here will *not* be set to automatically run on OS boot.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "enable": {
+          "description": "List of services to enable.\n\nThe services listed here will be set to automatically run on OS boot.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ServicingTypeSelection": {
+      "description": "The selection of servicing types performed by Trident that can be used for any user-facing API. Currently, it is used to allow the user to select when to run a custom Script.",
+      "oneOf": [
+        {
+          "title": "Clean Install",
+          "description": "This selection only includes CleanInstall, a clean install of the target OS image when the host is booted from the provisioning OS.",
+          "type": "string",
+          "enum": [
+            "clean-install"
+          ]
+        },
+        {
+          "title": "Normal Update",
+          "description": "This selection only includes NormalUpdate, an update that requires pausing the workload.",
+          "type": "string",
+          "enum": [
+            "normal-update"
+          ]
+        },
+        {
+          "title": "A/B Update",
+          "description": "This selection only includes AbUpdate, an update that requires switching to a different root partition and rebooting.",
+          "type": "string",
+          "enum": [
+            "ab-update"
+          ]
+        },
+        {
+          "title": "Update and Reboot",
+          "description": "This selection only includes UpdateAndReboot, an update that requires rebooting the host.",
+          "type": "string",
+          "enum": [
+            "update-and-reboot"
+          ]
+        },
+        {
+          "title": "All",
+          "description": "This selection includes all servicing types.",
+          "type": "string",
+          "enum": [
+            "all"
+          ]
+        }
+      ]
+    },
+    "SoftwareRaidArray": {
+      "description": "Software RAID configuration.\n\nThe RAID array will be created using the `mdadm` package. During a clean install, all the existing RAID arrays that are on disks defined in the host configuration will be unmounted, and then stopped.\n\nThe RAID arrays that are defined in the host configuration will be created, and mounted if requested in the `storage.filesystems` config.\n\nTo learn more about RAID, please refer to the [RAID wiki](https://wiki.archlinux.org/title/RAID).\n\nTo learn more about `mdadm`, please refer to the [mdadm guide](https://raid.wiki.kernel.org/index.php/A_guide_to_mdadm).",
+      "type": "object",
+      "required": [
+        "devices",
+        "id",
+        "level",
+        "name"
+      ],
+      "properties": {
+        "devices": {
+          "description": "Devices that will be used for the RAID array.\n\nSee the reference links for picking the right number of devices. Devices are partition IDs from the `disks` section.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "Block Device ID"
+          }
+        },
+        "id": {
+          "description": "A unique identifier for the RAID array.\n\nThis is a user-defined string that links the RAID array to the `filesystems` config in the configuration. The identifier must be unique across devices of all types in the host configuration.",
+          "type": "string",
+          "format": "Block Device ID"
+        },
+        "level": {
+          "description": "RAID level.\n\n`raid1` is supported and tested.\n\nOther possible values yet to be tested are: `raid0`, `raid5`, `raid6`, `raid10`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/RaidLevel"
+            }
+          ]
+        },
+        "name": {
+          "description": "Name of the RAID array.\n\nThis is used to reference the RAID array on the system. For example, `some-raid` will result in `/dev/md/some-raid` on the system.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SshMode": {
+      "oneOf": [
+        {
+          "title": "\\[DEFAULT\\] Blocked",
+          "description": "Disable SSH for this entity.",
+          "type": "string",
+          "enum": [
+            "block"
+          ]
+        },
+        {
+          "title": "Key Only",
+          "description": "Enable SSH for this entity with KEY only.",
+          "type": "string",
+          "enum": [
+            "key-only"
+          ]
+        }
+      ]
+    },
+    "Storage": {
+      "description": "Storage configuration describes the disks of the host that will be used to store the OS and data. Not all disks of the host need to be captured inside the Host Configuration, only those that Trident should operate on.",
+      "type": "object",
+      "properties": {
+        "abUpdate": {
+          "description": "A/B update configuration.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/AbUpdate"
+            }
+          ],
+          "nullable": true
+        },
+        "disks": {
+          "description": "A list of disks that will be used for the host.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Disk"
+          }
+        },
+        "encryption": {
+          "description": "Encryption configuration.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Encryption"
+            }
+          ],
+          "nullable": true
+        },
+        "filesystems": {
+          "description": "Filesystems in this host.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/FileSystem"
+          }
+        },
+        "raid": {
+          "description": "RAID configuration.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Raid"
+            }
+          ]
+        },
+        "swap": {
+          "description": "Swap device configuration.",
+          "type": "array",
+          "oneOf": [
+            {
+              "$ref": "#/definitions/Swap"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/definitions/Swap"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "string_shortcut": "Block Device ID"
+          }
+        },
+        "verity": {
+          "description": "Verity device configuration.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/VerityDevice"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Swap": {
+      "type": "object",
+      "required": [
+        "deviceId"
+      ],
+      "properties": {
+        "deviceId": {
+          "description": "The ID of the block device to use for this swap area.",
+          "type": "string",
+          "format": "Block Device ID"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Trident": {
+      "description": "The Trident Management configuration controls the installation of the Trident agent onto the target OS.",
+      "type": "object",
+      "properties": {
+        "datastorePath": {
+          "description": "Describes where to place the datastore Trident will use to store its state. Defaults to `/var/lib/trident/datastore.sqlite`. Needs to end with `.sqlite`, cannot be an existing file and cannot reside on a read-only filesystem or A/B volume.",
+          "type": "string"
+        },
+        "disable": {
+          "description": "When set to `true`, prevents Trident from being enabled on the target OS. In that case, the remaining fields are ignored.",
+          "default": false,
+          "type": "boolean"
+        },
+        "enableGrpc": {
+          "description": "Whether Trident should start a gRPC server to listen for commands when the target OS boots. Defaults to `false`.",
+          "type": "boolean"
+        },
+        "logstream": {
+          "description": "Optional URL to stream logs to. TODO: document the interface.",
+          "type": "string",
+          "nullable": true
+        },
+        "phonehome": {
+          "description": "URL to reach out to when target OS networking is up, so Trident can report its status. If not specified, the value from the Trident configuration will be used. This is useful for debugging and monitoring purposes, say by an orchestrator.",
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "User": {
+      "description": "Configuration for a specific user.",
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "homeDirectory": {
+          "description": "Home directory for the user.",
+          "type": "string",
+          "nullable": true
+        },
+        "name": {
+          "description": "Username",
+          "type": "string"
+        },
+        "password": {
+          "description": "Password configuration.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Password"
+            }
+          ]
+        },
+        "primaryGroup": {
+          "description": "Primary group to add the user to.",
+          "type": "string",
+          "nullable": true
+        },
+        "secondaryGroups": {
+          "description": "List of secondary groups to add the user to.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sshMode": {
+          "description": "SSH configuration for the user. **(IN DEVELOPMENT)**",
+          "allOf": [
+            {
+              "$ref": "#/definitions/SshMode"
+            }
+          ]
+        },
+        "sshPublicKeys": {
+          "description": "List of SSH keys to add to the user's authorized keys.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "startupCommand": {
+          "description": "Command to be executed at startup, providing a way to run custom scripts or applications on user login.",
+          "type": "string",
+          "nullable": true
+        },
+        "uid": {
+          "description": "Specifies the desired User ID. If not provided, the system will automatically assign a UID.",
+          "type": "integer",
+          "format": "int32",
+          "nullable": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "VerityCorruptionOption": {
+      "description": "Corruption option for verity.",
+      "oneOf": [
+        {
+          "title": "IO-Error",
+          "description": "Fails the I/O operation with an I/O error.",
+          "type": "string",
+          "enum": [
+            "io-error"
+          ]
+        },
+        {
+          "title": "Ignore",
+          "description": "Ignores the corruption and continues operation.",
+          "type": "string",
+          "enum": [
+            "ignore"
+          ]
+        },
+        {
+          "title": "Panic",
+          "description": "Causes the system to panic (print errors) and then try restarting.",
+          "type": "string",
+          "enum": [
+            "panic"
+          ]
+        },
+        {
+          "title": "Restart",
+          "description": "Attempts to restart the system.",
+          "type": "string",
+          "enum": [
+            "restart"
+          ]
+        }
+      ]
+    },
+    "VerityDevice": {
+      "description": "Verity device configuration.",
+      "type": "object",
+      "required": [
+        "dataDeviceId",
+        "hashDeviceId",
+        "id",
+        "name"
+      ],
+      "properties": {
+        "corruptionOption": {
+          "default": "io-error",
+          "allOf": [
+            {
+              "$ref": "#/definitions/VerityCorruptionOption"
+            }
+          ]
+        },
+        "dataDeviceId": {
+          "description": "The ID of the partition to use as the verity data partition.",
+          "type": "string",
+          "format": "Block Device ID"
+        },
+        "hashDeviceId": {
+          "description": "The ID of the partition to use as the verity hash partition.",
+          "type": "string",
+          "format": "Block Device ID"
+        },
+        "id": {
+          "description": "Block device id of the verity device.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Name of the verity device, used for the device mapper name.\n\nThe value must be \"root\" for root partition \"/\".",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

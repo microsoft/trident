@@ -40,8 +40,8 @@ steps:
       set -eux
 
       cmd=(
-        python3 ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/edit_host_config.py \
-          --keypath ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/key \
+        python3 ${{ parameters.tridentSourceDirectory }}/tests/e2e_tests/helpers/edit_host_config.py \
+          --keypath ${{ parameters.tridentSourceDirectory }}/tests/e2e_tests/helpers/key \
           --hostconfig ${{ parameters.tridentConfigPath }}/trident-config.yaml \
           --runtimeEnv ${{ parameters.runtimeEnv }}
       )
@@ -55,7 +55,7 @@ steps:
       # Execute the command
       "${cmd[@]}"
 
-      chmod 600 ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/key
-      ssh-keygen -p -m PEM -f ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/key -N ""
+      chmod 600 ${{ parameters.tridentSourceDirectory }}/tests/e2e_tests/helpers/key
+      ssh-keygen -p -m PEM -f ${{ parameters.tridentSourceDirectory }}/tests/e2e_tests/helpers/key -N ""
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: "Setting keys to ssh for testing"

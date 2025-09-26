@@ -1,0 +1,108 @@
+storage:
+  bootType: efi
+
+  disks:
+    - partitionTableType: gpt
+      maxSize: 4G
+      partitions:
+        - id: esp
+          type: esp
+          start: 1M
+          end: 9M
+
+        - id: rootfs
+          start: 9M
+  filesystems:
+    - deviceId: esp
+      type: fat32
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+
+    - deviceId: rootfs
+      type: ext4
+      mountPoint:
+        path: /
+
+os:
+  bootloader:
+    resetType: hard-reset
+  hostname: trident-mos-testimage
+
+  packages:
+    update:
+      - systemd
+
+    install:
+      - binutils
+      - curl
+      - device-mapper
+      - dnf
+      - dosfstools
+      - efibootmgr
+      - iproute
+      - iptables
+      - lsof
+      - mdadm
+      - netplan
+      # Support for mounting NTFS filesystems
+      - ntfs-3g
+      # Support for creating NTFS filesystems
+      - ntfsprogs
+      - openssh-server
+      - squashfs-tools
+      - tar
+      - tpm2-tools
+      - veritysetup
+      - vim
+      # Support for building SELinux module and debugging
+      - selinux-policy-devel
+      - setools-console
+
+  additionalDirs:
+    # Required for systemd-pcrlock & PCR-based encryption; can be removed once
+    # AZL 4.0 merges a fix to provide statically defined files inside the same
+    # package as the systemd-pcrlock binary, i.e. systemd-udev.
+    - source: "../packaging/static-pcrlock-files/"
+      destination: "/var/lib/pcrlock.d/"
+
+  additionalFiles:
+    - source: files/getty@.service
+      destination: /usr/lib/systemd/system/getty@.service
+    - source: files/serial-getty@.service
+      destination: /usr/lib/systemd/system/serial-getty@.service
+    - source: files/root.profile
+      destination: /root/.profile
+    - source: ../systemd/trident-install.service
+      destination: /usr/lib/systemd/system/trident-install.service
+    - source: files/download-trident.service
+      destination: /usr/lib/systemd/system/download-trident.service
+    - source: ../packaging/selinux-policy-trident/trident.if
+      destination: /usr/share/selinux/packages/trident/trident.if
+    - source: ../packaging/selinux-policy-trident/trident.fc
+      destination: /usr/share/selinux/packages/trident/trident.fc
+    - source: ../packaging/selinux-policy-trident/trident.te
+      destination: /usr/share/selinux/packages/trident/trident.te
+
+  services:
+    enable:
+      - trident-install
+      - download-trident
+
+scripts:
+  postCustomization:
+    - path: post-install.sh
+
+iso:
+  additionalFiles:
+    - source: files/config-placeholder.yaml
+      destination: /trident-config.yaml
+    - source: files/pre-trident-script.sh
+      destination: /pre-trident-script.sh
+  kernelCommandLine:
+    extraCommandLine:
+      - console=tty0
+      - console=ttyS0
+      - rd.luks=0
+      - selinux=1
+      - enforcing=0
