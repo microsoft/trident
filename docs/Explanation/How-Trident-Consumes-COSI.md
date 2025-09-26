@@ -1,6 +1,6 @@
 # How Trident Consumes COSI
 
-Trident uses a Composable Operating System Image ([COSI](../Reference/COSI.md))
+Trident uses a Composable Operating System Image ([COSI](../Reference/Composable-OS-Image.md))
 file to provision the contents of file systems that are not being newly created
 or adopted. The
 [`source`](../Reference/Host-Configuration/API-Reference/FileSystemSource.md) of
@@ -12,7 +12,7 @@ Configuration.
 
 This document explains the process Trident follows to read the COSI metadata and
 stream the partition images to disk. For complete information on the structure
-of a COSI file, please see the [COSI Reference Guide](../Reference/COSI.md).
+of a COSI file, please see the [COSI Reference Guide](../Reference/Composable-OS-Image.md).
 
 ## Reading the COSI Metadata
 

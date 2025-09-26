@@ -3,7 +3,7 @@
 
 ## Introduction
 
-To deploy an operating system, Trident requires [COSI](../Reference/COSI.md) files for both install and update.
+To deploy an operating system, Trident requires [COSI](../Reference/Composable-OS-Image.md) files for both install and update.
 
 This document describes how to create COSI files that support A/B Update for both install and update.
 
