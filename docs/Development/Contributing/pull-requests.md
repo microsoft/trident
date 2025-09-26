@@ -42,8 +42,7 @@ implementation.
 When making a PR you are attempting to merge, make sure that:
 
 - Code is formatted correctly. (`make format`) (See: [Formatting](./formatting.md))
-- Clippy is happy. (`make check`)
-- The build works. (`make check`)
+- The build works and cargo-clippy is happy. (`make check`)
 - API docs are up to date. (`make build-api-docs`)
 - Unit tests pass. (`make test`) (See: [Testing](../Building/testing.md))
 - Functional tests pass. (`make functional-test`)
