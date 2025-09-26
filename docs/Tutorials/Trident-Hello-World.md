@@ -14,7 +14,7 @@ Before we start, you'll need:
    - Follow the [Building a Servicing ISO](./Building-a-Servicing-ISO.md) guide to create your installer
    - **Important**: For this tutorial, we need to modify the ISO creation process to disable automatic installation. This allows us to:
      - Select the specific disk for installation.
-     - Observe the Host Configuration.  
+     - Observe the Host Configuration.
      - Execute the installation ourselves.
    - **Modification required**: In Step 3 of the "Building a Servicing ISO" tutorial, remove the `trident-install.service` from the `services` section in `ic-config.yaml`:
      ```yaml
