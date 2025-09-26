@@ -200,7 +200,6 @@ os:
       - vim
       - systemd-ukify
       - systemd-boot
-      - efibootmgr
       - audit
       - selinux-policy-devel
 
