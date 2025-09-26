@@ -1,51 +1,59 @@
 # Trident Hello World
 
-In this tutorial, we will install Azure Linux on a virtual machine using Trident. Trident is designed to perform clean installs on bare-metal hosts, but for learning/demonstration purposes, a virtual machine can also be used. We'll boot from the [Servicing ISO](./Building-a-Servicing-ISO.md), and use Trident to install and configure Azure Linux.
+In this tutorial, we will install Azure Linux on a machine using Trident. You will see firsthand how Trident transforms a blank virtual machine into a fully configured Azure Linux system in just a few minutes!
 
 ## Introduction
 
-In this tutorial, we will install Azure Linux using Trident. Trident is a declarative OS lifecycle agent. You will see firsthand how Trident transforms a blank virtual machine into a fully configured Azure Linux system in just a few minutes!
+Trident is a declarative OS lifecycle agent. It is designed to perform clean installs on bare-metal hosts, but for learning/demonstration purposes, a virtual machine can also be used. We'll boot from the [Servicing ISO](./Building-a-Servicing-ISO.md), and use Trident to install and configure Azure Linux.
 
 ## Prerequisites
 
 Before we start, you'll need:
 
-1. **Servicing ISO**
-   - Follow the [Building a Servicing ISO](./Building-a-Servicing-ISO.md) guide to create your installer
-   - **Important**: For this tutorial, we need to modify the ISO creation process to disable automatic installation. This allows us to:
-     - Select the specific disk for installation.
-     - Observe the Host Configuration.  
-     - Execute the installation ourselves.
-   - **Modification required**: In Step 3 of the "Building a Servicing ISO" tutorial, remove the `trident-install.service` from the `services` section in `ic-config.yaml`:
-     ```yaml
-     services:
-       enable:
-         - trident-install.service  # <-- Remove this line
-         - trident-network.service
-     ```
-   - This prevents automatically running Trident when the ISO boots, so we can do it ourselves.
-
-2. **A test target system**
+1. **A test target system**
    - Either a physical machine for bare-metal installation, OR
    - A virtual machine for testing (see [Appendix: Virtual Machine Setup](#appendix-virtual-machine-setup))
 
-3. **System resources**
+2. **System resources**
    - At least 16GB of available disk space on the target system
    - 4GB of available RAM
    - Administrative access
 
 ## Instructions
 
-### Step 1: Boot from the Servicing ISO
+### Step 1: BUild a Servicing ISO
+
+#### Building a Servicing ISO Tutorial
+
+Follow the [Building a Servicing ISO](./Building-a-Servicing-ISO.md) guide to create your installer until [Step 3: Create an Image Customizer Configuration](./Building-a-Servicing-ISO.mdd#step-3-create-an-image-customizer-configuration)
+
+#### Image Customizer Configuration
+
+**Modify the Image Customizer Configuration**: Follow [Step 3: Create an Image Customizer Configuration](./Building-a-Servicing-ISO.md#step-3-create-an-image-customizer-configuration), but remove the `trident-install.service` line from the `services` section in `ic-config.yaml`:
+
+    ``` yaml
+    os:
+      services:
+        enable:
+          - trident-install.service # <-- Remove this line
+          - trident-network.service
+    ```
+
+This prevents automatically running Trident when the ISO boots. This allows us to:
+  - Select the specific disk for installation.
+  - Observe the Host Configuration.  
+  - Execute the installation ourselves.
+
+### Step 2: Boot from the Servicing ISO
 
 **Create Servicing ISO**
-Follow the [Building a Servicing ISO](./Building-a-Servicing-ISO.md) tutorial (remember to remove the `trident-install.service` line from the Image Customizer configuration, as described in the Prerequisites) and use the tool of your choice to create bootable media from it.
+Use the tool of your choice to create bootable media from the Servicing ISO.
 
 Insert the bootable media (USB, CD, etc.) into your target system and power it on. Make sure to configure it to boot from the media first or select the media during the subsequent boot using the appropriate key (often F12).
 
 The system will boot into the Azure Linux installer environment.
 
-### Step 2: Access the installer environment
+### Step 3: Access the installer environment
 
 After a few moments, the screen will show:
 
@@ -56,7 +64,7 @@ installer-iso-mos login: root
 
 You're now in the installer environment. Since we removed the automatic installation service when creating the ISO, Trident will not run automatically, allowing us to configure and execute the installation manually.
 
-### Step 3: Configure the installation
+### Step 4: Configure the installation
 
 First, let's see what disk Trident will install to:
 
@@ -84,7 +92,7 @@ trident install
 
 Watch as Trident performs the automated installation process. After 2-3 minutes, you will see the installation completed successfully and the system will reboot automatically.
 
-### Step 4: Boot into Azure Linux
+### Step 5: Boot into Azure Linux
 
 After the reboot, we'll see the GRUB bootloader, then Azure Linux starting up.
 The installation is complete when you see the login prompt.
