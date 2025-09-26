@@ -203,3 +203,92 @@ docker run \
         --output-image-file "/staging/out/image.cosi"
 popd
 ```
+
+### Step 5: Trident Host Configuration
+
+Create a Trident host configuration file that aligns to the Image Customizer COSI that was created in step 4. The esp, root, root-hash, and var partitions/filesystems should reflect what was specified in the Image Customizer configuration.
+
+Some things to note in the host configuration below:
+
+* Define [A/B volume pairs](../Reference/Glossary.md#ab-volume-pair) for `root-data` and `root-hash`
+* Define an [`abUpdate`](../Reference/Host-Configuration/API-Reference/AbUpdate.md) section for `root-data` and `root-hash`:
+* Define [verity](../Reference/Host-Configuration/API-Reference/VerityDevice.md) section to connect root data and hash:
+
+The remainder of the Trident host configuration file describes things like where to find the COSI file (can be a local path, an HTTP url, or an OCI url) and what the disk device path is (in this case, /dev/sda):
+
+``` bash
+image:
+  url: image.cosi
+  sha384: ignored
+storage:
+  disks:
+    - id: os
+      device: /dev/sda
+      partitionTableType: gpt
+      partitions:
+        - id: esp
+          type: esp
+          size: 1G
+        - id: boot
+          type: xbootldr
+          size: 200M
+        - id: root-data-a
+          type: root
+          size: 4G
+        - id: root-data-b
+          type: root
+          size: 4G
+        - id: root-hash-a
+          type: root-verity
+          size: 1G
+        - id: root-hash-b
+          type: root-verity
+          size: 1G
+        - id: var
+          type: linux-generic
+          size: 1G
+
+  abUpdate:
+    volumePairs:
+      - id: root-data
+        volumeAId: root-data-a
+        volumeBId: root-data-b
+      - id: root-hash
+        volumeAId: root-hash-a
+        volumeBId: root-hash-b
+
+  verity:
+    - id: root
+      name: root
+      dataDeviceId: root-data
+      hashDeviceId: root-hash
+
+  filesystems:
+    - deviceId: esp
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+    - deviceId: boot
+      mountPoint: /boot
+    - deviceId: var
+      mountPoint: /var
+    - deviceId: root
+      mountPoint:
+        path: /
+        options: defaults,ro
+
+os:
+  selinux:
+    mode: enforcing
+  netplan:
+    version: 2
+    ethernets:
+      vmeths:
+        match:
+          name: enp*
+        dhcp4: true
+```
+
+## Troubleshooting
+
+With root-verity, configurations can be difficult as the configuration files are often on the root partition.  In the future, this section will be expanded to include learnings and hints for how to navigate these challenges.
