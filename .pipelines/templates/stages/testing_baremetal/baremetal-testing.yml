@@ -97,7 +97,7 @@ stages:
             value: $(Build.SourcesDirectory)
 
           - name: TRIDENT_CONFIG_PATH
-            value: $(TRIDENT_SOURCE_DIR)/e2e_tests/trident_configurations/$(TRIDENT_CONFIGURATION_NAME)
+            value: $(TRIDENT_SOURCE_DIR)/tests/e2e_tests/trident_configurations/$(TRIDENT_CONFIGURATION_NAME)
 
           - name: TRIDENT_CONFIG_FILE
             value: $(TRIDENT_CONFIG_PATH)/trident-config.yaml
@@ -348,7 +348,7 @@ stages:
           - bash: |
               set -eux
               ./bin/storm-trident helper check-selinux \
-                  "$(Build.SourcesDirectory)/e2e_tests/helpers/key" \
+                  "$(Build.SourcesDirectory)/tests/e2e_tests/helpers/key" \
                   "${{ variables.BAREMETAL_OAM_IP }}" \
                   "testing-user" \
                   "${{ parameters.runtimeEnv }}" \
@@ -360,7 +360,7 @@ stages:
           - bash: |
               set -eux
               ./bin/storm-trident helper boot-metrics \
-                  "$(Build.SourcesDirectory)/e2e_tests/helpers/key" \
+                  "$(Build.SourcesDirectory)/tests/e2e_tests/helpers/key" \
                   "${{ variables.BAREMETAL_OAM_IP }}" \
                   "testing-user" \
                   "${{ parameters.runtimeEnv }}" \

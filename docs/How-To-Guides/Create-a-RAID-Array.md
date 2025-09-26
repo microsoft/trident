@@ -1,7 +1,7 @@
 
 # Create a RAID Array
 
-This guide explains how to create a new [software RAID array](../Reference/Host-Configuration/API-Reference/SoftwareRaidArray.md) on [clean install](../Reference/Glossary.md/#clean-install) with Trident, using the Host Configuration API.
+This guide explains how to create a new [software RAID array](../Reference/Host-Configuration/API-Reference/SoftwareRaidArray.md) on [clean install](../Reference/Glossary.md#clean-install) with Trident, using the Host Configuration API.
 
 ## Goals
 

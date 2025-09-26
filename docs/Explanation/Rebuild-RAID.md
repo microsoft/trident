@@ -62,8 +62,9 @@ This is a step-by-step explanation of how RAID-rebuild works, using RAID 1
 
 **Note**: Trident does not handle Steps 1 and 2; these must be performed by the user.
 
-Please refer to [Trident Rebuild RAID](../How-To-Guides/Rebuild-RAID-Array.md)
-for more details on how to run Trident Rebuild-RAID.
+Please refer to [Rebuild RAID Array](../How-To-Guides/Rebuild-RAID-Array.md) for
+more details on how to run
+[`trident rebuild-raid`](../Reference/Trident-CLI.md#rebuild-raid).
 
 ### What Is Trident Doing Internally
 
@@ -153,7 +154,7 @@ storage:
         options: umask=0077
 ```
 
-In the sample host configuration above, a Trident rebuild RAID operation can be
+In the sample host configuration above, `trident rebuild-raid` can be
 initiated if **disk2** fails and is replaced with a new disk. Using the RAID
 rebuild feature, the new disk can be reconstructed if recoverable copies of the
 RAID partitions are available on other disks. In this configuration, we see that
@@ -163,7 +164,7 @@ disk because mirrored copies (`root-a1` and `root-a2`) are present on disk1.
 Additionally, disk2 contains an unformatted partition named `raw-part`, and we
 support initiating a rebuild if unformatted partitions are present. However, we
 can only restore data on RAID-ed partitions but not on the unformatted
-partitions using the Trident rebuild RAID feature.
+partitions using `trident rebuild-raid`.
 
 **Note**: When disk2 is replaced, the new disk should be a similar device. In
 the above example, the new disk should have the device attribute

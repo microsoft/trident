@@ -1,7 +1,7 @@
 parameters:
   - name: sshKeyPath
     type: string
-    default: $(Build.SourcesDirectory)/e2e_tests/helpers/key
+    default: $(Build.SourcesDirectory)/tests/e2e_tests/helpers/key
 
   - name: userName
     type: string
@@ -59,7 +59,7 @@ steps:
           ssh -o StrictHostKeyChecking=no -i ${{ parameters.sshKeyPath }} ${{ parameters.userName }}@${{ parameters.hostIp }} "sudo dd if=/dev/zero of=/dev/sdb bs=512 count=1"
           ssh -o StrictHostKeyChecking=no -i ${{ parameters.sshKeyPath }} ${{ parameters.userName }}@${{ parameters.hostIp }} "echo 'label: gpt' | sudo sfdisk /dev/sdb --force"
           # Fail the RAID devices
-          python3 $(Build.SourcesDirectory)/e2e_tests/helpers/fail_raid_devices.py \
+          python3 $(Build.SourcesDirectory)/tests/e2e_tests/helpers/fail_raid_devices.py \
               --ip-address ${{ parameters.hostIp }} \
               --user-name ${{ parameters.userName }} \
               --keys-file-path ${{ parameters.sshKeyPath }} 
@@ -125,7 +125,7 @@ steps:
           echo "VM serial log:"
 
           # Execute wait_for_login.py to retrieve the serial log
-          sudo $(tridentSourceDirectory)/e2e_tests/helpers/wait_for_login.py \
+          sudo $(tridentSourceDirectory)/tests/e2e_tests/helpers/wait_for_login.py \
               -d "$VM_SERIAL_LOG" \
               -o ./serial.log \
               -t 500 \
@@ -152,7 +152,7 @@ steps:
       set -eu
       echo "Running script to rebuild RAID arrays with Trident..."
       tridentRebuildRaidConfigFile="/var/lib/trident/config.yaml"
-      python3 $(Build.SourcesDirectory)/e2e_tests/helpers/rebuild_raid.py \
+      python3 $(Build.SourcesDirectory)/tests/e2e_tests/helpers/rebuild_raid.py \
           --ip-address ${{ parameters.hostIp }} \
           --user-name ${{ parameters.userName }} \
           --keys-file-path ${{ parameters.sshKeyPath }} \

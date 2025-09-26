@@ -44,7 +44,7 @@ steps:
         echo "Metrics file exists and is not empty."
 
         # Run the Python script to process the metrics
-        python3 ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/process_trident_metrics.py \
+        python3 ${{ parameters.tridentSourceDirectory }}/tests/e2e_tests/helpers/process_trident_metrics.py \
           --trident-config ${{ parameters.tridentConfigPath }}/trident-config.yaml \
           --metrics-file ${{ parameters.metricsFile }}
         
