@@ -1,13 +1,11 @@
 
-# Set Up Root Verity
+# Set Up Usr Verity
 
 ## Goals
 
-Configuring [root-verity](../Explanation/Root-Verity.md) offers good protection against modification of the root (`/`) partition.
+Configuring [usr-verity](../Explanation/Usr-Verity.md) offers good protection against modification of the root (`/usr`) partition.
 
-> Note: An alternative (both cannot be configured) is to instead configure [usr-verity](../Explanation/Usr-Verity.md) to protect against modification of the usr (`/usr`) partition.
-
-The goal of this document is to enable you to create a [COSI](../Reference/COSI.md) file that sets up root-verity.
+The goal of this document is to enable you to create a [COSI](../Reference/COSI.md) file that sets up usr-verity.
 
 ## Prerequisites
 
@@ -55,16 +53,16 @@ cp -r bin/RPMS $HOME/staging
 
 ### Step 3: Create Image Customizer Configuration
 
-To create a root-verity volume, there are a few Image Customization configuration sections that are important.
+To create a usr-verity volume, there are a few Image Customization configuration sections that are important.
 
-In addition to the typical `root` partition definition, a `root-hash` partition is needed like this:
+In addition to the typical `usr` partition definition, a `usr-hash` partition is needed like this:
 
 ``` yaml
 storage:
   disks:
   - partitionTableType: gpt
     partitions:
-    - label: root-hash
+    - label: usr-hash
       id: verityhash
       size: 128M
 ```
@@ -73,10 +71,10 @@ The [Image Customizer verity section](https://microsoft.github.io/azure-linux-im
 
 ``` yaml
 verity:
-  - id: rootverity
-    name: root
-    dataDeviceId: root-data
-    hashDeviceId: root-hash
+  - id: usrverity
+    name: usr
+    dataDeviceId: usr-data
+    hashDeviceId: usr-hash
     dataDeviceMountIdType: part-label
     hashDeviceMountIdType: part-label
 ```
@@ -96,24 +94,25 @@ storage:
     - id: boot
       size: 1G
 
-    - label: root-data
+    - label: root
       id: root
       size: 2G
 
-    - label: root-hash
-      id: verityhash
-      size: 128M
+    - id: usr-data
+      label: usr
+      size: 1G
 
-    - id: var
-      size: grow
+    - id: usr-hash
+      label: usr-hash
+      size: 128M
 
   bootType: efi
 
   verity:
-  - id: rootverity
-    name: root
-    dataDeviceId: root-data
-    hashDeviceId: root-hash
+  - id: usrverity
+    name: usr
+    dataDeviceId: usr-data
+    hashDeviceId: usr-hash
     dataDeviceMountIdType: part-label
     hashDeviceMountIdType: part-label
 
@@ -129,16 +128,16 @@ storage:
     mountPoint:
       path: /boot
 
-  - deviceId: rootverity
+  - deviceId: root
     type: ext4
     mountPoint:
       path: /
-      options: defaults,ro
 
-  - deviceId: var
+  - deviceId: usr
     type: ext4
     mountPoint:
-      path: /var
+      path: /usr
+      options: defaults,ro
 
 os:
   bootloader:
@@ -206,17 +205,17 @@ popd
 
 ### Step 5: Trident Host Configuration
 
-Create a Trident host configuration file that aligns to the Image Customizer COSI that was created in step 4. The esp, root, root-hash, and var partitions/filesystems should reflect what was specified in the Image Customizer configuration.
+Create a Trident host configuration file that aligns to the Image Customizer COSI that was created in step 4. The esp, boot, root, usr, and usr-hash partitions/filesystems should reflect what was specified in the Image Customizer configuration.
 
 Some things to note in the host configuration below:
 
-* Define [A/B volume pairs](../Reference/Glossary.md#ab-volume-pair) for `root-data` and `root-hash`
-* Define an [`abUpdate`](../Reference/Host-Configuration/API-Reference/AbUpdate.md) section for `root-data` and `root-hash`:
-* Define [verity](../Reference/Host-Configuration/API-Reference/VerityDevice.md) section to connect root data and hash:
+* Define [A/B volume pairs](../Reference/Glossary.md#ab-volume-pair) for `usr-data` and `usr-hash`
+* Define an [`abUpdate`](../Reference/Host-Configuration/API-Reference/AbUpdate.md) section for `usr-data` and `usr-hash`:
+* Define [verity](../Reference/Host-Configuration/API-Reference/VerityDevice.md) section to connect `usr` data and hash:
 
 The remainder of the Trident host configuration file describes things like where to find the COSI file (can be a local path, an HTTP url, or an OCI url) and what the disk device path is (in this case, /dev/sda):
 
-```yaml
+``` bash
 image:
   url: image.cosi
   sha384: ignored
@@ -232,36 +231,39 @@ storage:
         - id: boot
           type: xbootldr
           size: 200M
-        - id: root-data-a
+        - id: root
           type: root
-          size: 4G
-        - id: root-data-b
-          type: root
-          size: 4G
-        - id: root-hash-a
-          type: root-verity
+          size: 5G
+        - id: usr-data-a
+          type: usr
+          size: 5G
+        - id: usr-data-b
+          type: usr
+          size: 5G
+        - id: usr-hash-a
+          type: usr-verity
           size: 1G
-        - id: root-hash-b
-          type: root-verity
+        - id: usr-hash-b
+          type: usr-verity
           size: 1G
-        - id: var
+        - id: trident
           type: linux-generic
           size: 1G
 
   abUpdate:
     volumePairs:
-      - id: root-data
-        volumeAId: root-data-a
-        volumeBId: root-data-b
-      - id: root-hash
-        volumeAId: root-hash-a
-        volumeBId: root-hash-b
+      - id: usr-data
+        volumeAId: usr-data-a
+        volumeBId: usr-data-b
+      - id: usr-hash
+        volumeAId: usr-hash-a
+        volumeBId: usr-hash-b
 
   verity:
-    - id: root
-      name: root
-      dataDeviceId: root-data
-      hashDeviceId: root-hash
+    - id: usr
+      name: usr
+      dataDeviceId: usr-data
+      hashDeviceId: usr-hash
 
   filesystems:
     - deviceId: esp
@@ -270,12 +272,15 @@ storage:
         options: umask=0077
     - deviceId: boot
       mountPoint: /boot
-    - deviceId: var
-      mountPoint: /var
     - deviceId: root
+      mountPoint: /
+    - deviceId: usr
       mountPoint:
-        path: /
-        options: defaults,ro
+        path: /usr
+        options: ro
+    - deviceId: trident
+      source: new
+      mountPoint: /var/lib/trident
 
 os:
   selinux:
@@ -289,6 +294,3 @@ os:
         dhcp4: true
 ```
 
-## Troubleshooting
-
-With root-verity, configurations can be difficult as the configuration files are often on the root partition.  In the future, this section will be expanded to include learnings and hints for how to navigate these challenges.
