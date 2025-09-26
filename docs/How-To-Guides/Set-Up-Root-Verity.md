@@ -5,7 +5,7 @@
 
 Configuring [root-verity](../Explanation/Root-Verity.md) offers good protection against modification of the root (`/`) partition.
 
-> Note: Another option is configuring [usr-verity](../Explanation/Usr-Verity.md) for protection against modification of the usr (`/usr`) partition.
+> Note: An alternative (both cannot be configured) is to instead configure [usr-verity](../Explanation/Usr-Verity.md) to protect against modification of the usr (`/usr`) partition.
 
 The goal of this document is to enable you to create a [COSI](../Reference/COSI.md) file that sets up root-verity.
 
