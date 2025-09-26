@@ -32,7 +32,7 @@ parameters:
     displayName: OSModifier build type to download from osmodifier pipelines
     type: string
     values:
-      - main
+      - dev
       - preview
     default: preview
 

@@ -3,7 +3,7 @@ parameters:
     displayName: OSModifier build type to download from osmodifier pipelines
     type: string
     values:
-      - main
+      - dev
       - preview
     default: preview
 
@@ -18,12 +18,12 @@ parameters:
       - arm64
 
   - name: osModifierBranch
-    displayName: OSModifier branch to build from (if not main)
+    displayName: OSModifier branch to build from (for dev build type)
     type: string
     default: "main"
 
 steps:
-  - ${{ if ne(parameters.osModifierBranch, 'main') }}:
+  - ${{ if eq(parameters.osModifierBuildType, 'dev') }}:
     - bash: |
         set -ex
         rm -rf azure-linux-image-tools
@@ -35,34 +35,15 @@ steps:
       workingDirectory: $(Build.SourcesDirectory)
       retryCountOnTaskFailure: 3
 
-  - ${{ if eq(parameters.osModifierBuildType, 'main') }}:
-    - task: DownloadPipelineArtifact@2
-      displayName: "Download OSModifier artifact (main - latest)"
-      inputs:
-        buildType: "specific"
-        project: "polar"
-        definition: "5139"
-        buildVersionToDownload: "latestFromBranch"
-        branchName: "refs/heads/user/elaine/add-emu-pipeline"
-        artifactName: "osmodifier_${{ parameters.targetArchitecture }}"
-        targetPath: "$(Build.SourcesDirectory)/artifacts"
-
-  - ${{ if and(eq(parameters.osModifierBuildType, 'preview'), eq(parameters.targetArchitecture, 'arm64')) }}:
+  - ${{ if eq(parameters.osModifierBuildType, 'preview') }}:
     - task: UniversalPackages@0
       displayName: "Download OSModifier (preview - pinned version for arm64)"
       inputs:
         command: download
         vstsFeed: polar/PolarCoreArtifacts
-        vstsFeedPackage: osmodifier_arm64_preview
-        vstsPackageVersion: ${{ parameters.osModifierVersion }}
-        downloadDirectory: "$(Build.SourcesDirectory)/artifacts"
-
-  - ${{ if and(eq(parameters.osModifierBuildType, 'preview'), ne(parameters.targetArchitecture, 'arm64')) }}:
-    - task: UniversalPackages@0
-      displayName: "Download OSModifier (preview - pinned version for amd64)"
-      inputs:
-        command: download
-        vstsFeed: polar/PolarCoreArtifacts
-        vstsFeedPackage: osmodifier_preview
+        ${{ if eq(parameters.targetArchitecture, 'amd64') }}:
+          vstsFeedPackage: osmodifier_preview
+        ${{ if eq(parameters.targetArchitecture, 'arm64') }}:
+          vstsFeedPackage: osmodifier_arm64_preview
         vstsPackageVersion: ${{ parameters.osModifierVersion }}
         downloadDirectory: "$(Build.SourcesDirectory)/artifacts"

@@ -29,7 +29,7 @@ stages:
           - template: ../common_tasks/avoid-pypi-usage.yml
           - template: ../common_tasks/download-osmodifier.yml
             parameters:
-              osModifierBuildType: main
+              osModifierBuildType: dev
               osModifierBranch: ${{ parameters.osModifierBranch }}
               targetArchitecture: amd64
 

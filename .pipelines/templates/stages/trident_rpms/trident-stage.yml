@@ -49,7 +49,7 @@ stages:
           targetArchitecture: ${{ parameters.targetArchitecture }}
           # trident-cicd-for-prism should run against the lastest main build of osmodifier.
           ${{ if eq(parameters.stageType, 'ci') }}:
-            osModifierBuildType: main
+            osModifierBuildType: dev
           ${{ else }}:
             osModifierBuildType: preview
 
