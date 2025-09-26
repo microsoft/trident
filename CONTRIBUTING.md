@@ -1,7 +1,7 @@
 # Trident Contribution Guide
 
 For detailed information about contributing to this project please read the
-[contributing guide](./docs/Development/Contributing/contribuiting-guidelines.md).
+[contributing guide](./docs/Development/Contributing/contributing-guidelines.md).
 
 ## Contributing License Agreement
 
