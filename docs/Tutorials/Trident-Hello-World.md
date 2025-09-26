@@ -89,8 +89,6 @@ Watch as Trident performs the automated installation process. After 2-3 minutes,
 After the reboot, we'll see the GRUB bootloader, then Azure Linux starting up.
 The installation is complete when you see the login prompt.
 
-We now have Azure Linux running!!!
-
 **We have successfully created a complete Azure Linux system using Trident!**
 Now you can explore your new Azure Linux system.
 
