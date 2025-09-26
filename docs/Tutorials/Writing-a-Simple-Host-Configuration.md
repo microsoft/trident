@@ -32,9 +32,9 @@ Trident where to source the COSI file from. For a complete description of this
 section, please reference the [API
 documentation](../Reference/Host-Configuration/API-Reference/OsImage.md).
 
-Additionally, to learn more about COSI files, please see its [Reference
-page](../Reference/COSI.md). You can also learn how to create a COSI file in
-this tutorial on
+Additionally, to learn more about COSI files, please see its
+[Reference page](../Reference/Composable-OS-Image.md).
+You can also learn how to create a COSI file in this tutorial on
 [Building A/B Update Images for Install and Update](./Building-AB-Update-Images-for-Install-and-Update.md).
 
 The `image` section requires a `url`, where the COSI file is actually located or

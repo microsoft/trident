@@ -3,7 +3,10 @@
 
 ## Goals
 
-To deploy an operating system, Trident requires [COSI](../Reference/COSI.md) files. This document describes how to create a COSI file with [Image Customizer](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/README.html).
+To deploy an operating system, Trident requires
+[COSI](../Reference/Composable-OS-Image.md) files. This document describes how
+to create a COSI file with
+[Image Customizer](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/README.html).
 
 ## Prerequisites
 

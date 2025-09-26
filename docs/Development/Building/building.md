@@ -68,7 +68,7 @@ git clone https://github.com/microsoft/azure-linux-image-tools.git
 
 # Build osmodifier inside an Azure Linux 3 container
 docker build -t trident/osmodifier-build:latest \
-    -f Dockerfile-osmodifier.azl3 \
+    -f packaging/docker/Dockerfile-osmodifier.azl3 \
     .
 mkdir -p artifacts
 ID=$(docker create trident/osmodifier-build:latest)
