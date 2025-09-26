@@ -44,7 +44,7 @@ will be able to successfully read the COSI file.
 
 ### Known Incompatible Servers for Hosting COSI Files
 
-- Python3 `http.server`
+- Python3 `http.server` does not currently support HTTP Range Requests
 
 ## Reading the COSI Metadata
 
