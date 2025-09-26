@@ -1,8 +1,8 @@
 {
-    "label": "Tutorials",
+    "label": "Building",
     "position": 2,
     "link": {
         "type": "generated-index",
-        "description": "Tutorials for Trident."
+        "description": "Building Trident."
     }
 }

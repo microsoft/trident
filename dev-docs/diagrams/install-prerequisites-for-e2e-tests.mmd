@@ -1,8 +1,0 @@
-graph TD
-A[Call to trident-prep.yml] --> O{updateRuntimeOSTrident}
-subgraph trident-prep.yml
-    O --> |updateRuntimeOSTrident == true|B[Set host-configuration.management.self-upgrade = true in trident-config.yaml]
-    B --> C[Setting keys to SSH for E2E tests]
-end
-O --> |updateRuntimeOSTrident == false|C
-C --> D[end]
