@@ -4,7 +4,7 @@ In this tutorial, we will install Azure Linux on a machine using Trident. You wi
 
 ## Introduction
 
-Trident is a declarative OS lifecycle agent. It is designed to perform clean installs on bare-metal hosts, but for learning/demonstration purposes, a virtual machine can also be used. We'll boot from the [Servicing ISO](./Building-a-Servicing-ISO.md), and use Trident to install and configure Azure Linux.
+Trident is a declarative OS lifecycle agent. It is designed to perform clean installs on bare-metal hosts, but for learning/demonstration purposes, a virtual machine can also be used. We'll boot from the `Servicing ISO`, and use Trident to install and configure Azure Linux.
 
 ## Prerequisites
 
