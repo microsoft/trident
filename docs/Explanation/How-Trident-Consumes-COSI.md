@@ -38,9 +38,9 @@ the integrity of the COSI file.
 ## Streaming and Verifying Images
 
 The COSI metadata contains information that allows Trident to seek the exact
-location of each partition image in the COSI file. Paired witht the information
-on from the Host Configuration, Trident is able to write each partition image
-directly to the appropriate block device patch on disk. As Trident streams an
+location of each partition image in the COSI file. Paired with the information
+from the Host Configuration, Trident is able to write each partition image
+directly to the appropriate block device path on disk. As Trident streams an
 image to its destination partition, it performs a critical integrity check. The
 COSI metadata contains a SHA384 hash for each image file. Trident calculates the
 hash of the image as it is being written and, upon completion, verifies it
