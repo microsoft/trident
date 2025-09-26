@@ -24,10 +24,6 @@ parameters:
       - amd64
       - arm64
 
-  - name: osModifierVersion
-    type: string
-    default: "1.1.0-preview.937762"
-
   - name: osModifierBuildType
     displayName: OSModifier build type to download from osmodifier pipelines
     type: string
@@ -96,7 +92,6 @@ stages:
           - template: ../common_tasks/cargo-auth.yml
           - template: ../common_tasks/download-osmodifier.yml
             parameters:
-              osModifierVersion: ${{ parameters.osModifierVersion }}
               targetArchitecture: ${{ parameters.targetArchitecture }}
               osModifierBranch: ${{ parameters.osModifierBranch }}
               osModifierBuildType: ${{ parameters.osModifierBuildType }}
@@ -133,7 +128,6 @@ stages:
             displayName: Start Docker
           - template: ../common_tasks/download-osmodifier.yml
             parameters:
-              osModifierVersion: ${{ parameters.osModifierVersion }}
               targetArchitecture: ${{ parameters.targetArchitecture }}
               osModifierBranch: ${{ parameters.osModifierBranch }}
               osModifierBuildType: ${{ parameters.osModifierBuildType }}
