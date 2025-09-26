@@ -1,6 +1,10 @@
-# Functional Tests Explanation
+---
+sidebar_position: 5
+---
 
-Functional testing is a pytest test suite (rooted in `functional_tests/`) for
+# Functional Tests
+
+Functional testing is a `pytest` test suite (rooted in `functional_tests/`) for
 tests that are meant to be run in an isolated environment. Functional testing is
 comprised of:
 
@@ -12,29 +16,20 @@ They are used to test:
 - Functionality that cannot work in isolation and depends on external resources
   (e.g. binaries on the system)
 - The more dangerous parts of the codebase, generally things you wouldn't want
-  to test in your development environment (e.g. operations that require root
-  access).
+  to test in your development environment such as:
+  - Operations that require root access.
+  - Operations that manipulate disks, RAID arrays, mounts, filesystems, etc.
+  - Operations that modify the OS in any way.
 
 This document aims to explain the architecture of how functional tests work, and
 how they are implemented.
-
-- [Functional Tests Explanation](#functional-tests-explanation)
-  - [Native Python Tests](#native-python-tests)
-  - [Rust-Based Tests](#rust-based-tests)
-    - [Conditional Compilation](#conditional-compilation)
-    - [Test Case Definition](#test-case-definition)
-    - [Inventory Collection](#inventory-collection)
-    - [Rust-Pytest Interface](#rust-pytest-interface)
-      - [Rust Export to JSON](#rust-export-to-json)
-      - [Pytest Collection from JSON](#pytest-collection-from-json)
-  - [Isolated Environment Creation](#isolated-environment-creation)
 
 ## Native Python Tests
 
 Native Python tests are pytest tests that are written in Python. They live in
 python files in the `functional_tests/custom` directory.
 
-Generally, these leverage the `vm` fixture, which is a Mariner VM that has been
+Generally, these leverage the `vm` fixture, which is an Azure Linux VM that has been
 created using `virt-deploy` and `netlaunch`. The `vm` fixture is defined in
 `conftest.py`.
 
@@ -238,8 +233,5 @@ test case inside of the VM.
 
 ## Isolated Environment Creation
 
-The functional test pytest suite defines the `vm` fixture, whose setup includes
-calls to `virt-deploy` and netlaunch to create a Mariner VM ready to receive SSH
-connections.
-
-The OS is provisioned using `functional_tests/trident-setup.yaml`.
+The functional test pytest suite defines the `vm` fixture. This VM is created
+using `virt-deploy` with a prebuilt Azure Linux 3 image.

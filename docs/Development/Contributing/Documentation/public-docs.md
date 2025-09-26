@@ -1,16 +1,6 @@
 # Trident Public Documentation Standards
 
-- [Trident Public Documentation Standards](#trident-public-documentation-standards)
-  - [General Structure](#general-structure)
-  - [Formatting](#formatting)
-    - [Resources](#resources)
-    - [Diagrams](#diagrams)
-    - [Internal Links](#internal-links)
-  - [Document Structure](#document-structure)
-    - [Tutorial Structure](#tutorial-structure)
-    - [How-To Guides Structure](#how-to-guides-structure)
-    - [Explanation Structure](#explanation-structure)
-    - [Reference Structure](#reference-structure)
+Standards and conventions for writing public documentation for Trident.
 
 ## General Structure
 
@@ -38,7 +28,12 @@ As such, docs exist in the following directories:
 - `/docs/Explanation`
 - `/docs/Reference`
 
-<div style="border: 2px solid #cc0000; padding: 10px; margin: 20px 0;">❗ I strongly suggest giving the <a href="https://diataxis.fr/start-here/">diataxis summary</a> a read! :)</div>
+:::warning NOTICE
+
+It is strongly suggested to read the
+[diataxis summary available here](https://diataxis.fr/start-here/).
+
+:::
 
 ## Formatting
 
@@ -89,7 +84,7 @@ documents.
 
 Recommended reading: [Diátaxis Tutorials](https://diataxis.fr/tutorials/)
 
-[TEMPLATE](public-doc-templates/tutorial-template.md)
+[TEMPLATE](tutorial-template.md)
 
 Tutorials as introductory guides for users to learn the basics of working with
 Trident. As such, they should have very little jargon, prerequisites, or
@@ -123,7 +118,7 @@ The following structure is recommended:
 
 Recommended reading: [Diátaxis How-To Guides](https://diataxis.fr/how-to-guides/)
 
-[TEMPLATE](public-doc-templates/how-to-guide-template.md)
+[TEMPLATE](how-to-guide-template.md)
 
 How-to guides are more advanced than tutorials and are intended for users who
 are already familiar with Trident and want to learn how to perform specific

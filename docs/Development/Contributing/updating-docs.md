@@ -1,4 +1,4 @@
-# Updating Documentation
+# Auto-generated Documentation
 
 After any change to `trident_api`, the documentation needs to be regenerated. Run:
 

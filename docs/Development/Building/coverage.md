@@ -1,3 +1,7 @@
+---
+sidebar_position: 4
+---
+
 # Code Coverage
 
 Measuring unit test coverage.

@@ -1,3 +1,6 @@
+# How-To Guide Template
+
+```markdown
 # >TITLE GOES HERE<
 
 <!-- (DELETE) YOU MAY ADD A SUBTITLE HERE -->
@@ -46,3 +49,4 @@
 <!-- (DELETE) A section that provides troubleshooting tips and common
     pitfalls to avoid. This may include links to related documentation or
     resources for further learning.-->
+```

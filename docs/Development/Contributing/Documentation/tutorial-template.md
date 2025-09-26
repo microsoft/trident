@@ -1,3 +1,6 @@
+# Tutorial Template
+
+```markdown
 # >TITLE GOES HERE<
 
 <!-- (DELETE) YOU MAY ADD A SUBTITLE HERE -->
@@ -47,3 +50,4 @@
 <!-- (DELETE) A summary of what the user has learned and any next steps
     they can take. This may include links to related tutorials, documentation,
     or resources for further learning.-->
+```

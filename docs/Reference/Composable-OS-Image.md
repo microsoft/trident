@@ -1,10 +1,15 @@
+---
+sidebar_position: 6
+title: COSI Spec
+---
+
 # Composable Operating System Image (COSI) Specification
 
 ## Revision Summary
 
 | Revision            | Spec Date  |
 | ------------------- | ---------- |
-| [1.1](#revision-11) | TBD        |
+| [1.1](#revision-11) | 2025-05-08 |
 | [1.0](#revision-10) | 2024-10-09 |
 
 ## Table of Contents
