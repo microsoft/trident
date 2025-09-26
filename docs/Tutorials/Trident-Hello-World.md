@@ -1,6 +1,6 @@
 # Trident Hello World
 
-In this tutorial, we will install Azure Linux on a virtual machine using Trident. We'll create a virtual machine, boot from a [Provisioning ISO](./Building-a-Provisioning-ISO.md), and install Azure Linux using Trident.
+In this tutorial, we will install Azure Linux on a virtual machine using Trident. Trident is designed to perform clean installs on bare metal hosts, but for demonstration purposes, a virtual machine can also be used. We'll boot from the [Provisioning ISO](./Building-a-Provisioning-ISO.md), and use Trident to install and configure Azure Linux.
 
 ## Introduction
 
@@ -10,32 +10,108 @@ We will create a complete Azure Linux system using Trident. You will see how Tri
 
 Before we start, you'll need:
 
-1. **A Trident Provisioning ISO**
-   - Follow the [Building a Provisioning ISO](./Building-a-Provisioning-ISO.md) guide to create your installer.
+1. **Provisioning ISO**
+   - Follow the [Building a Provisioning ISO](./Building-a-Provisioning-ISO.md) guide to create your installer
 
-2. **Choose one virtualization platform:**
-   - **Linux system** with libvirt/KVM support, OR  
-   - **Windows system** with Hyper-V enabled
+2. **A test target system**
+   - Either a physical machine for bare-metal installation, OR
+   - A virtual machine for testing (see [Appendix: Virtual Machine Setup](#appendix-virtual-machine-setup))
 
 3. **System resources**
-   1. At least 16GB of available disk space.
-   2. 4GB of available RAM.
-   3. Administrative access (sudo on Linux).
+   - At least 16GB of available disk space on the target system
+   - 4GB of available RAM
+   - Administrative access
 
 ## Instructions
 
-Choose the section that matches your system:
+### Step 1: Boot from the Provisioning ISO
 
-- **Linux with libvirt/KVM** - Follow Section A
-- **Windows with Hyper-V** - Follow Section B
+**Create Provisioning ISO**
+Follow the [Building a Provisioning ISO](./Building-a-Provisioning-ISO.md) tutorial and use the tool of your choice to create bootable media from it.
 
-After completing your section, continue to "Start the Installation"
+Insert the bootable media (USB drive or CD/DVD) into your target system and power it on. Make sure to configure it to boot from the media first or select the media during the subsequent boot using the appropriate key (often F12).
 
-## Section A: Linux with libvirt/KVM
+The system will boot into the Azure Linux installer environment.
 
-### Step 1: Set up virtualization environment
+### Step 2: Access the installer environment
 
-First, let's verify that your Linux system supports virtualization.
+After a few moments, the screen will show:
+
+```
+Welcome to Azure Linux 3.0!
+azl-installer login: root 
+```
+
+You're now in the installer environment, ready to configure and run the installation.
+
+### Step 3: Configure the installation
+
+First, let's see what disk Trident will install to:
+
+```bash
+lsblk
+```
+
+You will see something similar to `/dev/sda` for the target disk. This is where Azure Linux will be installed.
+
+We need to update the Trident Host Configuration to specify the correct disk device.
+
+**Using vim to see/modify the Host Configuration:**
+
+```bash
+vim /etc/trident/config.yaml
+```
+
+In vim, find the line with `device: <disk>` and change it to the correct device, for example: `device: /dev/sda`; then save and exit (`:wq`).
+
+Now start the installation:
+
+```bash
+trident install
+```
+
+Watch as Trident performs the automated installation process. After 2-3 minutes, you will see:
+
+```
+Installation completed successfully!
+```
+
+The system will reboot automatically.
+
+### Step 4: Boot into Azure Linux
+
+After the reboot, we'll see the GRUB bootloader, then Azure Linux starting up.
+The installation is complete when you see the login prompt:
+
+```
+trident-testimg login:
+```
+
+The system will present a login prompt. Since the default configuration uses SSH key-only authentication (no password login), you can access the system via SSH once the installation is complete.
+
+We now have Azure Linux running!
+
+### Step 5: Explore your system
+
+If you have SSH access configured (with SSH keys in your Provisioning ISO configuration), you can connect to explore the system:
+
+```bash
+# From your host machine, if SSH is configured:
+ssh testing-user@<system-ip-address>
+```
+
+**We have successfully created a complete Azure Linux system using Trident!**
+Now you can explore your new Azure Linux system.
+
+## Appendix: Virtual Machine Setup
+
+For testing purposes, you can use virtual machines to experience Trident's clean install process. Choose the section that matches your system:
+
+### Option A: Linux with libvirt/KVM
+
+**Set up virtualization environment:**
+
+First, verify that your Linux system supports virtualization:
 
 ```bash
 sudo apt-get update
@@ -43,14 +119,7 @@ sudo apt-get install -y cpu-checker
 kvm-ok
 ```
 
-You will see output confirming that KVM acceleration is available. Example:
-
-```bash
-INFO: /dev/kvm exists
-KVM acceleration can be used
-```
-
-Now we lets install the virtualization tools:
+Install the virtualization tools:
 
 ```bash
 sudo NEEDRESTART_MODE=a apt-get install -y \
@@ -77,228 +146,68 @@ virsh list --all
 
 You will see an empty list, confirming libvirt is ready.
 
-### Step 2: Create the virtual machine
+**Create the virtual machine:**
 
-First, we wil prepare our installation files. Copy your Provisioning ISO and create a disk:
+Prepare installation files and create a disk:
 
 ```bash
-# Replace 'trident-provisioning.iso' with the actual name of your ISO file
-sudo cp trident-provisioning.iso /tmp/trident-installer.iso
+# Replace '<provisioning.iso>' with the actual name of your ISO file
+sudo cp <provisioning.iso> /tmp/trident-installer.iso
 sudo qemu-img create -f qcow2 /tmp/azure-linux-vm.qcow2 16G
 ```
 
-You now have a 16GB virtual disk for Azure Linux.
-
-Create the VM configuration:
+Create a simple VM using virt-install:
 
 ```bash
-cat << EOF > azure-linux-vm.xml
-<domain type="kvm">
-  <name>azure-linux-vm</name>
-  <memory unit="KiB">4194304</memory>
-  <currentMemory unit="KiB">4194304</currentMemory>
-  <vcpu placement="static">2</vcpu>
-  <os>
-    <type arch="x86_64" machine="pc-q35-6.2">hvm</type>
-    <loader readonly="yes" type="pflash">/usr/share/OVMF/OVMF_CODE.fd</loader>
-    <boot dev="cdrom"/>
-    <boot dev="hd"/>
-  </os>
-  <features>
-    <acpi />
-    <apic />
-    <vmport state="off" />
-  </features>
-  <cpu mode="custom" match="exact" check="none">
-    <model fallback="allow">Broadwell-IBRS</model>
-  </cpu>
-  <clock offset="utc">
-    <timer name="rtc" tickpolicy="catchup" />
-    <timer name="pit" tickpolicy="delay" />
-    <timer name="hpet" present="no" />
-  </clock>
-  <on_poweroff>destroy</on_poweroff>
-  <on_reboot>restart</on_reboot>
-  <on_crash>destroy</on_crash>
-  <devices>
-    <emulator>/usr/bin/qemu-system-x86_64</emulator>
-    <disk type="file" device="disk">
-      <driver name="qemu" type="qcow2" />
-      <source file="/tmp/azure-linux-vm.qcow2" />
-      <target dev="sda" bus="sata" />
-      <address type="drive" controller="0" bus="0" target="0" unit="1" />
-    </disk>
-    <disk type="file" device="cdrom">
-      <driver name="qemu" type="raw" />
-      <source file="/tmp/trident-installer.iso" />
-      <target dev="sdx" bus="sata" />
-      <readonly />
-      <address type="drive" controller="0" bus="0" target="0" unit="0" />
-    </disk>
-    <controller type="virtio-serial" index="0">
-      <address type="pci" domain="0x0000" bus="0x04" slot="0x00" function="0x0" />
-    </controller>
-    <serial type="pty">
-      <target type="isa-serial" port="0">
-        <model name="isa-serial" />
-      </target>
-    </serial>
-    <interface type="network">
-      <mac address="52:54:00:12:34:56" />
-      <source network="default" />
-      <model type="virtio" />
-      <address type="pci" domain="0x0000" bus="0x02" slot="0x00" function="0x0" />
-    </interface>
-    <console type="pty">
-      <target type="serial" port="0" />
-    </console>
-    <memballoon model="virtio">
-      <address type="pci" domain="0x0000" bus="0x05" slot="0x00" function="0x0" />
-    </memballoon>
-  </devices>
-</domain>
-EOF
+sudo virt-install \
+  --name azure-linux-vm \
+  --ram 4096 \
+  --vcpus 2 \
+  --disk path=/tmp/azure-linux-vm.qcow2,format=qcow2 \
+  --cdrom /tmp/trident-installer.iso \
+  --os-type linux \
+  --os-variant generic \
+  --boot uefi \
+  --graphics none \
+  --serial pty \
+  --console pty,target_type=serial \
+  --network network=default \
+  --noautoconsole
 ```
 
-Register the VM:
-
-```bash
-sudo virsh define azure-linux-vm.xml
-```
-
-Verify the VM was created:
-
-```bash
-virsh list --all
-```
-
-You will see `azure-linux-vm` in the list, ready to start.
-
-### Step 3: Start the VM
-
-Start the VM:
-
-```bash
-sudo virsh start azure-linux-vm
-```
-
-Connect to the console:
+Connect to the VM console:
 
 ```bash
 sudo virsh console azure-linux-vm
 ```
 
-You will see the boot process begin and eventually reach the installer environment.
-
-## Section B: Windows with Hyper-V
-
-### Step 1: Create the virtual machine
-
-Open Hyper-V Manager from the Start menu.
-
-Create a new virtual machine:
-
-1. Click **Action** → **New** → **Virtual Machine**
-2. Choose **Next** in the wizard
-3. Name: `Azure Linux VM`
-4. Choose **Generation 2** (UEFI support)
-5. Memory: `4096 MB`
-6. Network: **Default Switch**
-7. Create a new virtual hard disk: `16 GB`
-8. **Install from bootable image file**: Browse and select your Provisioning ISO
-9. Click **Finish**
-
-### Step 2: Start the VM
-
-In Hyper-V Manager, right-click your VM and select **Connect**, then click **Start**.
-
-You will see the boot process begin and eventually reach the installer environment.
-
-## Start the Installation
-
-**Both platforms:**
-
-After a few moments, the screen will show:
-
-```
-Welcome to Azure Linux 3.0!
-azl-installer login: root 
-```
-
-### Configure the installation
-
-First, let's see what disk Trident will install to:
-
-```bash
-lsblk
-```
-
-You will see something similar to `/dev/sda` for a 16GB disk. This is the installation target disk.
-We need to update the Trident Host Configuration for the VM's disk.
-
-
-**Using vim see/modify the Host Configuration:**
-
-```bash
-vim /etc/trident/config.yaml
-```
-
-In vim, find the line with `device: <disk>` and change it to the correct device, for example: `device: /dev/sda`; then save and exit (`:wq`).
-
-Now start the installation:
-
-```bash
-trident install
-```
-
-Watch as Trident performs the installation.
-
-After 2-3 minutes, you will see:
-
-```
-Installation completed successfully!
-```
-
-The system will reboot automatically.
-
-### Boot into Azure Linux
-
-After the reboot, we'll see the GRUB bootloader, then Azure Linux starting up.
-You can verify the system is running by checking the console output shows Azure Linux has booted successfully.
-
-The login prompt appears:
-
-```
-trident-testimg login:
-```
-
-The system will present a login prompt. Since the default configuration uses SSH key-only authentication (no password login), you can access the system via SSH once the installation is complete.
-
-We now have Azure Linux running!
-
-### Explore your system
-
-If you have SSH access configured (with SSH keys in your Provisioning ISO configuration), you can connect to explore the system:
-
-```bash
-# From your host machine, if SSH is configured:
-ssh testing-user@<vm-ip-address>
-```
-
-We have successfully created a complete Azure Linux system using Trident!
-Now you can explore your newly Azure Linux system.
-
-**Cleanup (Linux users):**
-
-When finished, exit the console with `Ctrl+]`, then clean up:
+**Cleanup when finished:**
 
 ```bash
 sudo virsh destroy azure-linux-vm
 sudo virsh undefine azure-linux-vm
 sudo rm /tmp/azure-linux-vm.qcow2 /tmp/trident-installer.iso
-rm azure-linux-vm.xml
 ```
 
-**Cleanup (Windows users):**
+### Option B: Windows with Hyper-V
+
+**Create the virtual machine:**
+
+1. Open Hyper-V Manager from the Start menu
+2. Click **Action** → **New** → **Virtual Machine**
+3. Choose **Next** in the wizard
+4. Name: `Azure Linux VM`
+5. Choose **Generation 2** (UEFI support)
+6. Memory: `4096 MB`
+7. Network: **Default Switch**
+8. Create a new virtual hard disk: `16 GB`
+9. **Install from bootable image file**: Browse and select your Provisioning ISO
+10. Click **Finish**
+
+**Start the VM:**
+
+In Hyper-V Manager, right-click your VM and select **Connect**, then click **Start**.
+
+**Cleanup when finished:**
 
 In Hyper-V Manager, right-click the VM and select **Delete** to remove it completely.
