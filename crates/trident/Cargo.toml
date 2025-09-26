@@ -54,9 +54,7 @@ uuid = { version = "1.11.0", features = ["v4", "serde"] }
 
 sysdefs = { path = "../sysdefs" }
 osutils = { path = "../osutils" }
-setsail = { path = "../setsail", optional = true }
 trident_api = { path = "../trident_api" }
-harpoon = { path = "../harpoon" }
 
 # Optional dependencies used by functional tests
 indoc = { version = "2.0.5", optional = true }
@@ -84,11 +82,7 @@ sha2 = "0.10.8"
 
 
 [features]
-dangerous-options = [
-    "trident_api/dangerous-options",
-    "setsail/dangerous-options",
-    "docker_credential",
-]
+dangerous-options = ["trident_api/dangerous-options", "docker_credential"]
 sysupdate = ["trident_api/sysupdate"]
 functional-test = [
     "pytest",
@@ -99,4 +93,3 @@ functional-test = [
 ]
 pytest-generator = ["pytest", "osutils/pytest-generator"]
 grpc-dangerous = ["prost", "tonic", "tokio-stream", "tonic-build"]
-setsail = ["dep:setsail", "trident_api/setsail"]
