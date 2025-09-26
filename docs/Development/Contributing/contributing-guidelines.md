@@ -1,7 +1,3 @@
----
-sidebar_position: 1
----
-
 # Contributing Guidelines
 
 Information about contributing to this project.
