@@ -63,7 +63,7 @@ Insert the bootable media (USB, CD, etc.) into your target system and power it o
 
 The system will boot into the Azure Linux installer environment.
 
-### Step 3: Access the installer environment
+### Step 4: Access the installer environment
 
 After a few moments, the screen will show:
 
@@ -74,7 +74,7 @@ installer-iso-mos login: root
 
 You're now in the installer environment. Since we removed the automatic installation service when creating the ISO, Trident will not run automatically, allowing us to configure and execute the installation manually.
 
-### Step 4: Configure the installation
+### Step 5: Configure the installation
 
 First, let's identify the target disk for installation:
 
@@ -110,7 +110,7 @@ trident install
 
 Watch as Trident performs the automated installation process. After 2-3 minutes, you will see the installation completed successfully and the system will reboot automatically.
 
-### Step 5: Boot into Azure Linux
+### Step 6: Boot into Azure Linux
 
 After the reboot, we'll see the GRUB bootloader, then Azure Linux starting up.
 The installation is complete when you see the login prompt:
