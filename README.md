@@ -9,9 +9,16 @@ Tags: comma,separated,list,of,tags
 
 # Trident
 
-**Trident** is a declarative, security-first OS lifecycle agent designed primarily for [Azure Linux](https://github.com/microsoft/azurelinux/?tab=readme-ov-file#azure-linux). It supports clean installation and provisioning of bare-metal nodes, as well as A/B-style updates and runtime configuration for both bare-metal and virtual machines.
+**Trident** is a declarative, security-first OS lifecycle agent designed
+primarily for [Azure
+Linux](https://github.com/microsoft/azurelinux/?tab=readme-ov-file#azure-linux).
+It supports clean installation and provisioning of bare-metal nodes, as well as
+A/B-style updates and runtime configuration for both bare-metal and virtual
+machines.
 
-At the heart of Trident is its **Host Configuration API**, a declarative YAML-based interface that defines the desired state of a machine across storage, OS, networking, and firmware layers.
+At the heart of Trident is its **Host Configuration API**, a declarative
+YAML-based interface that defines the desired state of a machine across storage,
+OS, networking, and firmware layers.
 
 Trident supports a wide range of lifecycle and configuration capabilities:
 
@@ -29,7 +36,8 @@ Trident supports a wide range of lifecycle and configuration capabilities:
 
 ## Getting Started
 
-Have a look at our [documentation](docs/Trident.md) to learn more and get started.
+For comprehensive guidance on installation, configuration, and usage, please
+refer to our [official documentation](docs/Trident.md).
 
 ## Getting Help
 
