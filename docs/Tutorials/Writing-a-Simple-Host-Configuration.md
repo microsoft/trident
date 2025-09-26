@@ -130,7 +130,7 @@ setting it is best to use more predictable device paths (i.e.
 Next, we'll configure A/B servicing in the `abUpdate` section. For more detailed
 information on A/B updates, please reference the [How-To guide on A/B Updates](../How-To-Guides/Configure-an-AB-Update-Ready-Host.md).
 In this section, we define `volumePairs` that link two partitions together. Here,
-we'll pair`root-a` and `root-b` as a single updatable volume named `root`.
+we'll pair `root-a` and `root-b` as a single updatable volume named `root`.
 
 ```yaml
 # ... (within the storage section)
