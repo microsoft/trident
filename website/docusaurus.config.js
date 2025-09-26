@@ -11,7 +11,7 @@ import fs from "fs";
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
 function getVersions() {
   const versionsPath = path.resolve(__dirname, "versions.json");
-  if (!fs.existsSync(versionsPath)) {
+  if (fs.existsSync(versionsPath)) {
     return require(versionsPath);
   }
   return ["current"];
