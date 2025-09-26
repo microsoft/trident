@@ -33,10 +33,10 @@ Trident where to source the COSI file from. For a complete description of this
 section, please reference the [API
 documentation](../Reference/Host-Configuration/API-Reference/OsImage.md).
 
-Additionally, to learn more about COSI files, please see its [Reference
-page](../Reference/COSI.md). You can also learn how to create a COSI file in
-this tutorial on [Building a Deployable
-Image](./Building-a-Deployable-Image.md).
+Additionally, to learn more about COSI files, please see its
+[reference page](../Reference/Composable-OS-Image.md). You can also learn how to
+create a COSI file in this tutorial on 
+[Building a Deployable Image](./Building-a-Deployable-Image.md).
 
 The `image` section requires a `url`, where the COSI file is actually located or
 hosted, and a `sha384` hash of the metadata of the COSI file. For the purposes
@@ -128,8 +128,8 @@ setting it is best to use more predictable device paths (i.e.
 `/dev/disk/by-id/...`) as kernel device naming can be unpredictable.
 
 Next, we'll configure A/B servicing in the `abUpdate` section. For more detailed
-information on A/B updates, please reference the [How-To guide on A/B
-Updates](../How-To-Guides/Configure-an-ABUpdate-Ready-Host.md). In this section,
+information on A/B updates, please reference the
+[How-To guide on A/B Updates](../How-To-Guides/Configure-an-AB-Update-Ready-Host.md). In this section,
 we define `volumePairs` that link two partitions together. Here, we'll pair
 `root-a` and `root-b` as a single updatable volume named `root`.
 
