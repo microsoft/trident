@@ -15,7 +15,7 @@ Before we start, you'll need to:
 3. A test target system
    - Either a physical machine for bare-metal installation, OR
    - A virtual machine for testing (see [Appendix: Virtual Machine Setup](#appendix-virtual-machine-setup))
-2. System resources
+4. System resources
    - At least 16GB of available disk space on the target system
    - 4GB of available RAM
    - Administrative access
