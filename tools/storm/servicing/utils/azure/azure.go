@@ -18,13 +18,13 @@ import (
 )
 
 type AzureConfig struct {
-	Subscription                string `help:"Azure subscription" default:"b8a0db63-c5fa-4198-8e2a-f9d6ff52465e"`
-	StorageAccountResourceGroup string `help:"Azure resource group" default:"azlinux_bmp_dev"`
-	StorageAccount              string `help:"Azure storage account for VM artifacts" default:"azlinuxbmpdev"`
+	Subscription                string `help:"Azure subscription"`
+	StorageAccountResourceGroup string `help:"Azure resource group"`
+	StorageAccount              string `help:"Azure storage account for VM artifacts"`
 	StorageContainerName        string `help:"Azure storage continer for VM artifacts" default:""`
 	WhoAmI                      string `help:"User who is running the tests, used for tagging resources" default:""`
 	Region                      string `help:"Azure region" default:"eastus2"`
-	SubnetId                    string `help:"Azure subnet ID" default:"/subscriptions/04cdc145-a4f9-42d4-9868-c46d23d0c63f/resourceGroups/trident-vm_servicing-azure-vnet/providers/Microsoft.Network/virtualNetworks/poolpeeringvnet/subnets/default"`
+	SubnetId                    string `help:"Azure subnet ID"`
 	SshPublicKeyPath            string `help:"Path to SSH public key" default:"~/.ssh/id_rsa.pub"`
 	GalleryName                 string `help:"Azure Shared Image Gallery name" default:""`
 	GalleryResourceGroup        string `help:"Azure Shared Image Gallery resource group" default:""`
