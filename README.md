@@ -1,12 +1,3 @@
----
-ArtifactType: executable, rpm.
-Documentation: ./README.md
-Language: rust
-Platform: mariner
-Stackoverflow: URL
-Tags: comma,separated,list,of,tags
----
-
 # Trident
 
 **Trident** is a declarative, security-first OS lifecycle agent designed
