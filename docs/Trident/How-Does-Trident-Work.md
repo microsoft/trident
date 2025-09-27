@@ -52,14 +52,15 @@ allowing for flexible scheduling and coordination with other maintenance tasks.
 This two-phase approach minimizes workload downtime and ensures a smooth
 transition to the updated OS.
 
-To stage OS images, Trident utilizes the [COSI](Reference/COSI.md) file format
-to enable efficient transfer and reliable deployment of the OS images. The file
-format is designed so that Trident can stream individual filesystem images
-directly from the specified source—such as a local file, HTTPS endpoint, or OCI
-registry—into the target block device (partition, RAID array, LUKS volume,
-etc.). During this process, Trident performs on-the-fly hashing and
-decompression of filesystem blocks, ensuring rapid transfer without requiring
-additional storage or memory for intermediate placement.
+To stage OS images, Trident utilizes the
+[COSI](../Reference/Composable-OS-Image.md) file format to enable efficient
+transfer and reliable deployment of the OS images. The file format is designed
+so that Trident can stream individual filesystem images directly from the
+specified source—such as a local file, HTTPS endpoint, or OCI registry—into the
+target block device (partition, RAID array, LUKS volume, etc.). During this
+process, Trident performs on-the-fly hashing and decompression of filesystem
+blocks, ensuring rapid transfer without requiring additional storage or memory
+for intermediate placement.
 
 ## Image validation and configuration
 
