@@ -6,33 +6,6 @@
 | -------- | ---------- | ---------------- |
 | 1.0      | 2024-10-31 | Initial version. |
 
-## Table of Contents
-
-- [Logging Standards](#logging-standards)
-  - [Revision Summary](#revision-summary)
-  - [Table of Contents](#table-of-contents)
-  - [Background](#background)
-  - [Goals](#goals)
-  - [Overview](#overview)
-    - [Background Log](#background-log)
-    - [Log Levels](#log-levels)
-      - [`ERROR`](#error)
-        - [`ERROR` Guidelines](#error-guidelines)
-        - [Fatal vs Non-Fatal Errors](#fatal-vs-non-fatal-errors)
-        - [`ERROR` Examples](#error-examples)
-      - [`WARN`](#warn)
-        - [`WARN` Guidelines](#warn-guidelines)
-        - [`WARN` Examples](#warn-examples)
-      - [`INFO`](#info)
-        - [`INFO` Examples](#info-examples)
-      - [`DEBUG`](#debug)
-        - [`DEBUG` Guidelines](#debug-guidelines)
-        - [`DEBUG` Examples](#debug-examples)
-      - [`TRACE`](#trace)
-        - [`TRACE` Guidelines](#trace-guidelines)
-        - [`TRACE` Examples](#trace-examples)
-    - [Log Structure and Contents](#log-structure-and-contents)
-
 ## Background
 
 Besides the Host Status, logging is the fundamental way for Trident to
