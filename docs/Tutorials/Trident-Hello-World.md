@@ -8,12 +8,13 @@ Trident is a declarative OS lifecycle agent. It is designed to perform clean ins
 
 ## Prerequisites
 
-Before we start, you'll need:
+Before we start, you'll need to:
 
-1. **A test target system**
+1. Ensure that [oras](https://oras.land/docs/installation/) is installed.
+2. Ensure [Image Customizer container](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/quick-start/quick-start.html) is accessible.
+3. **A test target system**
    - Either a physical machine for bare-metal installation, OR
    - A virtual machine for testing (see [Appendix: Virtual Machine Setup](#appendix-virtual-machine-setup))
-
 2. **System resources**
    - At least 16GB of available disk space on the target system
    - 4GB of available RAM
@@ -28,30 +29,129 @@ Follow the [Building A/B Update Images for Install and Update](./Building-AB-Upd
 - The Host Configuration file (`host-config.yaml`)
 
 ### Step 2: Build a Servicing ISO
+#### 2.1 Download the minimal base image
 
-#### Building a Servicing ISO Tutorial
+Pull [minimal-os](../Reference/Glossary.md#minimal-os) as a base image from MCR by running:
 
-Follow the [Building a Servicing ISO](./Building-a-Servicing-ISO.md) guide to create your installer until [Step 3: Create an Image Customizer Configuration](./Building-a-Servicing-ISO.md#step-3-create-an-image-customizer-configuration).
-
-#### Image Customizer Configuration
-
-**Modify the Image Customizer Configuration**: Follow [Step 3: Create an Image Customizer Configuration](./Building-a-Servicing-ISO.md#step-3-create-an-image-customizer-configuration), but remove the `trident-install.service` line from the `services` section in `ic-config.yaml`:
-
-``` yaml
-os:
-  services:
-    enable:
-      - trident-install.service # <-- Remove this line
-      - trident-network.service
+``` bash
+mkdir -p $HOME/staging
+pushd $HOME/staging
+oras pull mcr.microsoft.com/azurelinux/3.0/image/minimal-os:latest
+popd
 ```
 
-This prevents automatically running Trident when the ISO boots, and allows us to:
-  - Select the specific disk for installation.
-  - Observe the Host Configuration.
-  - Execute the installation ourselves.
+#### 2.2 Get Trident RPMs
 
-#### Create Installation ISO
-Proceed with [Step 4: Invoke Image Customizer to Create Installation ISO](./Building-a-Servicing-ISO.md#step-4-invoke-image-customizer-to-create-installation-iso) to create your installation ISO.
+Build the Trident RPMs by running:
+
+``` bash
+make bin/trident-rpms.tar.gz
+```
+
+After running this make command, the RPMs will be built and packaged into `bin/trident-rpms.tar.gz` and unpacked into `bin/RPMS/x86_64`:
+
+``` bash
+$ ls bin/RPMS/x86_64/
+trident-0.3.DATESTRING-dev.COMMITHASH.azl3.x86_64.rpm
+trident-install-service-0.3.DATESTRING-dev.COMMITHASH.azl3.x86_64.rpm
+trident-provisioning-0.3.DATESTRING-dev.COMMITHASH.azl3.x86_64.rpm
+trident-service-0.3.DATESTRING-dev.COMMITHASH.azl3.x86_64.rpm
+trident-static-pcrlock-files-0.3.DATESTRING-dev.COMMITHASH.azl3.x86_64.rpm
+trident-update-poll-0.3.DATESTRING-dev.COMMITHASH.azl3.x86_64.rpm
+```
+
+Copy RPMs to staging folder:
+
+``` bash
+cp -r bin/RPMS $HOME/staging
+```
+
+#### 2.3 Create an Image Customizer Configuration
+
+Assuming locations for the Azure Linux image COSI file (`$HOME/staging/osimage.cosi`) and the Trident Host Configuration file (`$HOME/staging/host-config.yaml`), follow the [Image Customizer documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/how-to/live-iso.html) to create an Image Customizer configuration file, `$HOME/staging/ic-config.yaml`:
+
+``` yaml
+storage:
+  bootType: efi
+  disks:
+    - partitionTableType: gpt
+      maxSize: 4G
+      partitions:
+        - id: esp
+          type: esp
+          size: 8M
+        - id: rootfs
+          size: grow
+  filesystems:
+    - deviceId: esp
+      type: fat32
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+    - deviceId: rootfs
+      type: ext4
+      mountPoint:
+        path: /
+os:
+  hostname: installer-iso-mos
+  bootloader:
+    resetType: hard-reset
+  selinux:
+    mode: enforcing
+  kernelCommandLine:
+    extraCommandLine:
+      - rd.info
+      - console=ttyS0
+      - console=tty0
+  packages:
+    install:
+      - netplan
+      - trident-install-service
+      - trident-provisioning
+      - vim
+      - curl
+      - device-mapper
+      - squashfs-tools
+      - tar
+      - selinux-policy
+  services:
+    enable:
+      - trident-network.service
+  additionalFiles:
+    - source: host-config.yaml
+      destination: /etc/trident/config.yaml
+scripts:
+  postCustomization:
+    - content: |
+        # Use more intuitive path for the ISO mount
+        ln -s /run/initramfs/live /mnt/trident_cdrom
+iso:
+  additionalFiles:
+    - source: osimage.cosi
+      destination: /images/azure-linux.cosi
+```
+
+#### 2.4 Invoke Image Customizer to Create Installation ISO
+
+Assuming locations for the base image file (`$HOME/staging/image.vhdx`) and the Image Customizer configuration file (`$HOME/staging/ic-config.yaml`), follow the [Image Customizer documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/quick-start/quick-start.html) and invoke Image Customizer:
+
+``` bash
+pushd $HOME/staging
+docker run --rm \
+    --privileged \
+    -v ".:/files:z" \
+    -v "/dev:/dev" \
+    --platform linux/amd64 \
+    mcr.microsoft.com/azurelinux/imagecustomizer:0.18.0 \
+    --log-level debug \
+    --build-dir /build \
+    --image-file "/files/image.vhdx" \
+    --rpm-source "/files/RPMS/x86_64" \
+    --output-image-file "/files/installer.iso" \
+    --config-file "/files/ic-config.yaml" \
+    --output-image-format iso
+popd
+```
 
 ### Step 3: Boot from the Servicing ISO
 
