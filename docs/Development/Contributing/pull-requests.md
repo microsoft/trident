@@ -7,17 +7,6 @@ sidebar_position: 1
 This document describes the process for submitting pull requests (PRs) to the
 `main` branch of `trident` & related repositories.
 
-- [Pull Request Guidelines](#pull-request-guidelines)
-  - [Opening a PR](#opening-a-pr)
-    - [Size and Scope](#size-and-scope)
-    - [Checks](#checks)
-    - [On Drafts](#on-drafts)
-    - [Titles](#titles)
-    - [Descriptions](#descriptions)
-    - [Testing](#testing)
-    - [PR Labels](#pr-labels)
-  - [Abandoning PRs and Cleaning Up](#abandoning-prs-and-cleaning-up)
-
 ## Opening a PR
 
 A pull request generally[[1]](#pr-labels) implies intent to merge code into the

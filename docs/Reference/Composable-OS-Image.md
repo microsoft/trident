@@ -12,39 +12,6 @@ title: COSI Spec
 | [1.1](#revision-11) | 2025-05-08 |
 | [1.0](#revision-10) | 2024-10-09 |
 
-## Table of Contents
-
-- [Composable Operating System Image (COSI) Specification](#composable-operating-system-image-cosi-specification)
-  - [Revision Summary](#revision-summary)
-  - [Table of Contents](#table-of-contents)
-  - [Background](#background)
-  - [Overview](#overview)
-  - [Goals](#goals)
-  - [COSI File Format](#cosi-file-format)
-    - [Contents](#contents)
-    - [Layout](#layout)
-    - [Partition Image Files](#partition-image-files)
-    - [Metadata JSON File](#metadata-json-file)
-      - [Schema](#schema)
-        - [Root Object](#root-object)
-        - [`Filesystem` Object](#filesystem-object)
-        - [`VerityConfig` Object](#verityconfig-object)
-        - [`ImageFile` Object](#imagefile-object)
-        - [`OsArchitecture` Enum](#osarchitecture-enum)
-        - [`OsPackage` Object](#ospackage-object)
-        - [`Bootloader` Object](#bootloader-object)
-        - [`BootloaderType` Enum](#bootloadertype-enum)
-        - [`SystemDBoot` Object](#systemdboot-object)
-        - [`SystemDBootEntry` Object](#systemdbootentry-object)
-        - [`SystemDBootEntryType` Enum](#systemdbootentrytype-enum)
-      - [Samples](#samples)
-        - [Simple Image](#simple-image)
-        - [Verity Image with UKI](#verity-image-with-uki)
-  - [Changelog](#changelog)
-    - [Revision 1.1](#revision-11)
-    - [Revision 1.0](#revision-10)
-  - [FAQ and Notes](#faq-and-notes)
-
 ## Background
 
 Trident is an image-based installer for Azure Linux. However, it does not deploy
