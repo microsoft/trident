@@ -59,7 +59,7 @@ _Notes:_
   themselves cannot be activated during an update.
 - [4] Currently, only PCR 7 is supported. Sealing against other PCRs is
   planned for a future release.
-- [5] These features cannot be used in conjunction with root verity.
+- [5] This feature cannot be used in conjunction with root verity.
 
 ## Out-of-Band Features
 
