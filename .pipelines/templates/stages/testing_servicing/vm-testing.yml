@@ -190,61 +190,61 @@ stages:
                   micBuildType: ${{ parameters.micBuildType }}
                   micVersion: ${{ parameters.micVersion }}
                   useStagedSshKeys: true
-
-  - stage: ServicingTesting
-    displayName: Servicing Testing
-    dependsOn:
-      - ${{ if eq(parameters.testingRun, true) }}:
-          - DownloadTestingElements
-      - ${{ else }}:
-          - BuildingTools
-          - ${{ if eq(parameters.includeQemu, true) }}:
-              - BuildImagesQemu
-          - ${{ if eq(parameters.includeAzure, true) }}:
-              - BuildImagesAzure
-          - ${{ if eq(parameters.includeUKI, true) }}:
-              - BuildImagesUKI
-
-    # variables:
-    #   SSH_PRIVATE_KEY_PATH: "$HOME/.ssh/id_rsa"
-    #   SSH_PUBLIC_KEY_PATH: "$(SSH_PRIVATE_KEY_PATH).pub"
-    #   IMAGE_DEFINITION: "trident-vm-grub-verity-testimage-$(System.DefinitionId)"
-    #   SUBSCRIPTION: TODO: TODO: replace with variable
-    #   STORAGE_ACCOUNT: TODO: replace with variable
-    #   RESOURCE_GROUP: TODO: replace with variable
-    #   SUBNET_ID: TODO: replace with variable
-
-    # jobs:
-    #   - ${{ if eq(parameters.includeQemu, true) }}:
-    #       - template: testing-template.yml
-    #         parameters:
-    #           updateIterationCount: ${{ parameters.updateIterationCount }}
-    #           rollbackTesting: ${{ parameters.rollbackTesting }}
-    #           workers: ${{ parameters.workers }}
-    #           updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
-    #           verboseLogging: ${{ parameters.verboseLogging }}
-    #           platform: qemu
-    #           flavor: qemu
-
-    #   - ${{ if eq(parameters.includeAzure, true) }}:
-    #       - template: testing-template.yml
-    #         parameters:
-    #           updateIterationCount: ${{ parameters.updateIterationCount }}
-    #           rollbackTesting: ${{ parameters.rollbackTesting }}
-    #           workers: ${{ parameters.workers }}
-    #           updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
-    #           verboseLogging: ${{ parameters.verboseLogging }}
-    #           platform: azure
-    #           flavor: azure
-    #           pool: trident-ubuntu-official-1es-pool-eastus2
-
-    #   - ${{ if eq(parameters.includeUKI, true) }}:
-    #       - template: testing-template.yml
-    #         parameters:
-    #           updateIterationCount: ${{ parameters.updateIterationCount }}
-    #           rollbackTesting: ${{ parameters.rollbackTesting }}
-    #           workers: ${{ parameters.workers }}
-    #           updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
-    #           verboseLogging: ${{ parameters.verboseLogging }}
-    #           platform: qemu
-    #           flavor: uki
+# TODO: re-add servicing testing stage
+#   - stage: ServicingTesting
+#     displayName: Servicing Testing
+#     dependsOn:
+#       - ${{ if eq(parameters.testingRun, true) }}:
+#           - DownloadTestingElements
+#       - ${{ else }}:
+#           - BuildingTools
+#           - ${{ if eq(parameters.includeQemu, true) }}:
+#               - BuildImagesQemu
+#           - ${{ if eq(parameters.includeAzure, true) }}:
+#               - BuildImagesAzure
+#           - ${{ if eq(parameters.includeUKI, true) }}:
+#               - BuildImagesUKI
+#
+#     variables:
+#       SSH_PRIVATE_KEY_PATH: "$HOME/.ssh/id_rsa"
+#       SSH_PUBLIC_KEY_PATH: "$(SSH_PRIVATE_KEY_PATH).pub"
+#       IMAGE_DEFINITION: "trident-vm-grub-verity-testimage-$(System.DefinitionId)"
+#       SUBSCRIPTION: TODO: TODO: replace with variable
+#       STORAGE_ACCOUNT: TODO: replace with variable
+#       RESOURCE_GROUP: TODO: replace with variable
+#       SUBNET_ID: TODO: replace with variable
+#
+#     jobs:
+#       - ${{ if eq(parameters.includeQemu, true) }}:
+#           - template: testing-template.yml
+#             parameters:
+#               updateIterationCount: ${{ parameters.updateIterationCount }}
+#               rollbackTesting: ${{ parameters.rollbackTesting }}
+#               workers: ${{ parameters.workers }}
+#               updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
+#               verboseLogging: ${{ parameters.verboseLogging }}
+#               platform: qemu
+#               flavor: qemu
+#
+#       - ${{ if eq(parameters.includeAzure, true) }}:
+#           - template: testing-template.yml
+#             parameters:
+#               updateIterationCount: ${{ parameters.updateIterationCount }}
+#               rollbackTesting: ${{ parameters.rollbackTesting }}
+#               workers: ${{ parameters.workers }}
+#               updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
+#               verboseLogging: ${{ parameters.verboseLogging }}
+#               platform: azure
+#               flavor: azure
+#               pool: trident-ubuntu-official-1es-pool-eastus2
+#
+#       - ${{ if eq(parameters.includeUKI, true) }}:
+#           - template: testing-template.yml
+#             parameters:
+#               updateIterationCount: ${{ parameters.updateIterationCount }}
+#               rollbackTesting: ${{ parameters.rollbackTesting }}
+#               workers: ${{ parameters.workers }}
+#               updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
+#               verboseLogging: ${{ parameters.verboseLogging }}
+#               platform: qemu
+#               flavor: uki
