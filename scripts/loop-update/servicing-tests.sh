@@ -11,7 +11,7 @@ OUTPUT=${OUTPUT:-}
 
 ALIAS=${ALIAS:-`whoami`}
 
-SUBSCRIPTION=${SUBSCRIPTION:-b8a0db63-c5fa-4198-8e2a-f9d6ff52465e} # CoreOS_AzureLinux_BMP_dev
+SUBSCRIPTION=${SUBSCRIPTION} # CoreOS_AzureLinux_BMP_dev
 IMAGE_DEFINITION=${IMAGE_DEFINITION:-trident-vm-grub-verity-azure-testimage}
 RESOURCE_GROUP=${RESOURCE_GROUP:-azlinux_bmp_dev}
 PUBLISH_LOCATION=${PUBLISH_LOCATION:-eastus2}

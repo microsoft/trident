@@ -8,7 +8,6 @@ parameters:
 
   - name: "registry"
     type: string
-    default: maritimusdev
 
   - name: "config"
     displayName: "Trident configuration"

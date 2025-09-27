@@ -24,7 +24,6 @@ parameters:
   - name: "registry"
     displayName: "Container registry to push to"
     type: string
-    default: "maritimusdev"
 
   - name: config
     type: string
@@ -46,11 +45,12 @@ steps:
           --runtimeEnv ${{ parameters.runtimeEnv }}
       )
 
-      if [ "${{ parameters.config }}" == "misc" ]; then
-        build_id="$(Build.BuildId)"
-        oci_url="oci://${{ parameters.registry }}.azurecr.io/${{ parameters.imageName }}:$(TAG_BASE).1"
-        cmd+=(--ociUrl "$oci_url")
-      fi
+      # TODO: re-add ACR pushing 
+      #   if [ "${{ parameters.config }}" == "misc" ]; then
+      #     build_id="$(Build.BuildId)"
+      #     oci_url="oci://${{ parameters.registry }}.azurecr.io/${{ parameters.imageName }}:$(TAG_BASE).1"
+      #     cmd+=(--ociUrl "$oci_url")
+      #   fi
 
       # Execute the command
       "${cmd[@]}"
