@@ -30,7 +30,7 @@ will be able to successfully read the COSI file.
 2. If the COSI file is hosted in an OCI registry (`oci://` scheme), that registry
    **must** allow for anonymous image pulls. In addition, Trident expects that
    the referenced artifact contains exactly one layer.
-3. Should your machine require a proxy to access a remoted hosted COSI image,
+3. Should your machine require a proxy to access a remotely hosted COSI image,
    ensure that the correct `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY`
    environment variables are set **and** are available to Trident at runtime. If
    running Trident from a container, ensure that the environment variables are
