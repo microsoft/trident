@@ -27,7 +27,7 @@ Before we start, you'll need to:
 Follow the [Building A/B Update Images for Install and Update](./Building-AB-Update-Images-for-Install-and-Update.md) tutorial through [Step 5: Create Trident Host Configuration for Install](./Building-AB-Update-Images-for-Install-and-Update.md#step-5-create-trident-host-configuration-for-install). **Stop after completing Step 5** (do not create the Servicing ISO of Step 6, we will create our own modified Servicing ISO in the next step). After following those steps you will have:
 - The [minimal-os](../Reference/Glossary.md#minimal-os) (`$HOME/staging/image.vhdx`)
 - The Trident RPMs (`bin/RPMS/x86_64`)
-- The [COSI](../Reference/COSI.md) file (`$HOME/staging/osimage.cosi`)
+- The COSI file (`$HOME/staging/osimage.cosi`)
 - The Host Configuration file (`$HOME/staging/host-config.yaml`)
 
 ### Step 2: Build a Servicing ISO
