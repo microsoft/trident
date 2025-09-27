@@ -190,7 +190,7 @@ stages:
                   micBuildType: ${{ parameters.micBuildType }}
                   micVersion: ${{ parameters.micVersion }}
                   useStagedSshKeys: true
-# TODO: re-add servicing testing stage
+# TODO: re-enable servicing testing
 #   - stage: ServicingTesting
 #     displayName: Servicing Testing
 #     dependsOn:
