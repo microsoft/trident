@@ -62,13 +62,9 @@ const config = {
     v4: true, // Improve compatibility with the upcoming Docusaurus v4
   },
 
-  // When GitHub Pages is public
-  // url: 'https://microsoft.github.io',
-  // baseUrl: '/trident/',
-
-  // While GitHub Pages is private
-  url: "https://vigilant-adventure-5jnm363.pages.github.io/",
-  baseUrl: "/",
+  // Public GitHub pages site
+  url: "https://microsoft.github.io",
+  baseUrl: "/trident/",
 
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
