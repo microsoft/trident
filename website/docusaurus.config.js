@@ -126,7 +126,7 @@ const config = {
         items: [
           {
             type: "doc",
-            docId: "Trident",
+            docId: "Trident/Trident",
             position: "left",
             label: "Docs",
           },
