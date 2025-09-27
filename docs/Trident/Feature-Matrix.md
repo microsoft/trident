@@ -1,47 +1,8 @@
 ---
-sidebar_position: 1
+sidebar_position: 5
 ---
 
-<!--
-DELETE ME AFTER COMPLETING THE DOCUMENT!
----
-Task: https://dev.azure.com/mariner-org/polar/_workitems/edit/14255
-Title: Trident
-Type: Wiki Homepage
-Objective: Introduce trident and its use cases. List all stable and preview
-    features with link to their respective pages when available. Link to the four
-    sub-sections of the wiki.
-    Add a getting started section with a link to the hello world tutorial.
-    Also talk about dependencies!
-    Some of them may also have specific explanation pages to talk about why/how we use them.
-
-draft feature list:
-
-stable:
-- clean install
-- ab update
-- rollback
-- Simple Encryption
-- RAID Volumes
-- ESP redundancy with RAID
-- RAID Rebuild
-- Containerized Trident
-- 
-
-preview:
-- root verity
-- usr verity
-- multiboot (unstable?)
-- partition adoption (unstable?)
-- UKI
-- Encryption with PCR sealing
--->
-
-# Trident
-
-Trident is a tool for managing the lifecycle of Azure Linux systems.
-
-## Feature Matrix
+# Feature Matrix
 
 Legend:
 
@@ -51,7 +12,7 @@ Legend:
 - ⚠️: Refer to relevant notes for details.
 - ❌: Not supported.
 
-### Servicing Features
+## Servicing Features
 
 | Category        | Feature                                 | Install | VM-Init | Update |
 | --------------- | --------------------------------------- | ------- | ------- | ------ |
@@ -98,13 +59,12 @@ _Notes:_
   themselves cannot be activated during an update.
 - [4] Currently, only PCR 7 is supported. Sealing against other PCRs is
   planned for a future release.
-- [5] These feature cannot be used in conjunction with root verity.
+- [5] This feature cannot be used in conjunction with root verity.
 
-### Out-of-Band Features
+## Out-of-Band Features
 
 These are features that exist outside of the normal servicing flows in Trident.
 
 | Category  | Feature      | Status | Notes                                                             |
 | --------- | ------------ | ------ | ----------------------------------------------------------------- |
 | 💽 Storage | RAID Rebuild | ✅      | Rebuild a software RAID array after a physical drive replacement. |
-
