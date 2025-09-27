@@ -190,10 +190,9 @@ stages:
               # TODO: This needs to be updated to enable SecureBoot for all E2E
               # tests.
               CERT_SEARCH_PATH="$(System.ArtifactsDirectory)/usrverity-testimage"
-              CERT_PATTERN="cert_${{ variables.usrVerityTestImageName }}_[0-9].pem"
-              FOUND_CERT=$(find "$CERT_SEARCH_PATH" -type f -name "$CERT_PATTERN" | sort | head -n 1)
-              if [ -n "$FOUND_CERT" ]; then
-                SIGNING_CERT="--signing-cert $FOUND_CERT"
+              CA_CERT_PATH="$CERT_SEARCH_PATH/ca_cert.pem"
+              if [ -f "$CA_CERT_PATH" ]; then
+                SIGNING_CERT="--signing-cert $CA_CERT_PATH"
               else
                 SIGNING_CERT=""
               fi
