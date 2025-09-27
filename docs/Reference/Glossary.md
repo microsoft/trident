@@ -154,13 +154,3 @@ servicing OS and the target OS are the same.
 An unformatted partition is a partition on a storage device that has been
 created but does not yet contain a filesystem. It is not associated with any
 filesystem, verity-filesystem, RAID array, or encryption volume.
-
-## Terms to Define
-
-- Operation
-- runtime configurations
-- Stage
-- State
-- Step
-- Host Configuration
-- Host Status
