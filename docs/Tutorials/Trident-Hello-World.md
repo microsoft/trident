@@ -25,48 +25,14 @@ Before we start, you'll need to:
 ### Step 1: Create the COSI file and Host Configuration
 
 Follow the [Building A/B Update Images for Install and Update](./Building-AB-Update-Images-for-Install-and-Update.md) tutorial through [Step 5: Create Trident Host Configuration for Install](./Building-AB-Update-Images-for-Install-and-Update.md#step-5-create-trident-host-configuration-for-install). **Stop after completing Step 5** (do not create the Servicing ISO of Step 6, we will create our own modified Servicing ISO in the next step). After following those steps you will have:
-- The [COSI](../Reference/COSI.md) file (`osimage.cosi`)
-- The Host Configuration file (`host-config.yaml`)
+- The [minimal-os](../Reference/Glossary.md#minimal-os) (`$HOME/staging/image.vhdx`)
+- The Trident RPMs (`bin/RPMS/x86_64`)
+- The [COSI](../Reference/COSI.md) file (`$HOME/staging/osimage.cosi`)
+- The Host Configuration file (`$HOME/staging/host-config.yaml`)
 
 ### Step 2: Build a Servicing ISO
-#### 2.1 Download the minimal base image
 
-Pull [minimal-os](../Reference/Glossary.md#minimal-os) as a base image from MCR by running:
-
-``` bash
-mkdir -p $HOME/staging
-pushd $HOME/staging
-oras pull mcr.microsoft.com/azurelinux/3.0/image/minimal-os:latest
-popd
-```
-
-#### 2.2 Get Trident RPMs
-
-Build the Trident RPMs by running:
-
-``` bash
-make bin/trident-rpms.tar.gz
-```
-
-After running this make command, the RPMs will be built and packaged into `bin/trident-rpms.tar.gz` and unpacked into `bin/RPMS/x86_64`:
-
-``` bash
-$ ls bin/RPMS/x86_64/
-trident-0.3.DATESTRING-dev.COMMITHASH.azl3.x86_64.rpm
-trident-install-service-0.3.DATESTRING-dev.COMMITHASH.azl3.x86_64.rpm
-trident-provisioning-0.3.DATESTRING-dev.COMMITHASH.azl3.x86_64.rpm
-trident-service-0.3.DATESTRING-dev.COMMITHASH.azl3.x86_64.rpm
-trident-static-pcrlock-files-0.3.DATESTRING-dev.COMMITHASH.azl3.x86_64.rpm
-trident-update-poll-0.3.DATESTRING-dev.COMMITHASH.azl3.x86_64.rpm
-```
-
-Copy RPMs to staging folder:
-
-``` bash
-cp -r bin/RPMS $HOME/staging
-```
-
-#### 2.3 Create an Image Customizer Configuration
+#### 2.1 Create an Image Customizer Configuration
 
 Assuming locations for the Azure Linux image COSI file (`$HOME/staging/osimage.cosi`) and the Trident Host Configuration file (`$HOME/staging/host-config.yaml`), follow the [Image Customizer documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/how-to/live-iso.html) to create an Image Customizer configuration file, `$HOME/staging/ic-config.yaml`:
 
@@ -131,7 +97,7 @@ iso:
       destination: /images/azure-linux.cosi
 ```
 
-#### 2.4 Invoke Image Customizer to Create Installation ISO
+#### 2.2 Invoke Image Customizer to Create Installation ISO
 
 Assuming locations for the base image file (`$HOME/staging/image.vhdx`) and the Image Customizer configuration file (`$HOME/staging/ic-config.yaml`), follow the [Image Customizer documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/quick-start/quick-start.html) and invoke Image Customizer:
 
@@ -167,7 +133,7 @@ After a few moments, the screen will show:
 
 ```
 Welcome to Microsoft Azure Linux 3.0!
-installer-iso-mos login: root 
+installer-iso-mos login:
 ```
 
 You're now in the installer environment. Since we removed the automatic installation service when creating the ISO, Trident will not run automatically, allowing us to configure and execute the installation manually.
@@ -277,8 +243,8 @@ You will see an empty list, confirming libvirt is ready.
 Prepare installation files and create a disk:
 
 ```bash
-# Replace '<servicing.iso>' with the actual name of your ISO file
-sudo cp <servicing.iso> /tmp/trident-installer.iso
+# Replace '<installer.iso>' with the actual name of your ISO file
+sudo cp <installer.iso> /tmp/trident-installer.iso
 sudo qemu-img create -f qcow2 /tmp/azure-linux-vm.qcow2 16G
 ```
 
