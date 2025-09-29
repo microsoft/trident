@@ -208,11 +208,11 @@ stages:
               SERVICE_OVERRIDE=""
               if [ "${{ parameters.runtimeEnv }}" == "host" ]; then 
                 SERVICE_OVERRIDE="[Service]
-                  Environment=\"HTTPS_PROXY=$(baremetal_controller.https_proxy)\""
+                  Environment=\"HTTPS_PROXY=$(baremetal_controller.lab_https_proxy)\""
               else
                 # When running containerized Trident, we must directly embed the proxy in the docker command
                 SERVICE_OVERRIDE="[Service]
-                  Environment=\"HTTPS_PROXY=$(baremetal_controller.https_proxy)\"
+                  Environment=\"HTTPS_PROXY=$(baremetal_controller.lab_https_proxy)\"
                   ExecStart=
                   ExecStart=docker run \\
                     --env HTTPS_PROXY \\
@@ -373,7 +373,7 @@ stages:
               netlistenPort: ${{ variables.NETLAUNCH_PORT }}
               runtimeEnv: ${{ parameters.runtimeEnv }}
               netlistenConfigFile: $(TRIDENT_SOURCE_DIR)/baremetal-netlisten.yaml
-              httpsProxy: "$(baremetal_controller.https_proxy)"
+              httpsProxy: "$(baremetal_controller.lab_https_proxy)"
 
         #   - template: ../common_tasks/remove-from-acr.yml
         #     parameters:
