@@ -298,6 +298,7 @@ stages:
       - template: stages/testing_functional/functional-testing.yml
         parameters:
           downloadPrebuiltImage: false
+          osModifierBuildType: "dev"
           osModifierBranch: ${{ parameters.osModifierBranch }}
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
