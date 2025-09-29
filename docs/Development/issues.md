@@ -26,7 +26,7 @@ repository that meets
 [Microsoft's definition of a security vulnerability](https://aka.ms/security.md/definition),
 please report it to us as described below.
 
-## Reporting Security Issues
+### Reporting Security Issues
 
 **Please do not report security vulnerabilities through public GitHub issues.**
 
@@ -62,11 +62,11 @@ higher bounty award. Please visit our
 [Microsoft Bug Bounty Program](https://aka.ms/security.md/msrc/bounty) page for
 more details about our active programs.
 
-## Preferred Languages
+### Preferred Languages
 
 We prefer all communications to be in English.
 
-## Policy
+### Policy
 
 Microsoft follows the principle of
 [Coordinated Vulnerability Disclosure](https://aka.ms/security.md/cvd).

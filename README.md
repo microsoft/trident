@@ -27,20 +27,20 @@ Trident supports a wide range of lifecycle and configuration capabilities:
 
 ## Getting Started
 
-For comprehensive guidance on installation, configuration, and usage, please
-refer to our [official documentation](docs/Trident.md).
+Read the **[Official Documentation](https://microsoft.github.io/trident)** for
+comprehensive guidance on installation, configuration, and usage.
 
 ### Developing and Contributing
 
 For detailed information about contributing to this project please read the
-[contributing guide](./docs/Development/Contributing/contributing-guidelines.md).
+[contributing guide](https://microsoft.github.io/trident/docs/Development/Contributing/contributing-guidelines).
 
 ## Getting Help
 
 Have questions, found a bug, or need a new feature? Open an issue in our [GitHub
 repository](https://github.com/microsoft/trident/issues/new?template=Blank+issue).
 
----
+For security issues, please see the [security policy](./SECURITY.md).
 
 ## Trademarks
 
