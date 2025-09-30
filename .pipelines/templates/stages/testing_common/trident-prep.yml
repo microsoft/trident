@@ -45,12 +45,11 @@ steps:
           --runtimeEnv ${{ parameters.runtimeEnv }}
       )
 
-      # TODO: re-add ACR pushing 
-      #   if [ "${{ parameters.config }}" == "misc" ]; then
-      #     build_id="$(Build.BuildId)"
-      #     oci_url="oci://${{ parameters.registry }}.azurecr.io/${{ parameters.imageName }}:$(TAG_BASE).1"
-      #     cmd+=(--ociUrl "$oci_url")
-      #   fi
+      if [ "${{ parameters.config }}" == "misc" ]; then
+        build_id="$(Build.BuildId)"
+        oci_url="oci://${{ parameters.registry }}.azurecr.io/${{ parameters.imageName }}:$(TAG_BASE).1"
+        cmd+=(--ociUrl "$oci_url")
+      fi
 
       # Execute the command
       "${cmd[@]}"

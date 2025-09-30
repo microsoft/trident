@@ -66,30 +66,51 @@ stages:
 
         variables:
           # Sourced from the matrix
-          tridentConfigurationName: $(configuration)
+          - name: tridentConfigurationName
+            value: $(configuration)
 
-          tridentConfigPath: $(tridentSourceDirectory)/tests/e2e_tests/trident_configurations/$(tridentConfigurationName)
+          - name: tridentSourceDirectory
+            value: $(Build.SourcesDirectory)
 
-          tridentSourceDirectory: $(Build.SourcesDirectory)
-          argusToolkitSourceDirectory: $(Build.SourcesDirectory)/argus-toolkit
+          - name: tridentConfigPath
+            value: $(tridentSourceDirectory)/tests/e2e_tests/trident_configurations/$(tridentConfigurationName)
 
-          ${{ if eq(parameters.runtimeEnv, 'container') }}:
-            installerISOName: trident-container-installer
-            testImageName: trident-container-testimage
-            verityTestImageName: trident-container-verity-testimage
-            usrVerityTestImageName: trident-container-usrverity-testimage
-            downloadTridentContainer: true
-          ${{ else }}:
-            installerISOName: trident-installer
-            testImageName: trident-testimage
-            verityTestImageName: trident-verity-testimage
-            usrVerityTestImageName: trident-usrverity-testimage
-            downloadTridentContainer: false
+          - name: argusToolkitSourceDirectory
+            value: $(Build.SourcesDirectory)/argus-toolkit
 
-          ob_outputDirectory: $(tridentSourceDirectory)/deployment_logs
-          ob_artifactBaseName: $(tridentConfigurationName)_${{ parameters.runtimeEnv }}_deployment_log_$(System.JobAttempt)
+          - ${{ if eq(parameters.runtimeEnv, 'container') }}:
+              - name: installerISOName
+                value: trident-container-installer
+              - name: testImageName
+                value: trident-container-testimage
+              - name: verityTestImageName
+                value: trident-container-verity-testimage
+              - name: usrVerityTestImageName
+                value: trident-container-usrverity-testimage
+              - name: downloadTridentContainer
+                value: true
+          - ${{ else }}:
+              - name: installerISOName
+                value: trident-installer
+              - name: testImageName
+                value: trident-testimage
+              - name: verityTestImageName
+                value: trident-verity-testimage
+              - name: usrVerityTestImageName
+                value: trident-usrverity-testimage
+              - name: downloadTridentContainer
+                value: false
 
-          netlaunchPort: 4000
+          - name: ob_outputDirectory
+            value: $(tridentSourceDirectory)/deployment_logs
+          - name: ob_artifactBaseName
+            value: $(tridentConfigurationName)_${{ parameters.runtimeEnv }}_deployment_log_$(System.JobAttempt)
+
+          - name: netlaunchPort
+            value: 4000
+
+          # Provides: ACR_NAME
+          - group: trident_e2e_params
 
         steps:
           - bash: |
@@ -113,12 +134,12 @@ stages:
               tridentTestImageUsrVerity: ${{ variables.usrVerityTestImageName }}
 
           # Push (regular or container) testimage to ACR
-          #   - template: ../common_tasks/push-to-acr.yml
-          #     parameters:
-          #       imageName: ${{ variables.testImageName }}
-          #       registry: # TODO: replace with variable
-          #       config: ${{ variables.tridentConfigurationName }}
-          #       deploymentEnvironment: "virtualMachine"
+          - template: ../common_tasks/push-to-acr.yml
+            parameters:
+              imageName: ${{ variables.testImageName }}
+              registry: ${{ variables.ACR_NAME }}
+              config: ${{ variables.tridentConfigurationName }}
+              deploymentEnvironment: "virtualMachine"
 
           - template: netlaunch-prep.yml
 
@@ -128,7 +149,7 @@ stages:
               tridentConfigPath: $(tridentConfigPath)
               runtimeEnv: ${{ parameters.runtimeEnv }}
               config: ${{ variables.tridentConfigurationName }}
-              registry: "" # TODO: replace with variable
+              registry: ${{ variables.ACR_NAME }}
               imageName: ${{ variables.testImageName }}
 
           - bash: |
@@ -284,11 +305,11 @@ stages:
               artifactsDirectory: artifacts/test-image
               netlistenPort: ${{variables.netlaunchPort}}
 
-          #   - template: ../common_tasks/remove-from-acr.yml
-          #     parameters:
-          #       repository: ${{ variables.testImageName }}
-          #       registry: # TODO: replace with variable
-          #       config: ${{ variables.tridentConfigurationName }}
+          - template: ../common_tasks/remove-from-acr.yml
+            parameters:
+              repository: ${{ variables.testImageName }}
+              registry: ${{ variables.ACR_NAME }}
+              config: ${{ variables.tridentConfigurationName }}
 
           - bash: |
               set -eux
