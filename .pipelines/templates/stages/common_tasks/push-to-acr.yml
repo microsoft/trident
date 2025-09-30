@@ -48,7 +48,7 @@ steps:
         fi
 
         # Login to ACR
-        az acr login -n ${{ variables.ACR_NAME }}
+        az acr login -n $(ACR_NAME)
 
         repository_name=${{ parameters.imageName }}
         build_id="$(Build.BuildId)"
@@ -67,11 +67,11 @@ steps:
           tag="$tag_base.${version}"
 
           if [[ -f "$filename" ]]; then
-            echo "Pushing $filename with tag $tag to ${{ variables.ACR_NAME }}.azurecr.io"
-            oras push ${{ variables.ACR_NAME }}.azurecr.io/$repository_name:$tag "$filename"
+            echo "Pushing $filename with tag $tag to $(ACR_NAME).azurecr.io"
+            oras push $(ACR_NAME).azurecr.io/$repository_name:$tag "$filename"
             sleep 3
             echo "Verifying $filename was pushed successfully..."
-            az acr repository show --name ${{ variables.ACR_NAME }} --image ${repository_name}:${tag}
+            az acr repository show --name $(ACR_NAME) --image ${repository_name}:${tag}
           else
             echo "File $filename not found"
           fi
