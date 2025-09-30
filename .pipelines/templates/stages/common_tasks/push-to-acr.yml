@@ -20,6 +20,8 @@ steps:
   - bash: |
       set -eux
 
+      printenv
+
       if [ ${{ parameters.config }} != 'misc' ]; then
         echo "Skipping step. Configuration is '${{ parameters.config }}'."
         exit 0
