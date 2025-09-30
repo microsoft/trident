@@ -71,7 +71,6 @@ type AttendedInstaller struct {
 	titleText         *tview.TextView
 	keyboard          uinput.Keyboard
 
-	calamaresInstallFunc func() error
 	installationError    error
 	installationTime     time.Duration
 	userQuitInstallation bool
@@ -80,10 +79,8 @@ type AttendedInstaller struct {
 }
 
 // New creates and returns a new AttendedInstaller.
-func New(calamaresInstallFunc func() error, imagePath string, hostConfigPath string) (attendedInstaller *AttendedInstaller, err error) {
-	attendedInstaller = &AttendedInstaller{
-		calamaresInstallFunc: calamaresInstallFunc,
-	}
+func New(imagePath string, hostConfigPath string) (attendedInstaller *AttendedInstaller, err error) {
+	attendedInstaller = &AttendedInstaller{}
 	attendedInstaller.hostConfigData = configuration.NewTridentConfigData(imagePath)
 	attendedInstaller.hostconfigPath = hostConfigPath
 
@@ -363,7 +360,7 @@ func (ai *AttendedInstaller) initializeUI() (err error) {
 }
 
 func (ai *AttendedInstaller) initializeViews() (err error) {
-	installerView := installerview.New(ai.installWithCalamaresWrapper)
+	installerView := installerview.New()
 	if installerView.NeedsToPrompt() {
 		ai.allViews = append(ai.allViews, installerView)
 	}
@@ -392,11 +389,6 @@ func (ai *AttendedInstaller) initializeViews() (err error) {
 	}
 
 	return
-}
-
-func (ai *AttendedInstaller) installWithCalamaresWrapper() {
-	ai.app.Stop()
-	ai.installationError = ai.calamaresInstallFunc()
 }
 
 func releaseVersion(releaseFile string) (version string, err error) {

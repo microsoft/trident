@@ -13,11 +13,8 @@ import (
 	"strings"
 
 	"azltools/imagegen/attendedinstaller"
-	"azltools/imagegen/configuration"
 	"azltools/internal/exe"
-	"azltools/internal/jsonutils"
 	"azltools/internal/logger"
-	"azltools/internal/shell"
 
 	"github.com/alecthomas/kingpin/v2"
 	"golang.org/x/sys/unix"
@@ -103,11 +100,7 @@ func installerFactory(unattended bool) (installFunc func() (bool, error)) {
 // Runs the terminal UI for attended installation
 func terminalUIAttendedInstall() (installationQuit bool, err error) {
 	// Initialize the attended installer
-	attendedInstaller, err := attendedinstaller.New(
-		// Calamares based installation
-		func() (err error) {
-			return calamaresInstall()
-		}, *imagePath, *hostconfigPath)
+	attendedInstaller, err := attendedinstaller.New(*imagePath, *hostconfigPath)
 
 	if err != nil {
 		return
@@ -116,74 +109,6 @@ func terminalUIAttendedInstall() (installationQuit bool, err error) {
 	// Execute installation UI
 	installationQuit, err = attendedInstaller.Run()
 	return
-}
-
-// This function will be replaced in Trident
-func ejectDisk() (err error) {
-	logger.Log.Info("Ejecting CD-ROM.")
-	const squashErrors = false
-	program := "eject"
-	commandArgs := []string{
-		"--cdrom",
-		"--force",
-	}
-	err = shell.ExecuteLive(squashErrors, program, commandArgs...)
-
-	if err != nil {
-		// If there was an error ejecting the CD-ROM, assume this is a USB installation and prompt the user
-		// to remove the USB device before rebooting.
-		logger.Log.Info("==================================================================================")
-		logger.Log.Info("Installation Complete. Please Remove USB installation media and reboot if present.")
-		logger.Log.Info("==================================================================================")
-	}
-	return
-}
-
-// Calamares based installation
-func calamaresInstall() (err error) {
-	const (
-		squashErrors = false
-		calamaresDir = "/etc/calamares"
-	)
-	args := imagerArguments{}
-	args.emitProgress = true
-	args.configFile = filepath.Join(calamaresDir, "unattended_config.json")
-
-	launchScript := filepath.Join(calamaresDir, "mariner-install.sh")
-	skuDir := filepath.Join(calamaresDir, "azurelinux-skus")
-
-	bootType := configuration.SystemBootType()
-	logger.Log.Infof("Boot type detected: %s", bootType)
-
-	mouseHandlers, err := findMouseHandlers()
-	if err != nil {
-		// Not finding a mouse isn't fatal as the installer can instead be driven with
-		// a keyboard only.
-		logger.Log.Warnf("No mouse detected: %v", err)
-	}
-
-	logger.Log.Infof("Using (%s) for mouse input", mouseHandlers)
-	newEnv := append(shell.CurrentEnvironment(), fmt.Sprintf("QT_QPA_EVDEV_MOUSE_PARAMETERS=%s", mouseHandlers))
-	shell.SetEnvironment(newEnv)
-
-	// Generate the files needed for calamares
-	err = os.MkdirAll(skuDir, os.ModePerm)
-	if err != nil {
-		return
-	}
-
-	err = generateCalamaresLaunchScript(launchScript, args)
-	if err != nil {
-		return
-	}
-
-	// Generate the partial JSONs for SKUs
-	err = generateCalamaresSKUs(skuDir, bootType)
-	if err != nil {
-		return
-	}
-
-	return shell.ExecuteLive(squashErrors, "calamares", "-platform", "linuxfb")
 }
 
 // Failing in azl-installer.iso
@@ -231,73 +156,6 @@ func findMouseHandlers() (handlers string, err error) {
 
 	// Join all mouse event handlers together so they all function inside QT
 	handlers = strings.Join(eventHandlers, handlerDelimiter)
-
-	return
-}
-
-func generateCalamaresLaunchScript(launchScriptPath string, args imagerArguments) (err error) {
-	const executionPerm = 0755
-
-	// Generate the script calamares will invoke to install
-	scriptFile, err := os.OpenFile(launchScriptPath, os.O_CREATE|os.O_RDWR, executionPerm)
-	if err != nil {
-		return
-	}
-	defer scriptFile.Close()
-
-	logger.Log.Infof("Generating install script (%s)", launchScriptPath)
-	program, commandArgs := formatImagerCommand(args)
-
-	scriptFile.WriteString("#!/bin/bash\n")
-	scriptFile.WriteString(fmt.Sprintf("%s %s", program, strings.Join(commandArgs, " ")))
-	scriptFile.WriteString("\n")
-
-	return
-}
-
-func generateCalamaresSKUs(skuDir, bootType string) (err error) {
-	// Parse template config
-	templateConfig, err := configuration.Load("/root/installer/attended_config.json")
-	if err != nil {
-		return
-	}
-
-	// Generate JSON snippets for each SKU
-	for _, sysConfig := range templateConfig.SystemConfigs {
-		sysConfig.BootType = bootType
-		err = generateSingleCalamaresSKU(sysConfig, skuDir)
-		if err != nil {
-			return
-		}
-	}
-
-	return
-}
-
-func generateSingleCalamaresSKU(sysConfig configuration.SystemConfig, skuDir string) (err error) {
-	skuFilePath := filepath.Join(skuDir, sysConfig.Name+".json")
-	logger.Log.Infof("Generating SKU option (%s)", skuFilePath)
-
-	// Write the individual system config to a file.
-	return jsonutils.WriteJSONFile(skuFilePath, sysConfig)
-}
-
-func formatImagerCommand(args imagerArguments) (program string, commandArgs []string) {
-	program = args.imagerTool
-
-	commandArgs = []string{
-		"--live-install",
-		fmt.Sprintf("--input=%s", args.configFile),
-		fmt.Sprintf("--build-dir=%s", args.buildDir),
-		fmt.Sprintf("--base-dir=%s", args.baseDirPath),
-		fmt.Sprintf("--log-file=%s", args.logFile),
-		fmt.Sprintf("--log-level=%s", args.logLevel),
-		fmt.Sprintf("--repo-snapshot-time=%s", args.repoSnapshotTime),
-	}
-
-	if args.emitProgress {
-		commandArgs = append(commandArgs, "--emit-progress")
-	}
 
 	return
 }
