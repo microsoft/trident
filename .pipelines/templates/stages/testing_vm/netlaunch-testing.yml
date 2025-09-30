@@ -137,7 +137,6 @@ stages:
           - template: ../common_tasks/push-to-acr.yml
             parameters:
               imageName: ${{ variables.testImageName }}
-              registry: ${{ variables.ACR_NAME }}
               config: ${{ variables.tridentConfigurationName }}
               deploymentEnvironment: "virtualMachine"
 
@@ -149,7 +148,6 @@ stages:
               tridentConfigPath: $(tridentConfigPath)
               runtimeEnv: ${{ parameters.runtimeEnv }}
               config: ${{ variables.tridentConfigurationName }}
-              registry: ${{ variables.ACR_NAME }}
               imageName: ${{ variables.testImageName }}
 
           - bash: |
@@ -308,7 +306,6 @@ stages:
           - template: ../common_tasks/remove-from-acr.yml
             parameters:
               repository: ${{ variables.testImageName }}
-              registry: ${{ variables.ACR_NAME }}
               config: ${{ variables.tridentConfigurationName }}
 
           - bash: |
