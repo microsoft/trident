@@ -99,9 +99,6 @@ os:
     resetType: hard-reset
   hostname: update-ready-os
 
-  selinux:
-    mode: enforcing
-
   kernelCommandLine:
     extraCommandLine:
       - log_buf_len=1M
