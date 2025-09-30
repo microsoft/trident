@@ -27,6 +27,13 @@ stages:
 
         steps:
           - template: ../common_tasks/avoid-pypi-usage.yml
+
+          - bash: |
+              set -eux
+              make artifacts/osmodifier
+              rm -rf artifacts/osmodifier
+            displayName: Invoke make artifacts/osmodifier
+
           - template: ../common_tasks/download-osmodifier.yml
             parameters:
               osModifierBuildType: dev
