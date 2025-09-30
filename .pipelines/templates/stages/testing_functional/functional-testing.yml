@@ -47,8 +47,6 @@ stages:
           baseImageDirectory: "$(Build.SourcesDirectory)/artifacts"
 
         steps:
-          - checkout: argus-toolkit
-            fetchDepth: 1
           - checkout: platform-tests
             fetchDepth: 1
 
@@ -109,7 +107,7 @@ stages:
               # rebuilding the test binaries and invoking pytest. The regular
               # target is meant for local use and does extra setup not required
               # here.
-              sg libvirt "make functional-test-core ARGUS_TOOLKIT_PATH=argus-toolkit"
+              sg libvirt "make functional-test-core"
             displayName: Execute Functional Tests
 
           - template: ../common_tasks/coverage.yml
@@ -130,6 +128,6 @@ stages:
           - bash: |
               set -eux
 
-              sg libvirt "make patch-functional-test ARGUS_TOOLKIT_PATH=argus-toolkit"
+              sg libvirt "make patch-functional-test"
             condition: and(succeeded(), eq('${{ parameters.rerunTests }}', 'true'))
             displayName: Rerun Functional Tests

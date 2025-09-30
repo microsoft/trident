@@ -75,9 +75,6 @@ stages:
           - name: tridentConfigPath
             value: $(tridentSourceDirectory)/tests/e2e_tests/trident_configurations/$(tridentConfigurationName)
 
-          - name: argusToolkitSourceDirectory
-            value: $(Build.SourcesDirectory)/argus-toolkit
-
           - ${{ if eq(parameters.runtimeEnv, 'container') }}:
               - name: installerISOName
                 value: trident-container-installer
@@ -121,9 +118,6 @@ stages:
               fi
             displayName: Special handle for split test
 
-          - checkout: argus-toolkit
-            fetchDepth: 1
-
           # Download all test images
           - template: ../testing_common/download-test-images.yml
             parameters:
@@ -159,8 +153,8 @@ stages:
               cat /etc/libvirt/virtlogd.conf
               sudo systemctl restart virtlogd.socket
 
-              ./virt-deploy create --mem 12 --disks 32,32
-            workingDirectory: $(argusToolkitSourceDirectory)
+              ./tools/virt-deploy create --mem 12 --disks 32,32
+            workingDirectory: $(tridentSourceDirectory)
             displayName: "Creating virt-deploy VM"
 
           - bash: |
@@ -189,7 +183,7 @@ stages:
 
               ./bin/netlaunch \
                   --iso ./artifacts/iso/$(installerISOName).iso \
-                  --config $(argusToolkitSourceDirectory)/vm-netlaunch.yaml \
+                  --config $(tridentSourceDirectory)/tools/vm-netlaunch.yaml \
                   --trident $(tridentConfigPath)/trident-config.yaml \
                   --servefolder ./artifacts/test-image \
                   --logstream \
@@ -213,7 +207,7 @@ stages:
           - bash: |
               set -ux
 
-              VM_NAME=$(jq -r '.virtualmachines[0].name' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)
+              VM_NAME=$(jq -r '.virtualmachines[0].name' $(tridentSourceDirectory)/tools/virt-deploy-metadata.json)
               VM_SERIAL_LOG="/tmp/$VM_NAME-serial0.log"
 
               until [ -f "$VM_SERIAL_LOG" ]
@@ -244,7 +238,7 @@ stages:
           - bash: |
               set -eux
 
-              HOST_IP=$(jq -r '.virtualmachines[0].ip' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)
+              HOST_IP=$(jq -r '.virtualmachines[0].ip' $(tridentSourceDirectory)/tools/virt-deploy-metadata.json)
               ./bin/storm-trident helper check-selinux \
                   "$(tridentSourceDirectory)/tests/e2e_tests/helpers/key" \
                   "$HOST_IP" \
@@ -257,7 +251,7 @@ stages:
 
           - bash: |
               set -eux
-              HOST_IP=$(jq -r '.virtualmachines[0].ip' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)
+              HOST_IP=$(jq -r '.virtualmachines[0].ip' $(tridentSourceDirectory)/tools/virt-deploy-metadata.json)
               ssh -o StrictHostKeyChecking=no -i $(tridentSourceDirectory)/tests/e2e_tests/helpers/key testing-user@$HOST_IP \
                 'sudo journalctl -u docker.service'
               ssh -o StrictHostKeyChecking=no -i $(tridentSourceDirectory)/tests/e2e_tests/helpers/key testing-user@$HOST_IP \
@@ -267,7 +261,7 @@ stages:
 
           - bash: |
               set -eux
-              HOST_IP=$(jq -r '.virtualmachines[0].ip' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)
+              HOST_IP=$(jq -r '.virtualmachines[0].ip' $(tridentSourceDirectory)/tools/virt-deploy-metadata.json)
               ./bin/storm-trident helper boot-metrics \
                   "$(tridentSourceDirectory)/tests/e2e_tests/helpers/key" \
                   "$HOST_IP" \
@@ -295,7 +289,7 @@ stages:
               buildPurpose: ${{ parameters.buildPurpose }}
               deploymentEnvironment: virtualMachine
               tridentConfigurationName: $(tridentConfigurationName)
-              hostIp: $(jq -r '.virtualmachines[0].ip' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)
+              hostIp: $(jq -r '.virtualmachines[0].ip' $(tridentSourceDirectory)/tools/virt-deploy-metadata.json)
               runtimeEnv: ${{ parameters.runtimeEnv }}
               tridentConfigPath: $(tridentConfigPath)
               sshKeyPath: $(tridentSourceDirectory)/tests/e2e_tests/helpers/key

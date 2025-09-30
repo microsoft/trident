@@ -4,8 +4,6 @@
 
 Virtdeploy is a tool to create VMs to mock real physical servers.
 
-It leverages libvirt, docker, and sushy-tools to emulate a physical machine with a BMC.
-
 ## Summary of How it Works
 
 Note: "Deploy Agent" is whatever you are using to deploy an OS through the BMC, eg. `netlaunch`.
@@ -129,19 +127,7 @@ EOF
 ### Resource creation
 
 ```bash
-./virt-deploy create
+./tools/virt-deploy create
 ```
-
-*Note: Make sure to run this command from your argus-toolkit directory. Use
-`--help` to see more options!*
-
-### Activate resources
-
-```bash
-./virt-deploy run
-```
-
-If you see a failure to pull, make sure you are not logged in using expired
-credentials. The target registry supports anonymous pull.
 
 *Note: Use `--help` to see more options!*
