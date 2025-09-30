@@ -1,0 +1,13 @@
+<network>
+    <name>{{ name }}</name>
+    <forward mode="nat" dev="{{ interface }}"/>
+    <domain name="{{ name }}" />
+    <ip address="{{ address }}" netmask="{{ mask }}">
+        <dhcp>
+            <range start="{{ dhcp_start }}" end="{{ dhcp_end }}" /> 
+            {%- for host in hosts %} 
+            <host mac="{{ host.mac }}" name="{{ host.name }}" ip="{{ host.ip }}" />
+            {%- endfor %}
+        </dhcp>
+    </ip>
+</network>
