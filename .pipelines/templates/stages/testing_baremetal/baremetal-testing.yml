@@ -125,6 +125,7 @@ stages:
         steps:
           - bash: |
               set -xe
+              printenv
               ping -c 3 "${{ variables.lab_canary_ip }}"
             displayName: "Validate if the Baremetal lab is up and running"
             retryCountOnTaskFailure: 10
