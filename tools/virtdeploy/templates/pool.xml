@@ -1,0 +1,14 @@
+<pool type='dir'>
+    <name>{{ name }}</name>
+    <uuid />
+    <source>
+    </source>
+    <target>
+        <path>{{ path }}</path>
+        <permissions>
+            <mode>0755</mode>
+            <owner>-1</owner>
+            <group>-1</group>
+        </permissions>
+    </target>
+</pool>

@@ -1,0 +1,98 @@
+<domain type="kvm">
+    <name>{{ name }}</name>
+    <memory unit="GiB">{{ mem }}</memory>
+    <vcpu>{{ cpus }}</vcpu>
+    <os>
+        <smbios mode='sysinfo'/>
+        <type arch="x86_64" machine="q35">hvm</type>
+        <loader readonly="yes" type="pflash">/usr/share/OVMF/OVMF_CODE_4M.ms.fd</loader>
+        <nvram template="/usr/share/OVMF/OVMF_VARS_4M.ms.fd">/var/lib/libvirt/qemu/nvram/{{ name }}_VARS.fd</nvram>
+    </os>
+    <sysinfo type="smbios">
+        <oemStrings>
+            <entry>virtdeploy:1</entry>
+        </oemStrings>
+    </sysinfo>
+    <features>
+        <acpi />
+        <apic />
+        <vmport state="off" />
+    </features>
+    <cpu match='exact' check='none'>
+        <model fallback='allow'>Broadwell-IBRS</model>
+        <feature policy='require' name='vmx' />
+    </cpu>
+    <clock offset="utc">
+        <timer name="rtc" tickpolicy="catchup" />
+        <timer name="pit" tickpolicy="delay" />
+        <timer name="hpet" present="no" />
+    </clock>
+    <pm>
+        <suspend-to-mem enabled="no" />
+        <suspend-to-disk enabled="no" />
+    </pm>
+    <devices>
+        <emulator>/usr/bin/qemu-system-x86_64</emulator>
+
+        {% for volume in volumes %}
+        <disk type="file" device="disk">
+            <driver name="qemu" type="qcow2" />
+            <source file="{{ volume.source }}" />
+            <target dev="{{ volume.dev }}" bus="sata" />
+            <address type="drive" controller="0" bus="0" target="0" unit="{{loop.index}}" />
+        </disk>
+        {% endfor %}
+
+        {% for cdrom in cdroms %}
+        <disk type="file" device="cdrom">
+            {% if cdrom.source %}
+            <source file="{{ cdrom.source }}" />
+            {% endif %}
+            <driver name="qemu" type="raw" />
+            <target dev="{{ cdrom.dev }}" bus="sata" />
+            <readonly />
+            <address type="drive" controller="1" bus="0" target="0" unit="{{loop.index}}" />
+        </disk>
+        {% endfor %}
+
+        <controller type="usb" index="0" model="ich9-ehci1" />
+        <controller type="usb" index="0" model="ich9-uhci1">
+            <master startport="0" />
+        </controller>
+        <controller type="usb" index="0" model="ich9-uhci2">
+            <master startport="2" />
+        </controller>
+        <controller type="usb" index="0" model="ich9-uhci3">
+            <master startport="4" />
+        </controller>
+        <interface type="network">
+            <mac address="{{ mac }}" />
+            <source network="{{ network }}" />
+            <model type="virtio" />
+        </interface>
+        <console type="pty" />
+        <channel type="spicevmc">
+            <target type="virtio" name="com.redhat.spice.0" />
+        </channel>
+        <input type="tablet" bus="usb" />
+        <graphics type="spice" port="-1" tlsPort="-1" autoport="yes">
+            <image compression="off" />
+        </graphics>
+        <sound model="ich6" />
+        <video>
+            <model type="qxl" />
+        </video>
+        <redirdev bus="usb" type="spicevmc" />
+        <redirdev bus="usb" type="spicevmc" />
+        <serial type='pty'>
+            <source path='/dev/pts/2' />
+            <target port='0' />
+            <log file="/tmp/{{ name }}-serial0.log" append="off" />
+        </serial>
+        {% if enable_tpm %}
+        <tpm model="tpm-tis">
+            <backend type="emulator" version="2.0" />
+        </tpm>
+        {% endif %}
+    </devices>
+</domain>
