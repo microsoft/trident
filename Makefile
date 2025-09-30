@@ -1,8 +1,6 @@
 # Path to the Trident configuration file for validate and run-netlaunch targets.
 TRIDENT_CONFIG ?= input/trident.yaml
 
-ARGUS_TOOLKIT_PATH ?= ../argus-toolkit
-
 PLATFORM_TESTS_PATH ?= ../platform-tests
 
 TEST_IMAGES_PATH ?= ../test-images
@@ -441,7 +439,7 @@ validate: $(TRIDENT_CONFIG) bin/trident
 
 NETLAUNCH_ISO ?= bin/trident-mos.iso
 
-input/netlaunch.yaml: $(ARGUS_TOOLKIT_PATH)/vm-netlaunch.yaml
+input/netlaunch.yaml: tools/vm-netlaunch.yaml
 	@mkdir -p input
 	ln -vsf "$$(realpath "$<")" $@
 

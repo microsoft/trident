@@ -30,11 +30,6 @@ trigger: none
 
 resources:
   repositories:
-    - repository: argus-toolkit
-      type: git
-      name: argus-toolkit
-      ref: refs/heads/main
-
     - repository: platform-tests
       type: git
       name: platform-tests
