@@ -378,7 +378,9 @@ def vm(request, ssh_key_path, known_hosts_path) -> SshNode:
     request.config.cache.set(VM_SSH_NODE_CACHE_KEY, None)
 
     # Fixture cleanup.
-    trident_runcmd([TRIDENT_REPO_DIR_PATH / "tools" / "virt-deploy", "create", "--clean"])
+    trident_runcmd(
+        [TRIDENT_REPO_DIR_PATH / "tools" / "virt-deploy", "create", "--clean"]
+    )
 
 
 def pytest_collection_modifyitems(session, config, items: List[pytest.Item]):
