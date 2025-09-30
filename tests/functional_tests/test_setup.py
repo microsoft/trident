@@ -33,9 +33,13 @@ users:
 def create_vm(create_params) -> Dict[str, str]:
     log.info("Creating VM with parameters: %s", create_params)
     """Creates a VM with the given parameters, using virt-deploy."""
-    trident_runcmd([TRIDENT_REPO_DIR_PATH / "tools" / "virt-deploy", "create"] + create_params)
+    trident_runcmd(
+        [TRIDENT_REPO_DIR_PATH / "tools" / "virt-deploy", "create"] + create_params
+    )
 
-    with open(TRIDENT_REPO_DIR_PATH / "tools" /"virt-deploy-metadata.json", "r") as file:
+    with open(
+        TRIDENT_REPO_DIR_PATH / "tools" / "virt-deploy-metadata.json", "r"
+    ) as file:
         metadata = json.load(file)
 
     return metadata["virtualmachines"][0]
