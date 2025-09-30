@@ -13,7 +13,7 @@ parameters:
 steps:
   - task: AzureCLI@2
     inputs:
-      azureSubscription: ${{ variables.ACR_SERVICE_CONNECTION }}
+      azureSubscription: trident-dev-acr-write-umi-ECF
       scriptType: bash
       scriptLocation: inlineScript
       inlineScript: |
@@ -25,18 +25,18 @@ steps:
         fi
 
         # Login to ACR
-        az acr login -n ${{ variables.ACR_NAME }}
+        az acr login -n $(ACR_NAME)
         sleep 5
 
         repository_name="${{ parameters.repository }}"
         build_id="$(Build.BuildId)"
-        az acr repository show-tags -n ${{ variables.ACR_NAME }} --repository $repository_name
+        az acr repository show-tags -n $(ACR_NAME) --repository $repository_name
 
         # Delete repository with COSI images
         for i in {1..4}; do
           tag="$(TAG_BASE).${i}"
-          if az acr repository show --name ${{ variables.ACR_NAME }} --image ${repository_name}:${tag} &> /dev/null; then
-            az acr repository delete --name ${{ variables.ACR_NAME }} --image ${repository_name}:${tag} --yes
+          if az acr repository show --name $(ACR_NAME) --image ${repository_name}:${tag} &> /dev/null; then
+            az acr repository delete --name $(ACR_NAME) --image ${repository_name}:${tag} --yes
           fi
         done
     displayName: "Log into ACR and delete images by tag"
