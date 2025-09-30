@@ -249,6 +249,11 @@
         "volumes"
       ],
       "properties": {
+        "clearTpmOnInstall": {
+          "description": "Optional parameter that determines whether the TPM 2.0 device will be cleared on clean install. By default, it is set to false. If set to true, Trident will clear the TPM 2.0 device on install. TPM cannot be cleared on A/B updates.\n\nClearing the TPM 2.0 device will remove all keys and data from the TPM 2.0 device. This operation is irreversible and could result in data loss. However, this option might be needed to ensure that the TPM 2.0 is in a known state; to avoid entering the DA (Direct Attack) lockout mode on repetitive provisioning attempts, e.g. during testing and development.",
+          "type": "boolean",
+          "nullable": true
+        },
         "pcrs": {
           "description": "Optional list of PCRs in TPM 2.0 device to seal to. If not specified, Trident will seal encrypted volumes against the following default options: - If doing a clean install of a grub ROS image, seal to PCR 7 while inside the MOS, - If doing a clean install of a UKI ROS image, seal to PCRs 4 and 11 after booting into the ROS A.\n\nEach PCR may be specified either as a digit or a string representation. If specified, at least one PCR must be provided.\n\nWhen doing a clean install of a grub ROS image, the following options are valid: - 7, or `secure-boot-policy`.\n\nWhen doing a clean install of a UKI ROS image, the following options are valid: - 4, or `boot-loader-code`, - 11, or `kernel-boot`, - 4 and 11.\n\nMore encryption flows, with additional PCR options, will be added in the future.",
           "type": "array",
