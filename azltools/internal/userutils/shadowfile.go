@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"azltools/internal/file"
-	"azltools/internal/sliceutils"
 )
 
 type ShadowEntry struct {
@@ -112,20 +111,4 @@ func parseOptionalInt(value string) (*int, error) {
 
 	a, err := strconv.Atoi(value)
 	return &a, err
-}
-
-func GetShadowFileEntryForUser(rootDir string, user string) (ShadowEntry, error) {
-	entries, err := ReadShadowFile(rootDir)
-	if err != nil {
-		return ShadowEntry{}, err
-	}
-
-	entry, found := sliceutils.FindValueFunc(entries, func(entry ShadowEntry) bool {
-		return entry.Name == user
-	})
-	if !found {
-		return ShadowEntry{}, fmt.Errorf("failed to find user (%s) in %s file", user, ShadowFile)
-	}
-
-	return entry, nil
 }

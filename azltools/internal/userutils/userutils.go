@@ -12,7 +12,6 @@ import (
 
 	"azltools/internal/file"
 	"azltools/internal/randomization"
-	"azltools/internal/safechroot"
 	"azltools/internal/shell"
 
 	"github.com/sirupsen/logrus"
@@ -54,54 +53,6 @@ func HashPassword(password string) (string, error) {
 
 	hashedPassword := strings.TrimSpace(stdout)
 	return hashedPassword, nil
-}
-
-func UserExists(username string, installChroot safechroot.ChrootInterface) (bool, error) {
-	var userExists bool
-	err := installChroot.UnsafeRun(func() error {
-		_, stderr, err := shell.Execute("id", "-u", username)
-		if err != nil {
-			if !strings.Contains(stderr, "no such user") {
-				return fmt.Errorf("failed to check if user exists (%s):\n%w", username, err)
-			}
-
-			userExists = false
-		} else {
-			userExists = true
-		}
-
-		return nil
-	})
-	if err != nil {
-		return false, err
-	}
-
-	return userExists, nil
-}
-
-func AddUser(username string, homeDir string, primaryGroup string, hashedPassword string, uid string, installChroot safechroot.ChrootInterface) error {
-	var args = []string{username, "-m"}
-	if hashedPassword != "" {
-		args = append(args, "-p", hashedPassword)
-	}
-	if uid != "" {
-		args = append(args, "-u", uid)
-	}
-	if homeDir != "" {
-		args = append(args, "-d", homeDir)
-	}
-	if primaryGroup != "" {
-		args = append(args, "-g", primaryGroup)
-	}
-
-	err := installChroot.UnsafeRun(func() error {
-		return shell.ExecuteLiveWithErr(1, "useradd", args...)
-	})
-	if err != nil {
-		return fmt.Errorf("failed to add user (%s):\n%w", username, err)
-	}
-
-	return nil
 }
 
 func UpdateUserPassword(installRoot, username, hashedPassword string) error {
@@ -147,27 +98,6 @@ func UpdateUserPassword(installRoot, username, hashedPassword string) error {
 	}
 
 	return nil
-}
-
-// UserHomeDirectory returns the home directory for a user.
-func UserHomeDirectory(installRoot string, username string) (string, error) {
-	entry, err := GetPasswdFileEntryForUser(installRoot, username)
-	if err != nil {
-		return "", err
-	}
-
-	return entry.HomeDirectory, nil
-}
-
-// UserSSHDirectory returns the path of the .ssh directory for a user.
-func UserSSHDirectory(installRoot string, username string) (string, error) {
-	homeDir, err := UserHomeDirectory(installRoot, username)
-	if err != nil {
-		return "", err
-	}
-
-	userSSHKeyDir := filepath.Join(homeDir, SSHDirectoryName)
-	return userSSHKeyDir, nil
 }
 
 // NameIsValid returns an error if the User name is empty

@@ -12,13 +12,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestUserSSHDirectory(t *testing.T) {
-	expected := "/home/1001/.ssh"
-	actual, err := UserSSHDirectory(testDataDir, "test")
-	assert.NoError(t, err)
-	assert.Equal(t, expected, actual)
-}
-
 func TestNameIsValidRoot(t *testing.T) {
 	err := NameIsValid("root")
 	assert.NoError(t, err)

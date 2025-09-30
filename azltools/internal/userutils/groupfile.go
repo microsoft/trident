@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"azltools/internal/file"
-	"azltools/internal/sliceutils"
 )
 
 type GroupEntry struct {
@@ -74,21 +73,4 @@ func parseGroupFileEntry(line string) (GroupEntry, error) {
 		UserList: users,
 	}
 	return entry, nil
-}
-
-func GetUserGroups(rootDir string, username string) ([]string, error) {
-	systemGroups, err := ReadGroupFile(rootDir)
-	if err != nil {
-		return nil, err
-	}
-
-	userGroups := []string(nil)
-	for _, group := range systemGroups {
-		userInGroup := sliceutils.ContainsValue(group.UserList, username)
-		if userInGroup {
-			userGroups = append(userGroups, group.Name)
-		}
-	}
-
-	return userGroups, nil
 }

@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"azltools/internal/file"
-	"azltools/internal/sliceutils"
 )
 
 type PasswdEntry struct {
@@ -80,21 +79,5 @@ func parsePasswdFileEntry(line string) (PasswdEntry, error) {
 		HomeDirectory: fields[5],
 		Shell:         fields[6],
 	}
-	return entry, nil
-}
-
-func GetPasswdFileEntryForUser(rootDir string, user string) (PasswdEntry, error) {
-	entries, err := ReadPasswdFile(rootDir)
-	if err != nil {
-		return PasswdEntry{}, err
-	}
-
-	entry, found := sliceutils.FindValueFunc(entries, func(entry PasswdEntry) bool {
-		return entry.Name == user
-	})
-	if !found {
-		return PasswdEntry{}, fmt.Errorf("failed to find user (%s) in %s file", user, PasswdFile)
-	}
-
 	return entry, nil
 }
