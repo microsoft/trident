@@ -31,7 +31,7 @@ This parameter is required and must not be empty. Each item is an object that wi
 
 Optional parameter that determines whether the TPM 2.0 device will be cleared on clean install. By default, it is set to false. If set to true, Trident will clear the TPM 2.0 device on install. TPM cannot be cleared on A/B updates.
 
-Clearing the TPM 2.0 device will remove all keys and data from the TPM 2.0 device. This operation is irreversible and will result in data loss. However, this option might be needed to ensure that the TPM 2.0 is in a known state; to avoid entering the DA (Direct Attack) lockout mode on repetitive provisioning attempts, e.g. during testing and development.
+Clearing the TPM 2.0 device will remove all keys and data from the TPM 2.0 device. This operation is irreversible and could result in data loss. However, this option might be needed to ensure that the TPM 2.0 is in a known state; to avoid entering the DA (Direct Attack) lockout mode on repetitive provisioning attempts, e.g. during testing and development.
 
 | Characteristic | Value     |
 | -------------- | --------- |
