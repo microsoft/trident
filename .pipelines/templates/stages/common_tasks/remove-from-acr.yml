@@ -13,7 +13,7 @@ parameters:
 steps:
   - task: AzureCLI@2
     inputs:
-      azureSubscription: ${{ variables.ACR_SERVICE_CONNECTION }}
+      azureSubscription: trident-dev-acr-write-umi-ECF
       scriptType: bash
       scriptLocation: inlineScript
       inlineScript: |
