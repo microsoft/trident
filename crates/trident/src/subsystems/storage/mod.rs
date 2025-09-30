@@ -332,6 +332,7 @@ mod tests {
                         device_id: "part5".to_owned(),
                     }],
                     pcrs: vec![DEFAULT_PCR],
+                    ..Default::default()
                 }),
                 ..Default::default()
             },

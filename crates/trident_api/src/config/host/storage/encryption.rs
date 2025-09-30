@@ -101,6 +101,18 @@ pub struct Encryption {
     /// More encryption flows, with additional PCR options, will be added in the future.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pcrs: Vec<Pcr>,
+
+    /// Optional parameter that determines whether the TPM 2.0 device will be cleared on clean
+    /// install. By default, it is set to false. If set to true, Trident will clear the TPM 2.0
+    /// device on install. TPM cannot be cleared on A/B updates.
+    ///
+    /// Clearing the TPM 2.0 device will remove all keys and data from the TPM 2.0 device. This
+    /// operation is irreversible and will result in data loss. However, this option might be
+    /// needed to ensure that the TPM 2.0 is in a known state; to avoid entering the DA (Direct
+    /// Attack) lockout mode on repetitive provisioning attempts, e.g. during testing and
+    /// development.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clear_tpm_on_install: Option<bool>,
 }
 
 /// A LUKS2-encrypted volume configuration.
