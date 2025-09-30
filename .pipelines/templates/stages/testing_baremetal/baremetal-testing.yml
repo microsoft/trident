@@ -125,8 +125,7 @@ stages:
         steps:
           - bash: |
               set -xe
-              printenv
-              ping -c 3 "${{ variables.lab_canary_ip }}"
+              ping -c 3 "$(baremetal_controller.lab_canary_ip)"
             displayName: "Validate if the Baremetal lab is up and running"
             retryCountOnTaskFailure: 10
 
@@ -194,10 +193,10 @@ stages:
               python3 ./.pipelines/templates/stages/testing_baremetal/update_host_config.py \
                     --trident-yaml $(TRIDENT_CONFIG_FILE) \
                     --test-selection $(TEST_SELECTION_FILE) \
-                    --oam-ip "${{ variables.oam_ip }}" \
-                    --oam-gateway "${{ variables.oam_gateway }}" \
-                    --interface-name "${{ variables.oam_interface }}" \
-                    --oam-mac "${{ variables.oam_mac }}"
+                    --oam-ip "$(baremetal_controller.oam_ip)" \
+                    --oam-gateway "$(baremetal_controller.oam_gateway)" \
+                    --interface-name "$(baremetal_controller.oam_interface)" \
+                    --oam-mac "$(baremetal_controller.oam_mac)"
               cat $(TRIDENT_CONFIG_FILE)
             env:
               SYSTEM_ACCESSTOKEN: $(System.AccessToken)
@@ -209,11 +208,11 @@ stages:
               SERVICE_OVERRIDE=""
               if [ "${{ parameters.runtimeEnv }}" == "host" ]; then 
                 SERVICE_OVERRIDE="[Service]
-                  Environment=\"HTTPS_PROXY=${{ variables.lab_https_proxy }}\""
+                  Environment=\"HTTPS_PROXY=$(baremetal_controller.https_proxy)\""
               else
                 # When running containerized Trident, we must directly embed the proxy in the docker command
                 SERVICE_OVERRIDE="[Service]
-                  Environment=\"HTTPS_PROXY=${{ variables.lab_https_proxy }}\"
+                  Environment=\"HTTPS_PROXY=$(baremetal_controller.https_proxy)\"
                   ExecStart=
                   ExecStart=docker run \\
                     --env HTTPS_PROXY \\
@@ -238,9 +237,9 @@ stages:
               cat << EOF > $(TRIDENT_SOURCE_DIR)/baremetal-netlaunch.yaml
               netlaunch:
                 bmc:
-                  ip: "${{ variables.bmc_ip }}"
-                  username: "${{ variables.bmc_username }}"
-                  password: "${{ variables.bmc_password }}"
+                  ip: "$(baremetal_controller.bmc_ip)"
+                  username: "$(baremetal_controller.bmc_username)"
+                  password: "$(baremetal_controller.bmc_password)"
                   serialOverSsh:
                     sshPort: 22
                     comPort: com2
@@ -257,9 +256,9 @@ stages:
               cat << EOF > $(TRIDENT_SOURCE_DIR)/baremetal-netlisten.yaml
               netlisten:
                 bmc:
-                  ip: "${{ variables.bmc_ip }}"
-                  username: "${{ variables.bmc_username }}"
-                  password: "${{ variables.bmc_password }}"
+                  ip: "$(baremetal_controller.bmc_ip)"
+                  username: "$(baremetal_controller.bmc_username)"
+                  password: "$(baremetal_controller.bmc_password)"
                   serialOverSsh:
                     sshPort: 22
                     comPort: com2
@@ -332,7 +331,7 @@ stages:
               set -eux
               ./bin/storm-trident helper check-selinux \
                   "$(Build.SourcesDirectory)/tests/e2e_tests/helpers/key" \
-                  "${{ variables.oam_ip }}" \
+                  "$(baremetal_controller.oam_ip)" \
                   "testing-user" \
                   "${{ parameters.runtimeEnv }}" \
                   --audit-file $(ob_outputDirectory)/audit.log \
@@ -344,7 +343,7 @@ stages:
               set -eux
               ./bin/storm-trident helper boot-metrics \
                   "$(Build.SourcesDirectory)/tests/e2e_tests/helpers/key" \
-                  "${{ variables.oam_ip }}" \
+                  "$(baremetal_controller.oam_ip)" \
                   "testing-user" \
                   "${{ parameters.runtimeEnv }}" \
                   --metrics-file $(TRIDENT_SOURCE_DIR)/trident-clean-install-metrics.jsonl \
@@ -369,12 +368,12 @@ stages:
               buildPurpose: ${{ parameters.buildPurpose }}
               deploymentEnvironment: bareMetal
               tridentConfigurationName: $(TRIDENT_CONFIGURATION_NAME)
-              hostIp: "${{ variables.oam_ip }}"
+              hostIp: "$(baremetal_controller.oam_ip)"
               tridentConfigPath: $(TRIDENT_CONFIG_PATH)
               netlistenPort: ${{ variables.NETLAUNCH_PORT }}
               runtimeEnv: ${{ parameters.runtimeEnv }}
               netlistenConfigFile: $(TRIDENT_SOURCE_DIR)/baremetal-netlisten.yaml
-              httpsProxy: "${{ variables.lab_https_proxy }}"
+              httpsProxy: "$(baremetal_controller.https_proxy)"
 
         #   - template: ../common_tasks/remove-from-acr.yml
         #     parameters:
