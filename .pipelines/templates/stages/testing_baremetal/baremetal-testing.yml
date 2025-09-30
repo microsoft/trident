@@ -122,6 +122,9 @@ stages:
 
           - group: baremetal_controller
 
+          # Provides: ACR_NAME
+          - group: trident_e2e_params
+
         steps:
           - bash: |
               set -xe
@@ -165,12 +168,11 @@ stages:
           # Push (regular or container) testimage to ACR.
           # This step must occur before trident prep, since the ACR image tag
           # variable is set in this template.
-          #   - template: ../common_tasks/push-to-acr.yml
-          #     parameters:
-          #       imageName: ${{ variables.IMAGE_NAME }}
-          #       registry: # TODO: replace with variable
-          #       config: $(TRIDENT_CONFIGURATION_NAME)
-          #       deploymentEnvironment: "bareMetal"
+          - template: ../common_tasks/push-to-acr.yml
+            parameters:
+              imageName: ${{ variables.IMAGE_NAME }}
+              config: $(TRIDENT_CONFIGURATION_NAME)
+              deploymentEnvironment: "bareMetal"
 
           #   Run trident prep
           - template: ../testing_common/trident-prep.yml
@@ -178,7 +180,6 @@ stages:
               tridentConfigPath: $(TRIDENT_CONFIG_PATH)
               runtimeEnv: ${{ parameters.runtimeEnv }}
               config: $(TRIDENT_CONFIGURATION_NAME)
-              registry: "" # TODO: replace with variable
               imageName: ${{ variables.IMAGE_NAME }}
 
           - bash: |
@@ -375,8 +376,7 @@ stages:
               netlistenConfigFile: $(TRIDENT_SOURCE_DIR)/baremetal-netlisten.yaml
               httpsProxy: "$(baremetal_controller.https_proxy)"
 
-        #   - template: ../common_tasks/remove-from-acr.yml
-        #     parameters:
-        #       repository: ${{ variables.IMAGE_NAME }}
-        #       registry: # TODO: replace with variable
-        #       config: $(TRIDENT_CONFIGURATION_NAME)
+          - template: ../common_tasks/remove-from-acr.yml
+            parameters:
+              repository: ${{ variables.IMAGE_NAME }}
+              config: $(TRIDENT_CONFIGURATION_NAME)
