@@ -111,8 +111,7 @@ extends:
             - DeploymentTesting_container
             # - BaremetalDeploymentTesting_host
             # - BaremetalDeploymentTesting_container
-            # TODO: re-enable servicing testing
-            # - ServicingTesting
+            - ServicingTesting
           jobs:
             - job: ProcessJunit_Job
               displayName: Process junit files
