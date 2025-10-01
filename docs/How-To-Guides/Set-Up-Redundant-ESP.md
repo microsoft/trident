@@ -1,15 +1,57 @@
 
 # Set Up Redundant ESP
 
-<!--
-DELETE ME AFTER COMPLETING THE DOCUMENT!
----
-Task: https://dev.azure.com/mariner-org/polar/_workitems/edit/13139
-Title: Set Up Redundant ESP
-Type: How-To Guide
-Objective:
+This guide shows you how to configure an operating system with ESP redundancy. Follow the steps below to create an ESP on a RAID volume.
 
-Guide the user through the process of setting up a redundant ESP on AzL 3.0. The
-guide should exclusively talk about the host configuration configuration and how
-to craft it.
--->
+## Goals
+
+By following this guide, you will:
+
+1. Understand how to create a RAID array
+2. Configure an ESP on a RAID array
+
+## Instructions
+
+To benefit from redundancy, create a RAID array that utilizes multiple disks.  This can be achieved by defining partitions (`esp-1` and `esp-2`) on separate disks like this:
+
+``` yaml
+storage:
+  disks:
+    - id: disk1
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
+      partitionTableType: gpt
+      partitions:
+        - id: esp-1
+          type: esp
+          size: 1G
+    - id: disk2
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
+      partitionTableType: gpt
+      partitions:
+        - id: esp-2
+          type: esp
+          size: 1G
+```
+
+Having defined partitions, create a `raid` section in the Trident host configuration that combines these partitions into a RAID array:
+
+``` yaml
+  raid:
+    software:
+      - id: esp
+        name: esp
+        level: raid1
+        devices:
+          - esp-1
+          - esp-2
+```
+
+The RAID array can then be utilized to define the ESP filesystem:
+
+``` yaml
+  filesystems:
+    - deviceId: esp
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+```
