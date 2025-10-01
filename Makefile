@@ -438,22 +438,22 @@ bin/storm-trident: tools/cmd/storm-trident/main.go tools/storm/**/*
 # Insatller tools
 
 AZLTOOLS_OUT_DIR := bin
-AZLTOOLS_DIR := azltools
+AZLTOOLS_DIR := tools/azltools
 
 bin/liveinstaller: \
 	$(shell find $(AZLTOOLS_DIR)/liveinstaller -type f) \
 	$(shell find $(AZLTOOLS_DIR)/imagegen/attendedinstaller/ -type f) \
-	azltools/go.sum
+	tools/go.sum
 	@mkdir -p bin
 	cd $(AZLTOOLS_DIR)/liveinstaller && \
-		CGO_ENABLED=0 go build -o ../../$(AZLTOOLS_OUT_DIR)/liveinstaller
+		CGO_ENABLED=0 go build -o ../../../$(AZLTOOLS_OUT_DIR)/liveinstaller
 
 bin/manualrun: \
 	$(shell find $(AZLTOOLS_DIR)/imagegen/attendedinstaller/ -type f) \
-	azltools/go.sum
+	tools/go.sum
 	@mkdir -p bin
 	cd $(AZLTOOLS_DIR)/imagegen/attendedinstaller/_manualrun && \
-		CGO_ENABLED=0 go build -o ../../../../$(AZLTOOLS_OUT_DIR)/manualrun
+		CGO_ENABLED=0 go build -o ../../../../../$(AZLTOOLS_OUT_DIR)/manualrun
 
 # AZL INSTALLER IMAGES
 
