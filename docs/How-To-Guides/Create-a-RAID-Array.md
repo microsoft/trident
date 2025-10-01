@@ -12,7 +12,7 @@ By following this guide, you will:
 1. Set an optional timeout so that Trident waits for RAID arrays to finish syncing before continuing with provisioning.
 1. Create RAID arrays on the target OS with Trident.
 
-This guide will not cover adopting an existing software RAID array in the [`offline-init`](../Explanation/Offline-Init.md) scenario or creating a new software RAID array on A/B updates, as Trident does **not** support these features.
+This guide will not cover adopting an existing software RAID array in the [`offline-init`](../Explanation/Offline-Initialize.md) scenario or creating a new software RAID array on A/B updates, as Trident does **not** support these features.
 
 ## Prerequisites
 
