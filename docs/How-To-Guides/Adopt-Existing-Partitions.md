@@ -14,13 +14,13 @@ Find the desired adoption partitions on your host, either by:
 * Partition labels, using a command like:
 
     ``` bash
-    ls -l /dev/disk/by-id
+    lsblk -o NAME,PARTLABEL
     ```
 
 * UUIDs, using a command like:
 
     ``` bash
-    ls -l /dev/disk/by-uuid
+    lsblk -o NAME,UUID
     ```
 
 ### Step 2: Add `adoptedPartitions` Configuration
