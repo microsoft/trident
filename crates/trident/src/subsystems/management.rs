@@ -1,4 +1,4 @@
-//! Subsystem in charge of configuring the Trident agent on the runtime OS.
+//! Subsystem in charge of configuring the Trident agent on the target OS.
 
 use std::{
     fs::{self},
@@ -58,7 +58,7 @@ impl Subsystem for ManagementSubsystem {
         }
 
         if ctx.spec.internal_params.get_flag(SELF_UPGRADE_TRIDENT) {
-            info!("Copying Trident binary to runtime OS");
+            info!("Copying Trident binary to target OS");
             fs::copy(
                 TRIDENT_BINARY_PATH,
                 path::join_relative(mount_path, TRIDENT_BINARY_PATH),

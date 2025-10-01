@@ -368,8 +368,7 @@ fn get_uki_paths(esp_path: &Path, mount_path: Option<&Path>) -> Result<Vec<PathB
     // If this is done during encryption provisioning, i.e. update image is mounted at mount_path,
     // we also construct the update UKI binary path
     if mount_path.is_some() {
-        // UKI binary in runtime OS to be measured; it's currently staged at designated
-        // path
+        // UKI binary in target OS to be measured; it's currently staged at designated path
         let uki_update = esp_uki_directory.join(TMP_UKI_NAME);
         uki_binaries.push(uki_update.clone());
     }

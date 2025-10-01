@@ -162,7 +162,7 @@ steps:
       echo "##vso[task.setvariable variable=abActiveVolume]volume-b"
     timeoutInMinutes: 15
     workingDirectory: $(Build.SourcesDirectory)
-    displayName: "🔄 Finalize A/B update into runtime OS B"
+    displayName: "🔄 Finalize A/B update into target OS"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - template: ../testing_common/display-serial-logs.yml
@@ -183,7 +183,7 @@ steps:
           "${{ parameters.hostIp }}" \
           "${{ parameters.userName }}" \
           "${{ parameters.runtimeEnv }}"
-    displayName: "🤝 Check SSH connection after booting into runtime OS B"
+    displayName: "🤝 Check SSH connection after booting into target OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - bash: |
@@ -195,7 +195,7 @@ steps:
           "${{ parameters.runtimeEnv }}" \
           --metrics-file $(Build.SourcesDirectory)/trident-finalize-update-metrics.jsonl \
           --metrics-operation update1
-    displayName: "Create boot metrics for booting into runtime OS B"
+    displayName: "Create boot metrics for booting into target OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - template: ../testing_common/trident-metrics.yml
@@ -224,12 +224,12 @@ steps:
           --ab-active-volume $(abActiveVolume)
     timeoutInMinutes: 5
     workingDirectory: $(Build.SourcesDirectory)/tests/e2e_tests
-    displayName: "🔬 Run Trident E2E tests after A/B update into runtime OS B"
+    displayName: "🔬 Run Trident E2E tests after A/B update into target OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - template: ../junit/handle-junit-test-results.yml
     parameters:
       testRunName: "${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_stage_finalize_ab_update_B_$(System.JobAttempt)"
       junitTestFile: "./tests/e2e_tests/${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_stage_finalize_ab_update_B_$(System.JobAttempt).junit.xml"
-      displayNameSpecifier: "A/B update into runtime OS A that was staged and finalized independently"
+      displayNameSpecifier: "A/B update into target OS A that was staged and finalized independently"
       artifactName: "junit_for_trident_ab_update_stage"
