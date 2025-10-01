@@ -169,23 +169,17 @@ stages:
                 MAX_FAILURES_FLAG="--max-failures 1"
               fi
 
-              # Enable SecureBoot for E2E tests that use usr-verity image.
-              # TODO: Enable SecureBoot for all E2E tests.
-              SECURE_BOOT=""
+              # Enable SecureBoot for all E2E tests.
+              SECURE_BOOT="--secure-boot"
+
+              # If this is a usr-verity image; a signing certificate must be
+              # set via --signing-cert; otherwise, set it to an empty string.
+              # This can also be used for sysext signing.
               TRIDENT_CONFIG="$(tridentConfigPath)/trident-config.yaml"
               IMAGE_URL=$(sudo yq '.image.url' "$TRIDENT_CONFIG")
-              if [[ "$IMAGE_URL" == *usrverity.cosi ]]; then
-                SECURE_BOOT="--secure-boot"
-              fi
-
-              # If a signing certificate exists, set --signing-cert to use it;
-              # otherwise, set it to an empty string. This can be used for
-              # SecureBoot and sysext signing.
-              # TODO: This needs to be updated to enable SecureBoot for all E2E
-              # tests.
               CERT_SEARCH_PATH="$(System.ArtifactsDirectory)/usrverity-testimage"
               CA_CERT_PATH="$CERT_SEARCH_PATH/ca_cert.pem"
-              if [ -f "$CA_CERT_PATH" ]; then
+              if [[ "$IMAGE_URL" == *usrverity.cosi ]] && [ -f "$CA_CERT_PATH" ]; then
                 SIGNING_CERT="--signing-cert $CA_CERT_PATH"
               else
                 SIGNING_CERT=""
