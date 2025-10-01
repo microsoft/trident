@@ -55,7 +55,7 @@ cp -r bin/RPMS $HOME/staging
 
 ### Step 3: Create Image Customizer Configuration for Update
 
-For an update COSI, we need to provide only an esp and the updated partitions. `trident` was not created as an [A/B volume pair](../Reference/Glossary.md#ab-volume-pair) and therefore can not serviced, so it is not included.
+For an update COSI, we need to provide only an esp and the updated partitions. `trident` was not created as an [A/B volume pair](../Reference/Glossary.md#ab-volume-pair) and therefore cannot be serviced, so it is not included.
 
 Interesting to note that Image Customizer reflects the OS image, which will be laid out onto a single partition at a time: either A or B. So, the [A/B volume pairs](../Reference/Glossary.md#ab-volume-pair) will be not be reflected in the Image Customizer config.  This is why `root` is specified here unlike the `root-a` or `root-b` found in the Trident Host Configuration.
 
