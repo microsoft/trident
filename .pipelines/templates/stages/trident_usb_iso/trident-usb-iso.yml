@@ -34,7 +34,7 @@ stages:
 
     variables:
       ob_outputDirectory: $(Pipeline.Workspace)/s/test-images/output
-      ob_artifactBaseName: azl-installer_$(System.JobAttempt)
+      ob_artifactBaseName: azl-installer
 
     steps:
     - checkout: test-images
@@ -115,7 +115,7 @@ stages:
 
     variables:
       ob_outputDirectory: $(Pipeline.Workspace)/azl-installer-test
-      ob_artifactBaseName: azl-installer-test
+      ob_artifactBaseName: azl-installer-test-$(System.JobAttempt)
 
     steps:
     - template: validate-usb-iso.yml
