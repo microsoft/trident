@@ -194,7 +194,7 @@ Assuming a disk path of `/dev/sda` and a local COSI file, the Trident update hos
 
 ``` bash
 DISK_DEVICE_PATH="/dev/sda"
-cat << EOF > $HOME/staging/host-config.yaml
+cat << EOF > $HOME/staging/host-config-update.yaml
 image:
   url: /tmp/osimage-update.cosi
   sha384: ignored
