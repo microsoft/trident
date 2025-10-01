@@ -3,7 +3,7 @@
 
 ## Goals
 
-By following this guide, you will ber able to use Trident to install an operating system while [adopting](../Explanation/Partition-Adoption.md) (or persisting) some desired partitions.
+By following this guide, you will be able to use Trident to install an operating system while [adopting or preserving some desired partitions](../Explanation/Partition-Adoption.md).
 
 ## Instructions
 
