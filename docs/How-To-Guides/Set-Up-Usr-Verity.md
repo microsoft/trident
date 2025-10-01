@@ -53,7 +53,7 @@ cp -r bin/RPMS $HOME/staging
 
 ### Step 3: Create Image Customizer Configuration
 
-To create a usr-verity volume, there are a few Image Customizer configuration sections that are important. These sections are detailed in the [Usr Verity explanation](../Explanation/Usr-Verity.md#use-image-customizer-to-create-a-cosi-file). Putting that together and following the Image Customizer [documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/README.html), the full configuration `$HOME/staging/ic-config.yaml` can look like this:
+To create a usr-verity volume, there are a few Image Customizer configuration sections that are important. These sections are detailed in the [Usr Verity explanation](../Explanation/Usr-Verity.md#use-image-customizer-to-create-a-cosi-file). Putting those together and following the Image Customizer [documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/README.html), the full configuration `$HOME/staging/ic-config.yaml` can look like this:
 
 ``` yaml
 storage:
