@@ -12,41 +12,43 @@ By following this guide, you will:
 
 ## Instructions
 
-To benefit from redundancy, create a RAID array that utilizes multiple disks.  This can be achieved by defining partitions (`esp-1` and `esp-2`) on separate disks like this:
+A detailed explanation of creating RAID arrays can be found in the [Create a RAID Array guide](./Create-a-RAID-Array.md).  For this guide, we break RAID creation into 2 parts:
 
-``` yaml
-storage:
-  disks:
-    - id: disk1
-      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
-      partitionTableType: gpt
-      partitions:
-        - id: esp-1
-          type: esp
-          size: 1G
-    - id: disk2
-      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
-      partitionTableType: gpt
-      partitions:
-        - id: esp-2
-          type: esp
-          size: 1G
-```
+1. To benefit from redundancy, create a RAID array that utilizes multiple disks by defining partitions `esp-1` and `esp-2` like this:
 
-Having defined partitions, create a `raid` section in the Trident host configuration that combines these partitions into a RAID array:
+    ``` yaml
+    storage:
+      disks:
+        - id: disk1
+          device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
+          partitionTableType: gpt
+          partitions:
+            - id: esp-1
+              type: esp
+              size: 1G
+        - id: disk2
+          device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
+          partitionTableType: gpt
+          partitions:
+            - id: esp-2
+              type: esp
+              size: 1G
+    ```
 
-``` yaml
-  raid:
-    software:
-      - id: esp
-        name: esp
-        level: raid1
-        devices:
-          - esp-1
-          - esp-2
-```
+2. Create a `raid` section in the Trident host configuration that combines these partitions into a RAID array:
 
-The RAID array can then be utilized to define the ESP filesystem:
+    ``` yaml
+    raid:
+        software:
+        - id: esp
+          name: esp
+          level: raid1
+          devices:
+            - esp-1
+            - esp-2
+    ```
+
+Having created the RAID array, it can then be referenced to host the ESP filesystem:
 
 ``` yaml
   filesystems:
