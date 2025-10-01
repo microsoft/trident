@@ -7,7 +7,7 @@ By following this guide, you will be able to use Trident to install an operating
 
 ## Instructions
 
-### Step 1: Determine Desired Partitons for Adoption
+### Step 1: Determine Desired Partitions for Adoption
 
 Find the desired adoption partitions on your host, either by:
 
