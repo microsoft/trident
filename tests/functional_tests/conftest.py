@@ -21,18 +21,6 @@ pytest_plugins = ["functional_tests.depends"]
 """Location of the Trident repository."""
 TRIDENT_REPO_DIR_PATH = Path(__file__).resolve().parent.parent.parent
 
-
-def __get_argus_toolkit_path():
-    """Returns the path to the argus-toolkit repository."""
-    envvar = os.environ.get("ARGUS_TOOLKIT_PATH", None)
-    if envvar:
-        return Path(envvar).resolve()
-    return Path(__file__).resolve().parent.parent.parent.parent / "argus-toolkit"
-
-
-"""Location of the argus-toolkit repository."""
-ARGUS_REPO_DIR_PATH = __get_argus_toolkit_path()
-
 """The user to use for SSH connections to the VM.
 Needs to be in sync with the
 user specified in the trident-setup.yaml."""
@@ -247,12 +235,6 @@ def trident_runcmd(cmd, check=True, **kwargs):
     subprocess.run(cmd, check=check, cwd=TRIDENT_REPO_DIR_PATH, **kwargs)
 
 
-def argus_runcmd(cmd, check=True, **kwargs):
-    """Runs a command in the argus repository directory."""
-    logging.debug(f"Running command: {cmd}")
-    subprocess.run(cmd, check=check, cwd=ARGUS_REPO_DIR_PATH, **kwargs)
-
-
 def upload_test_binaries(build_output_path: Path, force_upload, ssh_node: SshNode):
     """Uploads all test binaries to the VM. Unless force_upload is set, only binaries
     that are not fresh are uploaded. You need to make sure that you dont rebuild
@@ -396,7 +378,9 @@ def vm(request, ssh_key_path, known_hosts_path) -> SshNode:
     request.config.cache.set(VM_SSH_NODE_CACHE_KEY, None)
 
     # Fixture cleanup.
-    argus_runcmd([ARGUS_REPO_DIR_PATH / "virt-deploy", "create", "--clean"])
+    trident_runcmd(
+        [TRIDENT_REPO_DIR_PATH / "tools" / "virt-deploy", "create", "--clean"]
+    )
 
 
 def pytest_collection_modifyitems(session, config, items: List[pytest.Item]):
