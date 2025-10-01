@@ -34,7 +34,7 @@ stages:
 
     variables:
       ob_outputDirectory: $(Pipeline.Workspace)/s/test-images/output
-      ob_artifactBaseName: azl-installer
+      ob_artifactBaseName: azl-installer_$(System.JobAttempt)
 
     steps:
     - checkout: test-images
