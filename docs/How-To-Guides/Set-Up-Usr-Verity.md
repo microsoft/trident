@@ -53,58 +53,7 @@ cp -r bin/RPMS $HOME/staging
 
 ### Step 3: Create Image Customizer Configuration
 
-To create a usr-verity volume, there are a few Image Customizer configuration sections that are important.
-
-In addition to the typical `usr` partition definition, a `usr-hash` partition is needed like this:
-
-``` yaml
-storage:
-  disks:
-    - partitionTableType: gpt
-      partitions:
-        - id: usr-hash
-          label: usr-hash
-          size: 128M
-```
-
-The [Image Customizer verity section](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/api/configuration/verity.html) is required as well:
-
-``` yaml
-verity:
-  - id: usr
-    name: usr
-    dataDeviceId: usr-data
-    hashDeviceId: usr-hash
-    dataDeviceMountIdType: uuid
-    hashDeviceMountIdType: uuid
-```
-
-Verity filesystems should be created as read-only:
-
-``` yaml
-- deviceId: usr
-  type: ext4
-  mountPoint:
-    path: /usr
-    options: defaults,ro
-```
-
-And finally, usr-verity requires some changes to support UKI rather than grub:
-
-``` yaml
-os:
-  kernelCommandLine:
-    extraCommandLine:
-      - rd.hostonly=0
-
-  uki:
-    kernels: auto
-
-previewFeatures:
-  - uki
-```
-
-Putting that all together and following the Image Customizer [documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/README.html), the full configuration `$HOME/staging/ic-config.yaml` can look like this:
+To create a usr-verity volume, there are a few Image Customizer configuration sections that are important. These sections are detailed in the [Usr Verity explanation](../Explanation/Usr-Verity.md#use-image-customizer-to-create-a-cosi-file). Putting that together and following the Image Customizer [documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/README.html), the full configuration `$HOME/staging/ic-config.yaml` can look like this:
 
 ``` yaml
 storage:
@@ -244,7 +193,7 @@ Some things to note that are defined in the host configuration below:
 
 * [A/B volume pairs](../Reference/Glossary.md#ab-volume-pair) for `usr-data` and `usr-hash`
 * [abUpdate section](../Reference/Host-Configuration/API-Reference/AbUpdate.md) for `usr-data` and `usr-hash`
-* [verity section](../Reference/Host-Configuration/API-Reference/VerityDevice.md) to connect `usr` data and hash
+* [verity section](../Explanation/Usr-Verity.md#use-trident-to-deploy-the-cosi-file) to connect `usr-data` and `usr-hash`
 
 The remainder of the Trident host configuration file describes things like where to find the COSI file (can be a local path, an HTTP url, or an OCI url) and what the disk device path is (in this case, /dev/sda):
 
