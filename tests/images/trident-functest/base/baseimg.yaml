@@ -1,0 +1,87 @@
+storage:
+  bootType: efi
+
+  disks:
+    - partitionTableType: gpt
+      maxSize: 15G
+      partitions:
+        - id: esp
+          type: esp
+          size: 50M
+          label: esp
+        - id: root-a
+          size: 4G
+          type: root
+          label: root-a
+        - id: root-b
+          size: 4G
+          type: root
+          label: root-b
+        - id: swap
+          size: 2G
+          type: swap
+          label: swap
+        - id: trident
+          size: 100M
+          type: linux-generic
+          label: trident
+
+  filesystems:
+    - deviceId: esp
+      type: fat32
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+
+    - deviceId: root-a
+      type: ext4
+      mountPoint:
+        path: /
+
+    - deviceId: trident
+      type: ext4
+      mountPoint:
+        path: /var/lib/trident
+
+os:
+  bootloader:
+    resetType: hard-reset
+  hostname: trident-functest
+
+  selinux:
+    mode: permissive
+
+  kernelCommandLine:
+    # Replicates BM base image settings, that would otherwise be lost
+    extraCommandLine:
+      - console=tty0
+      - console=ttyS0
+      - rd.info
+      - log_buf_len=1M
+
+  packages:
+    install:
+      - curl
+      - dnf
+      - efibootmgr
+      - iproute
+      - iptables
+      - lsof
+      - mdadm
+      - netplan
+      - openssh-server
+      - tpm2-tools
+      - vim
+      - audit
+      # Packages required for functional tests, which currently use this image:
+      - device-mapper
+      - dosfstools
+      - lvm2
+      - veritysetup
+      # Optional dependencies for NTFS
+      - ntfs-3g
+      - ntfsprogs
+
+  services:
+    enable:
+      - sshd
