@@ -185,7 +185,7 @@ stages:
               IMAGE_URL=$(sudo yq '.image.url' "$TRIDENT_CONFIG")
               CERT_SEARCH_PATH="$(System.ArtifactsDirectory)/usrverity-testimage"
               CA_CERT_PATH="$CERT_SEARCH_PATH/ca_cert.pem"
-              if [ "$IMAGE_URL" == *usrverity.cosi ] && [ -f "$CA_CERT_PATH" ]; then
+              if [[ "$IMAGE_URL" == *usrverity.cosi ]] && [ -f "$CA_CERT_PATH" ]; then
                 SIGNING_CERT="--signing-cert $CA_CERT_PATH"
               else
                 SIGNING_CERT=""
