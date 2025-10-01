@@ -1,9 +1,12 @@
 
 # Configure Users
 
-This guide shows you how to configure users in your Trident's Host Configuration. Follow the steps below to create secure user accounts with SSH access and customize their properties.
+This guide shows you how to configure users in your Trident's Host
+Configuration. Follow the steps below to create secure user accounts with SSH
+access and customize their properties.
 
-For a complete configuration reference, see the [User API Reference](../Reference/Host-Configuration/API-Reference/User.md).
+For a complete configuration reference, see the [User API
+Reference](../Reference/Host-Configuration/API-Reference/User.md).
 
 ## Goals
 
@@ -17,7 +20,8 @@ By following this guide, you will:
 
 1. **Trident Host Configuration file**
    1. Have an existing Host Configuration file or create a new one.
-   2. Ensure the Host Configuration file has the basic structure with [os section](../Reference/Host-Configuration/API-Reference/Os.md).
+   2. Ensure the Host Configuration file has the basic structure with [os
+      section](../Reference/Host-Configuration/API-Reference/Os.md).
 2. **SSH Public Keys**
    1. Have the SSH key pairs that will be used for SSH authentication.
    2. Obtain the public key content (`.pub` file).
@@ -40,14 +44,20 @@ os:
 ```
 
 2. Replace `<Desired User Name>` with your desired username.
-3. Be sure to set `sshMode` to **key-only**. The [sshMode](../Reference/Host-Configuration/API-Reference/SshMode.md) controls SSH access and defaults to block if not specified.
-4. Replace the `<Public SSH Key content>` with your actual public key content (e.g. `ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... user@hostname`). Notice that more than one key can be associated with one user.
+3. Be sure to set `sshMode` to **key-only**. The
+   [sshMode](../Reference/Host-Configuration/API-Reference/SshMode.md) controls
+   SSH access and defaults to block if not specified.
+4. Replace the `<Public SSH Key content>` with your actual public key content
+   (e.g. `ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... user@hostname`). Notice that
+   more than one key can be associated with one user.
 
-The user will be created with a locked password (no password can be used to login) and SSH key-only authentication.
+The user will be created with a locked password (no password can be used to
+login) and SSH key-only authentication.
 
 ### Step 2: Configure multiple users
 
-To create multiple users, simply add additional user entries under the `users` section. Example:
+To create multiple users, simply add additional user entries under the `users`
+section. Example:
 
 ```yaml
 os:
@@ -69,7 +79,8 @@ os:
 ```
 
 1. Replace with the desired usernames
-2. Replace the SSH keys entries with the actual content of the public keys of each respective user.
+2. Replace the SSH keys entries with the actual content of the public keys of
+   each respective user.
 
 ### Step 3: Set custom user properties
 
@@ -89,12 +100,15 @@ os:
         - <Desired group2>
 ```
 
-1. Replace the `secondaryGroups` entries with groups that exist on your target system (for example, `wheel`, which typically provides sudo access).
+1. Replace the `secondaryGroups` entries with groups that exist on your target
+   system (for example, `wheel`, which typically provides sudo access).
 2. Add other groups as needed for your use case.
 
 #### Configure startup command
 
-The `startupCommand` property sets the default command/shell to be automatically executed at login. This is equivalent (and replaces) the shell field in `/etc/passwd`. Example:
+The `startupCommand` property sets the default command/shell to be automatically
+executed at login. This is equivalent (and replaces) the shell field in
+`/etc/passwd`. Example:
 
 ```yaml
 os:
@@ -122,9 +136,11 @@ os:
         - <Public SSH Key content>
 ```
 
-- **`uid`**: Specific user ID. If not provided, the system will automatically assign a UID.
+- **`uid`**: Specific user ID. If not provided, the system will automatically
+  assign a UID.
 - **`homeDirectory`**: Custom home directory path.
-- **`primaryGroup`**: The user's primary group. Only one primary group can be assigned per user (must exist on the target system).
+- **`primaryGroup`**: The user's primary group. Only one primary group can be
+  assigned per user (must exist on the target system).
 
 #### Disable SSH access
 
@@ -139,7 +155,9 @@ os:
 
 ## Password Authentication
 
-For security reasons, Trident has no built-in mechanisms to provision a [user password](../Reference/Host-Configuration/API-Reference/Password.md) in the user section.
+For security reasons, Trident has no built-in mechanisms to provision a [user
+password](../Reference/Host-Configuration/API-Reference/Password.md) in the user
+section.
 
 ## Troubleshooting
 
@@ -147,11 +165,14 @@ For security reasons, Trident has no built-in mechanisms to provision a [user pa
 
 - Verify the SSH key is correctly formatted in the `sshPublicKeys` array.
 - Ensure `sshMode` is set to `key-only`
-- Check that the used private key corresponds to the public key in the Host Configuration file.
+- Check that the used private key corresponds to the public key in the Host
+  Configuration file.
 
 **User cannot access required resources**:
 
-- Verify the groups specified in `primaryGroup` and `secondaryGroups` exist on the **target system**. You can check available groups by executing the following command on the deployed system:
+- Verify the groups specified in `primaryGroup` and `secondaryGroups` exist on
+  the **target system**. You can check available groups by executing the
+  following command on the deployed system:
 
 ```bash
 cat /etc/group 
@@ -159,6 +180,8 @@ cat /etc/group
 
 **Custom startup command fails**:
 
-- Ensure the specified command, shell, or referenced script exists on the target system.
+- Ensure the specified command, shell, or referenced script exists on the target
+  system.
 - Verify the path is correct (e.g., `/bin/bash`, `/usr/scripts/startup.sh`).
-- Use `ls -la /path/to/executable` to check if the file exists and has executable permissions.
+- Use `ls -la /path/to/executable` to check if the file exists and has
+  executable permissions.

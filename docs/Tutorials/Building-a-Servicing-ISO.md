@@ -3,20 +3,30 @@
 
 ## Introduction
 
-The goal of this document is to produce an installation ISO that utilizes Trident to install an Azure Linux operating system.
+The goal of this document is to produce an installation ISO that utilizes
+Trident to install an Azure Linux operating system.
 
 ## Prerequisites
 
 1. Ensure that [oras](https://oras.land/docs/installation/) is installed.
-2. Ensure [Image Customizer container](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/quick-start/quick-start.html) is accessible.
-3. Create an [Azure Linux image COSI file](./Building-AB-Update-Images-for-Install-and-Update.md), assuming the output COSI file is `$HOME/staging/osimage.cosi`.
-4. Create a [Trident host configuration file](./Writing-a-Simple-Host-Configuration.md), assuming the file is `$HOME/staging/host-config.yaml`. For this document, the host configuration is assumed to reference the COSI file as being contained in the installer ISO at `/images/azure-linux.cosi`.
+2. Ensure [Image Customizer
+   container](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/quick-start/quick-start.html)
+   is accessible.
+3. Create an [Azure Linux image COSI
+   file](./Building-AB-Update-Images-for-Install-and-Update.md), assuming the
+   output COSI file is `$HOME/staging/osimage.cosi`.
+4. Create a [Trident Host Configuration
+   file](./Writing-a-Simple-Host-Configuration.md), assuming the file is
+   `$HOME/staging/host-config.yaml`. For this document, the Host Configuration
+   is assumed to reference the COSI file as being contained in the installer ISO
+   at `/images/azure-linux.cosi`.
 
 ## Instructions
 
 ### Step 1: Download the minimal base image
 
-Pull [minimal-os](../Reference/Glossary.md#minimal-os) as a base image from MCR by running:
+Pull [minimal-os](../Reference/Glossary.md#minimal-os) as a base image from MCR
+by running:
 
 ``` bash
 mkdir -p $HOME/staging
@@ -33,7 +43,8 @@ Build the Trident RPMs by running:
 make bin/trident-rpms.tar.gz
 ```
 
-After running this make command, the RPMs will be built and packaged into `bin/trident-rpms.tar.gz` and unpacked into `bin/RPMS/x86_64`:
+After running this make command, the RPMs will be built and packaged into
+`bin/trident-rpms.tar.gz` and unpacked into `bin/RPMS/x86_64`:
 
 ``` bash
 $ ls bin/RPMS/x86_64/
@@ -53,7 +64,12 @@ cp -r bin/RPMS $HOME/staging
 
 ### Step 3: Create an Image Customizer Configuration
 
-Assuming locations for the Azure Linux image COSI file (`$HOME/staging/osimage.cosi`) and the Trident host configuration file (`$HOME/staging/host-config.yaml`), follow the [Image Customizer documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/how-to/live-iso.html) to create an Image Customizer configuration file, `$HOME/staging/ic-config.yaml`:
+Assuming locations for the Azure Linux image COSI file
+(`$HOME/staging/osimage.cosi`) and the Trident Host Configuration file
+(`$HOME/staging/host-config.yaml`), follow the [Image Customizer
+documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/how-to/live-iso.html)
+to create an Image Customizer configuration file,
+`$HOME/staging/ic-config.yaml`:
 
 ``` yaml
 storage:
@@ -119,7 +135,11 @@ iso:
 
 ### Step 4: Invoke Image Customizer to Create Installation ISO
 
-Assuming locations for the base image file (`$HOME/staging/image.vhdx`) and the Image Customizer configuration file (`$HOME/staging/ic-config.yaml`), follow the [Image Customizer documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/quick-start/quick-start.html) and invoke Image Customizer:
+Assuming locations for the base image file (`$HOME/staging/image.vhdx`) and the
+Image Customizer configuration file (`$HOME/staging/ic-config.yaml`), follow the
+[Image Customizer
+documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/quick-start/quick-start.html)
+and invoke Image Customizer:
 
 ``` bash
 pushd $HOME/staging
