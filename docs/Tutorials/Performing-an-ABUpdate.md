@@ -5,7 +5,7 @@
 
 Trident can be used to service an operating system, running either on bare metal or virtual machines.  To accomplish this, Trident uses an [A/B Update](../Reference/Glossary.md#ab-update) strategy.
 
-This document describes how to create an update image, create an update Trident host configuration, and exdcute an udpate with `trident update`.
+This document describes how to create an update image, create an update Trident host configuration, and execute an update with `trident update`.
 
 ## Prerequisites
 
