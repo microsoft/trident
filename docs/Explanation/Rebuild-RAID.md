@@ -42,7 +42,7 @@ failed disk is reconstructed onto a new disk.
   points, or encryption on partitions which are not members of RAID.
 
 **Consistency with Initial Host Configuration**: The disk configuration must
-match the original host configuration provided when the host was first
+match the original Host Configuration provided when the host was first
 provisioned. Simply run `trident rebuild-raid`, and Trident will by default load
 its configuration from `/etc/trident/config.yaml` to start rebuilding the RAID
 arrays on the new disk.
@@ -69,7 +69,7 @@ more details on how to run
 ### What Is Trident Doing Internally
 
 When the `trident rebuild-raid` command is executed, it first verifies whether
-the host configuration is suitable for a rebuild operation. It identifies the
+the Host Configuration is suitable for a rebuild operation. It identifies the
 presence of a new disk by monitoring the UUIDs of the disks. If a new disk is
 detected, it proceeds with further validation.
 
@@ -154,7 +154,7 @@ storage:
         options: umask=0077
 ```
 
-In the sample host configuration above, `trident rebuild-raid` can be
+In the sample Host Configuration above, `trident rebuild-raid` can be
 initiated if **disk2** fails and is replaced with a new disk. Using the RAID
 rebuild feature, the new disk can be reconstructed if recoverable copies of the
 RAID partitions are available on other disks. In this configuration, we see that
