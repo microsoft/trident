@@ -33,7 +33,7 @@ Find the desired adoption partitions on your host, either by:
    storage:
      disks:
        - id: disk-with-partitions-to-adopt
-         adopted_partitions:
+         adoptedPartitions:
            - id: adopted-partition-by-label
              matchLabel: disklabel-part1
            - id: adopted-partition-by-uuid
