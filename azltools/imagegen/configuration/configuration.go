@@ -59,6 +59,36 @@ type RootEncryption struct {
 	Password string `json:"Password"`
 }
 
+// SystemConfig defines how each system present on the image is supposed to be configured.
+// Minimal definition to prevent compilation errors.
+type SystemConfig struct {
+	IsDefault            bool                      `json:"IsDefault"`
+	Name                 string                    `json:"Name"`
+	PartitionSettings    []PartitionSetting        `json:"PartitionSettings"`
+	Encryption           RootEncryption            `json:"Encryption"`
+	AdditionalFiles      map[string]FileConfigList `json:"AdditionalFiles"`
+	PackageLists         []string                  `json:"PackageLists"`
+	PreInstallScripts    []InstallScript           `json:"PreInstallScripts"`
+	PostInstallScripts   []InstallScript           `json:"PostInstallScripts"`
+	FinalizeImageScripts []InstallScript           `json:"FinalizeImageScripts"`
+	Users                []User                    `json:"Users"`
+}
+
+// GetRootPartitionSetting returns a pointer to the partition setting describing the disk which
+// will be mounted at "/", or nil if no partition is found
+func (s *SystemConfig) GetRootPartitionSetting() (rootPartitionSetting *PartitionSetting) {
+	return FindRootPartitionSetting(s.PartitionSettings)
+}
+
+// IsValid returns an error if the SystemConfig is not valid - minimal implementation
+func (s *SystemConfig) IsValid() (err error) {
+	// Minimal validation - just check required fields
+	if strings.TrimSpace(s.Name) == "" {
+		return fmt.Errorf("missing [Name] field")
+	}
+	return nil
+}
+
 // Config holds the parsed values of the configuration schemas as well as
 // a few computed values simplifying access to certain pieces of the configuration.
 type Config struct {

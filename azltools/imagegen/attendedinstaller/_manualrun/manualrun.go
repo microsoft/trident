@@ -39,7 +39,7 @@ func main() {
 	passwordScriptPath := filepath.Join(tmpDir, "scripts", passwordScriptName)
 
 	// Run the attended installer
-	attendedInstaller, err := attendedinstaller.New(performCalamaresInstallation, imagePath, hostconfigPath)
+	attendedInstaller, err := attendedinstaller.New(imagePath, hostconfigPath)
 	if err != nil {
 		logger.PanicOnError(err)
 	}
@@ -68,10 +68,4 @@ func displayContent(hostconfigPath, passwordScriptPath string) {
 	} else {
 		logger.Log.Warnf("Could not read generated script to add user's password: %v", err)
 	}
-}
-
-// A fake calamares installation method.
-func performCalamaresInstallation() (err error) {
-	logger.Log.Info("Calamares installation requested")
-	return
 }
