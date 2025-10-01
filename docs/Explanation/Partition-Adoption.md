@@ -1,13 +1,4 @@
 
 # Partition Adoption
 
-<!--
-DELETE ME AFTER COMPLETING THE DOCUMENT!
----
-Task: https://dev.azure.com/mariner-org/polar/_workitems/edit/13154
-Title: Partition Adoption
-Type: Explanation
-Objective:
-
-Explanation of the partition adoption feature in Trident.
--->
+When Trident installs or services an operating system, there are times when existing partitions need to be preserved in the new OS. To accomplish this, these partitions can be adopted. To adopt a partition, the Trident host configuration can be modified to include details that helps Trident identify the desired partitions. Either (not both) a label or uuid can be specified.
