@@ -17,8 +17,9 @@ By following this guide, you will:
 1. Create an encrypted volume on the target OS with Trident.
 
 This guide will not cover adopting an existing encrypted volume in the
-[`offline-init`](../Explanation/Offline-Init.md) scenario or creating a new
-encrypted device on A/B updates, as Trident does **not** support these features.
+[`offline-init`](../Explanation/Offline-Initialize.md) scenario or creating a
+new encrypted device on A/B updates, as Trident does **not** support these
+features.
 
 ## Prerequisites
 

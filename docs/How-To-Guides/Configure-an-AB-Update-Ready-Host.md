@@ -33,7 +33,7 @@ By following this guide, you will:
    a logical [A/B volume pair](../Reference/Glossary.md#ab-volume-pair). This
    means different things for the two main runtime flows:
 
-- If you're following the [`offline-init`](../Explanation/Offline-Init.md)
+- If you're following the [`offline-init`](../Explanation/Offline-Initialize.md)
   scenario, the VM's disk layout must follow the A/B partition scheme, and the
   active partition A must have the initial OS image deployed onto it. [Image
   Customizer](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/README.html)
