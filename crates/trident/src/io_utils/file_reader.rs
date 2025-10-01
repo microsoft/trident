@@ -1,7 +1,7 @@
 #[cfg(test)]
 use std::io::Cursor;
 use std::{
-    fs::File,
+    fs::{self, File},
     io::{Error as IoError, ErrorKind as IoErrorKind, Read, Result as IoResult, Seek, SeekFrom},
     path::PathBuf,
     thread,
@@ -113,6 +113,24 @@ impl FileReader {
                 // Return a reader that is limited to the section size
                 Box::new(cursor.take(size))
             }
+        })
+    }
+
+    /// Returns an implementation of `Read` over the whole file.
+    pub(crate) fn complete_reader(&self) -> IoResult<Box<dyn Read>> {
+        Ok(match self {
+            Self::File(file_path) => {
+                // Open the file and seek to the section
+                let file = File::open(file_path)?;
+                let size = fs::metadata(file_path)?.len();
+                // Return a reader that is limited to the section size
+                Box::new(file.take(size))
+            }
+
+            Self::Http(http_file) => Box::new(http_file.section_reader(0, http_file.size)?),
+
+            #[cfg(test)]
+            Self::Buffer(_cursor) => todo!(),
         })
     }
 }
