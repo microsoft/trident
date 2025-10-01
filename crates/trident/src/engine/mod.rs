@@ -22,6 +22,7 @@ use crate::{
     engine::boot::BootSubsystem,
     subsystems::{
         esp::EspSubsystem,
+        extensions::ExtensionsSubsystem,
         hooks::HooksSubsystem,
         initrd::InitrdSubsystem,
         management::ManagementSubsystem,
@@ -115,6 +116,12 @@ lazy_static::lazy_static! {
         Box::<HooksSubsystem>::default(),
         Box::<InitrdSubsystem>::default(),
         Box::<SelinuxSubsystem>::default(),
+    ]);
+}
+
+lazy_static::lazy_static! {
+    static ref SUBSYSTEMS_HOTPATCH: Mutex<Vec<Box<dyn Subsystem>>> = Mutex::new(vec![
+        Box::<ExtensionsSubsystem>::default(),
     ]);
 }
 
