@@ -11,12 +11,14 @@ use crate::is_default;
 use super::error::HostConfigurationStaticValidationError;
 
 pub mod additional_files;
+pub mod extensions;
 pub mod modules;
 mod network;
 pub mod services;
 pub mod users;
 
 use additional_files::AdditionalFile;
+use extensions::Extension;
 use modules::Module;
 use services::Services;
 use users::User;
@@ -67,6 +69,12 @@ pub struct Os {
     /// Options for configuring the kernel.
     #[serde(default, skip_serializing_if = "is_default")]
     pub kernel_command_line: KernelCommandLine,
+
+    /// Data about the extension images, which should be merged on the target
+    /// OS.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "schemars", schemars(skip))]
+    pub extensions: Vec<Extension>,
 }
 
 /// Additional kernel command line options to add to the image.

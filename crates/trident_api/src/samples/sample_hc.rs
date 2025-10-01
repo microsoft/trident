@@ -1099,6 +1099,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     kernel_command_line: KernelCommandLine {
                         extra_command_line: vec![],
                     },
+                    extensions: vec![],
                 },
                 scripts: Scripts {
                     post_configure: vec![Script {
@@ -1243,6 +1244,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     kernel_command_line: KernelCommandLine {
                         extra_command_line: vec![],
                     },
+                    extensions: vec![],
                 },
                 scripts: Scripts {
                     post_configure: vec![Script {
@@ -1407,6 +1409,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     kernel_command_line: KernelCommandLine {
                         extra_command_line: vec![],
                     },
+                    extensions: vec![],
                 },
                 scripts: Scripts {
                     post_configure: vec![Script {
