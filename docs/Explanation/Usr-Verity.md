@@ -27,8 +27,8 @@ At a high level, there are only a couple things that need to be configured:
 
     ``` yaml
     storage:
-    disks:
-    - partitionTableType: gpt
+      disks:
+      - partitionTableType: gpt
         partitions:
         - label: usr-data
           id: usr-data
@@ -69,7 +69,7 @@ At a high level, there are only a couple things that need to be configured:
         - rd.hostonly=0
 
     uki:
-        kernels: auto
+      kernels: auto
 
     previewFeatures:
     - uki
@@ -87,26 +87,26 @@ Create a Trident host configuration file that aligns to the Image Customizer COS
 
     ```yaml
     storage:
-    disks:
-        - id: os
-          device: /dev/sda
-          partitionTableType: gpt
-          partitions:
-            - id: usr-data
-              type: root
-              size: 4G
-            - id: usr-hash
-              type: usr-verity
-              size: 1G
+      disks:
+      - id: os
+        device: /dev/sda
+        partitionTableType: gpt
+        partitions:
+        - id: usr-data
+          type: root
+          size: 4G
+        - id: usr-hash
+          type: usr-verity
+          size: 1G
     ```
 
 2. Create `verity` section
 
     ```yaml
     storage:
-    verity:
-        - id: usr
-          name: usr
-          dataDeviceId: usr-data
-          hashDeviceId: usr-hash
+      verity:
+      - id: usr
+        name: usr
+        dataDeviceId: usr-data
+        hashDeviceId: usr-hash
     ```
