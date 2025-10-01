@@ -10,8 +10,8 @@ from pathlib import Path
 from subprocess import CalledProcessError, TimeoutExpired
 
 from .conftest import (
-    argus_runcmd,
-    ARGUS_REPO_DIR_PATH,
+    trident_runcmd,
+    TRIDENT_REPO_DIR_PATH,
     VM_SSH_NODE_CACHE_KEY,
     FT_BASE_IMAGE,
     TEST_USER,
@@ -33,9 +33,13 @@ users:
 def create_vm(create_params) -> Dict[str, str]:
     log.info("Creating VM with parameters: %s", create_params)
     """Creates a VM with the given parameters, using virt-deploy."""
-    argus_runcmd([ARGUS_REPO_DIR_PATH / "virt-deploy", "create"] + create_params)
+    trident_runcmd(
+        [TRIDENT_REPO_DIR_PATH / "tools" / "virt-deploy", "create"] + create_params
+    )
 
-    with open(ARGUS_REPO_DIR_PATH / "virt-deploy-metadata.json", "r") as file:
+    with open(
+        TRIDENT_REPO_DIR_PATH / "tools" / "virt-deploy-metadata.json", "r"
+    ) as file:
         metadata = json.load(file)
 
     return metadata["virtualmachines"][0]
