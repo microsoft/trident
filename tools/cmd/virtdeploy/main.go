@@ -8,14 +8,23 @@ import (
 )
 
 func main() {
-	log.SetLevel(log.DebugLevel)
+	log.SetLevel(log.TraceLevel)
 	err := virtdeploy.CreateResources(virtdeploy.VirtDeployConfig{
-		Namespace: "test-namespace",
+		Namespace: "virtdeploy",
 		IPNet: net.IPNet{
 			IP:   net.IPv4(192, 168, 242, 0),
 			Mask: net.CIDRMask(24, 32),
 		},
 		NatInterface: virtdeploy.AutoDetectNatInterface,
+		VMs: []virtdeploy.VirtDeployVM{
+			{
+				Cpus:        4,
+				Mem:         2,
+				Disks:       []uint{16},
+				SecureBoot:  true,
+				EmulatedTPM: true,
+			},
+		},
 	})
 
 	if err != nil {

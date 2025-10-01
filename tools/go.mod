@@ -20,11 +20,13 @@ require (
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/viper v1.19.0
 	gopkg.in/yaml.v2 v2.4.0
+	libvirt.org/go/libvirtxml v1.11007.0
 	libvirt.org/libvirt-go-xml v7.4.0+incompatible
 )
 
 require (
 	github.com/kr/fs v0.1.0 // indirect
+	github.com/seancfoley/bintree v1.3.1 // indirect
 	github.com/vishvananda/netns v0.0.4 // indirect
 	golang.org/x/term v0.32.0 // indirect
 )
@@ -51,6 +53,7 @@ require (
 	github.com/sagikazarmark/locafero v0.6.0 // indirect
 	github.com/sagikazarmark/slog-shim v0.1.0 // indirect
 	github.com/satori/go.uuid v1.2.0 // indirect
+	github.com/seancfoley/ipaddress-go v1.7.1
 	github.com/sourcegraph/conc v0.3.0 // indirect
 	github.com/spf13/afero v1.11.0 // indirect
 	github.com/spf13/cast v1.7.0 // indirect
