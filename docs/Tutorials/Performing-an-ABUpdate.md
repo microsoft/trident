@@ -5,13 +5,13 @@
 
 Trident can be used to service an operating system, running either on bare metal or virtual machines.  To accomplish this, Trident uses an [A/B Update](../Reference/Glossary.md#ab-update) strategy.
 
-This document describes how to create an update image, create an update Trident host configuration, and execute an update with `trident update`.
+This document describes how to build an update image, create an update Trident Host Configuration, and execute an update with `trident update`.
 
 ## Prerequisites
 
 1. Ensure that [oras](https://oras.land/docs/installation/) is installed.
 2. Ensure [Image Customizer container](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/quick-start/quick-start.html) is accessible.
-3. Ensure SSH Key Pair Exists (assumed in this tutorial to be `$HOME/.ssh/id_rsa.pub`)
+3. Ensure SSH key pair exists (assumed in this tutorial to be `$HOME/.ssh/id_rsa.pub`)
 4. A bare metal machine (via [Hello World](./Trident-Hello-World.md)) or virtual machine (via [Onboard a VM to Trident](./Onboard-a-VM-to-Trident.md)) has been provisioned.
 
 ## Instructions
@@ -55,9 +55,9 @@ cp -r bin/RPMS $HOME/staging
 
 ### Step 3: Create Image Customizer Configuration for Update
 
-For an update COSI, we only need to provide an esp and the updated partitions.
+For an update COSI, we need to provide only an esp and the updated partitions. `trident` was not created as an [A/B volume pair](../Reference/Glossary.md#ab-volume-pair) and therefore can not serviced, so it is not included.
 
-> Note that `root` is specified for Image Customizer unlike the `root-a` or `root-b` found in the Trident host configuration. Also that there is no `trident` partition.
+Interesting to note that Image Customizer reflects the OS image, which will be laid out onto a single partition at a time: either A or B. So, the [A/B volume pairs](../Reference/Glossary.md#ab-volume-pair) will be not be reflected in the Image Customizer config.  This is why `root` is specified here unlike the `root-a` or `root-b` found in the Trident Host Configuration.
 
 ``` yaml
   disks:
@@ -84,7 +84,7 @@ Similarly, filesystems should only contain entries for esp and the updated files
       type: ext4
 ```
 
-As for the install COSI, Trident must be added. The final step for update is [trident commit](../Reference/Trident-CLI.md#commit), which must be invoked to validate and ensure the machine's boot order is correct. To enable commit, Trident needs the `trident-service` package to be installed and the `trident` service to be enabled:
+The final step for A/B Update is [trident commit](../Reference/Trident-CLI.md#commit). This will validate and ensure the machine's boot order is correct after an update. To enable `trident commit` in the update image, the `trident-service` package must be installed and the `trident` service needs to be enabled:
 
 ``` yaml
   packages:
@@ -182,7 +182,7 @@ popd
 
 ### Step 5: Create Trident Host Configuration for Update
 
-To update our existing installation, we need a new host configuration file. In this case, we are only changing the OS based on a new COSI file that was created in step 4. In essence, the host configuration file used to deploy the initial operating system can be used as a basis, only changing the COSI file reference:
+To update our existing installation, we need a new Host Configuration file. In this case, we are only changing the OS based on a new COSI file that was created in step 4. In essence, the Host Configuration file used to deploy the initial operating system can be used as a basis, only changing the COSI file reference:
 
   ``` yaml
     image:
@@ -190,7 +190,7 @@ To update our existing installation, we need a new host configuration file. In t
         sha384: ignored
   ```
 
-Assuming a disk path of `/dev/sda` and a local COSI file, the Trident update host configuration can be created like this:
+Assuming a disk path of `/dev/sda` and a local COSI file, the Trident update Host Configuration can be created like this:
 
 ``` bash
 DISK_DEVICE_PATH="/dev/sda"
@@ -249,19 +249,19 @@ os:
 EOF
 ```
 
-### Step 6: Copy COSI and Host Configuration to OS
+### Step 6: Copy COSI and Host Configuration to the Servicing OS
 
 While Trident can download COSI files from an OCI or http server, in this tutorial, we will just copy the COSI to a known location. This is based on knowing the IP address of the target machine, which can be supplied below as `TARGET_MACHINE_IP`:
 
 ``` bash
 TARGET_MACHINE_IP="<IP ADDRESS>"
-# Use SSH Copy to move the update host configuration to target machine
+# Use SSH Copy to move the update Host Configuration to target machine
 scp -i $HOME/.ssh/id_rsa $HOME/staging/host-config-update.yaml tutorial-user@$TARGET_MACHINE_IP:/tmp/host-config-update.yaml
 # Use SSH Copy to move the update COSI to target machine
 scp -i $HOME/.ssh/id_rsa $HOME/staging/osimage-update.cosi tutorial-user@$TARGET_MACHINE_IP:/tmp/osimage-update.cosi
 ```
 
-### Step 7: Update Target Machine to B OS
+### Step 7: Update OS on the Target Machine to B
 
 To update the target machine, we will invoke [`trident update`](../Reference/Trident-CLI.md#update).
 
@@ -273,4 +273,4 @@ ssh -i $HOME/.ssh/id_rsa tutorial-user@$TARGET_MACHINE_IP trident update /tmp/ho
 
 ## Conclusion
 
-We have now seen how to create an update image, Trident host configuration, and how to invoke update.
+We have now seen how to build an update image, Trident Host Configuration, and how to invoke update.
