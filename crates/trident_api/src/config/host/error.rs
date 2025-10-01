@@ -192,11 +192,6 @@ pub enum HostConfigurationDynamicValidationError {
     )]
     InvalidEncryptionPcrsForGrubImage { pcrs: String },
 
-    #[error(
-        "Since update image is a UKI image, list of PCRs in encryption config contains invalid PCRs: '{pcrs}'"
-    )]
-    InvalidEncryptionPcrsForUkiImage { pcrs: String },
-
     #[error("Failed to get block device information for disk '{disk_id}' that requires partition adoption")]
     GetBlockDeviceInfoForDisk { disk_id: String },
 
