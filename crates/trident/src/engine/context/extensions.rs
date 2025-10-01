@@ -152,7 +152,6 @@ fn read_extension_release(
         .get_value(&format!("{prefix}ID"))
         .map(|s| s.to_string())
         .ok_or_else(|| Error::msg(format!("Could not find {prefix}ID in extension release")))?;
-
     let file_name = path
         .display()
         .to_string()
@@ -160,17 +159,23 @@ fn read_extension_release(
         .last()
         .ok_or_else(|| Error::msg("Failed to get extension-release ending"))?
         .to_string();
+    let location = match &ext.location {
+        Some(location) => location.clone(),
+        None => {
+            if prefix == "SYSEXT_" {
+                PathBuf::from("/var/lib/extensions").join(format!("{file_name}.raw"))
+            } else {
+                PathBuf::from("/var/lib/confexts").join(format!("{file_name}.raw"))
+            }
+        }
+    };
 
     Ok(ExtensionData {
         id: extension_id,
         name: file_name.clone(),
         url: ext.url.clone(),
         sha384: ext.sha384.clone(),
-        location: if prefix == "SYSEXT_" {
-            PathBuf::from("/var/lib/extensions").join(format!("{file_name}.raw"))
-        } else {
-            PathBuf::from("/var/lib/confexts").join(format!("{file_name}.raw"))
-        },
+        location,
         temp_location: Some(curr_location.to_path_buf()),
         ext_type: if prefix == "SYSEXT_" {
             ExtensionType::Sysext
