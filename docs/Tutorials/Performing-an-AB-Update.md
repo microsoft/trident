@@ -157,7 +157,7 @@ os:
 EOF
 ```
 
-### Step 4: Invoke Image Customizer to Create an Update COSI File
+### Step 4: Create an Update COSI 
 
 From previous steps, the Trident RPMs, a base image (`image.vhdx`) and Image Customizer configuration file (`ic-config-update.yaml`) are all found in `$HOME/staging`.
 
