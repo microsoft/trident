@@ -182,7 +182,7 @@ popd
 
 ### Step 5: Create Trident Host Configuration for Update
 
-To update our existing installation, we need a new Host Configuration file. In this case, we are only changing the OS based on a new COSI file that was created in step 4. In essence, the Host Configuration file used to deploy the initial operating system can be used as a basis, only changing the COSI file reference:
+To update our existing installation, we need a new Host Configuration file that represents our desired state. In this case, we are only changing the OS based on a new COSI file that was created in step 4. In essence, the Host Configuration file used to deploy the initial operating system can be used as a basis, only changing the COSI file reference:
 
   ``` yaml
     image:
