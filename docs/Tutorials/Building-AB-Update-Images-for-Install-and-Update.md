@@ -349,7 +349,7 @@ operating system.
 Alternatively, to simulate an installation, you can create a virtual machine
 with an empty disk and mount the ISO directly as a CD.
 
-### Step 7: Define an Update COSI Configuration
+### Step 7: Define Update COSI Configuration
 
 The process for creating an update COSI file is similar to what we did for
 Install.
