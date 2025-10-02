@@ -31,7 +31,7 @@ Find the desired adoption partitions on your host, either by:
    add a new [adoptedPartitions](../Reference/Host-Configuration/API-Reference/AdoptedPartition.md)
    section to the `disk` section containing the partitions you want
    to adopt. This section should include the partition IDs and their
-   corresponding labels _or_ UUIDs.
+   corresponding uniquely identifying labels _or_ UUIDs.
 
    For example:
 
