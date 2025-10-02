@@ -1,4 +1,10 @@
 package virtdeploy
 
-// type storageVolume struct {
-// 	name string
+import "fmt"
+
+type storageVolume struct {
+	name   string
+	path   string
+	size   uint
+	osDisk string
+}

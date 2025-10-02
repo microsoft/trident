@@ -57,6 +57,9 @@ type VirtDeployVM struct {
 	// UUID of the VM according to libvirt
 	uuid uuid.UUID
 
+	// Storage volumes for the VM
+	volumes []storageVolume
+
 	// User-configurable fields
 
 	// Number of virtual CPUs

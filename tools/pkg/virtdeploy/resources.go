@@ -74,8 +74,27 @@ func newVirtDeployResourceConfig(config VirtDeployConfig) (*virtDeployResourceCo
 		if err != nil {
 			return nil, fmt.Errorf("lease IP for VM %s: %w", vm.name, err)
 		}
-
 		vm.ipAddr = lease
+
+		// Set up volume configurations for the VM
+		vm.volumes = make([]storageVolume, 0, len(vm.Disks))
+		for j, diskSize := range vm.Disks {
+			// Initialize volume with basic info, path will be filled in once the
+			// volume is created in libvirt.
+			vol := storageVolume{
+				name: fmt.Sprintf("%s-volume-%d", vm.name, j+1),
+				size: diskSize,
+			}
+
+			// If this is the first disk and an OS disk path was specified,
+			// set it.
+			if j == 0 && vm.OsDiskPath != "" {
+				vol.osDisk = vm.OsDiskPath
+			}
+
+			// Append the volume to the VM's list of volumes
+			vm.volumes = append(vm.volumes, vol)
+		}
 	}
 
 	return r, nil
@@ -331,10 +350,11 @@ func (rc *virtDeployResourceConfig) setupVm(vm *VirtDeployVM) error {
 		return fmt.Errorf("teardown existing domain: %w", err)
 	}
 
-	for i, disk := range vm.Disks {
-		err := rc.setupVolume(disk, pool)
+	for i := range vm.volumes {
+		vol := &vm.volumes[i]
+		err := rc.setupVolume(vol, rc.pool)
 		if err != nil {
-			return fmt.Errorf("setup volume #%d for disk %s: %w", i+1, disk., err)
+			return fmt.Errorf("setup volume for disk #%d: %w", i+1, err)
 		}
 	}
 
@@ -380,7 +400,8 @@ func (rc *virtDeployResourceConfig) teardownDomain(name string) error {
 	return nil
 }
 
-func (rc *virtDeployResourceConfig) setupVolume(disk VirtDeployDisk, pool libvirt.StoragePool) error {
+func (rc *virtDeployResourceConfig) setupVolume(vol *storageVolume, pool storagePool) error {
+	vol.path = fmt.Sprintf("%s/%s.qcow2", pool.path, vol.name)
 	// Create the volume
 	// vol, err := rc.lv.StorageVolumeCreate(disk.name, disk.size, pool)
 	// if err != nil {
@@ -388,6 +409,32 @@ func (rc *virtDeployResourceConfig) setupVolume(disk VirtDeployDisk, pool libvir
 	// }
 
 	// log.Infof("Created volume '%s' for disk '%s'", vol.Name, disk.name)
+
+	return nil
+}
+
+func (rc *virtDeployResourceConfig) teardownVolume(pool libvirt.StoragePool, name string) error {
+	vol, err := rc.lv.StorageVolLookupByName(pool, name)
+	if err != nil {
+		// Check if the error indicates that the volume does not exist
+		// If so, we can ignore it.
+		lverr, ok := err.(libvirt.Error)
+		if ok && lverr.Code == uint32(libvirt.ErrNoStorageVol) {
+			log.Tracef("Volume %s does not exist, skipping deletion", name)
+			return nil
+		}
+
+		return fmt.Errorf("lookup volume %s: %w", name, err)
+	}
+
+	log.Debugf("Found existing volume '%s', deleting.", name)
+
+	err = rc.lv.StorageVolumeDelete(vol, 0)
+	if err != nil {
+		return fmt.Errorf("delete volume %s: %w", name, err)
+	}
+
+	log.Infof("Deleted existing volume '%s'", name)
 
 	return nil
 }
