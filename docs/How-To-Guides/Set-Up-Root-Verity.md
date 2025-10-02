@@ -210,7 +210,7 @@ configuration.
 Some things to note that are defined in the Host Configuration below:
 
 * [A/B volume pairs](../Reference/Glossary.md#ab-volume-pair) for `root-data`
-* and `root-hash`
+and `root-hash`
 * [abUpdate section](../Reference/Host-Configuration/API-Reference/AbUpdate.md)
 for `root-data` and `root-hash`
 * [verity section](../Explanation/Root-Verity.md#use-trident-to-deploy-the-cosi-file)
