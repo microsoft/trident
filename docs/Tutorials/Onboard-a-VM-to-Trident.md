@@ -31,7 +31,7 @@ oras pull mcr.microsoft.com/azurelinux/3.0/image/minimal-os:latest --platform li
 popd
 ```
 
-### Step 2: Get Trident RPMs
+### Step 2: Build Trident RPMs
 
 Build the Trident RPMs by running:
 

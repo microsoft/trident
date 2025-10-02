@@ -15,7 +15,7 @@ both install and update.
 2. Ensure [Image Customizer
    container](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/quick-start/quick-start.html)
    is accessible.
-3. Ensure SSH Key Pair Exists (assumed in this tutorial to be
+3. Ensure SSH key pair exists (assumed in this tutorial to be
    `$HOME/.ssh/id_rsa.pub`)
 
 ## Instructions
@@ -32,7 +32,7 @@ oras pull mcr.microsoft.com/azurelinux/3.0/image/minimal-os:latest --platform li
 popd
 ```
 
-### Step 2: Get Trident RPMs
+### Step 2: Build Trident RPMs
 
 Build the Trident RPMs by running:
 
