@@ -103,7 +103,7 @@ pub struct Encryption {
     ///
     /// However, due to the limitations of `systemd-pcrlock`, which is used internally for
     /// encryption in UKI OS, PCR 7 cannot be used if Trident is running inside a container. To use
-    /// PCR 7 for encryption along in a UKI OS image, Trident must be running in a
+    /// PCR 7 for encryption in a UKI OS image, Trident must be running in a
     /// non-containerized environment.
     ///
     /// More encryption flows, with additional PCR options, will be added in the future.
