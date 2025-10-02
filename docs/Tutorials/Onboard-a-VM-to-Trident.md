@@ -31,7 +31,7 @@ oras pull mcr.microsoft.com/azurelinux/3.0/image/minimal-os:latest --platform li
 popd
 ```
 
-### Step 2: Get Trident RPMs
+### Step 2: Build Trident RPMs
 
 Build the Trident RPMs by running:
 
@@ -58,7 +58,7 @@ Copy RPMs to staging folder:
 cp -r bin/RPMS $HOME/staging
 ```
 
-### Step 3: Create Image Customizer configuration including offline-initialize
+### Step 3: Define COSI Configuration including offline-initialize
 
 Add the `trident-service` package to the Image Customizer configuration. This
 will add the Trident services needed for update and the `trident` package used

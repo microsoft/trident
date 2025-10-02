@@ -40,7 +40,7 @@ oras pull mcr.microsoft.com/azurelinux/3.0/image/minimal-os:latest --platform li
 popd
 ```
 
-### Step 2: Get Trident RPMs
+### Step 2: Build Trident RPMs
 
 Build the Trident RPMs by running:
 
@@ -67,7 +67,7 @@ Copy RPMs to staging folder:
 cp -r bin/RPMS $HOME/staging
 ```
 
-### Step 3: Create Image Customizer Configuration
+### Step 3: Define COSI Configuration
 
 To create a root-verity volume, there are a few Image Customizer configuration
 sections that are important.

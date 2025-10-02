@@ -70,7 +70,7 @@ pair comprised of two RAID arrays, `root-a` and `root-b`, would have an ID
 
 ### Step 2: Add `abUpdate` configuration
 
-1. Add a `storage.abUpdate` configuration to the host configuration. The
+1. Add a `storage.abUpdate` configuration to the Host Configuration. The
    [`abUpdate`](../Reference/Host-Configuration/API-Reference/AbUpdate.md)
    configuration carries information about the [A/B volume
    pairs](../Reference/Glossary.md#ab-volume-pair) that are used to perform A/B
@@ -155,7 +155,7 @@ will:
 - Link each pair of device copies into a logical A/B volume pair.
 
 1. Run A/B updates with Trident by following [this
-   tutorial](../Tutorials/Performing-an-ABUpdate.md). On an A/B update, Trident
+   tutorial](../Tutorials/Performing-an-AB-Update.md). On an A/B update, Trident
    will:
 
    - Update the OS image on the inactive partitions, so that it becomes active

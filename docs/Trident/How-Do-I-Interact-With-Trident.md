@@ -21,7 +21,7 @@ installation and servicing operations. The CLI supports the following commands:
 - [`offline-initialize`](Tutorials/Onboard-a-VM-to-Trident.md): Prepares the
   Trident datastore for a VM image, enabling future in-place servicing. This is
   typically performed during VM image creation.
-- [`update`](Tutorials/Performing-an-ABUpdate.md): Executes an OS update in
+- [`update`](Tutorials/Performing-an-AB-Update.md): Executes an OS update in
   accordance with the supplied Host Configuration.
 - `commit`: Certifies the current OS deployment as successful.
 - [`rebuild-raid`](How-To-Guides/Rebuild-RAID-Array.md): Reconstructs a degraded

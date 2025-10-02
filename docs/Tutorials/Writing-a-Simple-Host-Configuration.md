@@ -299,5 +299,5 @@ Now that you have a valid Host Configuration, you are ready to use it to
 provision a device. Here are some tutorials to explore next:
 
 - [Perform a clean install](./Onboard-a-VM-to-Trident.md)
-- [Perform an A/B Update](./Performing-an-ABUpdate.md)
+- [Perform an A/B Update](./Performing-an-AB-Update.md)
 - [Run a custom script with Trident](./Running-Custom-Scripts.md)

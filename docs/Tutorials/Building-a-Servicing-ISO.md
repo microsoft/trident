@@ -35,7 +35,7 @@ oras pull mcr.microsoft.com/azurelinux/3.0/image/minimal-os:latest --platform li
 popd
 ```
 
-### Step 2: Get Trident RPMs
+### Step 2: Build Trident RPMs
 
 Build the Trident RPMs by running:
 
@@ -133,7 +133,7 @@ iso:
       destination: /images/azure-linux.cosi
 ```
 
-### Step 4: Invoke Image Customizer to Create Installation ISO
+### Step 4: Create Installation ISO
 
 Assuming locations for the base image file (`$HOME/staging/image.vhdx`) and the
 Image Customizer configuration file (`$HOME/staging/ic-config.yaml`), follow the
