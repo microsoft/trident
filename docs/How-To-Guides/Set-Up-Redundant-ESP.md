@@ -1,7 +1,9 @@
 
 # Set Up Redundant ESP
 
-This guide shows you how to configure an operating system with ESP redundancy. Follow the steps below to create an ESP on a RAID volume.
+This guide shows you how to configure an operating system with ESP
+redundancy. Follow the steps below to create a Trident Host
+Configuration that configures ESP on a RAID volume.
 
 ## Goals
 
@@ -12,9 +14,13 @@ By following this guide, you will:
 
 ## Instructions
 
-A detailed explanation of creating RAID arrays can be found in the [Create a RAID Array guide](./Create-a-RAID-Array.md).  For this guide, we break RAID creation into 2 parts:
+The required configurations should all be made in the Trident Host
+Configuration. A detailed explanation of creating RAID arrays can be
+found in the [Create a RAID Array guide](./Create-a-RAID-Array.md).
+For this guide, we break RAID creation into 2 parts:
 
-1. To benefit from redundancy, create a RAID array that utilizes multiple disks by defining partitions `esp-1` and `esp-2` like this:
+1. To benefit from redundancy, create a RAID array that utilizes multiple
+   disks by defining partitions `esp-1` and `esp-2` like this:
 
     ``` yaml
     storage:
@@ -35,7 +41,8 @@ A detailed explanation of creating RAID arrays can be found in the [Create a RAI
               size: 1G
     ```
 
-2. Create a `raid` section in the Trident host configuration that combines these partitions into a RAID array:
+2. Create a `raid` section in the Trident host configuration that combines
+   these partitions into a RAID array:
 
     ``` yaml
     raid:
@@ -48,7 +55,8 @@ A detailed explanation of creating RAID arrays can be found in the [Create a RAI
             - esp-2
     ```
 
-Having created the RAID array, it can then be referenced to host the ESP filesystem:
+Having created the RAID array, it can then be referenced to host the ESP
+filesystem:
 
 ``` yaml
   filesystems:
