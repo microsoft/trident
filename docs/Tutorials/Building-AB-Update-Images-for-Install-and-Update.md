@@ -357,7 +357,7 @@ Install.
 For an update COSI, we need to provide only an esp and the updated partitions.
 The `trident` partition does not have an [A/B volume pair](../Reference/Glossary.md#ab-volume-pair)
 and does not need to be serviced, so it is not included. The same would go for
-any data or other none-serviced partition.
+any data or other non-serviced partition.
 
 Image Customizer reflects the update OS image, which will be laid out onto a
 single partition at a time: either A _or_ B. So, the
