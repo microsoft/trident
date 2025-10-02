@@ -20,7 +20,13 @@ List of PCRs in the TPM 2.0 device to seal encrypted volumes to in the target OS
 
 # UKI Target OS When doing a clean install of a UKI target OS image, the following options are valid:
 
-- 4, or `boot-loader-code` - 7, or `secure-boot-policy` - 11, or `kernel-boot` - 4 and 7 - 4 and 11 - 7 and 11 - 4, 7, and 11
+- 4, or `boot-loader-code`
+- 7, or `secure-boot-policy`
+- 11, or `kernel-boot`
+- 4 and 7
+- 4 and 11
+- 7 and 11
+- 4, 7, and 11
 
 However, due to the limitations of `systemd-pcrlock`, which is used internally for encryption in UKI OS, PCR 7 cannot be used if Trident is running inside a container. To use PCR 7 for encryption along in a UKI OS image, Trident must be running in a non-containerized environment.
 
