@@ -7,10 +7,8 @@ Configuration that configures ESP on a RAID volume.
 
 ## Goals
 
-By following this guide, you will:
-
-1. Understand how to create a RAID array
-2. Configure an ESP on a RAID array
+By following this guide, you will understand how to configure an
+ESP on a RAID array
 
 ## Instructions
 
@@ -20,7 +18,7 @@ found in the [Create a RAID Array guide](./Create-a-RAID-Array.md).
 For this guide, we break RAID creation into 2 parts:
 
 1. To benefit from redundancy, create a RAID array that utilizes multiple
-   disks by defining partitions `esp-1` and `esp-2` like this:
+   disks by defining 2 partitions for `raid1` (`esp-1` and `esp-2`) like this:
 
     ``` yaml
     storage:
@@ -41,8 +39,8 @@ For this guide, we break RAID creation into 2 parts:
               size: 1G
     ```
 
-2. Create a `raid` section in the Trident host configuration that combines
-   these partitions into a RAID array:
+2. Create a `raid` section in `storage` section of your Trident Host
+   Configuration that combines these partitions into a RAID array:
 
     ``` yaml
     raid:
