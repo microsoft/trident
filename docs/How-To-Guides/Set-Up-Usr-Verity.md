@@ -210,7 +210,7 @@ configuration.
 
 Some things to note that are defined in the Host Configuration below:
 
-* [A/B volume pairs](../Reference/Glossary.md#ab-volume-pair) for `usr-data` and 
+* [A/B volume pairs](../Reference/Glossary.md#ab-volume-pair) for `usr-data` and
   `usr-hash`
 * [abUpdate section](../Reference/Host-Configuration/API-Reference/AbUpdate.md)
   for `usr-data` and `usr-hash`
