@@ -11,6 +11,7 @@ import logging
 def update_trident_host_config(
     *,
     host_configuration: dict,
+    test_selection: dict,
     interface_name: str,
     interface_ip: str,
     interface_mac: Optional[str] = None,
@@ -79,6 +80,20 @@ def update_trident_host_config(
         host_configuration.setdefault("internalParams", {})[
             "writableEtcOverlayHooks"
         ] = True
+
+    # TODO: If this is a BM test with grub MOS -> UKI target OS flow, then only
+    # request PCRs 4 and 11 in the PCRs section b/c we cannot currently include
+    # PCR 7 into pcrlock policy as SecureBoot is disabled on BM machines.
+    # Related ADO task:
+    # https://dev.azure.com/mariner-org/polar/_workitems/edit/15566.
+    storage = host_configuration.get("storage")
+    if storage and "uki" in test_selection.get("compatible", []):
+        encryption = storage.get("encryption")
+        if encryption and "pcrs" in encryption:
+            logging.info(
+                "Detected UKI image, overwriting PCRs section to only include PCRs 4 and 11 and exclude PCR 7."
+            )
+            encryption["pcrs"] = ["boot-loader-code", "kernel-boot"]
 
     logging.info(
         "Final trident_yaml content post all the updates: %s", host_configuration
@@ -164,8 +179,12 @@ def main():
     with open(args.trident_yaml) as f:
         trident_yaml_content = yaml.safe_load(f)
 
+    with open(args.test_selection) as f:
+        test_selection_content = yaml.safe_load(f)
+
     update_trident_host_config(
         host_configuration=trident_yaml_content,
+        test_selection=test_selection_content,
         interface_name=args.interface_name,
         interface_ip=args.oam_ip,
         interface_mac=args.oam_mac,
