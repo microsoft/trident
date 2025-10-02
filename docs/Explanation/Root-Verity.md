@@ -1,6 +1,6 @@
 # Root Verity
 
-Root verity is a specific utilization of Verity, an integral part of the kernel
+Root data integrity verification, or "root verity", is a specific utilization of [dm-verity](https://www.kernel.org/doc/html/latest/admin-guide/device-mapper/verity.html), an integral part of the kernel
 that ensures that I/O for anything on the protected filesystem (in this case,
 root: `/`) is verified against a known good state. This is achieved by creating
 a hash tree of the root filesystem contents, which is then used to validate the
