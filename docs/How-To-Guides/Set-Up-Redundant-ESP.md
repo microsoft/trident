@@ -58,6 +58,7 @@ Having created the RAID array, it can then be referenced to host the ESP
 filesystem:
 
 ``` yaml
+storage:
   filesystems:
     - deviceId: esp
       mountPoint:
