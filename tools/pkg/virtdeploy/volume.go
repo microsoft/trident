@@ -20,13 +20,25 @@ type storageVolume struct {
 	osDisk string
 	// Libvirt storage volume, to be populated when created
 	lvVol libvirt.StorageVol
+	// Format of the volume (e.g. qcow2, raw)
+	format string
+	// Mode for the volume (e.g. 0644)
+	mode string
 }
 
-func newSimpleVolume(name string, size uint) storageVolume {
+func newSimpleVolume(name string, size uint, format string) storageVolume {
 	return storageVolume{
-		name: name,
-		size: size,
+		name:   name,
+		size:   size,
+		format: format,
+		mode:   "0644",
 	}
+}
+
+func newSimpleVolumeMode(name string, size uint, format string, mode string) storageVolume {
+	vol := newSimpleVolume(name, size, format)
+	vol.mode = mode
+	return vol
 }
 
 func (n storageVolume) asXml() (string, error) {
@@ -39,10 +51,10 @@ func (n storageVolume) asXml() (string, error) {
 		Target: &libvirtxml.StorageVolumeTarget{
 			Path: n.path,
 			Format: &libvirtxml.StorageVolumeTargetFormat{
-				Type: "qcow2",
+				Type: n.format,
 			},
 			Permissions: &libvirtxml.StorageVolumeTargetPermissions{
-				Mode: "0744",
+				Mode: n.mode,
 			},
 		},
 	}

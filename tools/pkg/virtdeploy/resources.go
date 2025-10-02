@@ -7,13 +7,13 @@ import (
 	"path"
 
 	"github.com/digitalocean/go-libvirt"
+	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 )
 
 const (
-// libvirtDir = "/var/lib/libvirt"
-// qemuDir    = "/var/lib/libvirt/qemu"
-// nvramDir   = "/var/lib/libvirt/qemu/nvram"
+	FIRMWARE_LOADER_PATH            = "/usr/share/OVMF/OVMF_CODE_4M.fd"
+	FIRMWARE_LOADER_PATH_SECUREBOOT = "/usr/share/OVMF/OVMF_CODE_4M.ms.fd"
 )
 
 type virtDeployResourceConfig struct {
@@ -71,16 +71,20 @@ func newVirtDeployResourceConfig(config VirtDeployConfig) (*virtDeployResourceCo
 		}
 		vm.ipAddr = lease
 
+		vm.nvramFile = fmt.Sprintf("%s_VARS.fd", vm.name)
+
+		if vm.SecureBoot {
+			vm.firmwareLoaderPath = FIRMWARE_LOADER_PATH_SECUREBOOT
+		} else {
+			vm.firmwareLoaderPath = FIRMWARE_LOADER_PATH
+		}
+
 		// Set up volume configurations for the VM
 		vm.volumes = make([]storageVolume, 0, len(vm.Disks))
 		for j, diskSize := range vm.Disks {
 			// Initialize volume with basic info, path will be filled in once the
 			// volume is created in libvirt.
-			vol := storageVolume{
-				name: fmt.Sprintf("%s-volume-%d.qcow2", vm.name, j+1),
-				size: diskSize,
-				path: fmt.Sprintf("%s/%s.qcow2", r.pool.path, vm.name),
-			}
+			vol := newSimpleVolume(fmt.Sprintf("%s-volume-%d.qcow2", vm.name, j+1), diskSize, "qcow2")
 
 			// If this is the first disk and an OS disk path was specified,
 			// set it.
@@ -96,8 +100,8 @@ func newVirtDeployResourceConfig(config VirtDeployConfig) (*virtDeployResourceCo
 	return r, nil
 }
 
-func cleanupNamespace(namespace string) error {
-	ns := namespace(namespace)
+func cleanupNamespace(namespaceRaw string) error {
+	ns := namespace(namespaceRaw)
 
 	// Connect to libvirt
 	lvConn, err := connect()
@@ -117,8 +121,50 @@ func cleanupNamespace(namespace string) error {
 	}
 
 	for _, dom := range domains {
-		if !ns.isVmName(dom.Name) {
+		if !ns.isInNamespace(dom.Name) {
 			continue
+		}
+
+		log.Infof("Tearing down domain %s", dom.Name)
+		err = rc.teardownDomain(dom)
+		if err != nil {
+			return fmt.Errorf("teardown domain %s: %w", dom.Name, err)
+		}
+	}
+
+	// Delete all networks in the namespace
+	networks, _, err := rc.lv.ConnectListAllNetworks(1, libvirt.ConnectListNetworksActive|libvirt.ConnectListNetworksInactive)
+	if err != nil {
+		return fmt.Errorf("list networks: %w", err)
+	}
+
+	for _, nw := range networks {
+		if !ns.isInNamespace(nw.Name) {
+			continue
+		}
+
+		log.Infof("Tearing down network %s", nw.Name)
+		err = rc.teardownNetwork(nw)
+		if err != nil {
+			return fmt.Errorf("teardown network %s: %w", nw.Name, err)
+		}
+	}
+
+	// Delete all storage pools in the namespace
+	pools, _, err := rc.lv.ConnectListAllStoragePools(1, libvirt.ConnectListStoragePoolsActive|libvirt.ConnectListStoragePoolsInactive)
+	if err != nil {
+		return fmt.Errorf("list storage pools: %w", err)
+	}
+
+	for _, pool := range pools {
+		if !ns.isInNamespace(pool.Name) {
+			continue
+		}
+
+		log.Infof("Tearing down storage pool %s", pool.Name)
+		err = rc.teardownStoragePool(pool)
+		if err != nil {
+			return fmt.Errorf("teardown storage pool %s: %w", pool.Name, err)
 		}
 	}
 
@@ -152,7 +198,7 @@ func (rc *virtDeployResourceConfig) close() {
 	}
 }
 
-func (rc *virtDeployResourceConfig) construct() error {
+func (rc *virtDeployResourceConfig) construct() (*VirtDeployStatus, error) {
 	// Create dirs for the nvram files. Do this ASAP to fail fast if we can't.
 	// We need to do this with sudo since /var/lib/libvirt is root-owned.
 	// if err := sudoCommand("mkdir", []string{"-p", nvramDir}).Run(); err != nil {
@@ -170,30 +216,46 @@ func (rc *virtDeployResourceConfig) construct() error {
 
 	err := rc.setupNetwork()
 	if err != nil {
-		return fmt.Errorf("failed to set up network: %w", err)
+		return nil, fmt.Errorf("failed to set up network: %w", err)
 	}
 
 	err = rc.setupStoragePool(&rc.pool)
 	if err != nil {
-		return fmt.Errorf("failed to set up storage pool: %w", err)
+		return nil, fmt.Errorf("failed to set up storage pool: %w", err)
 	}
 
 	err = rc.setupStoragePool(&rc.nvramPool)
 	if err != nil {
-		return fmt.Errorf("failed to set up NVRAM storage pool: %w", err)
+		return nil, fmt.Errorf("failed to set up NVRAM storage pool: %w", err)
 	}
 
 	err = rc.setupVms()
 	if err != nil {
-		return fmt.Errorf("failed to set up VMs: %w", err)
+		return nil, fmt.Errorf("failed to set up VMs: %w", err)
 	}
 
-	return nil
+	status := &VirtDeployStatus{
+		Namespace:   rc.namespace.String(),
+		NetworkCIDR: rc.network.CIDR(),
+		VMs:         make([]VirtDeployVMStatus, len(rc.vms)),
+	}
+
+	for i, vm := range rc.vms {
+		status.VMs[i] = VirtDeployVMStatus{
+			Name:       vm.name,
+			IPAddress:  vm.ipAddr.String(),
+			MACAddress: vm.mac.String(),
+			Uuid:       uuid.UUID(vm.domain.UUID),
+			NvramPath:  vm.nvramPath,
+		}
+	}
+
+	return status, nil
 }
 
 func (rc *virtDeployResourceConfig) setupNetwork() error {
 	// Destroy any existing network with the same name
-	err := rc.teardownNetwork(rc.network.name)
+	err := rc.teardownNetworkByName(rc.network.name)
 	if err != nil {
 		return fmt.Errorf("teardown existing network: %w", err)
 	}
@@ -236,7 +298,7 @@ func (rc *virtDeployResourceConfig) setupNetwork() error {
 	return nil
 }
 
-func (rc *virtDeployResourceConfig) teardownNetwork(name string) error {
+func (rc *virtDeployResourceConfig) teardownNetworkByName(name string) error {
 	network, err := rc.lv.NetworkLookupByName(name)
 	if err != nil {
 		// Check if the error indicates that the network does not exist
@@ -252,32 +314,36 @@ func (rc *virtDeployResourceConfig) teardownNetwork(name string) error {
 
 	log.Debugf("Found existing network '%s', deleting.", network.Name)
 
-	active, err := rc.lv.NetworkIsActive(network)
+	return rc.teardownNetwork(network)
+}
+
+func (rc *virtDeployResourceConfig) teardownNetwork(lvNetwork libvirt.Network) error {
+	active, err := rc.lv.NetworkIsActive(lvNetwork)
 	if err != nil {
-		return fmt.Errorf("check if network %s is active: %w", name, err)
+		return fmt.Errorf("check if network %s is active: %w", lvNetwork.Name, err)
 	}
 
 	if active != 0 {
-		log.Tracef("Network %s is active, destroying.", name)
-		err = rc.lv.NetworkDestroy(network)
+		log.Tracef("Network %s is active, destroying.", lvNetwork.Name)
+		err = rc.lv.NetworkDestroy(lvNetwork)
 		if err != nil {
-			return fmt.Errorf("destroy network %s: %w", name, err)
+			return fmt.Errorf("destroy network %s: %w", lvNetwork.Name, err)
 		}
 	}
 
-	err = rc.lv.NetworkUndefine(network)
+	err = rc.lv.NetworkUndefine(lvNetwork)
 	if err != nil {
-		return fmt.Errorf("undefine network %s: %w", name, err)
+		return fmt.Errorf("undefine network %s: %w", lvNetwork.Name, err)
 	}
 
-	log.Infof("Deleted existing network '%s'", name)
+	log.Infof("Deleted existing network '%s'", lvNetwork.Name)
 
 	return nil
 }
 
 func (rc *virtDeployResourceConfig) setupStoragePool(pool *storagePool) error {
 	// Destroy any existing storage pool with the same name
-	err := rc.teardownStoragePool(pool.name)
+	err := rc.teardownStoragePoolByName(pool.name)
 	if err != nil {
 		return fmt.Errorf("teardown existing storage pool: %w", err)
 	}
@@ -326,7 +392,7 @@ func (rc *virtDeployResourceConfig) setupStoragePool(pool *storagePool) error {
 	return nil
 }
 
-func (rc *virtDeployResourceConfig) teardownStoragePool(name string) error {
+func (rc *virtDeployResourceConfig) teardownStoragePoolByName(name string) error {
 	pool, err := rc.lv.StoragePoolLookupByName(name)
 	if err != nil {
 		// Check if the error indicates that the pool does not exist
@@ -342,25 +408,29 @@ func (rc *virtDeployResourceConfig) teardownStoragePool(name string) error {
 
 	log.Debugf("Found existing storage pool '%s', deleting.", pool.Name)
 
-	active, err := rc.lv.StoragePoolIsActive(pool)
+	return rc.teardownStoragePool(pool)
+}
+
+func (rc *virtDeployResourceConfig) teardownStoragePool(lvPool libvirt.StoragePool) error {
+	active, err := rc.lv.StoragePoolIsActive(lvPool)
 	if err != nil {
-		return fmt.Errorf("check if storage pool %s is active: %w", name, err)
+		return fmt.Errorf("check if storage pool %s is active: %w", lvPool.Name, err)
 	}
 
 	if active != 0 {
-		log.Tracef("Storage pool %s is active, destroying.", name)
-		err = rc.lv.StoragePoolDestroy(pool)
+		log.Tracef("Storage pool %s is active, destroying.", lvPool.Name)
+		err = rc.lv.StoragePoolDestroy(lvPool)
 		if err != nil {
-			return fmt.Errorf("destroy storage pool %s: %w", name, err)
+			return fmt.Errorf("destroy storage pool %s: %w", lvPool.Name, err)
 		}
 	}
 
-	err = rc.lv.StoragePoolUndefine(pool)
+	err = rc.lv.StoragePoolUndefine(lvPool)
 	if err != nil {
-		return fmt.Errorf("undefine storage pool %s: %w", name, err)
+		return fmt.Errorf("undefine storage pool %s: %w", lvPool.Name, err)
 	}
 
-	log.Infof("Deleted existing storage pool '%s'", name)
+	log.Infof("Deleted existing storage pool '%s'", lvPool.Name)
 
 	return nil
 }
@@ -387,9 +457,26 @@ func (rc *virtDeployResourceConfig) setupVm(vm *VirtDeployVM) error {
 	}
 
 	// Destroy any existing domain with the same name
-	err := rc.teardownDomain(vm.name)
+	err := rc.teardownDomainByName(vm.name)
 	if err != nil {
 		return fmt.Errorf("teardown existing domain: %w", err)
+	}
+
+	// nvram volume
+	vol := newSimpleVolumeMode(vm.nvramFile, 0, "raw", "0666")
+	err = rc.setupVolume(&vol, rc.nvramPool)
+	if err != nil {
+		return fmt.Errorf("setup NVRAM volume: %w", err)
+	}
+
+	// Update the VM's NVRAM path to the created volume's path
+	vm.nvramPath = vol.path
+
+	// Upload NVRAM template
+	log.Debugf("Uploading NVRAM template from %s to %s", vm.firmwareLoaderPath, vol.path)
+	err = rc.uploadFileToVolume(vol.lvVol, vm.firmwareLoaderPath)
+	if err != nil {
+		return fmt.Errorf("upload NVRAM template to volume: %w", err)
 	}
 
 	for i := range vm.volumes {
@@ -421,7 +508,7 @@ func (rc *virtDeployResourceConfig) setupVm(vm *VirtDeployVM) error {
 			return fmt.Errorf("build cloud init ISO: %w", err)
 		}
 
-		vol := newSimpleVolume(fmt.Sprintf("%s-cloudinit.iso", vm.name), 1)
+		vol := newSimpleVolume(fmt.Sprintf("%s-cloudinit.iso", vm.name), 1, "iso")
 
 		err = rc.setupVolume(&vol, rc.pool)
 		if err != nil {
@@ -468,7 +555,7 @@ func (rc *virtDeployResourceConfig) setupVm(vm *VirtDeployVM) error {
 	return nil
 }
 
-func (rc *virtDeployResourceConfig) teardownDomain(name string) error {
+func (rc *virtDeployResourceConfig) teardownDomainByName(name string) error {
 	dom, err := rc.lv.DomainLookupByName(name)
 	if err != nil {
 		// Check if the error indicates that the domain does not exist
@@ -483,26 +570,29 @@ func (rc *virtDeployResourceConfig) teardownDomain(name string) error {
 	}
 
 	log.Debugf("Found existing domain '%s', deleting.", name)
+	return rc.teardownDomain(dom)
+}
 
+func (rc *virtDeployResourceConfig) teardownDomain(dom libvirt.Domain) error {
 	active, err := rc.lv.DomainIsActive(dom)
 	if err != nil {
-		return fmt.Errorf("check if domain %s is active: %w", name, err)
+		return fmt.Errorf("check if domain %s is active: %w", dom.Name, err)
 	}
 
 	if active != 0 {
-		log.Tracef("Domain %s is active, destroying.", name)
+		log.Tracef("Domain %s is active, destroying.", dom.Name)
 		err = rc.lv.DomainDestroy(dom)
 		if err != nil {
-			return fmt.Errorf("destroy domain %s: %w", name, err)
+			return fmt.Errorf("destroy domain %s: %w", dom.Name, err)
 		}
 	}
 
 	err = rc.lv.DomainUndefineFlags(dom, libvirt.DomainUndefineNvram)
 	if err != nil {
-		return fmt.Errorf("undefine domain %s: %w", name, err)
+		return fmt.Errorf("undefine domain %s: %w", dom.Name, err)
 	}
 
-	log.Infof("Deleted existing domain '%s'", name)
+	log.Infof("Deleted existing domain '%s'", dom.Name)
 
 	return nil
 }
@@ -539,6 +629,8 @@ func (rc *virtDeployResourceConfig) setupVolume(vol *storageVolume, pool storage
 	} else {
 		log.Debugf("No OS disk specified for volume '%s', creating blank disk", vol.name)
 	}
+
+	log.Infof("Created volume '%s'", vol.name)
 
 	return nil
 }
@@ -592,6 +684,8 @@ func (rc *virtDeployResourceConfig) uploadFileToVolume(vol libvirt.StorageVol, f
 	if err != nil {
 		return fmt.Errorf("upload to volume %s: %w", vol.Name, err)
 	}
+
+	log.Infof("Uploaded file '%s' to volume '%s'", filePath, vol.Name)
 
 	return nil
 }

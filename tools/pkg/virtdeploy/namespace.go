@@ -1,6 +1,9 @@
 package virtdeploy
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 type namespace string
 
@@ -22,4 +25,8 @@ func (n namespace) nvramPoolName() string {
 
 func (n namespace) vmName(index int) string {
 	return string(n) + "-vm-" + fmt.Sprintf("%d", index)
+}
+
+func (n namespace) isInNamespace(name string) bool {
+	return strings.HasPrefix(name, string(n)+"-")
 }

@@ -98,6 +98,10 @@ func newVirtDeployNetwork(name string, stdIpNet net.IPNet, natInterface string) 
 	return network, nil
 }
 
+func (n *virtDeployNetwork) CIDR() string {
+	return n.ipNet.String()
+}
+
 // lease returns the next available IP address in the network.
 // It returns an error if there are no more available addresses.
 func (n *virtDeployNetwork) lease(name string, mac macAddress) (net.IP, error) {

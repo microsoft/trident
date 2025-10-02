@@ -2,15 +2,9 @@ package virtdeploy
 
 import (
 	"fmt"
-	"path"
 	"tridenttools/pkg/ref"
 
 	"libvirt.org/go/libvirtxml"
-)
-
-const (
-	FIRMWARE_LOADER_PATH            = "/usr/share/OVMF/OVMF_CODE_4M.fd"
-	FIRMWARE_LOADER_PATH_SECUREBOOT = "/usr/share/OVMF/OVMF_CODE_4M.ms.fd"
 )
 
 // asXml renders the libvirt domain XML corresponding to the VM definition.
@@ -91,15 +85,6 @@ func (vm *VirtDeployVM) asXml(network *virtDeployNetwork, nvramPool storagePool)
 		},
 	}}
 
-	// Firmware / UEFI
-	loaderPath := FIRMWARE_LOADER_PATH
-	if vm.SecureBoot {
-		loaderPath = FIRMWARE_LOADER_PATH_SECUREBOOT
-	}
-
-	// NVRAM path per template
-	nvramPath := path.Join(nvramPool.path, fmt.Sprintf("%s_VARS.fd", vm.name))
-
 	dom := libvirtxml.Domain{
 		Type:   "kvm",
 		Name:   vm.name,
@@ -109,8 +94,8 @@ func (vm *VirtDeployVM) asXml(network *virtDeployNetwork, nvramPool storagePool)
 
 			Type:   &libvirtxml.DomainOSType{Arch: "x86_64", Machine: "q35", Type: "hvm"},
 			SMBios: &libvirtxml.DomainSMBios{Mode: "sysinfo"},
-			Loader: &libvirtxml.DomainLoader{Path: loaderPath, Type: "pflash", Readonly: "yes"},
-			NVRam:  &libvirtxml.DomainNVRam{NVRam: nvramPath},
+			Loader: &libvirtxml.DomainLoader{Path: vm.firmwareLoaderPath, Type: "pflash", Readonly: "yes"},
+			NVRam:  &libvirtxml.DomainNVRam{NVRam: vm.nvramPath},
 		},
 		SysInfo: []libvirtxml.DomainSysInfo{
 			{
