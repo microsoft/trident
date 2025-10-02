@@ -108,7 +108,7 @@ COSI. Specifically:
         partitionTableType: gpt
         partitions:
         - id: usr-data
-          type: root
+          type: usr
           size: 4G
         - id: usr-hash
           type: usr-verity
