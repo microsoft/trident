@@ -3,7 +3,10 @@
 
 ## Goals
 
-By following this guide, you will be able to use Trident to install an operating system while [adopting or preserving some desired partitions](../Explanation/Partition-Adoption.md).
+By following this guide, you will understand how
+to use Trident, through changes to the Host Configuration,
+to install an operating system while
+[adopting or preserving some desired partitions](../Explanation/Partition-Adoption.md).
 
 ## Instructions
 
@@ -25,7 +28,10 @@ Find the desired adoption partitions on your host, either by:
 
 ### Step 2: Add `adoptedPartitions` Configuration
 
-1. Inside the `storage` config, add a new `adoptedPartitions` section to the disk configuration for the disk containing the partitions you want to adopt. This section should include the partition IDs and their corresponding labels or UUIDs.
+1. Inside the `storage` section of your Trident Host Configuration,
+   add a new `adoptedPartitions` section to the `disk` section containing
+   the partitions you want to adopt. This section should include the
+   partition IDs and their corresponding labels _or_ UUIDs.
 
    For example:
 
@@ -40,5 +46,6 @@ Find the desired adoption partitions on your host, either by:
              matchUuid: 12345678-abcd-1234-abcd-123456789abc
    ```
 
-   With this information, Trident will ensure that these partitions are preserved in the new OS.
+   With this information, Trident will ensure that these partitions are
+   preserved in the new OS.
 
