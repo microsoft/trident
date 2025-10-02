@@ -211,11 +211,11 @@ configuration.
 Some things to note that are defined in the Host Configuration below:
 
 * [A/B volume pairs](../Reference/Glossary.md#ab-volume-pair)
-for `usr-data` and `usr-hash`
+  for `usr-data` and `usr-hash`
 * [abUpdate section](../Reference/Host-Configuration/API-Reference/AbUpdate.md)
-for `usr-data` and `usr-hash`
+  for `usr-data` and `usr-hash`
 * [verity section](../Explanation/Usr-Verity.md#use-trident-to-deploy-the-cosi-file)
-to connect `usr-data` and `usr-hash`
+  to connect `usr-data` and `usr-hash`
 
 The remainder of the Trident Host Configuration file describes things like where
 to find the COSI file (can be a local path, an HTTP url, or an OCI url) and what

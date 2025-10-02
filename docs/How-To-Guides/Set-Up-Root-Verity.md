@@ -210,11 +210,11 @@ configuration.
 Some things to note that are defined in the Host Configuration below:
 
 * [A/B volume pairs](../Reference/Glossary.md#ab-volume-pair) for `root-data`
-and `root-hash`
+  and `root-hash`
 * [abUpdate section](../Reference/Host-Configuration/API-Reference/AbUpdate.md)
-for `root-data` and `root-hash`
+  for `root-data` and `root-hash`
 * [verity section](../Explanation/Root-Verity.md#use-trident-to-deploy-the-cosi-file)
-to connect `root-data` and `root-hash`
+  to connect `root-data` and `root-hash`
 
 The remainder of the Trident Host Configuration file describes things like where
 to find the COSI file (can be a local path, an HTTP url, or an OCI url) and what
