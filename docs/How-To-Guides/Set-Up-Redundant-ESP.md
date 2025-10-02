@@ -39,7 +39,7 @@ For this guide, we break RAID creation into 2 parts:
               size: 1G
     ```
 
-2. Create a `raid` section in `storage` section of your Trident Host
+2. Create a `raid` section in the `storage` section of your Trident Host
    Configuration that combines these partitions into a RAID array:
 
     ``` yaml
