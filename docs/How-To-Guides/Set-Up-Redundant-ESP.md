@@ -8,7 +8,7 @@ Configuration that configures ESP on a RAID volume.
 ## Goals
 
 By following this guide, you will understand how to configure an
-ESP on a RAID array
+ESP on a RAID array.
 
 ## Instructions
 
