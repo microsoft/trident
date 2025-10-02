@@ -23,7 +23,7 @@ Host Configuration, and execute an update with `trident update`.
 
 ## Instructions
 
-### Step 1: Download the minimal base image
+### Step 1: Download the Minimal Base Image
 
 Pull [minimal-os](../Reference/Glossary.md#minimal-os) as a base image from MCR
 by running:
@@ -62,7 +62,7 @@ Copy RPMs to staging folder:
 cp -r bin/RPMS $HOME/staging
 ```
 
-### Step 3: Define an Update COSI Configuration
+### Step 3: Define Update COSI Configuration
 
 For an update COSI, we need to provide only an esp and the updated partitions.
 The `trident` partition does not have an
