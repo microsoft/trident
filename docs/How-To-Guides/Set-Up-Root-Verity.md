@@ -3,26 +3,35 @@
 
 ## Goals
 
-Configuring [root-verity](../Explanation/Root-Verity.md) offers good protection against modification of the root (`/`) partition.
+Configuring [root-verity](../Explanation/Root-Verity.md) offers good protection
+against modification of the root (`/`) partition.
 
 :::info
 
-An alternative (both cannot be configured) is to instead configure [usr-verity](../Explanation/Usr-Verity.md) to protect against modification of the usr (`/usr`) partition.
+An alternative (both cannot be configured) is to instead configure
+[usr-verity](../Explanation/Usr-Verity.md) to protect against modification of
+the usr (`/usr`) partition.
 
 :::
 
-The goal of this document is to create a [Trident host configuration](../Reference/Host-Configuration/API-Reference/HostConfiguration.md) file and a [COSI](../Reference/Composable-OS-Image.md) file that can be used to install and service an image with a root-verity partition.
+The goal of this document is to create a [Trident Host
+Configuration](../Reference/Host-Configuration/API-Reference/HostConfiguration.md)
+file and a [COSI](../Reference/Composable-OS-Image.md) file that can be used to
+install and service an image with a root-verity partition.
 
 ## Prerequisites
 
 1. Ensure that [oras](https://oras.land/docs/installation/) is installed.
-2. Ensure [Image Customizer container](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/quick-start/quick-start.html) is accessible.
+2. Ensure [Image Customizer
+   container](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/quick-start/quick-start.html)
+   is accessible.
 
 ## Instructions
 
 ### Step 1: Download the minimal base image
 
-Pull [minimal-os](../Reference/Glossary.md#minimal-os) as a base image from MCR by running:
+Pull [minimal-os](../Reference/Glossary.md#minimal-os) as a base image from MCR
+by running:
 
 ``` bash
 mkdir -p $HOME/staging
@@ -39,7 +48,8 @@ Build the Trident RPMs by running:
 make bin/trident-rpms.tar.gz
 ```
 
-After running this make command, the RPMs will be built and packaged into `bin/trident-rpms.tar.gz` and unpacked into `bin/RPMS/x86_64`:
+After running this make command, the RPMs will be built and packaged into
+`bin/trident-rpms.tar.gz` and unpacked into `bin/RPMS/x86_64`:
 
 ``` bash
 $ ls bin/RPMS/x86_64/
@@ -59,7 +69,12 @@ cp -r bin/RPMS $HOME/staging
 
 ### Step 3: Create Image Customizer Configuration
 
-To create a root-verity volume, there are a few Image Customizer configuration sections that are important. These sections are detailed in the [Root Verity explanation](../Explanation/Root-Verity.md#use-image-customizer-to-create-a-cosi-file). Putting those together and following the Image Customizer [documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/README.html), the full configuration `$HOME/staging/ic-config.yaml` can look like this:
+To create a root-verity volume, there are a few Image Customizer configuration
+sections that are important. These sections are detailed in the
+[Root Verity explanation](../Explanation/Root-Verity.md#use-image-customizer-to-create-a-cosi-file).
+Putting those together and following the Image Customizer
+[documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/README.html),
+the full configuration `$HOME/staging/ic-config.yaml` can look like this:
 
 ``` yaml
 storage:
@@ -161,9 +176,12 @@ os:
 
 ### Step 4: Invoke Image Customizer
 
-Assuming RPMs, a base image `image.vhdx` and Image Customizer configuration `ic-config.yaml` found in `$HOME/staging`.
+Assuming RPMs, a base image `image.vhdx` and Image Customizer configuration
+`ic-config.yaml` found in `$HOME/staging`.
 
-Invoke Image Customizer, paying special attention to [specify](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/api/cli.html#--output-image-formatformat) `--output-image-format=cosi`:
+Invoke Image Customizer, paying special attention to
+[specify](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/api/cli.html#--output-image-formatformat)
+`--output-image-format=cosi`:
 
 ``` bash
 pushd $HOME/staging
@@ -184,15 +202,23 @@ popd
 
 ### Step 5: Trident Host Configuration
 
-Create a Trident host configuration file that aligns to the Image Customizer COSI that was created in step 4. The esp, root, root-hash, and var partitions/filesystems should reflect what was specified in the Image Customizer configuration.
+Create a Trident Host Configuration file that aligns to the Image Customizer
+COSI that was created in step 4. The esp, root, root-hash, and var
+partitions/filesystems should reflect what was specified in the Image Customizer
+configuration.
 
-Some things to note that are defined in the host configuration below:
+Some things to note that are defined in the Host Configuration below:
 
-* [A/B volume pairs](../Reference/Glossary.md#ab-volume-pair) for `root-data` and `root-hash`
-* [abUpdate section](../Reference/Host-Configuration/API-Reference/AbUpdate.md) for `root-data` and `root-hash`
-* [verity section](../Explanation/Root-Verity.md#use-trident-to-deploy-the-cosi-file) to connect `root-data` and `root-hash`
+* [A/B volume pairs](../Reference/Glossary.md#ab-volume-pair) for `root-data`
+* and `root-hash`
+* [abUpdate section](../Reference/Host-Configuration/API-Reference/AbUpdate.md)
+for `root-data` and `root-hash`
+* [verity section](../Explanation/Root-Verity.md#use-trident-to-deploy-the-cosi-file)
+to connect `root-data` and `root-hash`
 
-The remainder of the Trident host configuration file describes things like where to find the COSI file (can be a local path, an HTTP url, or an OCI url) and what the disk device path is (in this case, /dev/sda):
+The remainder of the Trident Host Configuration file describes things like where
+to find the COSI file (can be a local path, an HTTP url, or an OCI url) and what
+the disk device path is (in this case, /dev/sda):
 
 ```yaml
 image:
@@ -269,4 +295,6 @@ os:
 
 ## Troubleshooting
 
-With root-verity, configurations can be difficult as the configuration files are often on the root partition.  In the future, this section will be expanded to include learnings and hints for how to navigate these challenges.
+With root-verity, configurations can be difficult as the configuration files are
+often on the root partition.  In the future, this section will be expanded to
+include learnings and hints for how to navigate these challenges.
