@@ -56,7 +56,7 @@ Copy RPMs to staging folder:
 cp -r bin/RPMS $HOME/staging
 ```
 
-### Step 3: Create Image Customizer Configuration
+### Step 3: Define COSI Configuration
 
 Follow the Image Customizer
 [documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/README.html)

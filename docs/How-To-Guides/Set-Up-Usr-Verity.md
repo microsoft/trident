@@ -59,7 +59,7 @@ Copy RPMs to staging folder:
 cp -r bin/RPMS $HOME/staging
 ```
 
-### Step 3: Create Image Customizer Configuration
+### Step 3: Define COSI Configuration
 
 To create a usr-verity volume, there are a few Image Customizer configuration
 sections that are important.

@@ -133,7 +133,7 @@ iso:
       destination: /images/azure-linux.cosi
 ```
 
-### Step 4: Invoke Image Customizer to Create Installation ISO
+### Step 4: Create Installation ISO
 
 Assuming locations for the base image file (`$HOME/staging/image.vhdx`) and the
 Image Customizer configuration file (`$HOME/staging/ic-config.yaml`), follow the
