@@ -43,14 +43,15 @@ For this guide, we break RAID creation into 2 parts:
    Configuration that combines these partitions into a RAID array:
 
     ``` yaml
-    raid:
-      software:
-        - id: esp
-          name: esp
-          level: raid1
-          devices:
-            - esp-1
-            - esp-2
+    storage:
+      raid:
+        software:
+          - id: esp
+            name: esp
+            level: raid1
+            devices:
+              - esp-1
+              - esp-2
     ```
 
 Having created the RAID array, it can then be referenced to host the ESP
