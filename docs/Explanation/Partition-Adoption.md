@@ -11,3 +11,5 @@ desired partitions. Either (but not both) a label or UUID can be specified.
 > [partition type requirements](../Reference/Host-Configuration/Storage-Rules.md)
 > to be adopted.
 
+Please refer to [Adopt Existing Partitions](../How-To-Guides/Adopt-Existing-Partitions.md)
+for more details on how to adopt partitions.
