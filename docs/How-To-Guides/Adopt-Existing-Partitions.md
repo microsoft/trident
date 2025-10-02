@@ -47,5 +47,5 @@ Find the desired adoption partitions on your host, either by:
    ```
 
    With this information, Trident will ensure that these partitions are
-   preserved in the new OS.
+   preserved in the target OS.
 
