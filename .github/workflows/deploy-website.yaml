@@ -12,6 +12,7 @@ on:
     paths:
      - 'docs/**'
      - 'website/**'
+     - '.github/workflows/deploy-website.yaml'
 
   # # Trigger on release
   # release:
