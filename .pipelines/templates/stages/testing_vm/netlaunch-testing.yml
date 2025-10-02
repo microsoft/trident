@@ -175,6 +175,7 @@ stages:
               # If this is a usr-verity UKI image, a signing certificate must
               # be set via --signing-cert; otherwise, set it to an empty
               # string. This can also be used for sysext signing.
+              TRIDENT_CONFIG="$(tridentConfigPath)/trident-config.yaml"
               IMAGE_URL=$(sudo yq '.image.url' "$TRIDENT_CONFIG")
               CERT_SEARCH_PATH="$(System.ArtifactsDirectory)/usrverity-testimage"
               CA_CERT_PATH="$CERT_SEARCH_PATH/ca_cert.pem"
@@ -186,7 +187,6 @@ stages:
 
               # If this is a usr-verity UKI image and the test will run in a
               # container, then overwrite the PCRs to exclude PCR 7.
-              TRIDENT_CONFIG="$(tridentConfigPath)/trident-config.yaml"
               ENCRYPTION_VALUE=$(sudo yq '.storage.encryption' "$TRIDENT_CONFIG")
               if [[ "$IMAGE_URL" == *usrverity.cosi && \
                     "${{ parameters.runtimeEnv }}" == 'container' && \
