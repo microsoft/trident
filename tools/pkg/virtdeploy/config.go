@@ -60,7 +60,8 @@ type VirtDeployVM struct {
 	// Storage volumes for the VM
 	volumes []storageVolume
 
-	// CDROMs to attach to this VM
+	// CDROM drives for the VM
+	cdroms []cdrom
 
 	// User-configurable fields
 

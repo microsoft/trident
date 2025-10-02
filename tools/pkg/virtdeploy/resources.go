@@ -4,15 +4,16 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path"
 
 	"github.com/digitalocean/go-libvirt"
 	log "github.com/sirupsen/logrus"
 )
 
 const (
-	libvirtDir = "/var/lib/libvirt"
-	qemuDir    = "/var/lib/libvirt/qemu"
-	nvramDir   = "/var/lib/libvirt/qemu/nvram"
+// libvirtDir = "/var/lib/libvirt"
+// qemuDir    = "/var/lib/libvirt/qemu"
+// nvramDir   = "/var/lib/libvirt/qemu/nvram"
 )
 
 type virtDeployResourceConfig struct {
@@ -39,16 +40,9 @@ func newVirtDeployResourceConfig(config VirtDeployConfig) (*virtDeployResourceCo
 	}
 
 	// Connect to libvirt
-	parsedURL, err := url.Parse("qemu:///system")
+	lvConn, err := connect()
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse libvirt URI: %w", err)
-	}
-
-	log.Debugf("Connecting to libvirt at '%s'", parsedURL.String())
-	lvConn, err := libvirt.ConnectToURI(parsedURL)
-	if err != nil {
-		log.Errorf("Failed to connect to the hypervisor '%s'. Is your user in the libvirt group?", parsedURL.String())
-		return nil, fmt.Errorf("failed to connect to libvirt: %w", err)
+		return nil, err
 	}
 
 	// Create the storage pool configuration
@@ -69,7 +63,7 @@ func newVirtDeployResourceConfig(config VirtDeployConfig) (*virtDeployResourceCo
 	// Initialize all VMs
 	for i := range r.vms {
 		vm := &r.vms[i]
-		vm.name = ns.vmName(i + 1)
+		vm.name = ns.vmName(i)
 		vm.mac = NewRandomMacAddress(0x52, 0x54, 0x00)
 		lease, err := r.network.lease(vm.name, vm.mac)
 		if err != nil {
@@ -100,6 +94,52 @@ func newVirtDeployResourceConfig(config VirtDeployConfig) (*virtDeployResourceCo
 	}
 
 	return r, nil
+}
+
+func cleanupNamespace(namespace string) error {
+	ns := namespace(namespace)
+
+	// Connect to libvirt
+	lvConn, err := connect()
+	if err != nil {
+		return err
+	}
+
+	rc := &virtDeployResourceConfig{
+		namespace: ns,
+		lv:        lvConn,
+	}
+
+	// Delete all VMs in the namespace
+	domains, _, err := rc.lv.ConnectListAllDomains(1, libvirt.ConnectListDomainsActive|libvirt.ConnectListDomainsInactive)
+	if err != nil {
+		return fmt.Errorf("list domains: %w", err)
+	}
+
+	for _, dom := range domains {
+		if !ns.isVmName(dom.Name) {
+			continue
+		}
+	}
+
+	return nil
+}
+
+func connect() (*libvirt.Libvirt, error) {
+	// Connect to libvirt
+	parsedURL, err := url.Parse("qemu:///system")
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse libvirt URI: %w", err)
+	}
+
+	log.Debugf("Connecting to libvirt at '%s'", parsedURL.String())
+	lvConn, err := libvirt.ConnectToURI(parsedURL)
+	if err != nil {
+		log.Errorf("Failed to connect to the hypervisor '%s'. Is your user in the libvirt group?", parsedURL.String())
+		return nil, fmt.Errorf("failed to connect to libvirt: %w", err)
+	}
+
+	return lvConn, nil
 }
 
 func (rc *virtDeployResourceConfig) close() {
@@ -360,6 +400,70 @@ func (rc *virtDeployResourceConfig) setupVm(vm *VirtDeployVM) error {
 			return fmt.Errorf("setup volume for disk #%d: %w", i+1, err)
 		}
 	}
+
+	// Initialize cdroms, first add an empty bay.
+	// Device name will get filled in later.
+	vm.cdroms = []cdrom{
+		{},
+	}
+	if vm.CloudInit != nil {
+		// If cloud-init config is provided, create a cloud-init ISO and add it
+		// as a CDROM
+		tmpDir, err := os.MkdirTemp("", "virtdeploy-cloudinit-")
+		if err != nil {
+			return fmt.Errorf("create temp dir for cloud init ISO: %w", err)
+		}
+		defer os.RemoveAll(tmpDir)
+
+		isoPath := path.Join(tmpDir, "cloud-init.iso")
+		err = buildCloudInitIso(vm.CloudInit, isoPath)
+		if err != nil {
+			return fmt.Errorf("build cloud init ISO: %w", err)
+		}
+
+		vol := newSimpleVolume(fmt.Sprintf("%s-cloudinit.iso", vm.name), 1)
+
+		err = rc.setupVolume(&vol, rc.pool)
+		if err != nil {
+			return fmt.Errorf("setup cloud init volume: %w", err)
+		}
+
+		err = rc.uploadFileToVolume(vol.lvVol, isoPath)
+		if err != nil {
+			return fmt.Errorf("upload cloud init ISO to volume: %w", err)
+		}
+
+		vm.cdroms = append(vm.cdroms, cdrom{
+			path: vol.path,
+		})
+	}
+
+	if 'z'-len(vm.cdroms) < 'a'+len(vm.volumes) {
+		return fmt.Errorf("too many disks and CDROMs, cannot assign device names")
+	}
+
+	// Assign device names to the CDROMs, starting from the end of the alphabet
+	// to avoid conflicts with disk device names.
+	// e.g. if there are 3 disks (sda, sdb, sdc), CDROMs will be sdz, sdy, sdx, etc.
+	for i := range vm.cdroms {
+		vm.cdroms[i].device = fmt.Sprintf("sd%c", 'z'-i) // /dev/sdz, /dev/sdy, etc.
+	}
+
+	// Turn the configuration into XML
+	domainXML, err := vm.asXml(rc.network, rc.nvramPool)
+	if err != nil {
+		return fmt.Errorf("generate domain XML: %w", err)
+	}
+
+	log.Tracef("Defining domain with XML:\n%s", domainXML)
+
+	// Define the domain in libvirt
+	vm.domain, err = rc.lv.DomainDefineXMLFlags(domainXML, libvirt.DomainDefineValidate)
+	if err != nil {
+		return fmt.Errorf("define domain: %w", err)
+	}
+
+	log.Infof("Created domain '%s'", vm.name)
 
 	return nil
 }

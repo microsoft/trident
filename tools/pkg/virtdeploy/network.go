@@ -11,7 +11,7 @@ import (
 	"github.com/seancfoley/ipaddress-go/ipaddr"
 	log "github.com/sirupsen/logrus"
 	"github.com/vishvananda/netlink"
-	libvirtxml "libvirt.org/libvirt-go-xml"
+	"libvirt.org/go/libvirtxml"
 )
 
 const (

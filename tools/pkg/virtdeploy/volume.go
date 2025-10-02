@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/digitalocean/go-libvirt"
-	libvirtxml "libvirt.org/libvirt-go-xml"
+	"libvirt.org/go/libvirtxml"
 )
 
 type storageVolume struct {
@@ -20,6 +20,13 @@ type storageVolume struct {
 	osDisk string
 	// Libvirt storage volume, to be populated when created
 	lvVol libvirt.StorageVol
+}
+
+func newSimpleVolume(name string, size uint) storageVolume {
+	return storageVolume{
+		name: name,
+		size: size,
+	}
 }
 
 func (n storageVolume) asXml() (string, error) {

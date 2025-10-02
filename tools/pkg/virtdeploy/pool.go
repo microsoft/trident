@@ -5,7 +5,7 @@ import (
 	"strconv"
 
 	"github.com/digitalocean/go-libvirt"
-	libvirtxml "libvirt.org/libvirt-go-xml"
+	"libvirt.org/go/libvirtxml"
 )
 
 type storagePool struct {
