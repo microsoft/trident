@@ -173,11 +173,13 @@ stages:
               # then overwrite the PCRs to exclude PCR 7.
               TRIDENT_CONFIG="$(tridentConfigPath)/trident-config.yaml"
               ENCRYPTION_VALUE=$(sudo yq '.storage.encryption' "$TRIDENT_CONFIG")
-              if [[ "${{ parameters.runtimeEnv }}" == 'container' && -n "$ENCRYPTION_VALUE" ]]; then
+              if [[ "${{ parameters.runtimeEnv }}" == 'container' && -n "$ENCRYPTION_VALUE" && "$ENCRYPTION_VALUE" != "null" ]]; then
                 sudo yq -i '
-                  .storage.encryption.pcrs |=
-                    map(select(. != "secure-boot-policy" and . != 7))
+                  .storage.encryption.pcrs = ["boot-loader-code", "kernel-boot"]
                 ' "$TRIDENT_CONFIG"
+
+                echo "Updated Trident config:"
+                sudo yq '.' "$TRIDENT_CONFIG"
               fi
 
               # Enable SecureBoot for all E2E tests.
