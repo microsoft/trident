@@ -1,9 +1,15 @@
 
 # Usr Verity
 
-Usr verity is a specific utilization of Verity, an integral part of the kernel that ensures that I/O for anything on the protected filesystem (in this case, usr: `/usr`) is verified against a known good state. This is achieved by creating a hash tree of the usr filesystem contents, which is then used to validate the integrity of the data being accessed.
+Usr verity is a specific utilization of Verity, an integral part of the kernel
+that ensures that I/O for anything on the protected filesystem (in this case,
+usr: `/usr`) is verified against a known good state. This is achieved by
+creating a hash tree of the usr filesystem contents, which is then used to
+validate the integrity of the data being accessed.
 
-The hash tree is visualized in the [kernel documentation](https://docs.kernel.org/admin-guide/device-mapper/verity.html) like this, where the `usr-hash` is the root node of the hash tree:
+The hash tree is visualized in the
+[kernel documentation](https://docs.kernel.org/admin-guide/device-mapper/verity.html)
+like this, where the `usr-hash` is the root node of the hash tree:
 
 ``` text
                             [   usr    ]
@@ -15,15 +21,18 @@ The hash tree is visualized in the [kernel documentation](https://docs.kernel.or
 blk_0 ... blk_127  blk_16256   blk_16383      blk_32640 . . . blk_32767
 ```
 
-Trident partners with Image Customizer to deploy images that have `usr` configured with Verity and a partition storing the `usr-hash`.
+Trident partners with Image Customizer to deploy images that have `usr`
+configured with Verity and a partition storing the `usr-hash`.
 
 ## Use Image Customizer to Create a COSI File
 
-To create a COSI file with `Usr Verity` enabled, Image Customizer provides some [guidance](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/concepts/verity.html).
+To create a COSI file with `Usr Verity` enabled, Image Customizer provides some
+[guidance](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/concepts/verity.html).
 
 At a high level, there are only a couple things that need to be configured:
 
-1. In addition to the typical `usr-data` partition definition, a `usr-hash` partition is needed like this:
+1. In addition to the typical `usr-data` partition definition, a `usr-hash`
+   partition is needed like this:
 
     ``` yaml
     storage:
@@ -38,7 +47,8 @@ At a high level, there are only a couple things that need to be configured:
           size: 128M
     ```
 
-2. The [verity](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/api/configuration/verity.html) section is required:
+2. The [verity](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/api/configuration/verity.html)
+   section is required:
 
     ``` yaml
     verity:
@@ -75,13 +85,16 @@ At a high level, there are only a couple things that need to be configured:
     - uki
     ```
 
-With these sections defined for `usr`, Image Customizer will generate a COSI file containing a `usr-hash` partition and an OS with Usr Verity enabled.
+With these sections defined for `usr`, Image Customizer will generate a COSI
+file containing a `usr-hash` partition and an OS with Usr Verity enabled.
 
 ## Use Trident to Deploy the COSI File
 
-Once you have a COSI file that enables `usr verity`, Trident can be used to deploy it during install or update.
+Once you have a COSI file that enables `usr verity`, Trident can be used to
+deploy it during install or update.
 
-Create a Trident host configuration file that aligns to the Image Customizer COSI. Specifically:
+Create a Trident host configuration file that aligns to the Image Customizer
+COSI. Specifically:
 
 1. Include `usr-data` and `usr-hash` partitions/filesystems
 
