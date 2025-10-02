@@ -85,7 +85,7 @@ def update_trident_host_config(
     # request PCRs 4 and 11 in the PCRs section b/c we cannot currently include
     # PCR 7 into pcrlock policy as SecureBoot is disabled on BM machines.
     # Related ADO task:
-    # https://dev.azure.com/mariner-org/polar/_workitems/edit/15549.
+    # https://dev.azure.com/mariner-org/polar/_workitems/edit/15566.
     storage = host_configuration.get("storage")
     if storage and "uki" in test_selection.get("compatible", []):
         encryption = storage.get("encryption")
