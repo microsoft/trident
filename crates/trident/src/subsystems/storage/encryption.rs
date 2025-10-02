@@ -120,15 +120,15 @@ pub(super) fn validate_host_config(ctx: &EngineContext) -> Result<(), TridentErr
 /// persists the pcrlock policy to the update volume.
 ///
 /// On clean install:
-/// 1. TODO: UKI MOS + UKI ROS -> re-generate pcrlock policy to include PCRs 4,7,11 as selected by
-///    the user; not implemented for now. Related ADO task:
+/// 1. TODO: UKI MOS + UKI target OS -> re-generate pcrlock policy to include PCRs 4,7,11 as
+///    selected by the user; not implemented for now. Related ADO task:
 ///    https://dev.azure.com/mariner-org/polar/_workitems/edit/13059/.
-/// 2. Grub MOS + UKI ROS -> N/A, i.e. keep previous pcrlock policy that includes PCR 0 only,
-/// 3. Grub MOS + grub ROS -> N/A, i.e. still sealed to the value of PCR 7.
+/// 2. Grub MOS + UKI target OS -> N/A, i.e. keep previous pcrlock policy that includes PCR 0 only,
+/// 3. Grub MOS + grub target OS -> N/A, i.e. still sealed to the value of PCR 7.
 ///
 /// On A/B update:
-/// 1. UKI ROS -> re-generate pcrlock policy to include PCRs 4,7,11 as selected by the user,
-/// 2. Grub ROS -> N/A, i.e. keep previous pcrlock policy that includes PCR 7 only.
+/// 1. UKI target OS -> re-generate pcrlock policy to include PCRs 4,7,11 as selected by the user,
+/// 2. Grub target OS -> N/A, i.e. keep previous pcrlock policy that includes PCR 7 only.
 #[tracing::instrument(name = "encryption_provision", skip_all)]
 pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
     if let Some(encryption) = &ctx.spec.storage.encryption {
@@ -140,23 +140,10 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
             // On A/B update, use PCRs selected by the user through the API
             ServicingType::AbUpdate => {
                 if ctx.is_uki()? {
-                    let bitflags = if !encryption.pcrs.is_empty() {
-                        encryption
-                            .pcrs
-                            .iter()
-                            .fold(BitFlags::empty(), |acc, &pcr| acc | BitFlags::from(pcr))
-                    } else {
-                        // TODO: Currently, we cannot seal to PCR 7 b/c not all measurements are
-                        // recognized by the .pcrlock file generation logic. Once that is resolved,
-                        // we want to have PCR 7 as the default. For now, we use PCRs 4 and 11. Related
-                        // ADO tasks:
-                        // https://dev.azure.com/mariner-org/polar/_workitems/edit/14523/ and
-                        // https://dev.azure.com/mariner-org/polar/_workitems/edit/14455/.
-                        //
-                        // Use default PCR if none specified.
-                        //BitFlags::from(osutils_encryption::DEFAULT_PCR)
-                        BitFlags::from(Pcr::Pcr4) | BitFlags::from(Pcr::Pcr11)
-                    };
+                    let bitflags = encryption
+                        .pcrs
+                        .iter()
+                        .fold(BitFlags::empty(), |acc, &pcr| acc | BitFlags::from(pcr));
                     Some(bitflags)
                 } else {
                     debug!(

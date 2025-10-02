@@ -16,7 +16,7 @@ use osutils::{
     container,
     dependencies::{Dependency, DependencyResultExt},
     efivar,
-    encryption::{self, KeySlotType, DEFAULT_PCR},
+    encryption::{self, KeySlotType},
     lsblk::{self, BlockDeviceType},
     path::join_relative,
     pcrlock,
@@ -134,8 +134,13 @@ pub(super) fn create_encrypted_devices(
             pcrlock::generate_pcrlock_policy(BitFlags::from(Pcr::Pcr0), vec![], vec![])?;
             None
         } else {
-            debug!("Target OS image is a grub image, so sealing against the default PCR 7");
-            Some(BitFlags::from(DEFAULT_PCR))
+            debug!("Target OS image is a grub image, so sealing against PCR 7");
+            Some(
+                encryption
+                    .pcrs
+                    .iter()
+                    .fold(BitFlags::empty(), |acc, &pcr| acc | BitFlags::from(pcr)),
+            )
         };
 
         // Check if `REENCRYPT_ON_CLEAN_INSTALL` internal param is set to true; if so, re-encrypt
@@ -226,8 +231,8 @@ pub(super) fn create_encrypted_devices(
 /// - `encryption_type`: The type of encryption to be used. Determines whether the device should be
 ///   re-encrypted in-place, or whether a new LUKS2 volume should be initialized.
 /// - `pcr`: The PCR to seal the key against. This is an optional PCR for scenarios where encrypted
-///   volumes are sealed against the value of PCR 7 instead of a pcrlock policy, mainly for the
-///   grub MOS + grub ROS flow.
+///   volumes are sealed against the value of PCR 7 instead of a pcrlock policy, for the grub MOS +
+///   grub target OS flow.
 fn encrypt_and_open_device(
     device_path: &Path,
     device_name: &String,
@@ -302,7 +307,7 @@ struct LuksDumpSegment {
 
 /// Returns paths of UKI and bootloader binaries that `systemd-pcrlock` tool should seal to. During
 /// encryption provisioning, returns binaries used for the current boot, as well as binaries that
-/// will be used in the future boot, i.e. in the ROS update image. During rollback validation,
+/// will be used in the future boot, i.e. in the target OS image. During rollback validation,
 /// returns binaries used for the current boot only.
 ///
 /// Returns a tuple containing two vectors:

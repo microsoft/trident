@@ -10,6 +10,33 @@ Configure encrypted volumes of underlying disk partitions or software RAID array
 
 ## Properties
 
+### `pcrs` **<span>(required)</span>**
+
+List of PCRs in the TPM 2.0 device to seal encrypted volumes to in the target OS. This field is required, and at least one PCR must be provided. Each PCR may be specified either as a digit or as a string.
+
+# Grub Target OS When doing a clean install of a grub target OS image, the following options are valid:
+
+- 7, or `secure-boot-policy`
+
+# UKI Target OS When doing a clean install of a UKI target OS image, the following options are valid:
+
+- 4, or `boot-loader-code` - 7, or `secure-boot-policy` - 11, or `kernel-boot` - 4 and 7 - 4 and 11 - 7 and 11 - 4, 7, and 11
+
+However, due to the limitations of `systemd-pcrlock`, which is used internally for encryption in UKI OS, PCR 7 cannot be used if Trident is running inside a container. To use PCR 7 for encryption along in a UKI OS image, Trident must be running in a non-containerized environment.
+
+More encryption flows, with additional PCR options, will be added in the future.
+
+| Characteristic | Value   |
+| -------------- | ------- |
+| Type           | `array` |
+
+- Items of the array must have the type:
+
+   | Characteristic | Value           |
+   | -------------- | --------------- |
+   | Type           | `Pcr`           |
+   | Link           | [Pcr](./Pcr.md) |
+
 ### `volumes` **<span>(required)</span>**
 
 The list of LUKS2-encrypted volumes to create.
@@ -36,29 +63,6 @@ Clearing the TPM 2.0 device will remove all keys and data from the TPM 2.0 devic
 | Characteristic | Value     |
 | -------------- | --------- |
 | Type           | `boolean` |
-
-### `pcrs` (optional)
-
-Optional list of PCRs in TPM 2.0 device to seal to. If not specified, Trident will seal encrypted volumes against the following default options: - If doing a clean install of a grub ROS image, seal to PCR 7 while inside the MOS, - If doing a clean install of a UKI ROS image, seal to PCRs 4 and 11 after booting into the ROS A.
-
-Each PCR may be specified either as a digit or a string representation. If specified, at least one PCR must be provided.
-
-When doing a clean install of a grub ROS image, the following options are valid: - 7, or `secure-boot-policy`.
-
-When doing a clean install of a UKI ROS image, the following options are valid: - 4, or `boot-loader-code`, - 11, or `kernel-boot`, - 4 and 11.
-
-More encryption flows, with additional PCR options, will be added in the future.
-
-| Characteristic | Value   |
-| -------------- | ------- |
-| Type           | `array` |
-
-- Items of the array must have the type:
-
-   | Characteristic | Value           |
-   | -------------- | --------------- |
-   | Type           | `Pcr`           |
-   | Link           | [Pcr](./Pcr.md) |
 
 ### `recoveryKeyUrl` (optional)
 

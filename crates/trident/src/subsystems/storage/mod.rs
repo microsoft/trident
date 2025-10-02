@@ -222,7 +222,7 @@ mod tests {
     use tempfile::NamedTempFile;
     use url::Url;
 
-    use osutils::encryption::{self, DEFAULT_PCR};
+    use osutils::encryption;
     use trident_api::{
         config::{
             AbUpdate, Disk as DiskConfig, Encryption, FileSystem, HostConfiguration, MountPoint,
@@ -231,6 +231,8 @@ mod tests {
         },
         error::ErrorKind,
     };
+
+    use sysdefs::tpm2::Pcr;
 
     fn get_ctx() -> EngineContext {
         EngineContext {
@@ -331,7 +333,7 @@ mod tests {
                         device_name: "luks-enc".to_owned(),
                         device_id: "part5".to_owned(),
                     }],
-                    pcrs: vec![DEFAULT_PCR],
+                    pcrs: vec![Pcr::Pcr7],
                     ..Default::default()
                 }),
                 ..Default::default()

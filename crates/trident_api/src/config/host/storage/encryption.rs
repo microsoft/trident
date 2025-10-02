@@ -81,25 +81,33 @@ pub struct Encryption {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub volumes: Vec<EncryptedVolume>,
 
-    /// Optional list of PCRs in TPM 2.0 device to seal to. If not specified, Trident will seal
-    /// encrypted volumes against the following default options:
-    /// - If doing a clean install of a grub ROS image, seal to PCR 7 while inside the MOS,
-    /// - If doing a clean install of a UKI ROS image, seal to PCRs 4 and 11 after booting into
-    ///   the ROS A.
+    /// List of PCRs in the TPM 2.0 device to seal encrypted volumes to in the target OS. This
+    /// field is required, and at least one PCR must be provided. Each PCR may be specified either
+    /// as a digit or as a string.
     ///
-    /// Each PCR may be specified either as a digit or a string representation. If specified, at
-    /// least one PCR must be provided.
+    /// # Grub Target OS
+    /// When doing a clean install of a grub target OS image, the following options are valid:
     ///
-    /// When doing a clean install of a grub ROS image, the following options are valid:
-    /// - 7, or `secure-boot-policy`.
+    /// - 7, or `secure-boot-policy`
     ///
-    /// When doing a clean install of a UKI ROS image, the following options are valid:
-    /// - 4, or `boot-loader-code`,
-    /// - 11, or `kernel-boot`,
-    /// - 4 and 11.
+    /// # UKI Target OS
+    /// When doing a clean install of a UKI target OS image, the following options are valid:
+    ///
+    /// - 4, or `boot-loader-code`
+    /// - 7, or `secure-boot-policy`
+    /// - 11, or `kernel-boot`
+    /// - 4 and 7
+    /// - 4 and 11
+    /// - 7 and 11
+    /// - 4, 7, and 11
+    ///
+    /// However, due to the limitations of `systemd-pcrlock`, which is used internally for
+    /// encryption in UKI OS, PCR 7 cannot be used if Trident is running inside a container. To use
+    /// PCR 7 for encryption along in a UKI OS image, Trident must be running in a
+    /// non-containerized environment.
     ///
     /// More encryption flows, with additional PCR options, will be added in the future.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub pcrs: Vec<Pcr>,
 
     /// Optional parameter that determines whether the TPM 2.0 device will be cleared on clean
@@ -210,19 +218,13 @@ mod tests {
     #[test]
     fn test_validate_encryption() {
         let mut config = Encryption {
+            pcrs: vec![Pcr::Pcr7],
             ..Default::default()
         };
         config.validate().unwrap();
 
         config.recovery_key_url = Some(Url::parse("file:///path/to/recovery.key").unwrap());
         config.validate().unwrap();
-
-        // Test with empty pcrs (should be valid - means use defaults)
-        let config_empty_pcrs = Encryption {
-            pcrs: vec![],
-            ..Default::default()
-        };
-        config_empty_pcrs.validate().unwrap();
     }
 
     #[test]
