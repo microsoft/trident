@@ -18,7 +18,7 @@ List of PCRs in the TPM 2.0 device to seal encrypted volumes to in the target OS
 
 When doing a clean install of a grub target OS image, the following options are valid:
 
-- 7, or `secure-boot-policy`. - 7, or `secure-boot-policy`.
+- 7, or `secure-boot-policy`
 
 ### UKI Target OS
 

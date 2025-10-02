@@ -89,8 +89,7 @@ pub struct Encryption {
     ///
     /// When doing a clean install of a grub target OS image, the following options are valid:
     ///
-    /// - 7, or `secure-boot-policy`.
-    /// - 7, or `secure-boot-policy`.  
+    /// - 7, or `secure-boot-policy`
     ///
     /// ### UKI Target OS
     ///
