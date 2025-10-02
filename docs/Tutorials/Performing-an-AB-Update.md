@@ -53,7 +53,7 @@ Copy RPMs to staging folder:
 cp -r bin/RPMS $HOME/staging
 ```
 
-### Step 3: Create Image Customizer Configuration for Update
+### Step 3: Define an Update COSI Configuration
 
 For an update COSI, we need to provide only an esp and the updated partitions. The `trident` partition does not have an [A/B volume pair](../Reference/Glossary.md#ab-volume-pair) and does not need to be serviced, so it is not included. The same would go for any data or other none-serviced partition.
 
