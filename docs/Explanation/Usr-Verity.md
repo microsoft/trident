@@ -1,7 +1,7 @@
 
 # Usr Verity
 
-Usr data integrity verification, or "usr verity", is a specific utilization
+Usr data integrity verification, or "Usr Verity", is a specific utilization
 of [dm-verity](https://www.kernel.org/doc/html/latest/admin-guide/device-mapper/verity.html),
 an integral part of the kernel that ensures that I/O for anything on the
 protected filesystem (in this case, usr: `/usr`) is verified against a known
@@ -92,10 +92,10 @@ file containing a `usr-hash` partition and an OS with Usr Verity enabled.
 
 ## Use Trident to Deploy the COSI File
 
-Once you have a COSI file that enables `usr verity`, Trident can be used to
+Once you have a COSI file that enables `Usr Verity`, Trident can be used to
 deploy it during install or update.
 
-Create a Trident host configuration file that aligns to the Image Customizer
+Create a Trident Host Configuration file that aligns to the Image Customizer
 COSI. Specifically:
 
 1. Include `usr-data` and `usr-hash` partitions/filesystems
@@ -115,7 +115,8 @@ COSI. Specifically:
           size: 1G
     ```
 
-2. Create `verity` section
+2. Create [verity](../Reference/Host-Configuration/API-Reference/VerityDevice.md)
+   section:
 
     ```yaml
     storage:

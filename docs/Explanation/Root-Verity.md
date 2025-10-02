@@ -1,6 +1,6 @@
 # Root Verity
 
-Root data integrity verification, or "root verity", is a specific utilization
+Root data integrity verification, or "Root Verity", is a specific utilization
 of [dm-verity](https://www.kernel.org/doc/html/latest/admin-guide/device-mapper/verity.html),
 an integral part of the kernel that ensures that I/O for anything on the
 protected filesystem (in this case, root: `/`) is verified against a known good
@@ -76,10 +76,10 @@ file containing a `root-hash` partition and an OS with Root Verity enabled.
 
 ## Use Trident to Deploy the COSI File
 
-Once you have a COSI file that enables `root verity`, Trident can be used to
+Once you have a COSI file that enables `Root Verity`, Trident can be used to
 deploy it during install or update.
 
-Create a Trident host configuration file that aligns to the Image Customizer
+Create a Trident Host Configuration file that aligns to the Image Customizer
 COSI. Specifically:
 
 1. Include `root-data` and `root-hash` partitions/filesystems
@@ -99,7 +99,8 @@ COSI. Specifically:
           size: 1G
     ```
 
-2. Create `verity` section
+2. Create [verity](../Reference/Host-Configuration/API-Reference/VerityDevice.md)
+   section:
 
     ```yaml
     storage:
