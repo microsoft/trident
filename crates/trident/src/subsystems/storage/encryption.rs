@@ -8,7 +8,7 @@ use enumflags2::BitFlags;
 use log::{debug, info, trace};
 
 use osutils::{
-    encryption as osutils_encryption, files, path,
+    container, efivar, encryption as osutils_encryption, files, path,
     pcrlock::{self, PCRLOCK_POLICY_JSON_PATH},
 };
 use sysdefs::tpm2::Pcr;
@@ -109,6 +109,24 @@ pub(super) fn validate_host_config(ctx: &EngineContext) -> Result<(), TridentErr
                         pcrs: pcrs_string,
                     },
                 )));
+            }
+        } else {
+            // For UKI images, if PCR 7 is requested, we need to ensure that:
+            // 1. Secure Boot is enabled,
+            // 2. Trident is NOT running inside a container,
+            // due to the limitations of `systemd-pcrlock`.
+            if encryption.pcrs.contains(&Pcr::Pcr7) {
+                if !efivar::secure_boot_is_enabled() {
+                    return Err(TridentError::new(InvalidInputError::from(
+                        HostConfigurationDynamicValidationError::Pcr7EncryptionForUkiWhenSecureBootDisabled,
+                    )));
+                }
+
+                if container::is_running_in_container()? {
+                    return Err(TridentError::new(InvalidInputError::from(
+                        HostConfigurationDynamicValidationError::Pcr7EncryptionForUkiWhenRunningInContainer,
+                    )));
+                }
             }
         }
     }
@@ -511,11 +529,11 @@ mod tests {
         }
         validate_host_config(&ctx).unwrap();
 
-        // Test case #2: If OS image is a UKI image AND PCRs only include 4, 7, and 11, then pass.
+        // Test case #2: If OS image is a UKI image AND PCRs only include 4 and 11, then pass.
         ctx.is_uki = Some(true);
         {
             let encryption = ctx.spec.storage.encryption.as_mut().unwrap();
-            encryption.pcrs = vec![Pcr::Pcr4, Pcr::Pcr7, Pcr::Pcr11];
+            encryption.pcrs = vec![Pcr::Pcr4, Pcr::Pcr11];
         }
         validate_host_config(&ctx).unwrap();
     }

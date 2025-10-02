@@ -90,6 +90,7 @@ pub struct Encryption {
     /// When doing a clean install of a grub target OS image, the following options are valid:
     ///
     /// - 7, or `secure-boot-policy`.
+    /// - 7, or `secure-boot-policy`.  
     ///
     /// ### UKI Target OS
     ///
@@ -110,9 +111,14 @@ pub struct Encryption {
     /// - 4, 7, and 11
     ///
     /// However, due to the limitations of `systemd-pcrlock`, which is used internally for
-    /// encryption in UKI OS, PCR 7 cannot be used if Trident is running inside a container. To use
-    /// PCR 7 for encryption in a UKI OS image, Trident must be running in a
-    /// non-containerized environment.
+    /// encryption in UKI OS, PCR 7 CANNOT be used if:
+    ///
+    /// - `SecureBoot` is disabled,
+    ///
+    /// - Trident is running inside a container.
+    ///
+    /// To use PCR 7 for encryption in a target UKI OS, Trident must be running in a
+    /// non-containerized environment, with `SecureBoot` enabled.
     ///
     /// More encryption flows, with additional PCR options, will be added in the future.
     #[serde(skip_serializing_if = "Vec::is_empty")]
