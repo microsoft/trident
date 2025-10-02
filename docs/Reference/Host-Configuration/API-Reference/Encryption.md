@@ -14,21 +14,31 @@ Configure encrypted volumes of underlying disk partitions or software RAID array
 
 List of PCRs in the TPM 2.0 device to seal encrypted volumes to in the target OS. This field is required, and at least one PCR must be provided. Each PCR may be specified either as a digit or as a string.
 
-# Grub Target OS When doing a clean install of a grub target OS image, the following options are valid:
+### Grub Target OS
 
-- 7, or `secure-boot-policy`
+When doing a clean install of a grub target OS image, the following options are valid:
 
-# UKI Target OS When doing a clean install of a UKI target OS image, the following options are valid:
+- 7, or `secure-boot-policy`.
+
+### UKI Target OS
+
+When doing a clean install of a UKI target OS image, the following options are valid:
 
 - 4, or `boot-loader-code`
+
 - 7, or `secure-boot-policy`
+
 - 11, or `kernel-boot`
+
 - 4 and 7
+
 - 4 and 11
+
 - 7 and 11
+
 - 4, 7, and 11
 
-However, due to the limitations of `systemd-pcrlock`, which is used internally for encryption in UKI OS, PCR 7 cannot be used if Trident is running inside a container. To use PCR 7 for encryption along in a UKI OS image, Trident must be running in a non-containerized environment.
+However, due to the limitations of `systemd-pcrlock`, which is used internally for encryption in UKI OS, PCR 7 cannot be used if Trident is running inside a container. To use PCR 7 for encryption in a UKI OS image, Trident must be running in a non-containerized environment.
 
 More encryption flows, with additional PCR options, will be added in the future.
 
@@ -78,15 +88,15 @@ This parameter allows specifying a local file path to a recovery key file via a 
 
 The URL must be non-empty if provided. Other URL schemes are not supported at this time.
 
-# Recommended Configuration
+### Recommended Configuration
 
 It is strongly advised to configure a recovery key file, as it plays a pivotal role in data recovery.
 
-# File Format Expectations
+### File Format Expectations
 
 The recovery key file must be a binary file without any encoding. This direct format ensures compatibility with cryptsetup and systemd APIs. Be mindful that all file content, including any potential whitespace or newline characters, is considered part of the recovery key.
 
-# Security Considerations
+### Security Considerations
 
 Ensuring the recovery key's confidentiality and integrity is paramount. Employ secure storage and rigorous access control measures. Specifically:
 
@@ -94,7 +104,7 @@ Ensuring the recovery key's confidentiality and integrity is paramount. Employ s
 
 - The recovery key should be a minimum of 32 bytes long and should be generated with a high enough entropy to defend against brute force or cryptographic attacks targeting on-disk hash values.
 
-# Generating a Recovery Key
+### Generating a Recovery Key
 
 One way to create a recovery key file on Linux systems is using the `dd` utility:
 

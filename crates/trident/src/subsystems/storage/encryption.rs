@@ -90,7 +90,7 @@ pub(super) fn validate_host_config(ctx: &EngineContext) -> Result<(), TridentErr
 
         // We've already validated that only supported PCRs, i.e. 4, 7, and/or 11, are specified;
         // but we also need to ensure that only PCR 7 is specified for grub images.
-        if !encryption.pcrs.is_empty() && !ctx.is_uki()? {
+        if !ctx.is_uki()? {
             let invalid_pcrs: Vec<_> = encryption
                 .pcrs
                 .iter()

@@ -16,7 +16,17 @@ The ID of the disk partition or software RAID array to encrypt.
 
 This parameter is required. It must be unique among the list of encrypted volumes.
 
-If it refers to a disk partition, it must be of a supported type. Supported types are all but the following blocked partition types: - `esp` - `root` - `root-verity` - `usr-verity` - `home`
+If it refers to a disk partition, it must be of a supported type. Supported types are all but the following blocked partition types:
+
+- `esp`
+
+- `root`
+
+- `root-verity`
+
+- `usr-verity`
+
+- `home`
 
 If it refers to a software RAID array, the first disk partition of the software RAID array must be of a supported type.
 
