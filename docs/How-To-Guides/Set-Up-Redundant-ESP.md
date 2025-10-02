@@ -44,7 +44,7 @@ For this guide, we break RAID creation into 2 parts:
 
     ``` yaml
     raid:
-        software:
+      software:
         - id: esp
           name: esp
           level: raid1
