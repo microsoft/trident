@@ -23,6 +23,7 @@ func main() {
 				Disks:       []uint{16},
 				SecureBoot:  true,
 				EmulatedTPM: true,
+				// OsDiskPath:  "go.mod",
 			},
 		},
 	})

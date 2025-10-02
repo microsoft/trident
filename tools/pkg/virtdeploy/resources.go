@@ -3,6 +3,7 @@ package virtdeploy
 import (
 	"fmt"
 	"net/url"
+	"os"
 
 	"github.com/digitalocean/go-libvirt"
 	log "github.com/sirupsen/logrus"
@@ -82,8 +83,9 @@ func newVirtDeployResourceConfig(config VirtDeployConfig) (*virtDeployResourceCo
 			// Initialize volume with basic info, path will be filled in once the
 			// volume is created in libvirt.
 			vol := storageVolume{
-				name: fmt.Sprintf("%s-volume-%d", vm.name, j+1),
+				name: fmt.Sprintf("%s-volume-%d.qcow2", vm.name, j+1),
 				size: diskSize,
+				path: fmt.Sprintf("%s/%s.qcow2", r.pool.path, vm.name),
 			}
 
 			// If this is the first disk and an OS disk path was specified,
@@ -352,6 +354,7 @@ func (rc *virtDeployResourceConfig) setupVm(vm *VirtDeployVM) error {
 
 	for i := range vm.volumes {
 		vol := &vm.volumes[i]
+		vol.device = fmt.Sprintf("sd%c", 'a'+i) // /dev/sda, /dev/sdb, etc.
 		err := rc.setupVolume(vol, rc.pool)
 		if err != nil {
 			return fmt.Errorf("setup volume for disk #%d: %w", i+1, err)
@@ -401,14 +404,37 @@ func (rc *virtDeployResourceConfig) teardownDomain(name string) error {
 }
 
 func (rc *virtDeployResourceConfig) setupVolume(vol *storageVolume, pool storagePool) error {
-	vol.path = fmt.Sprintf("%s/%s.qcow2", pool.path, vol.name)
-	// Create the volume
-	// vol, err := rc.lv.StorageVolumeCreate(disk.name, disk.size, pool)
-	// if err != nil {
-	// 	return fmt.Errorf("create volume %s: %w", disk.name, err)
-	// }
+	vol.path = fmt.Sprintf("%s/%s", pool.path, vol.name)
+	log.Debugf("Setting up volume '%s' at path '%s'", vol.name, vol.path)
 
-	// log.Infof("Created volume '%s' for disk '%s'", vol.Name, disk.name)
+	// First, delete any existing volume with the same name
+	err := rc.teardownVolume(pool.lvPool, vol.name)
+	if err != nil {
+		return fmt.Errorf("teardown existing volume: %w", err)
+	}
+
+	xml, err := vol.asXml()
+	if err != nil {
+		return fmt.Errorf("generate volume XML: %w", err)
+	}
+
+	log.Tracef("Defining volume with XML:\n%s", xml)
+
+	// Define the volume in libvirt
+	vol.lvVol, err = rc.lv.StorageVolCreateXML(pool.lvPool, xml, 0)
+	if err != nil {
+		return fmt.Errorf("create volume %s: %w", vol.name, err)
+	}
+
+	if vol.osDisk != "" {
+		log.Infof("Uploading OS disk image '%s' to volume '%s'", vol.osDisk, vol.name)
+		err = rc.uploadFileToVolume(vol.lvVol, vol.osDisk)
+		if err != nil {
+			return fmt.Errorf("upload OS disk to volume %s: %w", vol.name, err)
+		}
+	} else {
+		log.Debugf("No OS disk specified for volume '%s', creating blank disk", vol.name)
+	}
 
 	return nil
 }
@@ -429,12 +455,39 @@ func (rc *virtDeployResourceConfig) teardownVolume(pool libvirt.StoragePool, nam
 
 	log.Debugf("Found existing volume '%s', deleting.", name)
 
-	err = rc.lv.StorageVolumeDelete(vol, 0)
+	err = rc.lv.StorageVolDelete(vol, 0)
 	if err != nil {
 		return fmt.Errorf("delete volume %s: %w", name, err)
 	}
 
 	log.Infof("Deleted existing volume '%s'", name)
+
+	return nil
+}
+
+func (rc *virtDeployResourceConfig) uploadFileToVolume(vol libvirt.StorageVol, filePath string) error {
+	stat, err := os.Stat(filePath)
+	if err != nil {
+		return fmt.Errorf("stat file %s: %w", filePath, err)
+	}
+
+	fileSize := stat.Size()
+	if fileSize == 0 {
+		return fmt.Errorf("file %s is empty", filePath)
+	}
+
+	log.Debugf("Uploading %d bytes from file '%s' to volume '%s'", fileSize, filePath, vol.Name)
+
+	file, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("open file %s: %w", filePath, err)
+	}
+	defer file.Close()
+
+	err = rc.lv.StorageVolUpload(vol, file, 0, uint64(fileSize), 0)
+	if err != nil {
+		return fmt.Errorf("upload to volume %s: %w", vol.Name, err)
+	}
 
 	return nil
 }

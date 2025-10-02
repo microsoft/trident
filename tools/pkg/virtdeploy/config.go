@@ -5,7 +5,7 @@ import (
 	"net"
 	"os"
 
-	"github.com/google/uuid"
+	"github.com/digitalocean/go-libvirt"
 )
 
 type VirtDeployConfig struct {
@@ -55,10 +55,12 @@ type VirtDeployVM struct {
 	mac macAddress
 
 	// UUID of the VM according to libvirt
-	uuid uuid.UUID
+	domain libvirt.Domain
 
 	// Storage volumes for the VM
 	volumes []storageVolume
+
+	// CDROMs to attach to this VM
 
 	// User-configurable fields
 
