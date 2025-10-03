@@ -223,7 +223,7 @@ fn read_extension_release(
         dir.len()
     );
 
-    // Find the file whose `SYSEXT_ID` matches `name` parameter
+    // Read the extension release file
     let path = &dir[0];
     let extension_release_file_content = fs::read_to_string(path).context(format!(
         "Failed to read extension-release file content from file at '{}'",
@@ -233,6 +233,7 @@ fn read_extension_release(
     let extension_release_obj = OsRelease::from_str(&extension_release_file_content)
         .with_context(|| "Failed to convert extension release file content to OsRelease object")?;
 
+    // Retrieve SYSEXT_ID or CONFEXT_ID field
     let extension_id = extension_release_obj
         .get_value(&format!("{prefix}ID"))
         .map(|s| s.to_string())
