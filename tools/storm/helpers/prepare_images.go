@@ -12,22 +12,22 @@ import (
 )
 
 const (
-	COSI_EXTENSION              = "cosi"
-	OUTPUT_REGULAR_IMAGE_NAME   = "regular"
-	OUTPUT_VERITY_IMAGE_NAME    = "verity"
-	OUTPUT_USRVERITY_IMAGE_NAME = "usrverity"
+	COSI_EXTENSION                = "cosi"
+	OUTPUT_REGULAR_IMAGE_NAME     = "regular"
+	OUTPUT_ROOT_VERITY_IMAGE_NAME = "root-verity"
+	OUTPUT_USR_VERITY_IMAGE_NAME  = "usr-verity"
 )
 
 type PrepareImages struct {
 	args struct {
-		RegularTestImageDir   string `arg:"" help:"Directory containing the regular test images" type:"path"`
-		VerityTestImageDir    string `arg:"" help:"Directory containing the verity test images" type:"path"`
-		UsrVerityTestImageDir string `arg:"" help:"Directory containing the verity test images" type:"path"`
-		RegularImageName      string `arg:"" help:"Name of the regular test image"`
-		VerityImageName       string `arg:"" help:"Name of the verity test image"`
-		UsrVerityImageName    string `arg:"" help:"Name of the usr-verity test image"`
-		OutputDir             string `arg:"" help:"Directory in which to place the prepared images" type:"path"`
-		Versions              uint   `short:"v" help:"Number of versions to create of each image type" default:"1"`
+		RegularTestImageDir    string `arg:"" help:"Directory containing the regular test images" type:"path"`
+		RootVerityTestImageDir string `arg:"" help:"Directory containing the root-verity test images" type:"path"`
+		UsrVerityTestImageDir  string `arg:"" help:"Directory containing the usr-verity test images" type:"path"`
+		RegularImageName       string `arg:"" help:"Name of the regular test image"`
+		RootVerityImageName    string `arg:"" help:"Name of the root-verity test image"`
+		UsrVerityImageName     string `arg:"" help:"Name of the usr-verity test image"`
+		OutputDir              string `arg:"" help:"Directory in which to place the prepared images" type:"path"`
+		Versions               uint   `short:"v" help:"Number of versions to create of each image type" default:"1"`
 	}
 }
 
@@ -41,8 +41,8 @@ func (h *PrepareImages) Args() any {
 
 func (h *PrepareImages) RegisterTestCases(r storm.TestRegistrar) error {
 	r.RegisterTestCase("copy-regular", h.copyRegularImages)
-	r.RegisterTestCase("copy-verity", h.copyVerityImages)
-	r.RegisterTestCase("copy-usrverity", h.copyUsrVerityImages)
+	r.RegisterTestCase("copy-root-verity", h.copyRootVerityImages)
+	r.RegisterTestCase("copy-usr-verity", h.copyUsrVerityImages)
 	return nil
 }
 
@@ -62,18 +62,18 @@ func (h *PrepareImages) copyRegularImages(tc storm.TestCase) error {
 	)
 }
 
-func (h *PrepareImages) copyVerityImages(tc storm.TestCase) error {
+func (h *PrepareImages) copyRootVerityImages(tc storm.TestCase) error {
 	// Skip test if the path doesn't exist
-	if _, err := os.Stat(h.args.VerityTestImageDir); os.IsNotExist(err) {
-		tc.Skip(fmt.Sprintf("Directory %s does not exist", h.args.VerityTestImageDir))
+	if _, err := os.Stat(h.args.RootVerityTestImageDir); os.IsNotExist(err) {
+		tc.Skip(fmt.Sprintf("Directory %s does not exist", h.args.RootVerityTestImageDir))
 	}
 
 	return copyImages(
-		h.args.VerityTestImageDir,
+		h.args.RootVerityTestImageDir,
 		h.args.OutputDir,
-		h.args.VerityImageName,
+		h.args.RootVerityImageName,
 		COSI_EXTENSION,
-		OUTPUT_VERITY_IMAGE_NAME,
+		OUTPUT_ROOT_VERITY_IMAGE_NAME,
 		h.args.Versions,
 	)
 }
@@ -89,7 +89,7 @@ func (h *PrepareImages) copyUsrVerityImages(tc storm.TestCase) error {
 		h.args.OutputDir,
 		h.args.UsrVerityImageName,
 		COSI_EXTENSION,
-		OUTPUT_USRVERITY_IMAGE_NAME,
+		OUTPUT_USR_VERITY_IMAGE_NAME,
 		h.args.Versions,
 	)
 }
