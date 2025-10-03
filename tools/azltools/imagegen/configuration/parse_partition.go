@@ -116,6 +116,33 @@ func populatepartCmdProcessMap() {
 	partCmdProcess[kickstartPartitionFsType] = processPartitionFsType
 }
 
+// GetKernelCmdLineValue returns the output of a specific option setting in /proc/cmdline
+func GetKernelCmdLineValue(option string) (cmdlineValue string, err error) {
+	const cmdlineFile = "/proc/cmdline"
+
+	content, err := os.ReadFile(cmdlineFile)
+	if err != nil {
+		err = fmt.Errorf("failed to read from (%s):\n%w", cmdlineFile, err)
+		return
+	}
+
+	cmdline := string(content)
+	if strings.Count(cmdline, option) > 1 {
+		err = fmt.Errorf("/proc/cmdline contains duplicate (%s) entries, which is invalid", option)
+		return
+	}
+
+	cmdlineArgs := strings.Split(cmdline, " ")
+	for _, cmdlineArg := range cmdlineArgs {
+		if strings.Contains(cmdlineArg, option) {
+			cmdlineValue = cmdlineArg[(len(option) + 1):len(cmdlineArg)]
+			return
+		}
+	}
+
+	return
+}
+
 func processPartitionTableType() (err error) {
 	systemBootType := SystemBootType()
 	if systemBootType == EFIPartitionType {

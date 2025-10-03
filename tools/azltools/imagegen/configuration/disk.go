@@ -129,39 +129,3 @@ func (d *Disk) UnmarshalJSON(b []byte) (err error) {
 	}
 	return
 }
-
-// GetDiskPartByID returns the disk partition object with the desired ID, nil if no partition found
-func (c *Config) GetDiskPartByID(ID string) (diskPart *Partition) {
-	for i, d := range c.Disks {
-		for j, p := range d.Partitions {
-			if p.ID == ID {
-				return &c.Disks[i].Partitions[j]
-			}
-		}
-	}
-	return nil
-}
-
-// GetDiskContainingPartition returns the disk containing the provided partition
-func (c *Config) GetDiskContainingPartition(partition *Partition) (disk *Disk) {
-	ID := partition.ID
-	for i, d := range c.Disks {
-		for _, p := range d.Partitions {
-			if p.ID == ID {
-				return &c.Disks[i]
-			}
-		}
-	}
-	return nil
-}
-
-func (c *Config) GetBootPartition() (partitionIndex int, partition *Partition) {
-	for i, d := range c.Disks {
-		for j, p := range d.Partitions {
-			if p.HasFlag(PartitionFlagBoot) {
-				return j, &c.Disks[i].Partitions[j]
-			}
-		}
-	}
-	return
-}
