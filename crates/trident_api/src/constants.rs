@@ -74,8 +74,7 @@ pub const ROOT_EFI_DIRECTORY: &str = "efi";
 /// Root volume mount point path.
 pub const ROOT_MOUNT_POINT_PATH: &str = "/";
 
-/// The path to the root of the freshly deployed (from provisioning OS) or
-/// updated OS (from target OS).
+/// Path to the root of the target OS.
 pub const UPDATE_ROOT_PATH: &str = "/mnt/newroot";
 
 /// Absolute path to /usr directory.
@@ -103,8 +102,7 @@ pub const TRIDENT_OVERLAY_RELATIVE_PATH: &str = "var/lib/trident-overlay";
 /// Expected to be on top of A/B update volume pair.
 pub const TRIDENT_OVERLAY_PATH: &str = formatcp!("/{TRIDENT_OVERLAY_RELATIVE_PATH}");
 
-/// The path to the root of the freshly deployed (from provisioning OS) or
-/// updated OS (from target OS). To be used when /mnt/newroot is not available.
+/// Path to the root of the target OS. To be used when /mnt/newroot is not available.
 pub const UPDATE_ROOT_FALLBACK_PATH: &str = formatcp!("{TRIDENT_OVERLAY_PATH}/newroot");
 
 /// Path to the mountinfo file in the host's proc directory that contains information about the

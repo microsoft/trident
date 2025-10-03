@@ -11,7 +11,7 @@ parameters:
     #   - trident-container-installer
 
   - name: tridentTestImage
-    displayName: "Image used in the target, source of Trident (container vs host)"
+    displayName: "Image used in the target OS, source of Trident (container vs host)"
     type: string
     default: trident-testimage
     values:
