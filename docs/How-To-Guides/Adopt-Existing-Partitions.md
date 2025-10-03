@@ -46,13 +46,16 @@ For example:
             matchUuid: 12345678-abcd-1234-abcd-123456789abc
   ```
 
-To adopt the filesystem on the above partition:
+To adopt filesystems from the above partitions:
 
 ``` yaml
   filesystems:
-    - deviceId: disk-with-partitions-to-adopt
+    - deviceId: adopted-partition-by-label
       source: adopted
-      mountPoint: /adopted-filesystem
+      mountPoint: /adopted-filesystem-by-label
+    - deviceId: adopted-partition-by-uuid
+      source: adopted
+      mountPoint: /adopted-filesystem-by-uuid
 ```
 
 With this information, Trident will ensure that these partitions are
