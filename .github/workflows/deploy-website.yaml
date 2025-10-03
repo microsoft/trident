@@ -9,6 +9,10 @@ on:
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review]
     branches: [main]
+    paths:
+     - 'docs/**'
+     - 'website/**'
+     - '.github/workflows/deploy-website.yaml'
 
   # # Trigger on release
   # release:

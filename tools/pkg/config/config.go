@@ -13,7 +13,6 @@ type NetlaunchConfigInner struct {
 	Bmc          *bmc.Bmc `yaml:"bmc,omitempty"`
 	LocalVmUuid  *string  `yaml:"localVmUuid,omitempty"`
 	LocalVmNvRam *string  `yaml:"localVmNvRam,omitempty"`
-	KeyLocation  *string  `yaml:"keyLocation,omitempty"`
 }
 
 type IsoConfig struct {

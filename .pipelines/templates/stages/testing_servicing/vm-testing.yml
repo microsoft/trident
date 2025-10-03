@@ -25,7 +25,7 @@ parameters:
     default: 1
 
   - name: updateCheckTimeoutInMinutes
-    displayName: "Timeout for checking runtime OS deployment in minutes"
+    displayName: "Timeout for checking target OS deployment in minutes"
     type: number
     default: 30
 

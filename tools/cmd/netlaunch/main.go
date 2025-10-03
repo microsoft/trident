@@ -290,11 +290,6 @@ var rootCmd = &cobra.Command{
 			file.Close()
 		}
 
-		// Validate that if SecureBoot is enabled, a signing certificate is provided
-		if secureBoot && signingCert == "" {
-			log.Fatal("SecureBoot is enabled, but no signing certificate was provided")
-		}
-
 		if config.Netlaunch.LocalVmUuid != nil {
 			startLocalVm(*config.Netlaunch.LocalVmUuid, iso_location, secureBoot, signingCert)
 		} else {

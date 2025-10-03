@@ -3,19 +3,26 @@
 
 ## Introduction
 
-For Trident to be able to update an existing installation of Azure Linux, it needs to track information such as partition and disk layout. This information is discovered by [offline-initialize](../Reference/Trident-CLI.md#offline-initialize).
+For Trident to be able to update an existing installation of Azure Linux, it
+needs to track information such as partition and disk layout. This information
+is discovered by
+[offline-initialize](../Reference/Trident-CLI.md#offline-initialize).
 
-This document will outline the steps required to enable this during image creation with Image Customizer.
+This document will outline the steps required to enable this during image
+creation with Image Customizer.
 
 ## Prerequisites
 
-1. Ensure [Image Customizer container](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/quick-start/quick-start.html) is accessible.
+1. Ensure [Image Customizer
+   container](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/quick-start/quick-start.html)
+   is accessible.
 
 ## Instructions
 
 ### Step 1: Download the minimal base image
 
-Pull [minimal-os](../Reference/Glossary.md#minimal-os) as a base image from MCR by running:
+Pull [minimal-os](../Reference/Glossary.md#minimal-os) as a base image from MCR
+by running:
 
 ``` bash
 mkdir -p $HOME/staging
@@ -24,7 +31,7 @@ oras pull mcr.microsoft.com/azurelinux/3.0/image/minimal-os:latest --platform li
 popd
 ```
 
-### Step 2: Get Trident RPMs
+### Step 2: Build Trident RPMs
 
 Build the Trident RPMs by running:
 
@@ -32,7 +39,8 @@ Build the Trident RPMs by running:
 make bin/trident-rpms.tar.gz
 ```
 
-After running this make command, the RPMs will be built and packaged into `bin/trident-rpms.tar.gz` and unpacked into `bin/RPMS/x86_64`:
+After running this make command, the RPMs will be built and packaged into
+`bin/trident-rpms.tar.gz` and unpacked into `bin/RPMS/x86_64`:
 
 ``` bash
 $ ls bin/RPMS/x86_64/
@@ -50,13 +58,17 @@ Copy RPMs to staging folder:
 cp -r bin/RPMS $HOME/staging
 ```
 
-### Step 3: Create Image Customizer configuration including offline-initialize
+### Step 3: Define COSI Configuration including offline-initialize
 
-Add the `trident-service` package to the Image Customizer configuration. This will add the Trident services needed for update and the `trident` package used for `offline-initialize`.
+Add the `trident-service` package to the Image Customizer configuration. This
+will add the Trident services needed for update and the `trident` package used
+for `offline-initialize`.
 
-To invoke `trident offline-initialize` during image creation, add it in the `postCustomization` scripts.
+To invoke `trident offline-initialize` during image creation, add it in the
+`postCustomization` scripts.
 
-These steps are shown below in a simple Image Customizer configuration (assumed as contents of `$HOME/staging/ic-config.yaml`):
+These steps are shown below in a simple Image Customizer configuration (assumed
+as contents of `$HOME/staging/ic-config.yaml`):
 
 ``` yaml
 storage:
@@ -126,7 +138,9 @@ scripts:
 
 ### Step 4: Invoke Image Customizer
 
-Assuming the RPMs, a base image (`image.vhdx`) and the Image Customizer configuration file (`ic-config.yaml`) are found in `$HOME/staging`, invoke Image Customizer to create a qcow2 file:
+Assuming the RPMs, a base image (`image.vhdx`) and the Image Customizer
+configuration file (`ic-config.yaml`) are found in `$HOME/staging`, invoke Image
+Customizer to create a qcow2 file:
 
 ``` bash
 pushd $HOME/staging
@@ -146,4 +160,5 @@ popd
 
 ## Conclusion
 
-Using `image.qcow2` as the operating system for a virtual machine will create a machine that is ready for `trident update` to work!
+Using `image.qcow2` as the operating system for a virtual machine will create a
+machine that is ready for `trident update` to work!

@@ -10,12 +10,12 @@ parameters:
 
   - name: artifactPrefix
     type: string
-    default: "stage-finalize-ab-update-runtime-os"
+    default: "stage-finalize-ab-update-target-os"
 
 steps:
   - bash: |
       set -eux
-      
+
       export SERIAL_LOG=""
       if [[  -n "${{ parameters.netlistenConfigFile }}" && -f "${{ parameters.netlistenConfigFile }}" ]]; then
         export SERIAL_LOG=$(sudo yq -e '.netlisten.bmc.serialOverSsh.output' ${{ parameters.netlistenConfigFile }})
@@ -39,4 +39,3 @@ steps:
       fi
     displayName: "📄 Display serial output from update to ${{ parameters.partition }}"
     condition: succeededOrFailed()
-    

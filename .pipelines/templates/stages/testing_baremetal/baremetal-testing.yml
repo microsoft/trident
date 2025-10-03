@@ -349,7 +349,7 @@ stages:
                   "${{ parameters.runtimeEnv }}" \
                   --metrics-file $(TRIDENT_SOURCE_DIR)/trident-clean-install-metrics.jsonl \
                   --metrics-operation install
-            displayName: "Create boot metrics for booting into runtime OS"
+            displayName: "Create boot metrics for booting into target OS"
 
           - template: ../testing_common/trident-metrics.yml
             parameters:

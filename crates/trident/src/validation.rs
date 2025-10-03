@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{fs, path::Path};
 
 use log::{debug, info};
 
@@ -41,7 +41,7 @@ pub fn validate_host_config_file(path: impl AsRef<Path>) -> Result<(), TridentEr
     );
 
     let contents =
-        std::fs::read_to_string(path.as_ref()).structured(InvalidInputError::ReadInputFile {
+        fs::read_to_string(path.as_ref()).structured(InvalidInputError::ReadInputFile {
             path: path.as_ref().display().to_string(),
         })?;
 

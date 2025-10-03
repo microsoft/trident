@@ -41,6 +41,8 @@ storage:
     - id: srv
       deviceName: luks-srv
       deviceId: enc-srv
+    pcrs:
+    - secure-boot-policy
   raid:
     software:
     - id: some_raid

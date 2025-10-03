@@ -16,7 +16,9 @@ Configuration](../Reference/Host-Configuration/Sample-Host-Configuration.md).
 
 1. An OS with the Trident binary installed. To check if Trident is available on
    your OS, try running `trident --version`.
-2. A COSI file. Please complete the tutorial on [Building A/B Update Images for Install and Update](./Building-AB-Update-Images-for-Install-and-Update.md) if you have not already.
+2. A COSI file. Please complete the tutorial on [Building A/B Update Images for
+   Install and Update](./Building-AB-Update-Images-for-Install-and-Update.md) if
+   you have not already.
 
 ## Instructions
 
@@ -32,10 +34,10 @@ Trident where to source the COSI file from. For a complete description of this
 section, please reference the [API
 documentation](../Reference/Host-Configuration/API-Reference/OsImage.md).
 
-Additionally, to learn more about COSI files, please see its
-[Reference page](../Reference/Composable-OS-Image.md).
-You can also learn how to create a COSI file in this tutorial on
-[Building A/B Update Images for Install and Update](./Building-AB-Update-Images-for-Install-and-Update.md).
+Additionally, to learn more about COSI files, please see its [Reference
+page](../Reference/Composable-OS-Image.md). You can also learn how to create a
+COSI file in this tutorial on [Building A/B Update Images for Install and
+Update](./Building-AB-Update-Images-for-Install-and-Update.md).
 
 The `image` section requires a `url`, where the COSI file is actually located or
 hosted, and a `sha384` hash of the metadata of the COSI file. For the purposes
@@ -65,9 +67,9 @@ image:
 #### Storage Section
 
 Next, we will define the `storage` section, which describes the disk layout of
-the target OS. Please reference the
-[API Documentation](../Reference/Host-Configuration/API-Reference/Storage.md)
-for a complete description of this section. Three sections should be populated:
+the target OS. Please reference the [API
+Documentation](../Reference/Host-Configuration/API-Reference/Storage.md) for a
+complete description of this section. Three sections should be populated:
 `disks`, including information about the `partitions` on each disk; `abUpdate`
 to specify which partitions should be serviced by Trident in a future A/B
 update; and `filesystems`, which maps filesystems to partitions.
@@ -76,10 +78,11 @@ First, we will define the disks and partitions. In the disks section, we list
 each disk and the partitions we want to create on it. Each disk needs a unique
 `id`, its `device` path, and a `partitionTableType`. (Currently, Trident only
 supports `gpt` partition tables). For each partition, we provide an `id`, a
-[Discoverable Partition](https://uapi-group.org/specifications/specs/discoverable_partitions_specification/)
+[Discoverable
+Partition](https://uapi-group.org/specifications/specs/discoverable_partitions_specification/)
 `type`, and its `size`. Full details on how to specify a partition can be found
-in the
-[API documentation](../Reference/Host-Configuration/API-Reference/Partition.md).
+in the [API
+documentation](../Reference/Host-Configuration/API-Reference/Partition.md).
 
 For this tutorial, we'll set up a disk with `esp`, `root-a`, `root-b`, `home`,
 and `trident` partitions. The `trident` partition, used solely for storing the
@@ -126,10 +129,10 @@ setting it is best to use more predictable device paths (i.e.
 `/dev/disk/by-id/...`) as kernel device naming can be unpredictable.
 
 Next, we'll configure A/B servicing in the `abUpdate` section. For more detailed
-information on A/B updates, please reference the
-[How-To guide on A/B updates](../How-To-Guides/Configure-an-AB-Update-Ready-Host.md).
-In this section, we define `volumePairs` that link two partitions together. Here,
-we'll pair `root-a` and `root-b` as a single updatable volume named `root`.
+information on A/B updates, please reference the [How-To guide on A/B
+updates](../How-To-Guides/Configure-an-AB-Update-Ready-Host.md). In this
+section, we define `volumePairs` that link two partitions together. Here, we'll
+pair `root-a` and `root-b` as a single updatable volume named `root`.
 
 ```yaml
 # ... (within the storage section)
@@ -296,5 +299,5 @@ Now that you have a valid Host Configuration, you are ready to use it to
 provision a device. Here are some tutorials to explore next:
 
 - [Perform a clean install](./Onboard-a-VM-to-Trident.md)
-- [Perform an A/B Update](./Performing-an-ABUpdate.md)
+- [Perform an A/B Update](./Performing-an-AB-Update.md)
 - [Run a custom script with Trident](./Running-Custom-Scripts.md)
