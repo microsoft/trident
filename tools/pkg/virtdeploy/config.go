@@ -63,8 +63,11 @@ type VirtDeployVM struct {
 	// CDROM drives for the VM
 	cdroms []cdrom
 
-	// Firmware template path
+	// Firmware loader path
 	firmwareLoaderPath string
+
+	// Firmware vars template path
+	firmwareVarsTemplatePath string
 
 	// NVRAM file and path
 	nvramFile string

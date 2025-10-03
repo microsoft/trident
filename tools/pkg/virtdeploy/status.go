@@ -18,7 +18,7 @@ type VirtDeployVMStatus struct {
 	Name string `json:"name"`
 
 	// IP address assigned to the VM
-	IPAddress string `json:"ipAddress"`
+	IPAddress string `json:"ip"`
 
 	// MAC address assigned to the VM
 	MACAddress string `json:"macAddress"`

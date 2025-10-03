@@ -351,7 +351,7 @@ functional-test: artifacts/trident-functest.qcow2
 # A target for pipelines that skips all setup and building steps that are not
 # required in the pipeline environment.
 .PHONY: functional-test-core
-functional-test-core: artifacts/osmodifier build-functional-test-cc generate-functional-test-manifest artifacts/trident-functest.qcow2
+functional-test-core: artifacts/osmodifier build-functional-test-cc generate-functional-test-manifest artifacts/trident-functest.qcow2 bin/virtdeploy
 	python3 -u -m \
 		pytest --color=yes \
 		--log-level=INFO \

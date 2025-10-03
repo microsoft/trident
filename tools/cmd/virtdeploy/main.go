@@ -1,12 +1,17 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
+	"os"
+	"tridenttools/pkg/config"
+	"tridenttools/pkg/ref"
 	"tridenttools/pkg/virtdeploy"
 
 	"github.com/alecthomas/kong"
 	log "github.com/sirupsen/logrus"
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -54,13 +59,15 @@ type CreateOneCmd struct {
 	Namespace    string `group:"Resource" short:"n" long:"namespace" help:"Namespace to create resources in" default:"${DEFAULT_NAMESPACE}"`
 	Network      string `group:"Resource" short:"N" long:"network" help:"Network to create resources in" default:"${DEFAULT_NETWORK}"`
 	CPUs         uint   `group:"VM" short:"c" long:"cpus" help:"Number of CPUs for the VM" default:"4"`
-	Mem          uint   `group:"VM" short:"m" long:"mem" help:"Memory in GB for the VM" default:"2"`
-	Disks        []uint `group:"VM" short:"d" long:"disk" help:"Disk sizes in GB for the VM" default:"16"`
+	Mem          uint   `group:"VM" short:"m" long:"mem" help:"Memory in GB for the VM" default:"6"`
+	Disks        []uint `group:"VM" short:"d" long:"disk" help:"Disk sizes in GB for the VM" default:"32"`
 	NoSecureBoot bool   `group:"VM" long:"no-secure-boot" help:"Disable secure boot"`
 	NoTpm        bool   `group:"VM" long:"no-tpm" help:"Disable emulated TPM"`
-	OsDiskPath   string `group:"VM" short:"o" long:"os-disk-path" help:"Optional path to an OS disk image to attach to the first disk"`
+	OsDisk       string `group:"VM" long:"os-disk" help:"Optional path to an OS disk image to attach to the first disk"`
 	CiUser       string `group:"cloud-init" and:"ci-meta" long:"ci-user" help:"Cloud-init userdata file path" type:"existingfile"`
 	CiMeta       string `group:"cloud-init" and:"ci-user" long:"ci-meta" help:"Cloud-init metadata file path" type:"existingfile"`
+	Json         bool   `group:"Output" short:"J" long:"json" help:"Output resource data as JSON to stdout."`
+	Netlaunch    string `group:"Output" short:"l" long:"netlaunch" type:"path" help:"Produce a netlaunch YAML at the given path" default:"./tools/vm-netlaunch.yaml"`
 }
 
 func (c *CreateOneCmd) Run() error {
@@ -98,16 +105,44 @@ func (c *CreateOneCmd) Run() error {
 				Disks:       c.Disks,
 				SecureBoot:  !c.NoSecureBoot,
 				EmulatedTPM: !c.NoTpm,
-				OsDiskPath:  c.OsDiskPath,
+				OsDiskPath:  c.OsDisk,
 				CloudInit:   cloudInitConfig,
 			},
 		},
 	})
 
-	log.Printf("Created VM: %+v", status)
-
 	if err != nil {
 		return fmt.Errorf("create-one failed: %w", err)
+	}
+
+	log.Info("Finished creating resources")
+
+	if c.Json {
+		marshalled, err := json.MarshalIndent(status, "", "    ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal JSON: %w", err)
+		}
+		fmt.Println(string(marshalled))
+	}
+
+	if c.Netlaunch != "" {
+		// Netlaunch can figure out everything but the VM UUID itself.
+		config := config.NetLaunchConfig{
+			Netlaunch: config.NetlaunchConfigInner{
+				LocalVmUuid:  ref.Of(status.VMs[0].Uuid.String()),
+				LocalVmNvRam: &status.VMs[0].NvramPath,
+			},
+		}
+
+		yamlData, err := yaml.Marshal(config)
+		if err != nil {
+			return fmt.Errorf("failed to marshal YAML: %w", err)
+		}
+
+		err = os.WriteFile(c.Netlaunch, yamlData, 0644)
+		if err != nil {
+			return fmt.Errorf("failed to write netlaunch file: %w", err)
+		}
 	}
 
 	return nil

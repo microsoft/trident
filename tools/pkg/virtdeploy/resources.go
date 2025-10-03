@@ -13,7 +13,9 @@ import (
 
 const (
 	FIRMWARE_LOADER_PATH            = "/usr/share/OVMF/OVMF_CODE_4M.fd"
-	FIRMWARE_LOADER_PATH_SECUREBOOT = "/usr/share/OVMF/OVMF_CODE_4M.ms.fd"
+	FIRMWARE_LOADER_SECUREBOOT_PATH = "/usr/share/OVMF/OVMF_CODE_4M.ms.fd"
+	FIRMWARE_VARS_PATH              = "/usr/share/OVMF/OVMF_VARS_4M.fd"
+	FIRMWARE_VARS_SECUREBOOT_PATH   = "/usr/share/OVMF/OVMF_VARS_4M.ms.fd"
 )
 
 type virtDeployResourceConfig struct {
@@ -74,9 +76,11 @@ func newVirtDeployResourceConfig(config VirtDeployConfig) (*virtDeployResourceCo
 		vm.nvramFile = fmt.Sprintf("%s_VARS.fd", vm.name)
 
 		if vm.SecureBoot {
-			vm.firmwareLoaderPath = FIRMWARE_LOADER_PATH_SECUREBOOT
+			vm.firmwareLoaderPath = FIRMWARE_LOADER_SECUREBOOT_PATH
+			vm.firmwareVarsTemplatePath = FIRMWARE_VARS_SECUREBOOT_PATH
 		} else {
 			vm.firmwareLoaderPath = FIRMWARE_LOADER_PATH
+			vm.firmwareVarsTemplatePath = FIRMWARE_VARS_PATH
 		}
 
 		// Set up volume configurations for the VM
@@ -84,7 +88,7 @@ func newVirtDeployResourceConfig(config VirtDeployConfig) (*virtDeployResourceCo
 		for j, diskSize := range vm.Disks {
 			// Initialize volume with basic info, path will be filled in once the
 			// volume is created in libvirt.
-			vol := newSimpleVolume(fmt.Sprintf("%s-volume-%d.qcow2", vm.name, j+1), diskSize, "qcow2")
+			vol := newSimpleVolume(fmt.Sprintf("%s-volume-%d.qcow2", vm.name, j), diskSize, "qcow2")
 
 			// If this is the first disk and an OS disk path was specified,
 			// set it.
@@ -487,8 +491,8 @@ func (rc *virtDeployResourceConfig) setupVm(vm *VirtDeployVM) error {
 	vm.nvramPath = vol.path
 
 	// Upload NVRAM template
-	log.Debugf("Uploading NVRAM template from %s to %s", vm.firmwareLoaderPath, vol.path)
-	err = rc.uploadFileToVolume(vol.lvVol, vm.firmwareLoaderPath)
+	log.Debugf("Uploading NVRAM template from %s to %s", vm.firmwareVarsTemplatePath, vol.path)
+	err = rc.uploadFileToVolume(vol.lvVol, vm.firmwareVarsTemplatePath)
 	if err != nil {
 		return fmt.Errorf("upload NVRAM template to volume: %w", err)
 	}

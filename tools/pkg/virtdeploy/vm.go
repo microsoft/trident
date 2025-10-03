@@ -95,7 +95,10 @@ func (vm *VirtDeployVM) asXml(network *virtDeployNetwork, nvramPool storagePool)
 			Type:   &libvirtxml.DomainOSType{Arch: "x86_64", Machine: "q35", Type: "hvm"},
 			SMBios: &libvirtxml.DomainSMBios{Mode: "sysinfo"},
 			Loader: &libvirtxml.DomainLoader{Path: vm.firmwareLoaderPath, Type: "pflash", Readonly: "yes"},
-			NVRam:  &libvirtxml.DomainNVRam{NVRam: vm.nvramPath},
+			NVRam: &libvirtxml.DomainNVRam{
+				NVRam:    vm.nvramPath,
+				Template: vm.firmwareVarsTemplatePath,
+			},
 		},
 		SysInfo: []libvirtxml.DomainSysInfo{
 			{
