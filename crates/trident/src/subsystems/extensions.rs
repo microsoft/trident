@@ -41,6 +41,15 @@ impl Subsystem for ExtensionsSubsystem {
 
     // Outside of chroot
     fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
+        // Skip step if no changes need to be made.
+        if ctx.spec.os.extensions == ctx.spec_old.os.extensions {
+            debug!(
+                "Skipping step 'provision' for Extensions subsystem since there \
+            are no changes to the 'extensions' section of the Host Configuration."
+            );
+            return Ok(());
+        }
+
         let sysext_dir_path = mount_path.join(SYSEXT_DIRECTORY_PATH);
         let confext_dir_path = mount_path.join(CONFEXT_DIRECTORY_PATH);
 

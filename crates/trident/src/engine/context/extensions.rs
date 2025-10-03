@@ -10,7 +10,6 @@ use etc_os_release::OsRelease;
 use log::{debug, trace};
 use osutils::dependencies::Dependency;
 use tempfile::NamedTempFile;
-use url::Url;
 
 use trident_api::{
     config::Extension,
@@ -34,8 +33,6 @@ const CONFEXT_PREFIX: &str = "CONFEXT_";
 #[derive(Clone)]
 pub struct ExtensionData {
     pub id: String,
-    pub name: String,
-    pub url: Url,
     pub sha384: Sha384Hash,
     pub location: PathBuf,
     pub temp_location: Option<PathBuf>,
@@ -51,6 +48,16 @@ pub enum ExtensionType {
 impl EngineContext {
     /// Populate the `extensions` and `extensions_old` fields in EngineContext.
     pub fn populate_extensions(&mut self) -> Result<(), TridentError> {
+        // No need to populate extensions object if the extensions in the Host
+        // Configuration have not changed.
+        if self.spec.os.extensions == self.spec_old.os.extensions {
+            debug!(
+                "Skipping running 'populate_extensions' step since there are \
+            no changes to the 'extensions' section of the Host Configuration."
+            );
+            return Ok(());
+        }
+
         let timeout = match self
             .spec
             .internal_params
@@ -202,8 +209,6 @@ fn read_extension_release(
 
     Ok(ExtensionData {
         id: extension_id,
-        name: file_name.clone(),
-        url: ext.url.clone(),
         sha384: ext.sha384.clone(),
         location,
         temp_location: Some(curr_location.to_path_buf()),
