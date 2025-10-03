@@ -8,7 +8,7 @@ use enumflags2::BitFlags;
 use log::{debug, info, trace};
 
 use osutils::{
-    encryption as osutils_encryption, files, path,
+    container, efivar, encryption as osutils_encryption, files, path,
     pcrlock::{self, PCRLOCK_POLICY_JSON_PATH},
 };
 use sysdefs::tpm2::Pcr;
@@ -89,53 +89,43 @@ pub(super) fn validate_host_config(ctx: &EngineContext) -> Result<(), TridentErr
         }
 
         // We've already validated that only supported PCRs, i.e. 4, 7, and/or 11, are specified;
-        // but we also need to ensure that only valid PCRs are specified for each image type.
-        if !encryption.pcrs.is_empty() {
-            if ctx.is_uki()? {
-                // TODO: Currently, we cannot seal to PCR 7 for grub MOS -> UKI ROS scenario b/c
-                // not all measurements are recognized by the .pcrlock file generation logic. Once
-                // that is resolved, we include PCR 7 into the valid list. For now, only PCRs 4 and
-                // 11 are valid. Related ADO tasks:
-                // https://dev.azure.com/mariner-org/polar/_workitems/edit/14523/ and
-                // https://dev.azure.com/mariner-org/polar/_workitems/edit/14455/.
-                let invalid_pcrs: Vec<_> = encryption
-                    .pcrs
-                    .iter()
-                    .filter(|&&pcr| pcr != Pcr::Pcr4 && pcr != Pcr::Pcr11)
-                    .cloned()
-                    .collect();
+        // but we also need to ensure that only PCR 7 is specified for grub images.
+        if !ctx.is_uki()? {
+            let invalid_pcrs: Vec<_> = encryption
+                .pcrs
+                .iter()
+                .filter(|&&pcr| pcr != Pcr::Pcr7)
+                .cloned()
+                .collect();
 
-                if !invalid_pcrs.is_empty() {
-                    let pcrs_string = invalid_pcrs
-                        .iter()
-                        .map(|pcr| pcr.to_num().to_string())
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    return Err(TridentError::new(InvalidInputError::from(
-                        HostConfigurationDynamicValidationError::InvalidEncryptionPcrsForUkiImage {
-                            pcrs: pcrs_string,
-                        },
-                    )));
-                }
-            } else {
-                let invalid_pcrs: Vec<_> = encryption
-                    .pcrs
+            if !invalid_pcrs.is_empty() {
+                let pcrs_string = invalid_pcrs
                     .iter()
-                    .filter(|&&pcr| pcr != Pcr::Pcr7)
-                    .cloned()
-                    .collect();
-
-                if !invalid_pcrs.is_empty() {
-                    let pcrs_string = invalid_pcrs
-                        .iter()
-                        .map(|pcr| pcr.to_num().to_string())
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    return Err(TridentError::new(InvalidInputError::from(
+                    .map(|pcr| pcr.to_num().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                return Err(TridentError::new(InvalidInputError::from(
                     HostConfigurationDynamicValidationError::InvalidEncryptionPcrsForGrubImage {
                         pcrs: pcrs_string,
                     },
                 )));
+            }
+        } else {
+            // For UKI images, if PCR 7 is requested, we need to ensure that:
+            // 1. Secure Boot is enabled,
+            // 2. Trident is NOT running inside a container,
+            // due to the limitations of `systemd-pcrlock`.
+            if encryption.pcrs.contains(&Pcr::Pcr7) {
+                if !efivar::secure_boot_is_enabled() {
+                    return Err(TridentError::new(InvalidInputError::from(
+                        HostConfigurationDynamicValidationError::Pcr7EncryptionForUkiWhenSecureBootDisabled,
+                    )));
+                }
+
+                if container::is_running_in_container()? {
+                    return Err(TridentError::new(InvalidInputError::from(
+                        HostConfigurationDynamicValidationError::Pcr7EncryptionForUkiWhenRunningInContainer,
+                    )));
                 }
             }
         }
@@ -148,15 +138,15 @@ pub(super) fn validate_host_config(ctx: &EngineContext) -> Result<(), TridentErr
 /// persists the pcrlock policy to the update volume.
 ///
 /// On clean install:
-/// 1. TODO: UKI MOS + UKI ROS -> re-generate pcrlock policy to include PCRs 4,7,11 as selected by
-///    the user; not implemented for now. Related ADO task:
+/// 1. TODO: UKI MOS + UKI target OS -> re-generate pcrlock policy to include PCRs 4,7,11 as
+///    selected by the user; not implemented for now. Related ADO task:
 ///    https://dev.azure.com/mariner-org/polar/_workitems/edit/13059/.
-/// 2. Grub MOS + UKI ROS -> N/A, i.e. keep previous pcrlock policy that includes PCR 0 only,
-/// 3. Grub MOS + grub ROS -> N/A, i.e. still sealed to the value of PCR 7.
+/// 2. Grub MOS + UKI target OS -> N/A, i.e. keep previous pcrlock policy that includes PCR 0 only,
+/// 3. Grub MOS + grub target OS -> N/A, i.e. still sealed to the value of PCR 7.
 ///
 /// On A/B update:
-/// 1. UKI ROS -> re-generate pcrlock policy to include PCRs 4,7,11 as selected by the user,
-/// 2. Grub ROS -> N/A, i.e. keep previous pcrlock policy that includes PCR 7 only.
+/// 1. UKI target OS -> re-generate pcrlock policy to include PCRs 4,7,11 as selected by the user,
+/// 2. Grub target OS -> N/A, i.e. keep previous pcrlock policy that includes PCR 7 only.
 #[tracing::instrument(name = "encryption_provision", skip_all)]
 pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
     if let Some(encryption) = &ctx.spec.storage.encryption {
@@ -168,23 +158,10 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
             // On A/B update, use PCRs selected by the user through the API
             ServicingType::AbUpdate => {
                 if ctx.is_uki()? {
-                    let bitflags = if !encryption.pcrs.is_empty() {
-                        encryption
-                            .pcrs
-                            .iter()
-                            .fold(BitFlags::empty(), |acc, &pcr| acc | BitFlags::from(pcr))
-                    } else {
-                        // TODO: Currently, we cannot seal to PCR 7 b/c not all measurements are
-                        // recognized by the .pcrlock file generation logic. Once that is resolved,
-                        // we want to have PCR 7 as the default. For now, we use PCRs 4 and 11. Related
-                        // ADO tasks:
-                        // https://dev.azure.com/mariner-org/polar/_workitems/edit/14523/ and
-                        // https://dev.azure.com/mariner-org/polar/_workitems/edit/14455/.
-                        //
-                        // Use default PCR if none specified.
-                        //BitFlags::from(osutils_encryption::DEFAULT_PCR)
-                        BitFlags::from(Pcr::Pcr4) | BitFlags::from(Pcr::Pcr11)
-                    };
+                    let bitflags = encryption
+                        .pcrs
+                        .iter()
+                        .fold(BitFlags::empty(), |acc, &pcr| acc | BitFlags::from(pcr));
                     Some(bitflags)
                 } else {
                     debug!(
@@ -552,27 +529,8 @@ mod tests {
         }
         validate_host_config(&ctx).unwrap();
 
-        // Test case #2: If OS image is a UKI image, then only PCRs 4 and 11 are allowed.
+        // Test case #2: If OS image is a UKI image AND PCRs only include 4 and 11, then pass.
         ctx.is_uki = Some(true);
-        {
-            let encryption = ctx.spec.storage.encryption.as_mut().unwrap();
-            encryption.pcrs = vec![Pcr::Pcr4, Pcr::Pcr7, Pcr::Pcr11];
-        }
-        let pcrs_str = [Pcr::Pcr7]
-            .iter()
-            .map(|pcr| pcr.to_num().to_string())
-            .collect::<Vec<_>>()
-            .join(", ");
-        assert_eq!(
-            validate_host_config(&ctx).unwrap_err().kind(),
-            &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
-                inner: HostConfigurationDynamicValidationError::InvalidEncryptionPcrsForUkiImage {
-                    pcrs: pcrs_str,
-                }
-            })
-        );
-
-        // Test case #3: If OS image is a UKI image AND PCRs only include 4 and 11, then pass.
         {
             let encryption = ctx.spec.storage.encryption.as_mut().unwrap();
             encryption.pcrs = vec![Pcr::Pcr4, Pcr::Pcr11];

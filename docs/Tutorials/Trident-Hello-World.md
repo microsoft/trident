@@ -1,20 +1,28 @@
 # Trident Hello World
 
-In this tutorial, we will install Azure Linux on a machine using Trident. You will see firsthand how Trident transforms a blank machine into a fully configured Azure Linux system in just a few minutes!
+In this tutorial, we will install Azure Linux on a machine using Trident. You
+will see firsthand how Trident transforms a blank machine into a fully
+configured Azure Linux system in just a few minutes!
 
 ## Introduction
 
-Trident is a declarative OS lifecycle agent. It is designed to perform clean installs on bare-metal hosts, but for learning/demonstration purposes, a virtual machine can also be used. We'll boot from the `Servicing ISO`, and use Trident to install and configure Azure Linux.
+Trident is a declarative OS lifecycle agent. It is designed to perform clean
+installs on bare-metal hosts, but for learning/demonstration purposes, a virtual
+machine can also be used. We'll boot from the `Servicing ISO`, and use Trident
+to install and configure Azure Linux.
 
 ## Prerequisites
 
 Before we start, you'll need to:
 
 1. Ensure that [oras](https://oras.land/docs/installation/) is installed.
-2. Ensure [Image Customizer container](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/quick-start/quick-start.html) is accessible.
+2. Ensure [Image Customizer
+   container](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/quick-start/quick-start.html)
+   is accessible.
 3. A test target system
    - Either a physical machine for bare-metal installation, OR
-   - A virtual machine for testing (see [Appendix: Virtual Machine Setup](#appendix-virtual-machine-setup))
+   - A virtual machine for testing (see [Appendix: Virtual Machine
+     Setup](#appendix-virtual-machine-setup))
 4. System resources
    - At least 16GB of available disk space on the target system
    - 4GB of available RAM
@@ -24,8 +32,15 @@ Before we start, you'll need to:
 
 ### Step 1: Create the COSI file and Host Configuration
 
-Follow the [Building A/B Update Images for Install and Update](./Building-AB-Update-Images-for-Install-and-Update.md) tutorial through [Step 5: Create Trident Host Configuration for Install](./Building-AB-Update-Images-for-Install-and-Update.md#step-5-create-trident-host-configuration-for-install). **Stop after completing Step 5** (do not create the Servicing ISO of Step 6, we will create our own modified Servicing ISO in the next step). After following those steps you will have:
-- The [minimal-os](../Reference/Glossary.md#minimal-os) (`$HOME/staging/image.vhdx`)
+Follow the [Building A/B Update Images for Install and
+Update](./Building-AB-Update-Images-for-Install-and-Update.md) tutorial through
+[Step 5: Create Trident Host Configuration for
+Install](./Building-AB-Update-Images-for-Install-and-Update.md#step-5-create-trident-host-configuration-for-install).
+**Stop after completing Step 5** (do not create the Servicing ISO of Step 6, we
+will create our own modified Servicing ISO in the next step). After following
+those steps you will have:
+- The [minimal-os](../Reference/Glossary.md#minimal-os)
+  (`$HOME/staging/image.vhdx`)
 - The Trident RPMs (`bin/RPMS/x86_64`)
 - The COSI file (`$HOME/staging/osimage.cosi`)
 - The Host Configuration file (`$HOME/staging/host-config.yaml`)
@@ -34,7 +49,12 @@ Follow the [Building A/B Update Images for Install and Update](./Building-AB-Upd
 
 #### 2.1 Create an Image Customizer Configuration
 
-Assuming locations for the Azure Linux image COSI file (`$HOME/staging/osimage.cosi`) and the Trident Host Configuration file (`$HOME/staging/host-config.yaml`), follow the [Image Customizer documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/how-to/live-iso.html) to create an Image Customizer configuration file, `$HOME/staging/ic-config.yaml`:
+Assuming locations for the Azure Linux image COSI file
+(`$HOME/staging/osimage.cosi`) and the Trident Host Configuration file
+(`$HOME/staging/host-config.yaml`), follow the [Image Customizer
+documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/how-to/live-iso.html)
+to create an Image Customizer configuration file,
+`$HOME/staging/ic-config.yaml`:
 
 ``` yaml
 storage:
@@ -97,9 +117,13 @@ iso:
       destination: /images/azure-linux.cosi
 ```
 
-#### 2.2 Invoke Image Customizer to Create Installation ISO
+#### 2.2 Create Installation ISO
 
-Assuming locations for the base image file (`$HOME/staging/image.vhdx`) and the Image Customizer configuration file (`$HOME/staging/ic-config.yaml`), follow the [Image Customizer documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/quick-start/quick-start.html) and invoke Image Customizer:
+Assuming locations for the base image file (`$HOME/staging/image.vhdx`) and the
+Image Customizer configuration file (`$HOME/staging/ic-config.yaml`), follow the
+[Image Customizer
+documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/quick-start/quick-start.html)
+and invoke Image Customizer:
 
 ``` bash
 pushd $HOME/staging
@@ -123,7 +147,9 @@ popd
 
 Use the tool of your choice to create bootable media from the Servicing ISO.
 
-Insert the bootable media (USB, CD, etc.) into your target system and power it on. Make sure to configure it to boot from the media first or select the media during the subsequent boot using the appropriate key (often F12).
+Insert the bootable media (USB, CD, etc.) into your target system and power it
+on. Make sure to configure it to boot from the media first or select the media
+during the subsequent boot using the appropriate key (often F12).
 
 The system will boot into the Azure Linux installer environment.
 
@@ -136,7 +162,9 @@ Welcome to Microsoft Azure Linux 3.0!
 installer-iso-mos login:
 ```
 
-You're now in the installer environment. Since we removed the automatic installation service when creating the ISO, Trident will not run automatically, allowing us to configure and execute the installation manually.
+You're now in the installer environment. Since we removed the automatic
+installation service when creating the ISO, Trident will not run automatically,
+allowing us to configure and execute the installation manually.
 
 ### Step 5: Configure the installation
 
@@ -146,9 +174,11 @@ First, let's identify the target disk for installation:
 lsblk
 ```
 
-Look for the main disk where you want to install Azure Linux (e.g. `/dev/sda`, `/dev/vda`, `/dev/nvme0n1`) with at least 16GB of space.
+Look for the main disk where you want to install Azure Linux (e.g. `/dev/sda`,
+`/dev/vda`, `/dev/nvme0n1`) with at least 16GB of space.
 
-If your selected disk is not `/dev/sda`, update the Trident Host Configuration to specify the correct disk device:
+If your selected disk is not `/dev/sda`, update the Trident Host Configuration
+to specify the correct disk device:
 
 ```bash
 # Set your disk device (replace with your actual disk from lsblk output)
@@ -164,7 +194,8 @@ You can verify the change was applied correctly:
 cat /etc/trident/config.yaml
 ```
 
-This will show the complete Host Configuration. Look for the `device:` line under the `storage` section to confirm your disk path is correct.
+This will show the complete Host Configuration. Look for the `device:` line
+under the `storage` section to confirm your disk path is correct.
 
 Now start the installation:
 
@@ -172,7 +203,9 @@ Now start the installation:
 trident install
 ```
 
-Watch as Trident performs the automated installation process. After 2-3 minutes, you will see the installation completed successfully and the system will reboot automatically.
+Watch as Trident performs the automated installation process. After 2-3 minutes,
+you will see the installation completed successfully and the system will reboot
+automatically.
 
 ### Step 6: Boot into Azure Linux
 
@@ -188,7 +221,13 @@ testimage login:
 
 Now you can explore your new Azure Linux system.
 
-The system presented a login prompt, but default configuration uses SSH key-only authentication (no password login available). To explore the system, you can use the configured SSH access given to the `tutorial-user` (as shown in the `users` section of the Host Configuration at [Step 5: Create Trident Host Configuration for Install](./Building-AB-Update-Images-for-Install-and-Update.md#step-5-create-trident-host-configuration-for-install)). You can connect from your host machine as follows:
+The system presented a login prompt, but default configuration uses SSH key-only
+authentication (no password login available). To explore the system, you can use
+the configured SSH access given to the `tutorial-user` (as shown in the `users`
+section of the Host Configuration at [Step 5: Create Trident Host Configuration
+for
+Install](./Building-AB-Update-Images-for-Install-and-Update.md#step-5-create-trident-host-configuration-for-install)).
+You can connect from your host machine as follows:
 
 ```bash
 # From your host machine:
@@ -197,7 +236,8 @@ ssh tutorial-user@<system-ip-address>
 
 ## Appendix: Virtual Machine Setup
 
-For testing purposes, you can use virtual machines to experience Trident's clean install process. Choose the section that matches your system:
+For testing purposes, you can use virtual machines to experience Trident's clean
+install process. Choose the section that matches your system:
 
 ### Option A: Linux with libvirt/KVM
 
@@ -298,8 +338,10 @@ sudo rm /tmp/azure-linux-vm.qcow2 /tmp/trident-installer.iso
 
 **Start the VM:**
 
-In Hyper-V Manager, right-click your VM and select **Connect**, then click **Start**.
+In Hyper-V Manager, right-click your VM and select **Connect**, then click
+**Start**.
 
 **Cleanup when finished:**
 
-In Hyper-V Manager, right-click the VM and select **Delete** to remove it completely.
+In Hyper-V Manager, right-click the VM and select **Delete** to remove it
+completely.

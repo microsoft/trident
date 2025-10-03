@@ -24,9 +24,9 @@ type PhoneHomeResult struct {
 
 func (result *PhoneHomeResult) Log() {
 	if result.State == PhoneHomeResultFailure {
-		log.Errorf("Trident failed to deploy Runtime OS with error:\n%s", result.Message)
+		log.Errorf("Trident failed to deploy target OS with error:\n%s", result.Message)
 	} else if result.State == PhoneHomeResultSuccess {
-		log.Info("Trident successfully deployed Runtime OS")
+		log.Info("Trident successfully deployed target OS")
 	} else if result.State == PhoneHomeResultError {
 		log.Errorf("Logstream had an error:\n%s", result.Message)
 	}

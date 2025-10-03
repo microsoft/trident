@@ -16,7 +16,17 @@ The ID of the disk partition or software RAID array to encrypt.
 
 This parameter is required. It must be unique among the list of encrypted volumes.
 
-If it refers to a disk partition, it must be of a supported type. Supported types are all but the following blocked partition types: - `esp` - `root` - `root-verity` - `usr-verity` - `home`
+If it refers to a disk partition, it must be of a supported type. Supported types are all but the following blocked partition types:
+
+- `esp`
+
+- `root`
+
+- `root-verity`
+
+- `usr-verity`
+
+- `home`
 
 If it refers to a software RAID array, the first disk partition of the software RAID array must be of a supported type.
 
@@ -39,7 +49,7 @@ This parameter is required. It must be a valid file name and unique among all en
 
 The ID of the LUKS-encrypted volume to create.
 
-This parameter is required. It must be non-empty and unique among the IDs of all block devices in the host configuration. This includes the IDs of all disk partitions, encrypted volumes, software RAID arrays, and A/B volume pairs.
+This parameter is required. It must be non-empty and unique among the IDs of all block devices in the Host Configuration. This includes the IDs of all disk partitions, encrypted volumes, software RAID arrays, and A/B volume pairs.
 
 | Characteristic | Value             |
 | -------------- | ----------------- |
