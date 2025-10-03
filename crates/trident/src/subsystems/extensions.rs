@@ -5,17 +5,23 @@ use std::{
 };
 
 use anyhow::{Context, Error};
-use log::debug;
+use chrono::Utc;
+use log::{debug, trace};
 
 use trident_api::{
     error::{InternalError, ReportError, TridentError},
     status::ServicingType,
 };
 
-use crate::engine::{extensions::ExtensionType, EngineContext, Subsystem};
+use crate::engine::{
+    extensions::{ExtensionData, ExtensionType},
+    EngineContext, Subsystem,
+};
 
 const SYSEXT_DIRECTORY_PATH: &str = "/var/lib/extensions/";
 const CONFEXT_DIRECTORY_PATH: &str = "/var/lib/confexts/";
+const PREV_EXT_STATE_DIRECTORY: &str = "/var/lib/trident-extensions";
+const SNAPSHOT_DIRECTORY_PREFIX: &str = "extensions_";
 
 #[derive(Default)]
 pub struct ExtensionsSubsystem;
@@ -38,6 +44,12 @@ impl Subsystem for ExtensionsSubsystem {
         let sysext_dir_path = mount_path.join(SYSEXT_DIRECTORY_PATH);
         let confext_dir_path = mount_path.join(CONFEXT_DIRECTORY_PATH);
 
+        // Snapshot existing extension image files to enable rolling back to a
+        // previous state.
+        retain_previous_ext_state(&ctx.extensions_old)
+            .structured(InternalError::Internal("Failed to back up"))?;
+
+        // Set up new sysexts and confexts in the appropriate directories.
         set_up_extensions(ctx, ExtensionType::Sysext, sysext_dir_path, mount_path)
             .structured(InternalError::Internal("Failed to set up sysexts"))?;
         set_up_extensions(ctx, ExtensionType::Confext, confext_dir_path, mount_path)
@@ -45,6 +57,38 @@ impl Subsystem for ExtensionsSubsystem {
 
         Ok(())
     }
+}
+
+/// Copy all current extension images from current locations to snapshot
+/// directory inside /var/lib/trident-extensions.
+fn retain_previous_ext_state(current_exts: &Vec<ExtensionData>) -> Result<(), Error> {
+    // Current snapshot of extension images should be within a directory named after current time
+    let curr_time = Utc::now().format("%Y-%m-%d_%H:%M:%S").to_string();
+    let snapshot_dir = format!("{PREV_EXT_STATE_DIRECTORY}/{SNAPSHOT_DIRECTORY_PREFIX}{curr_time}");
+
+    // Ensure that `/var/lib/trident-extensions/extensions_<time>` exists
+    trace!("Creating snapshot directory at '{snapshot_dir}'");
+    fs::create_dir_all(&snapshot_dir)
+        .with_context(|| format!("Failed to create directory path '{snapshot_dir}'"))?;
+
+    for ext in current_exts {
+        let file_name = ext.location.file_name().with_context(|| {
+            format!(
+                "Failed to get file name from file location '{}'",
+                ext.location.display()
+            )
+        })?;
+        let snapshot_file_path = Path::new(&snapshot_dir).join(file_name);
+        fs::copy(&ext.location, &snapshot_file_path).with_context(|| {
+            format!(
+                "Failed to copy extension '{}' to '{}'",
+                ext.location.display(),
+                snapshot_file_path.display()
+            )
+        })?;
+    }
+
+    Ok(())
 }
 
 fn set_up_extensions(
@@ -73,16 +117,17 @@ fn set_up_extensions(
     let mut ids_to_remove: Vec<_> = curr_exts_ids.difference(&new_exts_ids).collect();
     let mut ids_to_keep_as_is: Vec<&String> = Vec::new();
 
+    // Identify extension images that should be updated.
     for ext_id in new_exts_ids.intersection(&curr_exts_ids) {
         // Check hash
         let curr_hash = curr_exts_hashmap
             .get(*ext_id)
-            .context("Failed to find extension")?
+            .context(format!("Failed to find extension id '{ext_id}'"))? // We should never error here
             .sha384
             .clone();
         let new_hash = new_exts_hashmap
             .get(*ext_id)
-            .context("Failed to find extension")?
+            .context(format!("Failed to find extension id '{ext_id}'"))? // We should never error here
             .sha384
             .clone();
 
@@ -112,24 +157,32 @@ fn set_up_extensions(
 
     // Remove extensions that should be removed
     for ext in extensions_to_remove {
-        fs::remove_file(&ext.location).context("Failed to delete file")?;
+        fs::remove_file(&ext.location)
+            .with_context(|| format!("Failed to delete file at '{}'", ext.location.display()))?;
     }
 
     // Add new extensions that should be added
-    fs::create_dir_all(ext_dir_path).context("Failed to create sysext dir path")?;
+    fs::create_dir_all(&ext_dir_path).with_context(|| {
+        format!(
+            "Failed to create extension image directory path '{}'",
+            ext_dir_path.display()
+        )
+    })?;
     for ext in extensions_to_add {
         let curr_temp_location = ext
             .temp_location
             .clone()
-            .context("Failed to find temporary location of extension")?;
+            .context("Failed to find temporary location of extension image")?;
         let new_location = mount_path.join(&ext.location);
         fs::copy(&curr_temp_location, &new_location).context(format!(
-            "Failed to copy extension from {} to {}",
+            "Failed to copy extension from '{}' to '{}'",
             curr_temp_location.display(),
             new_location.display()
         ))?;
     }
 
+    // If the servicing OS is not the same as the target OS, copy over
+    // extensions images.
     if ctx.servicing_type != ServicingType::HotPatch {
         for ext in extensions_to_keep_as_is {
             let new_location = mount_path.join(&ext.location);
