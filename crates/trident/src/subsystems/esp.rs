@@ -239,6 +239,17 @@ fn copy_file_artifacts(
                         .join(ESP_RELATIVE_MOUNT_POINT_PATH)
                         .join(ESP_EFI_DIRECTORY)
                         .join(EFI_DEFAULT_BIN_DIRECTORY);
+                    debug!(
+                        "{:?} detected. Copying boot files from {} to {}: [{}]",
+                        ctx.servicing_type,
+                        active_boot_esp_dir_path.display(),
+                        uefi_fallback_path.display(),
+                        boot_files
+                            .iter()
+                            .map(|p| p.display().to_string())
+                            .collect::<Vec<String>>()
+                            .join(", ")
+                    );
                     copy_boot_files(
                         &active_boot_esp_dir_path,
                         &uefi_fallback_path,
@@ -266,6 +277,12 @@ fn copy_file_artifacts(
                         .join(ESP_RELATIVE_MOUNT_POINT_PATH)
                         .join(ESP_EFI_DIRECTORY)
                         .join(EFI_DEFAULT_BIN_DIRECTORY);
+                    debug!(
+                        "{:?} detected. Copying boot files from {} to {}.",
+                        ctx.servicing_type,
+                        temp_mount_dir.display(),
+                        uefi_fallback_path.display()
+                    );
                     copy_boot_files(temp_mount_dir, &uefi_fallback_path, boot_files.clone())
                         .context(format!(
                             "Failed to copy boot files from directory {} to directory {}",
