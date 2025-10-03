@@ -46,14 +46,14 @@ Find the desired adoption partitions on your host, either by:
              matchUuid: 12345678-abcd-1234-abcd-123456789abc
    ```
 
-  To adopt the filesystem on the above partition:
+   To adopt the filesystem on the above partition:
 
-  ``` yaml
-  filesystems:
-    - deviceId: disk-with-partitions-to-adopt
-      source: adopted
-      mountPoint: /adopted-filesystem
-  ```
+   ``` yaml
+   filesystems:
+     - deviceId: disk-with-partitions-to-adopt
+       source: adopted
+       mountPoint: /adopted-filesystem
+   ```
 
    With this information, Trident will ensure that these partitions are
    preserved in the target OS.
