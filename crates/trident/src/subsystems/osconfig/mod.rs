@@ -296,6 +296,7 @@ mod tests {
                     modules: vec![],
                     services: Services::default(),
                     kernel_command_line: KernelCommandLine::default(),
+                    uefi_fallback: None,
                 },
                 ..Default::default()
             },
