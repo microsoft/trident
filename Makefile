@@ -675,7 +675,6 @@ starter-configuration:
 	@echo "\033[33mCreated \033[36m$(TRIDENT_CONFIG)\033[33m. Please review and modify as needed! :)"
 	@echo "\033[33mDon't forget to add your SSH public key to the host configuration!"
 
-BASE_IMAGE_VERSION ?= 3.0.20250910-amd64
 artifacts/baremetal.vhdx:
 	@mkdir -p artifacts
 	@tests/images/testimages.py download-image baremetal
