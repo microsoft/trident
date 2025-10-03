@@ -22,6 +22,7 @@ use crate::{
     engine::boot::BootSubsystem,
     subsystems::{
         esp::EspSubsystem,
+        extensions::ExtensionsSubsystem,
         hooks::HooksSubsystem,
         initrd::InitrdSubsystem,
         management::ManagementSubsystem,
@@ -52,7 +53,7 @@ mod etc_overlay;
 pub(crate) mod install_index;
 
 pub(crate) use clean_install::{clean_install, finalize_clean_install};
-pub(crate) use context::{filesystem, EngineContext};
+pub(crate) use context::{extensions, filesystem, EngineContext};
 pub use newroot::NewrootMount;
 pub(crate) use update::{finalize_update, update};
 
@@ -115,6 +116,13 @@ lazy_static::lazy_static! {
         Box::<HooksSubsystem>::default(),
         Box::<InitrdSubsystem>::default(),
         Box::<SelinuxSubsystem>::default(),
+        Box::<ExtensionsSubsystem>::default(),
+    ]);
+}
+
+lazy_static::lazy_static! {
+    static ref SUBSYSTEMS_HOTPATCH: Mutex<Vec<Box<dyn Subsystem>>> = Mutex::new(vec![
+        Box::<ExtensionsSubsystem>::default(),
     ]);
 }
 

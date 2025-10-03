@@ -4,7 +4,7 @@ use log::{debug, info, warn};
 #[cfg(feature = "grpc-dangerous")]
 use tokio::sync::mpsc;
 
-use osutils::{chroot, container, path::join_relative};
+use osutils::{chroot, container, dependencies::Dependency, path::join_relative};
 use trident_api::{
     config::{HostConfiguration, Operations},
     constants::{
@@ -23,7 +23,7 @@ use crate::{
     engine::{
         self, bootentries, rollback,
         storage::{self, verity},
-        EngineContext, NewrootMount, SUBSYSTEMS,
+        EngineContext, NewrootMount, SUBSYSTEMS, SUBSYSTEMS_HOTPATCH,
     },
     monitor_metrics,
     osimage::OsImage,
@@ -46,7 +46,9 @@ pub(crate) fn update(
     info!("Starting update");
     let mut subsystems = SUBSYSTEMS.lock().unwrap();
 
-    if state.host_status().servicing_state == ServicingState::AbUpdateStaged {
+    if state.host_status().servicing_state == ServicingState::AbUpdateStaged
+        || state.host_status().servicing_state == ServicingState::HotPatchStaged
+    {
         // Need to re-set the Host Status in case another update has been previously staged
         debug!("Resetting A/B update state");
         state.with_host_status(|host_status| {
@@ -68,6 +70,8 @@ pub(crate) fn update(
         image: Some(image),
         storage_graph: engine::build_storage_graph(&host_config.storage)?, // Build storage graph
         filesystems: Vec::new(), // Will be populated after dynamic validation
+        extensions: Vec::new(), // May be populated before dynamic validation, given a change in 'extensions' config
+        extensions_old: Vec::new(), // May be populated before dynamic validation, given a change in 'extensions' config
     };
 
     // Before starting an update servicing, need to validate that the active volume is set
@@ -99,10 +103,18 @@ pub(crate) fn update(
         servicing_type
     );
 
+    // Only a subset of subsystems should be run for a Hot-Patch update.
+    if servicing_type == ServicingType::HotPatch {
+        subsystems = SUBSYSTEMS_HOTPATCH.lock().unwrap();
+    }
+
     ctx.servicing_type = servicing_type;
 
     // Execute pre-servicing scripts
     HooksSubsystem::default().execute_pre_servicing_scripts(&ctx)?;
+
+    // Extensions must be populated before dynamic validation
+    ctx.populate_extensions()?;
 
     engine::validate_host_config(&subsystems, &ctx)?;
 
@@ -115,15 +127,27 @@ pub(crate) fn update(
         servicing_state = format!("{:?}", state.host_status().servicing_state),
     );
 
-    // Stage update
-    stage_update(
-        &mut subsystems,
-        ctx,
-        state,
-        #[cfg(feature = "grpc-dangerous")]
-        sender,
-    )
-    .message("Failed to stage update")?;
+    if servicing_type == ServicingType::HotPatch {
+        // Stage hot-patch
+        stage_hotpatch(
+            &mut subsystems,
+            &mut ctx,
+            state,
+            #[cfg(feature = "grpc-dangerous")]
+            sender,
+        )
+        .message("Failed to stage hot-patch update")?;
+    } else {
+        // Stage update
+        stage_update(
+            &mut subsystems,
+            ctx,
+            state,
+            #[cfg(feature = "grpc-dangerous")]
+            sender,
+        )
+        .message("Failed to stage A/B update")?;
+    }
 
     match servicing_type {
         ServicingType::UpdateAndReboot | ServicingType::AbUpdate => {
@@ -150,21 +174,26 @@ pub(crate) fn update(
             }
         }
         ServicingType::NormalUpdate | ServicingType::HotPatch => {
-            state.with_host_status(|host_status| {
-                host_status.servicing_state = ServicingState::Provisioned;
-            })?;
-            #[cfg(feature = "grpc-dangerous")]
-            grpc::send_host_status_state(sender, state)?;
+            if !allowed_operations.has_finalize() {
+                info!("Finalizing of hot-patch update not requested");
 
-            // Persist the Trident background log and metrics file to the updated target OS
-            engine::persist_background_log_and_metrics(
-                &state.host_status().spec.trident.datastore_path,
-                None,
-                state.host_status().servicing_state,
-            );
-
-            info!("Update of servicing type '{:?}' succeeded", servicing_type);
-            Ok(ExitKind::Done)
+                // Persist the Trident background log and metrics file to the updated target OS
+                engine::persist_background_log_and_metrics(
+                    &state.host_status().spec.trident.datastore_path,
+                    None,
+                    state.host_status().servicing_state,
+                );
+                Ok(ExitKind::Done)
+            } else {
+                finalize_hotpatch(
+                    state,
+                    servicing_type,
+                    Some(update_start_time),
+                    #[cfg(feature = "grpc-dangerous")]
+                    sender,
+                )
+                .message("Failed to finalize hot-patch update")
+            }
         }
         ServicingType::CleanInstall => Err(TridentError::new(
             InvalidInputError::CleanInstallOnProvisionedHost,
@@ -318,6 +347,8 @@ pub(crate) fn finalize_update(
         storage_graph: engine::build_storage_graph(&state.host_status().spec.storage)?, // Build storage graph
         filesystems: Vec::new(), // Left empty since context does not have image
         is_uki: None,
+        extensions: Vec::new(), // TODO(15251): Enable extension servicing in clean install & A/B update
+        extensions_old: Vec::new(), // TODO(15251): Enable extension servicing in clean install & A/B update
     };
 
     let esp_path = if container::is_running_in_container()
@@ -369,4 +400,129 @@ pub(crate) fn finalize_update(
         );
         Ok(ExitKind::Done)
     }
+}
+
+/// Stages a hot-patch. Takes in 3-4 arguments:
+/// - subsystems: A mutable reference to the list of subsystems.
+/// - ctx: EngineContext.
+/// - state: A mutable reference to the DataStore.
+/// - sender: Optional mutable reference to the gRPC sender.
+#[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", ctx.servicing_type)))]
+fn stage_hotpatch(
+    subsystems: &mut [Box<dyn Subsystem>],
+    ctx: &mut EngineContext,
+    state: &mut DataStore,
+    #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
+        mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
+    >,
+) -> Result<(), TridentError> {
+    // Best effort to measure memory, CPU, and network usage during execution
+    let monitor = match monitor_metrics::MonitorMetrics::new("stage_hotpatch_update".to_string()) {
+        Ok(monitor) => Some(monitor),
+        Err(e) => {
+            warn!("Failed to create metrics monitor: {e:?}");
+            None
+        }
+    };
+
+    engine::prepare(subsystems, ctx)?;
+    engine::provision(subsystems, ctx, &PathBuf::from("/"))?;
+    engine::configure(subsystems, ctx)?;
+
+    ctx.finalize_extension_locations()?;
+
+    // At this point, deployment has been staged, so update servicing state
+    debug!(
+        "Updating host's servicing state to '{:?}'",
+        ServicingState::HotPatchStaged
+    );
+    state.with_host_status(|hs| {
+        *hs = HostStatus {
+            spec: ctx.spec.clone(),
+            spec_old: ctx.spec_old.clone(),
+            servicing_state: ServicingState::HotPatchStaged,
+            ab_active_volume: ctx.ab_active_volume,
+            partition_paths: ctx.partition_paths.clone(),
+            disk_uuids: ctx.disk_uuids.clone(),
+            install_index: ctx.install_index,
+            last_error: None,
+            is_management_os: false,
+        };
+    })?;
+    #[cfg(feature = "grpc-dangerous")]
+    grpc::send_host_status_state(sender, state)?;
+
+    if let Some(mut monitor) = monitor {
+        // If the monitor was created successfully, stop it after execution
+        if let Err(e) = monitor.stop() {
+            warn!("Failed to stop metrics monitor: {e:?}");
+        }
+    }
+
+    info!("Staging of update '{:?}' succeeded", ctx.servicing_type);
+
+    Ok(())
+}
+
+/// Finalizes an update. Takes in 2 arguments:
+/// - state: A mutable reference to the DataStore.
+/// - sender: Optional mutable reference to the gRPC sender.
+#[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", servicing_type)))]
+pub(crate) fn finalize_hotpatch(
+    state: &mut DataStore,
+    servicing_type: ServicingType,
+    update_start_time: Option<Instant>,
+    #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
+        mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
+    >,
+) -> Result<ExitKind, TridentError> {
+    info!("Finalizing hot-patch update");
+
+    if servicing_type != ServicingType::HotPatch {
+        return Err(TridentError::internal(
+            "Unimplemented servicing type for finalize",
+        ));
+    }
+
+    Dependency::SystemdSysext
+        .cmd()
+        .arg("refresh")
+        .run_and_check()
+        .structured(InternalError::Internal(
+            "Failed to run `systemd-sysext refresh`",
+        ))?;
+    Dependency::SystemdConfext
+        .cmd()
+        .arg("refresh")
+        .run_and_check()
+        .structured(InternalError::Internal(
+            "Failed to run `systemd-confext refresh`",
+        ))?;
+
+    debug!(
+        "Updating host's servicing state to '{:?}'",
+        ServicingState::Provisioned
+    );
+    state.with_host_status(|status| status.servicing_state = ServicingState::Provisioned)?;
+    #[cfg(feature = "grpc-dangerous")]
+    grpc::send_host_status_state(sender, state)?;
+    state.close();
+
+    // Metric for update time in seconds
+    if let Some(start_time) = update_start_time {
+        tracing::info!(
+            metric_name = "update_time_secs",
+            value = start_time.elapsed().as_secs_f64(),
+            servicing_type = format!("{:?}", servicing_type)
+        );
+    }
+
+    // Persist the Trident background log and metrics file to the updated runtime OS
+    engine::persist_background_log_and_metrics(
+        &state.host_status().spec.trident.datastore_path,
+        None,
+        state.host_status().servicing_state,
+    );
+
+    Ok(ExitKind::Done)
 }
