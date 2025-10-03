@@ -197,7 +197,7 @@ impl Os {
                 );
             }
             if let Some(location) = &ext.location {
-                if !ext_img_locations.insert(&ext.location) {
+                if !ext_img_locations.insert(location) {
                     return Err(
                         HostConfigurationStaticValidationError::DuplicateExtensionImageLocation {
                             location: location.display().to_string(),
