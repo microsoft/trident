@@ -1300,7 +1300,7 @@
           }
         },
         "id": {
-          "description": "A unique identifier for the RAID array.\n\nThis is a user-defined string that links the RAID array to the `filesystems` config in the configuration. The identifier must be unique across devices of all types in the host configuration.",
+          "description": "A unique identifier for the RAID array.\n\nThis is a user-defined string that links the RAID array to the `filesystems` config in the Host Configuration. The identifier must be unique across devices of all types in the Host Configuration.",
           "type": "string",
           "format": "Block Device ID"
         },
