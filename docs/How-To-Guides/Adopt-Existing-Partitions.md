@@ -28,7 +28,7 @@ Find the desired adoption partitions on your host, either by:
 ### Step 2: Add `adoptedPartitions` Configuration
 
 Inside the `storage` section of your Trident Host Configuration,
-add a new [adoptedPartitions](../Reference/Host-Configuration/API-Reference/AdoptedPartition.md)
+add a new [`adoptedPartitions`](../Reference/Host-Configuration/API-Reference/AdoptedPartition.md)
 section to the `disk` section containing the partitions you want
 to adopt. This section should include the partition IDs and their
 corresponding uniquely identifying labels _or_ UUIDs.
