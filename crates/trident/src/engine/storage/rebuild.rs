@@ -321,7 +321,7 @@ fn validate_raid_recovery(
             .iter()
             .find(|d| d.id == *disk_id)
             .context(format!(
-                "Failed to find configuration for disk '{disk_id}' in host config"
+                "Failed to find configuration for disk '{disk_id}' in Host Configuration"
             ))?;
 
         disks_to_rebuild_partitions.extend(disk.partitions.iter().map(|p| p.id.clone()));
@@ -346,8 +346,7 @@ fn validate_raid_recovery(
     Ok(())
 }
 
-/// Gets the RAID disks to rebuild map i.e. a map of RAID id and the associated
-/// disks to rebuild.
+/// Gets the RAID disks to rebuild map i.e. a map of RAID ID and the associated disks to rebuild.
 fn get_raid_disks_to_rebuild_map(
     host_config: &HostConfiguration,
     disks_to_rebuild: &[BlockDeviceId],
@@ -366,7 +365,7 @@ fn get_raid_disks_to_rebuild_map(
                 .iter()
                 .find(|d| d.id == *disk)
                 .context(format!(
-                    "Failed to find configuration for disk '{disk}' in host config"
+                    "Failed to find configuration for disk '{disk}' in Host Configuration"
                 ))?
                 .partitions
                 .iter()
@@ -384,10 +383,9 @@ fn get_raid_disks_to_rebuild_map(
     Ok(raid_disks_to_rebuild_map)
 }
 
-/// Validates the difference between the Host Configuration used to trigger a
-/// rebuild and the initial host onfiguration that is saved as Host Status spec.
-/// Currently, it only checks if the Host Status specification and Host
-/// Configuration are identical.
+/// Validates the difference between the Host Configuration used to trigger a rebuild and the
+/// initial Host Configuration that is saved as Host Status spec. Currently, it only checks if the
+/// Host Status specification and Host Configuration are identical.
 fn validate_host_config_delta(
     host_config: &HostConfiguration,
     host_status_spec: &HostConfiguration,
@@ -527,7 +525,7 @@ mod tests {
             ..Default::default()
         });
 
-        assert_eq!(validate_host_config_delta(&host_config, &host_status.spec).unwrap_err().to_string(), 
+        assert_eq!(validate_host_config_delta(&host_config, &host_status.spec).unwrap_err().to_string(),
         "We do not support updating the Host Configuration for the Trident rebuild-raid process. \
         The configuration must match the original Host Configuration used during host provisioning.");
     }
