@@ -125,7 +125,7 @@ func cleanupNamespace(namespaceRaw string) error {
 			continue
 		}
 
-		log.Infof("Tearing down domain %s", dom.Name)
+		log.Debugf("Tearing down domain %s", dom.Name)
 		err = rc.teardownDomain(dom)
 		if err != nil {
 			return fmt.Errorf("teardown domain %s: %w", dom.Name, err)
@@ -143,7 +143,7 @@ func cleanupNamespace(namespaceRaw string) error {
 			continue
 		}
 
-		log.Infof("Tearing down network %s", nw.Name)
+		log.Debugf("Tearing down network %s", nw.Name)
 		err = rc.teardownNetwork(nw)
 		if err != nil {
 			return fmt.Errorf("teardown network %s: %w", nw.Name, err)
@@ -161,7 +161,7 @@ func cleanupNamespace(namespaceRaw string) error {
 			continue
 		}
 
-		log.Infof("Tearing down storage pool %s", pool.Name)
+		log.Debugf("Tearing down storage pool %s", pool.Name)
 		err = rc.teardownStoragePool(pool)
 		if err != nil {
 			return fmt.Errorf("teardown storage pool %s: %w", pool.Name, err)
@@ -412,6 +412,20 @@ func (rc *virtDeployResourceConfig) teardownStoragePoolByName(name string) error
 }
 
 func (rc *virtDeployResourceConfig) teardownStoragePool(lvPool libvirt.StoragePool) error {
+
+	vols, _, err := rc.lv.StoragePoolListAllVolumes(lvPool, 1, 0)
+	if err != nil {
+		return fmt.Errorf("list volumes in storage pool %s: %w", lvPool.Name, err)
+	}
+
+	for _, vol := range vols {
+		log.Debugf("Tearing down volume %s in storage pool %s", vol.Name, lvPool.Name)
+		err = rc.teardownVolume(lvPool, vol.Name)
+		if err != nil {
+			return fmt.Errorf("teardown volume %s in pool %s: %w", vol.Name, lvPool.Name, err)
+		}
+	}
+
 	active, err := rc.lv.StoragePoolIsActive(lvPool)
 	if err != nil {
 		return fmt.Errorf("check if storage pool %s is active: %w", lvPool.Name, err)
