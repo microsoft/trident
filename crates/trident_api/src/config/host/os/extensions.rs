@@ -28,12 +28,14 @@ pub struct Extension {
 
     /// The absolute path of the extension image in the target OS.
     ///
-    /// Trident currently supports placing sysexts in:
+    /// By default, sysexts are placed in /var/lib/extensions/. Trident also
+    /// supports placing sysexts in:
     /// - /etc/extensions/
     /// - /var/lib/extensions/
     /// - /.extra/sysext
     ///
-    /// Trident supports placing confexts in:
+    /// By default, confexts are placed in /var/lib/confexts/. Trident also
+    /// supports placing confexts in:
     /// - /var/lib/confexts/
     /// - /usr/lib/confexts/
     /// - /usr/local/lib/confexts/
