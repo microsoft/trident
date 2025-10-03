@@ -679,8 +679,9 @@ BASE_IMAGE_VERSION ?= 3.0.20250910-amd64
 artifacts/baremetal.vhdx:
 	@mkdir -p artifacts
 	@tempdir=$$(mktemp -d) && \
-		cd $$tempdir && \
-		oras pull mcr.microsoft.com/azurelinux/3.0/image/baremetal:$(BASE_IMAGE_VERSION)
+		oras pull mcr.microsoft.com/azurelinux/3.0/image/baremetal:$(BASE_IMAGE_VERSION) --output $$tempdir && \
+		mv $$tempdir/*.vhdx artifacts/baremetal.vhdx && \
+		rm -rf $$tempdir
 
 MIC_PACKAGE_NAME ?= imagecustomizer
 MIC_PACKAGE_VERSION ?= *
