@@ -1,6 +1,10 @@
 
 # Set Up Redundant ESP
 
+ESP redundancy might be needed to protect against disk failures and
+ensure that the system remains bootable even if one boot partition
+becomes unavailable, increasing overall reliability and uptime.
+
 This guide shows you how to configure an operating system with ESP
 redundancy. Follow the steps below to create a Trident Host
 Configuration that configures ESP on a RAID volume.
@@ -65,3 +69,7 @@ storage:
         path: /boot/efi
         options: umask=0077
 ```
+
+With this configuration, Trident will set up the ESP on both disk
+partitions. When the machine boots, if the first disk partition has
+been corrupted or is invalid, the second will be used.
