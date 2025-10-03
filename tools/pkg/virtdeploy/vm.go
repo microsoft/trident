@@ -33,7 +33,7 @@ func (vm *VirtDeployVM) asXml(network *virtDeployNetwork, nvramPool storagePool)
 					Controller: new(uint),
 					Bus:        new(uint),
 					Target:     new(uint),
-					Unit:       ref.Of(uint(i)),
+					Unit:       ref.Of(uint(i + 1)),
 				},
 			},
 		})
@@ -51,7 +51,7 @@ func (vm *VirtDeployVM) asXml(network *virtDeployNetwork, nvramPool storagePool)
 					Controller: ref.Of(uint(1)),
 					Bus:        new(uint),
 					Target:     new(uint),
-					Unit:       ref.Of(uint(i)),
+					Unit:       ref.Of(uint(i + 1)),
 				},
 			},
 		}
