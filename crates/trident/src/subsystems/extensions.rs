@@ -41,19 +41,23 @@ impl Subsystem for ExtensionsSubsystem {
     }
 
     fn validate_host_config(&self, ctx: &EngineContext) -> Result<(), TridentError> {
-        // Ensure that the filename matches the intended final location. This
-        // checks the validity of any user-provided locations.
+        // Ensure the validity of the intended final location. In particular,
+        // this checks the validity of any user-provided locations.
         for ext in &ctx.extensions {
-            let final_file_name = ext
+            // Get the file stem.
+            let file_stem = ext
                 .location
-                .file_name()
+                .file_stem()
                 .structured(InvalidInputError::from(
                     HostConfigurationDynamicValidationError::InvalidExtensionImagePath {
                         path: ext.location.display().to_string(),
                         ext_type: ext.ext_type.to_string(),
                     },
                 ))?;
-            if final_file_name != ext.name.as_str() {
+            // Ensure that file stem is the same as the extension's name, i.e.
+            // the file extension of the sysext or confext's extension-release
+            // file.
+            if file_stem != ext.name.as_str() {
                 return Err(TridentError::new(InvalidInputError::from(
                     HostConfigurationDynamicValidationError::InvalidExtensionImagePath {
                         path: ext.location.display().to_string(),
@@ -61,6 +65,30 @@ impl Subsystem for ExtensionsSubsystem {
                     },
                 )));
             }
+
+            // Get the file suffix.
+            let suffix = ext
+                .location
+                .extension()
+                .and_then(|s| s.to_str())
+                .structured(InvalidInputError::from(
+                    HostConfigurationDynamicValidationError::InvalidExtensionImagePath {
+                        path: ext.location.display().to_string(),
+                        ext_type: ext.ext_type.to_string(),
+                    },
+                ))?;
+            // Ensure that file name ends with '.raw' suffix.
+            if suffix != "raw" {
+                return Err(TridentError::new(InvalidInputError::from(
+                    HostConfigurationDynamicValidationError::InvalidExtensionImagePath {
+                        path: ext.location.display().to_string(),
+                        ext_type: ext.ext_type.to_string(),
+                    },
+                )));
+            }
+
+            // TODO: ensure that the provided directory path is a valid path for
+            // the sysext or confext.
         }
 
         Ok(())

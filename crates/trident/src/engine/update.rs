@@ -70,8 +70,8 @@ pub(crate) fn update(
         image: Some(image),
         storage_graph: engine::build_storage_graph(&host_config.storage)?, // Build storage graph
         filesystems: Vec::new(), // Will be populated after dynamic validation
-        extensions: Vec::new(), // May be populated after dynamic validation, given a change in 'extensions' config
-        extensions_old: Vec::new(), // May be populated after dynamic validation, given a change in 'extensions' config
+        extensions: Vec::new(), // May be populated before dynamic validation, given a change in 'extensions' config
+        extensions_old: Vec::new(), // May be populated before dynamic validation, given a change in 'extensions' config
     };
 
     // Before starting an update servicing, need to validate that the active volume is set
@@ -113,10 +113,12 @@ pub(crate) fn update(
     // Execute pre-servicing scripts
     HooksSubsystem::default().execute_pre_servicing_scripts(&ctx)?;
 
+    // Extensions must be populated before dynamic validation
+    ctx.populate_extensions()?;
+
     engine::validate_host_config(&subsystems, &ctx)?;
 
     ctx.populate_filesystems()?;
-    ctx.populate_extensions()?;
 
     let update_start_time = Instant::now();
     tracing::info!(
