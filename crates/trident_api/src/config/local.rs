@@ -7,7 +7,7 @@ use strum_macros::EnumIter;
 
 use super::host::HostConfiguration;
 
-/// HostConfigurationSource is the source of the host configuration.
+/// HostConfigurationSource is the source of the Host Configuration.
 /// Used internally by Trident.
 #[derive(Debug)]
 pub enum HostConfigurationSource {

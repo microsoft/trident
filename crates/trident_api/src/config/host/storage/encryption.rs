@@ -144,7 +144,7 @@ pub struct EncryptedVolume {
     /// The ID of the LUKS-encrypted volume to create.
     ///
     /// This parameter is required. It must be non-empty and unique among the IDs of all block
-    /// devices in the host configuration. This includes the IDs of all disk partitions, encrypted
+    /// devices in the Host Configuration. This includes the IDs of all disk partitions, encrypted
     /// volumes, software RAID arrays, and A/B volume pairs.
     #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
     pub id: BlockDeviceId,

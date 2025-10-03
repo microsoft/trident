@@ -1,5 +1,5 @@
 
-# Set Up Root Verity
+# Set Up Root-Verity
 
 ## Goals
 
@@ -71,7 +71,7 @@ cp -r bin/RPMS $HOME/staging
 
 To create a root-verity volume, there are a few Image Customizer configuration
 sections that are important. These sections are detailed in the
-[Root Verity explanation](../Explanation/Root-Verity.md#use-image-customizer-to-create-a-cosi-file).
+[docs on root-verity](../Explanation/Root-Verity.md#use-image-customizer-to-create-a-cosi-file).
 Putting them together and following the Image Customizer
 [documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/README.html),
 the full configuration `$HOME/staging/ic-config.yaml` can look like this:
@@ -203,9 +203,9 @@ popd
 ### Step 5: Trident Host Configuration
 
 Create a Trident Host Configuration file that aligns to the Image Customizer
-COSI that was created in step 4. The esp, root, root-hash, and var
-partitions/filesystems should reflect what was specified in the Image Customizer
-configuration.
+COSI that was created in step 4. The `esp`, `root`, `root-hash`, and `var`
+partitions/filesystems should reflect what was specified in the Image
+Customizer configuration.
 
 Some things to note that are defined in the Host Configuration below:
 
@@ -218,7 +218,7 @@ Some things to note that are defined in the Host Configuration below:
 
 The remainder of the Trident Host Configuration file describes things like where
 to find the COSI file (can be a local path, an HTTP url, or an OCI url) and what
-the disk device path is (in this case, /dev/sda):
+the disk device path is (in this case, `/dev/sda`):
 
 ```yaml
 image:
@@ -296,5 +296,5 @@ os:
 ## Troubleshooting
 
 With root-verity, configurations can be difficult as the configuration files are
-often on the root partition.  In the future, this section will be expanded to
+often on the root partition. In the future, this section will be expanded to
 include learnings and hints for how to navigate these challenges.

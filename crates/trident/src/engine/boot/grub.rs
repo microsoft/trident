@@ -132,7 +132,7 @@ fn update_grub_config_azl3(
         updated_grub_config
     );
 
-    // If selinux is provided in engine context, overwrite selinux in GRUB config
+    // If SELinux is provided in engine context, overwrite SELinux in GRUB config
     let selinux_config = ctx
         .spec
         .os
@@ -140,7 +140,7 @@ fn update_grub_config_azl3(
         .mode
         .map(|mode| Selinux { mode: Some(mode) });
 
-    // If root verity is provided in engine context, overwrite it in GRUB config
+    // If root-verity is provided in engine context, overwrite it in GRUB config
     let root_device_id = ctx
         .spec
         .storage

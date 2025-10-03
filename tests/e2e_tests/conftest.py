@@ -34,7 +34,7 @@ def pytest_addoption(parser):
         action="store",
         type=str,
         required=True,
-        help="Provide the path to the directory with the host configuration and compatible tests.",
+        help="Provide the path to the directory with the Host Configuration and compatible tests.",
     )
     parser.addoption(
         "-A",

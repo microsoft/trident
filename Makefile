@@ -699,7 +699,7 @@ starter-configuration:
 	@mkdir -p $$(dirname $(TRIDENT_CONFIG))
 	@cp tests/e2e_tests/trident_configurations/simple/trident-config.yaml $(TRIDENT_CONFIG)
 	@echo "\033[33mCreated \033[36m$(TRIDENT_CONFIG)\033[33m. Please review and modify as needed! :)"
-	@echo "\033[33mDon't forget to add your SSH public key to the host configuration!"
+	@echo "\033[33mDon't forget to add your SSH public key to the Host Configuration!"
 
 BASE_IMAGE_NAME ?= baremetal_vhdx-3.0-stable
 BASE_IMAGE_VERSION ?= *

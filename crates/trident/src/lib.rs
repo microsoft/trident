@@ -396,7 +396,7 @@ impl Trident {
             .host_config
             .clone()
             .structured(InternalError::Internal(
-                "install called without host configuration set",
+                "install called without Host Configuration set",
             ))?;
 
         self.execute_and_record_error(datastore, |datastore| {
@@ -528,7 +528,7 @@ impl Trident {
             .host_config
             .clone()
             .structured(InternalError::Internal(
-                "update called without host configuration set",
+                "update called without Host Configuration set",
             ))?;
 
         self.execute_and_record_error(datastore, |datastore| {
