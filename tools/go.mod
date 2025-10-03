@@ -8,6 +8,7 @@ toolchain go1.24.2
 replace golang.org/x/net => golang.org/x/net v0.39.0
 
 require (
+	github.com/alecthomas/kingpin/v2 v2.4.0
 	github.com/bmc-toolbox/bmclib/v2 v2.0.1-0.20230530141715-da28e42c453f
 	github.com/digitalocean/go-libvirt v0.0.0-20250512231903-57024326652b
 	github.com/dustin/go-humanize v1.0.1
@@ -19,15 +20,21 @@ require (
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/viper v1.19.0
+	github.com/stretchr/testify v1.10.0
+	gonum.org/v1/gonum v0.15.0
 	gopkg.in/yaml.v2 v2.4.0
 	libvirt.org/go/libvirtxml v1.11007.0
 	libvirt.org/libvirt-go-xml v7.4.0+incompatible
 )
 
 require (
+	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137 // indirect
+	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/kr/fs v0.1.0 // indirect
+	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/seancfoley/bintree v1.3.1 // indirect
 	github.com/vishvananda/netns v0.0.4 // indirect
+	github.com/xhit/go-str2duration/v2 v2.1.0 // indirect
 	golang.org/x/term v0.32.0 // indirect
 )
 
@@ -65,7 +72,7 @@ require (
 	golang.org/x/crypto v0.38.0
 	golang.org/x/exp v0.0.0-20240823005443-9b4947da3948
 	golang.org/x/net v0.39.0 // indirect
-	golang.org/x/sys v0.33.0 // indirect
+	golang.org/x/sys v0.33.0
 	golang.org/x/text v0.25.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1
