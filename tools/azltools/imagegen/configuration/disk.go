@@ -22,7 +22,6 @@ type Disk struct {
 	TargetDisk         TargetDisk         `json:"TargetDisk"`
 	Artifacts          []Artifact         `json:"Artifacts"`
 	Partitions         []Partition        `json:"Partitions"`
-	RawBinaries        []RawBinary        `json:"RawBinaries"`
 }
 
 // checkOverlappingPartitions checks that start and end positions of the defined partitions don't overlap.
@@ -95,24 +94,11 @@ func (d *Disk) IsValid() (err error) {
 		return fmt.Errorf("invalid [Disk]: %w", err)
 	}
 
-	// if err = disk.PartitionTableType.IsValid(); err != nil {
-	// 	return
-	// }
-	// for _, artifact := range disk.Artifacts {
-	// 	if err = artifact.IsValid(); err != nil {
-	// 		return
-	// 	}
-	// }
 	for _, partition := range d.Partitions {
 		if err = partition.IsValid(); err != nil {
 			return
 		}
 	}
-	// for _, rawBinary := range disk.RawBinaries {
-	// 	if err = rawBinary.IsValid(); err != nil {
-	// 		return
-	// 	}
-	// }
 	return
 }
 

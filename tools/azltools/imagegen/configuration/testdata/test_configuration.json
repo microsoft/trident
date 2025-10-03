@@ -18,18 +18,6 @@
                     "Type": "vhd"
                 }
             ],
-            "RawBinaries": [
-                {
-                    "BinPath": "binaries/1.bin",
-                    "BlockSize": 1024,
-                    "Seek": 1
-                },
-                {
-                    "BinPath": "binaries/2.bin",
-                    "BlockSize": 1024,
-                    "Seek": 2
-                }
-            ],
             "Partitions": [
                 {
                     "ID": "MyBoot",
@@ -125,7 +113,7 @@
                 "path/to/packages.json",
                 "path/to/extraPackages.json"
             ],
-            "Packages":[
+            "Packages": [
                 "additionalPkgName"
             ],
             "KernelOptions": {
@@ -134,10 +122,24 @@
             "AdditionalFiles": {
                 "local/path/file1": "/final/system/path",
                 "local/path/file2": "/final/system/path/renamedfile2",
-                "local/path/file3": ["/final/system/path/file3"],
-                "local/path/file4": { "Path": "/final/system/path/file4", "Permissions": "664" },
-                "local/path/file5": [ { "Path": "/final/system/path/file5" }],
-                "local/path/file6": [ { "Path": "/final/system/path/file6" }, "/final/system/path/file6_copy" ]
+                "local/path/file3": [
+                    "/final/system/path/file3"
+                ],
+                "local/path/file4": {
+                    "Path": "/final/system/path/file4",
+                    "Permissions": "664"
+                },
+                "local/path/file5": [
+                    {
+                        "Path": "/final/system/path/file5"
+                    }
+                ],
+                "local/path/file6": [
+                    {
+                        "Path": "/final/system/path/file6"
+                    },
+                    "/final/system/path/file6_copy"
+                ]
             },
             "Hostname": "Azure-Linux-Test",
             "BootType": "efi",
@@ -176,7 +178,7 @@
                     "StartupCommand": "/usr/bin/somescript"
                 }
             ],
-            "PackageRepos" : [
+            "PackageRepos": [
                 {
                     "Name": "repo1",
                     "BaseUrl": "https://repo1.com",
@@ -191,7 +193,7 @@
                     "RepoGPGCheck": false
                 }
             ],
-            "PreInstallScripts":[
+            "PreInstallScripts": [
                 {
                     "Path": "arglessPreScript.sh"
                 },
@@ -200,7 +202,7 @@
                     "Args": "--input abc --output cba"
                 }
             ],
-            "PostInstallScripts":[
+            "PostInstallScripts": [
                 {
                     "Path": "arglessScript.sh"
                 },
@@ -209,7 +211,7 @@
                     "Args": "--input abc --output cba"
                 }
             ],
-            "FinalizeImageScripts":[
+            "FinalizeImageScripts": [
                 {
                     "Path": "arglessScript.sh"
                 },
@@ -218,21 +220,21 @@
                     "Args": "--input abc --output cba"
                 }
             ],
-            "Networks":[
+            "Networks": [
                 {
                     "BootProto": "dhcp",
-                    "GateWay":   "192.168.20.4",
-                    "Ip":        "192.169.20.148",
-                    "NetMask":   "255.255.255.0",
-                    "OnBoot":    false,
+                    "GateWay": "192.168.20.4",
+                    "Ip": "192.169.20.148",
+                    "NetMask": "255.255.255.0",
+                    "OnBoot": false,
                     "NameServer": [
                         "192.168.30.23"
                     ],
                     "Device": "eth0"
                 }
             ],
-            "Encryption" : {
-                "Enable":   true,
+            "Encryption": {
+                "Enable": true,
                 "Password": "EncryptPassphrase123"
             },
             "RemoveRpmDb": false,

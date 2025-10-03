@@ -207,37 +207,6 @@ func SizeAndUnitToBytes(sizeAndUnit string) (bytes uint64, err error) {
 	return
 }
 
-// ApplyRawBinaries applies all raw binaries described in disk configuration to the specified disk
-func ApplyRawBinaries(diskDevPath string, disk configuration.Disk) (err error) {
-	rawBinaries := disk.RawBinaries
-
-	for idx := range rawBinaries {
-		rawBinary := rawBinaries[idx]
-		err = ApplyRawBinary(diskDevPath, rawBinary)
-		if err != nil {
-			return err
-		}
-	}
-	return
-}
-
-// ApplyRawBinary applies a single raw binary at offset (seek) with blocksize to the specified disk
-func ApplyRawBinary(diskDevPath string, rawBinary configuration.RawBinary) (err error) {
-	ddArgs := []string{
-		fmt.Sprintf("if=%s", rawBinary.BinPath),   // Input file.
-		fmt.Sprintf("of=%s", diskDevPath),         // Output file.
-		fmt.Sprintf("bs=%d", rawBinary.BlockSize), // Size of one copied block.
-		fmt.Sprintf("seek=%d", rawBinary.Seek),    // Block number to start copying in the output file at.
-		"conv=notrunc",                            // Prevent truncation.
-	}
-
-	_, stderr, err := shell.Execute("dd", ddArgs...)
-	if err != nil {
-		err = fmt.Errorf("failed to apply raw binary with dd:\n%v\n%w", stderr, err)
-	}
-	return
-}
-
 // CreateEmptyDisk creates an empty raw disk in the given working directory as described in disk configuration
 func CreateEmptyDisk(workDirPath, diskName string, maxSize uint64) (diskFilePath string, err error) {
 	diskFilePath = filepath.Join(workDirPath, diskName)

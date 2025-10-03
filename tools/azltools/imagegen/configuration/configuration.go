@@ -25,14 +25,6 @@ type Artifact struct {
 	Type        string `json:"Type"`
 }
 
-// RawBinary allow the users to specify a binary they would
-// like to copy byte-for-byte onto the disk.
-type RawBinary struct {
-	BinPath   string `json:"BinPath"`
-	BlockSize uint64 `json:"BlockSize"`
-	Seek      uint64 `json:"Seek"`
-}
-
 // TargetDisk [kickstart-only] defines the physical disk, to which
 // Azure Linux should be installed.
 type TargetDisk struct {
@@ -361,11 +353,6 @@ func LoadWithAbsolutePaths(configFilePath, baseDirPath string) (config Config, e
 
 // convertToAbsolutePaths converts all of the config's local file paths into absolute ones.
 func (c *Config) convertToAbsolutePaths(baseDirPath string) {
-	for i := range c.Disks {
-		diskConfig := &c.Disks[i]
-		convertRawBinariesPath(baseDirPath, diskConfig)
-	}
-
 	for i := range c.SystemConfigs {
 		systemConfig := &c.SystemConfigs[i]
 
@@ -375,12 +362,6 @@ func (c *Config) convertToAbsolutePaths(baseDirPath string) {
 		convertPostInstallScriptsPaths(baseDirPath, systemConfig)
 		convertFinalizeImageScriptsPaths(baseDirPath, systemConfig)
 		convertSSHPubKeys(baseDirPath, systemConfig)
-	}
-}
-
-func convertRawBinariesPath(baseDirPath string, diskConfig *Disk) {
-	for i, rawBinary := range diskConfig.RawBinaries {
-		diskConfig.RawBinaries[i].BinPath = file.GetAbsPathWithBase(baseDirPath, rawBinary.BinPath)
 	}
 }
 
