@@ -116,6 +116,7 @@ lazy_static::lazy_static! {
         Box::<HooksSubsystem>::default(),
         Box::<InitrdSubsystem>::default(),
         Box::<SelinuxSubsystem>::default(),
+        Box::<ExtensionsSubsystem>::default(),
     ]);
 }
 
