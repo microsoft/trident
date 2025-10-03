@@ -17,7 +17,6 @@ use trident_api::{
 
 use crate::osimage::OsImage;
 
-#[allow(dead_code)]
 pub mod extensions;
 #[allow(dead_code)]
 pub mod filesystem;
