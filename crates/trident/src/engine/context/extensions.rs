@@ -98,6 +98,26 @@ impl EngineContext {
         ))?;
         Ok(())
     }
+
+    /// Update the Host Configuration with the final location of the extension
+    /// images.
+    pub fn finalize_extension_locations(&mut self) -> Result<(), TridentError> {
+        for ext_data in &self.extensions {
+            // Find the matching extension in the Host Configuration
+            let ext = self
+                .spec
+                .os
+                .extensions
+                .iter_mut()
+                .find(|ext| ext.sha384 == ext_data.sha384)
+                .structured(InternalError::UpdateExtensionsLocation {
+                    id: ext_data.id.clone(),
+                    hash: ext_data.sha384.to_string(),
+                })?;
+            ext.location = Some(ext_data.location.clone());
+        }
+        Ok(())
+    }
 }
 
 fn populate_extensions_inner(

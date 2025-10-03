@@ -129,7 +129,7 @@ pub(crate) fn update(
         // Stage hot-patch
         stage_hotpatch(
             &mut subsystems,
-            ctx,
+            &mut ctx,
             state,
             #[cfg(feature = "grpc-dangerous")]
             sender,
@@ -408,7 +408,7 @@ pub(crate) fn finalize_update(
 #[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", ctx.servicing_type)))]
 fn stage_hotpatch(
     subsystems: &mut [Box<dyn Subsystem>],
-    ctx: EngineContext,
+    ctx: &mut EngineContext,
     state: &mut DataStore,
     #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
@@ -423,9 +423,11 @@ fn stage_hotpatch(
         }
     };
 
-    engine::prepare(subsystems, &ctx)?;
-    engine::provision(subsystems, &ctx, &PathBuf::from("/"))?;
-    engine::configure(subsystems, &ctx)?;
+    engine::prepare(subsystems, ctx)?;
+    engine::provision(subsystems, ctx, &PathBuf::from("/"))?;
+    engine::configure(subsystems, ctx)?;
+
+    ctx.finalize_extension_locations()?;
 
     // At this point, deployment has been staged, so update servicing state
     debug!(
@@ -434,12 +436,12 @@ fn stage_hotpatch(
     );
     state.with_host_status(|hs| {
         *hs = HostStatus {
-            spec: ctx.spec,
-            spec_old: ctx.spec_old,
+            spec: ctx.spec.clone(),
+            spec_old: ctx.spec_old.clone(),
             servicing_state: ServicingState::HotPatchStaged,
             ab_active_volume: ctx.ab_active_volume,
-            partition_paths: ctx.partition_paths,
-            disk_uuids: ctx.disk_uuids,
+            partition_paths: ctx.partition_paths.clone(),
+            disk_uuids: ctx.disk_uuids.clone(),
             install_index: ctx.install_index,
             last_error: None,
             is_management_os: false,
