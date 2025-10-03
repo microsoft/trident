@@ -9,7 +9,8 @@ use chrono::Utc;
 use log::{debug, trace};
 
 use trident_api::{
-    error::{InternalError, ReportError, TridentError},
+    config::HostConfigurationDynamicValidationError,
+    error::{InvalidInputError, ReportError, ServicingError, TridentError},
     status::ServicingType,
 };
 
@@ -39,6 +40,32 @@ impl Subsystem for ExtensionsSubsystem {
         Ok(Some(ServicingType::HotPatch))
     }
 
+    fn validate_host_config(&self, ctx: &EngineContext) -> Result<(), TridentError> {
+        // Ensure that the filename matches the intended final location. This
+        // checks the validity of any user-provided locations.
+        for ext in &ctx.extensions {
+            let final_file_name = ext
+                .location
+                .file_name()
+                .structured(InvalidInputError::from(
+                    HostConfigurationDynamicValidationError::InvalidExtensionImagePath {
+                        path: ext.location.display().to_string(),
+                        ext_type: ext.ext_type.to_string(),
+                    },
+                ))?;
+            if final_file_name != ext.name.as_str() {
+                return Err(TridentError::new(InvalidInputError::from(
+                    HostConfigurationDynamicValidationError::InvalidExtensionImagePath {
+                        path: ext.location.display().to_string(),
+                        ext_type: ext.ext_type.to_string(),
+                    },
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
     // Outside of chroot
     fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
         // Skip step if no changes need to be made.
@@ -56,18 +83,22 @@ impl Subsystem for ExtensionsSubsystem {
         // Snapshot existing extension image files to enable rolling back to a
         // previous state.
         retain_previous_ext_state(&ctx.extensions_old)
-            .structured(InternalError::Internal("Failed to back up"))?;
+            .structured(ServicingError::CreateExtensionImagesSnapshot)?;
 
         // Set up new sysexts and confexts in the appropriate directories.
-        set_up_extensions(ctx, ExtensionType::Sysext, sysext_dir_path, mount_path)
-            .structured(InternalError::Internal("Failed to set up sysexts"))?;
-        set_up_extensions(ctx, ExtensionType::Confext, confext_dir_path, mount_path)
-            .structured(InternalError::Internal("Failed to set up confexts"))?;
+        set_up_extensions(ctx, ExtensionType::Sysext, sysext_dir_path, mount_path).structured(
+            ServicingError::SetUpExtensionImages {
+                ext_type: "sysexts".to_string(),
+            },
+        )?;
+        set_up_extensions(ctx, ExtensionType::Confext, confext_dir_path, mount_path).structured(
+            ServicingError::SetUpExtensionImages {
+                ext_type: "confexts".to_string(),
+            },
+        )?;
 
         // Clean up extension images.
-        clean_up_extensions(ctx).structured(InternalError::Internal(
-            "Failed to clean up extension images",
-        ))?;
+        clean_up_extensions(ctx).structured(ServicingError::CleanupTemporaryExtensionImages)?;
 
         Ok(())
     }

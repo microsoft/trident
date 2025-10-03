@@ -34,6 +34,7 @@ const CONFEXT_PREFIX: &str = "CONFEXT_";
 #[derive(Clone)]
 pub struct ExtensionData {
     pub id: String,
+    pub name: String,
     pub sha384: Sha384Hash,
     pub location: PathBuf,
     pub temp_location: Option<PathBuf>,
@@ -219,6 +220,7 @@ fn read_extension_release(
 
     Ok(ExtensionData {
         id: extension_id,
+        name: file_name,
         sha384: ext.sha384.clone(),
         location,
         temp_location: Some(curr_location.to_path_buf()),

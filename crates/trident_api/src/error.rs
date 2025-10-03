@@ -333,6 +333,9 @@ pub enum ServicingError {
     #[error("Failed to clean up pre-existing RAID arrays")]
     CleanupRaid,
 
+    #[error("Failed to clean up temporary extension images")]
+    CleanupTemporaryExtensionImages,
+
     #[error("Failed to clean up pre-existing verity devices")]
     CleanupVerity,
 
@@ -394,6 +397,9 @@ pub enum ServicingError {
 
     #[error("Failed to create verity devices")]
     CreateVerity,
+
+    #[error("Failed to create snapshot of extension images")]
+    CreateExtensionImagesSnapshot,
 
     #[error(transparent)]
     Datastore {
@@ -571,6 +577,9 @@ pub enum ServicingError {
 
     #[error("Failed to set EFI variable '{name}'")]
     SetEfiVariable { name: String },
+
+    #[error("Failed to set up {ext_type} on the target OS")]
+    SetUpExtensionImages { ext_type: String },
 
     #[error("Failed to set permissions on temporary recovery key file '{key_file}'")]
     SetRecoveryKeyFilePermissions { key_file: String },
