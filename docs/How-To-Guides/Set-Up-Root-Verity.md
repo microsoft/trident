@@ -70,36 +70,9 @@ cp -r bin/RPMS $HOME/staging
 ### Step 3: Define COSI Configuration
 
 To create a root-verity volume, there are a few Image Customizer configuration
-sections that are important.
-
-In addition to the typical `root` partition definition, a `root-hash` partition
-is needed like this:
-
-``` yaml
-storage:
-  disks:
-  - partitionTableType: gpt
-    partitions:
-    - label: root-hash
-      id: root-hash
-      size: 128M
-```
-
-The [Image Customizer verity
-section](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/api/configuration/verity.html)
-is required as well:
-
-``` yaml
-verity:
-  - id: root
-    name: root
-    dataDeviceId: root-data
-    hashDeviceId: root-hash
-    dataDeviceMountIdType: part-label
-    hashDeviceMountIdType: part-label
-```
-
-Putting that all together and following the Image Customizer
+sections that are important. These sections are detailed in the
+[Root Verity explanation](../Explanation/Root-Verity.md#use-image-customizer-to-create-a-cosi-file).
+Putting them together and following the Image Customizer
 [documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/README.html),
 the full configuration `$HOME/staging/ic-config.yaml` can look like this:
 
@@ -240,9 +213,8 @@ Some things to note that are defined in the Host Configuration below:
   and `root-hash`
 * [abUpdate section](../Reference/Host-Configuration/API-Reference/AbUpdate.md)
   for `root-data` and `root-hash`
-* [verity
-  section](../Reference/Host-Configuration/API-Reference/VerityDevice.md) to
-  connect `root` data and hash
+* [verity section](../Explanation/Root-Verity.md#use-trident-to-deploy-the-cosi-file)
+  to connect `root-data` and `root-hash`
 
 The remainder of the Trident Host Configuration file describes things like where
 to find the COSI file (can be a local path, an HTTP url, or an OCI url) and what
