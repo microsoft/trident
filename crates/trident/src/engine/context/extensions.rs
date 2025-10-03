@@ -79,14 +79,16 @@ impl EngineContext {
         };
 
         populate_extensions_inner(&self.spec.os.extensions, &mut self.extensions, timeout)
-            .structured(InternalError::Internal("Failed to populate ctx.extensions"))?;
+            .structured(InternalError::PopulateExtensionImages(
+                "Failed with new extension images.".to_string(),
+            ))?;
         populate_extensions_inner(
             &self.spec_old.os.extensions,
             &mut self.extensions_old,
             timeout,
         )
-        .structured(InternalError::Internal(
-            "Failed to populate ctx.extensions_old",
+        .structured(InternalError::PopulateExtensionImages(
+            "Failed with existing extension images.".to_string(),
         ))?;
         Ok(())
     }
