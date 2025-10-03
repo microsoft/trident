@@ -410,7 +410,7 @@ go.sum: go.mod
 	go mod tidy
 
 .PHONY: go-tools
-go-tools: bin/netlaunch bin/netlisten bin/miniproxy
+go-tools: bin/netlaunch bin/netlisten bin/miniproxy bin/virtdeploy
 
 bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum tools/pkg/*
 	@mkdir -p bin
@@ -432,6 +432,10 @@ bin/storm-trident: tools/cmd/storm-trident/main.go tools/storm/**/*
 	@mkdir -p bin
 	cd tools && go generate storm/e2e/discover.go
 	cd tools && go build -o ../bin/storm-trident ./cmd/storm-trident/main.go
+
+bin/virtdeploy: tools/cmd/virtdeploy/* tools/go.sum tools/pkg/* tools/pkg/virtdeploy/*
+	@mkdir -p bin
+	cd tools && go build -o ../bin/virtdeploy ./cmd/virtdeploy
 
 .PHONY: validate
 validate: $(TRIDENT_CONFIG) bin/trident
