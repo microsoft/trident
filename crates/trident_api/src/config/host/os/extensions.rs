@@ -156,6 +156,8 @@ mod tests {
     fn test_validate_no_parent_directory_fails() {
         let location = PathBuf::from("test.raw");
         let ext = create_test_extension(Some(location.clone()));
+        // `location.parent()` returns an empty string, which is technically
+        // valid. Thus, we return an ExtensionImageInvalidDirectory error.
         assert_eq!(
             ext.validate(),
             Err(

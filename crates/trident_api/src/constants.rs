@@ -166,7 +166,7 @@ pub const MOUNT_OPTION_READ_ONLY: &str = "ro";
 
 /// Valid sysext directories.
 ///
-/// Do not support /run/systexts/.
+/// Do not support /run/sysexts/.
 pub const VALID_SYSEXT_DIRECTORIES: [&str; 3] =
     ["/etc/extensions", "/var/lib/extensions", "/.extra/sysext"];
 
