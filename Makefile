@@ -678,10 +678,7 @@ starter-configuration:
 BASE_IMAGE_VERSION ?= 3.0.20250910-amd64
 artifacts/baremetal.vhdx:
 	@mkdir -p artifacts
-	@tempdir=$$(mktemp -d) && \
-		oras pull mcr.microsoft.com/azurelinux/3.0/image/baremetal:$(BASE_IMAGE_VERSION) --output $$tempdir && \
-		mv $$tempdir/*.vhdx artifacts/baremetal.vhdx && \
-		rm -rf $$tempdir
+	@tests/images/testimages.py download-image baremetal
 
 MIC_PACKAGE_NAME ?= imagecustomizer
 MIC_PACKAGE_VERSION ?= *
