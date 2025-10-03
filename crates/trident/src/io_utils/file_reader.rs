@@ -130,7 +130,14 @@ impl FileReader {
             Self::Http(http_file) => Box::new(http_file.section_reader(0, http_file.size)?),
 
             #[cfg(test)]
-            Self::Buffer(_cursor) => todo!(),
+            Self::Buffer(cursor) => {
+                // Clone the cursor and seek to the beginning of the buffer
+                let mut cursor = cursor.clone();
+                cursor.seek(SeekFrom::Start(0))?;
+                // Return a reader for the entire buffer
+                let size = cursor.get_ref().len() as u64;
+                Box::new(cursor.take(size))
+            }
         })
     }
 }
