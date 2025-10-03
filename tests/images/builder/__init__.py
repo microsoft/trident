@@ -200,7 +200,7 @@ class ImageConfig:
     def get_output_artifacts_dir(self) -> Optional[str]:
         """
         Return the output.artifacts.path from the image configuration YAML.
-        
+
         Throws:
             ValueError if the path is present but empty.
         """
