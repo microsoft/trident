@@ -14,13 +14,24 @@ import (
 	"tridenttools/azltools/internal/logger"
 )
 
+// TargetDisk [kickstart-only] defines the physical disk, to which
+// Azure Linux should be installed.
+type TargetDisk struct {
+	Type  string `json:"Type"`
+	Value string `json:"Value"`
+}
+
+// RootEncryption enables encryption on the root partition
+type RootEncryption struct {
+	Enable   bool   `json:"Enable"`
+	Password string `json:"Password"`
+}
+
 // Disk holds the disk partitioning, formatting and size information.
-// It may also define artifacts generated for each disk.
 type Disk struct {
 	PartitionTableType PartitionTableType `json:"PartitionTableType"`
 	MaxSize            uint64             `json:"MaxSize"`
 	TargetDisk         TargetDisk         `json:"TargetDisk"`
-	Artifacts          []Artifact         `json:"Artifacts"`
 	Partitions         []Partition        `json:"Partitions"`
 }
 
@@ -115,6 +126,42 @@ func (d *Disk) UnmarshalJSON(b []byte) (err error) {
 	err = d.IsValid()
 	if err != nil {
 		return fmt.Errorf("failed to parse [Disk]: %w", err)
+	}
+	return
+}
+
+// GetDiskPartByID returns the disk partition object with the desired ID, nil if no partition found
+func (c *Config) GetDiskPartByID(ID string) (diskPart *Partition) {
+	for i, d := range c.Disks {
+		for j, p := range d.Partitions {
+			if p.ID == ID {
+				return &c.Disks[i].Partitions[j]
+			}
+		}
+	}
+	return nil
+}
+
+// GetDiskContainingPartition returns the disk containing the provided partition
+func (c *Config) GetDiskContainingPartition(partition *Partition) (disk *Disk) {
+	ID := partition.ID
+	for i, d := range c.Disks {
+		for _, p := range d.Partitions {
+			if p.ID == ID {
+				return &c.Disks[i]
+			}
+		}
+	}
+	return nil
+}
+
+func (c *Config) GetBootPartition() (partitionIndex int, partition *Partition) {
+	for i, d := range c.Disks {
+		for j, p := range d.Partitions {
+			if p.HasFlag(PartitionFlagBoot) {
+				return j, &c.Disks[i].Partitions[j]
+			}
+		}
 	}
 	return
 }

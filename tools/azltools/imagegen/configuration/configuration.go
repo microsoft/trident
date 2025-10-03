@@ -17,21 +17,6 @@ import (
 	"tridenttools/azltools/internal/logger"
 )
 
-// Artifact [non-ISO image building only] defines the name, type
-// and optional compression of the output Azure Linux image.
-type Artifact struct {
-	Compression string `json:"Compression"`
-	Name        string `json:"Name"`
-	Type        string `json:"Type"`
-}
-
-// TargetDisk [kickstart-only] defines the physical disk, to which
-// Azure Linux should be installed.
-type TargetDisk struct {
-	Type  string `json:"Type"`
-	Value string `json:"Value"`
-}
-
 // InstallScript defines a script to be run before or after other installation
 // steps and provides a way to pass parameters to it.
 type InstallScript struct {
@@ -43,12 +28,6 @@ type InstallScript struct {
 type Group struct {
 	Name string `json:"Name"`
 	GID  string `json:"GID"`
-}
-
-// RootEncryption enables encryption on the root partition
-type RootEncryption struct {
-	Enable   bool   `json:"Enable"`
-	Password string `json:"Password"`
 }
 
 // SystemConfig defines how each system present on the image is supposed to be configured.
@@ -90,42 +69,6 @@ type Config struct {
 
 	// Computed values not present in the config JSON.
 	DefaultSystemConfig *SystemConfig // A system configuration with the "IsDefault" field set or the first system configuration if there is no explicit default.
-}
-
-// GetDiskPartByID returns the disk partition object with the desired ID, nil if no partition found
-func (c *Config) GetDiskPartByID(ID string) (diskPart *Partition) {
-	for i, d := range c.Disks {
-		for j, p := range d.Partitions {
-			if p.ID == ID {
-				return &c.Disks[i].Partitions[j]
-			}
-		}
-	}
-	return nil
-}
-
-// GetDiskByPartition returns the disk containing the provided partition
-func (c *Config) GetDiskContainingPartition(partition *Partition) (disk *Disk) {
-	ID := partition.ID
-	for i, d := range c.Disks {
-		for _, p := range d.Partitions {
-			if p.ID == ID {
-				return &c.Disks[i]
-			}
-		}
-	}
-	return nil
-}
-
-func (c *Config) GetBootPartition() (partitionIndex int, partition *Partition) {
-	for i, d := range c.Disks {
-		for j, p := range d.Partitions {
-			if p.HasFlag(PartitionFlagBoot) {
-				return j, &c.Disks[i].Partitions[j]
-			}
-		}
-	}
-	return
 }
 
 // GetKernelCmdLineValue returns the output of a specific option setting in /proc/cmdline

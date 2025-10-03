@@ -7,17 +7,6 @@
                 "Type": "path",
                 "Value": "/dev/sda"
             },
-            "Artifacts": [
-                {
-                    "Name": "CompressedVHD",
-                    "Type": "vhd",
-                    "Compression": "gz"
-                },
-                {
-                    "Name": "UncompressedVHD",
-                    "Type": "vhd"
-                }
-            ],
             "Partitions": [
                 {
                     "ID": "MyBoot",

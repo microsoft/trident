@@ -28,15 +28,14 @@ const (
 // "Grow" tells the logical volume to fill up any available space (**Only used for
 // kickstart-style unattended installation**)
 type Partition struct {
-	FsType    string          `json:"FsType"`
-	Type      string          `json:"Type"`
-	TypeUUID  string          `json:"TypeUUID"`
-	ID        string          `json:"ID"`
-	Name      string          `json:"Name"`
-	End       uint64          `json:"End"`
-	Start     uint64          `json:"Start"`
-	Flags     []PartitionFlag `json:"Flags"`
-	Artifacts []Artifact      `json:"Artifacts"`
+	FsType   string          `json:"FsType"`
+	Type     string          `json:"Type"`
+	TypeUUID string          `json:"TypeUUID"`
+	ID       string          `json:"ID"`
+	Name     string          `json:"Name"`
+	End      uint64          `json:"End"`
+	Start    uint64          `json:"Start"`
+	Flags    []PartitionFlag `json:"Flags"`
 }
 
 // HasFlag returns true if a given partition has a specific flag set.
