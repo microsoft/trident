@@ -11,6 +11,7 @@ use tempfile::{NamedTempFile, TempDir};
 
 use osutils::{
     bootloaders::{BOOT_EFI, GRUB_EFI, GRUB_NOPREFIX_EFI},
+    dependencies::Dependency,
     filesystems::MountFileSystemType,
     mount::{self, MountGuard},
     path,
@@ -302,6 +303,16 @@ fn copy_file_artifacts(
 ///
 /// Returns a boolean indicating whether grub-noprefix.efi is used.
 fn simple_copy_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
+    // Create to_dir if it doesn't exist
+    if !Path::new(to_dir).exists() {
+        Dependency::Mkdir
+            .cmd()
+            .arg("-p")
+            .arg(to_dir)
+            .run_and_check()
+            .unwrap();
+    }
+
     // Copy all files from from_dir to to_dir as <existing_filename>.new
     fs::read_dir(from_dir)?.flatten().for_each(|from_path| {
         let to_file_name = format!("{}.new", from_path.file_name().to_string_lossy());
