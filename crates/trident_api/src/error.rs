@@ -100,6 +100,9 @@ pub enum InternalError {
     #[error("Encountered a panic: {0}")]
     Panic(String),
 
+    #[error("Failed to populate extension images vector in Engine Context: {0}")]
+    PopulateExtensionImages(String),
+
     #[error("Failed to populate filesystems vector in Engine Context: {0}")]
     PopulateFilesystems(String),
 
