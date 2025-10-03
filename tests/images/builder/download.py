@@ -39,6 +39,7 @@ def az_cli_artifact_download(
         check=True,
     )
 
+
 def download_single(
     package_name: str,
     package_version: str,

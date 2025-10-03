@@ -61,7 +61,9 @@ class SshExecutableResult:
 
 
 class _SshChannelFileReader:
-    def __init__(self, channel_file: ChannelFile, log_level: int, log_name: str) -> None:
+    def __init__(
+        self, channel_file: ChannelFile, log_level: int, log_name: str
+    ) -> None:
         self._channel_file = channel_file
         self._log_level = log_level
         self._log_name = log_name
@@ -100,7 +102,12 @@ class _SshChannelFileReader:
 
                 # Log the line.
                 if log_enabled:
-                    logging.log(self._log_level, "%s: %s", self._log_name, line[:-1] if line.endswith("\n") else line)
+                    logging.log(
+                        self._log_level,
+                        "%s: %s",
+                        self._log_name,
+                        line[:-1] if line.endswith("\n") else line,
+                    )
 
             self._channel_file.close()
             self._output = output.getvalue()
@@ -125,8 +132,12 @@ class SshProcess:
 
         logging.debug("[ssh][%d][cmd]: %s", chanid, cmd)
 
-        self._stdout_reader = _SshChannelFileReader(stdout, stdout_log_level, f"[ssh][{chanid}][stdout]")
-        self._stderr_reader = _SshChannelFileReader(stderr, stderr_log_level, f"[ssh][{chanid}][stderr]")
+        self._stdout_reader = _SshChannelFileReader(
+            stdout, stdout_log_level, f"[ssh][{chanid}][stdout]"
+        )
+        self._stderr_reader = _SshChannelFileReader(
+            stderr, stderr_log_level, f"[ssh][{chanid}][stderr]"
+        )
 
     def close(self) -> None:
         self._channel.close()
@@ -167,10 +178,15 @@ class SshProcess:
             elapsed_time = time.monotonic() - self._start_time
 
             logging.debug(
-                "[ssh][%d][cmd]: execution time: %f, exit code: %d", self._channel.chanid, elapsed_time, exit_code
+                "[ssh][%d][cmd]: execution time: %f, exit code: %d",
+                self._channel.chanid,
+                elapsed_time,
+                exit_code,
             )
 
-            result = SshExecutableResult(stdout, stderr, exit_code, self.cmd, elapsed_time, not completed)
+            result = SshExecutableResult(
+                stdout, stderr, exit_code, self.cmd, elapsed_time, not completed
+            )
             self._result = result
 
         if expected_exit_code is not None:
@@ -207,7 +223,9 @@ class SshNode:
         if gateway:
             gateway_transport = gateway.ssh_client.get_transport()
             assert gateway_transport
-            sock = gateway_transport.open_channel("direct-tcpip", (hostname, port), ("", 0))
+            sock = gateway_transport.open_channel(
+                "direct-tcpip", (hostname, port), ("", 0)
+            )
 
         self.ssh_client = SSHClient()
         if known_hosts_path:
@@ -215,7 +233,13 @@ class SshNode:
         else:
             self.ssh_client.load_system_host_keys()
         key_filename = None if key_path is None else str(key_path.absolute())
-        self.ssh_client.connect(hostname=hostname, port=port, username=username, key_filename=key_filename, sock=sock)
+        self.ssh_client.connect(
+            hostname=hostname,
+            port=port,
+            username=username,
+            key_filename=key_filename,
+            sock=sock,
+        )
 
         if name:
             self.name = name
@@ -299,7 +323,9 @@ class SshNode:
         if no_error_log:
             stderr_log_level = stdout_log_level
 
-        stdin, stdout, stderr = self.ssh_client.exec_command(cmd, environment=update_envs)
+        stdin, stdout, stderr = self.ssh_client.exec_command(
+            cmd, environment=update_envs
+        )
         stdin.close()
 
         return SshProcess(cmd, stdout, stderr, stdout_log_level, stderr_log_level)
@@ -308,7 +334,9 @@ class SshNode:
     def working_path(self) -> PurePath:
         working_path = self._working_path
         if not working_path:
-            home_path = self.execute('echo "$HOME"', shell=True, expected_exit_code=0).stdout
+            home_path = self.execute(
+                'echo "$HOME"', shell=True, expected_exit_code=0
+            ).stdout
             working_path = PurePath(home_path)
 
             if self._working_path_subdir:
@@ -347,7 +375,15 @@ class SshNode:
         exist_ok: bool = False,
     ) -> None:
         if parents or exist_ok:
-            self.execute(f"mkdir -m={mode:o} -p {shlex.quote(str(path))}", shell=True, expected_exit_code=0)
+            self.execute(
+                f"mkdir -m={mode:o} -p {shlex.quote(str(path))}",
+                shell=True,
+                expected_exit_code=0,
+            )
 
         else:
-            self.execute(f"mkdir -m={mode:o} {shlex.quote(str(path))}", shell=True, expected_exit_code=0)
+            self.execute(
+                f"mkdir -m={mode:o} {shlex.quote(str(path))}",
+                shell=True,
+                expected_exit_code=0,
+            )
