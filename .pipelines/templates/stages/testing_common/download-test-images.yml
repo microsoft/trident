@@ -129,6 +129,7 @@ steps:
         netlisten
         mkcosi
         storm-trident
+        virtdeploy
       targetPath: "${{ parameters.toolsDirectory }}"
 
   - bash: |
