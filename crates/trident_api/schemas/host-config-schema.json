@@ -770,7 +770,7 @@
           ]
         },
         {
-          "title": "Usr verity hash partition (NOT ENABLED YET!)",
+          "title": "Usr-verity hash partition (NOT ENABLED YET!)",
           "description": "x64: `77ff5f63-e7b6-4633-acf4-1565b864c0e6`",
           "type": "string",
           "enum": [
@@ -1174,7 +1174,7 @@
       "type": "object",
       "properties": {
         "mode": {
-          "description": "Override the SELinux mode. When not provided, no changes will be made to the existing configuration.\n\nNote: Trident only supports SELinux and root verity together when running in UKI-mode. Otherwise when using verity, SELinux must not be enabled in the OS image or SELinux should be explicitly set to `disabled`.",
+          "description": "Override the SELinux mode. When not provided, no changes will be made to the existing configuration.\n\nNote: Trident only supports SELinux and root-verity together when running in UKI-mode. Otherwise when using verity, SELinux must not be enabled in the OS image or SELinux should be explicitly set to `disabled`.",
           "allOf": [
             {
               "$ref": "#/definitions/SelinuxMode"

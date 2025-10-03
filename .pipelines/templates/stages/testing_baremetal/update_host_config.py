@@ -18,7 +18,7 @@ def update_trident_host_config(
     network_gateway: Optional[str] = None,
     use_dhcp: bool = False,
 ):
-    logging.info("Updating host config section of trident.yaml")
+    logging.info("Updating Host Configuration section of trident.yaml")
     os = host_configuration.setdefault("os", {})
 
     main_interface = {
@@ -71,11 +71,11 @@ def update_trident_host_config(
         elif disk["id"] == "disk2":
             disk["device"] = "/dev/sdb"
 
-    # If this is root verity, we need to set an internal param to be able to
+    # If this is root-verity, we need to set an internal param to be able to
     # configure the network.
     if is_root_verity(host_configuration):
         logging.info(
-            "Detected root verity configuration, setting 'writableEtcOverlayHooks' internal param."
+            "Detected root-verity configuration, setting 'writableEtcOverlayHooks' internal param."
         )
         host_configuration.setdefault("internalParams", {})[
             "writableEtcOverlayHooks"
@@ -102,7 +102,7 @@ def update_trident_host_config(
 
 def is_root_verity(host_configuration: dict) -> bool:
     """
-    Check if the host configuration is using root verity.
+    Check if the Host Configuration is using root-verity.
     """
 
     verity_config = host_configuration.get("storage", {}).get("verity", [])

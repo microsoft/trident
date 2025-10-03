@@ -207,7 +207,7 @@ mod tests {
                 false,
             )
             .unwrap();
-            // agent config should be created with non-standard datastore path
+            // Agent config should be created with non-standard datastore path
             let contents = std::fs::read_to_string(agent_config_path).unwrap();
             print!("Contents of agent config file:\n{contents}");
             let expected_contents = format!("DatastorePath={nonstandard_datastore_path}");
@@ -215,7 +215,7 @@ mod tests {
         }
 
         {
-            // Non-standard datastore path, agent config does not exist, root verity
+            // Non-standard datastore path, agent config does not exist, root-verity
             let agent_config_folder = tempfile::tempdir().unwrap();
             let agent_config_path = agent_config_folder.path().join("trident.conf");
             configure_agent_config(
@@ -227,7 +227,7 @@ mod tests {
         }
 
         {
-            // agent config exists with matching datastore path
+            // Agent config exists with matching datastore path
             let agent_config_folder = tempfile::tempdir().unwrap();
             let agent_config_path = agent_config_folder.path().join("trident.conf");
             fs::write(

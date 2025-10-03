@@ -1,5 +1,5 @@
 
-# Set Up Usr Verity
+# Set Up Usr-Verity
 
 ## Goals
 
@@ -63,7 +63,7 @@ cp -r bin/RPMS $HOME/staging
 
 To create a usr-verity volume, there are a few Image Customizer configuration
 sections that are important. These sections are detailed in the
-[Usr Verity explanation](../Explanation/Usr-Verity.md#use-image-customizer-to-create-a-cosi-file).
+[docs on usr-verity](../Explanation/Usr-Verity.md#use-image-customizer-to-create-a-cosi-file).
 Putting them together and following the Image Customizer
 [documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/README.html),
 the full configuration `$HOME/staging/ic-config.yaml` can look like this:
@@ -204,9 +204,9 @@ popd
 ### Step 5: Trident Host Configuration
 
 Create a Trident Host Configuration file that aligns to the Image Customizer
-COSI that was created in step 4. The esp, boot, root, usr, and usr-hash
-partitions/filesystems should reflect what was specified in the Image Customizer
-configuration.
+COSI that was created in step 4. The `esp`, `boot`, `root`, `usr`, and
+`usr-hash` partitions/filesystems should reflect what was specified in the
+Image Customizer configuration.
 
 Some things to note that are defined in the Host Configuration below:
 
@@ -219,7 +219,7 @@ Some things to note that are defined in the Host Configuration below:
 
 The remainder of the Trident Host Configuration file describes things like where
 to find the COSI file (can be a local path, an HTTP url, or an OCI url) and what
-the disk device path is (in this case, /dev/sda):
+the disk device path is (in this case, `/dev/sda`):
 
 ``` yaml
 image:

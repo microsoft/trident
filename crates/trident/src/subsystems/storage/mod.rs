@@ -185,7 +185,7 @@ impl Subsystem for StorageSubsystem {
     #[tracing::instrument(name = "storage_configuration", skip_all)]
     fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
         if ctx.is_uki()? && ctx.storage_graph.root_fs_is_verity() {
-            debug!("Skipping storage configuration because UKI root verity is in use");
+            debug!("Skipping storage configuration because UKI root-verity is in use");
             return Ok(());
         }
 
