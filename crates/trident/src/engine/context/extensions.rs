@@ -78,14 +78,20 @@ impl EngineContext {
             _ => Duration::from_secs(10), // Default timeout
         };
 
-        populate_extensions_inner(&self.spec.os.extensions, &mut self.extensions, timeout)
-            .structured(InternalError::PopulateExtensionImages(
-                "Failed with new extension images.".to_string(),
-            ))?;
+        populate_extensions_inner(
+            &self.spec.os.extensions,
+            &mut self.extensions,
+            timeout,
+            true,
+        )
+        .structured(InternalError::PopulateExtensionImages(
+            "Failed with new extension images.".to_string(),
+        ))?;
         populate_extensions_inner(
             &self.spec_old.os.extensions,
             &mut self.extensions_old,
             timeout,
+            false,
         )
         .structured(InternalError::PopulateExtensionImages(
             "Failed with existing extension images.".to_string(),
@@ -98,38 +104,49 @@ fn populate_extensions_inner(
     hc_extensions: &Vec<Extension>,
     ctx_extensions: &mut Vec<ExtensionData>,
     timeout: Duration,
+    new: bool,
 ) -> Result<(), Error> {
     let temp_mp = tempfile::tempdir()?;
 
     for ext in hc_extensions {
-        let extension_file = match &ext.location {
-            Some(extension_file) => extension_file.clone(),
-            None => {
-                // Persist the temporary file and get its path
-                NamedTempFile::new()
-                    .context("Failed to create temporary file")?
-                    .into_temp_path()
-                    .keep()
-                    .context("Failed to persist temporary file")?
-            }
-        };
+        let extension_file = if new {
+            // Create and persist a temporary file; get its path
+            let temp_file = NamedTempFile::new()
+                .context("Failed to create temporary file")?
+                .into_temp_path()
+                .keep()
+                .context("Failed to persist temporary file")?;
 
-        let reader = FileReader::new(&ext.url, timeout)
-            .context("Failed to create file reader")?
-            .complete_reader()
-            .context("Failed to create complete file reader")?;
-        let hash_reader = HashingReader384::new(reader);
-        let computed_sha384 =
-            stream_and_hash(hash_reader, &extension_file).context("Failed to read and write")?;
-        // Ensure computed SHA384 matches SHA384 in OS image
-        if ext.sha384 != computed_sha384 {
-            bail!(
-                "SHA384 mismatch for extension image at '{}': expected {}, got {}",
-                ext.url,
-                ext.sha384,
-                computed_sha384
-            )
-        }
+            // Download the extension image to this temporary file
+            let reader = FileReader::new(&ext.url, timeout)
+                .context("Failed to create file reader")?
+                .complete_reader()
+                .context("Failed to create complete file reader")?;
+            let hash_reader = HashingReader384::new(reader);
+            let computed_sha384 =
+                stream_and_hash(hash_reader, &temp_file).context("Failed to read and write")?;
+
+            // Ensure computed SHA384 matches SHA384 in Host Configuration
+            if ext.sha384 != computed_sha384 {
+                bail!(
+                    "SHA384 mismatch for extension image at '{}': expected {}, got {}",
+                    ext.url,
+                    ext.sha384,
+                    computed_sha384
+                )
+            }
+
+            temp_file
+        } else {
+            // For extension images from the old Host Configuration, use the
+            // existing file.
+            ext.location.clone().with_context(|| {
+                format!(
+                    "Failed to retrieve current location of extension image '{}'",
+                    ext.url
+                )
+            })?
+        };
 
         // Attach a device and mount the extension
         let device_path =
