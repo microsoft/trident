@@ -335,17 +335,21 @@ fn simple_copy_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
     // Rename all copied files from to_dir/<filename>.new to to_dir/<filename>
     fs::read_dir(to_dir)?.flatten().for_each(|orig_path| {
         let orig_file_name = orig_path.file_name();
+        if !orig_file_name.to_string_lossy().ends_with(".new") {
+            // Skip files that do not end with .new
+            return;
+        }
         let orig_file_name_string = orig_file_name.to_string_lossy();
         let new_file_name = orig_file_name_string.trim_end_matches(".new");
         let to_path = to_dir.join(new_file_name);
         match fs::rename(orig_path.path(), &to_path) {
             Ok(_) => debug!(
-                "Copied file {} to {}",
+                "Renamed file {} to {}",
                 orig_path.path().display(),
                 to_path.display()
             ),
             Err(e) => debug!(
-                "Failed to copy file {} to {}: {}",
+                "Failed to rename file {} to {}: {}",
                 orig_path.path().display(),
                 to_path.display(),
                 e
