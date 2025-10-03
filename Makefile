@@ -1,8 +1,6 @@
 # Path to the Trident configuration file for validate and run-netlaunch targets.
 TRIDENT_CONFIG ?= input/trident.yaml
 
-ARGUS_TOOLKIT_PATH ?= ../argus-toolkit
-
 PLATFORM_TESTS_PATH ?= ../platform-tests
 
 TEST_IMAGES_PATH ?= ../test-images
@@ -12,8 +10,6 @@ HOST_CONFIG ?= base.yaml
 NETLAUNCH_CONFIG ?= input/netlaunch.yaml
 
 OVERRIDE_RUST_FEED ?= true
-
-PYTHON_CMD ?= python3
 
 SERVER_PORT ?= 8133
 
@@ -443,7 +439,7 @@ validate: $(TRIDENT_CONFIG) bin/trident
 
 NETLAUNCH_ISO ?= bin/trident-mos.iso
 
-input/netlaunch.yaml: $(ARGUS_TOOLKIT_PATH)/vm-netlaunch.yaml
+input/netlaunch.yaml: tools/vm-netlaunch.yaml
 	@mkdir -p input
 	ln -vsf "$$(realpath "$<")" $@
 
@@ -792,10 +788,15 @@ validate-pipeline-website-artifact:
 		sudo apt install gh; \
 	fi
 	$(eval STAGING_DIR := $(shell mktemp -d))
+	cp -r ./website/. $(STAGING_DIR)/
+	rm -rf $(STAGING_DIR)/build && \
+		mkdir -p $(STAGING_DIR)/build
 	$(eval RUN_ID ?= $(shell gh run list --workflow 'Deploy to GitHub Pages' --repo microsoft/trident --json conclusion,databaseId --jq '.[] | select(.conclusion == "success") | .databaseId' | sort -n | tail -n 1))
 	@echo "Downloading GitHub Pages artifact from $(RUN_ID)"
-	gh run download $(RUN_ID) --name github-pages --repo microsoft/trident --dir $(STAGING_DIR)
-	cd $(STAGING_DIR) && \
+	gh run download $(RUN_ID) --name github-pages --repo microsoft/trident --dir $(STAGING_DIR)/build
+	cd $(STAGING_DIR)/build && \
 		tar -xvf ./artifact.tar && \
-		$(PYTHON_CMD) -m http.server $(SERVER_PORT)
+		cd $(STAGING_DIR) && \
+		npm install && \
+			npm run serve -- --port $(SERVER_PORT)
 

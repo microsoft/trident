@@ -20,7 +20,7 @@ Pull [minimal-os](../Reference/Glossary.md#minimal-os) as a base image from MCR 
 ``` bash
 mkdir -p $HOME/staging
 pushd $HOME/staging
-oras pull mcr.microsoft.com/azurelinux/3.0/image/minimal-os:latest
+oras pull mcr.microsoft.com/azurelinux/3.0/image/minimal-os:latest --platform linux/amd64
 popd
 ```
 
@@ -98,9 +98,6 @@ os:
   bootloader:
     resetType: hard-reset
   hostname: update-ready-os
-
-  selinux:
-    mode: enforcing
 
   kernelCommandLine:
     extraCommandLine:

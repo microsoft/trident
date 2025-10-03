@@ -66,30 +66,48 @@ stages:
 
         variables:
           # Sourced from the matrix
-          tridentConfigurationName: $(configuration)
+          - name: tridentConfigurationName
+            value: $(configuration)
 
-          tridentConfigPath: $(tridentSourceDirectory)/tests/e2e_tests/trident_configurations/$(tridentConfigurationName)
+          - name: tridentSourceDirectory
+            value: $(Build.SourcesDirectory)
 
-          tridentSourceDirectory: $(Build.SourcesDirectory)
-          argusToolkitSourceDirectory: $(Build.SourcesDirectory)/argus-toolkit
+          - name: tridentConfigPath
+            value: $(tridentSourceDirectory)/tests/e2e_tests/trident_configurations/$(tridentConfigurationName)
 
-          ${{ if eq(parameters.runtimeEnv, 'container') }}:
-            installerISOName: trident-container-installer
-            testImageName: trident-container-testimage
-            verityTestImageName: trident-container-verity-testimage
-            usrVerityTestImageName: trident-container-usrverity-testimage
-            downloadTridentContainer: true
-          ${{ else }}:
-            installerISOName: trident-installer
-            testImageName: trident-testimage
-            verityTestImageName: trident-verity-testimage
-            usrVerityTestImageName: trident-usrverity-testimage
-            downloadTridentContainer: false
+          - ${{ if eq(parameters.runtimeEnv, 'container') }}:
+              - name: installerISOName
+                value: trident-container-installer
+              - name: testImageName
+                value: trident-container-testimage
+              - name: verityTestImageName
+                value: trident-container-verity-testimage
+              - name: usrVerityTestImageName
+                value: trident-container-usrverity-testimage
+              - name: downloadTridentContainer
+                value: true
+          - ${{ else }}:
+              - name: installerISOName
+                value: trident-installer
+              - name: testImageName
+                value: trident-testimage
+              - name: verityTestImageName
+                value: trident-verity-testimage
+              - name: usrVerityTestImageName
+                value: trident-usrverity-testimage
+              - name: downloadTridentContainer
+                value: false
 
-          ob_outputDirectory: $(tridentSourceDirectory)/deployment_logs
-          ob_artifactBaseName: $(tridentConfigurationName)_${{ parameters.runtimeEnv }}_deployment_log_$(System.JobAttempt)
+          - name: ob_outputDirectory
+            value: $(tridentSourceDirectory)/deployment_logs
+          - name: ob_artifactBaseName
+            value: $(tridentConfigurationName)_${{ parameters.runtimeEnv }}_deployment_log_$(System.JobAttempt)
 
-          netlaunchPort: 4000
+          - name: netlaunchPort
+            value: 4000
+
+          # Provides: ACR_NAME
+          - group: trident_e2e_params
 
         steps:
           - bash: |
@@ -99,9 +117,6 @@ stages:
                 echo "##vso[task.setvariable variable=installerISOName]$splitInstallerIsoName"
               fi
             displayName: Special handle for split test
-
-          - checkout: argus-toolkit
-            fetchDepth: 1
 
           # Download all test images
           - template: ../testing_common/download-test-images.yml
@@ -113,12 +128,11 @@ stages:
               tridentTestImageUsrVerity: ${{ variables.usrVerityTestImageName }}
 
           # Push (regular or container) testimage to ACR
-          #   - template: ../common_tasks/push-to-acr.yml
-          #     parameters:
-          #       imageName: ${{ variables.testImageName }}
-          #       registry: # TODO: replace with variable
-          #       config: ${{ variables.tridentConfigurationName }}
-          #       deploymentEnvironment: "virtualMachine"
+          - template: ../common_tasks/push-to-acr.yml
+            parameters:
+              imageName: ${{ variables.testImageName }}
+              config: ${{ variables.tridentConfigurationName }}
+              deploymentEnvironment: "virtualMachine"
 
           - template: netlaunch-prep.yml
 
@@ -128,7 +142,6 @@ stages:
               tridentConfigPath: $(tridentConfigPath)
               runtimeEnv: ${{ parameters.runtimeEnv }}
               config: ${{ variables.tridentConfigurationName }}
-              registry: "" # TODO: replace with variable
               imageName: ${{ variables.testImageName }}
 
           - bash: |
@@ -140,8 +153,8 @@ stages:
               cat /etc/libvirt/virtlogd.conf
               sudo systemctl restart virtlogd.socket
 
-              ./virt-deploy create --mem 12 --disks 32,32
-            workingDirectory: $(argusToolkitSourceDirectory)
+              ./tools/virt-deploy create --mem 12 --disks 32,32
+            workingDirectory: $(tridentSourceDirectory)
             displayName: "Creating virt-deploy VM"
 
           - bash: |
@@ -156,21 +169,31 @@ stages:
                 MAX_FAILURES_FLAG="--max-failures 1"
               fi
 
-              # TODO: Enable SecureBoot for E2E tests that require it.
+              # Enable SecureBoot for E2E tests that use usr-verity image.
+              # TODO: Enable SecureBoot for all E2E tests.
               SECURE_BOOT=""
+              TRIDENT_CONFIG="$(tridentConfigPath)/trident-config.yaml"
+              IMAGE_URL=$(sudo yq '.image.url' "$TRIDENT_CONFIG")
+              if [[ "$IMAGE_URL" == *usrverity.cosi ]]; then
+                SECURE_BOOT="--secure-boot"
+              fi
 
-              # If $(ob_artifactBaseName)/cert.pem exists, set --signing-cert
-              # to use it; otherwise, set it to an empty string. This can be
-              # used for SecureBoot and sysext signing.
-              if [ -f $(ob_artifactBaseName)/cert.pem ]; then
-                SIGNING_CERT="--signing-cert $(ob_artifactBaseName)/cert.pem"
+              # If a signing certificate exists, set --signing-cert to use it;
+              # otherwise, set it to an empty string. This can be used for
+              # SecureBoot and sysext signing.
+              # TODO: This needs to be updated to enable SecureBoot for all E2E
+              # tests.
+              CERT_SEARCH_PATH="$(System.ArtifactsDirectory)/usrverity-testimage"
+              CA_CERT_PATH="$CERT_SEARCH_PATH/ca_cert.pem"
+              if [ -f "$CA_CERT_PATH" ]; then
+                SIGNING_CERT="--signing-cert $CA_CERT_PATH"
               else
                 SIGNING_CERT=""
               fi
 
               ./bin/netlaunch \
                   --iso ./artifacts/iso/$(installerISOName).iso \
-                  --config $(argusToolkitSourceDirectory)/vm-netlaunch.yaml \
+                  --config $(tridentSourceDirectory)/tools/vm-netlaunch.yaml \
                   --trident $(tridentConfigPath)/trident-config.yaml \
                   --servefolder ./artifacts/test-image \
                   --logstream \
@@ -194,7 +217,7 @@ stages:
           - bash: |
               set -ux
 
-              VM_NAME=$(jq -r '.virtualmachines[0].name' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)
+              VM_NAME=$(jq -r '.virtualmachines[0].name' $(tridentSourceDirectory)/tools/virt-deploy-metadata.json)
               VM_SERIAL_LOG="/tmp/$VM_NAME-serial0.log"
 
               until [ -f "$VM_SERIAL_LOG" ]
@@ -225,7 +248,7 @@ stages:
           - bash: |
               set -eux
 
-              HOST_IP=$(jq -r '.virtualmachines[0].ip' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)
+              HOST_IP=$(jq -r '.virtualmachines[0].ip' $(tridentSourceDirectory)/tools/virt-deploy-metadata.json)
               ./bin/storm-trident helper check-selinux \
                   "$(tridentSourceDirectory)/tests/e2e_tests/helpers/key" \
                   "$HOST_IP" \
@@ -238,7 +261,7 @@ stages:
 
           - bash: |
               set -eux
-              HOST_IP=$(jq -r '.virtualmachines[0].ip' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)
+              HOST_IP=$(jq -r '.virtualmachines[0].ip' $(tridentSourceDirectory)/tools/virt-deploy-metadata.json)
               ssh -o StrictHostKeyChecking=no -i $(tridentSourceDirectory)/tests/e2e_tests/helpers/key testing-user@$HOST_IP \
                 'sudo journalctl -u docker.service'
               ssh -o StrictHostKeyChecking=no -i $(tridentSourceDirectory)/tests/e2e_tests/helpers/key testing-user@$HOST_IP \
@@ -248,7 +271,7 @@ stages:
 
           - bash: |
               set -eux
-              HOST_IP=$(jq -r '.virtualmachines[0].ip' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)
+              HOST_IP=$(jq -r '.virtualmachines[0].ip' $(tridentSourceDirectory)/tools/virt-deploy-metadata.json)
               ./bin/storm-trident helper boot-metrics \
                   "$(tridentSourceDirectory)/tests/e2e_tests/helpers/key" \
                   "$HOST_IP" \
@@ -276,7 +299,7 @@ stages:
               buildPurpose: ${{ parameters.buildPurpose }}
               deploymentEnvironment: virtualMachine
               tridentConfigurationName: $(tridentConfigurationName)
-              hostIp: $(jq -r '.virtualmachines[0].ip' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)
+              hostIp: $(jq -r '.virtualmachines[0].ip' $(tridentSourceDirectory)/tools/virt-deploy-metadata.json)
               runtimeEnv: ${{ parameters.runtimeEnv }}
               tridentConfigPath: $(tridentConfigPath)
               sshKeyPath: $(tridentSourceDirectory)/tests/e2e_tests/helpers/key
@@ -284,11 +307,10 @@ stages:
               artifactsDirectory: artifacts/test-image
               netlistenPort: ${{variables.netlaunchPort}}
 
-          #   - template: ../common_tasks/remove-from-acr.yml
-          #     parameters:
-          #       repository: ${{ variables.testImageName }}
-          #       registry: # TODO: replace with variable
-          #       config: ${{ variables.tridentConfigurationName }}
+          - template: ../common_tasks/remove-from-acr.yml
+            parameters:
+              repository: ${{ variables.testImageName }}
+              config: ${{ variables.tridentConfigurationName }}
 
           - bash: |
               set -eux

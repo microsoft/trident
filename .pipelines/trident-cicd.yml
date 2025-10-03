@@ -30,11 +30,6 @@ trigger: none
 
 resources:
   repositories:
-    - repository: argus-toolkit
-      type: git
-      name: argus-toolkit
-      ref: refs/heads/main
-
     - repository: platform-tests
       type: git
       name: platform-tests
@@ -111,8 +106,7 @@ extends:
             - DeploymentTesting_container
             # - BaremetalDeploymentTesting_host
             # - BaremetalDeploymentTesting_container
-            # TODO: re-enable servicing testing
-            # - ServicingTesting
+            - ServicingTesting
           jobs:
             - job: ProcessJunit_Job
               displayName: Process junit files

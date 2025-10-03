@@ -27,6 +27,16 @@ This parameter is required and must not be empty. Each item is an object that wi
    | Type           | `EncryptedVolume`                       |
    | Link           | [EncryptedVolume](./EncryptedVolume.md) |
 
+### `clearTpmOnInstall` (optional)
+
+Optional parameter that determines whether the TPM 2.0 device will be cleared on clean install. By default, it is set to false. If set to true, Trident will clear the TPM 2.0 device on install. TPM cannot be cleared on A/B updates.
+
+Clearing the TPM 2.0 device will remove all keys and data from the TPM 2.0 device. This operation is irreversible and could result in data loss. However, this option might be needed to ensure that the TPM 2.0 is in a known state; to avoid entering the DA (Direct Attack) lockout mode on repetitive provisioning attempts, e.g. during testing and development.
+
+| Characteristic | Value     |
+| -------------- | --------- |
+| Type           | `boolean` |
+
 ### `pcrs` (optional)
 
 Optional list of PCRs in TPM 2.0 device to seal to. If not specified, Trident will seal encrypted volumes against the following default options: - If doing a clean install of a grub ROS image, seal to PCR 7 while inside the MOS, - If doing a clean install of a UKI ROS image, seal to PCRs 4 and 11 after booting into the ROS A.

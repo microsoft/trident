@@ -359,3 +359,7 @@ baremetal-serial.log
 
 # Local cargo config
 .cargo/config
+
+# Virtdeploy files
+/tools/vm-netlaunch.yaml
+/tools/virt-deploy-metadata.json
