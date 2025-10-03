@@ -5,18 +5,19 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{ensure, Context, Error};
+use anyhow::{bail, ensure, Context, Error};
 use etc_os_release::OsRelease;
-use log::debug;
+use log::{debug, trace};
 use osutils::dependencies::Dependency;
 use tempfile::NamedTempFile;
+use url::Url;
 
 use trident_api::{
     config::Extension,
+    constants::internal_params::COSI_HTTP_CONNECTION_TIMEOUT_SECONDS,
     error::{InternalError, ReportError, TridentError},
     primitives::hash::Sha384Hash,
 };
-use url::Url;
 
 use crate::{
     engine::EngineContext,
@@ -27,6 +28,8 @@ use crate::{
 
 const SYSEXT_EXTENSION_RELEASE_DIRECTORY: &str = "usr/lib/extension-release.d/";
 const CONFEXT_EXTENSION_RELEASE_DIRECTORY: &str = "etc/extension-release.d/";
+const SYSEXT_PREFIX: &str = "SYSEXT_";
+const CONFEXT_PREFIX: &str = "CONFEXT_";
 
 #[derive(Clone)]
 pub struct ExtensionData {
@@ -48,12 +51,25 @@ pub enum ExtensionType {
 impl EngineContext {
     /// Populate the `extensions` and `extensions_old` fields in EngineContext.
     pub fn populate_extensions(&mut self) -> Result<(), TridentError> {
-        populate_extensions_inner(&self.spec.os.extensions, &mut self.extensions)
+        let timeout = match self
+            .spec
+            .internal_params
+            .get_u64(COSI_HTTP_CONNECTION_TIMEOUT_SECONDS)
+        {
+            Some(Ok(timeout)) => Duration::from_secs(timeout),
+            _ => Duration::from_secs(10), // Default timeout
+        };
+
+        populate_extensions_inner(&self.spec.os.extensions, &mut self.extensions, timeout)
             .structured(InternalError::Internal("Failed to populate ctx.extensions"))?;
-        populate_extensions_inner(&self.spec_old.os.extensions, &mut self.extensions_old)
-            .structured(InternalError::Internal(
-                "Failed to populate ctx.extensions_old",
-            ))?;
+        populate_extensions_inner(
+            &self.spec_old.os.extensions,
+            &mut self.extensions_old,
+            timeout,
+        )
+        .structured(InternalError::Internal(
+            "Failed to populate ctx.extensions_old",
+        ))?;
         Ok(())
     }
 }
@@ -61,31 +77,39 @@ impl EngineContext {
 fn populate_extensions_inner(
     hc_extensions: &Vec<Extension>,
     ctx_extensions: &mut Vec<ExtensionData>,
+    timeout: Duration,
 ) -> Result<(), Error> {
-    let temp_mp = tempfile::tempdir().context("Failed to create temporary directory")?;
+    let temp_mp = tempfile::tempdir()?;
+
     for ext in hc_extensions {
         let extension_file = match &ext.location {
             Some(extension_file) => extension_file.clone(),
             None => {
                 // Persist the temporary file and get its path
                 NamedTempFile::new()
-                    .context("Failed to create temp file")?
+                    .context("Failed to create temporary file")?
                     .into_temp_path()
                     .keep()
-                    .context("Failed to persist temporary extension file")?
+                    .context("Failed to persist temporary file")?
             }
         };
 
-        let reader = FileReader::new(&ext.url, Duration::from_secs(10))
-            .context("Failed to create reader")?
+        let reader = FileReader::new(&ext.url, timeout)
+            .context("Failed to create file reader")?
             .complete_reader()
-            .context("Failed to obtain complete reader")?;
+            .context("Failed to create complete file reader")?;
         let hash_reader = HashingReader384::new(reader);
-        let hash =
+        let computed_sha384 =
             stream_and_hash(hash_reader, &extension_file).context("Failed to read and write")?;
-        if ext.sha384 != hash {
-            return Err(Error::msg("Hashes didn't match"));
-        };
+        // Ensure computed SHA384 matches SHA384 in OS image
+        if ext.sha384 != computed_sha384 {
+            bail!(
+                "SHA384 mismatch for extension image at '{}': expected {}, got {}",
+                ext.url,
+                ext.sha384,
+                computed_sha384
+            )
+        }
 
         // Attach a device and mount the extension
         let device_path =
@@ -100,6 +124,10 @@ fn populate_extensions_inner(
         // Clean-Up: unmount and detach the device
         detach_device_and_unmount(device_path, temp_mp.path()).context("Failed to unmount")?;
     }
+
+    // Clean-Up: close temporary directory
+    temp_mp.close()?;
+
     Ok(())
 }
 
@@ -109,7 +137,12 @@ fn read_extension_release(
     curr_location: &Path,
     ext: &Extension,
 ) -> Result<ExtensionData, Error> {
-    let mut prefix = "SYSEXT_";
+    debug!(
+        "Processing extension release file for extension image at '{}'",
+        ext.url
+    );
+
+    let mut prefix = SYSEXT_PREFIX;
     let sysext_release_dir = mount_point.join(SYSEXT_EXTENSION_RELEASE_DIRECTORY);
     let confext_release_dir = mount_point.join(CONFEXT_EXTENSION_RELEASE_DIRECTORY);
 
@@ -118,14 +151,10 @@ fn read_extension_release(
         Ok(dir) => dir,
         Err(_) => match fs::read_dir(&confext_release_dir) {
             Ok(dir) => {
-                prefix = "CONFEXT_";
+                prefix = CONFEXT_PREFIX;
                 dir
             }
-            Err(_) => {
-                return Err(Error::msg(
-                    "Failed to find extension release file for extension image.",
-                ))
-            }
+            Err(_) => return Err(Error::msg("Failed to find extension release file.")),
         },
     }
     .map(|res| res.map(|e| e.path()))
@@ -133,18 +162,17 @@ fn read_extension_release(
 
     ensure!(
         dir.len() == 1,
-        "Expected each extension image to have exactly 1 extension-release file."
+        "Expected extension image to have exactly 1 extension-release file, found '{}'",
+        dir.len()
     );
 
-    let path = &dir[0];
-    debug!("Evaluating path: '{}'", path.display());
-
     // Find the file whose `SYSEXT_ID` matches `name` parameter
+    let path = &dir[0];
     let extension_release_file_content = fs::read_to_string(path).context(format!(
-        "Failed to read extension-release file content from '{}'",
+        "Failed to read extension-release file content from file at '{}'",
         &path.display()
     ))?;
-    debug!("Found extension release file content:\n {extension_release_file_content}");
+    trace!("Found extension release file content:\n{extension_release_file_content}");
     let extension_release_obj = OsRelease::from_str(&extension_release_file_content)
         .with_context(|| "Failed to convert extension release file content to OsRelease object")?;
 
@@ -157,12 +185,14 @@ fn read_extension_release(
         .to_string()
         .split("extension-release.")
         .last()
-        .ok_or_else(|| Error::msg("Failed to get extension-release ending"))?
+        .ok_or_else(|| {
+            Error::msg("Failed to get extension name from extension release file extension")
+        })?
         .to_string();
     let location = match &ext.location {
         Some(location) => location.clone(),
         None => {
-            if prefix == "SYSEXT_" {
+            if prefix == SYSEXT_PREFIX {
                 PathBuf::from("/var/lib/extensions").join(format!("{file_name}.raw"))
             } else {
                 PathBuf::from("/var/lib/confexts").join(format!("{file_name}.raw"))
@@ -177,7 +207,7 @@ fn read_extension_release(
         sha384: ext.sha384.clone(),
         location,
         temp_location: Some(curr_location.to_path_buf()),
-        ext_type: if prefix == "SYSEXT_" {
+        ext_type: if prefix == SYSEXT_PREFIX {
             ExtensionType::Sysext
         } else {
             ExtensionType::Confext
