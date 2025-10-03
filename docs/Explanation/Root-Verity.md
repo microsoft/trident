@@ -8,7 +8,7 @@ state. This is achieved by creating a hash tree of the root filesystem
 contents, which is then used to validate the integrity of the data being
 accessed.
 
-The hash tree is visualized in the
+The Merkle hash tree is visualized in the
 [kernel documentation](https://docs.kernel.org/admin-guide/device-mapper/verity.html)
 like this, where the `root-hash` is the root node of the hash tree:
 
