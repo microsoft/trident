@@ -7,6 +7,10 @@ can be adopted by modifying the Trident Host Configuration to include
 [identifying details for these partitions](../Reference/Host-Configuration/API-Reference/AdoptedPartition.md).
 These identifying details can be either (but not both) a label or a UUID.
 
+> Note: Any other pre-existing partitions, which are not declared in the Host
+> Configuration to be adopted, will be over-written by Trident during
+> servicing.
+
 For example, to adopt 2 partitions from a single disk, one with a matching
 label (`disklabel-part1`) and one with matching UUID
 (`12345678-abcd-1234-abcd-123456789abc`), add this to your Host
