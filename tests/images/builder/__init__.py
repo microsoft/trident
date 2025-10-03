@@ -1,3 +1,5 @@
+import yaml
+
 from dataclasses import dataclass, field, fields
 from enum import Enum
 from pathlib import Path
@@ -138,6 +140,22 @@ class ImageConfig:
         if self.base_image == BaseImage.CORE_ARM64:
             self.architecture = SystemArchitecture.ARM64
 
+        # Placeholder for the loaded base Image Customizer config
+        self.__base_ic_config = None
+
+    @property
+    def base_ic_config(self) -> dict:
+        """Lazy-load and return the base Image Customizer config as a dict."""
+        if self.__base_ic_config is None:
+            try:
+                with open(self.full_yaml_path(), "r") as f:
+                    self.__base_ic_config = yaml.safe_load(f)
+            except Exception as e:
+                raise RuntimeError(
+                    f"Error loading image config '{self.full_yaml_path()}': {e}"
+                ) from e
+        return self.__base_ic_config
+
     def base_dir(self) -> Path:
         return Path(self.source) / self.config
 
@@ -159,14 +177,15 @@ class ImageConfig:
         deps.extend(self.extra_dependencies)
         return deps
 
-    def file_name(self, as_unsigned_raw: bool = False) -> str:
+    def file_name(self) -> str:
         """
-        Returns the file name for the image, defaulting to the signed image with requested output
-        format.
+        Returns the file name for the image.
         """
-        if as_unsigned_raw:
-            return f"{self.id}-unsigned.{OutputFormat.RAW.ext()}"
         return f"{self.id}.{self.output_format.ext()}"
+
+    def file_name_unsigned_raw(self) -> str:
+        """Returns the file name for the unsigned raw image."""
+        return f"{self.id}-unsigned.{OutputFormat.RAW.ext()}"
 
     def set_suffix(self, suffix: str) -> None:
         self.suffix = suffix
@@ -177,6 +196,24 @@ class ImageConfig:
         if self.suffix is None:
             return self.name
         return f"{self.name}_{self.suffix}"
+
+    def get_output_artifacts_dir(self) -> Optional[str]:
+        """
+        Return the output.artifacts.path from the image configuration YAML.
+        
+        Throws:
+            ValueError if the path is present but empty.
+        """
+        path = self.base_ic_config.get("output", {}).get("artifacts", {}).get("path")
+        if path is not None and not path:
+            raise ValueError("output.artifacts.path cannot be empty")
+        return path
+
+    def get_items_to_sign(self) -> List[str]:
+        """Return the list of items to sign from the image configuration YAML."""
+        return (
+            self.base_ic_config.get("output", {}).get("artifacts", {}).get("items", [])
+        )
 
 
 # IMPORTANT: THESE NAMES ARE EXPOSED IN THE CLI, MAKE SURE TO UPDATE ALL

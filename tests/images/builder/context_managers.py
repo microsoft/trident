@@ -8,6 +8,9 @@ from typing import Optional
 from contextlib import contextmanager
 from pathlib import Path
 
+logging.basicConfig(level=logging.DEBUG)
+log = logging.getLogger(__name__)
+
 
 @contextmanager
 def temp_dir(
@@ -29,9 +32,9 @@ def temp_dir(
     try:
         yield Path(build_dir)
     finally:
-        logging.debug(f"Cleaning up build dir: {build_dir}")
+        log.debug(f"Cleaning up build dir: {build_dir}")
         if sudo:
-            logging.debug(f"Removing build dir as root: {build_dir}")
+            log.debug(f"Removing build dir as root: {build_dir}")
             subprocess.run(["sudo", "rm", "-rf", build_dir], check=True)
         else:
             shutil.rmtree(build_dir)
@@ -53,7 +56,7 @@ def temp_file(path: Path, sudo: bool = False):
         yield path
     finally:
         if path.exists():
-            logging.debug(f"Cleaning up temp file: {path}")
+            log.debug(f"Cleaning up temp file: {path}")
             if sudo:
                 subprocess.run(["sudo", "rm", "-f", str(path)], check=True)
             else:

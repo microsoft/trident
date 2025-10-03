@@ -6,13 +6,14 @@ import re
 import shutil
 import yaml
 import threading
+import tempfile
 
 from contextlib import ExitStack
 from cryptography.hazmat.backends import default_backend as crypto_default_backend
 from cryptography.hazmat.primitives import serialization as crypto_serialization
 from cryptography.hazmat.primitives.asymmetric import rsa, ed25519
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from builder import ArtifactManifest, ImageConfig, OutputFormat, customize, sign
 from builder.context_managers import temp_dir, temp_file
@@ -53,8 +54,8 @@ def build_image(
 
     # If image needs signing, generate a CA certificate
     ca_tmp_dir, ca_nss_key_db = None, None
-    if get_output_artifacts_dir(image.full_yaml_path()):
-        ca_tmp_dir = temp_dir(prefix="ca_").__enter__()
+    if image.get_output_artifacts_dir():
+        ca_tmp_dir = Path(tempfile.mkdtemp(prefix="ca_"))
         ca_nss_key_db = sign.generate_ca_certificate(ca_tmp_dir)
 
     try:
@@ -145,49 +146,14 @@ def build_one(
         # If config YAML contains output.artifacts, then need to output signed image. First, build
         # an unsigned image; then, sign boot artifacts, and inject the signed copies back, to build
         # a signed image as final output.
-        if output_artifacts_dir := get_output_artifacts_dir(image.full_yaml_path()):
-            # Set output format of unsigned image to raw file since that's the format used
-            # internally by Image Customizer for file injection
-            raw_output_format = OutputFormat.RAW.ic_name()
-
-            # Create a thread-specific copy of YAML in the same dir as main YAML
-            yaml_dir = image.full_yaml_path().parent
-            yaml_path = yaml_dir / f"config_{image.id}.yaml"
-            shutil.copy(image.full_yaml_path(), yaml_path)
-            stack.enter_context(temp_file(yaml_path, sudo=False))
-
-            # Create a temp dir inside yaml_dir to store the unsigned image and output artifacts
-            output_artifacts_dir = stack.enter_context(
-                temp_dir(prefix=f"{image.id}-", dir=yaml_dir, sudo=True)
-            )
-            # Modify thread-specific YAML to point to output_artifacts_dir
-            update_output_artifact_path(yaml_path, output_artifacts_dir)
-
-            # Construct the path to the unsigned image
-            unsigned_output_file = output_artifacts_dir / image.file_name(True)
-            log.debug(
-                f"Process with PID {threading.get_ident()} will write unsigned image and output artifacts to {output_artifacts_dir.absolute()}"
-            )
-
-            # Build the unsigned image
-            customize.build_config(
-                container_image,
-                image.id,
-                yaml_path,
-                image.base_image.path,
-                raw_output_format,
-                unsigned_output_file,
-                tmp_rpm_sources,
-                dry_run,
-            )
-
-            # Now, produce the signed image
+        if image.get_output_artifacts_dir():
             build_signed_image(
+                stack,
                 container_image,
                 image,
-                unsigned_output_file,
+                tmp_rpm_sources,
                 output_dir,
-                output_artifacts_dir,
+                output_file,
                 ca_nss_key_db,
                 dry_run,
             )
@@ -401,29 +367,40 @@ def generate_ssh_keys(
 
 
 def build_signed_image(
+    stack: ExitStack,
     container_image: str,
     image: ImageConfig,
-    unsigned_image_file: Path,
+    tmp_rpm_sources: List[Path],
     output_dir: Path,
-    output_artifacts_dir: Path,
+    output_file: Path,
     ca_nss_key_db: Path,
     dry_run: bool = False,
 ):
-    """
-    Builds a signed image by generating a signing key, signing the UKI, and injecting it into the
-    unsigned image. This is required to enable SecureBoot for testing.
 
-    Args:
-        container_image: Image Customizer container image to run the command in
-        image: Image Config
-        unsigned_image_file: Path to temp file where unsigned image was written to
-        output_dir: Directory where images are output
-        output_artifacts_dir: Directory where output artifacts built by Image Customizer are placed
-        ca_nss_key_db: Path to the NSS key database containing the CA certificate
-        dry_run: If True, do not run the command
-    """
-    signed_image_file = output_dir / image.file_name()
-    log.info(f"Building signed image: {signed_image_file}")
+    # Set up thread-specific YAML and output artifacts directory
+    working_yaml_path, output_artifacts_dir = setup_temp_yaml_and_dir(stack, image)
+
+    # Construct the path to the unsigned image
+    unsigned_output_file = output_artifacts_dir / image.file_name_unsigned_raw()
+    log.debug(
+        f"Process with PID {threading.get_ident()} will write unsigned image and output artifacts to {output_artifacts_dir.absolute()}"
+    )
+
+    # Build the unsigned image
+    customize.build_config(
+        container_image,
+        image.id,
+        working_yaml_path,
+        image.base_image.path,
+        # Set output format of unsigned image to raw file since that's the format used
+        # internally by Image Customizer for file injection
+        OutputFormat.RAW.ic_name(),
+        unsigned_output_file,
+        tmp_rpm_sources,
+        dry_run,
+    )
+
+    log.info(f"Building signed image: {output_file}")
 
     # Generate a leaf certificate for this clone using the CA certificate. The leaf certificate
     # must be generated in the same NSS key database as the CA certificate.
@@ -433,61 +410,62 @@ def build_signed_image(
     inject_files_yaml_path = output_artifacts_dir / INJECT_FILES_YAML
     # Sign boot artifacts that Image Customizer output when building the unsigned image
     sign.sign_boot_artifacts(
-        ca_nss_key_db, leaf_key_name, inject_files_yaml_path, output_artifacts_dir
+        ca_nss_key_db,
+        leaf_key_name,
+        image.get_items_to_sign(),
+        inject_files_yaml_path,
+        output_artifacts_dir,
     )
 
     # Run inject-files via Image Customizer to inject the signed UKI back into the image
     log.info(
         f"Running imagecustomizer inject-files using YAML: {inject_files_yaml_path}"
     )
+    log.debug(
+        f"Contents of output artifacts directory: {output_artifacts_dir}:\n"
+        + "\n".join([str(p) for p in output_artifacts_dir.rglob("*") if p.is_file()])
+    )
     customize.inject_files(
         container_image,
         inject_files_yaml_path,
-        unsigned_image_file,
+        unsigned_output_file,
         image.output_format.ic_name(),
-        signed_image_file,
+        output_file,
         dry_run,
     )
 
-    return signed_image_file
 
-
-def get_output_artifacts_dir(image_yaml_path: Path) -> Optional[Path]:
+def setup_temp_yaml_and_dir(
+    stack: ExitStack,
+    image: ImageConfig,
+) -> Tuple[Path, Path]:
     """
-    Gets the output dir path for artifacts from the image configuration YAML. If the image does not
-    need signing, then there is no such component inside YAML, so returns None.
-
-    Args:
-        image_yaml_path: Path to the image YAML configuration file
-
-    Returns:
-        Path to the output directory for artifacts as a string
-
-    Raises:
-        Exception: If the output.artifacts.path is not found in the config file
+    Sets up a temporary YAML file and output artifacts directory for building a signed image.
+    Returns the path to the temporary YAML file and the output artifacts directory.
     """
-    with open(image_yaml_path, "r") as f:
-        config = yaml.safe_load(f)
 
-    return config.get("output", {}).get("artifacts", {}).get("path")
+    # Figure out the directory of the main YAML file
+    yaml_dir = image.full_yaml_path().parent.absolute()
 
+    # Create a temp dir inside yaml_dir to store the unsigned image and output artifacts
+    output_artifacts_dir = stack.enter_context(
+        temp_dir(prefix=f".{image.id}-", dir=yaml_dir, sudo=True)
+    )
 
-def update_output_artifact_path(yaml_path: Path, tmp_dir: Path):
-    """
-    Updates output.artifacts.path in the image configuration YAML at yaml_path to tmp_dir.
-    """
-    yaml_dir = yaml_path.parent.absolute()
-    tmp_rel_path = str(tmp_dir.relative_to(yaml_dir))
+    # Now figure out the relative path from yaml_dir to output_artifacts_dir
+    tmp_rel_path = output_artifacts_dir.absolute().relative_to(yaml_dir)
 
-    with open(yaml_path, "r") as f:
-        config = yaml.safe_load(f)
+    # Update the in-memory config, this is safe because every thread has its own copy of the YAML.
+    # We use the relative path because the path should be relative to the YAML location.
+    image.base_ic_config["output"]["artifacts"]["path"] = f"./{tmp_rel_path}"
 
-    # Defensive: only update if "output" and "artifacts" keys exist
-    if "output" in config and "artifacts" in config["output"]:
-        config["output"]["artifacts"]["path"] = tmp_rel_path
-        with open(yaml_path, "w") as f:
-            yaml.safe_dump(config, f)
-    else:
-        raise KeyError(
-            f"YAML file '{yaml_path}' does not contain 'output.artifacts.path'"
-        )
+    # Create a thread-specific copy of YAML in the same dir as main YAML
+    working_yaml_path = yaml_dir / f".config_{image.id}.yaml"
+
+    with open(working_yaml_path, "w") as f:
+        yaml.safe_dump(image.base_ic_config, f)
+
+    # Ensure the temp YAML file is deleted at the end
+    stack.enter_context(temp_file(working_yaml_path))
+
+    return working_yaml_path, output_artifacts_dir
