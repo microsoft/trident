@@ -16,11 +16,11 @@ use osutils::{
     path,
 };
 use trident_api::{
-    config::UefiFallbackMode,
+    config::{NewFileSystemType, UefiFallbackMode},
     constants::{
         internal_params::DISABLE_GRUB_NOPREFIX_CHECK, EFI_DEFAULT_BIN_DIRECTORY,
-        EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY, ESP_RELATIVE_MOUNT_POINT_PATH,
-        GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH,
+        EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY, ESP_MOUNT_POINT_PATH,
+        ESP_RELATIVE_MOUNT_POINT_PATH, GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH,
     },
     error::{ReportError, ServicingError, TridentError, TridentResultExt},
     status::AbVolumeSelection,
@@ -231,8 +231,7 @@ fn copy_file_artifacts(
                             Some(AbVolumeSelection::VolumeB) => AbVolumeSelection::VolumeB,
                         },
                     );
-                    let active_boot_esp_dir_path = mount_point
-                        .join(ESP_RELATIVE_MOUNT_POINT_PATH)
+                    let active_boot_esp_dir_path = PathBuf::from(ESP_MOUNT_POINT_PATH)
                         .join(ESP_EFI_DIRECTORY)
                         .join(active_boot_esp_dir_name);
                     let uefi_fallback_path = mount_point
@@ -250,16 +249,12 @@ fn copy_file_artifacts(
                             .collect::<Vec<String>>()
                             .join(", ")
                     );
-                    copy_boot_files(
-                        &active_boot_esp_dir_path,
-                        &uefi_fallback_path,
-                        boot_files.clone(),
-                    )
-                    .context(format!(
-                        "Failed to copy boot files from directory {} to directory {}",
-                        active_boot_esp_dir_path.display(),
-                        uefi_fallback_path.display()
-                    ))?;
+                    simple_copy_boot_files(&active_boot_esp_dir_path, &uefi_fallback_path)
+                        .context(format!(
+                            "Failed to copy boot files from directory {} to directory {}",
+                            active_boot_esp_dir_path.display(),
+                            uefi_fallback_path.display()
+                        ))?;
                 }
                 _ => {
                     // Otherwise, should this be an error???
@@ -280,15 +275,14 @@ fn copy_file_artifacts(
                     debug!(
                         "{:?} detected. Copying boot files from {} to {}.",
                         ctx.servicing_type,
-                        temp_mount_dir.display(),
+                        esp_dir_path.display(),
                         uefi_fallback_path.display()
                     );
-                    copy_boot_files(temp_mount_dir, &uefi_fallback_path, boot_files.clone())
-                        .context(format!(
-                            "Failed to copy boot files from directory {} to directory {}",
-                            temp_mount_dir.display(),
-                            uefi_fallback_path.display()
-                        ))?;
+                    simple_copy_boot_files(&esp_dir_path, &uefi_fallback_path).context(format!(
+                        "Failed to copy boot files from directory {} to directory {}",
+                        esp_dir_path.display(),
+                        uefi_fallback_path.display()
+                    ))?;
                 }
                 _ => {
                     // Otherwise, should this be an error???
@@ -301,6 +295,52 @@ fn copy_file_artifacts(
         }
     }
 
+    Ok(())
+}
+
+/// Copies boot files from temp_mount_dir, where image was mounted to, to given dir esp_dir.
+///
+/// Returns a boolean indicating whether grub-noprefix.efi is used.
+fn simple_copy_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
+    // Copy all files from from_dir to to_dir as <existing_filename>.new
+    fs::read_dir(from_dir)?.flatten().for_each(|from_path| {
+        let to_file_name = format!("{}.new", from_path.file_name().to_string_lossy());
+        let to_path = to_dir.join(to_file_name);
+        match fs::copy(from_path.path(), &to_path) {
+            Ok(_) => debug!(
+                "Copied file {} to {}",
+                from_path.path().display(),
+                to_path.display()
+            ),
+            Err(e) => debug!(
+                "Failed to copy file {} to {}: {}",
+                from_path.path().display(),
+                to_path.display(),
+                e
+            ),
+        }
+    });
+
+    // Rename all copied files from to_dir/<filename>.new to to_dir/<filename>
+    fs::read_dir(to_dir)?.flatten().for_each(|orig_path| {
+        let orig_file_name = orig_path.file_name();
+        let orig_file_name_string = orig_file_name.to_string_lossy();
+        let new_file_name = orig_file_name_string.trim_end_matches(".new");
+        let to_path = to_dir.join(new_file_name);
+        match fs::rename(orig_path.path(), &to_path) {
+            Ok(_) => debug!(
+                "Copied file {} to {}",
+                orig_path.path().display(),
+                to_path.display()
+            ),
+            Err(e) => debug!(
+                "Failed to copy file {} to {}: {}",
+                orig_path.path().display(),
+                to_path.display(),
+                e
+            ),
+        }
+    });
     Ok(())
 }
 
