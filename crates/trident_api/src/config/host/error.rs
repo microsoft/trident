@@ -40,6 +40,12 @@ pub enum HostConfigurationStaticValidationError {
     #[error("Datastore path '{datastore_path}' must be in a known volume")]
     DatastorePathNotInKnownVolume { datastore_path: String },
 
+    #[error("Host Configuration contains extension images with duplicate hashes '{hash}', but extension images must be unique")]
+    DuplicateExtensionImage { hash: String },
+
+    #[error("Host Configuration contains extension images with duplicate locations '{location}', but extension images must have unique locations")]
+    DuplicateExtensionImageLocation { location: String },
+
     #[error("Host Configuration contains duplicate usernames '{username}', but usernames must be unique")]
     DuplicateUsernames { username: String },
 

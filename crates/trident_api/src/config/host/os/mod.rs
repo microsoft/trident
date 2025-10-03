@@ -186,6 +186,28 @@ impl Os {
             network::validate_netplan(network)?;
         }
 
+        let mut ext_img_hashes = HashSet::new();
+        let mut ext_img_locations = HashSet::new();
+        for ext in &self.extensions {
+            if !ext_img_hashes.insert(&ext.sha384) {
+                return Err(
+                    HostConfigurationStaticValidationError::DuplicateExtensionImage {
+                        hash: ext.sha384.to_string(),
+                    },
+                );
+            }
+            if let Some(location) = &ext.location {
+                if !ext_img_locations.insert(&ext.location) {
+                    return Err(
+                        HostConfigurationStaticValidationError::DuplicateExtensionImageLocation {
+                            location: location.display().to_string(),
+                        },
+                    );
+                }
+            }
+            ext.validate()?;
+        }
+
         Ok(())
     }
 }
