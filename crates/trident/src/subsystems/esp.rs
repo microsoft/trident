@@ -16,7 +16,7 @@ use osutils::{
     path,
 };
 use trident_api::{
-    config::{NewFileSystemType, UefiFallbackMode},
+    config::UefiFallbackMode,
     constants::{
         internal_params::DISABLE_GRUB_NOPREFIX_CHECK, EFI_DEFAULT_BIN_DIRECTORY,
         EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY, ESP_MOUNT_POINT_PATH,
