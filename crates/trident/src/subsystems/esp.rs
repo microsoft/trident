@@ -16,12 +16,14 @@ use osutils::{
     path,
 };
 use trident_api::{
+    config::UefiFallbackMode,
     constants::{
-        internal_params::DISABLE_GRUB_NOPREFIX_CHECK, EFI_DEFAULT_BIN_RELATIVE_PATH,
-        ESP_EFI_DIRECTORY, ESP_RELATIVE_MOUNT_POINT_PATH, GRUB2_CONFIG_FILENAME,
-        GRUB2_CONFIG_RELATIVE_PATH,
+        internal_params::DISABLE_GRUB_NOPREFIX_CHECK, EFI_DEFAULT_BIN_DIRECTORY,
+        EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY, ESP_RELATIVE_MOUNT_POINT_PATH,
+        GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH,
     },
     error::{ReportError, ServicingError, TridentError, TridentResultExt},
+    status::AbVolumeSelection,
 };
 
 use crate::{
@@ -186,8 +188,8 @@ fn copy_file_artifacts(
     }
 
     // Call helper func to copy boot files from temp_mount_dir to esp_dir_path
-    let grub_noprefix =
-        copy_boot_files(temp_mount_dir, &esp_dir_path, boot_files).context(format!(
+    let grub_noprefix = copy_boot_files(temp_mount_dir, &esp_dir_path, boot_files.clone())
+        .context(format!(
             "Failed to copy boot files from directory {} to directory {}",
             temp_mount_dir.display(),
             esp_dir_path.display()
@@ -210,6 +212,76 @@ fn copy_file_artifacts(
             "Cannot locate {GRUB_NOPREFIX_EFI} in the boot image. \
                 Verify if the grub2-efi-binary-noprefix package was installed on the booted image.",
         );
+    }
+
+    match ctx.spec.os.uefi_fallback {
+        Some(UefiFallbackMode::Rollback) => {
+            debug!("UEFI fallback mode is set to rollback");
+            match ctx.servicing_type {
+                trident_api::status::ServicingType::CleanInstall => {
+                    // For clean install, do nothing
+                    debug!("Clean install detected. No action needed for UEFI rollback mode.");
+                }
+                trident_api::status::ServicingType::AbUpdate => {
+                    // For update, find the servicing os boot files and copy them to EFI/BOOT/.
+                    let active_boot_esp_dir_name = boot::make_esp_dir_name(
+                        ctx.install_index,
+                        match ctx.ab_active_volume {
+                            None | Some(AbVolumeSelection::VolumeA) => AbVolumeSelection::VolumeA,
+                            Some(AbVolumeSelection::VolumeB) => AbVolumeSelection::VolumeB,
+                        },
+                    );
+                    let active_boot_esp_dir_path = mount_point
+                        .join(ESP_RELATIVE_MOUNT_POINT_PATH)
+                        .join(ESP_EFI_DIRECTORY)
+                        .join(active_boot_esp_dir_name);
+                    let uefi_fallback_path = mount_point
+                        .join(ESP_RELATIVE_MOUNT_POINT_PATH)
+                        .join(ESP_EFI_DIRECTORY)
+                        .join(EFI_DEFAULT_BIN_DIRECTORY);
+                    copy_boot_files(
+                        &active_boot_esp_dir_path,
+                        &uefi_fallback_path,
+                        boot_files.clone(),
+                    )
+                    .context(format!(
+                        "Failed to copy boot files from directory {} to directory {}",
+                        active_boot_esp_dir_path.display(),
+                        uefi_fallback_path.display()
+                    ))?;
+                }
+                _ => {
+                    // Otherwise, should this be an error???
+                    debug!("{:?} detected, no action needed.", ctx.servicing_type);
+                }
+            }
+        }
+        Some(UefiFallbackMode::Rollforward) => {
+            debug!("UEFI fallback mode is set to rollforward");
+            match ctx.servicing_type {
+                trident_api::status::ServicingType::CleanInstall
+                | trident_api::status::ServicingType::AbUpdate => {
+                    // For install and update, copy COSI boot files to EFI/BOOT/.
+                    let uefi_fallback_path = mount_point
+                        .join(ESP_RELATIVE_MOUNT_POINT_PATH)
+                        .join(ESP_EFI_DIRECTORY)
+                        .join(EFI_DEFAULT_BIN_DIRECTORY);
+                    copy_boot_files(temp_mount_dir, &uefi_fallback_path, boot_files.clone())
+                        .context(format!(
+                            "Failed to copy boot files from directory {} to directory {}",
+                            temp_mount_dir.display(),
+                            uefi_fallback_path.display()
+                        ))?;
+                }
+                _ => {
+                    // Otherwise, should this be an error???
+                    debug!("{:?} detected, no action needed.", ctx.servicing_type);
+                }
+            }
+        }
+        Some(UefiFallbackMode::None) | None => {
+            debug!("No UEFI fallback mode is set");
+        }
     }
 
     Ok(())

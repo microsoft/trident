@@ -44,3 +44,4 @@ os:
     - name: testing-user
       sshPublicKeys: []
       sshMode: key-only
+  uefiFallback: rollback
