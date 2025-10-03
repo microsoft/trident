@@ -356,7 +356,7 @@ pub enum ServicingError {
     )]
     CopyPcrlockPolicyJson { path: String, destination: String },
 
-    #[error("Failed to copy Trident binary to runtime OS")]
+    #[error("Failed to copy Trident binary to target OS")]
     CopyTridentBinary,
 
     #[error("Failed to create boot entry '{boot_entry}' via efibootmgr")]

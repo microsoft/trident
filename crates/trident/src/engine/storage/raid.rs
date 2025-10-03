@@ -47,7 +47,7 @@ fn create(config: SoftwareRaidArray, ctx: &EngineContext) -> Result<(), Error> {
     if ctx.is_uki().unstructured("UKI setting unknown")? {
         // If UKI support is enabled, we need to create the RAID array with the
         // homehost=any option to ensure that the RAID array can be opened by the
-        // runtime OS.
+        // target OS.
         mdadm::create_homehost(&config.device_path(), &config.level, device_paths, "any")
     } else {
         mdadm::create(&config.device_path(), &config.level, device_paths)

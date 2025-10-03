@@ -73,7 +73,7 @@ impl Trident {
 
     /// Validate the Trident Management configuration.
     pub fn validate(&self) -> Result<(), HostConfigurationStaticValidationError> {
-        // Nothing to do if Trident is disabled on the runtime OS.
+        // Nothing to do if Trident is disabled on the target OS.
         if self.disable {
             return Ok(());
         }
