@@ -1,4 +1,5 @@
 use std::{
+    fmt::Display,
     fs, io,
     path::{Path, PathBuf},
     str::FromStr,
@@ -43,6 +44,15 @@ pub struct ExtensionData {
 pub enum ExtensionType {
     Sysext,
     Confext,
+}
+
+impl Display for ExtensionType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Sysext => write!(f, "sysext"),
+            Self::Confext => write!(f, "confext"),
+        }
+    }
 }
 
 impl EngineContext {

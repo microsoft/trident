@@ -64,6 +64,11 @@ impl Subsystem for ExtensionsSubsystem {
         set_up_extensions(ctx, ExtensionType::Confext, confext_dir_path, mount_path)
             .structured(InternalError::Internal("Failed to set up confexts"))?;
 
+        // Clean up extension images.
+        clean_up_extensions(ctx).structured(InternalError::Internal(
+            "Failed to clean up extension images",
+        ))?;
+
         Ok(())
     }
 }
@@ -203,5 +208,25 @@ fn set_up_extensions(
         }
     }
 
+    Ok(())
+}
+
+/// Deletes extensions from temporary locations.
+fn clean_up_extensions(ctx: &EngineContext) -> Result<(), Error> {
+    for ext in &ctx.extensions {
+        if let Some(temp_location) = &ext.temp_location {
+            fs::remove_file(temp_location).with_context(|| {
+                format!(
+                    "Failed to remove extension image from temporary path '{}'",
+                    temp_location.display()
+                )
+            })?;
+        } else {
+            return Err(Error::msg(format!(
+                "Failed to find temporary location of '{}' with id '{}'",
+                ext.ext_type, ext.id
+            )));
+        }
+    }
     Ok(())
 }
