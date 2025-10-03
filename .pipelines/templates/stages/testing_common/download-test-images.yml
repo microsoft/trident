@@ -147,6 +147,7 @@ steps:
       chmod +x ${{ parameters.toolsDirectory }}/net*
       chmod +x ${{ parameters.toolsDirectory }}/mkcosi
       chmod +x ${{ parameters.toolsDirectory }}/storm-trident
+      chmod +x ${{ parameters.toolsDirectory }}/virtdeploy
 
       # Call helper to copy and rename images!
       ${{ parameters.toolsDirectory }}/storm-trident \

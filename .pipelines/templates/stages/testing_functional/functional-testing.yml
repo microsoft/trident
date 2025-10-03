@@ -109,6 +109,9 @@ stages:
           - bash: |
               set -eux
 
+              # Make virt-deploy executable
+              chmod +x ./bin/virtdeploy
+
               # Copy files from platform-tests to functional_tests
               cp platform-tests/tools/marinerhci_test_tools/node_interface.py tests/functional_tests/
               cp platform-tests/tools/marinerhci_test_tools/ssh_node.py tests/functional_tests/
