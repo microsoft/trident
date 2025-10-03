@@ -19,7 +19,7 @@ pub(crate) fn parse_host_config(
     if parsed.is_err() {
         match serde_yaml::from_str::<serde_yaml::Value>(contents) {
             Ok(value) => {
-                // Detect a few common issues with the host configuration
+                // Detect a few common issues with the Host Configuration
                 if value.get("hostConfiguration").is_some() {
                     return Err(TridentError::new(InvalidInputError::OldStyleConfiguration));
                 } else if value.get("allowedOperations").is_some() {

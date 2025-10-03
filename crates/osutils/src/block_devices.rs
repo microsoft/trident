@@ -37,8 +37,7 @@ pub struct ResolvedDisk {
     pub bus_path: PathBuf,
 }
 
-/// Resolves the disk paths in the host configuration to their real paths in
-/// /dev.
+/// Resolves the disk paths in the Host Configuration to their real paths in `/dev`.
 pub fn get_resolved_disks(host_config: &HostConfiguration) -> Result<Vec<ResolvedDisk>, Error> {
     host_config
         .storage

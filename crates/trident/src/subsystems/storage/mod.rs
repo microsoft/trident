@@ -38,7 +38,7 @@ impl Subsystem for StorageSubsystem {
 
     fn validate_host_config(&self, ctx: &EngineContext) -> Result<(), TridentError> {
         if ctx.servicing_type != ServicingType::CleanInstall {
-            // Ensure that relevant portions of the host configuration have not changed.
+            // Ensure that relevant portions of the Host Configuration have not changed.
             if ctx.spec_old.storage.disks != ctx.spec.storage.disks
                 || ctx.spec_old.storage.raid != ctx.spec.storage.raid
                 || ctx.spec_old.storage.encryption != ctx.spec.storage.encryption

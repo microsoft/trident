@@ -239,11 +239,11 @@ impl Storage {
     ) -> Result<(), HostConfigurationStaticValidationError> {
         // Return early if no verity devices are present
         if self.verity.is_empty() {
-            trace!("No verity devices found in the host configuration, skipping validation");
+            trace!("No verity devices found in the Host Configuration, skipping validation");
             return Ok(());
         }
 
-        trace!("Validating verity devices in the host configuration");
+        trace!("Validating verity devices in the Host Configuration");
 
         // Trident supports at most one verity device. Verify that no more than one device is
         // listed.
@@ -2526,7 +2526,7 @@ mod tests {
     /// a mount point for a specified path.
     #[test]
     fn test_is_mount_point_for_path() {
-        // Set up a host configuration with a few filesystems
+        // Set up a Host Configuration with a few filesystems
         let host_config = HostConfiguration {
             storage: Storage {
                 disks: vec![Disk {

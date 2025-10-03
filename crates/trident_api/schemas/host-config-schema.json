@@ -235,7 +235,7 @@
           "type": "string"
         },
         "id": {
-          "description": "The ID of the LUKS-encrypted volume to create.\n\nThis parameter is required. It must be non-empty and unique among the IDs of all block devices in the host configuration. This includes the IDs of all disk partitions, encrypted volumes, software RAID arrays, and A/B volume pairs.",
+          "description": "The ID of the LUKS-encrypted volume to create.\n\nThis parameter is required. It must be non-empty and unique among the IDs of all block devices in the Host Configuration. This includes the IDs of all disk partitions, encrypted volumes, software RAID arrays, and A/B volume pairs.",
           "type": "string",
           "format": "Block Device ID"
         }
@@ -1282,7 +1282,7 @@
       ]
     },
     "SoftwareRaidArray": {
-      "description": "Software RAID configuration.\n\nThe RAID array will be created using the `mdadm` package. During a clean install, all the existing RAID arrays that are on disks defined in the host configuration will be unmounted, and then stopped.\n\nThe RAID arrays that are defined in the host configuration will be created, and mounted if requested in the `storage.filesystems` config.\n\nTo learn more about RAID, please refer to the [RAID wiki](https://wiki.archlinux.org/title/RAID).\n\nTo learn more about `mdadm`, please refer to the [mdadm guide](https://raid.wiki.kernel.org/index.php/A_guide_to_mdadm).",
+      "description": "Software RAID configuration.\n\nThe RAID array will be created using the `mdadm` package. During a clean install, all the existing RAID arrays that are on disks defined in the Host Configuration will be unmounted, and then stopped.\n\nThe RAID arrays that are defined in the Host Configuration will be created, and mounted if requested in the `storage.filesystems` config.\n\nTo learn more about RAID, please refer to the [RAID wiki](https://wiki.archlinux.org/title/RAID).\n\nTo learn more about `mdadm`, please refer to the [mdadm guide](https://raid.wiki.kernel.org/index.php/A_guide_to_mdadm).",
       "type": "object",
       "required": [
         "devices",
