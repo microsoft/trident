@@ -27,6 +27,16 @@ pub struct Extension {
     pub sha384: Sha384Hash,
 
     /// The absolute path of the extension image in the target OS.
+    ///
+    /// Trident currently supports placing sysexts in:
+    /// - /etc/extensions/
+    /// - /var/lib/extensions/
+    /// - /.extra/sysext
+    ///
+    /// Trident supports placing confexts in:
+    /// - /var/lib/confexts/
+    /// - /usr/lib/confexts/
+    /// - /usr/local/lib/confexts/
     pub location: Option<PathBuf>,
 }
 
@@ -37,6 +47,33 @@ impl Extension {
         let Some(location) = &self.location else {
             return Ok(());
         };
+
+        // 'location' is a directory, not a file
+        if location.as_os_str().to_string_lossy().ends_with('/') {
+            return Err(
+                HostConfigurationStaticValidationError::ExtensionImageInvalidPath {
+                    location: location.display().to_string(),
+                    message: "Location cannot be a directory".to_string(),
+                },
+            );
+        }
+
+        // File must end in *.raw
+        let Some(filename) = location.file_name().and_then(|f| f.to_str()) else {
+            return Err(
+                HostConfigurationStaticValidationError::ExtensionImageInvalidPath {
+                    location: location.display().to_string(),
+                    message: "Could not retrieve file name".to_string(),
+                },
+            );
+        };
+        if !filename.ends_with(".raw") {
+            return Err(
+                HostConfigurationStaticValidationError::ExtensionImageInvalidFileExtension {
+                    location: location.display().to_string(),
+                },
+            );
+        }
 
         // Check that the directory is valid
         let Some(provided_dir) = location.parent() else {
@@ -59,23 +96,100 @@ impl Extension {
             );
         }
 
-        // File must end in *.raw
-        let Some(filename) = location.file_name().and_then(|f| f.to_str()) else {
-            return Err(
-                HostConfigurationStaticValidationError::ExtensionImageInvalidPath {
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::path::PathBuf;
+
+    use url::Url;
+
+    use crate::primitives::hash::Sha384Hash;
+
+    fn create_test_extension(location: Option<PathBuf>) -> Extension {
+        Extension {
+            url: Url::parse("http://example.com/test.raw").unwrap(),
+            sha384: Sha384Hash::from("a".repeat(96)),
+            location,
+        }
+    }
+
+    #[test]
+    fn test_validate_no_location_succeeds() {
+        let ext = create_test_extension(None);
+        assert!(ext.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_valid_sysext_location_succeeds() {
+        let ext = create_test_extension(Some(PathBuf::from("/var/lib/extensions/test.raw")));
+        assert!(ext.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_valid_confext_location_succeeds() {
+        let ext = create_test_extension(Some(PathBuf::from("/var/lib/confexts/test.raw")));
+        assert!(ext.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_invalid_directory_fails() {
+        let location = PathBuf::from("/opt/invalid/test.raw");
+        let ext = create_test_extension(Some(location.clone()));
+        assert_eq!(
+            ext.validate(),
+            Err(
+                HostConfigurationStaticValidationError::ExtensionImageInvalidDirectory {
                     location: location.display().to_string(),
-                    message: "Could not retrieve file name".to_string(),
-                },
-            );
-        };
-        if !filename.ends_with(".raw") {
-            return Err(
+                }
+            )
+        );
+    }
+
+    #[test]
+    fn test_validate_no_parent_directory_fails() {
+        let location = PathBuf::from("test.raw");
+        let ext = create_test_extension(Some(location.clone()));
+        assert_eq!(
+            ext.validate(),
+            Err(
+                HostConfigurationStaticValidationError::ExtensionImageInvalidDirectory {
+                    location: location.display().to_string(),
+                }
+            )
+        );
+    }
+
+    #[test]
+    fn test_validate_invalid_extension_fails() {
+        let location = PathBuf::from("/var/lib/extensions/test.img");
+        let ext = create_test_extension(Some(location.clone()));
+        assert_eq!(
+            ext.validate(),
+            Err(
                 HostConfigurationStaticValidationError::ExtensionImageInvalidFileExtension {
                     location: location.display().to_string(),
-                },
-            );
-        }
+                }
+            )
+        );
+    }
 
-        Ok(())
+    #[test]
+    fn test_validate_no_filename_fails() {
+        let location = PathBuf::from("/var/lib/extensions/");
+        let ext = create_test_extension(Some(location.clone()));
+        assert_eq!(
+            ext.validate(),
+            Err(
+                HostConfigurationStaticValidationError::ExtensionImageInvalidPath {
+                    location: location.display().to_string(),
+                    message: "Location cannot be a directory".to_string(),
+                }
+            )
+        );
     }
 }
