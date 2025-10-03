@@ -85,13 +85,13 @@ pub struct Encryption {
     /// field is required, and at least one PCR must be provided. Each PCR may be specified either
     /// as a digit or as a string.
     ///
-    /// ### Grub Target OS
+    /// #### Grub Target OS
     ///
     /// When doing a clean install of a grub target OS image, the following options are valid:
     ///
     /// - 7, or `secure-boot-policy`
     ///
-    /// ### UKI Target OS
+    /// #### UKI Target OS
     ///
     /// When doing a clean install of a UKI target OS image, the following options are valid:
     ///
