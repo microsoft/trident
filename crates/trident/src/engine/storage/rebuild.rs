@@ -400,7 +400,7 @@ fn validate_host_config_delta(
     host_config_to_compare.trident = Default::default();
 
     if host_status_spec != host_config_to_compare {
-        bail!("We do not support updating the Host Configuration for the Trident rebuild-raid process. \
+        bail!("Running rebuild-raid with an updated Host Configuration is not supported. \
         The configuration must match the original Host Configuration used during host provisioning.");
     }
     Ok(())
@@ -526,7 +526,7 @@ mod tests {
         });
 
         assert_eq!(validate_host_config_delta(&host_config, &host_status.spec).unwrap_err().to_string(),
-        "We do not support updating the Host Configuration for the Trident rebuild-raid process. \
+        "Running rebuild-raid with an updated Host Configuration is not supported. \
         The configuration must match the original Host Configuration used during host provisioning.");
     }
 

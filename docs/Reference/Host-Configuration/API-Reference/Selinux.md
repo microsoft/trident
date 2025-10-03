@@ -14,7 +14,7 @@ Configuration for SELinux mode
 
 Override the SELinux mode. When not provided, no changes will be made to the existing configuration.
 
-Note: Trident only supports SELinux and root-verity together when running in UKI-mode. Otherwise when using verity, SELinux must not be enabled in the OS image or SELinux should be explicitly set to `disabled`.
+Note: Trident only supports SELinux and root-verity together when running in UKI-mode. Otherwise, when using root-verity, SELinux must not be enabled in the OS image or SELinux should be explicitly set to `disabled`.
 
 | Characteristic | Value                           |
 | -------------- | ------------------------------- |

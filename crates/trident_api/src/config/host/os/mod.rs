@@ -86,8 +86,8 @@ pub struct Selinux {
     /// configuration.
     ///
     /// Note: Trident only supports SELinux and root-verity together when running in UKI-mode.
-    /// Otherwise when using verity, SELinux must not be enabled in the OS image or SELinux should
-    /// be explicitly set to `disabled`.
+    /// Otherwise, when using root-verity, SELinux must not be enabled in the OS image or SELinux
+    /// should be explicitly set to `disabled`.
     pub mode: Option<SelinuxMode>,
 }
 
