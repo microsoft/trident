@@ -46,7 +46,9 @@ pub(crate) fn update(
     info!("Starting update");
     let mut subsystems = SUBSYSTEMS.lock().unwrap();
 
-    if state.host_status().servicing_state == ServicingState::AbUpdateStaged {
+    if state.host_status().servicing_state == ServicingState::AbUpdateStaged
+        || state.host_status().servicing_state == ServicingState::HotPatchStaged
+    {
         // Need to re-set the Host Status in case another update has been previously staged
         debug!("Resetting A/B update state");
         state.with_host_status(|host_status| {
@@ -68,8 +70,8 @@ pub(crate) fn update(
         image: Some(image),
         storage_graph: engine::build_storage_graph(&host_config.storage)?, // Build storage graph
         filesystems: Vec::new(), // Will be populated after dynamic validation
-        extensions: Vec::new(),  // Populated below
-        extensions_old: Vec::new(), // Populated below
+        extensions: Vec::new(), // May be populated after dynamic validation, given a change in 'extensions' config
+        extensions_old: Vec::new(), // May be populated after dynamic validation, given a change in 'extensions' config
     };
 
     // Before starting an update servicing, need to validate that the active volume is set
@@ -101,9 +103,11 @@ pub(crate) fn update(
         servicing_type
     );
 
+    // Only a subset of subsystems should be run for a Hot-Patch update.
     if servicing_type == ServicingType::HotPatch {
         subsystems = SUBSYSTEMS_HOTPATCH.lock().unwrap();
     }
+
     ctx.servicing_type = servicing_type;
 
     // Execute pre-servicing scripts
@@ -123,7 +127,14 @@ pub(crate) fn update(
 
     if servicing_type == ServicingType::HotPatch {
         // Stage hot-patch
-        stage_hotpatch(&mut subsystems, ctx, state).message("Failed to stage hot-patch update")?;
+        stage_hotpatch(
+            &mut subsystems,
+            ctx,
+            state,
+            #[cfg(feature = "grpc-dangerous")]
+            sender,
+        )
+        .message("Failed to stage hot-patch update")?;
     } else {
         // Stage update
         stage_update(
@@ -172,8 +183,14 @@ pub(crate) fn update(
                 );
                 Ok(ExitKind::Done)
             } else {
-                finalize_hotpatch(state, servicing_type, Some(update_start_time))
-                    .message("Failed to finalize hot-patch update")
+                finalize_hotpatch(
+                    state,
+                    servicing_type,
+                    Some(update_start_time),
+                    #[cfg(feature = "grpc-dangerous")]
+                    sender,
+                )
+                .message("Failed to finalize hot-patch update")
             }
         }
         ServicingType::CleanInstall => Err(TridentError::new(
@@ -388,16 +405,17 @@ pub(crate) fn finalize_update(
 /// - ctx: EngineContext.
 /// - state: A mutable reference to the DataStore.
 /// - sender: Optional mutable reference to the gRPC sender.
-///
-/// On success, returns an Option<NewrootMount>; This is not null only for A/B updates.
 #[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", ctx.servicing_type)))]
 fn stage_hotpatch(
     subsystems: &mut [Box<dyn Subsystem>],
     ctx: EngineContext,
     state: &mut DataStore,
+    #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
+        mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
+    >,
 ) -> Result<(), TridentError> {
     // Best effort to measure memory, CPU, and network usage during execution
-    let monitor = match monitor_metrics::MonitorMetrics::new("stage_update".to_string()) {
+    let monitor = match monitor_metrics::MonitorMetrics::new("stage_hotpatch_update".to_string()) {
         Ok(monitor) => Some(monitor),
         Err(e) => {
             warn!("Failed to create metrics monitor: {e:?}");
@@ -427,6 +445,8 @@ fn stage_hotpatch(
             is_management_os: false,
         };
     })?;
+    #[cfg(feature = "grpc-dangerous")]
+    grpc::send_host_status_state(sender, state)?;
 
     if let Some(mut monitor) = monitor {
         // If the monitor was created successfully, stop it after execution
@@ -448,6 +468,9 @@ pub(crate) fn finalize_hotpatch(
     state: &mut DataStore,
     servicing_type: ServicingType,
     update_start_time: Option<Instant>,
+    #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
+        mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
+    >,
 ) -> Result<ExitKind, TridentError> {
     info!("Finalizing hot-patch update");
 
@@ -477,6 +500,8 @@ pub(crate) fn finalize_hotpatch(
         ServicingState::Provisioned
     );
     state.with_host_status(|status| status.servicing_state = ServicingState::Provisioned)?;
+    #[cfg(feature = "grpc-dangerous")]
+    grpc::send_host_status_state(sender, state)?;
     state.close();
 
     // Metric for update time in seconds
