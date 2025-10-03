@@ -437,23 +437,23 @@ bin/storm-trident: tools/cmd/storm-trident/main.go tools/storm/**/*
 
 # Insatller tools
 
-AZLTOOLS_OUT_DIR := bin
-AZLTOOLS_DIR := tools/azltools
+INSTALLER_OUT_DIR := bin
+INSTALLER_DIR := tools/installer
 
 bin/liveinstaller: \
-	$(shell find $(AZLTOOLS_DIR)/liveinstaller -type f) \
-	$(shell find $(AZLTOOLS_DIR)/imagegen/attendedinstaller/ -type f) \
-	tools/go.sum
+	$(shell find $(INSTALLER_DIR)/liveinstaller -type f) \
+	$(shell find $(INSTALLER_DIR)/imagegen/attendedinstaller/ -type f) \
+	$(INSTALLER_DIR)/go.sum
 	@mkdir -p bin
-	cd $(AZLTOOLS_DIR)/liveinstaller && \
-		CGO_ENABLED=0 go build -o ../../../$(AZLTOOLS_OUT_DIR)/liveinstaller
+	cd $(INSTALLER_DIR)/liveinstaller && \
+		CGO_ENABLED=0 go build -o ../../../$(INSTALLER_OUT_DIR)/liveinstaller
 
 bin/manualrun: \
-	$(shell find $(AZLTOOLS_DIR)/imagegen/attendedinstaller/ -type f) \
-	tools/go.sum
+	$(shell find $(INSTALLER_DIR)/imagegen/attendedinstaller/ -type f) \
+	$(INSTALLER_DIR)/go.sum
 	@mkdir -p bin
-	cd $(AZLTOOLS_DIR)/imagegen/attendedinstaller/_manualrun && \
-		CGO_ENABLED=0 go build -o ../../../../../$(AZLTOOLS_OUT_DIR)/manualrun
+	cd $(INSTALLER_DIR)/imagegen/attendedinstaller/_manualrun && \
+		CGO_ENABLED=0 go build -o ../../../../../$(INSTALLER_OUT_DIR)/manualrun
 
 # AZL INSTALLER IMAGES
 
