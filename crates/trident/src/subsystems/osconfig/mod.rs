@@ -296,6 +296,7 @@ mod tests {
                     modules: vec![],
                     services: Services::default(),
                     kernel_command_line: KernelCommandLine::default(),
+                    extensions: vec![],
                 },
                 ..Default::default()
             },
@@ -340,6 +341,8 @@ mod tests {
         assert!(os_config_requires_os_modifier(&ctx));
         ctx.spec.internal_params = serde_yaml::from_str("disableHostnameCarryOver: true").unwrap();
         assert!(!os_config_requires_os_modifier(&ctx));
+
+        // TODO(15251): Add case for extensions
     }
 
     #[test]

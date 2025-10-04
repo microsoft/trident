@@ -40,6 +40,12 @@ pub enum HostConfigurationStaticValidationError {
     #[error("Datastore path '{datastore_path}' must be in a known volume")]
     DatastorePathNotInKnownVolume { datastore_path: String },
 
+    #[error("Host Configuration contains extension images with duplicate hashes '{hash}', but extension images must be unique")]
+    DuplicateExtensionImage { hash: String },
+
+    #[error("Host Configuration contains extension images with duplicate locations '{location}', but extension images must have unique locations")]
+    DuplicateExtensionImageLocation { location: String },
+
     #[error("Host Configuration contains duplicate usernames '{username}', but usernames must be unique")]
     DuplicateUsernames { username: String },
 
@@ -48,6 +54,15 @@ pub enum HostConfigurationStaticValidationError {
 
     #[error("Failed to find expected mount point '{mount_point_path}'")]
     ExpectedMountPointNotFound { mount_point_path: String },
+
+    #[error("Extension image location '{location}' is invalid; filename must end with '.raw'")]
+    ExtensionImageInvalidFileExtension { location: String },
+
+    #[error("Extension image location '{location}' is invalid; directory is not valid for sysexts or confexts")]
+    ExtensionImageInvalidDirectory { location: String },
+
+    #[error("Extension image location '{location}' has an invalid path: {message}")]
+    ExtensionImageInvalidPath { location: String, message: String },
 
     #[error(
         "The Host Configuration is using both an image and partition images, these APIs are \
