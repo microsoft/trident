@@ -203,21 +203,6 @@ func (rc *virtDeployResourceConfig) close() {
 }
 
 func (rc *virtDeployResourceConfig) construct() (*VirtDeployStatus, error) {
-	// Create dirs for the nvram files. Do this ASAP to fail fast if we can't.
-	// We need to do this with sudo since /var/lib/libvirt is root-owned.
-	// if err := sudoCommand("mkdir", []string{"-p", nvramDir}).Run(); err != nil {
-	// 	return fmt.Errorf("failed to create NVRAM directory: %w", err)
-	// }
-	// if err := sudoCommand("chmod", []string{"o+rx", libvirtDir}).Run(); err != nil {
-	// 	return fmt.Errorf("failed to set permissions on %s: %w", libvirtDir, err)
-	// }
-	// if err := sudoCommand("chmod", []string{"o+rx", qemuDir}).Run(); err != nil {
-	// 	return fmt.Errorf("failed to set permissions on %s: %w", qemuDir, err)
-	// }
-	// if err := sudoCommand("chmod", []string{"o+rx", nvramDir}).Run(); err != nil {
-	// 	return fmt.Errorf("failed to set permissions on %s: %w", nvramDir, err)
-	// }
-
 	err := rc.setupNetwork()
 	if err != nil {
 		return nil, fmt.Errorf("failed to set up network: %w", err)
