@@ -232,7 +232,7 @@ def fetch_code_coverage(ssh_node):
 def trident_runcmd(cmd, check=True, **kwargs):
     """Runs a command in the Trident repository directory."""
     logging.debug(f"Running command: {cmd}")
-    subprocess.run(cmd, check=check, cwd=TRIDENT_REPO_DIR_PATH, **kwargs)
+    return subprocess.run(cmd, check=check, cwd=TRIDENT_REPO_DIR_PATH, **kwargs)
 
 
 def upload_test_binaries(build_output_path: Path, force_upload, ssh_node: SshNode):

@@ -19,6 +19,10 @@ parameters:
     type: boolean
     default: true
 
+  - name: buildVirtdeploy
+    type: boolean
+    default: true
+
 stages:
   - stage: BuildingTools
     displayName: Building Tools
@@ -83,3 +87,11 @@ stages:
                   mv bin/storm-trident $(ob_outputDirectory)
                 workingDirectory: $(Build.SourcesDirectory)
                 displayName: "Building storm-trident"
+
+          - ${{ if eq(parameters.buildVirtdeploy, true) }}:
+              - bash: |
+                  set -eux
+                  make bin/virtdeploy
+                  mkdir -p $(ob_outputDirectory)
+                  mv bin/virtdeploy $(ob_outputDirectory)
+                workingDirectory: $(Build.SourcesDirectory)

@@ -24,14 +24,15 @@ parameters:
 
   - name: dependsOnStage
     type: string
-    default: ''
+    default: ""
 
 stages:
   - stage: FunctionalTesting
     displayName: Functional Testing
-    ${{ if eq(parameters.downloadPrebuiltImage, false) }}:
-      dependsOn:
-        - TridentTestImg_trident_functest
+    dependsOn:
+      - BuildingTools
+      - ${{ if eq(parameters.downloadPrebuiltImage, false) }}:
+          - TridentTestImg_trident_functest
 
     jobs:
       - job: FunctionalTests
@@ -53,6 +54,15 @@ stages:
           - template: ../common_tasks/cargo-auth.yml
 
           - template: ../testing_vm/netlaunch-prep.yml
+
+          - task: DownloadPipelineArtifact@2
+            displayName: "Download go-tools"
+            inputs:
+              buildType: current
+              artifactName: "go-tools"
+              patterns: |
+                virtdeploy
+              targetPath: "$(Build.SourcesDirectory)/bin"
 
           - ${{ if eq(parameters.downloadPrebuiltImage, false) }}:
               - task: DownloadPipelineArtifact@2
@@ -99,6 +109,9 @@ stages:
           - bash: |
               set -eux
 
+              # Make virt-deploy executable
+              chmod +x ./bin/virtdeploy
+
               # Copy files from platform-tests to functional_tests
               cp platform-tests/tools/marinerhci_test_tools/node_interface.py tests/functional_tests/
               cp platform-tests/tools/marinerhci_test_tools/ssh_node.py tests/functional_tests/
@@ -116,7 +129,6 @@ stages:
               executeUnitTests: true
               installNativeDependencies: false
               rustup: false
-
 
           - template: ../junit/handle-junit-test-results.yml
             parameters:

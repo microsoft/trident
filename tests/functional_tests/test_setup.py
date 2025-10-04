@@ -33,16 +33,16 @@ users:
 def create_vm(create_params) -> Dict[str, str]:
     log.info("Creating VM with parameters: %s", create_params)
     """Creates a VM with the given parameters, using virt-deploy."""
-    trident_runcmd(
-        [TRIDENT_REPO_DIR_PATH / "tools" / "virt-deploy", "create"] + create_params
+    out = trident_runcmd(
+        [TRIDENT_REPO_DIR_PATH / "bin" / "virtdeploy", "create-one", "-J"]
+        + create_params,
+        capture_output=True,
+        text=True,
     )
 
-    with open(
-        TRIDENT_REPO_DIR_PATH / "tools" / "virt-deploy-metadata.json", "r"
-    ) as file:
-        metadata = json.load(file)
+    metadata = json.loads(out.stdout)
 
-    return metadata["virtualmachines"][0]
+    return metadata["vms"][0]
 
 
 def wait_online(ip: str, known_hosts_path: Path, timeout: int = 60) -> None:
@@ -98,7 +98,8 @@ def test_create_vm(request, known_hosts_path, ssh_key_public):
         # to set up a user and ssh access.
         vm_data = create_vm(
             [
-                ":::16,16",
+                "-d",
+                "16,16",
                 "--os-disk",
                 FT_BASE_IMAGE,
                 "--ci-user",
