@@ -487,6 +487,8 @@ validate: $(TRIDENT_CONFIG) bin/trident
 
 NETLAUNCH_ISO ?= bin/trident-mos.iso
 
+tools/vm-netlaunch.yaml: virtdeploy-create
+
 input/netlaunch.yaml: tools/vm-netlaunch.yaml
 	@mkdir -p input
 	ln -vsf "$$(realpath "$<")" $@
@@ -531,6 +533,10 @@ run-netlaunch-container-images: \
 .PHONY: watch-virtdeploy
 watch-virtdeploy:
 	@while true; do virsh console virtdeploy-vm-0; sleep 1; done
+
+.PHONY: virtdeploy-create
+virtdeploy-create:
+	tools/virt-deploy create
 
 # This target leverages the samples that are automatically generated as part of
 # the build-api-docs target. The HC sample is selected by setting the
