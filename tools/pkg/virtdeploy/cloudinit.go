@@ -64,6 +64,7 @@ func (ci *CloudInitConfig) writeToDir(dir string) error {
 		if err != nil {
 			return fmt.Errorf("failed to open destination '%s': %w", dst, err)
 		}
+		defer dstFile.Close()
 
 		_, copyErr := io.Copy(dstFile, srcFile)
 		if copyErr != nil {
