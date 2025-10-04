@@ -17,7 +17,7 @@ use tokio::runtime::Runtime;
 use url::Url;
 
 #[cfg(feature = "dangerous-options")]
-use std::{env, io::BufReader};
+use std::io::BufReader;
 
 #[cfg(feature = "dangerous-options")]
 use docker_credential::{self, DockerCredential};
@@ -185,27 +185,25 @@ impl HttpFile {
     /// enabled, will default to anonymous access.
     fn get_auth(_img_ref: &Reference) -> RegistryAuth {
         #[cfg(feature = "dangerous-options")]
-        if let Ok(docker_config) = File::open(
-            env::home_dir()
-                .unwrap_or_default()
-                .join(DOCKER_CONFIG_FILE_PATH),
-        ) {
-            let registry = _img_ref
-                .resolve_registry()
-                .strip_suffix('/')
-                .unwrap_or_else(|| _img_ref.resolve_registry());
-            match docker_credential::get_credential_from_reader(
-                BufReader::new(docker_config),
-                registry,
-            ) {
-                Ok(DockerCredential::UsernamePassword(username, password)) => {
-                    debug!("Found username and password docker credential");
-                    return RegistryAuth::Basic(username, password);
+        if let Some(home_dir) = home::home_dir() {
+            if let Ok(docker_config) = File::open(home_dir.join(DOCKER_CONFIG_FILE_PATH)) {
+                let registry = _img_ref
+                    .resolve_registry()
+                    .strip_suffix('/')
+                    .unwrap_or_else(|| _img_ref.resolve_registry());
+                match docker_credential::get_credential_from_reader(
+                    BufReader::new(docker_config),
+                    registry,
+                ) {
+                    Ok(DockerCredential::UsernamePassword(username, password)) => {
+                        debug!("Found username and password docker credential");
+                        return RegistryAuth::Basic(username, password);
+                    }
+                    Ok(DockerCredential::IdentityToken(_)) => {
+                        debug!("Found identity token docker credential")
+                    }
+                    Err(_) => debug!("Failed to find docker credentials"),
                 }
-                Ok(DockerCredential::IdentityToken(_)) => {
-                    debug!("Found identity token docker credential")
-                }
-                Err(_) => debug!("Failed to find docker credentials"),
             }
         };
 

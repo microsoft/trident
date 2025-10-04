@@ -19,6 +19,7 @@ duct = "0.13.7"
 enumflags2 = { version = "0.7", features = ["serde"] }
 env_logger = "0.11.5"
 glob = "0.3.1"
+home = { version = "0.5.9", optional = true }
 lazy_static = "1.5.0"
 libc = "0.2.167"
 log = "0.4.22"
@@ -83,7 +84,11 @@ sha2 = "0.10.8"
 
 
 [features]
-dangerous-options = ["trident_api/dangerous-options", "docker_credential"]
+dangerous-options = [
+    "trident_api/dangerous-options",
+    "docker_credential",
+    "home",
+]
 sysupdate = ["trident_api/sysupdate"]
 functional-test = [
     "pytest",
