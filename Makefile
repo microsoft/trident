@@ -433,7 +433,7 @@ bin/storm-trident: tools/cmd/storm-trident/main.go tools/storm/**/*
 
 .PHONY: validate
 validate: $(TRIDENT_CONFIG) bin/trident
-	@bin/trident validate $(TRIDENT_CONFIG)
+	bin/trident validate $(TRIDENT_CONFIG)
 
 NETLAUNCH_ISO ?= bin/trident-mos.iso
 
@@ -504,7 +504,7 @@ virtdeploy-create:
 .PHONY: run-netlaunch-sample
 run-netlaunch-sample: build-api-docs
 	$(eval TMP := $(shell mktemp))
-	yq '.os.users += [{"name": "$(shell whoami)", "sshPublicKeys": ["$(shell cat ~/.ssh/id_rsa.pub)"], "sshMode": "key-only", "secondaryGroups": ["wheel"]}] | (.. | select(tag == "!!str")) |= sub("file:///trident_cdrom/data", "http://NETLAUNCH_HOST_ADDRESS/files") | del(.storage.encryption.recoveryKeyUrl) | (.storage.filesystems[] | select(has("source")) | .source).sha256 = "ignored" | .storage.verityFilesystems[].dataImage.sha256 = "ignored" | .storage.verityFilesystems[].hashImage.sha256 = "ignored"' docs/Reference/Host-Configuration/Samples/$(HOST_CONFIG) > $(TMP)
+	yq '.os.users += [{"name": "$(shell whoami)", "sshPublicKeys": ["$(shell cat ~/.ssh/id_rsa.pub)"], "sshMode": "key-only", "secondaryGroups": ["wheel"]}] | (.. | select(tag == "!!str")) |= sub("file:///trident_cdrom/data", "http://NETLAUNCH_HOST_ADDRESS/files") | del(.storage.encryption.recoveryKeyUrl) | (.storage.filesystems[] | select(has("source")) | .source).sha256 = "ignored"' docs/Reference/Host-Configuration/Samples/$(HOST_CONFIG) > $(TMP)
 	TRIDENT_CONFIG=$(TMP) make run-netlaunch
 
 # Downloads regular, verity, and container COSI images from the latest successful
