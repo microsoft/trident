@@ -19,7 +19,7 @@ parameters:
       - trident-testimage
 
   - name: tridentTestImageVerity
-    displayName: "Image used in the verity target OS, source of Trident (container vs host)"
+    displayName: "Image used in the root-verity target OS, source of Trident (container vs host)"
     type: string
     default: trident-verity-testimage
     values:

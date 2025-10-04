@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"strings"
 
-	"tridenttools/azltools/internal/logger"
+	"installer/internal/logger"
 
 	"github.com/alecthomas/kingpin/v2"
 )

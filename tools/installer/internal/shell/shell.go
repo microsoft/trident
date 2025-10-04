@@ -11,7 +11,7 @@ import (
 	"strings"
 	"sync"
 
-	"tridenttools/azltools/internal/logger"
+	"installer/internal/logger"
 
 	"github.com/sirupsen/logrus"
 

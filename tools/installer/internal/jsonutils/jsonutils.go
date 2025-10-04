@@ -11,7 +11,7 @@ import (
 	"io"
 	"os"
 
-	"tridenttools/azltools/internal/logger"
+	"installer/internal/logger"
 )
 
 const (

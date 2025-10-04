@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"tridenttools/azltools/internal/logger"
+	"installer/internal/logger"
 
 	"github.com/stretchr/testify/assert"
 )

@@ -487,7 +487,7 @@ pub enum ServicingError {
     #[error("Failed to get the root block device id")]
     GetRootBlockDeviceId,
 
-    #[error("Failed to get block device path of root verity data device")]
+    #[error("Failed to get block device path of root-verity data device")]
     GetRootVerityDataDevPath,
 
     #[error("Failed to get SELINUX")]

@@ -14,15 +14,11 @@ Configure encrypted volumes of underlying disk partitions or software RAID array
 
 List of PCRs in the TPM 2.0 device to seal encrypted volumes to in the target OS. This field is required, and at least one PCR must be provided. Each PCR may be specified either as a digit or as a string.
 
-### Grub Target OS
-
-When doing a clean install of a grub target OS image, the following options are valid:
+1. When doing a clean install of **a grub target OS image**, the following options are valid:
 
 - 7, or `secure-boot-policy`
 
-### UKI Target OS
-
-When doing a clean install of a UKI target OS image, the following options are valid:
+2. When doing a clean install of **a UKI target OS image**, the following options are valid:
 
 - 4, or `boot-loader-code`
 

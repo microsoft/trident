@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"tridenttools/azltools/internal/logger"
+	"installer/internal/logger"
 )
 
 var (

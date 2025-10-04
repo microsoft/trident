@@ -85,15 +85,11 @@ pub struct Encryption {
     /// field is required, and at least one PCR must be provided. Each PCR may be specified either
     /// as a digit or as a string.
     ///
-    /// ### Grub Target OS
-    ///
-    /// When doing a clean install of a grub target OS image, the following options are valid:
+    /// 1. When doing a clean install of **a grub target OS image**, the following options are valid:
     ///
     /// - 7, or `secure-boot-policy`
     ///
-    /// ### UKI Target OS
-    ///
-    /// When doing a clean install of a UKI target OS image, the following options are valid:
+    /// 2. When doing a clean install of **a UKI target OS image**, the following options are valid:
     ///
     /// - 4, or `boot-loader-code`
     ///
@@ -144,7 +140,7 @@ pub struct EncryptedVolume {
     /// The ID of the LUKS-encrypted volume to create.
     ///
     /// This parameter is required. It must be non-empty and unique among the IDs of all block
-    /// devices in the host configuration. This includes the IDs of all disk partitions, encrypted
+    /// devices in the Host Configuration. This includes the IDs of all disk partitions, encrypted
     /// volumes, software RAID arrays, and A/B volume pairs.
     #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
     pub id: BlockDeviceId,

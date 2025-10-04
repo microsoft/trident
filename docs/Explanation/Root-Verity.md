@@ -1,6 +1,6 @@
-# Root Verity
+# Root-Verity
 
-Root data integrity verification, or "Root Verity", is a specific utilization
+Root data integrity verification, or root-verity, is a specific utilization
 of [dm-verity](https://www.kernel.org/doc/html/latest/admin-guide/device-mapper/verity.html),
 an integral part of the kernel that ensures that I/O for anything on the
 protected filesystem (in this case, root: `/`) is verified against a known good
@@ -23,11 +23,11 @@ blk_0 ... blk_127  blk_16256   blk_16383      blk_32640 . . . blk_32767
 ```
 
 Trident partners with Image Customizer to deploy images that have `root`
-configured with Verity and a partition storing the `root-hash`.
+configured with dm-verity and a partition storing the `root-hash`.
 
 ## Use Image Customizer to Create a COSI File
 
-To create a COSI file with `Root Verity` enabled, Image Customizer provides
+To create a COSI file with root-verity enabled, Image Customizer provides
 some [guidance](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/concepts/verity.html).
 
 At a high level, there are only a couple things that need to be configured:
@@ -61,7 +61,7 @@ At a high level, there are only a couple things that need to be configured:
       hashDeviceMountIdType: part-label
     ```
 
-3. Verity filesystems should be created as read-only:
+3. Root-verity filesystems should be created as read-only:
 
     ``` yaml
     - deviceId: root
@@ -72,11 +72,11 @@ At a high level, there are only a couple things that need to be configured:
     ```
 
 With these sections defined for `root`, Image Customizer will generate a COSI
-file containing a `root-hash` partition and an OS with Root Verity enabled.
+file containing a `root-hash` partition and an OS with root-verity enabled.
 
 ## Use Trident to Deploy the COSI File
 
-Once you have a COSI file that enables `Root Verity`, Trident can be used to
+Once you have a COSI file that enables root-verity, Trident can be used to
 deploy it during install or update.
 
 Create a Trident Host Configuration file that aligns to the Image Customizer

@@ -25,7 +25,7 @@ use uuid::Uuid;
 
 use crate::engine::EngineContext;
 
-/// Given a host configuration, adopt and create partitions on the disks.
+/// Given a Host Configuration, adopt and create partitions on the disks.
 #[tracing::instrument(name = "partitions_creation", skip_all)]
 pub fn create_partitions(ctx: &mut EngineContext) -> Result<(), Error> {
     // Resolve the disk paths to ensure that all disks in the configuration exist.

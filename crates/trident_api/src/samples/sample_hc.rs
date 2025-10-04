@@ -1438,7 +1438,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
 mod tests {
     use super::*;
 
-    /// This test is mostly to ensure that we try to build a host configuration
+    /// This test is mostly to ensure that we try to build a Host Configuration
     /// and fail if the build fails to let us know that the sample is out of date.
     #[test]
     fn test_build_basic_host_configuration() {
