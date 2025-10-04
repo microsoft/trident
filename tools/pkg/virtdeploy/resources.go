@@ -528,8 +528,20 @@ func (rc *virtDeployResourceConfig) setupVm(vm *VirtDeployVM) error {
 		})
 	}
 
-	if int('z')-len(vm.cdroms) < int('a')+len(vm.volumes) {
-		return fmt.Errorf("too many disks and CDROMs, cannot assign device names")
+	// Ensure we have enough letters for device names. First get the number of
+	// available letters, then get the number of used letters (disks + CDROMs).
+	// If there are not enough letters, error out.
+	// e.g. if there are 3 disks (sda, sdb, sdc) and 2 CDROMs (sdz, sdy), we need
+	// at least 5 letters.
+	availableLetters := int('z') - int('a') + 1
+	usedLetters := len(vm.volumes) + len(vm.cdroms)
+	if availableLetters-usedLetters < 0 {
+		return fmt.Errorf(
+			"too many disks and CDROMs, cannot assign device names. Found %d disks and %d CDROMs, but only %d letters available",
+			len(vm.volumes),
+			len(vm.cdroms),
+			availableLetters,
+		)
 	}
 
 	// Assign device names to the CDROMs, starting from the end of the alphabet
