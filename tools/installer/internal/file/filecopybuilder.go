@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"os"
 
-	"tridenttools/azltools/internal/logger"
-	"tridenttools/azltools/internal/shell"
+	"installer/internal/logger"
+	"installer/internal/shell"
 
 	"github.com/sirupsen/logrus"
 )

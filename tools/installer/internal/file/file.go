@@ -16,8 +16,8 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"tridenttools/azltools/internal/logger"
-	"tridenttools/azltools/internal/shell"
+	"installer/internal/logger"
+	"installer/internal/shell"
 )
 
 // IsDir check if a given file path is a directory.

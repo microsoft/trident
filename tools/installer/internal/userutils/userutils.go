@@ -10,9 +10,9 @@ import (
 	"regexp"
 	"strings"
 
-	"tridenttools/azltools/internal/file"
-	"tridenttools/azltools/internal/randomization"
-	"tridenttools/azltools/internal/shell"
+	"installer/internal/file"
+	"installer/internal/randomization"
+	"installer/internal/shell"
 
 	"github.com/sirupsen/logrus"
 )

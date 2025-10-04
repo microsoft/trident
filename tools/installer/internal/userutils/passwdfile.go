@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"tridenttools/azltools/internal/file"
+	"installer/internal/file"
 )
 
 type PasswdEntry struct {
