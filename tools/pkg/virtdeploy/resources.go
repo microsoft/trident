@@ -543,7 +543,7 @@ func (rc *virtDeployResourceConfig) setupVm(vm *VirtDeployVM) error {
 		})
 	}
 
-	if 'z'-len(vm.cdroms) < 'a'+len(vm.volumes) {
+	if int('z')-len(vm.cdroms) < int('a')+len(vm.volumes) {
 		return fmt.Errorf("too many disks and CDROMs, cannot assign device names")
 	}
 
