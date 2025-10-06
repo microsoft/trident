@@ -57,8 +57,8 @@ _Notes:_
   will be deprecated soon.
 - [3] A system installed with these features can be updated, but the features
   themselves cannot be activated during an update.
-- [4] Currently, only PCR 7 is supported. Sealing against other PCRs is
-  planned for a future release.
+- [4] Currently, different sets of PCRs are valid, depending on the type of the
+  target OS image. Please reference the [PCRs API](../Reference/Host-Configuration/API-Reference/Encryption.md) for details.
 - [5] This feature cannot be used in conjunction with root-verity.
 
 ## Out-of-Band Features
