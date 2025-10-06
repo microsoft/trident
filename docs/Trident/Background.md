@@ -60,7 +60,7 @@ inconsistencies across nodes due to timing and package variations.
 
 A more reliable approach is to use image-based A/B style in-place atomic
 updates, similar to those used by Android. With [A/B
-updates](Reference/Glossary.md#ab-update), rollback is straightforward—either
+updates](../Reference/Glossary.md#ab-update), rollback is straightforward—either
 during servicing or at any later point—without requiring extra resources.
 Additionally, servicing downtime is reduced, as the B set of images can be
 pre-staged while the A set remains operational.
