@@ -506,7 +506,7 @@ mod tests {
         // Mock GET request with authorization header
         let mock = server
             .mock("GET", file_name)
-            .match_header("Authorization", format!("Bearer {}", token).as_str())
+            .match_header("Authorization", format!("Bearer {token}").as_str())
             .match_header("Range", mockito::Matcher::Missing)
             .with_status(200)
             .with_header("Content-Length", &body.len().to_string())
