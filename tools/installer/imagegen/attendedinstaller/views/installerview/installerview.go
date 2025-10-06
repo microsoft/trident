@@ -43,8 +43,6 @@ type InstallerView struct {
 	centeredFlex     *tview.Flex
 	installerOptions []string
 	needsToPrompt    bool
-
-	hostConfigData *configuration.TridentConfigData
 }
 
 // New creates and returns a new InstallerView.
@@ -61,7 +59,6 @@ func New() *InstallerView {
 
 // Initialize initializes the view.
 func (iv *InstallerView) Initialize(hostConfigData *configuration.TridentConfigData, backButtonText string, app *tview.Application, nextPage, previousPage, quit, refreshTitle func()) (err error) {
-	iv.hostConfigData = hostConfigData
 	iv.navBar = navigationbar.NewNavigationBar().
 		AddButton(backButtonText, previousPage).
 		AddButton(uitext.ButtonNext, func() {
