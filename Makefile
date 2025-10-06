@@ -433,26 +433,6 @@ bin/storm-trident: tools/cmd/storm-trident/main.go tools/storm/**/*
 	cd tools && go generate storm/e2e/discover.go
 	cd tools && go build -o ../bin/storm-trident ./cmd/storm-trident/main.go
 
-# Insatller tools
-
-INSTALLER_OUT_DIR := bin
-INSTALLER_DIR := tools/installer
-
-bin/liveinstaller: \
-	$(shell find $(INSTALLER_DIR)/liveinstaller -type f) \
-	$(shell find $(INSTALLER_DIR)/imagegen/attendedinstaller/ -type f) \
-	$(INSTALLER_DIR)/go.sum
-	@mkdir -p bin
-	cd $(INSTALLER_DIR)/liveinstaller && \
-		CGO_ENABLED=0 go build -o ../../../$(INSTALLER_OUT_DIR)/liveinstaller
-
-bin/manualrun: \
-	$(shell find $(INSTALLER_DIR)/imagegen/attendedinstaller/ -type f) \
-	$(INSTALLER_DIR)/go.sum
-	@mkdir -p bin
-	cd $(INSTALLER_DIR)/imagegen/attendedinstaller/_manualrun && \
-		CGO_ENABLED=0 go build -o ../../../../../$(INSTALLER_OUT_DIR)/manualrun
-
 .PHONY: validate
 validate: $(TRIDENT_CONFIG) bin/trident
 	@bin/trident validate $(TRIDENT_CONFIG)
