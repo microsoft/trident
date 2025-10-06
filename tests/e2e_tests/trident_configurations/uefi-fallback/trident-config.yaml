@@ -1,0 +1,102 @@
+image:
+  url: http://NETLAUNCH_HOST_ADDRESS/files/regular.cosi
+  sha384: ignored
+storage:
+  disks:
+    - id: os
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
+      partitionTableType: gpt
+      partitions:
+        - id: root-a
+          type: root
+          size: 8G
+        - id: root-b
+          type: root
+          size: 8G
+        - id: esp
+          type: esp
+          size: 1G
+        - id: swap
+          type: swap
+          size: 2G
+        - id: home
+          type: home
+          size: 1G
+        - id: trident
+          type: linux-generic
+          size: 1G
+    - id: disk2
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
+      partitionTableType: gpt
+      partitions: []
+  abUpdate:
+    volumePairs:
+      - id: root
+        volumeAId: root-a
+        volumeBId: root-b
+  filesystems:
+    - deviceId: trident
+      source: new
+      mountPoint: /var/lib/trident
+    - deviceId: home
+      source: new
+      mountPoint: /home
+    - deviceId: esp
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+    - deviceId: root
+      mountPoint: /
+  swap:
+    - swap
+scripts:
+  postConfigure:
+    - name: testing-privilege
+      runOn:
+        - clean-install
+        - ab-update
+      content: echo 'testing-user ALL=(ALL:ALL) NOPASSWD:ALL' > /etc/sudoers.d/testing-user
+    - name: reset-uefi-and-reboot
+      runOn:
+        - ab-update
+      content: |
+        cat <<'EOF' >/usr/local/bin/reset-uefi-and-reboot.sh
+        #!/bin/bash
+        set -euo pipefail
+        echo 'reset UEFI variables to force fallback on next boot'
+        /usr/sbin/fw_setenv -safe-boot next
+        echo 'rebooting to trigger UEFI fallback'
+        /usr/sbin/reboot
+        EOF
+        chmod +x /usr/local/bin/reset-uefi-and-reboot.sh
+
+        # Create a systemd service to run the script on boot
+        cat <<'EOF' >/etc/systemd/system/reset-uefi-and-reboot.service
+        [Unit]
+        Description=Reset UEFI variables and reboot
+
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/local/bin/reset-uefi-and-reboot.sh
+
+        [Install]
+        WantedBy=multi-user.target
+        EOF
+
+        systemctl enable reset-uefi-and-reboot.service
+os:
+  uefiFallback: fallback
+  selinux:
+    mode: enforcing
+  netplan:
+    version: 2
+    ethernets:
+      vmeths:
+        match:
+          name: enp*
+        dhcp4: true
+  users:
+    - name: testing-user
+      sshPublicKeys: []
+      sshMode: key-only
+  uefiFallback: rollback

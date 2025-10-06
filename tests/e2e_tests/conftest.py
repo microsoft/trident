@@ -119,8 +119,7 @@ def hostConfiguration(request):
     return trident_Configuration
 
 
-@pytest.fixture
-def isUki(request):
+def compatibilityCheck(request, marker):
     file_path = request.config.getoption("--configuration")
     testselection_path = os.path.join(file_path, "test-selection.yaml")
     with open(testselection_path, "r") as stream:
@@ -130,7 +129,17 @@ def isUki(request):
             print(exc)
             return {}
 
-    return "uki" in test_Selection.get("compatible", [])
+    return marker in test_Selection.get("compatible", [])
+
+
+@pytest.fixture
+def isUki(request):
+    return compatibilityCheck(request, "uki")
+
+
+@pytest.fixture
+def isUefiFallback(request):
+    return compatibilityCheck(request, "uefi-fallback")
 
 
 @pytest.fixture

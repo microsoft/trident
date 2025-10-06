@@ -50,6 +50,11 @@ steps:
         
         echo "Trident Metrics:"
         cat ${{ parameters.metricsFile }}
+      elif [ "${{ parameters.tridentConfigurationName }}" == 'uefi-fallback' ]; then
+        echo "For UEFI fallback, missing metrics file are not a concern"
+        set +x
+        echo "##vso[task.setvariable variable=UploadMetrics]False"
+        set -x
       else
         if [[ "$AGENT_JOBSTATUS" == "Succeeded" ]]; then
             echo "Metrics file does not exist or is empty, but there were no previous failures!"

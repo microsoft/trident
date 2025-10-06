@@ -137,6 +137,11 @@ steps:
         PROXY_ARG="--proxy HTTPS_PROXY=${{ parameters.httpsProxy }}"
       fi
 
+      SKIP_SERVICE_CHECK_ARG=""
+      if [ ${{ parameters.tridentConfigurationName }} == 'uefi-fallback' ]; then
+        SKIP_SERVICE_CHECK_ARG="--skip-service-check"
+      fi
+
       echo "Running script to stage and finalize A/B update..."
       ./bin/storm-trident helper ab-update \
           "${{ parameters.sshKeyPath }}" \
@@ -147,7 +152,8 @@ steps:
           --version $(version) \
           --stage-ab-update \
           --finalize-ab-update \
-          $PROXY_ARG
+          $PROXY_ARG \
+          $SKIP_SERVICE_CHECK_ARG
 
       current_version=$(echo $(version))
       new_version=$((current_version + 1))

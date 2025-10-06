@@ -83,22 +83,27 @@ virtualMachine:
   host:
     daily:
       - base
+      - uefi-fallback
       - usr-verity
     post_merge:
       - base
       - simple
+      - uefi-fallback
       - usr-verity
     pullrequest:
       - base
       - simple
+      - uefi-fallback
       - usr-verity
     validation:
       - base
       - simple
+      - uefi-fallback
       - usr-verity
     weekly:
       - base
       - simple
+      - uefi-fallback
       - usr-verity
   container:
     daily:
