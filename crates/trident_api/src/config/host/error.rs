@@ -123,7 +123,7 @@ pub enum HostConfigurationStaticValidationError {
     #[error("Unsupported URL scheme provided '{url_scheme}', must be 'file', 'http', or 'https'")]
     UnsupportedSourceUrlScheme { url_scheme: String },
 
-    #[error("Only one of root or usr verity device is supported, but other verity devices were requested")]
+    #[error("Only one of root or usr-verity devices is supported, but other verity devices were requested")]
     UnsupportedVerityDevices,
 
     #[error("In order to use usr-verity, UKI support must be enabled")]

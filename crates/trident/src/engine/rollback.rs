@@ -352,7 +352,7 @@ pub(crate) fn validate_ab_active_volume(ctx: &EngineContext) -> Result<(), Tride
 
 /// This is an internal helper function that:
 /// - Fetches paths of A/B volumes,
-/// - In case that root is a verity device, fetches root verity data device path,
+/// - In case that root is a verity device, fetches root-verity data device path,
 /// - Validates that A/B active volume in engine context matches actual root device path.
 fn validate_ab_active_volume_internal(
     ctx: &EngineContext,

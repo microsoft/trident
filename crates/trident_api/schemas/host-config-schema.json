@@ -235,7 +235,7 @@
           "type": "string"
         },
         "id": {
-          "description": "The ID of the LUKS-encrypted volume to create.\n\nThis parameter is required. It must be non-empty and unique among the IDs of all block devices in the host configuration. This includes the IDs of all disk partitions, encrypted volumes, software RAID arrays, and A/B volume pairs.",
+          "description": "The ID of the LUKS-encrypted volume to create.\n\nThis parameter is required. It must be non-empty and unique among the IDs of all block devices in the Host Configuration. This includes the IDs of all disk partitions, encrypted volumes, software RAID arrays, and A/B volume pairs.",
           "type": "string",
           "format": "Block Device ID"
         }
@@ -256,7 +256,7 @@
           "nullable": true
         },
         "pcrs": {
-          "description": "List of PCRs in the TPM 2.0 device to seal encrypted volumes to in the target OS. This field is required, and at least one PCR must be provided. Each PCR may be specified either as a digit or as a string.\n\n### Grub Target OS\n\nWhen doing a clean install of a grub target OS image, the following options are valid:\n\n- 7, or `secure-boot-policy`\n\n### UKI Target OS\n\nWhen doing a clean install of a UKI target OS image, the following options are valid:\n\n- 4, or `boot-loader-code`\n\n- 7, or `secure-boot-policy`\n\n- 11, or `kernel-boot`\n\n- 4 and 7\n\n- 4 and 11\n\n- 7 and 11\n\n- 4, 7, and 11\n\nHowever, due to the limitations of `systemd-pcrlock`, which is used internally for encryption in UKI OS, PCR 7 CANNOT be used if:\n\n- `SecureBoot` is disabled,\n\n- Trident is running inside a container.\n\nTo use PCR 7 for encryption in a target UKI OS, Trident must be running in a non-containerized environment, with `SecureBoot` enabled.\n\nMore encryption flows, with additional PCR options, will be added in the future.",
+          "description": "List of PCRs in the TPM 2.0 device to seal encrypted volumes to in the target OS. This field is required, and at least one PCR must be provided. Each PCR may be specified either as a digit or as a string.\n\n1. When doing a clean install of **a grub target OS image**, the following options are valid:\n\n- 7, or `secure-boot-policy`\n\n2. When doing a clean install of **a UKI target OS image**, the following options are valid:\n\n- 4, or `boot-loader-code`\n\n- 7, or `secure-boot-policy`\n\n- 11, or `kernel-boot`\n\n- 4 and 7\n\n- 4 and 11\n\n- 7 and 11\n\n- 4, 7, and 11\n\nHowever, due to the limitations of `systemd-pcrlock`, which is used internally for encryption in UKI OS, PCR 7 CANNOT be used if:\n\n- `SecureBoot` is disabled,\n\n- Trident is running inside a container.\n\nTo use PCR 7 for encryption in a target UKI OS, Trident must be running in a non-containerized environment, with `SecureBoot` enabled.\n\nMore encryption flows, with additional PCR options, will be added in the future.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/Pcr"
@@ -770,7 +770,7 @@
           ]
         },
         {
-          "title": "Usr verity hash partition (NOT ENABLED YET!)",
+          "title": "Usr-verity hash partition (NOT ENABLED YET!)",
           "description": "x64: `77ff5f63-e7b6-4633-acf4-1565b864c0e6`",
           "type": "string",
           "enum": [
@@ -1174,7 +1174,7 @@
       "type": "object",
       "properties": {
         "mode": {
-          "description": "Override the SELinux mode. When not provided, no changes will be made to the existing configuration.\n\nNote: Trident only supports SELinux and root verity together when running in UKI-mode. Otherwise when using verity, SELinux must not be enabled in the OS image or SELinux should be explicitly set to `disabled`.",
+          "description": "Override the SELinux mode. When not provided, no changes will be made to the existing configuration.\n\nNote: Trident only supports SELinux and root-verity together when running in UKI-mode. Otherwise, when using root-verity, SELinux must not be enabled in the OS image or SELinux should be explicitly set to `disabled`.",
           "allOf": [
             {
               "$ref": "#/definitions/SelinuxMode"
@@ -1282,7 +1282,7 @@
       ]
     },
     "SoftwareRaidArray": {
-      "description": "Software RAID configuration.\n\nThe RAID array will be created using the `mdadm` package. During a clean install, all the existing RAID arrays that are on disks defined in the host configuration will be unmounted, and then stopped.\n\nThe RAID arrays that are defined in the host configuration will be created, and mounted if requested in the `storage.filesystems` config.\n\nTo learn more about RAID, please refer to the [RAID wiki](https://wiki.archlinux.org/title/RAID).\n\nTo learn more about `mdadm`, please refer to the [mdadm guide](https://raid.wiki.kernel.org/index.php/A_guide_to_mdadm).",
+      "description": "Software RAID configuration.\n\nThe RAID array will be created using the `mdadm` package. During a clean install, all the existing RAID arrays that are on disks defined in the Host Configuration will be unmounted, and then stopped.\n\nThe RAID arrays that are defined in the Host Configuration will be created, and mounted if requested in the `storage.filesystems` config.\n\nTo learn more about RAID, please refer to the [RAID wiki](https://wiki.archlinux.org/title/RAID).\n\nTo learn more about `mdadm`, please refer to the [mdadm guide](https://raid.wiki.kernel.org/index.php/A_guide_to_mdadm).",
       "type": "object",
       "required": [
         "devices",
@@ -1300,7 +1300,7 @@
           }
         },
         "id": {
-          "description": "A unique identifier for the RAID array.\n\nThis is a user-defined string that links the RAID array to the `filesystems` config in the configuration. The identifier must be unique across devices of all types in the host configuration.",
+          "description": "A unique identifier for the RAID array.\n\nThis is a user-defined string that links the RAID array to the `filesystems` config in the Host Configuration. The identifier must be unique across devices of all types in the Host Configuration.",
           "type": "string",
           "format": "Block Device ID"
         },

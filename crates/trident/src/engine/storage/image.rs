@@ -118,7 +118,7 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
     Ok(())
 }
 
-/// Scans the host configuration and the image in the engine context to find
+/// Scans the Host Configuration and the image in the engine context to find
 /// filesystems sourced from the image. Returns a list of tuples containing
 /// the block device ID, mount point path, and filesystem type for each filesystem
 /// sourced from the OS image.

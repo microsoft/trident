@@ -35,10 +35,10 @@ pub struct Raid {
 /// Software RAID configuration.
 ///
 /// The RAID array will be created using the `mdadm` package. During a clean install, all the
-/// existing RAID arrays that are on disks defined in the host configuration will be unmounted, and
+/// existing RAID arrays that are on disks defined in the Host Configuration will be unmounted, and
 /// then stopped.
 ///
-/// The RAID arrays that are defined in the host configuration will be created, and mounted if
+/// The RAID arrays that are defined in the Host Configuration will be created, and mounted if
 /// requested in the `storage.filesystems` config.
 ///
 /// To learn more about RAID, please refer to the [RAID wiki](https://wiki.archlinux.org/title/RAID).
@@ -52,8 +52,8 @@ pub struct SoftwareRaidArray {
     /// A unique identifier for the RAID array.
     ///
     /// This is a user-defined string that links the RAID array to the `filesystems` config in the
-    /// configuration. The identifier must be unique across devices of all types in the host
-    /// configuration.
+    /// Host Configuration. The identifier must be unique across devices of all types in the Host
+    /// Configuration.
     #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
     pub id: BlockDeviceId,
 

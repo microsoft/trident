@@ -1,7 +1,7 @@
 
-# Usr Verity
+# Usr-Verity
 
-Usr data integrity verification, or "Usr Verity", is a specific utilization
+Usr data integrity verification, or usr-verity, is a specific utilization
 of [dm-verity](https://www.kernel.org/doc/html/latest/admin-guide/device-mapper/verity.html),
 an integral part of the kernel that ensures that I/O for anything on the
 protected filesystem (in this case, usr: `/usr`) is verified against a known
@@ -24,11 +24,11 @@ blk_0 ... blk_127  blk_16256   blk_16383      blk_32640 . . . blk_32767
 ```
 
 Trident partners with Image Customizer to deploy images that have `usr`
-configured with Verity and a partition storing the `usr-hash`.
+configured with dm-verity and a partition storing the `usr-hash`.
 
 ## Use Image Customizer to Create a COSI File
 
-To create a COSI file with `Usr Verity` enabled, Image Customizer provides some
+To create a COSI file with usr-verity enabled, Image Customizer provides some
 [guidance](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/concepts/verity.html).
 
 At a high level, there are only a couple things that need to be configured:
@@ -62,7 +62,7 @@ At a high level, there are only a couple things that need to be configured:
       hashDeviceMountIdType: part-label
     ```
 
-3. Verity filesystems should be created as read-only:
+3. Usr-verity filesystems should be created as read-only:
 
     ``` yaml
     - deviceId: usr
@@ -72,7 +72,7 @@ At a high level, there are only a couple things that need to be configured:
         options: defaults,ro
     ```
 
-4. usr-verity requires some changes to support UKI rather than grub:
+4. Usr-verity requires some changes to support UKI rather than grub:
 
     ``` yaml
     os:
