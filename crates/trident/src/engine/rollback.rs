@@ -36,13 +36,8 @@ pub enum BootValidationResult {
 /// If the firmware did not boot from the expected root device, this function will return an error.
 /// In either case, the function will update the Host Status.
 #[tracing::instrument(skip_all)]
-<<<<<<< HEAD:crates/trident/src/engine/rollback.rs
-pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
-    info!("Validating whether host correctly booted from updated target OS image");
-=======
 pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, TridentError> {
     info!("Validating whether host correctly booted from updated runtime OS image");
->>>>>>> bf8874b7 (pass reboot along):src/engine/rollback.rs
 
     let servicing_type = match datastore.host_status().servicing_state {
         ServicingState::AbUpdateFinalized => ServicingType::AbUpdate,
