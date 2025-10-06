@@ -337,8 +337,8 @@ def check_crypsetup_luks_dump(
     given device path. The output will differ depending on whether the
     encryption is based on a pcrlock policy or not.
 
-    Example output for a testing flow using a UKI ROS image, where a pcrlock
-    policy is used:
+    Example output for a testing flow using a UKI target OS image, where a
+    pcrlock policy is used:
 
         {
             "keyslots":{
@@ -410,8 +410,8 @@ def check_crypsetup_luks_dump(
             }
         }
 
-    Example output for a grub ROS image, where pcrlock policy is NOT used, and
-    instead, the volume is enrolled to the value of PCR 7:
+    Example output for a grub target OS image, where pcrlock policy is NOT
+    used, and instead, the volume is enrolled to the value of PCR 7:
 
         {
             "keyslots":{
@@ -518,7 +518,7 @@ def check_crypsetup_luks_dump(
     # Check Host Status to see if image is UKI or not
     host_status = get_host_status(connection, tridentCommand)
 
-    # For both UKI and grub ROS images, we expect to see a single token 1
+    # For both UKI and grub target OS images, we expect to see a single token 1
     assert (
         "0" in dump["tokens"]
     ), f"Expected token 0 to be in {dump['tokens']!r}, got {dump['tokens']!r}"

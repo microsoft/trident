@@ -158,7 +158,7 @@ pub fn get_disks_to_rebuild(
 }
 
 /// This function verifies if the rebuild-raid operation can be initiated by
-/// validating the host configuration changes and determining whether the RAID
+/// validating the Host Configuration changes and determining whether the RAID
 /// can be successfully recovered.
 pub(crate) fn validate_rebuild_raid(
     host_config: &HostConfiguration,
@@ -171,7 +171,7 @@ pub(crate) fn validate_rebuild_raid(
     }
 
     validate_host_config_delta(host_config, &host_status.spec)
-        .context("Failed to validate host configuration delta for rebuild-raid operation")?;
+        .context("Failed to validate Host Configuration delta for rebuild-raid operation")?;
 
     match host_status.servicing_state {
         ServicingState::NotProvisioned
@@ -321,7 +321,7 @@ fn validate_raid_recovery(
             .iter()
             .find(|d| d.id == *disk_id)
             .context(format!(
-                "Failed to find configuration for disk '{disk_id}' in host config"
+                "Failed to find configuration for disk '{disk_id}' in Host Configuration"
             ))?;
 
         disks_to_rebuild_partitions.extend(disk.partitions.iter().map(|p| p.id.clone()));
@@ -346,8 +346,7 @@ fn validate_raid_recovery(
     Ok(())
 }
 
-/// Gets the RAID disks to rebuild map i.e. a map of RAID id and the associated
-/// disks to rebuild.
+/// Gets the RAID disks to rebuild map i.e. a map of RAID ID and the associated disks to rebuild.
 fn get_raid_disks_to_rebuild_map(
     host_config: &HostConfiguration,
     disks_to_rebuild: &[BlockDeviceId],
@@ -366,7 +365,7 @@ fn get_raid_disks_to_rebuild_map(
                 .iter()
                 .find(|d| d.id == *disk)
                 .context(format!(
-                    "Failed to find configuration for disk '{disk}' in host config"
+                    "Failed to find configuration for disk '{disk}' in Host Configuration"
                 ))?
                 .partitions
                 .iter()
@@ -384,10 +383,9 @@ fn get_raid_disks_to_rebuild_map(
     Ok(raid_disks_to_rebuild_map)
 }
 
-/// Validates the difference between the Host Configuration used to trigger a
-/// rebuild and the initial host onfiguration that is saved as Host Status spec.
-/// Currently, it only checks if the Host Status specification and Host
-/// Configuration are identical.
+/// Validates the difference between the Host Configuration used to trigger a rebuild and the
+/// initial Host Configuration that is saved as Host Status spec. Currently, it only checks if the
+/// Host Status specification and Host Configuration are identical.
 fn validate_host_config_delta(
     host_config: &HostConfiguration,
     host_status_spec: &HostConfiguration,
@@ -402,15 +400,15 @@ fn validate_host_config_delta(
     host_config_to_compare.trident = Default::default();
 
     if host_status_spec != host_config_to_compare {
-        bail!("We do not support the updated host configuration for the Trident rebuild-raid process. The configuration must match the original host configuration used during host provisioning.");
+        bail!("Running rebuild-raid with an updated Host Configuration is not supported. \
+        The configuration must match the original Host Configuration used during host provisioning.");
     }
     Ok(())
 }
 
 /// Checks if the partition is part of any RAID array.
 fn partition_is_raid_member(partition_id: &BlockDeviceId, host_config: &HostConfiguration) -> bool {
-    // Check if the partition ID is present in any RAID array in the host
-    // configuration.
+    // Check if the partition ID is present in any RAID array in the Host Configuration.
     host_config
         .storage
         .raid
@@ -527,7 +525,9 @@ mod tests {
             ..Default::default()
         });
 
-        assert_eq!(validate_host_config_delta(&host_config, &host_status.spec).unwrap_err().to_string(), "We do not support the updated host configuration for the Trident rebuild-raid process. The configuration must match the original host configuration used during host provisioning.");
+        assert_eq!(validate_host_config_delta(&host_config, &host_status.spec).unwrap_err().to_string(),
+        "Running rebuild-raid with an updated Host Configuration is not supported. \
+        The configuration must match the original Host Configuration used during host provisioning.");
     }
 
     #[test]
@@ -541,7 +541,7 @@ mod tests {
         expected.insert("raid1".to_string(), vec!["disk2".to_string()]);
         assert_eq!(result, expected);
 
-        // Append a new disk to the host configuration.
+        // Append a new disk to the Host Configuration.
         let mut host_config = host_config;
         host_config.storage.disks.push(Disk {
             id: "disk3".to_string(),
@@ -573,12 +573,12 @@ mod tests {
         let expected = HashMap::new();
         assert_eq!(result, expected);
 
-        // Disk to rebuild is not part of the host configuration.
+        // Disk to rebuild is not part of the Host Configuration.
         let disks_to_rebuild = vec!["doesnotexist".to_string()];
         let result = get_raid_disks_to_rebuild_map(&host_config, &disks_to_rebuild);
         assert_eq!(
             result.unwrap_err().to_string(),
-            "Failed to find configuration for disk 'doesnotexist' in host config"
+            "Failed to find configuration for disk 'doesnotexist' in Host Configuration"
         );
     }
 
@@ -591,7 +591,7 @@ mod tests {
         let result = validate_raid_recovery(&host_config, &disks_to_rebuild);
         result.unwrap();
 
-        // Append a new raid array to the host configuration.
+        // Append a new raid array to the Host Configuration.
         let mut host_config = host_config;
         host_config
             .storage
@@ -619,12 +619,12 @@ mod tests {
         let result = validate_raid_recovery(&host_config, &disks_to_rebuild);
         result.unwrap();
 
-        // Disk to rebuild does not exist in the host configuration.
+        // Disk to rebuild does not exist in the Host Configuration.
         let disks_to_rebuild = vec!["doesnotexist".to_string()];
         let result = validate_raid_recovery(&host_config, &disks_to_rebuild);
         assert_eq!(
             result.unwrap_err().to_string(),
-            "Failed to find configuration for disk 'doesnotexist' in host config"
+            "Failed to find configuration for disk 'doesnotexist' in Host Configuration"
         );
     }
 
@@ -702,7 +702,7 @@ mod tests {
     #[test]
     fn test_validate_rebuild_raid_host_config_delta_failure() {
         let host_config = get_host_config();
-        // Append a new disk and create a new host configuration.
+        // Append a new disk and create a new Host Configuration.
         let mut host_config1 = host_config.clone();
         host_config1.storage.disks.push(Disk {
             id: "disk3".to_string(),
@@ -732,7 +732,7 @@ mod tests {
 
         assert_eq!(
             result.unwrap_err().to_string(),
-            "Failed to validate host configuration delta for rebuild-raid operation"
+            "Failed to validate Host Configuration delta for rebuild-raid operation"
         );
     }
 
@@ -791,7 +791,7 @@ mod tests {
     fn test_validate_rebuild_raid_all_unformatted_partitions_warning() {
         let host_config = get_host_config();
         let mut host_config = host_config;
-        // Clear raid in the host configuration.
+        // Clear RAID in the Host Configuration.
         host_config.storage.raid.software.clear();
 
         let mut host_status = HostStatus {
@@ -1070,7 +1070,7 @@ mod functional_test {
         // Remove disk2 UUID from Host Status.
         host_status.disk_uuids.remove("disk2");
 
-        // Add a raid array raid2 which has partitions on disk2 to the host configuration.
+        // Add a RAID array raid2 which has partitions on disk2 to the Host Configuration.
         let mut host_config = host_config;
         host_config.storage.disks[1].partitions.push(Partition {
             id: "disk2part2".to_string(),

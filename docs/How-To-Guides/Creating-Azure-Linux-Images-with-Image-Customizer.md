@@ -5,19 +5,22 @@
 
 To deploy an operating system, Trident requires
 [COSI](../Reference/Composable-OS-Image.md) files. This document describes how
-to create a COSI file with
-[Image Customizer](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/README.html).
+to create a COSI file with [Image
+Customizer](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/README.html).
 
 ## Prerequisites
 
 1. Ensure that [oras](https://oras.land/docs/installation/) is installed.
-2. Ensure [Image Customizer container](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/quick-start/quick-start.html) is accessible.
+2. Ensure [Image Customizer
+   container](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/quick-start/quick-start.html)
+   is accessible.
 
 ## Instructions
 
 ### Step 1: Download the minimal base image
 
-Pull [minimal-os](../Reference/Glossary.md#minimal-os) as a base image from MCR by running:
+Pull [minimal-os](../Reference/Glossary.md#minimal-os) as a base image from MCR
+by running:
 
 ``` bash
 mkdir -p $HOME/staging
@@ -26,7 +29,7 @@ oras pull mcr.microsoft.com/azurelinux/3.0/image/minimal-os:latest --platform li
 popd
 ```
 
-### Step 2: Get Trident RPMs
+### Step 2: Build Trident RPMs
 
 Build the Trident RPMs by running:
 
@@ -34,7 +37,8 @@ Build the Trident RPMs by running:
 make bin/trident-rpms.tar.gz
 ```
 
-After running this make command, the RPMs will be built and packaged into `bin/trident-rpms.tar.gz` and unpacked into `bin/RPMS/x86_64`:
+After running this make command, the RPMs will be built and packaged into
+`bin/trident-rpms.tar.gz` and unpacked into `bin/RPMS/x86_64`:
 
 ``` bash
 $ ls bin/RPMS/x86_64/
@@ -52,9 +56,11 @@ Copy RPMs to staging folder:
 cp -r bin/RPMS $HOME/staging
 ```
 
-### Step 3: Create Image Customizer Configuration
+### Step 3: Define COSI Configuration
 
-Follow the Image Customizer [documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/README.html) to configure `$HOME/staging/ic-config.yaml`:
+Follow the Image Customizer
+[documentation](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/README.html)
+to configure `$HOME/staging/ic-config.yaml`:
 
 ``` yaml
 storage:
@@ -122,9 +128,12 @@ os:
 
 ### Step 4: Invoke Image Customizer
 
-Assuming RPMs, a base image `image.vhdx` and Image Customizer configuration `ic-config.yaml` found in `$HOME/staging`.
+Assuming RPMs, a base image `image.vhdx` and Image Customizer configuration
+`ic-config.yaml` found in `$HOME/staging`.
 
-Invoke Image Customizer, paying special attention to [specify](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/api/cli.html#--output-image-formatformat) `--output-image-format=cosi`:
+Invoke Image Customizer, paying special attention to
+[specify](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/api/cli.html#--output-image-formatformat)
+`--output-image-format=cosi`:
 
 ``` bash
 pushd $HOME/staging

@@ -35,7 +35,7 @@ use super::EngineContext;
 /// - There must be an equal number of filesystems in the OS image and Host Configuration
 /// - Filesystems in the OS image must match on mount points with filesystems in the Host
 ///   Configuration
-/// - The OS image and the Host Configuration match in terms of root verity configuration
+/// - The OS image and the Host Configuration match in terms of root-verity configuration
 /// - ESP image never has verity enabled
 /// - There is enough space to copy over the ESP image into /tmp
 pub fn validate_host_config(ctx: &EngineContext) -> Result<(), TridentError> {

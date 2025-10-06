@@ -35,14 +35,14 @@ pub(crate) fn get_updated_device_name(device_name: &str) -> String {
     format!("{device_name}_new")
 }
 
-/// Get the root verity root hash.
+/// Get the root-verity root hash.
 fn get_root_verity_root_hash(ctx: &EngineContext) -> Result<String, Error> {
     // Extract information from the OS image.
     let Some(os_img) = ctx.image.as_ref() else {
         bail!("Image is not available");
     };
 
-    trace!("Getting root verity root hash from OS image");
+    trace!("Getting root-verity root hash from OS image");
     let root_fs = os_img
         .root_filesystem()
         .context("Failed to get root filesystem from OS image")?;
@@ -54,14 +54,14 @@ fn get_root_verity_root_hash(ctx: &EngineContext) -> Result<String, Error> {
     Ok(verity.roothash.clone())
 }
 
-/// Get the root verity root hash.
+/// Gets the usr-verity root hash.
 fn get_usr_verity_root_hash(ctx: &EngineContext) -> Result<String, Error> {
     // Extract information from the OS image.
     let Some(os_img) = ctx.image.as_ref() else {
         bail!("Image is not available");
     };
 
-    trace!("Getting usr verity root hash from OS image");
+    trace!("Getting usr-verity root hash from OS image");
     let usr_fs = os_img
         .filesystems()
         .find(|fs| fs.mount_point == Path::new(USR_MOUNT_POINT_PATH))
@@ -327,8 +327,8 @@ pub fn get_verity_device_paths(
 
 /// Looks for verity devices created by Trident during servicing and stops them.
 ///
-/// This specifically targets root verity devices (named `root_new`) and usr
-/// verity devices (named `usr_new`).
+/// This specifically targets root-verity devices (named `root_new`) and usr-verity devices (named
+/// `usr_new`).
 #[tracing::instrument(skip_all)]
 pub fn stop_trident_servicing_devices(host_config: &HostConfiguration) -> Result<(), Error> {
     // If no verity module is loaded, there are no verity devices to stop
@@ -336,12 +336,12 @@ pub fn stop_trident_servicing_devices(host_config: &HostConfiguration) -> Result
         return Ok(());
     }
 
-    // Close the root verity device
+    // Close the root-verity device
     stop_verity_device(
         host_config,
         &get_updated_device_name(ROOT_VERITY_DEVICE_NAME),
     )?;
-    // Close the usr verity device
+    // Close the usr-verity device
     stop_verity_device(
         host_config,
         &get_updated_device_name(USR_VERITY_DEVICE_NAME),
@@ -359,7 +359,7 @@ fn stop_verity_device(
 
     let verity_device_path = Path::new(DEV_MAPPER_PATH).join(verity_device_name);
 
-    // Check if the root verity device is present
+    // Check if the root-verity device is present
     if !verity_device_path.exists() {
         return Ok(());
     }
@@ -370,7 +370,7 @@ fn stop_verity_device(
     }
 
     let root_verity_device_status = veritysetup::status(verity_device_name)
-        .context("Failed to get status of root verity device")?
+        .context("Failed to get status of root-verity device")?
         .active()
         .with_context(|| {
             format!(
@@ -432,7 +432,7 @@ fn stop_verity_device(
 
     debug!("Closing verity device '{}'", verity_device_path.display());
     veritysetup::close(verity_device_name).context(format!(
-        "Failed to close root verity device '{verity_device_name}'"
+        "Failed to close root-verity device '{verity_device_name}'"
     ))?;
 
     Ok(())
@@ -591,7 +591,7 @@ mod functional_test {
 
         assert!(ctx.partition_paths.is_empty());
 
-        // test root verity device
+        // Test root-verity device
         let (boot_dev, verity_vol) = verity::setup_verity_volumes_with_boot();
         let verity_dev = verity_vol.verity_device("root_new");
 
@@ -773,7 +773,7 @@ mod functional_test {
         assert!(!verity_device.is_active().unwrap());
         stop_trident_servicing_devices(&ctx_golden.spec).unwrap();
 
-        // root verity opened
+        // root-verity opened
         {
             let _guard = verity_device.open_with_guard().unwrap();
             assert!(verity_device.is_active().unwrap());
@@ -781,7 +781,7 @@ mod functional_test {
             assert!(!verity_device.is_active().unwrap());
         }
 
-        // root verity opened & mounted
+        // root-verity opened & mounted
         {
             let _guard = verity_device.open_with_guard().unwrap();
 

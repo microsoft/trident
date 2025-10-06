@@ -356,7 +356,7 @@ pub enum ServicingError {
     )]
     CopyPcrlockPolicyJson { path: String, destination: String },
 
-    #[error("Failed to copy Trident binary to runtime OS")]
+    #[error("Failed to copy Trident binary to target OS")]
     CopyTridentBinary,
 
     #[error("Failed to create boot entry '{boot_entry}' via efibootmgr")]
@@ -487,7 +487,7 @@ pub enum ServicingError {
     #[error("Failed to get the root block device id")]
     GetRootBlockDeviceId,
 
-    #[error("Failed to get block device path of root verity data device")]
+    #[error("Failed to get block device path of root-verity data device")]
     GetRootVerityDataDevPath,
 
     #[error("Failed to get SELINUX")]

@@ -38,7 +38,7 @@ impl Subsystem for StorageSubsystem {
 
     fn validate_host_config(&self, ctx: &EngineContext) -> Result<(), TridentError> {
         if ctx.servicing_type != ServicingType::CleanInstall {
-            // Ensure that relevant portions of the host configuration have not changed.
+            // Ensure that relevant portions of the Host Configuration have not changed.
             if ctx.spec_old.storage.disks != ctx.spec.storage.disks
                 || ctx.spec_old.storage.raid != ctx.spec.storage.raid
                 || ctx.spec_old.storage.encryption != ctx.spec.storage.encryption
@@ -185,7 +185,7 @@ impl Subsystem for StorageSubsystem {
     #[tracing::instrument(name = "storage_configuration", skip_all)]
     fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
         if ctx.is_uki()? && ctx.storage_graph.root_fs_is_verity() {
-            debug!("Skipping storage configuration because UKI root verity is in use");
+            debug!("Skipping storage configuration because UKI root-verity is in use");
             return Ok(());
         }
 
@@ -222,7 +222,7 @@ mod tests {
     use tempfile::NamedTempFile;
     use url::Url;
 
-    use osutils::encryption::{self, DEFAULT_PCR};
+    use osutils::encryption;
     use trident_api::{
         config::{
             AbUpdate, Disk as DiskConfig, Encryption, FileSystem, HostConfiguration, MountPoint,
@@ -231,6 +231,8 @@ mod tests {
         },
         error::ErrorKind,
     };
+
+    use sysdefs::tpm2::Pcr;
 
     fn get_ctx() -> EngineContext {
         EngineContext {
@@ -331,7 +333,7 @@ mod tests {
                         device_name: "luks-enc".to_owned(),
                         device_id: "part5".to_owned(),
                     }],
-                    pcrs: vec![DEFAULT_PCR],
+                    pcrs: vec![Pcr::Pcr7],
                     ..Default::default()
                 }),
                 ..Default::default()

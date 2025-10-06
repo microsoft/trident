@@ -14,7 +14,7 @@ parameters:
       - container
 
   - name: imageName
-    displayName: "Image used in the runtime OS, source of Trident (container vs host)"
+    displayName: "Image used in the target OS, source of Trident (container vs host)"
     type: string
     default: trident-testimage
     values:

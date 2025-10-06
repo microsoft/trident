@@ -120,7 +120,7 @@ impl Subsystem for OsConfigSubsystem {
             );
             return Ok(());
         } else if ctx.is_uki()? && ctx.storage_graph.root_fs_is_verity() {
-            error!("Skipping OS configuration changes requested in Host Configuration because UKI root verity is in use.");
+            error!("Skipping OS configuration changes requested in Host Configuration because UKI root-verity is in use.");
             return Ok(());
         }
 

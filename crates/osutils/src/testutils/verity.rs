@@ -175,7 +175,7 @@ pub fn setup_verity_volumes() -> TestVerityVolume {
     )
 }
 
-/// Sets up mock root verity volumes on the test disk.
+/// Sets up mock root-verity volumes on the test disk.
 ///
 /// Returns a tuple containing the boot device and the mock verity volume info.
 ///
@@ -207,7 +207,7 @@ pub fn setup_verity_volumes_with_boot() -> (PathBuf, TestVerityVolume) {
     (boot_device, verity_vol)
 }
 
-/// Sets up a root verity boot partition on the test disk.
+/// Sets up a root-verity boot partition on the test disk.
 ///
 /// It doesn't actually set up the verity stuff, just creates a partition with
 /// an ext4 filesystem that only contains grub2/grub.cfg.
@@ -239,7 +239,7 @@ pub fn setup_root_verity_boot_partition() -> (PathBuf, TestVerityVolume) {
     )
 }
 
-/// Sets up a fake grub config with root verity in a fake boot volume
+/// Sets up a fake grub config with root-verity in a fake boot volume.
 fn setup_fake_grub_config(
     boot_device: impl AsRef<Path>,
     data_device: impl AsRef<Path>,

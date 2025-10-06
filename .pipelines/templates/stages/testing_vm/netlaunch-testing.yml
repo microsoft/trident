@@ -172,9 +172,9 @@ stages:
               # Enable SecureBoot for all E2E tests.
               SECURE_BOOT="--secure-boot"
 
-              # If this is a usr-verity image; a signing certificate must be
-              # set via --signing-cert; otherwise, set it to an empty string.
-              # This can also be used for sysext signing.
+              # If this is a usr-verity UKI image, a signing certificate must
+              # be set via --signing-cert; otherwise, set it to an empty
+              # string. This can also be used for sysext signing.
               TRIDENT_CONFIG="$(tridentConfigPath)/trident-config.yaml"
               IMAGE_URL=$(sudo yq '.image.url' "$TRIDENT_CONFIG")
               CERT_SEARCH_PATH="$(System.ArtifactsDirectory)/usrverity-testimage"
@@ -185,10 +185,24 @@ stages:
                 SIGNING_CERT=""
               fi
 
+              # If this is a usr-verity UKI image and the test will run in a
+              # container, then overwrite the PCRs to exclude PCR 7.
+              ENCRYPTION_VALUE=$(sudo yq '.storage.encryption' "$TRIDENT_CONFIG")
+              if [[ "$IMAGE_URL" == *usrverity.cosi && \
+                    "${{ parameters.runtimeEnv }}" == 'container' && \
+                    "$ENCRYPTION_VALUE" != "null" ]]; then
+                sudo yq -i '
+                  .storage.encryption.pcrs = ["boot-loader-code", "kernel-boot"]
+                ' "$TRIDENT_CONFIG"
+
+                echo "Updated Trident config:"
+                sudo yq '.' "$TRIDENT_CONFIG"
+              fi
+
               ./bin/netlaunch \
                   --iso ./artifacts/iso/$(installerISOName).iso \
                   --config $(tridentSourceDirectory)/tools/vm-netlaunch.yaml \
-                  --trident $(tridentConfigPath)/trident-config.yaml \
+                  --trident "$TRIDENT_CONFIG" \
                   --servefolder ./artifacts/test-image \
                   --logstream \
                   $MAX_FAILURES_FLAG \
@@ -237,7 +251,7 @@ stages:
 
             timeoutInMinutes: 5
             condition: succeededOrFailed()
-            displayName: "📄 Check Runtime OS deployment"
+            displayName: "📄 Check target OS deployment"
 
           - bash: |
               set -eux
@@ -273,7 +287,7 @@ stages:
                   "${{ parameters.runtimeEnv }}" \
                   --metrics-file $(tridentSourceDirectory)/trident-clean-install-metrics.jsonl \
                   --metrics-operation install
-            displayName: "Create boot metrics for booting into runtime OS"
+            displayName: "Create boot metrics for booting into target OS"
 
           - template: ../testing_common/trident-metrics.yml
             parameters:

@@ -167,7 +167,7 @@ impl Subsystem for HooksSubsystem {
                     },
                 ))?;
 
-            // If file permissions are specified in the host configuration, they override everything
+            // If file permissions are specified in the Host Configuration, they override everything
             // else. Otherwise use the original file permissions or fall back to default permissions
             // of 0664.
             let mode = override_mode.or(original_mode).unwrap_or(0o664);

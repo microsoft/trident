@@ -26,7 +26,7 @@ pub const SWAP_MOUNT_POINT: &str = NONE_MOUNT_POINT;
 /// Datastore file extension.
 pub const DATASTORE_FILE_EXTENSION: &str = "sqlite";
 
-/// Default Trident datastore path. Used from the runtime OS.
+/// Default Trident datastore path. Used from the target OS.
 pub const TRIDENT_DATASTORE_PATH_DEFAULT: &str = "/var/lib/trident/datastore.sqlite";
 
 /// Path to load the agent config from.
@@ -74,8 +74,7 @@ pub const ROOT_EFI_DIRECTORY: &str = "efi";
 /// Root volume mount point path.
 pub const ROOT_MOUNT_POINT_PATH: &str = "/";
 
-/// The path to the root of the freshly deployed (from provisioning OS) or
-/// updated OS (from runtime OS).
+/// Path to the root of the target OS.
 pub const UPDATE_ROOT_PATH: &str = "/mnt/newroot";
 
 /// Absolute path to /usr directory.
@@ -103,8 +102,7 @@ pub const TRIDENT_OVERLAY_RELATIVE_PATH: &str = "var/lib/trident-overlay";
 /// Expected to be on top of A/B update volume pair.
 pub const TRIDENT_OVERLAY_PATH: &str = formatcp!("/{TRIDENT_OVERLAY_RELATIVE_PATH}");
 
-/// The path to the root of the freshly deployed (from provisioning OS) or
-/// updated OS (from runtime OS). To be used when /mnt/newroot is not available.
+/// Path to the root of the target OS. To be used when /mnt/newroot is not available.
 pub const UPDATE_ROOT_FALLBACK_PATH: &str = formatcp!("{TRIDENT_OVERLAY_PATH}/newroot");
 
 /// Path to the mountinfo file in the host's proc directory that contains information about the
@@ -142,7 +140,7 @@ pub const MDSTAT_PATH: &str = "/proc/mdstat";
 /// Root verity device name.
 pub const ROOT_VERITY_DEVICE_NAME: &str = "root";
 
-/// Usr verity device name.
+/// Usr-verity device name.
 pub const USR_VERITY_DEVICE_NAME: &str = "usr";
 
 // OS/System Constants
@@ -227,9 +225,9 @@ pub mod internal_params {
 
     /// (FOR DEBUGGING ONLY) a boolean flag that indicates whether Trident should
     /// upgrade itself. If set to `true`, Trident will replicate itself into the
-    /// runtime OS prior to rebooting. This is useful during development to
+    /// target OS prior to rebooting. This is useful during development to
     /// ensure that the matching version of Trident is used.  This feature is not
-    /// available for root verity images.
+    /// available for root-verity images.
     pub const SELF_UPGRADE_TRIDENT: &str = "selfUpgradeTrident";
 
     /// Set the in-image paths of the verity signature files.

@@ -25,11 +25,11 @@ Legend:
 | 🔄 Lifecycle     | Onboard system for updates              | ✅       | ✅       | ✅      |
 | 🔄 Lifecycle     | Rollback (grub)                         | ✅       | ✅       | ✅      |
 | 🔄 Lifecycle     | Rollback (systemd-boot/UKI)             | 🔜       | 🔜       | 🔜      |
-| 🔏 Integrity     | Secure boot                             | ✅       | ✅       | ✅      |
+| 🔏 Integrity     | Secure Boot                             | ✅       | ✅       | ✅      |
 | 🔏 Integrity     | UKI                                     | ☑️       | ☑️       | ☑️      |
-| 🔏 Integrity     | Root verity (grub)                      | ⚠️[2]    | ⚠️[2]    | ⚠️[2]   |
-| 🔏 Integrity     | Root verity (UKI)                       | ☑️       | ☑️       | ☑️      |
-| 🔏 Integrity     | User verity (UKI)                       | ☑️       | ☑️       | ☑️      |
+| 🔏 Integrity     | Root-verity (grub)                      | ⚠️[2]    | ⚠️[2]    | ⚠️[2]   |
+| 🔏 Integrity     | Root-verity (UKI)                       | ☑️       | ☑️       | ☑️      |
+| 🔏 Integrity     | User-verity (UKI)                       | ☑️       | ☑️       | ☑️      |
 | 💽 Storage       | Block device creation                   | ✅       | 🔜       | ❌      |
 | 💽 Storage       | Image streaming (local)                 | ✅       | 🔜       | ✅      |
 | 💽 Storage       | Image streaming (HTTPS)                 | ✅       | 🔜       | ✅      |
@@ -37,7 +37,7 @@ Legend:
 | 💽 Storage       | Partition adoption                      | ☑️       | ❌       | ✅[3]   |
 | 💽 Storage       | Software RAID                           | ✅       | ❌       | ✅[3]   |
 | 💽 Storage       | ESP redundancy                          | ✅       | ❌       | ✅[3]   |
-| 💽 Storage       | Encryption with secure boot PCR sealing | ✅       | 🔜       | ✅[3]   |
+| 💽 Storage       | Encryption with Secure Boot PCR sealing | ✅       | 🔜       | ✅[3]   |
 | 💽 Storage       | Encryption with OS PCR sealing          | 🔜[4]    | 🔜       | ✅[3]   |
 | 📝 OS Config     | Network configuration                   | ✅       | ❌       | ✅      |
 | 📝 OS Config     | Hostname configuration                  | ✅[5]    | ❌       | ✅[5]   |
@@ -53,13 +53,13 @@ Legend:
 _Notes:_
 
 - [1] Trident exclusively supports UEFI booting. BIOS booting is not supported.
-- [2] Root verity is supported with grub, but support for this feature
+- [2] Root-verity is supported with grub, but support for this feature
   will be deprecated soon.
 - [3] A system installed with these features can be updated, but the features
   themselves cannot be activated during an update.
-- [4] Currently, only PCR 7 is supported. Sealing against other PCRs is
-  planned for a future release.
-- [5] This feature cannot be used in conjunction with root verity.
+- [4] Currently, different sets of PCRs are valid, depending on the type of the
+  target OS image. Please reference the [PCRs API](../Reference/Host-Configuration/API-Reference/Encryption.md) for details.
+- [5] This feature cannot be used in conjunction with root-verity.
 
 ## Out-of-Band Features
 

@@ -120,7 +120,7 @@ pub enum HostConfigurationStaticValidationError {
     #[error("Path '{path}' must be absolute")]
     PathNotAbsolute { path: String },
 
-    #[error("Verity device name '{device_name}' is invalid, must be '{expected}'.")]
+    #[error("Verity device name '{device_name}' is invalid, must be '{expected}'")]
     VerityDeviceNameInvalid {
         device_name: String,
         expected: String,
@@ -131,7 +131,7 @@ pub enum HostConfigurationStaticValidationError {
 
     #[error(
         "List of PCRs in encryption config contains unsupported PCRs '{pcrs}'.\n
-        Currently only PCRs 4, 7, and 11 are supported"
+        Only PCRs 4, 7, and 11 are supported"
     )]
     UnsupportedEncryptionPcrs { pcrs: String },
 
@@ -141,13 +141,13 @@ pub enum HostConfigurationStaticValidationError {
     #[error("Unsupported URL scheme provided '{url_scheme}', must be 'file', 'http', or 'https'")]
     UnsupportedSourceUrlScheme { url_scheme: String },
 
-    #[error("Only one of root or usr verity device is supported, but other verity devices were requested")]
+    #[error("Only one of root or usr-verity devices is supported, but other verity devices were requested")]
     UnsupportedVerityDevices,
 
     #[error("In order to use usr-verity, UKI support must be enabled")]
     UsrVerityRequiresUkiSupport,
 
-    #[error("Verity device '{device_name}' must define a mount point.")]
+    #[error("Verity device '{device_name}' must define a mount point")]
     VerityFilesystemWithoutMountPoint { device_name: String },
 
     #[error(
@@ -210,11 +210,6 @@ pub enum HostConfigurationDynamicValidationError {
     )]
     InvalidEncryptionPcrsForGrubImage { pcrs: String },
 
-    #[error(
-        "Since update image is a UKI image, list of PCRs in encryption config contains invalid PCRs: '{pcrs}'"
-    )]
-    InvalidEncryptionPcrsForUkiImage { pcrs: String },
-
     #[error("Failed to get block device information for disk '{disk_id}' that requires partition adoption")]
     GetBlockDeviceInfoForDisk { disk_id: String },
 
@@ -243,10 +238,22 @@ pub enum HostConfigurationDynamicValidationError {
     LoadScript { name: String, path: String },
 
     #[error(
-        "SELinux is not support with root-verity and grub. SELinux is set to '{selinux_mode}', \
-    but should be set to 'disabled'."
+        "SELinux is not supported with root-verity and grub. SELinux is set to '{selinux_mode}', \
+        but should be set to 'disabled'"
     )]
     RootVerityAndSelinuxUnsupported { selinux_mode: String },
+
+    #[error(
+        "Since Trident is running in a container, PCR 7 cannot be used for encryption \
+        in the target UKI OS"
+    )]
+    Pcr7EncryptionForUkiWhenRunningInContainer,
+
+    #[error(
+        "Since Secure Boot is disabled, PCR 7 cannot be used for encryption \
+        in the target UKI OS"
+    )]
+    Pcr7EncryptionForUkiWhenSecureBootDisabled,
 
     #[error("Cannot modify storage configuration during update")]
     StorageConfigurationChanged,
