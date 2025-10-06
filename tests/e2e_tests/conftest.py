@@ -139,7 +139,7 @@ def isUki(request):
 
 @pytest.fixture
 def isUefiFallback(request):
-    return compatibilityCheck(request, "uefi-fallback")
+    return compatibilityCheck(request, "uefifallback")
 
 
 @pytest.fixture

@@ -50,7 +50,7 @@ steps:
         
         echo "Trident Metrics:"
         cat ${{ parameters.metricsFile }}
-      elif [ "${{ parameters.tridentConfigurationName }}" == 'uefi-fallback' ]; then
+      elif [ "${{ parameters.tridentConfigurationName }}" == 'uefifallback' ]; then
         echo "For UEFI fallback, missing metrics file are not a concern"
         set +x
         echo "##vso[task.setvariable variable=UploadMetrics]False"

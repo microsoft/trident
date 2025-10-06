@@ -138,7 +138,7 @@ steps:
       fi
 
       SKIP_SERVICE_CHECK_ARG=""
-      if [ ${{ parameters.tridentConfigurationName }} == 'uefi-fallback' ]; then
+      if [ ${{ parameters.tridentConfigurationName }} == 'uefifallback' ]; then
         SKIP_SERVICE_CHECK_ARG="--skip-service-check"
       fi
 
@@ -161,7 +161,7 @@ steps:
       set +x
       echo "##vso[task.setvariable variable=version]$new_version"
 
-      if [ ${{ parameters.tridentConfigurationName }} == 'uefi-fallback' ]; then
+      if [ ${{ parameters.tridentConfigurationName }} == 'uefifallback' ]; then
         # uefi-fallback should maintain active volume as volume-a
         echo "##vso[task.setvariable variable=abActiveVolume]volume-a"
       else
@@ -240,7 +240,7 @@ steps:
 
   - bash: |
       set -eu
-      if [ ${{ parameters.tridentConfigurationName }} == 'uefi-fallback' ]; then
+      if [ ${{ parameters.tridentConfigurationName }} == 'uefifallback' ]; then
         # for uefi-fallback, only run the first update
         echo "##vso[task.setvariable variable=abActiveVolume]null"
         echo "##vso[task.setvariable variable=skipJunitHandling]true"

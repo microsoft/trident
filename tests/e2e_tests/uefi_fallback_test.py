@@ -5,7 +5,7 @@ import pytest
 
 from base_test import get_host_status
 
-pytestmark = [pytest.mark.encryption]
+pytestmark = [pytest.mark.uefifallback]
 
 
 def test_uefi_fallback(
