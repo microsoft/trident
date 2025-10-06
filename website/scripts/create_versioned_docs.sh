@@ -99,6 +99,10 @@ create_version_docs() {
         gh repo clone "https://github.com/${REPO}.git" "${tmp_dir}" -- --depth 1 --branch "${version}" 
     fi
     cd "${tmp_dir}"/website
+    # For this temp repo, copy the docs folder from the root of the repo
+    # to get around docusaurus' need for the "current" docs version to
+    # exist.  This copy will not impact the actual website/docs folder.
+    cp -r ../docs .
     npm install
 
     echo "Creating documentation for version ${version}"
