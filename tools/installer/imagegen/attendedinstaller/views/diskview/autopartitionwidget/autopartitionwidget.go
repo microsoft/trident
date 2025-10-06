@@ -20,7 +20,7 @@ import (
 
 // UI constants.
 const (
-	nextButtonIndex = 2
+	nextButtonIndex = 1 // Changed from 1 to 2 when reenabling Custom partitions button
 	defaultPadding  = 1
 
 	textProportion = 0
@@ -56,9 +56,9 @@ func (ap *AutoPartitionWidget) Initialize(hostConfigData *configuration.TridentC
 	ap.hostConfigData = hostConfigData
 	ap.navBar = navigationbar.NewNavigationBar().
 		AddButton(backButtonText, previousPage).
-		AddButton(uitext.DiskButtonCustom, switchMode).
+		// AddButton(uitext.DiskButtonCustom, switchMode). // Temporarily disabled manual partitioning
 		AddButton(uitext.ButtonNext, func() {
-			ap.mustUpdateConfiguration()
+			ap.saveSelectedDevice()
 			nextPage()
 		}).
 		SetAlign(tview.AlignCenter)
@@ -129,67 +129,12 @@ func (ap *AutoPartitionWidget) SelectedSystemDevice() int {
 	return ap.deviceList.GetCurrentItem()
 }
 
-func (ap *AutoPartitionWidget) mustUpdateConfiguration() {
-	const (
-		targetDiskType     = "path"
-		partitionTableType = "gpt"
+func (ap *AutoPartitionWidget) saveSelectedDevice() {
+	currentItem := ap.deviceList.GetCurrentItem()
+	selectedDevicePath := ap.systemDevices[currentItem].DevicePath
 
-		bootPartitionName     = "esp"
-		bootPartitionFsType   = "fat32"
-		bootPartitionStartMiB = 1
-		bootPartitionEndMiB   = 9
-
-		rootPartitionName = "rootfs"
-		rootFsType        = "ext4"
-		rootMountPoint    = "/"
-	)
-
-	// bootMountPoint, bootMountOptions, and bootFlags
-	_, _, bootFlags, err := configuration.BootPartitionConfig(ap.bootType, partitionTableType)
-	if err != nil {
-		logger.Log.Panic(err)
-	}
-
-	partitions := []configuration.Partition{
-		configuration.Partition{
-			ID:     bootPartitionName,
-			Name:   bootPartitionName,
-			Start:  bootPartitionStartMiB,
-			End:    bootPartitionEndMiB,
-			FsType: bootPartitionFsType,
-			Flags:  bootFlags,
-		},
-		configuration.Partition{
-			ID:     rootPartitionName,
-			Name:   rootPartitionName,
-			Start:  bootPartitionEndMiB,
-			End:    diskutils.AutoEndSize,
-			FsType: rootFsType,
-		},
-	}
-
-	// partitionSettings := []configuration.PartitionSetting{
-	// 	configuration.PartitionSetting{
-	// 		ID:              bootPartitionName,
-	// 		MountPoint:      bootMountPoint,
-	// 		MountOptions:    bootMountOptions,
-	// 		MountIdentifier: configuration.MountIdentifierDefault,
-	// 	},
-	// 	configuration.PartitionSetting{
-	// 		ID:              rootPartitionName,
-	// 		MountPoint:      rootMountPoint,
-	// 		MountIdentifier: configuration.MountIdentifierDefault,
-	// 	},
-	// }
-
-	disk := configuration.Disk{}
-	disk.PartitionTableType = partitionTableType
-	disk.TargetDisk = configuration.TargetDisk{
-		Type:  targetDiskType,
-		Value: ap.systemDevices[ap.deviceList.GetCurrentItem()].DevicePath,
-	}
-	disk.Partitions = partitions
-	ap.hostConfigData.DiskPath = disk.TargetDisk.Value
+	logger.Log.Infof("Selected device: %s", selectedDevicePath)
+	ap.hostConfigData.DiskPath = selectedDevicePath
 }
 
 func (ap *AutoPartitionWidget) populateBlockDeviceOptions() {
