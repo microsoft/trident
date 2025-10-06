@@ -55,14 +55,17 @@ pub enum HostConfigurationStaticValidationError {
     #[error("Failed to find expected mount point '{mount_point_path}'")]
     ExpectedMountPointNotFound { mount_point_path: String },
 
-    #[error("Extension image location '{location}' is invalid; filename must end with '.raw'")]
+    #[error(
+        "Extension image location '{location}' is invalid; location must be an absolute path to a \
+        file whose filename must end with '.raw'"
+    )]
     ExtensionImageInvalidFileExtension { location: String },
 
     #[error("Extension image location '{location}' is invalid; directory is not valid for sysexts or confexts")]
     ExtensionImageInvalidDirectory { location: String },
 
-    #[error("Extension image location '{location}' has an invalid path: {message}")]
-    ExtensionImageInvalidPath { location: String, message: String },
+    #[error("Extension image location '{location}' has an invalid path; could not retrieve directory path of location")]
+    ExtensionImageInvalidPath { location: String },
 
     #[error(
         "The Host Configuration is using both an image and partition images, these APIs are \

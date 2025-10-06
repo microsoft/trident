@@ -45,31 +45,13 @@ pub struct Extension {
 impl Extension {
     pub fn validate(&self) -> Result<(), HostConfigurationStaticValidationError> {
         // Ensure that the location, if given, is a valid location for the
-        // extension image to be placed
+        // extension image to be placed.
         let Some(location) = &self.location else {
             return Ok(());
         };
 
-        // 'location' is a directory, not a file
-        if location.as_os_str().to_string_lossy().ends_with('/') {
-            return Err(
-                HostConfigurationStaticValidationError::ExtensionImageInvalidPath {
-                    location: location.display().to_string(),
-                    message: "Location cannot be a directory".to_string(),
-                },
-            );
-        }
-
-        // File must end in *.raw
-        let Some(filename) = location.file_name().and_then(|f| f.to_str()) else {
-            return Err(
-                HostConfigurationStaticValidationError::ExtensionImageInvalidPath {
-                    location: location.display().to_string(),
-                    message: "Could not retrieve file name".to_string(),
-                },
-            );
-        };
-        if !filename.ends_with(".raw") {
+        // 'location' must be a file with file extension ".raw".
+        if !location.display().to_string().ends_with(".raw") {
             return Err(
                 HostConfigurationStaticValidationError::ExtensionImageInvalidFileExtension {
                     location: location.display().to_string(),
@@ -82,7 +64,6 @@ impl Extension {
             return Err(
                 HostConfigurationStaticValidationError::ExtensionImageInvalidPath {
                     location: location.display().to_string(),
-                    message: "Could not retrieve directory path".to_string(),
                 },
             );
         };
@@ -123,19 +104,19 @@ mod tests {
     #[test]
     fn test_validate_no_location_succeeds() {
         let ext = create_test_extension(None);
-        assert!(ext.validate().is_ok());
+        assert_eq!(ext.validate(), Ok(()));
     }
 
     #[test]
     fn test_validate_valid_sysext_location_succeeds() {
         let ext = create_test_extension(Some(PathBuf::from("/var/lib/extensions/test.raw")));
-        assert!(ext.validate().is_ok());
+        assert_eq!(ext.validate(), Ok(()));
     }
 
     #[test]
     fn test_validate_valid_confext_location_succeeds() {
         let ext = create_test_extension(Some(PathBuf::from("/var/lib/confexts/test.raw")));
-        assert!(ext.validate().is_ok());
+        assert_eq!(ext.validate(), Ok(()));
     }
 
     #[test]
@@ -189,9 +170,8 @@ mod tests {
         assert_eq!(
             ext.validate(),
             Err(
-                HostConfigurationStaticValidationError::ExtensionImageInvalidPath {
+                HostConfigurationStaticValidationError::ExtensionImageInvalidFileExtension {
                     location: location.display().to_string(),
-                    message: "Location cannot be a directory".to_string(),
                 }
             )
         );
