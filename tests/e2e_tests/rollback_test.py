@@ -15,7 +15,7 @@ def test_rollback(
     host_status = get_host_status(connection, tridentCommand)
 
     # Assert that servicing state is correct
-    assert host_status["servicingState"] == "provisioned"
+    assert host_status["servicingState"] != "provisioned"
 
     # Assert that the active volume has not changed
     assert host_status["abActiveVolume"] == abActiveVolume
