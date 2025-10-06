@@ -16,7 +16,6 @@ import (
 	"installer/imagegen/attendedinstaller/views"
 	"installer/imagegen/attendedinstaller/views/confirmview"
 	"installer/imagegen/attendedinstaller/views/diskview"
-	"installer/imagegen/attendedinstaller/views/encryptview"
 	"installer/imagegen/attendedinstaller/views/eulaview"
 	"installer/imagegen/attendedinstaller/views/hostnameview"
 	"installer/imagegen/attendedinstaller/views/installerview"
@@ -367,7 +366,6 @@ func (ai *AttendedInstaller) initializeViews() (err error) {
 
 	ai.allViews = append(ai.allViews, eulaview.New())
 	ai.allViews = append(ai.allViews, diskview.New())
-	ai.allViews = append(ai.allViews, encryptview.New())
 	ai.allViews = append(ai.allViews, hostnameview.New())
 	ai.allViews = append(ai.allViews, userview.New())
 	ai.allViews = append(ai.allViews, confirmview.New(ai.hostconfigPath))
