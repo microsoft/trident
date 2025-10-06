@@ -413,11 +413,9 @@ func (mp *ManualPartitionWidget) populateTable() (err error) {
 		mp.partitionTable.SetCell(tableHeaderRow, i, cell)
 	}
 
-	// Hardcode to GPT only for now since all image configurations within Azure Linux are using GPT partition table type
-	bootPartitionMountPoint, _, _, err := configuration.BootPartitionConfig(mp.bootType, configuration.PartitionTableTypeGpt)
-	if err != nil {
-		return
-	}
+	// TODO: Implement proper boot partition configuration when partition management is restored
+	// For now, add a default boot partition placeholder
+	bootPartitionMountPoint := "/boot" // Default mount point for boot partition
 
 	// Add the default boot partition
 	err = mp.addPartitionToTable(bootPartitionName, bootPartitionSize, bootPartitionFormat, bootPartitionMountPoint)
@@ -519,84 +517,41 @@ func (mp *ManualPartitionWidget) mustRemovePartition() {
 
 func (mp *ManualPartitionWidget) unmarshalPartitionTable() (err error) {
 	const (
-		targetDiskType     = "path"
-		partitionTableType = "gpt"
-
 		rootMountPoint     = "/"
 		bootPartitionIndex = 0
 	)
 
-	_, bootMountOptions, bootFlags, err := configuration.BootPartitionConfig(mp.bootType, partitionTableType)
-	if err != nil {
-		return
-	}
+	// TODO: Implement proper partition configuration processing when partition management is restored
+	// For now, just save the selected device path like autopartitionwidget does
 
 	rows := mp.partitionTable.GetRowCount() - tableHeaderRowOffset // Skip header
 	if rows == 0 {
 		return fmt.Errorf(uitext.NoPartitionsError)
 	}
 
-	partitions := make([]configuration.Partition, rows)
-	partitionSettings := make([]configuration.PartitionSetting, rows)
-
-	// Start the first partition (boot) at the start of the disk (1MiB)
-	var diskCursor uint64
-	diskCursor = basePartitionUnit
-
-	foundRootPartition := false
-
 	// First partition - must be boot
 	if mp.partitionTable.GetCell(bootPartitionIndex+tableHeaderRowOffset, formatColumn).Text != bootPartitionFormat {
 		return fmt.Errorf(uitext.InvalidBootPartitionErrorFmt, bootPartitionFormat)
 	}
 
-	// Update boot partition
-	partitions[bootPartitionIndex].Flags = bootFlags
-	partitionSettings[bootPartitionIndex].MountOptions = bootMountOptions
+	foundRootPartition := false
 
-	for i := range partitions {
+	// Check if we have a root partition
+	for i := 0; i < rows; i++ {
 		currentRow := i + tableHeaderRowOffset
-
-		partitionSize := mp.partitionTable.GetCell(currentRow, sizeColumn).GetReference().(uint64)
-		if partitionSize%basePartitionUnit != 0 {
-			partitionFriendlySize := mp.partitionTable.GetCell(currentRow, sizeColumn).Text
-			return fmt.Errorf(uitext.UnexpectedPartitionErrorFmt, partitionFriendlySize)
-		}
-
-		partitions[i].ID = mp.partitionTable.GetCell(currentRow, nameColumn).Text
-		partitionSettings[i].ID = partitions[i].ID
-		partitions[i].Name = partitions[i].ID
-
-		partitions[i].FsType = mp.partitionTable.GetCell(currentRow, formatColumn).Text
-		partitionSettings[i].MountPoint = mp.partitionTable.GetCell(currentRow, mountpointColumn).Text
-
-		nextCursor := diskCursor + partitionSize
-		partitions[i].Start = diskCursor / basePartitionUnit
-		partitions[i].End = nextCursor / basePartitionUnit
-
-		partitionSettings[i].MountIdentifier = configuration.MountIdentifierDefault
-
-		if partitionSettings[i].MountPoint == rootMountPoint {
+		mountPoint := mp.partitionTable.GetCell(currentRow, mountpointColumn).Text
+		if mountPoint == rootMountPoint {
 			foundRootPartition = true
+			break
 		}
-
-		diskCursor = nextCursor
 	}
 
 	if !foundRootPartition {
 		return fmt.Errorf(uitext.InvalidRootPartitionErrorFmt, rootMountPoint)
 	}
 
-	disk := configuration.Disk{}
-	disk.PartitionTableType = partitionTableType
-	disk.TargetDisk = configuration.TargetDisk{
-		Type:  targetDiskType,
-		Value: mp.systemDevices[mp.deviceIndex].DevicePath,
-	}
-	disk.Partitions = partitions
-
-	disk_path := disk.TargetDisk.Value
-	mp.hostConfigData.DiskPath = disk_path
+	// Save the selected device path (same as autopartitionwidget)
+	mp.hostConfigData.DiskPath = mp.systemDevices[mp.deviceIndex].DevicePath
 
 	return
 }
