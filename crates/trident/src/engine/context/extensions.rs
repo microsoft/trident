@@ -28,10 +28,12 @@ use crate::{
 
 const SYSEXT_EXTENSION_RELEASE_DIRECTORY: &str = "usr/lib/extension-release.d/";
 const CONFEXT_EXTENSION_RELEASE_DIRECTORY: &str = "etc/extension-release.d/";
+const DEFAULT_SYSEXT_DIRECTORY: &str = "/var/lib/extensions/";
+const DEFAULT_CONFEXT_DIRECTORY: &str = "/var/lib/confexts/";
 const SYSEXT_PREFIX: &str = "SYSEXT_";
 const CONFEXT_PREFIX: &str = "CONFEXT_";
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ExtensionData {
     pub id: String,
     pub name: String,
@@ -238,29 +240,27 @@ fn read_extension_release(
         .get_value(&format!("{prefix}ID"))
         .map(|s| s.to_string())
         .ok_or_else(|| Error::msg(format!("Could not find {prefix}ID in extension release")))?;
-    let file_name = path
-        .display()
-        .to_string()
-        .split("extension-release.")
-        .last()
-        .ok_or_else(|| {
-            Error::msg("Failed to get extension name from extension release file extension")
-        })?
+    let name = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .context("Failed to get file name as a valid UTF-8 string")?
+        .strip_prefix("extension-release.")
+        .context("Extension release filename must begin with 'extension-release.'")?
         .to_string();
     let location = match &ext.location {
         Some(location) => location.clone(),
         None => {
             if prefix == SYSEXT_PREFIX {
-                PathBuf::from("/var/lib/extensions").join(format!("{file_name}.raw"))
+                PathBuf::from(DEFAULT_SYSEXT_DIRECTORY).join(format!("{name}.raw"))
             } else {
-                PathBuf::from("/var/lib/confexts").join(format!("{file_name}.raw"))
+                PathBuf::from(DEFAULT_CONFEXT_DIRECTORY).join(format!("{name}.raw"))
             }
         }
     };
 
     Ok(ExtensionData {
         id: extension_id,
-        name: file_name,
+        name,
         sha384: ext.sha384.clone(),
         location,
         temp_location: Some(curr_location.to_path_buf()),
@@ -308,4 +308,183 @@ fn detach_device_and_unmount(device_path: String, mount_path: &Path) -> Result<(
         .run_and_check()
         .context("Failed to detach loop device")?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::{fs::File, io::Write};
+
+    use tempfile::TempDir;
+    use url::Url;
+
+    fn create_extension(hash: Sha384Hash, location: Option<PathBuf>) -> Extension {
+        Extension {
+            url: Url::parse("https://example.com/test-extension").unwrap(),
+            sha384: hash.clone(),
+            location,
+        }
+    }
+
+    #[test]
+    fn test_read_extension_release_success() {
+        let tempdir = TempDir::new().unwrap();
+        let mount_point = tempdir.path();
+
+        let sysext_release_dir = mount_point.join(SYSEXT_EXTENSION_RELEASE_DIRECTORY);
+        fs::create_dir_all(&sysext_release_dir).unwrap();
+
+        let mut extension_release_file =
+            File::create(sysext_release_dir.join("extension-release.test_1.0.0")).unwrap();
+        extension_release_file.write_all(b"ID=_any\nSYSEXT_ID=test\nSYSEXT_VERSION_ID=1.0.0\nSYSEXT_SCOPE=initrd system portable\nARCHITECTURE=x86-64").unwrap();
+
+        // Create an Extension with no provided location
+        let hash = Sha384Hash::from("a".repeat(96));
+        let current_location = Path::new("/tmp/file");
+        let extension = create_extension(hash.clone(), None);
+
+        let extension_data =
+            read_extension_release(mount_point, current_location, &extension).unwrap();
+        let expected_extension_data = ExtensionData {
+            id: "test".to_string(),
+            name: "test_1.0.0".to_string(),
+            sha384: hash.clone(),
+            location: PathBuf::from(DEFAULT_SYSEXT_DIRECTORY).join("test_1.0.0.raw"),
+            temp_location: Some(PathBuf::from(current_location)),
+            ext_type: ExtensionType::Sysext,
+        };
+        assert_eq!(extension_data.id, expected_extension_data.id);
+        assert_eq!(extension_data.location, expected_extension_data.location);
+        assert_eq!(
+            extension_data.temp_location,
+            expected_extension_data.temp_location
+        );
+        assert_eq!(extension_data.name, expected_extension_data.name);
+        assert_eq!(extension_data.sha384, expected_extension_data.sha384);
+        assert_eq!(extension_data.ext_type, expected_extension_data.ext_type);
+
+        // Create an Extension with an intended location
+        let final_location = PathBuf::from("/etc/extensions/test_1.0.0.raw");
+        let extension_with_location = create_extension(hash.clone(), Some(final_location.clone()));
+
+        let extension_data =
+            read_extension_release(mount_point, current_location, &extension_with_location)
+                .unwrap();
+        let expected_extension_data = ExtensionData {
+            id: "test".to_string(),
+            name: "test_1.0.0".to_string(),
+            sha384: hash,
+            location: final_location,
+            temp_location: Some(PathBuf::from(current_location)),
+            ext_type: ExtensionType::Sysext,
+        };
+        assert_eq!(extension_data.id, expected_extension_data.id);
+        assert_eq!(extension_data.location, expected_extension_data.location);
+        assert_eq!(
+            extension_data.temp_location,
+            expected_extension_data.temp_location
+        );
+        assert_eq!(extension_data.name, expected_extension_data.name);
+        assert_eq!(extension_data.sha384, expected_extension_data.sha384);
+        assert_eq!(extension_data.ext_type, expected_extension_data.ext_type);
+    }
+
+    // Extension release directory does not exist
+    #[test]
+    fn test_read_extension_release_fails_no_file() {
+        let tempdir = TempDir::new().unwrap();
+        let mount_point = tempdir.path();
+
+        let current_location = Path::new("/tmp/file");
+        let extension = create_extension(Sha384Hash::from("a".repeat(96)), None);
+
+        let result = read_extension_release(mount_point, current_location, &extension);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Failed to find extension release file."
+        );
+    }
+
+    // There is not exactly one extension release file in the expected directory
+    #[test]
+    fn test_read_extension_release_fails_multiple_files() {
+        let tempdir = TempDir::new().unwrap();
+        let mount_point = tempdir.path();
+
+        let sysext_release_dir = mount_point.join(SYSEXT_EXTENSION_RELEASE_DIRECTORY);
+        fs::create_dir_all(&sysext_release_dir).unwrap();
+
+        let current_location = Path::new("/tmp/file");
+        let extension = create_extension(Sha384Hash::from("a".repeat(96)), None);
+
+        // No extension release file exists.
+        let result = read_extension_release(mount_point, current_location, &extension);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Expected extension image to have exactly 1 extension-release file, found '0'"
+        );
+
+        // Create two extension release files.
+        File::create(sysext_release_dir.join("extension-release.test1")).unwrap();
+        File::create(sysext_release_dir.join("extension-release.test2")).unwrap();
+
+        // Too many extension release files exist.
+        let result = read_extension_release(mount_point, current_location, &extension);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Expected extension image to have exactly 1 extension-release file, found '2'"
+        );
+    }
+
+    // Extension release file is missing the SYSEXT_ID field
+    #[test]
+    fn test_read_extension_release_fails_missing_field() {
+        let tempdir = TempDir::new().unwrap();
+        let mount_point = tempdir.path();
+
+        let sysext_release_dir = mount_point.join(SYSEXT_EXTENSION_RELEASE_DIRECTORY);
+        fs::create_dir_all(&sysext_release_dir).unwrap();
+
+        // Create a file with valid content but missing the SYSEXT_ID field.
+        let mut file = File::create(sysext_release_dir.join("extension-release.test")).unwrap();
+        file.write_all(b"ID=_any\nSYSEXT_VERSION_ID=1.0.0").unwrap();
+
+        let current_location = Path::new("/tmp/file");
+        let extension = create_extension(Sha384Hash::from("a".repeat(96)), None);
+
+        let result = read_extension_release(mount_point, current_location, &extension);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Could not find SYSEXT_ID in extension release"
+        );
+    }
+
+    // Extension release file has an invalid name
+    #[test]
+    fn test_read_extension_release_fails_invalid_filename() {
+        let tempdir = TempDir::new().unwrap();
+        let mount_point = tempdir.path();
+
+        let sysext_release_dir = mount_point.join(SYSEXT_EXTENSION_RELEASE_DIRECTORY);
+        fs::create_dir_all(&sysext_release_dir).unwrap();
+
+        // Create a file with a name that doesn't contain "extension-release."
+        let mut file = File::create(sysext_release_dir.join("my-release-file")).unwrap();
+        file.write_all(b"SYSEXT_ID=test").unwrap();
+
+        let hash = Sha384Hash::from("a".repeat(96));
+        let current_location = Path::new("/tmp/file");
+        let extension = create_extension(hash, None);
+
+        let err = read_extension_release(mount_point, current_location, &extension).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Extension release filename must begin with 'extension-release.'"
+        );
+    }
 }
