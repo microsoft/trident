@@ -378,7 +378,7 @@ fn parse_esp_metadata(
             if esp_raid_info.level == RaidLevel::Raid1 {
                 esp_device_metadata
             } else {
-                // This point should never be reached, as the host configuration validation ensures
+                // This point should never be reached, as the Host Configuration validation ensures
                 // the ESP RAID level.
                 return Err(TridentError::new(InternalError::Internal(
                     "Unsupported RAID level for ESP device",

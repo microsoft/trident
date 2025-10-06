@@ -27,12 +27,12 @@ potential errors that might occur on a host and/or in Trident:
     such an internal error.
 
 4. `InvalidInput` identifies errors that occur the user provides invalid input.
-    E.g. when the user points Trident to a local host configuration file that
+    E.g. when the user points Trident to a local Host Configuration file that
     cannot be parsed, it means that the user provided an incorrectly formatted
     YAML file. Defined in a separate file `trident_apt/src/config/host/error.rs`,
     `HostConfigurationStaticValidationError` and `HostConfigurationDynamicValidationError`
-    are two key sub-categories that describe potential errors in the host
-    configuration provided by the user.
+    are two key sub-categories that describe potential errors in the Host
+    Configuration provided by the user.
 
 5. `Servicing` identifies errors that occur during servicing and require
     user investigation, to determine whether the error occurred due to an
@@ -56,7 +56,7 @@ potential errors that might occur on a host and/or in Trident:
     - "Failed to do X..."
     - "Y check failed"
     - "W is true, but Z must be true" (This is mostly relevant to the error
-    categories related to invalid host configuration since you want to
+    categories related to invalid Host Configuration since you want to
     immediately communicate to the user why a specific input is wrong and how
     it can be fixed.)
 

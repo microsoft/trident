@@ -287,7 +287,7 @@ fn configure(
     subsystems: &mut [Box<dyn Subsystem>],
     ctx: &EngineContext,
 ) -> Result<(), TridentError> {
-    // Root verity means /etc is readonly, so in the non-UKI configuration we setup a writable
+    // Root-verity means /etc is readonly, so in the non-UKI configuration we setup a writable
     // overlay for it.
     let use_overlay = (ctx.servicing_type == ServicingType::CleanInstall
         || ctx.servicing_type == ServicingType::AbUpdate)

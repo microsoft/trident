@@ -108,7 +108,7 @@ pub enum PartitionType {
     /// x64: `8484680c-9521-48c6-9c11-b0720656f69e`
     Usr,
 
-    /// # Usr verity hash partition (NOT ENABLED YET!)
+    /// # Usr-verity hash partition (NOT ENABLED YET!)
     ///
     /// x64: `77ff5f63-e7b6-4633-acf4-1565b864c0e6`
     UsrVerity,

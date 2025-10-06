@@ -28,19 +28,19 @@ pub struct Encryption {
     ///
     /// The URL must be non-empty if provided. Other URL schemes are not supported at this time.
     ///
-    /// # Recommended Configuration
+    /// ### Recommended Configuration
     ///
     /// It is strongly advised to configure a recovery key file, as it plays a pivotal role in
     /// data recovery.
     ///
-    /// # File Format Expectations
+    /// ### File Format Expectations
     ///
     /// The recovery key file must be a binary file without any encoding. This direct format
     /// ensures compatibility with cryptsetup and systemd APIs. Be mindful that all file content,
     /// including any potential whitespace or newline characters, is considered part of the
     /// recovery key.
     ///
-    /// # Security Considerations
+    /// ### Security Considerations
     ///
     /// Ensuring the recovery key's confidentiality and integrity is paramount. Employ secure
     /// storage and rigorous access control measures. Specifically:
@@ -52,7 +52,7 @@ pub struct Encryption {
     ///   enough entropy to defend against brute force or cryptographic attacks targeting on-disk
     ///   hash values.
     ///
-    /// # Generating a Recovery Key
+    /// ### Generating a Recovery Key
     ///
     /// One way to create a recovery key file on Linux systems is using the `dd` utility:
     ///
@@ -81,25 +81,42 @@ pub struct Encryption {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub volumes: Vec<EncryptedVolume>,
 
-    /// Optional list of PCRs in TPM 2.0 device to seal to. If not specified, Trident will seal
-    /// encrypted volumes against the following default options:
-    /// - If doing a clean install of a grub ROS image, seal to PCR 7 while inside the MOS,
-    /// - If doing a clean install of a UKI ROS image, seal to PCRs 4 and 11 after booting into
-    ///   the ROS A.
+    /// List of PCRs in the TPM 2.0 device to seal encrypted volumes to in the target OS. This
+    /// field is required, and at least one PCR must be provided. Each PCR may be specified either
+    /// as a digit or as a string.
     ///
-    /// Each PCR may be specified either as a digit or a string representation. If specified, at
-    /// least one PCR must be provided.
+    /// 1. When doing a clean install of **a grub target OS image**, the following options are valid:
     ///
-    /// When doing a clean install of a grub ROS image, the following options are valid:
-    /// - 7, or `secure-boot-policy`.
+    /// - 7, or `secure-boot-policy`
     ///
-    /// When doing a clean install of a UKI ROS image, the following options are valid:
-    /// - 4, or `boot-loader-code`,
-    /// - 11, or `kernel-boot`,
-    /// - 4 and 11.
+    /// 2. When doing a clean install of **a UKI target OS image**, the following options are valid:
+    ///
+    /// - 4, or `boot-loader-code`
+    ///
+    /// - 7, or `secure-boot-policy`
+    ///
+    /// - 11, or `kernel-boot`
+    ///
+    /// - 4 and 7
+    ///
+    /// - 4 and 11
+    ///
+    /// - 7 and 11
+    ///
+    /// - 4, 7, and 11
+    ///
+    /// However, due to the limitations of `systemd-pcrlock`, which is used internally for
+    /// encryption in UKI OS, PCR 7 CANNOT be used if:
+    ///
+    /// - `SecureBoot` is disabled,
+    ///
+    /// - Trident is running inside a container.
+    ///
+    /// To use PCR 7 for encryption in a target UKI OS, Trident must be running in a
+    /// non-containerized environment, with `SecureBoot` enabled.
     ///
     /// More encryption flows, with additional PCR options, will be added in the future.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub pcrs: Vec<Pcr>,
 
     /// Optional parameter that determines whether the TPM 2.0 device will be cleared on clean
@@ -123,7 +140,7 @@ pub struct EncryptedVolume {
     /// The ID of the LUKS-encrypted volume to create.
     ///
     /// This parameter is required. It must be non-empty and unique among the IDs of all block
-    /// devices in the host configuration. This includes the IDs of all disk partitions, encrypted
+    /// devices in the Host Configuration. This includes the IDs of all disk partitions, encrypted
     /// volumes, software RAID arrays, and A/B volume pairs.
     #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
     pub id: BlockDeviceId,
@@ -140,10 +157,15 @@ pub struct EncryptedVolume {
     ///
     /// If it refers to a disk partition, it must be of a supported type. Supported types are all
     /// but the following blocked partition types:
+    ///
     /// - `esp`
+    ///
     /// - `root`
+    ///
     /// - `root-verity`
+    ///
     /// - `usr-verity`
+    ///
     /// - `home`
     ///
     /// If it refers to a software RAID array, the first disk partition of the software RAID array
@@ -210,19 +232,13 @@ mod tests {
     #[test]
     fn test_validate_encryption() {
         let mut config = Encryption {
+            pcrs: vec![Pcr::Pcr7],
             ..Default::default()
         };
         config.validate().unwrap();
 
         config.recovery_key_url = Some(Url::parse("file:///path/to/recovery.key").unwrap());
         config.validate().unwrap();
-
-        // Test with empty pcrs (should be valid - means use defaults)
-        let config_empty_pcrs = Encryption {
-            pcrs: vec![],
-            ..Default::default()
-        };
-        config_empty_pcrs.validate().unwrap();
     }
 
     #[test]

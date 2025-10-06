@@ -25,9 +25,6 @@ pub const KEY_SIZE: &str = "512";
 /// Size of the temporary recovery key file in bytes.
 const TMP_RECOVERY_KEY_SIZE: usize = 64;
 
-/// Default PCR to seal encrypted volumes to. PCR 7 represents the `SecureBoot` state.
-pub const DEFAULT_PCR: Pcr = Pcr::Pcr7;
-
 /// Runs `systemd-cryptenroll` to enroll a TPM 2.0 device for the given device of a LUKS2 encrypted
 /// volume.
 ///
@@ -259,7 +256,7 @@ mod tests {
         let pcrs = BitFlags::from(Pcr::Pcr1) | BitFlags::from(Pcr::Pcr4);
         assert_eq!(to_tpm2_pcrs_arg(pcrs), "--tpm2-pcrs=1+4".to_string());
 
-        let single_pcr = BitFlags::from(DEFAULT_PCR);
+        let single_pcr = BitFlags::from(Pcr::Pcr7);
         assert_eq!(to_tpm2_pcrs_arg(single_pcr), "--tpm2-pcrs=7".to_string());
 
         let all_pcrs = BitFlags::<Pcr>::all();

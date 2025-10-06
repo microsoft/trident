@@ -88,7 +88,7 @@ Trident](Tutorials/Onboard-a-VM-to-Trident.md) tutorial.
 #### Do you want to update a bare-metal host or a virtual machine?
 
 You can start with the [Performing an A/B
-update](Tutorials/Performing-an-ABUpdate.md) tutorial.
+update](Tutorials/Performing-an-AB-Update.md) tutorial.
 
 <!-- #### Do you want to orchestrate Trident servicing operations across your fleet?
 

@@ -1,10 +1,10 @@
 //! # Block device graph builder
 //!
 //! This module contains the core logic to build a block device graph based on
-//! the provided host configuration.
+//! the provided Host Configuration.
 //!
-//! The struct BlockDeviceGraphBuilder collects all definitions from the host
-//! configuration.
+//! The struct BlockDeviceGraphBuilder collects all definitions from the Host
+//! Configuration.
 //!
 //! After entering all information, the build() function is called to build the
 //! graph.
@@ -27,7 +27,7 @@
 //! The end result is a BlockDeviceGraph struct that contains all the nodes and
 //! their relationships. This graph, can be considered as fully valid.
 //!
-//! If the output is Err, it means that the host configuration provided is
+//! If the output is Err, it means that the Host Configuration provided is
 //! invalid.
 
 use std::collections::{BTreeMap, BTreeSet};

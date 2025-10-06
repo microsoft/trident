@@ -1,4 +1,4 @@
-//! Subsystem in charge of configuring the Trident agent on the runtime OS.
+//! Subsystem in charge of configuring the Trident agent on the target OS.
 
 use std::{
     fs::{self},
@@ -58,7 +58,7 @@ impl Subsystem for ManagementSubsystem {
         }
 
         if ctx.spec.internal_params.get_flag(SELF_UPGRADE_TRIDENT) {
-            info!("Copying Trident binary to runtime OS");
+            info!("Copying Trident binary to target OS");
             fs::copy(
                 TRIDENT_BINARY_PATH,
                 path::join_relative(mount_path, TRIDENT_BINARY_PATH),
@@ -207,7 +207,7 @@ mod tests {
                 false,
             )
             .unwrap();
-            // agent config should be created with non-standard datastore path
+            // Agent config should be created with non-standard datastore path
             let contents = std::fs::read_to_string(agent_config_path).unwrap();
             print!("Contents of agent config file:\n{contents}");
             let expected_contents = format!("DatastorePath={nonstandard_datastore_path}");
@@ -215,7 +215,7 @@ mod tests {
         }
 
         {
-            // Non-standard datastore path, agent config does not exist, root verity
+            // Non-standard datastore path, agent config does not exist, root-verity
             let agent_config_folder = tempfile::tempdir().unwrap();
             let agent_config_path = agent_config_folder.path().join("trident.conf");
             configure_agent_config(
@@ -227,7 +227,7 @@ mod tests {
         }
 
         {
-            // agent config exists with matching datastore path
+            // Agent config exists with matching datastore path
             let agent_config_folder = tempfile::tempdir().unwrap();
             let agent_config_path = agent_config_folder.path().join("trident.conf");
             fs::write(

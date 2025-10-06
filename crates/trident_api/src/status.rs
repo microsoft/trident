@@ -18,7 +18,7 @@ pub struct HostStatus {
     pub spec: HostConfiguration,
 
     /// If the host is currently in AbUpdateStaged or AbUpdateFinalized state, this holds the
-    /// previous host configuration, from before the A/B update servicing has started.
+    /// previous Host Configuration, from before the A/B update servicing has started.
     #[serde(default, skip_serializing_if = "is_default")]
     pub spec_old: HostConfiguration,
 

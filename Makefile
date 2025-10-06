@@ -1,8 +1,6 @@
 # Path to the Trident configuration file for validate and run-netlaunch targets.
 TRIDENT_CONFIG ?= input/trident.yaml
 
-ARGUS_TOOLKIT_PATH ?= ../argus-toolkit
-
 PLATFORM_TESTS_PATH ?= ../platform-tests
 
 TEST_IMAGES_PATH ?= ../test-images
@@ -346,8 +344,6 @@ build-functional-test-cc: .cargo/config
 
 .PHONY: functional-test
 functional-test: artifacts/trident-functest.qcow2
-	cp $(PLATFORM_TESTS_PATH)/tools/marinerhci_test_tools/node_interface.py tests/functional_tests/
-	cp $(PLATFORM_TESTS_PATH)/tools/marinerhci_test_tools/ssh_node.py tests/functional_tests/
 	$(MAKE) functional-test-core
 
 # A target for pipelines that skips all setup and building steps that are not
@@ -392,7 +388,7 @@ generate-functional-test-manifest: .cargo/config
 
 .PHONY: validate-configs
 validate-configs: bin/trident
-	$(eval DETECTED_HC_FILES := $(shell grep -R 'storage:' . --include '*.yaml' --exclude-dir=trident-mos --exclude-dir=target --exclude-dir=dev --exclude-dir=azure-linux-image-tools --exclude-dir=docbuilder -l))
+	$(eval DETECTED_HC_FILES := $(shell grep -R 'storage:' . --include '*.yaml' -l | grep -E -v '\./(tests/trident-mos|target|dev|azure-linux-image-tools|crates/docbuilder|tests/images)'))
 	@for file in $(DETECTED_HC_FILES); do \
 		echo "Validating $$file"; \
 		$< validate $$file -v info || exit 1; \
@@ -512,7 +508,7 @@ validate: $(TRIDENT_CONFIG) bin/trident
 
 NETLAUNCH_ISO ?= bin/trident-mos.iso
 
-input/netlaunch.yaml: $(ARGUS_TOOLKIT_PATH)/vm-netlaunch.yaml
+input/netlaunch.yaml: tools/vm-netlaunch.yaml
 	@mkdir -p input
 	ln -vsf "$$(realpath "$<")" $@
 
@@ -575,30 +571,6 @@ run-netlaunch-sample: build-api-docs
 	$(eval TMP := $(shell mktemp))
 	yq '.os.users += [{"name": "$(shell whoami)", "sshPublicKeys": ["$(shell cat ~/.ssh/id_rsa.pub)"], "sshMode": "key-only", "secondaryGroups": ["wheel"]}] | (.. | select(tag == "!!str")) |= sub("file:///trident_cdrom/data", "http://NETLAUNCH_HOST_ADDRESS/files") | del(.storage.encryption.recoveryKeyUrl) | (.storage.filesystems[] | select(has("source")) | .source).sha256 = "ignored" | .storage.verityFilesystems[].dataImage.sha256 = "ignored" | .storage.verityFilesystems[].hashImage.sha256 = "ignored"' docs/Reference/Host-Configuration/Samples/$(HOST_CONFIG) > $(TMP)
 	TRIDENT_CONFIG=$(TMP) make run-netlaunch
-
-# Downloads the latest Trident functional test image from the Azure DevOps pipeline.
-artifacts/trident-functest.qcow2:
-	$(eval BRANCH ?= main)
-	$(eval RUN_ID ?= $(shell az pipelines runs list \
-		--org "https://dev.azure.com/mariner-org" \
-		--project "ECF" \
-		--pipeline-ids 5067 \
-		--branch $(BRANCH) \
-		--query-order QueueTimeDesc \
-		--result succeeded \
-		--reason triggered \
-		--top 1 \
-		--query '[0].id'))
-	@echo PIPELINE RUN ID: $(RUN_ID)
-
-	mkdir -p artifacts
-	rm -f $@
-	az pipelines runs artifact download \
-		--org 'https://dev.azure.com/mariner-org' \
-		--project "ECF" \
-		--run-id $(RUN_ID) \
-		--path artifacts/ \
-		--artifact-name 'trident-functest'
 
 # Downloads regular, verity, and container COSI images from the latest successful
 # pipeline run. The images are downloaded to ./artifacts/test-image.
@@ -772,24 +744,11 @@ starter-configuration:
 	@mkdir -p $$(dirname $(TRIDENT_CONFIG))
 	@cp tests/e2e_tests/trident_configurations/simple/trident-config.yaml $(TRIDENT_CONFIG)
 	@echo "\033[33mCreated \033[36m$(TRIDENT_CONFIG)\033[33m. Please review and modify as needed! :)"
-	@echo "\033[33mDon't forget to add your SSH public key to the host configuration!"
+	@echo "\033[33mDon't forget to add your SSH public key to the Host Configuration!"
 
-BASE_IMAGE_NAME ?= baremetal_vhdx-3.0-stable
-BASE_IMAGE_VERSION ?= *
 artifacts/baremetal.vhdx:
 	@mkdir -p artifacts
-	@tempdir=$$(mktemp -d); \
-		result=$$(az artifacts universal download \
-			--organization "https://dev.azure.com/mariner-org/" \
-			--project "36d030d6-1d99-4ebd-878b-09af1f4f722f" \
-			--scope project \
-			--feed "AzureLinuxArtifacts" \
-			--name '$(BASE_IMAGE_NAME)' \
-			--version '$(BASE_IMAGE_VERSION)' \
-			--path $$tempdir) && \
-		mv $$tempdir/*.vhdx artifacts/baremetal.vhdx && \
-		rm -rf $$tempdir && \
-		echo $$result | jq > artifacts/baremetal.vhdx.metadata.json
+	@tests/images/testimages.py download-image baremetal
 
 MIC_PACKAGE_NAME ?= imagecustomizer
 MIC_PACKAGE_VERSION ?= *
@@ -873,3 +832,28 @@ validate-pipeline-website-artifact:
 		npm install && \
 			npm run serve -- --port $(SERVER_PORT)
 
+# Test images
+
+COSI_TARGETS = $(shell ./tests/images/testimages.py list)
+
+.PHONY: $(COSI_TARGETS)
+$(COSI_TARGETS): %: artifacts/%.cosi
+
+.PHONY: all-cosi
+all-cosi: $(COSI_TARGETS)
+
+# Fun trick to use the stem of the target (%) as a variable ($*) in the
+# prerequisites so that we can use find to get all the files in the directory.
+# https://www.gnu.org/software/make/manual/make.html#Secondary-Expansion
+.SECONDEXPANSION:
+
+MIC_CONTAINER_IMAGE ?= $(shell ./tests/images/testimages.py show-artifact customizer-container-full)
+artifacts/trident-functest.qcow2: $$(shell ./tests/images/testimages.py dependencies $$(basename $$(notdir $$@)))
+	@echo "Building '$*' [$@] from $<"
+	@echo "Prerequisites:"
+	@echo "$^" | tr ' ' '\n' | sed 's/^/    /'
+	@echo "Building image..."
+	sudo ./tests/images/testimages.py build \
+		$(basename $(notdir $@)) \
+		--output-dir ./artifacts \
+		$(if $(strip $(MIC_CONTAINER_IMAGE)),--container $(MIC_CONTAINER_IMAGE))

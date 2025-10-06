@@ -95,8 +95,8 @@ fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
     );
 
-    // If running inside of a container AND pcrlock.json already exists in the ROS on the host,
-    // copy it from the host and into the container
+    // If running inside of a container AND pcrlock.json already exists in the target OS on the
+    // host, copy it from the host into the container
     if container::is_running_in_container()
         .unstructured("Failed to determine if running in container")?
     {

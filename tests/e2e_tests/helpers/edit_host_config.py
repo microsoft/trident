@@ -71,7 +71,7 @@ def rename_oci_url(host_config_path, oci_url):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Makes host configuration edits: Adds an SSH key and optionally copies the container image."
+        description="Makes Host Configuration edits: Adds an SSH key and optionally copies the container image."
     )
     parser.add_argument(
         "-k", "--keypath", type=str, required=True, help="Path to save the RSA key."

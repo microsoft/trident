@@ -146,7 +146,7 @@ def test_partitions(connection, hostConfiguration, tridentCommand, abActiveVolum
         )
     ]
 
-    # Join lsblk and blkid information to compare with host configuration
+    # Join lsblk and blkid information to compare with Host Configuration
     for partition in lsblk_partitions:
         # Update information
         system_name = partition["name"]
