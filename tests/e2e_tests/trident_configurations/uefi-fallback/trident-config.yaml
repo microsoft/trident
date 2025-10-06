@@ -64,13 +64,13 @@ scripts:
         #!/bin/bash
         set -euo pipefail
         echo 'reset UEFI variables to force fallback on next boot'
-        for ENTRY in $(sudo efibootmgr -v | grep -E "^Boot" | awk '{print $1}' | sed 's|:||' | sed 's|*||'); do
+        for ENTRY in $(efibootmgr -v | grep -E "^Boot" | awk '{print $1}' | sed 's|:||' | sed 's|*||'); do
           echo "Delete UEFI boot var: $ENTRY"
-          sudo efibootmgr -b $ENTRY -B
+          efibootmgr -b $ENTRY -B
         done
 
         echo 'rebooting to trigger UEFI fallback'
-        sudo /usr/sbin/reboot
+        /usr/sbin/reboot
         EOF
         chmod +x /usr/local/bin/reset-uefi-and-reboot.sh
 
@@ -87,7 +87,7 @@ scripts:
         WantedBy=multi-user.target
         EOF
 
-        sudo systemctl enable reset-uefi-and-reboot.service
+        systemctl enable reset-uefi-and-reboot.service
 os:
   uefiFallback: fallback
   selinux:
