@@ -299,9 +299,7 @@ fn copy_file_artifacts(
     Ok(())
 }
 
-/// Copies boot files from temp_mount_dir, where image was mounted to, to given dir esp_dir.
-///
-/// Returns a boolean indicating whether grub-noprefix.efi is used.
+/// Copies boot files from one folder to another.
 fn simple_copy_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
     // Create to_dir if it doesn't exist
     if !Path::new(to_dir).exists() {
@@ -685,6 +683,70 @@ mod tests {
         File::open(file1).unwrap().read_to_end(&mut buf1).unwrap();
         File::open(file2).unwrap().read_to_end(&mut buf2).unwrap();
         buf1 == buf2
+    }
+
+    #[test]
+    fn test_simple_copy_boot_files() {
+        let from_dir = TempDir::new().unwrap();
+        let to_dir = TempDir::new().unwrap();
+
+        let file_infos = vec![
+            ("file1.txt", "New content of file 1"),
+            ("file2.txt", "New content of file 2"),
+        ];
+
+        let existing_file_infos = vec![
+            ("file1.txt", "Content of file 1"),
+            ("file2.txt", "Content of file 2"),
+            ("file3.txt", "Content of file 3"),
+        ];
+
+        // Create files in from_dir
+        for (file_name, content) in &file_infos {
+            let file_path = from_dir.path().join(file_name);
+            let mut file = File::create(&file_path).unwrap();
+            writeln!(file, "{}", content).unwrap();
+        }
+
+        // Create existing files in esp_dir
+        for (file_name, content) in &existing_file_infos {
+            let file_path = to_dir.path().join(file_name);
+            let mut file = File::create(&file_path).unwrap();
+            writeln!(file, "{}", content).unwrap();
+        }
+
+        // Call the function to copy files
+        simple_copy_boot_files(from_dir.path(), to_dir.path()).unwrap();
+
+        // Verify that files have been copied and renamed correctly
+        for (file_name, _content) in &file_infos {
+            assert!(
+                files_are_identical(
+                    &from_dir.path().join(file_name),
+                    &to_dir.path().join(file_name),
+                ),
+                "Files are not identical: {} and {}",
+                from_dir.path().join(file_name).display(),
+                to_dir.path().join(file_name).display()
+            );
+        }
+
+        // Verify that existing files that were not in from_dir are unchanged
+        for (file_name, content) in &existing_file_infos {
+            if !file_infos.iter().any(|(f, _)| f == file_name) {
+                let mut file_content = String::new();
+                File::open(to_dir.path().join(file_name))
+                    .unwrap()
+                    .read_to_string(&mut file_content)
+                    .unwrap();
+                assert_eq!(
+                    file_content.trim(),
+                    *content,
+                    "Content of existing file {} does not match",
+                    file_name
+                );
+            }
+        }
     }
 
     /// Validates that copy_boot_files() correctly copies boot files from temp_mount_dir to esp_dir
