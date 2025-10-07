@@ -12,12 +12,14 @@ use crate::{
 };
 
 /// Data about an extension image (sysext or confext) to merge onto the target OS.
+///
+/// Extension image must be a [Discoverable Disk
+/// Image](https://uapi-group.org/specifications/specs/discoverable_disk_image/).
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct Extension {
-    /// The path to the extension image file, which must be a [Discoverable Disk
-    /// Image](https://uapi-group.org/specifications/specs/discoverable_disk_image/).
+    /// The path to the extension image file.
     ///
     /// URLs may have one of the following four schemes: `http://`, `https://`, `file://`, or
     /// `oci://`. Extension image files stored in OCI registries must allow for
