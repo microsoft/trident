@@ -11,7 +11,7 @@ use log::{debug, trace, warn};
 use oci_client::{secrets::RegistryAuth, Client as OciClient, Reference};
 use reqwest::{
     blocking::{Client, Response},
-    StatusCode,
+    header, StatusCode,
 };
 use tokio::runtime::Runtime;
 use url::Url;
@@ -88,7 +88,7 @@ impl HttpFile {
         let request_sender = || {
             let mut request = client.head(url.as_str());
             if let Some(token) = &token {
-                request = request.header("Authorization", format!("Bearer {token}"));
+                request = request.header(header::AUTHORIZATION, format!("Bearer {token}"));
             }
             request.send().map(Some)
         };
@@ -99,7 +99,7 @@ impl HttpFile {
         // Get the file size from the response headers
         let size = response
             .headers()
-            .get("Content-Length")
+            .get(header::CONTENT_LENGTH)
             .ok_or(IoError::new(
                 IoErrorKind::Other,
                 "Failed to get 'Content-Length' in the response header",
@@ -123,7 +123,7 @@ impl HttpFile {
 
         // Ensure the server supports range requests, this implementation
         // requires that feature!
-        let accept_ranges_header = response.headers().get("Accept-Ranges");
+        let accept_ranges_header = response.headers().get(header::ACCEPT_RANGES);
         if accept_ranges_header.is_none() && ignore_ranges_header_absence {
             warn!("OCI server does not provide 'Accept-Ranges' header, continuing anyway");
         } else if accept_ranges_header
