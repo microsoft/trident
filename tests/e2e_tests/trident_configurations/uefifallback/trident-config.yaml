@@ -77,6 +77,9 @@ scripts:
           rm $ENTRY
         done
 
+        echo 'disable this service'
+        systemctl disable reset-uefi-and-reboot.service
+
         echo 'rebooting to trigger UEFI fallback'
         /usr/sbin/reboot
         EOF
