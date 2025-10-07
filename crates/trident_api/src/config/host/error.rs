@@ -66,9 +66,6 @@ pub enum HostConfigurationStaticValidationError {
     )]
     ExtensionImageInvalidFileExtension { path: String },
 
-    #[error("Extension image path '{path}' is invalid; could not retrieve directory path")]
-    ExtensionImageInvalidPath { path: String },
-
     #[error(
         "The Host Configuration is using both an image and partition images, these APIs are \
         mutually exclusive"

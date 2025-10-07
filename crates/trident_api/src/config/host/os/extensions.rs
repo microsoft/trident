@@ -65,14 +65,13 @@ impl Extension {
             );
         }
 
+        // Note: parent() only returns None for root paths or prefix-only paths.
+        // We will never call parent on such a path as it would be caught by the
+        // check for a 'raw' file extension above. For relative paths like
+        // "test.raw", it returns Some(""), which will fail the directory check
+        // below.
+        let provided_dir = path.parent().unwrap_or(path);
         // Check that the directory is valid
-        let Some(provided_dir) = path.parent() else {
-            return Err(
-                HostConfigurationStaticValidationError::ExtensionImageInvalidPath {
-                    path: path.display().to_string(),
-                },
-            );
-        };
         if !VALID_CONFEXT_DIRECTORIES
             .iter()
             .chain(VALID_SYSEXT_DIRECTORIES.iter())
@@ -143,9 +142,20 @@ mod tests {
     fn test_validate_no_parent_directory_fails() {
         let path = PathBuf::from("test.raw");
         let ext = create_test_extension(Some(path.clone()));
-        // `path.parent()` returns Some("") for relative paths with one
-        // component, i.e. "test.raw". Thus, this case is caught in the next
-        // check so we return an ExtensionImageInvalidDirectory error.
+        assert_eq!(
+            ext.validate(),
+            Err(
+                HostConfigurationStaticValidationError::ExtensionImageInvalidDirectory {
+                    path: path.display().to_string(),
+                }
+            )
+        );
+    }
+
+    #[test]
+    fn test_validate_relative_path_fails() {
+        let path = PathBuf::from("var/lib/extensions/test.raw");
+        let ext = create_test_extension(Some(path.clone()));
         assert_eq!(
             ext.validate(),
             Err(
