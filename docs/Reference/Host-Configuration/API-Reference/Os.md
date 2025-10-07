@@ -89,6 +89,15 @@ Options for configuring systemd services.
 | Type           | `Services`                |
 | Link           | [Services](./Services.md) |
 
+### `uefiFallback` (optional)
+
+Options for configuring the UEFI fallback.
+
+| Characteristic | Value                                     |
+| -------------- | ----------------------------------------- |
+| Type           | `UefiFallbackMode`                        |
+| Link           | [UefiFallbackMode](./UefiFallbackMode.md) |
+
 ### `users` (optional)
 
 Users to configure on the host.

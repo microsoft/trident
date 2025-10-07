@@ -56,6 +56,49 @@ scripts:
         - clean-install
         - ab-update
       content: echo 'testing-user ALL=(ALL:ALL) NOPASSWD:ALL' > /etc/sudoers.d/testing-user
+    - name: reset-uefi-and-reboot
+      runOn:
+        - ab-update
+      content: |
+        cat <<'EOF' >/usr/local/bin/reset-uefi-and-reboot.sh
+        #!/bin/bash
+        set -euo pipefail
+        echo 'reset UEFI variables to force fallback on next boot'
+        for ENTRY in $(ls /sys/firmware/efi/efivars/Boot00*); do
+          echo "Delete UEFI boot var: $ENTRY"
+          rm $ENTRY
+        done
+        for ENTRY in $(ls /sys/firmware/efi/efivars/BootOrder*); do
+          echo "Delete UEFI boot var: $ENTRY"
+          rm $ENTRY
+        done
+        for ENTRY in $(ls /sys/firmware/efi/efivars/BootNext*); do
+          echo "Delete UEFI boot var: $ENTRY"
+          rm $ENTRY
+        done
+
+        echo 'disable this service'
+        systemctl disable reset-uefi-and-reboot.service
+
+        echo 'rebooting to trigger UEFI fallback'
+        /usr/sbin/reboot
+        EOF
+        chmod +x /usr/local/bin/reset-uefi-and-reboot.sh
+
+        # Create a systemd service to run the script on boot
+        cat <<'EOF' >/etc/systemd/system/reset-uefi-and-reboot.service
+        [Unit]
+        Description=Reset UEFI variables and reboot
+
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/local/bin/reset-uefi-and-reboot.sh
+
+        [Install]
+        WantedBy=multi-user.target
+        EOF
+
+        systemctl enable reset-uefi-and-reboot.service
 os:
   selinux:
     mode: enforcing

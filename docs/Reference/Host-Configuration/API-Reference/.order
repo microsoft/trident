@@ -37,6 +37,7 @@ SshMode
 Storage
 Swap
 Trident
+UefiFallbackMode
 User
 VerityCorruptionOption
 VerityDevice

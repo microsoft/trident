@@ -11,17 +11,20 @@ use tempfile::{NamedTempFile, TempDir};
 
 use osutils::{
     bootloaders::{BOOT_EFI, GRUB_EFI, GRUB_NOPREFIX_EFI},
+    dependencies::Dependency,
     filesystems::MountFileSystemType,
     mount::{self, MountGuard},
     path,
 };
 use trident_api::{
+    config::UefiFallbackMode,
     constants::{
-        internal_params::DISABLE_GRUB_NOPREFIX_CHECK, EFI_DEFAULT_BIN_RELATIVE_PATH,
-        ESP_EFI_DIRECTORY, ESP_RELATIVE_MOUNT_POINT_PATH, GRUB2_CONFIG_FILENAME,
-        GRUB2_CONFIG_RELATIVE_PATH,
+        internal_params::DISABLE_GRUB_NOPREFIX_CHECK, EFI_DEFAULT_BIN_DIRECTORY,
+        EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY, ESP_MOUNT_POINT_PATH,
+        ESP_RELATIVE_MOUNT_POINT_PATH, GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH,
     },
     error::{ReportError, ServicingError, TridentError, TridentResultExt},
+    status::AbVolumeSelection,
 };
 
 use crate::{
@@ -186,8 +189,8 @@ fn copy_file_artifacts(
     }
 
     // Call helper func to copy boot files from temp_mount_dir to esp_dir_path
-    let grub_noprefix =
-        copy_boot_files(temp_mount_dir, &esp_dir_path, boot_files).context(format!(
+    let grub_noprefix = copy_boot_files(temp_mount_dir, &esp_dir_path, boot_files.clone())
+        .context(format!(
             "Failed to copy boot files from directory {} to directory {}",
             temp_mount_dir.display(),
             esp_dir_path.display()
@@ -212,6 +215,145 @@ fn copy_file_artifacts(
         );
     }
 
+    match ctx.spec.os.uefi_fallback {
+        Some(UefiFallbackMode::Rollback) => {
+            debug!("UEFI fallback mode is set to rollback");
+            match ctx.servicing_type {
+                trident_api::status::ServicingType::CleanInstall => {
+                    // For clean install, do nothing
+                    debug!("Clean install detected. No action needed for UEFI rollback mode.");
+                }
+                trident_api::status::ServicingType::AbUpdate => {
+                    // For update, find the servicing os boot files and copy them to EFI/BOOT/.
+                    let active_boot_esp_dir_name = boot::make_esp_dir_name(
+                        ctx.install_index,
+                        match ctx.ab_active_volume {
+                            None | Some(AbVolumeSelection::VolumeA) => AbVolumeSelection::VolumeA,
+                            Some(AbVolumeSelection::VolumeB) => AbVolumeSelection::VolumeB,
+                        },
+                    );
+                    let active_boot_esp_dir_path = PathBuf::from(ESP_MOUNT_POINT_PATH)
+                        .join(ESP_EFI_DIRECTORY)
+                        .join(active_boot_esp_dir_name);
+                    let uefi_fallback_path = mount_point
+                        .join(ESP_RELATIVE_MOUNT_POINT_PATH)
+                        .join(ESP_EFI_DIRECTORY)
+                        .join(EFI_DEFAULT_BIN_DIRECTORY);
+                    debug!(
+                        "{:?} detected. Copying boot files from {} to {}: [{}]",
+                        ctx.servicing_type,
+                        active_boot_esp_dir_path.display(),
+                        uefi_fallback_path.display(),
+                        boot_files
+                            .iter()
+                            .map(|p| p.display().to_string())
+                            .collect::<Vec<String>>()
+                            .join(", ")
+                    );
+                    simple_copy_boot_files(&active_boot_esp_dir_path, &uefi_fallback_path)
+                        .context(format!(
+                            "Failed to copy boot files from directory {} to directory {}",
+                            active_boot_esp_dir_path.display(),
+                            uefi_fallback_path.display()
+                        ))?;
+                }
+                _ => {
+                    // Otherwise, should this be an error???
+                    debug!("{:?} detected, no action needed.", ctx.servicing_type);
+                }
+            }
+        }
+        Some(UefiFallbackMode::Rollforward) => {
+            debug!("UEFI fallback mode is set to rollforward");
+            match ctx.servicing_type {
+                trident_api::status::ServicingType::CleanInstall
+                | trident_api::status::ServicingType::AbUpdate => {
+                    // For install and update, copy COSI boot files to EFI/BOOT/.
+                    let uefi_fallback_path = mount_point
+                        .join(ESP_RELATIVE_MOUNT_POINT_PATH)
+                        .join(ESP_EFI_DIRECTORY)
+                        .join(EFI_DEFAULT_BIN_DIRECTORY);
+                    debug!(
+                        "{:?} detected. Copying boot files from {} to {}.",
+                        ctx.servicing_type,
+                        esp_dir_path.display(),
+                        uefi_fallback_path.display()
+                    );
+                    simple_copy_boot_files(&esp_dir_path, &uefi_fallback_path).context(format!(
+                        "Failed to copy boot files from directory {} to directory {}",
+                        esp_dir_path.display(),
+                        uefi_fallback_path.display()
+                    ))?;
+                }
+                _ => {
+                    // Otherwise, should this be an error???
+                    debug!("{:?} detected, no action needed.", ctx.servicing_type);
+                }
+            }
+        }
+        Some(UefiFallbackMode::None) | None => {
+            debug!("No UEFI fallback mode is set");
+        }
+    }
+
+    Ok(())
+}
+
+/// Copies boot files from one folder to another.
+fn simple_copy_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
+    // Create to_dir if it doesn't exist
+    if !Path::new(to_dir).exists() {
+        Dependency::Mkdir
+            .cmd()
+            .arg("-p")
+            .arg(to_dir)
+            .run_and_check()
+            .unwrap();
+    }
+
+    // Copy all files from from_dir to to_dir as <existing_filename>.new
+    fs::read_dir(from_dir)?.flatten().for_each(|from_path| {
+        let to_file_name = format!("{}.new", from_path.file_name().to_string_lossy());
+        let to_path = to_dir.join(to_file_name);
+        match fs::copy(from_path.path(), &to_path) {
+            Ok(_) => debug!(
+                "Copied file {} to {}",
+                from_path.path().display(),
+                to_path.display()
+            ),
+            Err(e) => debug!(
+                "Failed to copy file {} to {}: {}",
+                from_path.path().display(),
+                to_path.display(),
+                e
+            ),
+        }
+    });
+
+    // Rename all copied files from to_dir/<filename>.new to to_dir/<filename>
+    fs::read_dir(to_dir)?.flatten().for_each(|orig_path| {
+        let orig_file_name = orig_path.file_name();
+        if !orig_file_name.to_string_lossy().ends_with(".new") {
+            // Skip files that do not end with .new
+            return;
+        }
+        let orig_file_name_string = orig_file_name.to_string_lossy();
+        let new_file_name = orig_file_name_string.trim_end_matches(".new");
+        let to_path = to_dir.join(new_file_name);
+        match fs::rename(orig_path.path(), &to_path) {
+            Ok(_) => debug!(
+                "Renamed file {} to {}",
+                orig_path.path().display(),
+                to_path.display()
+            ),
+            Err(e) => debug!(
+                "Failed to rename file {} to {}: {}",
+                orig_path.path().display(),
+                to_path.display(),
+                e
+            ),
+        }
+    });
     Ok(())
 }
 
@@ -541,6 +683,70 @@ mod tests {
         File::open(file1).unwrap().read_to_end(&mut buf1).unwrap();
         File::open(file2).unwrap().read_to_end(&mut buf2).unwrap();
         buf1 == buf2
+    }
+
+    #[test]
+    fn test_simple_copy_boot_files() {
+        let from_dir = TempDir::new().unwrap();
+        let to_dir = TempDir::new().unwrap();
+
+        let file_infos = vec![
+            ("file1.txt", "New content of file 1"),
+            ("file2.txt", "New content of file 2"),
+        ];
+
+        let existing_file_infos = vec![
+            ("file1.txt", "Content of file 1"),
+            ("file2.txt", "Content of file 2"),
+            ("file3.txt", "Content of file 3"),
+        ];
+
+        // Create files in from_dir
+        for (file_name, content) in &file_infos {
+            let file_path = from_dir.path().join(file_name);
+            let mut file = File::create(&file_path).unwrap();
+            writeln!(file, "{}", content).unwrap();
+        }
+
+        // Create existing files in esp_dir
+        for (file_name, content) in &existing_file_infos {
+            let file_path = to_dir.path().join(file_name);
+            let mut file = File::create(&file_path).unwrap();
+            writeln!(file, "{}", content).unwrap();
+        }
+
+        // Call the function to copy files
+        simple_copy_boot_files(from_dir.path(), to_dir.path()).unwrap();
+
+        // Verify that files have been copied and renamed correctly
+        for (file_name, _content) in &file_infos {
+            assert!(
+                files_are_identical(
+                    &from_dir.path().join(file_name),
+                    &to_dir.path().join(file_name),
+                ),
+                "Files are not identical: {} and {}",
+                from_dir.path().join(file_name).display(),
+                to_dir.path().join(file_name).display()
+            );
+        }
+
+        // Verify that existing files that were not in from_dir are unchanged
+        for (file_name, content) in &existing_file_infos {
+            if !file_infos.iter().any(|(f, _)| f == file_name) {
+                let mut file_content = String::new();
+                File::open(to_dir.path().join(file_name))
+                    .unwrap()
+                    .read_to_string(&mut file_content)
+                    .unwrap();
+                assert_eq!(
+                    file_content.trim(),
+                    *content,
+                    "Content of existing file {} does not match",
+                    file_name
+                );
+            }
+        }
     }
 
     /// Validates that copy_boot_files() correctly copies boot files from temp_mount_dir to esp_dir
