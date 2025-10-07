@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{ffi::OsStr, path::PathBuf};
 
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
@@ -19,7 +19,8 @@ use crate::{
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct Extension {
-    /// The path to the extension image file.
+    /// The path to the extension image file, which must be a [Discoverable Disk
+    /// Image](https://uapi-group.org/specifications/specs/discoverable_disk_image/).
     ///
     /// URLs may have one of the following four schemes: `http://`, `https://`, `file://`, or
     /// `oci://`. Extension image files stored in OCI registries must allow for
@@ -54,7 +55,7 @@ impl Extension {
         };
 
         // 'location' must be a file with file extension ".raw".
-        if !location.display().to_string().ends_with(".raw") {
+        if location.extension() != Some(OsStr::new("raw")) {
             return Err(
                 HostConfigurationStaticValidationError::ExtensionImageInvalidFileExtension {
                     location: location.display().to_string(),
@@ -73,7 +74,7 @@ impl Extension {
         if !VALID_CONFEXT_DIRECTORIES
             .iter()
             .chain(VALID_SYSEXT_DIRECTORIES.iter())
-            .any(|valid_dir| provided_dir == PathBuf::from(valid_dir))
+            .any(|valid_dir| provided_dir.as_os_str() == OsStr::new(valid_dir))
         {
             return Err(
                 HostConfigurationStaticValidationError::ExtensionImageInvalidDirectory {
