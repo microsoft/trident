@@ -188,7 +188,7 @@ impl Os {
 
         let mut ext_img_hashes = HashSet::new();
         let mut ext_img_paths = HashSet::new();
-        for ext in &self.extensions {
+        self.extensions.iter().try_for_each(|ext| {
             if !ext_img_hashes.insert(&ext.sha384) {
                 return Err(
                     HostConfigurationStaticValidationError::DuplicateExtensionImage {
@@ -206,7 +206,8 @@ impl Os {
                 }
             }
             ext.validate()?;
-        }
+            Ok(())
+        })?;
 
         Ok(())
     }
@@ -301,12 +302,10 @@ mod tests {
         });
 
         assert_eq!(
-            config.validate(),
-            Err(
-                HostConfigurationStaticValidationError::DuplicateExtensionImage {
-                    hash: duplicate_hash.to_string()
-                }
-            )
+            config.validate().unwrap_err(),
+            HostConfigurationStaticValidationError::DuplicateExtensionImage {
+                hash: duplicate_hash.to_string()
+            }
         );
     }
 
@@ -326,12 +325,10 @@ mod tests {
         });
 
         assert_eq!(
-            config.validate(),
-            Err(
-                HostConfigurationStaticValidationError::DuplicateExtensionImagePath {
-                    path: duplicate_path.display().to_string()
-                }
-            )
+            config.validate().unwrap_err(),
+            HostConfigurationStaticValidationError::DuplicateExtensionImagePath {
+                path: duplicate_path.display().to_string()
+            }
         );
     }
 }
