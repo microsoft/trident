@@ -187,7 +187,7 @@ impl Os {
         }
 
         let mut ext_img_hashes = HashSet::new();
-        let mut ext_img_locations = HashSet::new();
+        let mut ext_img_paths = HashSet::new();
         for ext in &self.extensions {
             if !ext_img_hashes.insert(&ext.sha384) {
                 return Err(
@@ -196,11 +196,11 @@ impl Os {
                     },
                 );
             }
-            if let Some(location) = &ext.location {
-                if !ext_img_locations.insert(location) {
+            if let Some(path) = &ext.path {
+                if !ext_img_paths.insert(path) {
                     return Err(
-                        HostConfigurationStaticValidationError::DuplicateExtensionImageLocation {
-                            location: location.display().to_string(),
+                        HostConfigurationStaticValidationError::DuplicateExtensionImagePath {
+                            path: path.display().to_string(),
                         },
                     );
                 }
@@ -275,12 +275,12 @@ mod tests {
         config.extensions.push(Extension {
             url: Url::parse("http://example.com/ext1.raw").unwrap(),
             sha384: Sha384Hash::from("a".repeat(96)),
-            location: Some(PathBuf::from("/var/lib/extensions/ext1.raw")),
+            path: Some(PathBuf::from("/var/lib/extensions/ext1.raw")),
         });
         config.extensions.push(Extension {
             url: Url::parse("http://example.com/ext2.raw").unwrap(),
             sha384: Sha384Hash::from("b".repeat(96)),
-            location: None,
+            path: None,
         });
         config.validate().unwrap();
     }
@@ -292,12 +292,12 @@ mod tests {
         config.extensions.push(Extension {
             url: Url::parse("http://example.com/ext1.raw").unwrap(),
             sha384: duplicate_hash.clone(),
-            location: Some(PathBuf::from("/var/lib/extensions/ext1.raw")),
+            path: Some(PathBuf::from("/var/lib/extensions/ext1.raw")),
         });
         config.extensions.push(Extension {
             url: Url::parse("http://example.com/ext2.raw").unwrap(),
             sha384: duplicate_hash.clone(),
-            location: Some(PathBuf::from("/var/lib/extensions/ext2.raw")),
+            path: Some(PathBuf::from("/var/lib/extensions/ext2.raw")),
         });
 
         assert_eq!(
@@ -311,25 +311,25 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_extensions_fail_duplicate_location() {
+    fn test_validate_extensions_fail_duplicate_path() {
         let mut config = Os::default();
-        let duplicate_location = PathBuf::from("/var/lib/extensions/ext.raw");
+        let duplicate_path = PathBuf::from("/var/lib/extensions/ext.raw");
         config.extensions.push(Extension {
             url: Url::parse("http://example.com/ext1.raw").unwrap(),
             sha384: Sha384Hash::from("a".repeat(96)),
-            location: Some(duplicate_location.clone()),
+            path: Some(duplicate_path.clone()),
         });
         config.extensions.push(Extension {
             url: Url::parse("http://example.com/ext2.raw").unwrap(),
             sha384: Sha384Hash::from("b".repeat(96)),
-            location: Some(duplicate_location.clone()),
+            path: Some(duplicate_path.clone()),
         });
 
         assert_eq!(
             config.validate(),
             Err(
-                HostConfigurationStaticValidationError::DuplicateExtensionImageLocation {
-                    location: duplicate_location.display().to_string()
+                HostConfigurationStaticValidationError::DuplicateExtensionImagePath {
+                    path: duplicate_path.display().to_string()
                 }
             )
         );

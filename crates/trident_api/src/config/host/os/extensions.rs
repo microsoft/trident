@@ -43,31 +43,31 @@ pub struct Extension {
     /// - /var/lib/confexts/
     /// - /usr/lib/confexts/
     /// - /usr/local/lib/confexts/
-    pub location: Option<PathBuf>,
+    pub path: Option<PathBuf>,
 }
 
 impl Extension {
     pub fn validate(&self) -> Result<(), HostConfigurationStaticValidationError> {
-        // Ensure that the location, if given, is a valid location for the
+        // Ensure that the path, if given, is a valid path for the
         // extension image to be placed.
-        let Some(location) = &self.location else {
+        let Some(path) = &self.path else {
             return Ok(());
         };
 
-        // 'location' must be a file with file extension ".raw".
-        if location.extension() != Some(OsStr::new("raw")) {
+        // 'path' must be a file with file extension ".raw".
+        if path.extension() != Some(OsStr::new("raw")) {
             return Err(
                 HostConfigurationStaticValidationError::ExtensionImageInvalidFileExtension {
-                    location: location.display().to_string(),
+                    path: path.display().to_string(),
                 },
             );
         }
 
         // Check that the directory is valid
-        let Some(provided_dir) = location.parent() else {
+        let Some(provided_dir) = path.parent() else {
             return Err(
                 HostConfigurationStaticValidationError::ExtensionImageInvalidPath {
-                    location: location.display().to_string(),
+                    path: path.display().to_string(),
                 },
             );
         };
@@ -78,7 +78,7 @@ impl Extension {
         {
             return Err(
                 HostConfigurationStaticValidationError::ExtensionImageInvalidDirectory {
-                    location: location.display().to_string(),
+                    path: path.display().to_string(),
                 },
             );
         }
@@ -97,41 +97,41 @@ mod tests {
 
     use crate::primitives::hash::Sha384Hash;
 
-    fn create_test_extension(location: Option<PathBuf>) -> Extension {
+    fn create_test_extension(path: Option<PathBuf>) -> Extension {
         Extension {
             url: Url::parse("http://example.com/test.raw").unwrap(),
             sha384: Sha384Hash::from("a".repeat(96)),
-            location,
+            path,
         }
     }
 
     #[test]
-    fn test_validate_no_location_succeeds() {
+    fn test_validate_no_path_succeeds() {
         let ext = create_test_extension(None);
         assert_eq!(ext.validate(), Ok(()));
     }
 
     #[test]
-    fn test_validate_valid_sysext_location_succeeds() {
+    fn test_validate_valid_sysext_path_succeeds() {
         let ext = create_test_extension(Some(PathBuf::from("/var/lib/extensions/test.raw")));
         assert_eq!(ext.validate(), Ok(()));
     }
 
     #[test]
-    fn test_validate_valid_confext_location_succeeds() {
+    fn test_validate_valid_confext_path_succeeds() {
         let ext = create_test_extension(Some(PathBuf::from("/var/lib/confexts/test.raw")));
         assert_eq!(ext.validate(), Ok(()));
     }
 
     #[test]
     fn test_validate_invalid_directory_fails() {
-        let location = PathBuf::from("/opt/invalid/test.raw");
-        let ext = create_test_extension(Some(location.clone()));
+        let path = PathBuf::from("/opt/invalid/test.raw");
+        let ext = create_test_extension(Some(path.clone()));
         assert_eq!(
             ext.validate(),
             Err(
                 HostConfigurationStaticValidationError::ExtensionImageInvalidDirectory {
-                    location: location.display().to_string(),
+                    path: path.display().to_string(),
                 }
             )
         );
@@ -139,16 +139,16 @@ mod tests {
 
     #[test]
     fn test_validate_no_parent_directory_fails() {
-        let location = PathBuf::from("test.raw");
-        let ext = create_test_extension(Some(location.clone()));
-        // `location.parent()` returns Some("") for relative paths with one
+        let path = PathBuf::from("test.raw");
+        let ext = create_test_extension(Some(path.clone()));
+        // `path.parent()` returns Some("") for relative paths with one
         // component, i.e. "test.raw". Thus, this case is caught in the next
         // check so we return an ExtensionImageInvalidDirectory error.
         assert_eq!(
             ext.validate(),
             Err(
                 HostConfigurationStaticValidationError::ExtensionImageInvalidDirectory {
-                    location: location.display().to_string(),
+                    path: path.display().to_string(),
                 }
             )
         );
@@ -156,13 +156,13 @@ mod tests {
 
     #[test]
     fn test_validate_invalid_extension_fails() {
-        let location = PathBuf::from("/var/lib/extensions/test.img");
-        let ext = create_test_extension(Some(location.clone()));
+        let path = PathBuf::from("/var/lib/extensions/test.img");
+        let ext = create_test_extension(Some(path.clone()));
         assert_eq!(
             ext.validate(),
             Err(
                 HostConfigurationStaticValidationError::ExtensionImageInvalidFileExtension {
-                    location: location.display().to_string(),
+                    path: path.display().to_string(),
                 }
             )
         );
@@ -170,13 +170,13 @@ mod tests {
 
     #[test]
     fn test_validate_no_filename_fails() {
-        let location = PathBuf::from("/var/lib/extensions/");
-        let ext = create_test_extension(Some(location.clone()));
+        let path = PathBuf::from("/var/lib/extensions/");
+        let ext = create_test_extension(Some(path.clone()));
         assert_eq!(
             ext.validate(),
             Err(
                 HostConfigurationStaticValidationError::ExtensionImageInvalidFileExtension {
-                    location: location.display().to_string(),
+                    path: path.display().to_string(),
                 }
             )
         );

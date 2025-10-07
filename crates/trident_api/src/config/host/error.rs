@@ -43,8 +43,8 @@ pub enum HostConfigurationStaticValidationError {
     #[error("Host Configuration contains extension images with duplicate hashes '{hash}', but extension images must be unique")]
     DuplicateExtensionImage { hash: String },
 
-    #[error("Host Configuration contains extension images with duplicate locations '{location}', but extension images must have unique locations")]
-    DuplicateExtensionImageLocation { location: String },
+    #[error("Host Configuration contains extension images with duplicate paths '{path}', but extension images must have unique paths")]
+    DuplicateExtensionImagePath { path: String },
 
     #[error("Host Configuration contains duplicate usernames '{username}', but usernames must be unique")]
     DuplicateUsernames { username: String },
@@ -56,16 +56,18 @@ pub enum HostConfigurationStaticValidationError {
     ExpectedMountPointNotFound { mount_point_path: String },
 
     #[error(
-        "Extension image location '{location}' is invalid; location must be an absolute path to a \
-        file whose filename must end with '.raw'"
+        "Extension image path '{path}' is invalid; must be an absolute path to a file whose \
+        filename must end with '.raw'"
     )]
-    ExtensionImageInvalidFileExtension { location: String },
+    ExtensionImageInvalidFileExtension { path: String },
 
-    #[error("Extension image location '{location}' is invalid; directory is not valid for sysexts or confexts")]
-    ExtensionImageInvalidDirectory { location: String },
+    #[error(
+        "Extension image path '{path}' is invalid; directory is not valid for sysexts or confexts"
+    )]
+    ExtensionImageInvalidDirectory { path: String },
 
-    #[error("Extension image location '{location}' has an invalid path; could not retrieve directory path of location")]
-    ExtensionImageInvalidPath { location: String },
+    #[error("Extension image path '{path}' is invalid; could not retrieve directory path")]
+    ExtensionImageInvalidPath { path: String },
 
     #[error(
         "The Host Configuration is using both an image and partition images, these APIs are \
