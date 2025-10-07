@@ -57,7 +57,7 @@ func StopSpeakup() (err error) {
 	return
 }
 
-// StartSpeakup stops the espeakup connector daemon using systemctl
+// StartSpeakup starts the espeakup connector daemon using systemctl
 func StartSpeakup() (err error) {
 	err = shell.ExecuteLive(squashError, systemctlProgram, []string{"enable", espeakupService}...)
 	if err != nil {
