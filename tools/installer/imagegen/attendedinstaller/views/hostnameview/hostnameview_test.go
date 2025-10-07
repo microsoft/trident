@@ -1,4 +1,4 @@
-// Copyright Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
 package hostnameview
