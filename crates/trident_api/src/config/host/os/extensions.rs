@@ -16,7 +16,8 @@ use crate::{
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct Extension {
-    /// The path to the extension image file.
+    /// The path to the extension image file, which must be a [Discoverable Disk
+    /// Image](https://uapi-group.org/specifications/specs/discoverable_disk_image/).
     ///
     /// URLs may have one of the following four schemes: `http://`, `https://`, `file://`, or
     /// `oci://`. Extension image files stored in OCI registries must allow for
