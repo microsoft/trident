@@ -43,6 +43,8 @@ pub struct Extension {
     /// - /var/lib/confexts/
     /// - /usr/lib/confexts/
     /// - /usr/local/lib/confexts/
+    ///
+    /// Currently /run/sysexts/ and /run/confexts/ are not supported.
     pub path: Option<PathBuf>,
 }
 
