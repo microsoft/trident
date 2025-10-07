@@ -83,28 +83,88 @@ virtualMachine:
   host:
     daily:
       - base
+      - combined
+      - encrypted-partition
+      - encrypted-raid
+      - encrypted-swap
+      - memory-constraint-combined
+      - misc
+      - raid-mirrored
+      - raid-resync-small
+      - raid-small
+      - rerun
+      - root-verity
+      - simple
+      - split
       - uefifallback
       - usr-verity
+      - usr-verity-raid
     post_merge:
       - base
+      - combined
+      - encrypted-partition
+      - encrypted-raid
+      - encrypted-swap
+      - memory-constraint-combined
+      - misc
+      - raid-mirrored
+      - raid-resync-small
+      - raid-small
+      - rerun
+      - root-verity
       - simple
+      - split
       - uefifallback
       - usr-verity
+      - usr-verity-raid
     pullrequest:
       - base
+      - combined
+      - misc
+      - raid-mirrored
+      - raid-resync-small
+      - rerun
+      - root-verity
       - simple
+      - split
       - uefifallback
       - usr-verity
+      - usr-verity-raid
     validation:
       - base
+      - combined
+      - encrypted-partition
+      - encrypted-raid
+      - encrypted-swap
+      - memory-constraint-combined
+      - misc
+      - raid-mirrored
+      - raid-resync-small
+      - raid-small
+      - rerun
+      - root-verity
       - simple
+      - split
       - uefifallback
       - usr-verity
+      - usr-verity-raid
     weekly:
       - base
+      - combined
+      - encrypted-partition
+      - encrypted-raid
+      - encrypted-swap
+      - memory-constraint-combined
+      - raid-mirrored
+      - raid-resync-small
+      - raid-small
+      - rerun
+      - root-verity
       - simple
+      - split
       - uefifallback
       - usr-verity
+      - usr-verity-raid
   container:
     daily:
       - base
