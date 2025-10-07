@@ -162,6 +162,21 @@ pub const AB_VOLUME_B_NAME: &str = "B";
 /// Read-only mount option.
 pub const MOUNT_OPTION_READ_ONLY: &str = "ro";
 
+/// Valid sysext directories.
+///
+/// Do not support /run/sysexts/.
+pub const VALID_SYSEXT_DIRECTORIES: [&str; 3] =
+    ["/etc/extensions", "/var/lib/extensions", "/.extra/sysext"];
+
+/// Valid confext directories.
+///
+/// Do not support /run/confexts/.
+pub const VALID_CONFEXT_DIRECTORIES: [&str; 3] = [
+    "/var/lib/confexts",
+    "/usr/lib/confexts",
+    "/usr/local/lib/confexts",
+];
+
 /// Internal-only overrides
 pub mod internal_params {
     /// Allow unused images in a COSI file.
