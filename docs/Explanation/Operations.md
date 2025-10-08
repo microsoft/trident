@@ -9,7 +9,7 @@ completion, Trident allows breaking these commands into separate `stage` and
 
 Staging an update involves streaming partition images and applying the indicated
 OS and bootloader configuration. It generally takes on the order of 1-5 minutes,
-but because the modifications are occuring on the inactive A/B volume partitions,
+but because the modifications are occurring on the inactive A/B volume partitions,
 the workload can continue running while the `stage` operation is in progress.
 
 ## Finalize
