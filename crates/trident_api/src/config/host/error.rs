@@ -221,6 +221,12 @@ pub enum HostConfigurationDynamicValidationError {
     #[error("Encryption recovery key file has invalid path '{path}'")]
     InvalidEncryptionKeyFilePath { path: String },
 
+    #[error(
+        "Extension image has invalid path '{path}'. File name must end in '.raw' \
+        and file name must match the file extension of the {ext_type}'s extension-release file."
+    )]
+    InvalidExtensionImagePath { path: String, ext_type: String },
+
     #[error("Disk '{name}' refers to device '{device}', but its device must be under '/dev'")]
     InvalidDiskBlockDevicePath { name: String, device: String },
 

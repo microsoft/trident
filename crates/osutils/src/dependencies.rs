@@ -117,6 +117,8 @@ pub enum Dependency {
     Swapoff,
     Swapon,
     Systemctl,
+    #[strum(serialize = "systemd-confext")]
+    SystemdConfext,
     #[strum(serialize = "systemd-cryptenroll")]
     SystemdCryptenroll,
     #[strum(serialize = "systemd-firstboot")]
@@ -125,6 +127,8 @@ pub enum Dependency {
     SystemdPcrlock,
     #[strum(serialize = "systemd-repart")]
     SystemdRepart,
+    #[strum(serialize = "systemd-sysext")]
+    SystemdSysext,
     Touch,
     #[strum(serialize = "tpm2_clear")]
     Tpm2Clear,

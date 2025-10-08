@@ -100,6 +100,9 @@ pub enum InternalError {
     #[error("Encountered a panic: {0}")]
     Panic(String),
 
+    #[error("Failed to populate extension images vector in Engine Context: {0}")]
+    PopulateExtensionImages(String),
+
     #[error("Failed to populate filesystems vector in Engine Context: {0}")]
     PopulateFilesystems(String),
 
@@ -123,6 +126,12 @@ pub enum InternalError {
 
     #[error("Unexpected servicing type '{servicing_type:?}'")]
     UnexpectedServicingType { servicing_type: ServicingType },
+
+    #[error(
+        "Failed to update the location of extension ID '{id}' in the Host Configuration. \
+    Could not find hash '{hash}' in the Host Configuration."
+    )]
+    UpdateExtensionsLocation { id: String, hash: String },
 
     #[error("Failed to build storage graph: {0}")]
     RebuildStorageGraph(#[from] StorageGraphBuildError),
@@ -333,6 +342,9 @@ pub enum ServicingError {
     #[error("Failed to clean up pre-existing RAID arrays")]
     CleanupRaid,
 
+    #[error("Failed to clean up temporary extension images")]
+    CleanupTemporaryExtensionImages,
+
     #[error("Failed to clean up pre-existing verity devices")]
     CleanupVerity,
 
@@ -394,6 +406,9 @@ pub enum ServicingError {
 
     #[error("Failed to create verity devices")]
     CreateVerity,
+
+    #[error("Failed to create snapshot of extension images")]
+    CreateExtensionImagesSnapshot,
 
     #[error(transparent)]
     Datastore {
@@ -571,6 +586,9 @@ pub enum ServicingError {
 
     #[error("Failed to set EFI variable '{name}'")]
     SetEfiVariable { name: String },
+
+    #[error("Failed to set up {ext_type} on the target OS")]
+    SetUpExtensionImages { ext_type: String },
 
     #[error("Failed to set permissions on temporary recovery key file '{key_file}'")]
     SetRecoveryKeyFilePermissions { key_file: String },
