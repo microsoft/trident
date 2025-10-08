@@ -20,8 +20,8 @@ use trident_api::{
     config::UefiFallbackMode,
     constants::{
         internal_params::DISABLE_GRUB_NOPREFIX_CHECK, EFI_DEFAULT_BIN_DIRECTORY,
-        EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY, ESP_MOUNT_POINT_PATH,
-        ESP_RELATIVE_MOUNT_POINT_PATH, GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH,
+        EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY, ESP_RELATIVE_MOUNT_POINT_PATH,
+        GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH,
     },
     error::{ReportError, ServicingError, TridentError, TridentResultExt},
     status::AbVolumeSelection,
@@ -215,6 +215,13 @@ fn copy_file_artifacts(
         );
     }
 
+    // Handle UEFI fallback if configured
+    configure_uefi_fallback(ctx, mount_point).context("Failed to configure UEFI fallback")?;
+
+    Ok(())
+}
+
+fn configure_uefi_fallback(ctx: &EngineContext, mount_point: &Path) -> Result<(), Error> {
     match ctx.spec.os.uefi_fallback {
         Some(UefiFallbackMode::Rollback) => {
             debug!("UEFI fallback mode is set to rollback");
@@ -232,7 +239,8 @@ fn copy_file_artifacts(
                             Some(AbVolumeSelection::VolumeB) => AbVolumeSelection::VolumeB,
                         },
                     );
-                    let active_boot_esp_dir_path = PathBuf::from(ESP_MOUNT_POINT_PATH)
+                    let active_boot_esp_dir_path = mount_point
+                        .join(ESP_RELATIVE_MOUNT_POINT_PATH)
                         .join(ESP_EFI_DIRECTORY)
                         .join(active_boot_esp_dir_name);
                     let uefi_fallback_path = mount_point
@@ -240,15 +248,10 @@ fn copy_file_artifacts(
                         .join(ESP_EFI_DIRECTORY)
                         .join(EFI_DEFAULT_BIN_DIRECTORY);
                     debug!(
-                        "{:?} detected. Copying boot files from {} to {}: [{}]",
+                        "{:?} detected. Copying boot files from {} to {}",
                         ctx.servicing_type,
                         active_boot_esp_dir_path.display(),
-                        uefi_fallback_path.display(),
-                        boot_files
-                            .iter()
-                            .map(|p| p.display().to_string())
-                            .collect::<Vec<String>>()
-                            .join(", ")
+                        uefi_fallback_path.display()
                     );
                     simple_copy_boot_files(&active_boot_esp_dir_path, &uefi_fallback_path)
                         .context(format!(
@@ -269,6 +272,18 @@ fn copy_file_artifacts(
                 trident_api::status::ServicingType::CleanInstall
                 | trident_api::status::ServicingType::AbUpdate => {
                     // For install and update, copy COSI boot files to EFI/BOOT/.
+                    // For update, find the servicing os boot files and copy them to EFI/BOOT/.
+                    let next_boot_esp_dir_name = boot::make_esp_dir_name(
+                        ctx.install_index,
+                        match ctx.ab_active_volume {
+                            None | Some(AbVolumeSelection::VolumeB) => AbVolumeSelection::VolumeA,
+                            Some(AbVolumeSelection::VolumeA) => AbVolumeSelection::VolumeB,
+                        },
+                    );
+                    let next_boot_esp_dir_path = mount_point
+                        .join(ESP_RELATIVE_MOUNT_POINT_PATH)
+                        .join(ESP_EFI_DIRECTORY)
+                        .join(next_boot_esp_dir_name);
                     let uefi_fallback_path = mount_point
                         .join(ESP_RELATIVE_MOUNT_POINT_PATH)
                         .join(ESP_EFI_DIRECTORY)
@@ -276,14 +291,16 @@ fn copy_file_artifacts(
                     debug!(
                         "{:?} detected. Copying boot files from {} to {}.",
                         ctx.servicing_type,
-                        esp_dir_path.display(),
+                        next_boot_esp_dir_path.display(),
                         uefi_fallback_path.display()
                     );
-                    simple_copy_boot_files(&esp_dir_path, &uefi_fallback_path).context(format!(
-                        "Failed to copy boot files from directory {} to directory {}",
-                        esp_dir_path.display(),
-                        uefi_fallback_path.display()
-                    ))?;
+                    simple_copy_boot_files(&next_boot_esp_dir_path, &uefi_fallback_path).context(
+                        format!(
+                            "Failed to copy boot files from directory {} to directory {}",
+                            next_boot_esp_dir_path.display(),
+                            uefi_fallback_path.display()
+                        ),
+                    )?;
                 }
                 _ => {
                     // Otherwise, should this be an error???
@@ -301,6 +318,11 @@ fn copy_file_artifacts(
 
 /// Copies boot files from one folder to another.
 fn simple_copy_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
+    trace!(
+        "Copying boot files from {} to {}",
+        from_dir.display(),
+        to_dir.display()
+    );
     // Create to_dir if it doesn't exist
     if !Path::new(to_dir).exists() {
         Dependency::Mkdir
@@ -315,6 +337,11 @@ fn simple_copy_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
     fs::read_dir(from_dir)?.flatten().for_each(|from_path| {
         let to_file_name = format!("{}.new", from_path.file_name().to_string_lossy());
         let to_path = to_dir.join(to_file_name);
+        debug!(
+            "Copying file {} to {}",
+            from_path.path().display(),
+            to_path.display()
+        );
         match fs::copy(from_path.path(), &to_path) {
             Ok(_) => debug!(
                 "Copied file {} to {}",
@@ -340,6 +367,11 @@ fn simple_copy_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
         let orig_file_name_string = orig_file_name.to_string_lossy();
         let new_file_name = orig_file_name_string.trim_end_matches(".new");
         let to_path = to_dir.join(new_file_name);
+        trace!(
+            "Renaming file {} to {}",
+            orig_path.path().display(),
+            to_path.display()
+        );
         match fs::rename(orig_path.path(), &to_path) {
             Ok(_) => debug!(
                 "Renamed file {} to {}",
@@ -519,14 +551,14 @@ mod tests {
 
     use fs::File;
 
-    use trident_api::{
-        constants::GRUB2_RELATIVE_PATH,
-        status::{AbVolumeSelection, ServicingType},
-    };
-
     use crate::engine::{
         boot::{get_update_esp_dir_name, make_esp_dir_name_candidates},
         install_index,
+    };
+    use trident_api::config::{HostConfiguration, Os};
+    use trident_api::{
+        constants::GRUB2_RELATIVE_PATH,
+        status::{AbVolumeSelection, ServicingType},
     };
 
     #[test]
@@ -671,8 +703,9 @@ mod tests {
             if let Some(parent) = full_path.parent() {
                 fs::create_dir_all(parent).unwrap();
             }
-            let mut file = File::create(full_path).unwrap();
+            let mut file = File::create(&full_path).unwrap();
             writeln!(file, "Mock content for {}", path.display()).unwrap();
+            trace!("Created mock boot file {}", full_path.display());
         }
     }
 
@@ -683,6 +716,94 @@ mod tests {
         File::open(file1).unwrap().read_to_end(&mut buf1).unwrap();
         File::open(file2).unwrap().read_to_end(&mut buf2).unwrap();
         buf1 == buf2
+    }
+
+    fn validate_fallback(ctx: &EngineContext, file_names: &[PathBuf], azlBootName: &str) {
+        let mount_point = TempDir::new().unwrap();
+
+        let fallback_esp_dir = mount_point
+            .path()
+            .join(ESP_RELATIVE_MOUNT_POINT_PATH)
+            .join(ESP_EFI_DIRECTORY)
+            .join("BOOT");
+        let azla_esp_dir = mount_point
+            .path()
+            .join(ESP_RELATIVE_MOUNT_POINT_PATH)
+            .join(ESP_EFI_DIRECTORY)
+            .join(azlBootName);
+        Dependency::Mkdir
+            .cmd()
+            .arg("-p")
+            .arg(&azla_esp_dir)
+            .run_and_check()
+            .unwrap();
+        create_boot_files(&azla_esp_dir, file_names);
+        configure_uefi_fallback(&ctx, mount_point.path()).unwrap();
+        for file in file_names {
+            let file1 = azla_esp_dir.join(file);
+            let file2 = fallback_esp_dir.join(file);
+            trace!("Comparing {} and {}", file1.display(), file2.display());
+            assert!(
+                files_are_identical(&file1, &file2),
+                "{} and {} are not identical",
+                file1.display(),
+                file2.display()
+            );
+        }
+    }
+
+    #[test]
+    fn test_configure_uefi_fallback() {
+        // Create a list of boot files
+        let file_names = vec![
+            PathBuf::from(GRUB2_CONFIG_FILENAME),
+            PathBuf::from(GRUB_EFI),
+            PathBuf::from(BOOT_EFI),
+        ];
+
+        let mut ctx = EngineContext {
+            servicing_type: ServicingType::AbUpdate,
+            ab_active_volume: Some(AbVolumeSelection::VolumeA),
+            install_index: 0,
+            spec: HostConfiguration {
+                os: Os {
+                    uefi_fallback: Some(UefiFallbackMode::Rollback),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        // Validate ABUpdate Rollback with active volume A ==> copy /EFI/AZLA to /EFI/BOOT
+        ctx.spec.os.uefi_fallback = Some(UefiFallbackMode::Rollback);
+        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
+        ctx.servicing_type = ServicingType::AbUpdate;
+        validate_fallback(&ctx, &file_names, "AZLA");
+
+        // Validate ABUpdate Rollback with active volume B ==> copy /EFI/AZLB to /EFI/BOOT
+        ctx.spec.os.uefi_fallback = Some(UefiFallbackMode::Rollback);
+        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
+        ctx.servicing_type = ServicingType::AbUpdate;
+        validate_fallback(&ctx, &file_names, "AZLB");
+
+        // Validate ABUpdate Rollforward with active volume A ==> copy /EFI/AZLA to /EFI/BOOT
+        ctx.spec.os.uefi_fallback = Some(UefiFallbackMode::Rollforward);
+        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
+        ctx.servicing_type = ServicingType::AbUpdate;
+        validate_fallback(&ctx, &file_names, "AZLB");
+
+        // Validate ABUpdate Rollforward with active volume B ==> copy /EFI/AZLB to /EFI/BOOT
+        ctx.spec.os.uefi_fallback = Some(UefiFallbackMode::Rollforward);
+        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
+        ctx.servicing_type = ServicingType::AbUpdate;
+        validate_fallback(&ctx, &file_names, "AZLA");
+
+        // Validate CleanInstall Rollforward with active volume None ==> copy /EFI/AZLA to /EFI/BOOT
+        ctx.spec.os.uefi_fallback = Some(UefiFallbackMode::Rollforward);
+        ctx.ab_active_volume = None;
+        ctx.servicing_type = ServicingType::CleanInstall;
+        validate_fallback(&ctx, &file_names, "AZLA");
     }
 
     #[test]
