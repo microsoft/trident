@@ -696,7 +696,7 @@ mod tests {
     }
 
     /// Creates mock boot files in temp_mount_dir
-    fn create_boot_files(temp_mount_dir: &Path, boot_files: &[PathBuf]) {
+    fn create_boot_files(temp_mount_dir: &Path, boot_files: &[PathBuf], content: &str) {
         for path in boot_files {
             let full_path = temp_mount_dir.join(path);
 
@@ -704,7 +704,7 @@ mod tests {
                 fs::create_dir_all(parent).unwrap();
             }
             let mut file = File::create(&full_path).unwrap();
-            writeln!(file, "Mock content for {}", path.display()).unwrap();
+            writeln!(file, "Mock content for {}: {}", path.display(), content).unwrap();
             trace!("Created mock boot file {}", full_path.display());
         }
     }
@@ -718,37 +718,68 @@ mod tests {
         buf1 == buf2
     }
 
-    fn validate_fallback(ctx: &EngineContext, file_names: &[PathBuf], azlBootName: &str) {
-        let mount_point = TempDir::new().unwrap();
-
+    fn create_and_fill_esp(
+        mount_point: &TempDir,
+        esp_name: &str,
+        file_names: &[PathBuf],
+        content: &str,
+    ) -> PathBuf {
         let fallback_esp_dir = mount_point
             .path()
             .join(ESP_RELATIVE_MOUNT_POINT_PATH)
             .join(ESP_EFI_DIRECTORY)
-            .join("BOOT");
-        let azla_esp_dir = mount_point
-            .path()
-            .join(ESP_RELATIVE_MOUNT_POINT_PATH)
-            .join(ESP_EFI_DIRECTORY)
-            .join(azlBootName);
+            .join(esp_name);
         Dependency::Mkdir
             .cmd()
             .arg("-p")
-            .arg(&azla_esp_dir)
+            .arg(&fallback_esp_dir)
             .run_and_check()
             .unwrap();
-        create_boot_files(&azla_esp_dir, file_names);
-        configure_uefi_fallback(&ctx, mount_point.path()).unwrap();
+        create_boot_files(&fallback_esp_dir, file_names, content);
+        fallback_esp_dir
+    }
+
+    fn validate_fallback(ctx: &EngineContext, file_names: &[PathBuf], azl_boot_name: &str) {
+        const ORIGINAL_FALLBACK_CONTENT: &str = "original-fallback";
+        const NEW_BOOT_CONTENT: &str = "new-boot";
+
+        let mount_point = TempDir::new().unwrap();
+        let fallback_esp_dir = create_and_fill_esp(
+            &mount_point,
+            EFI_DEFAULT_BIN_DIRECTORY,
+            file_names,
+            ORIGINAL_FALLBACK_CONTENT,
+        );
+        create_and_fill_esp(&mount_point, azl_boot_name, file_names, NEW_BOOT_CONTENT);
+
+        configure_uefi_fallback(ctx, mount_point.path()).unwrap();
         for file in file_names {
-            let file1 = azla_esp_dir.join(file);
-            let file2 = fallback_esp_dir.join(file);
-            trace!("Comparing {} and {}", file1.display(), file2.display());
-            assert!(
-                files_are_identical(&file1, &file2),
-                "{} and {} are not identical",
-                file1.display(),
-                file2.display()
-            );
+            let fallback_file = fallback_esp_dir.join(file);
+            let mut fallback_file_contents = String::new();
+            File::open(&fallback_file)
+                .unwrap()
+                .read_to_string(&mut fallback_file_contents)
+                .unwrap();
+            match ctx.spec.os.uefi_fallback {
+                None | Some(UefiFallbackMode::None) =>
+                // Fallback should not have been updated
+                {
+                    assert!(
+                        fallback_file_contents.contains(ORIGINAL_FALLBACK_CONTENT),
+                        "{} was updated, but should not have been",
+                        fallback_file.display()
+                    )
+                }
+                Some(UefiFallbackMode::Rollback) | Some(UefiFallbackMode::Rollforward) =>
+                // Fallback should have been updated
+                {
+                    assert!(
+                        fallback_file_contents.contains(NEW_BOOT_CONTENT),
+                        "{} was not updated, but should have been",
+                        fallback_file.display()
+                    )
+                }
+            };
         }
     }
 
@@ -803,6 +834,18 @@ mod tests {
         ctx.spec.os.uefi_fallback = Some(UefiFallbackMode::Rollforward);
         ctx.ab_active_volume = None;
         ctx.servicing_type = ServicingType::CleanInstall;
+        validate_fallback(&ctx, &file_names, "AZLA");
+
+        // Validate ABUpdate None with active volume A ==> /EFI/BOOT unchanged
+        ctx.spec.os.uefi_fallback = Some(UefiFallbackMode::None);
+        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
+        ctx.servicing_type = ServicingType::AbUpdate;
+        validate_fallback(&ctx, &file_names, "AZLA");
+
+        // Validate ABUpdate None with active volume A ==> /EFI/BOOT unchanged
+        ctx.spec.os.uefi_fallback = None;
+        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
+        ctx.servicing_type = ServicingType::AbUpdate;
         validate_fallback(&ctx, &file_names, "AZLA");
     }
 
@@ -884,7 +927,7 @@ mod tests {
         ];
 
         // Call helper func to create mock boot files in temp_mount_dir
-        create_boot_files(temp_mount_dir.path(), &file_names);
+        create_boot_files(temp_mount_dir.path(), &file_names, "test-content");
         // Call helper func to copy boot files from temp_mount_dir to esp_dir
         let noprefix =
             copy_boot_files(temp_mount_dir.path(), esp_dir.path(), file_names.clone()).unwrap();
@@ -923,7 +966,7 @@ mod tests {
         ];
 
         // Call helper func to create mock boot files in temp_mount_dir
-        create_boot_files(temp_mount_dir.path(), &file_names);
+        create_boot_files(temp_mount_dir.path(), &file_names, "test-content");
         // Call helper func to copy boot files from temp_mount_dir to esp_dir
         let noprefix =
             copy_boot_files(temp_mount_dir.path(), esp_dir.path(), file_names.clone()).unwrap();
