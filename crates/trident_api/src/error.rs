@@ -100,6 +100,9 @@ pub enum InternalError {
     #[error("Encountered a panic: {0}")]
     Panic(String),
 
+    #[error("Failed to populate extension images vector in Engine Context: {0}")]
+    PopulateExtensionImages(String),
+
     #[error("Failed to populate filesystems vector in Engine Context: {0}")]
     PopulateFilesystems(String),
 
@@ -123,6 +126,12 @@ pub enum InternalError {
 
     #[error("Unexpected servicing type '{servicing_type:?}'")]
     UnexpectedServicingType { servicing_type: ServicingType },
+
+    #[error(
+        "Failed to update the location of extension ID '{id}' in the Host Configuration. \
+    Could not find hash '{hash}' in the Host Configuration."
+    )]
+    UpdateExtensionPath { id: String, hash: String },
 
     #[error("Failed to build storage graph: {0}")]
     RebuildStorageGraph(#[from] StorageGraphBuildError),

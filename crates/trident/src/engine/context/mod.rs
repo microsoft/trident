@@ -4,7 +4,6 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
-use filesystem::FileSystemData;
 use log::{debug, trace};
 
 use trident_api::{
@@ -19,7 +18,12 @@ use trident_api::{
 use crate::osimage::OsImage;
 
 #[allow(dead_code)]
+pub mod extension;
+#[allow(dead_code)]
 pub mod filesystem;
+
+use extension::ExtensionData;
+use filesystem::FileSystemData;
 
 #[cfg(test)]
 mod test_utils;
@@ -72,6 +76,12 @@ pub struct EngineContext {
 
     /// All of the filesystems in the system.
     pub filesystems: Vec<FileSystemData>,
+
+    /// All of the extension images that should be in the target OS.
+    pub extensions: Vec<ExtensionData>,
+
+    /// All of the extension images existing on the servicing OS.
+    pub extensions_old: Vec<ExtensionData>,
 
     /// Whether the image will use a UKI or not.
     pub is_uki: Option<bool>,
