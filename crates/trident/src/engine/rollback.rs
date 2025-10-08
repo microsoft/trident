@@ -42,6 +42,8 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
         image: None, // Not used for boot validation logic
         storage_graph: engine::build_storage_graph(&datastore.host_status().spec.storage)?, // Build storage graph
         filesystems: Vec::new(), // Left empty since context does not have image
+        extensions: Vec::new(),  // TODO(15307): Implement rollback of extension images
+        extensions_old: Vec::new(), // TODO(15307): Implement rollback of extension images
         is_uki: Some(efivar::current_var_is_uki()),
     };
 

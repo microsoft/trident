@@ -206,6 +206,8 @@ fn stage_clean_install(
         image: Some(image),
         storage_graph: engine::build_storage_graph(&host_config.storage)?, // Build storage graph
         filesystems: Vec::new(), // Will be populated after dynamic validation
+        extensions: Vec::new(), // TODO(15251): Enable extension servicing in clean install & A/B update
+        extensions_old: Vec::new(), // TODO(15251): Enable extension servicing in clean install & A/B update
     };
 
     // Execute pre-servicing scripts
@@ -307,6 +309,8 @@ pub(crate) fn finalize_clean_install(
         image: None, // Not used in finalize_clean_install
         storage_graph: engine::build_storage_graph(&state.host_status().spec.storage)?, // Build storage graph
         filesystems: Vec::new(), // Left empty since context does not have image
+        extensions: Vec::new(), // TODO(15251): Enable extension servicing in clean install & A/B update
+        extensions_old: Vec::new(), // TODO(15251): Enable extension servicing in clean install & A/B update
         is_uki: None,
     };
 
