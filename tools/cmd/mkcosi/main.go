@@ -19,6 +19,7 @@ type CLI struct {
 type BuildCmd struct {
 	Regular builder.BuildRegular `cmd:"" help:"Build a regular COSI"`
 	Verity  builder.BuildVerity  `cmd:"" help:"Build a verity COSI"`
+	Ubuntu  builder.BuildUbuntu  `cmd:"" help:"Build an Ubuntu COSI"`
 }
 
 func main() {
