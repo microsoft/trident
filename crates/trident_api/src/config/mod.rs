@@ -6,6 +6,7 @@ pub use host::{
     image::{ImageSha384, OsImage},
     os::{
         additional_files::AdditionalFile,
+        extensions::Extension,
         modules::{LoadMode, Module},
         services::Services,
         users::{Password, SshMode, User},
