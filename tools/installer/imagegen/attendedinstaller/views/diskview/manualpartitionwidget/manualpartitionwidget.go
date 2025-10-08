@@ -54,7 +54,7 @@ const (
 	basePartitionUnit    = diskutils.MiB
 	basePartitionLabel   = "MiB"
 
-	maxParittionLabelSize = 32
+	maxPartitionLabelSize = 32
 )
 
 const (
@@ -160,7 +160,7 @@ func (mp *ManualPartitionWidget) Initialize(hostConfigData *configuration.Triden
 
 	mp.nameInput = tview.NewInputField().
 		SetLabel(uitext.FormDiskNameLabel).
-		SetFieldWidth(maxParittionLabelSize).
+		SetFieldWidth(maxPartitionLabelSize).
 		SetAcceptanceFunc(mp.nameInputValidation).
 		SetFieldBackgroundColor(tcell.ColorWhite)
 
@@ -607,7 +607,7 @@ func (mp *ManualPartitionWidget) mountPointInputValidation(textToCheck string, l
 }
 
 func (mp *ManualPartitionWidget) nameInputValidation(textToCheck string, lastChar rune) bool {
-	if len(textToCheck) > maxParittionLabelSize {
+	if len(textToCheck) > maxPartitionLabelSize {
 		return false
 	}
 
