@@ -869,14 +869,14 @@ mod tests {
         for (file_name, content) in &file_infos {
             let file_path = from_dir.path().join(file_name);
             let mut file = File::create(&file_path).unwrap();
-            writeln!(file, "{}", content).unwrap();
+            writeln!(file, "{content}").unwrap();
         }
 
         // Create existing files in esp_dir
         for (file_name, content) in &existing_file_infos {
             let file_path = to_dir.path().join(file_name);
             let mut file = File::create(&file_path).unwrap();
-            writeln!(file, "{}", content).unwrap();
+            writeln!(file, "{content}").unwrap();
         }
 
         // Call the function to copy files
@@ -906,8 +906,7 @@ mod tests {
                 assert_eq!(
                     file_content.trim(),
                     *content,
-                    "Content of existing file {} does not match",
-                    file_name
+                    "Content of existing file {file_name} does not match"
                 );
             }
         }
