@@ -15,15 +15,13 @@ the target OS. This allows Trident to perform tasks such as installing the boot
 loader, configuring the network, and other tasks that require running commands
 in the context of the target OS.
 
-Trident uses the `chroot` command to change the root directory of the current
+Trident uses `chroot` to change the root directory of the current
 process to the `newroot`. This is done using the `nix::unistd::chroot` function
 from the `nix` crate.
 
 When Trident is running in the `newroot`, it will have access to the file
 systems of the target OS, but it will not have access to the file systems of the
-servicing OS. This is important for ensuring that Trident does not accidentally
-modify the servicing OS while it is performing tasks in the context of the
-target OS.
+servicing OS.
 
 Trident will also bind mount certain directories from the servicing OS into the
 `newroot` to ensure that necessary files and directories are available in the
