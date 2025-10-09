@@ -16,7 +16,7 @@ The Trident CLI implements several verbs, like `install` and `update`. These
 verbs allow Trident to explicitly understand what the user wants to do. For
 a given verb, Trident will determine what needs to be done based on the
 [Host Configuration](../Reference/Host-Configuration/API-Reference/HostConfiguration.md)
-file, which is a declarative API that describing the desired state of the
+file, which is a declarative API that describes the desired state of the
 machine.
 
 The Host Configuration contains a description of the machine's disks,
