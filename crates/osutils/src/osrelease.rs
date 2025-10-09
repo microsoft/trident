@@ -79,18 +79,6 @@ impl OsRelease {
         }
     }
 
-    /// Returns the SYSEXT_ID or CONFEXT_ID of an extension release file, if the field exists.
-    pub fn get_ext_id(&self) -> Result<Option<String>, Error> {
-        match (&self.confext_id, &self.sysext_id) {
-            (None, None) => Ok(None),
-            (None, Some(_)) => Ok(self.sysext_id.clone()),
-            (Some(_), None) => Ok(self.confext_id.clone()),
-            (Some(_), Some(_)) => Err(Error::msg(
-                "Both SYSEXT_ID and CONFEXT_ID must not be defined.",
-            )),
-        }
-    }
-
     /// Parses the input string into an OsRelease struct.
     fn parse(data: &str) -> Self {
         let mut os_release = OsRelease::default();
