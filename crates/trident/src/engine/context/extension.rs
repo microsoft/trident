@@ -26,11 +26,19 @@ use crate::{
     },
 };
 
+/// Expected extension-release directory for sysexts
 const SYSEXT_EXTENSION_RELEASE_DIRECTORY: &str = "usr/lib/extension-release.d/";
+/// Expected extension-release directory for confexts
 const CONFEXT_EXTENSION_RELEASE_DIRECTORY: &str = "etc/extension-release.d/";
+
+/// Primary location for storing sysexts on the target OS
 const DEFAULT_SYSEXT_DIRECTORY: &str = "/var/lib/extensions/";
+/// Primary location for storing confexts on the target OS
 const DEFAULT_CONFEXT_DIRECTORY: &str = "/var/lib/confexts/";
+
+/// Prefix for sysext-specific fields in the extension-release file
 const SYSEXT_PREFIX: &str = "SYSEXT_";
+/// Prefix for confext-specific fields in the extension-release file
 const CONFEXT_PREFIX: &str = "CONFEXT_";
 
 #[derive(Clone, Debug)]
