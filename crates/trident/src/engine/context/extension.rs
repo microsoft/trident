@@ -81,19 +81,18 @@ impl EngineContext {
         };
 
         populate_extensions_inner(
-            &self.spec.os.extensions,
-            &mut self.extensions,
-            timeout,
-            true,
+            self, // &self.spec.os.extensions,
+            // &mut self.extensions,
+            timeout, true,
         )
         .structured(InternalError::PopulateExtensionImages(
             "Failed with new extension images.".to_string(),
         ))?;
         populate_extensions_inner(
-            &self.spec_old.os.extensions,
-            &mut self.extensions_old,
-            timeout,
-            false,
+            self,
+            // &self.spec_old.os.extensions,
+            // &mut self.extensions_old,
+            timeout, false,
         )
         .structured(InternalError::PopulateExtensionImages(
             "Failed with existing extension images.".to_string(),
@@ -123,42 +122,62 @@ impl EngineContext {
 }
 
 fn populate_extensions_inner(
-    hc_extensions: &Vec<Extension>,
-    ctx_extensions: &mut Vec<ExtensionData>,
+    ctx: &mut EngineContext,
+    // hc_extensions: &Vec<Extension>,
+    // ctx_extensions: &mut Vec<ExtensionData>,
     timeout: Duration,
     new: bool,
 ) -> Result<(), Error> {
+    let (hc_extensions, ctx_extensions) = match new {
+        true => (&ctx.spec.os.extensions, &mut ctx.extensions),
+        false => (&ctx.spec_old.os.extensions, &mut ctx.extensions_old),
+    };
+
     let temp_mp = tempfile::tempdir()?;
 
     for ext in hc_extensions {
         let extension_file = if new {
-            // Create and persist a temporary file; get its path
-            let temp_file = NamedTempFile::new()
-                .context("Failed to create temporary file")?
-                .into_temp_path()
-                .keep()
-                .context("Failed to persist temporary file")?;
-
-            // Download the extension image to this temporary file
-            let reader = FileReader::new(&ext.url, timeout)
-                .context("Failed to create file reader")?
-                .complete_reader()
-                .context("Failed to create complete file reader")?;
-            let hash_reader = HashingReader384::new(reader);
-            let computed_sha384 =
-                stream_and_hash(hash_reader, &temp_file).context("Failed to read and write")?;
-
-            // Ensure computed SHA384 matches SHA384 in Host Configuration
-            if ext.sha384 != computed_sha384 {
-                bail!(
-                    "SHA384 mismatch for extension image at '{}': expected {}, got {}",
+            // First, check if this extension already exists on the system.
+            if let Some(existing_file_path) =
+                check_for_path_in_old_host_configuration(ext, &ctx.spec_old.os.extensions)
+            {
+                ensure!(
+                    existing_file_path.exists(),
+                    "Expected to find extension image from URL '{}' at path '{}', but path does not exist",
                     ext.url,
-                    ext.sha384,
-                    computed_sha384
-                )
-            }
+                    existing_file_path.display()
+                );
+                existing_file_path
+            } else {
+                // The extension is new to the OS, so we need to download it.
+                // Create and persist a temporary file; get its path
+                let temp_file = NamedTempFile::new()
+                    .context("Failed to create temporary file")?
+                    .into_temp_path()
+                    .keep()
+                    .context("Failed to persist temporary file")?;
 
-            temp_file
+                // Download the extension image to this temporary file
+                let reader = FileReader::new(&ext.url, timeout)
+                    .context("Failed to create file reader")?
+                    .complete_reader()
+                    .context("Failed to create complete file reader")?;
+                let hash_reader = HashingReader384::new(reader);
+                let computed_sha384 =
+                    stream_and_hash(hash_reader, &temp_file).context("Failed to read and write")?;
+
+                // Ensure computed SHA384 matches SHA384 in Host Configuration
+                if ext.sha384 != computed_sha384 {
+                    bail!(
+                        "SHA384 mismatch for extension image at '{}': expected {}, got {}",
+                        ext.url,
+                        ext.sha384,
+                        computed_sha384
+                    )
+                }
+
+                temp_file
+            }
         } else {
             // For extension images from the old Host Configuration, use the
             // existing file.
@@ -196,6 +215,19 @@ fn populate_extensions_inner(
     temp_mp.close()?;
 
     Ok(())
+}
+
+/// Helper function to identify if the extension exists in the old Host
+/// Configuration, in which case we can reuse its location.
+fn check_for_path_in_old_host_configuration(
+    ext: &Extension,
+    old_hc_extensions: &Vec<Extension>,
+) -> Option<PathBuf> {
+    old_hc_extensions
+        .iter()
+        .find(|old_ext| ext.url == old_ext.url && ext.sha384 == old_ext.sha384)?
+        .path
+        .clone()
 }
 
 /// Helper function to extract information from extension-release file
@@ -491,19 +523,12 @@ mod tests {
     #[test]
     fn test_populate_extensions_inner_empty() {
         // Test with no extensions
-        let hc_extensions: Vec<Extension> = vec![];
-        let mut ctx_extensions = Vec::new();
+        let mut ctx = EngineContext::default();
 
-        populate_extensions_inner(
-            &hc_extensions,
-            &mut ctx_extensions,
-            Duration::from_secs(10),
-            true,
-        )
-        .unwrap();
+        populate_extensions_inner(&mut ctx, Duration::from_secs(10), true).unwrap();
 
         assert!(
-            ctx_extensions.is_empty(),
+            ctx.extensions.is_empty(),
             "Engine Context extensions should be empty when no extensions are provided"
         );
     }
@@ -642,16 +667,12 @@ mod functional_test {
             .collect();
 
         // Process extensions
-        let mut ctx_extensions = Vec::new();
-        populate_extensions_inner(
-            &hc_extensions,
-            &mut ctx_extensions,
-            Duration::from_secs(10),
-            true,
-        )
-        .unwrap();
+        let mut ctx = EngineContext::default();
+        ctx.spec.os.extensions = hc_extensions.clone();
+        populate_extensions_inner(&mut ctx, Duration::from_secs(10), true).unwrap();
 
         // Verify results
+        let ctx_extensions = ctx.extensions;
         assert_eq!(hc_extensions.len(), ctx_extensions.len());
         for (((_, name, expected_type, _), hc_ext), ctx_ext) in
             test_inputs.iter().zip(&hc_extensions).zip(&ctx_extensions)
@@ -719,16 +740,12 @@ mod functional_test {
             .collect();
 
         // Process extensions with new=false
-        let mut ctx_extensions = Vec::new();
-        populate_extensions_inner(
-            &hc_extensions,
-            &mut ctx_extensions,
-            Duration::from_secs(10),
-            false,
-        )
-        .unwrap();
+        let mut ctx = EngineContext::default();
+        ctx.spec_old.os.extensions = hc_extensions.clone();
+        populate_extensions_inner(&mut ctx, Duration::from_secs(10), false).unwrap();
 
         // Verify results
+        let ctx_extensions = ctx.extensions_old;
         assert_eq!(test_extensions.len(), ctx_extensions.len());
         for (((_, name, expected_type, _), hc_ext), ctx_ext) in
             test_inputs.iter().zip(&hc_extensions).zip(&ctx_extensions)
@@ -766,15 +783,11 @@ mod functional_test {
         };
 
         // Attempt to process - should fail due to hash mismatch
-        let mut ctx_extensions = Vec::new();
-        let error = populate_extensions_inner(
-            &vec![hc_extension],
-            &mut ctx_extensions,
-            Duration::from_secs(10),
-            true,
-        )
-        .unwrap_err()
-        .to_string();
+        let mut ctx = EngineContext::default();
+        ctx.spec.os.extensions = vec![hc_extension];
+        let error = populate_extensions_inner(&mut ctx, Duration::from_secs(10), true)
+            .unwrap_err()
+            .to_string();
 
         assert_eq!(error, format!("SHA384 mismatch for extension image at '{extension_url}': expected {wrong_hash}, got {actual_hash}"));
     }
@@ -804,15 +817,11 @@ mod functional_test {
         };
 
         // Attempt to process as an existing Extension
-        let mut ctx_extensions = Vec::new();
-        let error = populate_extensions_inner(
-            &vec![hc_extension],
-            &mut ctx_extensions,
-            Duration::from_secs(10),
-            false,
-        )
-        .unwrap_err()
-        .to_string();
+        let mut ctx = EngineContext::default();
+        ctx.spec_old.os.extensions = vec![hc_extension];
+        let error = populate_extensions_inner(&mut ctx, Duration::from_secs(10), false)
+            .unwrap_err()
+            .to_string();
 
         assert_eq!(error, format!("Expected to find extension image from URL '{ext_url}' at path '{}', but path does not exist", ext_path.display()));
     }
