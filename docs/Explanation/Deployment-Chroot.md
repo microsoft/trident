@@ -35,4 +35,5 @@ scripts defined in the Host Configuration. These scripts are run from within
 the chroot of the target OS, with the `$TARGET_ROOT` variable set to '/'.
 
 Once Trident has completed its tasks in the context of the target OS, it will
-exit the chroot and unmount the `newroot` and any bind mounts that were created. This cleanup is done using the `umount` command.
+exit the chroot and unmount the `newroot` and any bind mounts that were created.
+This cleanup is done using the `umount` command.
