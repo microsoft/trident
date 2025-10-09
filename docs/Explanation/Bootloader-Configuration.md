@@ -32,6 +32,11 @@ previewFeatures:
 - uki
 ```
 
+:::note
+The bootloader choice (and choice of UKI) has some implications on
+[Encryption](../Reference/Host-Configuration/API-Reference/Encryption.md#pcrs-required).
+:::
+
 ## Bootloader Servicing
 
 Trident will install the bootloader as part of COSI deployment. The target OS
