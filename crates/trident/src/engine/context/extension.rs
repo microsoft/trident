@@ -263,10 +263,12 @@ fn read_extension_release(
 
     // Read the extension release file
     let path = &dir[0];
-    let extension_release_file_content = fs::read_to_string(path).context(format!(
-        "Failed to read extension-release file content from file at '{}'",
-        &path.display()
-    ))?;
+    let extension_release_file_content = fs::read_to_string(path).with_context(|| {
+        format!(
+            "Failed to read extension-release file content from file at '{}'",
+            &path.display()
+        )
+    })?;
     trace!("Found extension release file content:\n{extension_release_file_content}");
     let extension_release_obj = OsRelease::from_str(&extension_release_file_content)
         .with_context(|| "Failed to convert extension release file content to OsRelease object")?;
