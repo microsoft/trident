@@ -20,13 +20,13 @@ func RenderTridentHostConfig(configPath string, configData *TridentConfigData) e
 		return fmt.Errorf("failed to create Host Configuration directory: %w", err)
 	}
 
-	// Create scripts directory inside config directory
+	// Create scripts directory inside Host configuration directory
 	scriptsDir := filepath.Join(configDir, "scripts")
 	if err := os.MkdirAll(scriptsDir, 0700); err != nil {
 		return fmt.Errorf("failed to create scripts directory: %w", err)
 	}
 
-	// Write password script
+	// Generate and write the user password script to set the user password
 	passwordScriptPath := filepath.Join(scriptsDir, "user-password.sh")
 	err := passwordScript(passwordScriptPath, configData)
 	if err != nil {
@@ -34,7 +34,6 @@ func RenderTridentHostConfig(configPath string, configData *TridentConfigData) e
 	}
 	configData.PasswordScript = passwordScriptPath
 
-	// Select template
 	var templateContent = hostConfigTemplate
 
 	// Render the config file
@@ -50,6 +49,8 @@ func RenderTridentHostConfig(configPath string, configData *TridentConfigData) e
 	return tmpl.Execute(out, configData)
 }
 
+// passwordScript generates and writes a shell script that sets the user password.
+// The script uses chpasswd with the -e flag to accept pre-hashed passwords (only hash is stored).
 func passwordScript(passwordScriptPath string, configData *TridentConfigData) (err error) {
 	// Hash the password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(configData.Password), bcrypt.DefaultCost)
