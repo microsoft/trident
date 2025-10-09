@@ -331,7 +331,7 @@ fn detach_device_and_unmount(device_path: String, mount_path: &Path) -> Result<(
         .cmd()
         .arg(mount_path)
         .run_and_check()
-        .context("Failed to umount")?;
+        .context("Failed to unmount")?;
     Dependency::Losetup
         .cmd()
         .arg("-d")
