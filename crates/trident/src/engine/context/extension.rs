@@ -244,7 +244,7 @@ fn read_extension_release(
                 prefix = CONFEXT_PREFIX;
                 dir
             }
-            Err(_) => return Err(Error::msg("Failed to find extension release file.")),
+            Err(_) => return Err(Error::msg("Failed to find extension release directory.")),
         },
     }
     .map(|res| res.map(|e| e.path()))
@@ -426,7 +426,7 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
-            "Failed to find extension release file."
+            "Failed to find extension release directory."
         );
     }
 
