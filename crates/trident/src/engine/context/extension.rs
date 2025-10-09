@@ -211,7 +211,7 @@ fn populate_extensions_inner(
 /// Configuration, in which case we can reuse its location.
 fn check_for_path_in_old_host_configuration(
     ext: &Extension,
-    old_hc_extensions: &Vec<Extension>,
+    old_hc_extensions: &[Extension],
 ) -> Option<PathBuf> {
     old_hc_extensions
         .iter()
