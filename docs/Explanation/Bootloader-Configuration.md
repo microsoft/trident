@@ -45,8 +45,10 @@ changes help Trident track multiple installs and A/B updates while ensuring
 that the bootloader starts the correct OS.
 
 To handle A/B updates, Trident will assume two bootloader paths, an `A` and a
-`B` path.  For example, for a simple `trident install`, the target OS
-bootloader paths will be:
+`B` path.
+
+For example, for a simple `trident install`, the target OS bootloader paths will
+be:
 
 * `/boot/efi/EFI/AZLA` - for the initial install, or active OS
 * `/boot/efi/EFI/AZLB` - will be used for a future update
