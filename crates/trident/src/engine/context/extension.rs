@@ -63,6 +63,7 @@ impl EngineContext {
     pub fn populate_extensions(&mut self) -> Result<(), TridentError> {
         // No need to populate extensions object if the extensions in the Host
         // Configuration have not changed.
+        // TODO(15251): This is not necessarily true for A/B Update.
         if self.spec.os.extensions == self.spec_old.os.extensions {
             debug!(
                 "Skipping running 'populate_extensions' step since there are \
