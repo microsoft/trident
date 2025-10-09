@@ -80,23 +80,14 @@ impl EngineContext {
             _ => Duration::from_secs(10), // Default timeout
         };
 
-        populate_extensions_inner(
-            self, // &self.spec.os.extensions,
-            // &mut self.extensions,
-            timeout, true,
-        )
-        .structured(InternalError::PopulateExtensionImages(
-            "Failed with new extension images.".to_string(),
-        ))?;
-        populate_extensions_inner(
-            self,
-            // &self.spec_old.os.extensions,
-            // &mut self.extensions_old,
-            timeout, false,
-        )
-        .structured(InternalError::PopulateExtensionImages(
-            "Failed with existing extension images.".to_string(),
-        ))?;
+        populate_extensions_inner(self, timeout, true).structured(
+            InternalError::PopulateExtensionImages("Failed with new extension images.".to_string()),
+        )?;
+        populate_extensions_inner(self, timeout, false).structured(
+            InternalError::PopulateExtensionImages(
+                "Failed with existing extension images.".to_string(),
+            ),
+        )?;
         Ok(())
     }
 
@@ -123,8 +114,6 @@ impl EngineContext {
 
 fn populate_extensions_inner(
     ctx: &mut EngineContext,
-    // hc_extensions: &Vec<Extension>,
-    // ctx_extensions: &mut Vec<ExtensionData>,
     timeout: Duration,
     new: bool,
 ) -> Result<(), Error> {
