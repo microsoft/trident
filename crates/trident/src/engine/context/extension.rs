@@ -307,11 +307,7 @@ fn read_extension_release(
         sha384: ext.sha384.clone(),
         path,
         temp_path: Some(curr_path.to_path_buf()),
-        ext_type: if ext_type == ExtensionType::Sysext {
-            ExtensionType::Sysext
-        } else {
-            ExtensionType::Confext
-        },
+        ext_type,
     })
 }
 
