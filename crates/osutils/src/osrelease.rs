@@ -28,6 +28,8 @@ pub struct OsRelease {
     pub version: Option<String>,
     pub version_id: Option<String>,
     pub pretty_name: Option<String>,
+    pub sysext_id: Option<String>,
+    pub confext_id: Option<String>,
 }
 
 impl OsRelease {
@@ -46,6 +48,13 @@ impl OsRelease {
             &std::fs::read_to_string(&osrelease_path)
                 .with_context(|| format!("Failed to read '{}'", osrelease_path.display()))?,
         ))
+    }
+
+    /// Reads the contents of the provided file and parses it into an OsRelease struct.
+    pub fn read_file(file: impl AsRef<Path>) -> Result<Self, Error> {
+        Ok(Self::parse(&std::fs::read_to_string(&file).with_context(
+            || format!("Failed to read '{}'", file.as_ref().display()),
+        )?))
     }
 
     /// Returns the distribution of the host.
@@ -100,6 +109,8 @@ impl OsRelease {
                 "VERSION" => os_release.version = value(),
                 "VERSION_ID" => os_release.version_id = value(),
                 "PRETTY_NAME" => os_release.pretty_name = value(),
+                "SYSEXT_ID" => os_release.sysext_id = value(),
+                "CONFEXT_ID" => os_release.confext_id = value(),
                 _ => {}
             }
         }
