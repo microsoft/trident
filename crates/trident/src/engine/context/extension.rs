@@ -9,9 +9,9 @@ use std::{
 use anyhow::{bail, ensure, Context, Error};
 use etc_os_release::OsRelease;
 use log::{debug, trace};
-use osutils::dependencies::Dependency;
 use tempfile::NamedTempFile;
 
+use osutils::dependencies::Dependency;
 use trident_api::{
     config::Extension,
     constants::internal_params::COSI_HTTP_CONNECTION_TIMEOUT_SECONDS,
@@ -478,5 +478,238 @@ mod tests {
             err.to_string(),
             "Extension release filename must begin with 'extension-release.'"
         );
+    }
+}
+
+#[cfg(feature = "functional-test")]
+#[cfg_attr(not(test), allow(unused_imports, dead_code))]
+mod functional_test {
+    use super::*;
+
+    use sha2::{Digest, Sha384};
+    use tempfile::TempDir;
+    use url::Url;
+
+    use pytest_gen::functional_test;
+
+    /// Helper to create a minimal Discoverable Disk Image extension for testing
+    fn create_test_extension_image(
+        image_path: &Path,
+        ext_name: &str,
+        ext_type: &ExtensionType,
+        ext_release_content: &str,
+    ) -> Sha384Hash {
+        let (top_level_dir, release_subdir) = match ext_type {
+            ExtensionType::Sysext => ("usr", SYSEXT_EXTENSION_RELEASE_DIRECTORY),
+            ExtensionType::Confext => ("etc", CONFEXT_EXTENSION_RELEASE_DIRECTORY),
+        };
+
+        // Create a temporary directory for the extension content
+        let content_dir = TempDir::new().unwrap();
+        let release_dir = content_dir.path().join(release_subdir);
+        fs::create_dir_all(&release_dir).unwrap();
+
+        let release_file_path = release_dir.join(format!("extension-release.{ext_name}"));
+        fs::write(&release_file_path, ext_release_content).unwrap();
+
+        // Format it as ext4
+        Dependency::Mkfs
+            .cmd()
+            .args([
+                "-t",
+                "ext4",
+                "-q",
+                "-L",
+                ext_name,
+                image_path.to_str().unwrap(),
+                "5M",
+            ])
+            .run_and_check()
+            .unwrap();
+
+        // Mount temporarily to copy content
+        let mount_point = TempDir::new().unwrap();
+        Dependency::Mount
+            .cmd()
+            .args([
+                "-o",
+                "loop",
+                image_path.to_str().unwrap(),
+                mount_point.path().to_str().unwrap(),
+            ])
+            .run_and_check()
+            .unwrap();
+
+        // Copy the extension-release file structure
+        Dependency::Cp
+            .cmd()
+            .args([
+                "-r",
+                content_dir.path().join(top_level_dir).to_str().unwrap(),
+                mount_point.path().to_str().unwrap(),
+            ])
+            .run_and_check()
+            .unwrap();
+
+        // Unmount
+        Dependency::Umount
+            .cmd()
+            .arg(mount_point.path().to_str().unwrap())
+            .run_and_check()
+            .unwrap();
+
+        // Compute SHA384 hash
+        let image_contents = fs::read(image_path).unwrap();
+        Sha384Hash::from(format!("{:x}", Sha384::digest(&image_contents)))
+    }
+
+    fn create_test_extensions(
+        input: &[(Option<PathBuf>, &str, ExtensionType, &str)],
+    ) -> Vec<(Url, Sha384Hash)> {
+        let mut output = Vec::new();
+        for (file_path, ext_name, ext_type, ext_release_content) in input {
+            let path = match file_path {
+                Some(path) => path.clone(),
+                None => NamedTempFile::new()
+                    .unwrap()
+                    .into_temp_path()
+                    .keep()
+                    .unwrap(),
+            };
+            let test_ext_hash =
+                create_test_extension_image(&path, ext_name, ext_type, ext_release_content);
+            output.push((Url::from_file_path(path).unwrap(), test_ext_hash));
+        }
+        output
+    }
+
+    #[functional_test]
+    fn test_populate_extensions_inner_new_success() {
+        // Create test extension images
+        let test_inputs = [
+            (
+                None,
+                "my_sysext",
+                ExtensionType::Sysext,
+                "ID=_any\nSYSEXT_ID=my_sysext",
+            ),
+            (
+                None,
+                "my_confext",
+                ExtensionType::Confext,
+                "ID=_any\nCONFEXT_ID=my_confext",
+            ),
+        ];
+
+        let test_extensions = create_test_extensions(&test_inputs);
+
+        // Build host configuration extensions (no path for new extensions)
+        let hc_extensions: Vec<Extension> = test_extensions
+            .iter()
+            .map(|(url, hash)| Extension {
+                url: url.clone(),
+                sha384: hash.clone(),
+                path: None,
+            })
+            .collect();
+
+        // Process extensions
+        let mut ctx_extensions = Vec::new();
+        populate_extensions_inner(
+            &hc_extensions,
+            &mut ctx_extensions,
+            Duration::from_secs(10),
+            true,
+        )
+        .unwrap();
+
+        // Verify results
+        assert_eq!(hc_extensions.len(), ctx_extensions.len());
+        for (((_, name, expected_type, _), hc_ext), ctx_ext) in
+            test_inputs.iter().zip(&hc_extensions).zip(&ctx_extensions)
+        {
+            assert_eq!(ctx_ext.ext_type, *expected_type);
+            assert_eq!(ctx_ext.id, *name);
+            assert_eq!(ctx_ext.name, *name);
+            assert_eq!(ctx_ext.sha384, hc_ext.sha384);
+
+            // Verify default path was set correctly
+            let expected_dir = match expected_type {
+                ExtensionType::Sysext => DEFAULT_SYSEXT_DIRECTORY,
+                ExtensionType::Confext => DEFAULT_CONFEXT_DIRECTORY,
+            };
+            assert_eq!(
+                ctx_ext.path,
+                PathBuf::from(expected_dir).join(format!("{}.raw", ctx_ext.name))
+            );
+        }
+    }
+
+    #[functional_test]
+    fn test_populate_extensions_inner_existing_success() {
+        // Create temporary test locations; note that 'populate' function does
+        // not check the validity of the location as this happens in static and
+        // dynamic validation.
+        let temp_file1 = NamedTempFile::new()
+            .unwrap()
+            .into_temp_path()
+            .keep()
+            .unwrap();
+        let temp_file2 = NamedTempFile::new()
+            .unwrap()
+            .into_temp_path()
+            .keep()
+            .unwrap();
+
+        // Create test extension images
+        let test_inputs = [
+            (
+                Some(temp_file1),
+                "my_sysext",
+                ExtensionType::Sysext,
+                "ID=_any\nSYSEXT_ID=my_sysext",
+            ),
+            (
+                Some(temp_file2),
+                "my_confext",
+                ExtensionType::Confext,
+                "ID=_any\nCONFEXT_ID=my_confext",
+            ),
+        ];
+
+        let test_extensions = create_test_extensions(&test_inputs);
+
+        // For existing extensions, provide explicit paths
+        let hc_extensions: Vec<Extension> = test_extensions
+            .iter()
+            .enumerate()
+            .map(|(i, (url, hash))| Extension {
+                url: url.clone(),
+                sha384: hash.clone(),
+                path: test_inputs[i].0.clone(),
+            })
+            .collect();
+
+        // Process extensions with new=false
+        let mut ctx_extensions = Vec::new();
+        populate_extensions_inner(
+            &hc_extensions,
+            &mut ctx_extensions,
+            Duration::from_secs(10),
+            false,
+        )
+        .unwrap();
+
+        // Verify results
+        assert_eq!(test_extensions.len(), ctx_extensions.len());
+        for (((_, name, expected_type, _), hc_ext), ctx_ext) in
+            test_inputs.iter().zip(&hc_extensions).zip(&ctx_extensions)
+        {
+            assert_eq!(ctx_ext.ext_type, *expected_type);
+            assert_eq!(ctx_ext.id, *name);
+            assert_eq!(ctx_ext.name, *name);
+            assert_eq!(&ctx_ext.sha384, &hc_ext.sha384);
+            assert_eq!(&ctx_ext.path, hc_ext.path.as_ref().unwrap());
+        }
     }
 }
