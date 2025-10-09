@@ -2,16 +2,14 @@ use std::{
     fmt::Display,
     fs, io,
     path::{Path, PathBuf},
-    str::FromStr,
     time::Duration,
 };
 
 use anyhow::{bail, ensure, Context, Error};
-use etc_os_release::OsRelease;
-use log::{debug, trace};
+use log::debug;
 use tempfile::NamedTempFile;
 
-use osutils::dependencies::Dependency;
+use osutils::{dependencies::Dependency, osrelease::OsRelease};
 use trident_api::{
     config::Extension,
     constants::internal_params::COSI_HTTP_CONNECTION_TIMEOUT_SECONDS,
@@ -35,11 +33,6 @@ const CONFEXT_EXTENSION_RELEASE_DIRECTORY: &str = "etc/extension-release.d/";
 const DEFAULT_SYSEXT_DIRECTORY: &str = "/var/lib/extensions/";
 /// Primary location for storing confexts on the target OS
 const DEFAULT_CONFEXT_DIRECTORY: &str = "/var/lib/confexts/";
-
-/// Prefix for sysext-specific fields in the extension-release file
-const SYSEXT_PREFIX: &str = "SYSEXT_";
-/// Prefix for confext-specific fields in the extension-release file
-const CONFEXT_PREFIX: &str = "CONFEXT_";
 
 #[derive(Clone, Debug)]
 pub struct ExtensionData {
@@ -247,7 +240,7 @@ fn read_extension_release(
         ext.url
     );
 
-    let mut prefix = SYSEXT_PREFIX;
+    let mut ext_type = ExtensionType::Sysext;
     let sysext_release_dir = mount_point.join(SYSEXT_EXTENSION_RELEASE_DIRECTORY);
     let confext_release_dir = mount_point.join(CONFEXT_EXTENSION_RELEASE_DIRECTORY);
 
@@ -256,7 +249,7 @@ fn read_extension_release(
         Ok(dir) => dir,
         Err(_) => match fs::read_dir(&confext_release_dir) {
             Ok(dir) => {
-                prefix = CONFEXT_PREFIX;
+                ext_type = ExtensionType::Confext;
                 dir
             }
             Err(_) => {
@@ -277,23 +270,20 @@ fn read_extension_release(
     );
 
     // Read the extension release file
-    let path = &dir[0];
-    let extension_release_file_content = fs::read_to_string(path).with_context(|| {
-        format!(
-            "Failed to read extension-release file content from file at '{}'",
-            &path.display()
-        )
-    })?;
-    trace!("Found extension release file content:\n{extension_release_file_content}");
-    let extension_release_obj = OsRelease::from_str(&extension_release_file_content)
-        .with_context(|| "Failed to convert extension release file content to OsRelease object")?;
+    let extension_release_file_path = &dir[0];
+    let extension_release = OsRelease::read_file(extension_release_file_path)
+        .context("Failed to read extension release file.")?;
 
     // Retrieve SYSEXT_ID or CONFEXT_ID field
-    let extension_id = extension_release_obj
-        .get_value(&format!("{prefix}ID"))
-        .map(|s| s.to_string())
-        .ok_or_else(|| Error::msg(format!("Could not find {prefix}ID in extension release")))?;
-    let name = path
+    let extension_id = match ext_type {
+        ExtensionType::Sysext => extension_release
+            .sysext_id
+            .context("Could not find SYSEXT_ID in extension release")?,
+        ExtensionType::Confext => extension_release
+            .confext_id
+            .context("Could not find CONFEXT_ID in extension release")?,
+    };
+    let name = extension_release_file_path
         .file_name()
         .and_then(|s| s.to_str())
         .context("Failed to get file name as a valid UTF-8 string")?
@@ -303,7 +293,7 @@ fn read_extension_release(
     let path = match &ext.path {
         Some(path) => path.clone(),
         None => {
-            if prefix == SYSEXT_PREFIX {
+            if ext_type == ExtensionType::Sysext {
                 PathBuf::from(DEFAULT_SYSEXT_DIRECTORY).join(format!("{name}.raw"))
             } else {
                 PathBuf::from(DEFAULT_CONFEXT_DIRECTORY).join(format!("{name}.raw"))
@@ -317,7 +307,7 @@ fn read_extension_release(
         sha384: ext.sha384.clone(),
         path,
         temp_path: Some(curr_path.to_path_buf()),
-        ext_type: if prefix == SYSEXT_PREFIX {
+        ext_type: if ext_type == ExtensionType::Sysext {
             ExtensionType::Sysext
         } else {
             ExtensionType::Confext
