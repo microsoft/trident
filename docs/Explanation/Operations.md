@@ -15,7 +15,9 @@ the `stage` operation is in progress.
 
 ## Finalize
 
-Finalizing an update configures the next boot and triggers a reboot.
+Finalizing an update configures the next boot and triggers a reboot. Unlike the
+`stage` operation, `finalize` will reboot the machine, which is a
+workload-disruptive action.
 
 * For `trident install`, this means that the UEFI BootOrder variable is
   configured to boot the newly installed OS on all subsequent reboots.
