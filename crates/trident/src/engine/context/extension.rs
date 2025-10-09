@@ -244,7 +244,12 @@ fn read_extension_release(
                 prefix = CONFEXT_PREFIX;
                 dir
             }
-            Err(_) => return Err(Error::msg("Failed to find extension release directory.")),
+            Err(_) => {
+                return Err(Error::msg(format!(
+                    "Failed to find extension release directory. Expected either \
+                    '{SYSEXT_EXTENSION_RELEASE_DIRECTORY}' or '{CONFEXT_EXTENSION_RELEASE_DIRECTORY}'",
+                )));
+            },
         },
     }
     .map(|res| res.map(|e| e.path()))
@@ -426,7 +431,7 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
-            "Failed to find extension release directory."
+            format!("Failed to find extension release directory. Expected either '{SYSEXT_EXTENSION_RELEASE_DIRECTORY}' or '{CONFEXT_EXTENSION_RELEASE_DIRECTORY}'")
         );
     }
 
