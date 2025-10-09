@@ -162,12 +162,20 @@ fn populate_extensions_inner(
         } else {
             // For extension images from the old Host Configuration, use the
             // existing file.
-            ext.path.clone().with_context(|| {
+            let path = ext.path.clone().with_context(|| {
                 format!(
                     "Failed to retrieve current path of extension image '{}'",
                     ext.url
                 )
-            })?
+            })?;
+            // Ensure that file exists
+            ensure!(
+                path.exists(),
+                "Expected to find extension image from URL '{}' at path '{}', but path does not exist",
+                ext.url,
+                path.display()
+            );
+            path
         };
 
         // Attach a device and mount the extension
@@ -479,6 +487,26 @@ mod tests {
             "Extension release filename must begin with 'extension-release.'"
         );
     }
+
+    #[test]
+    fn test_populate_extensions_inner_empty() {
+        // Test with no extensions
+        let hc_extensions: Vec<Extension> = vec![];
+        let mut ctx_extensions = Vec::new();
+
+        populate_extensions_inner(
+            &hc_extensions,
+            &mut ctx_extensions,
+            Duration::from_secs(10),
+            true,
+        )
+        .unwrap();
+
+        assert!(
+            ctx_extensions.is_empty(),
+            "Engine Context extensions should be empty when no extensions are provided"
+        );
+    }
 }
 
 #[cfg(feature = "functional-test")]
@@ -711,5 +739,81 @@ mod functional_test {
             assert_eq!(&ctx_ext.sha384, &hc_ext.sha384);
             assert_eq!(&ctx_ext.path, hc_ext.path.as_ref().unwrap());
         }
+    }
+
+    #[functional_test]
+    fn test_populate_extensions_inner_sha384_mismatch() {
+        // Create an extension image
+        let temp_file = NamedTempFile::new()
+            .unwrap()
+            .into_temp_path()
+            .keep()
+            .unwrap();
+        let actual_hash = create_test_extension_image(
+            &temp_file,
+            "test_ext",
+            &ExtensionType::Sysext,
+            "ID=_any\nSYSEXT_ID=test_ext",
+        );
+
+        // Create Extension with incorrect hash
+        let wrong_hash = Sha384Hash::from("a".repeat(96));
+        let extension_url = Url::from_file_path(&temp_file).unwrap();
+        let hc_extension = Extension {
+            url: extension_url.clone(),
+            sha384: wrong_hash.clone(),
+            path: None,
+        };
+
+        // Attempt to process - should fail due to hash mismatch
+        let mut ctx_extensions = Vec::new();
+        let error = populate_extensions_inner(
+            &vec![hc_extension],
+            &mut ctx_extensions,
+            Duration::from_secs(10),
+            true,
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert_eq!(error, format!("SHA384 mismatch for extension image at '{extension_url}': expected {wrong_hash}, got {actual_hash}"));
+    }
+
+    // Location of existing ext doesn't exist
+    #[functional_test]
+    fn test_populate_extensions_inner_nonexistent_path() {
+        let temp_file = NamedTempFile::new()
+            .unwrap()
+            .into_temp_path()
+            .keep()
+            .unwrap();
+        let hash = create_test_extension_image(
+            &temp_file,
+            "test_ext",
+            &ExtensionType::Sysext,
+            "ID=_any\nSYSEXT_ID=test_ext",
+        );
+
+        // Create Extension
+        let ext_url = Url::from_file_path(&temp_file).unwrap();
+        let ext_path = PathBuf::from("/etc/extensions/test_ext.raw"); // No file exists at this path
+        let hc_extension = Extension {
+            url: ext_url.clone(),
+            sha384: hash,
+            path: Some(ext_path.clone()),
+        };
+
+        // Attempt to process as an existing Extension
+        let mut ctx_extensions = Vec::new();
+        let error = populate_extensions_inner(
+            &vec![hc_extension],
+            &mut ctx_extensions,
+            Duration::from_secs(10),
+            false,
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert_eq!(error, format!("Expected to find extension image from URL '{ext_url}' at path '{}', but path does not exist", ext_path.display()));
     }
 }
