@@ -122,7 +122,7 @@ pub(super) fn create_encrypted_devices(
                 .message("Failed to clear TPM 2.0 device")?;
         }
 
-        // Sseal against a "bootstrapping" pcrlock policy that exclusively contains PCR 0.
+        // Seal against a "bootstrapping" pcrlock policy that exclusively contains PCR 0.
         debug!("Sealing against a pcrlock policy of PCR 0");
 
         // Remove any pre-existing policy
