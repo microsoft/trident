@@ -124,6 +124,13 @@ impl EngineContext {
     }
 }
 
+/// Populates `ctx.extensions` or `ctx.extensions_old`. Takes in 3 arguments:
+/// - ctx: EngineContext.
+/// - timeout: Time out on HTTP requests.
+/// - new: Boolean indicating whether this function should populate
+///   `ctx.extensions` or `ctx.extensions_old`. When populating
+///   `ctx.extensions_old`, expect all extensions in the old Host Configuration
+///   to be present on the servicing OS so we will not download any new images.
 fn populate_extensions_inner(
     ctx: &mut EngineContext,
     timeout: Duration,
