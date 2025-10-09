@@ -28,6 +28,8 @@ pub struct OsRelease {
     pub version: Option<String>,
     pub version_id: Option<String>,
     pub pretty_name: Option<String>,
+    pub sysext_id: Option<String>,
+    pub confext_id: Option<String>,
 }
 
 impl OsRelease {
@@ -46,6 +48,13 @@ impl OsRelease {
             &std::fs::read_to_string(&osrelease_path)
                 .with_context(|| format!("Failed to read '{}'", osrelease_path.display()))?,
         ))
+    }
+
+    /// Reads the contents of the provided file and parses it into an OsRelease struct.
+    pub fn read_file(file: impl AsRef<Path>) -> Result<Self, Error> {
+        Ok(Self::parse(&std::fs::read_to_string(&file).with_context(
+            || format!("Failed to read '{}'", file.as_ref().display()),
+        )?))
     }
 
     /// Returns the distribution of the host.
@@ -67,6 +76,18 @@ impl OsRelease {
                     .unwrap_or_default(),
             ),
             _ => Distro::Other,
+        }
+    }
+
+    /// Returns the SYSEXT_ID or CONFEXT_ID of an extension release file, if the field exists.
+    pub fn get_ext_id(&self) -> Result<Option<String>, Error> {
+        match (&self.confext_id, &self.sysext_id) {
+            (None, None) => Ok(None),
+            (None, Some(_)) => Ok(self.sysext_id.clone()),
+            (Some(_), None) => Ok(self.confext_id.clone()),
+            (Some(_), Some(_)) => Err(Error::msg(
+                "Both SYSEXT_ID and CONFEXT_ID must not be defined.",
+            )),
         }
     }
 
@@ -100,6 +121,8 @@ impl OsRelease {
                 "VERSION" => os_release.version = value(),
                 "VERSION_ID" => os_release.version_id = value(),
                 "PRETTY_NAME" => os_release.pretty_name = value(),
+                "SYSEXT_ID" => os_release.sysext_id = value(),
+                "CONFEXT_ID" => os_release.confext_id = value(),
                 _ => {}
             }
         }
