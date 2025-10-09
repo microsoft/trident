@@ -128,7 +128,7 @@ pub enum InternalError {
     UnexpectedServicingType { servicing_type: ServicingType },
 
     #[error(
-        "Failed to update the location of extension ID '{id}' in the Host Configuration. \
+        "Failed to update the path of extension ID '{id}' in the Host Configuration. \
     Could not find hash '{hash}' in the Host Configuration."
     )]
     UpdateExtensionPath { id: String, hash: String },
