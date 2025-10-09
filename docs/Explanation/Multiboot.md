@@ -5,7 +5,7 @@ Trident supports installing multiple operating systems on the same device. This 
 To enable this, use the [`--multiboot`](../Reference/Trident-CLI.md#--multiboot-multiboot)
 option for `trident install`.
 
-Keep in mind that installing with multiboot carries some requirements that are enforced by the [Trident safety check](../Explanation/Clean-Install-Safety-Checks.md).
+Keep in mind that installing with multiboot carries some requirements that are enforced by the [Trident safety check](./Clean-Install-Safety-Check.md).
 
 When installing with multiboot, Trident will update the ESP and bootloader to include an entry for the new operating system. The new operating system's EFI boot files will be put in /boot/efi/EFI/AZLXXX[A|B] where XXX is the smallest available number (i.e. /boot/efi/EFI/AZL3A and /boot/efi/EFI/AZL3B if AZL1 and AZL2 are already taken).
 
