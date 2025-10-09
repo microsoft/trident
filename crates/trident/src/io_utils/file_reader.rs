@@ -120,10 +120,10 @@ impl FileReader {
     pub(crate) fn complete_reader(&self) -> IoResult<Box<dyn Read>> {
         Ok(match self {
             Self::File(file_path) => {
-                // Open the file and seek to the section
+                // Open the file
                 let file = File::open(file_path)?;
                 let size = fs::metadata(file_path)?.len();
-                // Return a reader that is limited to the section size
+                // Return a reader to the entire file
                 Box::new(file.take(size))
             }
 
