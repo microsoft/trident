@@ -16,8 +16,8 @@ loader, configuring the network, and other tasks that require running commands
 in the context of the target OS.
 
 Trident uses `chroot` to change the root directory of the current
-process to the `newroot`. This is done using the `nix::unistd::chroot` function
-from the `nix` crate.
+process to the `newroot`. This means that any commands run after the
+`chroot` command will be executed in the context of the target OS.
 
 When Trident is running in the `newroot`, it will have access to the file
 systems of the target OS, but it will not have access to the file systems of the
