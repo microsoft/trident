@@ -123,7 +123,7 @@ pub(super) fn create_encrypted_devices(
         }
 
         // Seal against a "bootstrapping" pcrlock policy that exclusively contains PCR 0.
-        debug!("Sealing against a pcrlock policy of PCR 0");
+        debug!("Sealing against a bootstrapping pcrlock policy of PCR 0");
 
         // Remove any pre-existing policy
         pcrlock::remove_policy().structured(ServicingError::RemovePcrlockPolicy)?;
