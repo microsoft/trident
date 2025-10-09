@@ -43,7 +43,7 @@ change the runtime kernel settings. And even commands that only read runtime
 kernel settings are probably doing the wrong thing, since the servicing OS's
 kernel is likely entirely unrelated to the customized OS’s kernel.
 
-Instead, you should you make use of config files that set the target OS's
+Instead, you should make use of config files that set the target OS's
 runtime kernel settings during OS boot.
 :::
 
