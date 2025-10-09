@@ -33,6 +33,20 @@ This is particularly relevant for any
 scripts defined in the Host Configuration. These scripts are run from within
 the chroot of the target OS, with the `$TARGET_ROOT` variable set to `/`.
 
+:::warning
+The `postConfigure` scripts are run within a chroot environment, which while
+it is kind of similar to containers, is very explicitly not a sandbox
+environment. So, such scripts have the ability to modify the servicing OS.
+
+In particular, you should be very wary of commands that have the ability to
+change the runtime kernel settings. And even commands that only read runtime
+kernel settings are probably doing the wrong thing, since the servicing OS's
+kernel is likely entirely unrelated to the customized OS’s kernel.
+
+Instead, you should you make use of config files that set the target OS's
+runtime kernel settings during OS boot.
+:::
+
 Once Trident has completed its tasks in the context of the target OS, it will
 exit the chroot and unmount the `newroot` and any bind mounts that were created.
 This cleanup is done using the `umount` command.
