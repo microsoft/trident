@@ -5,6 +5,7 @@ use enumflags2::BitFlags;
 use log::{debug, info, trace, warn};
 
 use osutils::{block_devices, efivar, lsblk, pcrlock, veritysetup, virt};
+use sysdefs::tpm2::Pcr;
 use trident_api::{
     constants::internal_params::VIRTDEPLOY_BOOT_ORDER_WORKAROUND,
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
@@ -84,26 +85,36 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
         // selected by the user for the current boot only.
         if let Some(ref encryption) = ctx.spec.storage.encryption {
             if ctx.is_uki()? {
-                debug!("Regenerating pcrlock policy for current boot");
-
                 // Get the PCRs from Host Configuration
                 let pcrs = encryption
                     .pcrs
                     .iter()
                     .fold(BitFlags::empty(), |acc, &pcr| acc | BitFlags::from(pcr));
 
+                debug!(
+                    "Regenerating pcrlock policy for current boot with following PCRs: {:?}",
+                    pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
+                );
+
                 // Get UKI and bootloader binaries for .pcrlock file generation
                 let (uki_binaries, bootloader_binaries) =
                     encryption::get_binary_paths_pcrlock(&ctx, pcrs, None)
                         .structured(ServicingError::GetBinaryPathsForPcrlockEncryption)?;
 
-                // Generate a pcrlock policy
                 pcrlock::generate_pcrlock_policy(pcrs, uki_binaries, bootloader_binaries)?;
             } else {
-                debug!(
-                    "Target OS image is a grub image, \
-                    so skipping re-generating pcrlock policy for current boot"
-                );
+                // If this is our first boot into a target OS after clean install, need to
+                // re-generate the pcrlock policy to contain PCR 7.
+                if datastore.host_status().servicing_state == ServicingState::CleanInstallFinalized
+                {
+                    let pcrs = BitFlags::from(Pcr::Pcr7);
+
+                    debug!(
+                        "Regenerating pcrlock policy for current boot with following PCRs: {:?}",
+                        pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
+                    );
+                    pcrlock::generate_pcrlock_policy(pcrs, vec![], vec![])?;
+                }
             }
         }
     } else if datastore.host_status().servicing_state == ServicingState::CleanInstallStaged

@@ -141,8 +141,8 @@ pub(super) fn validate_host_config(ctx: &EngineContext) -> Result<(), TridentErr
 /// 1. TODO: UKI MOS + UKI target OS -> re-generate pcrlock policy to include PCRs 4,7,11 as
 ///    selected by the user; not implemented for now. Related ADO task:
 ///    https://dev.azure.com/mariner-org/polar/_workitems/edit/13059/.
-/// 2. Grub MOS + UKI target OS -> N/A, i.e. keep previous pcrlock policy that includes PCR 0 only,
-/// 3. Grub MOS + grub target OS -> N/A, i.e. still sealed to the value of PCR 7.
+/// 2. Grub MOS + UKI target OS -> N/A, i.e. keep boot-strapping pcrlock policy of PCR 0,
+/// 3. Grub MOS + grub target OS -> N/A, i.e. keep boot-strapping pcrlock policy of PCR 0.
 ///
 /// On A/B update:
 /// 1. UKI target OS -> re-generate pcrlock policy to include PCRs 4,7,11 as selected by the user,
@@ -164,9 +164,6 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                         .fold(BitFlags::empty(), |acc, &pcr| acc | BitFlags::from(pcr));
                     Some(bitflags)
                 } else {
-                    debug!(
-                        "Target OS image is a grub image, so skipping re-generating pcrlock policy"
-                    );
                     None
                 }
             }
