@@ -29,8 +29,7 @@ context of the target OS. These directories include `/proc`, `/sys`, `/dev`,
 and `/run`.
 
 This is particularly relevant for any
-[`postProvision`](./Script-Hooks.md#post-provision-scripts)
-or [`postConfigure`](./Script-Hooks.md#post-configure-scripts)
+[`postConfigure`](./Script-Hooks.md#post-configure-scripts)
 scripts defined in the Host Configuration. These scripts are run from within
 the chroot of the target OS, with the `$TARGET_ROOT` variable set to '/'.
 
