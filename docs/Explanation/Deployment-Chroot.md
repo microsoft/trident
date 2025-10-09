@@ -28,10 +28,6 @@ Trident will also mount certain directories from the servicing OS into the
 context of the target OS. These directories include `/proc`, `/sys`, `/dev`,
 and `/run`.
 
-Trident will also copy the `/etc/resolv.conf` file from the servicing OS to the
-`newroot` to ensure that DNS resolution works correctly in the context of the
-target OS.
-
 This is particularly relevant for any
 [`postProvision`](./Script-Hooks.md#post-provision-scripts)
 or [`postConfigure`](./Script-Hooks.md#post-configure-scripts)
