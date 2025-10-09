@@ -226,7 +226,7 @@ fn populate_extensions_inner(
 }
 
 /// Helper function to identify if the extension exists in the old Host
-/// Configuration, in which case we can reuse its location.
+/// Configuration, in which case we can reuse its path.
 fn check_for_path_in_old_host_configuration(
     ext: &Extension,
     old_hc_extensions: &[Extension],
