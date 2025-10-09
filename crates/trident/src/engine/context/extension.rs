@@ -215,6 +215,7 @@ fn check_for_path_in_old_host_configuration(
 ) -> Option<PathBuf> {
     old_hc_extensions
         .iter()
+        // Extension must match on both URL and Sha384 hash
         .find(|old_ext| ext.url == old_ext.url && ext.sha384 == old_ext.sha384)?
         .path
         .clone()
