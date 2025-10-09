@@ -23,10 +23,10 @@ When Trident is running in the `newroot`, it will have access to the file
 systems of the target OS, but it will not have access to the file systems of the
 servicing OS.
 
-Trident will also bind mount certain directories from the servicing OS into the
+Trident will also mount certain directories from the servicing OS into the
 `newroot` to ensure that necessary files and directories are available in the
 context of the target OS. These directories include `/proc`, `/sys`, `/dev`,
-and `/run`. This is done using the `mount` command with the `--bind` option.
+and `/run`.
 
 Trident will also copy the `/etc/resolv.conf` file from the servicing OS to the
 `newroot` to ensure that DNS resolution works correctly in the context of the
