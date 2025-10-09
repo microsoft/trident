@@ -49,4 +49,3 @@ runtime kernel settings during OS boot.
 
 Once Trident has completed its tasks in the context of the target OS, it will
 exit the chroot and unmount the `newroot` and any bind mounts that were created.
-This cleanup is done using the `umount` command.
