@@ -100,8 +100,11 @@ impl EngineContext {
         Ok(())
     }
 
-    /// Update the Host Configuration with the final path of the extension
-    /// images.
+    /// Update the Host Configuration with the path of the extension images,
+    /// after they have been copied over. This function is called after the
+    /// extension subsystem finishes its operations.
+    ///
+    /// TODO(15684): Implement extension subsystem.
     pub fn finalize_extension_paths(&mut self) -> Result<(), TridentError> {
         for ext_data in &self.extensions {
             // Find the matching extension in the Host Configuration
