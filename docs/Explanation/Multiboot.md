@@ -1,22 +1,27 @@
 # Multiboot
 
-<!-- TODO(8068): Write multiboot docs.-->
-<!-- tl;dr for the first PR
-Glossary:
-Install: a full deployment of an Azure Linux made with trident. 
-  We do not really care about other OSes or distros.
-  The install encompasses the entire OS, including the bootloader,
-  the kernel, the initramfs, the root filesystem, associated partitions,
-  and any other partitions that are part of the install.
-  This means that an install contains both A and B statuses for 
-  deployments that use A/B updates.
+Trident supports installing multiple operating systems on the same device. This
+is accomplished by installing the new operating system to a separate set of
+partitions from the existing operating system(s). For the existing operating
+system(s), they must be marked as
+[adopted](../How-To-Guides/Adopt-Existing-Partitions.md) so that Trident does
+not attempt to modify them during install or servicing.
 
-Multiboot: The capability of having multiple installs on the same device, 
-  even on the same disk.
+To enable this, use the
+[`--multiboot`](../Reference/Trident-CLI.md#--multiboot-multiboot)
+option for `trident install`.
 
-Install Index: A number that identifies a specific install on a machine.
+Keep in mind that installing with multiboot carries some requirements that are
+enforced by the [Trident safety check](./Clean-Install-Safety-Check.md).
 
-ESP Directory Name: A string that identifies the combination of a specific 
-  install and a specific A/B volume on that install.
-  It is used to uniquely name entries in the ESP filesystem.
- -->
+When installing with multiboot, there will be only one ESP partition for the
+machine. Trident will update the ESP and bootloader to include an entry for the
+new operating system. The new operating system's EFI boot files will be put in
+`/boot/efi/EFI/AZLXXX[A|B]` where `XXX` is the smallest available number (i.e.
+`/boot/efi/EFI/AZL3A` and `/boot/efi/EFI/AZL3B` if `AZL1` and `AZL2` are
+already taken).
+
+When updating with multiboot, Trident will update the existing operating
+system that is currently active. If you want to update a different operating
+system, you must first boot into that operating system and then run
+`trident update` from there.

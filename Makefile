@@ -349,7 +349,7 @@ functional-test: artifacts/trident-functest.qcow2
 # A target for pipelines that skips all setup and building steps that are not
 # required in the pipeline environment.
 .PHONY: functional-test-core
-functional-test-core: artifacts/osmodifier build-functional-test-cc generate-functional-test-manifest artifacts/trident-functest.qcow2
+functional-test-core: artifacts/osmodifier build-functional-test-cc generate-functional-test-manifest artifacts/trident-functest.qcow2 bin/virtdeploy
 	python3 -u -m \
 		pytest --color=yes \
 		--log-level=INFO \
@@ -408,7 +408,7 @@ go.sum: go.mod
 	go mod tidy
 
 .PHONY: go-tools
-go-tools: bin/netlaunch bin/netlisten bin/miniproxy
+go-tools: bin/netlaunch bin/netlisten bin/miniproxy bin/virtdeploy
 
 bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum tools/pkg/*
 	@mkdir -p bin
@@ -430,6 +430,10 @@ bin/storm-trident: tools/cmd/storm-trident/main.go tools/storm/**/*
 	@mkdir -p bin
 	cd tools && go generate storm/e2e/discover.go
 	cd tools && go build -o ../bin/storm-trident ./cmd/storm-trident/main.go
+
+bin/virtdeploy: tools/cmd/virtdeploy/* tools/go.sum tools/pkg/* tools/pkg/virtdeploy/*
+	@mkdir -p bin
+	cd tools && go build -o ../bin/virtdeploy ./cmd/virtdeploy
 
 # Insatller tools
 

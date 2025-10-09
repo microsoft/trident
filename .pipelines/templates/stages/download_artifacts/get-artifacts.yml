@@ -67,6 +67,7 @@ stages:
                 netlisten
                 mkcosi
                 storm-trident
+                virtdeploy
               targetPath: $(ob_outputDirectory)
 
       # Servicing images:
