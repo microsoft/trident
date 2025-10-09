@@ -552,19 +552,6 @@ mod functional_test {
         ext_type: &ExtensionType,
         ext_release_content: &str,
     ) -> Sha384Hash {
-        let (top_level_dir, release_subdir) = match ext_type {
-            ExtensionType::Sysext => ("usr", SYSEXT_EXTENSION_RELEASE_DIRECTORY),
-            ExtensionType::Confext => ("etc", CONFEXT_EXTENSION_RELEASE_DIRECTORY),
-        };
-
-        // Create a temporary directory for the extension content
-        let content_dir = TempDir::new().unwrap();
-        let release_dir = content_dir.path().join(release_subdir);
-        fs::create_dir_all(&release_dir).unwrap();
-
-        let release_file_path = release_dir.join(format!("extension-release.{ext_name}"));
-        fs::write(&release_file_path, ext_release_content).unwrap();
-
         // Format it as ext4
         Dependency::Mkfs
             .cmd()
@@ -580,7 +567,7 @@ mod functional_test {
             .run_and_check()
             .unwrap();
 
-        // Mount temporarily to copy content
+        // Mount temporarily to write extension-release file
         let mount_point = TempDir::new().unwrap();
         Dependency::Mount
             .cmd()
@@ -594,15 +581,17 @@ mod functional_test {
             .unwrap();
 
         // Copy the extension-release file structure
-        Dependency::Cp
-            .cmd()
-            .args([
-                "-r",
-                content_dir.path().join(top_level_dir).to_str().unwrap(),
-                mount_point.path().to_str().unwrap(),
-            ])
-            .run_and_check()
-            .unwrap();
+        let release_subdir = match ext_type {
+            ExtensionType::Sysext => SYSEXT_EXTENSION_RELEASE_DIRECTORY,
+            ExtensionType::Confext => CONFEXT_EXTENSION_RELEASE_DIRECTORY,
+        };
+
+        // Create a temporary directory for the extension content
+        let release_dir = mount_point.path().join(release_subdir);
+        fs::create_dir_all(&release_dir).unwrap();
+
+        let release_file_path = release_dir.join(format!("extension-release.{ext_name}"));
+        fs::write(&release_file_path, ext_release_content).unwrap();
 
         // Unmount
         Dependency::Umount
