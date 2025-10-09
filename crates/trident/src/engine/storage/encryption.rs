@@ -122,26 +122,14 @@ pub(super) fn create_encrypted_devices(
                 .message("Failed to clear TPM 2.0 device")?;
         }
 
-        // If this is for a grub ROS, seal against the value of PCR 7; if this is for a UKI ROS,
-        // seal against a "bootstrapping" pcrlock policy that exclusively contains PCR 0.
-        let pcr = if ctx.is_uki()? {
-            debug!("Target OS image is a UKI image, so sealing against a pcrlock policy of PCR 0");
+        // Sseal against a "bootstrapping" pcrlock policy that exclusively contains PCR 0.
+        debug!("Sealing against a pcrlock policy of PCR 0");
 
-            // Remove any pre-existing policy
-            pcrlock::remove_policy().structured(ServicingError::RemovePcrlockPolicy)?;
+        // Remove any pre-existing policy
+        pcrlock::remove_policy().structured(ServicingError::RemovePcrlockPolicy)?;
 
-            // Generate a pcrlock policy for the first time
-            pcrlock::generate_pcrlock_policy(BitFlags::from(Pcr::Pcr0), vec![], vec![])?;
-            None
-        } else {
-            debug!("Target OS image is a grub image, so sealing against PCR 7");
-            Some(
-                encryption
-                    .pcrs
-                    .iter()
-                    .fold(BitFlags::empty(), |acc, &pcr| acc | BitFlags::from(pcr)),
-            )
-        };
+        // Generate a pcrlock policy for the first time
+        pcrlock::generate_pcrlock_policy(BitFlags::from(Pcr::Pcr0), vec![], vec![])?;
 
         // Check if `REENCRYPT_ON_CLEAN_INSTALL` internal param is set to true; if so, re-encrypt
         // the device in-place. Otherwise, initialize a new LUKS2 volume.
@@ -188,7 +176,7 @@ pub(super) fn create_encrypted_devices(
                 &ev.device_name,
                 &key_file_path,
                 encryption_type,
-                pcr,
+                None,
             )
             .structured(ServicingError::EncryptBlockDevice {
                 device_path: device_path.to_string_lossy().to_string(),
