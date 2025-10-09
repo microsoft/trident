@@ -1,13 +1,78 @@
 
 # Bootloader Configuration
 
-<!--
-DELETE ME AFTER COMPLETING THE DOCUMENT!
----
-Task: https://dev.azure.com/mariner-org/polar/_workitems/edit/13126
-Title: Bootloader Configuration
-Type: Explanation
-Objective:
+For installation and servicing, Trident creates and modifies the bootloader of
+the target OS. Both GRUB and systemd-boot are supported.
 
-Explanation of the bootloader configuration done by Trident.
--->
+The bootloader type is determined by the COSI file referenced in the Host
+Configuration.
+
+## COSI Configuration
+
+Image Customizer supports creating COSI files that define either GRUB or
+systemd-boot as the bootloader.
+
+By default, Image Customizer creates GRUB based COSI files.
+
+To create a systemd-boot COSI file, create a UKI based COSI file by ensuring
+that these settings are included in the COSI configuration file:
+
+``` yaml
+os:
+  bootLoader:
+    resetType: hard-reset
+  uki:
+    kernels: auto
+previewFeatures:
+- uki
+```
+
+## Bootloader Servicing
+
+Trident will install the bootloader as part of COSI deployment. The target OS
+ESP partition is not an A/B volume pair, so Trident will update the ESP so that
+it boots the active OS.
+
+At a high level, Trident will use the ESP image from the COSI file as the basis
+for the target OS's ESP partition. That said, the layout and some file names
+will differ slightly between the COSI ESP image and the target OS ESP. These
+changes help Trident track multiple installs and A/B updates while ensuring
+that the bootloader starts the correct OS.
+
+To handle A/B updates, Trident will assume two bootloader paths, an `A` and a
+`B` path.  For example, for a simple `trident install`, the target OS
+bootloader paths will be:
+
+* `/boot/efi/EFI/AZLA` - for the initial install, or active OS
+* `/boot/efi/EFI/AZLB` - will be used for a future update
+
+Within the bootloader paths, Trident will copy efi files (like `boot<ARCH>.efi`
+and `grub<ARCH>.efi`) and the `grub.cfg` from the COSI ESP image.
+
+### systemd-boot Bootloader
+
+Trident will copy and rename the UKI efi file from the COSI ESP image, where
+it is versioned with the kernel version (something like
+`/boot/efi/EFI/Linux/vmlinuz-6.6.96.2-2.azl3.efi`), to `/boot/efi/EFI/Linux`
+on the target OS. Trident will rename the UKI efi file to ensure that the
+correct file is loaded at boot, as `systemd-boot` will sort the UKI files by
+their names and load the most recent one.
+
+To ensure that the most recent UKI, representing the correct partition, is
+loaded, Trident follows this naming convention:
+
+`vmlinuz-[SERVICING_INDEX]-azl[ACTIVE_PARTITION][OS_INDEX].efi`
+
+Where:
+
+* `[SERVICING_INDEX]` is incremented for each servicing operation (install or
+  update). The index is started at 100 to avoid conflicts with the standard
+  kernel-version-based naming.
+* `[ACTIVE_PARTITION]` is either `a` or `b` reflecting the active boot
+  partition
+* `[OS_INDEX]` is the 0-based index of the operating system being booted
+
+For example, the first install of a single OS would create
+`/boot/efi/EFI/Linux/vmlinuz-100-azla0.efi`. A subsequent update would create
+`/boot/efi/EFI/Linux/vmlinuz-101-azlb0`. A subsequent update would create
+`/boot/efi/EFI/Linux/vmlinuz-102-azla0`, and so on.
