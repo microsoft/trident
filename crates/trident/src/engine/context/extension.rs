@@ -320,7 +320,7 @@ fn attach_device_and_mount(image_file_path: &Path, mount_path: &Path) -> Result<
         .arg(loop_device)
         .arg(mount_path)
         .run_and_check()
-        .context("Failed to mount")?;
+        .context("Failed to mount extension image")?;
 
     Ok(loop_device.to_string())
 }
@@ -331,7 +331,7 @@ fn detach_device_and_unmount(device_path: String, mount_path: &Path) -> Result<(
         .cmd()
         .arg(mount_path)
         .run_and_check()
-        .context("Failed to unmount")?;
+        .context("Failed to unmount extension image")?;
     Dependency::Losetup
         .cmd()
         .arg("-d")
