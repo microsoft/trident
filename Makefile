@@ -437,15 +437,14 @@ INSTALLER_OUT_DIR := bin
 INSTALLER_DIR := tools/installer
 
 bin/liveinstaller: \
-	$(shell find $(INSTALLER_DIR)/liveinstaller -type f) \
-	$(shell find $(INSTALLER_DIR)/imagegen/attendedinstaller/ -type f) \
+	$(shell find $(INSTALLER_DIR)/ -type f) \
 	$(INSTALLER_DIR)/go.sum
 	@mkdir -p bin
 	cd $(INSTALLER_DIR)/liveinstaller && \
 		CGO_ENABLED=0 go build -o ../../../$(INSTALLER_OUT_DIR)/liveinstaller
 
 bin/manualrun: \
-	$(shell find $(INSTALLER_DIR)/imagegen/attendedinstaller/ -type f) \
+	$(shell find $(INSTALLER_DIR)/imagegen/ -type f) \
 	$(INSTALLER_DIR)/go.sum
 	@mkdir -p bin
 	cd $(INSTALLER_DIR)/imagegen/attendedinstaller/_manualrun && \

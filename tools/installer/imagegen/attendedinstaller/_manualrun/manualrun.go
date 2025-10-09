@@ -4,26 +4,33 @@
 package main
 
 import (
+	"fmt"
 	"installer/imagegen/attendedinstaller"
 	"installer/internal/logger"
-	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/alecthomas/kingpin/v2"
 )
 
 const passwordScriptName = "user-password.sh"
 
+var (
+	app           = kingpin.New("manualrun", "A tool to test the attendedinstaller without performing an installation.")
+	hostconfigDir = app.Flag("output-dir", "Directory where the generated Host Configuration file will be saved.").Default("").String()
+	logLevel      = app.Flag("log-level", "Set the log level.").Default("warn").String()
+)
+
 // manualrun is a tool to test the attendedinstaller in the current terminal window.
 // It will simply run the UI and print out the generated Host Configuration.
 func main() {
-	// Set log-level to warn to show clean up failures
+	kingpin.MustParse(app.Parse(os.Args[1:]))
+
+	// Set log-level
 	logger.InitStderrLog()
-	logger.SetStderrLogLevel("warn")
+	logger.SetStderrLogLevel(*logLevel)
 
-	// Example of an image path
-	const imagePath = "/mnt/trident_cdrom/images/azure-linux-trident.cosi"
-
-	// Create a temporary directory for config and scripts
+	// Create a temporary directory for test setup
 	tmpDir, err := os.MkdirTemp("", "trident-manualrun-*")
 	if err != nil {
 		logger.PanicOnError(fmt.Errorf("failed to create temp dir: %w", err))
@@ -35,11 +42,16 @@ func main() {
 		}
 	}()
 
+	// Create a fake .cosi files for testing
+	imagesDir, err := prepareTestDirectory(tmpDir)
+	if err != nil {
+		logger.PanicOnError(fmt.Errorf("failed to create fake COSI files: %w", err))
+	}
+
 	hostconfigPath := filepath.Join(tmpDir, "config.yaml")
 	passwordScriptPath := filepath.Join(tmpDir, "scripts", passwordScriptName)
 
-	// Run the attended installer
-	attendedInstaller, err := attendedinstaller.New(imagePath, hostconfigPath)
+	attendedInstaller, err := attendedinstaller.New(imagesDir, hostconfigPath)
 	if err != nil {
 		logger.PanicOnError(err)
 	}
@@ -52,6 +64,22 @@ func main() {
 	}
 
 	displayContent(hostconfigPath, passwordScriptPath)
+
+	if *hostconfigDir != "" {
+		err = os.MkdirAll(*hostconfigDir, 0755)
+		if err != nil {
+			logger.Log.Warnf("Failed to create directory %s: %v", *hostconfigDir, err)
+		} else {
+			targetPath := filepath.Join(*hostconfigDir, "config.yaml")
+			err = os.Rename(hostconfigPath, targetPath)
+			if err != nil {
+				logger.Log.Errorf("Failed to move config file to %s: %v", targetPath, err)
+			} else {
+				logger.Log.Infof("Host configuration saved to: %s", targetPath)
+			}
+		}
+	}
+
 }
 
 // Shows the contents of the generated Host Configuration and the script to add the user's password
@@ -68,4 +96,29 @@ func displayContent(hostconfigPath, passwordScriptPath string) {
 	} else {
 		logger.Log.Warnf("Could not read generated script to add user's password: %v", err)
 	}
+}
+
+// prepareTestDirectory creates the necessary files and directories for testing the attendedinstaller
+// and returns the path to the images directory containing the fake .cosi files.
+func prepareTestDirectory(testDir string) (string, error) {
+	// Create a directory for images and a fake .cosi file
+	imagesDir := filepath.Join(testDir, "images")
+	err := os.MkdirAll(imagesDir, 0755)
+	if err != nil {
+		return "", fmt.Errorf("failed to create images directory: %w", err)
+	}
+
+	fakeFiles := []string{
+		filepath.Join(imagesDir, "azure-linux-core.cosi"),
+		filepath.Join(imagesDir, "azure-linux-full.cosi"),
+	}
+
+	for _, filePath := range fakeFiles {
+		err := os.WriteFile(filePath, []byte("# Fake COSI file for testing\n"), 0644)
+		if err != nil {
+			return "", fmt.Errorf("failed to create fake COSI file %s: %w", filePath, err)
+		}
+	}
+
+	return imagesDir, nil
 }

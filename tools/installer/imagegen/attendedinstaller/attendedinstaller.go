@@ -18,9 +18,11 @@ import (
 	"installer/imagegen/attendedinstaller/views/diskview"
 	"installer/imagegen/attendedinstaller/views/eulaview"
 	"installer/imagegen/attendedinstaller/views/hostnameview"
+	"installer/imagegen/attendedinstaller/views/imageselectorview"
 	"installer/imagegen/attendedinstaller/views/installerview"
 	"installer/imagegen/attendedinstaller/views/userview"
 	"installer/imagegen/configuration"
+	"installer/imagegen/imageutils"
 	"installer/internal/logger"
 
 	"github.com/bendahl/uinput"
@@ -75,13 +77,18 @@ type AttendedInstaller struct {
 	userQuitInstallation bool
 	hostconfigPath       string
 	hostConfigData       *configuration.TridentConfigData
+	availableImages      []imageutils.SystemImage
 }
 
 // New creates and returns a new AttendedInstaller.
-func New(imagePath string, hostConfigPath string) (attendedInstaller *AttendedInstaller, err error) {
+func New(imagedirectory string, hostConfigPath string) (attendedInstaller *AttendedInstaller, err error) {
 	attendedInstaller = &AttendedInstaller{}
-	attendedInstaller.hostConfigData = configuration.NewTridentConfigData(imagePath)
+	attendedInstaller.hostConfigData = configuration.NewTridentConfigData()
 	attendedInstaller.hostconfigPath = hostConfigPath
+	attendedInstaller.availableImages, err = imageutils.DiscoverSystemImages(imagedirectory)
+	if err != nil {
+		return nil, fmt.Errorf("failed to discover system images: %w", err)
+	}
 
 	err = attendedInstaller.initializeUI()
 	return
@@ -364,12 +371,18 @@ func (ai *AttendedInstaller) initializeViews() (err error) {
 		ai.allViews = append(ai.allViews, installerView)
 	}
 
+	imageselectorView := imageselectorview.New(ai.availableImages, ai.hostConfigData)
+	if imageselectorView.NeedsToPrompt() {
+		ai.allViews = append(ai.allViews, imageselectorView)
+	} else {
+		logger.Log.Infof("Single image detected, automatically selected")
+	}
+
 	ai.allViews = append(ai.allViews, eulaview.New())
 	ai.allViews = append(ai.allViews, diskview.New())
 	ai.allViews = append(ai.allViews, hostnameview.New())
 	ai.allViews = append(ai.allViews, userview.New())
 	ai.allViews = append(ai.allViews, confirmview.New(ai.hostconfigPath))
-	// ai.allViews = append(ai.allViews, finishview.New(ai.recordedInstallationTime))
 
 	for i, view := range ai.allViews {
 		var backButtonText string

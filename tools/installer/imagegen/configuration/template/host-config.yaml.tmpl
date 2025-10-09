@@ -1,5 +1,7 @@
+#The Host Configuration Template is populated from user input during the attended installer process
+
 image:
-  url: file://{{ .ImagePath }}
+  url: {{ .ImagePath }}
   sha384: ignored
 storage:
   disks:

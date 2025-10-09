@@ -24,7 +24,7 @@ var (
 	app = kingpin.New("liveinstaller", "A tool to download a provided list of packages into a given directory.")
 
 	unattended     = app.Flag("unattended", "Use the unattended installer without user interaction.").Bool()
-	imagePath      = app.Flag("image-path", "Path to the OS image for the target system.").Required().String()
+	imagesDir      = app.Flag("images-dir", "Path to the directory containing OS images for the target system.").Required().String()
 	hostconfigPath = app.Flag("host-config", "Path to the host configuration file.").Default("/etc/trident/config.yaml").String()
 	logFlags       = exe.SetupLogFlags(app)
 )
@@ -100,7 +100,7 @@ func installerFactory(unattended bool) (installFunc func() (bool, error)) {
 // Runs the terminal UI for attended installation
 func terminalUIAttendedInstall() (installationQuit bool, err error) {
 	// Initialize the attended installer
-	attendedInstaller, err := attendedinstaller.New(*imagePath, *hostconfigPath)
+	attendedInstaller, err := attendedinstaller.New(*imagesDir, *hostconfigPath)
 
 	if err != nil {
 		return
