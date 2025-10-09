@@ -89,7 +89,6 @@ impl<T> DependencyResultExt<T> for Result<T, Box<DependencyError>> {
 #[strum(serialize_all = "lowercase")]
 pub enum Dependency {
     Blkid,
-    Cp,
     Cryptsetup,
     Dd,
     Df,
