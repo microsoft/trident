@@ -74,5 +74,5 @@ Where:
 
 For example, the first install of a single OS would create
 `/boot/efi/EFI/Linux/vmlinuz-100-azla0.efi`. A subsequent update would create
-`/boot/efi/EFI/Linux/vmlinuz-101-azlb0`. A subsequent update would create
+`/boot/efi/EFI/Linux/vmlinuz-101-azlb0.efi`. A subsequent update would create
 `/boot/efi/EFI/Linux/vmlinuz-102-azla0`, and so on.
