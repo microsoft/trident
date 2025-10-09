@@ -2,7 +2,9 @@
 # Bootloader Configuration
 
 For installation and servicing, Trident creates and modifies the bootloader of
-the target OS. Both GRUB and systemd-boot are supported.
+the target OS. Both [`GRUB`](https://www.unixtutorial.org/reference/grub-bootloader/)
+and [`systemd-boot`](https://www.freedesktop.org/software/systemd/man/latest/systemd-boot.html)
+are supported.
 
 The bootloader type is determined by the COSI file referenced in the Host
 Configuration.
@@ -14,8 +16,10 @@ systemd-boot as the bootloader.
 
 By default, Image Customizer creates GRUB based COSI files.
 
-To create a systemd-boot COSI file, create a UKI based COSI file by ensuring
-that these settings are included in the COSI configuration file:
+To create a systemd-boot COSI file, create a
+[UKI](https://uapi-group.org/specifications/specs/boot_loader_specification/#locating-boot-entries)
+based COSI file by ensuring that these settings are included in the COSI
+configuration file:
 
 ``` yaml
 os:
@@ -53,7 +57,8 @@ and `grub<ARCH>.efi`) and the `grub.cfg` from the COSI ESP image.
 
 Trident will copy and rename the UKI efi file from the COSI ESP image, where
 it is versioned with the kernel version (something like
-`/boot/efi/EFI/Linux/vmlinuz-6.6.96.2-2.azl3.efi`), to `/boot/efi/EFI/Linux`
+`/boot/efi/EFI/Linux/vmlinuz-6.6.96.2-2.azl3.efi`), to
+[`/boot/efi/EFI/Linux`](https://uapi-group.org/specifications/specs/boot_loader_specification/#locating-boot-entries)
 on the target OS. Trident will rename the UKI efi file to ensure that the
 correct file is loaded at boot, as `systemd-boot` will sort the UKI files by
 their names and load the most recent one.
