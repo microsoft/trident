@@ -219,9 +219,6 @@ fn populate_extensions_inner(
         detach_device_and_unmount(device_path, temp_mp.path()).context("Failed to unmount")?;
     }
 
-    // Clean-Up: close temporary directory
-    temp_mp.close()?;
-
     Ok(())
 }
 
