@@ -16,12 +16,12 @@ import (
 const userScriptName = "user-password.sh"
 
 var (
-	app           = kingpin.New("attendedinstaller_simulator", "A tool to simulate an attended installation process and generate a Host Configuration. No actual installation is performed.")
+	app           = kingpin.New("attendedinstaller-simulator", "A tool to simulate an attended installation process and generate a Host Configuration. No actual installation is performed.")
 	hostconfigDir = app.Flag("output-dir", "Directory where the generated Host Configuration file will be saved.").Default("").String()
 	logLevel      = app.Flag("log-level", "Set the log level.").Default("warn").String()
 )
 
-// attendedinstaller_simulator is a tool to run the attendedinstaller UI in the current terminal window.
+// attendedinstaller-simulator is a tool to run the attendedinstaller UI in the current terminal window.
 // It will run the UI and print out the generated Host Configuration without performing an actual installation.
 func main() {
 	kingpin.MustParse(app.Parse(os.Args[1:]))
