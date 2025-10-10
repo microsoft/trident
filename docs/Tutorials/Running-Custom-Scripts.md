@@ -9,9 +9,9 @@ custom logic during the installation.
 
 Trident has several [script hooks](../Explanation/Script-Hooks.md) to allow
 users to customize the install and update process. Here, we will create a
-postConfiguration script that will run inside the target OS after the system
+postConfigure script that will run inside the target OS after the system
 has been installed and configured, but before the system is rebooted into the
-new OS.
+target OS.
 
 ## Prerequisites
 
@@ -33,7 +33,7 @@ appending the following to the end of the file:
 
 ``` yaml
 scripts:
-  postConfiguration:
+  postConfigure:
     - content: |
         echo "Hello from the post-configuration script!" > /root/post-configuration.log
 ```
