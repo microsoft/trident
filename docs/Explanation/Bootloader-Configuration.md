@@ -39,9 +39,13 @@ The bootloader choice (and choice of UKI) has some implications on
 
 ## Bootloader Servicing
 
-Trident will install the bootloader as part of COSI deployment. The target OS
-ESP partition is not an A/B volume pair, so Trident will update the ESP so that
-it boots the active OS.
+In order to support A/B update from a single ESP partition, Trident needs to
+manage the bootloader files on the ESP partition in a particular way. The
+bootloader is first installed as part of the COSI deployment.
+
+As the target OS ESP partition is not an A/B volume pair, Trident will manage
+this single partition so that it boots the active OS from the correct A/B OS
+partitions.
 
 At a high level, Trident will use the ESP partition from the COSI file as the basis
 for the target OS's ESP partition. That said, the layout and some file names
@@ -64,7 +68,7 @@ and `grub<ARCH>.efi`) and the `grub.cfg` from the COSI ESP image.
 ### systemd-boot Bootloader
 
 Trident will copy and rename the UKI efi file from the COSI ESP image, where
-it is versioned with the kernel version (for example 
+it is versioned with the kernel version (for example
 `/boot/efi/EFI/Linux/vmlinuz-6.6.96.2-2.azl3.efi`), to
 [`/boot/efi/EFI/Linux`](https://uapi-group.org/specifications/specs/boot_loader_specification/#locating-boot-entries)
 on the target OS. Trident will rename the UKI efi file to ensure that the
