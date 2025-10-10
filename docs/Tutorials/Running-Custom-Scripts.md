@@ -3,7 +3,7 @@
 
 In this tutorial, we will build on the [Hello World tutorial](./Trident-Hello-World.md)
 and learn how to add custom scripts, so that we can execute custom logic during
-the install
+the installation.
 
 ## Introduction
 
