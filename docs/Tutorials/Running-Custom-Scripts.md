@@ -1,15 +1,16 @@
 
 # Running Custom Scripts
 
-In this tutorial, we will learn how to add a custom script to the
-[Hello World tutorial](./Trident-Hello-World.md) so that we can execute some
-custom logic during the installation.
+In this tutorial, we will build on the [Hello World tutorial](./Trident-Hello-World.md)
+and learn how to add custom scripts, so that we can execute custom logic during
+the install
 
 ## Introduction
 
 Trident has several [script hooks](../Explanation/Script-Hooks.md) to allow
 users to customize the install and update process. Here, we will create a
-postConfigure script that will run from within the chroot of the target OS
+[postConfigure](../Reference/Host-Configuration/API-Reference/Scripts.md#postconfigure-optional)
+script that will run from within the chroot of the target OS
 after the system has been installed and configured.
 
 ## Prerequisites
