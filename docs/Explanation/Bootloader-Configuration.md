@@ -48,7 +48,7 @@ this single partition so that it boots the active OS from the correct A/B OS
 partitions.
 
 At a high level, Trident will use the ESP partition from the COSI file as the basis
-for the target OS's ESP partition. That said, the layout and some file names
+for the target OS's ESP partition. However, the layout and some file names
 will differ slightly between the COSI ESP image and the target OS ESP. These
 changes help Trident track multiple installs and A/B updates while ensuring
 that the bootloader starts the correct OS.
