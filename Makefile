@@ -456,12 +456,12 @@ bin/manualrun: \
 
 # Copy End-User License Agreement example file to execution directory
 bin/EULA.txt: $(INSTALLER_DIR)/imagegen/attendedinstaller/_manualrun/EULA.txt
-       @mkdir -p bin
-       @cp $< $@
+	@mkdir -p bin
+	@cp $< $@
 
 .PHONY: run-manualrun
 run-manualrun: bin/manualrun bin/EULA.txt
-       @cd bin && ./manualrun && cd -
+	@cd bin && ./manualrun && cd -
 
 # AZL INSTALLER IMAGES
 
