@@ -39,6 +39,12 @@ The bootloader choice (and choice of UKI) has some implications on
 
 ## Bootloader Servicing
 
+:::note
+Trident handles bootloader servicing for A/B updates without any required user
+understanding or configuration. The following explanation is purely provided to
+illustrate how this process works.
+:::
+
 In order to support A/B update from a single ESP partition, Trident needs to
 manage the bootloader files on the ESP partition in a particular way. The
 bootloader is first installed as part of the COSI deployment.
