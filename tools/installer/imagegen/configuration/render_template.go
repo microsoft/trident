@@ -6,8 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"text/template"
-
-	"golang.org/x/crypto/bcrypt"
 )
 
 //go:embed template/host-config.yaml.tmpl
@@ -50,15 +48,13 @@ func RenderTridentHostConfig(configPath string, configData *TridentConfigData) e
 }
 
 // passwordScript generates and writes a shell script that sets the user password.
-// The script uses chpasswd with the -e flag to accept pre-hashed passwords (only hash is stored).
+// The script uses chpasswd with the -e flag to accept pre-hashed passwords (password is already hashed).
 func passwordScript(passwordScriptPath string, configData *TridentConfigData) (err error) {
-	// Hash the password
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(configData.Password), bcrypt.DefaultCost)
-	if err != nil {
-		return fmt.Errorf("failed to hash password: %w", err)
+	if configData.HashedPassword == "" {
+		return fmt.Errorf("hashed password is required but not set")
 	}
 
-	script := fmt.Sprintf("echo '%s:%s' | chpasswd -e\n", configData.Username, hashedPassword)
+	script := fmt.Sprintf("echo '%s:%s' | chpasswd -e\n", configData.Username, configData.HashedPassword)
 	dir := filepath.Dir(passwordScriptPath)
 	if err = os.MkdirAll(dir, 0700); err != nil {
 		return

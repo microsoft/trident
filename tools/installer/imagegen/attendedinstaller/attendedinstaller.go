@@ -249,7 +249,7 @@ func (ai *AttendedInstaller) initializeUI() (err error) {
 	const osReleaseFile = "/etc/os-release"
 
 	// For "bright" colors, we need to manually specify RGB values
-	// As they do not nhave
+	// As they do not have them by default
 	ai.backdropStyle = tview.Theme{
 		PrimitiveBackgroundColor:    tcell.ColorBlack,
 		ContrastBackgroundColor:     tcell.ColorWhite,
