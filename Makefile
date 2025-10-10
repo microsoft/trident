@@ -435,6 +435,27 @@ bin/virtdeploy: tools/cmd/virtdeploy/* tools/go.sum tools/pkg/* tools/pkg/virtde
 	@mkdir -p bin
 	cd tools && go build -o ../bin/virtdeploy ./cmd/virtdeploy
 
+# Installer tools
+
+INSTALLER_OUT_DIR := bin
+INSTALLER_DIR := tools/installer
+
+bin/attendedinstaller-simulator: \
+	$(shell find $(INSTALLER_DIR)/imagegen/ -type f) \
+	$(INSTALLER_DIR)/go.sum
+	@mkdir -p bin
+	cd $(INSTALLER_DIR)/imagegen/attendedinstaller/attendedinstaller_tests && \
+		CGO_ENABLED=0 go build -o $(CURDIR)/$(INSTALLER_OUT_DIR)/attendedinstaller-simulator attendedinstaller_simulator.go
+
+# If necessary create End-User License Agreement example file in execution directory
+bin/EULA.txt:
+	@mkdir -p bin
+	@echo "SAMPLE EULA" > $@
+
+.PHONY: run-attendedinstaller-simulator
+run-attendedinstaller-simulator: bin/attendedinstaller-simulator bin/EULA.txt
+	@cd bin && ./attendedinstaller-simulator && cd -
+
 .PHONY: validate
 validate: $(TRIDENT_CONFIG) bin/trident
 	@bin/trident validate $(TRIDENT_CONFIG)
