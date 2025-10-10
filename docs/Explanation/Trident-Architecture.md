@@ -156,7 +156,7 @@ On a bare metal machine, [clean install](../How-To-Guides/Perform-a-Clean-Instal
 
 ### `trident offline-initialize`
 
-For a virtual machine, [offline initialization](../How-To-Guides/Offline-Initialization.md) typically operates as part of the VHD creation:
+For a virtual machine, [offline initialization](../Explanation/Offline-Initialize.md) typically operates as part of the VHD creation:
 
 1. **Image History**: Understands COSI configuration
 2. **Disk Layout**: Understands the COSI partition layout
