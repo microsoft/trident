@@ -196,8 +196,6 @@ COSI provides:
 - **Compression**: ZSTD compression for efficient transfer
 - **Metadata Integration**: Rich metadata eliminates configuration verbosity
 
-## Communication Interfaces
-
 ## Data Flow Architecture
 
 ```mermaid
