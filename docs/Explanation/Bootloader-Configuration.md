@@ -65,8 +65,8 @@ To handle A/B updates, Trident will assume two bootloader paths, an `A` and a
 For example, for a simple `trident install`, the target OS bootloader paths will
 be:
 
-* `/boot/efi/EFI/AZLA` - for the initial install, or active OS
-* `/boot/efi/EFI/AZLB` - will be used for a future update
+* `/boot/efi/EFI/AZLA` - the target OS for the initial install
+* `/boot/efi/EFI/AZLB` - the target OS for a future update
 
 Within the bootloader paths, Trident will copy efi files (like `boot<ARCH>.efi`
 and `grub<ARCH>.efi`) and the `grub.cfg` from the COSI ESP image.
