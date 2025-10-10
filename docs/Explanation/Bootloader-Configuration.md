@@ -6,20 +6,24 @@ the target OS. Both [`GRUB`](https://www.unixtutorial.org/reference/grub-bootloa
 and [`systemd-boot`](https://www.freedesktop.org/software/systemd/man/latest/systemd-boot.html)
 are supported.
 
+:::note
+For [Unified Kernel Image (UKI)](https://uapi-group.org/specifications/specs/unified_kernel_image/),
+Trident only supports using `systemd-boot`.
+:::
+
 The bootloader type is determined by the COSI file referenced in the Host
 Configuration.
 
 ## COSI Configuration
 
 [Image Customizer](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/README.html)
-supports creating COSI files that define either GRUB or systemd-boot as the
+supports creating COSI files that define either `GRUB` or `systemd-boot` as the
 bootloader.
 
-By default, Image Customizer creates GRUB based COSI files.
+By default, Image Customizer creates `GRUB` based COSI files.
 
-To create a systemd-boot COSI file, create a
-[UKI](https://uapi-group.org/specifications/specs/unified_kernel_image/)
-based COSI file by ensuring that these settings are included in the
+To create a systemd-boot COSI file, create a UKI-based
+COSI file by ensuring that these settings are included in the
 [COSI configuration file](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/api/configuration/uki.html#uki-type):
 
 ``` yaml
