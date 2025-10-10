@@ -1,7 +1,7 @@
 
 # Bootloader Configuration
 
-For installation and servicing, Trident creates and modifies the bootloader of
+For installation and updating, Trident creates and modifies the bootloader of
 the target OS. Both [`GRUB`](https://www.unixtutorial.org/reference/grub-bootloader/)
 and [`systemd-boot`](https://www.freedesktop.org/software/systemd/man/latest/systemd-boot.html)
 are supported.
