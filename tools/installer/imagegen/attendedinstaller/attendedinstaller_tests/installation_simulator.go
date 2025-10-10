@@ -13,7 +13,7 @@ import (
 	"github.com/alecthomas/kingpin/v2"
 )
 
-const passwordScriptName = "user-password.sh"
+const userScriptName = "user-password.sh"
 
 var (
 	app           = kingpin.New("installation-simulator", "A tool to simulate an attended installation process and generate a Host Configuration. No actual installation is performed.")
@@ -49,7 +49,7 @@ func main() {
 	}
 
 	hostconfigPath := filepath.Join(tmpDir, "config.yaml")
-	passwordScriptPath := filepath.Join(tmpDir, "scripts", passwordScriptName)
+	userScriptPath := filepath.Join(tmpDir, "scripts", userScriptName)
 
 	attendedInstaller, err := attendedinstaller.New(imagesDir, hostconfigPath)
 	if err != nil {
@@ -63,7 +63,7 @@ func main() {
 		logger.Log.Error("User quit installation")
 	}
 
-	displayContent(hostconfigPath, passwordScriptPath)
+	displayContent(hostconfigPath, userScriptPath)
 
 	if *hostconfigDir != "" {
 		err = os.MkdirAll(*hostconfigDir, 0755)
