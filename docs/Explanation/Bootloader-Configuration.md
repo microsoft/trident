@@ -64,7 +64,7 @@ and `grub<ARCH>.efi`) and the `grub.cfg` from the COSI ESP image.
 ### systemd-boot Bootloader
 
 Trident will copy and rename the UKI efi file from the COSI ESP image, where
-it is versioned with the kernel version (something like
+it is versioned with the kernel version (for example 
 `/boot/efi/EFI/Linux/vmlinuz-6.6.96.2-2.azl3.efi`), to
 [`/boot/efi/EFI/Linux`](https://uapi-group.org/specifications/specs/boot_loader_specification/#locating-boot-entries)
 on the target OS. Trident will rename the UKI efi file to ensure that the
