@@ -152,8 +152,8 @@ steps:
           --version $(version) \
           --stage-ab-update \
           --finalize-ab-update \
-          $PROXY_ARG \
-          $FORCED_ROLLBACK_ARG
+          $FORCED_ROLLBACK_ARG \
+          $PROXY_ARG
 
       current_version=$(echo $(version))
       new_version=$((current_version + 1))
