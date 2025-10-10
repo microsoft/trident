@@ -183,7 +183,7 @@ image.cosi (tarball)
 ├── metadata.json          # Image metadata and filesystem descriptions
 └── images/               # Compressed filesystem images
     ├── root.img.zst      # Root filesystem
-    ├── usr.img.zst       # /usr partition  
+    ├── usr.img.zst       # /usr partition
     ├── var.img.zst       # /var partition
     └── ...
 ```
