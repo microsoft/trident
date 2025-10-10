@@ -445,7 +445,7 @@ bin/installation-simulator: \
 	$(INSTALLER_DIR)/go.sum
 	@mkdir -p bin
 	cd $(INSTALLER_DIR)/imagegen/attendedinstaller/attendedinstaller_tests && \
-		CGO_ENABLED=0 go build -o ../../../../../$(INSTALLER_OUT_DIR)/installation-simulator installation_simulator.go
+		CGO_ENABLED=0 go build -o $(CURDIR)/$(INSTALLER_OUT_DIR)/installation-simulator installation_simulator.go
 
 # If necessary create End-User License Agreement example file in execution directory
 bin/EULA.txt:
