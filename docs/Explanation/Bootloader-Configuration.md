@@ -43,7 +43,7 @@ Trident will install the bootloader as part of COSI deployment. The target OS
 ESP partition is not an A/B volume pair, so Trident will update the ESP so that
 it boots the active OS.
 
-At a high level, Trident will use the ESP image from the COSI file as the basis
+At a high level, Trident will use the ESP partition from the COSI file as the basis
 for the target OS's ESP partition. That said, the layout and some file names
 will differ slightly between the COSI ESP image and the target OS ESP. These
 changes help Trident track multiple installs and A/B updates while ensuring
