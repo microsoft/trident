@@ -182,6 +182,12 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     )]),
                     ..Default::default()
                 }],
+                pre_commit: vec![Script {
+                    name: "sample-commit-script".into(),
+                    run_on: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
+                    source: ScriptSource::Content("echo 'success'".into()),
+                    ..Default::default()
+                }],
             },
             ..Default::default()
             }
@@ -374,6 +380,12 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                         "SAMPLE_VARIABLE".into(),
                         "sample-variable-value".into(),
                     )]),
+                    ..Default::default()
+                }],
+                pre_commit: vec![Script {
+                    name: "sample-commit-script".into(),
+                    run_on: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
+                    source: ScriptSource::Content("echo 'success'".into()),
                     ..Default::default()
                 }],
             },
