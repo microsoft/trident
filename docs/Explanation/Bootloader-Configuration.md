@@ -18,7 +18,7 @@ bootloader.
 By default, Image Customizer creates GRUB based COSI files.
 
 To create a systemd-boot COSI file, create a
-[UKI](https://uapi-group.org/specifications/specs/boot_loader_specification/#locating-boot-entries)
+[UKI](https://uapi-group.org/specifications/specs/unified_kernel_image/)
 based COSI file by ensuring that these settings are included in the
 [COSI configuration file](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/api/configuration/uki.html#uki-type):
 
