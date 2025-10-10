@@ -627,12 +627,12 @@ impl Trident {
 
         match rollback_result {
             Ok(rollback::BootValidationResult::CorrectBootProvisioned) => Ok(ExitKind::Done),
-            Ok(rollback::BootValidationResult::CorrectBootInvalid(_e)) => {
-                // error!("Correct boot, but validation failed: {}", e);
+            Ok(rollback::BootValidationResult::CorrectBootInvalid(e)) => {
+                debug!("Correct boot, but validation failed: {e:?}");
                 Ok(ExitKind::NeedsReboot)
             }
             Err(e) => {
-                // error!("Boot validation failed: {}", e);
+                error!("Boot validation failed: {e:?}");
                 Err(e)
             }
         }
