@@ -16,12 +16,12 @@ import (
 const userScriptName = "user-password.sh"
 
 var (
-	app           = kingpin.New("installation-simulator", "A tool to simulate an attended installation process and generate a Host Configuration. No actual installation is performed.")
+	app           = kingpin.New("attendedinstaller-simulator", "A tool to simulate an attended installation process and generate a Host Configuration. No actual installation is performed.")
 	hostconfigDir = app.Flag("output-dir", "Directory where the generated Host Configuration file will be saved.").Default("").String()
 	logLevel      = app.Flag("log-level", "Set the log level.").Default("warn").String()
 )
 
-// installation_simulator is a tool to run the attendedinstaller UI in the current terminal window.
+// attendedinstaller_simulator is a tool to run the attendedinstaller UI in the current terminal window.
 // It will run the UI and print out the generated Host Configuration without performing an actual installation.
 func main() {
 	kingpin.MustParse(app.Parse(os.Args[1:]))
@@ -31,7 +31,7 @@ func main() {
 	logger.SetStderrLogLevel(*logLevel)
 
 	// Create a temporary directory for test setup
-	tmpDir, err := os.MkdirTemp("", "trident-installation-simulator-*")
+	tmpDir, err := os.MkdirTemp("", "trident-attendedinstaller-simulator-*")
 	if err != nil {
 		logger.PanicOnError(fmt.Errorf("failed to create temp dir: %w", err))
 	}
