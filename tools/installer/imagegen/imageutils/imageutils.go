@@ -14,6 +14,7 @@ import (
 
 const (
 	CosiExtension = ".cosi"
+	FileURLPrefix = "file://"
 )
 
 // Scans a directory for available images to install
@@ -50,7 +51,7 @@ func DiscoverSystemImages(directoryPath string) ([]SystemImage, error) {
 		if ValidateImage(fullPath) {
 			systemImage := SystemImage{
 				Name: displayName,
-				URL:  "file://" + fullPath,
+				URL:  FileURLPrefix + fullPath,
 			}
 			images = append(images, systemImage)
 		}

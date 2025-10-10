@@ -14,6 +14,7 @@ import (
 	"installer/imagegen/attendedinstaller/uitext"
 	"installer/imagegen/attendedinstaller/uiutils"
 	"installer/imagegen/configuration"
+	"installer/internal/logger"
 )
 
 // UI constants.
@@ -186,7 +187,13 @@ func (uv *UserView) onNextButton(nextPage func()) {
 	}
 
 	uv.hostConfigData.Username = enteredUserName
-	uv.hostConfigData.Password = enteredPassword
+
+	err = uv.hostConfigData.SetPassword(enteredPassword)
+	if err != nil {
+		logger.Log.Errorf("Failed to set password: %v", err)
+		uv.navBar.SetUserFeedback("Failed to save password. Please try again.", tview.Styles.TertiaryTextColor)
+		return
+	}
 
 	nextPage()
 }
