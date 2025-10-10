@@ -95,7 +95,6 @@ func New(imagedirectory string, hostConfigPath string) (attendedInstaller *Atten
 
 // Run shows the attended installer UI on the current thread.
 // When the user completes the installer, the function will return.
-// When producing the Host configuration, it would be best to return it from this function.
 func (ai *AttendedInstaller) Run() (installationQuit bool, err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -234,7 +233,7 @@ func (ai *AttendedInstaller) globalInputCapture(event *tcell.EventKey) *tcell.Ev
 func (ai *AttendedInstaller) initializeUI() (err error) {
 	ai.keyboard, err = speakuputils.CreateVirtualKeyboard()
 	if err != nil {
-		// Non-fatal - results in a slightlydegraded experience due to the lack of a
+		// Non-fatal - results in a slightly degraded experience due to the lack of a
 		// text-to-speech buffer clear between views, but not bad enough to exit outright
 		logger.Log.Warnf("Failed to initialize virtual keyboard via uinput")
 		err = nil

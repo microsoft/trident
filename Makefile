@@ -440,21 +440,21 @@ bin/virtdeploy: tools/cmd/virtdeploy/* tools/go.sum tools/pkg/* tools/pkg/virtde
 INSTALLER_OUT_DIR := bin
 INSTALLER_DIR := tools/installer
 
-bin/manualrun: \
+bin/installation-simulator: \
 	$(shell find $(INSTALLER_DIR)/imagegen/ -type f) \
 	$(INSTALLER_DIR)/go.sum
 	@mkdir -p bin
-	cd $(INSTALLER_DIR)/imagegen/attendedinstaller/_manualrun && \
-		CGO_ENABLED=0 go build -o ../../../../../$(INSTALLER_OUT_DIR)/manualrun
+	cd $(INSTALLER_DIR)/imagegen/attendedinstaller/attendedinstaller_tests && \
+		CGO_ENABLED=0 go build -o ../../../../../$(INSTALLER_OUT_DIR)/installation-simulator installation_simulator.go
 
 # If necessary create End-User License Agreement example file in execution directory
 bin/EULA.txt:
 	@mkdir -p bin
 	@echo "SAMPLE EULA" > $@
 
-.PHONY: run-manualrun
-run-manualrun: bin/manualrun bin/EULA.txt
-	@cd bin && ./manualrun && cd -
+.PHONY: run-installation-simulator
+run-installation-simulator: bin/installation-simulator bin/EULA.txt
+	@cd bin && ./installation-simulator && cd -
 
 .PHONY: validate
 validate: $(TRIDENT_CONFIG) bin/trident
