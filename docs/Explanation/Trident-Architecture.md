@@ -40,7 +40,7 @@ The **Trident Engine** serves as the central orchestrator that coordinates all s
 - **Subsystem Coordination**: Manages the ordered execution of subsystem steps based on dependencies
 - **State Tracking**: Maintains operational context throughout servicing operations
 
-The engine implements a rust trait-based architecture where each subsystem implements the `Subsystem` trait with standardized lifecycle methods: `prepare`, `provision`, and `configure`.
+The engine implements a Rust trait-based architecture where each subsystem implements the `Subsystem` trait with standardized lifecycle methods: `prepare`, `provision`, and `configure`.
 
 - **prepare**: Validates configuration, checks prerequisites, and prepares the system for changes
 - **provision**: Executes the core changes to the system (e.g., partitioning, installing images)
