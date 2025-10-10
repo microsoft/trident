@@ -35,10 +35,10 @@ appending the following to the end of the file:
 scripts:
   postConfigure:
     - content: |
-        echo "Hello from the post-configuration script!" > /root/post-configuration.log
+        echo "Hello from the post-configure script!" > /root/post-configure.log
 ```
 
-We define the post-configuration script contents inline using the `content`
+We define the post-configure script contents inline using the `content`
 field for simplicity, but you could also use the `path` field to reference a
 script file from the servicing OS filesystem.
 
@@ -52,8 +52,8 @@ Azure Linux.
 
 ``` bash
 # From your host machine:
-ssh tutorial-user@<system-ip-address> sudo cat /root/post-configuration.log
+ssh tutorial-user@<system-ip-address> sudo cat /root/post-configure.log
 ```
 
 You should see the expected message:
-`Hello from the post-configuration script!`
+`Hello from the post-configure script!`
