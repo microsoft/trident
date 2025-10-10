@@ -83,15 +83,15 @@ func main() {
 }
 
 // Shows the contents of the generated Host Configuration and the script to add the user's password
-func displayContent(hostconfigPath, passwordScriptPath string) {
+func displayContent(hostconfigPath, userScriptPath string) {
 	fmt.Println("\n--- Generated Host Configuration: ---")
 	if data, err := os.ReadFile(hostconfigPath); err == nil {
 		fmt.Println(string(data))
 	} else {
 		logger.Log.Warnf("Could not read Host Configuration file: %v", err)
 	}
-	fmt.Println("\n--- Generated Password Script (", passwordScriptPath, ") ---")
-	if data, err := os.ReadFile(passwordScriptPath); err == nil {
+	fmt.Println("\n--- Generated Password Script (", userScriptPath, ") ---")
+	if data, err := os.ReadFile(userScriptPath); err == nil {
 		fmt.Println(string(data))
 	} else {
 		logger.Log.Warnf("Could not read generated script to add user's password: %v", err)
