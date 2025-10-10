@@ -447,10 +447,10 @@ bin/manualrun: \
 	cd $(INSTALLER_DIR)/imagegen/attendedinstaller/_manualrun && \
 		CGO_ENABLED=0 go build -o ../../../../../$(INSTALLER_OUT_DIR)/manualrun
 
-# Copy End-User License Agreement example file to execution directory
-bin/EULA.txt: $(INSTALLER_DIR)/imagegen/attendedinstaller/_manualrun/EULA.txt
+# If necessary create End-User License Agreement example file in execution directory
+bin/EULA.txt:
 	@mkdir -p bin
-	@cp $< $@
+	@echo "SAMPLE EULA" > $@
 
 .PHONY: run-manualrun
 run-manualrun: bin/manualrun bin/EULA.txt

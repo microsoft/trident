@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"strings"
-	"time"
 
 	"installer/imagegen/attendedinstaller/speakuputils"
 	"installer/imagegen/attendedinstaller/uitext"
@@ -73,18 +72,18 @@ type AttendedInstaller struct {
 	keyboard          uinput.Keyboard
 
 	installationError    error
-	installationTime     time.Duration
 	userQuitInstallation bool
-	hostconfigPath       string
+	hostConfigPath       string
 	hostConfigData       *configuration.TridentConfigData
 	availableImages      []imageutils.SystemImage
 }
 
 // New creates and returns a new AttendedInstaller.
 func New(imagedirectory string, hostConfigPath string) (attendedInstaller *AttendedInstaller, err error) {
-	attendedInstaller = &AttendedInstaller{}
-	attendedInstaller.hostConfigData = configuration.NewTridentConfigData()
-	attendedInstaller.hostconfigPath = hostConfigPath
+	attendedInstaller = &AttendedInstaller{
+		hostConfigData: configuration.NewTridentConfigData(),
+		hostConfigPath: hostConfigPath,
+	}
 	attendedInstaller.availableImages, err = imageutils.DiscoverSystemImages(imagedirectory)
 	if err != nil {
 		return nil, fmt.Errorf("failed to discover system images: %w", err)
@@ -382,7 +381,7 @@ func (ai *AttendedInstaller) initializeViews() (err error) {
 	ai.allViews = append(ai.allViews, diskview.New())
 	ai.allViews = append(ai.allViews, hostnameview.New())
 	ai.allViews = append(ai.allViews, userview.New())
-	ai.allViews = append(ai.allViews, confirmview.New(ai.hostconfigPath))
+	ai.allViews = append(ai.allViews, confirmview.New(ai.hostConfigPath))
 
 	for i, view := range ai.allViews {
 		var backButtonText string
