@@ -1,11 +1,11 @@
 
 # Trident Architecture
 
-Trident is an image-based OS lifecycle agent designed for Azure Linux, providing atomic installation, A/B-style updates, and runtime configuration management. This document explains Trident's architectural components, design principles, and operational workflow.
+Trident is an image-based OS lifecycle agent, providing atomic image-based installation, [A/B updates](../Reference/Glossary.md#ab-updates), and runtime configuration management. This document explains Trident's architectural components, design principles, and operational workflow.
 
 ## Overview
 
-Trident's architecture follows a modular, subsystem-based design that separates concerns while maintaining tight integration for OS lifecycle management. The system operates on a declarative model where users specify desired system state through Host Configuration, and Trident reconciles the current state to match this specification.
+Trident's architecture follows a modular, [subsystem](../Reference/Glossary.md#subsystem)-based design that separates concerns while maintaining tight integration for OS lifecycle management. The system operates on a declarative model where users specify desired system state through [Host Configuration](../Reference/Host-Configuration/API-Reference/HostConfiguration.md), and Trident reconciles the current state to match this specification.
 
 ```mermaid
 graph TB
@@ -36,11 +36,15 @@ graph TB
 The **Trident Engine** serves as the central orchestrator that coordinates all subsystems and manages the overall workflow. Located in `crates/trident/src/engine/`, it provides:
 
 - **EngineContext**: Maintains comprehensive state including Host Configuration, storage graphs, filesystem data, and servicing type information
-- **Workflow Management**: Orchestrates the three-phase execution model (prepare, provision, configure)
-- **Subsystem Coordination**: Manages the ordered execution of subsystems based on dependencies
+- **Workflow Management**: Orchestrates the three-[step](../Reference/Glossary.md#step) execution model (prepare, provision, configure)
+- **Subsystem Coordination**: Manages the ordered execution of subsystem steps based on dependencies
 - **State Tracking**: Maintains operational context throughout servicing operations
 
-The engine implements a trait-based architecture where each subsystem implements the `Subsystem` trait with standardized lifecycle methods.
+The engine implements a rust trait-based architecture where each subsystem implements the `Subsystem` trait with standardized lifecycle methods: `prepare`, `provision`, and `configure`.
+
+- **prepare**: Validates configuration, checks prerequisites, and prepares the system for changes
+- **provision**: Executes the core changes to the system (e.g., partitioning, installing images)
+- **configure**: Finalizes the system state, applying configurations and ensuring consistency
 
 ### DataStore
 
@@ -55,20 +59,26 @@ The datastore can operate in temporary mode (for installer scenarios) or persist
 
 ### Host Configuration API
 
-The **Host Configuration** (`trident_api/src/config/host/`) defines the declarative interface:
+The **Host Configuration** (`trident_api/src/config/host/`) defines the declarative [interface](../Reference/Host-Configuration/API-Reference/HostConfiguration.md) for specifying desired system state. It encompasses:
 
-```rust
-pub struct HostConfiguration {
-    pub trident: Trident,           // Trident agent configuration
-    pub storage: Storage,           // Storage layout and devices
-    pub scripts: Scripts,           // Custom automation hooks
-    pub os: Os,                     // OS configuration
-    pub management_os: ManagementOs,// Installer OS settings
-    pub image: Option<OsImage>,     // COSI image reference
-}
+``` yaml
+trident:
+  # Trident agent configuration
+storage:
+  # Storage layout and devices
+scripts:
+  # Custom automation hooks
+os:
+  # OS configuration
+management_os:
+  # Installer OS settings
+image:
+  # COSI image reference
 ```
 
 This YAML-based configuration describes the desired state across storage, networking, security, and system configuration layers.
+
+An example Host Configuration file can be found in the [sample host configuration](../Reference/Host-Configuration/Sample-Host-Configuration.md).
 
 ## Subsystem Architecture
 
@@ -80,18 +90,18 @@ Trident's modular design centers around specialized subsystems that handle speci
 
 Manages complete storage stack including:
 
-- **Disk Partitioning**: GPT partition table management using `systemd-repart`
-- **RAID Configuration**: Software RAID arrays via `mdadm`
-- **Encryption**: LUKS volume encryption with TPM2 integration
+- **Disk Partitioning**: partition management using `systemd-repart`
+- **RAID Configuration**: [Software RAID arrays](../How-To-Guides/Create-a-RAID-Array.md) via `mdadm`
+- **Encryption**: [volume encryption](../How-To-Guides/Create-an-Encrypted-Volume.md) with TPM2 integration
 - **Filesystem Management**: Creation and mounting of ext4, XFS, FAT32, and NTFS filesystems
-- **Verity Support**: dm-verity for read-only filesystem integrity verification
-- **A/B Volume Management**: Dual-partition layout for atomic updates
+- **Verity Support**: dm-verity ([root](../Explanation/Root-Verity.md) or [usr](../Explanation/Usr-Verity.md)) for filesystem integrity verification
+- **A/B Volume Management**: Dual-partition layout for atomic A/B updates
 
 ### Boot Subsystem
 
 **Location**: `crates/trident/src/engine/boot/`
 
-Handles bootloader configuration and management:
+Handles [bootloader configuration](../Explanation/Bootloader-Configuration.md) and management:
 
 - **GRUB2 Configuration**: Boot menu generation and kernel parameter management
 - **systemd-boot Support**: UEFI boot manager integration
@@ -103,7 +113,7 @@ Handles bootloader configuration and management:
 
 **Location**: `crates/trident/src/subsystems/network.rs`
 
-Manages network configuration:
+Manages [network configuration](../Explanation/Network-Configuration.md):
 
 - **Netplan Integration**: Declarative network configuration
 - **Cloud-init Coordination**: Prevents conflicts with cloud initialization
@@ -113,7 +123,7 @@ Manages network configuration:
 
 **Location**: `crates/trident/src/subsystems/selinux.rs`
 
-Provides security policy management:
+Provides [SELinux](../Explanation/SELinux-Configuration.md) policy management:
 
 - **Policy Configuration**: SELinux mode management (enforcing/permissive/disabled)
 - **Filesystem Relabeling**: Ensures proper security contexts using `setfiles`
@@ -124,18 +134,18 @@ Provides security policy management:
 
 **Location**: `crates/trident/src/subsystems/hooks.rs`
 
-Enables custom automation:
+Enables custom, user-defined, [script-based](../Explanation/Script-Hooks.md) automation:
 
 - **Script Execution**: Pre/post servicing custom scripts
 - **Environment Management**: Controlled execution environments
 - **File Staging**: Preparation of custom files and configurations
 - **Integration Points**: Extensibility for product-specific logic
 
-## Operating Modes
+## Commands
 
-### Installation Mode
+### `trident install`
 
-During initial deployment, Trident operates from a live management OS (typically booted from ISO):
+On a bare metal machine, [clean install](../How-To-Guides/Perform-a-Clean-Install.md) operates from a servicing OS (typically booted from ISO):
 
 1. **Provisioning Network Setup**: Establishes network connectivity
 2. **Storage Preparation**: Partitions disks according to Host Configuration
@@ -144,7 +154,15 @@ During initial deployment, Trident operates from a live management OS (typically
 5. **Bootloader Installation**: Configures GRUB2 or systemd-boot
 6. **DataStore Creation**: Establishes persistent state tracking
 
-### Servicing Mode
+### `trident offline-initialize`
+
+For a virtual machine, [offline initialization](../How-To-Guides/Offline-Initialization.md) typically operates as part of the VHD creation:
+
+1. **Image History**: Understands COSI configuration
+2. **Disk Layout**: Understands the COSI partition layout
+3. **DataStore Creation**: Establishes persistent state to allow future servicing
+
+### `trident update`
 
 For ongoing updates, Trident runs within the host OS:
 
@@ -179,22 +197,6 @@ COSI provides:
 - **Metadata Integration**: Rich metadata eliminates configuration verbosity
 
 ## Communication Interfaces
-
-### Orchestrator Integration
-
-Trident supports integration with external orchestration systems through:
-
-- **HTTP Status Reporting**: RESTful status updates to orchestrator endpoints
-- **JSON Message Format**: Structured communication protocol
-- **Connection Management**: Configurable timeouts and retry logic
-
-### gRPC Server (Optional)
-
-When enabled, Trident provides a gRPC interface for external management:
-
-- **Remote Command Execution**: Accept Host Configuration updates remotely
-- **Status Streaming**: Real-time operation status updates
-- **Secure Communication**: TLS-enabled communication channel
 
 ## Data Flow Architecture
 
@@ -259,7 +261,7 @@ Trident implements comprehensive error handling:
 
 - **Streaming Architecture**: Direct COSI image deployment without intermediate storage
 - **Parallel Operations**: Concurrent subsystem execution where safe
-- **Incremental Updates**: A/B staging minimizes downtime
+- **Fast Updates**: A/B staging minimizes downtime
 - **Resource Management**: Controlled memory and disk usage
 - **Background Operations**: Non-blocking preparation phases
 
