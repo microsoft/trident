@@ -120,9 +120,9 @@ const (
 	FQDNInvalidLengthErrorFmt = "host name must be <= %d characters"
 )
 
-// InstallationView text.
+// ImageSelectorView text.
 const (
-	InstallationTitle = "Select Installation Type"
+	ImageSelectionTitle = "Select Image for Installation"
 )
 
 // UserView text.

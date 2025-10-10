@@ -13,8 +13,6 @@ type TridentConfigData struct {
 	PasswordScript string
 }
 
-func NewTridentConfigData(imagePath string) *TridentConfigData {
-	return &TridentConfigData{
-		ImagePath: imagePath,
-	}
+func NewTridentConfigData() *TridentConfigData {
+	return &TridentConfigData{}
 }
