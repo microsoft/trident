@@ -48,7 +48,7 @@ func RenderTridentHostConfig(configPath string, configData *TridentConfigData) e
 }
 
 // passwordScript generates and writes a shell script that sets the user password.
-// The script uses chpasswd with the -e flag to accept pre-hashed passwords (password is already hashed).
+// The script uses chpasswd with the -e flag to accept pre-hashed passwords.
 func passwordScript(passwordScriptPath string, configData *TridentConfigData) (err error) {
 	if configData.HashedPassword == "" {
 		return fmt.Errorf("hashed password is required but not set")
