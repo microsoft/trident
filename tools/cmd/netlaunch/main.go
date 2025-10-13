@@ -392,6 +392,12 @@ func captureScreenshot(screenshotPath string, netlaunchConfig config.NetLaunchCo
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
+	log.Info("Connecting to BMC")
+	client.Registry.Drivers = client.Registry.For("gofish")
+	if err := client.Open(context.Background()); err != nil {
+		log.WithError(err).Fatalf("failed to open connection to BMC")
+	}
+
 	image, filetype, err := client.Screenshot(ctx)
 	if err != nil {
 		log.WithError(err).Fatalf("failed to take screenshot")
