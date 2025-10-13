@@ -163,7 +163,7 @@ steps:
   - template: ../testing_common/capture-vm-screenshot.yml
     parameters:
       screenshotName: "update-b"
-      captureScreenshot: ne(variables['abActiveVolume'], 'null')
+      captureScreenshot: ${{ ne(variables['abActiveVolume'], 'null') }}
       deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
 
   - template: ../testing_common/display-serial-logs.yml
@@ -278,9 +278,8 @@ steps:
   - template: ../testing_common/capture-vm-screenshot.yml
     parameters:
       screenshotName: "update-a"
-      captureScreenshot: ne(variables['abActiveVolume'], 'null')
+      captureScreenshot: ${{ ne(variables['abActiveVolume'], 'null') }}
       deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
-
 
   - template: ../testing_common/display-serial-logs.yml
     parameters:
