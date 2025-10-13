@@ -113,6 +113,7 @@ stages:
           - bash: |
               sudo apt-get install -y imagemagick
             displayName: Install image package
+            retryCountOnTaskFailure: 3
 
           - bash: |
               if [ ${{ variables['tridentConfigurationName'] }} == 'split' ]; then
