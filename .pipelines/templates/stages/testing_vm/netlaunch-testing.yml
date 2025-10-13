@@ -217,6 +217,16 @@ stages:
             displayName: "🚀 Run netlaunch for testing"
             timeoutInMinutes: 20
 
+          - bash: |
+              echo "Displaying ip information"
+              ip a
+
+              HOST_IP=$(jq -r '.virtualmachines[0].ip' $(tridentSourceDirectory)/tools/virt-deploy-metadata.json)
+              echo "Ping machine os ($HOST_IP)"
+              ping -c 3 "$HOST_IP"
+            condition: succeededOrFailed()
+            displayName: "📄 Diagnostic info"
+
           - template: ../testing_common/display-deployment-logs.yml
             parameters:
               deploymentLogPath: $(tridentSourceDirectory)/logstream-full.log

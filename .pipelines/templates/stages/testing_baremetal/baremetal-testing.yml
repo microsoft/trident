@@ -302,6 +302,21 @@ stages:
             workingDirectory: ${{ variables.TRIDENT_SOURCE_DIR }}
             displayName: "Run netlaunch for testing"
 
+          - bash: |
+              echo "Displaying ip information"
+              ip a
+
+              echo "Ping machine lab"
+              ping -c 3 "$(baremetal_controller.lab_canary_ip)"
+
+              echo "Ping machine bmc"
+              ping -c 3 "$(baremetal_controller.bmc_ip)"
+
+              echo "Ping machine os"
+              ping -c 3 "$(baremetal_controller.oam_ip)"
+            condition: succeededOrFailed()
+            displayName: "📄 Diagnostic info"
+
           - template: ../testing_common/display-deployment-logs.yml
             parameters:
               deploymentLogPath: ${{ variables.TRIDENT_SOURCE_DIR }}/logstream-full.log
