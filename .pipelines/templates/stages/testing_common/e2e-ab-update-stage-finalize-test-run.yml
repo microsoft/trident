@@ -169,6 +169,7 @@ steps:
     - template: ../testing_common/capture-vm-screenshot.yml
       parameters:
         screenshotName: "finalize"
+        captureScreenshot: ne(variables['abActiveVolume'], 'null')
 
   - template: ../testing_common/display-serial-logs.yml
     parameters:
