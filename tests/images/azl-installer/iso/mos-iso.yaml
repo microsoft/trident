@@ -1,9 +1,5 @@
 os:
   additionalFiles:
-  - source: bin/liveinstaller
-    destination: /root/installer/liveinstaller
-  - source: files/EULA.txt
-    destination: /root/installer/EULA.txt
   - source: scripts/installation.sh
     destination: /root/installer/installation.sh 
 
@@ -11,9 +7,13 @@ iso:
   initramfsType: full-os
   additionalFiles:
   - source: images/trident-testimage.cosi
-    destination: /images/azure-linux-trident.cosi
+    destination: /mnt/installer/images/azure-linux-trident.cosi
   - source: images/azl-full-testimage.cosi
-    destination: /images/azure-linux-full.cosi
+    destination: /mnt/installer/images/azure-linux-full.cosi
+  - source: bin/liveinstaller
+    destination: /mnt/installer/liveinstaller
+  - source: files/EULA.txt
+    destination: /mnt/installer/EULA.txt
   kernelCommandLine:
     extraCommandLine:
     - console=tty0

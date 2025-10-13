@@ -2,20 +2,19 @@
 set -ex
 trap '/bin/bash' ERR
 
-# CD_INSTALLER_DIR="/mnt/trident_cdrom/installer"
-# IMAGES_PATH="/mnt/trident_cdrom/images/"
-WORKING_DIR="/root/installer"
+
+INSTALLER_DIR="/mnt/installer/"
+TRIDENT_CONFIG="/etc/trident/config.yaml"
 
 # Copy the installer files to the working directory
-# cp -r "$CD_INSTALLER_DIR/" "/root/"
-# cp -r "$IMAGES_PATH" "$WORKING_DIR/"
+cp -r "$INSTALLER_DIR/" "/root/"
 
-TRIDENT_CONFIG="/etc/trident/config.yaml"
-TRIDENT_IMAGES_DIR="$WORKING_DIR/images/"
+WORKING_DIR="/root/installer"
+IMAGES_DIR="$WORKING_DIR/images/"
 
 cd "$WORKING_DIR"
 "$WORKING_DIR/liveinstaller" \
-  --images-dir=$TRIDENT_IMAGES_DIR \
+  --images-dir=$IMAGES_DIR \
   --host-config=$TRIDENT_CONFIG \
   --log-level=trace \
   --log-file=$WORKING_DIR/liveinstaller.log > "$WORKING_DIR/output_liveinstaller.log" 2>&1
