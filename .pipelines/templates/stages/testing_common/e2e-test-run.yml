@@ -160,11 +160,11 @@ steps:
     displayName: "🅱️🔄 Stage and finalize A/B update into target OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
-  - ${{ if eq(parameters.deploymentEnvironment, 'virtualMachine') }}:
-    - template: ../testing_common/capture-vm-screenshot.yml
-      parameters:
-        screenshotName: "update-b"
-        captureScreenshot: ne(variables['abActiveVolume'], 'null')
+  - template: ../testing_common/capture-vm-screenshot.yml
+    parameters:
+      screenshotName: "update-b"
+      captureScreenshot: ne(variables['abActiveVolume'], 'null')
+      deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
 
   - template: ../testing_common/display-serial-logs.yml
     parameters:
@@ -275,11 +275,12 @@ steps:
     displayName: "🅰️🔄 Stage and finalize A/B update into target OS A"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
-  - ${{ if eq(parameters.deploymentEnvironment, 'virtualMachine') }}:
-    - template: ../testing_common/capture-vm-screenshot.yml
-      parameters:
-        screenshotName: "update-a"
-        captureScreenshot: ne(variables['abActiveVolume'], 'null')
+  - template: ../testing_common/capture-vm-screenshot.yml
+    parameters:
+      screenshotName: "update-a"
+      captureScreenshot: ne(variables['abActiveVolume'], 'null')
+      deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
+
 
   - template: ../testing_common/display-serial-logs.yml
     parameters:

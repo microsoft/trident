@@ -165,11 +165,11 @@ steps:
     displayName: "🔄 Finalize A/B update into target OS"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
-  - ${{ if eq(parameters.deploymentEnvironment, 'virtualMachine') }}:
-    - template: ../testing_common/capture-vm-screenshot.yml
-      parameters:
-        screenshotName: "finalize"
-        captureScreenshot: ne(variables['abActiveVolume'], 'null')
+  - template: ../testing_common/capture-vm-screenshot.yml
+    parameters:
+      screenshotName: "finalize"
+      captureScreenshot: ne(variables['abActiveVolume'], 'null')
+      deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
 
   - template: ../testing_common/display-serial-logs.yml
     parameters:

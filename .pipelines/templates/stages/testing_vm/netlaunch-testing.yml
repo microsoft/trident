@@ -111,11 +111,6 @@ stages:
 
         steps:
           - bash: |
-              sudo apt-get install -y imagemagick
-            displayName: Install image package
-            retryCountOnTaskFailure: 3
-
-          - bash: |
               if [ ${{ variables['tridentConfigurationName'] }} == 'split' ]; then
                 splitInstallerIsoName="trident-split-installer"
                 echo "setting variable.installerISOName to $splitInstallerIsoName"
@@ -225,6 +220,7 @@ stages:
           - template: ../testing_common/capture-vm-screenshot.yml
             parameters:
               screenshotName: "install"
+              deploymentEnvironment: virtualMachine
 
           - template: ../testing_common/display-deployment-logs.yml
             parameters:
