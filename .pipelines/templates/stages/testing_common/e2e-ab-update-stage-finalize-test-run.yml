@@ -165,12 +165,10 @@ steps:
     displayName: "🔄 Finalize A/B update into target OS"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
-  - bash: |
-      echo "Capture screenshot of virtual machine"
-      sudo virsh screenshot virtdeploy-vm-0 ./screenshot.ppm
-      convert ./screenshot.ppm $(ob_outputDirectory)/finalize.png
-    condition: and(succeededOrFailed(), eq(parameters.deploymentEnvironment, 'virtualMachine'))
-    displayName: "📷 Capture screenshot (finalize)"
+  - ${{ if eq(parameters.deploymentEnvironment, 'virtualMachine') }}:
+    - template: ../testing_common/capture-vm-screenshot.yml
+      parameters:
+        screenshotName: "finalize"
 
   - template: ../testing_common/display-serial-logs.yml
     parameters:

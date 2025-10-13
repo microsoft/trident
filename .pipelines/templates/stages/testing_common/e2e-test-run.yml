@@ -160,12 +160,10 @@ steps:
     displayName: "🅱️🔄 Stage and finalize A/B update into target OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
-  - bash: |
-      echo "Capture screenshot of virtual machine"
-      sudo virsh screenshot virtdeploy-vm-0 ./screenshot.ppm
-      convert ./screenshot.ppm $(ob_outputDirectory)/update-b.png
-    condition: and(succeededOrFailed(), eq(parameters.deploymentEnvironment, 'virtualMachine'))
-    displayName: "📷 Capture screenshot (update b)"
+  - ${{ if eq(parameters.deploymentEnvironment, 'virtualMachine') }}:
+    - template: ../testing_common/capture-vm-screenshot.yml
+      parameters:
+        screenshotName: "update-b"
 
   - template: ../testing_common/display-serial-logs.yml
     parameters:
@@ -276,12 +274,10 @@ steps:
     displayName: "🅰️🔄 Stage and finalize A/B update into target OS A"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
-  - bash: |
-      echo "Capture screenshot of virtual machine"
-      sudo virsh screenshot virtdeploy-vm-0 ./screenshot.ppm
-      convert ./screenshot.ppm $(ob_outputDirectory)/update-a.png
-    condition: and(succeededOrFailed(), eq(parameters.deploymentEnvironment, 'virtualMachine'))
-    displayName: "📷 Capture screenshot (update a)"
+  - ${{ if eq(parameters.deploymentEnvironment, 'virtualMachine') }}:
+    - template: ../testing_common/capture-vm-screenshot.yml
+      parameters:
+        screenshotName: "update-a"
 
   - template: ../testing_common/display-serial-logs.yml
     parameters:

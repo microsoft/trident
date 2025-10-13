@@ -1,0 +1,17 @@
+parameters:
+  - name: screenshotName
+    type: string
+
+  - name: vmName
+    type: string
+    default: "virtdeploy-vm-0"
+
+steps:
+  - bash: |
+      set -eux
+      mkdir -p $(ob_outputDirectory)
+      # Capture screenshot from the VM using virsh and convert it to PNG format
+      sudo virsh screenshot ${{ parameters.vmName }} /tmp/screenshot.ppm
+      convert /tmp/screenshot.ppm $(ob_outputDirectory)/${{ parameters.screenshotName }}.png
+    condition: succeededOrFailed()
+    displayName: "📷 Capture screenshot: ${{ parameters.screenshotName }}"
