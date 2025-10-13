@@ -21,6 +21,17 @@ def trident_rebuild_raid(connection, trident_config, runtime_env):
         trident_config : The full path to the Trident config on the host.
 
     """
+    run_ssh_command(
+        connection,
+        f"sed -i 's|waitForSystemdNetworkd.*||' {trident_config}",
+        use_sudo=True,
+    )
+    run_ssh_command(
+        connection,
+        f"sed -i 's|orchestratorConnectionTimeoutSeconds.*||' {trident_config}",
+        use_sudo=True,
+    )
+
     # Provide -c arg, the full path to the RW Trident config.
     trident_return_code, trident_stdout, trident_stderr = trident_run(
         connection, f"rebuild-raid -v trace", runtime_env
