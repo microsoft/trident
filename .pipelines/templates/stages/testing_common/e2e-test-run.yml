@@ -165,7 +165,7 @@ steps:
       sudo virsh screenshot virtdeploy-vm-0 ./screenshot.ppm
       sudo apt-get install -y imagemagick
       convert ./screenshot.ppm $(ob_outputDirectory)/update-b.png
-    condition: succeededOrFailed()
+    condition: and(succeededOrFailed(), eq(parameters.deploymentEnvironment, 'virtualMachine'))
     displayName: "📷 Capture screenshot (update b)"
 
   - template: ../testing_common/display-serial-logs.yml
@@ -282,7 +282,7 @@ steps:
       sudo virsh screenshot virtdeploy-vm-0 ./screenshot.ppm
       sudo apt-get install -y imagemagick
       convert ./screenshot.ppm $(ob_outputDirectory)/update-a.png
-    condition: succeededOrFailed()
+    condition: and(succeededOrFailed(), eq(parameters.deploymentEnvironment, 'virtualMachine'))
     displayName: "📷 Capture screenshot (update a)"
 
   - template: ../testing_common/display-serial-logs.yml
