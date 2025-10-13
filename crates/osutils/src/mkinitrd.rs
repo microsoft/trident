@@ -73,6 +73,9 @@ fn run_darcut() -> Result<(), Error> {
 
     Dependency::Dracut
         .cmd()
+        .arg("--debug")
+        .arg("-v")
+        .arg("6")
         .arg("--force")
         .arg("--regenerate-all")
         .arg("--zstd")
