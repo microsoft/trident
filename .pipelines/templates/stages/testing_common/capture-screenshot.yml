@@ -26,6 +26,7 @@ steps:
             --config $(TRIDENT_SOURCE_DIR)/baremetal-netlaunch.yaml \
             --force-color \
             --port 4000 \
+            --iso 'makebelieve' \
             --screenshot-path /tmp/screenshot
         ORIG_SCREENSHOT_FILE=$(find /tmp/screenshot/screenshot.* | head -n 1)
         ORIG_SCREENSHOT_EXT="${ORIG_SCREENSHOT_FILE##*.}"
