@@ -218,14 +218,12 @@ stages:
             timeoutInMinutes: 20
 
           - bash: |
-              echo "Displaying ip information"
-              ip a
-
-              # HOST_IP=$(jq -r '.virtualmachines[0].ip' $(tridentSourceDirectory)/tools/virt-deploy-metadata.json)
-              # echo "Ping machine os ($HOST_IP)"
-              # ping -c 3 "$HOST_IP"
+              echo "Capture screenshot of virtual machine"
+              sudo virsh screenshot virtdeploy-vm-0 ./screenshot.ppm
+              sudo apt-get install -y imagemagick
+              convert ./screenshot.ppm $(ob_outputDirectory)/install.png
             condition: succeededOrFailed()
-            displayName: "📄 Diagnostic info"
+            displayName: "📷 Capture screenshot"
 
           - template: ../testing_common/display-deployment-logs.yml
             parameters:

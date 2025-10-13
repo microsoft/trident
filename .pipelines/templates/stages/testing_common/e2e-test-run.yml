@@ -160,6 +160,14 @@ steps:
     displayName: "🅱️🔄 Stage and finalize A/B update into target OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
+  - bash: |
+      echo "Capture screenshot of virtual machine"
+      sudo virsh screenshot virtdeploy-vm-0 ./screenshot.ppm
+      sudo apt-get install -y imagemagick
+      convert ./screenshot.ppm $(ob_outputDirectory)/update-b.png
+    condition: succeededOrFailed()
+    displayName: "📷 Capture screenshot (update b)"
+
   - template: ../testing_common/display-serial-logs.yml
     parameters:
       netlistenConfigFile: ${{ parameters.netlistenConfigFile }}
@@ -268,6 +276,14 @@ steps:
     workingDirectory: $(Build.SourcesDirectory)
     displayName: "🅰️🔄 Stage and finalize A/B update into target OS A"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
+
+  - bash: |
+      echo "Capture screenshot of virtual machine"
+      sudo virsh screenshot virtdeploy-vm-0 ./screenshot.ppm
+      sudo apt-get install -y imagemagick
+      convert ./screenshot.ppm $(ob_outputDirectory)/update-a.png
+    condition: succeededOrFailed()
+    displayName: "📷 Capture screenshot (update a)"
 
   - template: ../testing_common/display-serial-logs.yml
     parameters:
