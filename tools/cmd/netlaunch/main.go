@@ -53,6 +53,7 @@ var (
 	waitForProvisioned  bool
 	secureBoot          bool
 	signingCert         string
+	screenshotPath      string
 )
 
 var backgroundLogstreamFull string
@@ -117,12 +118,6 @@ var rootCmd = &cobra.Command{
 		log.SetLevel(log.DebugLevel)
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		// Read the ISO
-		iso, err := os.ReadFile(iso)
-		if err != nil {
-			log.WithError(err).Fatalf("failed to find iso for testing")
-		}
-
 		viper.SetConfigType("yaml")
 		viper.SetConfigFile(netlaunchConfigFile)
 		if err := viper.ReadInConfig(); err != nil {
@@ -133,6 +128,17 @@ var rootCmd = &cobra.Command{
 
 		if err := viper.UnmarshalExact(&config); err != nil {
 			log.WithError(err).Fatal("could not unmarshal configuration")
+		}
+
+		if screenshotPath != "" {
+			captureScreenshot(screenshotPath, config)
+			return
+		}
+
+		// Read the ISO
+		iso, err := os.ReadFile(iso)
+		if err != nil {
+			log.WithError(err).Fatalf("failed to find iso for testing")
 		}
 
 		localListenAddress := fmt.Sprintf(":%d", listenPort)
@@ -363,6 +369,39 @@ var rootCmd = &cobra.Command{
 	},
 }
 
+func captureScreenshot(screenshotPath string, netlaunchConfig config.NetLaunchConfig) {
+	log.Infof("Screenshot path specified: %s", screenshotPath)
+	// Ensure the directory exists
+	err := os.MkdirAll(screenshotPath, 0755)
+	if err != nil {
+		log.WithError(err).Fatalf("failed to create screenshot directory")
+	}
+
+	port := "443"
+	if netlaunchConfig.Netlaunch.Bmc.Port != nil {
+		port = *netlaunchConfig.Netlaunch.Bmc.Port
+	}
+
+	client := bmclib.NewClient(
+		netlaunchConfig.Netlaunch.Bmc.Ip,
+		netlaunchConfig.Netlaunch.Bmc.Username,
+		netlaunchConfig.Netlaunch.Bmc.Password,
+		bmclib.WithRedfishPort(port),
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	image, filetype, err := client.Screenshot(ctx)
+	if err != nil {
+		log.WithError(err).Fatalf("failed to take screenshot")
+	}
+	err = os.WriteFile(fmt.Sprintf("%s/screenshot.%s", screenshotPath, filetype), image, 0644)
+	if err != nil {
+		log.WithError(err).Fatalf("failed to write screenshot")
+	}
+}
+
 func startLocalVm(localVmUuidStr string, isoLocation string, secureBoot bool, signingCert string) {
 	log.Info("Using local VM")
 
@@ -403,6 +442,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&signingCert, "signing-cert", "", "", "Path to signing certificate")
 	rootCmd.Flags().StringVarP(&iso, "iso", "i", "", "ISO for Netlaunch testing")
 	rootCmd.MarkFlagRequired("iso-template")
+	rootCmd.PersistentFlags().StringVarP(&screenshotPath, "screenshot-path", "", "", "Path to screenshot")
 }
 
 func main() {

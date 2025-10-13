@@ -18,6 +18,22 @@ parameters:
     default: true
 
 steps:
+  - ${{ if eq(parameters.deploymentEnvironment, 'bareMetal') }}:
+    - bash: |
+        set -eux
+        mkdir -p $(ob_outputDirectory)
+        ./bin/netlaunch \
+            --config $(TRIDENT_SOURCE_DIR)/baremetal-netlaunch.yaml \
+            --force-color \
+            --port 4000 \
+            --iso 'makebelieve' \
+            --screenshot-path /tmp/screenshot
+        ORIG_SCREENSHOT_FILE=$(find /tmp/screenshot/screenshot.* | head -n 1)
+        ORIG_SCREENSHOT_EXT="${ORIG_SCREENSHOT_FILE##*.}"
+        mv "$ORIG_SCREENSHOT_FILE" "$(ob_outputDirectory)/${{ parameters.screenshotName }}.$ORIG_SCREENSHOT_EXT"
+      condition: and(succeededOrFailed(), eq(${{ parameters.captureScreenshot }}, true))
+      displayName: "📷 Capture screenshot: ${{ parameters.screenshotName }}"
+
   - ${{ if eq(parameters.deploymentEnvironment, 'virtualMachine') }}:
     - bash: |
         sudo apt-get install -y imagemagick
