@@ -302,11 +302,6 @@ stages:
             workingDirectory: ${{ variables.TRIDENT_SOURCE_DIR }}
             displayName: "Run netlaunch for testing"
 
-          - template: ../testing_common/capture-screenshot.yml
-            parameters:
-              screenshotName: "install"
-              deploymentEnvironment: bareMetal
-
           - template: ../testing_common/display-deployment-logs.yml
             parameters:
               deploymentLogPath: ${{ variables.TRIDENT_SOURCE_DIR }}/logstream-full.log
