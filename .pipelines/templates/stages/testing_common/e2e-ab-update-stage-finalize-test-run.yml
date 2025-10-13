@@ -168,7 +168,6 @@ steps:
   - bash: |
       echo "Capture screenshot of virtual machine"
       sudo virsh screenshot virtdeploy-vm-0 ./screenshot.ppm
-      sudo apt-get install -y imagemagick
       convert ./screenshot.ppm $(ob_outputDirectory)/finalize.png
     condition: and(succeededOrFailed(), eq(parameters.deploymentEnvironment, 'virtualMachine'))
     displayName: "📷 Capture screenshot (finalize)"
