@@ -160,7 +160,7 @@ steps:
     displayName: "🅱️🔄 Stage and finalize A/B update into target OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
-  - template: ../testing_common/capture-vm-screenshot.yml
+  - template: ../testing_common/capture-screenshot.yml
     parameters:
       screenshotName: "update-b"
       captureScreenshot: ${{ ne(variables['abActiveVolume'], 'null') }}
@@ -275,7 +275,7 @@ steps:
     displayName: "🅰️🔄 Stage and finalize A/B update into target OS A"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
-  - template: ../testing_common/capture-vm-screenshot.yml
+  - template: ../testing_common/capture-screenshot.yml
     parameters:
       screenshotName: "update-a"
       captureScreenshot: ${{ ne(variables['abActiveVolume'], 'null') }}

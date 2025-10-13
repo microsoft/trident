@@ -165,7 +165,7 @@ steps:
     displayName: "🔄 Finalize A/B update into target OS"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
-  - template: ../testing_common/capture-vm-screenshot.yml
+  - template: ../testing_common/capture-screenshot.yml
     parameters:
       screenshotName: "finalize"
       captureScreenshot: ${{ ne(variables['abActiveVolume'], 'null') }}

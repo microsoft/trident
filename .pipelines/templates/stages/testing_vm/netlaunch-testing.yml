@@ -217,7 +217,7 @@ stages:
             displayName: "🚀 Run netlaunch for testing"
             timeoutInMinutes: 20
 
-          - template: ../testing_common/capture-vm-screenshot.yml
+          - template: ../testing_common/capture-screenshot.yml
             parameters:
               screenshotName: "install"
               deploymentEnvironment: virtualMachine
