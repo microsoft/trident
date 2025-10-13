@@ -57,6 +57,19 @@ def add_copy_command(host_config_path):
         yaml.safe_dump(host_config, f)
 
 
+def network_config(host_config_path):
+    with open(host_config_path, "r") as f:
+        host_config = yaml.safe_load(f)
+
+    if "internalParams" not in host_config:
+        host_config["internalParams"] = {}
+    host_config["internalParams"]["waitForSystemdNetworkd"] = True
+    host_config["internalParams"]["orchestratorConnectionTimeoutSeconds"] = 300
+
+    with open(host_config_path, "w") as f:
+        yaml.safe_dump(host_config, f)
+
+
 # Images stored in ACR are tagged based on pipeline build ID, and therefore the
 # URL must be updated for every build.
 def rename_oci_url(host_config_path, oci_url):
@@ -108,6 +121,8 @@ def main():
 
     if args.ociUrl:
         rename_oci_url(args.hostconfig, args.ociUrl)
+
+    network_config(args.hostconfig)
 
 
 if __name__ == "__main__":
