@@ -37,6 +37,7 @@ steps:
     - bash: |
         sudo apt-get install -y imagemagick
       displayName: Install image package
+      condition: and(succeededOrFailed(), eq(${{ parameters.captureScreenshot }}, true))
       retryCountOnTaskFailure: 3
 
     - bash: |
