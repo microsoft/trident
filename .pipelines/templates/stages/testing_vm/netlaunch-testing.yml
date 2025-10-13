@@ -217,6 +217,14 @@ stages:
             displayName: "🚀 Run netlaunch for testing"
             timeoutInMinutes: 20
 
+          - bash: |
+              echo "Capture screenshot of virtual machine"
+              sudo virsh screenshot virtdeploy-vm-0 ./screenshot.ppm
+              sudo apt-get install -y imagemagick
+              convert ./screenshot.ppm $(ob_outputDirectory)/install.png
+            condition: succeededOrFailed()
+            displayName: "📷 Capture screenshot"
+
           - template: ../testing_common/display-deployment-logs.yml
             parameters:
               deploymentLogPath: $(tridentSourceDirectory)/logstream-full.log
