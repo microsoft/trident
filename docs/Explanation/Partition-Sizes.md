@@ -11,13 +11,13 @@ For servicable partitions, like root, the sizes of the
 ## ESP
 
 The EFI System Partition (ESP) is used for storing boot loaders and related
-files. There are two recommended sizes for the ESP:
+files.
 
-- `256MB ???` for single-OS GRUB systems
-- `512MB ???` for single-OS UKI systems
+For a single boot system, `512MB` is recommended.
 
-For multiboot systems, `512MB * (number of operating systems) ???` is
-recommended.
+For multiboot systems, each operating system should be accounted for. Azure
+Linux should have at least `512MB`. For other operating systems, be aware of
+their recommendations.
 
 ``` yaml
 storage:
@@ -32,7 +32,7 @@ storage:
 ## Boot
 
 The boot partition is used for storing the kernel and initramfs files. The
-recommended size for the boot partition is `200MB`.
+recommended size for the boot partition is `256MB`.
 
 ``` yaml
 storage:
@@ -41,13 +41,17 @@ storage:
       partitions:
         - id: boot
           type: xbootldr
-          size: 200M
+          size: 256M
 ```
 
 ## Root
 
 The root partition size depends on the operating system being installed. The
 minimum recommended size for root is `4GB`.
+
+:::note
+Using the minimal size does not leave much room for additional packages or
+container images. Consider your use case and adjust the size accordingly.
 
 ``` yaml
 storage:
@@ -80,9 +84,12 @@ storage:
 ## Trident State
 
 By default, Trident stores its state in `/var/lib/trident`. This includes logs
-and other data that Trident needs to operate. This path can be customized, but
-regardless of the location, the recommendation is to allocate at least
-`1GB ???` for that partition.
+and other persistent state that Trident needs to operate. This path can be
+customized, but because it is used to store state that persists across updates,
+it must not be placed on an [A/B volume pair](../Reference/Glossary.md#ab-volume-pair).
+
+Regardless of the location, the recommendation is to allocate at least
+`256MB` for that partition.
 
 ``` yaml
 storage:
@@ -90,5 +97,14 @@ storage:
     - id: os
       partitions:
         - id: trident
-          size: 1G
+          size: 256M
 ```
+
+## Other Partitions
+
+There are a lot of scenarios where you might want to define additional
+partitions. People often create partitions to carve out dedicated spaces for
+subtrees, e.g. /var.
+
+These partitions should be sized according to your specific needs and use
+cases.
