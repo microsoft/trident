@@ -92,7 +92,7 @@ storage:
 
 ## Boot
 
-The boot partition (`/boot`)is used for storing the kernel and initramfs files.
+The boot partition (`/boot`) is used for storing the kernel and initramfs files.
 
 `/boot` must be a separate partition when creating COSI images configured with:
 
