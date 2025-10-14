@@ -74,7 +74,6 @@ ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa testing-user@$VM_IP sudo triden
 ## Verify results
 
 ``` bash
-ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa testing-user@$VM_IP sudo trident get status
-ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa testing-user@$VM_IP sudo ls /var/lib/trident/trident-update-check-failure-*.log
-ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa testing-user@$VM_IP sudo cat /var/lib/trident/trident-update-check-failure-*.log
+ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa testing-user@$VM_IP sudo cat /var/lib/trident/trident-update-check-failure-*.log > failure.log
+grep "failure for ab update" failure.log
 ```
