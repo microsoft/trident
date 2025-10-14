@@ -8,7 +8,7 @@ and may need to be adjusted based on specific requirements.
 :::note
 For [A/B volume pairs](../Reference/Glossary.md#ab-volume-pair), i.e. partitions
 that are configured to be updated with [A/B updates](../Reference/Glossary.md#ab-update),
-like root, the sizes of each (`root-a` and `root-b`) the must be the same.
+like root, the sizes of each (`root-a` and `root-b`) must be the same.
 :::
 
 The recommendations below are specific to Azure Linux unless otherwise noted.
