@@ -52,6 +52,7 @@ minimum recommended size for root is `4GB`.
 :::note
 Using the minimal size does not leave much room for additional packages or
 container images. Consider your use case and adjust the size accordingly.
+:::
 
 ``` yaml
 storage:
