@@ -6,13 +6,26 @@ the target OS. Both [`GRUB`](https://www.unixtutorial.org/reference/grub-bootloa
 and [`systemd-boot`](https://www.freedesktop.org/software/systemd/man/latest/systemd-boot.html)
 are supported.
 
+The bootloader type is determined by the `COSI` file referenced in the
+[Host Configuration](../Reference/Host-Configuration/API-Reference/HostConfiguration.md).
+
+## GRUB
+
+With `GRUB`, the UEFI firmware boots the grub EFI directly.
+
+## systemd-boot
+
 :::note
 For [Unified Kernel Image (UKI)](https://uapi-group.org/specifications/specs/unified_kernel_image/),
 Trident only supports using `systemd-boot`.
 :::
 
-The bootloader type is determined by the COSI file referenced in the Host
-Configuration.
+With `systemd-boot` and UKIs, shim is configured as the primary bootloader,
+which is booted by the firmware. shim then boots the secondary bootloader, i.e.
+`systemd-boot`. This is necessary because `systemd-boot` is an external
+bootloader, which is not signed with trusted keys; so, for SecureBoot to work,
+for example, we need to have `systemd-boot` loaded by shim, which can be
+trusted directly.
 
 ## COSI Configuration
 
