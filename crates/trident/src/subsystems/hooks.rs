@@ -318,13 +318,20 @@ impl HooksSubsystem {
 
     /// This function will be called outside the standard subsystem flow
     /// before Trident commits a target OS.
-    pub fn execute_pre_commit_scripts(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
-        if !ctx.spec.scripts.pre_commit.is_empty() {
+    pub fn execute_update_check_scripts(
+        &mut self,
+        ctx: &EngineContext,
+    ) -> Result<(), TridentError> {
+        if ctx.servicing_type != ServicingType::AbUpdate {
+            return Ok(());
+        }
+        if !ctx.spec.scripts.update_check.is_empty() {
             debug!("Running pre-commit scripts");
         }
+
         ctx.spec
             .scripts
-            .pre_commit
+            .update_check
             .iter()
             .filter(|script| script.should_run(ctx.servicing_type))
             .try_for_each(|script| {

@@ -1159,15 +1159,15 @@
             "$ref": "#/definitions/Script"
           }
         },
-        "preCommit": {
-          "description": "Scripts to be run before Trident commits a target OS as 'provisioned'.  If any of the scripts fail, commit will not be completed and rollback will be triggered.\n\nThese scripts are run in the target OS. The `$TARGET_ROOT` variable will be set to '/' for consistency with postProvision scripts.",
+        "preServicing": {
+          "description": "Scripts to be run before Trident begins servicing the host.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/Script"
           }
         },
-        "preServicing": {
-          "description": "Scripts to be run before Trident begins servicing the host.",
+        "updateCheck": {
+          "description": "Scripts to be run before Trident commits an updated target OS as 'provisioned'.  If any of the scripts fail, commit will not be completed and rollback will be triggered.\n\nThese scripts only run for updates, not installs. If runOn is specified for anything other than an update type, the script will be ignored.\n\nThese scripts are run in the target OS. The `$TARGET_ROOT` variable will be set to '/' for consistency with postProvision scripts.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/Script"

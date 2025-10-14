@@ -74,7 +74,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
         info!("Host successfully booted from updated target OS image");
 
         // Execute pre-commit scripts, if one fails, trigger rollback
-        match HooksSubsystem::default().execute_pre_commit_scripts(&ctx) {
+        match HooksSubsystem::default().execute_update_check_scripts(&ctx) {
             Ok(()) => {}
             // TODO: need to create mechanism for rollback reboot
             Err(e) => {

@@ -104,7 +104,7 @@ scripts:
     content: /var/config-script.sh
     environmentVariables:
       SAMPLE_VARIABLE: sample-variable-value
-  preCommit:
+  updateCheck:
   - name: sample-commit-script
     runOn:
     - clean-install
