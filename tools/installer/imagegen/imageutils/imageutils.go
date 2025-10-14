@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"installer/internal/file"
 )
 
 const (
@@ -18,18 +20,30 @@ const (
 )
 
 // Scans a directory for available images to install
-func DiscoverSystemImages(directoryPath string) ([]SystemImage, error) {
+func DiscoverSystemImages(directoryPath string) (images []SystemImage, err error) {
 	if directoryPath == "" {
 		return nil, fmt.Errorf("directory path cannot be empty")
 	}
-
-	info, err := os.Stat(directoryPath)
+	// Convert to absolute path
+	directoryPath, err = filepath.Abs(directoryPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to access directory '%s': %w", directoryPath, err)
+		return nil, fmt.Errorf("failed to get absolute path for directory: %w", err)
 	}
 
-	if !info.IsDir() {
-		return nil, fmt.Errorf("path '%s' is not a directory", directoryPath)
+	exists, err := file.PathExists(directoryPath)
+	if err != nil {
+		return
+	}
+	if !exists {
+		return nil, fmt.Errorf("directory does not exist: '%s'", directoryPath)
+	}
+
+	isDir, err := file.IsDir(directoryPath)
+	if err != nil {
+		return
+	}
+	if !isDir {
+		return nil, fmt.Errorf("path is not a directory: '%s'", directoryPath)
 	}
 
 	files, err := os.ReadDir(directoryPath)
@@ -37,7 +51,6 @@ func DiscoverSystemImages(directoryPath string) ([]SystemImage, error) {
 		return nil, fmt.Errorf("failed to read directory '%s': %w", directoryPath, err)
 	}
 
-	var images []SystemImage
 	for _, file := range files {
 		// Skip subdirectories
 		if file.IsDir() {
@@ -67,7 +80,8 @@ func DiscoverSystemImages(directoryPath string) ([]SystemImage, error) {
 // Validate SystemImage
 // Current validation just checks if image is a COSI file
 func ValidateImage(imageFile string) bool {
-	if _, err := os.Stat(imageFile); os.IsNotExist(err) {
+	exists, err := file.PathExists(imageFile)
+	if err != nil || !exists {
 		return false
 	}
 

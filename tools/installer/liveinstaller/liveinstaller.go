@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 
 	"installer/imagegen/attendedinstaller"
 	"installer/imagegen/configuration"
 	"installer/imagegen/diskutils"
 	"installer/internal/exe"
+	"installer/internal/file"
 	"installer/internal/logger"
 
 	"github.com/alecthomas/kingpin/v2"
@@ -19,13 +21,12 @@ import (
 )
 
 var (
-	app = kingpin.New("liveinstaller", "A tool to install Azure Linux using Trident with an interactive terminal UI.")
-
-	unattended             = app.Flag("unattended", "Use the unattended installer without user interaction.").Bool()
-	imagesDir              = app.Flag("images-dir", "Path to the directory containing OS images for the target system.").Required().String()
-	hostConfigTemplatePath = app.Flag("host-config-template", "Path to the Host Configuration template file for unattended installation.").Default("").String()
-	hostConfigOutputPath   = app.Flag("host-config-output", "Output path where the Host Configuration file will be created.").Default("/etc/trident/config.yaml").String()
-	logFlags               = exe.SetupLogFlags(app)
+	app              = kingpin.New("liveinstaller", "A tool to install Azure Linux using Trident with an interactive terminal UI.")
+	unattended       = app.Flag("unattended", "Use the unattended flag for the installer without user interaction. Host Configuration Template must be provided").Bool()
+	imagesDir        = app.Flag("images-dir", "Path to the directory containing OS images for the target system.").String()
+	templateFile     = app.Flag("template-file", "Path to the YAML template file used to generate the Host Configuration for unattended installation.").Default("").String()
+	hostConfigOutput = app.Flag("host-config-output", "Output path where the generated Host Configuration file will be saved.").Default("/etc/trident/config.yaml").String()
+	logFlags         = exe.SetupLogFlags(app)
 )
 
 func handleCtrlC(signals chan os.Signal) {
@@ -73,9 +74,30 @@ func installerFactory(unattended bool) (installFunc func() (bool, error)) {
 
 // Runs the terminal UI for attended installation
 func terminalUIAttendedInstall() (installationQuit bool, err error) {
-	// Initialize the attended installer
-	attendedInstaller, err := attendedinstaller.New(*imagesDir, *hostConfigOutputPath)
+	// Convert to absolute path
+	*hostConfigOutput, err = filepath.Abs(*hostConfigOutput)
+	if err != nil {
+		return
+	}
 
+	// Check if the images directory exists and is a directory
+	exists, err := file.DirExists(*imagesDir)
+	if err != nil {
+		return
+	}
+	if !exists {
+		err = fmt.Errorf("images directory not found : '%s'. "+
+			"Please specify a valid directory containing OS images using the --images-dir flag", *imagesDir)
+		return
+	}
+	// Convert images directory to absolute path
+	*imagesDir, err = filepath.Abs(*imagesDir)
+	if err != nil {
+		return
+	}
+
+	// Initialize the attended installer
+	attendedInstaller, err := attendedinstaller.New(*imagesDir, *hostConfigOutput)
 	if err != nil {
 		return
 	}
@@ -89,12 +111,16 @@ func terminalUIAttendedInstall() (installationQuit bool, err error) {
 func unattendedInstall() (installationQuit bool, err error) {
 	installationQuit = false
 
-	if *hostConfigTemplatePath == "" {
-		err = fmt.Errorf("unattended installation requires a Host Configuration template. Use --host-config-template flag")
+	// Check if template is provided and exists
+	exists, err := file.PathExists(*templateFile)
+	if err != nil {
 		return
 	}
-
-	logger.Log.Infof("Using Host Configuration template: %s", *hostConfigTemplatePath)
+	if !exists {
+		err = fmt.Errorf("template file not found: '%s'. "+
+			"Please specify a valid YAML template file using the --template-file flag", *templateFile)
+		return
+	}
 
 	// Set disk path for installation
 	devicePath, err := getDevicePath()
@@ -102,13 +128,16 @@ func unattendedInstall() (installationQuit bool, err error) {
 		return
 	}
 
-	// Render the Host Configuration using the provided template file
-	generatedHostConfigPath, err := configuration.RenderHostConfigurationUnattended(*hostConfigTemplatePath, devicePath)
+	// Convert template path to absolute path and render the Host Configuration
+	templatePath, err := filepath.Abs(*templateFile)
 	if err != nil {
 		return
 	}
-
-	logger.Log.Infof("Host Configuration created at: %s", generatedHostConfigPath)
+	generatedHostConfigPath, err := configuration.RenderHostConfigurationUnattended(templatePath, devicePath)
+	if err != nil {
+		return
+	}
+	*hostConfigOutput = generatedHostConfigPath
 
 	return
 }

@@ -6,18 +6,29 @@ import (
 	"os"
 	"path/filepath"
 	"text/template"
+
+	"installer/internal/file"
 )
 
 //go:embed template/host-config.yaml.tmpl
 var hostConfigTemplate string
 
-// Use default embedded template.
+// Use default embedded template
 func RenderTridentHostConfiguration(configPath string, configData *TridentConfigData) error {
 	return RenderHostConfigurationWithTemplate(configPath, configData, hostConfigTemplate)
 }
 
-// Creates Host Configuration from the given template for unattended installation.
+// Creates Host Configuration from the given template for unattended installation
 func RenderHostConfigurationUnattended(templatePath string, devicePath string) (configPath string, err error) {
+	// Check if template file exists
+	exists, err := file.PathExists(templatePath)
+	if err != nil {
+		return
+	}
+	if !exists {
+		return "", fmt.Errorf("template file does not exist: %s", templatePath)
+	}
+
 	templateContent, err := os.ReadFile(templatePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to read given Host Configuration template file %s: %w", templatePath, err)
@@ -42,7 +53,7 @@ func RenderHostConfigurationUnattended(templatePath string, devicePath string) (
 	return configPath, nil
 }
 
-// Creates Host Configuration in the specified path, by adding the user input to the template.
+// Creates Host Configuration in the specified path, by adding the user input to the template
 func RenderHostConfigurationWithTemplate(configPath string, configData *TridentConfigData, templateContent string) error {
 	// Check that configPath is a valid YAML file
 	ext := filepath.Ext(configPath)
@@ -68,7 +79,10 @@ func RenderHostConfigurationWithTemplate(configPath string, configData *TridentC
 		if err != nil {
 			return fmt.Errorf("failed to write password script: %w", err)
 		}
-		configData.PasswordScript = passwordScriptPath
+		configData.PasswordScript, err = filepath.Abs(passwordScriptPath)
+		if err != nil {
+			return fmt.Errorf("failed to get absolute path for password script: %w", err)
+		}
 	}
 
 	// Render the Host Configuration

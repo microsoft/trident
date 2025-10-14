@@ -15,7 +15,7 @@ IMAGES_DIR="$WORKING_DIR/images/"
 cd "$WORKING_DIR"
 "$WORKING_DIR/liveinstaller" \
   --images-dir=$IMAGES_DIR \
-  --host-config=$TRIDENT_CONFIG \
+  --host-config-output=$TRIDENT_CONFIG \
   --log-level=trace \
   --log-file=$WORKING_DIR/liveinstaller.log > "$WORKING_DIR/output_liveinstaller.log" 2>&1
 
