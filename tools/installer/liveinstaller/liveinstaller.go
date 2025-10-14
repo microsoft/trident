@@ -52,6 +52,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err == nil {
+		// Execute Trident
+		logger.Log.Infof("Executing Trident with Host Configuration: %s", *hostConfigOutput)
+		err = unix.Exec("/usr/bin/trident",
+			[]string{"trident", "install", *hostConfigOutput},
+			os.Environ())
+	}
 	logger.PanicOnError(err)
 }
 

@@ -19,5 +19,4 @@ cd "$WORKING_DIR"
   --log-level=trace \
   --log-file=$WORKING_DIR/liveinstaller.log > "$WORKING_DIR/output_liveinstaller.log" 2>&1
 
-/bin/trident install
 /bin/bash

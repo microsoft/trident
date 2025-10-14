@@ -463,7 +463,7 @@ bin/EULA.txt:
 run-attendedinstaller-simulator: bin/attendedinstaller-simulator bin/EULA.txt
 	@cd bin && ./attendedinstaller-simulator && cd -
 
-AZL INSTALLER IMAGES
+# AZL INSTALLER IMAGES
 
 artifacts/test-image/azl-installer-mos.vhdx: \
 	artifacts/baremetal.vhdx \
