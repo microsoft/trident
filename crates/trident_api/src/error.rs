@@ -557,8 +557,8 @@ pub enum ServicingError {
         root_volume_b_path: String,
     },
 
-    #[error("Failed to run pre-commit script '{script_name}'")]
-    RunPreCommitScript { script_name: String },
+    #[error("Failed to run update-check script '{script_name}'")]
+    RunUpdateCheckScript { script_name: String },
 
     #[error("Failed to run pre-servicing script '{script_name}'")]
     RunPreServicingScript { script_name: String },

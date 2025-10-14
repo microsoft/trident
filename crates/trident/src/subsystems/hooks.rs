@@ -326,7 +326,7 @@ impl HooksSubsystem {
             return Ok(());
         }
         if !ctx.spec.scripts.update_check.is_empty() {
-            debug!("Running pre-commit scripts");
+            debug!("Running update-check scripts");
         }
 
         ctx.spec
@@ -336,7 +336,7 @@ impl HooksSubsystem {
             .filter(|script| script.should_run(ctx.servicing_type))
             .try_for_each(|script| {
                 self.run_script(script, ctx, Path::new(ROOT_MOUNT_POINT_PATH))
-                    .structured(ServicingError::RunPreCommitScript {
+                    .structured(ServicingError::RunUpdateCheckScript {
                         script_name: script.name.clone(),
                     })
             })?;

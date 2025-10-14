@@ -25,9 +25,9 @@ use crate::{
 
 #[must_use]
 pub enum BootValidationResult {
-    /// Target OS boot successfully, pre-commit scripts succeeded
+    /// Target OS boot successfully, update-check scripts succeeded
     CorrectBootProvisioned,
-    /// Target OS boot successfully, pre-commit scripts failed
+    /// Target OS boot successfully, update-check scripts failed
     CorrectBootInvalid(TridentError),
 }
 
@@ -74,11 +74,11 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
     {
         info!("Host successfully booted from updated target OS image");
 
-        // Execute pre-commit scripts, if one fails, trigger rollback
+        // Execute update-check scripts, if one fails, trigger rollback
         match HooksSubsystem::default().execute_update_check_scripts(&ctx) {
             Ok(()) => {}
             Err(e) => {
-                info!("Failed to execute pre-commit scripts: {e:?}");
+                info!("Failed to execute update check scripts: {e:?}");
 
                 // Generate the new log filename
                 let new_commit_failure_log_filename = format!(
