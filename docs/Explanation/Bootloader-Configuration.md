@@ -54,7 +54,7 @@ understanding or configuration. The following explanation is purely provided to
 illustrate how this process works.
 :::
 
-In order to support A/B update from a single ESP partition, Trident needs to
+In order to support A/B updates from a single ESP partition, Trident needs to
 manage the bootloader files on the ESP partition in a particular way. The
 bootloader is first installed as part of the COSI deployment.
 
@@ -77,7 +77,7 @@ be:
 * `/boot/efi/EFI/AZLA` - the target OS for the initial install
 * `/boot/efi/EFI/AZLB` - the target OS for a future update
 
-Within the bootloader paths, Trident will copy efi files (like `boot<ARCH>.efi`
+Within the bootloader paths, Trident will copy EFI files (like `boot<ARCH>.efi`
 and `grub<ARCH>.efi`) and the `grub.cfg` from the COSI ESP image.
 
 ### systemd-boot Bootloader
@@ -86,7 +86,7 @@ Trident will copy and rename the UKI EFI file from the COSI ESP image, where
 it is versioned with the kernel version (for example
 `/boot/efi/EFI/Linux/vmlinuz-6.6.96.2-2.azl3.efi`), to
 [`/boot/efi/EFI/Linux`](https://uapi-group.org/specifications/specs/boot_loader_specification/#locating-boot-entries)
-on the target OS. Trident will rename the UKI efi file to ensure that the
+on the target OS. Trident will rename the UKI EFI file to ensure that the
 correct file is loaded at boot, as `systemd-boot` will sort the UKI files by
 their names and load the most recent one.
 
@@ -106,5 +106,5 @@ Where:
 
 For example, the first install of a single OS would create
 `/boot/efi/EFI/Linux/vmlinuz-100-azla0.efi`. A subsequent update would create
-`/boot/efi/EFI/Linux/vmlinuz-101-azlb0.efi`. A subsequent update would create
+`/boot/efi/EFI/Linux/vmlinuz-101-azlb0.efi`. The next update would create
 `/boot/efi/EFI/Linux/vmlinuz-102-azla0.efi`, and so on.
