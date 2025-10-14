@@ -6,8 +6,9 @@ installation and update. The recommended sizes are based on typical use cases
 and may need to be adjusted based on specific requirements.
 
 :::note
-For servicable partitions, like root, the sizes of the
-[A/B volume pair](../Reference/Glossary.md#ab-volume-pair) must be the same.
+For [A/B volume pairs](../Reference/Glossary.md#ab-volume-pair), i.e. partitions
+that are configured to be updated with [A/B updates](../Reference/Glossary.md#ab-update),
+like root, the sizes of each (`root-a` and `root-b`) the must be the same.
 :::
 
 The recommendations below are specific to Azure Linux unless otherwise noted.
@@ -116,8 +117,8 @@ storage:
 ## Other Partitions
 
 There are a lot of scenarios where you might want to define additional
-partitions. People often create partitions to carve out dedicated spaces for
-subtrees, e.g. /var.
+partitions. Customers often create partitions to carve out dedicated spaces for
+subtrees, e.g. `/var`.
 
 These partitions should be sized according to your specific needs and use
 cases.
