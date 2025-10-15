@@ -79,7 +79,3 @@ os:
     destination: /usr/lib/systemd/system/getty@.service
   - source: files/serial-getty@.service
     destination: /usr/lib/systemd/system/serial-getty@.service
-
-scripts:
-  postCustomization:
-  - path: scripts/mount-cdrom.sh
