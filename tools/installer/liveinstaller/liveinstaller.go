@@ -38,7 +38,7 @@ func main() {
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 	logger.InitBestEffort(logFlags)
 
-	// Prevent a SIGINT (Ctr-C) from stopping liveinstaller while an installation is in progress.
+	// Prevent a SIGINT (Ctrl-C) from stopping liveinstaller while an installation is in progress.
 	// It is the responsibility of the installer's user interface to handle quit requests from the user.
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, unix.SIGINT)
