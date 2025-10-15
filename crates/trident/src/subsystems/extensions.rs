@@ -73,17 +73,6 @@ impl Subsystem for ExtensionsSubsystem {
     }
 
     fn prepare(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
-        // No need to populate extensions object if the extensions in the Host
-        // Configuration have not changed.
-        // TODO(15251): This is not necessarily true for A/B Update.
-        if ctx.spec.os.extensions == ctx.spec_old.os.extensions {
-            debug!(
-                "Skipping running 'populate_extensions' step since there are \
-            no changes to the 'extensions' section of the Host Configuration."
-            );
-            return Ok(());
-        }
-
         let timeout = match ctx
             .spec
             .internal_params
@@ -126,11 +115,16 @@ impl ExtensionsSubsystem {
         self: &mut ExtensionsSubsystem,
         ctx: &EngineContext,
         timeout: Duration,
+        ext_type: ExtensionType,
         new: bool,
     ) -> Result<(), Error> {
-        let (hc_extensions, extensions) = match new {
-            true => (&ctx.spec.os.extensions, &mut self.extensions),
-            false => (&ctx.spec_old.os.extensions, &mut self.extensions_old),
+        let (hc_extensions, extensions) = match (new, &ext_type) {
+            (true, ExtensionType::Sysext) => (&ctx.spec.os.sysexts, &mut self.extensions), // Populate new sysexts
+            (false, ExtensionType::Sysext) => (&ctx.spec_old.os.sysexts, &mut self.extensions_old), // Populate old sysexts
+            (true, ExtensionType::Confext) => (&ctx.spec.os.confexts, &mut self.extensions), // Populate new confexts
+            (false, ExtensionType::Confext) => {
+                (&ctx.spec_old.os.confexts, &mut self.extensions_old)
+            } // Populate old confexts
         };
 
         let temp_mp = tempfile::tempdir()?;
@@ -138,15 +132,20 @@ impl ExtensionsSubsystem {
         for ext in hc_extensions {
             let extension_file = if new {
                 // First, check if this extension already exists on the system.
-                if let Some(existing_file_path) =
-                    check_for_path_in_old_host_configuration(ext, &ctx.spec_old.os.extensions)
-                {
+                if let Some(existing_file_path) = match &ext_type {
+                    ExtensionType::Sysext => {
+                        check_for_path_in_old_host_configuration(ext, &ctx.spec_old.os.sysexts)
+                    }
+                    ExtensionType::Confext => {
+                        check_for_path_in_old_host_configuration(ext, &ctx.spec_old.os.confexts)
+                    }
+                } {
                     ensure!(
-                    existing_file_path.exists(),
-                    "Expected to find extension image from URL '{}' at path '{}', but path does not exist",
-                    ext.url,
-                    existing_file_path.display()
-                );
+                        existing_file_path.exists(),
+                        "Expected to find extension image from URL '{}' at path '{}', but path does not exist",
+                        ext.url,
+                        existing_file_path.display()
+                    );
                     existing_file_path
                 } else {
                     // The extension is new to the OS, so we need to download it.
@@ -189,11 +188,11 @@ impl ExtensionsSubsystem {
                 })?;
                 // Ensure that file exists
                 ensure!(
-                path.exists(),
-                "Expected to find extension image from URL '{}' at path '{}', but path does not exist",
-                ext.url,
-                path.display()
-            );
+                    path.exists(),
+                    "Expected to find extension image from URL '{}' at path '{}', but path does not exist",
+                    ext.url,
+                    path.display()
+                );
                 path
             };
 
@@ -202,7 +201,7 @@ impl ExtensionsSubsystem {
                 .context("Failed to mount")?;
 
             // Get extension release file
-            let ext_data = read_extension_release(temp_mp.path(), &extension_file, ext)
+            let ext_data = read_extension_release(temp_mp.path(), &extension_file, ext, &ext_type)
                 .context("Failed to get extension release information")?;
 
             extensions.push(ext_data);
@@ -234,33 +233,21 @@ fn read_extension_release(
     mount_point: &Path,
     curr_path: &Path,
     ext: &Extension,
+    ext_type: &ExtensionType,
 ) -> Result<ExtensionData, Error> {
     debug!(
         "Processing extension release file for extension image at '{}'",
         ext.url
     );
 
-    let mut ext_type = ExtensionType::Sysext;
     let sysext_release_dir = mount_point.join(SYSEXT_EXTENSION_RELEASE_DIRECTORY);
     let confext_release_dir = mount_point.join(CONFEXT_EXTENSION_RELEASE_DIRECTORY);
 
     // Get extension release file
-    let dir = match fs::read_dir(&sysext_release_dir) {
-        Ok(dir) => dir,
-        Err(_) => match fs::read_dir(&confext_release_dir) {
-            Ok(dir) => {
-                ext_type = ExtensionType::Confext;
-                dir
-            }
-            Err(_) => {
-                return Err(Error::msg(format!(
-                    "Failed to find extension release directory. Expected either \
-                    '{SYSEXT_EXTENSION_RELEASE_DIRECTORY}' or '{CONFEXT_EXTENSION_RELEASE_DIRECTORY}'",
-                )));
-            },
-        },
-    }
-    .map(|res| res.map(|e| e.path()))
+    let dir = match ext_type {
+        ExtensionType::Sysext => fs::read_dir(&sysext_release_dir).with_context(|| format!("Failed to find extension release directory '{SYSEXT_EXTENSION_RELEASE_DIRECTORY}' in image at '{}'", ext.url))?,
+        ExtensionType::Confext => fs::read_dir(&confext_release_dir).with_context(|| format!("Failed to find extension release directory '{CONFEXT_EXTENSION_RELEASE_DIRECTORY}' in image at '{}'", ext.url))?,
+    }.map(|res| res.map(|e| e.path()))
     .collect::<Result<Vec<_>, io::Error>>()?;
 
     ensure!(
@@ -292,13 +279,14 @@ fn read_extension_release(
         .to_string();
     let path = match &ext.path {
         Some(path) => path.clone(),
-        None => {
-            if ext_type == ExtensionType::Sysext {
+        None => match ext_type {
+            ExtensionType::Sysext => {
                 PathBuf::from(DEFAULT_SYSEXT_DIRECTORY).join(format!("{name}.raw"))
-            } else {
+            }
+            ExtensionType::Confext => {
                 PathBuf::from(DEFAULT_CONFEXT_DIRECTORY).join(format!("{name}.raw"))
             }
-        }
+        },
     };
 
     Ok(ExtensionData {
@@ -307,7 +295,7 @@ fn read_extension_release(
         sha384: ext.sha384.clone(),
         path,
         temp_path: Some(curr_path.to_path_buf()),
-        ext_type,
+        ext_type: ext_type.clone(),
     })
 }
 
@@ -383,7 +371,13 @@ mod tests {
         let current_path = Path::new("/tmp/file");
         let extension = create_extension(hash.clone(), None);
 
-        let extension_data = read_extension_release(mount_point, current_path, &extension).unwrap();
+        let extension_data = read_extension_release(
+            mount_point,
+            current_path,
+            &extension,
+            &ExtensionType::Sysext,
+        )
+        .unwrap();
         let expected_extension_data = ExtensionData {
             id: "test".to_string(),
             name: "test_1.0.0".to_string(),
@@ -403,8 +397,13 @@ mod tests {
         let final_path = PathBuf::from("/etc/extensions/test_1.0.0.raw");
         let extension_with_path = create_extension(hash.clone(), Some(final_path.clone()));
 
-        let extension_data =
-            read_extension_release(mount_point, current_path, &extension_with_path).unwrap();
+        let extension_data = read_extension_release(
+            mount_point,
+            current_path,
+            &extension_with_path,
+            &ExtensionType::Sysext,
+        )
+        .unwrap();
         let expected_extension_data = ExtensionData {
             id: "test".to_string(),
             name: "test_1.0.0".to_string(),
@@ -430,7 +429,24 @@ mod tests {
         let current_path = Path::new("/tmp/file");
         let extension = create_extension(Sha384Hash::from("a".repeat(96)), None);
 
-        let result = read_extension_release(mount_point, current_path, &extension);
+        let result = read_extension_release(
+            mount_point,
+            current_path,
+            &extension,
+            &ExtensionType::Sysext,
+        );
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!("Failed to find extension release directory. Expected either '{SYSEXT_EXTENSION_RELEASE_DIRECTORY}' or '{CONFEXT_EXTENSION_RELEASE_DIRECTORY}'")
+        );
+
+        let result = read_extension_release(
+            mount_point,
+            current_path,
+            &extension,
+            &ExtensionType::Confext,
+        );
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
@@ -451,7 +467,12 @@ mod tests {
         let extension = create_extension(Sha384Hash::from("a".repeat(96)), None);
 
         // No extension release file exists.
-        let result = read_extension_release(mount_point, current_path, &extension);
+        let result = read_extension_release(
+            mount_point,
+            current_path,
+            &extension,
+            &ExtensionType::Sysext,
+        );
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
@@ -463,7 +484,12 @@ mod tests {
         File::create(sysext_release_dir.join("extension-release.test2")).unwrap();
 
         // Too many extension release files exist.
-        let result = read_extension_release(mount_point, current_path, &extension);
+        let result = read_extension_release(
+            mount_point,
+            current_path,
+            &extension,
+            &ExtensionType::Sysext,
+        );
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
@@ -487,7 +513,12 @@ mod tests {
         let current_path = Path::new("/tmp/file");
         let extension = create_extension(Sha384Hash::from("a".repeat(96)), None);
 
-        let result = read_extension_release(mount_point, current_path, &extension);
+        let result = read_extension_release(
+            mount_point,
+            current_path,
+            &extension,
+            &ExtensionType::Sysext,
+        );
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
@@ -512,7 +543,13 @@ mod tests {
         let current_path = Path::new("/tmp/file");
         let extension = create_extension(hash, None);
 
-        let err = read_extension_release(mount_point, current_path, &extension).unwrap_err();
+        let err = read_extension_release(
+            mount_point,
+            current_path,
+            &extension,
+            &ExtensionType::Sysext,
+        )
+        .unwrap_err();
         assert_eq!(
             err.to_string(),
             "Extension release filename must begin with 'extension-release.'"
@@ -526,15 +563,24 @@ mod tests {
         let ctx = EngineContext::default();
 
         subsystem
-            .populate_extensions(&ctx, Duration::from_secs(10), true)
+            .populate_extensions(&ctx, Duration::from_secs(10), ExtensionType::Sysext, true)
+            .unwrap();
+        subsystem
+            .populate_extensions(&ctx, Duration::from_secs(10), ExtensionType::Confext, true)
+            .unwrap();
+        subsystem
+            .populate_extensions(&ctx, Duration::from_secs(10), ExtensionType::Sysext, false)
+            .unwrap();
+        subsystem
+            .populate_extensions(&ctx, Duration::from_secs(10), ExtensionType::Confext, false)
             .unwrap();
 
         assert!(
-            subsystem.extensions.is_empty(),
+            subsystem.sysexts.is_empty(),
             "ExtensionsSubsystem extensions should be empty when there are no extensions in the Host Configuration"
         );
         assert!(
-            subsystem.extensions_old.is_empty(),
+            subsystem.sysexts_old.is_empty(),
             "ExtensionsSubsystem extensions_old should be empty when there are no extensions in the old Host Configuration"
         );
     }
