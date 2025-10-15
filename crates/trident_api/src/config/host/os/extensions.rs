@@ -76,12 +76,6 @@ impl Extension {
             );
         }
 
-        let valid_directories = if sysext {
-            VALID_SYSEXT_DIRECTORIES
-        } else {
-            VALID_CONFEXT_DIRECTORIES
-        };
-
         // Note: parent() only returns None for root paths or prefix-only paths.
         // We will never call parent on such a path as it would be caught by the
         // check for a 'raw' file extension above. For relative paths like
@@ -162,8 +156,6 @@ mod tests {
     fn test_validate_invalid_directory_fails() {
         let path = PathBuf::from("/opt/invalid/test.raw");
         let ext = create_test_extension(Some(path.clone()));
-
-        // Check that validation fails as a sysext
         assert_eq!(
             ext.validate_sysext().unwrap_err(),
             HostConfigurationStaticValidationError::ExtensionImageInvalidDirectory {
