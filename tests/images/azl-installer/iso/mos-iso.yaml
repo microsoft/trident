@@ -2,6 +2,8 @@ os:
   additionalFiles:
   - source: scripts/installation.sh
     destination: /root/installer/installation.sh 
+  - source: files/EULA.txt
+    destination: /root/installer/EULA.txt
 
 iso:
   initramfsType: full-os
@@ -12,8 +14,7 @@ iso:
     destination: /images/azure-linux-full.cosi
   - source: bin/liveinstaller
     destination: /installer/liveinstaller
-  - source: files/EULA.txt
-    destination: /installer/EULA.txt
+
   kernelCommandLine:
     extraCommandLine:
     - console=tty0
