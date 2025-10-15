@@ -100,8 +100,8 @@ pub enum InternalError {
     #[error("Encountered a panic: {0}")]
     Panic(String),
 
-    #[error("Failed to populate extension images vector in Engine Context: {0}")]
-    PopulateExtensionImages(String),
+    #[error("Failed to prepare all sysexts and confexts from the Host Configurations")]
+    PopulateExtensionImages,
 
     #[error("Failed to populate filesystems vector in Engine Context: {0}")]
     PopulateFilesystems(String),
@@ -129,7 +129,7 @@ pub enum InternalError {
 
     #[error(
         "Failed to update the path of extension ID '{id}' in the Host Configuration. \
-    Could not find hash '{hash}' in the Host Configuration."
+        Could not find hash '{hash}' in the Host Configuration."
     )]
     UpdateExtensionPath { id: String, hash: String },
 

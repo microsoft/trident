@@ -85,7 +85,7 @@ impl Subsystem for ExtensionsSubsystem {
     fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
         // Download new extension images. Mount and process all extension images.
         self.populate_extensions(ctx, mount_path)
-            .structured(InternalError::PopulateExtensionImages("Failed".to_string()))?;
+            .structured(InternalError::PopulateExtensionImages)?;
 
         // TODO: Copy extension images to their proper locations.
         Ok(())
