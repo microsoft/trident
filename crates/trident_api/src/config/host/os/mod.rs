@@ -213,7 +213,7 @@ impl Os {
                 }
             }
 
-            ext.validate(true)?;
+            ext.validate_sysext()?;
             Ok(())
         })?;
 
@@ -237,7 +237,7 @@ impl Os {
                     );
                 }
             }
-            ext.validate(false)?;
+            ext.validate_confext()?;
             Ok(())
         })?;
 
