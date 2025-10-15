@@ -7,8 +7,9 @@ use std::{
 
 use anyhow::{bail, ensure, Context, Error};
 use log::debug;
-use osutils::{dependencies::Dependency, osrelease::OsRelease};
 use tempfile::NamedTempFile;
+
+use osutils::{dependencies::Dependency, osrelease::OsRelease};
 use trident_api::{
     config::Extension,
     constants::internal_params::COSI_HTTP_CONNECTION_TIMEOUT_SECONDS,
@@ -29,9 +30,12 @@ const SYSEXT_EXTENSION_RELEASE_DIRECTORY: &str = "usr/lib/extension-release.d/";
 const CONFEXT_EXTENSION_RELEASE_DIRECTORY: &str = "etc/extension-release.d/";
 
 /// Primary location for storing sysexts on the target OS
-const DEFAULT_SYSEXT_DIRECTORY: &str = "/var/lib/extensions/";
+const DEFAULT_SYSEXT_DIRECTORY: &str = "var/lib/extensions/";
 /// Primary location for storing confexts on the target OS
-const DEFAULT_CONFEXT_DIRECTORY: &str = "/var/lib/confexts/";
+const DEFAULT_CONFEXT_DIRECTORY: &str = "var/lib/confexts/";
+
+/// Temporary directory on target OS for downloading extension images
+const EXTENSION_IMAGE_DOWNLOAD_DIRECTORY: &str = "var/lib/.extensions-staging/";
 
 #[derive(Clone, Debug)]
 pub struct ExtensionData {
@@ -72,28 +76,18 @@ impl Subsystem for ExtensionsSubsystem {
         Ok(())
     }
 
-    fn prepare(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
-        let timeout = match ctx
-            .spec
-            .internal_params
-            .get_u64(COSI_HTTP_CONNECTION_TIMEOUT_SECONDS)
-        {
-            Some(Ok(timeout)) => Duration::from_secs(timeout),
-            _ => Duration::from_secs(10), // Default timeout
-        };
-
-        self.populate_extensions(ctx, timeout, true).structured(
-            InternalError::PopulateExtensionImages("Failed with new extension images.".to_string()),
-        )?;
-        self.populate_extensions(ctx, timeout, false).structured(
-            InternalError::PopulateExtensionImages(
-                "Failed with existing extension images.".to_string(),
-            ),
-        )?;
+    // Servicing OS
+    fn prepare(&mut self, _ctx: &EngineContext) -> Result<(), TridentError> {
         Ok(())
     }
 
-    fn provision(&mut self, _ctx: &EngineContext, _mount_path: &Path) -> Result<(), TridentError> {
+    // Servicing OS, with access to target OS
+    fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
+        // Download new extension images. Mount and process all extension images.
+        self.populate_extensions(ctx, mount_path)
+            .structured(InternalError::PopulateExtensionImages("Failed".to_string()))?;
+
+        // TODO: Copy extension images to their proper locations.
         Ok(())
     }
 
@@ -103,31 +97,81 @@ impl Subsystem for ExtensionsSubsystem {
 }
 
 impl ExtensionsSubsystem {
-    /// Populates `self.extensions` or `self.extensions_old`. Takes in 4 arguments:
+    fn populate_extensions(
+        self: &mut ExtensionsSubsystem,
+        ctx: &EngineContext,
+        mount_path: &Path,
+    ) -> Result<(), Error> {
+        let timeout = match ctx
+            .spec
+            .internal_params
+            .get_u64(COSI_HTTP_CONNECTION_TIMEOUT_SECONDS)
+        {
+            Some(Ok(timeout)) => Duration::from_secs(timeout),
+            _ => Duration::from_secs(10), // Default timeout
+        };
+
+        let temporary_staging_dir = mount_path.join(EXTENSION_IMAGE_DOWNLOAD_DIRECTORY);
+        if !temporary_staging_dir.exists() {
+            fs::create_dir_all(&temporary_staging_dir).with_context(|| {
+                format!("Failed to create dir '{EXTENSION_IMAGE_DOWNLOAD_DIRECTORY}")
+            })?;
+        };
+
+        self.populate_extensions_inner(
+            ctx,
+            timeout,
+            &temporary_staging_dir,
+            ExtensionType::Sysext,
+            true,
+        )?;
+        self.populate_extensions_inner(
+            ctx,
+            timeout,
+            &temporary_staging_dir,
+            ExtensionType::Sysext,
+            false,
+        )?;
+        self.populate_extensions_inner(
+            ctx,
+            timeout,
+            &temporary_staging_dir,
+            ExtensionType::Confext,
+            true,
+        )?;
+        self.populate_extensions_inner(
+            ctx,
+            timeout,
+            &temporary_staging_dir,
+            ExtensionType::Confext,
+            false,
+        )?;
+        Ok(())
+    }
+
+    /// Appends to `self.extensions` or `self.extensions_old`. Takes in 4 arguments:
     /// - self: ExtensionsSubsystem.
     /// - ctx: EngineContext.
     /// - timeout: Time out on HTTP requests.
+    /// - ext_type: ExtensionType.
     /// - new: Boolean indicating whether this function should populate
     ///   `self.extensions` or `self.extensions_old`. When populating
     ///   `self.extensions_old`, expect all extensions in the old Host Configuration
     ///   to be present on the servicing OS so we will not download any new images.
-    fn populate_extensions(
+    fn populate_extensions_inner(
         self: &mut ExtensionsSubsystem,
         ctx: &EngineContext,
         timeout: Duration,
+        temp_staging_dir: &Path,
         ext_type: ExtensionType,
         new: bool,
     ) -> Result<(), Error> {
-        let (hc_extensions, extensions) = match (new, &ext_type) {
-            (true, ExtensionType::Sysext) => (&ctx.spec.os.sysexts, &mut self.extensions), // Populate new sysexts
-            (false, ExtensionType::Sysext) => (&ctx.spec_old.os.sysexts, &mut self.extensions_old), // Populate old sysexts
-            (true, ExtensionType::Confext) => (&ctx.spec.os.confexts, &mut self.extensions), // Populate new confexts
-            (false, ExtensionType::Confext) => {
-                (&ctx.spec_old.os.confexts, &mut self.extensions_old)
-            } // Populate old confexts
+        let hc_extensions = match (new, &ext_type) {
+            (true, ExtensionType::Sysext) => &ctx.spec.os.sysexts, // Populate new sysexts
+            (false, ExtensionType::Sysext) => &ctx.spec_old.os.sysexts, // Populate old sysexts
+            (true, ExtensionType::Confext) => &ctx.spec.os.confexts, // Populate new confexts
+            (false, ExtensionType::Confext) => &ctx.spec_old.os.confexts, // Populate old confexts
         };
-
-        let temp_mp = tempfile::tempdir()?;
 
         for ext in hc_extensions {
             let extension_file = if new {
@@ -150,7 +194,7 @@ impl ExtensionsSubsystem {
                 } else {
                     // The extension is new to the OS, so we need to download it.
                     // Create and persist a temporary file; get its path
-                    let temp_file = NamedTempFile::new()
+                    let temp_file: PathBuf = NamedTempFile::new_in(temp_staging_dir)
                         .context("Failed to create temporary file")?
                         .into_temp_path()
                         .keep()
@@ -196,6 +240,9 @@ impl ExtensionsSubsystem {
                 path
             };
 
+            // Create temporary mountpoint, which will be used to read the extension-release file
+            let temp_mp = tempfile::tempdir()?;
+
             // Attach a device and mount the extension
             let device_path = attach_device_and_mount(&extension_file, temp_mp.path())
                 .context("Failed to mount")?;
@@ -204,7 +251,11 @@ impl ExtensionsSubsystem {
             let ext_data = read_extension_release(temp_mp.path(), &extension_file, ext, &ext_type)
                 .context("Failed to get extension release information")?;
 
-            extensions.push(ext_data);
+            if new {
+                self.extensions.push(ext_data);
+            } else {
+                self.extensions_old.push(ext_data);
+            }
 
             // Clean-Up: unmount and detach the device
             detach_device_and_unmount(device_path, temp_mp.path()).context("Failed to unmount")?;
@@ -343,7 +394,7 @@ mod tests {
 
     use std::{fs::File, io::Write};
 
-    use tempfile::TempDir;
+    use tempfile::{env::temp_dir, TempDir};
     use url::Url;
 
     fn create_extension(hash: Sha384Hash, path: Option<PathBuf>) -> Extension {
@@ -438,7 +489,7 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
-            format!("Failed to find extension release directory. Expected either '{SYSEXT_EXTENSION_RELEASE_DIRECTORY}' or '{CONFEXT_EXTENSION_RELEASE_DIRECTORY}'")
+            format!("Failed to find extension release directory '{SYSEXT_EXTENSION_RELEASE_DIRECTORY}' in image at 'https://example.com/test-extension'")
         );
 
         let result = read_extension_release(
@@ -450,7 +501,7 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
-            format!("Failed to find extension release directory. Expected either '{SYSEXT_EXTENSION_RELEASE_DIRECTORY}' or '{CONFEXT_EXTENSION_RELEASE_DIRECTORY}'")
+            format!("Failed to find extension release directory '{CONFEXT_EXTENSION_RELEASE_DIRECTORY}' in image at 'https://example.com/test-extension'")
         );
     }
 
@@ -561,26 +612,14 @@ mod tests {
         // Test with no extensions
         let mut subsystem = ExtensionsSubsystem::default();
         let ctx = EngineContext::default();
-
-        subsystem
-            .populate_extensions(&ctx, Duration::from_secs(10), ExtensionType::Sysext, true)
-            .unwrap();
-        subsystem
-            .populate_extensions(&ctx, Duration::from_secs(10), ExtensionType::Confext, true)
-            .unwrap();
-        subsystem
-            .populate_extensions(&ctx, Duration::from_secs(10), ExtensionType::Sysext, false)
-            .unwrap();
-        subsystem
-            .populate_extensions(&ctx, Duration::from_secs(10), ExtensionType::Confext, false)
-            .unwrap();
+        subsystem.populate_extensions(&ctx, &temp_dir()).unwrap();
 
         assert!(
-            subsystem.sysexts.is_empty(),
+            subsystem.extensions.is_empty(),
             "ExtensionsSubsystem extensions should be empty when there are no extensions in the Host Configuration"
         );
         assert!(
-            subsystem.sysexts_old.is_empty(),
+            subsystem.extensions_old.is_empty(),
             "ExtensionsSubsystem extensions_old should be empty when there are no extensions in the old Host Configuration"
         );
     }
@@ -592,7 +631,7 @@ mod functional_test {
     use super::*;
 
     use sha2::{Digest, Sha384};
-    use tempfile::TempDir;
+    use tempfile::{env::temp_dir, TempDir};
     use url::Url;
 
     use pytest_gen::functional_test;
@@ -658,10 +697,10 @@ mod functional_test {
     }
 
     fn create_test_extensions(
-        input: &[(Option<PathBuf>, &str, ExtensionType, &str)],
-    ) -> Vec<(Url, Sha384Hash)> {
-        let mut output = Vec::new();
-        for (file_path, ext_name, ext_type, ext_release_content) in input {
+        input: &[(Option<PathBuf>, &str, ExtensionType, &str, bool)],
+    ) -> EngineContext {
+        let mut output = EngineContext::default();
+        for (file_path, ext_name, ext_type, ext_release_content, new) in input {
             let path = match file_path {
                 Some(path) => path.clone(),
                 None => NamedTempFile::new()
@@ -672,7 +711,28 @@ mod functional_test {
             };
             let test_ext_hash =
                 create_test_extension_image(&path, ext_name, ext_type, ext_release_content);
-            output.push((Url::from_file_path(path).unwrap(), test_ext_hash));
+            match (ext_type, new) {
+                (ExtensionType::Sysext, true) => output.spec.os.sysexts.push(Extension {
+                    url: Url::from_file_path(path).unwrap(),
+                    sha384: test_ext_hash,
+                    path: file_path.clone(),
+                }),
+                (ExtensionType::Confext, true) => output.spec.os.confexts.push(Extension {
+                    url: Url::from_file_path(path).unwrap(),
+                    sha384: test_ext_hash,
+                    path: file_path.clone(),
+                }),
+                (ExtensionType::Sysext, false) => output.spec_old.os.sysexts.push(Extension {
+                    url: Url::from_file_path(path).unwrap(),
+                    sha384: test_ext_hash,
+                    path: file_path.clone(),
+                }),
+                (ExtensionType::Confext, false) => output.spec_old.os.confexts.push(Extension {
+                    url: Url::from_file_path(path).unwrap(),
+                    sha384: test_ext_hash,
+                    path: file_path.clone(),
+                }),
+            }
         }
         output
     }
@@ -686,39 +746,28 @@ mod functional_test {
                 "my_sysext",
                 ExtensionType::Sysext,
                 "ID=_any\nSYSEXT_ID=my_sysext",
+                true,
             ),
             (
                 None,
                 "my_confext",
                 ExtensionType::Confext,
                 "ID=_any\nCONFEXT_ID=my_confext",
+                true,
             ),
         ];
 
-        let test_extensions = create_test_extensions(&test_inputs);
-
-        // Build host configuration extensions (no path for new extensions)
-        let hc_extensions: Vec<Extension> = test_extensions
-            .iter()
-            .map(|(url, hash)| Extension {
-                url: url.clone(),
-                sha384: hash.clone(),
-                path: None,
-            })
-            .collect();
-
         // Process extensions
-        let mut ctx = EngineContext::default();
-        ctx.spec.os.extensions = hc_extensions.clone();
+        let ctx = create_test_extensions(&test_inputs);
         let mut subsystem = ExtensionsSubsystem::default();
-        subsystem
-            .populate_extensions(&ctx, Duration::from_secs(10), true)
-            .unwrap();
+        subsystem.populate_extensions(&ctx, &temp_dir()).unwrap();
 
         // Verify results
         let subsystem_extensions = subsystem.extensions;
+        let mut hc_extensions = ctx.spec.os.sysexts.clone();
+        hc_extensions.extend(ctx.spec.os.confexts.clone());
         assert_eq!(hc_extensions.len(), subsystem_extensions.len());
-        for (((_, name, expected_type, _), hc_ext), subsystem_ext) in test_inputs
+        for (((_, name, expected_type, _, _), hc_ext), subsystem_ext) in test_inputs
             .iter()
             .zip(&hc_extensions)
             .zip(&subsystem_extensions)
@@ -763,40 +812,28 @@ mod functional_test {
                 "my_sysext",
                 ExtensionType::Sysext,
                 "ID=_any\nSYSEXT_ID=my_sysext",
+                false,
             ),
             (
                 Some(temp_file2),
                 "my_confext",
                 ExtensionType::Confext,
                 "ID=_any\nCONFEXT_ID=my_confext",
+                false,
             ),
         ];
 
-        let test_extensions = create_test_extensions(&test_inputs);
-
-        // For existing extensions, provide explicit paths
-        let hc_extensions: Vec<Extension> = test_extensions
-            .iter()
-            .enumerate()
-            .map(|(i, (url, hash))| Extension {
-                url: url.clone(),
-                sha384: hash.clone(),
-                path: test_inputs[i].0.clone(),
-            })
-            .collect();
-
         // Process extensions with new=false
-        let mut ctx = EngineContext::default();
-        ctx.spec_old.os.extensions = hc_extensions.clone();
+        let ctx = create_test_extensions(&test_inputs);
         let mut subsystem = ExtensionsSubsystem::default();
-        subsystem
-            .populate_extensions(&ctx, Duration::from_secs(10), false)
-            .unwrap();
+        subsystem.populate_extensions(&ctx, &temp_dir()).unwrap();
 
         // Verify results
         let subsystem_extensions = subsystem.extensions_old;
-        assert_eq!(test_extensions.len(), subsystem_extensions.len());
-        for (((_, name, expected_type, _), hc_ext), subsystem_ext) in test_inputs
+        let mut hc_extensions = ctx.spec_old.os.sysexts.clone();
+        hc_extensions.extend(ctx.spec_old.os.confexts.clone());
+        assert_eq!(hc_extensions.len(), subsystem_extensions.len());
+        for (((_, name, expected_type, _, _), hc_ext), subsystem_ext) in test_inputs
             .iter()
             .zip(&hc_extensions)
             .zip(&subsystem_extensions)
@@ -835,10 +872,10 @@ mod functional_test {
 
         // Attempt to process - should fail due to hash mismatch
         let mut ctx = EngineContext::default();
-        ctx.spec.os.extensions = vec![hc_extension];
+        ctx.spec.os.sysexts = vec![hc_extension];
         let mut subsystem = ExtensionsSubsystem::default();
         let error = subsystem
-            .populate_extensions(&ctx, Duration::from_secs(10), true)
+            .populate_extensions(&ctx, &temp_dir())
             .unwrap_err()
             .to_string();
 
@@ -871,10 +908,10 @@ mod functional_test {
 
         // Attempt to process as an existing Extension
         let mut ctx = EngineContext::default();
-        ctx.spec_old.os.extensions = vec![hc_extension];
+        ctx.spec_old.os.sysexts = vec![hc_extension];
         let mut subsystem = ExtensionsSubsystem::default();
         let error = subsystem
-            .populate_extensions(&ctx, Duration::from_secs(10), false)
+            .populate_extensions(&ctx, &temp_dir())
             .unwrap_err()
             .to_string();
 

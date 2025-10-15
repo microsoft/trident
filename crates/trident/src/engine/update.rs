@@ -68,8 +68,6 @@ pub(crate) fn update(
         image: Some(image),
         storage_graph: engine::build_storage_graph(&host_config.storage)?, // Build storage graph
         filesystems: Vec::new(), // Will be populated after dynamic validation
-        extensions: Vec::new(),  // TODO(15250): Enable extension servicing in runtime updates
-        extensions_old: Vec::new(), // TODO(15250): Enable extension servicing in runtime updates
     };
 
     // Before starting an update servicing, need to validate that the active volume is set
@@ -319,8 +317,6 @@ pub(crate) fn finalize_update(
         image: None, // Not used in finalize_update
         storage_graph: engine::build_storage_graph(&state.host_status().spec.storage)?, // Build storage graph
         filesystems: Vec::new(), // Left empty since context does not have image
-        extensions: Vec::new(), // TODO(15251): Enable extension servicing in clean install & A/B update
-        extensions_old: Vec::new(), // TODO(15251): Enable extension servicing in clean install & A/B update
         is_uki: None,
     };
 

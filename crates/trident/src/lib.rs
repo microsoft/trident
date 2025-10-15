@@ -365,8 +365,6 @@ impl Trident {
             image: None,
             storage_graph: engine::build_storage_graph(&host_config.storage)?, // Build storage graph
             filesystems: Vec::new(), // Left empty since context does not have image
-            extensions: Vec::new(),
-            extensions_old: Vec::new(),
             is_uki: None,
         };
 
