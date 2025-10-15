@@ -6,11 +6,11 @@ trap '/bin/bash' ERR
 mkdir -p /mnt/cdrom
 mount /dev/cdrom /mnt/cdrom
 
-IMAGES_DIR="/mnt/cdrom/installer/"
-IMAGES_ISO_DIR="/mnt/cdrom/images/"
+INSTALLER_DIR="/mnt/cdrom/installer/"
+IMAGES_DIR="/mnt/cdrom/images/"
 TRIDENT_CONFIG="/etc/trident/config.yaml"
 WORKING_DIR="/root/installer"
-IMAGES_DIR="$WORKING_DIR/images/"
+# IMAGES_DIR="$WORKING_DIR/images/"
 
 # Copy the installer files to the working directory (merge with existing)
 cp -r "$INSTALLER_DIR"* "$WORKING_DIR"
