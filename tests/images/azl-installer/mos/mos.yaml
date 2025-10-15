@@ -82,4 +82,4 @@ os:
 
 scripts:
   postCustomization:
-  - path: scripts/create-cdrom-symlink.sh
+  - path: scripts/mount-cdrom.sh

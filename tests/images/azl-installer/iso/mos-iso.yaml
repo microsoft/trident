@@ -7,13 +7,13 @@ iso:
   initramfsType: full-os
   additionalFiles:
   - source: images/trident-testimage.cosi
-    destination: /mnt/installer/images/azure-linux-trident.cosi
+    destination: /images/azure-linux-trident.cosi
   - source: images/azl-full-testimage.cosi
-    destination: /mnt/installer/images/azure-linux-full.cosi
+    destination: /images/azure-linux-full.cosi
   - source: bin/liveinstaller
-    destination: /mnt/installer/liveinstaller
+    destination: /installer/liveinstaller
   - source: files/EULA.txt
-    destination: /mnt/installer/EULA.txt
+    destination: /installer/EULA.txt
   kernelCommandLine:
     extraCommandLine:
     - console=tty0

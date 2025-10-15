@@ -500,7 +500,7 @@ artifacts/test-image/azl-installer.iso: \
 	rm -rf $(AZL_INSTALLER_IMAGES_PATH)
 	mkdir -p $(AZL_INSTALLER_IMAGES_PATH)
 	cp artifacts/test-image/regular.cosi $(AZL_INSTALLER_IMAGES_PATH)/trident-testimage.cosi
-	cp artifacts/test-image/azl-full-testimage.cosi $(AZL_INSTALLER_IMAGES_PATH)/azl-full-testimage.cosi
+	cp artifacts/test-image/fake-full.cosi $(AZL_INSTALLER_IMAGES_PATH)/azl-full-testimage.cosi
 	rm -rf $(AZL_INSTALLER_BIN_PATH)
 	mkdir -p $(AZL_INSTALLER_BIN_PATH)
 	cp bin/liveinstaller $(AZL_INSTALLER_BIN_PATH)/
