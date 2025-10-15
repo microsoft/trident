@@ -133,7 +133,7 @@ mod tests {
             ext.validate_confext().unwrap_err(),
             HostConfigurationStaticValidationError::ExtensionImageInvalidDirectory {
                 path: path.display().to_string(),
-                valid_directories: VALID_SYSEXT_DIRECTORIES.join(", ")
+                valid_directories: VALID_CONFEXT_DIRECTORIES.join(", ")
             }
         );
     }
@@ -147,7 +147,7 @@ mod tests {
             ext.validate_sysext().unwrap_err(),
             HostConfigurationStaticValidationError::ExtensionImageInvalidDirectory {
                 path: path.display().to_string(),
-                valid_directories: VALID_CONFEXT_DIRECTORIES.join(", ")
+                valid_directories: VALID_SYSEXT_DIRECTORIES.join(", ")
             }
         );
     }
