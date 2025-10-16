@@ -126,6 +126,8 @@ impl ExtensionsSubsystem {
             _ => Duration::from_secs(10), // Default timeout
         };
 
+        // Create temporary directory in which to download extension images
+        // before copying them to their final path.
         let temporary_staging_dir = mount_path.join(EXTENSION_IMAGE_DOWNLOAD_DIRECTORY);
         if !temporary_staging_dir.exists() {
             fs::create_dir_all(&temporary_staging_dir).with_context(|| {
