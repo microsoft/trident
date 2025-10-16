@@ -327,14 +327,24 @@ fn attach_device_and_mount(image_file_path: &Path, mount_path: &Path) -> Result<
 
     // Must mount with option '-t ddi', which internally invokes systemd-dissect
     // as a helper to parse the partitions in the image.
-    Dependency::Mount
+    let mount_result = Dependency::Mount
         .cmd()
         .arg("-t")
         .arg("ddi")
         .arg(loop_device)
         .arg(mount_path)
-        .run_and_check()
-        .context("Failed to mount extension image")?;
+        .run_and_check();
+    if let Err(e) = mount_result {
+        // Detach the loop device is mounting failed.
+        Dependency::Losetup
+            .cmd()
+            .arg("-d")
+            .arg(loop_device)
+            .run_and_check()
+            .context("Failed to clean up loop device after mount failed")?;
+        // After detaching the loop device, return mount error.
+        return Err(e.into());
+    }
 
     Ok(loop_device.to_string())
 }
