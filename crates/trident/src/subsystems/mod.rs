@@ -1,5 +1,4 @@
 pub(crate) mod esp;
-#[allow(dead_code)]
 pub(crate) mod extensions;
 pub(crate) mod hooks;
 pub(crate) mod initrd;

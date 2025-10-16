@@ -379,14 +379,6 @@ mod tests {
         error::ErrorKind,
     };
 
-    fn create_extension(hash: Sha384Hash, path: Option<PathBuf>) -> Extension {
-        Extension {
-            url: Url::parse("https://example.com/test-extension").unwrap(),
-            sha384: hash.clone(),
-            path,
-        }
-    }
-
     #[test]
     fn test_validate_success() {
         let mut ctx = EngineContext::default();
