@@ -12,7 +12,7 @@ use tempfile::NamedTempFile;
 use osutils::{dependencies::Dependency, path};
 use trident_api::{
     config::{Extension, HostConfigurationDynamicValidationError},
-    constants::internal_params::COSI_HTTP_CONNECTION_TIMEOUT_SECONDS,
+    constants::internal_params::HTTP_CONNECTION_TIMEOUT_SECONDS,
     error::{InternalError, InvalidInputError, ReportError, TridentError},
     primitives::hash::Sha384Hash,
 };
@@ -162,7 +162,7 @@ impl ExtensionsSubsystem {
         let timeout = Duration::from_secs(
             ctx.spec
                 .internal_params
-                .get_u64(COSI_HTTP_CONNECTION_TIMEOUT_SECONDS)
+                .get_u64(HTTP_CONNECTION_TIMEOUT_SECONDS)
                 .and_then(|timeout| timeout.ok())
                 .unwrap_or(10),
         );
