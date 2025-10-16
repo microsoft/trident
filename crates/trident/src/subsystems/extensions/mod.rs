@@ -170,9 +170,8 @@ impl ExtensionsSubsystem {
         // Create temporary directory in which to download extension images
         // before copying them to their final path.
         if !staging_dir.exists() {
-            fs::create_dir_all(staging_dir).with_context(|| {
-                format!("Failed to create dir '{EXTENSION_IMAGE_STAGING_DIRECTORY}'")
-            })?;
+            fs::create_dir_all(staging_dir)
+                .with_context(|| format!("Failed to create dir '{}'", staging_dir.display()))?;
         };
 
         self.populate_extensions_inner(ctx, timeout, staging_dir, ExtensionType::Sysext, true)?;
