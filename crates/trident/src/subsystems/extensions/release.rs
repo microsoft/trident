@@ -26,13 +26,16 @@ pub(crate) fn read_extension_release(
         ext.url
     );
 
-    let sysext_release_dir = mount_point.join(SYSEXT_EXTENSION_RELEASE_DIRECTORY);
-    let confext_release_dir = mount_point.join(CONFEXT_EXTENSION_RELEASE_DIRECTORY);
-
     // Get extension release file
     let dir = match ext_type {
-        ExtensionType::Sysext => fs::read_dir(&sysext_release_dir).with_context(|| format!("Failed to find extension release directory '{SYSEXT_EXTENSION_RELEASE_DIRECTORY}' in image at '{}'", ext.url))?,
-        ExtensionType::Confext => fs::read_dir(&confext_release_dir).with_context(|| format!("Failed to find extension release directory '{CONFEXT_EXTENSION_RELEASE_DIRECTORY}' in image at '{}'", ext.url))?,
+        ExtensionType::Sysext => {
+            fs::read_dir(mount_point.join(SYSEXT_EXTENSION_RELEASE_DIRECTORY))
+                .with_context(|| format!("Failed to find extension release directory '{SYSEXT_EXTENSION_RELEASE_DIRECTORY}' in image at '{}'", ext.url))?
+        },
+        ExtensionType::Confext => {
+            fs::read_dir(mount_point.join(CONFEXT_EXTENSION_RELEASE_DIRECTORY))
+                .with_context(|| format!("Failed to find extension release directory '{CONFEXT_EXTENSION_RELEASE_DIRECTORY}' in image at '{}'", ext.url))?
+        },
     }.map(|res| res.map(|e| e.path()))
     .collect::<Result<Vec<_>, io::Error>>()?;
 

@@ -1,7 +1,7 @@
 #[cfg(test)]
 use std::io::Cursor;
 use std::{
-    fs::{self, File},
+    fs::File,
     io::{Error as IoError, ErrorKind as IoErrorKind, Read, Result as IoResult, Seek, SeekFrom},
     path::PathBuf,
     thread,

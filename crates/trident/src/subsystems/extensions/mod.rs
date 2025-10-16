@@ -418,6 +418,10 @@ mod tests {
             }),
             ..Default::default()
         };
+        ctx.partition_paths
+            .insert("root-a".into(), PathBuf::from("/dev/sda"));
+        ctx.partition_paths
+            .insert("root-b".into(), PathBuf::from("/dev/sdb"));
 
         let subsystem = ExtensionsSubsystem::default();
         subsystem.validate_host_config(&ctx).unwrap();
