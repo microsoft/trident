@@ -122,11 +122,8 @@ impl FileReader {
     pub(crate) fn complete_reader(&self) -> IoResult<Box<dyn Read>> {
         Ok(match self {
             Self::File(file_path) => {
-                // Open the file
-                let file = File::open(file_path)?;
-                let size = fs::metadata(file_path)?.len();
                 // Return a reader to the entire file
-                Box::new(file.take(size))
+                Box::new(File::open(file_path)?)
             }
 
             Self::Http(http_file) => Box::new(http_file.section_reader(0, http_file.size)?),
