@@ -49,7 +49,18 @@ pub struct Extension {
 }
 
 impl Extension {
-    pub fn validate(&self) -> Result<(), HostConfigurationStaticValidationError> {
+    pub fn validate_sysext(&self) -> Result<(), HostConfigurationStaticValidationError> {
+        self.validate(&VALID_SYSEXT_DIRECTORIES)
+    }
+
+    pub fn validate_confext(&self) -> Result<(), HostConfigurationStaticValidationError> {
+        self.validate(&VALID_CONFEXT_DIRECTORIES)
+    }
+
+    fn validate(
+        &self,
+        valid_directories: &[&str],
+    ) -> Result<(), HostConfigurationStaticValidationError> {
         // Ensure that the path, if given, is a valid path for the
         // extension image to be placed.
         let Some(path) = &self.path else {
@@ -72,14 +83,14 @@ impl Extension {
         // below.
         let provided_dir = path.parent().unwrap_or(path);
         // Check that the directory is valid
-        if !VALID_CONFEXT_DIRECTORIES
+        if !valid_directories
             .iter()
-            .chain(VALID_SYSEXT_DIRECTORIES.iter())
             .any(|valid_dir| provided_dir.as_os_str() == OsStr::new(valid_dir))
         {
             return Err(
                 HostConfigurationStaticValidationError::ExtensionImageInvalidDirectory {
                     path: path.display().to_string(),
+                    valid_directories: valid_directories.join(", "),
                 },
             );
         }
@@ -109,19 +120,36 @@ mod tests {
     #[test]
     fn test_validate_no_path_succeeds() {
         let ext = create_test_extension(None);
-        ext.validate().unwrap();
+        ext.validate_sysext().unwrap();
+        ext.validate_confext().unwrap();
     }
 
     #[test]
     fn test_validate_valid_sysext_path_succeeds() {
-        let ext = create_test_extension(Some(PathBuf::from("/var/lib/extensions/test.raw")));
-        ext.validate().unwrap();
+        let path = PathBuf::from("/var/lib/extensions/test.raw");
+        let ext = create_test_extension(Some(path.clone()));
+        ext.validate_sysext().unwrap();
+        assert_eq!(
+            ext.validate_confext().unwrap_err(),
+            HostConfigurationStaticValidationError::ExtensionImageInvalidDirectory {
+                path: path.display().to_string(),
+                valid_directories: VALID_CONFEXT_DIRECTORIES.join(", ")
+            }
+        );
     }
 
     #[test]
     fn test_validate_valid_confext_path_succeeds() {
-        let ext = create_test_extension(Some(PathBuf::from("/var/lib/confexts/test.raw")));
-        ext.validate().unwrap();
+        let path = PathBuf::from("/var/lib/confexts/test.raw");
+        let ext = create_test_extension(Some(path.clone()));
+        ext.validate_confext().unwrap();
+        assert_eq!(
+            ext.validate_sysext().unwrap_err(),
+            HostConfigurationStaticValidationError::ExtensionImageInvalidDirectory {
+                path: path.display().to_string(),
+                valid_directories: VALID_SYSEXT_DIRECTORIES.join(", ")
+            }
+        );
     }
 
     #[test]
@@ -129,9 +157,17 @@ mod tests {
         let path = PathBuf::from("/opt/invalid/test.raw");
         let ext = create_test_extension(Some(path.clone()));
         assert_eq!(
-            ext.validate().unwrap_err(),
+            ext.validate_sysext().unwrap_err(),
             HostConfigurationStaticValidationError::ExtensionImageInvalidDirectory {
                 path: path.display().to_string(),
+                valid_directories: VALID_SYSEXT_DIRECTORIES.join(", ")
+            }
+        );
+        assert_eq!(
+            ext.validate_confext().unwrap_err(),
+            HostConfigurationStaticValidationError::ExtensionImageInvalidDirectory {
+                path: path.display().to_string(),
+                valid_directories: VALID_CONFEXT_DIRECTORIES.join(", ")
             }
         );
     }
@@ -141,9 +177,17 @@ mod tests {
         let path = PathBuf::from("test.raw");
         let ext = create_test_extension(Some(path.clone()));
         assert_eq!(
-            ext.validate().unwrap_err(),
+            ext.validate_sysext().unwrap_err(),
             HostConfigurationStaticValidationError::ExtensionImageInvalidDirectory {
                 path: path.display().to_string(),
+                valid_directories: VALID_SYSEXT_DIRECTORIES.join(", ")
+            }
+        );
+        assert_eq!(
+            ext.validate_confext().unwrap_err(),
+            HostConfigurationStaticValidationError::ExtensionImageInvalidDirectory {
+                path: path.display().to_string(),
+                valid_directories: VALID_CONFEXT_DIRECTORIES.join(", ")
             }
         );
     }
@@ -153,9 +197,17 @@ mod tests {
         let path = PathBuf::from("var/lib/extensions/test.raw");
         let ext = create_test_extension(Some(path.clone()));
         assert_eq!(
-            ext.validate().unwrap_err(),
+            ext.validate_sysext().unwrap_err(),
             HostConfigurationStaticValidationError::ExtensionImageInvalidDirectory {
                 path: path.display().to_string(),
+                valid_directories: VALID_SYSEXT_DIRECTORIES.join(", ")
+            }
+        );
+        assert_eq!(
+            ext.validate_confext().unwrap_err(),
+            HostConfigurationStaticValidationError::ExtensionImageInvalidDirectory {
+                path: path.display().to_string(),
+                valid_directories: VALID_CONFEXT_DIRECTORIES.join(", ")
             }
         );
     }
@@ -165,7 +217,13 @@ mod tests {
         let path = PathBuf::from("/var/lib/extensions/test.img");
         let ext = create_test_extension(Some(path.clone()));
         assert_eq!(
-            ext.validate().unwrap_err(),
+            ext.validate_sysext().unwrap_err(),
+            HostConfigurationStaticValidationError::ExtensionImageInvalidFileExtension {
+                path: path.display().to_string(),
+            }
+        );
+        assert_eq!(
+            ext.validate_confext().unwrap_err(),
             HostConfigurationStaticValidationError::ExtensionImageInvalidFileExtension {
                 path: path.display().to_string(),
             }
@@ -177,7 +235,13 @@ mod tests {
         let path = PathBuf::from("/var/lib/extensions/");
         let ext = create_test_extension(Some(path.clone()));
         assert_eq!(
-            ext.validate().unwrap_err(),
+            ext.validate_sysext().unwrap_err(),
+            HostConfigurationStaticValidationError::ExtensionImageInvalidFileExtension {
+                path: path.display().to_string(),
+            }
+        );
+        assert_eq!(
+            ext.validate_confext().unwrap_err(),
             HostConfigurationStaticValidationError::ExtensionImageInvalidFileExtension {
                 path: path.display().to_string(),
             }
