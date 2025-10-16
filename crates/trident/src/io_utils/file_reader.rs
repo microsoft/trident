@@ -116,7 +116,9 @@ impl FileReader {
         })
     }
 
-    /// Returns an implementation of `Read` over the whole file.
+    /// Returns an implementation of `Read` over the whole file. Creates a
+    /// single HTTP request for the entire file, and is faster for sequentially
+    /// reading an entire file.
     pub(crate) fn complete_reader(&self) -> IoResult<Box<dyn Read>> {
         Ok(match self {
             Self::File(file_path) => {
