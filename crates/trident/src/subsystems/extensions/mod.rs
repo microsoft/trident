@@ -308,8 +308,8 @@ impl ExtensionsSubsystem {
 fn check_for_existing_image(ext: &Extension, old_hc_extensions: &[Extension]) -> Option<PathBuf> {
     old_hc_extensions
         .iter()
-        // Extension must match on both URL and Sha384 hash
-        .find(|old_ext| ext.url == old_ext.url && ext.sha384 == old_ext.sha384)?
+        // Extension must match on Sha384 hash
+        .find(|old_ext| ext.sha384 == old_ext.sha384)?
         .path
         .clone()
 }
