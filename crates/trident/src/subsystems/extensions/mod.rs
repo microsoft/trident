@@ -320,6 +320,9 @@ fn attach_device_and_mount(image_file_path: &Path, mount_path: &Path) -> Result<
         .output_and_check()
         .context("Failed to attach loop device")?;
     let loop_device = loop_device_output.trim();
+
+    // Must mount with option '-t ddi', which internally invokes systemd-dissect
+    // as a helper to parse the partitions in the image.
     Dependency::Mount
         .cmd()
         .arg("-t")
