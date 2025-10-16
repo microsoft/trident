@@ -100,7 +100,7 @@ pub enum InternalError {
     #[error("Encountered a panic: {0}")]
     Panic(String),
 
-    #[error("Failed to prepare all sysexts and confexts from the Host Configurations")]
+    #[error("Failed to prepare all sysexts and confexts from the Host Configuration")]
     PopulateExtensionImages,
 
     #[error("Failed to populate filesystems vector in Engine Context: {0}")]
