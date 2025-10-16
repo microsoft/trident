@@ -89,12 +89,10 @@ impl Subsystem for ExtensionsSubsystem {
         Ok(())
     }
 
-    // Servicing OS
     fn prepare(&mut self, _ctx: &EngineContext) -> Result<(), TridentError> {
         Ok(())
     }
 
-    // Servicing OS, with access to target OS
     fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
         // Download new extension images. Mount and process all extension images.
         self.populate_extensions(ctx, mount_path)
