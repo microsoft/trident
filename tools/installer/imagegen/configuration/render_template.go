@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"text/template"
 
 	"installer/internal/file"
@@ -40,9 +41,7 @@ func RenderHostConfigurationUnattended(templatePath string, devicePath string) (
 	configDir := filepath.Dir(templatePath)
 	templateName := filepath.Base(templatePath)
 	// Remove ".tmpl" for Host Configuration file name
-	if filepath.Ext(templateName) == ".tmpl" {
-		templateName = templateName[:len(templateName)-5]
-	}
+	templateName = strings.TrimSuffix(templateName, ".tmpl")
 	configPath = filepath.Join(configDir, templateName)
 
 	err = RenderHostConfigurationWithTemplate(configPath, configData, string(templateContent))
@@ -55,12 +54,6 @@ func RenderHostConfigurationUnattended(templatePath string, devicePath string) (
 
 // Creates Host Configuration in the specified path, by adding the user input to the template
 func RenderHostConfigurationWithTemplate(configPath string, configData *TridentConfigData, templateContent string) error {
-	// Check that configPath is a valid YAML file
-	ext := filepath.Ext(configPath)
-	if ext != ".yaml" && ext != ".yml" {
-		return fmt.Errorf("config path must be a YAML file (.yaml or .yml), got: %s", ext)
-	}
-
 	configDir := filepath.Dir(configPath)
 	if err := os.MkdirAll(configDir, 0755); err != nil {
 		return fmt.Errorf("failed to create Host Configuration directory: %w", err)
