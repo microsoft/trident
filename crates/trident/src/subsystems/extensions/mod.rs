@@ -338,7 +338,7 @@ fn attach_device_and_mount(image_file_path: &Path, mount_path: &Path) -> Result<
         .arg(mount_path)
         .run_and_check();
     if let Err(e) = mount_result {
-        // Detach the loop device is mounting failed.
+        // Detach the loop device if mounting failed.
         Dependency::Losetup
             .cmd()
             .arg("-d")
