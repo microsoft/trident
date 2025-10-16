@@ -39,7 +39,7 @@ const DEFAULT_CONFEXT_DIRECTORY: &str = "/var/lib/confexts/";
 /// Temporary directory on target OS for downloading extension images, relative to the newroot mountpoint
 const EXTENSION_IMAGE_STAGING_DIRECTORY: &str = "/var/lib/extensions/.staging";
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExtensionData {
     /// ID of the extension image, corresponding to SYSEXT_ID or CONFEXT_ID in
     /// the extension release file.

@@ -138,12 +138,7 @@ mod tests {
             temp_path: Some(PathBuf::from(current_path)),
             ext_type: ExtensionType::Sysext,
         };
-        assert_eq!(extension_data.id, expected_extension_data.id);
-        assert_eq!(extension_data.path, expected_extension_data.path);
-        assert_eq!(extension_data.temp_path, expected_extension_data.temp_path);
-        assert_eq!(extension_data.name, expected_extension_data.name);
-        assert_eq!(extension_data.sha384, expected_extension_data.sha384);
-        assert_eq!(extension_data.ext_type, expected_extension_data.ext_type);
+        assert_eq!(extension_data, expected_extension_data);
 
         // Create an Extension with an intended path
         let final_path = PathBuf::from("/etc/extensions/test_1.0.0.raw");
@@ -164,12 +159,7 @@ mod tests {
             temp_path: Some(PathBuf::from(current_path)),
             ext_type: ExtensionType::Sysext,
         };
-        assert_eq!(extension_data.id, expected_extension_data.id);
-        assert_eq!(extension_data.path, expected_extension_data.path);
-        assert_eq!(extension_data.temp_path, expected_extension_data.temp_path);
-        assert_eq!(extension_data.name, expected_extension_data.name);
-        assert_eq!(extension_data.sha384, expected_extension_data.sha384);
-        assert_eq!(extension_data.ext_type, expected_extension_data.ext_type);
+        assert_eq!(extension_data, expected_extension_data);
     }
 
     // Extension release directory does not exist
