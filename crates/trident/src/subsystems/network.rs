@@ -1,4 +1,4 @@
-use std::fs;
+use std::{fs, path::Path};
 
 use anyhow::Context;
 use log::debug;
@@ -8,7 +8,8 @@ use trident_api::error::{ReportError, ServicingError, TridentError};
 
 use crate::engine::{EngineContext, Subsystem};
 
-const CLOUD_INIT_DISABLE_FILE: &str = "/etc/cloud/cloud.cfg.d/99-use-trident-networking.cfg";
+const CLOUD_INIT_CONFIG_DIR: &str = "/etc/cloud/cloud.cfg.d";
+const CLOUD_INIT_DISABLE_FILE: &str = "99-use-trident-networking.cfg";
 const CLOUD_INIT_DISABLE_CONTENT: &str = "network: {config: disabled}";
 
 #[derive(Default, Debug)]
@@ -41,7 +42,17 @@ impl Subsystem for NetworkSubsystem {
 }
 
 fn disable_cloud_init_networking() -> Result<(), TridentError> {
-    fs::write(CLOUD_INIT_DISABLE_FILE, CLOUD_INIT_DISABLE_CONTENT)
+    if !Path::new(CLOUD_INIT_CONFIG_DIR).exists() {
+        debug!(
+            "Cloud-init config dir {} does not exist, skipping disabling cloud-init networking",
+            CLOUD_INIT_CONFIG_DIR
+        );
+        return Ok(());
+    }
+
+    debug!("Disabling cloud-init networking");
+    let cloud_init_disable_path = Path::new(CLOUD_INIT_CONFIG_DIR).join(CLOUD_INIT_DISABLE_FILE);
+    fs::write(cloud_init_disable_path, CLOUD_INIT_DISABLE_CONTENT)
         .with_context(|| {
             format!("Failed to write to cloud-init disable file at {CLOUD_INIT_DISABLE_FILE}")
         })
