@@ -4,6 +4,7 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
+use filesystem::FileSystemData;
 use log::{debug, trace};
 
 use trident_api::{
@@ -19,10 +20,9 @@ use crate::osimage::OsImage;
 
 #[allow(dead_code)]
 pub mod filesystem;
+
 #[cfg(test)]
 mod test_utils;
-
-use filesystem::FileSystemData;
 
 /// Helper struct to consolidate the info on the A/B volume pair. Contains the paths and block
 /// device IDs for both volumes.
