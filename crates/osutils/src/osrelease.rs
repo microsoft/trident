@@ -28,8 +28,6 @@ pub struct OsRelease {
     pub version: Option<String>,
     pub version_id: Option<String>,
     pub pretty_name: Option<String>,
-    pub sysext_id: Option<String>,
-    pub confext_id: Option<String>,
 }
 
 impl OsRelease {
@@ -48,13 +46,6 @@ impl OsRelease {
             &std::fs::read_to_string(&osrelease_path)
                 .with_context(|| format!("Failed to read '{}'", osrelease_path.display()))?,
         ))
-    }
-
-    /// Reads the contents of the provided file and parses it into an OsRelease struct.
-    pub fn read_file(file: impl AsRef<Path>) -> Result<Self, Error> {
-        Ok(Self::parse(&std::fs::read_to_string(&file).with_context(
-            || format!("Failed to read '{}'", file.as_ref().display()),
-        )?))
     }
 
     /// Returns the distribution of the host.
@@ -109,8 +100,6 @@ impl OsRelease {
                 "VERSION" => os_release.version = value(),
                 "VERSION_ID" => os_release.version_id = value(),
                 "PRETTY_NAME" => os_release.pretty_name = value(),
-                "SYSEXT_ID" => os_release.sysext_id = value(),
-                "CONFEXT_ID" => os_release.confext_id = value(),
                 _ => {}
             }
         }
@@ -125,6 +114,64 @@ impl<'de> Deserialize<'de> for OsRelease {
         D: Deserializer<'de>,
     {
         Ok(OsRelease::parse(&String::deserialize(deserializer)?))
+    }
+}
+
+/// Represents the contents of the extension-release file of a sysext or
+/// confext.
+#[derive(Debug, Default, Clone, Eq, PartialEq)]
+pub struct ExtensionRelease {
+    pub sysext_id: Option<String>,
+    pub confext_id: Option<String>,
+    pub os_release: OsRelease,
+}
+
+impl ExtensionRelease {
+    /// Reads the contents of the provided file and parses it into an OsRelease struct.
+    pub fn read_file(file: impl AsRef<Path>) -> Result<Self, Error> {
+        Ok(Self::parse(&std::fs::read_to_string(&file).with_context(
+            || format!("Failed to read '{}'", file.as_ref().display()),
+        )?))
+    }
+
+    /// Parses the input string into an ExtensionRelease struct.
+    fn parse(data: &str) -> Self {
+        let mut sysext_id = None;
+        let mut confext_id = None;
+
+        for line in data.lines() {
+            if line.is_empty() || line.trim_start().starts_with('#') {
+                continue;
+            }
+
+            let Some((key, raw_value)) = line.trim().split_once('=') else {
+                continue;
+            };
+
+            // Fn to trim whitespace and quotes from value, and return as
+            // Option<String>
+            let value = || {
+                Some(
+                    raw_value
+                        .trim()
+                        .trim_matches('\"')
+                        .trim_matches('\'')
+                        .to_string(),
+                )
+            };
+
+            match key {
+                "SYSEXT_ID" => sysext_id = value(),
+                "CONFEXT_ID" => confext_id = value(),
+                _ => {}
+            }
+        }
+
+        Self {
+            sysext_id,
+            confext_id,
+            os_release: OsRelease::parse(data),
+        }
     }
 }
 
@@ -225,5 +272,23 @@ mod tests {
             os_release.get_distro(),
             Distro::AzureLinux(AzureLinuxRelease::AzL3)
         );
+    }
+
+    #[test]
+    fn test_parse_extension_release() {
+        let data = indoc::indoc! {
+            r#"
+            ID=_any
+            SYSEXT_ID=docker
+            SYSEXT_VERSION_ID=28.0.4
+            ARCHITECTURE=x86-64
+            "#,
+        };
+
+        let extension_release = ExtensionRelease::parse(data);
+
+        assert_eq!(extension_release.sysext_id, Some("docker".to_string()));
+        assert_eq!(extension_release.confext_id, None);
+        assert_eq!(extension_release.os_release.id, Some("_any".to_string()));
     }
 }

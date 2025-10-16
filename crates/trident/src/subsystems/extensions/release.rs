@@ -6,7 +6,7 @@ use std::{
 use anyhow::{ensure, Context, Error};
 use log::debug;
 
-use osutils::osrelease::OsRelease;
+use osutils::osrelease::ExtensionRelease;
 use trident_api::config::Extension;
 
 use crate::subsystems::extensions::{
@@ -44,7 +44,7 @@ pub(crate) fn read_extension_release(
 
     // Read the extension release file
     let extension_release_file_path = &dir[0];
-    let extension_release = OsRelease::read_file(extension_release_file_path)
+    let extension_release = ExtensionRelease::read_file(extension_release_file_path)
         .context("Failed to read extension release file.")?;
 
     // Retrieve SYSEXT_ID or CONFEXT_ID field
