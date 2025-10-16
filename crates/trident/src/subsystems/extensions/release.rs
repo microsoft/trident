@@ -14,7 +14,7 @@ use crate::subsystems::extensions::{
     DEFAULT_SYSEXT_DIRECTORY, SYSEXT_EXTENSION_RELEASE_DIRECTORY,
 };
 
-/// Helper function to extract information from extension-release file
+/// Helper function to extract information from extension-release file.
 pub(crate) fn read_extension_release(
     mount_point: &Path,
     curr_path: &Path,
