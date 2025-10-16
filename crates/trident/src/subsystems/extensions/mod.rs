@@ -281,18 +281,19 @@ impl ExtensionsSubsystem {
                 .context("Failed to mount")?;
 
             // Get extension release file
-            let ext_data =
-                release::read_extension_release(temp_mp.path(), &extension_file, ext, &ext_type)
-                    .context("Failed to get extension release information")?;
+            let ext_data_result =
+                release::read_extension_release(temp_mp.path(), &extension_file, ext, &ext_type);
 
+            // Clean-Up: unmount and detach the device
+            detach_device_and_unmount(device_path, temp_mp.path()).context("Failed to unmount")?;
+
+            let ext_data =
+                ext_data_result.context("Failed to get extension release information")?;
             if new {
                 self.extensions.push(ext_data);
             } else {
                 self.extensions_old.push(ext_data);
             }
-
-            // Clean-Up: unmount and detach the device
-            detach_device_and_unmount(device_path, temp_mp.path()).context("Failed to unmount")?;
         }
 
         Ok(())
