@@ -206,6 +206,9 @@ pub enum HostConfigurationDynamicValidationError {
     #[error("Encryption recovery key file '{key_file}' must be a regular file")]
     EncryptionKeyNotRegularFile { key_file: String },
 
+    #[error("Extension image path '{path}' must be on a known A/B volume")]
+    ExtensionImageNotOnABVolume { path: String },
+
     #[error(
         "Since update image is a grub image, list of PCRs in encryption config contains invalid PCRs: '{pcrs}'. \
         Only PCR 7 is valid for grub images"

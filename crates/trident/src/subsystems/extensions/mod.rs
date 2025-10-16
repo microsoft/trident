@@ -1,19 +1,19 @@
 use std::{
+    collections::HashSet,
     fmt::Display,
-    fs, io,
+    fs,
     path::{Path, PathBuf},
     time::Duration,
 };
 
 use anyhow::{bail, ensure, Context, Error};
-use log::debug;
 use tempfile::NamedTempFile;
 
-use osutils::{dependencies::Dependency, osrelease::OsRelease};
+use osutils::{dependencies::Dependency, path};
 use trident_api::{
-    config::Extension,
+    config::{Extension, HostConfigurationDynamicValidationError},
     constants::internal_params::COSI_HTTP_CONNECTION_TIMEOUT_SECONDS,
-    error::{InternalError, ReportError, TridentError},
+    error::{InternalError, InvalidInputError, ReportError, TridentError},
     primitives::hash::Sha384Hash,
 };
 
@@ -24,18 +24,20 @@ use crate::{
     },
 };
 
+mod release;
+
 /// Expected extension-release directory for sysexts
 const SYSEXT_EXTENSION_RELEASE_DIRECTORY: &str = "usr/lib/extension-release.d/";
 /// Expected extension-release directory for confexts
 const CONFEXT_EXTENSION_RELEASE_DIRECTORY: &str = "etc/extension-release.d/";
 
 /// Primary location for storing sysexts on the target OS, relative to the newroot mountpoint
-const DEFAULT_SYSEXT_DIRECTORY: &str = "var/lib/extensions/";
+const DEFAULT_SYSEXT_DIRECTORY: &str = "/var/lib/extensions/";
 /// Primary location for storing confexts on the target OS, relative to the newroot mountpoint
-const DEFAULT_CONFEXT_DIRECTORY: &str = "var/lib/confexts/";
+const DEFAULT_CONFEXT_DIRECTORY: &str = "/var/lib/confexts/";
 
 /// Temporary directory on target OS for downloading extension images, relative to the newroot mountpoint
-const EXTENSION_IMAGE_DOWNLOAD_DIRECTORY: &str = "var/lib/.extensions-staging/";
+const EXTENSION_IMAGE_STAGING_DIRECTORY: &str = "/var/lib/extensions/.staging";
 
 #[derive(Clone, Debug)]
 pub struct ExtensionData {
@@ -85,7 +87,43 @@ impl Subsystem for ExtensionsSubsystem {
         "extensions"
     }
 
-    fn validate_host_config(&self, _ctx: &EngineContext) -> Result<(), TridentError> {
+    fn validate_host_config(&self, ctx: &EngineContext) -> Result<(), TridentError> {
+        // Sysexts and confexts must not be placed on shared partitions since
+        // this may lead to unexpected behavior after an A/B update.
+        let mut dirs = HashSet::new();
+        dirs.extend(
+            ctx.spec
+                .os
+                .sysexts
+                .iter()
+                .map(|ext| ext.path.clone().unwrap_or(DEFAULT_SYSEXT_DIRECTORY.into())),
+        );
+        dirs.extend(
+            ctx.spec
+                .os
+                .confexts
+                .iter()
+                .map(|ext| ext.path.clone().unwrap_or(DEFAULT_CONFEXT_DIRECTORY.into())),
+        );
+        for dir_path in dirs {
+            let fs_device_id = ctx
+                .spec
+                .storage
+                .path_to_mount_point_info(&dir_path)
+                .and_then(|mp| mp.device_id)
+                .structured(InvalidInputError::from(
+                    HostConfigurationDynamicValidationError::ExtensionImageNotOnABVolume {
+                        path: dir_path.display().to_string(),
+                    },
+                ))?;
+            if ctx.get_ab_volume_pair(fs_device_id).is_err() {
+                return Err(TridentError::new(InvalidInputError::from(
+                    HostConfigurationDynamicValidationError::ExtensionImageNotOnABVolume {
+                        path: dir_path.display().to_string(),
+                    },
+                )));
+            };
+        }
         Ok(())
     }
 
@@ -94,13 +132,19 @@ impl Subsystem for ExtensionsSubsystem {
     }
 
     fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
+        // Define staging directory, in which extension images will be downloaded.
+        let staging_dir = path::join_relative(mount_path, EXTENSION_IMAGE_STAGING_DIRECTORY);
+
         // Download new extension images. Mount and process all extension images.
-        self.populate_extensions(ctx, mount_path)
+        self.populate_extensions(ctx, &staging_dir)
             .structured(InternalError::PopulateExtensionImages)?;
 
         // TODO: Determine which images need to be removed and which should be added.
 
         // TODO: Copy extension images to their proper locations.
+
+        // TODO: Clean-up staging directory.
+
         Ok(())
     }
 
@@ -113,54 +157,28 @@ impl ExtensionsSubsystem {
     fn populate_extensions(
         self: &mut ExtensionsSubsystem,
         ctx: &EngineContext,
-        mount_path: &Path,
+        staging_dir: &Path,
     ) -> Result<(), Error> {
-        let timeout = match ctx
-            .spec
-            .internal_params
-            .get_u64(COSI_HTTP_CONNECTION_TIMEOUT_SECONDS)
-        {
-            Some(Ok(timeout)) => Duration::from_secs(timeout),
-            _ => Duration::from_secs(10), // Default timeout
-        };
+        let timeout = Duration::from_secs(
+            ctx.spec
+                .internal_params
+                .get_u64(COSI_HTTP_CONNECTION_TIMEOUT_SECONDS)
+                .and_then(|timeout| timeout.ok())
+                .unwrap_or(10),
+        );
 
         // Create temporary directory in which to download extension images
         // before copying them to their final path.
-        let temporary_staging_dir = mount_path.join(EXTENSION_IMAGE_DOWNLOAD_DIRECTORY);
-        if !temporary_staging_dir.exists() {
-            fs::create_dir_all(&temporary_staging_dir).with_context(|| {
-                format!("Failed to create dir '{EXTENSION_IMAGE_DOWNLOAD_DIRECTORY}")
+        if !staging_dir.exists() {
+            fs::create_dir_all(staging_dir).with_context(|| {
+                format!("Failed to create dir '{EXTENSION_IMAGE_STAGING_DIRECTORY}")
             })?;
         };
 
-        self.populate_extensions_inner(
-            ctx,
-            timeout,
-            &temporary_staging_dir,
-            ExtensionType::Sysext,
-            true,
-        )?;
-        self.populate_extensions_inner(
-            ctx,
-            timeout,
-            &temporary_staging_dir,
-            ExtensionType::Sysext,
-            false,
-        )?;
-        self.populate_extensions_inner(
-            ctx,
-            timeout,
-            &temporary_staging_dir,
-            ExtensionType::Confext,
-            true,
-        )?;
-        self.populate_extensions_inner(
-            ctx,
-            timeout,
-            &temporary_staging_dir,
-            ExtensionType::Confext,
-            false,
-        )?;
+        self.populate_extensions_inner(ctx, timeout, staging_dir, ExtensionType::Sysext, true)?;
+        self.populate_extensions_inner(ctx, timeout, staging_dir, ExtensionType::Sysext, false)?;
+        self.populate_extensions_inner(ctx, timeout, staging_dir, ExtensionType::Confext, true)?;
+        self.populate_extensions_inner(ctx, timeout, staging_dir, ExtensionType::Confext, false)?;
         Ok(())
     }
 
@@ -178,7 +196,7 @@ impl ExtensionsSubsystem {
         self: &mut ExtensionsSubsystem,
         ctx: &EngineContext,
         timeout: Duration,
-        temp_staging_dir: &Path,
+        staging_dir: &Path,
         ext_type: ExtensionType,
         new: bool,
     ) -> Result<(), Error> {
@@ -210,7 +228,7 @@ impl ExtensionsSubsystem {
                 } else {
                     // The extension is new to the OS, so we need to download it.
                     // Create and persist a temporary file; get its path.
-                    let temp_file: PathBuf = NamedTempFile::new_in(temp_staging_dir)
+                    let temp_file: PathBuf = NamedTempFile::new_in(staging_dir)
                         .context("Failed to create temporary file")?
                         .into_temp_path()
                         .keep()
@@ -264,8 +282,9 @@ impl ExtensionsSubsystem {
                 .context("Failed to mount")?;
 
             // Get extension release file
-            let ext_data = read_extension_release(temp_mp.path(), &extension_file, ext, &ext_type)
-                .context("Failed to get extension release information")?;
+            let ext_data =
+                release::read_extension_release(temp_mp.path(), &extension_file, ext, &ext_type)
+                    .context("Failed to get extension release information")?;
 
             if new {
                 self.extensions.push(ext_data);
@@ -290,77 +309,6 @@ fn check_for_existing_image(ext: &Extension, old_hc_extensions: &[Extension]) ->
         .find(|old_ext| ext.url == old_ext.url && ext.sha384 == old_ext.sha384)?
         .path
         .clone()
-}
-
-/// Helper function to extract information from extension-release file
-fn read_extension_release(
-    mount_point: &Path,
-    curr_path: &Path,
-    ext: &Extension,
-    ext_type: &ExtensionType,
-) -> Result<ExtensionData, Error> {
-    debug!(
-        "Processing extension release file for extension image at '{}'",
-        ext.url
-    );
-
-    let sysext_release_dir = mount_point.join(SYSEXT_EXTENSION_RELEASE_DIRECTORY);
-    let confext_release_dir = mount_point.join(CONFEXT_EXTENSION_RELEASE_DIRECTORY);
-
-    // Get extension release file
-    let dir = match ext_type {
-        ExtensionType::Sysext => fs::read_dir(&sysext_release_dir).with_context(|| format!("Failed to find extension release directory '{SYSEXT_EXTENSION_RELEASE_DIRECTORY}' in image at '{}'", ext.url))?,
-        ExtensionType::Confext => fs::read_dir(&confext_release_dir).with_context(|| format!("Failed to find extension release directory '{CONFEXT_EXTENSION_RELEASE_DIRECTORY}' in image at '{}'", ext.url))?,
-    }.map(|res| res.map(|e| e.path()))
-    .collect::<Result<Vec<_>, io::Error>>()?;
-
-    ensure!(
-        dir.len() == 1,
-        "Expected extension image to have exactly 1 extension-release file, found '{}'",
-        dir.len()
-    );
-
-    // Read the extension release file
-    let extension_release_file_path = &dir[0];
-    let extension_release = OsRelease::read_file(extension_release_file_path)
-        .context("Failed to read extension release file.")?;
-
-    // Retrieve SYSEXT_ID or CONFEXT_ID field
-    let extension_id = match ext_type {
-        ExtensionType::Sysext => extension_release
-            .sysext_id
-            .context("Could not find SYSEXT_ID in extension release")?,
-        ExtensionType::Confext => extension_release
-            .confext_id
-            .context("Could not find CONFEXT_ID in extension release")?,
-    };
-    let name = extension_release_file_path
-        .file_name()
-        .and_then(|s| s.to_str())
-        .context("Failed to get file name as a valid UTF-8 string")?
-        .strip_prefix("extension-release.")
-        .context("Extension release filename must begin with 'extension-release.'")?
-        .to_string();
-    let path = match &ext.path {
-        Some(path) => path.clone(),
-        None => match ext_type {
-            ExtensionType::Sysext => {
-                PathBuf::from(DEFAULT_SYSEXT_DIRECTORY).join(format!("{name}.raw"))
-            }
-            ExtensionType::Confext => {
-                PathBuf::from(DEFAULT_CONFEXT_DIRECTORY).join(format!("{name}.raw"))
-            }
-        },
-    };
-
-    Ok(ExtensionData {
-        id: extension_id,
-        name,
-        sha384: ext.sha384.clone(),
-        path,
-        temp_path: Some(curr_path.to_path_buf()),
-        ext_type: ext_type.clone(),
-    })
 }
 
 /// Helper function to mount the extension image.
@@ -405,10 +353,15 @@ fn detach_device_and_unmount(device_path: String, mount_path: &Path) -> Result<(
 mod tests {
     use super::*;
 
-    use std::{fs::File, io::Write};
-
-    use tempfile::{env::temp_dir, TempDir};
+    use tempfile::env::temp_dir;
     use url::Url;
+
+    use trident_api::{
+        config::{
+            AbUpdate, AbVolumePair, FileSystem, FileSystemSource, MountOptions, MountPoint, Storage,
+        },
+        error::ErrorKind,
+    };
 
     fn create_extension(hash: Sha384Hash, path: Option<PathBuf>) -> Extension {
         Extension {
@@ -418,205 +371,111 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_read_extension_release_success() {
-        let tempdir = TempDir::new().unwrap();
-        let mount_point = tempdir.path();
+    fn test_validate_success() {
+        let mut ctx = EngineContext::default();
+        ctx.spec.os.sysexts = vec![
+            Extension {
+                url: Url::parse("https://example.com/sysext1.raw").unwrap(),
+                sha384: Sha384Hash::from("a".repeat(96)),
+                path: None, // Defaults to a file inside /var/lib/extensions
+            },
+            Extension {
+                url: Url::parse("https://example.com/sysext2.raw").unwrap(),
+                sha384: Sha384Hash::from("b".repeat(96)),
+                path: Some(PathBuf::from("/etc/extensions/sysext2.raw")),
+            },
+        ];
+        ctx.spec.os.confexts = vec![
+            Extension {
+                url: Url::parse("https://example.com/confext1.raw").unwrap(),
+                sha384: Sha384Hash::from("c".repeat(96)),
+                path: None, // Defaults to a file inside /var/lib/confexts
+            },
+            Extension {
+                url: Url::parse("https://example.com/confext2.raw").unwrap(),
+                sha384: Sha384Hash::from("d".repeat(96)),
+                path: Some(PathBuf::from("/usr/lib/confexts/confext2.raw")),
+            },
+        ];
 
-        let sysext_release_dir = mount_point.join(SYSEXT_EXTENSION_RELEASE_DIRECTORY);
-        fs::create_dir_all(&sysext_release_dir).unwrap();
-
-        let mut extension_release_file =
-            File::create(sysext_release_dir.join("extension-release.test_1.0.0")).unwrap();
-        extension_release_file.write_all(b"ID=_any\nSYSEXT_ID=test\nSYSEXT_VERSION_ID=1.0.0\nSYSEXT_SCOPE=initrd system portable\nARCHITECTURE=x86-64").unwrap();
-
-        // Create an Extension with no provided path
-        let hash = Sha384Hash::from("a".repeat(96));
-        let current_path = Path::new("/tmp/file");
-        let extension = create_extension(hash.clone(), None);
-
-        let extension_data = read_extension_release(
-            mount_point,
-            current_path,
-            &extension,
-            &ExtensionType::Sysext,
-        )
-        .unwrap();
-        let expected_extension_data = ExtensionData {
-            id: "test".to_string(),
-            name: "test_1.0.0".to_string(),
-            sha384: hash.clone(),
-            path: PathBuf::from(DEFAULT_SYSEXT_DIRECTORY).join("test_1.0.0.raw"),
-            temp_path: Some(PathBuf::from(current_path)),
-            ext_type: ExtensionType::Sysext,
+        // Ensure that /var/lib/extensions/ and /var/lib/confexts are on A/B volumes
+        ctx.spec.storage = Storage {
+            filesystems: vec![FileSystem {
+                device_id: Some("root".to_owned()),
+                source: FileSystemSource::Image,
+                mount_point: Some(MountPoint {
+                    path: PathBuf::from("/"),
+                    options: MountOptions::empty(),
+                }),
+            }],
+            ab_update: Some(AbUpdate {
+                volume_pairs: vec![AbVolumePair {
+                    id: "root".to_owned(),
+                    volume_a_id: "root-a".to_owned(),
+                    volume_b_id: "root-b".to_owned(),
+                }],
+            }),
+            ..Default::default()
         };
-        assert_eq!(extension_data.id, expected_extension_data.id);
-        assert_eq!(extension_data.path, expected_extension_data.path);
-        assert_eq!(extension_data.temp_path, expected_extension_data.temp_path);
-        assert_eq!(extension_data.name, expected_extension_data.name);
-        assert_eq!(extension_data.sha384, expected_extension_data.sha384);
-        assert_eq!(extension_data.ext_type, expected_extension_data.ext_type);
 
-        // Create an Extension with an intended path
-        let final_path = PathBuf::from("/etc/extensions/test_1.0.0.raw");
-        let extension_with_path = create_extension(hash.clone(), Some(final_path.clone()));
+        let subsystem = ExtensionsSubsystem::default();
+        subsystem.validate_host_config(&ctx).unwrap();
+    }
 
-        let extension_data = read_extension_release(
-            mount_point,
-            current_path,
-            &extension_with_path,
-            &ExtensionType::Sysext,
-        )
-        .unwrap();
-        let expected_extension_data = ExtensionData {
-            id: "test".to_string(),
-            name: "test_1.0.0".to_string(),
-            sha384: hash,
-            path: final_path,
-            temp_path: Some(PathBuf::from(current_path)),
-            ext_type: ExtensionType::Sysext,
+    #[test]
+    fn test_validate_no_extensions() {
+        let ctx = EngineContext::default();
+        let subsystem = ExtensionsSubsystem::default();
+        subsystem.validate_host_config(&ctx).unwrap();
+    }
+
+    #[test]
+    fn test_validate_failure() {
+        let mut ctx = EngineContext::default();
+        ctx.spec.os.sysexts = vec![Extension {
+            url: Url::parse("https://example.com/sysext1.raw").unwrap(),
+            sha384: Sha384Hash::from("a".repeat(96)),
+            path: None, // Defaults to a file inside /var/lib/extensions
+        }];
+
+        // Ensure place /var/lib/extensions/ on a shared partition
+        ctx.spec.storage = Storage {
+            filesystems: vec![
+                FileSystem {
+                    device_id: Some("root".to_owned()),
+                    source: FileSystemSource::Image,
+                    mount_point: Some(MountPoint {
+                        path: PathBuf::from("/"),
+                        options: MountOptions::empty(),
+                    }),
+                },
+                FileSystem {
+                    device_id: Some("shared".to_owned()),
+                    source: FileSystemSource::Image,
+                    mount_point: Some(MountPoint {
+                        path: PathBuf::from("/var/lib/extensions"),
+                        options: MountOptions::empty(),
+                    }),
+                },
+            ],
+            ab_update: Some(AbUpdate {
+                volume_pairs: vec![AbVolumePair {
+                    id: "root".to_owned(),
+                    volume_a_id: "root-a".to_owned(),
+                    volume_b_id: "root-b".to_owned(),
+                }],
+            }),
+            ..Default::default()
         };
-        assert_eq!(extension_data.id, expected_extension_data.id);
-        assert_eq!(extension_data.path, expected_extension_data.path);
-        assert_eq!(extension_data.temp_path, expected_extension_data.temp_path);
-        assert_eq!(extension_data.name, expected_extension_data.name);
-        assert_eq!(extension_data.sha384, expected_extension_data.sha384);
-        assert_eq!(extension_data.ext_type, expected_extension_data.ext_type);
-    }
 
-    // Extension release directory does not exist
-    #[test]
-    fn test_read_extension_release_fails_no_file() {
-        let tempdir = TempDir::new().unwrap();
-        let mount_point = tempdir.path();
-
-        let current_path = Path::new("/tmp/file");
-        let extension = create_extension(Sha384Hash::from("a".repeat(96)), None);
-
-        let result = read_extension_release(
-            mount_point,
-            current_path,
-            &extension,
-            &ExtensionType::Sysext,
-        );
-        assert!(result.is_err());
+        let subsystem = ExtensionsSubsystem::default();
         assert_eq!(
-            result.unwrap_err().to_string(),
-            format!("Failed to find extension release directory '{SYSEXT_EXTENSION_RELEASE_DIRECTORY}' in image at 'https://example.com/test-extension'")
-        );
-
-        let result = read_extension_release(
-            mount_point,
-            current_path,
-            &extension,
-            &ExtensionType::Confext,
-        );
-        assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            format!("Failed to find extension release directory '{CONFEXT_EXTENSION_RELEASE_DIRECTORY}' in image at 'https://example.com/test-extension'")
-        );
-    }
-
-    // There is not exactly one extension release file in the expected directory
-    #[test]
-    fn test_read_extension_release_fails_multiple_files() {
-        let tempdir = TempDir::new().unwrap();
-        let mount_point = tempdir.path();
-
-        let sysext_release_dir = mount_point.join(SYSEXT_EXTENSION_RELEASE_DIRECTORY);
-        fs::create_dir_all(&sysext_release_dir).unwrap();
-
-        let current_path = Path::new("/tmp/file");
-        let extension = create_extension(Sha384Hash::from("a".repeat(96)), None);
-
-        // No extension release file exists.
-        let result = read_extension_release(
-            mount_point,
-            current_path,
-            &extension,
-            &ExtensionType::Sysext,
-        );
-        assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            "Expected extension image to have exactly 1 extension-release file, found '0'"
-        );
-
-        // Create two extension release files.
-        File::create(sysext_release_dir.join("extension-release.test1")).unwrap();
-        File::create(sysext_release_dir.join("extension-release.test2")).unwrap();
-
-        // Too many extension release files exist.
-        let result = read_extension_release(
-            mount_point,
-            current_path,
-            &extension,
-            &ExtensionType::Sysext,
-        );
-        assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            "Expected extension image to have exactly 1 extension-release file, found '2'"
-        );
-    }
-
-    // Extension release file is missing the SYSEXT_ID field
-    #[test]
-    fn test_read_extension_release_fails_missing_field() {
-        let tempdir = TempDir::new().unwrap();
-        let mount_point = tempdir.path();
-
-        let sysext_release_dir = mount_point.join(SYSEXT_EXTENSION_RELEASE_DIRECTORY);
-        fs::create_dir_all(&sysext_release_dir).unwrap();
-
-        // Create a file with valid content but missing the SYSEXT_ID field.
-        let mut file = File::create(sysext_release_dir.join("extension-release.test")).unwrap();
-        file.write_all(b"ID=_any\nSYSEXT_VERSION_ID=1.0.0").unwrap();
-
-        let current_path = Path::new("/tmp/file");
-        let extension = create_extension(Sha384Hash::from("a".repeat(96)), None);
-
-        let result = read_extension_release(
-            mount_point,
-            current_path,
-            &extension,
-            &ExtensionType::Sysext,
-        );
-        assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            "Could not find SYSEXT_ID in extension release"
-        );
-    }
-
-    // Extension release file has an invalid name
-    #[test]
-    fn test_read_extension_release_fails_invalid_filename() {
-        let tempdir = TempDir::new().unwrap();
-        let mount_point = tempdir.path();
-
-        let sysext_release_dir = mount_point.join(SYSEXT_EXTENSION_RELEASE_DIRECTORY);
-        fs::create_dir_all(&sysext_release_dir).unwrap();
-
-        // Create a file with a name that doesn't contain "extension-release."
-        let mut file = File::create(sysext_release_dir.join("my-release-file")).unwrap();
-        file.write_all(b"SYSEXT_ID=test").unwrap();
-
-        let hash = Sha384Hash::from("a".repeat(96));
-        let current_path = Path::new("/tmp/file");
-        let extension = create_extension(hash, None);
-
-        let err = read_extension_release(
-            mount_point,
-            current_path,
-            &extension,
-            &ExtensionType::Sysext,
-        )
-        .unwrap_err();
-        assert_eq!(
-            err.to_string(),
-            "Extension release filename must begin with 'extension-release.'"
+            subsystem.validate_host_config(&ctx).unwrap_err().kind(),
+            &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
+                inner: HostConfigurationDynamicValidationError::ExtensionImageNotOnABVolume {
+                    path: "/var/lib/extensions/".to_string()
+                }
+            })
         );
     }
 
