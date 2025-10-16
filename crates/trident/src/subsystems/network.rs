@@ -42,19 +42,22 @@ impl Subsystem for NetworkSubsystem {
 }
 
 fn disable_cloud_init_networking() -> Result<(), TridentError> {
+    let cloud_init_disable_path = Path::new(CLOUD_INIT_CONFIG_DIR).join(CLOUD_INIT_DISABLE_FILE);
     if !Path::new(CLOUD_INIT_CONFIG_DIR).exists() {
         debug!(
             "Cloud-init config dir {} does not exist, skipping disabling cloud-init networking",
-            CLOUD_INIT_CONFIG_DIR
+            cloud_init_disable_path.display()
         );
         return Ok(());
     }
 
     debug!("Disabling cloud-init networking");
-    let cloud_init_disable_path = Path::new(CLOUD_INIT_CONFIG_DIR).join(CLOUD_INIT_DISABLE_FILE);
-    fs::write(cloud_init_disable_path, CLOUD_INIT_DISABLE_CONTENT)
+    fs::write(&cloud_init_disable_path, CLOUD_INIT_DISABLE_CONTENT)
         .with_context(|| {
-            format!("Failed to write to cloud-init disable file at {CLOUD_INIT_DISABLE_FILE}")
+            format!(
+                "Failed to write to cloud-init disable file at {}",
+                cloud_init_disable_path.display()
+            )
         })
         .structured(ServicingError::DisableCloudInitNetworking)
 }
