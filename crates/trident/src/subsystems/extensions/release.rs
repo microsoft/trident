@@ -4,6 +4,7 @@ use std::{
 };
 
 use anyhow::{ensure, Context, Error};
+use const_format::formatcp;
 use log::debug;
 
 use osutils::osrelease::ExtensionRelease;
@@ -11,8 +12,10 @@ use trident_api::config::Extension;
 
 use crate::subsystems::extensions::{
     ExtensionData, ExtensionType, CONFEXT_EXTENSION_RELEASE_DIRECTORY, DEFAULT_CONFEXT_DIRECTORY,
-    DEFAULT_SYSEXT_DIRECTORY, SYSEXT_EXTENSION_RELEASE_DIRECTORY,
+    DEFAULT_SYSEXT_DIRECTORY, EXTENSION_RELEASE, SYSEXT_EXTENSION_RELEASE_DIRECTORY,
 };
+
+const EXTENSION_RELEASE_PREFIX: &str = formatcp!("{EXTENSION_RELEASE}.");
 
 /// Helper function to extract information from extension-release file.
 pub(crate) fn read_extension_release(
@@ -22,19 +25,19 @@ pub(crate) fn read_extension_release(
     ext_type: &ExtensionType,
 ) -> Result<ExtensionData, Error> {
     debug!(
-        "Processing extension release file for extension image at '{}'",
+        "Processing extension-release file for extension image at '{}'",
         ext.url
     );
 
-    // Get extension release file
+    // Get extension-release file
     let dir = match ext_type {
         ExtensionType::Sysext => {
             fs::read_dir(mount_point.join(SYSEXT_EXTENSION_RELEASE_DIRECTORY))
-                .with_context(|| format!("Failed to find extension release directory '{SYSEXT_EXTENSION_RELEASE_DIRECTORY}' in image at '{}'", ext.url))?
+                .with_context(|| format!("Failed to find extension-release directory '{SYSEXT_EXTENSION_RELEASE_DIRECTORY}' in image at '{}'", ext.url))?
         },
         ExtensionType::Confext => {
             fs::read_dir(mount_point.join(CONFEXT_EXTENSION_RELEASE_DIRECTORY))
-                .with_context(|| format!("Failed to find extension release directory '{CONFEXT_EXTENSION_RELEASE_DIRECTORY}' in image at '{}'", ext.url))?
+                .with_context(|| format!("Failed to find extension-release directory '{CONFEXT_EXTENSION_RELEASE_DIRECTORY}' in image at '{}'", ext.url))?
         },
     }.map(|res| res.map(|e| e.path()))
     .collect::<Result<Vec<_>, io::Error>>()?;
@@ -45,26 +48,26 @@ pub(crate) fn read_extension_release(
         dir.len()
     );
 
-    // Read the extension release file
+    // Read the extension-release file
     let extension_release_file_path = &dir[0];
     let extension_release = ExtensionRelease::read_file(extension_release_file_path)
-        .context("Failed to read extension release file.")?;
+        .context("Failed to read extension-release file.")?;
 
     // Retrieve SYSEXT_ID or CONFEXT_ID field
     let extension_id = match ext_type {
         ExtensionType::Sysext => extension_release
             .sysext_id
-            .context("Could not find SYSEXT_ID in extension release")?,
+            .context("Could not find SYSEXT_ID in extension-release")?,
         ExtensionType::Confext => extension_release
             .confext_id
-            .context("Could not find CONFEXT_ID in extension release")?,
+            .context("Could not find CONFEXT_ID in extension-release")?,
     };
     let name = extension_release_file_path
         .file_name()
         .and_then(|s| s.to_str())
         .context("Failed to get file name as a valid UTF-8 string")?
-        .strip_prefix("extension-release.")
-        .context("Extension release filename must begin with 'extension-release.'")?
+        .strip_prefix(EXTENSION_RELEASE_PREFIX)
+        .context("Extension-release filename must begin with 'extension-release.'")?
         .to_string();
     let path = match &ext.path {
         Some(path) => path.clone(),
@@ -162,7 +165,7 @@ mod tests {
         assert_eq!(extension_data, expected_extension_data);
     }
 
-    // Extension release directory does not exist
+    // Extension-release directory does not exist
     #[test]
     fn test_read_extension_release_fails_no_file() {
         let tempdir = TempDir::new().unwrap();
@@ -180,7 +183,7 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
-            format!("Failed to find extension release directory '{SYSEXT_EXTENSION_RELEASE_DIRECTORY}' in image at 'https://example.com/test-extension'")
+            format!("Failed to find extension-release directory '{SYSEXT_EXTENSION_RELEASE_DIRECTORY}' in image at 'https://example.com/test-extension'")
         );
 
         let result = read_extension_release(
@@ -192,11 +195,11 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
-            format!("Failed to find extension release directory '{CONFEXT_EXTENSION_RELEASE_DIRECTORY}' in image at 'https://example.com/test-extension'")
+            format!("Failed to find extension-release directory '{CONFEXT_EXTENSION_RELEASE_DIRECTORY}' in image at 'https://example.com/test-extension'")
         );
     }
 
-    // There is not exactly one extension release file in the expected directory
+    // There is not exactly one extension-release file in the expected directory
     #[test]
     fn test_read_extension_release_fails_multiple_files() {
         let tempdir = TempDir::new().unwrap();
@@ -208,7 +211,7 @@ mod tests {
         let current_path = Path::new("/tmp/file");
         let extension = create_extension(Sha384Hash::from("a".repeat(96)), None);
 
-        // No extension release file exists.
+        // No extension-release file exists.
         let result = read_extension_release(
             mount_point,
             current_path,
@@ -221,11 +224,11 @@ mod tests {
             "Expected extension image to have exactly 1 extension-release file, found '0'"
         );
 
-        // Create two extension release files.
+        // Create two extension-release files.
         File::create(sysext_release_dir.join("extension-release.test1")).unwrap();
         File::create(sysext_release_dir.join("extension-release.test2")).unwrap();
 
-        // Too many extension release files exist.
+        // Too many extension-release files exist.
         let result = read_extension_release(
             mount_point,
             current_path,
@@ -238,7 +241,7 @@ mod tests {
         );
     }
 
-    // Extension release file is missing the SYSEXT_ID field
+    // Extension-release file is missing the SYSEXT_ID field
     #[test]
     fn test_read_extension_release_fails_missing_field() {
         let tempdir = TempDir::new().unwrap();
@@ -263,11 +266,11 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
-            "Could not find SYSEXT_ID in extension release"
+            "Could not find SYSEXT_ID in extension-release"
         );
     }
 
-    // Extension release file has an invalid name
+    // Extension-release file has an invalid name
     #[test]
     fn test_read_extension_release_fails_invalid_filename() {
         let tempdir = TempDir::new().unwrap();
@@ -293,7 +296,7 @@ mod tests {
         .unwrap_err();
         assert_eq!(
             err.to_string(),
-            "Extension release filename must begin with 'extension-release.'"
+            "Extension-release filename must begin with 'extension-release.'"
         );
     }
 }

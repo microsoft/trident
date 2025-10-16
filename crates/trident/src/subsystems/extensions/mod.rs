@@ -26,6 +26,9 @@ use crate::{
 
 mod release;
 
+/// Extension-release
+const EXTENSION_RELEASE: &str = "extension-release";
+
 /// Expected extension-release directory for sysexts
 const SYSEXT_EXTENSION_RELEASE_DIRECTORY: &str = "usr/lib/extension-release.d/";
 /// Expected extension-release directory for confexts
@@ -42,10 +45,10 @@ const EXTENSION_IMAGE_STAGING_DIRECTORY: &str = "/var/lib/extensions/.staging";
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExtensionData {
     /// ID of the extension image, corresponding to SYSEXT_ID or CONFEXT_ID in
-    /// the extension release file.
+    /// the extension-release file.
     pub id: String,
 
-    /// Name of the extension image. The file extension of the extension release
+    /// Name of the extension image. The file extension of the extension-release
     /// file, i.e. `extension-release.<NAME>`.
     pub name: String,
 
@@ -280,7 +283,7 @@ impl ExtensionsSubsystem {
             let device_path = attach_device_and_mount(&extension_file, temp_mp.path())
                 .context("Failed to mount")?;
 
-            // Get extension release file
+            // Get extension-release file
             let ext_data_result =
                 release::read_extension_release(temp_mp.path(), &extension_file, ext, &ext_type);
 
@@ -288,7 +291,7 @@ impl ExtensionsSubsystem {
             detach_device_and_unmount(device_path, temp_mp.path()).context("Failed to unmount")?;
 
             let ext_data =
-                ext_data_result.context("Failed to get extension release information")?;
+                ext_data_result.context("Failed to get extension-release information")?;
             if new {
                 self.extensions.push(ext_data);
             } else {
@@ -561,7 +564,7 @@ mod functional_test {
         let release_dir = mount_point.path().join(release_subdir);
         fs::create_dir_all(&release_dir).unwrap();
 
-        let release_file_path = release_dir.join(format!("extension-release.{ext_name}"));
+        let release_file_path = release_dir.join(format!("{EXTENSION_RELEASE}.{ext_name}"));
         fs::write(&release_file_path, ext_release_content).unwrap();
 
         // Unmount
