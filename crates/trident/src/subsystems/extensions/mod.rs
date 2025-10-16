@@ -243,7 +243,7 @@ impl ExtensionsSubsystem {
                         .context("Failed to create complete file reader")?;
                     let hash_reader = HashingReader384::new(reader);
                     let computed_sha384 = stream_and_hash(hash_reader, &temp_file)
-                        .context("Failed to read and write")?;
+                        .context("Failed to download extension image and calculate its hash")?;
 
                     // Ensure computed SHA384 matches SHA384 in Host Configuration.
                     if ext.sha384 != computed_sha384 {
