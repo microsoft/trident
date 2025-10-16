@@ -59,6 +59,9 @@ pub struct ExtensionData {
     pub path: PathBuf,
 
     /// Path of the extension image, relative to the servicing OS.
+    ///
+    /// The extension image is downloaded into a temporary location first to
+    /// avoid partial or corrupted extensions being merged into the OS.
     pub temp_path: Option<PathBuf>,
 
     /// Sysext or confext.
