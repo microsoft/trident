@@ -463,57 +463,6 @@ bin/EULA.txt:
 run-attendedinstaller-simulator: bin/attendedinstaller-simulator bin/EULA.txt
 	@cd bin && ./attendedinstaller-simulator && cd -
 
-# AZL INSTALLER IMAGES
-
-artifacts/test-image/azl-installer-mos.vhdx: \
-	artifacts/baremetal.vhdx \
-	bin/trident-rpms-azl3.tar.gz \
-	tests/images/azl-installer/mos/mos.yaml \
-	artifacts/imagecustomizer \
-	$(shell find tests/images/azl-installer/mos/ -type f 2>/dev/null)
-	@mkdir -p artifacts/test-image/
-	sudo rm -rf bin/trident_rpms
-	mkdir -p bin/trident_rpms
-	$(eval TEMP_DIR := $(shell mktemp -d))
-	tar -xf bin/trident-rpms-azl3.tar.gz -C $(TEMP_DIR)
-	cp $(TEMP_DIR)/RPMS/*/*.rpm bin/trident_rpms/
-	rm -rf $(TEMP_DIR) 
-
-	sudo ./artifacts/imagecustomizer \
-		--log-level debug \
-		--rpm-source ./bin/trident_rpms/ \
-		--build-dir ./artifacts/test-image \
-		--image-file $< \
-		--output-image-file $@ \
-		--output-image-format vhdx \
-		--config-file tests/images/azl-installer/mos/mos.yaml
-
-AZL_INSTALLER_IMAGES_PATH = tests/images/azl-installer/iso/images
-AZL_INSTALLER_BIN_PATH = tests/images/azl-installer/iso/bin
-artifacts/test-image/azl-installer.iso: \
-	artifacts/test-image/azl-installer-mos.vhdx \
-	artifacts/imagecustomizer \
-	bin/liveinstaller \
-	artifacts/test-image/regular.cosi \
-	$(shell find tests/images/azl-installer/iso/ -type f 2>/dev/null)
-	# Copy runtime images to prepare for inclusion in the ISO
-	rm -rf $(AZL_INSTALLER_IMAGES_PATH)
-	mkdir -p $(AZL_INSTALLER_IMAGES_PATH)
-	cp artifacts/test-image/regular.cosi $(AZL_INSTALLER_IMAGES_PATH)/trident-testimage.cosi
-	cp artifacts/test-image/azl-full-testimage.cosi $(AZL_INSTALLER_IMAGES_PATH)/azl-full-testimage.cosi
-	rm -rf $(AZL_INSTALLER_BIN_PATH)
-	mkdir -p $(AZL_INSTALLER_BIN_PATH)
-	cp bin/liveinstaller $(AZL_INSTALLER_BIN_PATH)/
-
-	mkdir -p artifacts/test-image/
-	sudo ./artifacts/imagecustomizer \
-	    --log-level debug \
-	    --build-dir ./artifacts/test-image/ \
-	    --image-file $< \
-	    --output-image-file $@ \
-	    --config-file tests/images/azl-installer/iso/mos-iso.yaml \
-	    --output-image-format iso
-
 .PHONY: validate
 validate: $(TRIDENT_CONFIG) bin/trident
 	@bin/trident validate $(TRIDENT_CONFIG)
