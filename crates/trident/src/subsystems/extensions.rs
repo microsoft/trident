@@ -29,21 +29,34 @@ const SYSEXT_EXTENSION_RELEASE_DIRECTORY: &str = "usr/lib/extension-release.d/";
 /// Expected extension-release directory for confexts
 const CONFEXT_EXTENSION_RELEASE_DIRECTORY: &str = "etc/extension-release.d/";
 
-/// Primary location for storing sysexts on the target OS
+/// Primary location for storing sysexts on the target OS, relative to the newroot mountpoint
 const DEFAULT_SYSEXT_DIRECTORY: &str = "var/lib/extensions/";
-/// Primary location for storing confexts on the target OS
+/// Primary location for storing confexts on the target OS, relative to the newroot mountpoint
 const DEFAULT_CONFEXT_DIRECTORY: &str = "var/lib/confexts/";
 
-/// Temporary directory on target OS for downloading extension images
+/// Temporary directory on target OS for downloading extension images, relative to the newroot mountpoint
 const EXTENSION_IMAGE_DOWNLOAD_DIRECTORY: &str = "var/lib/.extensions-staging/";
 
 #[derive(Clone, Debug)]
 pub struct ExtensionData {
+    /// ID of the extension image, corresponding to SYSEXT_ID or CONFEXT_ID in
+    /// the extension release file.
     pub id: String,
+
+    /// Name of the extension image. The file extension of the extension release
+    /// file, i.e. `extension-release.<NAME>`.
     pub name: String,
+
+    /// Hash of the entire extension image.
     pub sha384: Sha384Hash,
+
+    /// Path of the extension image, relative to the target OS.
     pub path: PathBuf,
+
+    /// Path of the extension image, relative to the servicing OS.
     pub temp_path: Option<PathBuf>,
+
+    /// Sysext or confext.
     pub ext_type: ExtensionType,
 }
 
@@ -86,6 +99,8 @@ impl Subsystem for ExtensionsSubsystem {
         // Download new extension images. Mount and process all extension images.
         self.populate_extensions(ctx, mount_path)
             .structured(InternalError::PopulateExtensionImages)?;
+
+        // TODO: Determine which images need to be removed and which should be added.
 
         // TODO: Copy extension images to their proper locations.
         Ok(())
@@ -149,11 +164,12 @@ impl ExtensionsSubsystem {
         Ok(())
     }
 
-    /// Appends to `self.extensions` or `self.extensions_old`. Takes in 4 arguments:
+    /// Updates `self.extensions` or `self.extensions_old`. Takes in 4
+    /// arguments:
     /// - self: ExtensionsSubsystem.
     /// - ctx: EngineContext.
     /// - timeout: Time out on HTTP requests.
-    /// - ext_type: ExtensionType.
+    /// - ext_type: ExtensionType, indicating which API should be processed.
     /// - new: Boolean indicating whether this function should populate
     ///   `self.extensions` or `self.extensions_old`. When populating
     ///   `self.extensions_old`, expect all extensions in the old Host Configuration
@@ -167,10 +183,10 @@ impl ExtensionsSubsystem {
         new: bool,
     ) -> Result<(), Error> {
         let hc_extensions = match (new, &ext_type) {
-            (true, ExtensionType::Sysext) => &ctx.spec.os.sysexts, // Populate new sysexts
-            (false, ExtensionType::Sysext) => &ctx.spec_old.os.sysexts, // Populate old sysexts
-            (true, ExtensionType::Confext) => &ctx.spec.os.confexts, // Populate new confexts
-            (false, ExtensionType::Confext) => &ctx.spec_old.os.confexts, // Populate old confexts
+            (true, ExtensionType::Sysext) => &ctx.spec.os.sysexts,
+            (false, ExtensionType::Sysext) => &ctx.spec_old.os.sysexts,
+            (true, ExtensionType::Confext) => &ctx.spec.os.confexts,
+            (false, ExtensionType::Confext) => &ctx.spec_old.os.confexts,
         };
 
         for ext in hc_extensions {
@@ -178,29 +194,29 @@ impl ExtensionsSubsystem {
                 // First, check if this extension already exists on the system.
                 if let Some(existing_file_path) = match &ext_type {
                     ExtensionType::Sysext => {
-                        check_for_path_in_old_host_configuration(ext, &ctx.spec_old.os.sysexts)
+                        check_for_existing_image(ext, &ctx.spec_old.os.sysexts)
                     }
                     ExtensionType::Confext => {
-                        check_for_path_in_old_host_configuration(ext, &ctx.spec_old.os.confexts)
+                        check_for_existing_image(ext, &ctx.spec_old.os.confexts)
                     }
                 } {
                     ensure!(
                         existing_file_path.exists(),
-                        "Expected to find extension image from URL '{}' at path '{}', but path does not exist",
+                        "Expected to find extension image from URL '{}' at path '{}' based on previous Host Configuration, but path does not exist",
                         ext.url,
                         existing_file_path.display()
                     );
                     existing_file_path
                 } else {
                     // The extension is new to the OS, so we need to download it.
-                    // Create and persist a temporary file; get its path
+                    // Create and persist a temporary file; get its path.
                     let temp_file: PathBuf = NamedTempFile::new_in(temp_staging_dir)
                         .context("Failed to create temporary file")?
                         .into_temp_path()
                         .keep()
                         .context("Failed to persist temporary file")?;
 
-                    // Download the extension image to this temporary file
+                    // Download the extension image to this temporary file.
                     let reader = FileReader::new(&ext.url, timeout)
                         .context("Failed to create file reader")?
                         .complete_reader()
@@ -209,7 +225,7 @@ impl ExtensionsSubsystem {
                     let computed_sha384 = stream_and_hash(hash_reader, &temp_file)
                         .context("Failed to read and write")?;
 
-                    // Ensure computed SHA384 matches SHA384 in Host Configuration
+                    // Ensure computed SHA384 matches SHA384 in Host Configuration.
                     if ext.sha384 != computed_sha384 {
                         bail!(
                             "SHA384 mismatch for extension image at '{}': expected {}, got {}",
@@ -267,10 +283,7 @@ impl ExtensionsSubsystem {
 
 /// Helper function to identify if the extension exists in the old Host
 /// Configuration, in which case we can reuse its path.
-fn check_for_path_in_old_host_configuration(
-    ext: &Extension,
-    old_hc_extensions: &[Extension],
-) -> Option<PathBuf> {
+fn check_for_existing_image(ext: &Extension, old_hc_extensions: &[Extension]) -> Option<PathBuf> {
     old_hc_extensions
         .iter()
         // Extension must match on both URL and Sha384 hash
