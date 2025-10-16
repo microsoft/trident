@@ -171,7 +171,7 @@ impl ExtensionsSubsystem {
         // before copying them to their final path.
         if !staging_dir.exists() {
             fs::create_dir_all(staging_dir).with_context(|| {
-                format!("Failed to create dir '{EXTENSION_IMAGE_STAGING_DIRECTORY}")
+                format!("Failed to create dir '{EXTENSION_IMAGE_STAGING_DIRECTORY}'")
             })?;
         };
 
@@ -438,7 +438,7 @@ mod tests {
             path: None, // Defaults to a file inside /var/lib/extensions
         }];
 
-        // Ensure place /var/lib/extensions/ on a shared partition
+        // Ensure that /var/lib/extensions/ is on a shared partition
         ctx.spec.storage = Storage {
             filesystems: vec![
                 FileSystem {
