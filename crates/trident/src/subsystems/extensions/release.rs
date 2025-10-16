@@ -67,7 +67,9 @@ pub(crate) fn read_extension_release(
         .and_then(|s| s.to_str())
         .context("Failed to get file name as a valid UTF-8 string")?
         .strip_prefix(EXTENSION_RELEASE_PREFIX)
-        .context("Extension-release filename must begin with 'extension-release.'")?
+        .with_context(|| {
+            format!("Extension-release filename must begin with '{EXTENSION_RELEASE_PREFIX}'")
+        })?
         .to_string();
     let path = match &ext.path {
         Some(path) => path.clone(),
@@ -118,7 +120,8 @@ mod tests {
         fs::create_dir_all(&sysext_release_dir).unwrap();
 
         let mut extension_release_file =
-            File::create(sysext_release_dir.join("extension-release.test_1.0.0")).unwrap();
+            File::create(sysext_release_dir.join(format!("{EXTENSION_RELEASE_PREFIX}test_1.0.0")))
+                .unwrap();
         extension_release_file.write_all(b"ID=_any\nSYSEXT_ID=test\nSYSEXT_VERSION_ID=1.0.0\nSYSEXT_SCOPE=initrd system portable\nARCHITECTURE=x86-64").unwrap();
 
         // Create an Extension with no provided path
@@ -222,8 +225,8 @@ mod tests {
         );
 
         // Create two extension-release files.
-        File::create(sysext_release_dir.join("extension-release.test1")).unwrap();
-        File::create(sysext_release_dir.join("extension-release.test2")).unwrap();
+        File::create(sysext_release_dir.join(format!("{EXTENSION_RELEASE_PREFIX}test1"))).unwrap();
+        File::create(sysext_release_dir.join(format!("{EXTENSION_RELEASE_PREFIX}test2"))).unwrap();
 
         // Too many extension-release files exist.
         let result = read_extension_release(
@@ -248,7 +251,9 @@ mod tests {
         fs::create_dir_all(&sysext_release_dir).unwrap();
 
         // Create a file with valid content but missing the SYSEXT_ID field.
-        let mut file = File::create(sysext_release_dir.join("extension-release.test")).unwrap();
+        let mut file =
+            File::create(sysext_release_dir.join(format!("{EXTENSION_RELEASE_PREFIX}test")))
+                .unwrap();
         file.write_all(b"ID=_any\nSYSEXT_VERSION_ID=1.0.0").unwrap();
 
         let current_path = Path::new("/tmp/file");
