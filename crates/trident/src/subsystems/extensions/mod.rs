@@ -155,7 +155,7 @@ impl Subsystem for ExtensionsSubsystem {
 
 impl ExtensionsSubsystem {
     fn populate_extensions(
-        self: &mut ExtensionsSubsystem,
+        &mut self,
         ctx: &EngineContext,
         staging_dir: &Path,
     ) -> Result<(), Error> {
@@ -193,7 +193,7 @@ impl ExtensionsSubsystem {
     ///   `self.extensions_old`, expect all extensions in the old Host Configuration
     ///   to be present on the servicing OS so we will not download any new images.
     fn populate_extensions_inner(
-        self: &mut ExtensionsSubsystem,
+        &mut self,
         ctx: &EngineContext,
         timeout: Duration,
         staging_dir: &Path,
