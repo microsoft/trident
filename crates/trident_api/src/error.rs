@@ -127,12 +127,6 @@ pub enum InternalError {
     #[error("Unexpected servicing type '{servicing_type:?}'")]
     UnexpectedServicingType { servicing_type: ServicingType },
 
-    #[error(
-        "Failed to update the path of extension ID '{id}' in the Host Configuration. \
-        Could not find hash '{hash}' in the Host Configuration."
-    )]
-    UpdateExtensionPath { id: String, hash: String },
-
     #[error("Failed to build storage graph: {0}")]
     RebuildStorageGraph(#[from] StorageGraphBuildError),
 
