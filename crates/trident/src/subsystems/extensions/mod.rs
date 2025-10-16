@@ -371,6 +371,7 @@ mod tests {
         }
     }
 
+    #[test]
     fn test_validate_success() {
         let mut ctx = EngineContext::default();
         ctx.spec.os.sysexts = vec![

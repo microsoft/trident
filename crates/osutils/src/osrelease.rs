@@ -127,7 +127,7 @@ pub struct ExtensionRelease {
 }
 
 impl ExtensionRelease {
-    /// Reads the contents of the provided file and parses it into an OsRelease struct.
+    /// Reads the contents of the provided file and parses it into an ExtensionRelease struct.
     pub fn read_file(file: impl AsRef<Path>) -> Result<Self, Error> {
         Ok(Self::parse(&std::fs::read_to_string(&file).with_context(
             || format!("Failed to read '{}'", file.as_ref().display()),

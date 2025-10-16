@@ -239,7 +239,6 @@ mod tests {
             &extension,
             &ExtensionType::Sysext,
         );
-        assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
             "Expected extension image to have exactly 1 extension-release file, found '2'"
