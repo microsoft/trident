@@ -13,7 +13,7 @@ use osutils::{block_devices, container, dependencies::Dependency};
 use trident_api::{
     config::{GrpcConfiguration, HostConfiguration, HostConfigurationSource, Operations},
     constants::internal_params::{
-        COSI_HTTP_CONNECTION_TIMEOUT_SECONDS, ORCHESTRATOR_CONNECTION_TIMEOUT_SECONDS,
+        HTTP_CONNECTION_TIMEOUT_SECONDS, ORCHESTRATOR_CONNECTION_TIMEOUT_SECONDS,
         WAIT_FOR_SYSTEMD_NETWORKD,
     },
     error::{
@@ -317,7 +317,7 @@ impl Trident {
     fn get_cosi_image(host_config: &mut HostConfiguration) -> Result<OsImage, TridentError> {
         let cosi_timeout = match host_config
             .internal_params
-            .get_u64(COSI_HTTP_CONNECTION_TIMEOUT_SECONDS)
+            .get_u64(HTTP_CONNECTION_TIMEOUT_SECONDS)
         {
             Some(Ok(timeout)) => Duration::from_secs(timeout),
             _ => Duration::from_secs(10), // Default timeout
