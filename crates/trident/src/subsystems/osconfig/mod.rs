@@ -24,6 +24,12 @@ const MACHINE_ID_PATH: &str = "/etc/machine-id";
 /// Path to hostname.
 const HOSTNAME_PATH: &str = "/etc/hostname";
 
+/// SystemD service for merging sysexts.
+const SYSTEMD_SYSEXT: &str = "systemd-sysext";
+
+/// SystemD service for merging confexts.
+const SYSTEMD_CONFEXT: &str = "systemd-confext";
+
 /// Returns whether the given OS configuration requires the os-modifier binary to be present.
 fn os_config_requires_os_modifier(ctx: &EngineContext) -> bool {
     let os_config = &ctx.spec.os;
@@ -147,9 +153,25 @@ impl Subsystem for OsConfigSubsystem {
             os_modifier_config.modules = ctx.spec.os.modules.to_vec();
         }
 
-        if !ctx.spec.os.services.enable.is_empty() || !ctx.spec.os.services.disable.is_empty() {
+        if !ctx.spec.os.services.enable.is_empty()
+            || !ctx.spec.os.services.disable.is_empty()
+            || !ctx.spec.os.sysexts.is_empty()
+            || !ctx.spec.os.confexts.is_empty()
+        {
             debug!("Setting up services");
-            os_modifier_config.services = Some(ctx.spec.os.services.clone());
+            let mut services = ctx.spec.os.services.clone();
+
+            if !ctx.spec.os.sysexts.is_empty() {
+                debug!("Enabling {SYSTEMD_SYSEXT} service");
+                services.enable.push(SYSTEMD_SYSEXT.to_string());
+            }
+
+            if !ctx.spec.os.confexts.is_empty() {
+                debug!("Enabling {SYSTEMD_CONFEXT} service");
+                services.enable.push(SYSTEMD_CONFEXT.to_string());
+            }
+
+            os_modifier_config.services = Some(services);
         }
 
         if !ctx

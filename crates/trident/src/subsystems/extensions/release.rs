@@ -91,7 +91,7 @@ pub(crate) fn read_extension_release(
         name,
         sha384: ext.sha384.clone(),
         path,
-        temp_path: Some(curr_path.to_path_buf()),
+        temp_path: curr_path.to_path_buf(),
         ext_type: ext_type.clone(),
     })
 }
@@ -145,7 +145,7 @@ mod tests {
             name: "test_1.0.0".to_string(),
             sha384: hash.clone(),
             path: PathBuf::from(DEFAULT_SYSEXT_DIRECTORY).join("test_1.0.0.raw"),
-            temp_path: Some(PathBuf::from(current_path)),
+            temp_path: PathBuf::from(current_path),
             ext_type: ExtensionType::Sysext,
         };
         assert_eq!(extension_data, expected_extension_data);
@@ -166,7 +166,7 @@ mod tests {
             name: "test_1.0.0".to_string(),
             sha384: hash,
             path: final_path,
-            temp_path: Some(PathBuf::from(current_path)),
+            temp_path: PathBuf::from(current_path),
             ext_type: ExtensionType::Sysext,
         };
         assert_eq!(extension_data, expected_extension_data);
