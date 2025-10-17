@@ -88,7 +88,7 @@ impl HostConfiguration {
 
         self.validate_datastore_location()?;
 
-        self.validate_extension_images_locations()?;
+        self.validate_extension_images_locations(&graph)?;
 
         Ok(())
     }
@@ -173,6 +173,7 @@ impl HostConfiguration {
     /// placed on an A/B volume and not on a shared partition.
     fn validate_extension_images_locations(
         &self,
+        graph: &StorageGraph,
     ) -> Result<(), HostConfigurationStaticValidationError> {
         // This check is not required if no A/B volumes are configured.
         if self.storage.ab_update.is_none() {
@@ -207,18 +208,10 @@ impl HostConfiguration {
                 );
             };
 
-            // Ensure that the extension image path is in an A/B update volume.
+            // Ensure that the extension image path is on an A/B update volume.
             // Sysexts and confexts must not be placed on shared partitions
             // since this may lead to unexpected behavior after an A/B update.
-            if !self
-                .storage
-                .ab_update
-                .as_ref()
-                .map(|ab| ab.volume_pairs.iter())
-                .into_iter()
-                .flatten()
-                .any(|p| p.id == *fs_device_id)
-            {
+            if !graph.has_ab_capabilities(fs_device_id).unwrap_or(false) {
                 return Err(
                     HostConfigurationStaticValidationError::ExtensionImageNotOnABVolume {
                         path: dir_path.display().to_string(),
@@ -282,7 +275,13 @@ mod tests {
 
     #[test]
     fn test_validate_extension_image_location_success() {
+        // Validate that validation passes with an empty Host Configuration
         let mut host_config = HostConfiguration::default();
+        let graph = host_config.storage.build_graph().unwrap();
+        host_config
+            .validate_extension_images_locations(&graph)
+            .unwrap();
+
         host_config.os.sysexts = vec![
             Extension {
                 url: Url::parse("https://example.com/sysext1.raw").unwrap(),
@@ -309,11 +308,42 @@ mod tests {
         ];
 
         // Validation should pass if no A/B volumes are configured.
-        host_config.validate_extension_images_locations().unwrap();
+        let graph = host_config.storage.build_graph().unwrap();
+        host_config
+            .validate_extension_images_locations(&graph)
+            .unwrap();
 
         // Configure A/B volumes and ensure that /var/lib/extensions/ and
         // /var/lib/confexts are on A/B volumes.
         host_config.storage = Storage {
+            disks: vec![Disk {
+                id: "os".to_string(),
+                device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-2.0".into(),
+                partition_table_type: PartitionTableType::Gpt,
+                partitions: vec![
+                    Partition {
+                        id: "root-a".to_string(),
+                        partition_type: PartitionType::Root,
+                        size: 0x200000000.into(), // 8GiB
+                    },
+                    Partition {
+                        id: "root-b".to_string(),
+                        partition_type: PartitionType::Root,
+                        size: 0x200000000.into(), // 8GiB
+                    },
+                    Partition {
+                        id: "data-a".to_string(),
+                        partition_type: PartitionType::LinuxGeneric,
+                        size: 0x200000000.into(), // 8GiB
+                    },
+                    Partition {
+                        id: "data-b".to_string(),
+                        partition_type: PartitionType::LinuxGeneric,
+                        size: 0x200000000.into(), // 8GiB
+                    },
+                ],
+                adopted_partitions: vec![],
+            }],
             filesystems: vec![
                 FileSystem {
                     device_id: Some("root".to_owned()),
@@ -349,13 +379,11 @@ mod tests {
             ..Default::default()
         };
 
-        host_config.validate_extension_images_locations().unwrap();
-    }
-
-    #[test]
-    fn test_validate_extension_image_location_no_extensions() {
-        let host_config = HostConfiguration::default();
-        host_config.validate_extension_images_locations().unwrap();
+        // Validation passes with A/B volumes configured
+        let graph = host_config.storage.build_graph().unwrap();
+        host_config
+            .validate_extension_images_locations(&graph)
+            .unwrap();
     }
 
     #[test]
@@ -367,8 +395,31 @@ mod tests {
             path: None, // Defaults to a file inside /var/lib/extensions
         }];
 
-        // Ensure that /var/lib/extensions/ is on a shared partition
+        // /var/lib/extensions/ is not on a shared partition
         host_config.storage = Storage {
+            disks: vec![Disk {
+                id: "os".to_string(),
+                device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-2.0".into(),
+                partition_table_type: PartitionTableType::Gpt,
+                partitions: vec![
+                    Partition {
+                        id: "root-a".to_string(),
+                        partition_type: PartitionType::Root,
+                        size: 0x200000000.into(), // 8GiB
+                    },
+                    Partition {
+                        id: "root-b".to_string(),
+                        partition_type: PartitionType::Root,
+                        size: 0x200000000.into(), // 8GiB
+                    },
+                    Partition {
+                        id: "shared".to_string(),
+                        partition_type: PartitionType::LinuxGeneric,
+                        size: 0x200000000.into(), // 8GiB
+                    },
+                ],
+                adopted_partitions: vec![],
+            }],
             filesystems: vec![
                 FileSystem {
                     device_id: Some("root".to_owned()),
@@ -397,9 +448,10 @@ mod tests {
             ..Default::default()
         };
 
+        let graph = host_config.storage.build_graph().unwrap();
         assert_eq!(
             host_config
-                .validate_extension_images_locations()
+                .validate_extension_images_locations(&graph)
                 .unwrap_err(),
             HostConfigurationStaticValidationError::ExtensionImageNotOnABVolume {
                 path: "/var/lib/extensions/".to_string()
