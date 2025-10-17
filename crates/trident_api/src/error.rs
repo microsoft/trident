@@ -82,6 +82,9 @@ pub enum ContainerConfigurationError {
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum InternalError {
+    #[error("Failed to create extension image directories on target OS")]
+    CreateExtensionImageDirectories,
+
     #[error("Failed to get the ESP partition information")]
     GetEspDeviceInfo,
 
@@ -117,6 +120,9 @@ pub enum InternalError {
 
     #[error("Failed to serialize Host Status")]
     SerializeHostStatus,
+
+    #[error("Failed to set up extension images on the target OS")]
+    SetUpExtensionImages,
 
     #[error("Failed to start tokio runtime")]
     StartTokioRuntime,

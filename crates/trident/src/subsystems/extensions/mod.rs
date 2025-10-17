@@ -102,14 +102,18 @@ impl Subsystem for ExtensionsSubsystem {
 
         // Ensure that desired target directories exist on the target OS.
         self.create_directories(mount_path)
-            .structured(InternalError::PopulateExtensionImages)?;
+            .structured(InternalError::CreateExtensionImageDirectories)?;
 
         // Determine which images need to be removed and which should be added.
         // Copy extension images to their proper locations.
         self.set_up_extensions(mount_path, ctx.servicing_type)
-            .structured(InternalError::PopulateExtensionImages)?;
+            .structured(InternalError::SetUpExtensionImages)?;
 
-        // TODO: Clean-up staging directory.
+        // Clean-up staging directory. Recursively remove all contents of
+        // staging directory as well as the directory itself.
+        fs::remove_dir_all(staging_dir).structured(InternalError::Internal(
+            "Failed to remove extension image staging directory",
+        ))?;
 
         Ok(())
     }
