@@ -90,14 +90,6 @@ impl Subsystem for ExtensionsSubsystem {
         "extensions"
     }
 
-    fn validate_host_config(&self, _ctx: &EngineContext) -> Result<(), TridentError> {
-        Ok(())
-    }
-
-    fn prepare(&mut self, _ctx: &EngineContext) -> Result<(), TridentError> {
-        Ok(())
-    }
-
     fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
         // Define staging directory, in which extension images will be downloaded.
         let staging_dir = path::join_relative(mount_path, EXTENSION_IMAGE_STAGING_DIRECTORY);
@@ -112,10 +104,6 @@ impl Subsystem for ExtensionsSubsystem {
 
         // TODO: Clean-up staging directory.
 
-        Ok(())
-    }
-
-    fn configure(&mut self, _ctx: &EngineContext) -> Result<(), TridentError> {
         Ok(())
     }
 }
