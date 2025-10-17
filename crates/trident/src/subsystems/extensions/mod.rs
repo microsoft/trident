@@ -326,10 +326,8 @@ impl ExtensionsSubsystem {
             let old_hash = &old_exts_hashmap[id].sha384;
             let new_hash = &new_exts_hashmap[id].sha384;
 
-            if old_hash == new_hash {
-                ids_to_add.push(id.clone());
-            } else {
-                ids_to_add.push(id.clone());
+            ids_to_add.push(id.clone());
+            if old_hash != new_hash {
                 ids_to_remove.push(id.clone());
             }
         }
@@ -901,7 +899,7 @@ mod functional_test {
         let confext_hash = create_test_extension_image(
             confext_file.path(),
             "new_ext",
-            &ExtensionType::Sysext,
+            &ExtensionType::Confext,
             "ID=_any\nCONFEXT_ID=new_ext",
         );
 
