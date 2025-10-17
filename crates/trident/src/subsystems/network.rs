@@ -31,7 +31,7 @@ impl Subsystem for NetworkSubsystem {
                 // Trident is configuring the network, otherwise cloud-init may
                 // deploy additional configurations that are undesired and may
                 // conflict with or otherwise affect Trident's network setup.
-                disable_cloud_init_networking()?;
+                disable_cloud_init_networking(CLOUD_INIT_CONFIG_DIR)?;
             }
             None => {
                 debug!("Network config not provided");
@@ -41,17 +41,17 @@ impl Subsystem for NetworkSubsystem {
     }
 }
 
-fn disable_cloud_init_networking() -> Result<(), TridentError> {
-    let cloud_init_disable_path = Path::new(CLOUD_INIT_CONFIG_DIR).join(CLOUD_INIT_DISABLE_FILE);
-    if !Path::new(CLOUD_INIT_CONFIG_DIR).exists() {
+fn disable_cloud_init_networking(config_dir: impl AsRef<Path>) -> Result<(), TridentError> {
+    if !config_dir.as_ref().exists() {
         debug!(
             "Cloud-init config dir {} does not exist, skipping disabling cloud-init networking",
-            cloud_init_disable_path.display()
+            config_dir.as_ref().display()
         );
         return Ok(());
     }
 
     debug!("Disabling cloud-init networking");
+    let cloud_init_disable_path = config_dir.as_ref().join(CLOUD_INIT_DISABLE_FILE);
     fs::write(&cloud_init_disable_path, CLOUD_INIT_DISABLE_CONTENT)
         .with_context(|| {
             format!(
@@ -60,4 +60,32 @@ fn disable_cloud_init_networking() -> Result<(), TridentError> {
             )
         })
         .structured(ServicingError::DisableCloudInitNetworking)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_disable_cloud_init_networking() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let config_dir = temp_dir.path();
+        disable_cloud_init_networking(config_dir).unwrap();
+        let disable_file_path = config_dir.join(CLOUD_INIT_DISABLE_FILE);
+        let content = fs::read_to_string(disable_file_path).unwrap();
+        assert_eq!(content, CLOUD_INIT_DISABLE_CONTENT);
+    }
+
+    #[test]
+    fn test_disable_cloud_init_networking_non_existent_dir() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let config_dir = temp_dir.path().join("non_existent");
+        // Should not error even if the directory does not exist
+        disable_cloud_init_networking(&config_dir).unwrap();
+        assert!(!config_dir.exists());
+        assert!(!config_dir.join(CLOUD_INIT_DISABLE_FILE).exists());
+        // Check that the temp dir still exists and is empty
+        assert!(temp_dir.path().exists());
+        assert!(temp_dir.path().read_dir().unwrap().next().is_none());
+    }
 }
