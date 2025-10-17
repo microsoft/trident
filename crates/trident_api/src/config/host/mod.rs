@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use log::warn;
 use serde::{Deserialize, Serialize};
 
@@ -5,7 +7,10 @@ use serde::{Deserialize, Serialize};
 use schemars::JsonSchema;
 
 use crate::{
-    constants::internal_params::SELF_UPGRADE_TRIDENT, is_default,
+    constants::{
+        internal_params::SELF_UPGRADE_TRIDENT, DEFAULT_CONFEXT_DIRECTORY, DEFAULT_SYSEXT_DIRECTORY,
+    },
+    is_default,
     storage_graph::graph::StorageGraph,
 };
 
@@ -82,6 +87,8 @@ impl HostConfiguration {
         self.validate_root_verity_config(&graph)?;
 
         self.validate_datastore_location()?;
+
+        self.validate_extension_images_locations(&graph)?;
 
         Ok(())
     }
@@ -162,6 +169,59 @@ impl HostConfiguration {
         Ok(())
     }
 
+    /// Ensure that if A/B volumes are configured, any extension images are
+    /// placed on an A/B volume and not on a shared partition.
+    fn validate_extension_images_locations(
+        &self,
+        graph: &StorageGraph,
+    ) -> Result<(), HostConfigurationStaticValidationError> {
+        // This check is not required if no A/B volumes are configured.
+        if self.storage.ab_update.is_none() {
+            return Ok(());
+        }
+
+        // Find all directories in which sysexts or confexts will be placed.
+        let mut dirs = HashSet::new();
+        dirs.extend(
+            self.os
+                .sysexts
+                .iter()
+                .map(|ext| ext.path.clone().unwrap_or(DEFAULT_SYSEXT_DIRECTORY.into())),
+        );
+        dirs.extend(
+            self.os
+                .confexts
+                .iter()
+                .map(|ext| ext.path.clone().unwrap_or(DEFAULT_CONFEXT_DIRECTORY.into())),
+        );
+
+        for dir_path in dirs {
+            let Some(fs_device_id) = self
+                .storage
+                .path_to_mount_point_info(&dir_path)
+                .and_then(|mp| mp.device_id)
+            else {
+                return Err(
+                    HostConfigurationStaticValidationError::ExtensionImageNotOnABVolume {
+                        path: dir_path.display().to_string(),
+                    },
+                );
+            };
+
+            // Ensure that the extension image path is on an A/B update volume.
+            // Sysexts and confexts must not be placed on shared partitions
+            // since this may lead to unexpected behavior after an A/B update.
+            if !graph.has_ab_capabilities(fs_device_id).unwrap_or(false) {
+                return Err(
+                    HostConfigurationStaticValidationError::ExtensionImageNotOnABVolume {
+                        path: dir_path.display().to_string(),
+                    },
+                );
+            }
+        }
+        Ok(())
+    }
+
     #[cfg(feature = "schemars")]
     pub fn generate_schema() -> schemars::schema::RootSchema {
         use schemars::schema::Schema;
@@ -194,20 +254,210 @@ impl HostConfiguration {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use super::*;
+
+    use std::path::{Path, PathBuf};
+
+    use url::Url;
 
     use crate::{
         config::{
-            AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, MountOptions, MountPoint,
-            NewFileSystemType, Partition, PartitionTableType, PartitionType, VerityDevice,
+            AbUpdate, AbVolumePair, Disk, Extension, FileSystem, FileSystemSource, MountOptions,
+            MountPoint, NewFileSystemType, Partition, PartitionTableType, PartitionType,
+            VerityDevice,
         },
         constants::{
             internal_params::SELF_UPGRADE_TRIDENT, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH,
             TRIDENT_DATASTORE_PATH_DEFAULT,
         },
+        primitives::hash::Sha384Hash,
     };
 
-    use super::*;
+    #[test]
+    fn test_validate_extension_image_location_success() {
+        // Validate that validation passes with an empty Host Configuration
+        let mut host_config = HostConfiguration::default();
+        let graph = host_config.storage.build_graph().unwrap();
+        host_config
+            .validate_extension_images_locations(&graph)
+            .unwrap();
+
+        host_config.os.sysexts = vec![
+            Extension {
+                url: Url::parse("https://example.com/sysext1.raw").unwrap(),
+                sha384: Sha384Hash::from("a".repeat(96)),
+                path: None, // Defaults to a file inside /var/lib/extensions
+            },
+            Extension {
+                url: Url::parse("https://example.com/sysext2.raw").unwrap(),
+                sha384: Sha384Hash::from("b".repeat(96)),
+                path: Some(PathBuf::from("/etc/extensions/sysext2.raw")),
+            },
+        ];
+        host_config.os.confexts = vec![
+            Extension {
+                url: Url::parse("https://example.com/confext1.raw").unwrap(),
+                sha384: Sha384Hash::from("c".repeat(96)),
+                path: None, // Defaults to a file inside /var/lib/confexts
+            },
+            Extension {
+                url: Url::parse("https://example.com/confext2.raw").unwrap(),
+                sha384: Sha384Hash::from("d".repeat(96)),
+                path: Some(PathBuf::from("/usr/lib/confexts/confext2.raw")),
+            },
+        ];
+
+        // Validation should pass if no A/B volumes are configured.
+        let graph = host_config.storage.build_graph().unwrap();
+        host_config
+            .validate_extension_images_locations(&graph)
+            .unwrap();
+
+        // Configure A/B volumes and ensure that /var/lib/extensions/ and
+        // /var/lib/confexts are on A/B volumes.
+        host_config.storage = Storage {
+            disks: vec![Disk {
+                id: "os".to_string(),
+                device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-2.0".into(),
+                partition_table_type: PartitionTableType::Gpt,
+                partitions: vec![
+                    Partition {
+                        id: "root-a".to_string(),
+                        partition_type: PartitionType::Root,
+                        size: 0x200000000.into(), // 8GiB
+                    },
+                    Partition {
+                        id: "root-b".to_string(),
+                        partition_type: PartitionType::Root,
+                        size: 0x200000000.into(), // 8GiB
+                    },
+                    Partition {
+                        id: "data-a".to_string(),
+                        partition_type: PartitionType::LinuxGeneric,
+                        size: 0x200000000.into(), // 8GiB
+                    },
+                    Partition {
+                        id: "data-b".to_string(),
+                        partition_type: PartitionType::LinuxGeneric,
+                        size: 0x200000000.into(), // 8GiB
+                    },
+                ],
+                adopted_partitions: vec![],
+            }],
+            filesystems: vec![
+                FileSystem {
+                    device_id: Some("root".to_owned()),
+                    source: FileSystemSource::Image,
+                    mount_point: Some(MountPoint {
+                        path: PathBuf::from("/"),
+                        options: MountOptions::empty(),
+                    }),
+                },
+                FileSystem {
+                    device_id: Some("data".to_owned()),
+                    source: FileSystemSource::Image,
+                    mount_point: Some(MountPoint {
+                        path: PathBuf::from("/data"),
+                        options: MountOptions::empty(),
+                    }),
+                },
+            ],
+            ab_update: Some(AbUpdate {
+                volume_pairs: vec![
+                    AbVolumePair {
+                        id: "root".to_owned(),
+                        volume_a_id: "root-a".to_owned(),
+                        volume_b_id: "root-b".to_owned(),
+                    },
+                    AbVolumePair {
+                        id: "data".to_owned(),
+                        volume_a_id: "data-a".to_owned(),
+                        volume_b_id: "data-b".to_owned(),
+                    },
+                ],
+            }),
+            ..Default::default()
+        };
+
+        // Validation passes with A/B volumes configured
+        let graph = host_config.storage.build_graph().unwrap();
+        host_config
+            .validate_extension_images_locations(&graph)
+            .unwrap();
+    }
+
+    #[test]
+    fn test_validate_extension_image_location_failure() {
+        let mut host_config = HostConfiguration::default();
+        host_config.os.sysexts = vec![Extension {
+            url: Url::parse("https://example.com/sysext1.raw").unwrap(),
+            sha384: Sha384Hash::from("a".repeat(96)),
+            path: None, // Defaults to a file inside /var/lib/extensions
+        }];
+
+        // /var/lib/extensions/ is not on a shared partition
+        host_config.storage = Storage {
+            disks: vec![Disk {
+                id: "os".to_string(),
+                device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-2.0".into(),
+                partition_table_type: PartitionTableType::Gpt,
+                partitions: vec![
+                    Partition {
+                        id: "root-a".to_string(),
+                        partition_type: PartitionType::Root,
+                        size: 0x200000000.into(), // 8GiB
+                    },
+                    Partition {
+                        id: "root-b".to_string(),
+                        partition_type: PartitionType::Root,
+                        size: 0x200000000.into(), // 8GiB
+                    },
+                    Partition {
+                        id: "shared".to_string(),
+                        partition_type: PartitionType::LinuxGeneric,
+                        size: 0x200000000.into(), // 8GiB
+                    },
+                ],
+                adopted_partitions: vec![],
+            }],
+            filesystems: vec![
+                FileSystem {
+                    device_id: Some("root".to_owned()),
+                    source: FileSystemSource::Image,
+                    mount_point: Some(MountPoint {
+                        path: PathBuf::from("/"),
+                        options: MountOptions::empty(),
+                    }),
+                },
+                FileSystem {
+                    device_id: Some("shared".to_owned()),
+                    source: FileSystemSource::Image,
+                    mount_point: Some(MountPoint {
+                        path: PathBuf::from("/var/lib/extensions"),
+                        options: MountOptions::empty(),
+                    }),
+                },
+            ],
+            ab_update: Some(AbUpdate {
+                volume_pairs: vec![AbVolumePair {
+                    id: "root".to_owned(),
+                    volume_a_id: "root-a".to_owned(),
+                    volume_b_id: "root-b".to_owned(),
+                }],
+            }),
+            ..Default::default()
+        };
+
+        let graph = host_config.storage.build_graph().unwrap();
+        assert_eq!(
+            host_config
+                .validate_extension_images_locations(&graph)
+                .unwrap_err(),
+            HostConfigurationStaticValidationError::ExtensionImageNotOnABVolume {
+                path: "/var/lib/extensions/".to_string()
+            }
+        );
+    }
 
     #[test]
     fn test_validate_datastore_location() {

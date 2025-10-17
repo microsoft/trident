@@ -115,6 +115,30 @@ impl FileReader {
             }
         })
     }
+
+    /// Returns an implementation of `Read` over the whole file. Creates a
+    /// single HTTP request for the entire file, and is faster for sequentially
+    /// reading an entire file.
+    pub(crate) fn complete_reader(&self) -> IoResult<Box<dyn Read>> {
+        Ok(match self {
+            Self::File(file_path) => {
+                // Return a reader to the entire file
+                Box::new(File::open(file_path)?)
+            }
+
+            Self::Http(http_file) => Box::new(http_file.section_reader(0, http_file.size)?),
+
+            #[cfg(test)]
+            Self::Buffer(cursor) => {
+                // Clone the cursor and seek to the beginning of the buffer
+                let mut cursor = cursor.clone();
+                cursor.seek(SeekFrom::Start(0))?;
+                // Return a reader for the entire buffer
+                let size = cursor.get_ref().len() as u64;
+                Box::new(cursor.take(size))
+            }
+        })
+    }
 }
 
 /// A FILE-like object that is obtained through an HTTP request using range

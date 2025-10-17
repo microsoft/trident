@@ -69,6 +69,9 @@ pub enum HostConfigurationStaticValidationError {
     )]
     ExtensionImageInvalidFileExtension { path: String },
 
+    #[error("Extension image path '{path}' must be on a known A/B volume")]
+    ExtensionImageNotOnABVolume { path: String },
+
     #[error(
         "The Host Configuration is using both an image and partition images, these APIs are \
         mutually exclusive"
