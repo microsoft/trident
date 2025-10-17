@@ -13,9 +13,6 @@ import (
 	"github.com/alecthomas/kingpin/v2"
 )
 
-// ToolkitVersion specifies the version of the toolkit and the reported version of all tools in it.
-var ToolkitVersion = ""
-
 // DistroNameAbbreviation is the short form of the distro used for conditional tests (i.e. 'azl')
 var DistroNameAbbreviation = "default_dist"
 

@@ -440,6 +440,13 @@ bin/virtdeploy: tools/cmd/virtdeploy/* tools/go.sum tools/pkg/* tools/pkg/virtde
 INSTALLER_OUT_DIR := bin
 INSTALLER_DIR := tools/installer
 
+bin/liveinstaller: \
+	$(shell find $(INSTALLER_DIR)/ -type f) \
+	$(INSTALLER_DIR)/go.sum
+	@mkdir -p bin
+	cd $(INSTALLER_DIR)/liveinstaller && \
+		CGO_ENABLED=0 go build -o $(CURDIR)/$(INSTALLER_OUT_DIR)/liveinstaller
+
 bin/attendedinstaller-simulator: \
 	$(shell find $(INSTALLER_DIR)/imagegen/ -type f) \
 	$(INSTALLER_DIR)/go.sum
