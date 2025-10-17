@@ -241,7 +241,7 @@ fn stage_clean_install(
     debug!("Entering '{}' chroot", newroot_mount.path().display());
     let result = chroot::enter_update_chroot(newroot_mount.path())
         .message("Failed to enter chroot")?
-        .execute_and_exit(|| engine::configure(subsystems, &ctx));
+        .execute_and_exit(|| engine::configure(subsystems, &mut ctx));
 
     if let Some(mut monitor) = monitor {
         // If the monitor was created successfully, stop it after execution

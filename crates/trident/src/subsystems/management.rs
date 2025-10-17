@@ -70,7 +70,7 @@ impl Subsystem for ManagementSubsystem {
     }
 
     #[tracing::instrument(name = "management_configure", skip_all)]
-    fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
+    fn configure(&mut self, ctx: &mut EngineContext) -> Result<(), TridentError> {
         configure_agent_config(
             AGENT_CONFIG_PATH,
             &ctx.spec.trident.datastore_path,

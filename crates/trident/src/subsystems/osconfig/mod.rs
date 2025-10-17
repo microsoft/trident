@@ -101,7 +101,7 @@ impl Subsystem for OsConfigSubsystem {
     }
 
     #[tracing::instrument(name = "osconfig_configuration", skip_all)]
-    fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
+    fn configure(&mut self, ctx: &mut EngineContext) -> Result<(), TridentError> {
         if ctx.servicing_type != ServicingType::CleanInstall
             && ctx.servicing_type != ServicingType::AbUpdate
         {
@@ -386,7 +386,7 @@ mod functional_test {
             .to_string();
 
         // Create EngineContext
-        let ctx = EngineContext {
+        let mut ctx = EngineContext {
             servicing_type: ServicingType::CleanInstall,
             spec: HostConfiguration {
                 os: Os {
@@ -409,7 +409,7 @@ mod functional_test {
 
         // Configure OsConfig subsystem
         let mut os_config_subsystem = OsConfigSubsystem::default();
-        let _ = os_config_subsystem.configure(&ctx);
+        let _ = os_config_subsystem.configure(&mut ctx);
 
         // Check that hostname has updated
         assert_eq!(
@@ -434,7 +434,7 @@ mod functional_test {
             .to_string();
 
         // Create EngineContext with no hostname specified
-        let ctx = EngineContext {
+        let mut ctx = EngineContext {
             servicing_type: ServicingType::AbUpdate,
             is_uki: Some(false),
             ..Default::default()
@@ -452,7 +452,7 @@ mod functional_test {
         let mut os_config_subsystem = OsConfigSubsystem {
             prev_hostname: Some("carry-over-hostname".into()),
         };
-        let _ = os_config_subsystem.configure(&ctx);
+        let _ = os_config_subsystem.configure(&mut ctx);
 
         // Check that hostname has updated
         assert_eq!(

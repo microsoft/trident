@@ -132,7 +132,7 @@ impl Subsystem for HooksSubsystem {
     }
 
     #[tracing::instrument(name = "hooks_configuration", skip_all)]
-    fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
+    fn configure(&mut self, ctx: &mut EngineContext) -> Result<(), TridentError> {
         if !ctx.spec.os.additional_files.is_empty() {
             debug!("Adding additional files");
         }
@@ -700,7 +700,7 @@ mod tests {
 
         // Content
         let mut subsystem = HooksSubsystem::default();
-        let ctx = EngineContext {
+        let mut ctx = EngineContext {
             spec: HostConfiguration {
                 os: trident_api::config::Os {
                     additional_files: vec![trident_api::config::AdditionalFile {
@@ -715,7 +715,7 @@ mod tests {
             ..Default::default()
         };
         subsystem.prepare(&ctx).unwrap();
-        subsystem.configure(&ctx).unwrap();
+        subsystem.configure(&mut ctx).unwrap();
         assert_eq!(fs::read_to_string(&test_file).unwrap(), test_content);
         assert_eq!(
             fs::metadata(&test_file).unwrap().permissions().mode() & 0o777,
@@ -724,7 +724,7 @@ mod tests {
 
         // Content + permissions
         let mut subsystem = HooksSubsystem::default();
-        let ctx = EngineContext {
+        let mut ctx = EngineContext {
             spec: HostConfiguration {
                 os: trident_api::config::Os {
                     additional_files: vec![trident_api::config::AdditionalFile {
@@ -740,7 +740,7 @@ mod tests {
             ..Default::default()
         };
         subsystem.prepare(&ctx).unwrap();
-        subsystem.configure(&ctx).unwrap();
+        subsystem.configure(&mut ctx).unwrap();
         assert_eq!(fs::read_to_string(&test_file).unwrap(), test_content);
         assert_eq!(
             fs::metadata(&test_file).unwrap().permissions().mode() & 0o777,
@@ -751,7 +751,7 @@ mod tests {
         let source_file = temp_dir.path().join("source-file");
         fs::write(&source_file, "\u{2603}").unwrap();
         let mut subsystem = HooksSubsystem::default();
-        let ctx = EngineContext {
+        let mut ctx = EngineContext {
             spec: HostConfiguration {
                 os: trident_api::config::Os {
                     additional_files: vec![trident_api::config::AdditionalFile {
@@ -766,7 +766,7 @@ mod tests {
             ..Default::default()
         };
         subsystem.prepare(&ctx).unwrap();
-        subsystem.configure(&ctx).unwrap();
+        subsystem.configure(&mut ctx).unwrap();
         assert_eq!(fs::read_to_string(&test_file).unwrap(), "\u{2603}");
         assert_eq!(
             fs::metadata(&source_file).unwrap().permissions().mode() & 0o777,

@@ -98,7 +98,7 @@ pub(crate) trait Subsystem: Send {
 
     /// Configure the system as specified by the Host Configuration, and update the Host Status
     /// accordingly.
-    fn configure(&mut self, _ctx: &EngineContext) -> Result<(), TridentError> {
+    fn configure(&mut self, _ctx: &mut EngineContext) -> Result<(), TridentError> {
         Ok(())
     }
 }
@@ -285,7 +285,7 @@ fn provision(
 
 fn configure(
     subsystems: &mut [Box<dyn Subsystem>],
-    ctx: &EngineContext,
+    ctx: &mut EngineContext,
 ) -> Result<(), TridentError> {
     // Root-verity means /etc is readonly, so in the non-UKI configuration we setup a writable
     // overlay for it.
