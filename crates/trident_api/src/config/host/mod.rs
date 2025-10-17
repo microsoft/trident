@@ -210,14 +210,14 @@ impl HostConfiguration {
             // Ensure that the extension image path is in an A/B update volume.
             // Sysexts and confexts must not be placed on shared partitions
             // since this may lead to unexpected behavior after an A/B update.
-            if self
+            if !self
                 .storage
                 .ab_update
                 .as_ref()
                 .map(|ab| ab.volume_pairs.iter())
                 .into_iter()
                 .flatten()
-                .any(|p| p.id != *fs_device_id)
+                .any(|p| p.id == *fs_device_id)
             {
                 return Err(
                     HostConfigurationStaticValidationError::ExtensionImageNotOnABVolume {
@@ -314,20 +314,37 @@ mod tests {
         // Configure A/B volumes and ensure that /var/lib/extensions/ and
         // /var/lib/confexts are on A/B volumes.
         host_config.storage = Storage {
-            filesystems: vec![FileSystem {
-                device_id: Some("root".to_owned()),
-                source: FileSystemSource::Image,
-                mount_point: Some(MountPoint {
-                    path: PathBuf::from("/"),
-                    options: MountOptions::empty(),
-                }),
-            }],
+            filesystems: vec![
+                FileSystem {
+                    device_id: Some("root".to_owned()),
+                    source: FileSystemSource::Image,
+                    mount_point: Some(MountPoint {
+                        path: PathBuf::from("/"),
+                        options: MountOptions::empty(),
+                    }),
+                },
+                FileSystem {
+                    device_id: Some("data".to_owned()),
+                    source: FileSystemSource::Image,
+                    mount_point: Some(MountPoint {
+                        path: PathBuf::from("/data"),
+                        options: MountOptions::empty(),
+                    }),
+                },
+            ],
             ab_update: Some(AbUpdate {
-                volume_pairs: vec![AbVolumePair {
-                    id: "root".to_owned(),
-                    volume_a_id: "root-a".to_owned(),
-                    volume_b_id: "root-b".to_owned(),
-                }],
+                volume_pairs: vec![
+                    AbVolumePair {
+                        id: "root".to_owned(),
+                        volume_a_id: "root-a".to_owned(),
+                        volume_b_id: "root-b".to_owned(),
+                    },
+                    AbVolumePair {
+                        id: "data".to_owned(),
+                        volume_a_id: "data-a".to_owned(),
+                        volume_b_id: "data-b".to_owned(),
+                    },
+                ],
             }),
             ..Default::default()
         };
