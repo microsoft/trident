@@ -7,7 +7,7 @@ use anyhow::{ensure, Context, Error};
 use const_format::formatcp;
 use log::debug;
 
-use osutils::osrelease::ExtensionRelease;
+use osutils::{osrelease::ExtensionRelease, path};
 use trident_api::config::Extension;
 
 use crate::subsystems::extensions::{
@@ -32,11 +32,11 @@ pub(crate) fn read_extension_release(
     // Get extension-release file
     let dir = match ext_type {
         ExtensionType::Sysext => {
-            fs::read_dir(mount_point.join(SYSEXT_EXTENSION_RELEASE_DIRECTORY))
+            fs::read_dir(path::join_relative(mount_point, SYSEXT_EXTENSION_RELEASE_DIRECTORY))
                 .with_context(|| format!("Failed to find extension-release directory '{SYSEXT_EXTENSION_RELEASE_DIRECTORY}' in image at '{}'", ext.url))?
         },
         ExtensionType::Confext => {
-            fs::read_dir(mount_point.join(CONFEXT_EXTENSION_RELEASE_DIRECTORY))
+            fs::read_dir(path::join_relative(mount_point,CONFEXT_EXTENSION_RELEASE_DIRECTORY))
                 .with_context(|| format!("Failed to find extension-release directory '{CONFEXT_EXTENSION_RELEASE_DIRECTORY}' in image at '{}'", ext.url))?
         },
     }.map(|res| res.map(|e| e.path()))
@@ -116,7 +116,8 @@ mod tests {
         let tempdir = TempDir::new().unwrap();
         let mount_point = tempdir.path();
 
-        let sysext_release_dir = mount_point.join(SYSEXT_EXTENSION_RELEASE_DIRECTORY);
+        let sysext_release_dir =
+            path::join_relative(mount_point, SYSEXT_EXTENSION_RELEASE_DIRECTORY);
         fs::create_dir_all(&sysext_release_dir).unwrap();
 
         let mut extension_release_file =
@@ -206,7 +207,8 @@ mod tests {
         let tempdir = TempDir::new().unwrap();
         let mount_point = tempdir.path();
 
-        let sysext_release_dir = mount_point.join(SYSEXT_EXTENSION_RELEASE_DIRECTORY);
+        let sysext_release_dir =
+            path::join_relative(mount_point, SYSEXT_EXTENSION_RELEASE_DIRECTORY);
         fs::create_dir_all(&sysext_release_dir).unwrap();
 
         let current_path = Path::new("/tmp/file");
@@ -247,7 +249,8 @@ mod tests {
         let tempdir = TempDir::new().unwrap();
         let mount_point = tempdir.path();
 
-        let sysext_release_dir = mount_point.join(SYSEXT_EXTENSION_RELEASE_DIRECTORY);
+        let sysext_release_dir =
+            path::join_relative(mount_point, SYSEXT_EXTENSION_RELEASE_DIRECTORY);
         fs::create_dir_all(&sysext_release_dir).unwrap();
 
         // Create a file with valid content but missing the SYSEXT_ID field.
@@ -277,7 +280,8 @@ mod tests {
         let tempdir = TempDir::new().unwrap();
         let mount_point = tempdir.path();
 
-        let sysext_release_dir = mount_point.join(SYSEXT_EXTENSION_RELEASE_DIRECTORY);
+        let sysext_release_dir =
+            path::join_relative(mount_point, SYSEXT_EXTENSION_RELEASE_DIRECTORY);
         fs::create_dir_all(&sysext_release_dir).unwrap();
 
         // Create a file with a name that doesn't contain "extension-release."

@@ -30,9 +30,9 @@ mod release;
 const EXTENSION_RELEASE: &str = "extension-release";
 
 /// Expected extension-release directory for sysexts
-const SYSEXT_EXTENSION_RELEASE_DIRECTORY: &str = "usr/lib/extension-release.d/";
+const SYSEXT_EXTENSION_RELEASE_DIRECTORY: &str = "/usr/lib/extension-release.d/";
 /// Expected extension-release directory for confexts
-const CONFEXT_EXTENSION_RELEASE_DIRECTORY: &str = "etc/extension-release.d/";
+const CONFEXT_EXTENSION_RELEASE_DIRECTORY: &str = "/etc/extension-release.d/";
 
 /// Primary location for storing sysexts on the target OS, relative to the newroot mountpoint
 const DEFAULT_SYSEXT_DIRECTORY: &str = "/var/lib/extensions/";
@@ -85,7 +85,10 @@ impl Display for ExtensionType {
 
 #[derive(Default, Debug)]
 pub struct ExtensionsSubsystem {
+    /// Extension images that should be merged on the target OS.
     extensions: Vec<ExtensionData>,
+
+    /// Extension images that are currently merged on the servicing OS.
     extensions_old: Vec<ExtensionData>,
 }
 impl Subsystem for ExtensionsSubsystem {
@@ -566,7 +569,7 @@ mod functional_test {
         };
 
         // Create a temporary directory for the extension content
-        let release_dir = mount_point.path().join(release_subdir);
+        let release_dir = path::join_relative(mount_point.path(), release_subdir);
         fs::create_dir_all(&release_dir).unwrap();
 
         let release_file_path = release_dir.join(format!("{EXTENSION_RELEASE}.{ext_name}"));
