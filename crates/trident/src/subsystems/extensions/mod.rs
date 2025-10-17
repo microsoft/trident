@@ -1,5 +1,4 @@
 use std::{
-    collections::HashSet,
     fmt::Display,
     fs,
     path::{Path, PathBuf},
@@ -11,9 +10,9 @@ use tempfile::NamedTempFile;
 
 use osutils::{dependencies::Dependency, path};
 use trident_api::{
-    config::{Extension, HostConfigurationDynamicValidationError},
+    config::Extension,
     constants::internal_params::HTTP_CONNECTION_TIMEOUT_SECONDS,
-    error::{InternalError, InvalidInputError, ReportError, TridentError},
+    error::{InternalError, ReportError, TridentError},
     primitives::hash::Sha384Hash,
 };
 
@@ -33,11 +32,6 @@ const EXTENSION_RELEASE: &str = "extension-release";
 const SYSEXT_EXTENSION_RELEASE_DIRECTORY: &str = "/usr/lib/extension-release.d/";
 /// Expected extension-release directory for confexts
 const CONFEXT_EXTENSION_RELEASE_DIRECTORY: &str = "/etc/extension-release.d/";
-
-/// Primary location for storing sysexts on the target OS, relative to the newroot mountpoint
-const DEFAULT_SYSEXT_DIRECTORY: &str = "/var/lib/extensions/";
-/// Primary location for storing confexts on the target OS, relative to the newroot mountpoint
-const DEFAULT_CONFEXT_DIRECTORY: &str = "/var/lib/confexts/";
 
 /// Temporary directory on target OS for downloading extension images, relative to the newroot mountpoint
 const EXTENSION_IMAGE_STAGING_DIRECTORY: &str = "/var/lib/extensions/.staging";
@@ -96,43 +90,7 @@ impl Subsystem for ExtensionsSubsystem {
         "extensions"
     }
 
-    fn validate_host_config(&self, ctx: &EngineContext) -> Result<(), TridentError> {
-        // Sysexts and confexts must not be placed on shared partitions since
-        // this may lead to unexpected behavior after an A/B update.
-        let mut dirs = HashSet::new();
-        dirs.extend(
-            ctx.spec
-                .os
-                .sysexts
-                .iter()
-                .map(|ext| ext.path.clone().unwrap_or(DEFAULT_SYSEXT_DIRECTORY.into())),
-        );
-        dirs.extend(
-            ctx.spec
-                .os
-                .confexts
-                .iter()
-                .map(|ext| ext.path.clone().unwrap_or(DEFAULT_CONFEXT_DIRECTORY.into())),
-        );
-        for dir_path in dirs {
-            let fs_device_id = ctx
-                .spec
-                .storage
-                .path_to_mount_point_info(&dir_path)
-                .and_then(|mp| mp.device_id)
-                .structured(InvalidInputError::from(
-                    HostConfigurationDynamicValidationError::ExtensionImageNotOnABVolume {
-                        path: dir_path.display().to_string(),
-                    },
-                ))?;
-            if ctx.get_ab_volume_pair(fs_device_id).is_err() {
-                return Err(TridentError::new(InvalidInputError::from(
-                    HostConfigurationDynamicValidationError::ExtensionImageNotOnABVolume {
-                        path: dir_path.display().to_string(),
-                    },
-                )));
-            };
-        }
+    fn validate_host_config(&self, _ctx: &EngineContext) -> Result<(), TridentError> {
         Ok(())
     }
 
@@ -376,127 +334,6 @@ mod tests {
     use super::*;
 
     use tempfile::env::temp_dir;
-    use url::Url;
-
-    use trident_api::{
-        config::{
-            AbUpdate, AbVolumePair, FileSystem, FileSystemSource, MountOptions, MountPoint, Storage,
-        },
-        error::ErrorKind,
-    };
-
-    #[test]
-    fn test_validate_success() {
-        let mut ctx = EngineContext::default();
-        ctx.spec.os.sysexts = vec![
-            Extension {
-                url: Url::parse("https://example.com/sysext1.raw").unwrap(),
-                sha384: Sha384Hash::from("a".repeat(96)),
-                path: None, // Defaults to a file inside /var/lib/extensions
-            },
-            Extension {
-                url: Url::parse("https://example.com/sysext2.raw").unwrap(),
-                sha384: Sha384Hash::from("b".repeat(96)),
-                path: Some(PathBuf::from("/etc/extensions/sysext2.raw")),
-            },
-        ];
-        ctx.spec.os.confexts = vec![
-            Extension {
-                url: Url::parse("https://example.com/confext1.raw").unwrap(),
-                sha384: Sha384Hash::from("c".repeat(96)),
-                path: None, // Defaults to a file inside /var/lib/confexts
-            },
-            Extension {
-                url: Url::parse("https://example.com/confext2.raw").unwrap(),
-                sha384: Sha384Hash::from("d".repeat(96)),
-                path: Some(PathBuf::from("/usr/lib/confexts/confext2.raw")),
-            },
-        ];
-
-        // Ensure that /var/lib/extensions/ and /var/lib/confexts are on A/B volumes
-        ctx.spec.storage = Storage {
-            filesystems: vec![FileSystem {
-                device_id: Some("root".to_owned()),
-                source: FileSystemSource::Image,
-                mount_point: Some(MountPoint {
-                    path: PathBuf::from("/"),
-                    options: MountOptions::empty(),
-                }),
-            }],
-            ab_update: Some(AbUpdate {
-                volume_pairs: vec![AbVolumePair {
-                    id: "root".to_owned(),
-                    volume_a_id: "root-a".to_owned(),
-                    volume_b_id: "root-b".to_owned(),
-                }],
-            }),
-            ..Default::default()
-        };
-        ctx.partition_paths
-            .insert("root-a".into(), PathBuf::from("/dev/sda"));
-        ctx.partition_paths
-            .insert("root-b".into(), PathBuf::from("/dev/sdb"));
-
-        let subsystem = ExtensionsSubsystem::default();
-        subsystem.validate_host_config(&ctx).unwrap();
-    }
-
-    #[test]
-    fn test_validate_no_extensions() {
-        let ctx = EngineContext::default();
-        let subsystem = ExtensionsSubsystem::default();
-        subsystem.validate_host_config(&ctx).unwrap();
-    }
-
-    #[test]
-    fn test_validate_failure() {
-        let mut ctx = EngineContext::default();
-        ctx.spec.os.sysexts = vec![Extension {
-            url: Url::parse("https://example.com/sysext1.raw").unwrap(),
-            sha384: Sha384Hash::from("a".repeat(96)),
-            path: None, // Defaults to a file inside /var/lib/extensions
-        }];
-
-        // Ensure that /var/lib/extensions/ is on a shared partition
-        ctx.spec.storage = Storage {
-            filesystems: vec![
-                FileSystem {
-                    device_id: Some("root".to_owned()),
-                    source: FileSystemSource::Image,
-                    mount_point: Some(MountPoint {
-                        path: PathBuf::from("/"),
-                        options: MountOptions::empty(),
-                    }),
-                },
-                FileSystem {
-                    device_id: Some("shared".to_owned()),
-                    source: FileSystemSource::Image,
-                    mount_point: Some(MountPoint {
-                        path: PathBuf::from("/var/lib/extensions"),
-                        options: MountOptions::empty(),
-                    }),
-                },
-            ],
-            ab_update: Some(AbUpdate {
-                volume_pairs: vec![AbVolumePair {
-                    id: "root".to_owned(),
-                    volume_a_id: "root-a".to_owned(),
-                    volume_b_id: "root-b".to_owned(),
-                }],
-            }),
-            ..Default::default()
-        };
-
-        let subsystem = ExtensionsSubsystem::default();
-        assert_eq!(
-            subsystem.validate_host_config(&ctx).unwrap_err().kind(),
-            &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
-                inner: HostConfigurationDynamicValidationError::ExtensionImageNotOnABVolume {
-                    path: "/var/lib/extensions/".to_string()
-                }
-            })
-        );
-    }
 
     #[test]
     fn test_populate_extensions_empty() {
@@ -523,6 +360,7 @@ mod functional_test {
 
     use sha2::{Digest, Sha384};
     use tempfile::{env::temp_dir, TempDir};
+    use trident_api::constants::{DEFAULT_CONFEXT_DIRECTORY, DEFAULT_SYSEXT_DIRECTORY};
     use url::Url;
 
     use pytest_gen::functional_test;

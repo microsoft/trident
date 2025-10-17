@@ -162,6 +162,12 @@ pub const AB_VOLUME_B_NAME: &str = "B";
 /// Read-only mount option.
 pub const MOUNT_OPTION_READ_ONLY: &str = "ro";
 
+/// Primary location for storing sysexts on the target OS.
+pub const DEFAULT_SYSEXT_DIRECTORY: &str = "/var/lib/extensions/";
+
+/// Primary location for storing confexts on the target OS.
+pub const DEFAULT_CONFEXT_DIRECTORY: &str = "/var/lib/confexts/";
+
 /// Valid sysext directories.
 ///
 /// Do not support /run/sysexts/.

@@ -8,11 +8,14 @@ use const_format::formatcp;
 use log::debug;
 
 use osutils::{osrelease::ExtensionRelease, path};
-use trident_api::config::Extension;
+use trident_api::{
+    config::Extension,
+    constants::{DEFAULT_CONFEXT_DIRECTORY, DEFAULT_SYSEXT_DIRECTORY},
+};
 
 use crate::subsystems::extensions::{
-    ExtensionData, ExtensionType, CONFEXT_EXTENSION_RELEASE_DIRECTORY, DEFAULT_CONFEXT_DIRECTORY,
-    DEFAULT_SYSEXT_DIRECTORY, EXTENSION_RELEASE, SYSEXT_EXTENSION_RELEASE_DIRECTORY,
+    ExtensionData, ExtensionType, CONFEXT_EXTENSION_RELEASE_DIRECTORY, EXTENSION_RELEASE,
+    SYSEXT_EXTENSION_RELEASE_DIRECTORY,
 };
 
 const EXTENSION_RELEASE_PREFIX: &str = formatcp!("{EXTENSION_RELEASE}.");
