@@ -6,6 +6,7 @@ package main
 import (
 	"fmt"
 	"installer/imagegen/attendedinstaller"
+	"installer/internal/file"
 	"installer/internal/logger"
 	"os"
 	"path/filepath"
@@ -66,17 +67,12 @@ func main() {
 	displayContent(hostconfigPath, userScriptPath)
 
 	if *hostconfigDir != "" {
-		err = os.MkdirAll(*hostconfigDir, 0755)
+		targetPath := filepath.Join(*hostconfigDir, "config.yaml")
+		err = file.Move(hostconfigPath, targetPath)
 		if err != nil {
-			logger.Log.Warnf("Failed to create directory %s: %v", *hostconfigDir, err)
+			logger.Log.Errorf("Failed to move config file to %s: %v", targetPath, err)
 		} else {
-			targetPath := filepath.Join(*hostconfigDir, "config.yaml")
-			err = os.Rename(hostconfigPath, targetPath)
-			if err != nil {
-				logger.Log.Errorf("Failed to move config file to %s: %v", targetPath, err)
-			} else {
-				logger.Log.Infof("Host configuration saved to: %s", targetPath)
-			}
+			logger.Log.Infof("Host configuration saved to: %s", targetPath)
 		}
 	}
 
@@ -85,14 +81,14 @@ func main() {
 // Shows the contents of the generated Host Configuration and the script to add the user's password
 func displayContent(hostconfigPath, userScriptPath string) {
 	fmt.Println("\n--- Generated Host Configuration: ---")
-	if data, err := os.ReadFile(hostconfigPath); err == nil {
-		fmt.Println(string(data))
+	if data, err := file.Read(hostconfigPath); err == nil {
+		fmt.Println(data)
 	} else {
 		logger.Log.Warnf("Could not read Host Configuration file: %v", err)
 	}
 	fmt.Println("\n--- Generated Password Script (", userScriptPath, ") ---")
-	if data, err := os.ReadFile(userScriptPath); err == nil {
-		fmt.Println(string(data))
+	if data, err := file.Read(userScriptPath); err == nil {
+		fmt.Println(data)
 	} else {
 		logger.Log.Warnf("Could not read generated script to add user's password: %v", err)
 	}
@@ -114,7 +110,7 @@ func prepareTestDirectory(testDir string) (string, error) {
 	}
 
 	for _, filePath := range fakeFiles {
-		err := os.WriteFile(filePath, []byte("# Fake COSI file for testing\n"), 0644)
+		err := file.Write("# Fake COSI file for testing\n", filePath)
 		if err != nil {
 			return "", fmt.Errorf("failed to create fake COSI file %s: %w", filePath, err)
 		}
