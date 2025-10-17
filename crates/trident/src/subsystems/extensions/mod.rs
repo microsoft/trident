@@ -1,4 +1,5 @@
 use std::{
+    collections::{HashMap, HashSet},
     fmt::Display,
     fs,
     path::{Path, PathBuf},
@@ -249,6 +250,102 @@ impl ExtensionsSubsystem {
             } else {
                 self.extensions_old.push(ext_data);
             }
+        }
+
+        Ok(())
+    }
+
+    fn set_up_extensions(
+        &mut self,
+        ext_type: ExtensionType,
+        mount_path: &Path,
+    ) -> Result<(), Error> {
+        let old_exts_hashmap = self
+            .extensions_old
+            .iter()
+            .filter(|ext| ext.ext_type == ext_type)
+            .map(|ext| (ext.id.clone(), ext))
+            .collect::<HashMap<_, _>>();
+        let old_exts_ids: HashSet<_> = old_exts_hashmap.keys().collect();
+
+        let new_exts_hashmap = self
+            .extensions
+            .iter()
+            .filter(|ext| ext.ext_type == ext_type)
+            .map(|ext| (ext.id.clone(), ext))
+            .collect::<HashMap<_, _>>();
+        let new_exts_ids: HashSet<_> = new_exts_hashmap.keys().collect();
+
+        let mut ids_to_add: Vec<_> = new_exts_ids.difference(&old_exts_ids).collect();
+        let mut ids_to_remove: Vec<_> = old_exts_ids.difference(&new_exts_ids).collect();
+
+        // Identify extension images that should be updated.
+        let mut ids_to_keep_as_is: Vec<&String> = Vec::new();
+        for ext_id in new_exts_ids.intersection(&old_exts_ids) {
+            // Check hash
+            let curr_hash = old_exts_hashmap
+                .get(*ext_id)
+                .context(format!("Failed to find extension id '{ext_id}'"))? // We should never error here
+                .sha384
+                .clone();
+            let new_hash = new_exts_hashmap
+                .get(*ext_id)
+                .context(format!("Failed to find extension id '{ext_id}'"))? // We should never error here
+                .sha384
+                .clone();
+
+            if curr_hash == new_hash {
+                ids_to_keep_as_is.push(ext_id);
+            } else {
+                ids_to_add.push(ext_id);
+                ids_to_remove.push(ext_id);
+            }
+        }
+
+        let extensions_to_add: Vec<_> = new_exts_hashmap
+            .iter()
+            .filter(|(k, _)| ids_to_add.contains(&k))
+            .map(|(_, ext)| ext)
+            .collect();
+        let extensions_to_remove: Vec<_> = old_exts_hashmap
+            .iter()
+            .filter(|(k, _)| ids_to_remove.contains(&k))
+            .map(|(_, ext)| ext)
+            .collect();
+        let extensions_to_keep_as_is: Vec<_> = new_exts_hashmap
+            .iter()
+            .filter(|(k, _)| ids_to_keep_as_is.contains(k))
+            .map(|(_, ext)| ext)
+            .collect();
+
+        // Remove extensions that should be removed; THIS ONLY NEEDS TO HAPPEN ON RUNTIME UPDATE
+        for ext in extensions_to_remove {
+            fs::remove_file(&ext.path)
+                .with_context(|| format!("Failed to delete file at '{}'", ext.path.display()))?;
+        }
+
+        // Add new extensions that should be added
+        for ext in extensions_to_add {
+            let curr_temp_path = ext
+                .temp_path
+                .clone()
+                .context("Failed to find temporary path of extension image")?;
+            let new_path = path::join_relative(mount_path, &ext.path);
+            fs::copy(&curr_temp_path, &new_path).context(format!(
+                "Failed to copy extension from '{}' to '{}'",
+                curr_temp_path.display(),
+                new_path.display()
+            ))?;
+        }
+
+        // Copy over existing extensions images.
+        for ext in extensions_to_keep_as_is {
+            let new_path = path::join_relative(mount_path, &ext.path);
+            fs::copy(&ext.path, &new_path).context(format!(
+                "Failed to copy extension from {} to {}",
+                &ext.path.display(),
+                new_path.display()
+            ))?;
         }
 
         Ok(())
