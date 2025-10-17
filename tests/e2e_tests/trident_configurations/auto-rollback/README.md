@@ -11,12 +11,15 @@ make bin/trident-rpms.tar.gz
 make -C $TEST_IMAGES_FOLDER copy-trident-rpms
 # Build install (regular.cosi) and update images (regular-2.cosi)
 mkdir -p artifacts/test-image
-rm -rf $TEST_IMAGES_FOLDER/build/trident-testimage.cosi
+sudo rm -rf $TEST_IMAGES_FOLDER/build/trident-testimage.cosi
 rm -rf artifacts/test-image/regular*.cosi
 make -C $TEST_IMAGES_FOLDER trident-testimage
-mv $TEST_IMAGES_FOLDER/build/trident-testimage.cosi artifacts/test-image/regular.cosi
+sudo mv $TEST_IMAGES_FOLDER/build/trident-testimage.cosi artifacts/test-image/regular.cosi
 make -C $TEST_IMAGES_FOLDER trident-testimage
-cp $TEST_IMAGES_FOLDER/build/trident-testimage.cosi artifacts/test-image/regular-2.cosi
+sudo mv $TEST_IMAGES_FOLDER/build/trident-testimage.cosi artifacts/test-image/regular-2.cosi
+
+find artifacts/test-image -name "regular*.cosi" -exec sudo ls -lh {} \;
+find artifacts/test-image -name "regular*.cosi" -exec sudo chown $(id -u):$(id -g) {} \;
 
 make bin/netlaunch
 make bin/netlisten

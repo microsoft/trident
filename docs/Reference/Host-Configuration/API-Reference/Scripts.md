@@ -73,8 +73,8 @@ These scripts are run in the target OS. The `$TARGET_ROOT` variable will be set 
 
 - Items of the array must have the type:
 
-   | Characteristic | Value                 |
-   | -------------- | --------------------- |
-   | Type           | `Script`              |
-   | Link           | [Script](./Script.md) |
+   | Characteristic | Value                           |
+   | -------------- | ------------------------------- |
+   | Type           | `UpdateCheck`                   |
+   | Link           | [UpdateCheck](./UpdateCheck.md) |
 

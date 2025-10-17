@@ -57,12 +57,10 @@ scripts:
         - ab-update
       content: echo 'testing-user ALL=(ALL:ALL) NOPASSWD:ALL' > /etc/sudoers.d/testing-user
   updateCheck:
-    - name: invoke-rollback
-      runOn:
-        - ab-update
-      content: |
-        echo 'failure for ab update'
-        exit 1
+    - name: check-non-existent-service-to-invoke-rollback
+      systemdServices:
+        - non-existent-service
+      timeoutSeconds: 10
 os:
   selinux:
     mode: enforcing

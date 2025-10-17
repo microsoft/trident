@@ -47,7 +47,7 @@ pub struct Scripts {
     /// will be set to '/' for consistency with postProvision scripts.
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub update_check: Vec<Script>,
+    pub update_check: Vec<UpdateCheck>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -67,6 +67,79 @@ impl Default for ScriptSource {
     fn default() -> Self {
         ScriptSource::Content(String::new())
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
+pub enum UpdateCheck {
+    /// Raw contents of the script.
+    Script(Script),
+
+    /// Path to a script in the execution OS.
+    SystemdCheck(SystemdCheck),
+}
+
+impl UpdateCheck {
+    /// Returns true if servicing type is enabled for this script.
+    pub fn should_run(&self, servicing_type: ServicingType) -> bool {
+        servicing_type == ServicingType::AbUpdate
+    }
+}
+
+/// Custom serialization and deserialization for UpdateCheck enum.
+/// This is needed to avoid using YAML tags (i.e. !Script and !SystemdCheck) in
+/// the serialized output.
+impl<'de> serde::Deserialize<'de> for UpdateCheck {
+    fn deserialize<D>(deserializer: D) -> Result<UpdateCheck, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = serde_yaml::Value::deserialize(deserializer)?;
+        if let Some(mapping) = value.as_mapping() {
+            if mapping.contains_key(serde_yaml::Value::String("systemdServices".to_string())) {
+                // Deserialize as SystemdCheck
+                let systemd_check: SystemdCheck =
+                    serde_yaml::from_value(value).map_err(serde::de::Error::custom)?;
+                return Ok(UpdateCheck::SystemdCheck(systemd_check));
+            } else {
+                // Deserialize as Script
+                let script: Script =
+                    serde_yaml::from_value(value).map_err(serde::de::Error::custom)?;
+                return Ok(UpdateCheck::Script(script));
+            }
+        }
+        Err(serde::de::Error::custom(
+            "invalid update check, expected a mapping",
+        ))
+    }
+}
+impl serde::Serialize for UpdateCheck {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            UpdateCheck::Script(script) => script.serialize(serializer),
+            UpdateCheck::SystemdCheck(systemd_check) => systemd_check.serialize(serializer),
+        }
+    }
+}
+
+/// A script that can be run on the host during Trident stages.
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
+pub struct SystemdCheck {
+    /// Name of the script.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub name: String,
+
+    /// List of systemd services that need to be in successful state.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub systemd_services: Vec<String>,
+
+    /// Timeout for the systemd check.
+    pub timeout_seconds: usize,
 }
 
 /// A script that can be run on the host during Trident stages.
@@ -270,5 +343,50 @@ mod tests {
                 path: "path/to/script".into()
             }
         );
+    }
+
+    fn create_test_update_check_scripts() -> Scripts {
+        Scripts {
+            post_provision: vec![],
+            post_configure: vec![],
+            pre_servicing: vec![],
+            update_check: vec![
+                UpdateCheck::Script(Script {
+                    name: "test-script".into(),
+                    run_on: vec![ServicingTypeSelection::AbUpdate],
+                    interpreter: Some("/bin/bash".into()),
+                    environment_variables: HashMap::new(),
+                    source: ScriptSource::Content("echo hi".into()),
+                    arguments: vec![],
+                }),
+                UpdateCheck::SystemdCheck(SystemdCheck {
+                    name: "test-systemd-check".into(),
+                    systemd_services: vec!["test-service".into()],
+                    timeout_seconds: 60,
+                }),
+            ],
+        }
+    }
+
+    #[test]
+    fn test_update_check_should_run() {
+        let scripts = create_test_update_check_scripts();
+        scripts.update_check.iter().for_each(|check| {
+            assert!(check.should_run(ServicingType::AbUpdate));
+            assert!(!check.should_run(ServicingType::CleanInstall));
+        });
+    }
+
+    #[test]
+    fn test_update_check_serde() {
+        let scripts = create_test_update_check_scripts();
+        let serialized = serde_yaml::to_string(&scripts.update_check).unwrap();
+        println!("Serialized updateCheck: {}", &serialized);
+        assert!(
+            !serialized.contains("!Script") && !serialized.contains("!SystemdCheck"),
+            "Serialized updateCheck should not use yaml tags to differentiate enum variants"
+        );
+        let deserialized: Vec<UpdateCheck> = serde_yaml::from_str(&serialized).unwrap();
+        assert_eq!(scripts.update_check, deserialized);
     }
 }

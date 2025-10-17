@@ -1170,7 +1170,7 @@
           "description": "Scripts to be run before Trident commits an updated target OS as 'provisioned'.  If any of the scripts fail, commit will not be completed and rollback will be triggered.\n\nThese scripts only run for updates, not installs. If runOn is specified for anything other than an update type, the script will be ignored.\n\nThese scripts are run in the target OS. The `$TARGET_ROOT` variable will be set to '/' for consistency with postProvision scripts.",
           "type": "array",
           "items": {
-            "$ref": "#/definitions/Script"
+            "$ref": "#/definitions/UpdateCheck"
           }
         }
       },
@@ -1437,6 +1437,43 @@
       },
       "additionalProperties": false
     },
+    "SystemdCheck": {
+      "description": "A script that can be run on the host during Trident stages.",
+      "type": "object",
+      "required": [
+        "name",
+        "runOn",
+        "services",
+        "timeoutSeconds"
+      ],
+      "properties": {
+        "name": {
+          "description": "Name of the script.",
+          "type": "string"
+        },
+        "runOn": {
+          "description": "List of servicing types that the script should run on.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ServicingTypeSelection"
+          }
+        },
+        "services": {
+          "description": "List of systemd services that need to be in successful state.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "timeoutSeconds": {
+          "description": "Timeout for the systemd check.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
     "Trident": {
       "description": "The Trident Management configuration controls the installation of the Trident agent onto the target OS.",
       "type": "object",
@@ -1466,6 +1503,36 @@
         }
       },
       "additionalProperties": false
+    },
+    "UpdateCheck": {
+      "oneOf": [
+        {
+          "description": "Raw contents of the script.",
+          "type": "object",
+          "required": [
+            "Script"
+          ],
+          "properties": {
+            "Script": {
+              "$ref": "#/definitions/Script"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Path to a script in the execution OS.",
+          "type": "object",
+          "required": [
+            "SystemdCheck"
+          ],
+          "properties": {
+            "SystemdCheck": {
+              "$ref": "#/definitions/SystemdCheck"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
     },
     "User": {
       "description": "Configuration for a specific user.",

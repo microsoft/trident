@@ -15,7 +15,7 @@ use crate::{
         FileSystemSource, HostConfiguration, ImageSha384, MountOptions, MountPoint,
         NewFileSystemType, Os, OsImage, Partition, PartitionTableType, PartitionType, Raid,
         RaidLevel, Script, ScriptSource, Scripts, Services, ServicingTypeSelection,
-        SoftwareRaidArray, SshMode, Storage, Swap, User, VerityDevice,
+        SoftwareRaidArray, SshMode, Storage, Swap, SystemdCheck, UpdateCheck, User, VerityDevice,
     },
     constants::{self, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
 };
@@ -182,12 +182,23 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     )]),
                     ..Default::default()
                 }],
-                update_check: vec![Script {
-                    name: "sample-commit-script".into(),
-                    run_on: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
-                    source: ScriptSource::Content("echo 'success'".into()),
-                    ..Default::default()
-                }],
+                update_check: vec![
+                    UpdateCheck::Script(
+                        Script {
+                            name: "sample-commit-script".into(),
+                            run_on: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
+                            source: ScriptSource::Content("echo 'success'".into()),
+                            ..Default::default()
+                        }
+                    ),
+                    UpdateCheck::SystemdCheck(
+                        SystemdCheck {
+                            name: "user.slice".into(),
+                            systemd_services: vec!["user.slice".into()],
+                            timeout_seconds: 10,
+                        }
+                    )
+                ],
             },
             ..Default::default()
             }
@@ -382,12 +393,23 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     )]),
                     ..Default::default()
                 }],
-                update_check: vec![Script {
-                    name: "sample-commit-script".into(),
-                    run_on: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
-                    source: ScriptSource::Content("echo 'success'".into()),
-                    ..Default::default()
-                }],
+                update_check: vec![
+                    UpdateCheck::Script(
+                        Script {
+                            name: "sample-commit-script".into(),
+                            run_on: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
+                            source: ScriptSource::Content("echo 'success'".into()),
+                            ..Default::default()
+                        }
+                    ),
+                    UpdateCheck::SystemdCheck(
+                        SystemdCheck {
+                            name: "user.slice".into(),
+                            systemd_services: vec!["user.slice".into()],
+                            timeout_seconds: 10,
+                        }
+                    )
+                ],
             },
             ..Default::default()
             }

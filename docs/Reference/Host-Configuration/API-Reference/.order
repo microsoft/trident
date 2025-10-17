@@ -36,7 +36,9 @@ SoftwareRaidArray
 SshMode
 Storage
 Swap
+SystemdCheck
 Trident
+UpdateCheck
 User
 VerityCorruptionOption
 VerityDevice

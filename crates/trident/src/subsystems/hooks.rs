@@ -3,34 +3,36 @@ use std::{
     ffi::OsStr,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
+    thread,
+    time::{Duration, Instant},
 };
 
 use anyhow::{Context, Error};
 use log::{debug, info, trace};
 
-use osutils::{exe::OutputChecker, files, scripts::ScriptRunner};
+use osutils::{dependencies::Dependency, exe::OutputChecker, files, scripts::ScriptRunner};
 use trident_api::{
     config::{
         HostConfigurationDynamicValidationError, HostConfigurationStaticValidationError, Script,
-        ScriptSource,
+        ScriptSource, SystemdCheck, UpdateCheck,
     },
     constants::{
         internal_params::WRITABLE_ETC_OVERLAY_HOOKS, DEFAULT_SCRIPT_INTERPRETER,
         ROOT_MOUNT_POINT_PATH,
     },
-    error::{InvalidInputError, ReportError, ServicingError, TridentError},
+    error::{InternalError, InvalidInputError, ReportError, ServicingError, TridentError},
     status::ServicingType,
 };
 
 use crate::engine::{EngineContext, Subsystem};
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct StagedFile {
     contents: Vec<u8>,
     mode: u32,
 }
 
-#[derive(Default, Debug)]
+#[derive(Clone, Default, Debug)]
 pub struct HooksSubsystem {
     staged_files: HashMap<PathBuf, StagedFile>,
     writable_etc_overlay: bool,
@@ -214,6 +216,47 @@ impl HooksSubsystem {
         Ok(())
     }
 
+    fn run_systemd_check(&self, check: &SystemdCheck, target_root: &Path) -> Result<(), Error> {
+        let start_time = Instant::now();
+        let timeout_duration = Duration::from_secs(check.timeout_seconds as u64);
+
+        for service_name in &check.systemd_services {
+            debug!(
+                "Checking status of systemd service '{service_name}' in target root '{}'",
+                target_root.display()
+            );
+
+            for _i in 0.. {
+                if start_time.elapsed() >= timeout_duration {
+                    return Err(Error::msg(format!(
+                        "Timeout reached while waiting for service '{service_name}' to become active/running"
+                    )));
+                }
+
+                let status = Dependency::Systemctl
+                    .cmd()
+                    .arg("status")
+                    .arg(service_name)
+                    .output();
+                match status {
+                    Ok(output) => {
+                        if output.check().is_ok() {
+                            info!("Service '{service_name}' is active/running");
+                            break;
+                        }
+
+                        info!("Service '{service_name}' is not active/running")
+                    }
+                    Err(e) => {
+                        info!("Unable to query service '{service_name}': {e}");
+                    }
+                }
+                thread::sleep(Duration::from_millis(100));
+            }
+        }
+        Ok(())
+    }
+
     fn run_script(
         &self,
         script: &Script,
@@ -329,17 +372,25 @@ impl HooksSubsystem {
             debug!("Running update-check scripts");
         }
 
-        ctx.spec
-            .scripts
-            .update_check
-            .iter()
-            .filter(|script| script.should_run(ctx.servicing_type))
-            .try_for_each(|script| {
-                self.run_script(script, ctx, Path::new(ROOT_MOUNT_POINT_PATH))
-                    .structured(ServicingError::RunUpdateCheckScript {
-                        script_name: script.name.clone(),
-                    })
-            })?;
+        // Create parallel update-check threads
+        let update_check_scripts = ctx.spec.scripts.update_check.clone();
+        thread::scope(|s| {
+            for script in update_check_scripts {
+                let subsystem = &self;
+                s.spawn(move || match script {
+                    UpdateCheck::SystemdCheck(systemd_check) => subsystem
+                        .run_systemd_check(&systemd_check, Path::new(ROOT_MOUNT_POINT_PATH))
+                        .structured(ServicingError::RunUpdateCheckSystemdServices {
+                            check_name: systemd_check.name.clone(),
+                        }),
+                    UpdateCheck::Script(inner_script) => subsystem
+                        .run_script(&inner_script, &ctx, Path::new(ROOT_MOUNT_POINT_PATH))
+                        .structured(ServicingError::RunUpdateCheckScript {
+                            script_name: inner_script.name.clone(),
+                        }),
+                });
+            }
+        });
         Ok(())
     }
 }

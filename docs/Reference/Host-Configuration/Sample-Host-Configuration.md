@@ -110,6 +110,10 @@ scripts:
     - clean-install
     - ab-update
     content: echo 'success'
+  - name: user.slice
+    services:
+    - user.slice
+    timeoutSeconds: 10
 os:
   netplan:
     version: 2

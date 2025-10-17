@@ -12,7 +12,7 @@ pub use host::{
         users::{Password, SshMode, User},
         KernelCommandLine, ManagementOs, Os, Selinux, SelinuxMode,
     },
-    scripts::{Script, ScriptSource, Scripts, ServicingTypeSelection},
+    scripts::{Script, ScriptSource, Scripts, ServicingTypeSelection, SystemdCheck, UpdateCheck},
     storage::abupdate::{AbUpdate, AbVolumePair},
     storage::{
         disks::{Disk, PartitionTableType},
