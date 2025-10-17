@@ -1,6 +1,7 @@
-use std::path::PathBuf;
+use std::{fs, path::PathBuf};
 
 use anyhow::{Context, Error};
+use chrono::Utc;
 use enumflags2::BitFlags;
 use log::{debug, info, trace, warn};
 
@@ -18,8 +19,17 @@ use crate::{
         context::EngineContext,
         storage::{encryption, verity},
     },
+    subsystems::hooks::HooksSubsystem,
     DataStore,
 };
+
+#[must_use]
+pub enum BootValidationResult {
+    /// Target OS boot successfully, update-check scripts succeeded
+    CorrectBootProvisioned,
+    /// Target OS boot successfully, update-check scripts failed
+    CorrectBootInvalid(TridentError),
+}
 
 /// Validates that the firmware did not perform a rollback, i.e. correctly booted from the updated
 /// target OS image.
@@ -27,14 +37,20 @@ use crate::{
 /// If the firmware did not boot from the expected root device, this function will return an error.
 /// In either case, the function will update the Host Status.
 #[tracing::instrument(skip_all)]
-pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
-    info!("Validating whether host correctly booted from updated target OS image");
+pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, TridentError> {
+    info!("Validating whether host correctly booted from updated runtime OS image");
+
+    let servicing_type = match datastore.host_status().servicing_state {
+        ServicingState::AbUpdateFinalized => ServicingType::AbUpdate,
+        ServicingState::CleanInstallFinalized => ServicingType::CleanInstall,
+        _ => ServicingType::NoActiveServicing,
+    };
 
     // Create an EngineContext based on the Host Status
     let ctx = EngineContext {
         spec: datastore.host_status().spec.clone(),
         spec_old: datastore.host_status().spec_old.clone(),
-        servicing_type: ServicingType::AbUpdate,
+        servicing_type,
         ab_active_volume: datastore.host_status().ab_active_volume,
         partition_paths: datastore.host_status().partition_paths.clone(),
         disk_uuids: datastore.host_status().disk_uuids.clone(),
@@ -57,6 +73,49 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
         .message("Host failed to boot from expected root device")?
     {
         info!("Host successfully booted from updated target OS image");
+
+        // Execute update-check scripts, if one fails, trigger rollback
+        match HooksSubsystem::default().execute_update_check_scripts(&ctx) {
+            Ok(()) => {}
+            Err(e) => {
+                info!("Failed to execute update check scripts: {e:?}");
+
+                // Generate the new log filename
+                let new_commit_failure_log_filename = format!(
+                    "trident-update-check-failure-{}.log",
+                    Utc::now().format("%Y%m%dT%H%M%SZ")
+                );
+
+                // Fetch the directory path from the full datastore path
+                let datastore_path = datastore.host_status().spec.trident.datastore_path.clone();
+                if let Some(datastore_dir) = datastore_path.parent() {
+                    let new_commit_failure_log_path: PathBuf =
+                        datastore_dir.join(new_commit_failure_log_filename);
+
+                    debug!(
+                        "Persisting Trident update check failure to '{}' ",
+                        new_commit_failure_log_path.display()
+                    );
+
+                    // Copy the background log file to the new location
+                    if let Err(log_error) =
+                        fs::write(&new_commit_failure_log_path, format!("{e:?}"))
+                    {
+                        warn!(
+                            "Failed to persist Trident update check failure to '{}': {}",
+                            new_commit_failure_log_path.display(),
+                            log_error
+                        );
+                    } else {
+                        debug!(
+                            "Successfully persisted Trident update check failure to '{}'",
+                            new_commit_failure_log_path.display()
+                        );
+                    }
+                }
+                return Ok(BootValidationResult::CorrectBootInvalid(e));
+            }
+        };
 
         // If it's virtdeploy, after confirming that we have booted into the correct image, we need
         // to update the `BootOrder` to boot from the correct image next time.
@@ -166,7 +225,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
         };
     })?;
 
-    Ok(())
+    Ok(BootValidationResult::CorrectBootProvisioned)
 }
 
 /// Returns the current root device path, i.e., the path of the root block device that the host

@@ -315,6 +315,33 @@ impl HooksSubsystem {
             })?;
         Ok(())
     }
+
+    /// This function will be called outside the standard subsystem flow
+    /// before Trident commits a target OS.
+    pub fn execute_update_check_scripts(
+        &mut self,
+        ctx: &EngineContext,
+    ) -> Result<(), TridentError> {
+        if ctx.servicing_type != ServicingType::AbUpdate {
+            return Ok(());
+        }
+        if !ctx.spec.scripts.update_check.is_empty() {
+            debug!("Running update-check scripts");
+        }
+
+        ctx.spec
+            .scripts
+            .update_check
+            .iter()
+            .filter(|script| script.should_run(ctx.servicing_type))
+            .try_for_each(|script| {
+                self.run_script(script, ctx, Path::new(ROOT_MOUNT_POINT_PATH))
+                    .structured(ServicingError::RunUpdateCheckScript {
+                        script_name: script.name.clone(),
+                    })
+            })?;
+        Ok(())
+    }
 }
 
 fn match_servicing_type_env_var(servicing_type: &ServicingType) -> &OsStr {

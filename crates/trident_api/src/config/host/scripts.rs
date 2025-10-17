@@ -36,6 +36,18 @@ pub struct Scripts {
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub post_configure: Vec<Script>,
+
+    /// Scripts to be run before Trident commits an updated target OS as 'provisioned'.  If any of
+    /// the scripts fail, commit will not be completed and rollback will be triggered.
+    ///
+    /// These scripts only run for updates, not installs. If runOn is specified for anything other
+    /// than an update type, the script will be ignored.
+    ///
+    /// These scripts are run in the target OS. The `$TARGET_ROOT` variable
+    /// will be set to '/' for consistency with postProvision scripts.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub update_check: Vec<Script>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]

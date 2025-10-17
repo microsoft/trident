@@ -59,3 +59,22 @@ Scripts to be run before Trident begins servicing the host.
    | Type           | `Script`              |
    | Link           | [Script](./Script.md) |
 
+### `updateCheck` (optional)
+
+Scripts to be run before Trident commits an updated target OS as 'provisioned'.  If any of the scripts fail, commit will not be completed and rollback will be triggered.
+
+These scripts only run for updates, not installs. If runOn is specified for anything other than an update type, the script will be ignored.
+
+These scripts are run in the target OS. The `$TARGET_ROOT` variable will be set to '/' for consistency with postProvision scripts.
+
+| Characteristic | Value   |
+| -------------- | ------- |
+| Type           | `array` |
+
+- Items of the array must have the type:
+
+   | Characteristic | Value                 |
+   | -------------- | --------------------- |
+   | Type           | `Script`              |
+   | Link           | [Script](./Script.md) |
+
