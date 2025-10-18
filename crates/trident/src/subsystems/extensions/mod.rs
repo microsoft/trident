@@ -106,6 +106,47 @@ impl Subsystem for ExtensionsSubsystem {
 
         Ok(())
     }
+
+    fn configure(&mut self, ctx: &mut EngineContext) -> Result<(), TridentError> {
+        // Update paths of sysexts in the Host Configuration.
+        for sysext in self
+            .extensions
+            .iter()
+            .filter(|ext| ext.ext_type == ExtensionType::Sysext)
+        {
+            // Find corresponding sysext in Host Configuration.
+            let hc_ext = ctx
+                .spec
+                .os
+                .sysexts
+                .iter_mut()
+                .find(|ext| ext.sha384 == sysext.sha384)
+                .structured(InternalError::Internal(
+                    "Failed to find previously processed sysext in Host Configuration",
+                ))?;
+            hc_ext.path = Some(sysext.path.clone());
+        }
+
+        // Update paths of confexts in the Host Configuration.
+        for confext in self
+            .extensions
+            .iter()
+            .filter(|ext| ext.ext_type == ExtensionType::Confext)
+        {
+            // Find corresponding confext in Host Configuration.
+            let hc_ext = ctx
+                .spec
+                .os
+                .confexts
+                .iter_mut()
+                .find(|ext| ext.sha384 == confext.sha384)
+                .structured(InternalError::Internal(
+                    "Failed to find previously processed confext in Host Configuration",
+                ))?;
+            hc_ext.path = Some(confext.path.clone());
+        }
+        Ok(())
+    }
 }
 
 impl ExtensionsSubsystem {
@@ -322,6 +363,7 @@ mod tests {
     use super::*;
 
     use tempfile::env::temp_dir;
+    use url::Url;
 
     #[test]
     fn test_populate_extensions_empty() {
@@ -338,6 +380,108 @@ mod tests {
             subsystem.extensions_old.is_empty(),
             "ExtensionsSubsystem extensions_old should be empty when there are no extensions in the old Host Configuration"
         );
+    }
+
+    #[test]
+    fn test_configure_sysexts_success() {
+        let mut ctx = EngineContext::default();
+        ctx.spec.os.sysexts = vec![
+            Extension {
+                url: Url::parse("https://example.com/sysext1.raw").unwrap(),
+                sha384: Sha384Hash::from("a".repeat(96)),
+                path: None,
+            },
+            Extension {
+                url: Url::parse("https://example.com/sysext2.raw").unwrap(),
+                sha384: Sha384Hash::from("b".repeat(96)),
+                path: Some(PathBuf::from("/etc/extensions/sysext2.raw")),
+            },
+        ];
+
+        let mut subsystem = ExtensionsSubsystem {
+            extensions: vec![
+                ExtensionData {
+                    id: "sysext1".to_string(),
+                    name: "sysext1".to_string(),
+                    sha384: Sha384Hash::from("a".repeat(96)),
+                    path: PathBuf::from("/var/lib/extensions/sysext1.raw"),
+                    temp_path: Some(
+                        PathBuf::from(EXTENSION_IMAGE_STAGING_DIRECTORY).join("sysext1.raw"),
+                    ),
+                    ext_type: ExtensionType::Sysext,
+                },
+                ExtensionData {
+                    id: "sysext2".to_string(),
+                    name: "sysext2".to_string(),
+                    sha384: Sha384Hash::from("b".repeat(96)),
+                    path: PathBuf::from("/etc/extensions/sysext2.raw"),
+                    temp_path: Some(
+                        PathBuf::from(EXTENSION_IMAGE_STAGING_DIRECTORY).join("sysext2.raw"),
+                    ),
+                    ext_type: ExtensionType::Sysext,
+                },
+            ],
+            extensions_old: vec![],
+        };
+        subsystem.configure(&mut ctx).unwrap();
+
+        for i in 0..subsystem.extensions.len() {
+            assert_eq!(
+                ctx.spec.os.sysexts[i].path,
+                Some(subsystem.extensions[i].path.clone())
+            )
+        }
+    }
+
+    #[test]
+    fn test_configure_confexts_success() {
+        let mut ctx = EngineContext::default();
+        ctx.spec.os.confexts = vec![
+            Extension {
+                url: Url::parse("https://example.com/confext1.raw").unwrap(),
+                sha384: Sha384Hash::from("a".repeat(96)),
+                path: None,
+            },
+            Extension {
+                url: Url::parse("https://example.com/confext2.raw").unwrap(),
+                sha384: Sha384Hash::from("b".repeat(96)),
+                path: Some(PathBuf::from("/usr/lib/confexts/confext2.raw")),
+            },
+        ];
+
+        let mut subsystem = ExtensionsSubsystem {
+            extensions: vec![
+                ExtensionData {
+                    id: "confext1".to_string(),
+                    name: "confext1".to_string(),
+                    sha384: Sha384Hash::from("a".repeat(96)),
+                    path: PathBuf::from("/var/lib/confexts/confext1.raw"),
+                    temp_path: Some(
+                        PathBuf::from(EXTENSION_IMAGE_STAGING_DIRECTORY).join("confext1.raw"),
+                    ),
+                    ext_type: ExtensionType::Confext,
+                },
+                ExtensionData {
+                    id: "confext2".to_string(),
+                    name: "confext2".to_string(),
+                    sha384: Sha384Hash::from("b".repeat(96)),
+                    path: PathBuf::from("/usr/lib/confexts/confext2.raw"),
+                    temp_path: Some(
+                        PathBuf::from(EXTENSION_IMAGE_STAGING_DIRECTORY).join("confext2.raw"),
+                    ),
+                    ext_type: ExtensionType::Confext,
+                },
+            ],
+            extensions_old: vec![],
+        };
+        subsystem.configure(&mut ctx).unwrap();
+
+        for i in 0..subsystem.extensions.len() {
+            assert_eq!(
+                ctx.spec.os.confexts[i].path,
+                Some(subsystem.extensions[i].path.clone())
+            )
+        }
     }
 }
 
