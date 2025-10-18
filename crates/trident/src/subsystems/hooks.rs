@@ -3,6 +3,7 @@ use std::{
     ffi::OsStr,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
+    sync::{Arc, Mutex},
     thread,
     time::{Duration, Instant},
 };
@@ -20,11 +21,17 @@ use trident_api::{
         internal_params::WRITABLE_ETC_OVERLAY_HOOKS, DEFAULT_SCRIPT_INTERPRETER,
         ROOT_MOUNT_POINT_PATH,
     },
-    error::{InternalError, InvalidInputError, ReportError, ServicingError, TridentError},
+    error::{InvalidInputError, ReportError, ServicingError, TridentError},
     status::ServicingType,
 };
 
 use crate::engine::{EngineContext, Subsystem};
+
+#[derive(Debug)]
+struct ScriptError {
+    script_name: String,
+    error: Error,
+}
 
 #[derive(Clone, Debug)]
 struct StagedFile {
@@ -372,25 +379,61 @@ impl HooksSubsystem {
             debug!("Running update-check scripts");
         }
 
-        // Create parallel update-check threads
+        // Shared vector to collect script errors from threads
+        let script_errors = Arc::new(Mutex::new(Vec::new()));
+        // Create parallel update-check threads within a scope, the
+        // threads will all be joined before the scope ends.
         let update_check_scripts = ctx.spec.scripts.update_check.clone();
         thread::scope(|s| {
             for script in update_check_scripts {
                 let subsystem = &self;
+                let loop_script_errors = script_errors.clone();
                 s.spawn(move || match script {
-                    UpdateCheck::SystemdCheck(systemd_check) => subsystem
-                        .run_systemd_check(&systemd_check, Path::new(ROOT_MOUNT_POINT_PATH))
-                        .structured(ServicingError::RunUpdateCheckSystemdServices {
-                            check_name: systemd_check.name.clone(),
-                        }),
-                    UpdateCheck::Script(inner_script) => subsystem
-                        .run_script(&inner_script, &ctx, Path::new(ROOT_MOUNT_POINT_PATH))
-                        .structured(ServicingError::RunUpdateCheckScript {
-                            script_name: inner_script.name.clone(),
-                        }),
+                    UpdateCheck::SystemdCheck(systemd_check) => {
+                        if let Err(err) = subsystem
+                            .run_systemd_check(&systemd_check, Path::new(ROOT_MOUNT_POINT_PATH))
+                        {
+                            loop_script_errors.lock().unwrap().push(ScriptError {
+                                script_name: systemd_check.name,
+                                error: err,
+                            });
+                        }
+                    }
+                    UpdateCheck::Script(inner_script) => {
+                        if let Err(err) = subsystem.run_script(
+                            &inner_script,
+                            ctx,
+                            Path::new(ROOT_MOUNT_POINT_PATH),
+                        ) {
+                            loop_script_errors.lock().unwrap().push(ScriptError {
+                                script_name: inner_script.name,
+                                error: err,
+                            });
+                        }
+                    }
                 });
             }
         });
+
+        // Create error collection from individual script errors
+        let script_errors_message: String = script_errors
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|e| format!("Script '{}' failed:\n{:?}", e.script_name, e.error))
+            .collect::<Vec<String>>()
+            .join("\n");
+        if !script_errors.lock().unwrap().is_empty() {
+            debug!(
+                "Update-check scripts completed with errors:\n{}",
+                script_errors_message
+            );
+            return Err(TridentError::new(
+                ServicingError::UpdateCheckScriptsFailed {
+                    details: script_errors_message,
+                },
+            ));
+        }
         Ok(())
     }
 }

@@ -569,12 +569,6 @@ pub enum ServicingError {
     #[error("Failed to run post-provision script '{script_name}'")]
     RunPostProvisionScript { script_name: String },
 
-    #[error("Failed to run update-check script '{script_name}'")]
-    RunUpdateCheckScript { script_name: String },
-
-    #[error("Failed to run update-check systemd services '{check_name}'")]
-    RunUpdateCheckSystemdServices { check_name: String },
-
     #[error("Failed to set EFI variable '{name}'")]
     SetEfiVariable { name: String },
 
@@ -586,6 +580,9 @@ pub enum ServicingError {
 
     #[error("Failed to start network")]
     StartNetwork,
+
+    #[error("Failed update-check: '{details}'")]
+    UpdateCheckScriptsFailed { details: String },
 
     #[error("Failed to update UKI")]
     UpdateUki,
