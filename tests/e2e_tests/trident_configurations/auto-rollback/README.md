@@ -79,4 +79,6 @@ ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa testing-user@$VM_IP sudo triden
 ``` bash
 ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa testing-user@$VM_IP sudo cat /var/lib/trident/trident-update-check-failure-*.log > failure.log
 grep "failure for ab update" failure.log
+grep "Unit non-existent-service1.service could not be found" failure.log
+grep "Unit non-existent-service2.service could not be found" failure.log
 ```

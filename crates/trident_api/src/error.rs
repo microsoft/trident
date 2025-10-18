@@ -581,9 +581,9 @@ pub enum ServicingError {
     #[error("Failed to start network")]
     StartNetwork,
 
-    #[error("Service '{service_name}' did not become active/running within {timeout_seconds} seconds: {last_error}")]
+    #[error("Service '{services}' did not become active/running within {timeout_seconds} seconds: {last_error}")]
     SystemdCheckTimeout {
-        service_name: String,
+        services: String,
         timeout_seconds: usize,
         last_error: String,
     },

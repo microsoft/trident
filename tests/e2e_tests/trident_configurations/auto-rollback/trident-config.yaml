@@ -59,8 +59,19 @@ scripts:
   updateCheck:
     - name: check-non-existent-service-to-invoke-rollback
       systemdServices:
-        - non-existent-service
+        - non-existent-service1
+        - non-existent-service2
       timeoutSeconds: 10
+    - name: check-existing-service
+      systemdServices:
+        - systemd-networkd
+      timeoutSeconds: 30
+    - name: invoke-rollback-from-script
+      runOn:
+        - ab-update
+      content: |
+        echo 'failure for ab update'
+        exit 1
 os:
   selinux:
     mode: enforcing

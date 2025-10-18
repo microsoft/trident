@@ -232,47 +232,46 @@ impl HooksSubsystem {
         let timeout_duration = Duration::from_secs(check.timeout_seconds as u64);
         let mut last_error = None;
 
-        for service_name in &check.systemd_services {
-            debug!(
-                "Checking status of systemd service '{service_name}' in target root '{}'",
-                target_root.display()
-            );
+        let services_list = check.systemd_services.join(" ");
+        debug!(
+            "Checking status of systemd service(s) '{}' in target root '{}'",
+            &services_list,
+            target_root.display()
+        );
 
-            for _i in 0.. {
-                if start_time.elapsed() >= timeout_duration {
-                    return Err(TridentError::new(ServicingError::SystemdCheckTimeout {
-                        service_name: service_name.clone(),
-                        timeout_seconds: check.timeout_seconds,
-                        last_error: last_error
-                            .map(|e| format!("{:?}", e))
-                            .unwrap_or_else(|| "No status retrieved".into()),
-                    }));
-                }
+        for _i in 0.. {
+            if start_time.elapsed() >= timeout_duration {
+                return Err(TridentError::new(ServicingError::SystemdCheckTimeout {
+                    services: services_list,
+                    timeout_seconds: check.timeout_seconds,
+                    last_error: last_error
+                        .map(|e| format!("{:?}", e))
+                        .unwrap_or_else(|| "No status retrieved".into()),
+                }));
+            }
 
-                let status = Dependency::Systemctl
-                    .cmd()
-                    .arg("status")
-                    .arg(service_name)
-                    .output();
-                match status {
-                    Ok(output) => match output.check() {
-                        Ok(_) => {
-                            info!("Service '{service_name}' is active/running");
-                            last_error = None;
-                            break;
-                        }
-                        Err(e) => {
-                            info!("Service '{service_name}' is not active/running: {e}");
-                            last_error = Some(e);
-                        }
-                    },
+            let status = Dependency::Systemctl
+                .cmd()
+                .arg("status")
+                .args(&check.systemd_services)
+                .output();
+            match status {
+                Ok(output) => match output.check() {
+                    Ok(_) => {
+                        info!("Service(s) '{services_list}' are active/running");
+                        break;
+                    }
                     Err(e) => {
-                        info!("Unable to query service '{service_name}': {e}");
+                        info!("Service(s) '{services_list}' are not active/running: {e}");
                         last_error = Some(e);
                     }
+                },
+                Err(e) => {
+                    info!("Unable to query service(s) '{services_list}': {e}");
+                    last_error = Some(e);
                 }
-                thread::sleep(Duration::from_millis(100));
             }
+            thread::sleep(Duration::from_millis(100));
         }
         Ok(())
     }
