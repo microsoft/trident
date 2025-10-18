@@ -30,7 +30,7 @@ use crate::engine::{EngineContext, Subsystem};
 #[derive(Debug)]
 struct ScriptError {
     script_name: String,
-    error: Error,
+    error_message: String,
 }
 
 #[derive(Clone, Debug)]
@@ -223,9 +223,14 @@ impl HooksSubsystem {
         Ok(())
     }
 
-    fn run_systemd_check(&self, check: &SystemdCheck, target_root: &Path) -> Result<(), Error> {
+    fn run_systemd_check(
+        &self,
+        check: &SystemdCheck,
+        target_root: &Path,
+    ) -> Result<(), TridentError> {
         let start_time = Instant::now();
         let timeout_duration = Duration::from_secs(check.timeout_seconds as u64);
+        let mut last_error = None;
 
         for service_name in &check.systemd_services {
             debug!(
@@ -235,9 +240,13 @@ impl HooksSubsystem {
 
             for _i in 0.. {
                 if start_time.elapsed() >= timeout_duration {
-                    return Err(Error::msg(format!(
-                        "Timeout reached while waiting for service '{service_name}' to become active/running"
-                    )));
+                    return Err(TridentError::new(ServicingError::SystemdCheckTimeout {
+                        service_name: service_name.clone(),
+                        timeout_seconds: check.timeout_seconds,
+                        last_error: last_error
+                            .map(|e| format!("{:?}", e))
+                            .unwrap_or_else(|| "No status retrieved".into()),
+                    }));
                 }
 
                 let status = Dependency::Systemctl
@@ -246,16 +255,20 @@ impl HooksSubsystem {
                     .arg(service_name)
                     .output();
                 match status {
-                    Ok(output) => {
-                        if output.check().is_ok() {
+                    Ok(output) => match output.check() {
+                        Ok(_) => {
                             info!("Service '{service_name}' is active/running");
+                            last_error = None;
                             break;
                         }
-
-                        info!("Service '{service_name}' is not active/running")
-                    }
+                        Err(e) => {
+                            info!("Service '{service_name}' is not active/running: {e}");
+                            last_error = Some(e);
+                        }
+                    },
                     Err(e) => {
                         info!("Unable to query service '{service_name}': {e}");
+                        last_error = Some(e);
                     }
                 }
                 thread::sleep(Duration::from_millis(100));
@@ -395,7 +408,7 @@ impl HooksSubsystem {
                         {
                             loop_script_errors.lock().unwrap().push(ScriptError {
                                 script_name: systemd_check.name,
-                                error: err,
+                                error_message: format!("{:?}", err),
                             });
                         }
                     }
@@ -407,7 +420,7 @@ impl HooksSubsystem {
                         ) {
                             loop_script_errors.lock().unwrap().push(ScriptError {
                                 script_name: inner_script.name,
-                                error: err,
+                                error_message: format!("{:?}", err),
                             });
                         }
                     }
@@ -420,7 +433,7 @@ impl HooksSubsystem {
             .lock()
             .unwrap()
             .iter()
-            .map(|e| format!("Script '{}' failed:\n{:?}", e.script_name, e.error))
+            .map(|e| format!("{}: {:?}", e.script_name, e.error_message))
             .collect::<Vec<String>>()
             .join("\n");
         if !script_errors.lock().unwrap().is_empty() {
