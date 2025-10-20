@@ -1,4 +1,5 @@
 use std::{
+    any::Any,
     fs,
     path::{Path, PathBuf},
     sync::Mutex,
@@ -22,6 +23,7 @@ use crate::{
     engine::boot::BootSubsystem,
     subsystems::{
         esp::EspSubsystem,
+        extensions::ExtensionsSubsystem,
         hooks::HooksSubsystem,
         initrd::InitrdSubsystem,
         management::ManagementSubsystem,
@@ -58,6 +60,13 @@ pub(crate) use update::{finalize_update, update};
 
 pub(crate) trait Subsystem: Send {
     fn name(&self) -> &'static str;
+
+    fn as_any(&self) -> &dyn Any
+    where
+        Self: Sized + 'static,
+    {
+        self
+    }
 
     fn writable_etc_overlay(&self) -> bool {
         true
@@ -115,6 +124,7 @@ lazy_static::lazy_static! {
         Box::<HooksSubsystem>::default(),
         Box::<InitrdSubsystem>::default(),
         Box::<SelinuxSubsystem>::default(),
+        Box::<ExtensionsSubsystem>::default(),
     ]);
 }
 
@@ -317,6 +327,16 @@ fn configure(
     debug!("Finished step 'Configure'");
 
     Ok(())
+}
+
+pub fn get_extensions_subsystem(subsystems: &mut [Box<dyn Subsystem>]) -> &ExtensionsSubsystem {
+    let subsystem = subsystems
+        .iter()
+        .find(|s| s.name() == "extensions")
+        .expect("ExtensionsSubsystem not found in subsystems list");
+
+    // SAFETY: We know this is ExtensionsSubsystem because its name is "extensions"
+    unsafe { &*(subsystem.as_ref() as *const dyn Subsystem as *const ExtensionsSubsystem) }
 }
 
 pub fn reboot() -> Result<(), TridentError> {
