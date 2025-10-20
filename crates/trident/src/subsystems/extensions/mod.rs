@@ -7,7 +7,7 @@ use std::{
 };
 
 use anyhow::{bail, ensure, Context, Error};
-use log::error;
+use log::warn;
 use tempfile::NamedTempFile;
 
 use osutils::{dependencies::Dependency, path};
@@ -350,7 +350,7 @@ impl ExtensionsSubsystem {
             // Attempt atomic rename first, for extensions that were newly
             // downloaded to the staging directory.
             if fs::rename(&ext.temp_path, &new_path).is_err() {
-                error!(
+                warn!(
                     "Failed to atomically rename '{}' to '{}'. Attempting file copy instead.",
                     ext.temp_path.display(),
                     new_path.display()
