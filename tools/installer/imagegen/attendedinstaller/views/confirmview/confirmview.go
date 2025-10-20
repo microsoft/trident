@@ -93,7 +93,7 @@ func (cv *ConfirmView) Reset() (err error) {
 
 func (cv *ConfirmView) onNextButton(nextPage func()) error {
 	// Save the user input to the config file.
-	err := configuration.RenderTridentHostConfig(cv.hostconfigPath, cv.hostConfigData)
+	err := configuration.RenderTridentHostConfiguration(cv.hostconfigPath, cv.hostConfigData)
 	if err != nil {
 		cv.navBar.SetUserFeedback(uiutils.ErrorToUserFeedback(err), tview.Styles.TertiaryTextColor)
 		return err
