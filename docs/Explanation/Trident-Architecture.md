@@ -203,7 +203,7 @@ For a virtual machine, [offline initialization](../Explanation/Offline-Initializ
 
 ### `trident update`
 
-For ongoing updates, Trident runs within the host OS:
+For updates, Trident runs within the host OS:
 
 1. **State Analysis**: Compares current Host Status with new Host Configuration
 2. **Servicing Type Selection**: Determines appropriate update strategy (A/B, in-place, etc.)
@@ -212,6 +212,26 @@ For ongoing updates, Trident runs within the host OS:
 5. **Configuration Migration**: Transfers persistent state between A/B volumes
 6. **Boot Configuration Update**: Modifies bootloader to use updated volume
 7. **Rollback Preparation**: Ensures safe rollback capability
+
+### `trident rebuild-raid`
+
+For [rebuilding RAID arrays](../Explanation/Rebuild-RAID.md), Trident performs:
+
+1. **Array Detection**: Identifies existing RAID arrays and their configurations
+2. **Validation**: Validates the desired configuration against current state
+3. **Rebuild Execution**: Initiates the RAID rebuild process using the appropriate tools
+
+### `trident validate`
+
+[Validates the provided Host Configuration](../Explanation/Host-Configuration-Validation.md) without making changes:
+
+1. **Schema Validation**: Ensures configuration adheres to defined schema
+2. **Logical Consistency**: Checks for conflicting or invalid settings
+3. **Dependency Verification**: Ensures all required components and subsystems are available
+
+### `trident get`
+
+[Gets](../Reference/Trident-CLI.md#get) the current Host Configuration, status, or last error information.
 
 ## COSI Image Format
 
