@@ -7,6 +7,7 @@ use std::{
 };
 
 use anyhow::{bail, ensure, Context, Error};
+use log::error;
 use tempfile::NamedTempFile;
 
 use osutils::{dependencies::Dependency, path};
@@ -303,6 +304,7 @@ impl ExtensionsSubsystem {
         mount_path: &Path,
         servicing_type: ServicingType,
     ) -> Result<(), Error> {
+        println!("Entering set up extensions");
         let old_exts_hashmap: HashMap<_, _> = self
             .extensions_old
             .iter()
@@ -342,6 +344,32 @@ impl ExtensionsSubsystem {
             .filter(|(k, _)| ids_to_remove.contains(k))
             .map(|(_, ext)| ext)
             .collect();
+        println!("extensions to add: {:?}", extensions_to_add);
+        println!("extensions to remove: {:?}", extensions_to_remove);
+
+        // Add new extensions that should be added
+        for ext in extensions_to_add {
+            let new_path = path::join_relative(mount_path, &ext.path);
+            // Attempt atomic rename first, for extensions that were newly
+            // downloaded to the staging directory.
+            println!("Attempting rename");
+            if fs::rename(&ext.temp_path, &new_path).is_err() {
+                error!(
+                    "Failed to atomically rename '{}' to '{}'. Attempting file copy instead.",
+                    ext.temp_path.display(),
+                    new_path.display()
+                );
+                // Fall back to file copy if this fails, i.e. if the files are
+                // not on the same filesystem. This will be the default for
+                // extensions existing on the servicing OS.
+                println!("rename failed so doing copy instead");
+                fs::copy(&ext.temp_path, &new_path).context(format!(
+                    "Failed to copy extension image from '{}' to '{}'",
+                    ext.temp_path.display(),
+                    new_path.display()
+                ))?;
+            }
+        }
 
         // On Clean Install and A/B Update, it is not necessary to remove
         // extensions from the servicing OS as these will not be present on the
@@ -353,20 +381,16 @@ impl ExtensionsSubsystem {
             // Otherwise, remove existing extensions that are not in the new
             // Host Configuration.
             for ext in extensions_to_remove {
-                fs::remove_file(&ext.path).with_context(|| {
-                    format!("Failed to delete file at '{}'", ext.path.display())
-                })?;
+                // Check that file still exists. If the file was renamed in the
+                // step above, there is no need to remove it.
+                println!("Attempting to remove {}", ext.path.display());
+                if ext.path.exists() {
+                    println!("It exists so we're going to remove it");
+                    fs::remove_file(&ext.path).with_context(|| {
+                        format!("Failed to delete file at '{}'", ext.path.display())
+                    })?;
+                }
             }
-        }
-
-        // Add new extensions that should be added
-        for ext in extensions_to_add {
-            let new_path = path::join_relative(mount_path, &ext.path);
-            fs::copy(&ext.temp_path, &new_path).context(format!(
-                "Failed to copy extension from '{}' to '{}'",
-                ext.temp_path.display(),
-                new_path.display()
-            ))?;
         }
 
         Ok(())
@@ -543,6 +567,10 @@ mod tests {
 mod functional_test {
     use super::*;
 
+    use osutils::{
+        filesystems::{MkfsFileSystemType, MountFileSystemType},
+        mkfs, mount,
+    };
     use sha2::{Digest, Sha384};
     use tempfile::{env::temp_dir, TempDir};
     use url::Url;
@@ -874,10 +902,6 @@ mod functional_test {
             path::join_relative(mount_path.path(), &target_path).exists(),
             "Extension should be copied to target"
         );
-        assert_eq!(
-            fs::read(&temp_file).unwrap(),
-            fs::read(path::join_relative(mount_path.path(), &target_path)).unwrap()
-        );
     }
 
     #[functional_test]
@@ -940,17 +964,9 @@ mod functional_test {
             path::join_relative(mount_path.path(), &sysext_target_path).exists(),
             "Sysext should be copied to target OS"
         );
-        assert_eq!(
-            fs::read(&sysext_file).unwrap(),
-            fs::read(path::join_relative(mount_path.path(), &sysext_target_path)).unwrap()
-        );
         assert!(
             path::join_relative(mount_path.path(), &confext_target_path).exists(),
             "Confext should be copied to target OS"
-        );
-        assert_eq!(
-            fs::read(&confext_file).unwrap(),
-            fs::read(path::join_relative(mount_path.path(), &confext_target_path)).unwrap()
         );
     }
 
@@ -1048,12 +1064,12 @@ mod functional_test {
 
         // Create necessary directories
         subsystem.create_directories(mount_path.path()).unwrap();
-        // Run set_up_extensions
+        // Run set_up_extensions; A/B update
         subsystem
             .set_up_extensions(mount_path.path(), ServicingType::AbUpdate)
             .unwrap();
 
-        // Verify old extension was not removed
+        // Verify old extension was not removed, since servicing type is A/B update
         assert!(
             old_ext.path().exists(),
             "Old extension should not be removed from the servicing OS"
@@ -1064,18 +1080,27 @@ mod functional_test {
             path::join_relative(mount_path.path(), target_path).exists(),
             "New extension should be copied"
         );
-        assert_eq!(
-            fs::read(&new_ext).unwrap(),
-            fs::read(path::join_relative(mount_path.path(), target_path)).unwrap(),
-            "New extension should match the updated version"
-        );
     }
 
     #[functional_test]
     fn test_set_up_extensions_update_maintain() {
+        // Create servicing OS filesystem
+        let loopback = NamedTempFile::new().unwrap();
+        loopback.as_file().set_len(1024 * 1024).unwrap();
+        mkfs::run(loopback.path(), MkfsFileSystemType::Ext4).unwrap();
+
+        let old_ext_mount = Path::new("/mnt/tmpfs");
+        fs::create_dir_all(old_ext_mount).unwrap();
+        mount::mount(
+            "tmpfs",
+            old_ext_mount,
+            MountFileSystemType::Tmpfs,
+            &["size=1M".into()],
+        )
+        .unwrap();
+
         // Create old extension
-        let old_ext_dir = TempDir::new().unwrap();
-        let old_ext = NamedTempFile::new_in(old_ext_dir.path()).unwrap();
+        let old_ext = NamedTempFile::new_in(old_ext_mount).unwrap();
         let hash = create_test_extension_image(
             old_ext.path(),
             "my_ext",
@@ -1111,7 +1136,8 @@ mod functional_test {
             .set_up_extensions(mount_path.path(), ServicingType::AbUpdate)
             .unwrap();
 
-        // Verify old extension was not removed
+        // Verify old extension was not removed. Since old extension exists on a
+        // separate filesystem, rename should fail and file should be copied.
         assert!(
             old_ext.path().exists(),
             "Old extension should not be removed from the servicing OS"
@@ -1127,5 +1153,9 @@ mod functional_test {
             fs::read(path::join_relative(mount_path.path(), target_path)).unwrap(),
             "Old extension should match version on target OS"
         );
+
+        // Clean-up
+        drop(old_ext);
+        mount::umount(old_ext_mount, true).unwrap();
     }
 }
