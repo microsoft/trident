@@ -1143,7 +1143,7 @@ mod functional_test {
 
         // Create necessary directories
         subsystem.create_directories(mount_path.path()).unwrap();
-        // Run set_up_extensions; A/B update
+        // Run set_up_extensions; hot patch update
         subsystem
             .set_up_extensions(mount_path.path(), ServicingType::HotPatch)
             .unwrap();
