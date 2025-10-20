@@ -5,7 +5,7 @@ Trident is an image-based OS lifecycle agent, providing atomic image-based insta
 
 ## Overview
 
-Trident's architecture follows a modular, [subsystem](../Reference/Glossary.md#subsystem)-based design that separates concerns while maintaining tight integration for OS lifecycle management. The system operates on a declarative model where users specify desired system state through [Host Configuration](../Reference/Host-Configuration/API-Reference/HostConfiguration.md), and Trident reconciles the current state to match this specification.
+Trident's architecture follows a modular, [subsystem](../Reference/Glossary.md#subsystem)-based design. Trident receives a declarative [Host Configuration](../Reference/Host-Configuration/API-Reference/HostConfiguration.md), in which the user specifies the desired state of the target OS. Trident operates on the current state of the servicing OS to match this specification.
 
 ```mermaid
 graph TB
@@ -42,9 +42,9 @@ The **Trident Engine** serves as the central orchestrator that coordinates all s
 
 The engine implements a Rust trait-based architecture where each subsystem implements the `Subsystem` trait with standardized lifecycle methods: `prepare`, `provision`, and `configure`.
 
-- **prepare**: Validates configuration, checks prerequisites, and prepares the system for changes
-- **provision**: Executes the core changes to the system (e.g., partitioning, installing images)
-- **configure**: Finalizes the system state, applying configurations and ensuring consistency
+- **prepare**: Perform non-destructive preparations for servicing, such as validating configuration, checking prerequisites, and preparing the system for changes
+- **provision**: Initialize or migrate the state on the target OS from the servicing OS, such as deploying esp, installing images, updating encryption
+- **configure**: Configure the system as specified by the Host Configuration, and update the Host Status accordingly
 
 ### DataStore
 
@@ -69,9 +69,9 @@ storage:
 scripts:
   # Custom automation hooks
 os:
-  # OS configuration
+  # Target OS configuration
 management_os:
-  # Installer OS settings
+  # Servicing OS settings
 image:
   # COSI image reference
 ```
@@ -109,6 +109,20 @@ Handles [bootloader configuration](../Explanation/Bootloader-Configuration.md) a
 - **Boot Entry Management**: Creation and maintenance of boot configurations
 - **Recovery Integration**: Automatic rollback configuration
 
+### ESP Subsystem
+
+**Location**: `crates/trident/src/subsystems/esp.rs`
+
+Manages the EFI System Partition (ESP):
+- **File Management**: Installs and updates bootloader files
+
+### Initrd Subsystem
+
+**Location**: `crates/trident/src/subsystems/initrd.rs`
+
+Manages the initial RAM disk (initrd) creation and configuration:
+- **Image Creation**: Builds initrd images with necessary drivers and tools
+
 ### Network Subsystem
 
 **Location**: `crates/trident/src/subsystems/network.rs`
@@ -140,6 +154,31 @@ Enables custom, user-defined, [script-based](../Explanation/Script-Hooks.md) aut
 - **Environment Management**: Controlled execution environments
 - **File Staging**: Preparation of custom files and configurations
 - **Integration Points**: Extensibility for product-specific logic
+
+### Management Subsystem
+
+**Location**: `crates/trident/src/subsystems/management.rs`
+
+Ensures that the agent configuration is aligned with the Host Configuration.
+
+### OS Config Subsystem
+
+**Location**: `crates/trident/src/subsystems/osconfig/mod.rs`
+
+Manages operating system configuration aspects such as:
+- **User Management**: Creation and configuration of system users and groups
+- **System Settings**: Application of OS-level settings (hostname, time zone, locale)
+- **Service Management**: Enabling/disabling system services
+- **Package Management**: Installation and removal of OS packages
+- **Kernel Parameters**: Configuration of kernel boot parameters
+
+
+### MOS Config Subsystem
+
+**Location**: `crates/trident/src/subsystems/osconfig/mod.rs`
+
+Manages the servicing OS (Management OS) configuration aspects such as:
+- **User Management**: Creation and configuration of servicing OS users and groups
 
 ## Commands
 
