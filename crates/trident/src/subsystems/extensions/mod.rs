@@ -456,14 +456,16 @@ fn detach_device_and_unmount(device_path: String, mount_path: &Path) -> Result<(
 mod tests {
     use super::*;
 
-    use tempfile::{env::temp_dir, TempDir};
+    use tempfile::TempDir;
 
     #[test]
     fn test_populate_extensions_empty() {
         // Test with no extensions
         let mut subsystem = ExtensionsSubsystem::default();
         let ctx = EngineContext::default();
-        subsystem.populate_extensions(&ctx, &temp_dir()).unwrap();
+        subsystem
+            .populate_extensions(&ctx, TempDir::new().unwrap().path())
+            .unwrap();
 
         assert!(
             subsystem.extensions.is_empty(),
@@ -1014,8 +1016,8 @@ mod functional_test {
             old_ext.path().exists(),
             "Old extension should still exist in its original location"
         );
-        // Verify the extension has not been copied to the target OS.
-        assert!(!path::join_relative(mount_path.path(), old_ext.path()).exists());
+        // Verify that nothing has been copied to the target OS.
+        assert!(mount_path.path().read_dir().unwrap().next().is_none());
 
         // Run set_up_extensions with HotPath (should remove old extensions)
         subsystem
@@ -1023,8 +1025,8 @@ mod functional_test {
             .unwrap();
         // Verify the extension was removed
         assert!(!old_ext.path().exists(), "Old extension should be removed");
-        // Verify the extension has not been copied to the target OS.
-        assert!(!path::join_relative(mount_path.path(), old_ext.path()).exists());
+        // Verify that nothing has been copied to the target OS.
+        assert!(mount_path.path().read_dir().unwrap().next().is_none());
     }
 
     #[functional_test]
@@ -1080,7 +1082,7 @@ mod functional_test {
             .set_up_extensions(mount_path.path(), ServicingType::AbUpdate)
             .unwrap();
 
-        // Verify old extension was not removed, since servicing type is A/B update
+        // Verify old extension was NOT removed, since servicing type is A/B update
         assert!(
             old_ext.path().exists(),
             "Old extension should not be removed from the servicing OS"
