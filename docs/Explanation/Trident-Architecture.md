@@ -215,7 +215,7 @@ For ongoing updates, Trident runs within the host OS:
 
 ## COSI Image Format
 
-Trident uses the **Composable OS Image (COSI)** format for atomic image deployment:
+Trident uses the [**Composable OS Image (COSI)**](../Reference/Composable-OS-Image.md) format for atomic image deployment:
 
 ```text
 image.cosi (tarball)
