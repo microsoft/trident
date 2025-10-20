@@ -114,6 +114,7 @@ Handles [bootloader configuration](../Explanation/Bootloader-Configuration.md) a
 **Location**: `crates/trident/src/subsystems/esp.rs`
 
 Manages the EFI System Partition (ESP):
+
 - **File Management**: Installs and updates bootloader files
 
 ### Initrd Subsystem
@@ -121,6 +122,7 @@ Manages the EFI System Partition (ESP):
 **Location**: `crates/trident/src/subsystems/initrd.rs`
 
 Manages the initial RAM disk (initrd) creation and configuration:
+
 - **Image Creation**: Builds initrd images with necessary drivers and tools
 
 ### Network Subsystem
@@ -166,18 +168,19 @@ Ensures that the agent configuration is aligned with the Host Configuration.
 **Location**: `crates/trident/src/subsystems/osconfig/mod.rs`
 
 Manages operating system configuration aspects such as:
+
 - **User Management**: Creation and configuration of system users and groups
 - **System Settings**: Application of OS-level settings (hostname, time zone, locale)
 - **Service Management**: Enabling/disabling system services
 - **Package Management**: Installation and removal of OS packages
 - **Kernel Parameters**: Configuration of kernel boot parameters
 
-
 ### MOS Config Subsystem
 
 **Location**: `crates/trident/src/subsystems/osconfig/mod.rs`
 
 Manages the servicing OS (Management OS) configuration aspects such as:
+
 - **User Management**: Creation and configuration of servicing OS users and groups
 
 ## Commands
