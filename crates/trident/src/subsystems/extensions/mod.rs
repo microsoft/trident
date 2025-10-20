@@ -269,31 +269,26 @@ impl ExtensionsSubsystem {
     /// Ensures that all target directories for extension images exist on the
     /// target OS.
     fn create_directories(&self, mount_path: &Path) -> Result<(), Error> {
-        // Find all directories in which sysexts or confexts will be placed.
-        let dirs: HashSet<_> = self
-            .extensions
-            .iter()
-            .map(|ext| {
-                ext.path.parent().with_context(|| {
-                    format!(
-                        "Failed to get parent directory of path '{}'",
-                        ext.path.display()
-                    )
-                })
-            })
-            .collect::<Result<_, _>>()?;
+        let mut seen_dirs = HashSet::new();
 
-        // Ensure that path exists on the target OS.
-        for dir_path in dirs {
-            fs::create_dir_all(path::join_relative(mount_path, dir_path)).with_context(|| {
+        self.extensions.iter().try_for_each(|ext| {
+            let dir = ext.path.parent().with_context(|| {
                 format!(
-                    "Failed to create directory '{}' on the target OS at mount path '{}'",
-                    dir_path.display(),
-                    mount_path.display()
+                    "Failed to get parent directory of path '{}'",
+                    ext.path.display()
                 )
             })?;
-        }
-        Ok(())
+            if seen_dirs.insert(dir) {
+                fs::create_dir_all(path::join_relative(mount_path, dir)).with_context(|| {
+                    format!(
+                        "Failed to create directory '{}' on the target OS at mount path '{}'",
+                        dir.display(),
+                        mount_path.display()
+                    )
+                })?;
+            }
+            Ok(())
+        })
     }
 
     /// Identifies which extension images should be added to the target OS from
