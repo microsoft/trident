@@ -82,9 +82,6 @@ pub enum ContainerConfigurationError {
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum InternalError {
-    #[error("Failed to create extension image directories on target OS")]
-    CreateExtensionImageDirectories,
-
     #[error("Failed to get the ESP partition information")]
     GetEspDeviceInfo,
 
@@ -353,6 +350,9 @@ pub enum ServicingError {
         binary: &'static str,
         explanation: String,
     },
+
+    #[error("Failed to create extension image directories on target OS")]
+    CreateExtensionImageDirectories,
 
     #[error("Failed to get binary paths required for pcrlock encryption")]
     GetBinaryPathsForPcrlockEncryption,

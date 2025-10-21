@@ -14,7 +14,7 @@ use osutils::{dependencies::Dependency, path};
 use trident_api::{
     config::Extension,
     constants::internal_params::HTTP_CONNECTION_TIMEOUT_SECONDS,
-    error::{InternalError, ReportError, TridentError},
+    error::{InternalError, ReportError, ServicingError, TridentError},
     primitives::hash::Sha384Hash,
     status::ServicingType,
 };
@@ -103,7 +103,7 @@ impl Subsystem for ExtensionsSubsystem {
 
         // Ensure that desired target directories exist on the target OS.
         self.create_directories(mount_path)
-            .structured(InternalError::CreateExtensionImageDirectories)?;
+            .structured(ServicingError::CreateExtensionImageDirectories)?;
 
         // Determine which images need to be removed and which should be added.
         // Copy extension images to their proper locations.
