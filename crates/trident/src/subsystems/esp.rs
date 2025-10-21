@@ -1,4 +1,5 @@
 use std::{
+    any::Any,
     fs,
     io::Read,
     path::{Path, PathBuf},
@@ -42,7 +43,7 @@ impl Subsystem for EspSubsystem {
         "esp"
     }
 
-    fn as_any(&self) -> &dyn std::any::Any {
+    fn as_any(&self) -> &dyn Any {
         self
     }
 

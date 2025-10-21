@@ -1,4 +1,5 @@
 use std::{
+    any::Any,
     fs::File,
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
@@ -77,7 +78,7 @@ impl Subsystem for SelinuxSubsystem {
         "selinux"
     }
 
-    fn as_any(&self) -> &dyn std::any::Any {
+    fn as_any(&self) -> &dyn Any {
         self
     }
 

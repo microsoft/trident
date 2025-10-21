@@ -1,4 +1,5 @@
 use std::{
+    any::Any,
     collections::HashMap,
     ffi::OsStr,
     os::unix::fs::PermissionsExt,
@@ -40,7 +41,7 @@ impl Subsystem for HooksSubsystem {
         "hooks"
     }
 
-    fn as_any(&self) -> &dyn std::any::Any {
+    fn as_any(&self) -> &dyn Any {
         self
     }
 

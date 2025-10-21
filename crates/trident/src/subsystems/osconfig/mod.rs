@@ -1,4 +1,4 @@
-use std::{fs, path::Path};
+use std::{any::Any, fs, path::Path};
 
 use anyhow::Context;
 use log::{debug, error, info, warn};
@@ -61,7 +61,7 @@ impl Subsystem for OsConfigSubsystem {
         "os-config"
     }
 
-    fn as_any(&self) -> &dyn std::any::Any {
+    fn as_any(&self) -> &dyn Any {
         self
     }
 
@@ -196,7 +196,7 @@ impl Subsystem for MosConfigSubsystem {
         "mos-config"
     }
 
-    fn as_any(&self) -> &dyn std::any::Any {
+    fn as_any(&self) -> &dyn Any {
         self
     }
 

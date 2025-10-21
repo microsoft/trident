@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{any::Any, path::Path};
 
 use log::debug;
 use strum::IntoEnumIterator;
@@ -25,7 +25,7 @@ impl Subsystem for BootSubsystem {
         "boot"
     }
 
-    fn as_any(&self) -> &dyn std::any::Any {
+    fn as_any(&self) -> &dyn Any {
         self
     }
 

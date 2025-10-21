@@ -1,4 +1,5 @@
 use std::{
+    any::Any,
     collections::HashMap,
     path::{Path, PathBuf},
 };
@@ -36,7 +37,7 @@ impl Subsystem for StorageSubsystem {
         "storage"
     }
 
-    fn as_any(&self) -> &dyn std::any::Any {
+    fn as_any(&self) -> &dyn Any {
         self
     }
 

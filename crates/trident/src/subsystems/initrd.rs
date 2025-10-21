@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use log::{debug, info};
 
 use osutils::mkinitrd;
@@ -12,7 +14,7 @@ impl Subsystem for InitrdSubsystem {
         "initrd"
     }
 
-    fn as_any(&self) -> &dyn std::any::Any {
+    fn as_any(&self) -> &dyn Any {
         self
     }
 

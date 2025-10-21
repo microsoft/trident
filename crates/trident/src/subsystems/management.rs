@@ -1,6 +1,7 @@
 //! Subsystem in charge of configuring the Trident agent on the target OS.
 
 use std::{
+    any::Any,
     fs::{self},
     path::Path,
 };
@@ -29,7 +30,7 @@ impl Subsystem for ManagementSubsystem {
         "management"
     }
 
-    fn as_any(&self) -> &dyn std::any::Any {
+    fn as_any(&self) -> &dyn Any {
         self
     }
 

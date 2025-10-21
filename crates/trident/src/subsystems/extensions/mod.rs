@@ -1,4 +1,5 @@
 use std::{
+    any::Any,
     fmt::Display,
     fs,
     path::{Path, PathBuf},
@@ -90,7 +91,7 @@ impl Subsystem for ExtensionsSubsystem {
         "extensions"
     }
 
-    fn as_any(&self) -> &dyn std::any::Any {
+    fn as_any(&self) -> &dyn Any {
         self
     }
 

@@ -1,4 +1,4 @@
-use std::{fs, path::Path};
+use std::{any::Any, fs, path::Path};
 
 use anyhow::Context;
 use log::debug;
@@ -19,7 +19,7 @@ impl Subsystem for NetworkSubsystem {
         "network"
     }
 
-    fn as_any(&self) -> &dyn std::any::Any {
+    fn as_any(&self) -> &dyn Any {
         self
     }
 
