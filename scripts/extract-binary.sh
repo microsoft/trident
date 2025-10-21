@@ -3,7 +3,7 @@
 # Takes a path to a directory containing a Trident RPM and extracts the Trident
 # binary to the specified path.
 
-set -eu
+set -eux
 
 TMP_DIR=$(mktemp -d)
 RPM=$(find $1 | grep -P 'trident-\d.*\.rpm')
