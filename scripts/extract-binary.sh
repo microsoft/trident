@@ -11,7 +11,7 @@ RPM=$(find $1 | grep -P 'trident-\d.*\.rpm')
 cp "$RPM" "$TMP_DIR/trident.rpm"
 
 pushd "$TMP_DIR"
-rpm2cpio "$RPM" | cpio -idmv
+rpm2cpio trident.rpm | cpio -idmv
 popd
 
 mv "$TMP_DIR/usr/bin/trident" $2
