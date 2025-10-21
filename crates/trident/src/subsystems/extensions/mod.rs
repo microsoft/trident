@@ -294,6 +294,19 @@ impl ExtensionsSubsystem {
     /// Identifies which extension images should be added to the target OS from
     /// the set of extensions on the servicing OS and the set of newly
     /// downloaded extensions.
+    /// - New extensions that exist *only* in the new HC are renamed/copied from
+    ///   the staging directory to their target paths on the target OS.
+    /// - Extensions that exist *only* in the old HC are removed from the
+    ///   servicing OS (only during a runtime update, i.e. target OS ==
+    ///   servicing OS).
+    /// - Extensions that exist in both the new HC and the old HC:
+    ///   - If the hash differs, then the new version of the extension is
+    ///     renamed/copied from the staging directory to its path on the target
+    ///     OS. The old version of the extension is removed from the servicing
+    ///     OS if servicing type is not Clean Install or A/B update.
+    ///   - If the hash is the same, the extension is renamed/copied from its
+    ///     old location on the servicing OS to its new location on the target
+    ///     OS.
     fn set_up_extensions(
         &self,
         mount_path: &Path,
