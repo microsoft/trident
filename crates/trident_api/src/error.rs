@@ -967,7 +967,7 @@ mod tests {
         assert_eq!(
             format!("{error:?}"),
             format!(
-                "Internal error: w at {}:{}\n\nCaused by:\n    0: x\n       y\n    1: z\n",
+                "Trident failed due to an internal error\n\nContext:\n    0: Internal error: w at {}:{}\n    1: x\n       y\n    2: z\n",
                 error.0.location.file(),
                 error.0.location.line(),
             ),
