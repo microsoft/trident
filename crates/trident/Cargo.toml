@@ -53,6 +53,8 @@ tracing-subscriber = { version = "0.3.19", features = ["json"] }
 url = { version = "2.5.4", features = ["serde"] }
 uuid = { version = "1.11.0", features = ["v4", "serde"] }
 
+openssl = { version = "0.10", features = ["vendored"] }
+
 sysdefs = { path = "../sysdefs" }
 osutils = { path = "../osutils" }
 trident_api = { path = "../trident_api" }
