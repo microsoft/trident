@@ -70,11 +70,15 @@ pub struct Os {
     #[serde(default, skip_serializing_if = "is_default")]
     pub kernel_command_line: KernelCommandLine,
 
-    /// Data about the extension images, which should be merged on the target
-    /// OS.
+    /// Data about systext images, which should be merged on the target OS.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[cfg_attr(feature = "schemars", schemars(skip))]
-    pub extensions: Vec<Extension>,
+    pub sysexts: Vec<Extension>,
+
+    /// Data about confext images, which should be merged on the target OS.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "schemars", schemars(skip))]
+    pub confexts: Vec<Extension>,
 }
 
 /// Additional kernel command line options to add to the image.
@@ -186,18 +190,21 @@ impl Os {
             network::validate_netplan(network)?;
         }
 
-        let mut ext_img_hashes = HashSet::new();
-        let mut ext_img_paths = HashSet::new();
-        self.extensions.iter().try_for_each(|ext| {
-            if !ext_img_hashes.insert(&ext.sha384) {
+        // Validate sysexts
+        let mut sysext_hashes = HashSet::new();
+        let mut sysext_paths = HashSet::new();
+        self.sysexts.iter().try_for_each(|ext| {
+            // Ensure there are no duplicate images
+            if !sysext_hashes.insert(&ext.sha384) {
                 return Err(
                     HostConfigurationStaticValidationError::DuplicateExtensionImage {
                         hash: ext.sha384.to_string(),
                     },
                 );
             }
+            // Ensure that no images are placed at the same path
             if let Some(path) = &ext.path {
-                if !ext_img_paths.insert(path) {
+                if !sysext_paths.insert(path) {
                     return Err(
                         HostConfigurationStaticValidationError::DuplicateExtensionImagePath {
                             path: path.display().to_string(),
@@ -205,7 +212,32 @@ impl Os {
                     );
                 }
             }
-            ext.validate()?;
+
+            ext.validate_sysext()?;
+            Ok(())
+        })?;
+
+        // Validate confexts
+        let mut confext_hashes = HashSet::new();
+        let mut confext_paths = HashSet::new();
+        self.confexts.iter().try_for_each(|ext| {
+            if !confext_hashes.insert(&ext.sha384) {
+                return Err(
+                    HostConfigurationStaticValidationError::DuplicateExtensionImage {
+                        hash: ext.sha384.to_string(),
+                    },
+                );
+            }
+            if let Some(path) = &ext.path {
+                if !confext_paths.insert(path) {
+                    return Err(
+                        HostConfigurationStaticValidationError::DuplicateExtensionImagePath {
+                            path: path.display().to_string(),
+                        },
+                    );
+                }
+            }
+            ext.validate_confext()?;
             Ok(())
         })?;
 
@@ -273,12 +305,12 @@ mod tests {
     #[test]
     fn test_validate_extensions_success() {
         let mut config = Os::default();
-        config.extensions.push(Extension {
+        config.sysexts.push(Extension {
             url: Url::parse("http://example.com/ext1.raw").unwrap(),
             sha384: Sha384Hash::from("a".repeat(96)),
             path: Some(PathBuf::from("/var/lib/extensions/ext1.raw")),
         });
-        config.extensions.push(Extension {
+        config.sysexts.push(Extension {
             url: Url::parse("http://example.com/ext2.raw").unwrap(),
             sha384: Sha384Hash::from("b".repeat(96)),
             path: None,
@@ -290,12 +322,12 @@ mod tests {
     fn test_validate_extensions_fail_duplicate_hash() {
         let mut config = Os::default();
         let duplicate_hash = Sha384Hash::from("a".repeat(96));
-        config.extensions.push(Extension {
+        config.sysexts.push(Extension {
             url: Url::parse("http://example.com/ext1.raw").unwrap(),
             sha384: duplicate_hash.clone(),
             path: Some(PathBuf::from("/var/lib/extensions/ext1.raw")),
         });
-        config.extensions.push(Extension {
+        config.sysexts.push(Extension {
             url: Url::parse("http://example.com/ext2.raw").unwrap(),
             sha384: duplicate_hash.clone(),
             path: Some(PathBuf::from("/var/lib/extensions/ext2.raw")),
@@ -313,12 +345,12 @@ mod tests {
     fn test_validate_extensions_fail_duplicate_path() {
         let mut config = Os::default();
         let duplicate_path = PathBuf::from("/var/lib/extensions/ext.raw");
-        config.extensions.push(Extension {
+        config.sysexts.push(Extension {
             url: Url::parse("http://example.com/ext1.raw").unwrap(),
             sha384: Sha384Hash::from("a".repeat(96)),
             path: Some(duplicate_path.clone()),
         });
-        config.extensions.push(Extension {
+        config.sysexts.push(Extension {
             url: Url::parse("http://example.com/ext2.raw").unwrap(),
             sha384: Sha384Hash::from("b".repeat(96)),
             path: Some(duplicate_path.clone()),

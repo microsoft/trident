@@ -162,6 +162,12 @@ pub const AB_VOLUME_B_NAME: &str = "B";
 /// Read-only mount option.
 pub const MOUNT_OPTION_READ_ONLY: &str = "ro";
 
+/// Primary location for storing sysexts on the target OS.
+pub const DEFAULT_SYSEXT_DIRECTORY: &str = "/var/lib/extensions/";
+
+/// Primary location for storing confexts on the target OS.
+pub const DEFAULT_CONFEXT_DIRECTORY: &str = "/var/lib/confexts/";
+
 /// Valid sysext directories.
 ///
 /// Do not support /run/sysexts/.
@@ -182,9 +188,6 @@ pub mod internal_params {
     /// Allow unused images in a COSI file.
     pub const ALLOW_UNUSED_FILESYSTEMS_IN_COSI: &str = "allowUnusedFilesystems";
 
-    /// Enable configuration of http timeout for COSI download.
-    pub const COSI_HTTP_CONNECTION_TIMEOUT_SECONDS: &str = "cosiHttpConnectionTimeoutSeconds";
-
     /// Disable check that filesystem size does not exceed the size of its block device.
     pub const DISABLE_FS_BLOCK_DEVICE_SIZE_CHECK: &str = "disableFsBlockDeviceSizeCheck";
 
@@ -202,6 +205,9 @@ pub mod internal_params {
 
     /// Experimental support for UKIs.
     pub const ENABLE_UKI_SUPPORT: &str = "uki";
+
+    /// Enable configuration of http connection timeout for file downloads.
+    pub const HTTP_CONNECTION_TIMEOUT_SECONDS: &str = "httpConnectionTimeoutSeconds";
 
     /// Block Trident from closing encrypted volumes at the start of provisioning.
     pub const NO_CLOSE_ENCRYPTED_VOLUMES: &str = "noCloseEncryptedVolumes";

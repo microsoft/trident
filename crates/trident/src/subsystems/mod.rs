@@ -1,4 +1,5 @@
 pub(crate) mod esp;
+pub(crate) mod extensions;
 pub(crate) mod hooks;
 pub(crate) mod initrd;
 pub(crate) mod management;

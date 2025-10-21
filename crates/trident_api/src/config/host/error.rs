@@ -56,15 +56,21 @@ pub enum HostConfigurationStaticValidationError {
     ExpectedMountPointNotFound { mount_point_path: String },
 
     #[error(
-        "Extension image path '{path}' is invalid; directory is not valid for sysexts or confexts"
+        "Extension image path '{path}' is invalid; valid directories to place this extension image are: {valid_directories}"
     )]
-    ExtensionImageInvalidDirectory { path: String },
+    ExtensionImageInvalidDirectory {
+        path: String,
+        valid_directories: String,
+    },
 
     #[error(
         "Extension image path '{path}' is invalid; must be an absolute path to a file whose \
         filename must end with '.raw'"
     )]
     ExtensionImageInvalidFileExtension { path: String },
+
+    #[error("Extension image path '{path}' must be on a known A/B volume")]
+    ExtensionImageNotOnABVolume { path: String },
 
     #[error(
         "The Host Configuration is using both an image and partition images, these APIs are \
