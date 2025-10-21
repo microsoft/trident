@@ -371,6 +371,7 @@ mod tests {
     use super::*;
 
     use tempfile::env::temp_dir;
+    use url::Url;
 
     #[test]
     fn test_populate_extensions_empty() {
@@ -387,6 +388,108 @@ mod tests {
             subsystem.extensions_old.is_empty(),
             "ExtensionsSubsystem extensions_old should be empty when there are no extensions in the old Host Configuration"
         );
+    }
+
+    #[test]
+    fn test_update_host_configuration_sysexts() {
+        let mut ctx = EngineContext::default();
+        ctx.spec.os.sysexts = vec![
+            Extension {
+                url: Url::parse("https://example.com/sysext1.raw").unwrap(),
+                sha384: Sha384Hash::from("a".repeat(96)),
+                path: None,
+            },
+            Extension {
+                url: Url::parse("https://example.com/sysext2.raw").unwrap(),
+                sha384: Sha384Hash::from("b".repeat(96)),
+                path: Some(PathBuf::from("/etc/extensions/sysext2.raw")),
+            },
+        ];
+
+        let subsystem = ExtensionsSubsystem {
+            extensions: vec![
+                ExtensionData {
+                    id: "sysext1".to_string(),
+                    name: "sysext1".to_string(),
+                    sha384: Sha384Hash::from("a".repeat(96)),
+                    path: PathBuf::from("/var/lib/extensions/sysext1.raw"),
+                    temp_path: Some(
+                        PathBuf::from(EXTENSION_IMAGE_STAGING_DIRECTORY).join("sysext1.raw"),
+                    ),
+                    ext_type: ExtensionType::Sysext,
+                },
+                ExtensionData {
+                    id: "sysext2".to_string(),
+                    name: "sysext2".to_string(),
+                    sha384: Sha384Hash::from("b".repeat(96)),
+                    path: PathBuf::from("/etc/extensions/sysext2.raw"),
+                    temp_path: Some(
+                        PathBuf::from(EXTENSION_IMAGE_STAGING_DIRECTORY).join("sysext2.raw"),
+                    ),
+                    ext_type: ExtensionType::Sysext,
+                },
+            ],
+            extensions_old: vec![],
+        };
+        let updated_hc = subsystem.update_host_configuration(&ctx).unwrap();
+
+        for i in 0..subsystem.extensions.len() {
+            assert_eq!(
+                updated_hc.os.sysexts[i].path,
+                Some(subsystem.extensions[i].path.clone())
+            )
+        }
+    }
+
+    #[test]
+    fn test_update_host_configuration_confexts() {
+        let mut ctx = EngineContext::default();
+        ctx.spec.os.confexts = vec![
+            Extension {
+                url: Url::parse("https://example.com/confext1.raw").unwrap(),
+                sha384: Sha384Hash::from("a".repeat(96)),
+                path: None,
+            },
+            Extension {
+                url: Url::parse("https://example.com/confext2.raw").unwrap(),
+                sha384: Sha384Hash::from("b".repeat(96)),
+                path: Some(PathBuf::from("/usr/lib/confexts/confext2.raw")),
+            },
+        ];
+
+        let subsystem = ExtensionsSubsystem {
+            extensions: vec![
+                ExtensionData {
+                    id: "confext1".to_string(),
+                    name: "confext1".to_string(),
+                    sha384: Sha384Hash::from("a".repeat(96)),
+                    path: PathBuf::from("/var/lib/confexts/confext1.raw"),
+                    temp_path: Some(
+                        PathBuf::from(EXTENSION_IMAGE_STAGING_DIRECTORY).join("confext1.raw"),
+                    ),
+                    ext_type: ExtensionType::Confext,
+                },
+                ExtensionData {
+                    id: "confext2".to_string(),
+                    name: "confext2".to_string(),
+                    sha384: Sha384Hash::from("b".repeat(96)),
+                    path: PathBuf::from("/usr/lib/confexts/confext2.raw"),
+                    temp_path: Some(
+                        PathBuf::from(EXTENSION_IMAGE_STAGING_DIRECTORY).join("confext2.raw"),
+                    ),
+                    ext_type: ExtensionType::Confext,
+                },
+            ],
+            extensions_old: vec![],
+        };
+        let updated_hc = subsystem.update_host_configuration(&ctx).unwrap();
+
+        for i in 0..subsystem.extensions.len() {
+            assert_eq!(
+                updated_hc.os.confexts[i].path,
+                Some(subsystem.extensions[i].path.clone())
+            )
+        }
     }
 }
 
