@@ -392,7 +392,7 @@ impl ExtensionsSubsystem {
                 // Configuration.
                 if ext.temp_path.exists() {
                     fs::remove_file(&ext.temp_path).with_context(|| {
-                        format!("Failed to delete file at '{}'", ext.path.display())
+                        format!("Failed to delete file at '{}'", ext.temp_path.display())
                     })?;
                 }
             }
