@@ -25,6 +25,10 @@ impl Subsystem for BootSubsystem {
         "boot"
     }
 
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     #[tracing::instrument(name = "boot_configuration", skip_all)]
     fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
         if ctx.is_uki()? {

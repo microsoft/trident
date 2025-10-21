@@ -27,7 +27,7 @@ use crate::{
     },
     monitor_metrics,
     osimage::OsImage,
-    subsystems::{extensions::ExtensionsSubsystem, hooks::HooksSubsystem},
+    subsystems::hooks::HooksSubsystem,
     ExitKind,
 };
 #[cfg(feature = "grpc-dangerous")]
@@ -254,7 +254,7 @@ fn stage_update(
     };
 
     // Update Host Configuration with the paths of extension images.
-    subsystems.get(0);
+    engine::get_extensions_subsystem(subsystems)?.update_host_configuration(&ctx)?;
 
     // At this point, deployment has been staged, so update servicing state
     debug!(

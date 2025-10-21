@@ -90,6 +90,10 @@ impl Subsystem for ExtensionsSubsystem {
         "extensions"
     }
 
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
         // Define staging directory, in which extension images will be downloaded.
         let staging_dir = path::join_relative(mount_path, EXTENSION_IMAGE_STAGING_DIRECTORY);
@@ -255,7 +259,7 @@ impl ExtensionsSubsystem {
     }
 
     pub(crate) fn update_host_configuration(
-        &mut self,
+        &self,
         ctx: &EngineContext,
     ) -> Result<HostConfiguration, TridentError> {
         let mut updated_hc = ctx.spec.clone();

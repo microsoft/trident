@@ -36,6 +36,10 @@ impl Subsystem for StorageSubsystem {
         "storage"
     }
 
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     fn validate_host_config(&self, ctx: &EngineContext) -> Result<(), TridentError> {
         if ctx.servicing_type != ServicingType::CleanInstall {
             // Ensure that relevant portions of the Host Configuration have not changed.

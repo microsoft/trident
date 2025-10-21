@@ -61,12 +61,7 @@ pub(crate) use update::{finalize_update, update};
 pub(crate) trait Subsystem: Send {
     fn name(&self) -> &'static str;
 
-    fn as_any(&self) -> &dyn Any
-    where
-        Self: Sized + 'static,
-    {
-        self
-    }
+    fn as_any(&self) -> &dyn Any;
 
     fn writable_etc_overlay(&self) -> bool {
         true
@@ -329,17 +324,20 @@ fn configure(
     Ok(())
 }
 
-pub fn get_extensions_subsystem(subsystems: &mut [Box<dyn Subsystem>]) -> &ExtensionsSubsystem {
-    let subsystem = subsystems
+pub fn get_extensions_subsystem(
+    subsystems: &mut [Box<dyn Subsystem>],
+) -> Result<&ExtensionsSubsystem, TridentError> {
+    subsystems
         .iter()
         .find(|s| s.name() == "extensions")
-        .unwrap()
+        .structured(InternalError::Internal(
+            "Failed to find Extensions subsystem",
+        ))?
         .as_any()
         .downcast_ref::<ExtensionsSubsystem>()
-        .expect("ExtensionsSubsystem not found in subsystems list");
-
-    // SAFETY: We know this is ExtensionsSubsystem because its name is "extensions"
-    unsafe { &*(subsystem.as_ref() as *const dyn Subsystem as *const ExtensionsSubsystem) }
+        .structured(InternalError::Internal(
+            "Failed to downcast to ExtensionsSubsystem",
+        ))
 }
 
 pub fn reboot() -> Result<(), TridentError> {

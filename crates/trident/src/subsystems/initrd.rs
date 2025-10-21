@@ -12,6 +12,10 @@ impl Subsystem for InitrdSubsystem {
         "initrd"
     }
 
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     fn writable_etc_overlay(&self) -> bool {
         false
     }

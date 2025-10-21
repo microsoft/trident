@@ -29,6 +29,10 @@ impl Subsystem for ManagementSubsystem {
         "management"
     }
 
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     fn validate_host_config(&self, ctx: &EngineContext) -> Result<(), TridentError> {
         if ctx.spec.trident.disable {
             return Ok(());

@@ -19,6 +19,10 @@ impl Subsystem for NetworkSubsystem {
         "network"
     }
 
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     #[tracing::instrument(name = "network_configuration", skip_all)]
     fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
         match ctx.spec.os.netplan.as_ref() {

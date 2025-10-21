@@ -77,6 +77,10 @@ impl Subsystem for SelinuxSubsystem {
         "selinux"
     }
 
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     #[tracing::instrument(name = "selinux_configuration", skip_all)]
     fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
         // Only continue if the servicing type is a clean install or AB update.

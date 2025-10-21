@@ -42,6 +42,10 @@ impl Subsystem for EspSubsystem {
         "esp"
     }
 
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     #[tracing::instrument(name = "esp_provision", skip_all)]
     fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
         // Perform file-based deployment of ESP images, if needed, after filesystems have been

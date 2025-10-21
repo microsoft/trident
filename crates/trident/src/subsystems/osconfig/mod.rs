@@ -61,6 +61,10 @@ impl Subsystem for OsConfigSubsystem {
         "os-config"
     }
 
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     fn validate_host_config(&self, ctx: &EngineContext) -> Result<(), TridentError> {
         // If the os-modifier binary is required but not present, return an error.
         if os_config_requires_os_modifier(ctx) && !Path::new(OS_MODIFIER_BINARY_PATH).exists() {
@@ -190,6 +194,10 @@ pub struct MosConfigSubsystem;
 impl Subsystem for MosConfigSubsystem {
     fn name(&self) -> &'static str {
         "mos-config"
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 
     fn validate_host_config(&self, ctx: &EngineContext) -> Result<(), TridentError> {

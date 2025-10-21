@@ -257,6 +257,9 @@ fn stage_clean_install(
         return Err(original_error).message("Failed to execute in chroot");
     }
 
+    // Update Host Configuration with the paths of extension images.
+    engine::get_extensions_subsystem(subsystems)?.update_host_configuration(&ctx)?;
+
     // At this point, clean install has been staged, so update Host Status
     debug!(
         "Updating host's servicing state to '{:?}'",
