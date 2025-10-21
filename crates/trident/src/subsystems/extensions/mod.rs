@@ -344,9 +344,9 @@ impl ExtensionsSubsystem {
             let new_path = path::join_relative(mount_path, &ext.path);
             // Attempt atomic rename first, for extensions that were newly
             // downloaded to the staging directory.
-            if fs::rename(&ext.temp_path, &new_path).is_err() {
+            if let Err(e) = fs::rename(&ext.temp_path, &new_path) {
                 warn!(
-                    "Failed to atomically rename '{}' to '{}'. Attempting file copy instead.",
+                    "Failed to atomically rename '{}' to '{}': {e}. Attempting file copy instead.",
                     ext.temp_path.display(),
                     new_path.display()
                 );
@@ -372,9 +372,13 @@ impl ExtensionsSubsystem {
             // Host Configuration.
             for ext in extensions_to_remove {
                 // Check that file still exists. If the file was renamed in the
-                // step above, there is no need to remove it.
-                if ext.path.exists() {
-                    fs::remove_file(&ext.path).with_context(|| {
+                // step above, there is no need to remove it. Note that for any
+                // extension in 'extensions_to_remove', ext.path and
+                // ext.temp_path will be the same because each ExtensionData
+                // object in the vector was populated from the old Host
+                // Configuration.
+                if ext.temp_path.exists() {
+                    fs::remove_file(&ext.temp_path).with_context(|| {
                         format!("Failed to delete file at '{}'", ext.path.display())
                     })?;
                 }
