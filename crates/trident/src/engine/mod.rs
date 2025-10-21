@@ -329,7 +329,7 @@ pub fn get_extensions_subsystem(
 ) -> Result<&ExtensionsSubsystem, TridentError> {
     subsystems
         .iter()
-        .find(|s| s.name() == "extensions")
+        .find(|s| s.name() == ExtensionsSubsystem::default().name())
         .structured(InternalError::Internal(
             "Failed to find Extensions subsystem",
         ))?
