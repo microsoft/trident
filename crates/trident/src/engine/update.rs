@@ -254,7 +254,8 @@ fn stage_update(
     };
 
     // Update Host Configuration with the paths of extension images.
-    engine::get_extensions_subsystem(subsystems)?.update_host_configuration(&ctx)?;
+    let updated_hc =
+        engine::get_extensions_subsystem(subsystems)?.update_host_configuration(&ctx)?;
 
     // At this point, deployment has been staged, so update servicing state
     debug!(
@@ -263,7 +264,7 @@ fn stage_update(
     );
     state.with_host_status(|hs| {
         *hs = HostStatus {
-            spec: ctx.spec,
+            spec: updated_hc,
             spec_old: ctx.spec_old,
             servicing_state: ServicingState::AbUpdateStaged,
             ab_active_volume: ctx.ab_active_volume,

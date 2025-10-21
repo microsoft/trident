@@ -258,7 +258,8 @@ fn stage_clean_install(
     }
 
     // Update Host Configuration with the paths of extension images.
-    engine::get_extensions_subsystem(subsystems)?.update_host_configuration(&ctx)?;
+    let updated_hc =
+        engine::get_extensions_subsystem(subsystems)?.update_host_configuration(&ctx)?;
 
     // At this point, clean install has been staged, so update Host Status
     debug!(
@@ -268,7 +269,7 @@ fn stage_clean_install(
     state.with_host_status(|hs| {
         *hs = HostStatus {
             servicing_state: ServicingState::CleanInstallStaged,
-            spec: host_config.clone(),
+            spec: updated_hc,
             spec_old: Default::default(),
             ab_active_volume: None,
             partition_paths: ctx.partition_paths,
