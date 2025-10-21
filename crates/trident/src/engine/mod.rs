@@ -333,6 +333,9 @@ pub fn get_extensions_subsystem(subsystems: &mut [Box<dyn Subsystem>]) -> &Exten
     let subsystem = subsystems
         .iter()
         .find(|s| s.name() == "extensions")
+        .unwrap()
+        .as_any()
+        .downcast_ref::<ExtensionsSubsystem>()
         .expect("ExtensionsSubsystem not found in subsystems list");
 
     // SAFETY: We know this is ExtensionsSubsystem because its name is "extensions"
