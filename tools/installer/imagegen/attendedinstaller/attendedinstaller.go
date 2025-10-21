@@ -369,6 +369,8 @@ func (ai *AttendedInstaller) initializeViews() (err error) {
 		ai.allViews = append(ai.allViews, installerView)
 	}
 
+	ai.allViews = append(ai.allViews, eulaview.New())
+
 	imageselectorView := imageselectorview.New(ai.availableImages, ai.hostConfigData)
 	if imageselectorView.NeedsToPrompt() {
 		ai.allViews = append(ai.allViews, imageselectorView)
@@ -376,7 +378,6 @@ func (ai *AttendedInstaller) initializeViews() (err error) {
 		logger.Log.Infof("Single image detected, automatically selected")
 	}
 
-	ai.allViews = append(ai.allViews, eulaview.New())
 	ai.allViews = append(ai.allViews, diskview.New())
 	ai.allViews = append(ai.allViews, hostnameview.New())
 	ai.allViews = append(ai.allViews, userview.New())
