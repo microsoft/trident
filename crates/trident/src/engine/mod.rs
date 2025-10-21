@@ -325,7 +325,7 @@ fn configure(
 }
 
 pub fn get_extensions_subsystem(
-    subsystems: &mut [Box<dyn Subsystem>],
+    subsystems: &[Box<dyn Subsystem>],
 ) -> Result<&ExtensionsSubsystem, TridentError> {
     subsystems
         .iter()
