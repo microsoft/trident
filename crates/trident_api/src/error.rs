@@ -829,9 +829,10 @@ impl Serialize for TridentError {
 impl Debug for TridentError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.0.kind {
-            ErrorKind::ExecutionEnvironmentMisconfiguration(_) => {
-                writeln!(f, "Trident failed due to a misconfigured execution environment")?
-            }
+            ErrorKind::ExecutionEnvironmentMisconfiguration(_) => writeln!(
+                f,
+                "Trident failed due to a misconfigured execution environment"
+            )?,
             ErrorKind::Initialization(_) => writeln!(f, "Trident failed to initialize")?,
             ErrorKind::Internal(_) => writeln!(f, "Trident failed due to an internal error")?,
             ErrorKind::InvalidInput(_) => writeln!(f, "Trident failed due to invalid input")?,
@@ -840,7 +841,6 @@ impl Debug for TridentError {
                 writeln!(f, "Trident failed due to an unsupported configuration")?
             }
         }
-
 
         writeln!(f, "\nContext:")?;
         writeln!(
