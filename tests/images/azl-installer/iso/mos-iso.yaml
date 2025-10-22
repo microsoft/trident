@@ -10,8 +10,6 @@ iso:
   additionalFiles:
   - source: images/trident-testimage.cosi
     destination: /images/azure-linux-core.cosi
-  - source: images/azl-full-testimage.cosi
-    destination: /images/azure-linux-full.cosi
   - source: bin/liveinstaller
     destination: /installer/liveinstaller
 
