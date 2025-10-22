@@ -56,7 +56,7 @@ Prefer the use of mermaid diagrams embedded in markdown files. This allows for
 easy editing and version control of diagrams.
 
 ```markdown
-:::mermaid
+:::
 flowchart TD
     A[Hard] -->|Text| B(Round)
     B --> C{Decision}
