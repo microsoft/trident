@@ -118,6 +118,9 @@ pub enum InternalError {
     #[error("Failed to serialize Host Status")]
     SerializeHostStatus,
 
+    #[error("Failed to set up extension images on the target OS")]
+    SetUpExtensionImages,
+
     #[error("Failed to start tokio runtime")]
     StartTokioRuntime,
 
@@ -347,6 +350,9 @@ pub enum ServicingError {
         binary: &'static str,
         explanation: String,
     },
+
+    #[error("Failed to create extension image directories on target OS")]
+    CreateExtensionImageDirectories,
 
     #[error("Failed to get binary paths required for pcrlock encryption")]
     GetBinaryPathsForPcrlockEncryption,
