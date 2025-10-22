@@ -699,44 +699,8 @@ mod tests {
                     id: "confext2".to_string(),
                     name: "confext2".to_string(),
                     sha384: Sha384Hash::from("b".repeat(96)),
-                    path: PathBuf::from("/var/lib/extensions/sysext2.raw"),
-                    temp_path: PathBuf::from("/var/lib/extensions/.staging/sysext2.raw"),
-                    ext_type: ExtensionType::Sysext,
-                },
-                // Sysext in /.extra/sysext
-                ExtensionData {
-                    id: "sysext3".to_string(),
-                    name: "sysext3".to_string(),
-                    sha384: Sha384Hash::from("c".repeat(96)),
-                    path: PathBuf::from("/.extra/sysext/sysext3.raw"),
-                    temp_path: PathBuf::from("/var/lib/extensions/.staging/sysext3.raw"),
-                    ext_type: ExtensionType::Sysext,
-                },
-                // Confext in /var/lib/confexts (default)
-                ExtensionData {
-                    id: "confext1".to_string(),
-                    name: "confext1".to_string(),
-                    sha384: Sha384Hash::from("d".repeat(96)),
-                    path: PathBuf::from("/var/lib/confexts/confext1.raw"),
-                    temp_path: PathBuf::from("/var/lib/extensions/.staging/confext1.raw"),
-                    ext_type: ExtensionType::Confext,
-                },
-                // Confext in /usr/lib/confexts
-                ExtensionData {
-                    id: "confext2".to_string(),
-                    name: "confext2".to_string(),
-                    sha384: Sha384Hash::from("e".repeat(96)),
                     path: PathBuf::from("/usr/lib/confexts/confext2.raw"),
                     temp_path: PathBuf::from("/var/lib/extensions/.staging/confext2.raw"),
-                    ext_type: ExtensionType::Confext,
-                },
-                // Confext in /usr/local/lib/confexts
-                ExtensionData {
-                    id: "confext3".to_string(),
-                    name: "confext3".to_string(),
-                    sha384: Sha384Hash::from("f".repeat(96)),
-                    path: PathBuf::from("/usr/local/lib/confexts/confext3.raw"),
-                    temp_path: PathBuf::from("/var/lib/extensions/.staging/confext3.raw"),
                     ext_type: ExtensionType::Confext,
                 },
             ],
