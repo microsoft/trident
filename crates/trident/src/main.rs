@@ -288,7 +288,7 @@ fn main() -> ExitCode {
     match run_trident(logstream.unwrap(), tracestream.unwrap(), &args) {
         Ok(ExitKind::Done) => {}
         Err(e) => {
-            error!("Trident failed: {e:?}");
+            error!("{e:?}");
             return ExitCode::from(2);
         }
         Ok(ExitKind::NeedsReboot) => {

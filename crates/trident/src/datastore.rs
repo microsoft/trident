@@ -53,7 +53,10 @@ impl DataStore {
             .structured(ServicingError::Datastore {
                 inner: DatastoreError::InitializeDatastore,
             })?
-            .unwrap_or_default();
+            .unwrap_or(HostStatus {
+                is_management_os: true,
+                ..Default::default()
+            });
 
         Ok(Self {
             db: Some(db),

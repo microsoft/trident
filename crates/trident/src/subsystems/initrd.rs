@@ -3,7 +3,7 @@ use std::any::Any;
 use log::{debug, info};
 
 use osutils::mkinitrd;
-use trident_api::error::TridentError;
+use trident_api::{constants::internal_params::DRACUT_DEBUG, error::TridentError};
 
 use crate::engine::{EngineContext, Subsystem};
 
@@ -37,6 +37,6 @@ impl Subsystem for InitrdSubsystem {
         // password into initrd and to update the hardcoded UUID of the ESP.
 
         info!("Regenerating initrd");
-        mkinitrd::execute()
+        mkinitrd::execute(ctx.spec.internal_params.get_flag(DRACUT_DEBUG))
     }
 }
