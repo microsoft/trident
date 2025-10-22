@@ -1,0 +1,46 @@
+parameters:
+  - name: buildLiveInstaller
+    type: boolean
+    default: true
+
+  - name: buildAttendedInstallerSimulator
+    type: boolean
+    default: true
+
+stages:
+  - stage: AzlInstaller
+    displayName: AZL Installer Tools
+
+    jobs:
+      - job: BuildInstallerTools
+        displayName: Build Installer Tools
+        timeoutInMinutes: 60
+        pool:
+          type: linux
+          name: trident-ubuntu-1es-pool-eastus2
+          hostArchitecture: amd64
+
+        variables:
+          ob_outputDirectory: $(Build.SourcesDirectory)/installer-tools
+          ob_artifactBaseName: installer-tools
+
+        steps:
+          - template: ../../common_tasks/avoid-pypi-usage.yml
+
+          - ${{ if eq(parameters.buildLiveInstaller, true) }}:
+              - bash: |
+                  set -eux
+                  make bin/liveinstaller
+                  mkdir -p $(ob_outputDirectory)
+                  mv bin/liveinstaller $(ob_outputDirectory)
+                workingDirectory: $(Build.SourcesDirectory)
+                displayName: "Building liveinstaller"
+
+          - ${{ if eq(parameters.buildAttendedInstallerSimulator, true) }}:
+              - bash: |
+                  set -eux
+                  make bin/attendedinstaller-simulator
+                  mkdir -p $(ob_outputDirectory)
+                  mv bin/attendedinstaller-simulator $(ob_outputDirectory)
+                workingDirectory: $(Build.SourcesDirectory)
+                displayName: "Building attendedinstaller-simulator"

@@ -12,3 +12,4 @@ stages:
       targetArchitecture: arm64
   - template: stages/validate_makefile/dev-build.yml
   - template: stages/building_tools/building-tools.yml
+  - template: stages/azl_installer/azl-installer.yml
