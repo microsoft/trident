@@ -44,19 +44,19 @@ fi
 ///
 /// If mkinitrd is available, it will be used. Azl 3.0 doesn't have mkinitrd anymore, so dracut is
 /// used instead.
-pub fn execute() -> Result<(), TridentError> {
+pub fn execute(debug: bool) -> Result<(), TridentError> {
     if Path::new("/usr/bin/mkinitrd").exists() {
         Dependency::Mkinitrd
             .cmd()
             .run_and_check()
             .structured(ServicingError::RegenerateInitrd)
     } else {
-        run_darcut().structured(ServicingError::RegenerateInitrd)
+        run_dracut(debug).structured(ServicingError::RegenerateInitrd)
     }
 }
 
 /// Wrapper around dracut to regenerate the initrd with specific options
-fn run_darcut() -> Result<(), Error> {
+fn run_dracut(debug: bool) -> Result<(), Error> {
     // Create a temp file
     let mut script = NamedTempFile::new().context("Failed to create temporary file")?;
     // Write the worakround script to the temp file
@@ -71,10 +71,13 @@ fn run_darcut() -> Result<(), Error> {
     std::fs::set_permissions(script.path(), std::fs::Permissions::from_mode(0o755))
         .context("Failed to set permissions of temporary file")?;
 
-    Dependency::Dracut
-        .cmd()
-        .arg("--force")
-        .arg("--regenerate-all")
+    let mut cmd = Dependency::Dracut.cmd().with_arg("--force");
+
+    if debug {
+        cmd.arg("--debug").arg("-L").arg("6");
+    }
+
+    cmd.arg("--regenerate-all")
         .arg("--zstd")
         .arg("--include")
         .arg("/usr/lib/locale")
@@ -109,7 +112,7 @@ mod functional_test {
             std::fs::remove_file(initrd_path.as_ref().unwrap()).unwrap();
         }
 
-        execute().unwrap();
+        execute(false).unwrap();
 
         // Some initrd should have been created
         let initrd_path = glob::glob(pattern).unwrap().next();

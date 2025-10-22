@@ -200,6 +200,9 @@ pub mod internal_params {
     /// Disable automatic ejection of installation media after clean install.
     pub const DISABLE_MEDIA_EJECTION: &str = "disableMediaEjection";
 
+    /// Run dracut in debug mode to capture more output.
+    pub const DRACUT_DEBUG: &str = "dracutDebug";
+
     /// Enable support for Harpoon to query for updated Host Config documents.
     pub const ENABLE_HARPOON_SUPPORT: &str = "harpoon";
 
