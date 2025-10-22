@@ -120,8 +120,7 @@ To build an image with Builder or test your changes to Builder, follow these ste
 1. If necessary, update the Image Customizer config for the image you want to build, by modifying the corresponding YAML in `test-images/platform-integration-images`. You can also find the relevant YAML by running:
 
 ```bash
-    python3 ./testimages.py show-image <image_name> config-file`
-
+    python3 ./testimages.py show-image <image_name> config-file
 ```
 
 1. Build the image:
