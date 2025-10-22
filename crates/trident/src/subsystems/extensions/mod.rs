@@ -29,6 +29,9 @@ use crate::{
 
 mod release;
 
+/// Extensions subsystem name
+pub const EXTENSIONS_SUBSYSTEM_NAME: &str = "extensions";
+
 /// Extension-release
 const EXTENSION_RELEASE: &str = "extension-release";
 
@@ -91,7 +94,7 @@ pub struct ExtensionsSubsystem {
 }
 impl Subsystem for ExtensionsSubsystem {
     fn name(&self) -> &'static str {
-        "extensions"
+        EXTENSIONS_SUBSYSTEM_NAME
     }
 
     fn as_any(&self) -> &dyn Any {

@@ -23,7 +23,7 @@ use crate::{
     engine::boot::BootSubsystem,
     subsystems::{
         esp::EspSubsystem,
-        extensions::ExtensionsSubsystem,
+        extensions::{ExtensionsSubsystem, EXTENSIONS_SUBSYSTEM_NAME},
         hooks::HooksSubsystem,
         initrd::InitrdSubsystem,
         management::ManagementSubsystem,
@@ -329,7 +329,7 @@ pub fn get_extensions_subsystem(
 ) -> Result<&ExtensionsSubsystem, TridentError> {
     subsystems
         .iter()
-        .find(|s| s.name() == ExtensionsSubsystem::default().name())
+        .find(|s| s.name() == EXTENSIONS_SUBSYSTEM_NAME)
         .structured(InternalError::Internal(
             "Failed to find Extensions subsystem",
         ))?
