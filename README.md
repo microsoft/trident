@@ -33,7 +33,7 @@ comprehensive guidance on installation, configuration, and usage.
 ### Developing and Contributing
 
 For detailed information about contributing to this project please read the
-[contributing guide](https://microsoft.github.io/trident/docs/Development/Contributing/contributing-guidelines).
+[contributing guide](https://microsoft.github.io/trident/docs/Development/Contributing/Contributing-Guidelines).
 
 ## Getting Help
 

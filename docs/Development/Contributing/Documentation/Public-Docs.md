@@ -84,7 +84,7 @@ documents.
 
 Recommended reading: [Diátaxis Tutorials](https://diataxis.fr/tutorials/)
 
-[TEMPLATE](tutorial-template.md)
+[TEMPLATE](Templates/Tutorial-Template.md)
 
 Tutorials as introductory guides for users to learn the basics of working with
 Trident. As such, they should have very little jargon, prerequisites, or
@@ -117,7 +117,7 @@ The following structure is recommended:
 
 Recommended reading: [Diátaxis How-To Guides](https://diataxis.fr/how-to-guides/)
 
-[TEMPLATE](how-to-guide-template.md)
+[TEMPLATE](Templates/How-To-Guide-Template.md)
 
 How-to guides are more advanced than tutorials and are intended for users who
 are already familiar with Trident and want to learn how to perform specific
