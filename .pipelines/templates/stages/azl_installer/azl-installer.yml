@@ -25,8 +25,6 @@ stages:
           ob_artifactBaseName: installer-tools
 
         steps:
-          - template: ../../common_tasks/avoid-pypi-usage.yml
-
           - ${{ if eq(parameters.buildLiveInstaller, true) }}:
               - bash: |
                   set -eux
