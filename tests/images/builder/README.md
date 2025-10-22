@@ -104,11 +104,11 @@ The following commands are supported:
     python3 ./testimages.py show-image <image_name> <field>
     # Show info on key artifacts, such as the Image Customizer version or container image
     python3 ./testimages.py show-artifact
-    # List images that have been built and are avaible to be used
+    # List images that have been built and are available to be used
     python3 ./testimages.py list-files
 ```
 
-So, to build an image with Builder or test your changes to Builder, follow these steps:
+To build an image with Builder or test your changes to Builder, follow these steps:
 
 1. If necessary, make changes to the Builder source code.
 1. Download the base image:
@@ -117,7 +117,7 @@ So, to build an image with Builder or test your changes to Builder, follow these
     ./testimages.py download-image <base_image_name>
 ```
 
-1. If necessary, update the Image Customizer config for the image you want to build, by modifying the corresponding YAML in `test-images/plaform-integration-images`. You can also find the relevant YAML by running:
+1. If necessary, update the Image Customizer config for the image you want to build, by modifying the corresponding YAML in `test-images/platform-integration-images`. You can also find the relevant YAML by running:
 
 ```bash
     python3 ./testimages.py show-image <image_name> config-file`
