@@ -182,7 +182,7 @@ fn validate_final_selinux_mode(
     final_selinux_mode: SelinuxMode,
 ) -> Result<(), TridentError> {
     // If a verity filesystem is mounted at root, ensure that SELinux is not
-    // in enforcing mode and warn if it is in permissive mode
+    // in enforcing mode and warn if it is in permissive mode.
     if ctx.storage_graph.root_fs_is_verity() && !ctx.is_uki()? {
         match final_selinux_mode {
             SelinuxMode::Enforcing => {
