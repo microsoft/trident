@@ -112,7 +112,7 @@ the Host Status under the `lastError` section. Because `TridentError` already
 carries the error context, the callstack, and the error type, an `ERROR` log
 should **only** be printed if there is any additional context that must be
 shared with the customer. Refer to
-[Structured Error in Trident](structured-error.md) for more details on
+[Structured Error in Trident](Structured-Error.md) for more details on
 `TridentError`.
 
 In case of **a non-fatal error**, no `TridentError` is returned, hence, an

@@ -29,7 +29,7 @@ potential errors that might occur on a host and/or in Trident:
 4. `InvalidInput` identifies errors that occur the user provides invalid input.
     E.g. when the user points Trident to a local Host Configuration file that
     cannot be parsed, it means that the user provided an incorrectly formatted
-    YAML file. Defined in a separate file `trident_apt/src/config/host/error.rs`,
+    YAML file. Defined in a separate file `trident_api/src/config/host/error.rs`,
     `HostConfigurationStaticValidationError` and `HostConfigurationDynamicValidationError`
     are two key sub-categories that describe potential errors in the Host
     Configuration provided by the user.

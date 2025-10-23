@@ -80,3 +80,51 @@ The system uses Python's `multiprocessing` package to build image clones in para
 ### Resource Management
 
 The builder uses `ExitStack()` context managers to ensure proper cleanup of temporary resources.
+
+## Running Builder
+
+Builder can be run locally as a stand-alone tool:
+
+```bash
+    python3 ./testimages.py <command>
+```
+
+The following commands are supported:
+
+```bash
+    # List images available for building
+    python3 ./testimages.py list
+    # Download a base image: baremetal, core_selinux, qemu_guest, or minimal
+    python3 ./testimages.py download-image <base_image_name>
+    # List required dependencies for an image
+    python3 ./testimages.py dependencies <image_name>
+    # Build an image locally
+    python3 ./testimages.py build <image_name>
+    # Show key info about the image, such as name, source, config path, etc.
+    python3 ./testimages.py show-image <image_name> <field>
+    # Show info on key artifacts, such as the Image Customizer version or container image
+    python3 ./testimages.py show-artifact
+    # List images that have been built and are available to be used
+    python3 ./testimages.py list-files
+```
+
+To build an image with Builder or test your changes to Builder, follow these steps:
+
+1. If necessary, make changes to the Builder source code.
+1. Download the base image:
+
+```bash
+    ./testimages.py download-image <base_image_name>
+```
+
+1. If necessary, update the Image Customizer config for the image you want to build, by modifying the corresponding YAML in `test-images/platform-integration-images`. You can also find the relevant YAML by running:
+
+```bash
+    python3 ./testimages.py show-image <image_name> config-file
+```
+
+1. Build the image:
+
+```bash
+    python3 ./testimages.py build <image_name> --output-dir <output_dir> --no-download --clones <num_of_clones>
+```

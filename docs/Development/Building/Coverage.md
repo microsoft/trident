@@ -11,7 +11,7 @@ gates ensure we maintain a high level of code coverage.
 
 ## Requirements
 
-See [Code Coverage Dependencies](dependencies.md#code-coverage-dependencies).
+See [Code Coverage Dependencies](Dependencies.md#code-coverage-dependencies).
 
 ## Running Coverage
 

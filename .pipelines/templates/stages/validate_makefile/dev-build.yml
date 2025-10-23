@@ -5,7 +5,7 @@ parameters:
 
   - name: dependsOnStage
     type: string
-    default: ''
+    default: ""
 
 stages:
   - stage: MakefileValidation
@@ -51,7 +51,6 @@ stages:
 
           - bash: |
               set -eux
-              # Disabled `generate-mermaid-diagrams` due to #9055
               make validate-configs
               make bin/trident-rpms.tar.gz
               make docker-build

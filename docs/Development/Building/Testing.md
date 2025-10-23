@@ -31,7 +31,7 @@ make test
 
 :::info NOTICE
 Running these tests depends on internal resources that are not publicly
-available yet. 
+available yet.
 :::
 
 Many operations in Trident cannot be tested with unit tests alone given the
@@ -51,4 +51,4 @@ mod functional_tests {
 ```
 
 You can read more about how functional tests work in
-[Functional Tests](functional-tests.md).
+[Functional Tests](Functional-Tests.md).
