@@ -210,6 +210,12 @@ pub enum HostConfigurationDynamicValidationError {
     EncryptionKeyNotRegularFile { key_file: String },
 
     #[error(
+        "SELinux is not supported with root-verity and grub. SELinux is set to '{selinux_mode}', \
+        but should be set to 'disabled'"
+    )]
+    ExtensionImagesAndSelinuxUnsupported { selinux_mode: String },
+
+    #[error(
         "Since update image is a grub image, list of PCRs in encryption config contains invalid PCRs: '{pcrs}'. \
         Only PCR 7 is valid for grub images"
     )]
