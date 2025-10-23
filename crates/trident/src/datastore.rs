@@ -3,8 +3,10 @@ use std::{fs, path::Path};
 use log::debug;
 
 use trident_api::{
-    error::{DatastoreError, InternalError, ReportError, ServicingError, TridentError},
-    status::HostStatus,
+    error::{
+        DatastoreError, InternalError, ReportError, ServicingError, TridentError, TridentResultExt,
+    },
+    status::{decode_host_status, HostStatus},
 };
 
 pub struct DataStore {
@@ -37,7 +39,7 @@ impl DataStore {
                 path: path.to_string_lossy().into(),
             },
         })?;
-        let host_status: HostStatus = db
+        let host_status_yaml: Option<serde_yaml::Value> = db
             .prepare("SELECT contents FROM hoststatus ORDER BY id DESC LIMIT 1")
             .structured(ServicingError::Datastore {
                 inner: DatastoreError::InitializeDatastore,
@@ -49,6 +51,14 @@ impl DataStore {
                 inner: DatastoreError::InitializeDatastore,
             })?
             .map(|row| serde_yaml::from_str(row.read::<&str, _>(0)))
+            .transpose()
+            .structured(ServicingError::Datastore {
+                inner: DatastoreError::InitializeDatastore,
+            })
+            .message("Failed to parse Host Status as YAML")?;
+
+        let host_status = host_status_yaml
+            .map(|yaml| decode_host_status(yaml))
             .transpose()
             .structured(ServicingError::Datastore {
                 inner: DatastoreError::InitializeDatastore,

@@ -4,7 +4,8 @@ use std::{
     path::PathBuf,
 };
 
-use log::{debug, error};
+use anyhow::{bail, Context};
+use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
 use strum_macros::EnumIter;
@@ -121,13 +122,9 @@ impl Display for AbVolumeSelection {
     }
 }
 
-fn load_compatible(mut yaml: Value) -> Option<Value> {
+fn fix_host_config(yaml: &mut Value) -> Result<(), anyhow::Error> {
     let Value::Mapping(ref mut m) = yaml else {
-        return None;
-    };
-
-    let Some(Value::Mapping(ref mut m)) = m.get_mut("spec") else {
-        return None;
+        bail!("Host config is not a mapping")
     };
 
     if let Some(Value::Mapping(mut e)) = m.remove("osImage") {
@@ -152,10 +149,9 @@ fn load_compatible(mut yaml: Value) -> Option<Value> {
                         if s.get("type") == Some(&Value::String("create".into()))
                             || s.get("type") == Some(&Value::String("create".into()))
                         {
-                            error!(
+                            bail!(
                                 "Cannot convert old host status with 'create' or 'new' filesystem source"
                             );
-                            return None;
                         }
                     }
 
@@ -171,22 +167,12 @@ fn load_compatible(mut yaml: Value) -> Option<Value> {
             for fs in fs_list.iter_mut() {
                 match fs {
                     Value::Mapping(ref mut fs_map) => {
-                        let Some(data_device_id) = fs_map.remove("dataDeviceId") else {
-                            error!("Cannot convert old host status with verity filesystem missing dataDeviceId");
-                            return None;
-                        };
-                        let Some(hash_device_id) = fs_map.remove("hashDeviceId") else {
-                            error!("Cannot convert old host status with verity filesystem missing hashDeviceId");
-                            return None;
-                        };
-                        let Some(mount_point) = fs_map.remove("mountPoint") else {
-                            error!("Cannot convert old host status with verity filesystem missing mountPoint");
-                            return None;
-                        };
-                        let Some(name) = fs_map.remove("name") else {
-                            error!("Cannot convert old host status with verity filesystem missing name");
-                            return None;
-                        };
+                        let data_device_id = fs_map.remove("dataDeviceId").context("Cannot convert old host status with verity filesystem missing dataDeviceId")?;
+                        let hash_device_id = fs_map.remove("hashDeviceId").context("Cannot convert old host status with verity filesystem missing hashDeviceId")?;
+                        let mount_point = fs_map.remove("mountPoint").context("Cannot convert old host status with verity filesystem missing mountPoint")?;
+                        let name = fs_map.remove("name").context(
+                            "Cannot convert old host status with verity filesystem missing name",
+                        )?;
 
                         let id = format!("verity{}", extra_verity.len());
 
@@ -211,8 +197,7 @@ fn load_compatible(mut yaml: Value) -> Option<Value> {
                         ));
                     }
                     _ => {
-                        error!("Cannot convert old host status with non-mapping verity filesystem");
-                        return None;
+                        bail!("Cannot convert old host status with non-mapping verity filesystem");
                     }
                 }
             }
@@ -229,8 +214,44 @@ fn load_compatible(mut yaml: Value) -> Option<Value> {
             }
         }
     }
+    Ok(())
+}
 
-    Some(yaml)
+fn fix_old_host_status(yaml: &mut Value) -> Result<(), anyhow::Error> {
+    let Value::Mapping(ref mut m) = yaml else {
+        bail!("Host status is not a mapping");
+    };
+
+    fix_host_config(
+        m.get_mut("spec")
+            .context("Missing 'spec' field in host status")?,
+    )?;
+
+    if let Some(ref mut spec_old @ Value::Mapping(_)) = m.get_mut("specOld") {
+        fix_host_config(spec_old).context("Invalid 'specOld' field in host status")?;
+    }
+
+    Ok(())
+}
+
+pub fn decode_host_status(mut yaml: Value) -> Result<HostStatus, serde_yaml::Error> {
+    let decoded = serde_yaml::from_value(yaml.clone());
+    if let Ok(host_status) = decoded {
+        return Ok(host_status);
+    }
+
+    if let Err(e) = fix_old_host_status(&mut yaml) {
+        info!("Failed to fixup old Host Status format: {e}");
+        return decoded;
+    }
+
+    match serde_yaml::from_value(yaml) {
+        Ok(hs) => Ok(hs),
+        Err(e) => {
+            info!("Failed to parse Host Status after fixup : {e}");
+            decoded
+        }
+    }
 }
 
 #[cfg(test)]
@@ -241,12 +262,8 @@ mod tests {
     fn load_old_format() {
         let old_yaml = include_str!("test/old_host_status.yaml");
         let yaml: Value = serde_yaml::from_str(old_yaml).unwrap();
-        let new_yaml = load_compatible(yaml).unwrap();
 
-        println!("{}", serde_yaml::to_string(&new_yaml).unwrap());
-
-        let hs: HostStatus = serde_yaml::from_value(new_yaml).unwrap();
-
+        let hs = decode_host_status(yaml).unwrap();
         hs.spec.validate().unwrap();
     }
 }
