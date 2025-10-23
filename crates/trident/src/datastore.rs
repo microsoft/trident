@@ -58,7 +58,7 @@ impl DataStore {
             .message("Failed to parse Host Status as YAML")?;
 
         let host_status = host_status_yaml
-            .map(|yaml| decode_host_status(yaml))
+            .map(decode_host_status)
             .transpose()
             .structured(ServicingError::Datastore {
                 inner: DatastoreError::InitializeDatastore,
