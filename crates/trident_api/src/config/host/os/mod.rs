@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use log::warn;
 use netplan_types::NetworkConfig;
 use serde::{Deserialize, Serialize};
 
@@ -188,6 +189,18 @@ impl Os {
 
         if let Some(network) = self.netplan.as_ref() {
             network::validate_netplan(network)?;
+        }
+
+        // Warn if SELinux is not disabled and sysexts or confexts are specified.
+        if let Some(selinux_mode) = self.selinux.mode {
+            if !(self.sysexts.is_empty() && self.confexts.is_empty())
+                && selinux_mode != SelinuxMode::Disabled
+            {
+                warn!(
+                    "The use of SELinux with sysexts and confexts is not \
+                    supported. SELinux mode should be set to 'disabled'."
+                );
+            }
         }
 
         // Validate sysexts

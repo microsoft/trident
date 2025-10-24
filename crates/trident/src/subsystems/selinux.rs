@@ -127,25 +127,7 @@ impl Subsystem for SelinuxSubsystem {
                 Dependency::Setfiles
             )))?;
 
-        // If a verity filesystem is mounted at root, ensure that SELinux is not
-        // in enforcing mode and warn if it is in permissive mode
-        if ctx.storage_graph.root_fs_is_verity() && !ctx.is_uki()? {
-            match final_selinux_mode {
-                SelinuxMode::Enforcing => {
-                    return Err(TridentError::new(InvalidInputError::from(
-                        HostConfigurationDynamicValidationError::RootVerityAndSelinuxUnsupported {
-                            selinux_mode: final_selinux_mode.to_string(),
-                        },
-                    )));
-                }
-                SelinuxMode::Permissive => warn!(
-                    "The use of SELinux with verity is not supported. SELinux mode is currently \
-                set to '{}', but should be 'disabled'.",
-                    final_selinux_mode.to_string()
-                ),
-                _ => (),
-            }
-        }
+        validate_final_selinux_mode(ctx, final_selinux_mode)?;
 
         perform_relabel(ctx)
     }
@@ -194,6 +176,59 @@ fn calculate_final_selinux_state(
         // For all other cases, the resulting state is the same as the Host Configuration.
         (Some(mode), _) => Some(mode),
     })
+}
+
+/// Validate that the calculated final SELinux mode is compatible with the rest
+/// of the Host Configuration. SELinux may not be in 'enforcing' mode when:
+/// - A verity filesystem is mounted at root
+/// - Sysexts or confexts are specified
+fn validate_final_selinux_mode(
+    ctx: &EngineContext,
+    final_selinux_mode: SelinuxMode,
+) -> Result<(), TridentError> {
+    // If a verity filesystem is mounted at root, ensure that SELinux is not
+    // in enforcing mode and warn if it is in permissive mode.
+    if ctx.storage_graph.root_fs_is_verity() && !ctx.is_uki()? {
+        match final_selinux_mode {
+            SelinuxMode::Enforcing => {
+                return Err(TridentError::new(InvalidInputError::from(
+                    HostConfigurationDynamicValidationError::RootVerityAndSelinuxUnsupported {
+                        selinux_mode: final_selinux_mode.to_string(),
+                    },
+                )));
+            }
+            SelinuxMode::Permissive => warn!(
+                "The use of SELinux with verity is not supported. SELinux mode is currently \
+                set to '{}', but should be 'disabled'.",
+                final_selinux_mode.to_string()
+            ),
+            _ => (),
+        }
+    }
+
+    // SELinux must not be in enforcing mode if sysexts or confexts are
+    // specified in the Host Configuration. Return an error if SELinux will
+    // be in 'enforcing' mode in the target OS, and warn for 'permissive'
+    // mode.
+    if !(ctx.spec.os.sysexts.is_empty() && ctx.spec.os.confexts.is_empty()) {
+        match final_selinux_mode {
+            SelinuxMode::Enforcing => {
+                return Err(TridentError::new(InvalidInputError::from(
+                    HostConfigurationDynamicValidationError::ExtensionImagesAndSelinuxUnsupported {
+                        selinux_mode: final_selinux_mode.to_string(),
+                    },
+                )));
+            }
+            SelinuxMode::Permissive => warn!(
+                "The use of SELinux with sysexts and confexts is not supported. SELinux mode is \
+                currently set to '{}', but should be 'disabled'.",
+                final_selinux_mode.to_string()
+            ),
+            _ => (),
+        }
+    }
+
+    Ok(())
 }
 
 /// Runs the setfiles command to relabel the required filesystems.
@@ -260,14 +295,21 @@ mod tests {
     use std::{io::Write, path::PathBuf};
 
     use strum::IntoEnumIterator;
+    use url::Url;
     use uuid::Uuid;
 
     use sysdefs::{osuuid::OsUuid, partition_types::DiscoverablePartitionType};
     use tempfile::NamedTempFile;
 
     use trident_api::{
-        config::{FileSystem, FileSystemSource, MountOptions, MountPoint, NewFileSystemType},
+        config::{
+            Disk, Extension, FileSystem, FileSystemSource, MountOptions, MountPoint,
+            NewFileSystemType, Partition, PartitionSize, PartitionType, Storage,
+            VerityCorruptionOption, VerityDevice,
+        },
         constants::MOUNT_OPTION_READ_ONLY,
+        error::ErrorKind,
+        primitives::hash::Sha384Hash,
     };
 
     use crate::{
@@ -417,5 +459,104 @@ mod tests {
 
         let selinux_mode = get_selinux_mode(temp_file.path().to_str().unwrap()).unwrap();
         assert_eq!(selinux_mode, SelinuxMode::Permissive);
+    }
+
+    #[test]
+    fn test_validate_final_selinux_mode_root_verity() {
+        // Test case 1: dynamic validation succeeds with SELinux in enforcing
+        // mode and no root-verity.
+        let mut ctx = EngineContext::default();
+        validate_final_selinux_mode(&ctx, SelinuxMode::Enforcing).unwrap();
+
+        // Test case 2: dynamic validation fails with SELinux in enforcing mode
+        // and root-verity present.
+        ctx.spec.storage = Storage {
+            filesystems: vec![FileSystem {
+                device_id: Some("root".into()),
+                source: Default::default(),
+                mount_point: Some(MountPoint {
+                    path: PathBuf::from("/"),
+                    options: Default::default(),
+                }),
+            }],
+            disks: vec![Disk {
+                id: "disk0".into(),
+                device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-2".into(),
+                partitions: vec![
+                    Partition {
+                        id: "root-data".into(),
+                        partition_type: PartitionType::Root,
+                        size: PartitionSize::from_str("1G").unwrap(),
+                    },
+                    Partition {
+                        id: "root-hash".into(),
+                        partition_type: PartitionType::RootVerity,
+                        size: PartitionSize::from_str("512M").unwrap(),
+                    },
+                ],
+                ..Default::default()
+            }],
+            verity: vec![VerityDevice {
+                id: "root".into(),
+                name: "root".into(),
+                data_device_id: "root-data".into(),
+                hash_device_id: "root-hash".into(),
+                corruption_option: VerityCorruptionOption::Ignore,
+            }],
+            ..Default::default()
+        };
+        ctx.is_uki = Some(false);
+        ctx.storage_graph = ctx.spec.storage.build_graph().unwrap();
+        let err = validate_final_selinux_mode(&ctx, SelinuxMode::Enforcing).unwrap_err();
+        assert_eq!(
+            *err.kind(),
+            ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
+                inner: HostConfigurationDynamicValidationError::RootVerityAndSelinuxUnsupported {
+                    selinux_mode: "enforcing".into()
+                }
+            })
+        );
+
+        // Test case 3: dynamic validation succeeds with SELinux in 'permissive'
+        // or 'disabled' mode and root-verity present.
+        validate_final_selinux_mode(&ctx, SelinuxMode::Permissive).unwrap();
+        validate_final_selinux_mode(&ctx, SelinuxMode::Disabled).unwrap();
+    }
+
+    #[test]
+    fn test_validate_final_selinux_mode_sysexts_confexts() {
+        // Test case 1: dynamic validation succeeds with SELinux in enforcing
+        // mode and no extension images.
+        let mut ctx = EngineContext::default();
+        validate_final_selinux_mode(&ctx, SelinuxMode::Enforcing).unwrap();
+
+        // Test case 2: dynamic validation fails with SELinux in enforcing mode
+        // and extension images present.
+        ctx.spec.os.sysexts.push(Extension {
+            url: Url::parse("https://example.com/sysext").unwrap(),
+            sha384: Sha384Hash::from("a".repeat(96)),
+            path: None,
+        });
+        ctx.spec.os.confexts.push(Extension {
+            url: Url::parse("https://example.com/confext").unwrap(),
+            sha384: Sha384Hash::from("b".repeat(96)),
+            path: None,
+        });
+
+        let err = validate_final_selinux_mode(&ctx, SelinuxMode::Enforcing).unwrap_err();
+        assert_eq!(
+            *err.kind(),
+            ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
+                inner:
+                    HostConfigurationDynamicValidationError::ExtensionImagesAndSelinuxUnsupported {
+                        selinux_mode: "enforcing".into()
+                    }
+            })
+        );
+
+        // Test case 3: dynamic validation succeeds with SELinux in 'permissive'
+        // or 'disabled mode and extension images present.
+        validate_final_selinux_mode(&ctx, SelinuxMode::Permissive).unwrap();
+        validate_final_selinux_mode(&ctx, SelinuxMode::Disabled).unwrap();
     }
 }

@@ -14,7 +14,7 @@ OVERRIDE_RUST_FEED ?= true
 SERVER_PORT ?= 8133
 
 .PHONY: all
-all: format check test build-api-docs bin/trident-rpms.tar.gz docker-build build-functional-test coverage validate-configs generate-mermaid-diagrams
+all: format check test build-api-docs bin/trident-rpms.tar.gz docker-build build-functional-test coverage validate-configs
 
 .PHONY: check
 check:
@@ -393,16 +393,6 @@ validate-configs: bin/trident
 		echo "Validating $$file"; \
 		$< validate $$file -v info || exit 1; \
 	done
-
-.PHONY: generate-mermaid-diagrams
-generate-mermaid-diagrams: mmdc
-	$(MAKE) $(addsuffix .png, $(basename $(wildcard $(abspath dev-docs/diagrams)/*.mmd)))
-
-mmdc:
-	docker pull ghcr.io/mermaid-js/mermaid-cli/mermaid-cli
-
-$(abspath dev-docs/diagrams)/%.png: dev-docs/diagrams/%.mmd
-	docker run --rm -u `id -u`:`id -g` -v $(abspath dev-docs/diagrams):/data minlag/mermaid-cli -i /data/$(notdir $<) -o /data/$(notdir $@)
 
 go.sum: go.mod
 	go mod tidy
