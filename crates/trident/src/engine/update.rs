@@ -118,7 +118,7 @@ pub(crate) fn update(
     // Stage update
     stage_update(
         &mut subsystems,
-        &mut ctx,
+        ctx,
         state,
         #[cfg(feature = "grpc-dangerous")]
         sender,
@@ -183,12 +183,15 @@ pub(crate) fn update(
 #[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", ctx.servicing_type)))]
 fn stage_update(
     subsystems: &mut [Box<dyn Subsystem>],
-    ctx: &mut EngineContext,
+    ctx: EngineContext,
     state: &mut DataStore,
     #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
 ) -> Result<(), TridentError> {
+    // Make mutable clone of the EngineContext.
+    let mut ctx = ctx.clone();
+
     match ctx.servicing_type {
         ServicingType::CleanInstall => {
             return Err(TridentError::new(
@@ -215,7 +218,7 @@ fn stage_update(
         }
     };
 
-    engine::prepare(subsystems, ctx)?;
+    engine::prepare(subsystems, &ctx)?;
 
     if let ServicingType::AbUpdate = ctx.servicing_type {
         debug!("Preparing storage to mount new root");
@@ -224,7 +227,7 @@ fn stage_update(
         verity::stop_trident_servicing_devices(&ctx.spec)
             .structured(ServicingError::CleanupVerity)?;
 
-        storage::initialize_block_devices(ctx)?;
+        storage::initialize_block_devices(&ctx)?;
         let newroot_mount = NewrootMount::create_and_mount(
             &ctx.spec,
             &ctx.partition_paths,
@@ -234,12 +237,12 @@ fn stage_update(
                 ))?,
         )?;
 
-        engine::provision(subsystems, ctx, newroot_mount.path())?;
+        engine::provision(subsystems, &ctx, newroot_mount.path())?;
 
         debug!("Entering '{}' chroot", newroot_mount.path().display());
         let result = chroot::enter_update_chroot(newroot_mount.path())
             .message("Failed to enter chroot")?
-            .execute_and_exit(|| engine::configure(subsystems, ctx));
+            .execute_and_exit(|| engine::configure(subsystems, &ctx));
 
         if let Err(original_error) = result {
             if let Err(e) = newroot_mount.unmount_all() {
@@ -250,10 +253,10 @@ fn stage_update(
 
         newroot_mount.unmount_all()?;
     } else {
-        engine::configure(subsystems, ctx)?;
+        engine::configure(subsystems, &ctx)?;
     };
 
-    engine::update_host_configuration(subsystems, ctx)?;
+    engine::update_host_configuration(subsystems, &mut ctx)?;
 
     // At this point, deployment has been staged, so update servicing state
     debug!(
@@ -262,12 +265,12 @@ fn stage_update(
     );
     state.with_host_status(|hs| {
         *hs = HostStatus {
-            spec: ctx.spec.clone(),
-            spec_old: ctx.spec_old.clone(),
+            spec: ctx.spec,
+            spec_old: ctx.spec_old,
             servicing_state: ServicingState::AbUpdateStaged,
             ab_active_volume: ctx.ab_active_volume,
-            partition_paths: ctx.partition_paths.clone(),
-            disk_uuids: ctx.disk_uuids.clone(),
+            partition_paths: ctx.partition_paths,
+            disk_uuids: ctx.disk_uuids,
             install_index: ctx.install_index,
             last_error: None,
             is_management_os: false,
