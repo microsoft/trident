@@ -253,7 +253,6 @@ fn stage_update(
         engine::configure(subsystems, ctx)?;
     };
 
-    // Update Host Configuration with the paths of extension images.
     engine::update_host_configuration(subsystems, ctx)?;
 
     // At this point, deployment has been staged, so update servicing state

@@ -94,13 +94,6 @@ impl Subsystem for ExtensionsSubsystem {
     }
 
     fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
-        // Skip step if there are no changes to sysexts and confexts.
-        if ctx.spec.os.sysexts == ctx.spec_old.os.sysexts
-            && ctx.spec.os.confexts == ctx.spec_old.os.confexts
-        {
-            return Ok(());
-        }
-
         // Define staging directory, in which extension images will be downloaded.
         let staging_dir = path::join_relative(mount_path, EXTENSION_IMAGE_STAGING_DIRECTORY);
 
