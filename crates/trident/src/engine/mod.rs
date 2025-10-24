@@ -103,7 +103,7 @@ pub(crate) trait Subsystem: Send {
         Ok(())
     }
 
-    /// Update the Host Configuration with information in the subsystem.
+    /// Update the Host Configuration with information from the subsystem.
     fn update_host_configuration(&self, _ctx: &mut EngineContext) -> Result<(), TridentError> {
         Ok(())
     }
