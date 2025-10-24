@@ -142,6 +142,7 @@ fn fix_host_config(yaml: &mut Value) -> Result<(), anyhow::Error> {
     }
 
     if let Some(Value::Mapping(ref mut t)) = m.get_mut("trident") {
+        debug!("Removing deprecated 'trident.selfUpgrade' field from host status");
         t.remove("selfUpgrade");
     }
 
@@ -208,9 +209,11 @@ fn fix_host_config(yaml: &mut Value) -> Result<(), anyhow::Error> {
         }
 
         if !extra_verity.is_empty() {
+            debug!("Adding converted verity devices to host status");
             storage.insert("verity".into(), Value::Sequence(extra_verity));
         }
         if !extra_filesystems.is_empty() {
+            debug!("Adding converted verity filesystems to host status");
             if let Some(Value::Sequence(ref mut fs_list)) = storage.get_mut("filesystems") {
                 fs_list.extend(extra_filesystems);
             } else {
@@ -225,6 +228,8 @@ fn fix_old_host_status(yaml: &mut Value) -> Result<(), anyhow::Error> {
     let Value::Mapping(ref mut m) = yaml else {
         bail!("Host status is not a mapping");
     };
+
+    info!("Attempting to fix old host status format");
 
     fix_host_config(
         m.get_mut("spec")
