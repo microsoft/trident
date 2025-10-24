@@ -513,7 +513,7 @@ mod tests {
         );
 
         // Test case 3: dynamic validation succeeds with SELinux in 'permissive'
-        // or 'disabled mode and root-verity present.
+        // or 'disabled' mode and root-verity present.
         validate_final_selinux_mode(&ctx, SelinuxMode::Permissive).unwrap();
         validate_final_selinux_mode(&ctx, SelinuxMode::Disabled).unwrap();
     }
