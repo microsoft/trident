@@ -216,7 +216,7 @@ fn validate_final_selinux_mode(
             }
             SelinuxMode::Permissive => warn!(
                 "The use of SELinux with sysexts and confexts is not supported. SELinux mode is \
-                    currently set to '{}', but should be 'disabled'.",
+                currently set to '{}', but should be 'disabled'.",
                 final_selinux_mode.to_string()
             ),
             _ => (),
