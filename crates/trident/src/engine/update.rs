@@ -189,8 +189,8 @@ fn stage_update(
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
 ) -> Result<(), TridentError> {
-    // Make mutable clone of the EngineContext.
-    let mut ctx = ctx.clone();
+    // Make mutable instance of EngineContext.
+    let mut ctx = ctx;
 
     match ctx.servicing_type {
         ServicingType::CleanInstall => {
