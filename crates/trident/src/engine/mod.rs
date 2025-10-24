@@ -327,7 +327,7 @@ fn configure(
 }
 
 fn update_host_configuration(
-    subsystems: &mut [Box<dyn Subsystem>],
+    subsystems: &[Box<dyn Subsystem>],
     ctx: &mut EngineContext,
 ) -> Result<(), TridentError> {
     info!("Starting step 'Update Host Configuration'");
