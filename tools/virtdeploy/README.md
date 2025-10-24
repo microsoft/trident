@@ -8,7 +8,7 @@ Virtdeploy is a tool to create VMs to mock real physical servers.
 
 Note: "Deploy Agent" is whatever you are using to deploy an OS through the BMC, eg. `netlaunch`.
 
-```
+```markdown
 :::mermaid
 sequenceDiagram
 actor you

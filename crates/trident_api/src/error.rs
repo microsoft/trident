@@ -118,6 +118,9 @@ pub enum InternalError {
     #[error("Failed to serialize Host Status")]
     SerializeHostStatus,
 
+    #[error("Failed to set up extension images on the target OS")]
+    SetUpExtensionImages,
+
     #[error("Failed to start tokio runtime")]
     StartTokioRuntime,
 
@@ -347,6 +350,9 @@ pub enum ServicingError {
         binary: &'static str,
         explanation: String,
     },
+
+    #[error("Failed to create extension image directories on target OS")]
+    CreateExtensionImageDirectories,
 
     #[error("Failed to get binary paths required for pcrlock encryption")]
     GetBinaryPathsForPcrlockEncryption,
@@ -828,32 +834,44 @@ impl Serialize for TridentError {
 
 impl Debug for TridentError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
+        match self.0.kind {
+            ErrorKind::ExecutionEnvironmentMisconfiguration(_) => writeln!(
+                f,
+                "Trident failed due to a misconfigured execution environment"
+            )?,
+            ErrorKind::Initialization(_) => writeln!(f, "Trident failed to initialize")?,
+            ErrorKind::Internal(_) => writeln!(f, "Trident failed due to an internal error")?,
+            ErrorKind::InvalidInput(_) => writeln!(f, "Trident failed due to invalid input")?,
+            ErrorKind::Servicing(_) => writeln!(f, "Trident failed due to a servicing error")?,
+            ErrorKind::UnsupportedConfiguration(_) => {
+                writeln!(f, "Trident failed due to an unsupported configuration")?
+            }
+        }
+
+        writeln!(f, "\nContext:")?;
+        writeln!(
             f,
-            "{} at {}:{}",
+            "    0: {} at {}:{}",
             self.0.kind,
             self.0.location.file(),
             self.0.location.line()
         )?;
 
-        if !self.0.context.is_empty() {
-            writeln!(f, "\n\nContext:")?;
-            for (i, (context, location)) in self.0.context.iter().enumerate() {
-                for (j, line) in context.split('\n').enumerate() {
-                    if j == 0 {
-                        write!(f, "{i: >5}: ")?;
-                    } else {
-                        f.write_str("\n       ")?;
-                    }
-                    f.write_str(line)?;
+        let mut index = 1;
+        for (context, location) in self.0.context.iter() {
+            for (j, line) in context.split('\n').enumerate() {
+                if j == 0 {
+                    write!(f, "{index: >5}: ")?;
+                } else {
+                    f.write_str("\n       ")?;
                 }
-                writeln!(f, " at {}:{}", location.file(), location.line())?;
+                f.write_str(line)?;
             }
+            writeln!(f, " at {}:{}", location.file(), location.line())?;
+            index += 1;
         }
 
         if let Some(ref source) = self.0.source {
-            writeln!(f, "\n\nCaused by:")?;
-            let mut index = 0;
             let mut source: Option<&dyn std::error::Error> = Some(source.as_ref());
             while let Some(e) = source {
                 for (i, line) in e.to_string().split('\n').enumerate() {
@@ -955,7 +973,7 @@ mod tests {
         assert_eq!(
             format!("{error:?}"),
             format!(
-                "Internal error: w at {}:{}\n\nCaused by:\n    0: x\n       y\n    1: z\n",
+                "Trident failed due to an internal error\n\nContext:\n    0: Internal error: w at {}:{}\n    1: x\n       y\n    2: z\n",
                 error.0.location.file(),
                 error.0.location.line(),
             ),

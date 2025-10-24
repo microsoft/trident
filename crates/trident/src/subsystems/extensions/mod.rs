@@ -1,4 +1,5 @@
 use std::{
+    collections::{HashMap, HashSet},
     fmt::Display,
     fs,
     path::{Path, PathBuf},
@@ -6,14 +7,16 @@ use std::{
 };
 
 use anyhow::{bail, ensure, Context, Error};
+use log::warn;
 use tempfile::NamedTempFile;
 
 use osutils::{dependencies::Dependency, path};
 use trident_api::{
     config::Extension,
     constants::internal_params::HTTP_CONNECTION_TIMEOUT_SECONDS,
-    error::{InternalError, ReportError, TridentError},
+    error::{InternalError, ReportError, ServicingError, TridentError},
     primitives::hash::Sha384Hash,
+    status::ServicingType,
 };
 
 use crate::{
@@ -56,13 +59,13 @@ pub struct ExtensionData {
     ///
     /// The extension image is downloaded into a temporary location first to
     /// avoid partial or corrupted extensions being merged into the OS.
-    pub temp_path: Option<PathBuf>,
+    pub temp_path: PathBuf,
 
     /// Sysext or confext.
     pub ext_type: ExtensionType,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ExtensionType {
     Sysext,
     Confext,
@@ -98,11 +101,20 @@ impl Subsystem for ExtensionsSubsystem {
         self.populate_extensions(ctx, &staging_dir)
             .structured(InternalError::PopulateExtensionImages)?;
 
-        // TODO: Determine which images need to be removed and which should be added.
+        // Ensure that desired target directories exist on the target OS.
+        self.create_directories(mount_path)
+            .structured(ServicingError::CreateExtensionImageDirectories)?;
 
-        // TODO: Copy extension images to their proper locations.
+        // Determine which images need to be removed and which should be added.
+        // Copy extension images to their proper locations.
+        self.set_up_extensions(mount_path, ctx.servicing_type)
+            .structured(InternalError::SetUpExtensionImages)?;
 
-        // TODO: Clean-up staging directory.
+        // Clean-up staging directory. Recursively remove all contents of
+        // staging directory as well as the directory itself.
+        fs::remove_dir_all(staging_dir).structured(InternalError::Internal(
+            "Failed to remove extension image staging directory",
+        ))?;
 
         Ok(())
     }
@@ -253,6 +265,141 @@ impl ExtensionsSubsystem {
 
         Ok(())
     }
+
+    /// Ensures that all target directories for extension images exist on the
+    /// target OS.
+    fn create_directories(&self, mount_path: &Path) -> Result<(), Error> {
+        let mut seen_dirs = HashSet::new();
+
+        self.extensions.iter().try_for_each(|ext| {
+            let dir = ext.path.parent().with_context(|| {
+                format!(
+                    "Failed to get parent directory of path '{}'",
+                    ext.path.display()
+                )
+            })?;
+            if seen_dirs.insert(dir) {
+                fs::create_dir_all(path::join_relative(mount_path, dir)).with_context(|| {
+                    format!(
+                        "Failed to create directory '{}' on the target OS at mount path '{}'",
+                        dir.display(),
+                        mount_path.display()
+                    )
+                })?;
+            }
+            Ok(())
+        })
+    }
+
+    /// Identifies which extension images should be added to the target OS from
+    /// the set of extensions on the servicing OS and the set of newly
+    /// downloaded extensions.
+    /// - New extensions that exist *only* in the new HC are renamed/copied from
+    ///   the staging directory to their target paths on the target OS.
+    /// - Extensions that exist *only* in the old HC are removed from the
+    ///   servicing OS (only during a runtime update, i.e. target OS ==
+    ///   servicing OS).
+    /// - Extensions that exist in both the new HC and the old HC:
+    ///   - If the hash differs, then the new version of the extension is
+    ///     renamed/copied from the staging directory to its path on the target
+    ///     OS. The old version of the extension is removed from the servicing
+    ///     OS if servicing type is not Clean Install or A/B update.
+    ///   - If the hash is the same, the extension is renamed/copied from its
+    ///     old location on the servicing OS to its new location on the target
+    ///     OS.
+    fn set_up_extensions(
+        &self,
+        mount_path: &Path,
+        servicing_type: ServicingType,
+    ) -> Result<(), Error> {
+        let old_exts_hashmap: HashMap<_, _> = self
+            .extensions_old
+            .iter()
+            .map(|ext| ((ext.id.clone(), ext.ext_type.clone()), ext))
+            .collect();
+        let old_exts_ids: HashSet<_> = old_exts_hashmap.keys().cloned().collect();
+
+        let new_exts_hashmap: HashMap<_, _> = self
+            .extensions
+            .iter()
+            .map(|ext| ((ext.id.clone(), ext.ext_type.clone()), ext))
+            .collect();
+        let new_exts_ids: HashSet<_> = new_exts_hashmap.keys().cloned().collect();
+
+        let mut ids_to_add: Vec<_> = new_exts_ids.difference(&old_exts_ids).cloned().collect();
+        let mut ids_to_remove: Vec<_> = old_exts_ids.difference(&new_exts_ids).cloned().collect();
+
+        // Identify extension images that should be updated.
+        for id in new_exts_ids.intersection(&old_exts_ids) {
+            // Check hash
+            let old_hash = &old_exts_hashmap[id].sha384;
+            let new_hash = &new_exts_hashmap[id].sha384;
+
+            ids_to_add.push(id.clone());
+            if old_hash != new_hash {
+                ids_to_remove.push(id.clone());
+            }
+        }
+
+        let extensions_to_add: Vec<_> = new_exts_hashmap
+            .iter()
+            .filter(|(k, _)| ids_to_add.contains(k))
+            .map(|(_, ext)| ext)
+            .collect();
+        let extensions_to_remove: Vec<_> = old_exts_hashmap
+            .iter()
+            .filter(|(k, _)| ids_to_remove.contains(k))
+            .map(|(_, ext)| ext)
+            .collect();
+
+        // Add new extensions that should be added
+        for ext in extensions_to_add {
+            let new_path = path::join_relative(mount_path, &ext.path);
+            // Attempt atomic rename first, for extensions that were newly
+            // downloaded to the staging directory.
+            if let Err(e) = fs::rename(&ext.temp_path, &new_path) {
+                warn!(
+                    "Failed to atomically rename '{}' to '{}': {e}. Attempting file copy instead.",
+                    ext.temp_path.display(),
+                    new_path.display()
+                );
+                // Fall back to file copy if this fails, i.e. if the files are
+                // not on the same filesystem. This will be the default for
+                // extensions existing on the servicing OS.
+                fs::copy(&ext.temp_path, &new_path).context(format!(
+                    "Failed to copy extension image from '{}' to '{}'",
+                    ext.temp_path.display(),
+                    new_path.display()
+                ))?;
+            }
+        }
+
+        // On Clean Install and A/B Update, it is not necessary to remove
+        // extensions from the servicing OS as these will not be present on the
+        // target OS. (We also do not expect any existing extension images on
+        // the servicing OS for Clean Install.)
+        if !(servicing_type == ServicingType::CleanInstall
+            || servicing_type == ServicingType::AbUpdate)
+        {
+            // Otherwise, remove existing extensions that are not in the new
+            // Host Configuration.
+            for ext in extensions_to_remove {
+                // Check that file still exists. If the file was renamed in the
+                // step above, there is no need to remove it. Note that for any
+                // extension in 'extensions_to_remove', ext.path and
+                // ext.temp_path will be the same because each ExtensionData
+                // object in the vector was populated from the old Host
+                // Configuration.
+                if ext.temp_path.exists() {
+                    fs::remove_file(&ext.temp_path).with_context(|| {
+                        format!("Failed to delete file at '{}'", ext.temp_path.display())
+                    })?;
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// Helper function to identify if the extension exists in the old Host
@@ -321,14 +468,16 @@ fn detach_device_and_unmount(device_path: String, mount_path: &Path) -> Result<(
 mod tests {
     use super::*;
 
-    use tempfile::env::temp_dir;
+    use tempfile::TempDir;
 
     #[test]
     fn test_populate_extensions_empty() {
         // Test with no extensions
         let mut subsystem = ExtensionsSubsystem::default();
         let ctx = EngineContext::default();
-        subsystem.populate_extensions(&ctx, &temp_dir()).unwrap();
+        subsystem
+            .populate_extensions(&ctx, TempDir::new().unwrap().path())
+            .unwrap();
 
         assert!(
             subsystem.extensions.is_empty(),
@@ -339,6 +488,85 @@ mod tests {
             "ExtensionsSubsystem extensions_old should be empty when there are no extensions in the old Host Configuration"
         );
     }
+
+    #[test]
+    fn test_create_directories() {
+        let subsystem = ExtensionsSubsystem {
+            extensions: vec![
+                // Sysext in /etc/extensions
+                ExtensionData {
+                    id: "sysext1".to_string(),
+                    name: "sysext1".to_string(),
+                    sha384: Sha384Hash::from("a".repeat(96)),
+                    path: PathBuf::from("/etc/extensions/sysext1.raw"),
+                    temp_path: PathBuf::from("/var/lib/extensions/.staging/sysext1.raw"),
+                    ext_type: ExtensionType::Sysext,
+                },
+                // Sysext in /var/lib/extensions (default)
+                ExtensionData {
+                    id: "sysext2".to_string(),
+                    name: "sysext2".to_string(),
+                    sha384: Sha384Hash::from("b".repeat(96)),
+                    path: PathBuf::from("/var/lib/extensions/sysext2.raw"),
+                    temp_path: PathBuf::from("/var/lib/extensions/.staging/sysext2.raw"),
+                    ext_type: ExtensionType::Sysext,
+                },
+                // Sysext in /.extra/sysext
+                ExtensionData {
+                    id: "sysext3".to_string(),
+                    name: "sysext3".to_string(),
+                    sha384: Sha384Hash::from("c".repeat(96)),
+                    path: PathBuf::from("/.extra/sysext/sysext3.raw"),
+                    temp_path: PathBuf::from("/var/lib/extensions/.staging/sysext3.raw"),
+                    ext_type: ExtensionType::Sysext,
+                },
+                // Confext in /var/lib/confexts (default)
+                ExtensionData {
+                    id: "confext1".to_string(),
+                    name: "confext1".to_string(),
+                    sha384: Sha384Hash::from("d".repeat(96)),
+                    path: PathBuf::from("/var/lib/confexts/confext1.raw"),
+                    temp_path: PathBuf::from("/var/lib/extensions/.staging/confext1.raw"),
+                    ext_type: ExtensionType::Confext,
+                },
+                // Confext in /usr/lib/confexts
+                ExtensionData {
+                    id: "confext2".to_string(),
+                    name: "confext2".to_string(),
+                    sha384: Sha384Hash::from("e".repeat(96)),
+                    path: PathBuf::from("/usr/lib/confexts/confext2.raw"),
+                    temp_path: PathBuf::from("/var/lib/extensions/.staging/confext2.raw"),
+                    ext_type: ExtensionType::Confext,
+                },
+                // Confext in /usr/local/lib/confexts
+                ExtensionData {
+                    id: "confext3".to_string(),
+                    name: "confext3".to_string(),
+                    sha384: Sha384Hash::from("f".repeat(96)),
+                    path: PathBuf::from("/usr/local/lib/confexts/confext3.raw"),
+                    temp_path: PathBuf::from("/var/lib/extensions/.staging/confext3.raw"),
+                    ext_type: ExtensionType::Confext,
+                },
+            ],
+            extensions_old: vec![],
+        };
+
+        let mount_path = TempDir::new().unwrap();
+        assert!(!mount_path.path().join("etc/extensions").exists());
+        assert!(!mount_path.path().join("var/lib/extensions").exists());
+        assert!(!mount_path.path().join(".extra/sysext").exists());
+        assert!(!mount_path.path().join("var/lib/confexts").exists());
+        assert!(!mount_path.path().join("usr/lib/confexts").exists());
+        assert!(!mount_path.path().join("usr/local/lib/confexts").exists());
+
+        subsystem.create_directories(mount_path.path()).unwrap();
+        assert!(mount_path.path().join("etc/extensions").exists());
+        assert!(mount_path.path().join("var/lib/extensions").exists());
+        assert!(mount_path.path().join(".extra/sysext").exists());
+        assert!(mount_path.path().join("var/lib/confexts").exists());
+        assert!(mount_path.path().join("usr/lib/confexts").exists());
+        assert!(mount_path.path().join("usr/local/lib/confexts").exists());
+    }
 }
 
 #[cfg(feature = "functional-test")]
@@ -346,12 +574,16 @@ mod tests {
 mod functional_test {
     use super::*;
 
+    use osutils::{
+        filesystems::{MkfsFileSystemType, MountFileSystemType},
+        mkfs, mount,
+    };
     use sha2::{Digest, Sha384};
     use tempfile::{env::temp_dir, TempDir};
-    use trident_api::constants::{DEFAULT_CONFEXT_DIRECTORY, DEFAULT_SYSEXT_DIRECTORY};
     use url::Url;
 
     use pytest_gen::functional_test;
+    use trident_api::constants::{DEFAULT_CONFEXT_DIRECTORY, DEFAULT_SYSEXT_DIRECTORY};
 
     /// Helper to create a minimal Discoverable Disk Image extension for testing
     fn create_test_extension_image(
@@ -370,7 +602,7 @@ mod functional_test {
                 "-L",
                 ext_name,
                 image_path.to_str().unwrap(),
-                "5M",
+                "1M",
             ])
             .run_and_check()
             .unwrap();
@@ -633,5 +865,447 @@ mod functional_test {
             .to_string();
 
         assert_eq!(error, format!("Expected to find extension image from URL '{ext_url}' at path '{}', but path does not exist", ext_path.display()));
+    }
+
+    #[functional_test]
+    fn test_set_up_extensions_add() {
+        // Test adding new extensions
+        let mount_path = TempDir::new().unwrap();
+        let staging_dir = path::join_relative(mount_path.path(), EXTENSION_IMAGE_STAGING_DIRECTORY);
+        fs::create_dir_all(&staging_dir).unwrap();
+
+        // Create a new extension in staging directory
+        let temp_file = NamedTempFile::new_in(&staging_dir).unwrap();
+        let ext_hash = create_test_extension_image(
+            temp_file.path(),
+            "new_ext",
+            &ExtensionType::Sysext,
+            "ID=_any\nSYSEXT_ID=new_ext",
+        );
+
+        let target_path = PathBuf::from("/var/lib/extensions/new_ext.raw");
+        let subsystem = ExtensionsSubsystem {
+            extensions: vec![ExtensionData {
+                id: "new_ext".to_string(),
+                name: "new_ext".to_string(),
+                sha384: ext_hash,
+                path: target_path.clone(),
+                temp_path: temp_file.path().to_path_buf(),
+                ext_type: ExtensionType::Sysext,
+            }],
+            extensions_old: vec![],
+        };
+
+        // Create necessary directories
+        subsystem.create_directories(mount_path.path()).unwrap();
+
+        // Run set_up_extensions
+        subsystem
+            .set_up_extensions(mount_path.path(), ServicingType::CleanInstall)
+            .unwrap();
+
+        // Verify the extension was copied to the target location
+        assert!(
+            path::join_relative(mount_path.path(), &target_path).exists(),
+            "Extension should be copied to target"
+        );
+        // Verify that fs::rename was used, so temporary file should not exist anymore.
+        assert!(
+            !temp_file.path().exists(),
+            "Temporary extension file should no longer exist."
+        );
+    }
+
+    #[functional_test]
+    fn test_set_up_extensions_add_duplicate_id() {
+        // Test adding new extensions where a sysext and confext have the same ID
+        let mount_path = TempDir::new().unwrap();
+        let staging_dir = path::join_relative(mount_path.path(), EXTENSION_IMAGE_STAGING_DIRECTORY);
+        fs::create_dir_all(&staging_dir).unwrap();
+
+        // Create a sysext and confext with the same "ID"
+        let sysext_file = NamedTempFile::new_in(&staging_dir).unwrap();
+        let sysext_hash = create_test_extension_image(
+            sysext_file.path(),
+            "new_ext",
+            &ExtensionType::Sysext,
+            "ID=_any\nSYSEXT_ID=new_ext",
+        );
+        let confext_file = NamedTempFile::new_in(&staging_dir).unwrap();
+        let confext_hash = create_test_extension_image(
+            confext_file.path(),
+            "new_ext",
+            &ExtensionType::Confext,
+            "ID=_any\nCONFEXT_ID=new_ext",
+        );
+
+        let sysext_target_path = PathBuf::from("/etc/extensions/new_ext.raw");
+        let confext_target_path = PathBuf::from("/usr/lib/confexts/new_ext.raw");
+        let subsystem = ExtensionsSubsystem {
+            extensions: vec![
+                ExtensionData {
+                    id: "new_ext".to_string(),
+                    name: "new_ext".to_string(),
+                    sha384: sysext_hash,
+                    path: sysext_target_path.clone(),
+                    temp_path: sysext_file.path().to_path_buf(),
+                    ext_type: ExtensionType::Sysext,
+                },
+                ExtensionData {
+                    id: "new_ext".to_string(),
+                    name: "new_ext".to_string(),
+                    sha384: confext_hash,
+                    path: confext_target_path.clone(),
+                    temp_path: confext_file.path().to_path_buf(),
+                    ext_type: ExtensionType::Confext,
+                },
+            ],
+            extensions_old: vec![],
+        };
+
+        // Create necessary directories
+        subsystem.create_directories(mount_path.path()).unwrap();
+
+        // Run set_up_extensions
+        subsystem
+            .set_up_extensions(mount_path.path(), ServicingType::CleanInstall)
+            .unwrap();
+
+        // Verify the extensions were copied to their target locations
+        assert!(
+            path::join_relative(mount_path.path(), &sysext_target_path).exists(),
+            "Sysext should be copied to target OS"
+        );
+        assert!(
+            path::join_relative(mount_path.path(), &confext_target_path).exists(),
+            "Confext should be copied to target OS"
+        );
+
+        // Verify that the temporary extension images don't exist anymore (were
+        // renamed).
+        assert!(
+            !sysext_file.path().exists(),
+            "Temporary sysext file should not exist anymore"
+        );
+        assert!(
+            !confext_file.path().exists(),
+            "Temporary confext file should not exist anymore"
+        );
+    }
+
+    #[functional_test]
+    fn test_set_up_extensions_remove_old() {
+        // Create an old extension file
+        let old_ext_dir = TempDir::new().unwrap();
+        let old_ext = NamedTempFile::new_in(&old_ext_dir).unwrap();
+        let ext_hash = create_test_extension_image(
+            old_ext.path(),
+            "old_ext",
+            &ExtensionType::Sysext,
+            "ID=_any\nSYSEXT_ID=old_ext",
+        );
+        let subsystem = ExtensionsSubsystem {
+            extensions: vec![],
+            extensions_old: vec![ExtensionData {
+                id: "old_ext".to_string(),
+                name: "old_ext".to_string(),
+                sha384: ext_hash,
+                path: old_ext.path().to_path_buf(),
+                temp_path: old_ext.path().to_path_buf(),
+                ext_type: ExtensionType::Sysext,
+            }],
+        };
+
+        let mount_path = TempDir::new().unwrap();
+        // Create necessary directories
+        subsystem.create_directories(mount_path.path()).unwrap();
+        // Run set_up_extensions with A/B update (should NOT remove old extensions)
+        subsystem
+            .set_up_extensions(mount_path.path(), ServicingType::AbUpdate)
+            .unwrap();
+        // Verify the extension still exists
+        assert!(
+            old_ext.path().exists(),
+            "Old extension should still exist in its original location"
+        );
+        // Verify that nothing has been copied to the target OS.
+        assert!(mount_path.path().read_dir().unwrap().next().is_none());
+
+        // Run set_up_extensions with HotPath (should remove old extensions)
+        subsystem
+            .set_up_extensions(mount_path.path(), ServicingType::HotPatch)
+            .unwrap();
+        // Verify the extension was removed
+        assert!(!old_ext.path().exists(), "Old extension should be removed");
+        // Verify that nothing has been copied to the target OS.
+        assert!(mount_path.path().read_dir().unwrap().next().is_none());
+    }
+
+    #[functional_test]
+    fn test_set_up_extensions_update_replace_ab_update() {
+        // Test scenario where an old sysext and a new sysext match on ID, and
+        // an update is required (mismatched hashes), on an A/B update.
+        // Create old extension.
+        let old_ext_dir = TempDir::new().unwrap();
+        let old_ext = NamedTempFile::new_in(old_ext_dir.path()).unwrap();
+        let old_hash = create_test_extension_image(
+            old_ext.path(),
+            "old_ext",
+            &ExtensionType::Sysext,
+            "ID=_any\nSYSEXT_ID=my_ext",
+        );
+
+        // Create new version with different content
+        let mount_path = TempDir::new().unwrap();
+        let staging_dir = path::join_relative(mount_path.path(), EXTENSION_IMAGE_STAGING_DIRECTORY);
+        fs::create_dir_all(&staging_dir).unwrap();
+        let new_ext = NamedTempFile::new_in(&staging_dir).unwrap();
+        let new_hash = create_test_extension_image(
+            new_ext.path(),
+            "updated_ext",
+            &ExtensionType::Sysext,
+            "ID=_any\nSYSEXT_ID=my_ext",
+        );
+
+        let target_path = "/var/lib/extensions/updated_ext.raw";
+        let subsystem = ExtensionsSubsystem {
+            extensions: vec![ExtensionData {
+                id: "my_ext".to_string(), // Matching ID
+                name: "updated_ext".to_string(),
+                sha384: new_hash,
+                path: PathBuf::from(target_path),
+                temp_path: new_ext.path().to_path_buf(),
+                ext_type: ExtensionType::Sysext,
+            }],
+            extensions_old: vec![ExtensionData {
+                id: "my_ext".to_string(), // Matching ID
+                name: "old_ext".to_string(),
+                sha384: old_hash,
+                path: old_ext.path().to_path_buf(),
+                temp_path: old_ext.path().to_path_buf(),
+                ext_type: ExtensionType::Sysext,
+            }],
+        };
+
+        // Create necessary directories
+        subsystem.create_directories(mount_path.path()).unwrap();
+        // Run set_up_extensions; A/B update
+        subsystem
+            .set_up_extensions(mount_path.path(), ServicingType::AbUpdate)
+            .unwrap();
+
+        // Verify old extension was NOT removed, since servicing type is A/B update
+        assert!(
+            old_ext.path().exists(),
+            "Old extension should not be removed from the servicing OS"
+        );
+
+        // Verify new extension was copied
+        assert!(
+            path::join_relative(mount_path.path(), target_path).exists(),
+            "New extension should be copied"
+        );
+    }
+
+    #[functional_test]
+    fn test_set_up_extensions_update_replace_hotpatch() {
+        // Test scenario where an old sysext and a new sysext match on ID, and
+        // an update is required (mismatched hashes), on a hot patch update.
+        // Create old extension.
+        let old_ext_dir = TempDir::new().unwrap();
+        let old_ext = NamedTempFile::new_in(old_ext_dir.path()).unwrap();
+        let old_hash = create_test_extension_image(
+            old_ext.path(),
+            "old_ext",
+            &ExtensionType::Sysext,
+            "ID=_any\nSYSEXT_ID=my_ext",
+        );
+
+        // Create new version with different content
+        let mount_path = TempDir::new().unwrap();
+        let staging_dir = path::join_relative(mount_path.path(), EXTENSION_IMAGE_STAGING_DIRECTORY);
+        fs::create_dir_all(&staging_dir).unwrap();
+        let new_ext = NamedTempFile::new_in(&staging_dir).unwrap();
+        let new_hash = create_test_extension_image(
+            new_ext.path(),
+            "updated_ext",
+            &ExtensionType::Sysext,
+            "ID=_any\nSYSEXT_ID=my_ext",
+        );
+
+        let target_path = "/var/lib/extensions/updated_ext.raw";
+        let subsystem = ExtensionsSubsystem {
+            extensions: vec![ExtensionData {
+                id: "my_ext".to_string(), // Matching ID
+                name: "updated_ext".to_string(),
+                sha384: new_hash,
+                path: PathBuf::from(target_path),
+                temp_path: new_ext.path().to_path_buf(),
+                ext_type: ExtensionType::Sysext,
+            }],
+            extensions_old: vec![ExtensionData {
+                id: "my_ext".to_string(), // Matching ID
+                name: "old_ext".to_string(),
+                sha384: old_hash,
+                path: old_ext.path().to_path_buf(),
+                temp_path: old_ext.path().to_path_buf(),
+                ext_type: ExtensionType::Sysext,
+            }],
+        };
+
+        // Create necessary directories
+        subsystem.create_directories(mount_path.path()).unwrap();
+        // Run set_up_extensions; hot patch update
+        subsystem
+            .set_up_extensions(mount_path.path(), ServicingType::HotPatch)
+            .unwrap();
+
+        // Verify old extension was removed, since servicing type is not A/B
+        // update (or Clean Install).
+        assert!(
+            !old_ext.path().exists(),
+            "Old extension should be removed from the servicing OS"
+        );
+
+        // Verify new extension exists on the target OS
+        assert!(
+            path::join_relative(mount_path.path(), target_path).exists(),
+            "New extension should be copied"
+        );
+    }
+
+    #[functional_test]
+    fn test_set_up_extensions_update_maintain_ab_update() {
+        // Test scenario where an old sysext and a new sysext match on ID, and
+        // an update is NOT required (matching hashes).
+        // Create servicing OS filesystem
+        let loopback = NamedTempFile::new().unwrap();
+        loopback.as_file().set_len(1024 * 1024).unwrap();
+        mkfs::run(loopback.path(), MkfsFileSystemType::Ext4).unwrap();
+
+        let old_ext_mount = Path::new("/mnt/tmpfs");
+        fs::create_dir_all(old_ext_mount).unwrap();
+        mount::mount(
+            "tmpfs",
+            old_ext_mount,
+            MountFileSystemType::Tmpfs,
+            &["size=1M".into()],
+        )
+        .unwrap();
+
+        // Create old extension
+        let old_ext = NamedTempFile::new_in(old_ext_mount).unwrap();
+        let hash = create_test_extension_image(
+            old_ext.path(),
+            "my_ext",
+            &ExtensionType::Sysext,
+            "ID=_any\nSYSEXT_ID=my_ext",
+        );
+
+        let target_path = "/etc/extensions/updated_ext.raw";
+        let subsystem = ExtensionsSubsystem {
+            extensions: vec![ExtensionData {
+                id: "my_ext".to_string(),
+                name: "my_ext".to_string(),
+                sha384: hash.clone(),
+                path: PathBuf::from(target_path),
+                temp_path: old_ext.path().to_path_buf(), // Sysext exists on servicing OS, so temp_path should point to this file.
+                ext_type: ExtensionType::Sysext,
+            }],
+            extensions_old: vec![ExtensionData {
+                id: "my_ext".to_string(),
+                name: "my_ext".to_string(),
+                sha384: hash,
+                path: old_ext.path().to_path_buf(),
+                temp_path: old_ext.path().to_path_buf(),
+                ext_type: ExtensionType::Sysext,
+            }],
+        };
+
+        let mount_path = TempDir::new().unwrap();
+        // Create necessary directories
+        subsystem.create_directories(mount_path.path()).unwrap();
+        // Run set_up_extensions
+        subsystem
+            .set_up_extensions(mount_path.path(), ServicingType::AbUpdate)
+            .unwrap();
+
+        // Verify old extension was not removed. Since old extension exists on a
+        // separate filesystem, rename should fail and file should be copied.
+        assert!(
+            old_ext.path().exists(),
+            "Old extension should not be removed from the servicing OS"
+        );
+
+        // Verify old extension was copied to target OS
+        assert!(
+            path::join_relative(mount_path.path(), target_path).exists(),
+            "Old extension should be copied"
+        );
+        assert_eq!(
+            fs::read(&old_ext).unwrap(),
+            fs::read(path::join_relative(mount_path.path(), target_path)).unwrap(),
+            "Old extension should match version on target OS"
+        );
+
+        // Clean-up
+        drop(old_ext);
+        mount::umount(old_ext_mount, true).unwrap();
+    }
+
+    #[functional_test]
+    fn test_set_up_extensions_update_maintain_hotpatch() {
+        // Test scenario where an old sysext and a new sysext match on ID, and
+        // an update is NOT required (matching hashes), on a hot patch update.
+        // Create old extension.
+        let old_ext_dir = TempDir::new().unwrap();
+        let old_ext = NamedTempFile::new_in(&old_ext_dir).unwrap();
+        let hash = create_test_extension_image(
+            old_ext.path(),
+            "my_ext",
+            &ExtensionType::Sysext,
+            "ID=_any\nSYSEXT_ID=my_ext",
+        );
+
+        let target_path = "/etc/extensions/updated_ext.raw";
+        let subsystem = ExtensionsSubsystem {
+            extensions: vec![ExtensionData {
+                id: "my_ext".to_string(),
+                name: "my_ext".to_string(),
+                sha384: hash.clone(),
+                path: PathBuf::from(target_path),
+                temp_path: old_ext.path().to_path_buf(), // Sysext exists on servicing OS, so temp_path should point to this file.
+                ext_type: ExtensionType::Sysext,
+            }],
+            extensions_old: vec![ExtensionData {
+                id: "my_ext".to_string(),
+                name: "my_ext".to_string(),
+                sha384: hash,
+                path: old_ext.path().to_path_buf(),
+                temp_path: old_ext.path().to_path_buf(),
+                ext_type: ExtensionType::Sysext,
+            }],
+        };
+
+        let mount_path = TempDir::new().unwrap();
+        // Create necessary directories
+        subsystem.create_directories(mount_path.path()).unwrap();
+        // Run set_up_extensions
+        subsystem
+            .set_up_extensions(mount_path.path(), ServicingType::HotPatch)
+            .unwrap();
+
+        // Verify old extension was removed. Since servicing OS == target OS,
+        // rename should succeed.
+        assert!(
+            !old_ext.path().exists(),
+            "Old extension should be removed from the servicing OS"
+        );
+
+        // Verify extension exists at new location on target OS
+        assert!(
+            path::join_relative(mount_path.path(), target_path).exists(),
+            "Extension should be at new location"
+        );
     }
 }
