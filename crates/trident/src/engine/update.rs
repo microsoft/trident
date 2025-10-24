@@ -189,6 +189,9 @@ fn stage_update(
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
 ) -> Result<(), TridentError> {
+    // Make mutable instance of EngineContext.
+    let mut ctx = ctx;
+
     match ctx.servicing_type {
         ServicingType::CleanInstall => {
             return Err(TridentError::new(
@@ -252,6 +255,8 @@ fn stage_update(
     } else {
         engine::configure(subsystems, &ctx)?;
     };
+
+    engine::update_host_configuration(subsystems, &mut ctx)?;
 
     // At this point, deployment has been staged, so update servicing state
     debug!(
