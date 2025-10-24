@@ -257,7 +257,7 @@ pub fn decode_host_status(mut yaml: Value) -> Result<HostStatus, serde_yaml::Err
     match serde_yaml::from_value(yaml) {
         Ok(hs) => Ok(hs),
         Err(e) => {
-            info!("Failed to parse Host Status after fixup : {e}");
+            info!("Failed to parse Host Status after fixup: {e}");
             decoded
         }
     }
