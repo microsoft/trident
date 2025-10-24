@@ -152,7 +152,7 @@ fn fix_host_config(yaml: &mut Value) -> Result<(), anyhow::Error> {
                 if let Value::Mapping(ref mut fs_map) = fs {
                     if let Some(Value::Mapping(s)) = fs_map.remove("source") {
                         if s.get("type") == Some(&Value::String("create".into()))
-                            || s.get("type") == Some(&Value::String("create".into()))
+                            || s.get("type") == Some(&Value::String("new".into()))
                         {
                             bail!(
                                 "Cannot convert old host status with 'create' or 'new' filesystem source"
