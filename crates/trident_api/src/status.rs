@@ -141,6 +141,10 @@ fn fix_host_config(yaml: &mut Value) -> Result<(), anyhow::Error> {
         }
     }
 
+    if let Some(Value::Mapping(ref mut t)) = m.get_mut("trident") {
+        t.remove("selfUpgrade");
+    }
+
     if let Some(Value::Mapping(ref mut storage)) = m.get_mut("storage") {
         if let Some(Value::Sequence(ref mut fs_list)) = storage.get_mut("filesystems") {
             for fs in fs_list.iter_mut() {
