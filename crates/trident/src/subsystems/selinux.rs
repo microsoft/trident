@@ -1,5 +1,4 @@
 use std::{
-    any::Any,
     fs::File,
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
@@ -76,10 +75,6 @@ pub struct SelinuxSubsystem;
 impl Subsystem for SelinuxSubsystem {
     fn name(&self) -> &'static str {
         "selinux"
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 
     #[tracing::instrument(name = "selinux_configuration", skip_all)]

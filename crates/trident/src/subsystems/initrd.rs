@@ -1,5 +1,3 @@
-use std::any::Any;
-
 use log::{debug, info};
 
 use osutils::mkinitrd;
@@ -12,10 +10,6 @@ pub struct InitrdSubsystem;
 impl Subsystem for InitrdSubsystem {
     fn name(&self) -> &'static str {
         "initrd"
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 
     fn writable_etc_overlay(&self) -> bool {

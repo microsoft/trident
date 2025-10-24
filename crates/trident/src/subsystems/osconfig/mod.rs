@@ -1,4 +1,4 @@
-use std::{any::Any, fs, path::Path};
+use std::{fs, path::Path};
 
 use anyhow::Context;
 use log::{debug, error, info, warn};
@@ -65,10 +65,6 @@ pub struct OsConfigSubsystem {
 impl Subsystem for OsConfigSubsystem {
     fn name(&self) -> &'static str {
         "os-config"
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 
     fn validate_host_config(&self, ctx: &EngineContext) -> Result<(), TridentError> {
@@ -216,10 +212,6 @@ pub struct MosConfigSubsystem;
 impl Subsystem for MosConfigSubsystem {
     fn name(&self) -> &'static str {
         "mos-config"
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 
     fn validate_host_config(&self, ctx: &EngineContext) -> Result<(), TridentError> {

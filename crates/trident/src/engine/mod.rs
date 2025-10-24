@@ -1,5 +1,4 @@
 use std::{
-    any::Any,
     fs,
     path::{Path, PathBuf},
     sync::Mutex,
@@ -23,7 +22,7 @@ use crate::{
     engine::boot::BootSubsystem,
     subsystems::{
         esp::EspSubsystem,
-        extensions::{ExtensionsSubsystem, EXTENSIONS_SUBSYSTEM_NAME},
+        extensions::ExtensionsSubsystem,
         hooks::HooksSubsystem,
         initrd::InitrdSubsystem,
         management::ManagementSubsystem,
@@ -60,8 +59,6 @@ pub(crate) use update::{finalize_update, update};
 
 pub(crate) trait Subsystem: Send {
     fn name(&self) -> &'static str;
-
-    fn as_any(&self) -> &dyn Any;
 
     fn writable_etc_overlay(&self) -> bool {
         true
@@ -103,6 +100,11 @@ pub(crate) trait Subsystem: Send {
     /// Configure the system as specified by the Host Configuration, and update the Host Status
     /// accordingly.
     fn configure(&mut self, _ctx: &EngineContext) -> Result<(), TridentError> {
+        Ok(())
+    }
+
+    /// Update the Host Configuration with information in the subsystem.
+    fn update_host_configuration(&self, _ctx: &mut EngineContext) -> Result<(), TridentError> {
         Ok(())
     }
 }
@@ -324,20 +326,23 @@ fn configure(
     Ok(())
 }
 
-pub fn get_extensions_subsystem(
-    subsystems: &[Box<dyn Subsystem>],
-) -> Result<&ExtensionsSubsystem, TridentError> {
-    subsystems
-        .iter()
-        .find(|s| s.name() == EXTENSIONS_SUBSYSTEM_NAME)
-        .structured(InternalError::Internal(
-            "Failed to find Extensions subsystem",
-        ))?
-        .as_any()
-        .downcast_ref::<ExtensionsSubsystem>()
-        .structured(InternalError::Internal(
-            "Failed to downcast to ExtensionsSubsystem",
-        ))
+fn update_host_configuration(
+    subsystems: &mut [Box<dyn Subsystem>],
+    ctx: &mut EngineContext,
+) -> Result<(), TridentError> {
+    info!("Starting step 'Update Host Configuration'");
+    for subsystem in subsystems {
+        debug!(
+            "Starting step 'Update Host Configuration' for subsystem '{}'",
+            subsystem.name()
+        );
+        subsystem.update_host_configuration(ctx).message(format!(
+            "Step 'Update Host Configuration' failed for subsystem '{}'",
+            subsystem.name()
+        ))?;
+    }
+    debug!("Finished step 'Update Host Configuration'");
+    Ok(())
 }
 
 pub fn reboot() -> Result<(), TridentError> {

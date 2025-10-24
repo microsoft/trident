@@ -1,5 +1,4 @@
 use std::{
-    any::Any,
     collections::{HashMap, HashSet},
     fmt::Display,
     fs,
@@ -13,7 +12,7 @@ use tempfile::NamedTempFile;
 
 use osutils::{dependencies::Dependency, path};
 use trident_api::{
-    config::{Extension, HostConfiguration},
+    config::Extension,
     constants::internal_params::HTTP_CONNECTION_TIMEOUT_SECONDS,
     error::{InternalError, ReportError, ServicingError, TridentError},
     primitives::hash::Sha384Hash,
@@ -28,9 +27,6 @@ use crate::{
 };
 
 mod release;
-
-/// Extensions subsystem name
-pub const EXTENSIONS_SUBSYSTEM_NAME: &str = "extensions";
 
 /// Extension-release
 const EXTENSION_RELEASE: &str = "extension-release";
@@ -94,11 +90,7 @@ pub struct ExtensionsSubsystem {
 }
 impl Subsystem for ExtensionsSubsystem {
     fn name(&self) -> &'static str {
-        EXTENSIONS_SUBSYSTEM_NAME
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
+        "extensions"
     }
 
     fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
@@ -131,6 +123,47 @@ impl Subsystem for ExtensionsSubsystem {
             "Failed to remove extension image staging directory",
         ))?;
 
+        Ok(())
+    }
+
+    fn update_host_configuration(&self, ctx: &mut EngineContext) -> Result<(), TridentError> {
+        // Update paths of sysexts in the Host Configuration.
+        for sysext in self
+            .extensions
+            .iter()
+            .filter(|ext| ext.ext_type == ExtensionType::Sysext)
+        {
+            // Find corresponding sysext in Host Configuration.
+            let hc_ext = ctx
+                .spec
+                .os
+                .sysexts
+                .iter_mut()
+                .find(|ext| ext.sha384 == sysext.sha384)
+                .structured(InternalError::Internal(
+                    "Failed to find previously processed sysext in Host Configuration",
+                ))?;
+            hc_ext.path = Some(sysext.path.clone());
+        }
+
+        // Update paths of confexts in the Host Configuration.
+        for confext in self
+            .extensions
+            .iter()
+            .filter(|ext| ext.ext_type == ExtensionType::Confext)
+        {
+            // Find corresponding confext in Host Configuration.
+            let hc_ext = ctx
+                .spec
+                .os
+                .confexts
+                .iter_mut()
+                .find(|ext| ext.sha384 == confext.sha384)
+                .structured(InternalError::Internal(
+                    "Failed to find previously processed confext in Host Configuration",
+                ))?;
+            hc_ext.path = Some(confext.path.clone());
+        }
         Ok(())
     }
 }
@@ -279,51 +312,6 @@ impl ExtensionsSubsystem {
         }
 
         Ok(())
-    }
-
-    pub(crate) fn update_host_configuration(
-        &self,
-        ctx: &EngineContext,
-    ) -> Result<HostConfiguration, TridentError> {
-        let mut updated_hc = ctx.spec.clone();
-
-        // Update paths of sysexts in the Host Configuration.
-        for sysext in self
-            .extensions
-            .iter()
-            .filter(|ext| ext.ext_type == ExtensionType::Sysext)
-        {
-            // Find corresponding sysext in Host Configuration.
-            let hc_ext = updated_hc
-                .os
-                .sysexts
-                .iter_mut()
-                .find(|ext| ext.sha384 == sysext.sha384)
-                .structured(InternalError::Internal(
-                    "Failed to find previously processed sysext in Host Configuration",
-                ))?;
-            hc_ext.path = Some(sysext.path.clone());
-        }
-
-        // Update paths of confexts in the Host Configuration.
-        for confext in self
-            .extensions
-            .iter()
-            .filter(|ext| ext.ext_type == ExtensionType::Confext)
-        {
-            // Find corresponding confext in Host Configuration.
-            let hc_ext = updated_hc
-                .os
-                .confexts
-                .iter_mut()
-                .find(|ext| ext.sha384 == confext.sha384)
-                .structured(InternalError::Internal(
-                    "Failed to find previously processed confext in Host Configuration",
-                ))?;
-            hc_ext.path = Some(confext.path.clone());
-        }
-
-        Ok(updated_hc)
     }
 
     /// Ensures that all target directories for extension images exist on the
@@ -668,11 +656,11 @@ mod tests {
             ],
             extensions_old: vec![],
         };
-        let updated_hc = subsystem.update_host_configuration(&ctx).unwrap();
+        subsystem.update_host_configuration(&mut ctx).unwrap();
 
         for i in 0..subsystem.extensions.len() {
             assert_eq!(
-                updated_hc.os.sysexts[i].path,
+                ctx.spec.os.sysexts[i].path,
                 Some(subsystem.extensions[i].path.clone())
             )
         }
@@ -716,11 +704,11 @@ mod tests {
             ],
             extensions_old: vec![],
         };
-        let updated_hc = subsystem.update_host_configuration(&ctx).unwrap();
+        subsystem.update_host_configuration(&mut ctx).unwrap();
 
         for i in 0..subsystem.extensions.len() {
             assert_eq!(
-                updated_hc.os.confexts[i].path,
+                ctx.spec.os.confexts[i].path,
                 Some(subsystem.extensions[i].path.clone())
             )
         }

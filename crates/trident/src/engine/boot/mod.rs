@@ -1,4 +1,4 @@
-use std::{any::Any, path::Path};
+use std::path::Path;
 
 use log::debug;
 use strum::IntoEnumIterator;
@@ -23,10 +23,6 @@ pub(super) struct BootSubsystem;
 impl Subsystem for BootSubsystem {
     fn name(&self) -> &'static str {
         "boot"
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 
     #[tracing::instrument(name = "boot_configuration", skip_all)]

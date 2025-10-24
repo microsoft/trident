@@ -1,5 +1,4 @@
 use std::{
-    any::Any,
     collections::HashMap,
     ffi::OsStr,
     os::unix::fs::PermissionsExt,
@@ -39,10 +38,6 @@ pub struct HooksSubsystem {
 impl Subsystem for HooksSubsystem {
     fn name(&self) -> &'static str {
         "hooks"
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 
     fn writable_etc_overlay(&self) -> bool {

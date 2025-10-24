@@ -1,7 +1,6 @@
 //! Subsystem in charge of configuring the Trident agent on the target OS.
 
 use std::{
-    any::Any,
     fs::{self},
     path::Path,
 };
@@ -28,10 +27,6 @@ pub struct ManagementSubsystem;
 impl Subsystem for ManagementSubsystem {
     fn name(&self) -> &'static str {
         "management"
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 
     fn validate_host_config(&self, ctx: &EngineContext) -> Result<(), TridentError> {

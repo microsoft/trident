@@ -1,5 +1,4 @@
 use std::{
-    any::Any,
     fs,
     io::Read,
     path::{Path, PathBuf},
@@ -41,10 +40,6 @@ pub struct EspSubsystem;
 impl Subsystem for EspSubsystem {
     fn name(&self) -> &'static str {
         "esp"
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 
     #[tracing::instrument(name = "esp_provision", skip_all)]

@@ -1,5 +1,4 @@
 use std::{
-    any::Any,
     collections::HashMap,
     path::{Path, PathBuf},
 };
@@ -35,10 +34,6 @@ pub(crate) struct StorageSubsystem;
 impl Subsystem for StorageSubsystem {
     fn name(&self) -> &'static str {
         "storage"
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 
     fn validate_host_config(&self, ctx: &EngineContext) -> Result<(), TridentError> {

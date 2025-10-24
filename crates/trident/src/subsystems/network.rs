@@ -1,4 +1,4 @@
-use std::{any::Any, fs, path::Path};
+use std::{fs, path::Path};
 
 use anyhow::Context;
 use log::debug;
@@ -17,10 +17,6 @@ pub struct NetworkSubsystem;
 impl Subsystem for NetworkSubsystem {
     fn name(&self) -> &'static str {
         "network"
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 
     #[tracing::instrument(name = "network_configuration", skip_all)]
