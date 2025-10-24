@@ -1,7 +1,7 @@
 jobs:
   - job: PrepareSSHKeys
     displayName: Prepare SSH Keys
-    timeoutInMinutes: 5
+    timeoutInMinutes: 8
     pool:
       type: linux
 
