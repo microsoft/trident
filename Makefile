@@ -430,32 +430,73 @@ bin/virtdeploy: tools/cmd/virtdeploy/* tools/go.sum tools/pkg/* tools/pkg/virtde
 INSTALLER_OUT_DIR := bin
 INSTALLER_DIR := tools/installer
 
-# If necessary create End-User License Agreement example file in execution directory
-bin/EULA.txt:
-	@mkdir -p bin
-	@echo "SAMPLE EULA" > $@
-
-# EULA.txt required at runtime; added to ensure binary will be able to run
 bin/liveinstaller: \
 	$(shell find $(INSTALLER_DIR)/ -type f) \
-	$(INSTALLER_DIR)/go.sum \
-	bin/EULA.txt
+	$(INSTALLER_DIR)/go.sum
 	@mkdir -p bin
 	cd $(INSTALLER_DIR)/liveinstaller && \
 		CGO_ENABLED=0 go build -o $(CURDIR)/$(INSTALLER_OUT_DIR)/liveinstaller
 
-# EULA.txt required at runtime; added to ensure binary will be able to run
 bin/attendedinstaller-simulator: \
 	$(shell find $(INSTALLER_DIR)/imagegen/ -type f) \
-	$(INSTALLER_DIR)/go.sum \
-	bin/EULA.txt
+	$(INSTALLER_DIR)/go.sum
 	@mkdir -p bin
 	cd $(INSTALLER_DIR)/imagegen/attendedinstaller/attendedinstaller_tests && \
 		CGO_ENABLED=0 go build -o $(CURDIR)/$(INSTALLER_OUT_DIR)/attendedinstaller-simulator attendedinstaller_simulator.go
 
 .PHONY: run-attendedinstaller-simulator
-run-attendedinstaller-simulator: bin/attendedinstaller-simulator bin/EULA.txt
+run-attendedinstaller-simulator: bin/attendedinstaller-simulator
 	@cd bin && ./attendedinstaller-simulator && cd -
+
+# AZL INSTALLER IMAGES
+
+artifacts/test-image/azl-installer-mos.vhdx: \
+	artifacts/baremetal.vhdx \
+	bin/trident-rpms-azl3.tar.gz \
+	tests/images/azl-installer/mos/mos.yaml \
+	artifacts/imagecustomizer \
+	$(shell find tests/images/azl-installer/mos/ -type f 2>/dev/null)
+	@mkdir -p artifacts/test-image/
+	sudo rm -rf bin/trident_rpms
+	mkdir -p bin/trident_rpms
+	$(eval TEMP_DIR := $(shell mktemp -d))
+	tar -xf bin/trident-rpms-azl3.tar.gz -C $(TEMP_DIR)
+	cp $(TEMP_DIR)/RPMS/*/*.rpm bin/trident_rpms/
+	rm -rf $(TEMP_DIR) 
+
+	sudo ./artifacts/imagecustomizer \
+		--log-level debug \
+		--rpm-source ./bin/trident_rpms/ \
+		--build-dir ./artifacts/test-image \
+		--image-file $< \
+		--output-image-file $@ \
+		--output-image-format vhdx \
+		--config-file tests/images/azl-installer/mos/mos.yaml
+
+AZL_INSTALLER_IMAGES_PATH = tests/images/azl-installer/iso/images
+AZL_INSTALLER_BIN_PATH = tests/images/azl-installer/iso/bin
+artifacts/test-image/azl-installer.iso: \
+	artifacts/test-image/azl-installer-mos.vhdx \
+	artifacts/imagecustomizer \
+	bin/liveinstaller \
+	artifacts/test-image/regular.cosi \
+	$(shell find tests/images/azl-installer/iso/ -type f 2>/dev/null)
+	# Copy runtime images to prepare for inclusion in the ISO
+	rm -rf $(AZL_INSTALLER_IMAGES_PATH)
+	mkdir -p $(AZL_INSTALLER_IMAGES_PATH)
+	cp artifacts/test-image/regular.cosi $(AZL_INSTALLER_IMAGES_PATH)/trident-testimage.cosi
+	rm -rf $(AZL_INSTALLER_BIN_PATH)
+	mkdir -p $(AZL_INSTALLER_BIN_PATH)
+	cp bin/liveinstaller $(AZL_INSTALLER_BIN_PATH)/
+
+	mkdir -p artifacts/test-image/
+	sudo ./artifacts/imagecustomizer \
+	    --log-level debug \
+	    --build-dir ./artifacts/test-image/ \
+	    --image-file $< \
+	    --output-image-file $@ \
+	    --config-file tests/images/azl-installer/iso/mos-iso.yaml \
+	    --output-image-format iso
 
 .PHONY: validate
 validate: $(TRIDENT_CONFIG) bin/trident
