@@ -121,42 +121,41 @@ impl Subsystem for ExtensionsSubsystem {
 
     fn update_host_configuration(&self, ctx: &mut EngineContext) -> Result<(), TridentError> {
         // Update paths of sysexts in the Host Configuration.
-        for sysext in self
-            .extensions
+        self.extensions
             .iter()
             .filter(|ext| ext.ext_type == ExtensionType::Sysext)
-        {
-            // Find corresponding sysext in Host Configuration.
-            let hc_ext = ctx
-                .spec
-                .os
-                .sysexts
-                .iter_mut()
-                .find(|ext| ext.sha384 == sysext.sha384)
-                .structured(InternalError::Internal(
-                    "Failed to find previously processed sysext in Host Configuration",
-                ))?;
-            hc_ext.path = Some(sysext.path.clone());
-        }
+            .try_for_each(|sysext| {
+                // Find corresponding sysext in Host Configuration.
+                ctx.spec
+                    .os
+                    .sysexts
+                    .iter_mut()
+                    .find(|ext| ext.sha384 == sysext.sha384)
+                    .structured(InternalError::Internal(
+                        "Failed to find previously processed sysext in Host Configuration",
+                    ))?
+                    .path = Some(sysext.path.clone());
+                Ok::<(), TridentError>(())
+            })?;
 
         // Update paths of confexts in the Host Configuration.
-        for confext in self
-            .extensions
+        self.extensions
             .iter()
             .filter(|ext| ext.ext_type == ExtensionType::Confext)
-        {
-            // Find corresponding confext in Host Configuration.
-            let hc_ext = ctx
-                .spec
-                .os
-                .confexts
-                .iter_mut()
-                .find(|ext| ext.sha384 == confext.sha384)
-                .structured(InternalError::Internal(
-                    "Failed to find previously processed confext in Host Configuration",
-                ))?;
-            hc_ext.path = Some(confext.path.clone());
-        }
+            .try_for_each(|confext| {
+                // Find corresponding confext in Host Configuration.
+                ctx.spec
+                    .os
+                    .confexts
+                    .iter_mut()
+                    .find(|ext| ext.sha384 == confext.sha384)
+                    .structured(InternalError::Internal(
+                        "Failed to find previously processed confext in Host Configuration",
+                    ))?
+                    .path = Some(confext.path.clone());
+                Ok::<(), TridentError>(())
+            })?;
+
         Ok(())
     }
 }
