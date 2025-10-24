@@ -23,7 +23,7 @@ use trident_api::{
         ExecutionEnvironmentMisconfigurationError, InitializationError, InvalidInputError,
         ReportError, TridentError, TridentResultExt,
     },
-    status::{AbVolumeSelection, HostStatus, ServicingState},
+    status::{decode_host_status, AbVolumeSelection, HostStatus, ServicingState},
     BlockDeviceId,
 };
 use uuid::Uuid;
@@ -424,12 +424,17 @@ pub fn execute(
 ) -> Result<(), TridentError> {
     let host_status: HostStatus = if let Some(hs_path) = hs_path {
         info!("Reading Host Status from {:?}", hs_path);
-        let host_status_yaml = fs::read_to_string(hs_path)
+        let host_status_str = fs::read_to_string(hs_path)
             .structured(InitializationError::LoadHostStatus)
             .message(format!("Failed to read Host Status from {hs_path:?}"))?;
-        let mut host_status: HostStatus = serde_yaml::from_str(&host_status_yaml)
+        let host_status_yaml: serde_yaml::Value = serde_yaml::from_str(&host_status_str)
             .structured(InitializationError::ParseHostStatus)
-            .message("Failed to parse Host Status from YAML")?;
+            .message("Failed to parse Host Status as YAML")?;
+
+        let mut host_status = decode_host_status(host_status_yaml)
+            .structured(InitializationError::ParseHostStatus)
+            .message("Failed to load Host Status")?;
+
         host_status
             .spec
             .internal_params
