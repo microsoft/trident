@@ -58,6 +58,7 @@ os:
       # Support for building SELinux module and debugging
       - selinux-policy-devel
       - setools-console
+      - python3
 
   additionalDirs:
     # Required for systemd-pcrlock & PCR-based encryption; can be removed once
@@ -86,7 +87,7 @@ os:
 
   services:
     enable:
-      - trident-install
+      # - trident-install
       - download-trident
 
 scripts:
