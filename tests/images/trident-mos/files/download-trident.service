@@ -10,7 +10,18 @@ ExecStart=chmod +x /usr/bin/trident
 ExecStart=/sbin/restorecon -v /usr/bin/trident
 ExecStart=/bin/bash -c "curl $(grep -oP '^\s*phonehome: \\K.*(?=phonehome)' /etc/trident/config.yaml)files/osmodifier -o /usr/bin/osmodifier -f"
 ExecStart=/bin/chmod +x /usr/bin/osmodifier
+ExecStart=/bin/bash -c "curl $(grep -oP '^\s*phonehome: \\K.*(?=phonehome)' /etc/trident/config.yaml)files/bmi-prep-agent-cli -o /usr/bin/bmi-prep-agent-cli -f"
+ExecStart=/bin/chmod +x /usr/bin/bmi-prep-agent-cli
+ExecStart=/bin/bash -c "curl $(grep -oP '^\s*phonehome: \\K.*(?=phonehome)' /etc/trident/config.yaml)files/bmi-prep-agent-server -o /usr/bin/bmi-prep-agent-server -f"
+ExecStart=/bin/chmod +x /usr/bin/bmi-prep-agent-server
+ExecStart=/bin/bash -c "curl $(grep -oP '^\s*phonehome: \\K.*(?=phonehome)' /etc/trident/config.yaml)files/flash_os_workflow.py -o /usr/bin/flash_os_workflow.py -f"
+ExecStart=/bin/chmod +x /usr/bin/flash_os_workflow.py
+ExecStart=/bin/bash -c "curl $(grep -oP '^\s*phonehome: \\K.*(?=phonehome)' /etc/trident/config.yaml)files/harpoon2-server -o /usr/bin/harpoon2-server -f"
+ExecStart=/bin/chmod +x /usr/bin/harpoon2-server
+ExecStart=/bin/systemd-run --unit=bmi-prep-agent-server /usr/bin/bmi-prep-agent-server
+ExecStart=/bin/systemd-run --unit=harpoon2-server /usr/bin/harpoon2-server
+ExecStart=/usr/bin/flash_os_workflow.py --host-config /etc/trident/config.yaml
 Type=oneshot
 
 [Install]
-WantedBy=trident-install.service
+WantedBy=multi-user.target

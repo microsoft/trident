@@ -6,3 +6,6 @@ BMP_PublicPackages = { index = "sparse+https://pkgs.dev.azure.com/mariner-org/EC
 
 [source.crates-io]
 replace-with = "BMP_PublicPackages"
+
+[target.aarch64-unknown-linux-gnu]
+linker = "aarch64-linux-gnu-gcc"
