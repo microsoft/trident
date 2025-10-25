@@ -1,6 +1,6 @@
 ### This file is used in pipelines to build Trident RPMs.
 
-FROM mcr.microsoft.com/azurelinux/base/core:3.0
+FROM mcr.microsoft.com/azurelinux/base/core:3.0.20250910-arm64
 
 RUN tdnf install -y rpmdevtools openssl-devel clang-devel protobuf-devel rust sed ca-certificates perl build-essential selinux-policy-devel
 
@@ -8,8 +8,8 @@ WORKDIR /work
 
 COPY packaging/rpm/trident.spec .
 COPY packaging/systemd ./systemd
-COPY artifacts/osmodifier /usr/src/azl/SOURCES/osmodifier
-COPY artifacts/test-image/harpoon2-server ./target/release/harpoon2-server
+COPY artifacts/osmodifier-aarch64 /usr/src/azl/SOURCES/osmodifier
+COPY artifacts/test-image/harpoon2-server-aarch64 ./target/release/harpoon2-server
 COPY artifacts/test-image/trident-grpc.service ./target/release/trident-grpc.service
 COPY packaging/selinux-policy-trident/trident.te /usr/src/azl/SOURCES/trident.te
 COPY packaging/selinux-policy-trident/trident.fc /usr/src/azl/SOURCES/trident.fc
@@ -35,6 +35,7 @@ RUN if [ "$CARGO_REGISTRIES_FROM_ENV" = "true" ]; then \
 RUN --mount=type=secret,id=registry_token \
     export CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN=$(cat /run/secrets/registry_token) && \
     rpmbuild -bb --build-in-place trident.spec \
+    --target aarch64 \
     --define="trident_version $TRIDENT_VERSION" \
     --define="rpm_ver $RPM_VER" \
     --define="rpm_rel $RPM_REL" && \
