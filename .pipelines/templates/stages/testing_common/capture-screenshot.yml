@@ -1,0 +1,34 @@
+parameters:
+  - name: deploymentEnvironment
+    type: string
+    default: virtualMachine
+    values:
+      - virtualMachine
+      - bareMetal
+
+  - name: screenshotName
+    type: string
+
+  - name: vmName
+    type: string
+    default: "virtdeploy-vm-0"
+
+  - name: captureScreenshot
+    type: boolean
+    default: true
+
+steps:
+  - ${{ if eq(parameters.deploymentEnvironment, 'virtualMachine') }}:
+    - bash: |
+        sudo apt-get install -y imagemagick
+      displayName: Install image package
+      condition: and(succeededOrFailed(), eq(${{ parameters.captureScreenshot }}, true))
+      retryCountOnTaskFailure: 3
+    - bash: |
+        set -eux
+        mkdir -p $(ob_outputDirectory)
+        # Capture screenshot from the VM using virsh and convert it to PNG format
+        sudo virsh screenshot ${{ parameters.vmName }} /tmp/screenshot.ppm
+        convert /tmp/screenshot.ppm $(ob_outputDirectory)/${{ parameters.screenshotName }}.png
+      condition: and(succeededOrFailed(), eq(${{ parameters.captureScreenshot }}, true))
+      displayName: "📷 Capture screenshot: ${{ parameters.screenshotName }}"

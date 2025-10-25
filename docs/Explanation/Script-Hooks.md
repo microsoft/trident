@@ -32,3 +32,13 @@ OS](../Reference/Glossary.md#target-os). Post-configure scripts are useful for:
 
 - Setting attributes or permissions for users.
 - Installing packages required for expected workloads.
+
+## Update-Check Scripts
+
+Update-check scripts are run inside the [target
+OS](../Reference/Glossary.md#target-os). Update-check scripts run during
+`trident commit`, right after the boot partition has been validated, but before
+the system is marked as `provisioned` and the EFI boot order has been updated.
+The intent of these scripts is to allow users to validate the system per their
+requirements. If any of the update-check scripts return a non-zero exit code,
+the commit will fail and the system will rollback to the previous state.

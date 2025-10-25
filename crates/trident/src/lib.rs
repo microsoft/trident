@@ -279,6 +279,25 @@ impl Trident {
     where
         F: FnOnce(&mut DataStore) -> Result<T, TridentError>,
     {
+        // AbUpdateHealthCheckFailed is a special case where we would like
+        // to preserve the last error across any recovery. This aids in
+        // surfacing the original error.
+        info!(
+            "Execute and record error with current servicing state: {:?}",
+            datastore.host_status().servicing_state
+        );
+        info!(
+            "Execute and record error with current last error: {:?}",
+            datastore.host_status().last_error
+        );
+        let last_error_to_preserve = if datastore.host_status().servicing_state
+            == ServicingState::AbUpdateHealthCheckFailed
+        {
+            datastore.host_status().last_error.clone()
+        } else {
+            None
+        };
+
         datastore.with_host_status(|host_status| {
             if let Some(e) = host_status.last_error.take() {
                 warn!("Previously encountered error: {e:?}");
@@ -290,7 +309,10 @@ impl Trident {
             Ok(t) => Ok(t),
             Err(e) => {
                 // Record error in datastore.
-                let error = serde_yaml::to_value(&e).structured(InternalError::SerializeError)?;
+                let error = match last_error_to_preserve {
+                    Some(err) => err,
+                    None => serde_yaml::to_value(&e).structured(InternalError::SerializeError)?,
+                };
                 if let Err(e2) =
                     datastore.with_host_status(|status| status.last_error = Some(error))
                 {
@@ -600,19 +622,22 @@ impl Trident {
         })
     }
 
-    pub fn commit(&mut self, datastore: &mut DataStore) -> Result<(), TridentError> {
-        // If host's servicing state is Finalized, need to validate that the firmware correctly
-        // booted from the updated target OS image.
-        if datastore.host_status().servicing_state != ServicingState::CleanInstallFinalized
-            && datastore.host_status().servicing_state != ServicingState::AbUpdateFinalized
-        {
+    pub fn commit(&mut self, datastore: &mut DataStore) -> Result<ExitKind, TridentError> {
+        // If host's servicing state is *Finalized or *HealthCheckFailed, need to
+        // re-evaluate the current state of the host.
+        if !matches!(
+            datastore.host_status().servicing_state,
+            ServicingState::CleanInstallFinalized
+                | ServicingState::AbUpdateFinalized
+                | ServicingState::AbUpdateHealthCheckFailed
+        ) {
             info!("No update in progress, skipping commit");
-            return Ok(());
+            return Ok(ExitKind::Done);
         }
 
         let rollback_result = self.execute_and_record_error(datastore, |datastore| {
             rollback::validate_boot(datastore).message(
-                "Failed to validate that firmware correctly booted from updated target OS image",
+                "Failed to validate that firmware correctly booted from validated updated target OS image",
             )
         });
 
@@ -625,8 +650,17 @@ impl Trident {
             }
         }
 
-        // Re"throw" the error if there was one.
-        rollback_result
+        match rollback_result {
+            Ok(rollback::BootValidationResult::CorrectBootProvisioned) => Ok(ExitKind::Done),
+            Ok(rollback::BootValidationResult::CorrectBootInvalid(e)) => {
+                debug!("Correct boot, but validation failed: {e:?}");
+                Ok(ExitKind::NeedsReboot)
+            }
+            Err(e) => {
+                error!("Boot validation failed: {e:?}");
+                Err(e)
+            }
+        }
     }
 
     pub fn get(

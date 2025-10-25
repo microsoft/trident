@@ -26,6 +26,8 @@ type AbUpdateHelper struct {
 		StageAbUpdate        bool   `short:"s" help:"Controls whether A/B update should be staged."`
 		FinalizeAbUpdate     bool   `short:"f" help:"Controls whether A/B update should be finalized."`
 		Proxy                string `help:"Proxy address. Input should include the env var name, i.e. HTTPS_PROXY=http://0.0.0.0."`
+		ForcedRollback       bool   `help:"Controls whether this test includes a forced auto-rollback during A/B update." default:"false"`
+		ExpectFailedCommit   bool   `help:"Controls whether this test treats failed commits as successful." default:"false"`
 	}
 
 	client *ssh.Client
@@ -89,6 +91,61 @@ func (h *AbUpdateHelper) getHostConfig(tc storm.TestCase) error {
 func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 	if !h.args.StageAbUpdate {
 		tc.Skip("Staging not requested")
+	}
+
+	if h.args.ForcedRollback {
+		if _, ok := h.config["health"].(map[string]interface{}); !ok {
+			h.config["health"] = map[string]interface{}{}
+		}
+		if _, ok := h.config["health"].(map[string]interface{})["checks"].([]interface{}); !ok {
+			h.config["health"].(map[string]interface{})["checks"] = make([]interface{}, 0)
+		}
+
+		// Add a script health check that always fails during A/B update to trigger auto-rollback
+		h.config["health"].(map[string]interface{})["checks"] = append(
+			h.config["health"].(map[string]interface{})["checks"].([]interface{}),
+			map[string]interface{}{
+				"content": "exit 1",
+				"runOn":   []string{"ab-update"},
+				"name":    "invoke-rollback-from-script",
+			},
+		)
+
+		// Add a systemd health check that always fails during A/B update to trigger auto-rollback
+		h.config["health"].(map[string]interface{})["checks"] = append(
+			h.config["health"].(map[string]interface{})["checks"].([]interface{}),
+			map[string]interface{}{
+				"runOn":           []string{"ab-update"},
+				"name":            "check-non-existent-service-to-invoke-rollback",
+				"systemdServices": []string{"non-existent-service1", "non-existent-service2"},
+				"timeoutSeconds":  30,
+			},
+		)
+	} else {
+		// Remove check-non-existent-service-to-invoke-rollback and
+		// invoke-rollback-from-script checks if they exist
+		if health, ok := h.config["health"].(map[string]interface{}); ok {
+			if checks, ok := health["checks"].([]interface{}); ok {
+				newChecks := make([]interface{}, 0)
+				for _, check := range checks {
+					checkMap, ok := check.(map[string]interface{})
+					if !ok {
+						newChecks = append(newChecks, check)
+						continue
+					}
+					name, ok := checkMap["name"].(string)
+					if !ok {
+						newChecks = append(newChecks, check)
+						continue
+					}
+					if name == "check-non-existent-service-to-invoke-rollback" || name == "invoke-rollback-from-script" {
+						continue
+					}
+					newChecks = append(newChecks, check)
+				}
+				health["checks"] = newChecks
+			}
+		}
 	}
 
 	// Extract the OLD URL from the configuration
@@ -289,7 +346,10 @@ func (h *AbUpdateHelper) checkTridentService(tc storm.TestCase) error {
 
 			logrus.Infof("SSH dial to '%s' succeeded", h.args.SshCliSettings.FullHost())
 
-			err = utils.CheckTridentService(client, h.args.Env, h.args.TimeoutDuration())
+			// Enable tests to handle success and failure of commit service
+			// depending on configuration
+			expectSuccessfulCommit := !h.args.ExpectFailedCommit
+			err = utils.CheckTridentService(client, h.args.Env, h.args.TimeoutDuration(), expectSuccessfulCommit)
 			if err != nil {
 				logrus.Warnf("Trident service is not in expected state: %s", err)
 				return nil, err

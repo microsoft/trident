@@ -165,6 +165,12 @@ steps:
     displayName: "🔄 Finalize A/B update into target OS"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
+  - template: ../testing_common/capture-screenshot.yml
+    parameters:
+      screenshotName: "finalize"
+      captureScreenshot: ${{ ne(variables['abActiveVolume'], 'null') }}
+      deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
+
   - template: ../testing_common/display-serial-logs.yml
     parameters:
       netlistenConfigFile: ${{ parameters.netlistenConfigFile }}

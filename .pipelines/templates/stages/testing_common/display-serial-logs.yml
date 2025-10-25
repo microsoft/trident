@@ -8,6 +8,10 @@ parameters:
   - name: partition
     type: string
 
+  - name: displayNameSuffix
+    type: string
+    default: ""
+
   - name: artifactPrefix
     type: string
     default: "stage-finalize-ab-update-target-os"
@@ -37,5 +41,5 @@ steps:
         echo "Serial log not found!"
         echo "(No serial log captured)" > $SERIAL_LOG_ARTIFACT_PATH
       fi
-    displayName: "📄 Display serial output from update to ${{ parameters.partition }}"
+    displayName: "📄 Display serial output from update to ${{ parameters.partition }} ${{ parameters.displayNameSuffix }}"
     condition: succeededOrFailed()
