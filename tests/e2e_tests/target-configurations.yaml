@@ -96,6 +96,7 @@ virtualMachine:
       - root-verity
       - simple
       - split
+      - uefifallback
       - usr-verity
       - usr-verity-raid
     post_merge:
@@ -113,6 +114,7 @@ virtualMachine:
       - root-verity
       - simple
       - split
+      - uefifallback
       - usr-verity
       - usr-verity-raid
     pullrequest:
@@ -125,6 +127,7 @@ virtualMachine:
       - root-verity
       - simple
       - split
+      - uefifallback
       - usr-verity
       - usr-verity-raid
     validation:
@@ -142,6 +145,7 @@ virtualMachine:
       - root-verity
       - simple
       - split
+      - uefifallback
       - usr-verity
       - usr-verity-raid
     weekly:
@@ -158,6 +162,7 @@ virtualMachine:
       - root-verity
       - simple
       - split
+      - uefifallback
       - usr-verity
       - usr-verity-raid
   container:
@@ -174,6 +179,7 @@ virtualMachine:
       - rerun
       - root-verity
       - simple
+      - uefifallback
       - usr-verity
       - usr-verity-raid
     post_merge:
@@ -189,6 +195,7 @@ virtualMachine:
       - rerun
       - root-verity
       - simple
+      - uefifallback
       - usr-verity
       - usr-verity-raid
     pullrequest:
@@ -202,6 +209,7 @@ virtualMachine:
       - raid-resync-small
       - rerun
       - simple
+      - uefifallback
       - usr-verity
       - usr-verity-raid
     validation:
@@ -217,6 +225,7 @@ virtualMachine:
       - rerun
       - root-verity
       - simple
+      - uefifallback
       - usr-verity
       - usr-verity-raid
     weekly:
@@ -231,5 +240,6 @@ virtualMachine:
       - rerun
       - root-verity
       - simple
+      - uefifallback
       - usr-verity
       - usr-verity-raid

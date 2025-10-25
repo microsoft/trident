@@ -597,6 +597,15 @@
             }
           ]
         },
+        "uefiFallback": {
+          "description": "Options for configuring the UEFI fallback.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/UefiFallbackMode"
+            }
+          ],
+          "nullable": true
+        },
         "users": {
           "description": "Users to configure on the host.",
           "default": [],
@@ -1459,6 +1468,35 @@
         }
       },
       "additionalProperties": false
+    },
+    "UefiFallbackMode": {
+      "description": "UEFIFallback mode",
+      "oneOf": [
+        {
+          "title": "Rollback",
+          "description": "Set the UEFI fallback mode to rollback, where fallback will boot to the last OS.",
+          "type": "string",
+          "enum": [
+            "rollback"
+          ]
+        },
+        {
+          "title": "Rollforward",
+          "description": "Set the UEFI fallback mode to rollforward, where fallback will boot to the newly installed or updated OS.",
+          "type": "string",
+          "enum": [
+            "rollforward"
+          ]
+        },
+        {
+          "title": "None",
+          "description": "Leave the fallback UEFI files untouched during install and update.",
+          "type": "string",
+          "enum": [
+            "none"
+          ]
+        }
+      ]
     },
     "User": {
       "description": "Configuration for a specific user.",

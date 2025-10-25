@@ -26,6 +26,7 @@ type AbUpdateHelper struct {
 		StageAbUpdate        bool   `short:"s" help:"Controls whether A/B update should be staged."`
 		FinalizeAbUpdate     bool   `short:"f" help:"Controls whether A/B update should be finalized."`
 		Proxy                string `help:"Proxy address. Input should include the env var name, i.e. HTTPS_PROXY=http://0.0.0.0."`
+		ExpectFailedCommit   bool   `help:"Controls whether this test treats failed commits as successful." default:"false"`
 	}
 
 	client *ssh.Client
@@ -289,7 +290,10 @@ func (h *AbUpdateHelper) checkTridentService(tc storm.TestCase) error {
 
 			logrus.Infof("SSH dial to '%s' succeeded", h.args.SshCliSettings.FullHost())
 
-			err = utils.CheckTridentService(client, h.args.Env, h.args.TimeoutDuration())
+			// Enable tests to handle success and failure of commit service
+			// depending on configuration
+			expectSuccessfulCommit := !h.args.ExpectFailedCommit
+			err = utils.CheckTridentService(client, h.args.Env, h.args.TimeoutDuration(), expectSuccessfulCommit)
 			if err != nil {
 				logrus.Warnf("Trident service is not in expected state: %s", err)
 				return nil, err
