@@ -44,11 +44,11 @@ steps:
 
        # Create sysext DDI image
       echo "Creating sysext DDI image..."
-      mksquashfs sysext-image test-sysext.raw -comp xz -Xbcj x86 -noappend
+      mksquashfs sysext-image test-sysext.raw -comp xz -Xbcj x86 -noappend -no-xattrs
 
       # Create confext DDI image  
       echo "Creating confext DDI image..."
-      mksquashfs confext-image test-confext.raw -comp xz -Xbcj x86 -noappend
+      mksquashfs confext-image test-confext.raw -comp xz -Xbcj x86 -noappend -no-xattrs
 
       # Verify the images were created
       ls -la *.raw

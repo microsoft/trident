@@ -50,6 +50,8 @@ steps:
         cmd+=(--ociSysextUrl "$oci_sysext_url")
         cmd+=(--ociConfextUrl "$oci_confext_url")
 
+        ls
+
         # Calculate SHA384 hashes of extension images.
         sysext_sha384=$(sha384sum test_sysext.raw | awk '{print $1}')
         confext_sha384=$(sha384sum test_confext.raw | awk '{print $1}')
