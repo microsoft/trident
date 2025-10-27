@@ -162,7 +162,6 @@ func checkTridentServiceInner(client *ssh.Client, serviceName string, expectSucc
 
 	output, err := session.CombinedOutput(cmd)
 	if err != nil {
-		logrus.Debugf("Received output:\n %s", output)
 		// We expect systemctl to return an exit code of 3 when the service is
 		// not running. This is expected after trident is finished. It is NOT an
 		// error!
