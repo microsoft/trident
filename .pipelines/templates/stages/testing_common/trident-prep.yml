@@ -42,15 +42,13 @@ steps:
       )
 
       if [ "${{ parameters.config }}" == "misc" ]; then
-        build_id="$(Build.BuildId)"
-        oci_cosi_url="oci://$(ACR_NAME).azurecr.io/${{ parameters.imageName }}:$(TAG_BASE).1"
-        oci_sysext_url="oci://$(ACR_NAME).azurecr.io/$(SYSEXT_REPO):$(TAG_BASE)"
-        oci_confext_url="oci://$(ACR_NAME).azurecr.io/$(CONFEXT_REPO):$(TAG_BASE)"
+        tag="$(TAG_BASE).1"
+        oci_cosi_url="oci://$(ACR_NAME).azurecr.io/${{ parameters.imageName }}:${tag}"
+        oci_sysext_url="oci://$(ACR_NAME).azurecr.io/$(SYSEXT_REPO):${tag}"
+        oci_confext_url="oci://$(ACR_NAME).azurecr.io/$(CONFEXT_REPO):${tag}"
         cmd+=(--ociCosiUrl "$oci_cosi_url")
         cmd+=(--ociSysextUrl "$oci_sysext_url")
         cmd+=(--ociConfextUrl "$oci_confext_url")
-
-        ls
 
         # Calculate SHA384 hashes of extension images.
         sysext_sha384=$(sha384sum test-sysext.raw | awk '{print $1}')
