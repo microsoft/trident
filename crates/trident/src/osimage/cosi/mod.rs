@@ -85,7 +85,7 @@ impl Cosi {
     }
 
     /// Returns the ESP filesystem image.
-    pub(super) fn esp_filesystem<'a>(&'a self) -> Result<OsImageFileSystem<'a>, Error> {
+    pub(super) fn esp_filesystem(&self) -> Result<OsImageFileSystem<'_>, Error> {
         self.metadata
             .get_esp_filesystem()
             .map(|image| cosi_image_to_os_image_filesystem(&self.reader, image))
