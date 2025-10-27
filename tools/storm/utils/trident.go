@@ -181,7 +181,7 @@ func checkTridentServiceInner(client *ssh.Client, serviceName string, expectSucc
 			return &reconnectNeeded, fmt.Errorf("expected to find 'Active: inactive (dead)' in Trident service status")
 		}
 	} else {
-		if !strings.Contains(outputStr, " Active: failed (Result: exit-code)") {
+		if !strings.Contains(outputStr, "Active: failed (Result: exit-code)") {
 			return &reconnectNeeded, fmt.Errorf("expected to find 'Active: failed (Result: exit-code)' in Trident service status")
 		}
 	}
