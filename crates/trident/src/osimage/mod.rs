@@ -137,7 +137,7 @@ impl OsImage {
     }
 
     /// Find the mount point which contains the given path.
-    pub(crate) fn path_to_filesystem<'a>(&'a self, path: &Path) -> Option<OsImageFileSystem<'a>> {
+    pub(crate) fn path_to_filesystem(&self, path: &Path) -> Option<OsImageFileSystem<'_>> {
         self.filesystems()
             .filter(|fs| path.starts_with(&fs.mount_point))
             .max_by_key(|fs| fs.mount_point.components().count())
