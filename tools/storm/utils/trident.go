@@ -148,9 +148,27 @@ func CheckTridentService(client *ssh.Client, env TridentEnvironment, timeout tim
 	return nil
 }
 
+// checkTridentServiceInner checks the status of the Trident service on the host.
+//   - client: An established SSH client connection to the host. This is used to
+//     create new SSH sessions to execute commands. If the client fails to
+//     create a new session, 'true' is returned to indicate that the SSH client
+//     needs to be recreated.
+//   - serviceName: The name of the Trident service to check. This is expected to differ
+//     based on whether Trident is running in a container or on the host.
+//   - expectSuccessfulCommit: A boolean indicating what the expected result of
+//     `trident commit` should be on the host,  successful (true) or a
+//     failed (false).
+//
+// The function returns a boolean indicating whether the SSH connection needs to be
+// re-established (typically when `client` fails to creat a new SSH session) and an
+// error if the service is not in the expected state or if there was an error
+// executing the command.
 func checkTridentServiceInner(client *ssh.Client, serviceName string, expectSuccessfulCommit bool) (bool, error) {
 	session, err := client.NewSession()
 	if err != nil {
+		// New session was not created, return `true` to indicate that
+		// the SSH client should be recreated and checkTridentServiceInner
+		// should be retried.
 		return true, fmt.Errorf("failed to create SSH session: %w", err)
 	}
 	defer session.Close()
