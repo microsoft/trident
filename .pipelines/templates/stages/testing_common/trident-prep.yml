@@ -43,8 +43,15 @@ steps:
 
       if [ "${{ parameters.config }}" == "misc" ]; then
         build_id="$(Build.BuildId)"
-        oci_url="oci://$(ACR_NAME).azurecr.io/${{ parameters.imageName }}:$(TAG_BASE).1"
-        cmd+=(--ociUrl "$oci_url")
+        oci_cosi_url="oci://$(ACR_NAME).azurecr.io/${{ parameters.imageName }}:$(TAG_BASE).1"
+        oci_sysext_url="oci://$(ACR_NAME).azurecr.io/$(SYSEXT_REPO):$(TAG_BASE)"
+        oci_confext_url="oci://$(ACR_NAME).azurecr.io/$(CONFEXT_REPO):$(TAG_BASE)"
+        cmd+=(--ociCosiUrl "$oci_cosi_url")
+        cmd+=(--ociSysextUrl "$oci_sysext_url")
+        cmd+=(--ociConfextUrl "$oci_confext_url")
+
+        # Calculate SHA384 hashes of extension images.
+        ls
       fi
 
       # Execute the command
@@ -53,4 +60,4 @@ steps:
       chmod 600 ${{ parameters.tridentSourceDirectory }}/tests/e2e_tests/helpers/key
       ssh-keygen -p -m PEM -f ${{ parameters.tridentSourceDirectory }}/tests/e2e_tests/helpers/key -N ""
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
-    displayName: "Setting keys to ssh for testing"
+    displayName: "Edit Trident Host Configuration"

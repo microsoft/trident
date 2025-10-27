@@ -57,13 +57,27 @@ def add_copy_command(host_config_path):
         yaml.safe_dump(host_config, f)
 
 
-# Images stored in ACR are tagged based on pipeline build ID, and therefore the
-# URL must be updated for every build.
-def rename_oci_url(host_config_path, oci_url):
+def add_extension_images(host_config_path, oci_sysext_url, oci_confext_url):
     with open(host_config_path, "r") as f:
         host_config = yaml.safe_load(f)
 
-    host_config["image"]["url"] = oci_url
+    if "os" not in host_config:
+        host_config["os"] = {}
+    if "sysexts" not in host_config["sysexts"]:
+        host_config["os"]["sysexts"] = []
+    host_config["os"]["sysexts"].append({"url": oci_sysext_url, "sha384": ""})
+    if "confexts" not in host_config["confexts"]:
+        host_config["os"]["confexts"] = []
+    host_config["os"]["confexts"].append({"url": oci_confext_url, "sha384": ""})
+
+
+# Images stored in ACR are tagged based on pipeline build ID, and therefore the
+# URL must be updated for every build.
+def rename_oci_url(host_config_path, oci_cosi_url):
+    with open(host_config_path, "r") as f:
+        host_config = yaml.safe_load(f)
+
+    host_config["image"]["url"] = oci_cosi_url
 
     with open(host_config_path, "w") as f:
         yaml.safe_dump(host_config, f)
@@ -84,11 +98,22 @@ def main():
         help="Path to the Trident configuration file.",
     )
     parser.add_argument(
-        "-o",
-        "--ociUrl",
+        "--ociCosiUrl",
         type=str,
         required=False,
         help="Url to ACR blob containing COSI file.",
+    )
+    parser.add_argument(
+        "--ociSysextUrl",
+        type=str,
+        required=False,
+        help="Url to ACR blob containing sysext file.",
+    )
+    parser.add_argument(
+        "--ociConfextUrl",
+        type=str,
+        required=False,
+        help="Url to ACR blob containing confext file.",
     )
     parser.add_argument(
         "-r",
