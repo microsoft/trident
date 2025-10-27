@@ -227,6 +227,7 @@ stages:
             parameters:
               deploymentLogPath: $(tridentSourceDirectory)/logstream-full.log
               displayName: "📄Display clean install logs"
+              forceRun: true
 
           - bash: |
               set -ux

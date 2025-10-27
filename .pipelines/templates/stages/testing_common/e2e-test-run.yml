@@ -70,24 +70,6 @@ steps:
       sudo pip3 install fabric
     displayName: "Installing dependencies for E2E tests"
 
-  # Check if Trident config requires A/B update testing.
-  # If it does, initialize the variables for active volume and image version.
-  - bash: |
-      set -eu
-      abUpdateExists=$(sudo yq e '.storage.abUpdate != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
-      if [ "$abUpdateExists" == "true" ]; then
-        echo "Trident config requires A/B update testing"
-        echo "##vso[task.setvariable variable=abActiveVolume]volume-a"
-        echo "##vso[task.setvariable variable=version]2"
-        echo "##vso[task.setvariable variable=tridentConfigFile]/var/lib/trident/config.yaml"
-      else
-        echo "Trident config does not require A/B update testing"
-        echo "##vso[task.setvariable variable=abActiveVolume]null"
-        echo "##vso[task.setvariable variable=skipJunitHandling]true"
-      fi
-    workingDirectory: $(Build.SourcesDirectory)/tests/e2e_tests
-    displayName: "Check if Trident config requires A/B update testing"
-
   - bash: |
       $(Build.SourcesDirectory)/bin/storm-trident helper check-ssh \
           "${{ parameters.sshKeyPath }}" \
@@ -115,6 +97,24 @@ steps:
       junitTestFile: "./tests/e2e_tests/${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_clean_install_$(System.JobAttempt).junit.xml"
       displayNameSpecifier: "clean install of target OS"
       artifactName: "junit_for_trident_clean_install"
+
+  # Check if Trident config requires A/B update testing.
+  # If it does, initialize the variables for active volume and image version.
+  - bash: |
+      set -eu
+      abUpdateExists=$(sudo yq e '.storage.abUpdate != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
+      if [ "$abUpdateExists" == "true" ]; then
+        echo "Trident config requires A/B update testing"
+        echo "##vso[task.setvariable variable=abActiveVolume]volume-a"
+        echo "##vso[task.setvariable variable=version]2"
+        echo "##vso[task.setvariable variable=tridentConfigFile]/var/lib/trident/config.yaml"
+      else
+        echo "Trident config does not require A/B update testing"
+        echo "##vso[task.setvariable variable=abActiveVolume]null"
+        echo "##vso[task.setvariable variable=skipJunitHandling]true"
+      fi
+    workingDirectory: $(Build.SourcesDirectory)/tests/e2e_tests
+    displayName: "Check if Trident config requires A/B update testing"
 
   # If current config requires A/B update testing, execute script to ssh into the host, update
   # images in the custom Trident config, and re-run Trident to both stage and finalize A/B update.
