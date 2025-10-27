@@ -57,7 +57,9 @@ def add_copy_command(host_config_path):
         yaml.safe_dump(host_config, f)
 
 
-def add_extension_images(host_config_path, oci_sysext_url, oci_confext_url):
+def add_extension_images(
+    host_config_path, oci_sysext_url, oci_confext_url, sysext_hash, confext_hash
+):
     with open(host_config_path, "r") as f:
         host_config = yaml.safe_load(f)
 
@@ -65,10 +67,12 @@ def add_extension_images(host_config_path, oci_sysext_url, oci_confext_url):
         host_config["os"] = {}
     if "sysexts" not in host_config["sysexts"]:
         host_config["os"]["sysexts"] = []
-    host_config["os"]["sysexts"].append({"url": oci_sysext_url, "sha384": ""})
+    host_config["os"]["sysexts"].append({"url": oci_sysext_url, "sha384": sysext_hash})
     if "confexts" not in host_config["confexts"]:
         host_config["os"]["confexts"] = []
-    host_config["os"]["confexts"].append({"url": oci_confext_url, "sha384": ""})
+    host_config["os"]["confexts"].append(
+        {"url": oci_confext_url, "sha384": confext_hash}
+    )
 
 
 # Images stored in ACR are tagged based on pipeline build ID, and therefore the
@@ -114,6 +118,18 @@ def main():
         type=str,
         required=False,
         help="Url to ACR blob containing confext file.",
+    )
+    parser.add_argument(
+        "--sysextHash",
+        type=str,
+        required=False,
+        help="Hash of sysext file.",
+    )
+    parser.add_argument(
+        "--confextHash",
+        type=str,
+        required=False,
+        help="Hash of confext file.",
     )
     parser.add_argument(
         "-r",
