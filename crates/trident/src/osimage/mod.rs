@@ -173,7 +173,7 @@ impl OsImage {
     }
 
     /// Returns the root filesystem image.
-    pub(crate) fn root_filesystem<'a>(&'a self) -> Option<OsImageFileSystem<'a>> {
+    pub(crate) fn root_filesystem(&self) -> Option<OsImageFileSystem<'_>> {
         self.filesystems()
             .find(|fs| fs.mount_point == Path::new(ROOT_MOUNT_POINT_PATH))
     }
