@@ -162,9 +162,7 @@ impl OsImage {
     }
 
     /// Returns an iterator over all images that are NOT the ESP filesystem image.
-    pub(crate) fn filesystems(
-        &self,
-    ) -> Box<dyn Iterator<Item = OsImageFileSystem<'_>> + '_> {
+    pub(crate) fn filesystems(&self) -> Box<dyn Iterator<Item = OsImageFileSystem<'_>> + '_> {
         match &self.0 {
             OsImageInner::Cosi(cosi) => Box::new(cosi.filesystems()),
             #[cfg(test)]
