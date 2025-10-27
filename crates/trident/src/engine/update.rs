@@ -183,15 +183,12 @@ pub(crate) fn update(
 #[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", ctx.servicing_type)))]
 fn stage_update(
     subsystems: &mut [Box<dyn Subsystem>],
-    ctx: EngineContext,
+    mut ctx: EngineContext,
     state: &mut DataStore,
     #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
 ) -> Result<(), TridentError> {
-    // Make mutable instance of EngineContext.
-    let mut ctx = ctx;
-
     match ctx.servicing_type {
         ServicingType::CleanInstall => {
             return Err(TridentError::new(
@@ -256,7 +253,12 @@ fn stage_update(
         engine::configure(subsystems, &ctx)?;
     };
 
+    // Update the Host Configuration with information produced and stored in the
+    // subsystems. Currently, this step is used only to update the final paths
+    // of sysexts and confexts configured in the extensions subsystem.
     engine::update_host_configuration(subsystems, &mut ctx)?;
+    // Turn ctx into an immutable variable.
+    let ctx = ctx;
 
     // At this point, deployment has been staged, so update servicing state
     debug!(
