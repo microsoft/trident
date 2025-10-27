@@ -21,11 +21,11 @@ type AbUpdateHelper struct {
 	args struct {
 		utils.SshCliSettings `embed:""`
 		utils.EnvCliSettings `embed:""`
-		TridentConfig        string `short:"c" required:"" help:"File name of the custom read-write Trident config on the host to point Trident to."`
-		Version              string `short:"v" required:"" help:"Version of the Trident image to use for the A/B update."`
-		StageAbUpdate        bool   `short:"s" help:"Controls whether A/B update should be staged."`
-		FinalizeAbUpdate     bool   `short:"f" help:"Controls whether A/B update should be finalized."`
-		Proxy                string `help:"Proxy address. Input should include the env var name, i.e. HTTPS_PROXY=http://0.0.0.0."`
+		TridentConfig        string   `short:"c" required:"" help:"File name of the custom read-write Trident config on the host to point Trident to."`
+		Version              string   `short:"v" required:"" help:"Version of the Trident image to use for the A/B update."`
+		StageAbUpdate        bool     `short:"s" help:"Controls whether A/B update should be staged."`
+		FinalizeAbUpdate     bool     `short:"f" help:"Controls whether A/B update should be finalized."`
+		EnvVars              []string `short:"e" help:"Environment variables. Multiple vars can be passed as a list of comma-separated strings, or this flag can be used multiple times. Each var should include the env var name, i.e. HTTPS_PROXY=http://0.0.0.0."`
 	}
 
 	client *ssh.Client
@@ -65,7 +65,7 @@ func (h *AbUpdateHelper) getHostConfig(tc storm.TestCase) error {
 		}
 	})
 
-	out, err := utils.InvokeTrident(h.args.Env, h.client, h.args.Proxy, "get configuration")
+	out, err := utils.InvokeTrident(h.args.Env, h.client, h.args.EnvVars, "get configuration")
 	if err != nil {
 		return fmt.Errorf("failed to invoke Trident: %w", err)
 	}
@@ -230,7 +230,7 @@ func (h *AbUpdateHelper) triggerTridentUpdate(tc storm.TestCase) error {
 	for i := 1; ; i++ {
 		logrus.Infof("Invoking Trident attempt #%d with args: %s", i, args)
 
-		out, err := utils.InvokeTrident(h.args.Env, h.client, h.args.Proxy, args)
+		out, err := utils.InvokeTrident(h.args.Env, h.client, h.args.EnvVars, args)
 		if err != nil {
 			if err, ok := err.(*ssh.ExitMissingError); ok && strings.Contains(out.Stderr, "Rebooting system") {
 				// The connection closed without an exit code, and the output contains "Rebooting system".
