@@ -1,0 +1,115 @@
+parameters:
+  - name: "imageName"
+    displayName: "Test image name, doubling as repository name"
+    type: string
+    values:
+      - trident-testimage
+      - trident-container-testimage
+
+  - name: "config"
+    displayName: "Trident configuration"
+    type: string
+
+  - name: "deploymentEnvironment"
+    type: string
+    values:
+      - virtualMachine
+      - bareMetal
+
+steps:
+  - bash: |
+      set -eux
+
+      if [ ${{ parameters.config }} != 'misc' ]; then
+        echo "Skipping step. Configuration is '${{ parameters.config }}'."
+        exit 0
+      fi
+
+      # Create sysext image directory structure
+      mkdir -p sysext-image/usr/lib/extension-release.d
+      mkdir -p sysext-image/usr/bin
+      mkdir -p sysext-image/usr/lib/systemd/system
+
+      # Create sysext extension-release file
+      cat > sysext-image/usr/lib/extension-release.d/extension-release.test-sysext << 'EOF'
+      ID=_any
+      SYSEXT_ID=test-sysext
+      ARCHITECTURE=x86-64
+      EOF
+
+      # Create confext image directory structure  
+      mkdir -p confext-image/etc/extension-release.d
+      mkdir -p confext-image/etc/perftools
+      mkdir -p confext-image/etc/systemd/system
+
+      # Create confext extension-release file
+      cat > confext-image/etc/extension-release.d/extension-release.test-confext << 'EOF'
+      ID=_any
+      CONFEXT_ID=test-confext
+      ARCHITECTURE=x86-64
+      EOF
+
+       # Create sysext DDI image
+      echo "Creating sysext DDI image..."
+      mksquashfs sysext-image test-sysext.raw -comp xz -Xbcj x86 -noappend
+
+      # Create confext DDI image  
+      echo "Creating confext DDI image..."
+      mksquashfs confext-image test-confext.raw -comp xz -Xbcj x86 -noappend
+
+      # Verify the images were created
+      ls -la *.raw
+      echo "Extension images created successfully!"
+
+    displayName: "Build sysext and confext images"
+    workingDirectory: $(Build.SourcesDirectory)
+    retryCountOnTaskFailure: 3
+
+  - task: AzureCLI@2
+    inputs:
+      azureSubscription: trident-dev-acr-write-umi-ECF
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        set -eux
+
+        if [ ${{ parameters.config }} != 'misc' ]; then
+          echo "Skipping step. Configuration is '${{ parameters.config }}'."
+          exit 0
+        fi
+
+        # Login to ACR
+        az acr login -n $(ACR_NAME)
+
+        sysext_repository_name="sysext"
+        confext_repository_name="confext"
+        build_id="$(Build.BuildId)"
+
+
+        cd $(Build.SourcesDirectory)
+
+        tag_base="v${build_id}.${{ parameters.config }}.${{ parameters.deploymentEnvironment }}"
+        for version in {1..4}; do
+          if [[ $version == 1 ]]; then
+            filename="regular.cosi"
+          else
+            filename="regular_v${version}.cosi"
+          fi
+
+          tag="$tag_base.${version}"
+          filename=
+          if [[ -f "$filename" ]]; then
+            echo "Pushing $filename with tag $tag to $(ACR_NAME).azurecr.io"
+            oras push $(ACR_NAME).azurecr.io/$repository_name:$tag "$filename"
+            sleep 3
+            echo "Verifying $filename was pushed successfully..."
+            az acr repository show --name $(ACR_NAME) --image ${repository_name}:${tag}
+          else
+            echo "File $filename not found"
+          fi
+        done
+
+        # Set variable for tag base of pushed images
+        echo "##vso[task.setvariable variable=TAG_BASE]$tag_base"
+    displayName: "Push extension images to ACR"
+    retryCountOnTaskFailure: 3

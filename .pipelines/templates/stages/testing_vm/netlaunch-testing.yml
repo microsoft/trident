@@ -127,6 +127,8 @@ stages:
               downloadTridentContainer: ${{ variables.downloadTridentContainer }}
               tridentTestImageUsrVerity: ${{ variables.usrVerityTestImageName }}
 
+          # Produce test sysext and confext images
+
           # Push (regular or container) testimage to ACR
           - template: ../common_tasks/push-to-acr.yml
             parameters:

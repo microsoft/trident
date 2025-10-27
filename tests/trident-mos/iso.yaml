@@ -83,11 +83,16 @@ os:
       destination: /usr/share/selinux/packages/trident/trident.fc
     - source: ../../packaging/selinux-policy-trident/trident.te
       destination: /usr/share/selinux/packages/trident/trident.te
+    - source: files/override.conf
+      destination: /override.conf
 
   services:
     enable:
       - trident-install
       - download-trident
+
+  selinux:
+    mode: enforcing
 
 scripts:
   postCustomization:
@@ -105,4 +110,4 @@ iso:
       - console=ttyS0
       - rd.luks=0
       - selinux=1
-      - enforcing=0
+      # - enforcing=0
