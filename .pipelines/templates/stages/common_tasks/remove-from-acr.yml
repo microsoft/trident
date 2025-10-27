@@ -28,17 +28,32 @@ steps:
         az acr login -n $(ACR_NAME)
         sleep 5
 
-        repository_name="${{ parameters.repository }}"
+        cosi_repository_name="${{ parameters.repository }}"
+        sysext_repository_name="sysext"
+        confext_repository_name="confext"
         build_id="$(Build.BuildId)"
-        az acr repository show-tags -n $(ACR_NAME) --repository $repository_name
+        az acr repository show-tags -n $(ACR_NAME) --repository $cosi_repository_name
 
         # Delete repository with COSI images
         for i in {1..4}; do
           tag="$(TAG_BASE).${i}"
-          if az acr repository show --name $(ACR_NAME) --image ${repository_name}:${tag} &> /dev/null; then
-            az acr repository delete --name $(ACR_NAME) --image ${repository_name}:${tag} --yes
+          if az acr repository show --name $(ACR_NAME) --image ${cosi_repository_name}:${tag} &> /dev/null; then
+            az acr repository delete --name $(ACR_NAME) --image ${cosi_repository_name}:${tag} --yes
           fi
         done
+
+        # Delete repository with sysext images
+        tag="$(TAG_BASE)"
+        if az acr repository show --name $(ACR_NAME) --image ${repository_name}:${tag} &> /dev/null; then
+          az acr repository delete --name $(ACR_NAME) --image ${repository_name}:${tag} --yes
+        fi
+
+        # Delete repository with confext images
+        tag="$(TAG_BASE)"
+        if az acr repository show --name $(ACR_NAME) --image ${repository_name}:${tag} &> /dev/null; then
+          az acr repository delete --name $(ACR_NAME) --image ${repository_name}:${tag} --yes
+        fi
+
     displayName: "Log into ACR and delete images by tag"
     retryCountOnTaskFailure: 3
     condition: always()

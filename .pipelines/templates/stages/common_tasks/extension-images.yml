@@ -54,7 +54,7 @@ steps:
       ls -la *.raw
       echo "Extension images created successfully!"
 
-    displayName: "Build sysext and confext images"
+    displayName: "Build test sysext and confext images"
     workingDirectory: $(Build.SourcesDirectory)
     retryCountOnTaskFailure: 3
 
@@ -81,7 +81,7 @@ steps:
 
         cd $(Build.SourcesDirectory)
 
-        tag="v${build_id}.${{ parameters.config }}.${{ parameters.deploymentEnvironment }}"
+        tag="$(TAG_BASE)"
         sysext_filename="test-sysext.raw"
         if [[ -f "$sysext_filename" ]]; then
           echo "Pushing $sysext_filename with tag $tag to $(ACR_NAME).azurecr.io"
@@ -102,8 +102,5 @@ steps:
         else
           echo "File $confext_filename not found"
         fi
-
-        # Set variable for tag base of pushed images
-        echo "##vso[task.setvariable variable=TAG_BASE]$tag"
     displayName: "Push extension images to ACR"
     retryCountOnTaskFailure: 3
