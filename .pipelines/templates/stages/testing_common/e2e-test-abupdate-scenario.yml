@@ -32,6 +32,11 @@ parameters:
     type: string
     default: ""
 
+  # Designate configurations to skip this scenario for, space-separated
+  - name: skipConfigurations
+    type: string
+    default: ""
+
   #
   # Support all of the e2e-test-run.yml parameters
   #
@@ -80,9 +85,12 @@ parameters:
 steps:
   - bash: |
       set -eux
-      existingAbActiveVolume=$(abActiveVolume) 
+      existingAbActiveVolume=$(abActiveVolume)
       internalSetting=$existingAbActiveVolume
-      if [ "${{ parameters.deploymentEnvironment }}" == "virtualMachine" ]; then
+      if echo "${{ parameters.skipConfigurations }}" | grep -wq "${{ parameters.tridentConfigurationName }}"; then
+        echo "Skipping ${{ parameters.updateScenarioName }} as it is in skipConfigurations list [${{ parameters.skipConfigurations }}]"
+        internalSetting='null'
+      elif [ "${{ parameters.deploymentEnvironment }}" == "virtualMachine" ]; then
         echo "Test ${{ parameters.updateScenarioName }} for all VM tests that do AB Update"
         internalSetting=$existingAbActiveVolume
       elif [ "${{ parameters.deploymentEnvironment }}" == "bareMetal" ] && 
@@ -93,7 +101,6 @@ steps:
         echo "Do not test ${{ parameters.updateScenarioName }}"
         internalSetting='null'
       fi
-
       set +x
       echo "Cache existing abActiveVolume value: $existingAbActiveVolume"
       echo "##vso[task.setvariable variable=existingAbActiveVolume]$existingAbActiveVolume"
