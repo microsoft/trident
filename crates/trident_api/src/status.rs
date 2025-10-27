@@ -269,7 +269,7 @@ mod tests {
 
     #[test]
     fn load_old_format() {
-        let old_yaml = include_str!("test/old_host_status.yaml");
+        let old_yaml = include_str!("test/preview12_host_status.yaml");
         let yaml: Value = serde_yaml::from_str(old_yaml).unwrap();
 
         let hs = decode_host_status(yaml).unwrap();
