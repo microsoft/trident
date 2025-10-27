@@ -160,6 +160,39 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 	// Delete the storage section from the config, not needed for A/B update
 	delete(h.config, "storage")
 
+	// Update the sysext and confext files. Update happens only once, from
+	// version 1 to 2. If already version 2, then keep as is.
+	sysexts, ok := h.config["sysexts"].([]interface{})
+	if ok && len(sysexts) > 0 {
+		// Get the first (and only) sysext from the array
+		sysext, ok := sysexts[0].(map[string]interface{})
+		if ok {
+			oldSysextUrl, ok := sysext["url"].(string)
+			if ok {
+				if strings.HasSuffix(oldSysextUrl, ".1") {
+					trimmedSysextUrl := strings.TrimSuffix(oldSysextUrl, ".1")
+					newSysextUrl := fmt.Sprintf("%s.2", trimmedSysextUrl)
+					sysext["url"] = newSysextUrl
+				}
+			}
+		}
+	}
+	confexts, ok := h.config["confexts"].([]interface{})
+	if ok && len(confexts) > 0 {
+		// Get the first (and only) confext from the array
+		confext, ok := confexts[0].(map[string]interface{})
+		if ok {
+			oldConfextUrl, ok := confext["url"].(string)
+			if ok {
+				if strings.HasSuffix(oldConfextUrl, ".1") {
+					trimmedConfextUrl := strings.TrimSuffix(oldConfextUrl, ".1")
+					newConfextUrl := fmt.Sprintf("%s.2", trimmedConfextUrl)
+					confext["url"] = newConfextUrl
+				}
+			}
+		}
+	}
+
 	hc_yaml, err := yaml.Marshal(h.config)
 	if err != nil {
 		return fmt.Errorf("failed to marshal YAML: %w", err)
