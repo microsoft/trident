@@ -153,7 +153,7 @@ impl OsImage {
     }
 
     /// Returns the ESP filesystem image.
-    pub(crate) fn esp_filesystem<'a>(&'a self) -> Result<OsImageFileSystem<'a>, Error> {
+    pub(crate) fn esp_filesystem(&self) -> Result<OsImageFileSystem<'_>, Error> {
         match &self.0 {
             OsImageInner::Cosi(cosi) => cosi.esp_filesystem(),
             #[cfg(test)]
