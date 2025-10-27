@@ -1,0 +1,200 @@
+parameters:
+  # Scenario name (like 'auto-rollback') will be appended to task display names and log file names
+  - name: updateScenarioName
+    type: string
+
+  # Scenario target OS (like 'A' or 'B') will be used in task display names and log file names
+  - name: updateScenarioTargetOs
+    type: string
+
+  # Flag to be passed to the storm ab-update command for this scenario
+  - name: updateScenarioFlag
+    type: string
+
+  # Whether to increment the COSI version after the update
+  - name: incrementUpdateVersion
+    type: boolean
+
+  # Test name to be passed to pytest for selecting scenario tests
+  - name: updateScenarioTestName
+    type: string
+
+  # Whether the storm ab-update helper should expect the target OS 'trident commit' to fail
+  - name: expectCommitFailure
+    type: boolean
+
+  # Expected final active volume after the scenario finishes
+  - name: expectActiveVolume
+    type: string
+
+  # Emoji to use in task display names for this scenario
+  - name: updateEmoji
+    type: string
+    default: ""
+
+  #
+  # Support all of the e2e-test-run.yml parameters
+  #
+  - name: buildPurpose
+    type: string
+
+  - name: tridentConfigurationName
+    type: string
+
+  - name: tridentConfigFile
+    type: string
+
+  - name: deploymentEnvironment
+    type: string
+
+  - name: runtimeEnv
+    type: string
+
+  - name: hostIp
+    type: string
+
+  - name: tridentConfigPath
+    type: string
+
+  - name: jUnitXMLIdentifier
+    type: string
+
+  - name: sshKeyPath
+    type: string
+
+  - name: userName
+    type: string
+
+  - name: artifactsDirectory
+    type: string
+
+  - name: netlistenPort
+    type: number
+
+  - name: netlistenConfigFile
+    type: string
+
+  - name: httpsProxy
+    type: string
+
+steps:
+  - bash: |
+      set -eux
+      existingAbActiveVolume=$(abActiveVolume) 
+      internalSetting=$existingAbActiveVolume
+      if [ "${{ parameters.deploymentEnvironment }}" == "virtualMachine" ]; then
+        echo "Test ${{ parameters.updateScenarioName }} for all VM tests that do AB Update"
+        internalSetting=$existingAbActiveVolume
+      elif [ "${{ parameters.deploymentEnvironment }}" == "bareMetal" ] && 
+         [ "${{ parameters.buildPurpose }}" == "weekly" ]; then
+        echo "Test ${{ parameters.updateScenarioName }} for BM tests that do AB Update for Full Validation"
+        internalSetting=$existingAbActiveVolume
+      else
+        echo "Do not test ${{ parameters.updateScenarioName }}"
+        internalSetting='null'
+      fi
+
+      set +x
+      echo "Cache existing abActiveVolume value: $existingAbActiveVolume"
+      echo "##vso[task.setvariable variable=existingAbActiveVolume]$existingAbActiveVolume"
+      echo "Set abActiveVolume value for this template: $internalSetting"
+      echo "##vso[task.setvariable variable=abActiveVolume]$internalSetting"
+    displayName: "Determine whether to test ${{ parameters.updateScenarioName }}"
+
+  - bash: |
+      set -eux
+      # If there is a netlisten process, kill it so there is no port clash in the instance
+      if pgrep netlisten > /dev/null; then pkill netlisten; fi
+
+      NETLISTEN_CONFIG_ARGS=""
+      if [ -n "${{ parameters.netlistenConfigFile }}" ]; then
+        NETLISTEN_CONFIG_ARGS="--config ${{ parameters.netlistenConfigFile }}"
+      fi
+
+      ./bin/netlisten --force-color $NETLISTEN_CONFIG_ARGS \
+          -m $(Build.SourcesDirectory)/trident-ab-update-metrics-target-os-${{ parameters.updateScenarioTargetOs }}-${{ parameters.updateScenarioName }}.jsonl \
+          --full-logstream ./logstream-full.log \
+          -s "${{ parameters.artifactsDirectory }}" \
+          -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-target-os-${{ parameters.updateScenarioTargetOs }}-${{ parameters.updateScenarioName }}.log 2>&1 &
+
+      PROXY_ARG=""
+      if [ -n "${{ parameters.httpsProxy }}" ]; then
+        PROXY_ARG="--proxy HTTPS_PROXY=${{ parameters.httpsProxy }}"
+      fi
+
+      EXPECT_FAILURE_ARG=""
+      if [ "${{ parameters.expectCommitFailure }}" == "True" ]; then
+        EXPECT_FAILURE_ARG="--expect-failed-commit"
+      fi
+
+      echo "Running script to stage and finalize A/B update..."
+      ./bin/storm-trident helper ab-update \
+          "${{ parameters.sshKeyPath }}" \
+          "${{ parameters.hostIp }}" \
+          "${{ parameters.userName }}" \
+          "${{ parameters.runtimeEnv }}" \
+          --trident-config ${{ parameters.tridentConfigFile }} \
+          --version $(version) \
+          --stage-ab-update \
+          --finalize-ab-update \
+          ${{ parameters.updateScenarioFlag }} \
+          $EXPECT_FAILURE_ARG \
+          $PROXY_ARG
+
+      # Un-set the 'x' flag to avoid errors.
+      set +x
+      echo "##vso[task.setvariable variable=abActiveVolume]${{ parameters.expectActiveVolume }}"
+
+      if [ "${{ parameters.incrementUpdateVersion }}" == "True" ]; then
+        current_version=$(echo $(version))
+        new_version=$((current_version + 1))
+        echo "##vso[task.setvariable variable=version]$new_version"
+      fi
+
+    timeoutInMinutes: 15
+    workingDirectory: $(Build.SourcesDirectory)
+    displayName: "🅰️🔄${{ parameters.updateEmoji }} Stage and finalize A/B update into target OS ${{ parameters.updateScenarioTargetOs }} testing ${{ parameters.updateScenarioName }}"
+    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
+
+  # TODO: uncomment when https://github.com/microsoft/trident/pull/290 merges
+  # - template: ./capture-screenshot.yml
+  #   parameters:
+  #     screenshotName: "update-a-${{ parameters.updateScenarioName }}"
+  #     deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
+
+  - template: ./display-serial-logs.yml
+    parameters:
+      netlistenConfigFile: ${{ parameters.netlistenConfigFile }}
+      outputDirectory: $(ob_outputDirectory)
+      partition: ${{ parameters.updateScenarioTargetOs }}
+      displayNameSuffix: "testing ${{ parameters.updateScenarioName }}"
+
+  - template: ./display-deployment-logs.yml
+    parameters:
+      deploymentLogPath: $(Build.SourcesDirectory)/stage-finalize-ab-update-target-os-${{ parameters.updateScenarioTargetOs }}-${{ parameters.updateScenarioName }}.log
+      displayName: "📄 Display A/B update deployment logs for target OS ${{ parameters.updateScenarioTargetOs }} testing ${{ parameters.updateScenarioName }}"
+
+  - template: ./display-deployment-logs.yml
+    parameters:
+      deploymentLogPath: $(Build.SourcesDirectory)/logstream-full.log
+      displayName: "📄 [TRACE] Display A/B update deployment logs for target OS ${{ parameters.updateScenarioTargetOs }} testing ${{ parameters.updateScenarioName }}"
+
+  - bash: |
+      set -eux
+      python3 -u -m pytest \
+          -m ${{ parameters.updateScenarioTestName }} \
+          --capture=no \
+          --junit-xml=${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_${{ parameters.updateScenarioTargetOs }}_${{ parameters.updateScenarioName }}_$(System.JobAttempt).junit.xml \
+          --host ${{ parameters.hostIp }} \
+          --runtime-env ${{ parameters.runtimeEnv }} \
+          --configuration ${{ parameters.tridentConfigPath }} \
+          --ab-active-volume ${{ parameters.expectActiveVolume }}
+    timeoutInMinutes: 5
+    workingDirectory: $(Build.SourcesDirectory)/tests/e2e_tests
+    displayName: "🔬${{ parameters.updateEmoji }} Run Trident E2E tests after A/B update into target OS ${{ parameters.updateScenarioTargetOs }} testing ${{ parameters.updateScenarioName }}"
+    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
+
+  - bash: |
+      echo "Reset abActiveVolume value to cached value: $(existingAbActiveVolume)"
+      echo "##vso[task.setvariable variable=abActiveVolume]$(existingAbActiveVolume)"
+    displayName: "Reset abActiveVolume variable"
