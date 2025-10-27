@@ -6,6 +6,10 @@ parameters:
     type: string
     default: ""
 
+  - name: forceRun
+    type: boolean
+    default: false
+
 steps:
   - bash: |
       if [[ -f ${{ parameters.deploymentLogPath }} ]]; then
@@ -16,7 +20,7 @@ steps:
       else
         echo "No deployment log found at ${{ parameters.deploymentLogPath }}"
       fi
-    condition: succeededOrFailed()
+    condition: and(succeededOrFailed(), or(${{ parameters.forceRun }}, ne(variables['abActiveVolume'], 'null')))
     ${{ if ne(parameters.displayName, '') }}:
       displayName: "${{ parameters.displayName }}"
     ${{ else }}:
