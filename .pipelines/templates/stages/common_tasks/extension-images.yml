@@ -20,12 +20,8 @@ steps:
 
       # Create two sysexts and confexts each.
       for i in 1 2; do
-        # Create sysext image directory structure
-        mkdir -p sysext-image-$i/usr/lib/extension-release.d
-        mkdir -p sysext-image-$i/usr/bin
-        mkdir -p sysext-image-$i/usr/lib/systemd/system
-
         # Create sysext extension-release file
+        mkdir -p sysext-image-$i/usr/lib/extension-release.d
         cat > sysext-image-$i/usr/lib/extension-release.d/extension-release.test-sysext << 'EOF'
         ID=_any
         SYSEXT_ID=test-sysext
@@ -33,12 +29,8 @@ steps:
         ARCHITECTURE=x86-64
         EOF
 
-        # Create confext image-$i directory structure  
-        mkdir -p confext-image-$i/etc/extension-release.d
-        mkdir -p confext-image-$i/etc/perftools
-        mkdir -p confext-image-$i/etc/systemd/system
-
         # Create confext extension-release file
+        mkdir -p confext-image-$i/etc/extension-release.d
         cat > confext-image/etc/extension-release.d/extension-release.test-confext << 'EOF'
         ID=_any
         CONFEXT_ID=test-confext
@@ -46,12 +38,8 @@ steps:
         ARCHITECTURE=x86-64
         EOF
 
-        # Create sysext DDI image
-        echo "Creating sysext DDI image..."
+        # Create DDI files
         mksquashfs sysext-image-$i test-sysext-$i.raw -comp xz -Xbcj x86 -noappend -no-xattrs
-
-        # Create confext DDI image  
-        echo "Creating confext DDI image..."
         mksquashfs confext-image-$i test-confext-$i.raw -comp xz -Xbcj x86 -noappend -no-xattrs
       done
 
