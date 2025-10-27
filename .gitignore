@@ -298,6 +298,7 @@ paket-files/
 # Python Tools for Visual Studio (PTVS)
 __pycache__/
 *.pyc
+.venv/
 
 # Cake - Uncomment if you are using it
 # tools/**
@@ -359,3 +360,7 @@ baremetal-serial.log
 
 # Local cargo config
 .cargo/config
+
+# Virtdeploy files
+/tools/vm-netlaunch.yaml
+/tools/virt-deploy-metadata.json

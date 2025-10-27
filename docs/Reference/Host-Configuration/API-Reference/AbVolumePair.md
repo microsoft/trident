@@ -2,9 +2,7 @@
 
 # AbVolumePair
 
-Per A/B update volume pair configuration. Points to the underlying block devices used for the A/B update.
-
-**Under development, initial logic for illustration purposes only.**
+Per A/B volume pair configuration. Points to the underlying block devices in the A/B volume pair.
 
 | Characteristic | Value    |
 | -------------- | -------- |
@@ -12,29 +10,29 @@ Per A/B update volume pair configuration. Points to the underlying block devices
 
 ## Properties
 
-### `id` **<span style="color:orange;">(required)</span>**
+### `id` **<span>(required)</span>**
 
-A unique identifier for the volume pair.
+A unique identifier for the A/B volume pair.
 
-This is a user defined string that allows to link the volume pair to the results in the Host Status and to the mount points. The identifier needs to be unique across all types of devices, not just A/B Volume Pairs.
-
-| Characteristic | Value             |
-| -------------- | ----------------- |
-| Type           | `string`          |
-| Format         | `Block Device ID` |
-
-### `volumeAId` **<span style="color:orange;">(required)</span>**
-
-The ID of the partition that will be used as the A volume.
+This is a user-defined string that links the A/B volume pair to the `filesystems` config in the Host Configuration. The identifier needs to be unique across devices of all types, not just A/B volume pairs.
 
 | Characteristic | Value             |
 | -------------- | ----------------- |
 | Type           | `string`          |
 | Format         | `Block Device ID` |
 
-### `volumeBId` **<span style="color:orange;">(required)</span>**
+### `volumeAId` **<span>(required)</span>**
 
-The ID of the partition that will be used as the B volume.
+The ID of the device that will be used as the A volume.
+
+| Characteristic | Value             |
+| -------------- | ----------------- |
+| Type           | `string`          |
+| Format         | `Block Device ID` |
+
+### `volumeBId` **<span>(required)</span>**
+
+The ID of the device that will be used as the B volume.
 
 | Characteristic | Value             |
 | -------------- | ----------------- |

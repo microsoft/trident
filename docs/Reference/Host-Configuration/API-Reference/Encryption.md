@@ -10,7 +10,52 @@ Configure encrypted volumes of underlying disk partitions or software RAID array
 
 ## Properties
 
-### `volumes` **<span style="color:orange;">(required)</span>**
+### `pcrs` **<span>(required)</span>**
+
+List of PCRs in the TPM 2.0 device to seal encrypted volumes to in the target OS. This field is required, and at least one PCR must be provided. Each PCR may be specified either as a digit or as a string.
+
+1. When doing a clean install of **a grub target OS image**, the following options are valid:
+
+- 7, or `secure-boot-policy`
+
+2. When doing a clean install of **a UKI target OS image**, the following options are valid:
+
+- 4, or `boot-loader-code`
+
+- 7, or `secure-boot-policy`
+
+- 11, or `kernel-boot`
+
+- 4 and 7
+
+- 4 and 11
+
+- 7 and 11
+
+- 4, 7, and 11
+
+However, due to the limitations of `systemd-pcrlock`, which is used internally for encryption in UKI OS, PCR 7 CANNOT be used if:
+
+- `SecureBoot` is disabled,
+
+- Trident is running inside a container.
+
+To use PCR 7 for encryption in a target UKI OS, Trident must be running in a non-containerized environment, with `SecureBoot` enabled.
+
+More encryption flows, with additional PCR options, will be added in the future.
+
+| Characteristic | Value   |
+| -------------- | ------- |
+| Type           | `array` |
+
+- Items of the array must have the type:
+
+   | Characteristic | Value           |
+   | -------------- | --------------- |
+   | Type           | `Pcr`           |
+   | Link           | [Pcr](./Pcr.md) |
+
+### `volumes` **<span>(required)</span>**
 
 The list of LUKS2-encrypted volumes to create.
 
@@ -27,28 +72,15 @@ This parameter is required and must not be empty. Each item is an object that wi
    | Type           | `EncryptedVolume`                       |
    | Link           | [EncryptedVolume](./EncryptedVolume.md) |
 
-### `pcrs` (optional)
+### `clearTpmOnInstall` (optional)
 
-Optional list of PCRs in TPM 2.0 device to seal to. If not specified, Trident will seal encrypted volumes against the following default options: - If doing a clean install of a grub ROS image, seal to PCR 7 while inside the MOS, - If doing a clean install of a UKI ROS image, seal to PCRs 4 and 11 after booting into the ROS A.
+Optional parameter that determines whether the TPM 2.0 device will be cleared on clean install. By default, it is set to false. If set to true, Trident will clear the TPM 2.0 device on install. TPM cannot be cleared on A/B updates.
 
-Each PCR may be specified either as a digit or a string representation. If specified, at least one PCR must be provided.
+Clearing the TPM 2.0 device will remove all keys and data from the TPM 2.0 device. This operation is irreversible and could result in data loss. However, this option might be needed to ensure that the TPM 2.0 is in a known state; to avoid entering the DA (Direct Attack) lockout mode on repetitive provisioning attempts, e.g. during testing and development.
 
-When doing a clean install of a grub ROS image, the following options are valid: - 7, or `secure-boot-policy`.
-
-When doing a clean install of a UKI ROS image, the following options are valid: - 4, or `boot-loader-code`, - 11, or `kernel-boot`, - 4 and 11.
-
-More encryption flows, with additional PCR options, will be added in the future.
-
-| Characteristic | Value   |
-| -------------- | ------- |
-| Type           | `array` |
-
-- Items of the array must have the type:
-
-   | Characteristic | Value           |
-   | -------------- | --------------- |
-   | Type           | `Pcr`           |
-   | Link           | [Pcr](./Pcr.md) |
+| Characteristic | Value     |
+| -------------- | --------- |
+| Type           | `boolean` |
 
 ### `recoveryKeyUrl` (optional)
 
@@ -58,27 +90,27 @@ This parameter allows specifying a local file path to a recovery key file via a 
 
 The URL must be non-empty if provided. Other URL schemes are not supported at this time.
 
-# Recommended Configuration
+### Recommended Configuration
 
 It is strongly advised to configure a recovery key file, as it plays a pivotal role in data recovery.
 
-# File Format Expectations
+### File Format Expectations
 
 The recovery key file must be a binary file without any encoding. This direct format ensures compatibility with cryptsetup and systemd APIs. Be mindful that all file content, including any potential whitespace or newline characters, is considered part of the recovery key.
 
-# Security Considerations
+### Security Considerations
 
 Ensuring the recovery key's confidentiality and integrity is paramount. Employ secure storage and rigorous access control measures. Specifically:
 
 - The file containing the key should only be accessible by the root user and have `0400` permissions set.
 
-- The recovery key should be a minimum of 32 bytes long and should be generated with enough high entropy to defend against brute force or cryptographic attacks targeting on-disk hash values.
+- The recovery key should be a minimum of 32 bytes long and should be generated with a high enough entropy to defend against brute force or cryptographic attacks targeting on-disk hash values.
 
-# Generating a Recovery Key
+### Generating a Recovery Key
 
 One way to create a recovery key file on Linux systems is using the `dd` utility:
 
-> Note: The following example is for illustration purposes only. > Be sure to generate recovery keys with diligence and attention > to security principles. Please adjust the following example > according to your own security policies and operational > environment to fit your specific security requirements and > constraints.
+> Note: The following example is for illustration purposes only. Be sure to generate > recovery keys with diligence and attention to security principles. Please adjust the > following example according to your own security policies and operational environment to > fit your specific security requirements and constraints.
 
 ```sh touch ./recovery.key chmod 0400 ./recovery.key dd if=/dev/random of=./recovery.key bs=1 count=256 ```
 

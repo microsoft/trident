@@ -25,7 +25,7 @@ parameters:
     default: 1
 
   - name: updateCheckTimeoutInMinutes
-    displayName: "Timeout for checking runtime OS deployment in minutes"
+    displayName: "Timeout for checking target OS deployment in minutes"
     type: number
     default: 30
 
@@ -63,6 +63,10 @@ parameters:
     type: string
     default: "*.*.*"
 
+  - name: dependsOnStage
+    type: string
+    default: ""
+
 stages:
   - ${{ if eq(parameters.testingRun, false) }}:
       - stage: PrepareSSHKeys
@@ -71,42 +75,44 @@ stages:
           - template: generate-ssh-keys.yml
 
       - ${{ if eq(parameters.includeQemu, true) }}:
-        - stage: BuildImagesQemu
-          displayName: Build Base and Update Images for QEMU
-          dependsOn:
-            - PrepareSSHKeys
-            - GetTridentBinaries_rpms_amd64
+          - stage: BuildImagesQemu
+            displayName: Build Base and Update Images for QEMU
+            dependsOn:
+              - PrepareSSHKeys
+              - GetTridentBinaries_rpms_amd64
+              - ${{ if ne(parameters.dependsOnStage, '') }}:
+                  - ${{ parameters.dependsOnStage }}
 
-          jobs:
-            - template: build-image.yml
-              parameters:
-                label: "qemu-base"
-                makeTarget: "build/trident-vm-grub-verity-testimage.qcow2"
-                baseimgType: qemu_guest
-                baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-                micBuildType: ${{ parameters.micBuildType }}
-                micVersion: ${{ parameters.micVersion }}
-                useStagedSshKeys: true
+            jobs:
+              - template: build-image.yml
+                parameters:
+                  label: "qemu-base"
+                  makeTarget: "build/trident-vm-grub-verity-testimage.qcow2"
+                  baseimgType: qemu_guest
+                  baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+                  micBuildType: ${{ parameters.micBuildType }}
+                  micVersion: ${{ parameters.micVersion }}
+                  useStagedSshKeys: true
 
-            - template: build-image.yml
-              parameters:
-                label: "qemu-update-a"
-                makeTarget: "build/trident-vm-grub-verity-testimage.cosi"
-                baseimgType: qemu_guest
-                baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-                micBuildType: ${{ parameters.micBuildType }}
-                micVersion: ${{ parameters.micVersion }}
-                useStagedSshKeys: true
+              - template: build-image.yml
+                parameters:
+                  label: "qemu-update-a"
+                  makeTarget: "build/trident-vm-grub-verity-testimage.cosi"
+                  baseimgType: qemu_guest
+                  baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+                  micBuildType: ${{ parameters.micBuildType }}
+                  micVersion: ${{ parameters.micVersion }}
+                  useStagedSshKeys: true
 
-            - template: build-image.yml
-              parameters:
-                label: "qemu-update-b"
-                makeTarget: "build/trident-vm-grub-verity-testimage.cosi"
-                baseimgType: qemu_guest
-                baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-                micBuildType: ${{ parameters.micBuildType }}
-                micVersion: ${{ parameters.micVersion }}
-                useStagedSshKeys: true
+              - template: build-image.yml
+                parameters:
+                  label: "qemu-update-b"
+                  makeTarget: "build/trident-vm-grub-verity-testimage.cosi"
+                  baseimgType: qemu_guest
+                  baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+                  micBuildType: ${{ parameters.micBuildType }}
+                  micVersion: ${{ parameters.micVersion }}
+                  useStagedSshKeys: true
 
       - ${{ if eq(parameters.includeAzure, true) }}:
           - stage: BuildImagesAzure
@@ -114,6 +120,8 @@ stages:
             dependsOn:
               - PrepareSSHKeys
               - GetTridentBinaries_rpms_amd64
+              - ${{ if ne(parameters.dependsOnStage, '') }}:
+                  - ${{ parameters.dependsOnStage }}
 
             jobs:
               - template: build-image.yml
@@ -144,42 +152,44 @@ stages:
                   micVersion: ${{ parameters.micVersion }}
 
       - ${{ if eq(parameters.includeUKI, true) }}:
-        - stage: BuildImagesUKI
-          displayName: Build Base and Update Images for UKI
-          dependsOn:
-            - PrepareSSHKeys
-            - GetTridentBinaries_rpms_amd64
+          - stage: BuildImagesUKI
+            displayName: Build Base and Update Images for UKI
+            dependsOn:
+              - PrepareSSHKeys
+              - GetTridentBinaries_rpms_amd64
+              - ${{ if ne(parameters.dependsOnStage, '') }}:
+                  - ${{ parameters.dependsOnStage }}
 
-          jobs:
-            - template: build-image.yml
-              parameters:
-                label: "uki-base"
-                makeTarget: "build/trident-vm-usr-verity-testimage.qcow2"
-                baseimgType: qemu_guest
-                baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-                micBuildType: ${{ parameters.micBuildType }}
-                micVersion: ${{ parameters.micVersion }}
-                useStagedSshKeys: true
+            jobs:
+              - template: build-image.yml
+                parameters:
+                  label: "uki-base"
+                  makeTarget: "build/trident-vm-usr-verity-testimage.qcow2"
+                  baseimgType: qemu_guest
+                  baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+                  micBuildType: ${{ parameters.micBuildType }}
+                  micVersion: ${{ parameters.micVersion }}
+                  useStagedSshKeys: true
 
-            - template: build-image.yml
-              parameters:
-                label: "uki-update-a"
-                makeTarget: "build/trident-vm-usr-verity-testimage.cosi"
-                baseimgType: qemu_guest
-                baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-                micBuildType: ${{ parameters.micBuildType }}
-                micVersion: ${{ parameters.micVersion }}
-                useStagedSshKeys: true
+              - template: build-image.yml
+                parameters:
+                  label: "uki-update-a"
+                  makeTarget: "build/trident-vm-usr-verity-testimage.cosi"
+                  baseimgType: qemu_guest
+                  baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+                  micBuildType: ${{ parameters.micBuildType }}
+                  micVersion: ${{ parameters.micVersion }}
+                  useStagedSshKeys: true
 
-            - template: build-image.yml
-              parameters:
-                label: "uki-update-b"
-                makeTarget: "build/trident-vm-usr-verity-testimage.cosi"
-                baseimgType: qemu_guest
-                baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-                micBuildType: ${{ parameters.micBuildType }}
-                micVersion: ${{ parameters.micVersion }}
-                useStagedSshKeys: true
+              - template: build-image.yml
+                parameters:
+                  label: "uki-update-b"
+                  makeTarget: "build/trident-vm-usr-verity-testimage.cosi"
+                  baseimgType: qemu_guest
+                  baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+                  micBuildType: ${{ parameters.micBuildType }}
+                  micVersion: ${{ parameters.micVersion }}
+                  useStagedSshKeys: true
 
   - stage: ServicingTesting
     displayName: Servicing Testing
@@ -196,13 +206,13 @@ stages:
               - BuildImagesUKI
 
     variables:
-      SSH_PRIVATE_KEY_PATH: "$HOME/.ssh/id_rsa"
-      SSH_PUBLIC_KEY_PATH: "$(SSH_PRIVATE_KEY_PATH).pub"
-      IMAGE_DEFINITION: "trident-vm-grub-verity-testimage-$(System.DefinitionId)"
-      SUBSCRIPTION: 04cdc145-a4f9-42d4-9868-c46d23d0c63f # CoreOS_Mariner_BMP_Staging
-      STORAGE_ACCOUNT: "azlinuxbmpstagingeastus2"
-      RESOURCE_GROUP: "azlinux_bmp_staging_eastus2"
-      SUBNET_ID: /subscriptions/04cdc145-a4f9-42d4-9868-c46d23d0c63f/resourceGroups/trident-vm_servicing-azure-vnet/providers/Microsoft.Network/virtualNetworks/poolpeeringvnet/subnets/default
+      - group: servicing_testing_params
+      - name: SSH_PRIVATE_KEY_PATH
+        value: "$HOME/.ssh/id_rsa"
+      - name: SSH_PUBLIC_KEY_PATH
+        value: "$(SSH_PRIVATE_KEY_PATH).pub"
+      - name: IMAGE_DEFINITION
+        value: "trident-vm-grub-verity-testimage-$(System.DefinitionId)"
 
     jobs:
       - ${{ if eq(parameters.includeQemu, true) }}:

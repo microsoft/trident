@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 
-	"storm"
+	"github.com/microsoft/storm"
 
 	"github.com/sirupsen/logrus"
 )
@@ -25,7 +25,7 @@ type PrepareImages struct {
 		UsrVerityTestImageDir string `arg:"" help:"Directory containing the verity test images" type:"path"`
 		RegularImageName      string `arg:"" help:"Name of the regular test image"`
 		VerityImageName       string `arg:"" help:"Name of the verity test image"`
-		UsrVerityImageName    string `arg:"" help:"Name of the verity test image"`
+		UsrVerityImageName    string `arg:"" help:"Name of the usr-verity test image"`
 		OutputDir             string `arg:"" help:"Directory in which to place the prepared images" type:"path"`
 		Versions              uint   `short:"v" help:"Number of versions to create of each image type" default:"1"`
 	}

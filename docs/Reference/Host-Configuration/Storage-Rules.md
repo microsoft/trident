@@ -212,17 +212,17 @@ The following referrers require that all underlying partitions are of the same s
 
 Some referrers only support specific underlying partitions types.
 
-| Referrer type      | Allowed partition types                                             |
-| ------------------ | ------------------------------------------------------------------- |
-| raid-array         | any                                                                 |
-| ab-volume          | any                                                                 |
-| encrypted-volume   | any type except 'esp' or 'root' or 'root-verity' or 'home'          |
-| verity-device      | 'root' or 'root-verity' or 'usr' or 'usr-verity' or 'linux-generic' |
-| swap-device        | 'swap'                                                              |
-| filesystem-new     | any type except 'esp'                                               |
-| filesystem-image   | any                                                                 |
-| filesystem-esp     | 'esp'                                                               |
-| filesystem-adopted | any type except 'esp'                                               |
+| Referrer type      | Allowed partition types                                                    |
+| ------------------ | -------------------------------------------------------------------------- |
+| raid-array         | any                                                                        |
+| ab-volume          | any                                                                        |
+| encrypted-volume   | any type except 'esp' or 'root' or 'root-verity' or 'usr-verity' or 'home' |
+| verity-device      | 'root' or 'root-verity' or 'usr' or 'usr-verity' or 'linux-generic'        |
+| swap-device        | 'swap'                                                                     |
+| filesystem-new     | any type except 'esp'                                                      |
+| filesystem-image   | any                                                                        |
+| filesystem-esp     | 'esp'                                                                      |
+| filesystem-adopted | any type except 'esp'                                                      |
 
 ## Allowed RAID Levels
 

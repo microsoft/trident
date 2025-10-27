@@ -1,3 +1,8 @@
+---
+sidebar_position: 2
+title: Trident CLI Documentation
+---
+
 # Trident Command Line Interface Documentation
 
 Usage:
@@ -84,14 +89,14 @@ Options:
 
 ### Argument Details
 
-#### <span style="color:#d96125;font-family:monospace;">&lt;CONFIG&gt;</span>
+#### <span>&lt;CONFIG&gt;</span>
 
 The new configuration to apply
 
 Default: `/etc/trident/config.yaml`
 
 
-#### <span style="color:#d96125;font-family:monospace;">--allowed_operations &lt;ALLOWED_OPERATIONS&gt;</span>
+#### <span>--allowed_operations &lt;ALLOWED_OPERATIONS&gt;</span>
 
 Comma-separated list of operations that Trident will be allowed to perform
 
@@ -103,22 +108,22 @@ Possible values:
 Default: `stage,finalize`
 
 
-#### <span style="color:#d96125;font-family:monospace;">--status &lt;STATUS&gt;</span>
+#### <span>--status &lt;STATUS&gt;</span>
 
 Path to save the resulting Host Status
 
 
-#### <span style="color:#d96125;font-family:monospace;">--error &lt;ERROR&gt;</span>
+#### <span>--error &lt;ERROR&gt;</span>
 
 Path to save an eventual fatal error
 
 
-#### <span style="color:#d96125;font-family:monospace;">--multiboot &lt;MULTIBOOT&gt;</span>
+#### <span>--multiboot &lt;MULTIBOOT&gt;</span>
 
 Allow Trident to perform a multiboot install
 
 
-#### <span style="color:#d96125;font-family:monospace;">--verbosity &lt;VERBOSITY&gt;</span>
+#### <span>--verbosity &lt;VERBOSITY&gt;</span>
 
 Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
 
@@ -159,14 +164,14 @@ Options:
 
 ### Argument Details
 
-#### <span style="color:#d96125;font-family:monospace;">&lt;CONFIG&gt;</span>
+#### <span>&lt;CONFIG&gt;</span>
 
 The new configuration to apply
 
 Default: `/etc/trident/config.yaml`
 
 
-#### <span style="color:#d96125;font-family:monospace;">--allowed_operations &lt;ALLOWED_OPERATIONS&gt;</span>
+#### <span>--allowed_operations &lt;ALLOWED_OPERATIONS&gt;</span>
 
 Comma-separated list of operations that Trident will be allowed to perform
 
@@ -178,17 +183,17 @@ Possible values:
 Default: `stage,finalize`
 
 
-#### <span style="color:#d96125;font-family:monospace;">--status &lt;STATUS&gt;</span>
+#### <span>--status &lt;STATUS&gt;</span>
 
 Path to save the resulting Host Status
 
 
-#### <span style="color:#d96125;font-family:monospace;">--error &lt;ERROR&gt;</span>
+#### <span>--error &lt;ERROR&gt;</span>
 
 Path to save an eventual fatal error
 
 
-#### <span style="color:#d96125;font-family:monospace;">--verbosity &lt;VERBOSITY&gt;</span>
+#### <span>--verbosity &lt;VERBOSITY&gt;</span>
 
 Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
 
@@ -221,17 +226,17 @@ Options:
 
 ### Argument Details
 
-#### <span style="color:#d96125;font-family:monospace;">--status &lt;STATUS&gt;</span>
+#### <span>--status &lt;STATUS&gt;</span>
 
 Path to save the resulting Host Status
 
 
-#### <span style="color:#d96125;font-family:monospace;">--error &lt;ERROR&gt;</span>
+#### <span>--error &lt;ERROR&gt;</span>
 
 Path to save an eventual fatal error
 
 
-#### <span style="color:#d96125;font-family:monospace;">--verbosity &lt;VERBOSITY&gt;</span>
+#### <span>--verbosity &lt;VERBOSITY&gt;</span>
 
 Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
 
@@ -262,17 +267,17 @@ Options:
 
 ### Argument Details
 
-#### <span style="color:#d96125;font-family:monospace;">--status &lt;STATUS&gt;</span>
+#### <span>--status &lt;STATUS&gt;</span>
 
 Path to save the resulting Host Status
 
 
-#### <span style="color:#d96125;font-family:monospace;">--error &lt;ERROR&gt;</span>
+#### <span>--error &lt;ERROR&gt;</span>
 
 Path to save an eventual fatal error
 
 
-#### <span style="color:#d96125;font-family:monospace;">--verbosity &lt;VERBOSITY&gt;</span>
+#### <span>--verbosity &lt;VERBOSITY&gt;</span>
 
 Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
 
@@ -307,22 +312,22 @@ Options:
 
 ### Argument Details
 
-#### <span style="color:#d96125;font-family:monospace;">--config &lt;CONFIG&gt;</span>
+#### <span>--config &lt;CONFIG&gt;</span>
 
 The new configuration to work from
 
 
-#### <span style="color:#d96125;font-family:monospace;">--status &lt;STATUS&gt;</span>
+#### <span>--status &lt;STATUS&gt;</span>
 
 Path to save the resulting HostStatus
 
 
-#### <span style="color:#d96125;font-family:monospace;">--error &lt;ERROR&gt;</span>
+#### <span>--error &lt;ERROR&gt;</span>
 
 Path to save an eventual fatal error
 
 
-#### <span style="color:#d96125;font-family:monospace;">--verbosity &lt;VERBOSITY&gt;</span>
+#### <span>--verbosity &lt;VERBOSITY&gt;</span>
 
 Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
 
@@ -355,14 +360,14 @@ Options:
 
 ### Argument Details
 
-#### <span style="color:#d96125;font-family:monospace;">&lt;CONFIG&gt;</span>
+#### <span>&lt;CONFIG&gt;</span>
 
 The new configuration to apply
 
 Default: `/etc/trident/config.yaml`
 
 
-#### <span style="color:#d96125;font-family:monospace;">--verbosity &lt;VERBOSITY&gt;</span>
+#### <span>--verbosity &lt;VERBOSITY&gt;</span>
 
 Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
 
@@ -397,7 +402,7 @@ Options:
 
 ### Argument Details
 
-#### <span style="color:#d96125;font-family:monospace;">&lt;KIND&gt;</span>
+#### <span>&lt;KIND&gt;</span>
 
 What data to retrieve
 
@@ -410,12 +415,12 @@ Possible values:
 Default: `status`
 
 
-#### <span style="color:#d96125;font-family:monospace;">--outfile &lt;OUTFILE&gt;</span>
+#### <span>--outfile &lt;OUTFILE&gt;</span>
 
 Path to save the resulting output
 
 
-#### <span style="color:#d96125;font-family:monospace;">--verbosity &lt;VERBOSITY&gt;</span>
+#### <span>--verbosity &lt;VERBOSITY&gt;</span>
 
 Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
 
@@ -448,14 +453,14 @@ Options:
 
 ### Argument Details
 
-#### <span style="color:#d96125;font-family:monospace;">&lt;CONFIG&gt;</span>
+#### <span>&lt;CONFIG&gt;</span>
 
 Path to a Host Configuration file
 
 Default: `/etc/trident/config.yaml`
 
 
-#### <span style="color:#d96125;font-family:monospace;">--verbosity &lt;VERBOSITY&gt;</span>
+#### <span>--verbosity &lt;VERBOSITY&gt;</span>
 
 Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
 
@@ -494,7 +499,7 @@ Options:
 
 ### Argument Details
 
-#### <span style="color:#d96125;font-family:monospace;">&lt;HS_PATH&gt;</span>
+#### <span>&lt;HS_PATH&gt;</span>
 
 Path to a Host Status file (deprecated)
 
@@ -505,7 +510,7 @@ Conflicts with:
 - `--lazy_partitions <LAZY_PARTITIONS>`
 
 
-#### <span style="color:#d96125;font-family:monospace;">--lazy_partitions &lt;LAZY_PARTITIONS&gt;</span>
+#### <span>--lazy_partitions &lt;LAZY_PARTITIONS&gt;</span>
 
 Provide lazy partition information overrides for `-b` partitions
 
@@ -516,7 +521,7 @@ Conflicts with:
 - `<HS_PATH>`
 
 
-#### <span style="color:#d96125;font-family:monospace;">--disk &lt;DISK&gt;</span>
+#### <span>--disk &lt;DISK&gt;</span>
 
 Provide disk path
 
@@ -527,7 +532,7 @@ Conflicts with:
 - `<HS_PATH>`
 
 
-#### <span style="color:#d96125;font-family:monospace;">--history_path &lt;HISTORY_PATH&gt;</span>
+#### <span>--history_path &lt;HISTORY_PATH&gt;</span>
 
 Provide path for history.json
 
@@ -536,7 +541,7 @@ Conflicts with:
 - `<HS_PATH>`
 
 
-#### <span style="color:#d96125;font-family:monospace;">--verbosity &lt;VERBOSITY&gt;</span>
+#### <span>--verbosity &lt;VERBOSITY&gt;</span>
 
 Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
 

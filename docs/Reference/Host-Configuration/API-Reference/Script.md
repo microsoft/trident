@@ -10,7 +10,7 @@ A script that can be run on the host during Trident stages.
 
 ## Properties
 
-### `content` **<span style="color:orange;">(required)</span>**
+### `content` **<span>(required)</span>**
 
 Raw contents of the script.
 
@@ -22,7 +22,7 @@ Conflicts with:
 | -------------- | -------- |
 | Type           | `string` |
 
-### `name` **<span style="color:orange;">(required)</span>**
+### `name` **<span>(required)</span>**
 
 Name of the script.
 
@@ -30,7 +30,7 @@ Name of the script.
 | -------------- | -------- |
 | Type           | `string` |
 
-### `path` **<span style="color:orange;">(required)</span>**
+### `path` **<span>(required)</span>**
 
 Path to a script in the execution OS.
 
@@ -42,7 +42,7 @@ Conflicts with:
 | -------------- | -------- |
 | Type           | `string` |
 
-### `runOn` **<span style="color:orange;">(required)</span>**
+### `runOn` **<span>(required)</span>**
 
 List of servicing types that the script should run on.
 

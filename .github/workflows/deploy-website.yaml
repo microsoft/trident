@@ -1,0 +1,87 @@
+name: Deploy to GitHub Pages
+
+on:
+
+  # Manual trigger
+  workflow_dispatch:
+
+  # Triggers the workflow on push or pull request events but only for the main branch
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    branches: [main]
+    paths:
+     - 'docs/**'
+     - 'website/**'
+     - '.github/workflows/deploy-website.yaml'
+
+  # # Trigger on release
+  # release:
+  #   types: [published]
+  #   branches: [main]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    name: Build Github Pages artifact
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+
+      - name: Build website
+        run: |
+          # Go to website folder
+          cd website
+          # Authenticate GitHub CLI
+          echo ${{ secrets.GITHUB_TOKEN }} | gh auth login --with-token
+          # For pull requests, use branch as dev version so branch docs are validated
+          if [[ "${{github.event_name}}" == "pull_request" ]]; then
+            export DEV_BRANCH=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}
+            echo "Using PR branch as dev branch: $DEV_BRANCH"
+          fi
+          # Construct multi-version docs
+          ./scripts/create_versioned_docs.sh
+          # Install dependencies
+          npm ci
+          # Build website
+          npm run build
+
+      - name: Upload website artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./website/build
+
+  wait-for-approval:
+    # Do not run publishing flow for pull requests
+    if: github.event_name != 'pull_request'
+    name: Wait for validation and approval
+    # This job will require approval for the 'wait-for-approval' environment
+    environment: wait-for-approval
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Approved
+        run: |
+          echo "approved :)"
+
+  deploy:
+    # Do not run publishing flow for pull requests
+    if: github.event_name != 'pull_request'
+    name: Deploy website artifact to Github Pages
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: wait-for-approval
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4 

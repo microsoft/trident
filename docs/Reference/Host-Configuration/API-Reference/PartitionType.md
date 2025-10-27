@@ -2,7 +2,7 @@
 
 # PartitionType
 
-Partition types as defined by The Discoverable Partitions Specification (<https://uapi-group.org/specifications/specs/discoverable_partitions_specification/>).
+Partition types as defined by [The Discoverable Partitions Specification](<https://uapi-group.org/specifications/specs/discoverable_partitions_specification/>).
 
 | Characteristic | Value  |
 | -------------- | ------ |
@@ -75,7 +75,7 @@ x64: `8484680c-9521-48c6-9c11-b0720656f69e`
 | Type           | `string` |
 | Value          | `usr`    |
 
-### Usr verity hash partition (NOT ENABLED YET!)
+### Usr-verity hash partition (NOT ENABLED YET!)
 
 x64: `77ff5f63-e7b6-4633-acf4-1565b864c0e6`
 

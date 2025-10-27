@@ -10,7 +10,7 @@ Per partition configuration.
 
 ## Properties
 
-### `id` **<span style="color:orange;">(required)</span>**
+### `id` **<span>(required)</span>**
 
 A unique identifier for the partition.
 
@@ -21,7 +21,7 @@ This is a user defined string that allows to link the partition to the mount poi
 | Type           | `string`          |
 | Format         | `Block Device ID` |
 
-### `size` **<span style="color:orange;">(required)</span>**
+### `size` **<span>(required)</span>**
 
 Size of the partition.
 

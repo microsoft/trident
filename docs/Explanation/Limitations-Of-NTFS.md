@@ -1,14 +1,5 @@
 # Limitations of NTFS
 
-## Table of Contents
-
-- [Limitations of NTFS](#limitations-of-ntfs)
-  - [Table of Contents](#table-of-contents)
-  - [Background](#background)
-  - [NTFS User Space Driver](#ntfs-user-space-driver)
-    - [Limitations](#limitations)
-      - [NTFS and Multiboot](#ntfs-and-multiboot)
-
 ## Background
 
 NTFS, or New Technology File System, is a file system developed by Microsoft

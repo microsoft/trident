@@ -2,7 +2,7 @@
 
 # AbUpdate
 
-A/B update configuration. Carries information about the A/B update volume pairs that are used to perform A/B updates.
+A/B update configuration. Carries information about the A/B volume pairs that are used to perform A/B updates.
 
 | Characteristic | Value    |
 | -------------- | -------- |
@@ -10,11 +10,9 @@ A/B update configuration. Carries information about the A/B update volume pairs 
 
 ## Properties
 
-### `volumePairs` **<span style="color:orange;">(required)</span>**
+### `volumePairs` **<span>(required)</span>**
 
-A list of volume pairs that will be used for A/B Update.
-
-You can target the A/B Update volume pair from the `images` and `mount-points` and Trident will pick the right volume to use based on the A/B Update state of the host.
+A list of A/B volume pairs that will be used for A/B update.
 
 | Characteristic | Value   |
 | -------------- | ------- |

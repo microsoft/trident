@@ -18,7 +18,7 @@ def update_trident_host_config(
     network_gateway: Optional[str] = None,
     use_dhcp: bool = False,
 ):
-    logging.info("Updating host config section of trident.yaml")
+    logging.info("Updating Host Configuration section of trident.yaml")
     os = host_configuration.setdefault("os", {})
 
     main_interface = {
@@ -71,37 +71,38 @@ def update_trident_host_config(
         elif disk["id"] == "disk2":
             disk["device"] = "/dev/sdb"
 
-    # If this is root verity, we need to set an internal param to be able to
+    # If this is root-verity, we need to set an internal param to be able to
     # configure the network.
     if is_root_verity(host_configuration):
         logging.info(
-            "Detected root verity configuration, setting 'writableEtcOverlayHooks' internal param."
+            "Detected root-verity configuration, setting 'writableEtcOverlayHooks' internal param."
         )
         host_configuration.setdefault("internalParams", {})[
             "writableEtcOverlayHooks"
         ] = True
 
-    logging.info(
-        "Final trident_yaml content post all the updates: %s", host_configuration
-    )
-
-    # TODO: If this is a BM test with grub MOS -> UKI ROS flow, then only
-    # request PCR 11 in the PCRs section b/c we cannot currently include PCR 4
-    # into pcrlock policy on Dell hardware. Related ADO task:
-    # https://dev.azure.com/mariner-org/polar/_workitems/edit/14736
+    # TODO: If this is a BM test with grub MOS -> UKI target OS flow, then only
+    # request PCRs 4 and 11 in the PCRs section b/c we cannot currently include
+    # PCR 7 into pcrlock policy as SecureBoot is disabled on BM machines.
+    # Related ADO task:
+    # https://dev.azure.com/mariner-org/polar/_workitems/edit/15566.
     storage = host_configuration.get("storage")
     if storage and "uki" in test_selection.get("compatible", []):
         encryption = storage.get("encryption")
         if encryption and "pcrs" in encryption:
             logging.info(
-                "Detected UKI image, overwriting PCRs section to only include PCR 11"
+                "Detected UKI image, overwriting PCRs section to only include PCRs 4 and 11 and exclude PCR 7."
             )
-            encryption["pcrs"] = ["kernel-boot"]
+            encryption["pcrs"] = ["boot-loader-code", "kernel-boot"]
+
+    logging.info(
+        "Final trident_yaml content post all the updates: %s", host_configuration
+    )
 
 
 def is_root_verity(host_configuration: dict) -> bool:
     """
-    Check if the host configuration is using root verity.
+    Check if the Host Configuration is using root-verity.
     """
 
     verity_config = host_configuration.get("storage", {}).get("verity", [])

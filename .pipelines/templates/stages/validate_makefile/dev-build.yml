@@ -1,11 +1,11 @@
 parameters:
   - name: osModifierBranch
     type: string
-    default: "submodule"
+    default: "main"
 
   - name: dependsOnStage
     type: string
-    default: ''
+    default: ""
 
 stages:
   - stage: MakefileValidation
@@ -27,9 +27,18 @@ stages:
 
         steps:
           - template: ../common_tasks/avoid-pypi-usage.yml
-          - template: ../common_tasks/build-osmodifier.yml
+
+          - bash: |
+              set -eux
+              make artifacts/osmodifier
+              rm -rf artifacts/osmodifier
+            displayName: Invoke make artifacts/osmodifier
+
+          - template: ../common_tasks/download-osmodifier.yml
             parameters:
+              osModifierBuildType: dev
               osModifierBranch: ${{ parameters.osModifierBranch }}
+              targetArchitecture: amd64
 
           - script: |
               set -eux
@@ -42,7 +51,6 @@ stages:
 
           - bash: |
               set -eux
-              # Disabled `generate-mermaid-diagrams` due to #9055
               make validate-configs
               make bin/trident-rpms.tar.gz
               make docker-build

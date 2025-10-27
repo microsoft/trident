@@ -32,7 +32,7 @@ These settings are only applicable for clean install servicing. They are ignored
 
 ### `os` (optional)
 
-OS Configuration for the runtime OS.
+OS Configuration for the target OS.
 
 | Characteristic | Value         |
 | -------------- | ------------- |
@@ -59,7 +59,7 @@ Describes the storage configuration of the host.
 
 ### `trident` (optional)
 
-The Trident Management configuration controls the installation of the Trident agent onto the runtime OS.
+The Trident Management configuration controls the installation of the Trident agent onto the target OS.
 
 | Characteristic | Value                   |
 | -------------- | ----------------------- |

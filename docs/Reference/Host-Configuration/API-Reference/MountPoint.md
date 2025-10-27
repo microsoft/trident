@@ -8,7 +8,7 @@
 
 ## Properties
 
-### `path` **<span style="color:orange;">(required)</span>**
+### `path` **<span>(required)</span>**
 
 The path to mount the file system.
 

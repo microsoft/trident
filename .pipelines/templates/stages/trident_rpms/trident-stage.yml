@@ -24,29 +24,32 @@ parameters:
 
   - name: osModifierBranch
     type: string
-    default: "submodule"
+    default: "main"
 
   - name: dependsOnStage
     type: string
-    default: ''
+    default: ""
 
   - name: targetArchitecture
     type: string
     values:
       - amd64
-      - arm64 
+      - arm64
 
 stages:
   - ${{ if or(parameters.forceTridentRebuild, eq(parameters.stageType, 'pr'), eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e-azure')) }}:
       - template: build-source.yml
         parameters:
-          ${{ if eq(parameters.stageType, 'pr') }}:
-            publishToDevFeed: true
           tridentArtifactName: ${{ parameters.tridentArtifactName }}
           codeCoverage: ${{ parameters.codeCoverage }}
           osModifierBranch: ${{ parameters.osModifierBranch }}
           dependsOnStage: ${{ parameters.dependsOnStage }}
           targetArchitecture: ${{ parameters.targetArchitecture }}
+          # trident-cicd-for-prism should run against the latest main build of osmodifier.
+          ${{ if eq(parameters.stageType, 'ci') }}:
+            osModifierBuildType: dev
+          ${{ else }}:
+            osModifierBuildType: preview
 
   - ${{ elseif eq(parameters.targetArchitecture, 'amd64') }}:
       - template: ../download_staged/download-staged.yml

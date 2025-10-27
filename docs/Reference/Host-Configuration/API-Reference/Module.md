@@ -8,7 +8,7 @@
 
 ## Properties
 
-### `name` **<span style="color:orange;">(required)</span>**
+### `name` **<span>(required)</span>**
 
 Name of the module.
 

@@ -4,13 +4,13 @@
 
 Software RAID configuration.
 
-The RAID array will be created using the `mdadm` package. During a clean install, all the existing RAID arrays that are on disks defined in the host configuration will be unmounted, and stopped.
+The RAID array will be created using the `mdadm` package. During a clean install, all the existing RAID arrays that are on disks defined in the Host Configuration will be unmounted, and then stopped.
 
-The RAID arrays that are defined in the host configuration will be created, and mounted if specified in `mount-points`.
+The RAID arrays that are defined in the Host Configuration will be created, and mounted if requested in the `storage.filesystems` config.
 
-To learn more about RAID, please refer to the [RAID wiki](https://wiki.archlinux.org/title/RAID)
+To learn more about RAID, please refer to the [RAID wiki](https://wiki.archlinux.org/title/RAID).
 
-To learn more about `mdadm`, please refer to the [mdadm guide](https://raid.wiki.kernel.org/index.php/A_guide_to_mdadm)
+To learn more about `mdadm`, please refer to the [mdadm guide](https://raid.wiki.kernel.org/index.php/A_guide_to_mdadm).
 
 | Characteristic | Value    |
 | -------------- | -------- |
@@ -18,11 +18,11 @@ To learn more about `mdadm`, please refer to the [mdadm guide](https://raid.wiki
 
 ## Properties
 
-### `devices` **<span style="color:orange;">(required)</span>**
+### `devices` **<span>(required)</span>**
 
 Devices that will be used for the RAID array.
 
-See the reference links for picking the right number of devices. Devices are partition ids from the `disks` section.
+See the reference links for picking the right number of devices. Devices are partition IDs from the `disks` section.
 
 | Characteristic | Value   |
 | -------------- | ------- |
@@ -35,29 +35,31 @@ See the reference links for picking the right number of devices. Devices are par
    | Type           | `string`          |
    | Format         | `Block Device ID` |
 
-### `id` **<span style="color:orange;">(required)</span>**
+### `id` **<span>(required)</span>**
 
 A unique identifier for the RAID array.
 
-This is a user defined string that allows to link the RAID array to the mount points and also to results in the Host Status. The identifier needs to be unique across all types of devices, not just RAID arrays.
+This is a user-defined string that links the RAID array to the `filesystems` config in the Host Configuration. The identifier must be unique across devices of all types in the Host Configuration.
 
 | Characteristic | Value             |
 | -------------- | ----------------- |
 | Type           | `string`          |
 | Format         | `Block Device ID` |
 
-### `level` **<span style="color:orange;">(required)</span>**
+### `level` **<span>(required)</span>**
 
 RAID level.
 
-`raid1` is supported and tested. Other possible values yet to be tested are: `raid0`, `raid5`, `raid6`, `raid10`.
+`raid1` is supported and tested.
+
+Other possible values yet to be tested are: `raid0`, `raid5`, `raid6`, `raid10`.
 
 | Characteristic | Value                       |
 | -------------- | --------------------------- |
 | Type           | `RaidLevel`                 |
 | Link           | [RaidLevel](./RaidLevel.md) |
 
-### `name` **<span style="color:orange;">(required)</span>**
+### `name` **<span>(required)</span>**
 
 Name of the RAID array.
 

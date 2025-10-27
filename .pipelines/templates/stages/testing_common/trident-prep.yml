@@ -14,17 +14,12 @@ parameters:
       - container
 
   - name: imageName
-    displayName: "Image used in the runtime OS, source of Trident (container vs host)"
+    displayName: "Image used in the target OS, source of Trident (container vs host)"
     type: string
     default: trident-testimage
     values:
       - trident-testimage
       - trident-container-testimage
-
-  - name: "registry"
-    displayName: "Container registry to push to"
-    type: string
-    default: "maritimusdev"
 
   - name: config
     type: string
@@ -40,22 +35,22 @@ steps:
       set -eux
 
       cmd=(
-        python3 ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/edit_host_config.py \
-          --keypath ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/key \
+        python3 ${{ parameters.tridentSourceDirectory }}/tests/e2e_tests/helpers/edit_host_config.py \
+          --keypath ${{ parameters.tridentSourceDirectory }}/tests/e2e_tests/helpers/key \
           --hostconfig ${{ parameters.tridentConfigPath }}/trident-config.yaml \
           --runtimeEnv ${{ parameters.runtimeEnv }}
       )
 
       if [ "${{ parameters.config }}" == "misc" ]; then
         build_id="$(Build.BuildId)"
-        oci_url="oci://${{ parameters.registry }}.azurecr.io/${{ parameters.imageName }}:$(TAG_BASE).1"
+        oci_url="oci://$(ACR_NAME).azurecr.io/${{ parameters.imageName }}:$(TAG_BASE).1"
         cmd+=(--ociUrl "$oci_url")
       fi
 
       # Execute the command
       "${cmd[@]}"
 
-      chmod 600 ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/key
-      ssh-keygen -p -m PEM -f ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/key -N ""
+      chmod 600 ${{ parameters.tridentSourceDirectory }}/tests/e2e_tests/helpers/key
+      ssh-keygen -p -m PEM -f ${{ parameters.tridentSourceDirectory }}/tests/e2e_tests/helpers/key -N ""
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: "Setting keys to ssh for testing"

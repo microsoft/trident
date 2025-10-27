@@ -20,18 +20,19 @@ parameters:
 
   - name: osModifierBranch
     type: string
-    default: "submodule"
+    default: "main"
 
   - name: dependsOnStage
     type: string
-    default: ''
+    default: ""
 
 stages:
   - stage: FunctionalTesting
     displayName: Functional Testing
-    ${{ if eq(parameters.downloadPrebuiltImage, false) }}:
-      dependsOn:
-        - TridentTestImg_trident_functest
+    dependsOn:
+      - BuildingTools
+      - ${{ if eq(parameters.downloadPrebuiltImage, false) }}:
+          - TridentTestImg_trident_functest
 
     jobs:
       - job: FunctionalTests
@@ -47,14 +48,21 @@ stages:
           baseImageDirectory: "$(Build.SourcesDirectory)/artifacts"
 
         steps:
-          - checkout: argus-toolkit
-            fetchDepth: 1
           - checkout: platform-tests
             fetchDepth: 1
 
           - template: ../common_tasks/cargo-auth.yml
 
           - template: ../testing_vm/netlaunch-prep.yml
+
+          - task: DownloadPipelineArtifact@2
+            displayName: "Download go-tools"
+            inputs:
+              buildType: current
+              artifactName: "go-tools"
+              patterns: |
+                virtdeploy
+              targetPath: "$(Build.SourcesDirectory)/bin"
 
           - ${{ if eq(parameters.downloadPrebuiltImage, false) }}:
               - task: DownloadPipelineArtifact@2
@@ -84,9 +92,10 @@ stages:
             displayName: Install dependencies
             retryCountOnTaskFailure: 3
 
-          - template: ../common_tasks/build-osmodifier.yml
+          - template: ../common_tasks/download-osmodifier.yml
             parameters:
               osModifierBranch: ${{ parameters.osModifierBranch }}
+              targetArchitecture: amd64
 
           - bash: |
               set -eux
@@ -100,15 +109,18 @@ stages:
           - bash: |
               set -eux
 
+              # Make virt-deploy executable
+              chmod +x ./bin/virtdeploy
+
               # Copy files from platform-tests to functional_tests
-              cp platform-tests/tools/marinerhci_test_tools/node_interface.py functional_tests/
-              cp platform-tests/tools/marinerhci_test_tools/ssh_node.py functional_tests/
+              cp platform-tests/tools/marinerhci_test_tools/node_interface.py tests/functional_tests/
+              cp platform-tests/tools/marinerhci_test_tools/ssh_node.py tests/functional_tests/
 
               # Run the core of the functional tests, which means only
               # rebuilding the test binaries and invoking pytest. The regular
               # target is meant for local use and does extra setup not required
               # here.
-              sg libvirt "make functional-test-core ARGUS_TOOLKIT_PATH=argus-toolkit"
+              sg libvirt "make functional-test-core"
             displayName: Execute Functional Tests
 
           - template: ../common_tasks/coverage.yml
@@ -117,7 +129,6 @@ stages:
               executeUnitTests: true
               installNativeDependencies: false
               rustup: false
-
 
           - template: ../junit/handle-junit-test-results.yml
             parameters:
@@ -129,6 +140,6 @@ stages:
           - bash: |
               set -eux
 
-              sg libvirt "make patch-functional-test ARGUS_TOOLKIT_PATH=argus-toolkit"
+              sg libvirt "make patch-functional-test"
             condition: and(succeeded(), eq('${{ parameters.rerunTests }}', 'true'))
             displayName: Rerun Functional Tests

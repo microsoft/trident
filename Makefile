@@ -1,8 +1,6 @@
 # Path to the Trident configuration file for validate and run-netlaunch targets.
 TRIDENT_CONFIG ?= input/trident.yaml
 
-ARGUS_TOOLKIT_PATH ?= ../argus-toolkit
-
 PLATFORM_TESTS_PATH ?= ../platform-tests
 
 TEST_IMAGES_PATH ?= ../test-images
@@ -13,8 +11,10 @@ NETLAUNCH_CONFIG ?= input/netlaunch.yaml
 
 OVERRIDE_RUST_FEED ?= true
 
+SERVER_PORT ?= 8133
+
 .PHONY: all
-all: format check test build-api-docs bin/trident-rpms.tar.gz docker-build build-functional-test coverage validate-configs generate-mermaid-diagrams
+all: format check test build-api-docs bin/trident-rpms.tar.gz docker-build build-functional-test coverage validate-configs
 
 .PHONY: check
 check:
@@ -84,13 +84,12 @@ format:
 	cargo fmt
 	python3 -m black . --exclude "azure-linux-image-tools"
 	gofmt -w -s tools/
-	gofmt -w -s storm/
 
 .PHONY: test
 test: .cargo/config
 	cargo test --all --no-fail-fast
 
-COVERAGE_EXCLUDED_FILES_REGEX='docbuilder|pytest|setsail'
+COVERAGE_EXCLUDED_FILES_REGEX='crates/docbuilder|crates/pytest|crates/setsail'
 
 .PHONY: coverage
 coverage: .cargo/config coverage-llvm
@@ -119,7 +118,7 @@ ut-coverage: .cargo/config
 .PHONY: coverage-report
 coverage-report: .cargo/config
 	# cargo install grcov
-	grcov . --binary-path ./target/coverage/debug/deps/ -s . -t html,covdir,cobertura --branch --ignore-not-existing --ignore '../*' --ignore "/*" --ignore "docbuilder/*" --ignore "target/*" -o target/coverage
+	grcov . --binary-path ./target/coverage/debug/deps/ -s . -t html,covdir,cobertura --branch --ignore-not-existing --ignore '../*' --ignore "/*" --ignore "crates/docbuilder/*" --ignore "target/*" -o target/coverage
 	jq .coveragePercent target/coverage/covdir
 
 .PHONY: grcov-coverage
@@ -134,15 +133,14 @@ TOOLKIT_DIR="azure-linux-image-tools/toolkit"
 AZL_TOOLS_OUT_DIR="$(TOOLKIT_DIR)/out/tools"
 ARTIFACTS_DIR="artifacts"
 
-# Build OSModifier from the azure-linux-image-tools submodule.
-# Before building OSModifier, you need to initialize the local .git/config with
-# the submodules listed in .gitmodules and then fetch the actual content of the
-# submodule, via:
+# Build OSModifier from a local clone of azure-linux-image-tools.
+# Make sure the repo has been cloned manually, via:
 #
-# git submodule update --init
-artifacts/osmodifier: Dockerfile-osmodifier.azl3
+# git clone https://github.com/microsoft/azure-linux-image-tools
+
+artifacts/osmodifier: packaging/docker/Dockerfile-osmodifier.azl3
 	@docker build -t trident/osmodifier-build:latest \
-		-f Dockerfile-osmodifier.azl3 \
+		-f packaging/docker/Dockerfile-osmodifier.azl3 \
 		.
 	@mkdir -p "$(ARTIFACTS_DIR)"
 	@id=$$(docker create trident/osmodifier-build:latest) && \
@@ -154,9 +152,9 @@ bin/trident: build
 	@cp -u target/release/trident bin/
 
 # This will do a proper build on azl3, exactly as the pipelines would, with the custom registry and all.
-bin/trident-rpms-azl3.tar.gz: Dockerfile.full systemd/*.service trident.spec artifacts/osmodifier selinux-policy-trident/* version-vars
+bin/trident-rpms-azl3.tar.gz: packaging/docker/Dockerfile.full packaging/systemd/*.service packaging/rpm/trident.spec artifacts/osmodifier packaging/selinux-policy-trident/* version-vars
 	$(eval CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN := $(shell az account get-access-token --query "join(' ', ['Bearer', accessToken])" --output tsv))
-
+	
 	@export CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN="$(CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN)" &&\
 		docker build -t trident/trident-build:latest \
 			--secret id=registry_token,env=CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN \
@@ -164,7 +162,7 @@ bin/trident-rpms-azl3.tar.gz: Dockerfile.full systemd/*.service trident.spec art
 			--build-arg TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
 			--build-arg RPM_VER="$(TRIDENT_CARGO_VERSION)" \
 			--build-arg RPM_REL="dev.$(GIT_COMMIT)" \
-			-f Dockerfile.full \
+			-f packaging/docker/Dockerfile.full \
 			.
 	@mkdir -p bin/
 	@id=$$(docker create trident/trident-build:latest) && \
@@ -174,12 +172,12 @@ bin/trident-rpms-azl3.tar.gz: Dockerfile.full systemd/*.service trident.spec art
 	@tar xf $@ -C bin/
 
 # This one does a fast trick-build where we build locally and inject the binary into the container to add it to the RPM.
-bin/trident-rpms.tar.gz: Dockerfile.azl3 systemd/*.service trident.spec artifacts/osmodifier bin/trident selinux-policy-trident/*
+bin/trident-rpms.tar.gz: packaging/docker/Dockerfile.azl3 packaging/systemd/*.service packaging/rpm/trident.spec artifacts/osmodifier bin/trident packaging/selinux-policy-trident/*
 	@docker build -t trident/trident-build:latest \
 		--build-arg TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
 		--build-arg RPM_VER="$(TRIDENT_CARGO_VERSION)" \
 		--build-arg RPM_REL="dev.$(GIT_COMMIT)" \
-		-f Dockerfile.azl3 \
+		-f packaging/docker/Dockerfile.azl3 \
 		.
 	@mkdir -p bin/
 	@id=$$(docker create trident/trident-build:latest) && \
@@ -220,8 +218,8 @@ publish-dev-rpms: bin/trident-rpms-azl3.tar.gz
 
 # Grabs bin/trident-rpms.tar.gz from the local build directory and builds a Docker image with it.
 .PHONY: docker-build
-docker-build: Dockerfile.runtime bin/trident-rpms.tar.gz
-	@docker build --quiet -f Dockerfile.runtime -t trident/trident:latest .
+docker-build: packaging/docker/Dockerfile.runtime bin/trident-rpms.tar.gz
+	@docker build --quiet -f packaging/docker/Dockerfile.runtime -t trident/trident:latest .
 
 artifacts/test-image/trident-container.tar.gz: docker-build
 	@mkdir -p artifacts/test-image
@@ -258,7 +256,7 @@ docbuilder: .cargo/config
 
 
 TRIDENT_API_HC_SCHEMA_GENERATED  := target/trident-api-docs/host-config-schema.json
-TRIDENT_API_HC_SCHEMA_CHECKED_IN := trident_api/schemas/host-config-schema.json
+TRIDENT_API_HC_SCHEMA_CHECKED_IN := crates/trident_api/schemas/host-config-schema.json
 
 TRIDENT_API_HC_MARKDOWN_DIR := docs/Reference/Host-Configuration/API-Reference
 TRIDENT_API_HC_EXAMPLE_FILE := docs/Reference/Host-Configuration/Sample-Host-Configuration.md
@@ -346,20 +344,18 @@ build-functional-test-cc: .cargo/config
 
 .PHONY: functional-test
 functional-test: artifacts/trident-functest.qcow2
-	cp $(PLATFORM_TESTS_PATH)/tools/marinerhci_test_tools/node_interface.py functional_tests/
-	cp $(PLATFORM_TESTS_PATH)/tools/marinerhci_test_tools/ssh_node.py functional_tests/
 	$(MAKE) functional-test-core
 
 # A target for pipelines that skips all setup and building steps that are not
 # required in the pipeline environment.
 .PHONY: functional-test-core
-functional-test-core: artifacts/osmodifier build-functional-test-cc generate-functional-test-manifest artifacts/trident-functest.qcow2
+functional-test-core: artifacts/osmodifier build-functional-test-cc generate-functional-test-manifest artifacts/trident-functest.qcow2 bin/virtdeploy
 	python3 -u -m \
 		pytest --color=yes \
 		--log-level=INFO \
 		--force-upload \
-		functional_tests/test_setup.py \
-		functional_tests/$(FILTER) \
+		tests/functional_tests/test_setup.py \
+		tests/functional_tests/$(FILTER) \
 		--keep-duplicates \
 		-v \
 		-o junit_logging=all \
@@ -375,7 +371,7 @@ patch-functional-test: artifacts/osmodifier build-functional-test-cc generate-fu
 		pytest --color=yes \
 		--log-level=INFO \
 		--force-upload \
-		functional_tests/$(FILTER) \
+		tests/functional_tests/$(FILTER) \
 		-v \
 		-o junit_logging=all \
 		--junitxml $(FUNCTIONAL_TEST_JUNIT_XML) \
@@ -392,27 +388,17 @@ generate-functional-test-manifest: .cargo/config
 
 .PHONY: validate-configs
 validate-configs: bin/trident
-	$(eval DETECTED_HC_FILES := $(shell grep -R 'storage:' . --include '*.yaml' --exclude-dir=trident-mos --exclude-dir=target --exclude-dir=dev --exclude-dir=azure-linux-image-tools --exclude-dir=docbuilder -l))
+	$(eval DETECTED_HC_FILES := $(shell grep -R 'storage:' . --include '*.yaml' -l | grep -E -v '\./(tests/trident-mos|target|dev|azure-linux-image-tools|crates/docbuilder|tests/images)'))
 	@for file in $(DETECTED_HC_FILES); do \
 		echo "Validating $$file"; \
 		$< validate $$file -v info || exit 1; \
 	done
 
-.PHONY: generate-mermaid-diagrams
-generate-mermaid-diagrams: mmdc
-	$(MAKE) $(addsuffix .png, $(basename $(wildcard $(abspath dev-docs/diagrams)/*.mmd)))
-
-mmdc:
-	docker pull ghcr.io/mermaid-js/mermaid-cli/mermaid-cli
-
-$(abspath dev-docs/diagrams)/%.png: dev-docs/diagrams/%.mmd
-	docker run --rm -u `id -u`:`id -g` -v $(abspath dev-docs/diagrams):/data minlag/mermaid-cli -i /data/$(notdir $<) -o /data/$(notdir $@)
-
 go.sum: go.mod
 	go mod tidy
 
 .PHONY: go-tools
-go-tools: bin/netlaunch bin/netlisten bin/miniproxy
+go-tools: bin/netlaunch bin/netlisten bin/miniproxy bin/virtdeploy
 
 bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum tools/pkg/*
 	@mkdir -p bin
@@ -430,10 +416,46 @@ bin/mkcosi: tools/cmd/mkcosi/* tools/go.sum tools/pkg/* tools/cmd/mkcosi/**/*
 	@mkdir -p bin
 	cd tools && go build -o ../bin/mkcosi ./cmd/mkcosi
 
-bin/storm-trident: $(shell find storm -type f) tools/go.sum
+bin/storm-trident: tools/cmd/storm-trident/main.go tools/storm/**/*
 	@mkdir -p bin
 	cd tools && go generate storm/e2e/discover.go
 	cd tools && go build -o ../bin/storm-trident ./cmd/storm-trident/main.go
+
+bin/virtdeploy: tools/cmd/virtdeploy/* tools/go.sum tools/pkg/* tools/pkg/virtdeploy/*
+	@mkdir -p bin
+	cd tools && go build -o ../bin/virtdeploy ./cmd/virtdeploy
+
+# Installer tools
+
+INSTALLER_OUT_DIR := bin
+INSTALLER_DIR := tools/installer
+
+# If necessary create End-User License Agreement example file in execution directory
+bin/EULA.txt:
+	@mkdir -p bin
+	@echo "SAMPLE EULA" > $@
+
+# EULA.txt required at runtime; added to ensure binary will be able to run
+bin/liveinstaller: \
+	$(shell find $(INSTALLER_DIR)/ -type f) \
+	$(INSTALLER_DIR)/go.sum \
+	bin/EULA.txt
+	@mkdir -p bin
+	cd $(INSTALLER_DIR)/liveinstaller && \
+		CGO_ENABLED=0 go build -o $(CURDIR)/$(INSTALLER_OUT_DIR)/liveinstaller
+
+# EULA.txt required at runtime; added to ensure binary will be able to run
+bin/attendedinstaller-simulator: \
+	$(shell find $(INSTALLER_DIR)/imagegen/ -type f) \
+	$(INSTALLER_DIR)/go.sum \
+	bin/EULA.txt
+	@mkdir -p bin
+	cd $(INSTALLER_DIR)/imagegen/attendedinstaller/attendedinstaller_tests && \
+		CGO_ENABLED=0 go build -o $(CURDIR)/$(INSTALLER_OUT_DIR)/attendedinstaller-simulator attendedinstaller_simulator.go
+
+.PHONY: run-attendedinstaller-simulator
+run-attendedinstaller-simulator: bin/attendedinstaller-simulator bin/EULA.txt
+	@cd bin && ./attendedinstaller-simulator && cd -
 
 .PHONY: validate
 validate: $(TRIDENT_CONFIG) bin/trident
@@ -441,7 +463,7 @@ validate: $(TRIDENT_CONFIG) bin/trident
 
 NETLAUNCH_ISO ?= bin/trident-mos.iso
 
-input/netlaunch.yaml: $(ARGUS_TOOLKIT_PATH)/vm-netlaunch.yaml
+input/netlaunch.yaml: tools/vm-netlaunch.yaml
 	@mkdir -p input
 	ln -vsf "$$(realpath "$<")" $@
 
@@ -504,30 +526,6 @@ run-netlaunch-sample: build-api-docs
 	$(eval TMP := $(shell mktemp))
 	yq '.os.users += [{"name": "$(shell whoami)", "sshPublicKeys": ["$(shell cat ~/.ssh/id_rsa.pub)"], "sshMode": "key-only", "secondaryGroups": ["wheel"]}] | (.. | select(tag == "!!str")) |= sub("file:///trident_cdrom/data", "http://NETLAUNCH_HOST_ADDRESS/files") | del(.storage.encryption.recoveryKeyUrl) | (.storage.filesystems[] | select(has("source")) | .source).sha256 = "ignored" | .storage.verityFilesystems[].dataImage.sha256 = "ignored" | .storage.verityFilesystems[].hashImage.sha256 = "ignored"' docs/Reference/Host-Configuration/Samples/$(HOST_CONFIG) > $(TMP)
 	TRIDENT_CONFIG=$(TMP) make run-netlaunch
-
-# Downloads the latest Trident functional test image from the Azure DevOps pipeline.
-artifacts/trident-functest.qcow2:
-	$(eval BRANCH ?= main)
-	$(eval RUN_ID ?= $(shell az pipelines runs list \
-		--org "https://dev.azure.com/mariner-org" \
-		--project "ECF" \
-		--pipeline-ids 5067 \
-		--branch $(BRANCH) \
-		--query-order QueueTimeDesc \
-		--result succeeded \
-		--reason triggered \
-		--top 1 \
-		--query '[0].id'))
-	@echo PIPELINE RUN ID: $(RUN_ID)
-
-	mkdir -p artifacts
-	rm -f $@
-	az pipelines runs artifact download \
-		--org 'https://dev.azure.com/mariner-org' \
-		--project "ECF" \
-		--run-id $(RUN_ID) \
-		--path artifacts/ \
-		--artifact-name 'trident-functest'
 
 # Downloads regular, verity, and container COSI images from the latest successful
 # pipeline run. The images are downloaded to ./artifacts/test-image.
@@ -699,26 +697,13 @@ copy-runtime-images: $(TEST_IMAGES_PATH)/build/trident-testimage/*.cosi $(TEST_I
 .PHONY: starter-configuration
 starter-configuration:
 	@mkdir -p $$(dirname $(TRIDENT_CONFIG))
-	@cp e2e_tests/trident_configurations/simple/trident-config.yaml $(TRIDENT_CONFIG)
+	@cp tests/e2e_tests/trident_configurations/simple/trident-config.yaml $(TRIDENT_CONFIG)
 	@echo "\033[33mCreated \033[36m$(TRIDENT_CONFIG)\033[33m. Please review and modify as needed! :)"
-	@echo "\033[33mDon't forget to add your SSH public key to the host configuration!"
+	@echo "\033[33mDon't forget to add your SSH public key to the Host Configuration!"
 
-BASE_IMAGE_NAME ?= baremetal_vhdx-3.0-stable
-BASE_IMAGE_VERSION ?= *
 artifacts/baremetal.vhdx:
 	@mkdir -p artifacts
-	@tempdir=$$(mktemp -d); \
-		result=$$(az artifacts universal download \
-			--organization "https://dev.azure.com/mariner-org/" \
-			--project "36d030d6-1d99-4ebd-878b-09af1f4f722f" \
-			--scope project \
-			--feed "AzureLinuxArtifacts" \
-			--name '$(BASE_IMAGE_NAME)' \
-			--version '$(BASE_IMAGE_VERSION)' \
-			--path $$tempdir) && \
-		mv $$tempdir/*.vhdx artifacts/baremetal.vhdx && \
-		rm -rf $$tempdir && \
-		echo $$result | jq > artifacts/baremetal.vhdx.metadata.json
+	@tests/images/testimages.py download-image baremetal
 
 MIC_PACKAGE_NAME ?= imagecustomizer
 MIC_PACKAGE_VERSION ?= *
@@ -735,7 +720,7 @@ artifacts/imagecustomizer:
 	@chmod +x artifacts/imagecustomizer
 	@touch artifacts/imagecustomizer
 
-bin/trident-mos.iso: artifacts/baremetal.vhdx artifacts/imagecustomizer systemd/trident-install.service trident-mos/iso.yaml trident-mos/files/* trident-mos/post-install.sh selinux-policy-trident/*
+bin/trident-mos.iso: artifacts/baremetal.vhdx artifacts/imagecustomizer packaging/systemd/trident-install.service tests/trident-mos/iso.yaml tests/trident-mos/files/* tests/trident-mos/post-install.sh packaging/selinux-policy-trident/*
 	@mkdir -p bin
 	BUILD_DIR=`mktemp -d` && \
 		trap 'sudo rm -rf $$BUILD_DIR' EXIT; \
@@ -744,7 +729,7 @@ bin/trident-mos.iso: artifacts/baremetal.vhdx artifacts/imagecustomizer systemd/
 			--build-dir $$BUILD_DIR \
 			--image-file $< \
 			--output-image-file $@ \
-			--config-file trident-mos/iso.yaml \
+			--config-file tests/trident-mos/iso.yaml \
 			--output-image-format iso
 
 .PHONY: recreate-verity-image
@@ -752,3 +737,78 @@ recreate-verity-image: bin/trident-rpms.tar.gz
 	$(MAKE) -C $(TEST_IMAGES_PATH) copy-trident-rpms
 	$(MAKE) -C $(TEST_IMAGES_PATH) trident-verity-testimage
 	make copy-runtime-images
+
+.PHONY: website-clear
+website-clear:
+	cd ./website && \
+		rm -rf ./docs && \
+		rm -rf ./versioned_* && \
+		rm -rf ./versions.json && \
+		rm -rf ./node_modules
+
+.PHONY: website-prereqs
+website-prereqs:
+	cd ./website && \
+		npm install --save docusaurus @easyops-cn/docusaurus-search-local @docusaurus/theme-mermaid
+
+DOCS_CONTENTS = $(shell find ./docs -type f)
+website/docs: $(DOCS_CONTENTS)
+	rm -rf ./website/docs && \
+		cp -r ./docs ./website
+
+website/versions.json:
+	echo '[]' > website/versions.json
+
+.PHONY: website-build
+website-build: website-prereqs website/docs website/versions.json
+	cd ./website && \
+		npm run build
+
+.PHONY: website-serve
+website-serve: website-build
+	cd ./website && \
+		npm run serve -- --port $(SERVER_PORT)
+
+.PHONY: validate-pipeline-website-artifact
+validate-pipeline-website-artifact:
+	if ! which gh > /dev/null; then \
+		sudo apt install gh; \
+	fi
+	$(eval STAGING_DIR := $(shell mktemp -d))
+	cp -r ./website/. $(STAGING_DIR)/
+	rm -rf $(STAGING_DIR)/build && \
+		mkdir -p $(STAGING_DIR)/build
+	$(eval RUN_ID ?= $(shell gh run list --workflow 'Deploy to GitHub Pages' --repo microsoft/trident --json conclusion,databaseId --jq '.[] | select(.conclusion == "success") | .databaseId' | sort -n | tail -n 1))
+	@echo "Downloading GitHub Pages artifact from $(RUN_ID)"
+	gh run download $(RUN_ID) --name github-pages --repo microsoft/trident --dir $(STAGING_DIR)/build
+	cd $(STAGING_DIR)/build && \
+		tar -xvf ./artifact.tar && \
+		cd $(STAGING_DIR) && \
+		npm install && \
+			npm run serve -- --port $(SERVER_PORT)
+
+# Test images
+
+COSI_TARGETS = $(shell ./tests/images/testimages.py list)
+
+.PHONY: $(COSI_TARGETS)
+$(COSI_TARGETS): %: artifacts/%.cosi
+
+.PHONY: all-cosi
+all-cosi: $(COSI_TARGETS)
+
+# Fun trick to use the stem of the target (%) as a variable ($*) in the
+# prerequisites so that we can use find to get all the files in the directory.
+# https://www.gnu.org/software/make/manual/make.html#Secondary-Expansion
+.SECONDEXPANSION:
+
+MIC_CONTAINER_IMAGE ?= $(shell ./tests/images/testimages.py show-artifact customizer-container-full)
+artifacts/trident-functest.qcow2: $$(shell ./tests/images/testimages.py dependencies $$(basename $$(notdir $$@)))
+	@echo "Building '$*' [$@] from $<"
+	@echo "Prerequisites:"
+	@echo "$^" | tr ' ' '\n' | sed 's/^/    /'
+	@echo "Building image..."
+	sudo ./tests/images/testimages.py build \
+		$(basename $(notdir $@)) \
+		--output-dir ./artifacts \
+		$(if $(strip $(MIC_CONTAINER_IMAGE)),--container $(MIC_CONTAINER_IMAGE))

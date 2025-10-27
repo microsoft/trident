@@ -14,7 +14,7 @@ parameters:
     default: "*.*.*"
 
   - name: osModifierBranch
-    displayName: Branch to use for OS Modifier (specify 'submodule' to use trident's current submodule)
+    displayName: OSModifier branch to use for dev build type
     type: string
     default: "main"
 
@@ -30,11 +30,6 @@ trigger: none
 
 resources:
   repositories:
-    - repository: argus-toolkit
-      type: git
-      name: argus-toolkit
-      ref: refs/heads/main
-
     - repository: platform-tests
       type: git
       name: platform-tests

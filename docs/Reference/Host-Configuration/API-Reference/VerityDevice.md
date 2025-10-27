@@ -10,7 +10,7 @@ Verity device configuration.
 
 ## Properties
 
-### `dataDeviceId` **<span style="color:orange;">(required)</span>**
+### `dataDeviceId` **<span>(required)</span>**
 
 The ID of the partition to use as the verity data partition.
 
@@ -19,7 +19,7 @@ The ID of the partition to use as the verity data partition.
 | Type           | `string`          |
 | Format         | `Block Device ID` |
 
-### `hashDeviceId` **<span style="color:orange;">(required)</span>**
+### `hashDeviceId` **<span>(required)</span>**
 
 The ID of the partition to use as the verity hash partition.
 
@@ -28,7 +28,7 @@ The ID of the partition to use as the verity hash partition.
 | Type           | `string`          |
 | Format         | `Block Device ID` |
 
-### `id` **<span style="color:orange;">(required)</span>**
+### `id` **<span>(required)</span>**
 
 Block device id of the verity device.
 
@@ -36,7 +36,7 @@ Block device id of the verity device.
 | -------------- | -------- |
 | Type           | `string` |
 
-### `name` **<span style="color:orange;">(required)</span>**
+### `name` **<span>(required)</span>**
 
 Name of the verity device, used for the device mapper name.
 

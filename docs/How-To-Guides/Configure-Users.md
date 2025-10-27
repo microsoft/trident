@@ -1,12 +1,187 @@
 
-<!--
-DELETE ME AFTER COMPLETING THE DOCUMENT!
----
-Task: https://dev.azure.com/mariner-org/polar/_workitems/edit/13134
-Title: Configure Users
-Type: How-To Guide
-Objective:
+# Configure Users
 
-How to configure users in trident. The guide should only talk about HC and how
-to craft it.
--->
+This guide shows you how to configure users in your Trident's Host
+Configuration. Follow the steps below to create secure user accounts with SSH
+access and customize their properties.
+
+For a complete configuration reference, see the [User API
+Reference](../Reference/Host-Configuration/API-Reference/User.md).
+
+## Goals
+
+By following this guide, you will:
+
+1. Create users with secure SSH key-only authentication.
+2. Assign users to administrative and functional groups.
+3. Configure custom user properties (UID, home directory, startup command).
+
+## Prerequisites
+
+1. **Trident Host Configuration file**
+   1. Have an existing Host Configuration file or create a new one.
+   2. Ensure the Host Configuration file has the basic structure with [os
+      section](../Reference/Host-Configuration/API-Reference/Os.md).
+2. **SSH Public Keys**
+   1. Have the SSH key pairs that will be used for SSH authentication.
+   2. Obtain the public key content (`.pub` file).
+3. **System Groups Knowledge**
+   1. Know which groups exist on your target system (e.g., `wheel`, `docker`)
+
+## Instructions
+
+### Step 1: Create a basic user with SSH access
+
+1. Add a `users` section under `os` in your Host Configuration:
+
+```yaml
+os:
+  users:
+    - name: <Desired User Name>
+      sshMode: key-only
+      sshPublicKeys:
+        - <Public SSH Key content>
+```
+
+2. Replace `<Desired User Name>` with your desired username.
+3. Be sure to set `sshMode` to **key-only**. The
+   [sshMode](../Reference/Host-Configuration/API-Reference/SshMode.md) controls
+   SSH access and defaults to block if not specified.
+4. Replace the `<Public SSH Key content>` with your actual public key content
+   (e.g. `ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... user@hostname`). Notice that
+   more than one key can be associated with one user.
+
+The user will be created with a locked password (no password can be used to
+login) and SSH key-only authentication.
+
+### Step 2: Configure multiple users
+
+To create multiple users, simply add additional user entries under the `users`
+section. Example:
+
+```yaml
+os:
+  users:
+    - name: <User1 Name>
+      sshMode: key-only
+      sshPublicKeys:
+        - <User1 public SSH Key content>
+      secondaryGroups:
+        - wheel
+    - name: <User2 Name>
+      sshMode: key-only
+      sshPublicKeys:
+        - <User2 public SSH Key content>
+    - name: <User3 Name>
+      sshMode: key-only
+      sshPublicKeys:
+        - <User3 public SSH Key content>
+```
+
+1. Replace with the desired usernames
+2. Replace the SSH keys entries with the actual content of the public keys of
+   each respective user.
+
+### Step 3: Set custom user properties
+
+#### Add users to administrative groups
+
+1. Add the `secondaryGroups` property to assign users to existing system groups:
+
+```yaml
+os:
+  users:
+    - name: <Desired User Name>
+      sshMode: key-only
+      sshPublicKeys:
+        - <Public SSH Key content>
+      secondaryGroups:
+        - <Desired group1>
+        - <Desired group2>
+```
+
+1. Replace the `secondaryGroups` entries with groups that exist on your target
+   system (for example, `wheel`, which typically provides sudo access).
+2. Add other groups as needed for your use case.
+
+#### Configure startup command
+
+The `startupCommand` property sets the default command/shell to be automatically
+executed at login. This is equivalent (and replaces) the shell field in
+`/etc/passwd`. Example:
+
+```yaml
+os:
+  users:
+    - name: <Desired User Name>
+      sshMode: key-only
+      sshPublicKeys:
+        - <Public SSH Key content>
+      startupCommand: /bin/bash
+```
+
+#### Configure more available user properties
+
+Configure advanced user properties for specific requirements:
+
+```yaml
+os:
+  users:
+    - name: <Desired User Name>
+      uid: 1001
+      homeDirectory: <Custom home directory path>
+      primaryGroup: developers
+      sshMode: key-only
+      sshPublicKeys:
+        - <Public SSH Key content>
+```
+
+- **`uid`**: Specific user ID. If not provided, the system will automatically
+  assign a UID.
+- **`homeDirectory`**: Custom home directory path.
+- **`primaryGroup`**: The user's primary group. Only one primary group can be
+  assigned per user (must exist on the target system).
+
+#### Disable SSH access
+
+To create a user without SSH access:
+
+```yaml
+os:
+  users:
+    - name: <Desired User Name>
+      sshMode: block
+```
+
+## Password Authentication
+
+For security reasons, Trident has no built-in mechanisms to provision a [user
+password](../Reference/Host-Configuration/API-Reference/Password.md) in the user
+section.
+
+## Troubleshooting
+
+**User cannot login via SSH**:
+
+- Verify the SSH key is correctly formatted in the `sshPublicKeys` array.
+- Ensure `sshMode` is set to `key-only`
+- Check that the used private key corresponds to the public key in the Host
+  Configuration file.
+
+**User cannot access required resources**:
+
+- Verify the groups specified in `primaryGroup` and `secondaryGroups` exist on
+  the **target system**. You can check available groups by executing the
+  following command on the deployed system:
+
+```bash
+cat /etc/group 
+```
+
+**Custom startup command fails**:
+
+- Ensure the specified command, shell, or referenced script exists on the target
+  system.
+- Verify the path is correct (e.g., `/bin/bash`, `/usr/scripts/startup.sh`).
+- Use `ls -la /path/to/executable` to check if the file exists and has
+  executable permissions.

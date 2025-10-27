@@ -1,0 +1,205 @@
+image:
+  url: http://NETLAUNCH_HOST_ADDRESS/files/usrverity.cosi
+  sha384: ignored
+storage:
+  disks:
+    - id: os
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
+      partitionTableType: gpt
+      partitions:
+        - id: esp
+          type: esp
+          size: 1G
+        - id: boot-a
+          size: 200M
+        - id: boot-b
+          size: 200M
+        - id: root-a-1
+          size: 3G
+        - id: root-b-1
+          size: 3G
+        - id: usr-data-a-1
+          size: 2G
+        - id: usr-data-b-1
+          size: 2G
+        - id: usr-hash-a-1
+          size: 1G
+        - id: usr-hash-b-1
+          size: 1G
+        - id: home-a-e-1
+          size: 100M
+        - id: home-b-e-1
+          size: 100M
+        - id: trident
+          size: 500M
+        - id: srv-e
+          size: 1G
+    - id: disk2
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
+      partitionTableType: gpt
+      partitions:
+        - id: root-a-2
+          size: 3G
+        - id: root-b-2
+          size: 3G
+        - id: usr-data-a-2
+          size: 2G
+        - id: usr-data-b-2
+          size: 2G
+        - id: usr-hash-a-2
+          size: 1G
+        - id: usr-hash-b-2
+          size: 1G
+        - id: home-a-e-2
+          size: 100M
+        - id: home-b-e-2
+          size: 100M
+  raid:
+    software:
+      - id: usr-data-a
+        name: usr-data-a
+        level: raid1
+        devices:
+          - usr-data-a-1
+          - usr-data-a-2
+      - id: usr-data-b
+        name: usr-data-b
+        level: raid1
+        devices:
+          - usr-data-b-1
+          - usr-data-b-2
+      - id: usr-hash-a
+        name: usr-hash-a
+        level: raid1
+        devices:
+          - usr-hash-a-1
+          - usr-hash-a-2
+      - id: usr-hash-b
+        name: usr-hash-b
+        level: raid1
+        devices:
+          - usr-hash-b-1
+          - usr-hash-b-2
+      - id: root-a
+        name: root-a
+        level: raid1
+        devices:
+          - root-a-1
+          - root-a-2
+      - id: root-b
+        name: root-b
+        level: raid1
+        devices:
+          - root-b-1
+          - root-b-2
+      - id: home-a-e
+        name: home-a-e
+        level: raid1
+        devices:
+          - home-a-e-1
+          - home-a-e-2
+      - id: home-b-e
+        name: home-b-e
+        level: raid1
+        devices:
+          - home-b-e-1
+          - home-b-e-2
+  encryption:
+    volumes:
+      - id: srv
+        deviceName: srv
+        deviceId: srv-e
+      - id: home-a
+        deviceName: home-a
+        deviceId: home-a-e
+      - id: home-b
+        deviceName: home-b
+        deviceId: home-b-e
+    pcrs:
+      - boot-loader-code # 4
+      - secure-boot-policy # 7
+      - kernel-boot # 11
+  abUpdate:
+    volumePairs:
+      - id: boot
+        volumeAId: boot-a
+        volumeBId: boot-b
+      - id: usr-data
+        volumeAId: usr-data-a
+        volumeBId: usr-data-b
+      - id: usr-hash
+        volumeAId: usr-hash-a
+        volumeBId: usr-hash-b
+      - id: root
+        volumeAId: root-a
+        volumeBId: root-b
+      - id: home
+        volumeAId: home-a
+        volumeBId: home-b
+  verity:
+    - id: usr
+      name: usr
+      dataDeviceId: usr-data
+      hashDeviceId: usr-hash
+  filesystems:
+    - deviceId: esp
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+    - deviceId: boot
+      mountPoint: /boot
+    - deviceId: root
+      mountPoint: /
+    - deviceId: usr
+      mountPoint:
+        path: /usr
+        options: defaults,ro
+    - deviceId: trident
+      source: new
+      mountPoint: /var/lib/trident
+    - deviceId: srv
+      source: new
+      mountPoint: /srv
+    - deviceId: home
+      source: new
+      mountPoint: /home
+scripts:
+  postProvision:
+    - name: rerun-trident
+      runOn: [clean-install]
+      content: systemd-run --property=After=trident-install.service --no-block systemctl start trident-install.service
+    - name: rerun-trident-container
+      runOn: [clean-install]
+      content: systemd-run --property=After=trident-container.service --no-block systemctl start trident-container.service
+    - name: mount-var
+      runOn: [all]
+      content: mkdir -p $TARGET_ROOT/tmp/var && mount --bind /var $TARGET_ROOT/tmp/var
+    - name: noop-fail-for-second-run
+      runOn: [all]
+      content: |
+        if [ -f /etc/trident/config.yaml ]; then
+          sed -i 's|echo fail-on-first-run|echo no op; exit 0;|' /etc/trident/config.yaml
+        fi
+  postConfigure:
+    - name: fail-on-the-first-run
+      runOn: [all]
+      content: |
+        trap "umount /tmp/var" EXIT
+        echo fail-on-first-run
+        exit 1
+os:
+  selinux:
+    mode: enforcing
+  netplan:
+    version: 2
+    ethernets:
+      vmeths:
+        match:
+          name: enp*
+        dhcp4: true
+  users:
+    - name: testing-user
+      sshPublicKeys: []
+      secondaryGroups:
+        - wheel
+      sshMode: key-only

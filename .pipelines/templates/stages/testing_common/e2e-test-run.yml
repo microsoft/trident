@@ -41,7 +41,7 @@ parameters:
 
   - name: sshKeyPath
     type: string
-    default: $(Build.SourcesDirectory)/e2e_tests/helpers/key
+    default: $(Build.SourcesDirectory)/tests/e2e_tests/helpers/key
 
   - name: userName
     type: string
@@ -85,7 +85,7 @@ steps:
         echo "##vso[task.setvariable variable=abActiveVolume]null"
         echo "##vso[task.setvariable variable=skipJunitHandling]true"
       fi
-    workingDirectory: $(Build.SourcesDirectory)/e2e_tests
+    workingDirectory: $(Build.SourcesDirectory)/tests/e2e_tests
     displayName: "Check if Trident config requires A/B update testing"
 
   - bash: |
@@ -106,14 +106,14 @@ steps:
           --runtime-env ${{ parameters.runtimeEnv }} \
           --configuration ${{ parameters.tridentConfigPath }}
     timeoutInMinutes: 5
-    workingDirectory: $(Build.SourcesDirectory)/e2e_tests
-    displayName: "🔬 Run Trident E2E tests after clean install of runtime OS"
+    workingDirectory: $(Build.SourcesDirectory)/tests/e2e_tests
+    displayName: "🔬 Run Trident E2E tests after clean install of target OS"
 
   - template: ../junit/handle-junit-test-results.yml
     parameters:
       testRunName: "${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_trident_e2e_tests_${{ parameters.tridentConfigurationName }}_clean_install_$(System.JobAttempt)"
-      junitTestFile: "./e2e_tests/${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_clean_install_$(System.JobAttempt).junit.xml"
-      displayNameSpecifier: "clean install of runtime OS"
+      junitTestFile: "./tests/e2e_tests/${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_clean_install_$(System.JobAttempt).junit.xml"
+      displayNameSpecifier: "clean install of target OS"
       artifactName: "junit_for_trident_clean_install"
 
   # If current config requires A/B update testing, execute script to ssh into the host, update
@@ -127,10 +127,10 @@ steps:
       fi
 
       ./bin/netlisten --force-color $NETLISTEN_CONFIG_ARGS \
-        -m $(Build.SourcesDirectory)/trident-ab-update-metrics-runtime-os-B.jsonl \
+        -m $(Build.SourcesDirectory)/trident-ab-update-metrics-target-os-B.jsonl \
         --full-logstream ./logstream-full.log \
         -s "${{ parameters.artifactsDirectory }}" \
-        -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-runtime-os-B.log 2>&1 &
+        -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-target-os-B.log 2>&1 &
 
       PROXY_ARG=""
       if [ -n "${{ parameters.httpsProxy }}" ]; then
@@ -157,7 +157,7 @@ steps:
       echo "##vso[task.setvariable variable=abActiveVolume]volume-b"
     timeoutInMinutes: 15
     workingDirectory: $(Build.SourcesDirectory)
-    displayName: "🅱️🔄 Stage and finalize A/B update into runtime OS B"
+    displayName: "🅱️🔄 Stage and finalize A/B update into target OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - template: ../testing_common/display-serial-logs.yml
@@ -168,13 +168,13 @@ steps:
 
   - template: ../testing_common/display-deployment-logs.yml
     parameters:
-      deploymentLogPath: $(Build.SourcesDirectory)/stage-finalize-ab-update-runtime-os-B.log
-      displayName: "📄 Display A/B update deployment logs for runtime OS B"
+      deploymentLogPath: $(Build.SourcesDirectory)/stage-finalize-ab-update-target-os-B.log
+      displayName: "📄 Display A/B update deployment logs for target OS B"
 
   - template: ../testing_common/display-deployment-logs.yml
     parameters:
       deploymentLogPath: $(Build.SourcesDirectory)/logstream-full.log
-      displayName: "📄 [TRACE] Display A/B update deployment logs for runtime OS B"
+      displayName: "📄 [TRACE] Display A/B update deployment logs for target OS B"
 
   - bash: |
       set -eux
@@ -183,9 +183,9 @@ steps:
           "${{ parameters.hostIp }}" \
           "${{ parameters.userName }}" \
           "${{ parameters.runtimeEnv }}" \
-          --metrics-file $(Build.SourcesDirectory)/trident-ab-update-metrics-runtime-os-B.jsonl \
+          --metrics-file $(Build.SourcesDirectory)/trident-ab-update-metrics-target-os-B.jsonl \
           --metrics-operation update1
-    displayName: "Create boot metrics for booting into runtime OS B"
+    displayName: "Create boot metrics for booting into target OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - template: ../testing_common/trident-metrics.yml
@@ -195,14 +195,14 @@ steps:
       deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
       runtimeEnvironment: ${{ parameters.runtimeEnv }}
       tridentConfigurationName: ${{ parameters.tridentConfigurationName }}
-      metricsFile: $(Build.SourcesDirectory)/trident-ab-update-metrics-runtime-os-B.jsonl
+      metricsFile: $(Build.SourcesDirectory)/trident-ab-update-metrics-target-os-B.jsonl
       tridentOperation: ab-update
       ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
         kustoTableName: main
       ${{ if ne(variables['Build.SourceBranchName'], 'main') }}:
         kustoTableName: dev
 
-  # Re-run E2E tests after A/B update into runtime OS B.
+  # Re-run E2E tests after A/B update into target OS B.
   - bash: |
       set -eux
       python3 -u -m pytest \
@@ -214,15 +214,15 @@ steps:
           --configuration ${{ parameters.tridentConfigPath }} \
           --ab-active-volume $(abActiveVolume)
     timeoutInMinutes: 5
-    workingDirectory: $(Build.SourcesDirectory)/e2e_tests
-    displayName: "🔬 Run Trident E2E tests after A/B update into runtime OS B"
+    workingDirectory: $(Build.SourcesDirectory)/tests/e2e_tests
+    displayName: "🔬 Run Trident E2E tests after A/B update into target OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - template: ../junit/handle-junit-test-results.yml
     parameters:
       testRunName: "${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_trident_e2e_tests_${{ parameters.tridentConfigurationName }}_ab_update_B_$(System.JobAttempt)"
-      junitTestFile: "./e2e_tests/${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_B_$(System.JobAttempt).junit.xml"
-      displayNameSpecifier: "A/B update into runtime OS B"
+      junitTestFile: "./tests/e2e_tests/${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_B_$(System.JobAttempt).junit.xml"
+      displayNameSpecifier: "A/B update into target OS B"
       artifactName: "junit_for_trident_ab_update_B"
 
   - bash: |
@@ -236,10 +236,10 @@ steps:
       fi
 
       ./bin/netlisten --force-color $NETLISTEN_CONFIG_ARGS \
-          -m $(Build.SourcesDirectory)/trident-ab-update-metrics-runtime-os-A.jsonl \
+          -m $(Build.SourcesDirectory)/trident-ab-update-metrics-target-os-A.jsonl \
           --full-logstream ./logstream-full.log \
           -s "${{ parameters.artifactsDirectory }}" \
-          -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-runtime-os-A.log 2>&1 &
+          -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-target-os-A.log 2>&1 &
 
       PROXY_ARG=""
       if [ -n "${{ parameters.httpsProxy }}" ]; then
@@ -266,7 +266,7 @@ steps:
       echo "##vso[task.setvariable variable=abActiveVolume]volume-a"
     timeoutInMinutes: 15
     workingDirectory: $(Build.SourcesDirectory)
-    displayName: "🅰️🔄 Stage and finalize A/B update into runtime OS A"
+    displayName: "🅰️🔄 Stage and finalize A/B update into target OS A"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - template: ../testing_common/display-serial-logs.yml
@@ -277,13 +277,13 @@ steps:
 
   - template: ../testing_common/display-deployment-logs.yml
     parameters:
-      deploymentLogPath: $(Build.SourcesDirectory)/stage-finalize-ab-update-runtime-os-A.log
-      displayName: "📄 Display A/B update deployment logs for runtime OS A"
+      deploymentLogPath: $(Build.SourcesDirectory)/stage-finalize-ab-update-target-os-A.log
+      displayName: "📄 Display A/B update deployment logs for target OS A"
 
   - template: ../testing_common/display-deployment-logs.yml
     parameters:
       deploymentLogPath: $(Build.SourcesDirectory)/logstream-full.log
-      displayName: "📄 [TRACE] Display A/B update deployment logs for runtime OS A"
+      displayName: "📄 [TRACE] Display A/B update deployment logs for target OS A"
 
   - bash: |
       set -eux
@@ -292,9 +292,9 @@ steps:
           "${{ parameters.hostIp }}" \
           "${{ parameters.userName }}" \
           "${{ parameters.runtimeEnv }}" \
-          --metrics-file $(Build.SourcesDirectory)/trident-ab-update-metrics-runtime-os-A.jsonl \
+          --metrics-file $(Build.SourcesDirectory)/trident-ab-update-metrics-target-os-A.jsonl \
           --metrics-operation update2
-    displayName: "Create boot metrics for booting into runtime OS A"
+    displayName: "Create boot metrics for booting into target OS A"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - template: ../testing_common/trident-metrics.yml
@@ -304,7 +304,7 @@ steps:
       deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
       runtimeEnvironment: ${{ parameters.runtimeEnv }}
       tridentConfigurationName: ${{ parameters.tridentConfigurationName }}
-      metricsFile: $(Build.SourcesDirectory)/trident-ab-update-metrics-runtime-os-A.jsonl
+      metricsFile: $(Build.SourcesDirectory)/trident-ab-update-metrics-target-os-A.jsonl
       tridentOperation: ab-update
       ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
         kustoTableName: main
@@ -322,15 +322,15 @@ steps:
           --configuration ${{ parameters.tridentConfigPath }} \
           --ab-active-volume $(abActiveVolume)
     timeoutInMinutes: 5
-    workingDirectory: $(Build.SourcesDirectory)/e2e_tests
-    displayName: "🔬 Run Trident E2E tests after A/B update into runtime OS A"
+    workingDirectory: $(Build.SourcesDirectory)/tests/e2e_tests
+    displayName: "🔬 Run Trident E2E tests after A/B update into target OS A"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - template: ../junit/handle-junit-test-results.yml
     parameters:
       testRunName: "${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_trident_e2e_tests_${{ parameters.tridentConfigurationName }}_ab_update_A_$(System.JobAttempt)"
-      junitTestFile: "./e2e_tests/${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_A_$(System.JobAttempt).junit.xml"
-      displayNameSpecifier: "A/B update into runtime OS A"
+      junitTestFile: "./tests/e2e_tests/${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_A_$(System.JobAttempt).junit.xml"
+      displayNameSpecifier: "A/B update into target OS A"
       artifactName: "junit_for_trident_ab_update_A"
 
   # Check the value of 'buildPurpose', to determine if we need to execute the

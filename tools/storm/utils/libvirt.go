@@ -3,7 +3,6 @@ package utils
 import (
 	"fmt"
 	"net/url"
-	"os"
 	"os/exec"
 
 	libvirtxml "libvirt.org/libvirt-go-xml"
@@ -12,6 +11,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
+
+const EFI_GLOBAL_VARIABLE_GUID = "8BE4DF61-93CA-11d2-AA0D00E098032B8C"
 
 type LibvirtVm struct {
 	libvirt *libvirt.Libvirt
@@ -51,7 +52,7 @@ func InitializeVm(vmUuid uuid.UUID) (*LibvirtVm, error) {
 	return &LibvirtVm{l, domain}, nil
 }
 
-func (vm *LibvirtVm) SetFirmwareVars(boot_url string, secure_boot bool) error {
+func (vm *LibvirtVm) SetFirmwareVars(bootUrl string, secureBoot bool, signingCert string) error {
 	// Get the domain XML
 	domainXml, err := vm.libvirt.DomainGetXMLDesc(vm.domain, libvirt.DomainXMLUpdateCPU)
 	if err != nil {
@@ -73,31 +74,47 @@ func (vm *LibvirtVm) SetFirmwareVars(boot_url string, secure_boot bool) error {
 		return fmt.Errorf("no <nvram> node found in domain XML")
 	}
 
-	// Check if a file exists at the NVRAM path
-	if _, err := os.Stat(nvram.NVRam); err != nil {
-		// If not, start the VM in a paused state and then immediately stop it.
-		// This will cause libvirt to create the NVRAM file.
-		if vm.domain, err = vm.libvirt.DomainCreateWithFlags(vm.domain, uint32(libvirt.DomainStartPaused)); err != nil {
-			return fmt.Errorf("failed to create domain '%s': %w", vm.domain.Name, err)
-		}
-		if err = vm.libvirt.DomainDestroy(vm.domain); err != nil {
-			return fmt.Errorf("failed to destroy domain '%s': %w", vm.domain.Name, err)
-		}
+	// Destroy old instance of VM and its NVRAM file.
+	// NVRAM path should stay the same.
+	if err := vm.libvirt.DomainUndefineFlags(vm.domain, libvirt.DomainUndefineNvram); err != nil {
+		return fmt.Errorf("failed to remove existing NVRAM file: %w", err)
+	}
+	// Create a new instance of the VM based on domainXml.
+	if vm.domain, err = vm.libvirt.DomainDefineXML(domainXml); err != nil {
+		return fmt.Errorf("failed to define domain with XML '%s': %w", domainXml, err)
+	}
+	// Start the VM in a paused state and then immediately stop it.
+	// This will cause libvirt to create the NVRAM file.
+	if vm.domain, err = vm.libvirt.DomainCreateWithFlags(vm.domain, uint32(libvirt.DomainStartPaused)); err != nil {
+		return fmt.Errorf("failed to create domain '%s': %w", vm.domain.Name, err)
+	}
+	if err = vm.libvirt.DomainDestroy(vm.domain); err != nil {
+		return fmt.Errorf("failed to destroy domain '%s': %w", vm.domain.Name, err)
 	}
 
-	args := []string{"--inplace", nvram.NVRam, "--set-boot-uri", boot_url}
-	if secure_boot {
-		args = append(args, "--set-true", "SecureBootEnable")
+	virtFwVarsArgs := []string{"virt-fw-vars", "--inplace", nvram.NVRam, "--set-boot-uri", bootUrl}
+
+	// Enable SecureBoot, if needed
+	if secureBoot {
+		logrus.Infof("Setting SecureBoot to enabled")
+		virtFwVarsArgs = append(virtFwVarsArgs, "--set-true", "SecureBootEnable")
 	} else {
-		args = append(args, "--set-false", "SecureBootEnable")
+		virtFwVarsArgs = append(virtFwVarsArgs, "--set-false", "SecureBootEnable")
 	}
 
-	cmd := exec.Command("virt-fw-vars", args...)
+	// Enroll the signing certificate
+	if signingCert != "" {
+		logrus.Infof("Enrolling signing certificate from %s", signingCert)
+		virtFwVarsArgs = append(virtFwVarsArgs, "--enroll-cert", signingCert)
+		virtFwVarsArgs = append(virtFwVarsArgs, "--add-db", EFI_GLOBAL_VARIABLE_GUID, signingCert)
+	}
+
+	cmd := exec.Command("sudo", virtFwVarsArgs...)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		logrus.Debugf("virt-fw-vars output:\n%s\n", output)
 		return fmt.Errorf("failed to set boot URI: %w", err)
 	}
-	logrus.Infof("Set boot URI to %s and set SecureBoot to %t", boot_url, secure_boot)
+	logrus.Infof("Set boot URI to %s and set SecureBoot to %t", bootUrl, secureBoot)
 
 	return nil
 }

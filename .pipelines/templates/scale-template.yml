@@ -99,3 +99,4 @@ stages:
       includeQemu: ${{ parameters.includeQemu }}
       includeAzure: ${{ parameters.includeAzure }}
       includeUKI: ${{ parameters.includeUKI }}
+      dependsOnStage: CreateBaseImageConfig

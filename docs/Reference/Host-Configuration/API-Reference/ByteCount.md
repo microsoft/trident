@@ -4,9 +4,9 @@
 
 A byte count with an optional suffix (K, M, G, T, to the base of 1024).
 
-| Characteristic | Value                                                           |
-| -------------- | --------------------------------------------------------------- |
-| Type           | `string/number`                                                 |
-| Format         | `\d+\s*[KMGT]?`                                                 |
-| Examples       | `0`<br>`1`<br>`102`<br>`104576`<br>`1K`<br>`1M`<br>`5G`<br>`4T` |
+| Characteristic | Value                                                                         |
+| -------------- | ----------------------------------------------------------------------------- |
+| Type           | `string/number`                                                               |
+| Format         | `\d+\s*[KMGT]?`                                                               |
+| Examples       | `0`<br />`1`<br />`102`<br />`104576`<br />`1K`<br />`1M`<br />`5G`<br />`4T` |
 

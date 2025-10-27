@@ -1,12 +1,63 @@
 
-<!--
-DELETE ME AFTER COMPLETING THE DOCUMENT!
----
-Task: https://dev.azure.com/mariner-org/polar/_workitems/edit/13132
-Title: Adopt Existing Partitions
-Type: How-To Guide
-Objective:
+# Adopt Existing Partitions
 
-How to adopt existing partitions. The guide should only talk about HC and how to
-craft it.
--->
+## Goals
+
+By following this how-to guide, you will learn how
+to [adopt existing partitions](../Explanation/Partition-Adoption.md)
+with Trident, by using Host Configuration.
+
+## Instructions
+
+### Step 1: Determine Desired Partitions for Adoption
+
+Find the desired adoption partitions on your host, either by:
+
+* Partition labels, using a command like:
+
+    ``` bash
+    lsblk -o NAME,PARTLABEL
+    ```
+
+* UUIDs, using a command like:
+
+    ``` bash
+    lsblk -o NAME,UUID
+    ```
+
+### Step 2: Add `adoptedPartitions` Configuration
+
+Inside the `storage` section of your Trident Host Configuration,
+add a new [`adoptedPartitions`](../Reference/Host-Configuration/API-Reference/AdoptedPartition.md)
+section to the `disk` section containing the partitions you want
+to adopt. This section should include the partition IDs and their
+corresponding uniquely identifying labels _or_ UUIDs.
+
+For example:
+
+```yaml
+  storage:
+    disks:
+      - id: disk-with-partitions-to-adopt
+        adoptedPartitions:
+          - id: adopted-partition-by-label
+            matchLabel: disklabel-part1
+          - id: adopted-partition-by-uuid
+            matchUuid: 12345678-abcd-1234-abcd-123456789abc
+  ```
+
+To adopt filesystems from the above partitions:
+
+``` yaml
+  filesystems:
+    - deviceId: adopted-partition-by-label
+      source: adopted
+      mountPoint: /adopted-filesystem-by-label
+    - deviceId: adopted-partition-by-uuid
+      source: adopted
+      mountPoint: /adopted-filesystem-by-uuid
+```
+
+With this information, Trident will ensure that these partitions are
+preserved in the target OS.
+

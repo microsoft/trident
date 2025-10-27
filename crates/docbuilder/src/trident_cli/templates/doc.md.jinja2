@@ -1,0 +1,42 @@
+---
+sidebar_position: 2
+title: Trident CLI Documentation
+---
+
+# Trident Command Line Interface Documentation
+
+{% if about -%}
+{{ about }}
+
+{% endif -%}
+
+{{ usage }}
+
+# Subcommands
+
+{% for subcommand in subcommands -%}
+- [{{ subcommand.name }}](#{{ subcommand.name }})
+{% endfor %}
+
+{% for subcommand in subcommands -%}
+## {{ subcommand.name }}
+
+{% if subcommand.aliases -%}
+**Aka:{% for alias in subcommand.aliases %} `{{alias}}`,{% endfor %}**
+
+{% endif -%}
+{% if subcommand.about -%}
+{{ subcommand.about }}
+
+{% endif -%}
+{{ subcommand.usage }}
+
+{% if subcommand.args -%}
+### Argument Details
+
+{% for arg in subcommand.args -%}
+{% include "args.md.jinja2" %}
+{% endfor -%}
+{% endif -%}
+
+{% endfor -%}
