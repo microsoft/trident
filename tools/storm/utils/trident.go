@@ -127,8 +127,8 @@ func CheckTridentService(client *ssh.Client, env TridentEnvironment, timeout tim
 		func(attempt int) (*bool, error) {
 			logrus.Infof("Checking Trident service status (attempt %d)", attempt)
 			reconnect, err := checkTridentServiceInner(client, serviceName, expectSuccessfulCommit)
-			if reconnect != nil && *reconnect {
-				return reconnect, nil
+			if reconnect {
+				return &reconnect, nil
 			}
 			if err != nil {
 				logrus.Warnf("Trident service is not in expected state: %s", err)
@@ -148,12 +148,10 @@ func CheckTridentService(client *ssh.Client, env TridentEnvironment, timeout tim
 	return nil
 }
 
-func checkTridentServiceInner(client *ssh.Client, serviceName string, expectSuccessfulCommit bool) (*bool, error) {
-	reconnectNeeded := false
+func checkTridentServiceInner(client *ssh.Client, serviceName string, expectSuccessfulCommit bool) (bool, error) {
 	session, err := client.NewSession()
 	if err != nil {
-		reconnectNeeded = true
-		return &reconnectNeeded, fmt.Errorf("failed to create SSH session: %w", err)
+		return true, fmt.Errorf("failed to create SSH session: %w", err)
 	}
 	defer session.Close()
 
@@ -168,7 +166,7 @@ func checkTridentServiceInner(client *ssh.Client, serviceName string, expectSucc
 		if exitErr, ok := err.(*ssh.ExitError); !(ok && exitErr.ExitStatus() == 3) {
 			// This is an unknown error, return it.
 			logrus.Debugf("Received output:\n %s", output)
-			return &reconnectNeeded, fmt.Errorf("failed to check Trident service status: %w", err)
+			return false, fmt.Errorf("failed to check Trident service status: %w", err)
 		}
 	}
 
@@ -178,11 +176,11 @@ func checkTridentServiceInner(client *ssh.Client, serviceName string, expectSucc
 
 	if expectSuccessfulCommit {
 		if !strings.Contains(outputStr, "Active: inactive (dead)") {
-			return &reconnectNeeded, fmt.Errorf("expected to find 'Active: inactive (dead)' in Trident service status")
+			return false, fmt.Errorf("expected to find 'Active: inactive (dead)' in Trident service status")
 		}
 	} else {
 		if !strings.Contains(outputStr, "Active: failed (Result: exit-code)") {
-			return &reconnectNeeded, fmt.Errorf("expected to find 'Active: failed (Result: exit-code)' in Trident service status")
+			return false, fmt.Errorf("expected to find 'Active: failed (Result: exit-code)' in Trident service status")
 		}
 	}
 
@@ -196,25 +194,25 @@ func checkTridentServiceInner(client *ssh.Client, serviceName string, expectSucc
 	}
 
 	if mainPidLine == "" {
-		return &reconnectNeeded, fmt.Errorf("expected to find 'Main PID:' in Trident service status")
+		return false, fmt.Errorf("expected to find 'Main PID:' in Trident service status")
 	}
 
 	commitSuccessfulExit := strings.Contains(mainPidLine, "(code=exited, status=0/SUCCESS")
 	if expectSuccessfulCommit {
 		if !commitSuccessfulExit {
 			// commit exited with non-zero status, but we expected success
-			return &reconnectNeeded, fmt.Errorf("expected Trident service status to show '(code=exited, status=0/SUCCESS)', but it did not")
+			return false, fmt.Errorf("expected Trident service status to show '(code=exited, status=0/SUCCESS)', but it did not")
 		} else {
 			logrus.Info("Trident service ran and exited successfully")
 		}
 	} else {
 		if commitSuccessfulExit {
 			// we expected commit to exit with non-zero status, but we found success
-			return &reconnectNeeded, fmt.Errorf("expected Trident service status to show non-zero exit status, but found '(code=exited, status=0/SUCCESS)'")
+			return false, fmt.Errorf("expected Trident service status to show non-zero exit status, but found '(code=exited, status=0/SUCCESS)'")
 		} else {
 			logrus.Info("Trident service ran as expected and exited with non-zero status")
 		}
 	}
 
-	return &reconnectNeeded, nil
+	return false, nil
 }
