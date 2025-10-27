@@ -1,8 +1,13 @@
 package helpers
 
 import (
+	"context"
+	"crypto/sha512"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
 	"path"
 	"regexp"
 	"strings"
@@ -13,6 +18,9 @@ import (
 	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v3"
+	"oras.land/oras-go/v2"
+	"oras.land/oras-go/v2/content/file"
+	"oras.land/oras-go/v2/registry/remote"
 
 	"tridenttools/storm/utils"
 )
@@ -162,32 +170,45 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 
 	// Update the sysext and confext files. Update happens only once, from
 	// version 1 to 2. If already version 2, then keep as is.
-	sysexts, ok := h.config["sysexts"].([]interface{})
-	if ok && len(sysexts) > 0 {
-		// Get the first (and only) sysext from the array
-		sysext, ok := sysexts[0].(map[string]interface{})
-		if ok {
-			oldSysextUrl, ok := sysext["url"].(string)
+	osConfig, ok := h.config["os"].(map[string]interface{})
+	if ok {
+		sysexts, ok := osConfig["sysexts"].([]interface{})
+		if ok && len(sysexts) > 0 {
+			// Get the first (and only) sysext from the array
+			sysext, ok := sysexts[0].(map[string]interface{})
 			if ok {
-				if strings.HasSuffix(oldSysextUrl, ".1") {
-					trimmedSysextUrl := strings.TrimSuffix(oldSysextUrl, ".1")
-					newSysextUrl := fmt.Sprintf("%s.2", trimmedSysextUrl)
-					sysext["url"] = newSysextUrl
+				oldSysextUrl, ok := sysext["url"].(string)
+				if ok {
+					if strings.HasSuffix(oldSysextUrl, ".1") {
+						trimmedSysextUrl := strings.TrimSuffix(oldSysextUrl, ".1")
+						newSysextUrl := fmt.Sprintf("%s.2", trimmedSysextUrl)
+						sysext["url"] = newSysextUrl
+						newHash, err := pullImageAndCalculateSha384(newSysextUrl)
+						if err != nil {
+							return fmt.Errorf("failed to calculate Sha384 hash of %s: %w", newSysextUrl, err)
+						}
+						sysext["sha384"] = newHash
+					}
 				}
 			}
 		}
-	}
-	confexts, ok := h.config["confexts"].([]interface{})
-	if ok && len(confexts) > 0 {
-		// Get the first (and only) confext from the array
-		confext, ok := confexts[0].(map[string]interface{})
-		if ok {
-			oldConfextUrl, ok := confext["url"].(string)
+		confexts, ok := osConfig["confexts"].([]interface{})
+		if ok && len(confexts) > 0 {
+			// Get the first (and only) confext from the array
+			confext, ok := confexts[0].(map[string]interface{})
 			if ok {
-				if strings.HasSuffix(oldConfextUrl, ".1") {
-					trimmedConfextUrl := strings.TrimSuffix(oldConfextUrl, ".1")
-					newConfextUrl := fmt.Sprintf("%s.2", trimmedConfextUrl)
-					confext["url"] = newConfextUrl
+				oldConfextUrl, ok := confext["url"].(string)
+				if ok {
+					if strings.HasSuffix(oldConfextUrl, ".1") {
+						trimmedConfextUrl := strings.TrimSuffix(oldConfextUrl, ".1")
+						newConfextUrl := fmt.Sprintf("%s.2", trimmedConfextUrl)
+						confext["url"] = newConfextUrl
+						newHash, err := pullImageAndCalculateSha384(newConfextUrl)
+						if err != nil {
+							return fmt.Errorf("failed to calculate Sha384 hash of %s: %w", newConfextUrl, err)
+						}
+						confext["sha384"] = newHash
+					}
 				}
 			}
 		}
@@ -350,4 +371,59 @@ func checkUrlIsAccessible(url string) error {
 	}
 
 	return nil
+}
+
+func pullImageAndCalculateSha384(imageUrl string) (string, error) {
+	url := strings.TrimPrefix(imageUrl, "oci://")
+	parts := strings.Split(url, ":")
+	if len(parts) != 2 {
+		return "", fmt.Errorf("invalid image URL format: %s", imageUrl)
+	}
+	ref := parts[0]
+	tag := parts[1]
+
+	// Create repository client
+	repo, err := remote.NewRepository(ref)
+	if err != nil {
+		return "", fmt.Errorf("failed to create repository client: %w", err)
+	}
+
+	// Create temporary directory to pull files into
+	tempDir, err := os.MkdirTemp("", "oras_pull_*")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp directory: %w", err)
+	}
+	defer os.RemoveAll(tempDir) // Clean up
+
+	// Create file store targeting the temp directory
+	fileStore, err := file.New(tempDir)
+	if err != nil {
+		return "", fmt.Errorf("failed to create file store: %w", err)
+	}
+	defer fileStore.Close()
+
+	// Pull the artifact
+	_, err = oras.Copy(context.Background(), repo, tag, fileStore, tag, oras.DefaultCopyOptions)
+	if err != nil {
+		return "", fmt.Errorf("failed to pull artifact: %w", err)
+	}
+
+	// Find the .raw file in the directory
+	files, err := os.ReadDir(tempDir)
+	if err != nil {
+		return "", fmt.Errorf("failed to read temp directory: %w", err)
+	}
+	rawFilePath := path.Join(tempDir, files[0].Name())
+
+	// Hash the .raw file
+	file, err := os.Open(rawFilePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to open .raw file: %w", err)
+	}
+	defer file.Close()
+	hasher := sha512.New384()
+	if _, err := io.Copy(hasher, file); err != nil {
+		return "", fmt.Errorf("failed to calculate hash: %w", err)
+	}
+	return hex.EncodeToString(hasher.Sum(nil)), nil
 }
