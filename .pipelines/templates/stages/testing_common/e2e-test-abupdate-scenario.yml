@@ -163,11 +163,10 @@ steps:
     displayName: "🅰️🔄${{ parameters.updateEmoji }} Stage and finalize A/B update into target OS ${{ parameters.updateScenarioTargetOs }} testing ${{ parameters.updateScenarioName }}"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
-  # TODO: uncomment when https://github.com/microsoft/trident/pull/290 merges
-  # - template: ./capture-screenshot.yml
-  #   parameters:
-  #     screenshotName: "update-a-${{ parameters.updateScenarioName }}"
-  #     deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
+  - template: ./capture-screenshot.yml
+    parameters:
+      screenshotName: "update-a-${{ parameters.updateScenarioName }}"
+      deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
 
   - template: ./display-serial-logs.yml
     parameters:
