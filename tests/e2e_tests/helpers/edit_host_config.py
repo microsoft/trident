@@ -162,7 +162,7 @@ def main():
             args.hostconfig,
             args.ociSysextUrl,
             args.sysextHash,
-            args.ociConfextHash,
+            args.ociConfextUrl,
             args.confextHash,
         )
 
