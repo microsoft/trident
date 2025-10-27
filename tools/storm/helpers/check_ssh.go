@@ -69,7 +69,7 @@ func (h *CheckSshHelper) checkTridentService(tc storm.TestCase) error {
 		tc.Skip("No Trident environment specified")
 	}
 
-	err := utils.CheckTridentService(h.client, h.args.Env, h.args.TimeoutDuration())
+	err := utils.CheckTridentService(h.client, h.args.Env, h.args.TimeoutDuration(), true)
 	if err != nil {
 		// Log this as a test failure
 		tc.FailFromError(err)
