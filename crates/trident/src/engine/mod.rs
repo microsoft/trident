@@ -118,10 +118,10 @@ lazy_static::lazy_static! {
         Box::<NetworkSubsystem>::default(),
         Box::<OsConfigSubsystem>::default(),
         Box::<ManagementSubsystem>::default(),
+        Box::<ExtensionsSubsystem>::default(),
         Box::<HooksSubsystem>::default(),
         Box::<InitrdSubsystem>::default(),
         Box::<SelinuxSubsystem>::default(),
-        Box::<ExtensionsSubsystem>::default(),
     ]);
 }
 
