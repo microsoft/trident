@@ -99,7 +99,7 @@ impl Cosi {
     }
 
     /// Returns an iterator over all images that are NOT the ESP filesystem image.
-    pub(super) fn filesystems<'a>(&'a self) -> impl Iterator<Item = OsImageFileSystem<'a>> {
+    pub(super) fn filesystems(&self) -> impl Iterator<Item = OsImageFileSystem<'_>> {
         self.metadata
             .get_regular_filesystems()
             .map(|image| cosi_image_to_os_image_filesystem(&self.reader, image))
