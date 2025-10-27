@@ -1,6 +1,6 @@
 module tridenttools
 
-go 1.23.5
+go 1.24.0
 
 toolchain go1.24.2
 
@@ -16,12 +16,22 @@ require (
 	github.com/microsoft/storm v0.1.1
 	github.com/pkg/errors v0.9.1
 	github.com/pkg/sftp v1.13.9
-	github.com/sirupsen/logrus v1.9.3
+	github.com/sirupsen/logrus v1.9.4-0.20230606125235-dd1b4c2e81af
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/viper v1.19.0
 	gopkg.in/yaml.v2 v2.4.0
 	libvirt.org/go/libvirtxml v1.11007.0
 	libvirt.org/libvirt-go-xml v7.4.0+incompatible
+)
+
+require (
+	github.com/anchore/go-lzo v0.1.0 // indirect
+	github.com/diskfs/go-diskfs v1.7.0 // indirect
+	github.com/djherbis/times v1.6.0 // indirect
+	github.com/elliotwutingfeng/asciiset v0.0.0-20230602022725-51bbb787efab // indirect
+	github.com/pierrec/lz4/v4 v4.1.17 // indirect
+	github.com/pkg/xattr v0.4.9 // indirect
+	github.com/ulikunitz/xz v0.5.11 // indirect
 )
 
 require (
