@@ -1,3 +1,6 @@
+# Combined configuration for AZL Installer ISO
+# Builds a bootable ISO image with installer tools and runtime images
+
 storage:
   bootType: efi
 
@@ -25,7 +28,7 @@ storage:
       path: /
 
 os:
-  hostname: azl-installer-mos
+  hostname: azl-installer
   bootloader:
     resetType: hard-reset
 
@@ -61,11 +64,38 @@ os:
       - trident-provisioning
       - vim
       - veritysetup
+      # Accessibility packages
       - pcaudiolib
 
   additionalFiles:
     # Getty service files for root autologin
-  - source: files/getty@.service
+  - source: mos/files/getty@.service
     destination: /usr/lib/systemd/system/getty@.service
-  - source: files/serial-getty@.service
+  - source: mos/files/serial-getty@.service
     destination: /usr/lib/systemd/system/serial-getty@.service
+  # Installer files
+  - source: iso/scripts/installation.sh
+    destination: /root/installer/installation.sh 
+  - source: iso/files/EULA.txt
+    destination: /root/installer/EULA.txt
+
+# ISO-specific configuration
+iso:
+  initramfsType: full-os
+  
+  additionalFiles:
+  - source: iso/images/trident-testimage.cosi
+    destination: /images/azure-linux-core.cosi
+  - source: iso/bin/liveinstaller
+    destination: /installer/liveinstaller
+
+  kernelCommandLine:
+    extraCommandLine:
+    - console=tty0
+    - console=tty1
+    - console=ttyS0
+    - loglevel=6
+
+scripts:
+  postCustomization:
+  - path: iso/scripts/startup-command.sh

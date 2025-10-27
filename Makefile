@@ -457,55 +457,41 @@ bin/attendedinstaller-simulator: \
 run-attendedinstaller-simulator: bin/attendedinstaller-simulator bin/EULA.txt
 	@cd bin && ./attendedinstaller-simulator && cd -
 
-# AZL INSTALLER IMAGES
+# AZL INSTALLER ISO
 
-artifacts/test-image/azl-installer-mos.vhdx: \
-	artifacts/baremetal.vhdx \
+# Prepare runtime dependencies for the ISO
+.PHONY: prepare-installer-deps
+prepare-installer-deps: \
+	bin/liveinstaller \
+	artifacts/test-image/regular.cosi
+	# Copy runtime images to prepare for inclusion in the ISO
+	rm -rf tests/images/azl-installer/iso/images
+	mkdir -p tests/images/azl-installer/iso/images
+	cp artifacts/test-image/regular.cosi tests/images/azl-installer/iso/images/trident-testimage.cosi
+	rm -rf tests/images/azl-installer/iso/bin
+	mkdir -p tests/images/azl-installer/iso/bin
+	cp bin/liveinstaller tests/images/azl-installer/iso/bin/
+
+# Build the installer ISO using the builder (single stage)
+artifacts/test-image/azl-installer.iso: \
 	bin/trident-rpms-azl3.tar.gz \
-	tests/images/azl-installer/mos/mos.yaml \
-	artifacts/imagecustomizer \
-	$(shell find tests/images/azl-installer/mos/ -type f 2>/dev/null)
-	@mkdir -p artifacts/test-image/
-	sudo rm -rf bin/trident_rpms
-	mkdir -p bin/trident_rpms
+	prepare-installer-deps \
+	tests/images/azl-installer/installer-iso.yaml \
+	$(shell find tests/images/azl-installer/ -type f 2>/dev/null)
+	@mkdir -p bin/trident_rpms base
 	$(eval TEMP_DIR := $(shell mktemp -d))
 	tar -xf bin/trident-rpms-azl3.tar.gz -C $(TEMP_DIR)
 	cp $(TEMP_DIR)/RPMS/*/*.rpm bin/trident_rpms/
-	rm -rf $(TEMP_DIR) 
-
-	sudo ./artifacts/imagecustomizer \
-		--log-level debug \
-		--rpm-source ./bin/trident_rpms/ \
-		--build-dir ./artifacts/test-image \
-		--image-file $< \
-		--output-image-file $@ \
-		--output-image-format vhdx \
-		--config-file tests/images/azl-installer/mos/mos.yaml
-
-AZL_INSTALLER_IMAGES_PATH = tests/images/azl-installer/iso/images
-AZL_INSTALLER_BIN_PATH = tests/images/azl-installer/iso/bin
-artifacts/test-image/azl-installer.iso: \
-	artifacts/test-image/azl-installer-mos.vhdx \
-	artifacts/imagecustomizer \
-	bin/liveinstaller \
-	artifacts/test-image/regular.cosi \
-	$(shell find tests/images/azl-installer/iso/ -type f 2>/dev/null)
-	# Copy runtime images to prepare for inclusion in the ISO
-	rm -rf $(AZL_INSTALLER_IMAGES_PATH)
-	mkdir -p $(AZL_INSTALLER_IMAGES_PATH)
-	cp artifacts/test-image/regular.cosi $(AZL_INSTALLER_IMAGES_PATH)/trident-testimage.cosi
-	rm -rf $(AZL_INSTALLER_BIN_PATH)
-	mkdir -p $(AZL_INSTALLER_BIN_PATH)
-	cp bin/liveinstaller $(AZL_INSTALLER_BIN_PATH)/
-
+	rm -rf $(TEMP_DIR)
+	# Create symlink for builder to find RPMs
+	rm -f base/trident
+	ln -sf ../bin/trident_rpms base/trident
 	mkdir -p artifacts/test-image/
-	sudo ./artifacts/imagecustomizer \
-	    --log-level debug \
-	    --build-dir ./artifacts/test-image/ \
-	    --image-file $< \
-	    --output-image-file $@ \
-	    --config-file tests/images/azl-installer/iso/mos-iso.yaml \
-	    --output-image-format iso
+	./tests/images/testimages.py build azl-installer --output-dir artifacts/test-image
+
+# Alias for the primary ISO target
+artifacts/azl-installer.iso: artifacts/test-image/azl-installer.iso
+	@true
 
 .PHONY: validate
 validate: $(TRIDENT_CONFIG) bin/trident
