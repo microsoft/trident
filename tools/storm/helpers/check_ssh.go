@@ -18,6 +18,7 @@ type CheckSshHelper struct {
 		utils.SshCliSettings `embed:""`
 		utils.EnvCliSettings `embed:""`
 		CheckActiveVolume    string `help:"Check that the indicated volume is the active one"`
+		ExpectFailedCommit   bool   `help:"Controls whether this test treats failed commits as successful." default:"false"`
 	}
 	client *ssh.Client
 }
@@ -69,7 +70,8 @@ func (h *CheckSshHelper) checkTridentService(tc storm.TestCase) error {
 		tc.Skip("No Trident environment specified")
 	}
 
-	err := utils.CheckTridentService(h.client, h.args.Env, h.args.TimeoutDuration(), true)
+	expectSuccessfulCommit := !h.args.ExpectFailedCommit
+	err := utils.CheckTridentService(h.client, h.args.Env, h.args.TimeoutDuration(), expectSuccessfulCommit)
 	if err != nil {
 		// Log this as a test failure
 		tc.FailFromError(err)
