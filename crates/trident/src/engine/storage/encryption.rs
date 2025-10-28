@@ -1,5 +1,4 @@
 use std::{
-    collections::BTreeMap,
     fs::{self, Permissions},
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
@@ -8,7 +7,6 @@ use std::{
 use anyhow::{Context, Error};
 use enumflags2::BitFlags;
 use log::{debug, info};
-use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 
 use osutils::{
@@ -280,29 +278,6 @@ fn encrypt_and_open_device(
     encryption::cryptsetup_open(key_file, device_path, device_name)?;
 
     Ok(())
-}
-
-/// This is an abbreviated representation of the JSON output of
-/// `cryptsetup luksDump --dump-json-metadata <device_path>`
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-struct LuksDump {
-    segments: BTreeMap<String, LuksDumpSegment>,
-}
-
-/// This is a complete representation of the segment object in the JSON
-/// output of `cryptsetup luksDump --dump-json-metadata <device_path>`
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-#[serde(deny_unknown_fields)]
-struct LuksDumpSegment {
-    #[serde(rename = "type")]
-    segment_type: String,
-    offset: String,
-    size: String,
-    iv_tweak: String,
-    encryption: String,
-    sector_size: u64,
 }
 
 /// Returns paths of UKI and bootloader binaries that `systemd-pcrlock` tool should seal to. During

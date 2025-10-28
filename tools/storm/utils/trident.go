@@ -19,10 +19,12 @@ const (
 	DOCKER_IMAGE_PATH = "/var/lib/trident/trident-container.tar.gz"
 )
 
-func BuildTridentContainerCommand(env string) string {
+func BuildTridentContainerCommand(envVars []string) string {
 	cmd := DOCKER_COMMAND_BASE
-	if env != "" {
-		cmd += fmt.Sprintf("--env %s ", env)
+	if len(envVars) != 0 {
+		for _, envVar := range envVars {
+			cmd += fmt.Sprintf("--env '%s' ", envVar)
+		}
 	}
 	cmd += TRIDENT_CONTAINER
 	return cmd
@@ -38,13 +40,13 @@ func BuildTridentContainerCommand(env string) string {
 // - The SSH session cannot be created
 // - There was an error starting the command.
 // - Some IO error occurred while reading stdout or stderr.
-func InvokeTrident(env TridentEnvironment, client *ssh.Client, proxy string, arguments string) (*SshCmdOutput, error) {
+func InvokeTrident(env TridentEnvironment, client *ssh.Client, envVars []string, arguments string) (*SshCmdOutput, error) {
 	var cmd string
 	switch env {
 	case TridentEnvironmentHost:
 		cmd = TRIDENT_BINARY
 	case TridentEnvironmentContainer:
-		cmd = BuildTridentContainerCommand(proxy)
+		cmd = BuildTridentContainerCommand(envVars)
 	case TridentEnvironmentNone:
 		return nil, fmt.Errorf("trident service is not running")
 	default:
@@ -52,9 +54,12 @@ func InvokeTrident(env TridentEnvironment, client *ssh.Client, proxy string, arg
 	}
 
 	var cmdPrefix string
-	if proxy != "" {
-		envVar := strings.Split(proxy, "=")[0]
-		cmdPrefix = fmt.Sprintf("%s sudo --preserve-env=%s", proxy, envVar)
+	if len(envVars) != 0 {
+		var quotedEnvVars = ""
+		for _, v := range envVars {
+			quotedEnvVars += fmt.Sprintf("'%s' ", v)
+		}
+		cmdPrefix = fmt.Sprintf("sudo %s", quotedEnvVars)
 	} else {
 		cmdPrefix = "sudo"
 	}
@@ -101,7 +106,7 @@ func LoadTridentContainer(client *ssh.Client) error {
 	return nil
 }
 
-func CheckTridentService(client *ssh.Client, env TridentEnvironment, timeout time.Duration) error {
+func CheckTridentService(client *ssh.Client, env TridentEnvironment, timeout time.Duration, expectSuccessfulCommit bool) error {
 	if client == nil {
 		return fmt.Errorf("SSH client is nil")
 	}
@@ -116,12 +121,15 @@ func CheckTridentService(client *ssh.Client, env TridentEnvironment, timeout tim
 		return fmt.Errorf("unsupported environment: %s", env)
 	}
 
-	_, err := Retry(
+	reconnectNeeded, err := Retry(
 		timeout,
 		time.Second*5,
 		func(attempt int) (*bool, error) {
 			logrus.Infof("Checking Trident service status (attempt %d)", attempt)
-			err := checkTridentServiceInner(client, serviceName)
+			reconnect, err := checkTridentServiceInner(client, serviceName, expectSuccessfulCommit)
+			if reconnect {
+				return &reconnect, nil
+			}
 			if err != nil {
 				logrus.Warnf("Trident service is not in expected state: %s", err)
 				return nil, err
@@ -130,6 +138,9 @@ func CheckTridentService(client *ssh.Client, env TridentEnvironment, timeout tim
 			return nil, nil
 		},
 	)
+	if reconnectNeeded != nil && *reconnectNeeded {
+		return fmt.Errorf("SSH connection needs to be re-established")
+	}
 	if err != nil {
 		return fmt.Errorf("trident service is not in expected state: %w", err)
 	}
@@ -137,10 +148,28 @@ func CheckTridentService(client *ssh.Client, env TridentEnvironment, timeout tim
 	return nil
 }
 
-func checkTridentServiceInner(client *ssh.Client, serviceName string) error {
+// checkTridentServiceInner checks the status of the Trident service on the host.
+//   - client: An established SSH client connection to the host. This is used to
+//     create new SSH sessions to execute commands. If the client fails to
+//     create a new session, 'true' is returned to indicate that the SSH client
+//     needs to be recreated.
+//   - serviceName: The name of the Trident service to check. This is expected to differ
+//     based on whether Trident is running in a container or on the host.
+//   - expectSuccessfulCommit: A boolean indicating what the expected result of
+//     `trident commit` should be on the host,  successful (true) or a
+//     failed (false).
+//
+// The function returns a boolean indicating whether the SSH connection needs to be
+// re-established (typically when `client` fails to create a new SSH session) and an
+// error if the service is not in the expected state or if there was an error
+// executing the command.
+func checkTridentServiceInner(client *ssh.Client, serviceName string, expectSuccessfulCommit bool) (bool, error) {
 	session, err := client.NewSession()
 	if err != nil {
-		return fmt.Errorf("failed to create SSH session: %w", err)
+		// New session was not created, return `true` to indicate that
+		// the SSH client should be recreated and checkTridentServiceInner
+		// should be retried.
+		return true, fmt.Errorf("failed to create SSH session: %w", err)
 	}
 	defer session.Close()
 
@@ -155,7 +184,7 @@ func checkTridentServiceInner(client *ssh.Client, serviceName string) error {
 		if exitErr, ok := err.(*ssh.ExitError); !(ok && exitErr.ExitStatus() == 3) {
 			// This is an unknown error, return it.
 			logrus.Debugf("Received output:\n %s", output)
-			return fmt.Errorf("failed to check Trident service status: %w", err)
+			return false, fmt.Errorf("failed to check Trident service status: %w", err)
 		}
 	}
 
@@ -163,8 +192,14 @@ func checkTridentServiceInner(client *ssh.Client, serviceName string) error {
 
 	logrus.Debugf("Trident service status:\n%s", outputStr)
 
-	if !strings.Contains(outputStr, "Active: inactive (dead)") {
-		return fmt.Errorf("expected to find 'Active: inactive (dead)' in Trident service status")
+	if expectSuccessfulCommit {
+		if !strings.Contains(outputStr, "Active: inactive (dead)") {
+			return false, fmt.Errorf("expected to find 'Active: inactive (dead)' in Trident service status")
+		}
+	} else {
+		if !strings.Contains(outputStr, "Active: failed (Result: exit-code)") {
+			return false, fmt.Errorf("expected to find 'Active: failed (Result: exit-code)' in Trident service status")
+		}
 	}
 
 	mainPidLine := ""
@@ -177,14 +212,25 @@ func checkTridentServiceInner(client *ssh.Client, serviceName string) error {
 	}
 
 	if mainPidLine == "" {
-		return fmt.Errorf("expected to find 'Main PID:' in Trident service status")
+		return false, fmt.Errorf("expected to find 'Main PID:' in Trident service status")
 	}
 
-	if !strings.Contains(mainPidLine, "(code=exited, status=0/SUCCESS") {
-		return fmt.Errorf("expected to find '(code=exited, status=0/SUCCESS)' in Trident service status")
+	commitSuccessfulExit := strings.Contains(mainPidLine, "(code=exited, status=0/SUCCESS")
+	if expectSuccessfulCommit {
+		if !commitSuccessfulExit {
+			// commit exited with non-zero status, but we expected success
+			return false, fmt.Errorf("expected Trident service status to show '(code=exited, status=0/SUCCESS)', but it did not")
+		} else {
+			logrus.Info("Trident service ran and exited successfully")
+		}
+	} else {
+		if commitSuccessfulExit {
+			// we expected commit to exit with non-zero status, but we found success
+			return false, fmt.Errorf("expected Trident service status to show non-zero exit status, but found '(code=exited, status=0/SUCCESS)'")
+		} else {
+			logrus.Info("Trident service ran as expected and exited with non-zero status")
+		}
 	}
 
-	logrus.Info("Trident service ran successfully")
-
-	return nil
+	return false, nil
 }

@@ -161,6 +161,7 @@ impl Subsystem for ExtensionsSubsystem {
 }
 
 impl ExtensionsSubsystem {
+    #[allow(unused)]
     fn populate_extensions(
         &mut self,
         ctx: &EngineContext,

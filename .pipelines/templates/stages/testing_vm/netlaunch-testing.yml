@@ -134,6 +134,12 @@ stages:
               config: ${{ variables.tridentConfigurationName }}
               deploymentEnvironment: "virtualMachine"
 
+          # Produce test sysext and confext images and push to ACR
+          - template: ../common_tasks/extension-images.yml
+            parameters:
+              config: ${{ variables.tridentConfigurationName }}
+              deploymentEnvironment: "virtualMachine"
+
           - template: netlaunch-prep.yml
 
           - template: ../testing_common/trident-prep.yml
@@ -217,10 +223,17 @@ stages:
             displayName: "🚀 Run netlaunch for testing"
             timeoutInMinutes: 20
 
+          - template: ../testing_common/capture-screenshot.yml
+            parameters:
+              screenshotName: "install"
+              deploymentEnvironment: virtualMachine
+              forceRun: true
+
           - template: ../testing_common/display-deployment-logs.yml
             parameters:
               deploymentLogPath: $(tridentSourceDirectory)/logstream-full.log
               displayName: "📄Display clean install logs"
+              forceRun: true
 
           - bash: |
               set -ux

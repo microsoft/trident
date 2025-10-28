@@ -42,15 +42,32 @@ steps:
       )
 
       if [ "${{ parameters.config }}" == "misc" ]; then
-        build_id="$(Build.BuildId)"
-        oci_url="oci://$(ACR_NAME).azurecr.io/${{ parameters.imageName }}:$(TAG_BASE).1"
-        cmd+=(--ociUrl "$oci_url")
+        tag="$(TAG_BASE).1"
+        oci_url="oci://$(ACR_NAME).azurecr.io/${{ parameters.imageName }}:${tag}"
+        cmd+=(--ociCosiUrl "$oci_url")
+      fi
+
+      if [ "${{ parameters.config }}" == "extensions" ]; then
+        tag="$(TAG_BASE).1"
+        oci_sysext_url="oci://$(ACR_NAME).azurecr.io/sysext:${tag}"
+        oci_confext_url="oci://$(ACR_NAME).azurecr.io/confext:${tag}"
+        cmd+=(--ociSysextUrl "$oci_sysext_url")
+        cmd+=(--ociConfextUrl "$oci_confext_url")
+
+        # Calculate SHA384 hashes of extension images.
+        sysext_sha384=$(sha384sum test-sysext-1.raw | awk '{print $1}')
+        confext_sha384=$(sha384sum test-confext-1.raw | awk '{print $1}')
+        cmd+=(--sysextHash "$sysext_sha384")
+        cmd+=(--confextHash "$confext_sha384")
       fi
 
       # Execute the command
       "${cmd[@]}"
 
+      # Print out the config
+      cat ${{ parameters.tridentConfigPath }}/trident-config.yaml
+
       chmod 600 ${{ parameters.tridentSourceDirectory }}/tests/e2e_tests/helpers/key
       ssh-keygen -p -m PEM -f ${{ parameters.tridentSourceDirectory }}/tests/e2e_tests/helpers/key -N ""
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
-    displayName: "Setting keys to ssh for testing"
+    displayName: "Edit Trident Host Configuration"
