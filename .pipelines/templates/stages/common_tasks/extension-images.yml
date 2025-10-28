@@ -22,19 +22,19 @@ steps:
       for i in 1 2; do
         # Create sysext extension-release file
         mkdir -p sysext-image-$i/usr/lib/extension-release.d
-        cat << EOF >  sysext-image-$i/usr/lib/extension-release.d/extension-release.test-sysext
+        cat << EOF > sysext-image-${i}/usr/lib/extension-release.d/extension-release.test-sysext
         ID=_any
         SYSEXT_ID=test-sysext
-        SYSEXT_VERSION_ID=$i.0.0
+        SYSEXT_VERSION_ID=${i}.0.0
         ARCHITECTURE=x86-64
         EOF
 
         # Create confext extension-release file
         mkdir -p confext-image-$i/etc/extension-release.d
-        cat << EOF >  confext-image-$i/etc/extension-release.d/extension-release.test-confext
+        cat << EOF > confext-image-${i}/etc/extension-release.d/extension-release.test-confext
         ID=_any
         CONFEXT_ID=test-confext
-        CONFEXT_VERSION_ID=$i.0.0
+        CONFEXT_VERSION_ID=${i}.0.0
         ARCHITECTURE=x86-64
         EOF
 
