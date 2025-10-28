@@ -40,17 +40,17 @@ steps:
           fi
         done
 
-        # Delete repository with sysext images
-        tag="$(TAG_BASE)"
-        if az acr repository show --name $(ACR_NAME) --image $(SYSEXT_REPO):${tag} &> /dev/null; then
-          az acr repository delete --name $(ACR_NAME) --image $(SYSEXT_REPO):${tag} --yes
-        fi
-
-        # Delete repository with confext images
-        tag="$(TAG_BASE)"
-        if az acr repository show --name $(ACR_NAME) --image $(CONFEXT_REPO):${tag} &> /dev/null; then
-          az acr repository delete --name $(ACR_NAME) --image $(CONFEXT_REPO):${tag} --yes
-        fi
+        for i in 1 2; do
+          tag="$(TAG_BASE).${i}"
+          # Delete repository with sysext images
+          if az acr repository show --name $(ACR_NAME) --image $(SYSEXT_REPO):${tag} &> /dev/null; then
+            az acr repository delete --name $(ACR_NAME) --image $(SYSEXT_REPO):${tag} --yes
+          fi
+          # Delete repository with confext images
+          if az acr repository show --name $(ACR_NAME) --image $(CONFEXT_REPO):${tag} &> /dev/null; then
+            az acr repository delete --name $(ACR_NAME) --image $(CONFEXT_REPO):${tag} --yes
+          fi
+        done
 
     displayName: "Log into ACR and delete images by tag"
     retryCountOnTaskFailure: 3
