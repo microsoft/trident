@@ -34,6 +34,7 @@ stages:
     dependsOn:
       - BuildInstallerTools
       - GetTridentBinaries_rpms_amd64
+      - TridentTestImg_trident_testimage
       - ${{ if ne(parameters.dependsOnStage, '') }}:
         - ${{ parameters.dependsOnStage }}
 
@@ -46,7 +47,7 @@ stages:
 
         variables:
           ob_outputDirectory: $(Pipeline.Workspace)/s/output
-          ob_artifactBaseName: azl-installer-iso
+          ob_artifactBaseName: azl-installer
           BASEIMG_AZURE_LINUX_VERSION: "3.0"
 
         steps:
