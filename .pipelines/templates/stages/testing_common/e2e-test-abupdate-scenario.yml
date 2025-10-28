@@ -201,6 +201,15 @@ steps:
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - bash: |
-      echo "Reset abActiveVolume value to cached value: $(existingAbActiveVolume)"
-      echo "##vso[task.setvariable variable=abActiveVolume]$(existingAbActiveVolume)"
+      if [[ "$(existingAbActiveVolume)" != 'null' ]]; then
+        # If abActiveVolume was non-null before this template, set it to
+        # the expected volume parameter
+        echo "Reset abActiveVolume value to cached value: ${{ parameters.expectActiveVolume }}"
+        echo "##vso[task.setvariable variable=abActiveVolume]${{ parameters.expectActiveVolume }}"
+      else
+        # If abActiveVolume was null before this template, keep it as null
+        echo "Reset abActiveVolume value to cached value: null"
+        echo "##vso[task.setvariable variable=abActiveVolume]null"
+      fi
     displayName: "Reset abActiveVolume variable"
+    condition: succeededOrFailed()
