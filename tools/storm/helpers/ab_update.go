@@ -172,45 +172,9 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 	// version 1 to 2. If already version 2, then keep as is.
 	osConfig, ok := h.config["os"].(map[string]interface{})
 	if ok {
-		sysexts, ok := osConfig["sysexts"].([]interface{})
-		if ok && len(sysexts) > 0 {
-			// Get the first (and only) sysext from the array
-			sysext, ok := sysexts[0].(map[string]interface{})
-			if ok {
-				oldSysextUrl, ok := sysext["url"].(string)
-				if ok {
-					if strings.HasSuffix(oldSysextUrl, ".1") {
-						trimmedSysextUrl := strings.TrimSuffix(oldSysextUrl, ".1")
-						newSysextUrl := fmt.Sprintf("%s.2", trimmedSysextUrl)
-						sysext["url"] = newSysextUrl
-						newHash, err := pullImageAndCalculateSha384(newSysextUrl)
-						if err != nil {
-							return fmt.Errorf("failed to calculate SHA384 hash of %s: %w", newSysextUrl, err)
-						}
-						sysext["sha384"] = newHash
-					}
-				}
-			}
-		}
-		confexts, ok := osConfig["confexts"].([]interface{})
-		if ok && len(confexts) > 0 {
-			// Get the first (and only) confext from the array
-			confext, ok := confexts[0].(map[string]interface{})
-			if ok {
-				oldConfextUrl, ok := confext["url"].(string)
-				if ok {
-					if strings.HasSuffix(oldConfextUrl, ".1") {
-						trimmedConfextUrl := strings.TrimSuffix(oldConfextUrl, ".1")
-						newConfextUrl := fmt.Sprintf("%s.2", trimmedConfextUrl)
-						confext["url"] = newConfextUrl
-						newHash, err := pullImageAndCalculateSha384(newConfextUrl)
-						if err != nil {
-							return fmt.Errorf("failed to calculate SHA384 hash of %s: %w", newConfextUrl, err)
-						}
-						confext["sha384"] = newHash
-					}
-				}
-			}
+		err := updateExtensions(osConfig)
+		if err != nil {
+			return fmt.Errorf("failed to update extensions in Host Configuration: %w", err)
 		}
 	}
 
@@ -370,6 +334,50 @@ func checkUrlIsAccessible(url string) error {
 		return fmt.Errorf("new image URL is not accessible: %s, got HTTP code: %d", url, resp.StatusCode)
 	}
 
+	return nil
+}
+
+func updateExtensions(osConfig map[string]interface{}) error {
+	sysexts, ok := osConfig["sysexts"].([]interface{})
+	if ok && len(sysexts) > 0 {
+		// Get the first (and only) sysext from the array
+		sysext, ok := sysexts[0].(map[string]interface{})
+		if ok {
+			oldSysextUrl, ok := sysext["url"].(string)
+			if ok {
+				if strings.HasSuffix(oldSysextUrl, ".1") {
+					trimmedSysextUrl := strings.TrimSuffix(oldSysextUrl, ".1")
+					newSysextUrl := fmt.Sprintf("%s.2", trimmedSysextUrl)
+					sysext["url"] = newSysextUrl
+					newHash, err := pullImageAndCalculateSha384(newSysextUrl)
+					if err != nil {
+						return fmt.Errorf("failed to calculate SHA384 hash of %s: %w", newSysextUrl, err)
+					}
+					sysext["sha384"] = newHash
+				}
+			}
+		}
+	}
+	confexts, ok := osConfig["confexts"].([]interface{})
+	if ok && len(confexts) > 0 {
+		// Get the first (and only) confext from the array
+		confext, ok := confexts[0].(map[string]interface{})
+		if ok {
+			oldConfextUrl, ok := confext["url"].(string)
+			if ok {
+				if strings.HasSuffix(oldConfextUrl, ".1") {
+					trimmedConfextUrl := strings.TrimSuffix(oldConfextUrl, ".1")
+					newConfextUrl := fmt.Sprintf("%s.2", trimmedConfextUrl)
+					confext["url"] = newConfextUrl
+					newHash, err := pullImageAndCalculateSha384(newConfextUrl)
+					if err != nil {
+						return fmt.Errorf("failed to calculate SHA384 hash of %s: %w", newConfextUrl, err)
+					}
+					confext["sha384"] = newHash
+				}
+			}
+		}
+	}
 	return nil
 }
 
