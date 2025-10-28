@@ -83,7 +83,7 @@ stages:
               
               # Move trident-testimage artifacts to artifacts/test-image/
               mkdir -p artifacts/test-image
-              mv "$(Build.ArtifactStagingDirectory)/testimage/regular.cosi" artifacts/test-image/
+              mv "$(Build.ArtifactStagingDirectory)/testimage/*.cosi" artifacts/test-image/regular.cosi
             displayName: "Prepare installer dependencies"
             workingDirectory: $(Build.SourcesDirectory)
 
