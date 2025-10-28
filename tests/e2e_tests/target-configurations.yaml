@@ -12,6 +12,7 @@ bareMetal:
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
+      - extensions
       - memory-constraint-combined
       - misc
       - raid-big
@@ -29,6 +30,7 @@ bareMetal:
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
+      - extensions
       - memory-constraint-combined
       - misc
       - raid-big
@@ -55,6 +57,7 @@ bareMetal:
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
+      - extensions
       - misc
       - raid-mirrored
       - raid-resync-small
@@ -70,6 +73,7 @@ bareMetal:
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
+      - extensions
       - misc
       - raid-mirrored
       - raid-resync-small
@@ -87,6 +91,7 @@ virtualMachine:
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
+      - extensions
       - memory-constraint-combined
       - misc
       - raid-mirrored
@@ -104,6 +109,7 @@ virtualMachine:
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
+      - extensions
       - memory-constraint-combined
       - misc
       - raid-mirrored
@@ -133,6 +139,7 @@ virtualMachine:
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
+      - extensions
       - memory-constraint-combined
       - misc
       - raid-mirrored
@@ -150,6 +157,7 @@ virtualMachine:
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
+      - extensions
       - memory-constraint-combined
       - raid-mirrored
       - raid-resync-small
@@ -167,6 +175,7 @@ virtualMachine:
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
+      - extensions
       - misc
       - raid-mirrored
       - raid-resync-small
@@ -182,6 +191,7 @@ virtualMachine:
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
+      - extensions
       - misc
       - raid-mirrored
       - raid-resync-small
@@ -197,6 +207,7 @@ virtualMachine:
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
+      - extensions
       - misc
       - raid-mirrored
       - raid-resync-small
@@ -210,6 +221,7 @@ virtualMachine:
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
+      - extensions
       - misc
       - raid-mirrored
       - raid-resync-small
@@ -225,6 +237,7 @@ virtualMachine:
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
+      - extensions
       - raid-mirrored
       - raid-resync-small
       - raid-small

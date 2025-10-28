@@ -13,7 +13,7 @@ steps:
   - bash: |
       set -eux
 
-      if [ ${{ parameters.config }} != 'misc' ]; then
+      if [ ${{ parameters.config }} != 'extensions' ]; then
         echo "Skipping step. Configuration is '${{ parameters.config }}'."
         exit 0
       fi
@@ -49,7 +49,7 @@ steps:
       inlineScript: |
         set -eux
 
-        if [ ${{ parameters.config }} != 'misc' ]; then
+        if [ ${{ parameters.config }} != 'extensions' ]; then
           echo "Skipping step. Configuration is '${{ parameters.config }}'."
           exit 0
         fi

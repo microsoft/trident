@@ -43,10 +43,14 @@ steps:
 
       if [ "${{ parameters.config }}" == "misc" ]; then
         tag="$(TAG_BASE).1"
-        oci_cosi_url="oci://$(ACR_NAME).azurecr.io/${{ parameters.imageName }}:${tag}"
+        oci_url="oci://$(ACR_NAME).azurecr.io/${{ parameters.imageName }}:${tag}"
+        cmd+=(--ociCosiUrl "$oci_url")
+      fi
+
+      if [ "${{ parameters.config }}" == "extensions" ]; then
+        tag="$(TAG_BASE).1"
         oci_sysext_url="oci://$(ACR_NAME).azurecr.io/$(SYSEXT_REPO):${tag}"
         oci_confext_url="oci://$(ACR_NAME).azurecr.io/$(CONFEXT_REPO):${tag}"
-        cmd+=(--ociCosiUrl "$oci_cosi_url")
         cmd+=(--ociSysextUrl "$oci_sysext_url")
         cmd+=(--ociConfextUrl "$oci_confext_url")
 

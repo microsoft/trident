@@ -16,9 +16,6 @@ storage:
         - id: root-b
           type: root
           size: 8G
-        - id: ntfs-partition
-          type: linux-generic
-          size: 100M
         - id: trident
           type: linux-generic
           size: 1G
@@ -38,10 +35,6 @@ storage:
       mountPoint:
         path: /boot/efi
         options: umask=0077
-    - deviceId: ntfs-partition
-      type: ntfs
-      source: new
-      mountPoint: /mnt/ntfs-partition
     - deviceId: trident
       source: new
       mountPoint: /var/lib/trident
@@ -54,28 +47,4 @@ scripts:
       content: echo "testing-user ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/testing-user
 os:
   selinux:
-    mode: enforcing
-  netplan:
-    version: 2
-    ethernets:
-      vmeths:
-        match:
-          name: enp*
-        dhcp4: true
-  users:
-    - name: testing-user
-      sshPublicKeys: []
-      sshMode: key-only
-  modules:
-    - name: test-module
-      loadMode: always
-      options:
-        "option1": "value1"
-        "option2": "value2"
-  services:
-    enable:
-      - cron
-  kernelCommandLine:
-    extraCommandLine:
-      - param1=value
-      - param2=\"value2 value3\"
+    mode: permissive
