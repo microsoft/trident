@@ -91,11 +91,11 @@ steps:
         echo "Skipping ${{ parameters.updateScenarioName }} as it is in skipConfigurations list [${{ parameters.skipConfigurations }}]"
         internalSetting='null'
       elif [ "${{ parameters.deploymentEnvironment }}" == "virtualMachine" ]; then
-        echo "Test ${{ parameters.updateScenarioName }} for all VM tests that do AB Update"
+        echo "Test ${{ parameters.updateScenarioName }} for all VM tests that do A/B Update"
         internalSetting=$existingAbActiveVolume
       elif [ "${{ parameters.deploymentEnvironment }}" == "bareMetal" ] && 
          [ "${{ parameters.buildPurpose }}" == "weekly" ]; then
-        echo "Test ${{ parameters.updateScenarioName }} for BM tests that do AB Update for Full Validation"
+        echo "Test ${{ parameters.updateScenarioName }} for BM tests that do A/B Update for Full Validation"
         internalSetting=$existingAbActiveVolume
       else
         echo "Do not test ${{ parameters.updateScenarioName }}"
