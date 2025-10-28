@@ -298,7 +298,7 @@ stages:
                   --full-logstream logstream-full.log \
                   --wait-for-provisioned-state \
                   --port ${{ variables.NETLAUNCH_PORT }} 2>&1 | tee ./clean-install-deployment.log
-            timeoutInMinutes: 30
+            timeoutInMinutes: 35
             workingDirectory: ${{ variables.TRIDENT_SOURCE_DIR }}
             displayName: "Run netlaunch for testing"
 
