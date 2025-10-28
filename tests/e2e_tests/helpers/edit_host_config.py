@@ -59,11 +59,34 @@ def add_copy_command(host_config_path):
 
 # Images stored in ACR are tagged based on pipeline build ID, and therefore the
 # URL must be updated for every build.
-def rename_oci_url(host_config_path, oci_url):
+def rename_oci_url(host_config_path, oci_cosi_url):
     with open(host_config_path, "r") as f:
         host_config = yaml.safe_load(f)
 
-    host_config["image"]["url"] = oci_url
+    host_config["image"]["url"] = oci_cosi_url
+
+    with open(host_config_path, "w") as f:
+        yaml.safe_dump(host_config, f)
+
+
+# Sysext and confext images are stored in ACR and tagged based on pipeline build
+# ID, so the HC must be updated for every build.
+def add_extension_images(
+    host_config_path, oci_sysext_url, oci_confext_url, sysext_hash, confext_hash
+):
+    with open(host_config_path, "r") as f:
+        host_config = yaml.safe_load(f)
+
+    if "os" not in host_config:
+        host_config["os"] = {}
+    if "sysexts" not in host_config["os"]:
+        host_config["os"]["sysexts"] = []
+    host_config["os"]["sysexts"].append({"url": oci_sysext_url, "sha384": sysext_hash})
+    if "confexts" not in host_config["os"]:
+        host_config["os"]["confexts"] = []
+    host_config["os"]["confexts"].append(
+        {"url": oci_confext_url, "sha384": confext_hash}
+    )
 
     with open(host_config_path, "w") as f:
         yaml.safe_dump(host_config, f)
@@ -84,11 +107,34 @@ def main():
         help="Path to the Trident configuration file.",
     )
     parser.add_argument(
-        "-o",
-        "--ociUrl",
+        "--ociCosiUrl",
         type=str,
         required=False,
         help="Url to ACR blob containing COSI file.",
+    )
+    parser.add_argument(
+        "--ociSysextUrl",
+        type=str,
+        required=False,
+        help="Url to ACR blob containing sysext file.",
+    )
+    parser.add_argument(
+        "--ociConfextUrl",
+        type=str,
+        required=False,
+        help="Url to ACR blob containing confext file.",
+    )
+    parser.add_argument(
+        "--sysextHash",
+        type=str,
+        required=False,
+        help="Hash of sysext file.",
+    )
+    parser.add_argument(
+        "--confextHash",
+        type=str,
+        required=False,
+        help="Hash of confext file.",
     )
     parser.add_argument(
         "-r",
@@ -106,8 +152,22 @@ def main():
     if args.runtimeEnv == "container":
         add_copy_command(args.hostconfig)
 
-    if args.ociUrl:
-        rename_oci_url(args.hostconfig, args.ociUrl)
+    if args.ociCosiUrl:
+        rename_oci_url(args.hostconfig, args.ociCosiUrl)
+
+    if (
+        args.ociSysextUrl
+        and args.sysextHash
+        and args.ociConfextUrl
+        and args.confextHash
+    ):
+        add_extension_images(
+            args.hostconfig,
+            args.ociSysextUrl,
+            args.ociConfextUrl,
+            args.sysextHash,
+            args.confextHash,
+        )
 
 
 if __name__ == "__main__":
