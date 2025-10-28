@@ -79,10 +79,10 @@ def add_extension_images(
 
     if "os" not in host_config:
         host_config["os"] = {}
-    if "sysexts" not in host_config["sysexts"]:
+    if "sysexts" not in host_config["os"]:
         host_config["os"]["sysexts"] = []
     host_config["os"]["sysexts"].append({"url": oci_sysext_url, "sha384": sysext_hash})
-    if "confexts" not in host_config["confexts"]:
+    if "confexts" not in host_config["os"]:
         host_config["os"]["confexts"] = []
     host_config["os"]["confexts"].append(
         {"url": oci_confext_url, "sha384": confext_hash}
