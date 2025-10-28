@@ -205,7 +205,7 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 						confext["url"] = newConfextUrl
 						newHash, err := pullImageAndCalculateSha384(newConfextUrl)
 						if err != nil {
-							return fmt.Errorf("failed to calculate Sha384 hash of %s: %w", newConfextUrl, err)
+							return fmt.Errorf("failed to calculate SHA384 hash of %s: %w", newConfextUrl, err)
 						}
 						confext["sha384"] = newHash
 					}
