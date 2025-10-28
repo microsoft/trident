@@ -91,6 +91,10 @@ pub struct Storage {
         )
     )]
     pub swap: Vec<Swap>,
+
+    /// Source the storage configuration from the COSI.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub raw_cosi: bool,
 }
 
 impl Storage {
