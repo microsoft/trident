@@ -276,8 +276,9 @@ func (h *AbUpdateHelper) checkTridentService(tc storm.TestCase) error {
 	time.Sleep(time.Second * 10)
 
 	// Reconnect via SSH to the updated OS
+	endTime := time.Now().Add(h.args.TimeoutDuration())
 	_, err := utils.Retry(
-		h.args.TimeoutDuration(),
+		time.Until(endTime),
 		time.Second*5,
 		func(attempt int) (*bool, error) {
 			logrus.Infof("SSH dial to '%s' (attempt %d)", h.args.SshCliSettings.FullHost(), attempt)
@@ -293,7 +294,7 @@ func (h *AbUpdateHelper) checkTridentService(tc storm.TestCase) error {
 			// Enable tests to handle success and failure of commit service
 			// depending on configuration
 			expectSuccessfulCommit := !h.args.ExpectFailedCommit
-			err = utils.CheckTridentService(client, h.args.Env, h.args.TimeoutDuration(), expectSuccessfulCommit)
+			err = utils.CheckTridentService(client, h.args.Env, time.Until(endTime), expectSuccessfulCommit)
 			if err != nil {
 				logrus.Warnf("Trident service is not in expected state: %s", err)
 				return nil, err
