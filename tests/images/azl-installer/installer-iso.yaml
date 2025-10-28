@@ -1,6 +1,3 @@
-# Combined configuration for AZL Installer ISO
-# Builds a bootable ISO image with installer tools and runtime images
-
 storage:
   bootType: efi
 
@@ -36,7 +33,6 @@ os:
     mode: disabled
 
   kernelCommandLine:
-    # Replicates BM base image settings, that would otherwise be lost
     extraCommandLine:
     - console=tty0
     - console=ttyS0
@@ -88,6 +84,8 @@ iso:
     destination: /images/azure-linux-core.cosi
   - source: iso/bin/liveinstaller
     destination: /installer/liveinstaller
+  - source: iso/files/config-placeholder.yaml
+    destination: /installer/trident-config.yaml.tmpl
 
   kernelCommandLine:
     extraCommandLine:
