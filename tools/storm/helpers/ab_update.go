@@ -168,8 +168,7 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 	// Delete the storage section from the config, not needed for A/B update
 	delete(h.config, "storage")
 
-	// Update the sysext and confext files. Update happens only once, from
-	// version 1 to 2. If already version 2, then keep as is.
+	// Update the sysext and confext files.
 	osConfig, ok := h.config["os"].(map[string]interface{})
 	if ok {
 		err := updateExtensions(osConfig)
@@ -337,50 +336,43 @@ func checkUrlIsAccessible(url string) error {
 	return nil
 }
 
+// Update the paths of the extension images. This update happens only once, from
+// version 1 to 2. If images are already version 2, then keep as is.
 func updateExtensions(osConfig map[string]interface{}) error {
-	sysexts, ok := osConfig["sysexts"].([]interface{})
-	if ok && len(sysexts) > 0 {
-		// Get the first (and only) sysext from the array
-		sysext, ok := sysexts[0].(map[string]interface{})
-		if ok {
-			oldSysextUrl, ok := sysext["url"].(string)
-			if ok {
-				if strings.HasSuffix(oldSysextUrl, ".1") {
-					trimmedSysextUrl := strings.TrimSuffix(oldSysextUrl, ".1")
-					newSysextUrl := fmt.Sprintf("%s.2", trimmedSysextUrl)
-					sysext["url"] = newSysextUrl
-					newHash, err := pullImageAndCalculateSha384(newSysextUrl)
-					if err != nil {
-						return fmt.Errorf("failed to calculate SHA384 hash of %s: %w", newSysextUrl, err)
-					}
-					sysext["sha384"] = newHash
-				}
-			}
+	for _, extensionType := range []string{"sysexts", "confexts"} {
+		extensions, ok := osConfig[extensionType].([]interface{})
+		if !ok || len(extensions) == 0 {
+			continue // No extensions of this type, skip
 		}
-	}
-	confexts, ok := osConfig["confexts"].([]interface{})
-	if ok && len(confexts) > 0 {
-		// Get the first (and only) confext from the array
-		confext, ok := confexts[0].(map[string]interface{})
-		if ok {
-			oldConfextUrl, ok := confext["url"].(string)
-			if ok {
-				if strings.HasSuffix(oldConfextUrl, ".1") {
-					trimmedConfextUrl := strings.TrimSuffix(oldConfextUrl, ".1")
-					newConfextUrl := fmt.Sprintf("%s.2", trimmedConfextUrl)
-					confext["url"] = newConfextUrl
-					newHash, err := pullImageAndCalculateSha384(newConfextUrl)
-					if err != nil {
-						return fmt.Errorf("failed to calculate SHA384 hash of %s: %w", newConfextUrl, err)
-					}
-					confext["sha384"] = newHash
-				}
-			}
+		extension, ok := extensions[0].(map[string]interface{})
+		if !ok {
+			continue // Invalid extension format, skip
 		}
+
+		// Update URL from version 1 to 2
+		oldUrl, ok := extension["url"].(string)
+		if !ok || !strings.HasSuffix(oldUrl, ".1") {
+			continue // No URL or not version 1, skip
+		}
+		trimmedUrl := strings.TrimSuffix(oldUrl, ".1")
+		newUrl := fmt.Sprintf("%s.2", trimmedUrl)
+
+		// Calculate new hash
+		newHash, err := pullImageAndCalculateSha384(newUrl)
+		if err != nil {
+			return fmt.Errorf("failed to calculate SHA384 hash of %s: %w", newUrl, err)
+		}
+
+		// Update the extension configuration
+		extension["url"] = newUrl
+		extension["sha384"] = newHash
 	}
+
 	return nil
 }
 
+// Download the new extension image and calcualte SHA384 hash to populate the
+// updated Host Configuration.
 func pullImageAndCalculateSha384(imageUrl string) (string, error) {
 	url := strings.TrimPrefix(imageUrl, "oci://")
 	parts := strings.Split(url, ":")
