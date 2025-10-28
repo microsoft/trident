@@ -21,11 +21,6 @@ parameters:
     type: string
     default: "*.*.*"
 
-  - name: clones
-    displayName: "Number of clones to generate"
-    type: number
-    default: 2
-
   - name: dependsOnStage
     type: string
     default: ''

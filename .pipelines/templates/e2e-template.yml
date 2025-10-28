@@ -204,8 +204,7 @@ stages:
           packageName: usb-iso
 
   - ${{ if eq(parameters.stageType, 'pr-e2e') }}:
-      # Build USB-ISO
-      - template: stages/trident_usb_iso/trident-usb-iso.yml
+      - template: stages/azl-installer.yml
         parameters:
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}     
