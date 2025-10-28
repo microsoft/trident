@@ -36,8 +36,8 @@ DEFINED_IMAGES: List[ImageConfig] = [
         output_format=OutputFormat.ISO,
         requires_trident=True,
         extra_dependencies=[
-            Path("bin/liveinstaller"),
-            Path("artifacts/test-image/regular.cosi"),
+            Path("tests/images/azl-installer/iso/bin/liveinstaller"),
+            Path("tests/images/azl-installer/iso/images/trident-testimage.cosi"),
         ],
     ),
 ]
