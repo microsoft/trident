@@ -22,21 +22,11 @@ steps:
       for i in 1 2; do
         # Create sysext extension-release file
         mkdir -p sysext-image-$i/usr/lib/extension-release.d
-        cat << EOF > sysext-image-${i}/usr/lib/extension-release.d/extension-release.test-sysext
-        ID=_any
-        SYSEXT_ID=test-sysext
-        SYSEXT_VERSION_ID=${i}.0.0
-        ARCHITECTURE=x86-64
-        EOF
+        printf 'ID=_any\nSYSEXT_ID=test-sysext\nSYSEXT_VERSION_ID=%s.0.0\nARCHITECTURE=x86-64\n' "$i" > sysext-image-$i/usr/lib/extension-release.d/extension-release.test-sysext
 
         # Create confext extension-release file
         mkdir -p confext-image-$i/etc/extension-release.d
-        cat << EOF > confext-image-${i}/etc/extension-release.d/extension-release.test-confext
-        ID=_any
-        CONFEXT_ID=test-confext
-        CONFEXT_VERSION_ID=${i}.0.0
-        ARCHITECTURE=x86-64
-        EOF
+        printf 'ID=_any\nCONFEXT_ID=test-confext\ncCONFEXT_VERSION_ID=%s.0.0\nARCHITECTURE=x86-64\n' "$i" > confext-image-$i/usr/lib/extension-release.d/extension-release.test-confext
 
         # Create DDI files
         mksquashfs sysext-image-$i test-sysext-$i.raw -comp xz -Xbcj x86 -noappend -no-xattrs
