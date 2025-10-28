@@ -49,8 +49,8 @@ steps:
 
       if [ "${{ parameters.config }}" == "extensions" ]; then
         tag="$(TAG_BASE).1"
-        oci_sysext_url="oci://$(ACR_NAME).azurecr.io/$(SYSEXT_REPO):${tag}"
-        oci_confext_url="oci://$(ACR_NAME).azurecr.io/$(CONFEXT_REPO):${tag}"
+        oci_sysext_url="oci://$(ACR_NAME).azurecr.io/sysext:${tag}"
+        oci_confext_url="oci://$(ACR_NAME).azurecr.io/confext:${tag}"
         cmd+=(--ociSysextUrl "$oci_sysext_url")
         cmd+=(--ociConfextUrl "$oci_confext_url")
 
