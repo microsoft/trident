@@ -76,14 +76,16 @@ stages:
 
           - bash: |
               set -ex
-              # Move installer tools to bin/
-              mkdir -p bin
-              mv "$(Build.ArtifactStagingDirectory)/installer-tools/liveinstaller" bin/
-              chmod +x bin/liveinstaller
               
-              # Move trident-testimage COSI to artifacts/test-image/
-              mkdir -p artifacts/test-image
-              mv $(Build.ArtifactStagingDirectory)/testimage/*.cosi artifacts/test-image/regular.cosi
+              mkdir -p tests/images/azl-installer/iso/bin
+              mkdir -p tests/images/azl-installer/iso/images
+              
+              # Move liveinstaller to bin directory
+              mv "$(Build.ArtifactStagingDirectory)/installer-tools/liveinstaller" tests/images/azl-installer/iso/bin/
+              chmod +x tests/images/azl-installer/iso/bin/liveinstaller
+              
+              # Move target image to the ISO directory
+              mv $(Build.ArtifactStagingDirectory)/testimage/*.cosi tests/images/azl-installer/iso/images/trident-testimage.cosi
             displayName: "Prepare installer dependencies"
             workingDirectory: $(Build.SourcesDirectory)
 
