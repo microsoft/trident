@@ -185,7 +185,7 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 						sysext["url"] = newSysextUrl
 						newHash, err := pullImageAndCalculateSha384(newSysextUrl)
 						if err != nil {
-							return fmt.Errorf("failed to calculate Sha384 hash of %s: %w", newSysextUrl, err)
+							return fmt.Errorf("failed to calculate SHA384 hash of %s: %w", newSysextUrl, err)
 						}
 						sysext["sha384"] = newHash
 					}
@@ -412,6 +412,9 @@ func pullImageAndCalculateSha384(imageUrl string) (string, error) {
 	files, err := os.ReadDir(tempDir)
 	if err != nil {
 		return "", fmt.Errorf("failed to read temp directory: %w", err)
+	}
+	if len(files) != 1 {
+		return "", fmt.Errorf("expected to find exactly one file in temp directory after pulling artifact")
 	}
 	rawFilePath := path.Join(tempDir, files[0].Name())
 

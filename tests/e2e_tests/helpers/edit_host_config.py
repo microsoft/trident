@@ -70,7 +70,7 @@ def rename_oci_url(host_config_path, oci_cosi_url):
 
 
 # Sysext and confext images are stored in ACR and tagged based on pipeline build
-# ID, so the HC much be updated for every build.
+# ID, so the HC must be updated for every build.
 def add_extension_images(
     host_config_path, oci_sysext_url, oci_confext_url, sysext_hash, confext_hash
 ):
