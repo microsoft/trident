@@ -88,6 +88,9 @@ def add_extension_images(
         {"url": oci_confext_url, "sha384": confext_hash}
     )
 
+    with open(host_config_path, "w") as f:
+        yaml.safe_dump(host_config, f)
+
 
 def main():
     parser = argparse.ArgumentParser(
