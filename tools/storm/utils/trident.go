@@ -160,7 +160,7 @@ func CheckTridentService(client *ssh.Client, env TridentEnvironment, timeout tim
 //     failed (false).
 //
 // The function returns a boolean indicating whether the SSH connection needs to be
-// re-established (typically when `client` fails to creat a new SSH session) and an
+// re-established (typically when `client` fails to create a new SSH session) and an
 // error if the service is not in the expected state or if there was an error
 // executing the command.
 func checkTridentServiceInner(client *ssh.Client, serviceName string, expectSuccessfulCommit bool) (bool, error) {
