@@ -213,6 +213,68 @@ fn stage_clean_install(
 
     engine::validate_host_config(subsystems, &ctx)?;
 
+    // if ctx.spec.storage.from_cosi {
+    //     let partitions = &mut ctx
+    //         .spec
+    //         .storage
+    //         .disks
+    //         .get_mut(0)
+    //         .structured(InternalError::Internal("No disks but storage.fromCosi set"))?
+    //         .partitions;
+    //     let image = ctx
+    //         .image
+    //         .as_ref()
+    //         .structured(InternalError::Internal("no image"))?;
+    //     for (n, fs) in image.filesystems().enumerate() {
+    //         partitions.push(trident_api::config::Partition {
+    //             id: format!("part{}", n + 1),
+    //             partition_type: trident_api::config::PartitionType::LinuxGeneric,
+    //             size: fs
+    //                 .image_file
+    //                 .uncompressed_size
+    //                 .next_multiple_of(1 << 20)
+    //                 .into(),
+    //         });
+    //         ctx.spec
+    //             .storage
+    //             .filesystems
+    //             .push(trident_api::config::FileSystem {
+    //                 device_id: Some(format!("part{}", n + 1)),
+    //                 source: trident_api::config::FileSystemSource::Image,
+    //                 mount_point: Some(trident_api::config::MountPoint {
+    //                     path: fs.mount_point.clone(),
+    //                     options: Default::default(),
+    //                 }),
+    //             });
+    //     }
+    //     partitions.sort_by_key(|p| p.size.to_bytes().unwrap_or(u64::MAX));
+    //     partitions.insert(
+    //         0,
+    //         trident_api::config::Partition {
+    //             id: "esp".to_string(),
+    //             partition_type: trident_api::config::PartitionType::Esp,
+    //             size: image
+    //                 .esp_filesystem()
+    //                 .structured(InternalError::Internal("No ESP filesystem in COSI"))?
+    //                 .image_file
+    //                 .uncompressed_size
+    //                 .next_multiple_of(1 << 20)
+    //                 .into(),
+    //         },
+    //     );
+    //     ctx.spec
+    //         .storage
+    //         .filesystems
+    //         .push(trident_api::config::FileSystem {
+    //             device_id: Some("esp".to_string()),
+    //             source: trident_api::config::FileSystemSource::Image,
+    //             mount_point: Some(trident_api::config::MountPoint {
+    //                 path: "/boot/efi".into(),
+    //                 options: Default::default(),
+    //             }),
+    //         });
+    // }
+
     ctx.populate_filesystems()?;
 
     // Need to re-set saved Host Status in case another clean install has been previously staged
@@ -324,6 +386,12 @@ pub(crate) fn finalize_clean_install(
 
     // On clean install, need to verify that AZLA entry exists in /mnt/newroot/boot/efi
     let esp_path = join_relative(new_root.path(), ESP_MOUNT_POINT_PATH);
+
+    if ctx.spec.storage.raw_cosi {
+        new_root.unmount_all()?;
+        return Ok(ExitKind::NeedsReboot);
+    }
+
     bootentries::create_and_update_boot_variables(&ctx, &esp_path)?;
 
     debug!(

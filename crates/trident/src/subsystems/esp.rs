@@ -47,8 +47,9 @@ impl Subsystem for EspSubsystem {
         // Perform file-based deployment of ESP images, if needed, after filesystems have been
         // mounted and initialized.
 
-        // Deploy ESP image
-        deploy_esp(ctx, mount_path).structured(ServicingError::DeployESPImages)?;
+        if !ctx.spec.storage.raw_cosi {
+            deploy_esp(ctx, mount_path).structured(ServicingError::DeployESPImages)?;
+        }
 
         Ok(())
     }

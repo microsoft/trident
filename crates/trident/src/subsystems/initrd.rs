@@ -22,6 +22,10 @@ impl Subsystem for InitrdSubsystem {
             debug!("Skipping initrd regeneration because UKI is in use");
             return Ok(());
         }
+        if ctx.spec.storage.raw_cosi {
+            debug!("Skipping initrd regeneration because raw COSI is in use");
+            return Ok(());
+        }
 
         // We could autodetect configurations on the fly, but for more predictable
         // behavior and speedier subsequent boots, we will regenerate the host-specific initrd
