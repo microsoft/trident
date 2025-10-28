@@ -371,7 +371,7 @@ func updateExtensions(osConfig map[string]interface{}) error {
 	return nil
 }
 
-// Download the new extension image and calcualte SHA384 hash to populate the
+// Download the new extension image and calculate SHA384 hash to populate the
 // updated Host Configuration.
 func pullImageAndCalculateSha384(imageUrl string) (string, error) {
 	url := strings.TrimPrefix(imageUrl, "oci://")
