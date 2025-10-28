@@ -91,6 +91,7 @@ steps:
         done
 
         # Set variable for sysext and confext repositories
+        echo "##vso[task.setvariable variable=TAG_BASE]$tag_base"
         echo "##vso[task.setvariable variable=SYSEXT_REPO]$sysext_repository_name"
         echo "##vso[task.setvariable variable=CONFEXT_REPO]$confext_repository_name"
     displayName: "Push extension images to ACR"
