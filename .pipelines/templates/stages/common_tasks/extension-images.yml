@@ -18,24 +18,7 @@ steps:
         exit 0
       fi
 
-      # Create two sysexts and confexts each.
-      for i in 1 2; do
-        # Create sysext extension-release file
-        mkdir -p sysext-image-$i/usr/lib/extension-release.d
-        printf 'ID=_any\nSYSEXT_ID=test-sysext\nSYSEXT_VERSION_ID=%s.0.0\nARCHITECTURE=x86-64\n' "$i" > sysext-image-$i/usr/lib/extension-release.d/extension-release.test-sysext
-
-        # Create confext extension-release file
-        mkdir -p confext-image-$i/etc/extension-release.d
-        printf 'ID=_any\nCONFEXT_ID=test-confext\nCONFEXT_VERSION_ID=%s.0.0\nARCHITECTURE=x86-64\n' "$i" > confext-image-$i/etc/extension-release.d/extension-release.test-confext
-
-        # Create DDI files
-        mksquashfs sysext-image-$i test-sysext-$i.raw -comp xz -Xbcj x86 -noappend -no-xattrs
-        mksquashfs confext-image-$i test-confext-$i.raw -comp xz -Xbcj x86 -noappend -no-xattrs
-      done
-
-      # Verify the images were created
-      ls -la *.raw
-      echo "Extension images created successfully!"
+      ./bin/storm-trident helper build-extension-images --num-clones 2
 
     displayName: "Build test sysext and confext images"
     workingDirectory: $(Build.SourcesDirectory)
