@@ -164,8 +164,8 @@ def main():
         add_extension_images(
             args.hostconfig,
             args.ociSysextUrl,
-            args.sysextHash,
             args.ociConfextUrl,
+            args.sysextHash,
             args.confextHash,
         )
 
