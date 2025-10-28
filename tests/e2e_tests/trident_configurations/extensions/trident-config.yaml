@@ -59,3 +59,4 @@ os:
     - name: testing-user
       sshPublicKeys: []
       sshMode: key-only
+  # sysexts and confexts sections are added in pipeline
