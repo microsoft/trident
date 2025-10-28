@@ -26,6 +26,7 @@ type AbUpdateHelper struct {
 		StageAbUpdate        bool     `short:"s" help:"Controls whether A/B update should be staged."`
 		FinalizeAbUpdate     bool     `short:"f" help:"Controls whether A/B update should be finalized."`
 		EnvVars              []string `short:"e" help:"Environment variables. Multiple vars can be passed as a list of comma-separated strings, or this flag can be used multiple times. Each var should include the env var name, i.e. HTTPS_PROXY=http://0.0.0.0."`
+		ExpectFailedCommit   bool     `help:"Controls whether this test treats failed commits as successful." default:"false"`
 	}
 
 	client *ssh.Client
@@ -275,8 +276,9 @@ func (h *AbUpdateHelper) checkTridentService(tc storm.TestCase) error {
 	time.Sleep(time.Second * 10)
 
 	// Reconnect via SSH to the updated OS
+	endTime := time.Now().Add(h.args.TimeoutDuration())
 	_, err := utils.Retry(
-		h.args.TimeoutDuration(),
+		time.Until(endTime),
 		time.Second*5,
 		func(attempt int) (*bool, error) {
 			logrus.Infof("SSH dial to '%s' (attempt %d)", h.args.SshCliSettings.FullHost(), attempt)
@@ -289,7 +291,10 @@ func (h *AbUpdateHelper) checkTridentService(tc storm.TestCase) error {
 
 			logrus.Infof("SSH dial to '%s' succeeded", h.args.SshCliSettings.FullHost())
 
-			err = utils.CheckTridentService(client, h.args.Env, h.args.TimeoutDuration())
+			// Enable tests to handle success and failure of commit service
+			// depending on configuration
+			expectSuccessfulCommit := !h.args.ExpectFailedCommit
+			err = utils.CheckTridentService(client, h.args.Env, time.Until(endTime), expectSuccessfulCommit)
 			if err != nil {
 				logrus.Warnf("Trident service is not in expected state: %s", err)
 				return nil, err
