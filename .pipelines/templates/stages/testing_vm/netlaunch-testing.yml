@@ -217,10 +217,17 @@ stages:
             displayName: "🚀 Run netlaunch for testing"
             timeoutInMinutes: 20
 
+          - template: ../testing_common/capture-screenshot.yml
+            parameters:
+              screenshotName: "install"
+              deploymentEnvironment: virtualMachine
+              forceRun: true
+
           - template: ../testing_common/display-deployment-logs.yml
             parameters:
               deploymentLogPath: $(tridentSourceDirectory)/logstream-full.log
               displayName: "📄Display clean install logs"
+              forceRun: true
 
           - bash: |
               set -ux

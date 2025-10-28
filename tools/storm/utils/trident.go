@@ -19,10 +19,12 @@ const (
 	DOCKER_IMAGE_PATH = "/var/lib/trident/trident-container.tar.gz"
 )
 
-func BuildTridentContainerCommand(env string) string {
+func BuildTridentContainerCommand(envVars []string) string {
 	cmd := DOCKER_COMMAND_BASE
-	if env != "" {
-		cmd += fmt.Sprintf("--env %s ", env)
+	if len(envVars) != 0 {
+		for _, envVar := range envVars {
+			cmd += fmt.Sprintf("--env '%s' ", envVar)
+		}
 	}
 	cmd += TRIDENT_CONTAINER
 	return cmd
@@ -38,13 +40,13 @@ func BuildTridentContainerCommand(env string) string {
 // - The SSH session cannot be created
 // - There was an error starting the command.
 // - Some IO error occurred while reading stdout or stderr.
-func InvokeTrident(env TridentEnvironment, client *ssh.Client, proxy string, arguments string) (*SshCmdOutput, error) {
+func InvokeTrident(env TridentEnvironment, client *ssh.Client, envVars []string, arguments string) (*SshCmdOutput, error) {
 	var cmd string
 	switch env {
 	case TridentEnvironmentHost:
 		cmd = TRIDENT_BINARY
 	case TridentEnvironmentContainer:
-		cmd = BuildTridentContainerCommand(proxy)
+		cmd = BuildTridentContainerCommand(envVars)
 	case TridentEnvironmentNone:
 		return nil, fmt.Errorf("trident service is not running")
 	default:
@@ -52,9 +54,12 @@ func InvokeTrident(env TridentEnvironment, client *ssh.Client, proxy string, arg
 	}
 
 	var cmdPrefix string
-	if proxy != "" {
-		envVar := strings.Split(proxy, "=")[0]
-		cmdPrefix = fmt.Sprintf("%s sudo --preserve-env=%s", proxy, envVar)
+	if len(envVars) != 0 {
+		var quotedEnvVars = ""
+		for _, v := range envVars {
+			quotedEnvVars += fmt.Sprintf("'%s' ", v)
+		}
+		cmdPrefix = fmt.Sprintf("sudo %s", quotedEnvVars)
 	} else {
 		cmdPrefix = "sudo"
 	}

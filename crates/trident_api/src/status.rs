@@ -1,10 +1,13 @@
 use std::{
     collections::{BTreeMap, HashMap},
-    fmt::{Display, Formatter, Result},
+    fmt::{self, Display, Formatter},
     path::PathBuf,
 };
 
+use anyhow::{bail, Context};
+use log::{debug, info};
 use serde::{Deserialize, Serialize};
+use serde_yaml::Value;
 use strum_macros::EnumIter;
 use uuid::Uuid;
 
@@ -111,10 +114,165 @@ pub enum AbVolumeSelection {
 }
 
 impl Display for AbVolumeSelection {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             AbVolumeSelection::VolumeA => write!(f, "Volume A"),
             AbVolumeSelection::VolumeB => write!(f, "Volume B"),
         }
+    }
+}
+
+fn fix_host_config(yaml: &mut Value) -> Result<(), anyhow::Error> {
+    let Value::Mapping(ref mut m) = yaml else {
+        bail!("Host config is not a mapping")
+    };
+
+    if let Some(Value::Mapping(mut e)) = m.remove("osImage") {
+        debug!("Converting 'osImage' host status section to 'image'");
+        e.remove("type");
+        e.insert("sha384".into(), Value::String("ignored".into()));
+        m.insert("image".into(), e.into());
+    }
+
+    if let Some(Value::Mapping(ref mut os)) = m.get_mut("os") {
+        if let Some(n) = os.remove("network") {
+            debug!("Converting 'os.network' host status section to 'os.netplan'");
+            os.insert("netplan".into(), n);
+        }
+    }
+
+    if let Some(Value::Mapping(ref mut t)) = m.get_mut("trident") {
+        debug!("Removing deprecated 'trident.selfUpgrade' field from host status");
+        t.remove("selfUpgrade");
+    }
+
+    if let Some(Value::Mapping(ref mut storage)) = m.get_mut("storage") {
+        if let Some(Value::Sequence(ref mut fs_list)) = storage.get_mut("filesystems") {
+            for fs in fs_list.iter_mut() {
+                if let Value::Mapping(ref mut fs_map) = fs {
+                    if let Some(Value::Mapping(s)) = fs_map.remove("source") {
+                        if s.get("type") == Some(&Value::String("create".into()))
+                            || s.get("type") == Some(&Value::String("new".into()))
+                        {
+                            bail!(
+                                "Cannot convert old host status with 'create' or 'new' filesystem source"
+                            );
+                        }
+                    }
+
+                    fs_map.remove("type");
+                }
+            }
+        }
+
+        let mut extra_verity = Vec::new();
+        let mut extra_filesystems = Vec::new();
+
+        if let Some(Value::Sequence(ref mut fs_list)) = storage.remove("verityFilesystems") {
+            for fs in fs_list.iter_mut() {
+                match fs {
+                    Value::Mapping(ref mut fs_map) => {
+                        let data_device_id = fs_map.remove("dataDeviceId").context("Cannot convert old host status with verity filesystem missing dataDeviceId")?;
+                        let hash_device_id = fs_map.remove("hashDeviceId").context("Cannot convert old host status with verity filesystem missing hashDeviceId")?;
+                        let mount_point = fs_map.remove("mountPoint").context("Cannot convert old host status with verity filesystem missing mountPoint")?;
+                        let name = fs_map.remove("name").context(
+                            "Cannot convert old host status with verity filesystem missing name",
+                        )?;
+
+                        let id = format!("verity{}", extra_verity.len());
+
+                        extra_verity.push(Value::Mapping(
+                            vec![
+                                ("name".into(), name),
+                                ("id".into(), Value::String(id.clone())),
+                                ("dataDeviceId".into(), data_device_id),
+                                ("hashDeviceId".into(), hash_device_id),
+                            ]
+                            .into_iter()
+                            .collect(),
+                        ));
+
+                        extra_filesystems.push(Value::Mapping(
+                            vec![
+                                ("deviceId".into(), Value::String(id)),
+                                ("mountPoint".into(), mount_point),
+                            ]
+                            .into_iter()
+                            .collect(),
+                        ));
+                    }
+                    _ => {
+                        bail!("Cannot convert old host status with non-mapping verity filesystem");
+                    }
+                }
+            }
+        }
+
+        if !extra_verity.is_empty() {
+            debug!("Adding converted verity devices to host status");
+            storage.insert("verity".into(), Value::Sequence(extra_verity));
+        }
+        if !extra_filesystems.is_empty() {
+            debug!("Adding converted verity filesystems to host status");
+            if let Some(Value::Sequence(ref mut fs_list)) = storage.get_mut("filesystems") {
+                fs_list.extend(extra_filesystems);
+            } else {
+                storage.insert("filesystems".into(), Value::Sequence(extra_filesystems));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn fix_old_host_status(yaml: &mut Value) -> Result<(), anyhow::Error> {
+    let Value::Mapping(ref mut m) = yaml else {
+        bail!("Host status is not a mapping");
+    };
+
+    info!("Attempting to fix old host status format");
+
+    fix_host_config(
+        m.get_mut("spec")
+            .context("Missing 'spec' field in host status")?,
+    )?;
+
+    if let Some(ref mut spec_old @ Value::Mapping(_)) = m.get_mut("specOld") {
+        fix_host_config(spec_old).context("Invalid 'specOld' field in host status")?;
+    }
+
+    Ok(())
+}
+
+pub fn decode_host_status(mut yaml: Value) -> Result<HostStatus, serde_yaml::Error> {
+    let decoded = serde_yaml::from_value(yaml.clone());
+    if let Ok(host_status) = decoded {
+        return Ok(host_status);
+    }
+
+    if let Err(e) = fix_old_host_status(&mut yaml) {
+        info!("Failed to fixup old Host Status format: {e}");
+        return decoded;
+    }
+
+    match serde_yaml::from_value(yaml) {
+        Ok(hs) => Ok(hs),
+        Err(e) => {
+            info!("Failed to parse Host Status after fixup: {e}");
+            decoded
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn load_old_format() {
+        let old_yaml = include_str!("test/preview12_host_status.yaml");
+        let yaml: Value = serde_yaml::from_str(old_yaml).unwrap();
+
+        let hs = decode_host_status(yaml).unwrap();
+        hs.spec.validate().unwrap();
     }
 }

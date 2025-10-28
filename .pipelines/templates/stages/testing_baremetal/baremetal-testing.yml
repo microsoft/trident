@@ -306,6 +306,7 @@ stages:
             parameters:
               deploymentLogPath: ${{ variables.TRIDENT_SOURCE_DIR }}/logstream-full.log
               displayName: "Display clean install logs"
+              forceRun: true
 
           - bash: |
               CLEAN_INSTALL_LOG="${{ variables.TRIDENT_SOURCE_DIR }}/clean-install-deployment.log"

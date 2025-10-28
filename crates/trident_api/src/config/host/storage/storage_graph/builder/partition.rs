@@ -14,7 +14,7 @@ use crate::{
             references::{ReferenceKind, SpecialReferenceKind},
             types::HostConfigBlockDevice,
         },
-        Partition, PartitionSize,
+        Partition, PartitionSize, PartitionType,
     },
     storage_graph::{
         containers::AllowBlockList, graph, node::BlockDevice, rules::expected_partition_type,
@@ -317,7 +317,9 @@ pub(super) fn check_verity_partition_types(
                 }
             })?;
 
-        if hash_dev_partition_type != expected_hash_partition_type {
+        if hash_dev_partition_type != expected_hash_partition_type
+            && expected_hash_partition_type != PartitionType::LinuxGeneric
+        {
             return Err(StorageGraphBuildError::InvalidVerityHashPartitionType {
                 node_id: dev.name.clone(),
                 data_dev_partition_type,

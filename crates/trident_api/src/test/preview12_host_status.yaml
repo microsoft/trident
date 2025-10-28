@@ -1,0 +1,146 @@
+abActiveVolume: volume-a
+diskUuids:
+  disk-0: f4265b47-09cd-4d5e-aa92-684fb783f817
+installIndex: 0
+partitionPaths:
+  esp: disk-0-partition-0-path
+  boot-a: disk-0-partition-1-path
+  root-a: disk-0-partition-2-path
+  boot-b: disk-0-partition-3-path
+  root-b: disk-0-partition-4-path
+  abupdate: disk-0-partition-5-path
+  root-hash-a: disk-0-partition-6-path
+  root-hash-b: disk-0-partition-7-path
+  trident: disk-0-partition-8-path
+  trident-overlay-a: disk-0-partition-9-path
+  trident-overlay-b: disk-0-partition-10-path
+  log: disk-0-partition-11-path
+  data: disk-0-partition-12-path  
+servicingState: provisioned
+spec:
+  os:
+    hostname: iotedge-vm
+    network: null
+    users: []
+  scripts:
+    postConfigure:
+    - content: mkdir -p /var/lib/trident-overlay/etc-rw/upper && mkdir -p /var/lib/trident-overlay/etc-rw/work
+      name: rw-overlay
+      runOn:
+      - all
+  storage:
+    abUpdate:
+      volumePairs:
+      - id: boot
+        volumeAId: boot-a
+        volumeBId: boot-b
+      - id: root
+        volumeAId: root-a
+        volumeBId: root-b
+      - id: root-hash
+        volumeAId: root-hash-a
+        volumeBId: root-hash-b
+      - id: trident-overlay
+        volumeAId: trident-overlay-a
+        volumeBId: trident-overlay-b
+    disks:
+    - device: /dev/sda
+      id: disk-0
+      partitionTableType: gpt
+      partitions:
+      - id: esp
+        size: 8M
+        type: esp
+      - id: boot-a
+        size: 192M
+        type: xbootldr
+      - id: root-a
+        size: 4G
+        type: linux-generic
+      - id: boot-b
+        size: 192M
+        type: xbootldr
+      - id: root-b
+        size: 4G
+        type: linux-generic
+      - id: abupdate
+        size: 2816M
+        type: linux-generic
+      - id: root-hash-a
+        size: 256M
+        type: root-verity
+      - id: root-hash-b
+        size: 256M
+        type: root-verity
+      - id: trident
+        size: 256M
+        type: linux-generic
+      - id: trident-overlay-a
+        size: 256M
+        type: linux-generic
+      - id: trident-overlay-b
+        size: 256M
+        type: linux-generic
+      - id: log
+        size: 1G
+        type: linux-generic
+      - id: data
+        size: 1G
+        type: linux-generic
+    filesystems:
+    - deviceId: esp
+      mountPoint:
+        options: umask=0077
+        path: /boot/efi
+      source:
+        format: raw-zst
+        sha256: ignored
+        type: esp-image
+        url: file:///dev/null
+      type: vfat
+    - deviceId: boot
+      mountPoint:
+        options: defaults
+        path: /boot
+      type: ext4
+    - deviceId: trident
+      mountPoint:
+        options: defaults
+        path: /var/lib/trident
+      type: ext4
+    - deviceId: trident-overlay
+      mountPoint:
+        options: defaults
+        path: /var/lib/trident-overlay
+      type: ext4
+    - deviceId: abupdate
+      mountPoint:
+        options: noauto
+        path: /var/.eflow/abupdate
+      type: ext4
+    - deviceId: log
+      mountPoint:
+        options: defaults
+        path: /var/log
+      type: ext4
+    - deviceId: data
+      mountPoint:
+        options: defaults
+        path: /var
+      type: ext4
+    verityFilesystems:
+    - dataDeviceId: root
+      dataImage:
+        format: raw-zst
+        sha256: ignored
+        url: file:///dev/null
+      hashDeviceId: root-hash
+      hashImage:
+        format: raw-zst
+        sha256: ignored
+        url: file:///dev/null
+      mountPoint:
+        options: defaults,ro
+        path: /
+      name: root
+      type: ext4
