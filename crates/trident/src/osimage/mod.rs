@@ -137,7 +137,7 @@ impl OsImage {
     }
 
     /// Find the mount point which contains the given path.
-    pub(crate) fn path_to_filesystem(&self, path: &Path) -> Option<OsImageFileSystem> {
+    pub(crate) fn path_to_filesystem(&self, path: &Path) -> Option<OsImageFileSystem<'_>> {
         self.filesystems()
             .filter(|fs| path.starts_with(&fs.mount_point))
             .max_by_key(|fs| fs.mount_point.components().count())
@@ -153,7 +153,7 @@ impl OsImage {
     }
 
     /// Returns the ESP filesystem image.
-    pub(crate) fn esp_filesystem(&self) -> Result<OsImageFileSystem, Error> {
+    pub(crate) fn esp_filesystem(&self) -> Result<OsImageFileSystem<'_>, Error> {
         match &self.0 {
             OsImageInner::Cosi(cosi) => cosi.esp_filesystem(),
             #[cfg(test)]
@@ -162,7 +162,7 @@ impl OsImage {
     }
 
     /// Returns an iterator over all images that are NOT the ESP filesystem image.
-    pub(crate) fn filesystems(&self) -> Box<dyn Iterator<Item = OsImageFileSystem> + '_> {
+    pub(crate) fn filesystems(&self) -> Box<dyn Iterator<Item = OsImageFileSystem<'_>> + '_> {
         match &self.0 {
             OsImageInner::Cosi(cosi) => Box::new(cosi.filesystems()),
             #[cfg(test)]
@@ -171,7 +171,7 @@ impl OsImage {
     }
 
     /// Returns the root filesystem image.
-    pub(crate) fn root_filesystem(&self) -> Option<OsImageFileSystem> {
+    pub(crate) fn root_filesystem(&self) -> Option<OsImageFileSystem<'_>> {
         self.filesystems()
             .find(|fs| fs.mount_point == Path::new(ROOT_MOUNT_POINT_PATH))
     }

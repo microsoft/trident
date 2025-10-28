@@ -8,8 +8,6 @@ use std::{
 
 use anyhow::{anyhow, bail, Context, Error};
 use log::{debug, info, trace, warn};
-use serde::{Deserialize, Serialize};
-use strum_macros::{Display, EnumString};
 
 use osutils::{block_devices, dependencies::Dependency, mdadm, udevadm};
 use trident_api::{
@@ -22,21 +20,6 @@ use trident_api::{
 use crate::engine::{storage::common::SetRelationship, EngineContext};
 
 use super::common;
-
-#[derive(Serialize, Deserialize, Clone, Debug, Hash, Eq, PartialEq, Display, EnumString)]
-#[serde(rename_all = "kebab-case")]
-#[serde(deny_unknown_fields)]
-pub(super) enum RaidState {
-    /// in a clean, healthy state
-    #[strum(serialize = "clean")]
-    Clean,
-    /// active and operational
-    #[strum(serialize = "active")]
-    Active,
-    /// IO error
-    #[strum(serialize = "inactive")]
-    Inactive,
-}
 
 fn create(config: SoftwareRaidArray, ctx: &EngineContext) -> Result<(), Error> {
     let devices = &config.devices;
