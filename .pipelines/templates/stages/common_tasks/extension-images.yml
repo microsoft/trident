@@ -26,7 +26,7 @@ steps:
 
         # Create confext extension-release file
         mkdir -p confext-image-$i/etc/extension-release.d
-        printf 'ID=_any\nCONFEXT_ID=test-confext\ncCONFEXT_VERSION_ID=%s.0.0\nARCHITECTURE=x86-64\n' "$i" > confext-image-$i/usr/lib/extension-release.d/extension-release.test-confext
+        printf 'ID=_any\nCONFEXT_ID=test-confext\nCONFEXT_VERSION_ID=%s.0.0\nARCHITECTURE=x86-64\n' "$i" > confext-image-$i/etc/extension-release.d/extension-release.test-confext
 
         # Create DDI files
         mksquashfs sysext-image-$i test-sysext-$i.raw -comp xz -Xbcj x86 -noappend -no-xattrs
