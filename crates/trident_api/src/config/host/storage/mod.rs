@@ -177,23 +177,6 @@ impl Storage {
         &self,
         require_root_mount_point: bool,
     ) -> Result<StorageGraph, HostConfigurationStaticValidationError> {
-        // if self.raw_cosi {
-        //     if self.encryption.is_some()
-        //         || self.raid != Raid::default()
-        //         || self.ab_update.is_some()
-        //         || !self.filesystems.is_empty()
-        //         || self.disks.len() != 1
-        //         || !self.disks[0].partitions.is_empty()
-        //         || !self.disks[0].adopted_partitions.is_empty()
-        //         || !self.verity.is_empty()
-        //         || !self.swap.is_empty()
-        //     {
-        //         return Err(HostConfigurationStaticValidationError::InconsistentStorageMethod);
-        //     }
-
-        //     return Ok(StorageGraph::default());
-        // }
-
         // Check basic constraints
 
         if let Some(encryption) = &self.encryption {

@@ -78,9 +78,6 @@ pub enum HostConfigurationStaticValidationError {
     )]
     ImageApiMixed,
 
-    #[error("If storage.fromCosi is set, configuration cannot also specify storage settings")]
-    InconsistentStorageMethod,
-
     #[error(transparent)]
     InvalidStorageGraph(#[from] StorageGraphBuildError),
 
