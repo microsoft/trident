@@ -24,7 +24,7 @@ steps:
     workingDirectory: $(Build.SourcesDirectory)
     retryCountOnTaskFailure: 3
 
-  - base: |
+  - bash: |
       set -eux
 
       if [ ${{ parameters.config }} != 'extensions' ]; then
