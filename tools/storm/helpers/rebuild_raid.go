@@ -1,0 +1,422 @@
+package helpers
+
+import (
+	"fmt"
+	"os"
+	"os/exec"
+	"strings"
+	"time"
+	"tridenttools/storm/utils"
+
+	"github.com/microsoft/storm"
+	"github.com/sirupsen/logrus"
+	"gopkg.in/yaml.v2"
+	"libvirt.org/go/libvirtxml"
+)
+
+type RebuildRaidHelper struct {
+	args struct {
+		utils.SshCliSettings  `embed:""`
+		TridentConfigPath     string `help:"Path to the Trident configuration file." type:"string"`
+		DeploymentEnvironment string `help:"Deployment environment (e.g., bareMetal, virtualMachine)." type:"string" default:"virtualMachine"`
+		VmName                string `help:"Name of VM." type:"string" default:"virtdeploy-vm-0"`
+		Disk                  string `help:"Disk to fail in RAID array." type:"string" default:"/dev/sdb"`
+		SkipRebuildRaid       bool   `help:"Skip the rebuild RAID step." type:"bool" default:"false"`
+		ArtifactsFolder       string `help:"Folder to copy log files into." type:"string" default:""`
+	}
+}
+
+func (h RebuildRaidHelper) Name() string {
+	return "rebuild-raid"
+}
+
+func (h *RebuildRaidHelper) Args() any {
+	return &h.args
+}
+
+func (h *RebuildRaidHelper) RegisterTestCases(r storm.TestRegistrar) error {
+	r.RegisterTestCase("check-if-needed", h.checkIfNeeded)
+	r.RegisterTestCase("fail-bm-raids", h.failBaremetalRaids)
+	r.RegisterTestCase("shutdown-vm", h.shutdownVirtualMachine)
+	return nil
+}
+
+func (h *RebuildRaidHelper) checkIfNeeded(tc storm.TestCase) error {
+
+	tridentConfigContents, err := os.ReadFile(h.args.TridentConfigPath)
+	if err != nil {
+		logrus.Tracef("Failed to read trident config file %s: %v", h.args.TridentConfigPath, err)
+		return err
+	}
+	tridentConfig := make(map[string]interface{})
+	err = yaml.UnmarshalStrict(tridentConfigContents, &tridentConfig)
+	if err != nil {
+		logrus.Tracef("Failed to parse trident config file %s: %v", h.args.TridentConfigPath, err)
+		return err
+	}
+
+	raidExists := tridentConfig["storage"].(map[string]interface{})["raid"] != nil
+	usrVerity := false
+	if verityList, ok := tridentConfig["storage"].(map[string]interface{})["verity"].([]interface{}); ok {
+		if len(verityList) > 0 {
+			if firstVerity, ok := verityList[0].(map[string]interface{}); ok {
+				if name, ok := firstVerity["name"].(string); ok && name == "usr" {
+					usrVerity = true
+				}
+			}
+		}
+	}
+
+	// TODO (12277): Support for UKI + Rebuild
+	if raidExists && !usrVerity {
+		logrus.Infof("Trident config requires Rebuild testing")
+	} else {
+		logrus.Infof("Trident config does not require Rebuild testing")
+		h.args.SkipRebuildRaid = true
+	}
+	return nil
+}
+
+func (h *RebuildRaidHelper) failBaremetalRaids(tc storm.TestCase) error {
+	if h.args.DeploymentEnvironment != "bareMetal" {
+		logrus.Infof("Skipping fail bare metal raids step for deployment environment: %s", h.args.DeploymentEnvironment)
+		return nil
+	}
+	logrus.Infof("Failing bare metal raids")
+
+	// # Set up SSH client
+	// connection = create_ssh_connection(ip_address, user_name, keys_file_path)
+	var err error
+	client, err := utils.OpenSshClient(h.args.SshCliSettings)
+	if err != nil {
+		tc.Error(err)
+	}
+
+	session, err := client.NewSession()
+	if err != nil {
+		tc.Error(err)
+	}
+	defer session.Close()
+
+	// ssh -o StrictHostKeyChecking=no -i ${{ parameters.sshKeyPath }} ${{ parameters.userName }}@${{ parameters.hostIp }} "sudo dd if=/dev/zero of=/dev/sdb bs=512 count=1"
+	output, err := session.CombinedOutput("sudo dd if=/dev/zero of=/dev/sdb bs=512 count=1")
+	if err != nil {
+		tc.Error(err)
+	}
+	logrus.Debugf("Output of zeroing /dev/sdb:\n%s", string(output))
+	// ssh -o StrictHostKeyChecking=no -i ${{ parameters.sshKeyPath }} ${{ parameters.userName }}@${{ parameters.hostIp }} "echo 'label: gpt' | sudo sfdisk /dev/sdb --force"
+	output, err = session.CombinedOutput("echo 'label: gpt' | sudo sfdisk /dev/sdb --force")
+	if err != nil {
+		tc.Error(err)
+	}
+	logrus.Debugf("Output of partitioning /dev/sdb:\n%s", string(output))
+
+	// Fail the RAID devices
+	// python3 $(Build.SourcesDirectory)/tests/e2e_tests/helpers/fail_raid_devices.py \
+	// 	--ip-address ${{ parameters.hostIp }} \
+	// 	--user-name ${{ parameters.userName }} \
+	// 	--keys-file-path ${{ parameters.sshKeyPath }}
+	// def get_raid_arrays(connection):
+	// 	"""
+	// 	Get the list of RAID arrays and their devices on the host.
+	// 	"""
+	// 	try:
+	// 		# Getting the list of RAID arrays
+	// 		result = run_ssh_command(
+	// 			connection,
+	// 			"mdadm --detail --scan",
+	// 			use_sudo=True,
+	// 		)
+	output, err = session.CombinedOutput("sudo mdadm --detail --scan")
+	if err != nil {
+		tc.Error(err)
+	}
+	logrus.Debugf("Output of mdadm --detail --scan:\n%s", string(output))
+	// 		# Sample output:
+	// 		#  ARRAY /dev/md/esp-raid metadata=1.0 name=trident-mos-testimage:esp-raid
+	// 		#  UUID=42dd297c:7e0c5a24:6b792c94:238a99f5
+
+	// 		raid_arrays = []
+	raidArrays := []string{}
+	// 		for line in result.splitlines():
+	for _, line := range strings.Split(string(output), "\n") {
+		// 			if line.strip().startswith("ARRAY"):
+		if strings.HasPrefix(strings.TrimSpace(line), "ARRAY") {
+			// 			parts = line.split()
+			parts := strings.Fields(line)
+			// 			if len(parts) > 1 and parts[0] == "ARRAY":
+			if len(parts) > 1 && parts[0] == "ARRAY" {
+				// 				raid_arrays.append(parts[1])
+				raidArrays = append(raidArrays, parts[1])
+			}
+			// 			if len(parts) > 1 and parts[0] == "ARRAY":
+			if len(parts) > 1 && parts[0] == "ARRAY" {
+				// 				raid_arrays.append(parts[1])
+				raidArrays = append(raidArrays, parts[1])
+			}
+		}
+	}
+	// 		raid_details = {}
+	raidDetails := make(map[string][]string)
+	// 		for raid in raid_arrays:
+	for _, raid := range raidArrays {
+		// 			# Getting detailed information for each RAID array
+		// 			array_result = run_ssh_command(
+		// 				connection,
+		// 				f"mdadm --detail {raid}",
+		// 				use_sudo=True,
+		// 			)
+		arrayResult, err := session.CombinedOutput(
+			"sudo mdadm --detail " + raid,
+		)
+		if err != nil {
+			tc.Error(err)
+		}
+		// 			# Sample output:
+
+		// 			# /dev/md/esp-raid:
+		// 			#            Version : 1.0
+		// 			#      Creation Time : Thu Nov 14 18:17:50 2024
+		// 			#         Raid Level : raid1
+		// 			#         Array Size : 1048512 (1023.94 MiB 1073.68 MB)
+		// 			#      Used Dev Size : 1048512 (1023.94 MiB 1073.68 MB)
+		// 			#       Raid Devices : 2
+		// 			#      Total Devices : 2
+		// 			#        Persistence : Superblock is persistent
+
+		// 			#        Update Time : Thu Nov 14 18:18:49 2024
+		// 			#              State : clean
+		// 			#     Active Devices : 2
+		// 			#    Working Devices : 2
+		// 			#     Failed Devices : 0
+		// 			#      Spare Devices : 0
+
+		// 			# Consistency Policy : resync
+
+		// 			#               Name : trident-mos-testimage:esp-raid
+		// 			#               UUID : 6d52553e:ee0662a3:24761c4b:e3e6885b
+		// 			#             Events : 19
+
+		// 			#     Number   Major   Minor   RaidDevice State
+		// 			#        0       8        1        0      active sync   /dev/sda1
+		// 			#        1       8       17        1      active sync   /dev/sdb1
+
+		// 			details = array_result.splitlines()
+		details := strings.Split(string(arrayResult), "\n")
+		// 			# Extracting devices
+		// 			devices = []
+		devices := []string{}
+		// 			devices_section = False
+		devicesSection := false
+		// 			for line in details:
+		for _, line := range details {
+			// 				if line.strip().startswith("Number"):
+			if strings.HasPrefix(strings.TrimSpace(line), "Number") {
+				// 					devices_section = True
+				devicesSection = true
+				// 					continue
+				continue
+			}
+			// 				if devices_section and line.strip():
+			if devicesSection && strings.TrimSpace(line) != "" {
+				// 					parts = line.split()
+				parts := strings.Fields(line)
+				// 					if (
+				// 						len(parts) >= 7
+				// 					):  # Ensure we have enough parts to avoid index errors
+				if len(parts) >= 7 {
+					// 						devices.append(parts[6])
+					devices = append(devices, parts[6])
+				}
+			}
+		}
+		// 			raid_details[raid] = devices
+		raidDetails[raid] = devices
+	}
+	// 		return raid_details
+
+	// 	except Exception as e:
+	// 		raise Exception(f"Error getting RAID arrays: {e}")
+
+	// def fail_raid_array(connection, raid, device):
+	failRaidArray := func(raid string, device string) error {
+		// 	"""
+		// 	Fail a device in a RAID array.
+		// 	"""
+		// 	try:
+		// 		run_ssh_command(
+		// 			connection,
+		// 			f"mdadm --fail {raid} {device}",
+		// 			use_sudo=True,
+		// 		)
+		output, err := session.CombinedOutput(
+			"sudo mdadm --fail " + raid + " " + device,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to fail device %s in RAID array %s: %w\nOutput: %s", device, raid, err, string(output))
+		}
+		// 		print(f"Device {device} failed in RAID array {raid}")
+		logrus.Infof("Device %s failed in RAID array %s", device, raid)
+
+		// 	except Exception as e:
+		// 		raise Exception(f"Error failing RAID array {raid}: {e}")
+		return nil
+	}
+	// raid_arrays = get_raid_arrays(connection)
+	// if raid_arrays:
+	if len(raidDetails) > 0 {
+		// 	for raid, devices in raid_arrays.items():
+		for raid, devices := range raidDetails {
+			// 		for device in devices:
+			for _, device := range devices {
+				// 			if device.startswith(disk):
+				if strings.HasPrefix(device, h.args.Disk) {
+					// 				# fail the device in the RAID array
+					// 				fail_raid_array(connection, raid, device)
+					err := failRaidArray(raid, device)
+					if err != nil {
+						tc.Error(err)
+					}
+				}
+			}
+		}
+		// else:
+	} else {
+		// 	print("No RAID arrays found on the host.")
+		logrus.Infof("No RAID arrays found on the host.")
+	}
+
+	// ssh -o StrictHostKeyChecking=no -i ${{ parameters.sshKeyPath }} ${{ parameters.userName }}@${{ parameters.hostIp }} "sudo reboot"
+	output, err = session.CombinedOutput("sudo reboot")
+	logrus.Tracef("Output of `sudo reboot` (%+v):\n%s", err, string(output))
+	return nil
+}
+
+func (h *RebuildRaidHelper) shutdownVirtualMachine(tc storm.TestCase) error {
+	if h.args.DeploymentEnvironment != "virtualMachine" {
+		logrus.Infof("Skipping shutdown VM step for deployment environment: %s", h.args.DeploymentEnvironment)
+		return nil
+	}
+	logrus.Infof("Shutting down virtual machine %s", h.args.VmName)
+
+	var err error
+	client, err := utils.OpenSshClient(h.args.SshCliSettings)
+	if err != nil {
+		tc.Error(err)
+	}
+
+	session, err := client.NewSession()
+	if err != nil {
+		tc.Error(err)
+	}
+	defer session.Close()
+
+	//   echo "Efibootmgr entries in the VM."
+	logrus.Info("Efibootmgr entries in the VM.")
+	//   ssh -o StrictHostKeyChecking=no -i ${{ parameters.sshKeyPath }} ${{ parameters.userName }}@${{ parameters.hostIp }} "sudo efibootmgr"
+	output, err := session.CombinedOutput("sudo efibootmgr")
+	if err != nil {
+		tc.Error(err)
+	}
+	logrus.Infof("Output of efibootmgr:\n%s", string(output))
+
+	//   sudo virsh shutdown virtdeploy-vm-0
+	virshOutput, virshErr := exec.Command("sudo", "virsh", "shtudown", h.args.VmName).CombinedOutput()
+	logrus.Tracef("virsh shutdown output: %s\n%v", string(virshOutput), virshErr)
+	if virshErr != nil {
+		tc.Error(virshErr)
+	}
+
+	//   sudo rm -f /var/lib/libvirt/images/virtdeploy-pool/virtdeploy-vm-0-1-volume.qcow2
+	rmOutput, rmErr := exec.Command("sudo", "rm", "-f", fmt.Sprintf("/var/lib/libvirt/images/virtdeploy-pool/%s-1-volume.qcow2", h.args.VmName)).CombinedOutput()
+	logrus.Tracef("rm volume output: %s\n%v", string(rmOutput), rmErr)
+	if rmErr != nil {
+		tc.Error(rmErr)
+	}
+	//   sudo qemu-img create -f qcow2 /var/lib/libvirt/images/virtdeploy-pool/virtdeploy-vm-0-1-volume.qcow2 16G
+	createOutput, createErr := exec.Command("sudo", "qemu-img", "create", "-f", "qcow2", fmt.Sprintf("/var/lib/libvirt/images/virtdeploy-pool/%s-1-volume.qcow2", h.args.VmName), "16G").CombinedOutput()
+	logrus.Tracef("qemu-img create output: %s\n%v", string(createOutput), createErr)
+	if createErr != nil {
+		tc.Error(createErr)
+	}
+
+	//   # Name of the domain
+	//   DOMAIN_NAME="virtdeploy-vm-0"
+
+	//   # Initial sleep time
+	//   sleep_time=10
+	sleepTime := time.Duration(10) * time.Second
+
+	//   # Check the state of the domain and run the loop
+	//   for (( i=1; i<=30; i++ )); do
+	for i := 1; i <= 30; i++ {
+		//       domain_state=$(sudo virsh domstate $DOMAIN_NAME)
+		domstateOutput, domstateErr := exec.Command("sudo", "virsh", "domstate", h.args.VmName).CombinedOutput()
+		if domstateErr != nil {
+			tc.Error(domstateErr)
+		}
+		logrus.Infof("Domain state attempt %d: %s", i, strings.TrimSpace(string(domstateOutput)))
+
+		//       if [[ $domain_state == "shut off" ]]; then
+		if strings.TrimSpace(string(domstateOutput)) == "shut off" {
+			//           echo "The domain is shut off. Starting the domain..."
+			logrus.Info("The domain is shut off. Starting the domain...")
+			//           sudo virsh start $DOMAIN_NAME
+			startOutput, startErr := exec.Command("sudo", "virsh", "start", h.args.VmName).CombinedOutput()
+			logrus.Tracef("virsh start output: %s\n%v", string(startOutput), startErr)
+			if startErr != nil {
+				tc.Error(startErr)
+			}
+			//           echo "The domain has been started."
+			logrus.Info("The domain has been started.")
+			//           exit 0
+			break
+			//       else
+		} else {
+			//           echo "The domain is still running. Waiting for $sleep_time seconds..."
+			logrus.Infof("The domain is still running. Waiting for %d seconds...", i*10)
+			//           sleep $sleep_time
+			time.Sleep(sleepTime)
+			//           sleep_time=$((sleep_time + 10))
+			sleepTime += 10 * time.Second
+			//       fi
+		}
+		//   done
+	}
+
+	//   echo "The domain did not shut down after 30 attempts."
+	logrus.Info("The domain did not shut down after 30 attempts.")
+
+	//   # Name of the domain
+	//   DOMAIN_NAME="virtdeploy-vm-0"
+
+	//   # Get the VM serial log file path
+	//   VM_SERIAL_LOG=$(sudo virsh dumpxml $DOMAIN_NAME | grep -A 1 console | grep source | cut -d"'" -f2)
+	dumpxmlOutput, dumpxmlErr := exec.Command("sudo", "virsh", "dumpxml", h.args.VmName).CombinedOutput()
+	if dumpxmlErr != nil {
+		tc.Error(dumpxmlErr)
+	}
+	parsedDomainXml := &libvirtxml.Domain{}
+	if err := parsedDomainXml.Unmarshal(string(dumpxmlOutput)); err != nil {
+		return fmt.Errorf("failed to parse domain XML: %w", err)
+	}
+	var vmSerialLog string
+	if parsedDomainXml.Devices != nil {
+		for _, console := range parsedDomainXml.Devices.Consoles {
+			if console.Log != nil {
+				logrus.Infof("VM serial log file path: %s", console.Log.File)
+				vmSerialLog = console.Log.File
+				break
+			}
+		}
+	}
+	if vmSerialLog == "" {
+		tc.Error(fmt.Errorf("failed to find VM serial log path"))
+	}
+
+	err = utils.WaitForLoginMessageInSerialLog(vmSerialLog, true, 1, fmt.Sprintf("%s/serial.log", h.args.ArtifactsFolder))
+	if err != nil {
+		tc.Error(err)
+	}
+	return nil
+}
