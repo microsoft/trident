@@ -1,6 +1,6 @@
 # Confexts
 
-Sysexts (system extension images) allow users to extend the base OS filesystem
+Confexts (configuration extension images) allow users to extend the base OS filesystem
 with new configuration settings. Confexts are activated by `systemd-confext`,
 which extends the `/etc` directory tree by mounting a read-only overlay over
 `/etc`. Please reference the [systemd-confext man
