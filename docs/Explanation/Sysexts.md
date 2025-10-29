@@ -46,5 +46,5 @@ sysexts contain files in `/opt`).
 ### SELinux
 
 Servicing of sysexts is not currently compatible with SELinux. Therefore,
-[selinux](../Reference/Host-Configuration/API-Reference/Selinux.md) should be
+[SELinux](../Reference/Host-Configuration/API-Reference/Selinux.md) should be
 configured to `disabled` in the Host Configuration.

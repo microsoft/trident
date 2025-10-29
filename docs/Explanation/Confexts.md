@@ -46,5 +46,5 @@ can be problematic if other services that run on boot require writing to `/etc`.
 ### SELinux
 
 Servicing of confexts is not currently compatible with SELinux. Therefore,
-[selinux](../Reference/Host-Configuration/API-Reference/Selinux.md) should be
+[SELinux](../Reference/Host-Configuration/API-Reference/Selinux.md) should be
 configured to `disabled` in the Host Configuration.
