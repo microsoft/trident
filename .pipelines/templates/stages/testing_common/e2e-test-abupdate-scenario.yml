@@ -126,7 +126,7 @@ steps:
 
       PROXY_ARG=""
       if [ -n "${{ parameters.httpsProxy }}" ]; then
-        PROXY_ARG="--proxy HTTPS_PROXY=${{ parameters.httpsProxy }}"
+        PROXY_ARG="--env-vars HTTPS_PROXY=${{ parameters.httpsProxy }}"
       fi
 
       EXPECT_FAILURE_ARG=""
