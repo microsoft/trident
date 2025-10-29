@@ -19,7 +19,7 @@ steps:
       inlineScript: |
         set -eux
 
-        if [ ${{ parameters.config }} != 'misc' ]; then
+        if [ ${{ parameters.config }} != 'misc' ] && [ "${{ parameters.config }}" != 'extensions' ]; then
           echo "Skipping step. Configuration is '${{ parameters.config }}'."
           exit 0
         fi
@@ -28,17 +28,30 @@ steps:
         az acr login -n $(ACR_NAME)
         sleep 5
 
-        repository_name="${{ parameters.repository }}"
+        cosi_repository_name="${{ parameters.repository }}"
         build_id="$(Build.BuildId)"
-        az acr repository show-tags -n $(ACR_NAME) --repository $repository_name
+        az acr repository show-tags -n $(ACR_NAME) --repository $cosi_repository_name
 
         # Delete repository with COSI images
         for i in {1..4}; do
           tag="$(TAG_BASE).${i}"
-          if az acr repository show --name $(ACR_NAME) --image ${repository_name}:${tag} &> /dev/null; then
-            az acr repository delete --name $(ACR_NAME) --image ${repository_name}:${tag} --yes
+          if az acr repository show --name $(ACR_NAME) --image ${cosi_repository_name}:${tag} &> /dev/null; then
+            az acr repository delete --name $(ACR_NAME) --image ${cosi_repository_name}:${tag} --yes
           fi
         done
+
+        for i in 1 2; do
+          tag="$(TAG_BASE).${i}"
+          # Delete repository with sysext images
+          if az acr repository show --name $(ACR_NAME) --image sysext:${tag} &> /dev/null; then
+            az acr repository delete --name $(ACR_NAME) --image sysext:${tag} --yes
+          fi
+          # Delete repository with confext images
+          if az acr repository show --name $(ACR_NAME) --image confext:${tag} &> /dev/null; then
+            az acr repository delete --name $(ACR_NAME) --image confext:${tag} --yes
+          fi
+        done
+
     displayName: "Log into ACR and delete images by tag"
     retryCountOnTaskFailure: 3
     condition: always()

@@ -1,8 +1,13 @@
 package helpers
 
 import (
+	"context"
+	"crypto/sha512"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
 	"path"
 	"regexp"
 	"strings"
@@ -13,6 +18,9 @@ import (
 	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v3"
+	"oras.land/oras-go/v2"
+	"oras.land/oras-go/v2/content/file"
+	"oras.land/oras-go/v2/registry/remote"
 
 	"tridenttools/storm/utils"
 )
@@ -26,6 +34,7 @@ type AbUpdateHelper struct {
 		StageAbUpdate        bool     `short:"s" help:"Controls whether A/B update should be staged."`
 		FinalizeAbUpdate     bool     `short:"f" help:"Controls whether A/B update should be finalized."`
 		EnvVars              []string `short:"e" help:"Environment variables. Multiple vars can be passed as a list of comma-separated strings, or this flag can be used multiple times. Each var should include the env var name, i.e. HTTPS_PROXY=http://0.0.0.0."`
+		ExpectFailedCommit   bool     `help:"Controls whether this test treats failed commits as successful." default:"false"`
 	}
 
 	client *ssh.Client
@@ -160,6 +169,15 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 	// Delete the storage section from the config, not needed for A/B update
 	delete(h.config, "storage")
 
+	// Update the sysext and confext files.
+	osConfig, ok := h.config["os"].(map[string]interface{})
+	if ok {
+		err := updateExtensions(osConfig)
+		if err != nil {
+			return fmt.Errorf("failed to update extensions in Host Configuration: %w", err)
+		}
+	}
+
 	hc_yaml, err := yaml.Marshal(h.config)
 	if err != nil {
 		return fmt.Errorf("failed to marshal YAML: %w", err)
@@ -275,8 +293,9 @@ func (h *AbUpdateHelper) checkTridentService(tc storm.TestCase) error {
 	time.Sleep(time.Second * 10)
 
 	// Reconnect via SSH to the updated OS
+	endTime := time.Now().Add(h.args.TimeoutDuration())
 	_, err := utils.Retry(
-		h.args.TimeoutDuration(),
+		time.Until(endTime),
 		time.Second*5,
 		func(attempt int) (*bool, error) {
 			logrus.Infof("SSH dial to '%s' (attempt %d)", h.args.SshCliSettings.FullHost(), attempt)
@@ -289,7 +308,10 @@ func (h *AbUpdateHelper) checkTridentService(tc storm.TestCase) error {
 
 			logrus.Infof("SSH dial to '%s' succeeded", h.args.SshCliSettings.FullHost())
 
-			err = utils.CheckTridentService(client, h.args.Env, h.args.TimeoutDuration())
+			// Enable tests to handle success and failure of commit service
+			// depending on configuration
+			expectSuccessfulCommit := !h.args.ExpectFailedCommit
+			err = utils.CheckTridentService(client, h.args.Env, time.Until(endTime), expectSuccessfulCommit)
 			if err != nil {
 				logrus.Warnf("Trident service is not in expected state: %s", err)
 				return nil, err
@@ -317,4 +339,99 @@ func checkUrlIsAccessible(url string) error {
 	}
 
 	return nil
+}
+
+// Update the paths of the extension images. This update happens only once, from
+// version 1 to 2. If images are already version 2, then keep as is.
+func updateExtensions(osConfig map[string]interface{}) error {
+	for _, extensionType := range []string{"sysexts", "confexts"} {
+		extensions, ok := osConfig[extensionType].([]interface{})
+		if !ok || len(extensions) == 0 {
+			continue // No extensions of this type, skip
+		}
+		extension, ok := extensions[0].(map[string]interface{})
+		if !ok {
+			continue // Invalid extension format, skip
+		}
+
+		// Update URL from version 1 to 2
+		oldUrl, ok := extension["url"].(string)
+		if !ok || !strings.HasSuffix(oldUrl, ".1") {
+			continue // No URL or not version 1, skip
+		}
+		trimmedUrl := strings.TrimSuffix(oldUrl, ".1")
+		newUrl := fmt.Sprintf("%s.2", trimmedUrl)
+
+		// Calculate new hash
+		newHash, err := pullImageAndCalculateSha384(newUrl)
+		if err != nil {
+			return fmt.Errorf("failed to calculate SHA384 hash of %s: %w", newUrl, err)
+		}
+
+		// Update the extension configuration
+		extension["url"] = newUrl
+		extension["sha384"] = newHash
+	}
+
+	return nil
+}
+
+// Download the new extension image and calculate SHA384 hash to populate the
+// updated Host Configuration.
+func pullImageAndCalculateSha384(imageUrl string) (string, error) {
+	url := strings.TrimPrefix(imageUrl, "oci://")
+	parts := strings.Split(url, ":")
+	if len(parts) != 2 {
+		return "", fmt.Errorf("invalid image URL format: %s", imageUrl)
+	}
+	ref := parts[0]
+	tag := parts[1]
+
+	// Create repository client
+	repo, err := remote.NewRepository(ref)
+	if err != nil {
+		return "", fmt.Errorf("failed to create repository client: %w", err)
+	}
+
+	// Create temporary directory to pull files into
+	tempDir, err := os.MkdirTemp("", "oras_pull_*")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp directory: %w", err)
+	}
+	defer os.RemoveAll(tempDir) // Clean up
+
+	// Create file store targeting the temp directory
+	fileStore, err := file.New(tempDir)
+	if err != nil {
+		return "", fmt.Errorf("failed to create file store: %w", err)
+	}
+	defer fileStore.Close()
+
+	// Pull the artifact
+	_, err = oras.Copy(context.Background(), repo, tag, fileStore, tag, oras.DefaultCopyOptions)
+	if err != nil {
+		return "", fmt.Errorf("failed to pull artifact: %w", err)
+	}
+
+	// Find the .raw file in the directory
+	files, err := os.ReadDir(tempDir)
+	if err != nil {
+		return "", fmt.Errorf("failed to read temp directory: %w", err)
+	}
+	if len(files) != 1 {
+		return "", fmt.Errorf("expected to find exactly one file in temp directory after pulling artifact")
+	}
+	rawFilePath := path.Join(tempDir, files[0].Name())
+
+	// Hash the .raw file
+	file, err := os.Open(rawFilePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to open .raw file: %w", err)
+	}
+	defer file.Close()
+	hasher := sha512.New384()
+	if _, err := io.Copy(hasher, file); err != nil {
+		return "", fmt.Errorf("failed to calculate hash: %w", err)
+	}
+	return hex.EncodeToString(hasher.Sum(nil)), nil
 }
