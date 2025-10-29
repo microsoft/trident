@@ -32,7 +32,8 @@ All sysexts must be packaged as a [Discoverable Disk Image
 Trident expects to find exactly one valid extension-release file in the sysext.
 In addition, Trident requires that the sysext contain the field `SYSEXT_ID` in
 the extension-release file. This field is used to determine which sysexts
-require update during an A/B update flow.
+require update during an A/B update flow. Each sysext's `SYSEXT_ID` must be
+unique among the IDs of all sysexts listed in the Host Configuration.
 
 ### Read-Only Mount
 

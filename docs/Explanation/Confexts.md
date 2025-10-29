@@ -32,7 +32,8 @@ All confexts must be packaged as a [Discoverable Disk Image
 Trident expects to find exactly one valid extension-release file in the confext.
 In addition, Trident requires that the confext contain the field `CONFEXT_ID` in
 the extension-release file. This field is used to determine which confexts
-require update during an A/B update flow.
+require update during an A/B update flow. Each confext's `CONFEXT_ID` must be
+unique among the IDs of all confexts listed in the Host Configuration.
 
 ### Read-Only Mount
 
