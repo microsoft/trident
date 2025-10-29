@@ -93,9 +93,14 @@ steps:
     displayName: "🔄 Stage A/B update"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
-  - template: ../testing_common/display-deployment-logs.yml
-    parameters:
-      deploymentLogPath: $(Build.SourcesDirectory)/stage-ab-update-deployment.log
+  - bash: |
+      set -eux
+      ./bin/storm-trident helper display-logs \
+          --skip-serial \
+		      --trident-log-file $(Build.SourcesDirectory)/stage-ab-update-deployment.log \
+		      --artifacts-folder $(ob_outputDirectory)
+    displayName: "📄 Stage A/B update deployment logs"
+    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - bash: |
       set -eux
@@ -174,16 +179,15 @@ steps:
       displayName: "📷 Capture Finalize A/B update screenshot"
       condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
 
-  - template: ../testing_common/display-serial-logs.yml
-    parameters:
-      netlistenConfigFile: ${{ parameters.netlistenConfigFile }}
-      outputDirectory: $(ob_outputDirectory)
-      partition: B
-      artifactPrefix: "finalize-ab-update"
-
-  - template: ../testing_common/display-deployment-logs.yml
-    parameters:
-      deploymentLogPath: $(Build.SourcesDirectory)/finalize-ab-update.log
+  - bash: |
+      set -eux
+      ./bin/storm-trident helper display-logs \
+          --netlisten-config ${{ parameters.netlistenConfigFile }} \
+          --serial-log-artifact-file-name "finalize-ab-update-B-serial.log" \
+		      --trident-log-file $(Build.SourcesDirectory)/finalize-ab-update.log \
+		      --artifacts-folder $(ob_outputDirectory)
+    displayName: "📄 Finalize A/B update deployment logs"
+    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - bash: |
       set -eux
