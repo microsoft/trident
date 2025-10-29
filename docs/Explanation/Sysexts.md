@@ -1,10 +1,11 @@
 # Sysexts
 
-Systemd-Sysexts (system extensions) are a mechanism for extending the base OS
-filesystem with additional functionality and tooling. Sysexts extend the `/usr`
-and `/opt` directory trees by mounting a read-only overlay over `/usr` and
-`/opt`. Please reference the [systemd-sysext man
-page](https://man.archlinux.org/man/systemd-sysext.8.en) for more information.
+Sysexts (system extension images) allow users to extend the base OS filesystem
+with additional functionality and tooling. Sysexts are activated by
+`systemd-sysext`, a utility which extends the `/usr` and `/opt` directory trees
+by mounting a read-only overlay over `/usr` and `/opt`. Please reference the
+[systemd-sysext man page](https://man.archlinux.org/man/systemd-sysext.8.en) for
+more information.
 
 Trident supports servicing sysexts as part of the [Clean
 Install](../Reference/Glossary.md#clean-install) and [A/B

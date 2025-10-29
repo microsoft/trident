@@ -1,10 +1,10 @@
 # Confexts
 
-Systemd-Confexts (configuration extensions) are a mechanism for extending the
-base OS filesystem with new configuration settings. Confexts extend the `/etc`
-directory tree by mounting a read-only overlay over `/etc`. Please reference the
-[systemd-confext man page](https://man.archlinux.org/man/systemd-confext.8.en)
-for more information.
+Sysexts (system extension images) allow users to extend the base OS filesystem
+with new configuration settings. Confexts are activated by `systemd-confext`,
+which extends the `/etc` directory tree by mounting a read-only overlay over
+`/etc`. Please reference the [systemd-confext man
+page](https://man.archlinux.org/man/systemd-confext.8.en) for more information.
 
 Trident supports servicing confexts as part of the [Clean
 Install](../Reference/Glossary.md#clean-install) and [A/B
