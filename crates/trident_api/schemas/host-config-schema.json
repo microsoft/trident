@@ -631,7 +631,7 @@
           ]
         },
         "sysexts": {
-          "description": "Data about systext images, which should be merged on the target OS.",
+          "description": "Data about sysext images, which should be merged on the target OS.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/Extension"

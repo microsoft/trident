@@ -106,7 +106,7 @@ Options for configuring systemd services.
 
 ### `sysexts` (optional)
 
-Data about systext images, which should be merged on the target OS.
+Data about sysext images, which should be merged on the target OS.
 
 | Characteristic | Value   |
 | -------------- | ------- |
