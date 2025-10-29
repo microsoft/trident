@@ -36,9 +36,21 @@ URLs may have one of the following four schemes: `http://`, `https://`, `file://
 
 The absolute path of the extension image in the target OS.
 
-By default, sysexts are placed in /var/lib/extensions/. Trident supports placing sysexts in: - /etc/extensions/ - /var/lib/extensions/ - /.extra/sysext
+By default, sysexts are placed in /var/lib/extensions/. Trident supports placing sysexts in:
 
-By default, confexts are placed in /var/lib/confexts/. Trident supports placing confexts in: - /var/lib/confexts/ - /usr/lib/confexts/ - /usr/local/lib/confexts/
+- /etc/extensions/
+
+- /var/lib/extensions/
+
+- /.extra/sysext
+
+By default, confexts are placed in /var/lib/confexts/. Trident supports placing confexts in:
+
+- /var/lib/confexts/
+
+- /usr/lib/confexts/
+
+- /usr/local/lib/confexts/
 
 /run/sysexts/ and /run/confexts/ are not supported.
 
