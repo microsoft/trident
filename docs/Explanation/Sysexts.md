@@ -29,7 +29,7 @@ for a sysext, is located on a shared volume.
 
 All sysexts must be packaged as a [Discoverable Disk Image
 (DDI)](https://uapi-group.org/specifications/specs/discoverable_disk_image/).
-Trident expects to find exactly one, valid extension-release file in the sysext.
+Trident expects to find exactly one valid extension-release file in the sysext.
 In addition, Trident requires that the sysext contain the field `SYSEXT_ID` in
 the extension-release file. This field is used to determine which sysexts
 require update during an A/B update flow.

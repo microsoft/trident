@@ -29,7 +29,7 @@ the Host Configuration for a confext, is located on a shared volume.
 
 All confexts must be packaged as a [Discoverable Disk Image
 (DDI)](https://uapi-group.org/specifications/specs/discoverable_disk_image/).
-Trident expects to find exactly one, valid extension-release file in the confext.
+Trident expects to find exactly one valid extension-release file in the confext.
 In addition, Trident requires that the confext contain the field `CONFEXT_ID` in
 the extension-release file. This field is used to determine which confexts
 require update during an A/B update flow.
