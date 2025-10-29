@@ -45,6 +45,7 @@ pub struct Extension {
     /// - /usr/local/lib/confexts/
     ///
     /// /run/sysexts/ and /run/confexts/ are not supported.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<PathBuf>,
 }
 

@@ -278,6 +278,32 @@
       },
       "additionalProperties": false
     },
+    "Extension": {
+      "description": "Data about an extension image (sysext or confext) to merge onto the target OS.\n\nExtension image must be a [Discoverable Disk Image](https://uapi-group.org/specifications/specs/discoverable_disk_image/).",
+      "type": "object",
+      "required": [
+        "sha384",
+        "url"
+      ],
+      "properties": {
+        "path": {
+          "description": "The absolute path of the extension image in the target OS.\n\nBy default, sysexts are placed in /var/lib/extensions/. Trident supports placing sysexts in: - /etc/extensions/ - /var/lib/extensions/ - /.extra/sysext\n\nBy default, confexts are placed in /var/lib/confexts/. Trident supports placing confexts in: - /var/lib/confexts/ - /usr/lib/confexts/ - /usr/local/lib/confexts/\n\n/run/sysexts/ and /run/confexts/ are not supported.",
+          "type": "string",
+          "nullable": true
+        },
+        "sha384": {
+          "description": "The Sha384 of the entire extension image file.",
+          "type": "string",
+          "format": "[a-fA-F0-9]{96}"
+        },
+        "url": {
+          "description": "The path to the extension image file, which must be a [Discoverable Disk Image](https://uapi-group.org/specifications/specs/discoverable_disk_image/).\n\nURLs may have one of the following four schemes: `http://`, `https://`, `file://`, or `oci://`. Extension image files stored in OCI registries must allow for anonymous pulls.",
+          "type": "string",
+          "format": "uri"
+        }
+      },
+      "additionalProperties": false
+    },
     "FileSystem": {
       "type": "object",
       "properties": {
@@ -552,6 +578,13 @@
             "$ref": "#/definitions/AdditionalFile"
           }
         },
+        "confexts": {
+          "description": "Data about confext images, which should be merged on the target OS.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Extension"
+          }
+        },
         "hostname": {
           "description": "Hostname of the system.",
           "type": "string",
@@ -596,6 +629,13 @@
               "$ref": "#/definitions/Services"
             }
           ]
+        },
+        "sysexts": {
+          "description": "Data about systext images, which should be merged on the target OS.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Extension"
+          }
         },
         "users": {
           "description": "Users to configure on the host.",

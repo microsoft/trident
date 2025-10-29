@@ -73,12 +73,10 @@ pub struct Os {
 
     /// Data about systext images, which should be merged on the target OS.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[cfg_attr(feature = "schemars", schemars(skip))]
     pub sysexts: Vec<Extension>,
 
     /// Data about confext images, which should be merged on the target OS.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[cfg_attr(feature = "schemars", schemars(skip))]
     pub confexts: Vec<Extension>,
 }
 
