@@ -24,72 +24,99 @@ steps:
     workingDirectory: $(Build.SourcesDirectory)
     retryCountOnTaskFailure: 3
 
-  - task: AzureCLI@2
-    inputs:
-      azureSubscription: trident-dev-acr-write-umi-ECF
-      scriptType: bash
-      scriptLocation: inlineScript
-      inlineScript: |
-        set -eux
+  - base: |
+      set -eux
 
-        if [ ${{ parameters.config }} != 'extensions' ]; then
-          echo "Skipping step. Configuration is '${{ parameters.config }}'."
-          exit 0
-        fi
+      if [ ${{ parameters.config }} != 'extensions' ]; then
+        echo "Skipping step. Configuration is '${{ parameters.config }}'."
+        exit 0
+      fi
 
-        ./bin/storm-trident helper push-to-acr \
-          --config ${{ parameters.config }} \
-          --deployment-environment ${{ parameters.deploymentEnvironment }} \
-          --acr-name $(ACR_NAME) \
-          --repo-name sysext \
-          --build-id $(Build.BuildId) \
-          --file-paths test-sysext-1.raw,test-sysext-2.raw
+      ./bin/storm-trident helper push-to-acr \
+        --config ${{ parameters.config }} \
+        --deployment-environment ${{ parameters.deploymentEnvironment }} \
+        --acr-name $(ACR_NAME) \
+        --repo-name sysext \
+        --build-id $(Build.BuildId) \
+        --file-paths test-sysext-1.raw,test-sysext-2.raw
 
-        ./bin/storm-trident helper push-to-acr \
-          --config ${{ parameters.config }} \
-          --deployment-environment ${{ parameters.deploymentEnvironment }} \
-          --acr-name $(ACR_NAME) \
-          --repo-name confext \
-          --build-id $(Build.BuildId) \
-          --file-paths test-confext-1.raw,test-confext-2.raw
-
-        # # Login to ACR
-        # az acr login -n $(ACR_NAME)
-
-        # sysext_repository_name="sysext"
-        # confext_repository_name="confext"
-        # build_id="$(Build.BuildId)"
-
-        # cd $(Build.SourcesDirectory)
-
-        # tag_base="v${build_id}.${{ parameters.config }}.${{ parameters.deploymentEnvironment }}"
-        # for version in 1 2; do
-        #   sysext_filename="test-sysext-${version}.raw"
-        #   confext_filename="test-confext-${version}.raw"
-
-        #   tag="$tag_base.${version}"
-
-        #   if [[ -f "$sysext_filename" ]]; then
-        #     echo "Pushing $sysext_filename with tag $tag to $(ACR_NAME).azurecr.io"
-        #     oras push $(ACR_NAME).azurecr.io/$sysext_repository_name:$tag "$sysext_filename"
-        #     sleep 3
-        #     echo "Verifying $sysext_filename was pushed successfully..."
-        #     az acr repository show --name $(ACR_NAME) --image ${sysext_repository_name}:${tag}
-        #   else
-        #     echo "File $sysext_filename not found"
-        #   fi
-        #   if [[ -f "$confext_filename" ]]; then
-        #     echo "Pushing $confext_filename with tag $tag to $(ACR_NAME).azurecr.io"
-        #     oras push $(ACR_NAME).azurecr.io/$confext_repository_name:$tag "$confext_filename"
-        #     sleep 3
-        #     echo "Verifying $confext_filename was pushed successfully..."
-        #     az acr repository show --name $(ACR_NAME) --image ${confext_repository_name}:${tag}
-        #   else
-        #     echo "File $confext_filename not found"
-        #   fi
-        # done
-
-        # # Set variable for sysext and confext repositories
-        # echo "##vso[task.setvariable variable=TAG_BASE]$tag_base"
+      ./bin/storm-trident helper push-to-acr \
+        --config ${{ parameters.config }} \
+        --deployment-environment ${{ parameters.deploymentEnvironment }} \
+        --acr-name $(ACR_NAME) \
+        --repo-name confext \
+        --build-id $(Build.BuildId) \
+        --file-paths test-confext-1.raw,test-confext-2.raw
     displayName: "Push extension images to ACR"
+    workingDirectory: $(Build.SourcesDirectory)
     retryCountOnTaskFailure: 3
+
+  # - task: AzureCLI@2
+  #   inputs:
+  #     azureSubscription: trident-dev-acr-write-umi-ECF
+  #     scriptType: bash
+  #     scriptLocation: inlineScript
+  #     inlineScript: |
+  #       set -eux
+
+  #       if [ ${{ parameters.config }} != 'extensions' ]; then
+  #         echo "Skipping step. Configuration is '${{ parameters.config }}'."
+  #         exit 0
+  #       fi
+
+  #       ./bin/storm-trident helper push-to-acr \
+  #         --config ${{ parameters.config }} \
+  #         --deployment-environment ${{ parameters.deploymentEnvironment }} \
+  #         --acr-name $(ACR_NAME) \
+  #         --repo-name sysext \
+  #         --build-id $(Build.BuildId) \
+  #         --file-paths test-sysext-1.raw,test-sysext-2.raw
+
+  #       ./bin/storm-trident helper push-to-acr \
+  #         --config ${{ parameters.config }} \
+  #         --deployment-environment ${{ parameters.deploymentEnvironment }} \
+  #         --acr-name $(ACR_NAME) \
+  #         --repo-name confext \
+  #         --build-id $(Build.BuildId) \
+  #         --file-paths test-confext-1.raw,test-confext-2.raw
+
+  #       # # Login to ACR
+  #       # az acr login -n $(ACR_NAME)
+
+  #       # sysext_repository_name="sysext"
+  #       # confext_repository_name="confext"
+  #       # build_id="$(Build.BuildId)"
+
+  #       # cd $(Build.SourcesDirectory)
+
+  #       # tag_base="v${build_id}.${{ parameters.config }}.${{ parameters.deploymentEnvironment }}"
+  #       # for version in 1 2; do
+  #       #   sysext_filename="test-sysext-${version}.raw"
+  #       #   confext_filename="test-confext-${version}.raw"
+
+  #       #   tag="$tag_base.${version}"
+
+  #       #   if [[ -f "$sysext_filename" ]]; then
+  #       #     echo "Pushing $sysext_filename with tag $tag to $(ACR_NAME).azurecr.io"
+  #       #     oras push $(ACR_NAME).azurecr.io/$sysext_repository_name:$tag "$sysext_filename"
+  #       #     sleep 3
+  #       #     echo "Verifying $sysext_filename was pushed successfully..."
+  #       #     az acr repository show --name $(ACR_NAME) --image ${sysext_repository_name}:${tag}
+  #       #   else
+  #       #     echo "File $sysext_filename not found"
+  #       #   fi
+  #       #   if [[ -f "$confext_filename" ]]; then
+  #       #     echo "Pushing $confext_filename with tag $tag to $(ACR_NAME).azurecr.io"
+  #       #     oras push $(ACR_NAME).azurecr.io/$confext_repository_name:$tag "$confext_filename"
+  #       #     sleep 3
+  #       #     echo "Verifying $confext_filename was pushed successfully..."
+  #       #     az acr repository show --name $(ACR_NAME) --image ${confext_repository_name}:${tag}
+  #       #   else
+  #       #     echo "File $confext_filename not found"
+  #       #   fi
+  #       # done
+
+  #       # # Set variable for sysext and confext repositories
+  #       # echo "##vso[task.setvariable variable=TAG_BASE]$tag_base"
+  #   displayName: "Push extension images to ACR"
+  #   retryCountOnTaskFailure: 3
