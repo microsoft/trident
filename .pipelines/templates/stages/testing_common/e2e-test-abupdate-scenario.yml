@@ -160,7 +160,7 @@ steps:
 
     timeoutInMinutes: 15
     workingDirectory: $(Build.SourcesDirectory)
-    displayName: "🅰️🔄${{ parameters.updateEmoji }} Stage and finalize A/B update into target OS ${{ parameters.updateScenarioTargetOs }} testing ${{ parameters.updateScenarioName }}"
+    displayName: "🔄${{ parameters.updateEmoji }} Stage and finalize A/B update into target OS ${{ parameters.updateScenarioTargetOs }} testing ${{ parameters.updateScenarioName }}"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - template: ./capture-screenshot.yml
