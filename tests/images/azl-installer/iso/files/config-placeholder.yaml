@@ -1,5 +1,5 @@
 image:
-  url: file:///mnt/trident_cdrom/images/azure-linux.cosi
+  url: file:///mnt/cdrom/images/azure-linux-core.cosi
   sha384: ignored
 storage:
   disks:
