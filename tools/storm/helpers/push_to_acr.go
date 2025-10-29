@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/microsoft/storm"
+	"github.com/sirupsen/logrus"
 )
 
 type PushToACRHelper struct {
@@ -56,7 +57,7 @@ func (h *PushToACRHelper) pushToACR(tc storm.TestCase) error {
 }
 
 func (h *PushToACRHelper) loginToACR() error {
-	fmt.Printf("Logging in to ACR: %s\n", h.args.AcrName)
+	logrus.Infof("Logging in to ACR: %s\n", h.args.AcrName)
 
 	cmd := exec.Command("az", "acr", "login", "-n", h.args.AcrName)
 	cmd.Stdout = os.Stdout
@@ -69,7 +70,7 @@ func (h *PushToACRHelper) pushFiles(tagBase string) error {
 	for i, filePath := range h.args.FilePaths {
 		// Check if file exists
 		if _, err := os.Stat(filePath); os.IsNotExist(err) {
-			fmt.Printf("File %s not found, skipping\n", filePath)
+			logrus.Infof("File %s not found, skipping\n", filePath)
 			continue
 		}
 
@@ -96,7 +97,7 @@ func (h *PushToACRHelper) pushImage(filePath, tag string) error {
 	registryURL := fmt.Sprintf("%s.azurecr.io", h.args.AcrName)
 	fullImageName := fmt.Sprintf("%s/%s:%s", registryURL, h.args.RepoName, tag)
 
-	fmt.Printf("Pushing %s with tag %s to %s\n", filePath, tag, registryURL)
+	logrus.Infof("Pushing %s with tag %s to %s\n", filePath, tag, registryURL)
 
 	// Use ORAS to push the image
 	cmd := exec.Command("oras", "push", fullImageName, filePath)
@@ -115,7 +116,7 @@ func (h *PushToACRHelper) pushImage(filePath, tag string) error {
 }
 
 func (h *PushToACRHelper) verifyImage(repository, tag string) error {
-	fmt.Printf("Verifying %s:%s was pushed successfully...\n", repository, tag)
+	logrus.Infof("Verifying %s:%s was pushed successfully...\n", repository, tag)
 
 	cmd := exec.Command("az", "acr", "repository", "show",
 		"--name", h.args.AcrName,
