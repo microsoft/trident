@@ -1,0 +1,170 @@
+package helpers
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/microsoft/storm"
+	"github.com/sirupsen/logrus"
+	"gopkg.in/yaml.v2"
+)
+
+type DisplayLogsHelper struct {
+	args struct {
+		SkipSerialLog               bool   `help:"Skip displaying serial log." default:"false"`
+		NetlistenConfig             string `help:"Path to netlisten config file." type:"path" default:""`
+		SerialLogFallbackFolder     string `help:"File containing serial log output." type:"path" default:"/tmp"`
+		SerialLogFallbackFileSuffix string `help:"File containing serial log output." type:"path" default:"serial0.log"`
+		SerialLogArtifactFileName   string `help:"Filename to use when copying serial log to artifacts folder." type:"string" default:""`
+		TridentLogFile              string `help:"File containing trident log output." type:"path" default:""`
+		TridentTraceLogFile         string `help:"File containing trace log output." type:"path" default:""`
+		ArtifactsFolder             string `help:"Folder to copy log files into." type:"path" default:""`
+	}
+}
+
+func (h DisplayLogsHelper) Name() string {
+	return "display-logs"
+}
+
+func (h *DisplayLogsHelper) Args() any {
+	return &h.args
+}
+
+func (h *DisplayLogsHelper) RegisterTestCases(r storm.TestRegistrar) error {
+	r.RegisterTestCase("display-serial", h.displaySerial)
+	r.RegisterTestCase("display-trident", h.displayTrident)
+	r.RegisterTestCase("display-trace-trident", h.displayTraceTrident)
+	return nil
+}
+
+func copyFileToArtifactsFolder(sourcePath, artifactsFolder, artifactFileName string) error {
+	// Ensure artifacts folder exists
+	err := os.MkdirAll(artifactsFolder, 0755)
+	if err != nil {
+		return err
+	}
+
+	destinationPath := filepath.Join(artifactsFolder, artifactFileName)
+	input, err := os.ReadFile(sourcePath)
+	if err != nil {
+		return err
+	}
+	err = os.WriteFile(destinationPath, input, 0644)
+	if err != nil {
+		return err
+	}
+	logrus.Tracef("Copied file to artifacts folder: %s", destinationPath)
+	return nil
+}
+
+func getSerialPathFromNetlistenConfig(netlistenConfigPath string) string {
+	if netlistenConfigPath != "" {
+		tridentConfigContents, err := os.ReadFile(netlistenConfigPath)
+		if err != nil {
+			logrus.Tracef("Failed to read netlisten config file %s: %v", netlistenConfigPath, err)
+			return ""
+		}
+
+		netlistenConfig := make(map[string]interface{})
+		err = yaml.UnmarshalStrict(tridentConfigContents, &netlistenConfig)
+		if err != nil {
+			logrus.Tracef("Failed to parse netlisten config file %s: %v", netlistenConfigPath, err)
+			return ""
+		}
+		if netlisten, ok := netlistenConfig["netlisten"].(map[string]interface{}); ok {
+			if bmc, ok := netlisten["bmc"].(map[string]interface{}); ok {
+				if serialOverSsh, ok := bmc["serialOverSsh"].(map[string]interface{}); ok {
+					if logFile, ok := serialOverSsh["logFile"].(string); ok {
+						return logFile
+					}
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func (h *DisplayLogsHelper) displaySerial(tc storm.TestCase) error {
+	if h.args.SkipSerialLog {
+		tc.Skip("Skipping serial log.")
+		return nil
+	}
+	serialLogFile := getSerialPathFromNetlistenConfig(h.args.NetlistenConfig)
+	if serialLogFile == "" {
+		// Look for a file in the fallback folder that ends with the specified suffix
+		entries, err := os.ReadDir(h.args.SerialLogFallbackFolder)
+		if err != nil {
+			tc.Skip("No serial log file specified and cannot read fallback folder")
+			return nil
+		}
+
+		var matchingFiles []string
+		for _, entry := range entries {
+			if !entry.IsDir() && strings.HasSuffix(entry.Name(), h.args.SerialLogFallbackFileSuffix) {
+				matchingFiles = append(matchingFiles, entry.Name())
+			}
+		}
+
+		if len(matchingFiles) == 0 {
+			tc.Skip("No serial log file specified and no matching fallback file found")
+			return nil
+		} else if len(matchingFiles) > 1 {
+			logrus.Warnf("Multiple files found ending with '%s': %v, using first one", h.args.SerialLogFallbackFileSuffix, matchingFiles)
+		}
+
+		serialLogFile = filepath.Join(h.args.SerialLogFallbackFolder, matchingFiles[0])
+		logrus.Tracef("Using fallback serial log file: %s", serialLogFile)
+	}
+
+	err := copyFileToArtifactsFolder(serialLogFile, h.args.ArtifactsFolder, h.args.SerialLogArtifactFileName)
+	if err != nil {
+		return err
+	}
+
+	logrus.Infof("== Serial Log Output from %s ==", serialLogFile)
+	serialLogs, err := os.ReadFile(serialLogFile)
+	if err != nil {
+		return err
+	}
+	logrus.Info(strings.TrimSpace(string(serialLogs)))
+	return nil
+}
+
+func (h *DisplayLogsHelper) displayTrident(tc storm.TestCase) error {
+	if h.args.TridentLogFile == "" {
+		tc.Skip("No trident log file specified")
+	}
+
+	err := copyFileToArtifactsFolder(h.args.TridentLogFile, h.args.ArtifactsFolder, filepath.Base(h.args.TridentLogFile))
+	if err != nil {
+		return err
+	}
+
+	logrus.Infof("== Trident Log Output from %s ==", h.args.TridentLogFile)
+	tridentLogs, err := os.ReadFile(h.args.TridentLogFile)
+	if err != nil {
+		return err
+	}
+	logrus.Info(strings.TrimSpace(string(tridentLogs)))
+	return nil
+}
+
+func (h *DisplayLogsHelper) displayTraceTrident(tc storm.TestCase) error {
+	if h.args.TridentTraceLogFile == "" {
+		tc.Skip("No trident trace log file specified")
+	}
+
+	err := copyFileToArtifactsFolder(h.args.TridentLogFile, h.args.ArtifactsFolder, filepath.Base(h.args.TridentLogFile))
+	if err != nil {
+		return err
+	}
+
+	logrus.Infof("== Trident Trace Log Output from %s ==", h.args.TridentTraceLogFile)
+	tridentTraceLogs, err := os.ReadFile(h.args.TridentTraceLogFile)
+	if err != nil {
+		return err
+	}
+	logrus.Info(strings.TrimSpace(string(tridentTraceLogs)))
+	return nil
+}

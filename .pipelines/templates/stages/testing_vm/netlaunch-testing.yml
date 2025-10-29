@@ -229,11 +229,13 @@ stages:
               deploymentEnvironment: virtualMachine
               forceRun: true
 
-          - template: ../testing_common/display-deployment-logs.yml
-            parameters:
-              deploymentLogPath: $(tridentSourceDirectory)/logstream-full.log
-              displayName: "📄Display clean install logs"
-              forceRun: true
+          - bash: |
+              set -eux
+              ./bin/storm-trident helper display-logs \
+                  --skip-serial \
+                  --trident-trace-log-file "$(tridentSourceDirectory)/logstream-full.log" \
+                  --artifacts-folder "$(ob_outputDirectory)"
+            displayName: "📄Display clean install logs"
 
           - bash: |
               set -ux
