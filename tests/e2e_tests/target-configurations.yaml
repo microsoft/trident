@@ -124,6 +124,7 @@ virtualMachine:
     pullrequest:
       - base
       - combined
+      - extensions
       - misc
       - raid-mirrored
       - raid-resync-small
