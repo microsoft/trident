@@ -307,8 +307,8 @@ stages:
               set -eux
               ./bin/storm-trident helper display-logs \
                   --skip-serial \
-                  --trident-trace-log-file ${{ variables.TRIDENT_SOURCE_DIR }}/logstream-full.log \
-                  --artifacts-folder $(ob_outputDirectory)
+                  --trident-trace-log-file "${{ variables.TRIDENT_SOURCE_DIR }}/logstream-full.log" \
+                  --artifacts-folder "$(ob_outputDirectory)"
             displayName: "Display clean install logs"
 
           - bash: |

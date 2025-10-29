@@ -97,8 +97,8 @@ steps:
       set -eux
       ./bin/storm-trident helper display-logs \
           --skip-serial \
-		      --trident-log-file $(Build.SourcesDirectory)/stage-ab-update-deployment.log \
-		      --artifacts-folder $(ob_outputDirectory)
+          --trident-log-file "$(Build.SourcesDirectory)/stage-ab-update-deployment.log" \
+          --artifacts-folder "$(ob_outputDirectory)"
     displayName: "📄 Stage A/B update deployment logs"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
@@ -184,8 +184,8 @@ steps:
       ./bin/storm-trident helper display-logs \
           --netlisten-config ${{ parameters.netlistenConfigFile }} \
           --serial-log-artifact-file-name "finalize-ab-update-B-serial.log" \
-		      --trident-log-file $(Build.SourcesDirectory)/finalize-ab-update.log \
-		      --artifacts-folder $(ob_outputDirectory)
+          --trident-log-file "$(Build.SourcesDirectory)/finalize-ab-update.log" \
+          --artifacts-folder "$(ob_outputDirectory)"
     displayName: "📄 Finalize A/B update deployment logs"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
