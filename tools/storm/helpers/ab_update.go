@@ -37,7 +37,7 @@ type AbUpdateHelper struct {
 		EnvVars              []string `short:"e" help:"Environment variables. Multiple vars can be passed as a list of comma-separated strings, or this flag can be used multiple times. Each var should include the env var name, i.e. HTTPS_PROXY=http://0.0.0.0."`
 		ExpectFailedCommit   bool     `help:"Controls whether this test treats failed commits as successful." default:"false"`
 		ForcedRollback       bool     `help:"Controls whether this test includes a forced auto-rollback during A/B update." default:"false"`
-		UefiFallback         string   `help:"Controls type UEFI fallback testing to use." default:"none"`
+		UefiFallback         string   `help:"Type of UEFI fallback to use." default:"none"`
 	}
 
 	client *ssh.Client
