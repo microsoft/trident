@@ -637,7 +637,7 @@ impl Trident {
 
         let rollback_result = self.execute_and_record_error(datastore, |datastore| {
             rollback::validate_boot(datastore).message(
-                "Failed to validate that firmware correctly booted from validated updated target OS image",
+                "Failed to validate that firmware correctly booted from updated target OS image",
             )
         });
 
