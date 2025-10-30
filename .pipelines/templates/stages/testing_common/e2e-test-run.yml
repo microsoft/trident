@@ -424,3 +424,4 @@ steps:
           --deployment-environment "${{ parameters.deploymentEnvironment }}" \
           --artifacts-folder "$(ob_outputDirectory)"
     displayName: "Test Trident rebuild-raid"
+    timeoutInMinutes: 15
