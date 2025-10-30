@@ -323,11 +323,11 @@ stages:
               artifactsDirectory: artifacts/test-image
               netlistenPort: ${{variables.netlaunchPort}}
 
-          - template: ../common_tasks/remove-from-acr.yml
-            parameters:
-              repository: ${{ variables.testImageName }}
-              config: ${{ variables.tridentConfigurationName }}
-              deploymentEnvironment: "virtualMachine"
+          # - template: ../common_tasks/remove-from-acr.yml
+          #   parameters:
+          #     repository: ${{ variables.testImageName }}
+          #     config: ${{ variables.tridentConfigurationName }}
+          #     deploymentEnvironment: "virtualMachine"
 
           - bash: |
               set -eux
