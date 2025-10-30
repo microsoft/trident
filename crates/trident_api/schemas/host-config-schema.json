@@ -1483,7 +1483,7 @@
       "additionalProperties": false
     },
     "SystemdCheck": {
-      "description": "A script that can be run on the host during Trident stages.",
+      "description": "A check that can be run on the host to ensure systemd service(s) are in a successful state, as defined by `systemctl status` returning success.",
       "type": "object",
       "required": [
         "name",

@@ -96,7 +96,8 @@ impl serde::Serialize for Check {
     }
 }
 
-/// A script that can be run on the host during Trident stages.
+/// A check that can be run on the host to ensure systemd service(s) are in
+/// a successful state, as defined by `systemctl status` returning success.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]

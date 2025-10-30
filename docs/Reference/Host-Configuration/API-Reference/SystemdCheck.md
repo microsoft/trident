@@ -2,7 +2,7 @@
 
 # SystemdCheck
 
-A script that can be run on the host during Trident stages.
+A check that can be run on the host to ensure systemd service(s) are in a successful state, as defined by `systemctl status` returning success.
 
 | Characteristic | Value    |
 | -------------- | -------- |
