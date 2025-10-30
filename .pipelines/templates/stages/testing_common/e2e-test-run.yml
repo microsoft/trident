@@ -422,6 +422,5 @@ steps:
           "${{ parameters.runtimeEnv }}" \
           --trident-config-path "${{ parameters.tridentConfigPath }}" \
           --deployment-environment "${{ parameters.deploymentEnvironment }}" \
-          --disk "${{ parameters.disk }}" \
           --artifacts-folder "$(ob_outputDirectory)"
     displayName: "Test Trident rebuild-raid"
