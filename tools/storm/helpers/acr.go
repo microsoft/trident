@@ -91,8 +91,6 @@ func (h *AcrHelper) generateTagBase() string {
 func (h *AcrHelper) loginToACR() error {
 	logrus.Infof("Logging in to ACR: %s", h.args.AcrName)
 	cmd := exec.Command("az", "acr", "login", "-n", h.args.AcrName)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
 
@@ -135,8 +133,6 @@ func (h *AcrHelper) pushImage(filePath, tag string) error {
 	// Use ORAS to push the image
 	cmd := exec.Command("oras", "push", fullImageName, fileName)
 	cmd.Dir = dir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
 	err := cmd.Run()
 	if err != nil {
 		return fmt.Errorf("oras push failed for %s: %w", filePath, err)
@@ -154,9 +150,6 @@ func (h *AcrHelper) verifyImage(repository, tag string) error {
 	cmd := exec.Command("az", "acr", "repository", "show",
 		"--name", h.args.AcrName,
 		"--image", fmt.Sprintf("%s:%s", repository, tag))
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
 	return cmd.Run()
 }
 
@@ -180,8 +173,6 @@ func (h *AcrHelper) deleteImageIfExists(repository, tag string) error {
 		"--name", h.args.AcrName,
 		"--image", imageName)
 	logrus.Debugf("Executing command: %s %s", checkCmd.Path, strings.Join(checkCmd.Args[1:], " "))
-	checkCmd.Stdout = os.Stdout
-	checkCmd.Stderr = os.Stderr
 	err := checkCmd.Run()
 	if err != nil {
 		// Image doesn't exist, skip deletion
@@ -196,8 +187,5 @@ func (h *AcrHelper) deleteImageIfExists(repository, tag string) error {
 		"--image", imageName,
 		"--yes")
 	logrus.Debugf("Executing command: %s %s", deleteCmd.Path, strings.Join(deleteCmd.Args[1:], " "))
-	deleteCmd.Stdout = os.Stdout
-	deleteCmd.Stderr = os.Stderr
-
 	return deleteCmd.Run()
 }
