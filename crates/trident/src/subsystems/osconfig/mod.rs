@@ -320,6 +320,7 @@ mod tests {
                     kernel_command_line: KernelCommandLine::default(),
                     sysexts: vec![],
                     confexts: vec![],
+                    uefi_fallback: None,
                 },
                 ..Default::default()
             },
