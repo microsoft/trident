@@ -47,37 +47,45 @@ steps:
           exit 0
         fi
 
-        # Login to ACR
-        az acr login -n $(ACR_NAME)
+        ./bin/storm-trident helper push-to-acr \
+          --config ${{ parameters.config }} \
+          --deployment-environment ${{ parameters.deploymentEnvironment }} \
+          --acr-name $(ACR_NAME) \
+          --repo-name ${{ parameters.imageName }} \
+          --build-id $(Build.BuildId) \
+          --file-paths regular.cosi,regular_v2.cosi,regular_v3.cosi,regular_v4.cosi
 
-        repository_name=${{ parameters.imageName }}
-        build_id="$(Build.BuildId)"
+        # # Login to ACR
+        # az acr login -n $(ACR_NAME)
+
+        # repository_name=${{ parameters.imageName }}
+        # build_id="$(Build.BuildId)"
 
 
-        cd $(Build.SourcesDirectory)/artifacts/test-image
+        # cd $(Build.SourcesDirectory)/artifacts/test-image
 
-        tag_base="v${build_id}.${{ parameters.config }}.${{ parameters.deploymentEnvironment }}"
-        for version in {1..4}; do
-          if [[ $version == 1 ]]; then
-            filename="regular.cosi"
-          else
-            filename="regular_v${version}.cosi"
-          fi
+        # tag_base="v${build_id}.${{ parameters.config }}.${{ parameters.deploymentEnvironment }}"
+        # for version in {1..4}; do
+        #   if [[ $version == 1 ]]; then
+        #     filename="regular.cosi"
+        #   else
+        #     filename="regular_v${version}.cosi"
+        #   fi
 
-          tag="$tag_base.${version}"
+        #   tag="$tag_base.${version}"
 
-          if [[ -f "$filename" ]]; then
-            echo "Pushing $filename with tag $tag to $(ACR_NAME).azurecr.io"
-            oras push $(ACR_NAME).azurecr.io/$repository_name:$tag "$filename"
-            sleep 3
-            echo "Verifying $filename was pushed successfully..."
-            az acr repository show --name $(ACR_NAME) --image ${repository_name}:${tag}
-          else
-            echo "File $filename not found"
-          fi
-        done
+        #   if [[ -f "$filename" ]]; then
+        #     echo "Pushing $filename with tag $tag to $(ACR_NAME).azurecr.io"
+        #     oras push $(ACR_NAME).azurecr.io/$repository_name:$tag "$filename"
+        #     sleep 3
+        #     echo "Verifying $filename was pushed successfully..."
+        #     az acr repository show --name $(ACR_NAME) --image ${repository_name}:${tag}
+        #   else
+        #     echo "File $filename not found"
+        #   fi
+        # done
 
-        # Set variable for tag base of pushed images
-        echo "##vso[task.setvariable variable=TAG_BASE]$tag_base"
+        # # Set variable for tag base of pushed images
+        # echo "##vso[task.setvariable variable=TAG_BASE]$tag_base"
     displayName: "Push to ACR"
     retryCountOnTaskFailure: 3

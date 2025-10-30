@@ -6,8 +6,6 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/Azure/azure-sdk-for-go/sdk/containers/azcontainerregistry"
 	"github.com/microsoft/storm"
 	"github.com/sirupsen/logrus"
 )
@@ -37,7 +35,7 @@ func (h *PushToACRHelper) RegisterTestCases(r storm.TestRegistrar) error {
 }
 
 func (h *PushToACRHelper) pushToACR(tc storm.TestCase) error {
-	// Login to Azure and ACR
+	// Login to ACR
 	err := h.loginToACR()
 	if err != nil {
 		return fmt.Errorf("failed to login to ACR: %w", err)
@@ -59,25 +57,7 @@ func (h *PushToACRHelper) pushToACR(tc storm.TestCase) error {
 }
 
 func (h *PushToACRHelper) loginToACR() error {
-	// Login to Azure
-	clientId := azidentity.ClientID("1db04fd3-7844-4243-8d19-c70d8505411b")
-	cred, err := azidentity.NewManagedIdentityCredential(&azidentity.ManagedIdentityCredentialOptions{
-		ID: clientId,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to created managed identity credential: %w", err)
-	}
-
 	logrus.Infof("Logging in to ACR: %s\n", h.args.AcrName)
-	registryUrl := fmt.Sprintf("https://%s.azurecr.io", h.args.AcrName)
-	_, err = azcontainerregistry.NewClient(registryUrl, cred, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create ACR client: %w", err)
-	}
-
-	// logrus.Infof("Successfully authenticated to ACR using managed identity")
-	// return nil
-
 	cmd := exec.Command("az", "acr", "login", "-n", h.args.AcrName)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
