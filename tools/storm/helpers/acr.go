@@ -13,7 +13,8 @@ import (
 
 type AcrHelper struct {
 	args struct {
-		Push                  bool     `required:"" help:"If true, push images to ACR; if false, remove images from ACR" type:"bool"`
+		Push                  bool     `help:"If set, push images to ACR"`
+		Remove                bool     `help:"If set, remove images from ACR" type:"bool`
 		Config                string   `required:"" help:"Trident configuration (e.g., 'extensions')" type:"string"`
 		DeploymentEnvironment string   `required:"" help:"Deployment environment (virtualMachine or bareMetal)" type:"string"`
 		AcrName               string   `required:"" help:"Azure Container Registry name" type:"string"`
@@ -64,7 +65,7 @@ func (h *AcrHelper) pushToACR(tc storm.TestCase) error {
 }
 
 func (h *AcrHelper) removeFromAcr(tc storm.TestCase) error {
-	if h.args.Push {
+	if !h.args.Remove {
 		tc.Skip("Remove from ACR not requested.")
 	}
 
