@@ -748,7 +748,7 @@ website-clear:
 
 .PHONY: website-prereqs
 website-prereqs:
-	cd ./website && npm install && npm ci
+	cd ./website && npm ci
 
 DOCS_CONTENTS = $(shell find ./docs -type f)
 website/docs: $(DOCS_CONTENTS)
