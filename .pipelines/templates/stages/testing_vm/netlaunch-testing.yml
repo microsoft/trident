@@ -242,7 +242,7 @@ stages:
           - bash: |
               set -eux
               ./bin/storm-trident helper display-logs \
-                  --skip-serial \
+                  --skip-serial-log \
                   --trident-trace-log-file "$(tridentSourceDirectory)/logstream-full.log" \
                   --artifacts-folder "$(ob_outputDirectory)"
             displayName: "📄Display clean install logs"
