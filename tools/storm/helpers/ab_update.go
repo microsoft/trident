@@ -387,7 +387,6 @@ func (h *AbUpdateHelper) handleUefiFallback(tc storm.TestCase) error {
 			h.config["scripts"] = scripts
 		}
 	}
-	logrus.Tracef("Modified config for UEFI-fallback: [%v]", h.config)
 	return nil
 }
 
