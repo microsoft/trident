@@ -309,7 +309,7 @@ func (h *AbUpdateHelper) handleUefiFallback(tc storm.TestCase) error {
 		scripts = make(map[string]any)
 	}
 	if h.args.UefiFallback != "none" {
-		logrus.Tracef("Configuring UEFI-fallback rollback settings in host config")
+		logrus.Tracef("Configuring UEFI-fallback rollback settings in Host Configuration")
 		os, ok := h.config["os"].(map[string]any)
 		if !ok {
 			os = make(map[string]any)
