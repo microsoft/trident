@@ -28,6 +28,7 @@ steps:
         if [ ${{ parameters.config }} == 'misc' ]; then
           # Remove COSI images
           ./bin/storm-trident helper acr \
+            --push=false \
             --config ${{ parameters.config }} \
             --deployment-environment ${{ parameters.deploymentEnvironment }} \
             --acr-name $(ACR_NAME) \
@@ -37,6 +38,7 @@ steps:
 
         elif [ "${{ parameters.config }}" == 'extensions' ]; then
           ./bin/storm-trident helper acr \
+            --push=false \
             --config ${{ parameters.config }} \
             --deployment-environment ${{ parameters.deploymentEnvironment }} \
             --acr-name $(ACR_NAME) \
@@ -44,6 +46,7 @@ steps:
             --build-id $(Build.BuildId) \
             --num-clones 4
           ./bin/storm-trident helper acr \
+            --push=false \
             --config ${{ parameters.config }} \
             --deployment-environment ${{ parameters.deploymentEnvironment }} \
             --acr-name $(ACR_NAME) \
