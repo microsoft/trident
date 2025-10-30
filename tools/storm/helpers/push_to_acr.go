@@ -97,7 +97,7 @@ func (h *PushToACRHelper) pushImage(filePath, tag string) error {
 	logrus.Infof("Pushing %s with tag %s to %s\n", filePath, tag, registryURL)
 
 	// Use ORAS to push the image
-	cmd := exec.Command("oras", "push", fullImageName, filePath)
+	cmd := exec.Command("oras", "push", "--disable-path-validation", fullImageName, filePath)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
