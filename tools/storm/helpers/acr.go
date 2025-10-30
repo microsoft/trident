@@ -184,7 +184,7 @@ func (h *AcrHelper) deleteImageIfExists(repository, tag string) error {
 	if err != nil {
 		// Image doesn't exist, skip deletion
 		logrus.Debugf("Image %s/%s does not exist, skipping deletion", h.args.AcrName, imageName)
-		return nil
+		return err
 	}
 
 	// Image exists, delete it
