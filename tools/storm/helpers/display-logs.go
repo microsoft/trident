@@ -85,6 +85,22 @@ func getSerialPathFromNetlistenConfig(netlistenConfigPath string) string {
 	return ""
 }
 
+func (h *DisplayLogsHelper) copyAndDisplayLogFile(tc storm.TestCase, logFilePath string, artifactFileName string) error {
+	logrus.Infof("== Copy Log from %s to %s ==", logFilePath, h.args.ArtifactsFolder)
+	err := copyFileToArtifactsFolder(logFilePath, h.args.ArtifactsFolder, artifactFileName)
+	if err != nil {
+		return err
+	}
+
+	logrus.Infof("== Log Output from %s ==", logFilePath)
+	logs, err := os.ReadFile(logFilePath)
+	if err != nil {
+		return err
+	}
+	logrus.Info(strings.TrimSpace(string(logs)))
+	return nil
+}
+
 func (h *DisplayLogsHelper) displaySerial(tc storm.TestCase) error {
 	if h.args.SkipSerialLog {
 		tc.Skip("Skipping serial log.")
@@ -117,54 +133,22 @@ func (h *DisplayLogsHelper) displaySerial(tc storm.TestCase) error {
 		logrus.Tracef("Using fallback serial log file: %s", serialLogFile)
 	}
 
-	err := copyFileToArtifactsFolder(serialLogFile, h.args.ArtifactsFolder, h.args.SerialLogArtifactFileName)
-	if err != nil {
-		return err
+	return h.copyAndDisplayLogFile(tc, serialLogFile, h.args.SerialLogArtifactFileName)
+}
+
+func (h *DisplayLogsHelper) displayTridentLogFile(tc storm.TestCase, logFile string, skipMessage string) error {
+	if h.args.TridentLogFile == "" {
+		tc.Skip(skipMessage)
+		return nil
 	}
 
-	logrus.Infof("== Serial Log Output from %s ==", serialLogFile)
-	serialLogs, err := os.ReadFile(serialLogFile)
-	if err != nil {
-		return err
-	}
-	logrus.Info(strings.TrimSpace(string(serialLogs)))
-	return nil
+	return h.copyAndDisplayLogFile(tc, logFile, filepath.Base(logFile))
 }
 
 func (h *DisplayLogsHelper) displayTrident(tc storm.TestCase) error {
-	if h.args.TridentLogFile == "" {
-		tc.Skip("No trident log file specified")
-	}
-
-	err := copyFileToArtifactsFolder(h.args.TridentLogFile, h.args.ArtifactsFolder, filepath.Base(h.args.TridentLogFile))
-	if err != nil {
-		return err
-	}
-
-	logrus.Infof("== Trident Log Output from %s ==", h.args.TridentLogFile)
-	tridentLogs, err := os.ReadFile(h.args.TridentLogFile)
-	if err != nil {
-		return err
-	}
-	logrus.Info(strings.TrimSpace(string(tridentLogs)))
-	return nil
+	return h.displayTridentLogFile(tc, h.args.TridentLogFile, "No trident log file specified")
 }
 
 func (h *DisplayLogsHelper) displayTraceTrident(tc storm.TestCase) error {
-	if h.args.TridentTraceLogFile == "" {
-		tc.Skip("No trident trace log file specified")
-	}
-
-	err := copyFileToArtifactsFolder(h.args.TridentLogFile, h.args.ArtifactsFolder, filepath.Base(h.args.TridentLogFile))
-	if err != nil {
-		return err
-	}
-
-	logrus.Infof("== Trident Trace Log Output from %s ==", h.args.TridentTraceLogFile)
-	tridentTraceLogs, err := os.ReadFile(h.args.TridentTraceLogFile)
-	if err != nil {
-		return err
-	}
-	logrus.Info(strings.TrimSpace(string(tridentTraceLogs)))
-	return nil
+	return h.displayTridentLogFile(tc, h.args.TridentTraceLogFile, "No trident trace log file specified")
 }
