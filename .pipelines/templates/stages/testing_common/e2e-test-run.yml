@@ -415,7 +415,9 @@ steps:
           httpsProxy: ${{ parameters.httpsProxy }}
 
   - bash: |
-      $(Build.SourcesDirectory)/bin/storm-trident helper rebuild-raid \
+      set -eux
+      # To allow storm to access VM serial logs, need sudo. '-w' is needed with sudo
+      sudo $(Build.SourcesDirectory)/bin/storm-trident helper rebuild-raid -w \
           "${{ parameters.sshKeyPath }}" \
           "${{ parameters.hostIp }}" \
           "${{ parameters.userName }}" \
