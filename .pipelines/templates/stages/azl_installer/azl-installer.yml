@@ -40,7 +40,7 @@ stages:
 
     jobs:
       - job: BuildAzLInstallerISO
-        displayName: Build azl-installer-iso
+        displayName: Build azl-installers (attended & unattended)
         timeoutInMinutes: 20
         pool:
           type: linux
@@ -99,14 +99,28 @@ stages:
               micBuildType: ${{ parameters.micBuildType }}
               micVersion: ${{ parameters.micVersion }}
 
-  - stage: Test_AzureLinux_Installer_ISO
-    displayName: Test azl-installer-iso
+          - bash: |
+              set -ex
+              
+              # Rename to attended ISO
+              mv $(ob_outputDirectory)/azl-installer.iso $(ob_outputDirectory)/azl-installer-attended.iso
+              
+              # Create unattended ISO by patching the attended ISO with Host Configuration
+              $(Build.ArtifactStagingDirectory)/installer-tools/isopatch \
+                --iso $(ob_outputDirectory)/azl-installer-attended.iso \
+                --output $(ob_outputDirectory)/azl-installer-unattended.iso \
+                --patch tests/azl-installer/host-configuration.yaml:/installer/trident-config.yaml.tmpl
+            displayName: "Create attended and unattended ISOs"
+            workingDirectory: $(Build.SourcesDirectory)
+
+  - stage: Test_AzureLinux_Installer_ISO_Unattended
+    displayName: Test azl-installer-iso (unattended)
     dependsOn:
       - AzureLinux_Installer_ISO
 
     jobs:
-      - job: ValidateAzLInstallerISO
-        displayName: Validate azl-installer-iso
+      - job: ValidateAzLInstallerISO_Unattended
+        displayName: Validate azl-installer-iso (unattended)
         timeoutInMinutes: 20
         pool:
           type: linux
@@ -114,8 +128,9 @@ stages:
           hostArchitecture: amd64
 
         variables:
-          ob_outputDirectory: $(Pipeline.Workspace)/azl-installer-test
-          ob_artifactBaseName: azl-installer-test-$(System.JobAttempt)
+          ob_outputDirectory: $(Pipeline.Workspace)/azl-installer-test-unattended
+          ob_artifactBaseName: azl-installer-test-unattended-$(System.JobAttempt)
+          ISO_NAME: azl-installer-unattended
 
         steps:
           - template: ../trident_usb_iso/validate-usb-iso.yml

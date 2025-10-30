@@ -37,7 +37,7 @@ steps:
       uri_default = "qemu:///system"
       EOF
 
-      cp $(Pipeline.Workspace)/azl-installer/azl-installer.iso /tmp/azl-installer.iso
+      cp $(Pipeline.Workspace)/azl-installer/${ISO_NAME}.iso /tmp/azl-installer.iso
       sudo qemu-img create -f qcow2 /tmp/usb-iso-test-vm-volume.qcow2 16G
 
       sudo virsh net-create $(Build.SourcesDirectory)/.pipelines/templates/stages/trident_usb_iso/usb-iso-net-template.xml
