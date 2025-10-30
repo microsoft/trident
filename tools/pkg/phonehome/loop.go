@@ -11,7 +11,7 @@ import (
 // If a result file is specified, it writes the result to that file.
 // If the result indicates that we should terminate, it returns.
 // If the terminate channel receives something, it returns.
-func ListenLoop(ctx context.Context, result <-chan PhoneHomeResult, waitForProvisioned bool, maxFailures uint) int {
+func ListenLoop(ctx context.Context, result <-chan PhoneHomeResult, waitForProvisioned bool, maxFailures uint, onlyPrintExitCode bool) int {
 	failureCount := uint(0)
 
 	// Loop forever!

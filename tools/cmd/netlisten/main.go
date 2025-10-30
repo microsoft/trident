@@ -143,7 +143,7 @@ var rootCmd = &cobra.Command{
 		// Wait for done signal.
 		// HACK: Ignore the first failure from phonehome to support the 'rerun'
 		// E2E test.
-		exitCode := phonehome.ListenLoop(ctx, result, false, 1)
+		exitCode := phonehome.ListenLoop(ctx, result, false, 1, false)
 
 		log.Info("Shutting down server...")
 		server.Shutdown(context.Background())
