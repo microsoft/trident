@@ -44,7 +44,7 @@ steps:
             --acr-name $(ACR_NAME) \
             --repo-name sysext \
             --build-id $(Build.BuildId) \
-            --num-clones 4
+            --num-clones 2
           ./bin/storm-trident helper acr \
             --push=false \
             --config ${{ parameters.config }} \
@@ -52,7 +52,7 @@ steps:
             --acr-name $(ACR_NAME) \
             --repo-name confext \
             --build-id $(Build.BuildId) \
-            --num-clones 4
+            --num-clones 2
 
         else
           echo "Skipping step. Configuration is '${{ parameters.config }}'."
