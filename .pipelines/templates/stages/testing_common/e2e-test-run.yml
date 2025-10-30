@@ -184,8 +184,8 @@ steps:
 
   - bash: |
       set -eux
-      # sudo is needed to read qemu VM serial logs
-      sudo ./bin/storm-trident helper display-logs \
+      # sudo is needed to read qemu VM serial logs, `-w` is needed with sudo
+      sudo ./bin/storm-trident helper display-logs -w \
           --netlisten-config "${{ parameters.netlistenConfigFile }}" \
           --serial-log-artifact-file-name "stage-finalize-ab-update-target-os-B-serial.log" \
           --trident-log-file "$(Build.SourcesDirectory)/stage-finalize-ab-update-target-os-B.log" \
@@ -334,8 +334,8 @@ steps:
 
   - bash: |
       set -eux
-      # sudo is needed to read qemu VM serial logs
-      sudo ./bin/storm-trident helper display-logs \
+      # sudo is needed to read qemu VM serial logs, `-w` is needed with sudo
+      sudo ./bin/storm-trident helper display-logs -w \
           --netlisten-config "${{ parameters.netlistenConfigFile }}" \
           --serial-log-artifact-file-name "stage-finalize-ab-update-target-os-A-serial.log" \
           --trident-log-file "$(Build.SourcesDirectory)/stage-finalize-ab-update-target-os-A.log" \
