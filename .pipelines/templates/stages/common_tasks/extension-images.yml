@@ -18,7 +18,7 @@ steps:
         exit 0
       fi
 
-      ./bin/storm-trident helper build-extension-images --num-clones 2
+      ./bin/storm-trident helper build-extension-images --build-sysexts --build-confexts --num-clones 2
 
     displayName: "Build test sysext and confext images"
     workingDirectory: $(Build.SourcesDirectory)

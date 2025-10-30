@@ -40,5 +40,5 @@ steps:
           --file-paths $(Build.SourcesDirectory)/artifacts/test-image/regular_v2.cosi \
           --file-paths $(Build.SourcesDirectory)/artifacts/test-image/regular_v3.cosi \
           --file-paths $(Build.SourcesDirectory)/artifacts/test-image/regular_v4.cosi
-    displayName: "Push to ACR"
+    displayName: "Push COSI to ACR"
     retryCountOnTaskFailure: 3
