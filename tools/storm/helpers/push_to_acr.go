@@ -105,7 +105,6 @@ func (h *PushToACRHelper) pushImage(filePath, tag string) error {
 	cmd.Dir = dir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-
 	err := cmd.Run()
 	if err != nil {
 		return fmt.Errorf("oras push failed for %s: %w", filePath, err)
