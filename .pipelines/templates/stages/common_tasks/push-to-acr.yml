@@ -61,19 +61,21 @@ steps:
         set -eux
 
         if [ ${{ parameters.config }} == 'misc' ]; then
-          ./bin/storm-trident helper push-to-acr \
-          --config ${{ parameters.config }} \
-          --deployment-environment ${{ parameters.deploymentEnvironment }} \
-          --acr-name $(ACR_NAME) \
-          --repo-name ${{ parameters.imageName }} \
-          --build-id $(Build.BuildId) \
-          --file-paths $(Build.SourcesDirectory)/artifacts/test-image/regular.cosi \
-          --file-paths $(Build.SourcesDirectory)/artifacts/test-image/regular_v2.cosi \
-          --file-paths $(Build.SourcesDirectory)/artifacts/test-image/regular_v3.cosi \
-          --file-paths $(Build.SourcesDirectory)/artifacts/test-image/regular_v4.cosi
+          ./bin/storm-trident helper acr \
+            --push \
+            --config ${{ parameters.config }} \
+            --deployment-environment ${{ parameters.deploymentEnvironment }} \
+            --acr-name $(ACR_NAME) \
+            --repo-name ${{ parameters.imageName }} \
+            --build-id $(Build.BuildId) \
+            --file-paths $(Build.SourcesDirectory)/artifacts/test-image/regular.cosi \
+            --file-paths $(Build.SourcesDirectory)/artifacts/test-image/regular_v2.cosi \
+            --file-paths $(Build.SourcesDirectory)/artifacts/test-image/regular_v3.cosi \
+            --file-paths $(Build.SourcesDirectory)/artifacts/test-image/regular_v4.cosi
 
         elif [ ${{ parameters.config }} == 'extensions' ]; then
-          ./bin/storm-trident helper push-to-acr \
+          ./bin/storm-trident helper acr \
+            --push \
             --config ${{ parameters.config }} \
             --deployment-environment ${{ parameters.deploymentEnvironment }} \
             --acr-name $(ACR_NAME) \
@@ -83,7 +85,8 @@ steps:
             --file-paths $(Build.SourcesDirectory)/test-sysext-2.raw
 
         elif [ ${{ parameters.config }} == 'root-verity' ]; then
-          ./bin/storm-trident helper push-to-acr \
+          ./bin/storm-trident helper acr \
+            --push \
             --config ${{ parameters.config }} \
             --deployment-environment ${{ parameters.deploymentEnvironment }} \
             --acr-name $(ACR_NAME) \

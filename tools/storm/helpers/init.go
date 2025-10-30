@@ -9,5 +9,5 @@ var TRIDENT_HELPERS = []storm.Helper{
 	&BootMetricsHelper{},
 	&CheckSelinuxHelper{},
 	&BuildExtensionImagesHelper{},
-	&PushToACRHelper{},
+	&AcrHelper{},
 }
