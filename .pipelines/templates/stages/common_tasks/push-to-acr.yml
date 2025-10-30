@@ -53,7 +53,11 @@ steps:
           --acr-name $(ACR_NAME) \
           --repo-name ${{ parameters.imageName }} \
           --build-id $(Build.BuildId) \
-          --file-paths regular.cosi,regular_v2.cosi,regular_v3.cosi,regular_v4.cosi
+          --file-paths \
+            $(Build.SourcesDirectory)/artifacts/test-image/regular.cosi,\
+            $(Build.SourcesDirectory)/artifacts/test-image/regular_v2.cosi,\
+            $(Build.SourcesDirectory)/artifacts/test-image/regular_v3.cosi,\
+            $(Build.SourcesDirectory)/artifacts/test-image/regular_v4.cosi
 
         # # Login to ACR
         # az acr login -n $(ACR_NAME)

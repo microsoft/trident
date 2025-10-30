@@ -68,8 +68,7 @@ func (h *PushToACRHelper) pushFiles(tagBase string) error {
 	for i, filePath := range h.args.FilePaths {
 		// Check if file exists
 		if _, err := os.Stat(filePath); os.IsNotExist(err) {
-			logrus.Infof("File %s not found, skipping\n", filePath)
-			continue
+			return fmt.Errorf("file %s does not exist: %w", filePath, err)
 		}
 
 		// Create tag with index
