@@ -414,13 +414,14 @@ steps:
           netlistenConfigFile: ${{ parameters.netlistenConfigFile }}
           httpsProxy: ${{ parameters.httpsProxy }}
 
-  - template: ../testing_common/trident-rebuild.yml
-    parameters:
-      hostIp: ${{ parameters.hostIp }}
-      sshKeyPath: ${{ parameters.sshKeyPath }}
-      userName: ${{ parameters.userName }}
-      runtimeEnv: ${{ parameters.runtimeEnv }}
-      tridentSourceDirectory: $(Build.SourcesDirectory)
-      tridentConfigPath: ${{ parameters.tridentConfigPath }}
-      deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
-      tridentConfigurationName: ${{ parameters.tridentConfigurationName }}
+  - bash: |
+      $(Build.SourcesDirectory)/bin/storm-trident helper rebuild-raid \
+          "${{ parameters.sshKeyPath }}" \
+          "${{ parameters.hostIp }}" \
+          "${{ parameters.userName }}" \
+          "${{ parameters.runtimeEnv }}" \
+          --trident-config-path "${{ parameters.tridentConfigPath }}" \
+          --deployment-environment "${{ parameters.deploymentEnvironment }}" \
+          --disk "${{ parameters.disk }}" \
+          --artifacts-folder "$(ob_outputDirectory)"
+    displayName: "Test Trident rebuild-raid"
