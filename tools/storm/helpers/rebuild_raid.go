@@ -30,6 +30,8 @@ type RebuildRaidHelper struct {
 		SkipRebuildRaid          bool   `help:"Skip the rebuild RAID step." type:"bool" default:"false"`
 		ArtifactsFolder          string `help:"Folder to copy log files into." type:"string" default:""`
 	}
+
+	failed bool
 }
 
 func (h RebuildRaidHelper) Name() string {
@@ -49,18 +51,24 @@ func (h *RebuildRaidHelper) RegisterTestCases(r storm.TestRegistrar) error {
 	return nil
 }
 
+func (h *RebuildRaidHelper) FailFromError(tc storm.TestCase, err error) {
+	h.failed = true
+	tc.FailFromError(err)
+}
+
 func (h *RebuildRaidHelper) checkIfNeeded(tc storm.TestCase) error {
+	h.failed = false
 
 	tridentConfigContents, err := os.ReadFile(h.args.TridentConfigPath)
 	if err != nil {
 		logrus.Tracef("Failed to read trident config file %s: %v", h.args.TridentConfigPath, err)
-		return err
+		h.FailFromError(tc, err)
 	}
 	tridentConfig := make(map[string]interface{})
 	err = yaml.UnmarshalStrict(tridentConfigContents, &tridentConfig)
 	if err != nil {
 		logrus.Tracef("Failed to parse trident config file %s: %v", h.args.TridentConfigPath, err)
-		return err
+		h.FailFromError(tc, err)
 	}
 
 	raidExists := tridentConfig["storage"].(map[string]interface{})["raid"] != nil
@@ -86,12 +94,16 @@ func (h *RebuildRaidHelper) checkIfNeeded(tc storm.TestCase) error {
 }
 
 func (h *RebuildRaidHelper) failBaremetalRaids(tc storm.TestCase) error {
+	if h.failed {
+		tc.Skip("Previous step failed; skipping this test case.")
+		return nil
+	}
 	if h.args.SkipRebuildRaid {
-		logrus.Infof("Skipping fail bare metal raids step")
+		tc.Skip("Skipping fail bare metal raids step")
 		return nil
 	}
 	if h.args.DeploymentEnvironment != "bareMetal" {
-		logrus.Infof("Skipping fail bare metal raids step for deployment environment: %s", h.args.DeploymentEnvironment)
+		tc.Skip(fmt.Sprintf("Skipping fail bare metal raids step for deployment environment: %s", h.args.DeploymentEnvironment))
 		return nil
 	}
 	logrus.Infof("Failing bare metal raids")
@@ -305,12 +317,16 @@ func (h *RebuildRaidHelper) failBaremetalRaids(tc storm.TestCase) error {
 }
 
 func (h *RebuildRaidHelper) shutdownVirtualMachine(tc storm.TestCase) error {
+	if h.failed {
+		tc.Skip("Previous step failed; skipping this test case.")
+		return nil
+	}
 	if h.args.SkipRebuildRaid {
-		logrus.Infof("Skipping virtual machine shutdown step")
+		tc.Skip("Skipping virtual machine shutdown step")
 		return nil
 	}
 	if h.args.DeploymentEnvironment != "virtualMachine" {
-		logrus.Infof("Skipping shutdown VM step for deployment environment: %s", h.args.DeploymentEnvironment)
+		tc.Skip(fmt.Sprintf("Skipping shutdown VM step for deployment environment: %s", h.args.DeploymentEnvironment))
 		return nil
 	}
 	logrus.Infof("Shutting down virtual machine %s", h.args.VmName)
@@ -438,8 +454,12 @@ func (h *RebuildRaidHelper) shutdownVirtualMachine(tc storm.TestCase) error {
 }
 
 func (h *RebuildRaidHelper) checkTridentServiceWithSsh(tc storm.TestCase) error {
+	if h.failed {
+		tc.Skip("Previous step failed; skipping this test case.")
+		return nil
+	}
 	if h.args.SkipRebuildRaid {
-		logrus.Infof("Skipping trident service check step")
+		tc.Skip("Skipping trident service check step")
 		return nil
 	}
 	err := check.CheckTridentService(
@@ -451,7 +471,7 @@ func (h *RebuildRaidHelper) checkTridentServiceWithSsh(tc storm.TestCase) error 
 	)
 	if err != nil {
 		logrus.Errorf("Trident service check via SSH failed: %s", err)
-		tc.FailFromError(err)
+		h.FailFromError(tc, err)
 	}
 	return nil
 }
@@ -617,8 +637,12 @@ func (h *RebuildRaidHelper) triggerRebuildRaid(tridentConfig string) error {
 }
 
 func (h *RebuildRaidHelper) rebuildRaid(tc storm.TestCase) error {
+	if h.failed {
+		tc.Skip("Previous step failed; skipping this test case.")
+		return nil
+	}
 	if h.args.SkipRebuildRaid {
-		logrus.Infof("Skipping rebuild RAID step")
+		tc.Skip("Skipping rebuild RAID step")
 		return nil
 	}
 	// def main():
@@ -675,7 +699,7 @@ func (h *RebuildRaidHelper) rebuildRaid(tc storm.TestCase) error {
 		h.args.TridentConfigPath,
 	)
 	if err != nil {
-		tc.FailFromError(err)
+		h.FailFromError(tc, err)
 	}
 
 	return nil
