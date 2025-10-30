@@ -35,10 +35,11 @@ func (h *CheckSshHelper) RegisterTestCases(r storm.TestRegistrar) error {
 }
 
 func (h *CheckSshHelper) checkTridentServiceWithSsh(tc storm.TestCase) error {
+	expectSuccessfulCommit := !h.args.ExpectFailedCommit
 	err := check.CheckTridentService(
 		h.args.SshCliSettings,
 		h.args.EnvCliSettings,
-		h.args.ExpectFailedCommit,
+		expectSuccessfulCommit,
 		h.args.TimeoutDuration(),
 		tc,
 	)

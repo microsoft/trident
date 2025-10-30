@@ -369,10 +369,11 @@ func (h *AbUpdateHelper) checkTridentService(tc storm.TestCase) error {
 		tc.Skip("No Trident environment specified")
 	}
 
+	expectSuccessfulCommit := !h.args.ExpectFailedCommit
 	err := sshcheck.CheckTridentService(
 		h.args.SshCliSettings,
 		h.args.EnvCliSettings,
-		h.args.ExpectFailedCommit,
+		expectSuccessfulCommit,
 		h.args.TimeoutDuration(),
 		tc)
 	if err != nil {

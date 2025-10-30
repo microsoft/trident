@@ -7,11 +7,14 @@ import (
 	"strings"
 	"time"
 	"tridenttools/storm/utils"
+	"tridenttools/storm/utils/env"
+	check "tridenttools/storm/utils/ssh/check"
 	sshclient "tridenttools/storm/utils/ssh/client"
 	sshconfig "tridenttools/storm/utils/ssh/config"
 
 	"github.com/microsoft/storm"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v2"
 	"libvirt.org/go/libvirtxml"
 )
@@ -19,6 +22,7 @@ import (
 type RebuildRaidHelper struct {
 	args struct {
 		sshconfig.SshCliSettings `embed:""`
+		env.EnvCliSettings       `embed:""`
 		TridentConfigPath        string `help:"Path to the Trident configuration file." type:"string"`
 		DeploymentEnvironment    string `help:"Deployment environment (e.g., bareMetal, virtualMachine)." type:"string" default:"virtualMachine"`
 		VmName                   string `help:"Name of VM." type:"string" default:"virtdeploy-vm-0"`
@@ -40,8 +44,8 @@ func (h *RebuildRaidHelper) RegisterTestCases(r storm.TestRegistrar) error {
 	r.RegisterTestCase("check-if-needed", h.checkIfNeeded)
 	r.RegisterTestCase("fail-bm-raids", h.failBaremetalRaids)
 	r.RegisterTestCase("shutdown-vm", h.shutdownVirtualMachine)
-	r.RegisterTestCase("check-ssh", h.shutdownVirtualMachine)
-	r.RegisterTestCase("rebuild-raid", h.shutdownVirtualMachine)
+	r.RegisterTestCase("check-ssh", h.checkTridentServiceWithSsh)
+	r.RegisterTestCase("rebuild-raid", h.rebuildRaid)
 	return nil
 }
 
@@ -82,6 +86,10 @@ func (h *RebuildRaidHelper) checkIfNeeded(tc storm.TestCase) error {
 }
 
 func (h *RebuildRaidHelper) failBaremetalRaids(tc storm.TestCase) error {
+	if h.args.SkipRebuildRaid {
+		logrus.Infof("Skipping fail bare metal raids step")
+		return nil
+	}
 	if h.args.DeploymentEnvironment != "bareMetal" {
 		logrus.Infof("Skipping fail bare metal raids step for deployment environment: %s", h.args.DeploymentEnvironment)
 		return nil
@@ -297,6 +305,10 @@ func (h *RebuildRaidHelper) failBaremetalRaids(tc storm.TestCase) error {
 }
 
 func (h *RebuildRaidHelper) shutdownVirtualMachine(tc storm.TestCase) error {
+	if h.args.SkipRebuildRaid {
+		logrus.Infof("Skipping virtual machine shutdown step")
+		return nil
+	}
 	if h.args.DeploymentEnvironment != "virtualMachine" {
 		logrus.Infof("Skipping shutdown VM step for deployment environment: %s", h.args.DeploymentEnvironment)
 		return nil
@@ -422,5 +434,249 @@ func (h *RebuildRaidHelper) shutdownVirtualMachine(tc storm.TestCase) error {
 	if err != nil {
 		tc.Error(err)
 	}
+	return nil
+}
+
+func (h *RebuildRaidHelper) checkTridentServiceWithSsh(tc storm.TestCase) error {
+	if h.args.SkipRebuildRaid {
+		logrus.Infof("Skipping trident service check step")
+		return nil
+	}
+	err := check.CheckTridentService(
+		h.args.SshCliSettings,
+		h.args.EnvCliSettings,
+		true,
+		h.args.TimeoutDuration(),
+		tc,
+	)
+	if err != nil {
+		logrus.Errorf("Trident service check via SSH failed: %s", err)
+		tc.FailFromError(err)
+	}
+	return nil
+}
+
+// def check_file_exists(connection: Connection, file_path: str) -> bool:
+func (h *RebuildRaidHelper) checkFileExists(client *ssh.Client, filePath string) (bool, error) {
+	clientSession, err := client.NewSession()
+	if err != nil {
+		return false, err
+	}
+	defer clientSession.Close()
+	// 	"""
+	// 	Checks if a file exists at the specified path on the host.
+	// 	"""
+	// 	command = f"test -f {file_path}"
+	command := fmt.Sprintf("test -f %s", filePath)
+	// 	result = _connection_run_command(connection, command)
+	err = clientSession.Run(command)
+	if err != nil {
+		return false, nil
+	}
+	return true, nil
+}
+
+// def trident_rebuild_raid(connection, trident_config, runtime_env):
+func (h *RebuildRaidHelper) tridentRebuildRaid(client *ssh.Client, tridentConfig string) error {
+	clientSession, err := client.NewSession()
+	if err != nil {
+		return err
+	}
+	defer clientSession.Close()
+
+	// 	Args:
+	// 		connection : The SSH connection to the host.
+	// 		trident_config : The full path to the Trident config on the host.
+
+	// 	"""
+	// 	# Provide -c arg, the full path to the RW Trident config.
+	// 	trident_return_code, trident_stdout, trident_stderr = trident_run(
+	// 		connection, f"rebuild-raid -v trace", runtime_env
+	// 	)
+	command := fmt.Sprintf("trident rebuild-raid -c %s -v trace", tridentConfig)
+	output, err := clientSession.CombinedOutput(command)
+	// 	trident_output = trident_stdout + trident_stderr
+	// 	print("Trident rebuild-raid output {}".format(trident_output))
+	logrus.Infof("Trident rebuild-raid output:\n%s", string(output))
+
+	// 	# Check the exit code: if 0, Trident rebuild-raid succeeded.
+	// 	if trident_return_code == 0:
+	// 		print(
+	// 			"Received expected output with exit code 0. Trident rebuild-raid succeeded."
+	// 		)
+	// 	else:
+	// 		raise Exception(
+	// 			f"Command unexpectedly returned with exit code {trident_return_code} and output {trident_output}"
+	// 		)
+	if err != nil {
+		return err
+	}
+	logrus.Info("Trident rebuild-raid succeeded")
+	// 	return
+	return nil
+}
+
+// def copy_host_config(connection, trident_config):
+func (h *RebuildRaidHelper) copyHostConfig(client *ssh.Client, tridentConfig string) error {
+	clientSession, err := client.NewSession()
+	if err != nil {
+		return err
+	}
+	defer clientSession.Close()
+	// 	"""
+	// 	Copies the Trident config to the host.
+
+	// 	Args:
+	// 		connection : The SSH connection to the host.
+	// 		trident_config : The full path to the Trident config on the host.
+
+	// 	"""
+	// 	# If file at path trident_config does not exist, copy it over from LOCAL_TRIDENT_CONFIG_PATH
+	// 	if not check_file_exists(connection, trident_config):
+	fileExists, err := h.checkFileExists(client, tridentConfig)
+	if err != nil {
+		return err
+	}
+	if !fileExists {
+		// 		print(
+		// 			f"File {trident_config} does not exist. Copying from {LOCAL_TRIDENT_CONFIG_PATH}"
+		// 		)
+		LOCAL_TRIDENT_CONFIG_PATH := "/etc/trident/config.yaml"
+		logrus.Infof("File %s does not exist. Copying from %s", tridentConfig, LOCAL_TRIDENT_CONFIG_PATH)
+		// 		run_ssh_command(
+		// 			connection,
+		// 			f"cp {LOCAL_TRIDENT_CONFIG_PATH} {trident_config}",
+		// 			use_sudo=True,
+		// 		)
+		copyCommand := fmt.Sprintf("sudo cp %s %s", LOCAL_TRIDENT_CONFIG_PATH, tridentConfig)
+		output, err := clientSession.CombinedOutput(copyCommand)
+		if err != nil {
+			logrus.Errorf("Failed to copy Trident config to host: %s\n%s", err, string(output))
+			return err
+		}
+	}
+	// 	trident_config_output = run_ssh_command(
+	// 		connection,
+	// 		f"cat {trident_config}",
+	// 		use_sudo=True,
+	// 	).strip()
+	catCommand := fmt.Sprintf("sudo cat %s", tridentConfig)
+	tridentConfigOutput, err := clientSession.CombinedOutput(catCommand)
+	if err != nil {
+		logrus.Errorf("Failed to read Trident config on host: %s\n%s", err, string(tridentConfigOutput))
+		return err
+	}
+	// 	print("Trident configuration:\n", trident_config_output)
+	logrus.Infof("Trident configuration:\n%s", string(tridentConfigOutput))
+	return nil
+}
+
+// def trigger_rebuild_raid(
+//
+//	ip_address,
+//	user_name,
+//	keys_file_path,
+//	runtime_env,
+//	trident_config,
+//
+// ):
+func (h *RebuildRaidHelper) triggerRebuildRaid(tridentConfig string) error {
+	// 	"""Connects to the host via SSH, copies the Trident config to the host, and runs Trident rebuild-raid.
+
+	// 	Args:
+	// 		ip_address : The IP address of the host.
+	// 		user_name : The user name to ssh into the host with.
+	// 		keys_file_path : The full path to the file containing the host ssh keys.
+	// 		trident_config : The full path to the Trident config on the host.
+	// 	"""
+	// 	# Set up SSH client
+	// 	connection = create_ssh_connection(ip_address, user_name, keys_file_path)
+	client, err := sshclient.OpenSshClient(h.args.SshCliSettings)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	// 	# Copy the Trident config to the host
+	// 	copy_host_config(connection, trident_config)
+	err = h.copyHostConfig(client, tridentConfig)
+	if err != nil {
+		return err
+	}
+
+	// 	# Re-build Trident and capture logs
+	// 	print("Re-building Trident", flush=True)
+	logrus.Info("Re-building Trident")
+	// 	trident_rebuild_raid(connection, trident_config, runtime_env)
+	err = h.tridentRebuildRaid(client, tridentConfig)
+	if err != nil {
+		return err
+	}
+	// 	connection.close()
+	return nil
+}
+
+func (h *RebuildRaidHelper) rebuildRaid(tc storm.TestCase) error {
+	if h.args.SkipRebuildRaid {
+		logrus.Infof("Skipping rebuild RAID step")
+		return nil
+	}
+	// def main():
+	// 	# Setting argument_default=argparse.SUPPRESS means that the program will
+	// 	# halt attribute creation if no values provided for arg-s
+	// 	parser = argparse.ArgumentParser(
+	// 		allow_abbrev=True, argument_default=argparse.SUPPRESS
+	// 	)
+	// 	parser.add_argument(
+	// 		"-i",
+	// 		"--ip-address",
+	// 		type=str,
+	// 		help="IP address of the host.",
+	// 	)
+	// 	parser.add_argument(
+	// 		"-u",
+	// 		"--user-name",
+	// 		type=str,
+	// 		help="User name to ssh into the host with.",
+	// 	)
+	// 	parser.add_argument(
+	// 		"-k",
+	// 		"--keys-file-path",
+	// 		type=str,
+	// 		help="Full path to the file containing the host ssh keys.",
+	// 	)
+	// 	parser.add_argument(
+	// 		"-e",
+	// 		"--runtime-env",
+	// 		action="store",
+	// 		type=str,
+	// 		choices=["host", "container"],
+	// 		default="host",
+	// 		help="Runtime environment for trident: 'host' or 'container'. Default is 'host'.",
+	// 	)
+	// 	parser.add_argument(
+	// 		"-c",
+	// 		"--trident-config",
+	// 		type=str,
+	// 		help="File name of the custom read-write Trident config on the host to point Trident to.",
+	// 	)
+
+	// 	args = parser.parse_args()
+
+	// 	# Call helper func that runs Trident rebuild-raid
+	// 	trigger_rebuild_raid(
+	// 		args.ip_address,
+	// 		args.user_name,
+	// 		args.keys_file_path,
+	// 		args.runtime_env,
+	// 		args.trident_config,
+	// 	)
+	err := h.triggerRebuildRaid(
+		h.args.TridentConfigPath,
+	)
+	if err != nil {
+		tc.FailFromError(err)
+	}
+
 	return nil
 }
