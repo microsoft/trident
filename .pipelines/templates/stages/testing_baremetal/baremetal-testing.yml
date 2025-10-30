@@ -381,3 +381,4 @@ stages:
             parameters:
               repository: ${{ variables.IMAGE_NAME }}
               config: $(TRIDENT_CONFIGURATION_NAME)
+              deploymentEnvironment: "bareMetal"
