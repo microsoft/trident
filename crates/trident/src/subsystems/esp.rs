@@ -23,7 +23,7 @@ use trident_api::{
         GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH,
     },
     error::{ReportError, ServicingError, TridentError, TridentResultExt},
-    status::AbVolumeSelection,
+    status::{AbVolumeSelection, ServicingType},
 };
 
 use crate::{
@@ -220,19 +220,27 @@ fn copy_file_artifacts(
     Ok(())
 }
 
+/// Configures UEFI fallback by copying boot files to the UEFI fallback folder
+/// based on the UEFI fallback mode and servicing type.
+/// For Clean Install and Rollforward, the target OS boot files are copied to the
+/// UEFI fallback folder. For None and Rollback, no action is taken during
+/// Clean Install.
+/// For A/B Update and Rollforward, the target OS boot files are copied to the
+/// UEFI fallback folder. For Rollback, the servicing OS boot files are copied
+/// to the UEFI fallback folder. For None, no action is taken.
 fn configure_uefi_fallback(ctx: &EngineContext, mount_point: &Path) -> Result<(), Error> {
     match ctx.spec.os.uefi_fallback {
         Some(UefiFallbackMode::Rollback) => {
             debug!("UEFI fallback mode is set to rollback");
             match ctx.servicing_type {
-                trident_api::status::ServicingType::CleanInstall => {
+                ServicingType::CleanInstall => {
                     // For clean install, do nothing
-                    debug!("Clean install detected. No action needed for UEFI rollback mode.");
+                    debug!("Clean install detected, no action needed for UEFI rollback mode");
                 }
-                trident_api::status::ServicingType::AbUpdate => {
+                ServicingType::AbUpdate => {
                     // For Rollback, the fallback path should contain the boot
                     // files that were installed previously (the servicing OS).
-                    // For update, ab_active_volume is set to the servicing OS volume,
+                    // ab_active_volume is set to the servicing OS volume,
                     // so copy from that volume.
                     let active_boot_esp_dir_name = boot::make_esp_dir_name(
                         ctx.install_index,
@@ -241,26 +249,11 @@ fn configure_uefi_fallback(ctx: &EngineContext, mount_point: &Path) -> Result<()
                             Some(AbVolumeSelection::VolumeB) => AbVolumeSelection::VolumeB,
                         },
                     );
-                    let active_boot_esp_dir_path = mount_point
-                        .join(ESP_RELATIVE_MOUNT_POINT_PATH)
-                        .join(ESP_EFI_DIRECTORY)
-                        .join(active_boot_esp_dir_name);
-                    let uefi_fallback_path = mount_point
-                        .join(ESP_RELATIVE_MOUNT_POINT_PATH)
-                        .join(ESP_EFI_DIRECTORY)
-                        .join(EFI_DEFAULT_BIN_DIRECTORY);
-                    debug!(
-                        "{:?} detected. Copying boot files from {} to {}",
-                        ctx.servicing_type,
-                        active_boot_esp_dir_path.display(),
-                        uefi_fallback_path.display()
-                    );
-                    simple_copy_boot_files(&active_boot_esp_dir_path, &uefi_fallback_path)
-                        .context(format!(
-                            "Failed to copy boot files from directory {} to directory {}",
-                            active_boot_esp_dir_path.display(),
-                            uefi_fallback_path.display()
-                        ))?;
+                    copy_boot_files_for_uefi_fallback(
+                        mount_point,
+                        &active_boot_esp_dir_name,
+                        &ctx.servicing_type,
+                    )?;
                 }
                 _ => {
                     debug!("{:?} detected, no action needed.", ctx.servicing_type);
@@ -270,12 +263,11 @@ fn configure_uefi_fallback(ctx: &EngineContext, mount_point: &Path) -> Result<()
         Some(UefiFallbackMode::Rollforward) => {
             debug!("UEFI fallback mode is set to rollforward");
             match ctx.servicing_type {
-                trident_api::status::ServicingType::CleanInstall
-                | trident_api::status::ServicingType::AbUpdate => {
+                ServicingType::CleanInstall | ServicingType::AbUpdate => {
                     // For Rollforward, the fallback path should contain the boot
-                    // files that were just installed.
-                    // For install, ab_active_volume is None, COSI files are installed
-                    // so A, so copy from A
+                    // files that were just installed (the target OS).
+                    // For install, ab_active_volume is None, the target OS is
+                    // installed on A, so copy from A
                     // For update, ab_active_volume is set to the servicing OS volume,
                     // so copy from the opposite volume.
                     let next_boot_esp_dir_name = boot::make_esp_dir_name(
@@ -285,26 +277,10 @@ fn configure_uefi_fallback(ctx: &EngineContext, mount_point: &Path) -> Result<()
                             Some(AbVolumeSelection::VolumeA) => AbVolumeSelection::VolumeB,
                         },
                     );
-                    let next_boot_esp_dir_path = mount_point
-                        .join(ESP_RELATIVE_MOUNT_POINT_PATH)
-                        .join(ESP_EFI_DIRECTORY)
-                        .join(next_boot_esp_dir_name);
-                    let uefi_fallback_path = mount_point
-                        .join(ESP_RELATIVE_MOUNT_POINT_PATH)
-                        .join(ESP_EFI_DIRECTORY)
-                        .join(EFI_DEFAULT_BIN_DIRECTORY);
-                    debug!(
-                        "{:?} detected. Copying boot files from {} to {}.",
-                        ctx.servicing_type,
-                        next_boot_esp_dir_path.display(),
-                        uefi_fallback_path.display()
-                    );
-                    simple_copy_boot_files(&next_boot_esp_dir_path, &uefi_fallback_path).context(
-                        format!(
-                            "Failed to copy boot files from directory {} to directory {}",
-                            next_boot_esp_dir_path.display(),
-                            uefi_fallback_path.display()
-                        ),
+                    copy_boot_files_for_uefi_fallback(
+                        mount_point,
+                        &next_boot_esp_dir_name,
+                        &ctx.servicing_type,
                     )?;
                 }
                 _ => {
@@ -320,6 +296,33 @@ fn configure_uefi_fallback(ctx: &EngineContext, mount_point: &Path) -> Result<()
     Ok(())
 }
 
+fn copy_boot_files_for_uefi_fallback(
+    mount_point: &Path,
+    source_esp_name: &String,
+    servicing_type: &ServicingType,
+) -> Result<(), Error> {
+    let source_esp_dir_path = mount_point
+        .join(ESP_RELATIVE_MOUNT_POINT_PATH)
+        .join(ESP_EFI_DIRECTORY)
+        .join(source_esp_name);
+    let uefi_fallback_path = mount_point
+        .join(ESP_RELATIVE_MOUNT_POINT_PATH)
+        .join(ESP_EFI_DIRECTORY)
+        .join(EFI_DEFAULT_BIN_DIRECTORY);
+    debug!(
+        "{:?} detected. Copying boot files from {} to {}.",
+        servicing_type,
+        source_esp_dir_path.display(),
+        uefi_fallback_path.display()
+    );
+    simple_copy_boot_files(&source_esp_dir_path, &uefi_fallback_path).context(format!(
+        "Failed to copy boot files from directory {} to directory {}",
+        source_esp_dir_path.display(),
+        uefi_fallback_path.display()
+    ))?;
+    Ok(())
+}
+
 /// Copies boot files from one folder to another.
 fn simple_copy_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
     trace!(
@@ -327,11 +330,9 @@ fn simple_copy_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
         from_dir.display(),
         to_dir.display()
     );
-    // Create to_dir if it doesn't exist
-    if !Path::new(to_dir).exists() {
-        fs::create_dir_all(to_dir)
-            .context(format!("Failed to create directory {}", to_dir.display()))?;
-    }
+    // Ensure to_dir exists
+    fs::create_dir_all(to_dir)
+        .context(format!("Failed to create directory {}", to_dir.display()))?;
 
     // Copy all files from from_dir to to_dir as <existing_filename>.new
     fs::read_dir(from_dir)?
@@ -345,7 +346,7 @@ fn simple_copy_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
                 from_path.path().display(),
                 to_path.display(),
             ))?;
-            debug!(
+            trace!(
                 "Copied file {} to {}",
                 from_path.path().display(),
                 to_path.display()
@@ -698,7 +699,6 @@ mod tests {
             }
             let mut file = File::create(&full_path).unwrap();
             writeln!(file, "Mock content for {}: {}", path.display(), content).unwrap();
-            trace!("Created mock boot file {}", full_path.display());
         }
     }
 
