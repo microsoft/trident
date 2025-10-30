@@ -75,13 +75,13 @@ func (h *PushToACRHelper) loginToACR() error {
 		return fmt.Errorf("failed to create ACR client: %w", err)
 	}
 
-	logrus.Infof("Successfully authenticated to ACR using managed identity")
-	return nil
+	// logrus.Infof("Successfully authenticated to ACR using managed identity")
+	// return nil
 
-	// cmd := exec.Command("az", "acr", "login", "-n", h.args.AcrName)
-	// cmd.Stdout = os.Stdout
-	// cmd.Stderr = os.Stderr
-	// return cmd.Run()
+	cmd := exec.Command("az", "acr", "login", "-n", h.args.AcrName)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
 
 func (h *PushToACRHelper) pushFiles(tagBase string) error {
