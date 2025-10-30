@@ -1,4 +1,8 @@
 use std::collections::HashSet;
+use std::{
+    fmt::{Display, Formatter, Result as FmtResult},
+    str::FromStr,
+};
 
 use log::warn;
 use netplan_types::NetworkConfig;
@@ -132,8 +136,8 @@ pub enum SelinuxMode {
     Enforcing,
 }
 
-impl std::fmt::Display for SelinuxMode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Display for SelinuxMode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         let mode_str = match self {
             SelinuxMode::Disabled => "disabled",
             SelinuxMode::Permissive => "permissive",
@@ -143,7 +147,7 @@ impl std::fmt::Display for SelinuxMode {
     }
 }
 
-impl std::str::FromStr for SelinuxMode {
+impl FromStr for SelinuxMode {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -157,29 +161,40 @@ impl std::str::FromStr for SelinuxMode {
 }
 
 /// UEFIFallback mode
+///
+/// UEFI provides a mechanism for booting from an EFI file without
+/// a corresponding boot variable existing in NVRAM. This is known
+/// as the UEFI fallback mode, and it uses a specific file path
+/// (\EFI\BOOT) to locate the fallback bootloader.
+///
+/// This configuration option allows specifying how Trident should
+/// populate the UEFI fallback boot files during OS installation or
+/// update.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Copy)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub enum UefiFallbackMode {
     /// # Rollback
     ///
-    /// Set the UEFI fallback mode to rollback, where fallback will boot
-    /// to the last OS.
+    /// In 'rollback' mode, the servicing OS boot files will be used as
+    /// the UEFI fallback boot files. This mode is not valid for clean
+    /// installs.
     Rollback,
 
     /// # Rollforward
     ///
-    /// Set the UEFI fallback mode to rollforward, where fallback will boot
-    /// to the newly installed or updated OS.
+    /// In 'rollforward' mode, the newly installed or updated OS (the
+    /// target OS) boot files will be used as the UEFI fallback boot files.
     Rollforward,
 
     /// # None
     ///
-    /// Leave the fallback UEFI files untouched during install and update.
+    /// This is the default mode, where no UEFI fallback boot files
+    /// are installed.
     None,
 }
 
-impl std::fmt::Display for UefiFallbackMode {
+impl Display for UefiFallbackMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mode_str = match self {
             UefiFallbackMode::Rollback => "rollback",
@@ -190,7 +205,7 @@ impl std::fmt::Display for UefiFallbackMode {
     }
 }
 
-impl std::str::FromStr for UefiFallbackMode {
+impl FromStr for UefiFallbackMode {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
