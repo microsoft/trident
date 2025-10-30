@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Tests the azl-installer ISO which automatically runs liveinstaller in unattended mode.
+# The installer detects the target disk and runs trident install without manual intervention.
 
 import argparse
 import libvirt
@@ -95,46 +97,23 @@ def validate_trident_usb_iso(vm_name: str, output_log_file: str):
         print(f"Start VM: {vm_name}")
         start_domain(vm_name)
 
-        # get disk device
-        target_device = get_xml_element_attribute(
-            vm_name, "./devices/disk[@device='disk']/target", "dev"
-        )
-        print(f"Find target device for {vm_name}: {target_device}")
-
         # get serial pts device
         serial_pts_device = get_xml_element_attribute(
             vm_name, "./devices/console[@type='pty']/source", "path"
         )
         print(f"Find serial port for {vm_name}: {serial_pts_device}")
 
-        print(f"Wait for usb-iso to be ready.")
+        print(f"Wait for azl-installer ISO to boot and start installation.")
+        print(f"The liveinstaller will automatically detect the disk and run trident install.")
         watch_for_usb_iso_login(
             vm_name,
-            "azl-installer-mos login: root (automatic login)",
+            "azl-installer login:",
             output_log_file,
             log_file_stream,
         )
-        print(f"... usb-iso to has started.")
+        print(f"... azl-installer has booted and started installation script.")
 
-        print(
-            f"Send CTRL-C to VM over serial for some reason to re-enable serial input."
-        )
-        run_command(f"echo -e '\x03' > {serial_pts_device}")
-        print(f"... CTRL-C sent.")
-
-        print(f"Modify embedded config.yaml to reflect {target_device}.")
-        send_command_to_vm(
-            vm_name,
-            f"sed -i 's|device: /dev/nvme0n1|device: /dev/{target_device}|' /etc/trident/config.yaml",
-            log_file_stream,
-            output_log_file,
-        )
-
-        print(f"Start OS installation")
-        # Open a serial console connection
-        send_command_to_vm(vm_name, "trident install", log_file_stream, output_log_file)
-
-        print(f"Wait while new OS is installing.")
+        print(f"Wait while new OS is installing (this may take several minutes).")
         watch_for_usb_iso_login(
             vm_name, "trident-testimg login:", output_log_file, log_file_stream
         )

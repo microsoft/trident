@@ -1,12 +1,12 @@
 steps:
   # Download azl-installer artifact
   - task: DownloadPipelineArtifact@2
-    displayName: "Download Trident usb-iso"
+    displayName: "Download azl-installer ISO"
     inputs:
       buildType: current
       artifactName: "azl-installer"
       targetPath: $(Pipeline.Workspace)/azl-installer
-  # Test usb-iso by using serial connection to invoke trident
+
   - bash: |
       set -eux
 
@@ -43,8 +43,9 @@ steps:
       sudo virsh net-create $(Build.SourcesDirectory)/.pipelines/templates/stages/trident_usb_iso/usb-iso-net-template.xml
       sudo virsh define $(Build.SourcesDirectory)/.pipelines/templates/stages/trident_usb_iso/usb-iso-vm-template.xml
       sudo python3 $(Build.SourcesDirectory)/.pipelines/templates/stages/trident_usb_iso/test-usb-iso.py
-    timeoutInMinutes: 5
-    displayName: "Test usb-iso"
+    timeoutInMinutes: 10
+    displayName: "Test azl-installer ISO (unattended installation)"
+  
   # Dump serial log of test vm
   - bash: |
       set -eu
@@ -52,6 +53,5 @@ steps:
       
       sudo mkdir -p $(Pipeline.Workspace)/azl-installer-test
       sudo cp /tmp/test.log $(Pipeline.Workspace)/azl-installer-test/test.log
-    displayName: "Dump usb-iso serial test log"
     timeoutInMinutes: 1
     condition: always()
