@@ -4,7 +4,7 @@
 `Health checks` have been implemented to enable customers to define whether a
 servicing operation leaves the target OS in a healthy state. These
 `health checks` are optionally run during `trident commit` (the last step of a
-clean install and/or an A/B update). The `health checks` can include
+clean install or an A/B update). The `health checks` can include
 user-defined [scripts](../Reference/Host-Configuration/API-Reference/Script.md)
 and/or configurations to verify that
 [systemd services are running](../Reference/Host-Configuration/API-Reference/SystemdCheck.md).
