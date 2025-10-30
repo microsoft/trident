@@ -337,7 +337,7 @@ func (h *AbUpdateHelper) handleUefiFallback(tc storm.TestCase) error {
 		needWritableEtcInternalParam := false
 		if strings.Contains(imageUrl, "verity") {
 			if !strings.Contains(imageUrl, "usrverity") {
-				// root-verity image, use /usr path
+				// root-verity image, use /var/lib/trident/ path
 				finalPath = "/var/lib/trident/reset-uefi-and-reboot.sh"
 				needWritableEtcInternalParam = true
 			} else {
