@@ -58,7 +58,7 @@ steps:
             --acr-name $(ACR_NAME) \
             --repo-name sysext \
             --build-id $(Build.BuildId) \
-            --file-paths $(Build.SourcesDirectory)/test-sysext-1.raw
+            --file-paths $(Build.SourcesDirectory)/test-sysext-1.raw \
             --file-paths $(Build.SourcesDirectory)/test-sysext-2.raw
           ./bin/storm-trident helper push-to-acr \
             --config ${{ parameters.config }} \
@@ -66,9 +66,9 @@ steps:
             --acr-name $(ACR_NAME) \
             --repo-name confext \
             --build-id $(Build.BuildId) \
-            --file-paths $(Build.SourcesDirectory)/test-confext-1.raw
+            --file-paths $(Build.SourcesDirectory)/test-confext-1.raw \
             --file-paths $(Build.SourcesDirectory)/test-confext-2.raw
-            
+
         else
           echo "Skipping step. Configuration is '${{ parameters.config }}'."
           exit 0
