@@ -71,14 +71,15 @@ func (h *RebuildRaidHelper) checkIfNeeded(tc storm.TestCase) error {
 		h.FailFromError(tc, err)
 	}
 
-	raidExists := tridentConfig["storage"].(map[string]interface{})["raid"] != nil
+	raidExists := false
 	usrVerity := false
-	if verityList, ok := tridentConfig["storage"].(map[string]interface{})["verity"].([]interface{}); ok {
-		if len(verityList) > 0 {
-			if firstVerity, ok := verityList[0].(map[string]interface{}); ok {
-				if name, ok := firstVerity["name"].(string); ok && name == "usr" {
-					usrVerity = true
-				}
+
+	storage, ok := tridentConfig["storage"].(map[interface{}]interface{})
+	if ok {
+		raidExists = storage["raid"] != nil
+		if verityList, ok := storage["verity"].([]interface{}); ok {
+			if len(verityList) > 0 {
+				usrVerity = verityList[0].(map[interface{}]interface{})["name"] == "usr"
 			}
 		}
 	}
