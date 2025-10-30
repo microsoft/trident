@@ -42,17 +42,16 @@ func (h *PushToACRHelper) pushToACR(tc storm.TestCase) error {
 		return fmt.Errorf("failed to login to ACR: %w", err)
 	}
 
-	tagBase := fmt.Sprintf("v%s.%s.%s", h.args.BuildId, h.args.Config, h.args.DeploymentEnvironment)
-
 	// Push all specified files
+	tagBase := fmt.Sprintf("v%s.%s.%s", h.args.BuildId, h.args.Config, h.args.DeploymentEnvironment)
 	err = h.pushFiles(tagBase)
 	if err != nil {
 		return fmt.Errorf("failed to push files: %w", err)
 	}
 
-	// Set output variable (equivalent to ##vso[task.setvariable variable=TAG_BASE])
+	// Set output variable by writing to stdout
 	fmt.Printf("##vso[task.setvariable variable=TAG_BASE]%s\n", tagBase)
-	fmt.Printf("TAG_BASE set to: %s\n", tagBase)
+	logrus.Infof("TAG_BASE set to: %s\n", tagBase)
 
 	return nil
 }
@@ -129,29 +128,3 @@ func (h *PushToACRHelper) verifyImage(repository, tag string) error {
 
 	return cmd.Run()
 }
-
-// // Alternative implementation using Azure SDK instead of CLI commands
-// func (h *PushToACRHelper) verifyImageWithSDK(repository, tag string) error {
-// 	// Create Azure credential
-// 	cred, err := azidentity.NewDefaultAzureCredential(nil)
-// 	if err != nil {
-// 		return fmt.Errorf("failed to create Azure credential: %w", err)
-// 	}
-
-// 	// Create ACR client
-// 	registryURL := fmt.Sprintf("https://%s.azurecr.io", h.args.AcrName)
-// 	client, err := azcontainerregistry.NewClient(registryURL, cred, nil)
-// 	if err != nil {
-// 		return fmt.Errorf("failed to create ACR client: %w", err)
-// 	}
-
-// 	// Get repository properties to verify it exists
-// 	ctx := context.Background()
-// 	_, err = client.GetRepositoryProperties(ctx, repository, nil)
-// 	if err != nil {
-// 		return fmt.Errorf("failed to verify repository %s: %w", repository, err)
-// 	}
-
-// 	fmt.Printf("Successfully verified %s:%s\n", repository, tag)
-// 	return nil
-// }

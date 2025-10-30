@@ -31,6 +31,22 @@ steps:
     workingDirectory: $(Build.SourcesDirectory)
     retryCountOnTaskFailure: 3
 
+  - bash: |
+      set -eux
+      if [ ${{ parameters.config }} != 'misc' ] && [ ${{ parameters.config }} != 'extensions' ]; then
+        echo "Skipping step. Configuration is '${{ parameters.config }}'."
+        exit 0
+      fi
+
+      VERSION="1.2.2"
+      curl -LO "https://github.com/oras-project/oras/releases/download/v${VERSION}/oras_${VERSION}_linux_amd64.tar.gz"
+      mkdir -p oras-install/
+      tar -zxf oras_${VERSION}_*.tar.gz -C oras-install/
+      sudo mv oras-install/oras /usr/local/bin/
+      rm -rf oras_${VERSION}_*.tar.gz oras-install/
+    displayName: "Install ORAS"
+    retryCountOnTaskFailure: 3
+
   - task: AzureCLI@2
     inputs:
       azureSubscription: trident-dev-acr-write-umi-ECF
