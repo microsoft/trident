@@ -82,7 +82,7 @@ build: .cargo/config version-vars
 .PHONY: format
 format:
 	cargo fmt
-	python3 -m black . --exclude "azure-linux-image-tools"
+	python3 -m black .
 	gofmt -w -s tools/
 
 .PHONY: test

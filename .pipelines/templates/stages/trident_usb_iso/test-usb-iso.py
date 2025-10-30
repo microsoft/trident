@@ -104,7 +104,9 @@ def validate_trident_usb_iso(vm_name: str, output_log_file: str):
         print(f"Find serial port for {vm_name}: {serial_pts_device}")
 
         print(f"Wait for azl-installer ISO to boot and start installation.")
-        print(f"The liveinstaller will automatically detect the disk and run trident install.")
+        print(
+            f"The liveinstaller will automatically detect the disk and run trident install."
+        )
         watch_for_usb_iso_login(
             vm_name,
             "azl-installer login:",
