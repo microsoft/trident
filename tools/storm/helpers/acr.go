@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/microsoft/storm"
@@ -178,6 +179,7 @@ func (h *AcrHelper) deleteImageIfExists(repository, tag string) error {
 	checkCmd := exec.Command("az", "acr", "repository", "show",
 		"--name", h.args.AcrName,
 		"--image", imageName)
+	logrus.Debugf("Executing command: %s %s", checkCmd.Path, strings.Join(checkCmd.Args[1:], " "))
 	checkCmd.Stdout = os.Stdout
 	checkCmd.Stderr = os.Stderr
 	err := checkCmd.Run()
