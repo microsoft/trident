@@ -118,7 +118,4 @@ stages:
           ob_artifactBaseName: azl-installer-test-$(System.JobAttempt)
 
         steps:
-          - checkout: self
-            fetchDepth: 1
-
           - template: ../trident_usb_iso/validate-usb-iso.yml

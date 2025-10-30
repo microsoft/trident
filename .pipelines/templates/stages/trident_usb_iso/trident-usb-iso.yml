@@ -105,9 +105,9 @@ stages:
     - TridentTestImg_azl_installer
 
   jobs:
-  - job: ValidateAzlInstaller
+  - job: BuildTridentTestImg
     displayName: Validate
-    timeoutInMinutes: 20
+    timeoutInMinutes: 15
     pool:
       type: linux
       name: trident-ubuntu-1es-pool-eastus2
