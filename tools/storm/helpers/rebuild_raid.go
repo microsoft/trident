@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 	"tridenttools/storm/utils"
+	sshclient "tridenttools/storm/utils/ssh/client"
+	sshconfig "tridenttools/storm/utils/ssh/config"
 
 	"github.com/microsoft/storm"
 	"github.com/sirupsen/logrus"
@@ -16,13 +18,13 @@ import (
 
 type RebuildRaidHelper struct {
 	args struct {
-		utils.SshCliSettings  `embed:""`
-		TridentConfigPath     string `help:"Path to the Trident configuration file." type:"string"`
-		DeploymentEnvironment string `help:"Deployment environment (e.g., bareMetal, virtualMachine)." type:"string" default:"virtualMachine"`
-		VmName                string `help:"Name of VM." type:"string" default:"virtdeploy-vm-0"`
-		Disk                  string `help:"Disk to fail in RAID array." type:"string" default:"/dev/sdb"`
-		SkipRebuildRaid       bool   `help:"Skip the rebuild RAID step." type:"bool" default:"false"`
-		ArtifactsFolder       string `help:"Folder to copy log files into." type:"string" default:""`
+		sshconfig.SshCliSettings `embed:""`
+		TridentConfigPath        string `help:"Path to the Trident configuration file." type:"string"`
+		DeploymentEnvironment    string `help:"Deployment environment (e.g., bareMetal, virtualMachine)." type:"string" default:"virtualMachine"`
+		VmName                   string `help:"Name of VM." type:"string" default:"virtdeploy-vm-0"`
+		Disk                     string `help:"Disk to fail in RAID array." type:"string" default:"/dev/sdb"`
+		SkipRebuildRaid          bool   `help:"Skip the rebuild RAID step." type:"bool" default:"false"`
+		ArtifactsFolder          string `help:"Folder to copy log files into." type:"string" default:""`
 	}
 }
 
@@ -38,6 +40,8 @@ func (h *RebuildRaidHelper) RegisterTestCases(r storm.TestRegistrar) error {
 	r.RegisterTestCase("check-if-needed", h.checkIfNeeded)
 	r.RegisterTestCase("fail-bm-raids", h.failBaremetalRaids)
 	r.RegisterTestCase("shutdown-vm", h.shutdownVirtualMachine)
+	r.RegisterTestCase("check-ssh", h.shutdownVirtualMachine)
+	r.RegisterTestCase("rebuild-raid", h.shutdownVirtualMachine)
 	return nil
 }
 
@@ -87,7 +91,7 @@ func (h *RebuildRaidHelper) failBaremetalRaids(tc storm.TestCase) error {
 	// # Set up SSH client
 	// connection = create_ssh_connection(ip_address, user_name, keys_file_path)
 	var err error
-	client, err := utils.OpenSshClient(h.args.SshCliSettings)
+	client, err := sshclient.OpenSshClient(h.args.SshCliSettings)
 	if err != nil {
 		tc.Error(err)
 	}
@@ -300,7 +304,7 @@ func (h *RebuildRaidHelper) shutdownVirtualMachine(tc storm.TestCase) error {
 	logrus.Infof("Shutting down virtual machine %s", h.args.VmName)
 
 	var err error
-	client, err := utils.OpenSshClient(h.args.SshCliSettings)
+	client, err := sshclient.OpenSshClient(h.args.SshCliSettings)
 	if err != nil {
 		tc.Error(err)
 	}
