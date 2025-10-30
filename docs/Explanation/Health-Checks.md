@@ -14,7 +14,7 @@ If any health check fails:
 * **for A/B update**: a rollback will be initiated by `trident commit`,
   updating the Host Status state to `AbUpdateHealthCheckFailed` and triggering
   a reboot into the previous OS. Within the previous OS, `trident commit` will
-  validate the boot partition and update the Host Status stae to `Provisioned`
+  validate the boot partition and update the Host Status state to `Provisioned`
   (reflecting that the machine is now Provisioned to the previous OS).
 * **for clean install**: a rollback will **NOT** be initiated as there is no
   previous OS. Instead, the Host Status state will be set to `NotProvisioned`
@@ -53,7 +53,7 @@ health:
 
 [Systemd checks](../Reference/Host-Configuration/API-Reference/SystemdCheck.md)
 can also be defined to ensure that critical systemd services are running after
-servicing.  For example, to ensure that `kubelet.service` and `docker.service`
+servicing. For example, to ensure that `kubelet.service` and `docker.service`
 are running within 15 seconds of `trident commit` being called for both clean
 install and A/B update servicing types:
 
@@ -137,10 +137,13 @@ flowchart TD
     linkStyle 18 stroke:#D50000,fill:none
 ```
 
-## Health Check logs
+## Health Check failures
 
 If a health check fails, the output from each failed check will be captured in
 a log file located at
 `/var/lib/trident/trident-health-check-failure-<timestamp>.log`
 on the target OS. This log file can be used to help diagnose the reason
 for the health check failure.
+
+The failures will also be reported in the Trident Host Status `lastError`
+field.
