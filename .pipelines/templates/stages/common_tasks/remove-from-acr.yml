@@ -36,7 +36,7 @@ steps:
             --build-id $(Build.BuildId) \
             --num-clones 4
 
-        elif [ "${{ parameters.config }}" == 'extensions' ]; then
+        elif [ ${{ parameters.config }} == 'extensions' ]; then
           ./bin/storm-trident helper acr \
             --remove \
             --config ${{ parameters.config }} \
