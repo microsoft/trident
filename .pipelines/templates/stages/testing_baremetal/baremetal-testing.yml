@@ -165,19 +165,13 @@ stages:
               ${{ if eq(parameters.runtimeEnv, 'container') }}:
                 downloadTridentContainer: true
 
-          # Push (regular or container) testimage to ACR.
-          # This step must occur before trident prep, since the ACR image tag
-          # variable is set in this template.
+          # Push (regular or container) testimage, sysexts, and/or confexts to
+          # ACR. This step must occur before trident prep, since the ACR image
+          # tag variable is set in this template.
           - template: ../common_tasks/push-to-acr.yml
             parameters:
               imageName: ${{ variables.IMAGE_NAME }}
               config: $(TRIDENT_CONFIGURATION_NAME)
-              deploymentEnvironment: "bareMetal"
-
-          # Produce test sysext and confext images and push to ACR
-          - template: ../common_tasks/extension-images.yml
-            parameters:
-              config: ${{ variables.tridentConfigurationName }}
               deploymentEnvironment: "bareMetal"
 
           #   Run trident prep
