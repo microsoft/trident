@@ -13,8 +13,8 @@ import (
 
 type AcrHelper struct {
 	args struct {
-		Push                  bool     `help:"If set, push images to ACR"`
-		Remove                bool     `help:"If set, remove images from ACR" type:"bool`
+		Push                  bool     `help:"If set, push images to ACR" type:"bool"`
+		Remove                bool     `help:"If set, remove images from ACR" type:"bool"`
 		Config                string   `required:"" help:"Trident configuration (e.g., 'extensions')" type:"string"`
 		DeploymentEnvironment string   `required:"" help:"Deployment environment (virtualMachine or bareMetal)" type:"string"`
 		AcrName               string   `required:"" help:"Azure Container Registry name" type:"string"`
