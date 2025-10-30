@@ -173,7 +173,10 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 	internalParams["selfUpgradeTrident"] = false
 
 	// Handle UEFI-fallback settings if configured
-	h.handleUefiFallback(tc)
+	err = h.handleUefiFallback(tc)
+	if err != nil {
+		return fmt.Errorf("failed to handle UEFI fallback: %w", err)
+	}
 
 	// Delete the storage section from the config, not needed for A/B update
 	delete(h.config, "storage")
@@ -356,7 +359,7 @@ func (h *AbUpdateHelper) handleUefiFallback(tc storm.TestCase) error {
 		h.config["scripts"] = scripts
 
 		if needWritableEtcInternalParam {
-			// Set the config to NOT self-upgrade
+			// Ensure writableEtcOverlayHooks is set to true when using root-verity
 			internalParams, ok := h.config["internalParams"].(map[string]any)
 			if !ok {
 				internalParams = make(map[string]any)
