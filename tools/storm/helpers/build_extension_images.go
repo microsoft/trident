@@ -12,7 +12,7 @@ import (
 
 type BuildExtensionImagesHelper struct {
 	args struct {
-		NumClones     int  `required:"" help:"Number of sysexts and confexts to build." type:"int"`
+		NumClones     int  `help:"Number of sysexts and confexts to build." type:"int"`
 		BuildSysexts  bool `help:"Indicates that test sysext images should be built." type:"bool"`
 		BuildConfexts bool `help:"Indicates that test confext images should be built." type:"bool"`
 	}
