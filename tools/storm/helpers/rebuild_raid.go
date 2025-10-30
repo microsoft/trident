@@ -354,7 +354,7 @@ func (h *RebuildRaidHelper) shutdownVirtualMachine(tc storm.TestCase) error {
 	logrus.Infof("Output of efibootmgr:\n%s", string(output))
 
 	//   sudo virsh shutdown virtdeploy-vm-0
-	virshOutput, virshErr := exec.Command("sudo", "virsh", "shtudown", h.args.VmName).CombinedOutput()
+	virshOutput, virshErr := exec.Command("sudo", "virsh", "shutdown", h.args.VmName).CombinedOutput()
 	logrus.Tracef("virsh shutdown output: %s\n%v", string(virshOutput), virshErr)
 	if virshErr != nil {
 		tc.Error(virshErr)
