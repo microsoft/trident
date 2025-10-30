@@ -1,4 +1,4 @@
-package utils
+package trident
 
 import (
 	"fmt"
@@ -7,6 +7,11 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
+
+	"tridenttools/storm/utils/env"
+	"tridenttools/storm/utils/retry"
+	sshclient "tridenttools/storm/utils/ssh/client"
+	sshconfig "tridenttools/storm/utils/ssh/config"
 )
 
 const (
@@ -40,17 +45,17 @@ func BuildTridentContainerCommand(envVars []string) string {
 // - The SSH session cannot be created
 // - There was an error starting the command.
 // - Some IO error occurred while reading stdout or stderr.
-func InvokeTrident(env TridentEnvironment, client *ssh.Client, envVars []string, arguments string) (*SshCmdOutput, error) {
+func InvokeTrident(environment env.TridentEnvironment, client *ssh.Client, envVars []string, arguments string) (*sshconfig.SshCmdOutput, error) {
 	var cmd string
-	switch env {
-	case TridentEnvironmentHost:
+	switch environment {
+	case env.TridentEnvironmentHost:
 		cmd = TRIDENT_BINARY
-	case TridentEnvironmentContainer:
+	case env.TridentEnvironmentContainer:
 		cmd = BuildTridentContainerCommand(envVars)
-	case TridentEnvironmentNone:
+	case env.TridentEnvironmentNone:
 		return nil, fmt.Errorf("trident service is not running")
 	default:
-		return nil, fmt.Errorf("invalid environment: %s", env)
+		return nil, fmt.Errorf("invalid environment: %s", environment)
 	}
 
 	var cmdPrefix string
@@ -65,7 +70,7 @@ func InvokeTrident(env TridentEnvironment, client *ssh.Client, envVars []string,
 	}
 
 	logrus.Debug(fmt.Sprintf("Running command: %s %s %s", cmdPrefix, cmd, arguments))
-	return RunCommand(client, fmt.Sprintf("%s %s %s", cmdPrefix, cmd, arguments))
+	return sshclient.RunCommand(client, fmt.Sprintf("%s %s %s", cmdPrefix, cmd, arguments))
 }
 
 // Loads the Trident container stored in DOCKER_IMAGE_PATH int the remote host's
@@ -78,7 +83,7 @@ func LoadTridentContainer(client *ssh.Client) error {
 		return fmt.Errorf("SSH client is nil")
 	}
 
-	out, err := RunCommand(client, fmt.Sprintf("sudo docker images --format json %s", DOCKER_IMAGE_PATH))
+	out, err := sshclient.RunCommand(client, fmt.Sprintf("sudo docker images --format json %s", DOCKER_IMAGE_PATH))
 	if err != nil {
 		return fmt.Errorf("failed to run docker images command: %w", err)
 	}
@@ -94,7 +99,7 @@ func LoadTridentContainer(client *ssh.Client) error {
 	}
 
 	// Load the image
-	out, err = RunCommand(client, fmt.Sprintf("sudo docker load --input %s", DOCKER_IMAGE_PATH))
+	out, err = sshclient.RunCommand(client, fmt.Sprintf("sudo docker load --input %s", DOCKER_IMAGE_PATH))
 	if err != nil {
 		return fmt.Errorf("failed to load docker image: %w", err)
 	}
@@ -106,22 +111,22 @@ func LoadTridentContainer(client *ssh.Client) error {
 	return nil
 }
 
-func CheckTridentService(client *ssh.Client, env TridentEnvironment, timeout time.Duration, expectSuccessfulCommit bool) error {
+func CheckTridentService(client *ssh.Client, environment env.TridentEnvironment, timeout time.Duration, expectSuccessfulCommit bool) error {
 	if client == nil {
 		return fmt.Errorf("SSH client is nil")
 	}
 
 	var serviceName string
-	switch env {
-	case TridentEnvironmentHost:
+	switch environment {
+	case env.TridentEnvironmentHost:
 		serviceName = "trident.service"
-	case TridentEnvironmentContainer:
+	case env.TridentEnvironmentContainer:
 		serviceName = "trident-container.service"
 	default:
-		return fmt.Errorf("unsupported environment: %s", env)
+		return fmt.Errorf("unsupported environment: %s", environment)
 	}
 
-	reconnectNeeded, err := Retry(
+	reconnectNeeded, err := retry.Retry(
 		timeout,
 		time.Second*5,
 		func(attempt int) (*bool, error) {
