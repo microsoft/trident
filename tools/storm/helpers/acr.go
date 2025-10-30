@@ -57,8 +57,8 @@ func (h *AcrHelper) pushToACR(tc storm.TestCase) error {
 	}
 
 	// Set output variable by writing to stdout
-	fmt.Printf("##vso[task.setvariable variable=TAG_BASE]%s\n", tagBase)
-	logrus.Infof("TAG_BASE set to: %s\n", tagBase)
+	fmt.Printf("##vso[task.setvariable variable=TAG_BASE]%s", tagBase)
+	logrus.Infof("TAG_BASE set to: %s", tagBase)
 
 	return nil
 }
@@ -87,7 +87,7 @@ func (h *AcrHelper) generateTagBase() string {
 }
 
 func (h *AcrHelper) loginToACR() error {
-	logrus.Infof("Logging in to ACR: %s\n", h.args.AcrName)
+	logrus.Infof("Logging in to ACR: %s", h.args.AcrName)
 	cmd := exec.Command("az", "acr", "login", "-n", h.args.AcrName)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -124,7 +124,7 @@ func (h *AcrHelper) pushImage(filePath, tag string) error {
 	registryURL := fmt.Sprintf("%s.azurecr.io", h.args.AcrName)
 	fullImageName := fmt.Sprintf("%s/%s:%s", registryURL, h.args.RepoName, tag)
 
-	logrus.Infof("Pushing %s with tag %s to %s\n", filePath, tag, registryURL)
+	logrus.Infof("Pushing %s with tag %s to %s", filePath, tag, registryURL)
 
 	// Get the directory and filename from the full path
 	dir := filepath.Dir(filePath)
@@ -147,7 +147,7 @@ func (h *AcrHelper) pushImage(filePath, tag string) error {
 }
 
 func (h *AcrHelper) verifyImage(repository, tag string) error {
-	logrus.Infof("Verifying %s:%s was pushed successfully...\n", repository, tag)
+	logrus.Infof("Verifying %s:%s was pushed successfully...", repository, tag)
 
 	cmd := exec.Command("az", "acr", "repository", "show",
 		"--name", h.args.AcrName,
