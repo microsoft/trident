@@ -82,7 +82,7 @@ build: .cargo/config version-vars
 .PHONY: format
 format:
 	cargo fmt
-	python3 -m black . --exclude "azure-linux-image-tools"
+	python3 -m black .
 	gofmt -w -s tools/
 
 .PHONY: test
@@ -388,7 +388,7 @@ generate-functional-test-manifest: .cargo/config
 
 .PHONY: validate-configs
 validate-configs: bin/trident
-	$(eval DETECTED_HC_FILES := $(shell grep -R '^storage:' . --include '*.yaml' -l | grep -E -v '\./(tests/trident-mos|target|dev|azure-linux-image-tools|crates/docbuilder|tests/images)'))
+	$(eval DETECTED_HC_FILES := $(shell grep -R '^storage:' . --include '*.yaml' -l | grep -E -v '\./(target|dev|crates/docbuilder|tests/images)'))
 	@for file in $(DETECTED_HC_FILES); do \
 		echo "Validating $$file"; \
 		$< validate $$file -v info || exit 1; \
@@ -430,32 +430,44 @@ bin/virtdeploy: tools/cmd/virtdeploy/* tools/go.sum tools/pkg/* tools/pkg/virtde
 INSTALLER_OUT_DIR := bin
 INSTALLER_DIR := tools/installer
 
-# If necessary create End-User License Agreement example file in execution directory
-bin/EULA.txt:
-	@mkdir -p bin
-	@echo "SAMPLE EULA" > $@
-
-# EULA.txt required at runtime; added to ensure binary will be able to run
 bin/liveinstaller: \
 	$(shell find $(INSTALLER_DIR)/ -type f) \
-	$(INSTALLER_DIR)/go.sum \
-	bin/EULA.txt
+	$(INSTALLER_DIR)/go.sum
 	@mkdir -p bin
 	cd $(INSTALLER_DIR)/liveinstaller && \
 		CGO_ENABLED=0 go build -o $(CURDIR)/$(INSTALLER_OUT_DIR)/liveinstaller
 
-# EULA.txt required at runtime; added to ensure binary will be able to run
 bin/attendedinstaller-simulator: \
 	$(shell find $(INSTALLER_DIR)/imagegen/ -type f) \
-	$(INSTALLER_DIR)/go.sum \
-	bin/EULA.txt
+	$(INSTALLER_DIR)/go.sum
 	@mkdir -p bin
 	cd $(INSTALLER_DIR)/imagegen/attendedinstaller/attendedinstaller_tests && \
 		CGO_ENABLED=0 go build -o $(CURDIR)/$(INSTALLER_OUT_DIR)/attendedinstaller-simulator attendedinstaller_simulator.go
 
 .PHONY: run-attendedinstaller-simulator
-run-attendedinstaller-simulator: bin/attendedinstaller-simulator bin/EULA.txt
+run-attendedinstaller-simulator: bin/attendedinstaller-simulator
 	@cd bin && ./attendedinstaller-simulator && cd -
+
+# AZL INSTALLER ISO
+
+# Build the installer ISO using the builder
+artifacts/test-image/azl-installer.iso: \
+	bin/RPMS \
+	bin/liveinstaller \
+	artifacts/test-image/regular.cosi \
+	tests/images/azl-installer/installer-iso.yaml \
+	$(shell find tests/images/azl-installer/ -type f 2>/dev/null)
+	# Copy runtime image
+	rm -rf tests/images/azl-installer/iso/images
+	mkdir -p tests/images/azl-installer/iso/images
+	cp artifacts/test-image/regular.cosi tests/images/azl-installer/iso/images/trident-testimage.cosi
+	# Copy installer binary
+	rm -rf tests/images/azl-installer/iso/bin
+	mkdir -p tests/images/azl-installer/iso/bin
+	cp bin/liveinstaller tests/images/azl-installer/iso/bin/
+	# Build ISO
+	mkdir -p artifacts/test-image/
+	./tests/images/testimages.py build azl-installer --output-dir artifacts/test-image
 
 .PHONY: validate
 validate: $(TRIDENT_CONFIG) bin/trident
@@ -720,7 +732,7 @@ artifacts/imagecustomizer:
 	@chmod +x artifacts/imagecustomizer
 	@touch artifacts/imagecustomizer
 
-bin/trident-mos.iso: artifacts/baremetal.vhdx artifacts/imagecustomizer packaging/systemd/trident-install.service tests/trident-mos/iso.yaml tests/trident-mos/files/* tests/trident-mos/post-install.sh packaging/selinux-policy-trident/*
+bin/trident-mos.iso: artifacts/baremetal.vhdx artifacts/imagecustomizer packaging/systemd/trident-install.service tests/images/trident-mos/iso.yaml tests/images/trident-mos/files/* tests/images/trident-mos/post-install.sh packaging/selinux-policy-trident/*
 	@mkdir -p bin
 	BUILD_DIR=`mktemp -d` && \
 		trap 'sudo rm -rf $$BUILD_DIR' EXIT; \
@@ -729,7 +741,7 @@ bin/trident-mos.iso: artifacts/baremetal.vhdx artifacts/imagecustomizer packagin
 			--build-dir $$BUILD_DIR \
 			--image-file $< \
 			--output-image-file $@ \
-			--config-file tests/trident-mos/iso.yaml \
+			--config-file tests/images/trident-mos/iso.yaml \
 			--output-image-format iso
 
 .PHONY: recreate-verity-image

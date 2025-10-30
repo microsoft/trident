@@ -29,6 +29,17 @@ DEFINED_IMAGES: List[ImageConfig] = [
         output_format=OutputFormat.QCOW2,
         requires_trident=False,
     ),
+    ImageConfig(
+        "azl-installer",
+        config="azl-installer",
+        config_file=Path("installer-iso.yaml"),
+        output_format=OutputFormat.ISO,
+        requires_trident=True,
+        extra_dependencies=[
+            Path("tests/images/azl-installer/iso/bin/liveinstaller"),
+            Path("tests/images/azl-installer/iso/images/trident-testimage.cosi"),
+        ],
+    ),
 ]
 
 ARTIFACTS = ArtifactManifest(
