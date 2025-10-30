@@ -174,11 +174,11 @@ stages:
               config: $(TRIDENT_CONFIGURATION_NAME)
               deploymentEnvironment: "bareMetal"
 
-          # Produce test sysext and confext images and push to ACR
-          - template: ../common_tasks/extension-images.yml
-            parameters:
-              config: ${{ variables.tridentConfigurationName }}
-              deploymentEnvironment: "bareMetal"
+          # # Produce test sysext and confext images and push to ACR
+          # - template: ../common_tasks/extension-images.yml
+          #   parameters:
+          #     config: ${{ variables.tridentConfigurationName }}
+          #     deploymentEnvironment: "bareMetal"
 
           #   Run trident prep
           - template: ../testing_common/trident-prep.yml

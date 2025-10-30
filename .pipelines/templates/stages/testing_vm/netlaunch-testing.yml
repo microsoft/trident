@@ -134,11 +134,11 @@ stages:
               config: ${{ variables.tridentConfigurationName }}
               deploymentEnvironment: "virtualMachine"
 
-          # Produce test sysext and confext images and push to ACR
-          - template: ../common_tasks/extension-images.yml
-            parameters:
-              config: ${{ variables.tridentConfigurationName }}
-              deploymentEnvironment: "virtualMachine"
+          # # Produce test sysext and confext images and push to ACR
+          # - template: ../common_tasks/extension-images.yml
+          #   parameters:
+          #     config: ${{ variables.tridentConfigurationName }}
+          #     deploymentEnvironment: "virtualMachine"
 
           - template: netlaunch-prep.yml
 
