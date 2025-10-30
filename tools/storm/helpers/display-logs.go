@@ -13,13 +13,13 @@ import (
 type DisplayLogsHelper struct {
 	args struct {
 		SkipSerialLog               bool   `help:"Skip displaying serial log." default:"false"`
-		NetlistenConfig             string `help:"Path to netlisten config file." type:"path" default:""`
-		SerialLogFallbackFolder     string `help:"File containing serial log output." type:"path" default:"/tmp"`
-		SerialLogFallbackFileSuffix string `help:"File containing serial log output." type:"path" default:"serial0.log"`
+		NetlistenConfig             string `help:"Path to netlisten config file." type:"string" default:""`
+		SerialLogFallbackFolder     string `help:"File containing serial log output." type:"string" default:"/tmp"`
+		SerialLogFallbackFileSuffix string `help:"File containing serial log output." type:"string" default:"serial0.log"`
 		SerialLogArtifactFileName   string `help:"Filename to use when copying serial log to artifacts folder." type:"string" default:""`
-		TridentLogFile              string `help:"File containing trident log output." type:"path" default:""`
-		TridentTraceLogFile         string `help:"File containing trace log output." type:"path" default:""`
-		ArtifactsFolder             string `help:"Folder to copy log files into." type:"path" default:""`
+		TridentLogFile              string `help:"File containing trident log output." type:"string" default:""`
+		TridentTraceLogFile         string `help:"File containing trace log output." type:"string" default:""`
+		ArtifactsFolder             string `help:"Folder to copy log files into." type:"string" default:""`
 	}
 }
 
@@ -137,7 +137,7 @@ func (h *DisplayLogsHelper) displaySerial(tc storm.TestCase) error {
 }
 
 func (h *DisplayLogsHelper) displayTridentLogFile(tc storm.TestCase, logFile string, skipMessage string) error {
-	if h.args.TridentLogFile == "" {
+	if logFile == "" {
 		tc.Skip(skipMessage)
 		return nil
 	}
