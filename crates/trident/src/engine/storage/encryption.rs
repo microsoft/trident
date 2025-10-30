@@ -281,8 +281,8 @@ fn encrypt_and_open_device(
 }
 
 /// Returns paths of UKI and bootloader binaries that `systemd-pcrlock` tool should seal to. During
-/// encryption provisioning, returns binaries used for the current boot, as well as binaries that
-/// will be used in the future boot, i.e. in the target OS image. During rollback validation,
+/// encryption provisioning, returns binaries used for the current boot, , i.e. servicing OS, as
+/// well as binaries that will be used in the future boot, i.e. target OS. During boot validation,
 /// returns binaries used for the current boot only.
 ///
 /// Returns a tuple containing two vectors:
@@ -298,7 +298,7 @@ pub fn get_binary_paths_pcrlock(
         return Ok((vec![], vec![]));
     }
 
-    // Determine esp path depending on the environment
+    // Determine ESP path depending on the environment
     let esp_path = if container::is_running_in_container()
         .unstructured("Failed to determine if running in container")?
     {
@@ -309,7 +309,7 @@ pub fn get_binary_paths_pcrlock(
         PathBuf::from(ESP_MOUNT_POINT_PATH)
     };
 
-    // Construct UKI paths
+    // If either PCR 4 or PCR 11 is requested, construct UKI paths
     let uki_binaries = get_uki_paths(&esp_path, mount_path)?;
 
     // If PCR 4 is requested, construct bootloader paths
@@ -318,6 +318,22 @@ pub fn get_binary_paths_pcrlock(
     } else {
         vec![]
     };
+
+    // Validate that these paths exist to fail early
+    let mut missing_paths = Vec::new();
+    for path in uki_binaries.iter().chain(bootloader_binaries.iter()) {
+        if !path.exists() {
+            missing_paths.push(path.display().to_string());
+        }
+    }
+
+    // If any are missing, return a single error listing them
+    if !missing_paths.is_empty() {
+        return Err(anyhow::anyhow!(
+            "Following binary paths required for pcrlock encryption do not exist:\n{}",
+            missing_paths.join("\n")
+        ));
+    }
 
     Ok((uki_binaries, bootloader_binaries))
 }
@@ -357,11 +373,11 @@ fn get_uki_paths(esp_path: &Path, mount_path: Option<&Path>) -> Result<Vec<PathB
 }
 
 /// Returns paths of the bootloader binaries for the current boot and if mount_path is provided,
-/// for the future boot, i.e. update image, as required for the generation of .pcrlock files.
-/// Bootloaders include shim and systemd-boot EFI executables.
+/// for the target OS, as required for the generation of .pcrlock files. Bootloaders include shim
+/// and systemd-boot EFI executables.
 ///
 /// If `mount_path` is provided, it means that this func is called during staging of an A/B update,
-/// so the bootloader binary for the update image is requested. Otherwise, this logic is called on
+/// so the bootloader binary for the target OS is requested. Otherwise, this logic is called on
 /// boot validation, and so we're re-generating the pcrlock policy for the current boot only.
 fn get_bootloader_paths(
     esp_path: &Path,
@@ -370,14 +386,14 @@ fn get_bootloader_paths(
 ) -> Result<Vec<PathBuf>, Error> {
     let mut bootloader_binaries: Vec<PathBuf> = Vec::new();
 
-    // If mount_path is null, this logic is called on rollback detection, when active volume is
-    // still set to the old volume, so we need to determine the actual active volume
     let active_volume = match mount_path {
         // Currently, not executing pcrlock encryption or this logic on clean install, so active
         // volume has to be non-null on encryption provisioning.
         Some(_) => ctx.ab_active_volume.ok_or_else(|| {
             anyhow::anyhow!("Active volume is not set outside of clean install servicing")
         })?,
+        // If mount_path is null, this logic is called on rollback detection, when active volume is
+        // still set to the old volume, so we need to determine the actual active volume
         None => match ctx.ab_active_volume {
             None | Some(AbVolumeSelection::VolumeB) => AbVolumeSelection::VolumeA,
             Some(AbVolumeSelection::VolumeA) => AbVolumeSelection::VolumeB,
@@ -398,16 +414,15 @@ fn get_bootloader_paths(
     let systemd_boot_current = join_relative(esp_path, &systemd_boot_path);
     bootloader_binaries.push(systemd_boot_current);
 
-    // If there is mount_path, we are currently staging a clean install or an A/B update, so also
-    // construct update paths
+    // If there is mount_path, also construct bootloader paths in the target OS image
     if let Some(mount_path) = mount_path {
         let esp_dir_path = join_relative(mount_path, ESP_MOUNT_POINT_PATH);
-        // Primary bootloader, i.e. shim EFI executable, in update image
+        // Primary bootloader, i.e. shim EFI executable, in target OS
         let (_, shim_update_relative) = bootentries::get_label_and_path(ctx, BOOT_EFI)?;
         let shim_update = join_relative(esp_dir_path.clone(), shim_update_relative);
         bootloader_binaries.push(shim_update);
 
-        // Secondary bootloader, i.e. systemd-boot EFI executable, in update image
+        // Secondary bootloader, i.e. systemd-boot EFI executable, in target OS
         let (_, systemd_boot_update_relative) = bootentries::get_label_and_path(ctx, GRUB_EFI)?;
         let systemd_boot_update = join_relative(esp_dir_path, systemd_boot_update_relative);
         bootloader_binaries.push(systemd_boot_update);
@@ -419,4 +434,129 @@ fn get_bootloader_paths(
     }
 
     Ok(bootloader_binaries)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use trident_api::{
+        config::{AbUpdate, AbVolumePair, HostConfiguration, Storage},
+        status::{AbVolumeSelection, ServicingType},
+    };
+
+    #[test]
+    fn test_get_bootloader_paths() {
+        // Declare ESP path; no need to actually write anything as this func only constructs paths.
+        let esp_path = PathBuf::from("/boot/efi");
+
+        let mut ctx = EngineContext {
+            ab_active_volume: None,
+            install_index: 0,
+            servicing_type: ServicingType::CleanInstall,
+            spec: HostConfiguration {
+                storage: Storage {
+                    ab_update: Some(AbUpdate {
+                        volume_pairs: vec![AbVolumePair {
+                            id: "root".to_string(),
+                            volume_a_id: "root-a".to_string(),
+                            volume_b_id: "root-b".to_string(),
+                        }],
+                    }),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        // Test case #1: Boot validation, so no mount_path. Active volume is None, so we're booting
+        // into A for the first time.
+        let esp_azla_path = esp_path.join("EFI").join("AZLA");
+        let expected_paths_a = vec![
+            esp_azla_path.join("bootx64.efi"),
+            esp_azla_path.join("grubx64.efi"),
+        ];
+        assert_eq!(
+            get_bootloader_paths(&esp_path, None, &ctx).unwrap(),
+            expected_paths_a
+        );
+
+        // Test case #2: Boot validation, so no mount_path. Active volume is set to B, so we're
+        // booting into A.
+        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
+        assert_eq!(
+            get_bootloader_paths(&esp_path, None, &ctx).unwrap(),
+            expected_paths_a
+        );
+
+        // Test case #3: Boot validation, so no mount_path. Active volume is set to A, so we're
+        // booting into B.
+        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
+        let esp_azlb_path = esp_path.join("EFI").join("AZLB");
+        let expected_paths_b = vec![
+            esp_azlb_path.join("bootx64.efi"),
+            esp_azlb_path.join("grubx64.efi"),
+        ];
+        assert_eq!(
+            get_bootloader_paths(&esp_path, None, &ctx).unwrap(),
+            expected_paths_b
+        );
+
+        // Test case #4: If active volume is None, but servicing type is not clean install and
+        // mount_path is provided, return an error.
+        let mount_path = PathBuf::from("/mnt");
+        ctx.servicing_type = ServicingType::AbUpdate;
+        ctx.ab_active_volume = None;
+        assert_eq!(
+            get_bootloader_paths(&esp_path, Some(&mount_path), &ctx)
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            "Active volume is not set outside of clean install servicing"
+        );
+
+        // Test case #5: Encryption provisioning during A/B update, so mount_path provided. Active
+        // volume is A.
+        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
+        let mount_esp_path = join_relative(&mount_path, &esp_path);
+        let mount_esp_azlb_path = mount_esp_path.join("EFI").join("AZLB");
+        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
+        ctx.servicing_type = ServicingType::AbUpdate;
+        let expected_mount_paths_b: Vec<PathBuf> = expected_paths_a
+            .iter()
+            .chain(
+                [
+                    mount_esp_azlb_path.join("bootx64.efi"),
+                    mount_esp_azlb_path.join("grubx64.efi"),
+                ]
+                .iter(),
+            )
+            .cloned()
+            .collect();
+        assert_eq!(
+            get_bootloader_paths(&esp_path, Some(&mount_path), &ctx).unwrap(),
+            expected_mount_paths_b
+        );
+
+        // Test case #6: Encryption provisioning during A/B update, so mount_path provided. Active
+        // volume is B.
+        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
+        let mount_esp_azla_path = mount_esp_path.join("EFI").join("AZLA");
+        let expected_mount_paths_a: Vec<PathBuf> = expected_paths_b
+            .iter()
+            .chain(
+                [
+                    mount_esp_azla_path.join("bootx64.efi"),
+                    mount_esp_azla_path.join("grubx64.efi"),
+                ]
+                .iter(),
+            )
+            .cloned()
+            .collect();
+        assert_eq!(
+            get_bootloader_paths(&esp_path, Some(&mount_path), &ctx).unwrap(),
+            expected_mount_paths_a
+        );
+    }
 }
