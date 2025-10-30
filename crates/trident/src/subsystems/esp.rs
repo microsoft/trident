@@ -298,7 +298,7 @@ fn configure_uefi_fallback(ctx: &EngineContext, mount_point: &Path) -> Result<()
 
 fn copy_boot_files_for_uefi_fallback(
     mount_point: &Path,
-    source_esp_name: &String,
+    source_esp_name: &str,
     servicing_type: &ServicingType,
 ) -> Result<(), Error> {
     let source_esp_dir_path = mount_point
