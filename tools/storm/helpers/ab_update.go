@@ -35,6 +35,7 @@ type AbUpdateHelper struct {
 		FinalizeAbUpdate     bool     `short:"f" help:"Controls whether A/B update should be finalized."`
 		EnvVars              []string `short:"e" help:"Environment variables. Multiple vars can be passed as a list of comma-separated strings, or this flag can be used multiple times. Each var should include the env var name, i.e. HTTPS_PROXY=http://0.0.0.0."`
 		ExpectFailedCommit   bool     `help:"Controls whether this test treats failed commits as successful." default:"false"`
+		ForcedRollback       bool     `help:"Controls whether this test includes a forced auto-rollback during A/B update." default:"false"`
 	}
 
 	client *ssh.Client
@@ -99,6 +100,9 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 	if !h.args.StageAbUpdate {
 		tc.Skip("Staging not requested")
 	}
+
+	// Handle auto-rollback settings if configured
+	h.handleAutoRollback(tc)
 
 	// Extract the OLD URL from the configuration
 	oldUrl, ok := h.config["image"].(map[string]interface{})["url"].(string)
@@ -216,6 +220,67 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 		return fmt.Errorf("failed to change ownership of new Host Config file: %w", err)
 	}
 
+	return nil
+}
+
+func (h *AbUpdateHelper) handleAutoRollback(tc storm.TestCase) error {
+	systemdCheckName := "check-non-existent-service-to-invoke-rollback"
+	scriptCheckName := "invoke-rollback-from-script"
+
+	if h.args.ForcedRollback {
+		if _, ok := h.config["health"].(map[string]interface{}); !ok {
+			h.config["health"] = map[string]interface{}{}
+		}
+		if _, ok := h.config["health"].(map[string]interface{})["checks"].([]interface{}); !ok {
+			h.config["health"].(map[string]interface{})["checks"] = make([]interface{}, 0)
+		}
+
+		// Add a script health check that always fails during A/B update to trigger auto-rollback
+		h.config["health"].(map[string]interface{})["checks"] = append(
+			h.config["health"].(map[string]interface{})["checks"].([]interface{}),
+			map[string]interface{}{
+				"content": "exit 1",
+				"runOn":   []string{"ab-update"},
+				"name":    scriptCheckName,
+			},
+		)
+
+		// Add a systemd health check that always fails during A/B update to trigger auto-rollback
+		h.config["health"].(map[string]interface{})["checks"] = append(
+			h.config["health"].(map[string]interface{})["checks"].([]interface{}),
+			map[string]interface{}{
+				"runOn":           []string{"ab-update"},
+				"name":            systemdCheckName,
+				"systemdServices": []string{"non-existent-service1", "non-existent-service2"},
+				"timeoutSeconds":  30,
+			},
+		)
+	} else {
+		// Remove check-non-existent-service-to-invoke-rollback and
+		// invoke-rollback-from-script checks if they exist
+		if health, ok := h.config["health"].(map[string]interface{}); ok {
+			if checks, ok := health["checks"].([]interface{}); ok {
+				newChecks := make([]interface{}, 0)
+				for _, check := range checks {
+					checkMap, ok := check.(map[string]interface{})
+					if !ok {
+						newChecks = append(newChecks, check)
+						continue
+					}
+					name, ok := checkMap["name"].(string)
+					if !ok {
+						newChecks = append(newChecks, check)
+						continue
+					}
+					if name == systemdCheckName || name == scriptCheckName {
+						continue
+					}
+					newChecks = append(newChecks, check)
+				}
+				health["checks"] = newChecks
+			}
+		}
+	}
 	return nil
 }
 

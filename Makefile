@@ -748,8 +748,7 @@ website-clear:
 
 .PHONY: website-prereqs
 website-prereqs:
-	cd ./website && \
-		npm install --save docusaurus @easyops-cn/docusaurus-search-local @docusaurus/theme-mermaid
+	cd ./website && npm install && npm ci
 
 DOCS_CONTENTS = $(shell find ./docs -type f)
 website/docs: $(DOCS_CONTENTS)

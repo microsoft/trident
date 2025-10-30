@@ -159,9 +159,7 @@ fn run_trident(
                         #[cfg(feature = "grpc-dangerous")]
                         &mut None,
                     ),
-                    Commands::Commit { .. } => {
-                        trident.commit(&mut datastore).map(|()| ExitKind::Done)
-                    }
+                    Commands::Commit { .. } => trident.commit(&mut datastore),
                     Commands::Listen { .. } => {
                         trident.listen(&mut datastore).map(|()| ExitKind::Done)
                     }

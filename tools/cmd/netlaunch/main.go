@@ -51,6 +51,7 @@ var (
 	traceFile           string
 	forceColor          bool
 	waitForProvisioned  bool
+	onlyPrintExitCode   bool
 	secureBoot          bool
 	signingCert         string
 )
@@ -352,11 +353,16 @@ var rootCmd = &cobra.Command{
 		}
 
 		// Wait for something to happen
-		var exitCode = phonehome.ListenLoop(terminateCtx, result, waitForProvisioned, maxFailures)
+		var exitCode = phonehome.ListenLoop(terminateCtx, result, waitForProvisioned, maxFailures, onlyPrintExitCode)
 
 		err = server.Shutdown(context.Background())
 		if err != nil {
 			log.WithError(err).Errorln("failed to shutdown server")
+		}
+
+		fmt.Printf("Phone home exited: %d", exitCode)
+		if onlyPrintExitCode {
+			return
 		}
 
 		os.Exit(exitCode)
@@ -398,6 +404,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&traceFile, "trace-file", "m", "", "File for writing metrics collected from Trident.")
 	rootCmd.PersistentFlags().StringVarP(&backgroundLogstreamFull, "full-logstream", "b", "logstream-full.log", "File to write full logstream output to. (Requires -l)")
 	rootCmd.PersistentFlags().BoolVarP(&waitForProvisioned, "wait-for-provisioned-state", "", false, "Wait for Host Status servicingState to be 'provisioned'")
+	rootCmd.PersistentFlags().BoolVarP(&onlyPrintExitCode, "only-print-exit-code", "", false, "Only print the exit code")
 	rootCmd.PersistentFlags().BoolVarP(&forceColor, "force-color", "", false, "Force colored output")
 	rootCmd.PersistentFlags().BoolVarP(&secureBoot, "secure-boot", "", false, "Enable SecureBoot")
 	rootCmd.PersistentFlags().StringVarP(&signingCert, "signing-cert", "", "", "Path to signing certificate")

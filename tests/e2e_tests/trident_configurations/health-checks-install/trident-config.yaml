@@ -1,0 +1,60 @@
+image:
+  url: http://NETLAUNCH_HOST_ADDRESS/files/regular.cosi
+  sha384: ignored
+storage:
+  disks:
+    - id: os
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
+      partitionTableType: gpt
+      partitions:
+        - id: esp
+          type: esp
+          size: 1G
+        - id: root
+          type: root
+          size: 8G
+    - id: disk2
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
+      partitionTableType: gpt
+      partitions: []
+  filesystems:
+    - deviceId: root
+      mountPoint: /
+    - deviceId: esp
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+scripts:
+  postConfigure:
+    - name: testing-privilege
+      runOn:
+        - clean-install
+      content: echo "testing-user ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/testing-user
+os:
+  selinux:
+    mode: enforcing
+  netplan:
+    version: 2
+    ethernets:
+      vmeths:
+        match:
+          name: enp*
+        dhcp4: true
+  users:
+    - name: testing-user
+      sshPublicKeys: []
+      sshMode: key-only
+health:
+  checks:
+  - name: invoke-rollback-from-script
+    runOn:
+    - clean-install
+    content: |
+      exit 1
+  - name: install-failure-systemd-check
+    runOn:
+    - clean-install
+    systemdServices:
+    - non-existent-service1.service
+    - non-existent-service2.service
+    timeoutSeconds: 15

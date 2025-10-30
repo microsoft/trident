@@ -71,22 +71,35 @@ steps:
     displayName: "Installing dependencies for E2E tests"
 
   - bash: |
+      set -eux
+      EXPECT_FAILURE_ARG=""
+      if [ "${{ parameters.tridentConfigurationName }}" == "health-checks-install" ]; then
+        # In health-checks-install, the Trident service will not return
+        # success. This is expected.
+        EXPECT_FAILURE_ARG="--expect-failed-commit"
+      fi
       $(Build.SourcesDirectory)/bin/storm-trident helper check-ssh \
           "${{ parameters.sshKeyPath }}" \
           "${{ parameters.hostIp }}" \
           "${{ parameters.userName }}" \
-          "${{ parameters.runtimeEnv }}"
+          "${{ parameters.runtimeEnv }}" \
+          $EXPECT_FAILURE_ARG
     displayName: "🤝 Check SSH connection"
 
   - bash: |
       set -eux
+      EXPECTED_HOST_STATUS_STATE_ARG=""
+      if [ "${{ parameters.tridentConfigurationName }}" == "health-checks-install" ]; then
+        EXPECTED_HOST_STATUS_STATE_ARG="--expected-host-status-state not-provisioned"
+      fi
       python3 -u -m pytest \
           -m "${{ parameters.buildPurpose }}" \
           --capture=no \
           --junit-xml=${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_clean_install_$(System.JobAttempt).junit.xml \
           --host ${{ parameters.hostIp }} \
           --runtime-env ${{ parameters.runtimeEnv }} \
-          --configuration ${{ parameters.tridentConfigPath }}
+          --configuration ${{ parameters.tridentConfigPath }} \
+          $EXPECTED_HOST_STATUS_STATE_ARG
     timeoutInMinutes: 5
     workingDirectory: $(Build.SourcesDirectory)/tests/e2e_tests
     displayName: "🔬 Run Trident E2E tests after clean install of target OS"
@@ -230,6 +243,42 @@ steps:
       displayNameSpecifier: "A/B update into target OS B"
       artifactName: "junit_for_trident_ab_update_B"
 
+  # Test auto-rollback scenario after A/B update into target OS B.
+  # This scenario will configure an update into target OS A that
+  # will execute failing health checks, triggering an auto rollback
+  # to target OS B.
+  #
+  # This scenario is configured to run for all VM e2e tests that
+  # do A/B update, and for BM e2e tests that do A/B update in the
+  # weekly build purpose.
+  - template: ./e2e-test-abupdate-scenario.yml
+    parameters:
+      # Rollback-specific parameters
+      updateScenarioName: "auto-rollback"
+      updateScenarioTargetOs: "A"
+      updateScenarioFlag: "--forced-rollback"
+      expectActiveVolume: volume-b
+      incrementUpdateVersion: false
+      updateScenarioTestName: "rollback"
+      expectCommitFailure: true
+      updateEmoji: "⎌"
+      # Pass all other parameters throuh
+      buildPurpose: ${{ parameters.buildPurpose }}
+      tridentConfigurationName: ${{ parameters.tridentConfigurationName }}
+      tridentConfigFile: $(tridentConfigFile)
+      deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
+      runtimeEnv: ${{ parameters.runtimeEnv }}
+      hostIp: ${{ parameters.hostIp }}
+      tridentConfigPath: ${{ parameters.tridentConfigPath }}
+      jUnitXMLIdentifier: ${{ parameters.jUnitXMLIdentifier }}
+      sshKeyPath: ${{ parameters.sshKeyPath }}
+      userName: ${{ parameters.userName }}
+      artifactsDirectory: ${{ parameters.artifactsDirectory }}
+      netlistenPort: ${{ parameters.netlistenPort }}
+      netlistenConfigFile: ${{ parameters.netlistenConfigFile }}
+      httpsProxy: ${{ parameters.httpsProxy }}
+
+  # Run A/B update from servicing OS B into target OS A.
   - bash: |
       set -eux
       # If there is a netlisten process, kill it so there is no port clash in the instance

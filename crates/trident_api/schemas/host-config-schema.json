@@ -4,6 +4,14 @@
   "description": "HostConfiguration is the configuration for a host. Trident agent will use this to configure the host.",
   "type": "object",
   "properties": {
+    "health": {
+      "description": "Health configuration for the target OS.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/Health"
+        }
+      ]
+    },
     "image": {
       "description": "Data about the image to deploy on the host, including sourcing and integrity information.",
       "allOf": [
@@ -171,6 +179,36 @@
         "number"
       ],
       "format": "\\d+\\s*[KMGT]?"
+    },
+    "Check": {
+      "oneOf": [
+        {
+          "description": "Raw contents of the script. Valid script servicing types are CleanInstall and AbUpdate.",
+          "type": "object",
+          "required": [
+            "Script"
+          ],
+          "properties": {
+            "Script": {
+              "$ref": "#/definitions/Script"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Path to a script in the execution OS. Valid script servicing types are CleanInstall and AbUpdate.",
+          "type": "object",
+          "required": [
+            "SystemdCheck"
+          ],
+          "properties": {
+            "SystemdCheck": {
+              "$ref": "#/definitions/SystemdCheck"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
     },
     "Disk": {
       "description": "Per disk configuration.",
@@ -399,6 +437,20 @@
           ]
         }
       ]
+    },
+    "Health": {
+      "description": "Scripts that can be run on the host during Trident stages. These scripts are run in the order they are defined. Ensure that the scripts are idempotent as they may be run multiple times.",
+      "type": "object",
+      "properties": {
+        "checks": {
+          "description": "Scripts to be run before Trident commits a serviced target OS as 'provisioned'.  If any of the scripts fail, commit will not be completed and, for A/B update, a rollback will be triggered.\n\nThese scripts run for installs and A/B updates. If runOn is specified for anything other than 'clean-install' or 'ab-update' type, the script will be ignored.\n\nThese scripts are run in the target OS. The `$TARGET_ROOT` variable will be set to '/' for consistency with postProvision scripts.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Check"
+          }
+        }
+      },
+      "additionalProperties": false
     },
     "ImageSha384": {
       "description": "Image SHA384 checksum.",
@@ -1426,6 +1478,43 @@
           "description": "The ID of the block device to use for this swap area.",
           "type": "string",
           "format": "Block Device ID"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SystemdCheck": {
+      "description": "A script that can be run on the host during Trident stages.",
+      "type": "object",
+      "required": [
+        "name",
+        "runOn",
+        "systemdServices",
+        "timeoutSeconds"
+      ],
+      "properties": {
+        "name": {
+          "description": "Name of the script.",
+          "type": "string"
+        },
+        "runOn": {
+          "description": "List of servicing types that the script should run on. Valid servicing types are CleanInstall and AbUpdate.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ServicingTypeSelection"
+          }
+        },
+        "systemdServices": {
+          "description": "List of systemd services that need to be in successful state.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "timeoutSeconds": {
+          "description": "Timeout for the systemd check.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0.0
         }
       },
       "additionalProperties": false
