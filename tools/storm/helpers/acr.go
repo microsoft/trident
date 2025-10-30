@@ -195,6 +195,7 @@ func (h *AcrHelper) deleteImageIfExists(repository, tag string) error {
 		"--name", h.args.AcrName,
 		"--image", imageName,
 		"--yes")
+	logrus.Debugf("Executing command: %s %s", deleteCmd.Path, strings.Join(deleteCmd.Args[1:], " "))
 	deleteCmd.Stdout = os.Stdout
 	deleteCmd.Stderr = os.Stderr
 
