@@ -10,7 +10,7 @@
 
 ### variant-1
 
-Raw contents of the script. Valid script servicing types are CleanInstall and AbUpdate.
+Script that will be run. The success or failure of the script will define the health of the target OS. Valid script servicing types are CleanInstall and AbUpdate, or All (which will execute for both).
 
 | Characteristic | Value    |
 | -------------- | -------- |
@@ -27,7 +27,7 @@ Raw contents of the script. Valid script servicing types are CleanInstall and Ab
 
 ### variant-2
 
-Path to a script in the execution OS. Valid script servicing types are CleanInstall and AbUpdate.
+Define systemd service(s) that need to be in a successful state, defined by `systemctl status` returning success. The success or failure of this check will define the health of the target OS. Valid script servicing types are CleanInstall and AbUpdate, or All (which will execute for both).
 
 | Characteristic | Value    |
 | -------------- | -------- |

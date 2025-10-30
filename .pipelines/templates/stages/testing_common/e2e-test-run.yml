@@ -262,7 +262,7 @@ steps:
       updateScenarioTestName: "rollback"
       expectCommitFailure: true
       updateEmoji: "⎌"
-      # Pass all other parameters throuh
+      # Pass all other parameters through
       buildPurpose: ${{ parameters.buildPurpose }}
       tridentConfigurationName: ${{ parameters.tridentConfigurationName }}
       tridentConfigFile: $(tridentConfigFile)

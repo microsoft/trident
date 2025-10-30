@@ -31,7 +31,7 @@ def test_rollback(
 
     # Check log files for expected failure messages
     listLogsResult = connection.run(
-        "sudo ls /var/lib/trident/trident-update-check-failure-*.log"
+        "sudo ls /var/lib/trident/trident-health-check-failure-*.log"
     )
     print(f"Log files: {listLogsResult.stdout.strip()}")
     # There should be 1 log file

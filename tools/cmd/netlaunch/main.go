@@ -360,7 +360,7 @@ var rootCmd = &cobra.Command{
 			log.WithError(err).Errorln("failed to shutdown server")
 		}
 
-		fmt.Printf("Phone home exited: %d", exitCode)
+		fmt.Printf("Phone home exited: %d\n", exitCode)
 		if onlyPrintExitCode {
 			return
 		}

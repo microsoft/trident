@@ -183,7 +183,7 @@
     "Check": {
       "oneOf": [
         {
-          "description": "Raw contents of the script. Valid script servicing types are CleanInstall and AbUpdate.",
+          "description": "Script that will be run. The success or failure of the script will define the health of the target OS. Valid script servicing types are CleanInstall and AbUpdate, or All (which will execute for both).",
           "type": "object",
           "required": [
             "Script"
@@ -196,7 +196,7 @@
           "additionalProperties": false
         },
         {
-          "description": "Path to a script in the execution OS. Valid script servicing types are CleanInstall and AbUpdate.",
+          "description": "Define systemd service(s) that need to be in a successful state, defined by `systemctl status` returning success. The success or failure of this check will define the health of the target OS. Valid script servicing types are CleanInstall and AbUpdate, or All (which will execute for both).",
           "type": "object",
           "required": [
             "SystemdCheck"
@@ -439,11 +439,11 @@
       ]
     },
     "Health": {
-      "description": "Scripts that can be run on the host during Trident stages. These scripts are run in the order they are defined. Ensure that the scripts are idempotent as they may be run multiple times.",
+      "description": "Configuration for the host OS health.",
       "type": "object",
       "properties": {
         "checks": {
-          "description": "Scripts to be run before Trident commits a serviced target OS as 'provisioned'.  If any of the scripts fail, commit will not be completed and, for A/B update, a rollback will be triggered.\n\nThese scripts run for installs and A/B updates. If runOn is specified for anything other than 'clean-install' or 'ab-update' type, the script will be ignored.\n\nThese scripts are run in the target OS. The `$TARGET_ROOT` variable will be set to '/' for consistency with postProvision scripts.",
+          "description": "Checks to be run before Trident commits a serviced target OS as 'provisioned'. If any of the checks fail, the commit will not be completed and, for A/B update, a rollback will be triggered.\n\nThese checks run for installs and A/B updates. If `runOn` is specified for anything other than 'clean-install' or 'ab-update' type, the check will be ignored. If 'all' is specified, the check will run for both 'clean-install' and 'ab-update'.\n\nThese checks are run in the target OS. The `$TARGET_ROOT` variable will be set to '/' for consistency with postProvision scripts.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/Check"
@@ -1493,11 +1493,11 @@
       ],
       "properties": {
         "name": {
-          "description": "Name of the script.",
+          "description": "Name of the check.",
           "type": "string"
         },
         "runOn": {
-          "description": "List of servicing types that the script should run on. Valid servicing types are CleanInstall and AbUpdate.",
+          "description": "List of servicing types that the check should run on. Valid servicing types are CleanInstall and AbUpdate, if All is specified, the check will run for both CleanInstall and AbUpdate.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/ServicingTypeSelection"

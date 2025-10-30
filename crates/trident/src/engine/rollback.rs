@@ -25,9 +25,9 @@ use crate::{
 
 #[must_use]
 pub enum BootValidationResult {
-    /// Target OS boot successfully, update-check scripts succeeded
+    /// Target OS booted successfully, health checks succeeded
     CorrectBootProvisioned,
-    /// Target OS boot successfully, update-check scripts failed
+    /// Target OS booted successfully, health checks failed
     CorrectBootInvalid(TridentError),
 }
 
@@ -38,15 +38,15 @@ pub enum BootValidationResult {
 /// In either case, the function will update the Host Status.
 #[tracing::instrument(skip_all)]
 pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, TridentError> {
-    info!("Validating whether host correctly booted from updated runtime OS image");
+    info!("Validating whether host correctly booted from target OS image");
 
     let current_servicing_state = datastore.host_status().servicing_state;
-    let expected_ab_active_volume = match current_servicing_state {
-        // For *Finalized, the expected active volume is the one set in Host Status
+    let ab_active_volume = match current_servicing_state {
+        // For *Finalized, use the active volume set in Host Status
         ServicingState::AbUpdateFinalized | ServicingState::CleanInstallFinalized => {
             datastore.host_status().ab_active_volume
         }
-        // For AbUpdateHealthCheckFailed, the expected active volume is the opposite of the one
+        // For AbUpdateHealthCheckFailed, use the opposite active volume of the one
         // set in Host Status
         ServicingState::AbUpdateHealthCheckFailed => {
             match datastore.host_status().ab_active_volume {
@@ -76,7 +76,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
         spec: datastore.host_status().spec.clone(),
         spec_old: datastore.host_status().spec_old.clone(),
         servicing_type,
-        ab_active_volume: expected_ab_active_volume,
+        ab_active_volume,
         partition_paths: datastore.host_status().partition_paths.clone(),
         disk_uuids: datastore.host_status().disk_uuids.clone(),
         install_index: datastore.host_status().install_index,
@@ -119,7 +119,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
             // For AB Update, when health checks previously failed and not
             // booting from expected root (the servicing OS), report error
             // and leave host status alone
-            info!("Host successfully booted from rollback OS image");
+            info!("Host failed to rollback into the servicing OS");
             return Err(TridentError::new(ServicingError::AbUpdateRebootCheck {
                 root_device_path: current_root_path.to_string_lossy().to_string(),
                 expected_device_path: expected_root_path.to_string_lossy().to_string(),
@@ -183,7 +183,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
 /// Completes the commit for AbUpdateFinalized and CleanInstallFinalized states when
 /// the host has booted from the expected root device. This includes running health
 /// checks, updating boot order, updating the encryption pcrlock policy if needed, and
-/// updating the host status.
+/// updating the Host Status.
 fn commit_finalized_on_expected_root(
     ctx: &EngineContext,
     datastore: &mut DataStore,
@@ -292,11 +292,11 @@ fn run_health_checks(
     match current_servicing_state {
         ServicingState::AbUpdateFinalized | ServicingState::CleanInstallFinalized => {
             // If health check previously failed, need to re-run the health checks
-            // Execute update-check scripts, if one fails, trigger rollback
+            // Execute health checks, if one fails, trigger rollback
             match HooksSubsystem::default().execute_health_checks(ctx) {
                 Ok(()) => {}
                 Err(e) => {
-                    info!("Failed to execute update check scripts: {e:?}");
+                    info!("Health check failure: {e:?}");
                     let structured_error =
                         serde_yaml::to_value(&e).structured(InternalError::SerializeError)?;
                     // Update host status to reflect health check failure
@@ -312,7 +312,7 @@ fn run_health_checks(
 
                     // Generate the new log filename
                     let new_commit_failure_log_filename = format!(
-                        "trident-update-check-failure-{}.log",
+                        "trident-health-check-failure-{}.log",
                         Utc::now().format("%Y%m%dT%H%M%SZ")
                     );
 
@@ -324,7 +324,7 @@ fn run_health_checks(
                             datastore_dir.join(new_commit_failure_log_filename);
 
                         debug!(
-                            "Persisting Trident update check failure to '{}' ",
+                            "Persisting Trident health check failure to '{}' ",
                             new_commit_failure_log_path.display()
                         );
 
@@ -333,13 +333,13 @@ fn run_health_checks(
                             fs::write(&new_commit_failure_log_path, format!("{e:?}"))
                         {
                             warn!(
-                                "Failed to persist Trident update check failure to '{}': {}",
+                                "Failed to persist Trident health check failure to '{}': {}",
                                 new_commit_failure_log_path.display(),
                                 log_error
                             );
                         } else {
                             debug!(
-                                "Successfully persisted Trident update check failure to '{}'",
+                                "Successfully persisted Trident health check failure to '{}'",
                                 new_commit_failure_log_path.display()
                             );
                         }

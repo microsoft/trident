@@ -12,7 +12,7 @@ A script that can be run on the host during Trident stages.
 
 ### `name` **<span>(required)</span>**
 
-Name of the script.
+Name of the check.
 
 | Characteristic | Value    |
 | -------------- | -------- |
@@ -20,7 +20,7 @@ Name of the script.
 
 ### `runOn` **<span>(required)</span>**
 
-List of servicing types that the script should run on. Valid servicing types are CleanInstall and AbUpdate.
+List of servicing types that the check should run on. Valid servicing types are CleanInstall and AbUpdate, if All is specified, the check will run for both CleanInstall and AbUpdate.
 
 | Characteristic | Value   |
 | -------------- | ------- |

@@ -2,7 +2,7 @@
 
 # Health
 
-Scripts that can be run on the host during Trident stages. These scripts are run in the order they are defined. Ensure that the scripts are idempotent as they may be run multiple times.
+Configuration for the host OS health.
 
 | Characteristic | Value    |
 | -------------- | -------- |
@@ -12,11 +12,11 @@ Scripts that can be run on the host during Trident stages. These scripts are run
 
 ### `checks` (optional)
 
-Scripts to be run before Trident commits a serviced target OS as 'provisioned'.  If any of the scripts fail, commit will not be completed and, for A/B update, a rollback will be triggered.
+Checks to be run before Trident commits a serviced target OS as 'provisioned'. If any of the checks fail, the commit will not be completed and, for A/B update, a rollback will be triggered.
 
-These scripts run for installs and A/B updates. If runOn is specified for anything other than 'clean-install' or 'ab-update' type, the script will be ignored.
+These checks run for installs and A/B updates. If `runOn` is specified for anything other than 'clean-install' or 'ab-update' type, the check will be ignored. If 'all' is specified, the check will run for both 'clean-install' and 'ab-update'.
 
-These scripts are run in the target OS. The `$TARGET_ROOT` variable will be set to '/' for consistency with postProvision scripts.
+These checks are run in the target OS. The `$TARGET_ROOT` variable will be set to '/' for consistency with postProvision scripts.
 
 | Characteristic | Value   |
 | -------------- | ------- |

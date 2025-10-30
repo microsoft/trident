@@ -6,21 +6,20 @@ use schemars::JsonSchema;
 use crate::config::host::scripts::{Script, ServicingTypeSelection};
 use crate::status::ServicingType;
 
-/// Scripts that can be run on the host during Trident stages.
-/// These scripts are run in the order they are defined.
-/// Ensure that the scripts are idempotent as they may be run multiple times.
+/// Configuration for the host OS health.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct Health {
-    /// Scripts to be run before Trident commits a serviced target OS as 'provisioned'.  If any of
-    /// the scripts fail, commit will not be completed and, for A/B update, a rollback will be
+    /// Checks to be run before Trident commits a serviced target OS as 'provisioned'. If any of
+    /// the checks fail, the commit will not be completed and, for A/B update, a rollback will be
     /// triggered.
     ///
-    /// These scripts run for installs and A/B updates. If runOn is specified for anything other
-    /// than 'clean-install' or 'ab-update' type, the script will be ignored.
+    /// These checks run for installs and A/B updates. If `runOn` is specified for anything other
+    /// than 'clean-install' or 'ab-update' type, the check will be ignored. If 'all' is
+    /// specified, the check will run for both 'clean-install' and 'ab-update'.
     ///
-    /// These scripts are run in the target OS. The `$TARGET_ROOT` variable
+    /// These checks are run in the target OS. The `$TARGET_ROOT` variable
     /// will be set to '/' for consistency with postProvision scripts.
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -30,12 +29,17 @@ pub struct Health {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub enum Check {
-    /// Raw contents of the script.
-    /// Valid script servicing types are CleanInstall and AbUpdate.
+    /// Script that will be run. The success or failure of the script will define
+    /// the health of the target OS.
+    /// Valid script servicing types are CleanInstall and AbUpdate, or All (which
+    /// will execute for both).
     Script(Script),
 
-    /// Path to a script in the execution OS.
-    /// Valid script servicing types are CleanInstall and AbUpdate.
+    /// Define systemd service(s) that need to be in a successful state, defined
+    /// by `systemctl status` returning success. The success or failure of this
+    /// check will define the health of the target OS.
+    /// Valid script servicing types are CleanInstall and AbUpdate, or All (which
+    /// will execute for both).
     SystemdCheck(SystemdCheck),
 }
 
@@ -76,7 +80,7 @@ impl<'de> serde::Deserialize<'de> for Check {
             }
         }
         Err(serde::de::Error::custom(
-            "invalid update check, expected a mapping",
+            "invalid health check, expected a mapping",
         ))
     }
 }
@@ -97,7 +101,7 @@ impl serde::Serialize for Check {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct SystemdCheck {
-    /// Name of the script.
+    /// Name of the check.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub name: String,
 
@@ -108,8 +112,10 @@ pub struct SystemdCheck {
     /// Timeout for the systemd check.
     pub timeout_seconds: usize,
 
-    /// List of servicing types that the script should run on.
-    /// Valid servicing types are CleanInstall and AbUpdate.
+    /// List of servicing types that the check should run on.
+    /// Valid servicing types are CleanInstall and AbUpdate, if
+    /// All is specified, the check will run for both CleanInstall
+    /// and AbUpdate.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub run_on: Vec<ServicingTypeSelection>,
 }
