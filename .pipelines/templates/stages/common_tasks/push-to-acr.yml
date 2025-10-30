@@ -17,23 +17,6 @@ parameters:
       - bareMetal
 
 steps:
-  - bash: |
-      set -eux
-
-      if [ ${{ parameters.config }} != 'misc' ]; then
-        echo "Skipping step. Configuration is '${{ parameters.config }}'."
-        exit 0
-      fi
-
-      VERSION="1.2.2"
-      curl -LO "https://github.com/oras-project/oras/releases/download/v${VERSION}/oras_${VERSION}_linux_amd64.tar.gz"
-      mkdir -p oras-install/
-      tar -zxf oras_${VERSION}_*.tar.gz -C oras-install/
-      sudo mv oras-install/oras /usr/local/bin/
-      rm -rf oras_${VERSION}_*.tar.gz oras-install/
-    displayName: "Install ORAS"
-    retryCountOnTaskFailure: 3
-
   - task: AzureCLI@2
     inputs:
       azureSubscription: trident-dev-acr-write-umi-ECF
@@ -57,38 +40,5 @@ steps:
           --file-paths $(Build.SourcesDirectory)/artifacts/test-image/regular_v2.cosi \
           --file-paths $(Build.SourcesDirectory)/artifacts/test-image/regular_v3.cosi \
           --file-paths $(Build.SourcesDirectory)/artifacts/test-image/regular_v4.cosi
-
-        # # Login to ACR
-        # az acr login -n $(ACR_NAME)
-
-        # repository_name=${{ parameters.imageName }}
-        # build_id="$(Build.BuildId)"
-
-
-        # cd $(Build.SourcesDirectory)/artifacts/test-image
-
-        # tag_base="v${build_id}.${{ parameters.config }}.${{ parameters.deploymentEnvironment }}"
-        # for version in {1..4}; do
-        #   if [[ $version == 1 ]]; then
-        #     filename="regular.cosi"
-        #   else
-        #     filename="regular_v${version}.cosi"
-        #   fi
-
-        #   tag="$tag_base.${version}"
-
-        #   if [[ -f "$filename" ]]; then
-        #     echo "Pushing $filename with tag $tag to $(ACR_NAME).azurecr.io"
-        #     oras push $(ACR_NAME).azurecr.io/$repository_name:$tag "$filename"
-        #     sleep 3
-        #     echo "Verifying $filename was pushed successfully..."
-        #     az acr repository show --name $(ACR_NAME) --image ${repository_name}:${tag}
-        #   else
-        #     echo "File $filename not found"
-        #   fi
-        # done
-
-        # # Set variable for tag base of pushed images
-        # echo "##vso[task.setvariable variable=TAG_BASE]$tag_base"
     displayName: "Push to ACR"
     retryCountOnTaskFailure: 3
