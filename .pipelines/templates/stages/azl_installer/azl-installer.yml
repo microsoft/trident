@@ -98,3 +98,27 @@ stages:
               baseimgVersion: $(BASEIMG_VERSION)
               micBuildType: ${{ parameters.micBuildType }}
               micVersion: ${{ parameters.micVersion }}
+
+  - stage: Test_AzureLinux_Installer_ISO
+    displayName: Test azl-installer-iso
+    dependsOn:
+      - AzureLinux_Installer_ISO
+
+    jobs:
+      - job: ValidateAzLInstallerISO
+        displayName: Validate azl-installer-iso
+        timeoutInMinutes: 20
+        pool:
+          type: linux
+          name: trident-ubuntu-1es-pool-eastus2
+          hostArchitecture: amd64
+
+        variables:
+          ob_outputDirectory: $(Pipeline.Workspace)/azl-installer-test
+          ob_artifactBaseName: azl-installer-test-$(System.JobAttempt)
+
+        steps:
+          - checkout: self
+            fetchDepth: 1
+
+          - template: ../trident_usb_iso/validate-usb-iso.yml
