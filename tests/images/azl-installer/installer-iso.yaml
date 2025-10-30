@@ -69,13 +69,9 @@ os:
     destination: /usr/lib/systemd/system/getty@.service
   - source: mos/files/serial-getty@.service
     destination: /usr/lib/systemd/system/serial-getty@.service
-  # Installer files
-  - source: iso/scripts/installation.sh
+  - source: mos/scripts/installation.sh
     destination: /root/installer/installation.sh 
-  - source: iso/files/EULA.txt
-    destination: /root/installer/EULA.txt
 
-# ISO-specific configuration
 iso:
   initramfsType: full-os
   
@@ -96,4 +92,4 @@ iso:
 
 scripts:
   postCustomization:
-  - path: iso/scripts/startup-command.sh
+  - path: mos/scripts/startup-command.sh

@@ -102,6 +102,9 @@ stages:
           - bash: |
               set -ex
               
+              # Make isopatch executable
+              chmod +x $(Build.ArtifactStagingDirectory)/installer-tools/isopatch
+              
               # Rename to attended ISO
               mv $(ob_outputDirectory)/azl-installer.iso $(ob_outputDirectory)/azl-installer-attended.iso
               
