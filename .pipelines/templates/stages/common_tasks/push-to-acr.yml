@@ -22,6 +22,9 @@ steps:
 
       if [ ${{ parameters.config }} == 'extensions' ]; then
         ./bin/storm-trident helper build-extension-images --build-sysexts --num-clones 2
+        ls
+        sha384sum test-sysext-1.raw
+        sha384sum test-sysext-2.raw
       elif [ ${{ parameters.config }} == 'root-verity' ]; then
         ./bin/storm-trident helper build-extension-images --build-confexts --num-clones 2
       else
