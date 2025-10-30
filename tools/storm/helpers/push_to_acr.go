@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	"github.com/microsoft/storm"
@@ -96,8 +97,13 @@ func (h *PushToACRHelper) pushImage(filePath, tag string) error {
 
 	logrus.Infof("Pushing %s with tag %s to %s\n", filePath, tag, registryURL)
 
+	// Get the directory and filename from the full path
+	dir := filepath.Dir(filePath)
+	fileName := filepath.Base(filePath)
+
 	// Use ORAS to push the image
-	cmd := exec.Command("oras", "push", "--disable-path-validation", fullImageName, filePath)
+	cmd := exec.Command("oras", "push", fullImageName, fileName)
+	cmd.Dir = dir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
