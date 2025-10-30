@@ -365,7 +365,7 @@ func (h *AbUpdateHelper) handleUefiFallback(tc storm.TestCase) error {
 			h.config["internalParams"] = internalParams
 		}
 	} else {
-		logrus.Tracef("Ensuring UEFI-fallback rollback settings are not in host config")
+		logrus.Tracef("Ensuring UEFI-fallback rollback settings are not in Host Configuration")
 		os, ok := h.config["os"].(map[string]any)
 		if ok {
 			os["uefiFallback"] = "none"
