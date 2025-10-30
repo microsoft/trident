@@ -25,9 +25,9 @@ use crate::{
 
 #[must_use]
 pub enum BootValidationResult {
-    /// Target OS booted successfully, health checks succeeded
+    /// Target OS booted successfully, and the health checks succeeded
     CorrectBootProvisioned,
-    /// Target OS booted successfully, health checks failed
+    /// Target OS booted successfully, and the health checks failed
     CorrectBootInvalid(TridentError),
 }
 
