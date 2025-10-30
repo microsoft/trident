@@ -78,6 +78,10 @@ pub struct Os {
     /// Data about confext images, which should be active on the target OS.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub confexts: Vec<Extension>,
+
+    /// Options for configuring the UEFI fallback.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub uefi_fallback: Option<UefiFallbackMode>,
 }
 
 /// Additional kernel command line options to add to the image.
@@ -146,6 +150,53 @@ impl std::str::FromStr for SelinuxMode {
             "permissive" => Ok(SelinuxMode::Permissive),
             "enforcing" => Ok(SelinuxMode::Enforcing),
             _ => Err(anyhow::anyhow!("Invalid SELinux mode: {}", s)),
+        }
+    }
+}
+
+/// UEFIFallback mode
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Copy)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
+pub enum UefiFallbackMode {
+    /// # Rollback
+    ///
+    /// Set the UEFI fallback mode to rollback, where fallback will boot
+    /// to the last OS.
+    Rollback,
+
+    /// # Rollforward
+    ///
+    /// Set the UEFI fallback mode to rollforward, where fallback will boot
+    /// to the newly installed or updated OS.
+    Rollforward,
+
+    /// # None
+    ///
+    /// Leave the fallback UEFI files untouched during install and update.
+    None,
+}
+
+impl std::fmt::Display for UefiFallbackMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mode_str = match self {
+            UefiFallbackMode::Rollback => "rollback",
+            UefiFallbackMode::Rollforward => "rollforward",
+            UefiFallbackMode::None => "none",
+        };
+        write!(f, "{mode_str}")
+    }
+}
+
+impl std::str::FromStr for UefiFallbackMode {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "rollback" => Ok(UefiFallbackMode::Rollback),
+            "rollforward" => Ok(UefiFallbackMode::Rollforward),
+            "none" => Ok(UefiFallbackMode::None),
+            _ => Err(anyhow::anyhow!("Invalid UEFI fallback mode: {}", s)),
         }
     }
 }
