@@ -420,7 +420,7 @@ steps:
           "${{ parameters.hostIp }}" \
           "${{ parameters.userName }}" \
           "${{ parameters.runtimeEnv }}" \
-          --trident-config-path "${{ parameters.tridentConfigPath }}" \
+          --trident-config-path "${{ parameters.tridentConfigPath }}/trident-config.yaml" \
           --deployment-environment "${{ parameters.deploymentEnvironment }}" \
           --artifacts-folder "$(ob_outputDirectory)"
     displayName: "Test Trident rebuild-raid"
