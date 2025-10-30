@@ -1,0 +1,73 @@
+storage:
+  bootType: efi
+
+  disks:
+    - partitionTableType: gpt
+      maxSize: 4G
+      partitions:
+        - id: esp
+          type: esp
+          start: 1M
+          end: 9M
+
+        - id: rootfs
+          start: 9M
+  filesystems:
+    - deviceId: esp
+      type: fat32
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+
+    - deviceId: rootfs
+      type: ext4
+      mountPoint:
+        path: /
+
+os:
+  bootloader:
+    resetType: hard-reset
+  hostname: trident-containerhost-mos-testimage
+
+  packages:
+    install:
+      - curl
+      - device-mapper
+      - dnf
+      - moby-engine
+      - moby-cli
+      - openssh-server
+      - squashfs-tools
+      - tar
+      - vim
+
+  additionalFiles:
+    - source: files/getty@.service
+      destination: /usr/lib/systemd/system/getty@.service
+    - source: files/serial-getty@.service
+      destination: /usr/lib/systemd/system/serial-getty@.service
+    - source: files/root.profile
+      destination: /root/.profile
+    - source: files/download-trident-container.service
+      destination: /usr/lib/systemd/system/download-trident-container.service
+
+  services:
+    enable:
+      - download-trident-container
+
+scripts:
+  postCustomization:
+    - path: post-install.sh
+
+iso:
+  additionalFiles:
+    - source: files/config-placeholder.yaml
+      destination: /trident-config.yaml
+    - source: files/pre-trident-script.sh
+      destination: /pre-trident-script.sh
+  kernelCommandLine:
+    extraCommandLine:
+      - console=tty0
+      - console=ttyS0
+      - rd.luks=0
+      - selinux=0
