@@ -63,9 +63,9 @@ class OutputFormat(Enum):
 
 
 class RpmSources(Enum):
-    TRIDENT = Path("base/trident")
-    DHCP = Path("base/dhcp")
-    RPM_OVERRIDES = Path("base/rpm-overrides")
+    TRIDENT = Path("bin/RPMS")
+    DHCP = Path("artifacts/dhcp")
+    RPM_OVERRIDES = Path("artifacts/rpm-overrides")
 
     def path(self) -> Path:
         return self.value
