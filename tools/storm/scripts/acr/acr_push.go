@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"time"
+	"tridenttools/storm/utils"
 
 	"github.com/microsoft/storm/pkg/storm/core"
 	"github.com/sirupsen/logrus"
@@ -48,8 +49,14 @@ func (s *AcrPushScript) pushFiles(tagBase string) error {
 		// Create tag with index
 		tag := fmt.Sprintf("%s.%d", tagBase, i+1)
 
-		// Push the file
-		err := s.pushImage(filePath, tag)
+		// Push the file with retry (5 seconds total until time out; 1 second backoff between attempts)
+		_, err := utils.Retry(5*time.Second, 1*time.Second, func(attempt int) (*bool, error) {
+			err := s.pushImage(filePath, tag)
+			if err != nil {
+				return nil, err
+			}
+			return nil, nil
+		})
 		if err != nil {
 			return fmt.Errorf("failed to push file %s: %w", filePath, err)
 		}
@@ -82,9 +89,6 @@ func (s *AcrPushScript) pushImage(filePath, tag string) error {
 		logrus.WithField("output", string(output)).Errorf("Failed to push %s with oras", fullImageName)
 		return err
 	}
-
-	// Sleep to allow registry to process
-	time.Sleep(3 * time.Second)
 
 	return nil
 }
