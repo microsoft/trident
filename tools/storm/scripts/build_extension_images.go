@@ -21,6 +21,11 @@ type BuildExtensionImagesScript struct {
 }
 
 func (s *BuildExtensionImagesScript) Run() error {
+	if !s.BuildConfexts && !s.BuildSysexts {
+		logrus.Warn("Neither --build-sysexts nor --build-confexts is specified. Returning early.")
+		return nil
+	}
+
 	if s.BuildSysexts {
 		err := buildImage("sysext", s.NumClones)
 		if err != nil {
