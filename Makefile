@@ -398,7 +398,7 @@ go.sum: go.mod
 	go mod tidy
 
 .PHONY: go-tools
-go-tools: bin/netlaunch bin/netlisten bin/miniproxy bin/virtdeploy
+go-tools: bin/netlaunch bin/netlisten bin/miniproxy bin/virtdeploy bin/isopatch
 
 bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum tools/pkg/*
 	@mkdir -p bin
@@ -407,6 +407,10 @@ bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum tools/pkg/*
 bin/netlisten: tools/cmd/netlisten/* tools/go.sum tools/pkg/*
 	@mkdir -p bin
 	cd tools && go build -o ../bin/netlisten ./cmd/netlisten
+
+bin/isopatch: tools/cmd/isopatch/* tools/go.sum tools/pkg/isopatcher/*
+	@mkdir -p bin
+	cd tools && go build -o ../bin/isopatch ./cmd/isopatch
 
 bin/miniproxy: tools/cmd/miniproxy/* tools/go.sum
 	mkdir -p bin
