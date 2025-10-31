@@ -15,9 +15,9 @@ type BuildExtensionImagesScriptSet struct {
 }
 
 type BuildExtensionImagesScript struct {
-	NumClones     int  `required:"" help:"Number of sysexts and confexts to build." type:"int"`
-	BuildSysexts  bool `help:"Indicates that test sysext images should be built." type:"bool"`
-	BuildConfexts bool `help:"Indicates that test confext images should be built." type:"bool"`
+	NumClones     int  `required:"" help:"Number of sysexts and confexts to build."`
+	BuildSysexts  bool `help:"Indicates that test sysext images should be built."`
+	BuildConfexts bool `help:"Indicates that test confext images should be built."`
 }
 
 func (s *BuildExtensionImagesScript) Run() error {
