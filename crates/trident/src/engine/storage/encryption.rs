@@ -448,7 +448,7 @@ mod tests {
     #[test]
     fn test_get_bootloader_paths() {
         // Declare ESP path; no need to actually write anything as this func only constructs paths.
-        let esp_path = PathBuf::from("/boot/efi");
+        let esp_path = PathBuf::from(ESP_MOUNT_POINT_PATH);
 
         let mut ctx = EngineContext {
             ab_active_volume: None,
@@ -557,6 +557,52 @@ mod tests {
         assert_eq!(
             get_bootloader_paths(&esp_path, Some(&mount_path), &ctx).unwrap(),
             expected_mount_paths_a
+        );
+    }
+}
+
+#[cfg(feature = "functional-test")]
+#[cfg_attr(not(test), allow(unused_imports, dead_code))]
+mod functional_test {
+    use pytest_gen::functional_test;
+
+    use super::*;
+
+    #[functional_test(feature = "helpers")]
+    fn test_get_uki_paths() {
+        // Declare ESP path; no need to actually write anything as this func only constructs paths.
+        let esp_path = PathBuf::from(ESP_MOUNT_POINT_PATH);
+        let esp_uki_path = esp_path.join(UKI_DIRECTORY);
+
+        // Test case #0: No current entry set, so return an error.
+        assert_eq!(
+            get_uki_paths(&esp_path, None).unwrap_err().to_string(),
+            "Failed to read current boot entry"
+        );
+
+        // Test case #1: No mount_path, so only one path is returned, i.e. current entry.
+        let current_entry = "CurrentEntry-0.efi";
+        let var_name = format!(
+            "{}-{}",
+            efivar::BOOTLOADER_INTERFACE_GUID,
+            efivar::LOADER_ENTRY_SELECTED
+        );
+        efivar::set_efi_variable(&var_name, &efivar::encode_utf16le(current_entry)).unwrap();
+
+        let expected_paths = vec![esp_uki_path.join(current_entry)];
+        assert_eq!(get_uki_paths(&esp_path, None).unwrap(), expected_paths);
+
+        // Test case #2: Mount_path provided, so two paths are returned, i.e. current entry and
+        // update entry.
+        let mount_path = PathBuf::from("/mnt");
+        let mount_esp_uki_path = join_relative(&mount_path, esp_uki_path);
+        let expected_mount_paths = vec![
+            mount_esp_uki_path.join(current_entry),
+            mount_esp_uki_path.join(TMP_UKI_NAME),
+        ];
+        assert_eq!(
+            get_uki_paths(&esp_path, Some(&mount_path)).unwrap(),
+            expected_mount_paths
         );
     }
 }
