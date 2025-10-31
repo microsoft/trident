@@ -4,21 +4,19 @@ import (
 	"github.com/microsoft/storm"
 
 	"github.com/sirupsen/logrus"
-	"golang.org/x/crypto/ssh"
 
-	"tridenttools/storm/utils/env"
-	check "tridenttools/storm/utils/ssh/check"
-	sshconfig "tridenttools/storm/utils/ssh/config"
+	stormenv "tridenttools/storm/utils/env"
+	stormsshcheck "tridenttools/storm/utils/ssh/check"
+	stormsshconfig "tridenttools/storm/utils/ssh/config"
 )
 
 type CheckSshHelper struct {
 	args struct {
-		sshconfig.SshCliSettings `embed:""`
-		env.EnvCliSettings       `embed:""`
-		CheckActiveVolume        string `help:"Check that the indicated volume is the active one"`
-		ExpectFailedCommit       bool   `help:"Controls whether this test treats failed commits as successful." default:"false"`
+		stormsshconfig.SshCliSettings `embed:""`
+		stormenv.EnvCliSettings       `embed:""`
+		CheckActiveVolume             string `help:"Check that the indicated volume is the active one"`
+		ExpectFailedCommit            bool   `help:"Controls whether this test treats failed commits as successful." default:"false"`
 	}
-	client *ssh.Client
 }
 
 func (h CheckSshHelper) Name() string {
@@ -36,7 +34,7 @@ func (h *CheckSshHelper) RegisterTestCases(r storm.TestRegistrar) error {
 
 func (h *CheckSshHelper) checkTridentServiceWithSsh(tc storm.TestCase) error {
 	expectSuccessfulCommit := !h.args.ExpectFailedCommit
-	err := check.CheckTridentService(
+	err := stormsshcheck.CheckTridentService(
 		h.args.SshCliSettings,
 		h.args.EnvCliSettings,
 		expectSuccessfulCommit,

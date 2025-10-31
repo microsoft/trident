@@ -6,12 +6,13 @@ import (
 	"os/exec"
 	"strings"
 	"time"
-	"tridenttools/storm/utils"
-	"tridenttools/storm/utils/env"
-	check "tridenttools/storm/utils/ssh/check"
-	sshclient "tridenttools/storm/utils/ssh/client"
-	sshconfig "tridenttools/storm/utils/ssh/config"
-	"tridenttools/storm/utils/trident"
+
+	stormutils "tridenttools/storm/utils"
+	stormenv "tridenttools/storm/utils/env"
+	stormsshcheck "tridenttools/storm/utils/ssh/check"
+	stormsshclient "tridenttools/storm/utils/ssh/client"
+	stormsshconfig "tridenttools/storm/utils/ssh/config"
+	stormtrident "tridenttools/storm/utils/trident"
 
 	"github.com/microsoft/storm"
 	"github.com/sirupsen/logrus"
@@ -22,14 +23,14 @@ import (
 
 type RebuildRaidHelper struct {
 	args struct {
-		sshconfig.SshCliSettings `embed:""`
-		env.EnvCliSettings       `embed:""`
-		TridentConfigPath        string `help:"Path to the Trident configuration file." type:"string"`
-		DeploymentEnvironment    string `help:"Deployment environment (e.g., bareMetal, virtualMachine)." type:"string" default:"virtualMachine"`
-		VmName                   string `help:"Name of VM." type:"string" default:"virtdeploy-vm-0"`
-		Disk                     string `help:"Disk to fail in RAID array." type:"string" default:"/dev/sdb"`
-		SkipRebuildRaid          bool   `help:"Skip the rebuild RAID step." type:"bool" default:"false"`
-		ArtifactsFolder          string `help:"Folder to copy log files into." type:"string" default:""`
+		stormsshconfig.SshCliSettings `embed:""`
+		stormenv.EnvCliSettings       `embed:""`
+		TridentConfigPath             string `help:"Path to the Trident configuration file." type:"string"`
+		DeploymentEnvironment         string `help:"Deployment environment (e.g., bareMetal, virtualMachine)." type:"string" default:"virtualMachine"`
+		VmName                        string `help:"Name of VM." type:"string" default:"virtdeploy-vm-0"`
+		Disk                          string `help:"Disk to fail in RAID array." type:"string" default:"/dev/sdb"`
+		SkipRebuildRaid               bool   `help:"Skip the rebuild RAID step." type:"bool" default:"false"`
+		ArtifactsFolder               string `help:"Folder to copy log files into." type:"string" default:""`
 	}
 
 	failed bool
@@ -113,7 +114,7 @@ func (h *RebuildRaidHelper) failBaremetalRaids(tc storm.TestCase) error {
 	// # Set up SSH client
 	// connection = create_ssh_connection(ip_address, user_name, keys_file_path)
 	var err error
-	client, err := sshclient.OpenSshClient(h.args.SshCliSettings)
+	client, err := stormsshclient.OpenSshClient(h.args.SshCliSettings)
 	if err != nil {
 		tc.Error(err)
 	}
@@ -334,7 +335,7 @@ func (h *RebuildRaidHelper) shutdownVirtualMachine(tc storm.TestCase) error {
 	logrus.Infof("Shutting down virtual machine %s", h.args.VmName)
 
 	var err error
-	client, err := sshclient.OpenSshClient(h.args.SshCliSettings)
+	client, err := stormsshclient.OpenSshClient(h.args.SshCliSettings)
 	if err != nil {
 		tc.Error(err)
 		return err
@@ -467,7 +468,7 @@ func (h *RebuildRaidHelper) shutdownVirtualMachine(tc storm.TestCase) error {
 		tc.Error(fmt.Errorf("failed to find VM serial log path"))
 	}
 
-	err = utils.WaitForLoginMessageInSerialLog(vmSerialLog, true, 1, fmt.Sprintf("%s/serial.log", h.args.ArtifactsFolder), time.Minute*5)
+	err = stormutils.WaitForLoginMessageInSerialLog(vmSerialLog, true, 1, fmt.Sprintf("%s/serial.log", h.args.ArtifactsFolder), time.Minute*5)
 	if err != nil {
 		tc.Error(err)
 	}
@@ -483,7 +484,7 @@ func (h *RebuildRaidHelper) checkTridentServiceWithSsh(tc storm.TestCase) error 
 		tc.Skip("Skipping trident service check step")
 		return nil
 	}
-	err := check.CheckTridentService(
+	err := stormsshcheck.CheckTridentService(
 		h.args.SshCliSettings,
 		h.args.EnvCliSettings,
 		true,
@@ -536,7 +537,7 @@ func (h *RebuildRaidHelper) tridentRebuildRaid(client *ssh.Client, tridentConfig
 	// 	trident_return_code, trident_stdout, trident_stderr = trident_run(
 	// 		connection, f"rebuild-raid -v trace", runtime_env
 	// 	)
-	output, err := trident.InvokeTrident(h.args.Env, client, []string{}, "rebuild-raid -v trace")
+	output, err := stormtrident.InvokeTrident(h.args.Env, client, []string{}, "rebuild-raid -v trace")
 	if err != nil {
 		return fmt.Errorf("failed to invoke Trident: %w", err)
 	}
@@ -641,7 +642,7 @@ func (h *RebuildRaidHelper) triggerRebuildRaid(tridentConfig string) error {
 	// 	"""
 	// 	# Set up SSH client
 	// 	connection = create_ssh_connection(ip_address, user_name, keys_file_path)
-	client, err := sshclient.OpenSshClient(h.args.SshCliSettings)
+	client, err := stormsshclient.OpenSshClient(h.args.SshCliSettings)
 	if err != nil {
 		return err
 	}

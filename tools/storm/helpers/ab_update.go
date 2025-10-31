@@ -21,26 +21,25 @@ import (
 	"oras.land/oras-go/v2/content/file"
 	"oras.land/oras-go/v2/registry/remote"
 
-	"tridenttools/storm/utils/env"
 	stormenv "tridenttools/storm/utils/env"
-	sshcheck "tridenttools/storm/utils/ssh/check"
-	sshclient "tridenttools/storm/utils/ssh/client"
-	sshconfig "tridenttools/storm/utils/ssh/config"
+	stormsshcheck "tridenttools/storm/utils/ssh/check"
+	stormsshclient "tridenttools/storm/utils/ssh/client"
+	stormsshconfig "tridenttools/storm/utils/ssh/config"
 	stormsftp "tridenttools/storm/utils/ssh/sftp"
-	"tridenttools/storm/utils/trident"
+	stormtrident "tridenttools/storm/utils/trident"
 )
 
 type AbUpdateHelper struct {
 	args struct {
-		sshconfig.SshCliSettings `embed:""`
-		stormenv.EnvCliSettings  `embed:""`
-		TridentConfig            string   `short:"c" required:"" help:"File name of the custom read-write Trident config on the host to point Trident to."`
-		Version                  string   `short:"v" required:"" help:"Version of the Trident image to use for the A/B update."`
-		StageAbUpdate            bool     `short:"s" help:"Controls whether A/B update should be staged."`
-		FinalizeAbUpdate         bool     `short:"f" help:"Controls whether A/B update should be finalized."`
-		EnvVars                  []string `short:"e" help:"Environment variables. Multiple vars can be passed as a list of comma-separated strings, or this flag can be used multiple times. Each var should include the env var name, i.e. HTTPS_PROXY=http://0.0.0.0."`
-		ExpectFailedCommit       bool     `help:"Controls whether this test treats failed commits as successful." default:"false"`
-		ForcedRollback           bool     `help:"Controls whether this test includes a forced auto-rollback during A/B update." default:"false"`
+		stormsshconfig.SshCliSettings `embed:""`
+		stormenv.EnvCliSettings       `embed:""`
+		TridentConfig                 string   `short:"c" required:"" help:"File name of the custom read-write Trident config on the host to point Trident to."`
+		Version                       string   `short:"v" required:"" help:"Version of the Trident image to use for the A/B update."`
+		StageAbUpdate                 bool     `short:"s" help:"Controls whether A/B update should be staged."`
+		FinalizeAbUpdate              bool     `short:"f" help:"Controls whether A/B update should be finalized."`
+		EnvVars                       []string `short:"e" help:"Environment variables. Multiple vars can be passed as a list of comma-separated strings, or this flag can be used multiple times. Each var should include the env var name, i.e. HTTPS_PROXY=http://0.0.0.0."`
+		ExpectFailedCommit            bool     `help:"Controls whether this test treats failed commits as successful." default:"false"`
+		ForcedRollback                bool     `help:"Controls whether this test includes a forced auto-rollback during A/B update." default:"false"`
 	}
 
 	client *ssh.Client
@@ -64,12 +63,12 @@ func (h *AbUpdateHelper) RegisterTestCases(r storm.TestRegistrar) error {
 }
 
 func (h *AbUpdateHelper) getHostConfig(tc storm.TestCase) error {
-	if h.args.Env == env.TridentEnvironmentNone {
+	if h.args.Env == stormenv.TridentEnvironmentNone {
 		return fmt.Errorf("environment %s is not supported", h.args.Env)
 	}
 
 	var err error
-	h.client, err = sshclient.OpenSshClient(h.args.SshCliSettings)
+	h.client, err = stormsshclient.OpenSshClient(h.args.SshCliSettings)
 	if err != nil {
 		tc.Error(err)
 	}
@@ -80,7 +79,7 @@ func (h *AbUpdateHelper) getHostConfig(tc storm.TestCase) error {
 		}
 	})
 
-	out, err := trident.InvokeTrident(h.args.Env, h.client, h.args.EnvVars, "get configuration")
+	out, err := stormtrident.InvokeTrident(h.args.Env, h.client, h.args.EnvVars, "get configuration")
 	if err != nil {
 		return fmt.Errorf("failed to invoke Trident: %w", err)
 	}
@@ -318,7 +317,7 @@ func (h *AbUpdateHelper) triggerTridentUpdate(tc storm.TestCase) error {
 		strings.Join(allowedOperations, ","),
 	)
 
-	file, err := sshclient.CommandOutput(h.client, fmt.Sprintf("sudo cat %s", h.args.TridentConfig))
+	file, err := stormsshclient.CommandOutput(h.client, fmt.Sprintf("sudo cat %s", h.args.TridentConfig))
 	if err != nil {
 		return fmt.Errorf("failed to read new Host Config file: %w", err)
 	}
@@ -328,7 +327,7 @@ func (h *AbUpdateHelper) triggerTridentUpdate(tc storm.TestCase) error {
 	for i := 1; ; i++ {
 		logrus.Infof("Invoking Trident attempt #%d with args: %s", i, args)
 
-		out, err := trident.InvokeTrident(h.args.Env, h.client, h.args.EnvVars, args)
+		out, err := stormtrident.InvokeTrident(h.args.Env, h.client, h.args.EnvVars, args)
 		if err != nil {
 			if err, ok := err.(*ssh.ExitMissingError); ok && strings.Contains(out.Stderr, "Rebooting system") {
 				// The connection closed without an exit code, and the output contains "Rebooting system".
@@ -365,12 +364,12 @@ func (h *AbUpdateHelper) triggerTridentUpdate(tc storm.TestCase) error {
 }
 
 func (h *AbUpdateHelper) checkTridentService(tc storm.TestCase) error {
-	if h.args.Env == env.TridentEnvironmentNone {
+	if h.args.Env == stormenv.TridentEnvironmentNone {
 		tc.Skip("No Trident environment specified")
 	}
 
 	expectSuccessfulCommit := !h.args.ExpectFailedCommit
-	err := sshcheck.CheckTridentService(
+	err := stormsshcheck.CheckTridentService(
 		h.args.SshCliSettings,
 		h.args.EnvCliSettings,
 		expectSuccessfulCommit,
