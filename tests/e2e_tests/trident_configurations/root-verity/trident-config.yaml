@@ -83,7 +83,7 @@ storage:
       source: new
       mountPoint: /var/lib/trident
     - deviceId: var
-      mountPoint: /var/etc
+      mountPoint: /var/tmp
     - deviceId: root
       mountPoint:
         path: /
