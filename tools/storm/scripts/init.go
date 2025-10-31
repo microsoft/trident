@@ -1,6 +1,8 @@
 package scripts
 
+import "tridenttools/storm/scripts/acr"
+
 var TRIDENT_SCRIPTSETS = []any{
-	&AcrScriptSet{},
+	&acr.AcrScriptSet{},
 	&BuildExtensionImagesScriptSet{},
 }
