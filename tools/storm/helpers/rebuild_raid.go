@@ -337,11 +337,13 @@ func (h *RebuildRaidHelper) shutdownVirtualMachine(tc storm.TestCase) error {
 	client, err := sshclient.OpenSshClient(h.args.SshCliSettings)
 	if err != nil {
 		tc.Error(err)
+		return err
 	}
 
 	session, err := client.NewSession()
 	if err != nil {
 		tc.Error(err)
+		return err
 	}
 	defer session.Close()
 
@@ -351,6 +353,7 @@ func (h *RebuildRaidHelper) shutdownVirtualMachine(tc storm.TestCase) error {
 	output, err := session.CombinedOutput("sudo efibootmgr")
 	if err != nil {
 		tc.Error(err)
+		return err
 	}
 	logrus.Infof("Output of efibootmgr:\n%s", string(output))
 
@@ -359,6 +362,7 @@ func (h *RebuildRaidHelper) shutdownVirtualMachine(tc storm.TestCase) error {
 	logrus.Tracef("virsh shutdown output: %s\n%v", string(virshOutput), virshErr)
 	if virshErr != nil {
 		tc.Error(virshErr)
+		return err
 	}
 
 	//   sudo rm -f /var/lib/libvirt/images/virtdeploy-pool/virtdeploy-vm-0-1-volume.qcow2
@@ -366,12 +370,14 @@ func (h *RebuildRaidHelper) shutdownVirtualMachine(tc storm.TestCase) error {
 	logrus.Tracef("rm volume output: %s\n%v", string(rmOutput), rmErr)
 	if rmErr != nil {
 		tc.Error(rmErr)
+		return err
 	}
 	//   sudo qemu-img create -f qcow2 /var/lib/libvirt/images/virtdeploy-pool/virtdeploy-vm-0-1-volume.qcow2 16G
 	createOutput, createErr := exec.Command("sudo", "qemu-img", "create", "-f", "qcow2", fmt.Sprintf("/var/lib/libvirt/images/virtdeploy-pool/%s-1-volume.qcow2", h.args.VmName), "16G").CombinedOutput()
 	logrus.Tracef("qemu-img create output: %s\n%v", string(createOutput), createErr)
 	if createErr != nil {
 		tc.Error(createErr)
+		return err
 	}
 
 	//   # Name of the domain
@@ -383,25 +389,31 @@ func (h *RebuildRaidHelper) shutdownVirtualMachine(tc storm.TestCase) error {
 
 	//   # Check the state of the domain and run the loop
 	//   for (( i=1; i<=30; i++ )); do
+	domainShutdown := false
+	domainStarted := false
 	for i := 1; i <= 30; i++ {
 		//       domain_state=$(sudo virsh domstate $DOMAIN_NAME)
 		domstateOutput, domstateErr := exec.Command("sudo", "virsh", "domstate", h.args.VmName).CombinedOutput()
 		if domstateErr != nil {
 			tc.Error(domstateErr)
+			return err
 		}
 		logrus.Infof("Domain state attempt %d: %s", i, strings.TrimSpace(string(domstateOutput)))
 
 		//       if [[ $domain_state == "shut off" ]]; then
 		if strings.TrimSpace(string(domstateOutput)) == "shut off" {
 			//           echo "The domain is shut off. Starting the domain..."
+			domainShutdown = true
 			logrus.Info("The domain is shut off. Starting the domain...")
 			//           sudo virsh start $DOMAIN_NAME
 			startOutput, startErr := exec.Command("sudo", "virsh", "start", h.args.VmName).CombinedOutput()
 			logrus.Tracef("virsh start output: %s\n%v", string(startOutput), startErr)
 			if startErr != nil {
 				tc.Error(startErr)
+				return startErr
 			}
 			//           echo "The domain has been started."
+			domainStarted = true
 			logrus.Info("The domain has been started.")
 			//           exit 0
 			break
@@ -419,7 +431,14 @@ func (h *RebuildRaidHelper) shutdownVirtualMachine(tc storm.TestCase) error {
 	}
 
 	//   echo "The domain did not shut down after 30 attempts."
-	logrus.Info("The domain did not shut down after 30 attempts.")
+	if !domainShutdown {
+		tc.Error(fmt.Errorf("the domain did not shut down after 30 attempts"))
+		return nil
+	}
+	if !domainStarted {
+		tc.Error(fmt.Errorf("the domain did not start after 30 attempts"))
+		return nil
+	}
 
 	//   # Name of the domain
 	//   DOMAIN_NAME="virtdeploy-vm-0"
