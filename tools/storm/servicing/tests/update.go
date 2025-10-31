@@ -14,7 +14,7 @@ import (
 	"tridenttools/storm/servicing/utils/file"
 	"tridenttools/storm/servicing/utils/ssh"
 	"tridenttools/storm/servicing/utils/vmip"
-	"tridenttools/storm/utils/retry"
+	stormretry "tridenttools/storm/utils/retry"
 
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
@@ -473,7 +473,7 @@ func validateRollback(cfg config.VMConfig, vmIP string) error {
 }
 
 func checkActiveVolume(cfg config.VMConfig, vmIP string, expectedVolume string) error {
-	_, err := retry.Retry(
+	_, err := stormretry.Retry(
 		time.Second*600,
 		time.Second,
 		func(attempt int) (*bool, error) {
