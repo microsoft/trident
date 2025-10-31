@@ -549,8 +549,7 @@ func (h *RebuildRaidHelper) tridentRebuildRaid(client *ssh.Client, tridentConfig
 	// 	trident_return_code, trident_stdout, trident_stderr = trident_run(
 	// 		connection, f"rebuild-raid -v trace", runtime_env
 	// 	)
-	command := fmt.Sprintf("rebuild-raid -c %s -v trace", tridentConfig)
-	output, err := trident.InvokeTrident(h.args.Env, client, []string{}, command)
+	output, err := trident.InvokeTrident(h.args.Env, client, []string{}, "rebuild-raid -v trace")
 	if err != nil {
 		return fmt.Errorf("failed to invoke Trident: %w", err)
 	}
