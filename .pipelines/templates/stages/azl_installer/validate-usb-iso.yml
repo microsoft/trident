@@ -40,9 +40,9 @@ steps:
       cp $(Pipeline.Workspace)/azl-installer/${ISO_NAME}.iso /tmp/azl-installer.iso
       sudo qemu-img create -f qcow2 /tmp/usb-iso-test-vm-volume.qcow2 16G
 
-      sudo virsh net-create $(Build.SourcesDirectory)/.pipelines/templates/stages/azL_installer/usb-iso-net-template.xml
-      sudo virsh define $(Build.SourcesDirectory)/.pipelines/templates/stages/azL_installer/usb-iso-vm-template.xml
-      sudo python3 $(Build.SourcesDirectory)/.pipelines/templates/stages/azL_installer/test-usb-iso.py
+      sudo virsh net-create $(Build.SourcesDirectory)/.pipelines/templates/stages/azl_installer/usb-iso-net-template.xml
+      sudo virsh define $(Build.SourcesDirectory)/.pipelines/templates/stages/azl_installer/usb-iso-vm-template.xml
+      sudo python3 $(Build.SourcesDirectory)/.pipelines/templates/stages/azl_installer/test-usb-iso.py
     timeoutInMinutes: 10
     displayName: "Test azl-installer ISO (unattended installation)"
   
