@@ -4,22 +4,21 @@ import (
 	"os"
 	"strings"
 	"time"
-	"tridenttools/storm/utils/env"
+
 	stormenv "tridenttools/storm/utils/env"
-	"tridenttools/storm/utils/retry"
-	sshclient "tridenttools/storm/utils/ssh/client"
-	sshconfig "tridenttools/storm/utils/ssh/config"
+	stormretry "tridenttools/storm/utils/retry"
+	stormsshclient "tridenttools/storm/utils/ssh/client"
+	stormsshconfig "tridenttools/storm/utils/ssh/config"
 
 	"github.com/microsoft/storm"
-
 	"github.com/sirupsen/logrus"
 )
 
 type CheckSelinuxHelper struct {
 	args struct {
-		sshconfig.SshCliSettings `embed:""`
-		env.EnvCliSettings       `embed:""`
-		AuditFile                string `required:"" help:"Audit logs file." type:"path"`
+		stormsshconfig.SshCliSettings `embed:""`
+		stormenv.EnvCliSettings       `embed:""`
+		AuditFile                     string `required:"" help:"Audit logs file." type:"path"`
 	}
 }
 
@@ -49,17 +48,17 @@ func (h *CheckSelinuxHelper) checkSelinuxDenials(tc storm.TestCase) error {
 	}
 
 	logrus.Infof("== VM audit logs ==")
-	auditLogsOutput, err := retry.Retry(
+	auditLogsOutput, err := stormretry.Retry(
 		time.Second*time.Duration(h.args.Timeout),
 		time.Second*5,
 		func(attempt int) (*string, error) {
-			client, err := sshclient.OpenSshClient(h.args.SshCliSettings)
+			client, err := stormsshclient.OpenSshClient(h.args.SshCliSettings)
 			if err != nil {
 				return nil, err
 			}
 			defer client.Close()
 
-			auditLogsResult, err := sshclient.RunCommand(client, "sudo cat /var/log/audit/audit.log")
+			auditLogsResult, err := stormsshclient.RunCommand(client, "sudo cat /var/log/audit/audit.log")
 			if err != nil {
 				return nil, err
 			}
@@ -91,12 +90,12 @@ func (h *CheckSelinuxHelper) checkSelinuxDenials(tc storm.TestCase) error {
 }
 
 func (h *CheckSelinuxHelper) checkAudit2Allow() error {
-	client, err := sshclient.OpenSshClient(h.args.SshCliSettings)
+	client, err := stormsshclient.OpenSshClient(h.args.SshCliSettings)
 	if err != nil {
 		return err
 	}
 
-	audit2AllowResult, err := sshclient.RunCommand(client, "sudo audit2allow -i /var/log/audit/audit.log")
+	audit2AllowResult, err := stormsshclient.RunCommand(client, "sudo audit2allow -i /var/log/audit/audit.log")
 	if err != nil {
 		logrus.Errorf("Failed to run audit2allow: %v", err)
 		return err

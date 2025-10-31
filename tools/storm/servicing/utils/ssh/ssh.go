@@ -7,10 +7,12 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
 	"tridenttools/storm/servicing/utils/config"
-	"tridenttools/storm/utils/retry"
-	sshclient "tridenttools/storm/utils/ssh/client"
-	sshconfig "tridenttools/storm/utils/ssh/config"
+
+	stormretry "tridenttools/storm/utils/retry"
+	stormsshclient "tridenttools/storm/utils/ssh/client"
+	stormsshconfig "tridenttools/storm/utils/ssh/config"
 
 	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
@@ -106,7 +108,7 @@ func ScpUploadFileWithSudo(cfg config.VMConfig, vmIP, src, dest string) error {
 }
 
 func innerSshCommand(cfg config.VMConfig, vmIP, command string, combineOutput bool, connectionRetryCount int, commandRetryCount int) (string, error) {
-	sshCliSettings := sshconfig.SshCliSettings{
+	sshCliSettings := stormsshconfig.SshCliSettings{
 		PrivateKeyPath: cfg.SshPrivateKeyPath,
 		Host:           vmIP,
 		User:           cfg.User,
@@ -114,12 +116,12 @@ func innerSshCommand(cfg config.VMConfig, vmIP, command string, combineOutput bo
 		Timeout:        5,
 	}
 	var err error
-	client, err := retry.Retry(
+	client, err := stormretry.Retry(
 		time.Second*time.Duration(connectionRetryCount),
 		time.Second*time.Duration(1),
 		func(attempt int) (*ssh.Client, error) {
 			logrus.Tracef("SSH dial to '%s' (attempt %d)", sshCliSettings.FullHost(), attempt)
-			return sshclient.OpenSshClient(sshCliSettings)
+			return stormsshclient.OpenSshClient(sshCliSettings)
 		},
 	)
 	if err != nil {
@@ -127,7 +129,7 @@ func innerSshCommand(cfg config.VMConfig, vmIP, command string, combineOutput bo
 	}
 	defer client.Close()
 
-	output, err := retry.Retry(
+	output, err := stormretry.Retry(
 		time.Second*time.Duration(commandRetryCount),
 		time.Second*time.Duration(1),
 		func(attempt int) (*string, error) {
