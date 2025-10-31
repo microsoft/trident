@@ -11,6 +11,7 @@ import (
 	check "tridenttools/storm/utils/ssh/check"
 	sshclient "tridenttools/storm/utils/ssh/client"
 	sshconfig "tridenttools/storm/utils/ssh/config"
+	"tridenttools/storm/utils/trident"
 
 	"github.com/microsoft/storm"
 	"github.com/sirupsen/logrus"
@@ -514,11 +515,19 @@ func (h *RebuildRaidHelper) tridentRebuildRaid(client *ssh.Client, tridentConfig
 	// 	trident_return_code, trident_stdout, trident_stderr = trident_run(
 	// 		connection, f"rebuild-raid -v trace", runtime_env
 	// 	)
-	command := fmt.Sprintf("trident rebuild-raid -c %s -v trace", tridentConfig)
-	output, err := clientSession.CombinedOutput(command)
+	command := fmt.Sprintf("rebuild-raid -c %s -v trace", tridentConfig)
+	output, err := trident.InvokeTrident(h.args.Env, client, []string{}, command)
+	if err != nil {
+		return fmt.Errorf("failed to invoke Trident: %w", err)
+	}
+	if err := output.Check(); err != nil {
+		logrus.Errorf("Trident rebuild-raid stderr:\n%s", output.Stderr)
+		return fmt.Errorf("failed to run trident to get host config: %w", err)
+	}
+
 	// 	trident_output = trident_stdout + trident_stderr
 	// 	print("Trident rebuild-raid output {}".format(trident_output))
-	logrus.Infof("Trident rebuild-raid output:\n%s", string(output))
+	logrus.Infof("Trident rebuild-raid output:\n%s\n%s", output.Stdout, output.Stderr)
 
 	// 	# Check the exit code: if 0, Trident rebuild-raid succeeded.
 	// 	if trident_return_code == 0:
