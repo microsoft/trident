@@ -195,7 +195,7 @@ stages:
         parameters:
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}     
-        dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+          dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
   # dom0 is failing for not known reasons ... comment out for now to unblock, longterm this may
   # be removed from Trident pipelines alltogether in favor of being only test-images
