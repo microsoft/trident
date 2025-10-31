@@ -189,12 +189,13 @@ stages:
       micVersion: ${{ parameters.micVersion }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
+# BuildAZL installer (attended and unattended)
   - ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e-azure')) }}:
       - template: stages/azl_installer/azl-installer.yml
         parameters:
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}     
-
+        dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
   # dom0 is failing for not known reasons ... comment out for now to unblock, longterm this may
   # be removed from Trident pipelines alltogether in favor of being only test-images

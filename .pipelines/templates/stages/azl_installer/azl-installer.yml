@@ -1,12 +1,4 @@
 parameters:
-  - name: runtimeEnv
-    displayName: "Runtime environment (host vs container)"
-    type: string
-    default: "host"
-    values:
-      - host
-      - container
-
   - name: micBuildType
     displayName: MIC Build Type
     type: string
@@ -113,7 +105,7 @@ stages:
                 --iso $(ob_outputDirectory)/azl-installer-attended.iso \
                 --output $(ob_outputDirectory)/azl-installer-unattended.iso \
                 --patch tests/azl-installer/host-configuration.yaml:/installer/trident-config.yaml.tmpl
-            displayName: "Create attended and unattended ISOs"
+            displayName: "Create Unattended ISO"
             workingDirectory: $(Build.SourcesDirectory)
 
   - stage: Test_AzureLinux_Installer_ISO_Unattended
@@ -123,7 +115,7 @@ stages:
 
     jobs:
       - job: ValidateAzLInstallerISO_Unattended
-        displayName: Validate azl-installer-iso (unattended)
+        displayName: Validate Unattended azl-installer-iso
         timeoutInMinutes: 20
         pool:
           type: linux
