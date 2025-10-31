@@ -281,8 +281,8 @@ fn encrypt_and_open_device(
 }
 
 /// Returns paths of UKI and bootloader binaries that `systemd-pcrlock` tool should seal to. During
-/// encryption provisioning, returns binaries used for the current boot, , i.e. servicing OS, as
-/// well as binaries that will be used in the future boot, i.e. target OS. During boot validation,
+/// encryption provisioning, returns binaries used for the current boot, i.e. servicing OS, as well
+/// as binaries that will be used in the future boot, i.e. target OS. During boot validation,
 /// returns binaries used for the current boot only.
 ///
 /// Returns a tuple containing two vectors:
@@ -440,10 +440,7 @@ fn get_bootloader_paths(
 mod tests {
     use super::*;
 
-    use trident_api::{
-        config::{AbUpdate, AbVolumePair, HostConfiguration, Storage},
-        status::{AbVolumeSelection, ServicingType},
-    };
+    use trident_api::status::{AbVolumeSelection, ServicingType};
 
     #[test]
     fn test_get_bootloader_paths() {
@@ -454,26 +451,13 @@ mod tests {
             ab_active_volume: None,
             install_index: 0,
             servicing_type: ServicingType::CleanInstall,
-            spec: HostConfiguration {
-                storage: Storage {
-                    ab_update: Some(AbUpdate {
-                        volume_pairs: vec![AbVolumePair {
-                            id: "root".to_string(),
-                            volume_a_id: "root-a".to_string(),
-                            volume_b_id: "root-b".to_string(),
-                        }],
-                    }),
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
             ..Default::default()
         };
 
         // Test case #1: Boot validation, so no mount_path. Active volume is None, so we're booting
         // into A for the first time.
         let esp_azla_path = esp_path.join("EFI").join("AZLA");
-        let expected_paths_a = vec![
+        let mut expected_paths_a = vec![
             esp_azla_path.join("bootx64.efi"),
             esp_azla_path.join("grubx64.efi"),
         ];
@@ -494,7 +478,7 @@ mod tests {
         // booting into B.
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
         let esp_azlb_path = esp_path.join("EFI").join("AZLB");
-        let expected_paths_b = vec![
+        let mut expected_paths_b = vec![
             esp_azlb_path.join("bootx64.efi"),
             esp_azlb_path.join("grubx64.efi"),
         ];
@@ -521,42 +505,26 @@ mod tests {
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
         let mount_esp_path = join_relative(&mount_path, &esp_path);
         let mount_esp_azlb_path = mount_esp_path.join("EFI").join("AZLB");
-        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
-        ctx.servicing_type = ServicingType::AbUpdate;
-        let expected_mount_paths_b: Vec<PathBuf> = expected_paths_a
-            .iter()
-            .chain(
-                [
-                    mount_esp_azlb_path.join("bootx64.efi"),
-                    mount_esp_azlb_path.join("grubx64.efi"),
-                ]
-                .iter(),
-            )
-            .cloned()
-            .collect();
+        expected_paths_a.extend([
+            mount_esp_azlb_path.join("bootx64.efi"),
+            mount_esp_azlb_path.join("grubx64.efi"),
+        ]);
         assert_eq!(
             get_bootloader_paths(&esp_path, Some(&mount_path), &ctx).unwrap(),
-            expected_mount_paths_b
+            expected_paths_a
         );
 
         // Test case #6: Encryption provisioning during A/B update, so mount_path provided. Active
         // volume is B.
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         let mount_esp_azla_path = mount_esp_path.join("EFI").join("AZLA");
-        let expected_mount_paths_a: Vec<PathBuf> = expected_paths_b
-            .iter()
-            .chain(
-                [
-                    mount_esp_azla_path.join("bootx64.efi"),
-                    mount_esp_azla_path.join("grubx64.efi"),
-                ]
-                .iter(),
-            )
-            .cloned()
-            .collect();
+        expected_paths_b.extend([
+            mount_esp_azla_path.join("bootx64.efi"),
+            mount_esp_azla_path.join("grubx64.efi"),
+        ]);
         assert_eq!(
             get_bootloader_paths(&esp_path, Some(&mount_path), &ctx).unwrap(),
-            expected_mount_paths_a
+            expected_paths_b
         );
     }
 }
@@ -595,10 +563,9 @@ mod functional_test {
         // Test case #2: Mount_path provided, so two paths are returned, i.e. current entry and
         // update entry.
         let mount_path = PathBuf::from("/mnt");
-        let mount_esp_uki_path = join_relative(&mount_path, esp_uki_path);
         let expected_mount_paths = vec![
-            mount_esp_uki_path.join(current_entry),
-            mount_esp_uki_path.join(TMP_UKI_NAME),
+            esp_uki_path.join(current_entry),
+            esp_uki_path.join(TMP_UKI_NAME),
         ];
         assert_eq!(
             get_uki_paths(&esp_path, Some(&mount_path)).unwrap(),
