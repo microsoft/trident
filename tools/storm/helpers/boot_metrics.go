@@ -9,19 +9,22 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"tridenttools/storm/utils"
+
+	stormenv "tridenttools/storm/utils/env"
+	stormretry "tridenttools/storm/utils/retry"
+	stormsshclient "tridenttools/storm/utils/ssh/client"
+	stormsshconfig "tridenttools/storm/utils/ssh/config"
 
 	"github.com/microsoft/storm"
-
 	"github.com/sirupsen/logrus"
 )
 
 type BootMetricsHelper struct {
 	args struct {
-		utils.SshCliSettings `embed:""`
-		utils.EnvCliSettings `embed:""`
-		MetricsFile          string `required:"" help:"Metrics file." type:"path"`
-		MetricsOperation     string `required:"" help:"Metrics operation."`
+		stormsshconfig.SshCliSettings `embed:""`
+		stormenv.EnvCliSettings       `embed:""`
+		MetricsFile                   string `required:"" help:"Metrics file." type:"path"`
+		MetricsOperation              string `required:"" help:"Metrics operation."`
 	}
 }
 
@@ -56,7 +59,7 @@ func (h *BootMetricsHelper) RegisterTestCases(r storm.TestRegistrar) error {
 }
 
 func (h *BootMetricsHelper) collectBootMetrics(tc storm.TestCase) error {
-	if h.args.Env == utils.TridentEnvironmentNone {
+	if h.args.Env == stormenv.TridentEnvironmentNone {
 		tc.Skip("No Trident environment specified")
 	}
 	logrus.Infof("Waiting for the host to reboot and come back online...")
@@ -66,13 +69,13 @@ func (h *BootMetricsHelper) collectBootMetrics(tc storm.TestCase) error {
 		tc.FailFromError(err)
 	}
 
-	value, err := utils.Retry(
+	value, err := stormretry.Retry(
 		time.Second*time.Duration(h.args.Timeout),
 		time.Second*5,
 		func(attempt int) (*BootMetric, error) {
 			var err error = nil
 			result := BootMetric{}
-			client, err := utils.OpenSshClient(h.args.SshCliSettings)
+			client, err := stormsshclient.OpenSshClient(h.args.SshCliSettings)
 			if err != nil {
 				return &result, err
 			}
@@ -80,7 +83,7 @@ func (h *BootMetricsHelper) collectBootMetrics(tc storm.TestCase) error {
 			// Expect output in the form of:
 			//   Startup finished in [13.022s (firmware) + 2.552s (loader) + ]? 4.740s (kernel) + 1.267s (initrd) + 15.249s (userspace) = 35.565s
 			//   graphical.target reached after 13.272s in userspace
-			systemdAnalzeBootResult, err := utils.RunCommand(client, "systemd-analyze | head -n 1")
+			systemdAnalzeBootResult, err := stormsshclient.RunCommand(client, "systemd-analyze | head -n 1")
 			if err != nil {
 				return &result, err
 			}
