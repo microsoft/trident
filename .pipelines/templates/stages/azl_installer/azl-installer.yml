@@ -84,8 +84,8 @@ stages:
               mv "$(Build.ArtifactStagingDirectory)/installer-tools/liveinstaller" tests/images/azl-installer/iso/bin/
               chmod +x tests/images/azl-installer/iso/bin/liveinstaller
               
-              # Move target image to the ISO directory
-              mv $(Build.ArtifactStagingDirectory)/testimage/*.cosi tests/images/azl-installer/iso/images/trident-testimage.cosi
+              # Move .cosi file to the ISO directory. When there are clones (multiple .cosi files), we pick the first one.
+              mv $(ls $(Build.ArtifactStagingDirectory)/testimage/*.cosi | head -n 1) tests/images/azl-installer/iso/images/trident-testimage.cosi
             displayName: "Prepare installer dependencies"
             workingDirectory: $(Build.SourcesDirectory)
 
