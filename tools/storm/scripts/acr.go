@@ -19,8 +19,8 @@ type AcrScriptSet struct {
 	AcrDelete AcrDeleteScript `cmd:"" help:"Deletes images from an ACR"`
 }
 
-func generateTagBase(buildId string, config string, deploymentEnv string) string {
-	return fmt.Sprintf("v%s.%s.%s", buildId, config, deploymentEnv)
+func generateTagBase(buildId string, config string, deploymentEnvironment string) string {
+	return fmt.Sprintf("v%s.%s.%s", buildId, config, deploymentEnvironment)
 }
 
 func loginToACR(acrName string) error {
@@ -31,12 +31,12 @@ func loginToACR(acrName string) error {
 
 // Define AcrPushScript
 type AcrPushScript struct {
-	Config        string   `required:"" help:"Trident configuration (e.g., 'extensions')" type:"string"`
-	DeploymentEnv string   `required:"" help:"Deployment environment (virtualMachine or bareMetal)" type:"string"`
-	AcrName       string   `required:"" help:"Azure Container Registry name" type:"string"`
-	RepoName      string   `required:"" help:"Repository name in ACR" type:"string"`
-	BuildId       string   `required:"" help:"Build ID" type:"string"`
-	FilePaths     []string `required:"" help:"Array of file paths to push to ACR"`
+	Config                string   `required:"" help:"Trident configuration (e.g., 'extensions')" type:"string"`
+	DeploymentEnvironment string   `required:"" help:"Deployment environment (virtualMachine or bareMetal)" type:"string"`
+	AcrName               string   `required:"" help:"Azure Container Registry name" type:"string"`
+	RepoName              string   `required:"" help:"Repository name in ACR" type:"string"`
+	BuildId               string   `required:"" help:"Build ID" type:"string"`
+	FilePaths             []string `required:"" help:"Array of file paths to push to ACR"`
 }
 
 func (s *AcrPushScript) Run() error {
@@ -47,7 +47,7 @@ func (s *AcrPushScript) Run() error {
 	}
 
 	// Push all specified files
-	tagBase := generateTagBase(s.BuildId, s.Config, s.DeploymentEnv)
+	tagBase := generateTagBase(s.BuildId, s.Config, s.DeploymentEnvironment)
 	err = s.pushFiles(tagBase)
 	if err != nil {
 		return fmt.Errorf("failed to push files: %w", err)
@@ -127,12 +127,12 @@ func (s *AcrPushScript) verifyImage(repository, tag string) error {
 
 // Define AcrDeleteScript
 type AcrDeleteScript struct {
-	Config        string `required:"" help:"Trident configuration (e.g., 'extensions')" type:"string"`
-	DeploymentEnv string `required:"" help:"Deployment environment (virtualMachine or bareMetal)" type:"string"`
-	AcrName       string `required:"" help:"Azure Container Registry name" type:"string"`
-	RepoName      string `required:"" help:"Repository name in ACR" type:"string"`
-	BuildId       string `required:"" help:"Build ID" type:"string"`
-	NumClones     int    `required:"" help:"Number of copies of file to delete from ACR repository" type:"int"`
+	Config                string `required:"" help:"Trident configuration (e.g., 'extensions')" type:"string"`
+	DeploymentEnvironment string `required:"" help:"Deployment environment (virtualMachine or bareMetal)" type:"string"`
+	AcrName               string `required:"" help:"Azure Container Registry name" type:"string"`
+	RepoName              string `required:"" help:"Repository name in ACR" type:"string"`
+	BuildId               string `required:"" help:"Build ID" type:"string"`
+	NumClones             int    `required:"" help:"Number of copies of file to delete from ACR repository" type:"int"`
 }
 
 func (s *AcrDeleteScript) Run() error {
@@ -142,7 +142,7 @@ func (s *AcrDeleteScript) Run() error {
 		return fmt.Errorf("failed to login to ACR: %w", err)
 	}
 
-	tagBase := generateTagBase(s.BuildId, s.Config, s.DeploymentEnv)
+	tagBase := generateTagBase(s.BuildId, s.Config, s.DeploymentEnvironment)
 	// Delete COSI images (for misc config)
 	s.deleteImagesWithTagBase(tagBase)
 
