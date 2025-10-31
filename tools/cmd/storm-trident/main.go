@@ -2,6 +2,7 @@ package main
 
 import (
 	"tridenttools/storm/helpers"
+	"tridenttools/storm/scripts"
 	"tridenttools/storm/servicing"
 
 	"github.com/microsoft/storm"
@@ -22,6 +23,11 @@ func main() {
 	// Register Trident helpers
 	for _, helper := range helpers.TRIDENT_HELPERS {
 		storm.AddHelper(helper)
+	}
+
+	// Register Trident scripts
+	for _, scriptset := range scripts.TRIDENT_SCRIPTSETS {
+		storm.AddScriptSet(scriptset)
 	}
 
 	storm.Run()

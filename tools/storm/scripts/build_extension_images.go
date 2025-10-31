@@ -1,4 +1,4 @@
-package helpers
+package scripts
 
 import (
 	"fmt"
@@ -6,40 +6,29 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/microsoft/storm"
 	"github.com/sirupsen/logrus"
 )
 
-type BuildExtensionImagesHelper struct {
-	args struct {
-		NumClones     int  `help:"Number of sysexts and confexts to build." type:"int"`
-		BuildSysexts  bool `help:"Indicates that test sysext images should be built." type:"bool"`
-		BuildConfexts bool `help:"Indicates that test confext images should be built." type:"bool"`
-	}
+type BuildExtensionImagesScriptSet struct {
+	// This field represents the "build-extension-images" subcommand.
+	BuildExtensionImages BuildExtensionImagesScript `cmd:"" help:"Builds sample sysexts and confexts"`
 }
 
-func (h BuildExtensionImagesHelper) Name() string {
-	return "build-extension-images"
+type BuildExtensionImagesScript struct {
+	NumClones     int  `required:"" help:"Number of sysexts and confexts to build." type:"int"`
+	BuildSysexts  bool `help:"Indicates that test sysext images should be built." type:"bool"`
+	BuildConfexts bool `help:"Indicates that test confext images should be built." type:"bool"`
 }
 
-func (h *BuildExtensionImagesHelper) Args() any {
-	return &h.args
-}
-
-func (h *BuildExtensionImagesHelper) RegisterTestCases(r storm.TestRegistrar) error {
-	r.RegisterTestCase("build-extension-images", h.buildExtensionImages)
-	return nil
-}
-
-func (h *BuildExtensionImagesHelper) buildExtensionImages(tc storm.TestCase) error {
-	if h.args.BuildSysexts {
-		err := buildImage("sysext", h.args.NumClones)
+func (s *BuildExtensionImagesScript) Run() error {
+	if s.BuildSysexts {
+		err := buildImage("sysext", s.NumClones)
 		if err != nil {
 			return fmt.Errorf("failed to build sysext images: %w", err)
 		}
 	}
-	if h.args.BuildConfexts {
-		err := buildImage("confext", h.args.NumClones)
+	if s.BuildConfexts {
+		err := buildImage("confext", s.NumClones)
 		if err != nil {
 			return fmt.Errorf("failed to build confext images: %w", err)
 		}
