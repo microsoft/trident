@@ -54,7 +54,7 @@ func (s *AcrPushScript) Run() error {
 	}
 
 	// Set output variable by writing to stdout
-	fmt.Printf("##vso[task.setvariable variable=TAG_BASE]%s", tagBase)
+	fmt.Printf("##vso[task.setvariable variable=TAG_BASE]%s\n", tagBase)
 	logrus.Infof("TAG_BASE set to: %s", tagBase)
 
 	return nil
