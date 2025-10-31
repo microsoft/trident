@@ -8,7 +8,7 @@ import (
 )
 
 type AcrScriptSet struct {
-	AcrPush   AcrPushScript   `cmd:"" help:"Pushes images to an ACR"`
+	AcrPush   AcrPushScript   `cmd:"" help:"Pushes all specified images to the same repository in an ACR individually, with unique tags"`
 	AcrDelete AcrDeleteScript `cmd:"" help:"Deletes images from an ACR"`
 }
 
