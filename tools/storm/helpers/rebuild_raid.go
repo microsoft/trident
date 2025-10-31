@@ -510,7 +510,8 @@ func (h *RebuildRaidHelper) checkFileExists(client *ssh.Client, filePath string)
 	// 	command = f"test -f {file_path}"
 	command := fmt.Sprintf("test -f %s", filePath)
 	// 	result = _connection_run_command(connection, command)
-	err = clientSession.Run(command)
+	output, err := clientSession.CombinedOutput(command)
+	logrus.Tracef("check file exists output: %s\n%v", string(output), err)
 	if err != nil {
 		return false, nil
 	}
