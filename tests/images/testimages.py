@@ -31,7 +31,6 @@ DEFINED_IMAGES: List[ImageConfig] = [
     ),
     ImageConfig(
         "azl-installer",
-        config="azl-installer",
         config_file=Path("installer-iso.yaml"),
         output_format=OutputFormat.ISO,
         requires_trident=True,
