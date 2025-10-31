@@ -76,7 +76,7 @@ steps:
             --build-id $(Build.BuildId) \
             --file-paths $(Build.SourcesDirectory)/test-sysext-1.raw \
             --file-paths $(Build.SourcesDirectory)/test-sysext-2.raw
-          ./bin/storm-trident helper acr-push \
+          ./bin/storm-trident script acr-push \
             --config ${{ parameters.config }} \
             --deployment-environment ${{ parameters.deploymentEnvironment }} \
             --acr-name $(ACR_NAME) \
