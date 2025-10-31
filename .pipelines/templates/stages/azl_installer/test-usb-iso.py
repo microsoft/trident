@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-# Tests the azl-installer ISO which automatically runs liveinstaller in unattended mode.
-# The installer detects the target disk and runs trident install without manual intervention.
 
 import argparse
 import libvirt
