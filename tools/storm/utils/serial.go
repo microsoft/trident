@@ -12,9 +12,8 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func WaitForLoginMessageInSerialLog(vmSerialLog string, verbose bool, iteration int, localSerialLog string) error {
+func WaitForLoginMessageInSerialLog(vmSerialLog string, verbose bool, iteration int, localSerialLog string, timeout time.Duration) error {
 	// Timeout for monitoring serial log for login prompt
-	timeout := time.Second * 120
 	startTime := time.Now()
 
 	// Wait for serial log

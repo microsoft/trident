@@ -359,5 +359,5 @@ func analyzeSerialLog(serial string) error {
 }
 
 func innerWaitForLogin(vmSerialLog string, verbose bool, iteration int, localSerialLog string) error {
-	return utils.WaitForLoginMessageInSerialLog(vmSerialLog, verbose, iteration, localSerialLog)
+	return utils.WaitForLoginMessageInSerialLog(vmSerialLog, verbose, iteration, localSerialLog, time.Second*120)
 }
