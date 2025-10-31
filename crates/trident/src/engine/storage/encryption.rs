@@ -536,6 +536,8 @@ mod functional_test {
 
     use super::*;
 
+    use trident_api::status::ServicingType;
+
     #[functional_test(feature = "helpers")]
     fn test_get_uki_paths() {
         // Declare ESP path; no need to actually write anything as this func only constructs paths.
@@ -571,5 +573,73 @@ mod functional_test {
             get_uki_paths(&esp_path, Some(&mount_path)).unwrap(),
             expected_mount_paths
         );
+    }
+
+    #[functional_test(feature = "helpers")]
+    fn test_get_binary_paths_pcrlock() {
+        // Create a temporary directory to use as ESP path
+        let esp_path = tempfile::tempdir().unwrap().into_path();
+        let esp_uki_path = esp_path.join(UKI_DIRECTORY);
+
+        let ctx = EngineContext {
+            ab_active_volume: Some(AbVolumeSelection::VolumeA),
+            install_index: 0,
+            servicing_type: ServicingType::CleanInstall,
+            ..Default::default()
+        };
+
+        // Set up current entry for UKI paths
+        let current_entry = "CurrentEntry-test.efi";
+        let var_name = format!(
+            "{}-{}",
+            efivar::BOOTLOADER_INTERFACE_GUID,
+            efivar::LOADER_ENTRY_SELECTED
+        );
+        efivar::set_efi_variable(&var_name, &efivar::encode_utf16le(current_entry)).unwrap();
+
+        // Test case #1: Neither PCR 4 nor PCR 11 requested, so should return two empty vectors
+        let pcrs_none = BitFlags::empty();
+        assert_eq!(
+            get_binary_paths_pcrlock(&ctx, pcrs_none, None).unwrap(),
+            (vec![], vec![])
+        );
+
+        // Test case #2: Both PCRs 4 and 11 are requested, but files don't exist, should return error
+        let pcrs = BitFlags::from(Pcr::Pcr4) | BitFlags::from(Pcr::Pcr11);
+        let esp_azla_path = esp_path.join("EFI").join("AZLA");
+        let expected_paths_a = vec![
+            esp_azla_path.join("bootx64.efi"),
+            esp_azla_path.join("grubx64.efi"),
+        ];
+        let uki_path = esp_uki_path.join(current_entry);
+        let mut expected_paths = expected_paths_a.clone();
+        expected_paths.push(uki_path.clone());
+        let err = get_binary_paths_pcrlock(&ctx, pcrs, None)
+            .unwrap_err()
+            .to_string();
+        let expected_error_message = format!(
+            "Following binary paths required for pcrlock encryption do not exist:\n{}",
+            expected_paths
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+        assert_eq!(err, expected_error_message);
+
+        // Test case #3: All files exist, should return correct vectors
+        for path in &expected_paths {
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).unwrap();
+            }
+            fs::write(path, b"test").unwrap();
+        }
+        let result = get_binary_paths_pcrlock(&ctx, pcrs, None).unwrap();
+        assert_eq!(result, (vec![uki_path.clone()], expected_paths_a));
+
+        // Test case #4: Only PCR 11 is requested, so should return only UKI paths
+        let pcrs_11 = BitFlags::from(Pcr::Pcr11);
+        let result = get_binary_paths_pcrlock(&ctx, pcrs_11, None).unwrap();
+        assert_eq!(result, (vec![uki_path], vec![]));
     }
 }
