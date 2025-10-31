@@ -40,6 +40,12 @@ storage:
         - id: trident
           type: linux-generic
           size: 500M
+        - id: exts-a
+          type: linux-generic
+          size: 1G
+        - id: exts-b
+          type: linux-generic
+          size: 1G
         - id: var
           type: linux-generic
           size: 1G
@@ -61,6 +67,9 @@ storage:
       - id: trident-overlay
         volumeAId: trident-overlay-a
         volumeBId: trident-overlay-b
+      - id: exts
+        volumeAId: exts-a
+        volumeBId: exts-b
   verity:
     - id: root
       name: root
@@ -82,6 +91,8 @@ storage:
     - deviceId: trident
       source: new
       mountPoint: /var/lib/trident
+    - deviceId: exts
+      mountPoint: /var/lib
     - deviceId: var
       mountPoint: /var
     - deviceId: root
