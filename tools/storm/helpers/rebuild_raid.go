@@ -573,7 +573,7 @@ func (h *RebuildRaidHelper) copyHostConfig(client *ssh.Client, tridentConfig str
 		output, err := clientSession.CombinedOutput(copyCommand)
 		if err != nil {
 			logrus.Errorf("Failed to copy Trident config to host: %s\n%s", err, string(output))
-			return err
+			// return err
 		}
 	}
 	// 	trident_config_output = run_ssh_command(
@@ -585,7 +585,7 @@ func (h *RebuildRaidHelper) copyHostConfig(client *ssh.Client, tridentConfig str
 	tridentConfigOutput, err := clientSession.CombinedOutput(catCommand)
 	if err != nil {
 		logrus.Errorf("Failed to read Trident config on host: %s\n%s", err, string(tridentConfigOutput))
-		return err
+		// return err
 	}
 	// 	print("Trident configuration:\n", trident_config_output)
 	logrus.Infof("Trident configuration:\n%s", string(tridentConfigOutput))
