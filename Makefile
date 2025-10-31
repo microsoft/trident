@@ -388,7 +388,7 @@ generate-functional-test-manifest: .cargo/config
 
 .PHONY: validate-configs
 validate-configs: bin/trident
-	$(eval DETECTED_HC_FILES := $(shell grep -R '^storage:' . --include '*.yaml' -l | grep -E -v '\./(target|dev|crates/docbuilder|tests/images)'))
+	$(eval DETECTED_HC_FILES := $(shell grep -R '^storage:' . --include '*.yaml' -l | grep -E -v '\./(target|dev|azure-linux-image-tools|crates/docbuilder|tests/images)'))
 	@for file in $(DETECTED_HC_FILES); do \
 		echo "Validating $$file"; \
 		$< validate $$file -v info || exit 1; \
