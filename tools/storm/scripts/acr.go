@@ -99,9 +99,10 @@ func (s *AcrPushScript) pushImage(filePath, tag string) error {
 	// Use ORAS to push the image
 	cmd := exec.Command("oras", "push", fullImageName, fileName)
 	cmd.Dir = dir
-	err := cmd.Run()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("oras push failed for %s: %w", filePath, err)
+		logrus.WithField("output", string(output)).Errorf("Failed to push %s with oras", fullImageName)
+		return err
 	}
 
 	// Sleep to allow registry to process
@@ -116,7 +117,12 @@ func (s *AcrPushScript) verifyImage(repository, tag string) error {
 	cmd := exec.Command("az", "acr", "repository", "show",
 		"--name", s.AcrName,
 		"--image", fmt.Sprintf("%s:%s", repository, tag))
-	return cmd.Run()
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		logrus.WithField("output", string(output)).Errorf("Failed to verify image %s:%s exists in ACR", repository, tag)
+		return err
+	}
+	return nil
 }
 
 // Define AcrDeleteScript
@@ -149,26 +155,20 @@ func (s *AcrDeleteScript) deleteImagesWithTagBase(tagBase string) {
 
 	for i := 1; i <= s.NumClones; i++ {
 		tag := fmt.Sprintf("%s.%d", tagBase, i)
-		err := s.deleteImageIfExists(s.RepoName, tag)
-		if err != nil {
-			logrus.Warnf("Failed to delete %s:%s: %v", s.RepoName, tag, err)
-			// Continue with other images even if one fails
-		}
+		s.deleteImageIfExists(s.RepoName, tag)
 	}
 }
 
-func (s *AcrDeleteScript) deleteImageIfExists(repository, tag string) error {
+func (s *AcrDeleteScript) deleteImageIfExists(repository, tag string) {
 	// First check if the image exists
 	imageName := fmt.Sprintf("%s:%s", repository, tag)
 	checkCmd := exec.Command("az", "acr", "repository", "show",
 		"--name", s.AcrName,
 		"--image", imageName)
 	logrus.Debugf("Executing command: %s %s", checkCmd.Path, strings.Join(checkCmd.Args[1:], " "))
-	err := checkCmd.Run()
+	output, err := checkCmd.CombinedOutput()
 	if err != nil {
-		// Image doesn't exist, skip deletion
-		logrus.Debugf("Image %s/%s does not exist, skipping deletion", s.AcrName, imageName)
-		return err
+		logrus.WithField("output", string(output)).Errorf("Could not find %s: %v, skipping deletion", imageName, err)
 	}
 
 	// Image exists, delete it
@@ -178,5 +178,8 @@ func (s *AcrDeleteScript) deleteImageIfExists(repository, tag string) error {
 		"--image", imageName,
 		"--yes")
 	logrus.Debugf("Executing command: %s %s", deleteCmd.Path, strings.Join(deleteCmd.Args[1:], " "))
-	return deleteCmd.Run()
+	output, err = deleteCmd.CombinedOutput()
+	if err != nil {
+		logrus.WithField("output", string(output)).Errorf("Failed to delete %s: %v", imageName, err)
+	}
 }
