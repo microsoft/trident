@@ -40,10 +40,19 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
         "No OS image available for deployment",
     ))?;
 
-    let images = os_img
+    let mut images = os_img
         .filesystems()
         .map(|fs| (fs.mount_point.to_owned(), fs))
         .collect::<HashMap<_, _>>();
+
+    if ctx.spec.storage.raw_cosi {
+        images.insert(
+            "/boot/efi".into(),
+            os_img
+                .esp_filesystem()
+                .structured(InternalError::Internal("COSI doesn't have ESP"))?,
+        );
+    }
 
     // Now, deploy the filesystems sourced from the OS image
     for (id, mpp, fs) in fs_from_img {
@@ -136,7 +145,7 @@ fn filesystems_from_image(
             continue;
         };
 
-        if img_fs.is_esp() {
+        if img_fs.is_esp() && !ctx.spec.storage.raw_cosi {
             debug!(
                 "Skipping deployment of filesystem [{}] sourced from OS Image, as it is the ESP.",
                 filesystem.description()

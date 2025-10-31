@@ -43,6 +43,10 @@ pub fn validate_host_config(ctx: &EngineContext) -> Result<(), TridentError> {
         return Ok(());
     };
 
+    if ctx.spec.storage.raw_cosi {
+        return Ok(());
+    }
+
     debug!("Validating Host Configuration filesystems against OS image");
     validate_filesystems(os_image, ctx)?;
 

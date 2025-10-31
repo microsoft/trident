@@ -324,6 +324,12 @@ pub(crate) fn finalize_clean_install(
 
     // On clean install, need to verify that AZLA entry exists in /mnt/newroot/boot/efi
     let esp_path = join_relative(new_root.path(), ESP_MOUNT_POINT_PATH);
+
+    if ctx.spec.storage.raw_cosi {
+        new_root.unmount_all()?;
+        return Ok(ExitKind::NeedsReboot);
+    }
+
     bootentries::create_and_update_boot_variables(&ctx, &esp_path)?;
 
     debug!(

@@ -76,7 +76,7 @@ build: .cargo/config version-vars
 		OPENSSL_LIB_DIR=$(shell dirname `whereis libssl.a | cut -d" " -f2`) \
 		OPENSSL_INCLUDE_DIR=/usr/include/openssl \
 		TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
-		cargo build --release --features dangerous-options
+		cargo build --release --features dangerous-options --target x86_64-unknown-linux-musl
 	@mkdir -p bin
 
 .PHONY: format
@@ -149,7 +149,7 @@ artifacts/osmodifier: packaging/docker/Dockerfile-osmodifier.azl3
 
 bin/trident: build
 	@mkdir -p bin
-	@cp -u target/release/trident bin/
+	@cp -u target/x86_64-unknown-linux-musl/release/trident bin/
 
 # This will do a proper build on azl3, exactly as the pipelines would, with the custom registry and all.
 bin/trident-rpms-azl3.tar.gz: packaging/docker/Dockerfile.full packaging/systemd/*.service packaging/rpm/trident.spec artifacts/osmodifier packaging/selinux-policy-trident/* version-vars
