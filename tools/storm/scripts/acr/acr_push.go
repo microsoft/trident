@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/microsoft/storm/pkg/storm/core"
 	"github.com/sirupsen/logrus"
 )
 
@@ -19,7 +20,7 @@ type AcrPushScript struct {
 	FilePaths             []string `required:"" help:"Array of file paths to push to ACR" type:"existingfile"`
 }
 
-func (s *AcrPushScript) Run() error {
+func (s *AcrPushScript) Run(suite core.SuiteContext) error {
 	// Login to ACR
 	err := loginToACR(s.AcrName)
 	if err != nil {
@@ -33,8 +34,10 @@ func (s *AcrPushScript) Run() error {
 		return fmt.Errorf("failed to push files: %w", err)
 	}
 
-	// Set output variable by writing to stdout
-	fmt.Printf("##vso[task.setvariable variable=TAG_BASE]%s\n", tagBase)
+	if suite.AzureDevops() {
+		// Set output variable by writing to stdout
+		fmt.Printf("##vso[task.setvariable variable=TAG_BASE]%s\n", tagBase)
+	}
 	logrus.Infof("TAG_BASE set to: %s", tagBase)
 
 	return nil
