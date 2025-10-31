@@ -1,4 +1,4 @@
-package scripts
+package build_extension_images
 
 import (
 	"fmt"
