@@ -136,4 +136,4 @@ stages:
           ISO_NAME: azl-installer-unattended
 
         steps:
-          - template: ../trident_usb_iso/validate-usb-iso.yml
+          - template: ./validate-usb-iso.yml

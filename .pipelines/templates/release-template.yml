@@ -15,13 +15,6 @@ stages:
       specificVersion: ${{ parameters.specificVersion }}
       packageName: rpms
 
-  - template: stages/download_staged/download-staged.yml
-    parameters:
-      stageType: rel
-      artifactName: azl-installer
-      specificVersion: ${{ parameters.specificVersion }}
-      packageName: usb-iso
-
   - template: stages/publishing/publish.yml
     parameters:
       stageType: rel
