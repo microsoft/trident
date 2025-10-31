@@ -19,6 +19,7 @@ type AcrPushScript struct {
 	RepoName              string   `required:"" help:"Repository name in ACR"`
 	BuildId               string   `required:"" help:"Build ID"`
 	FilePaths             []string `required:"" help:"Array of file paths to push to ACR" type:"existingfile"`
+	TagVarName            string   `required:"" help:"ADO variable name in which to store images' tag base"`
 }
 
 func (s *AcrPushScript) Run(suite core.SuiteContext) error {
@@ -37,9 +38,9 @@ func (s *AcrPushScript) Run(suite core.SuiteContext) error {
 
 	if suite.AzureDevops() {
 		// Set output variable by writing to stdout
-		fmt.Printf("##vso[task.setvariable variable=TAG_BASE]%s\n", tagBase)
+		fmt.Printf("##vso[task.setvariable variable=%s]%s\n", s.TagVarName, tagBase)
 	}
-	logrus.Infof("TAG_BASE set to: %s", tagBase)
+	logrus.Infof("%s set to: %s", s.TagVarName, tagBase)
 
 	return nil
 }
