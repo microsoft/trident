@@ -697,7 +697,7 @@ func (h *RebuildRaidHelper) rebuildRaid(tc storm.TestCase) error {
 	// 		args.trident_config,
 	// 	)
 	err := h.triggerRebuildRaid(
-		h.args.TridentConfigPath,
+		"/var/lib/trident/config.yaml",
 	)
 	if err != nil {
 		h.FailFromError(tc, err)
