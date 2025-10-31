@@ -10,6 +10,12 @@ parameters:
     displayName: "Trident configuration"
     type: string
 
+  - name: "deploymentEnvironment"
+    type: string
+    values:
+      - virtualMachine
+      - bareMetal
+
 steps:
   - task: AzureCLI@2
     inputs:
@@ -19,38 +25,36 @@ steps:
       inlineScript: |
         set -eux
 
-        if [ ${{ parameters.config }} != 'misc' ] && [ "${{ parameters.config }}" != 'extensions' ]; then
+        if [ "${{ parameters.config }}" == 'misc' ]; then
+          # Remove COSI images
+          ./bin/storm-trident script acr-delete \
+            --config ${{ parameters.config }} \
+            --deployment-environment ${{ parameters.deploymentEnvironment }} \
+            --acr-name $(ACR_NAME) \
+            --repo-name ${{ parameters.repository }} \
+            --build-id $(Build.BuildId) \
+            --num-clones 4
+
+        elif [ "${{ parameters.config }}" == 'extensions' ]; then
+          ./bin/storm-trident script acr-delete \
+            --config ${{ parameters.config }} \
+            --deployment-environment ${{ parameters.deploymentEnvironment }} \
+            --acr-name $(ACR_NAME) \
+            --repo-name sysext \
+            --build-id $(Build.BuildId) \
+            --num-clones 2
+          ./bin/storm-trident script acr-delete \
+            --config ${{ parameters.config }} \
+            --deployment-environment ${{ parameters.deploymentEnvironment }} \
+            --acr-name $(ACR_NAME) \
+            --repo-name confext \
+            --build-id $(Build.BuildId) \
+            --num-clones 2
+
+        else
           echo "Skipping step. Configuration is '${{ parameters.config }}'."
           exit 0
         fi
-
-        # Login to ACR
-        az acr login -n $(ACR_NAME)
-        sleep 5
-
-        cosi_repository_name="${{ parameters.repository }}"
-        build_id="$(Build.BuildId)"
-        az acr repository show-tags -n $(ACR_NAME) --repository $cosi_repository_name
-
-        # Delete repository with COSI images
-        for i in {1..4}; do
-          tag="$(TAG_BASE).${i}"
-          if az acr repository show --name $(ACR_NAME) --image ${cosi_repository_name}:${tag} &> /dev/null; then
-            az acr repository delete --name $(ACR_NAME) --image ${cosi_repository_name}:${tag} --yes
-          fi
-        done
-
-        for i in 1 2; do
-          tag="$(TAG_BASE).${i}"
-          # Delete repository with sysext images
-          if az acr repository show --name $(ACR_NAME) --image sysext:${tag} &> /dev/null; then
-            az acr repository delete --name $(ACR_NAME) --image sysext:${tag} --yes
-          fi
-          # Delete repository with confext images
-          if az acr repository show --name $(ACR_NAME) --image confext:${tag} &> /dev/null; then
-            az acr repository delete --name $(ACR_NAME) --image confext:${tag} --yes
-          fi
-        done
 
     displayName: "Log into ACR and delete images by tag"
     retryCountOnTaskFailure: 3
