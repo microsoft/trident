@@ -504,13 +504,27 @@ func (h *RebuildRaidHelper) checkFileExists(client *ssh.Client, filePath string)
 		return false, err
 	}
 	defer clientSession.Close()
+
+	output, err := clientSession.CombinedOutput(fmt.Sprintf("ls %s", filePath))
+	logrus.Tracef("check file exists ls output: %s\n%v", string(output), err)
+	output, err = clientSession.CombinedOutput(fmt.Sprintf("sudo ls %s", filePath))
+	logrus.Tracef("check file exists ls output: %s\n%v", string(output), err)
+	output, err = clientSession.CombinedOutput("sudo ls /var/lib/trident")
+	logrus.Tracef("check file exists ls output: %s\n%v", string(output), err)
+	output, err = clientSession.CombinedOutput("sudo ls /var/lib/trident/config.yaml")
+	logrus.Tracef("check file exists ls output: %s\n%v", string(output), err)
+	output, err = clientSession.CombinedOutput("sudo hostname")
+	logrus.Tracef("check file exists ls output: %s\n%v", string(output), err)
+	output, err = clientSession.CombinedOutput("sudo cat /etc/os-release")
+	logrus.Tracef("check file exists ls output: %s\n%v", string(output), err)
+
 	// 	"""
 	// 	Checks if a file exists at the specified path on the host.
 	// 	"""
 	// 	command = f"test -f {file_path}"
 	command := fmt.Sprintf("test -f %s", filePath)
 	// 	result = _connection_run_command(connection, command)
-	output, err := clientSession.CombinedOutput(command)
+	output, err = clientSession.CombinedOutput(command)
 	logrus.Tracef("check file exists output: %s\n%v", string(output), err)
 	if err != nil {
 		return false, nil
