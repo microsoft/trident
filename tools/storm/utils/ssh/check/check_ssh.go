@@ -3,19 +3,19 @@ package check
 import (
 	"time"
 
-	"tridenttools/storm/utils/env"
-	"tridenttools/storm/utils/retry"
-	sshclient "tridenttools/storm/utils/ssh/client"
-	sshconfig "tridenttools/storm/utils/ssh/config"
-	"tridenttools/storm/utils/trident"
+	stormenv "tridenttools/storm/utils/env"
+	stormretry "tridenttools/storm/utils/retry"
+	stormsshclient "tridenttools/storm/utils/ssh/client"
+	stormsshconfig "tridenttools/storm/utils/ssh/config"
+	stormtrident "tridenttools/storm/utils/trident"
 
 	"github.com/microsoft/storm"
 	"github.com/sirupsen/logrus"
 )
 
 func CheckTridentService(
-	sshClientArgs sshconfig.SshCliSettings,
-	envArgs env.EnvCliSettings,
+	sshClientArgs stormsshconfig.SshCliSettings,
+	envArgs stormenv.EnvCliSettings,
 	expectSuccessfulCommit bool,
 	timeout time.Duration,
 	tc storm.TestCase) error {
@@ -24,12 +24,12 @@ func CheckTridentService(
 
 	// Reconnect via SSH to the updated OS
 	endTime := time.Now().Add(timeout)
-	_, err := retry.Retry(
+	_, err := stormretry.Retry(
 		time.Until(endTime),
 		time.Second*5,
 		func(attempt int) (*bool, error) {
 			logrus.Infof("SSH dial to '%s' (attempt %d)", sshClientArgs.FullHost(), attempt)
-			client, err := sshclient.OpenSshClient(sshClientArgs)
+			client, err := stormsshclient.OpenSshClient(sshClientArgs)
 			if err != nil {
 				logrus.Warnf("Failed to dial SSH server '%s': %s", sshClientArgs.FullHost(), err)
 				return nil, err
@@ -40,7 +40,7 @@ func CheckTridentService(
 
 			// Enable tests to handle success and failure of commit service
 			// depending on configuration
-			err = trident.CheckTridentService(client, envArgs.Env, time.Until(endTime), expectSuccessfulCommit)
+			err = stormtrident.CheckTridentService(client, envArgs.Env, time.Until(endTime), expectSuccessfulCommit)
 			if err != nil {
 				logrus.Warnf("Trident service is not in expected state: %s", err)
 				return nil, err

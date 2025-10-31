@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 	"tridenttools/storm/servicing/utils/file"
-	"tridenttools/storm/utils"
+	stormutils "tridenttools/storm/utils"
 
 	"github.com/digitalocean/go-libvirt"
 	"github.com/sirupsen/logrus"
@@ -359,5 +359,5 @@ func analyzeSerialLog(serial string) error {
 }
 
 func innerWaitForLogin(vmSerialLog string, verbose bool, iteration int, localSerialLog string) error {
-	return utils.WaitForLoginMessageInSerialLog(vmSerialLog, verbose, iteration, localSerialLog, time.Second*120)
+	return stormutils.WaitForLoginMessageInSerialLog(vmSerialLog, verbose, iteration, localSerialLog, time.Second*120)
 }

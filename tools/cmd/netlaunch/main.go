@@ -9,7 +9,7 @@ import (
 	"tridenttools/pkg/isopatcher"
 	"tridenttools/pkg/netfinder"
 	"tridenttools/pkg/phonehome"
-	"tridenttools/storm/utils"
+	stormutils "tridenttools/storm/utils"
 
 	"bytes"
 	"context"
@@ -341,7 +341,7 @@ func startLocalVm(localVmUuidStr string, isoLocation string, secureBoot bool, si
 		log.WithError(err).Fatalf("failed to parse LocalVmUuid as UUID")
 	}
 
-	vm, err := utils.InitializeVm(vmUuid)
+	vm, err := stormutils.InitializeVm(vmUuid)
 	if err != nil {
 		log.WithError(err).Fatalf("failed to initialize VM")
 	}

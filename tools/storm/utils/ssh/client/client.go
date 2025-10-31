@@ -9,10 +9,10 @@ import (
 	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
 
-	sshconfig "tridenttools/storm/utils/ssh/config"
+	stormsshconfig "tridenttools/storm/utils/ssh/config"
 )
 
-func OpenSshClient(settings sshconfig.SshCliSettings) (*ssh.Client, error) {
+func OpenSshClient(settings stormsshconfig.SshCliSettings) (*ssh.Client, error) {
 	private_key, err := os.ReadFile(settings.PrivateKeyPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read SSH key file '%s': %w", settings.PrivateKeyPath, err)
@@ -42,7 +42,7 @@ func OpenSshClient(settings sshconfig.SshCliSettings) (*ssh.Client, error) {
 	return client, nil
 }
 
-func RunCommand(client *ssh.Client, command string) (*sshconfig.SshCmdOutput, error) {
+func RunCommand(client *ssh.Client, command string) (*stormsshconfig.SshCmdOutput, error) {
 	if client == nil {
 		return nil, fmt.Errorf("SSH client is nil")
 	}
@@ -78,7 +78,7 @@ func RunCommand(client *ssh.Client, command string) (*sshconfig.SshCmdOutput, er
 		return nil, fmt.Errorf("failed to read stderr: %w", err)
 	}
 
-	out := &sshconfig.SshCmdOutput{
+	out := &stormsshconfig.SshCmdOutput{
 		Stdout: string(output),
 		Stderr: string(errOutput),
 		Status: 0,
