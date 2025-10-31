@@ -71,8 +71,10 @@ def rename_oci_url(host_config_path, oci_cosi_url):
 
 # Sysext and confext images are stored in ACR and tagged based on pipeline build
 # ID, so the HC must be updated for every build.
-def add_extension_images(
-    host_config_path, oci_sysext_url, oci_confext_url, sysext_hash, confext_hash
+def add_sysexts(
+    host_config_path,
+    oci_sysext_url,
+    sysext_hash,
 ):
     with open(host_config_path, "r") as f:
         host_config = yaml.safe_load(f)
@@ -82,6 +84,19 @@ def add_extension_images(
     if "sysexts" not in host_config["os"]:
         host_config["os"]["sysexts"] = []
     host_config["os"]["sysexts"].append({"url": oci_sysext_url, "sha384": sysext_hash})
+
+    with open(host_config_path, "w") as f:
+        yaml.safe_dump(host_config, f)
+
+
+# Sysext and confext images are stored in ACR and tagged based on pipeline build
+# ID, so the HC must be updated for every build.
+def add_confexts(host_config_path, oci_confext_url, confext_hash):
+    with open(host_config_path, "r") as f:
+        host_config = yaml.safe_load(f)
+
+    if "os" not in host_config:
+        host_config["os"] = {}
     if "confexts" not in host_config["os"]:
         host_config["os"]["confexts"] = []
     host_config["os"]["confexts"].append(
@@ -155,17 +170,17 @@ def main():
     if args.ociCosiUrl:
         rename_oci_url(args.hostconfig, args.ociCosiUrl)
 
-    if (
-        args.ociSysextUrl
-        and args.sysextHash
-        and args.ociConfextUrl
-        and args.confextHash
-    ):
-        add_extension_images(
+    if args.ociSysextUrl and args.sysextHash:
+        add_sysexts(
             args.hostconfig,
             args.ociSysextUrl,
-            args.ociConfextUrl,
             args.sysextHash,
+        )
+
+    if args.ociConfextUrl and args.confextHash:
+        add_confexts(
+            args.hostconfig,
+            args.ociConfextUrl,
             args.confextHash,
         )
 

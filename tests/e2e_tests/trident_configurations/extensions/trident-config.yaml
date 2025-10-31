@@ -45,6 +45,16 @@ scripts:
         - clean-install
         - ab-update
       content: echo "testing-user ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/testing-user
+    - name: create-override
+      runOn:
+        - clean-install
+      content: |
+        mkdir -p /etc/systemd/system/systemd-confext.service.d
+        cat << EOF > /etc/systemd/system/systemd-confext.service.d/override.conf
+        [Service]
+        ExecStart=
+        ExecStart=systemd-confext refresh --noexec=false
+        EOF
 os:
   selinux:
     mode: permissive
