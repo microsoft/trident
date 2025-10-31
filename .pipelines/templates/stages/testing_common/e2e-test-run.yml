@@ -160,10 +160,14 @@ steps:
     displayName: "🅱️🔄 Stage and finalize A/B update into target OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
-  - template: ../testing_common/capture-screenshot.yml
-    parameters:
-      screenshotName: "update-b"
-      deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
+  - ${{ if eq(parameters.deploymentEnvironment, 'virtualMachine') }}:
+    - bash: |
+        set -eux
+        ./bin/storm-trident helper capture-screenshot \
+            --screenshot-filename "update-b.png" \
+            --artifacts-folder "$(ob_outputDirectory)"
+      displayName: "📷 Capture screenshot: stage and finalize A/B update into target OS B"
+      condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
 
   - template: ../testing_common/display-serial-logs.yml
     parameters:
@@ -274,10 +278,14 @@ steps:
     displayName: "🅰️🔄 Stage and finalize A/B update into target OS A"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
-  - template: ../testing_common/capture-screenshot.yml
-    parameters:
-      screenshotName: "update-a"
-      deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
+  - ${{ if eq(parameters.deploymentEnvironment, 'virtualMachine') }}:
+    - bash: |
+        set -eux
+        ./bin/storm-trident helper capture-screenshot \
+            --screenshot-filename "update-a.png" \
+            --artifacts-folder "$(ob_outputDirectory)"
+      displayName: "📷 Capture screenshot: stage and finalize A/B update into target OS A"
+      condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
 
   - template: ../testing_common/display-serial-logs.yml
     parameters:

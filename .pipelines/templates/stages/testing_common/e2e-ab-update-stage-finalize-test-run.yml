@@ -165,10 +165,14 @@ steps:
     displayName: "🔄 Finalize A/B update into target OS"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
-  - template: ../testing_common/capture-screenshot.yml
-    parameters:
-      screenshotName: "finalize"
-      deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
+  - ${{ if eq(parameters.deploymentEnvironment, 'virtualMachine') }}:
+    - bash: |
+        set -eux
+        ./bin/storm-trident helper capture-screenshot \
+            --screenshot-filename "finalize.png" \
+            --artifacts-folder "$(ob_outputDirectory)"
+      displayName: "📷 Capture Finalize A/B update screenshot"
+      condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
 
   - template: ../testing_common/display-serial-logs.yml
     parameters:

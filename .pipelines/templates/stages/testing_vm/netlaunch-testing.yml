@@ -223,11 +223,13 @@ stages:
             displayName: "🚀 Run netlaunch for testing"
             timeoutInMinutes: 20
 
-          - template: ../testing_common/capture-screenshot.yml
-            parameters:
-              screenshotName: "install"
-              deploymentEnvironment: virtualMachine
-              forceRun: true
+          - bash: |
+              set -eux
+              ./bin/storm-trident helper capture-screenshot \
+                  --screenshot-filename "install.png" \
+                  --artifacts-folder "$(ob_outputDirectory)"
+            displayName: "📷 Capture screenshot: clean install"
+            condition: succeededOrFailed()
 
           - template: ../testing_common/display-deployment-logs.yml
             parameters:

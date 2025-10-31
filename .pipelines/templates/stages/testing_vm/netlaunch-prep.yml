@@ -48,7 +48,8 @@ steps:
           python3-docker \
           python3-bcrypt \
           python3-jinja2 \
-          zstd
+          zstd \
+          imagemagick
 
       sudo pip3 install virt-firmware
     displayName: Install virt-deploy dependencies
