@@ -43,6 +43,12 @@ storage:
         - id: var
           type: linux-generic
           size: 1G
+        - id: exts-a
+          type: linux-generic
+          size: 1G
+        - id: exts-b
+          type: linux-generic
+          size: 1G
     - id: disk2
       device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
       partitionTableType: gpt
@@ -61,6 +67,9 @@ storage:
       - id: trident-overlay
         volumeAId: trident-overlay-a
         volumeBId: trident-overlay-b
+      - id: exts
+        volumeAId: exts-a
+        volumeBId: exts-b
   verity:
     - id: root
       name: root
@@ -83,7 +92,9 @@ storage:
       source: new
       mountPoint: /var/lib/trident
     - deviceId: var
-      mountPoint: /var/tmp
+      mountPoint: /var
+    - deviceId: exts
+      mountPoint: /var/lib
     - deviceId: root
       mountPoint:
         path: /
