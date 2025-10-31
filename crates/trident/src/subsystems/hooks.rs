@@ -3,16 +3,19 @@ use std::{
     ffi::OsStr,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
+    sync::{Arc, Mutex},
+    thread,
+    time::{Duration, Instant},
 };
 
 use anyhow::{Context, Error};
 use log::{debug, info, trace};
 
-use osutils::{exe::OutputChecker, files, scripts::ScriptRunner};
+use osutils::{dependencies::Dependency, exe::OutputChecker, files, scripts::ScriptRunner};
 use trident_api::{
     config::{
-        HostConfigurationDynamicValidationError, HostConfigurationStaticValidationError, Script,
-        ScriptSource,
+        Check, HostConfigurationDynamicValidationError, HostConfigurationStaticValidationError,
+        Script, ScriptSource, SystemdCheck,
     },
     constants::{
         internal_params::WRITABLE_ETC_OVERLAY_HOOKS, DEFAULT_SCRIPT_INTERPRETER,
@@ -25,12 +28,18 @@ use trident_api::{
 use crate::engine::{EngineContext, Subsystem};
 
 #[derive(Debug)]
+struct ScriptError {
+    script_name: String,
+    error_message: String,
+}
+
+#[derive(Clone, Debug)]
 struct StagedFile {
     contents: Vec<u8>,
     mode: u32,
 }
 
-#[derive(Default, Debug)]
+#[derive(Clone, Default, Debug)]
 pub struct HooksSubsystem {
     staged_files: HashMap<PathBuf, StagedFile>,
     writable_etc_overlay: bool,
@@ -214,6 +223,55 @@ impl HooksSubsystem {
         Ok(())
     }
 
+    fn run_systemd_check(&self, check: &SystemdCheck) -> Result<(), TridentError> {
+        let start_time = Instant::now();
+        let timeout_duration = Duration::from_secs(check.timeout_seconds as u64);
+        let mut last_error = None;
+
+        let services_list = check.systemd_services.join(" ");
+        debug!("Checking status of systemd service(s) '{}'", &services_list);
+
+        for _i in 0.. {
+            if start_time.elapsed() >= timeout_duration {
+                return Err(TridentError::new(ServicingError::SystemdCheckTimeout {
+                    services: services_list,
+                    timeout_seconds: check.timeout_seconds,
+                    last_error: last_error
+                        .map(|e| format!("{e:?}"))
+                        .unwrap_or_else(|| "No status retrieved".into()),
+                }));
+            }
+
+            let status = Dependency::Systemctl
+                .cmd()
+                .env("SYSTEMD_IGNORE_CHROOT", "true")
+                .arg("status")
+                .args(&check.systemd_services)
+                .output();
+            match status {
+                Ok(output) => match output.check() {
+                    Ok(_) => {
+                        info!(
+                            "Service(s) '{services_list}' are active/running: {}",
+                            output.output_report()
+                        );
+                        break;
+                    }
+                    Err(e) => {
+                        info!("Service(s) '{services_list}' are not active/running: {e}");
+                        last_error = Some(e);
+                    }
+                },
+                Err(e) => {
+                    info!("Unable to query service(s) '{services_list}': {e}");
+                    last_error = Some(e);
+                }
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+        Ok(())
+    }
+
     fn run_script(
         &self,
         script: &Script,
@@ -313,6 +371,74 @@ impl HooksSubsystem {
                         script_name: script.name.clone(),
                     })
             })?;
+        Ok(())
+    }
+
+    /// This function will be called outside the standard subsystem flow
+    /// before Trident commits a target OS.
+    pub fn execute_health_checks(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
+        let health_checks = ctx
+            .spec
+            .health
+            .checks
+            .clone()
+            .into_iter()
+            .filter(|check| check.should_run(ctx.servicing_type))
+            .collect::<Vec<_>>();
+        if !health_checks.is_empty() {
+            debug!("Running health check scripts");
+        }
+
+        // Shared vector to collect script errors from threads
+        let health_check_errors = Arc::new(Mutex::new(Vec::new()));
+        // Create parallel health-check threads within a scope, the
+        // threads will all be joined before the scope ends.
+        thread::scope(|s| {
+            for health_check in health_checks {
+                let subsystem = &self;
+                let loop_script_errors = health_check_errors.clone();
+                s.spawn(move || match health_check {
+                    Check::SystemdCheck(systemd_check) => {
+                        if let Err(err) = subsystem.run_systemd_check(&systemd_check) {
+                            loop_script_errors.lock().unwrap().push(ScriptError {
+                                script_name: systemd_check.name,
+                                error_message: format!("{err:?}"),
+                            });
+                        }
+                    }
+                    Check::Script(inner_script) => {
+                        if let Err(err) = subsystem.run_script(
+                            &inner_script,
+                            ctx,
+                            Path::new(ROOT_MOUNT_POINT_PATH),
+                        ) {
+                            loop_script_errors.lock().unwrap().push(ScriptError {
+                                script_name: inner_script.name,
+                                error_message: format!("{err:?}"),
+                            });
+                        }
+                    }
+                });
+            }
+        });
+
+        // Create error collection from individual health check failures
+        let health_check_errors_message: String = health_check_errors
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|e| format!("{}: {:?}", e.script_name, e.error_message))
+            .collect::<Vec<String>>()
+            .join("\n");
+        if !health_check_errors.lock().unwrap().is_empty() {
+            debug!(
+                "Health checks completed with errors:\n{}",
+                health_check_errors_message
+            );
+            return Err(TridentError::new(ServicingError::HealthChecksFailed {
+                details: health_check_errors_message,
+            }));
+        }
         Ok(())
     }
 }

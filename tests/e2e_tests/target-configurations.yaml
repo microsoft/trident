@@ -92,6 +92,7 @@ virtualMachine:
       - encrypted-raid
       - encrypted-swap
       - extensions
+      - health-checks-install
       - memory-constraint-combined
       - misc
       - raid-mirrored
@@ -110,6 +111,7 @@ virtualMachine:
       - encrypted-raid
       - encrypted-swap
       - extensions
+      - health-checks-install
       - memory-constraint-combined
       - misc
       - raid-mirrored
@@ -124,6 +126,7 @@ virtualMachine:
     pullrequest:
       - base
       - combined
+      - health-checks-install
       - misc
       - raid-mirrored
       - raid-resync-small
@@ -140,6 +143,7 @@ virtualMachine:
       - encrypted-raid
       - encrypted-swap
       - extensions
+      - health-checks-install
       - memory-constraint-combined
       - misc
       - raid-mirrored
@@ -158,6 +162,7 @@ virtualMachine:
       - encrypted-raid
       - encrypted-swap
       - extensions
+      - health-checks-install
       - memory-constraint-combined
       - raid-mirrored
       - raid-resync-small
@@ -176,6 +181,7 @@ virtualMachine:
       - encrypted-raid
       - encrypted-swap
       - extensions
+      - health-checks-install
       - misc
       - raid-mirrored
       - raid-resync-small
@@ -192,6 +198,7 @@ virtualMachine:
       - encrypted-raid
       - encrypted-swap
       - extensions
+      - health-checks-install
       - misc
       - raid-mirrored
       - raid-resync-small
@@ -208,6 +215,7 @@ virtualMachine:
       - encrypted-raid
       - encrypted-swap
       - extensions
+      - health-checks-install
       - misc
       - raid-mirrored
       - raid-resync-small
@@ -222,6 +230,7 @@ virtualMachine:
       - encrypted-raid
       - encrypted-swap
       - extensions
+      - health-checks-install
       - misc
       - raid-mirrored
       - raid-resync-small
@@ -238,6 +247,7 @@ virtualMachine:
       - encrypted-raid
       - encrypted-swap
       - extensions
+      - health-checks-install
       - raid-mirrored
       - raid-resync-small
       - raid-small

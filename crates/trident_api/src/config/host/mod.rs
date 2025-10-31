@@ -15,6 +15,7 @@ use crate::{
 };
 
 pub(crate) mod error;
+pub(crate) mod health;
 pub(crate) mod image;
 pub(crate) mod internal_params;
 pub(crate) mod os;
@@ -23,6 +24,7 @@ pub(crate) mod storage;
 pub(crate) mod trident;
 
 use error::HostConfigurationStaticValidationError;
+use health::Health;
 use image::OsImage;
 use internal_params::InternalParams;
 use os::{ManagementOs, Os, SelinuxMode};
@@ -70,6 +72,10 @@ pub struct HostConfiguration {
     /// integrity information.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image: Option<OsImage>,
+
+    /// Health configuration for the target OS.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub health: Health,
 }
 
 impl HostConfiguration {

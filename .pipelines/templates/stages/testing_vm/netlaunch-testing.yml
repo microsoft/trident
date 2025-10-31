@@ -205,6 +205,18 @@ stages:
                 sudo yq '.' "$TRIDENT_CONFIG"
               fi
 
+              HANDLE_PROVISIONED_STATE_ARG="--wait-for-provisioned-state"
+              if [ "${{ variables['tridentConfigurationName'] }}" == "health-checks-install" ]; then
+                # In health-checks-install, the Host Status will never reach
+                # 'provisioned' state, because the health checks are designed to
+                # fail.
+                # netlaunch typically returns the exit code reflecting the call
+                # to 'trident commit' on the target OS. For this test, we do not
+                # want this non-zero exit code to cause netlaunch to return failure,
+                # so we set this flag to only print the exit code instead.
+                HANDLE_PROVISIONED_STATE_ARG="--only-print-exit-code"
+              fi
+
               ./bin/netlaunch \
                   --iso ./artifacts/iso/$(installerISOName).iso \
                   --config $(tridentSourceDirectory)/tools/vm-netlaunch.yaml \
@@ -215,7 +227,7 @@ stages:
                   --trace-file $(tridentSourceDirectory)/trident-clean-install-metrics.jsonl \
                   --force-color \
                   --full-logstream logstream-full.log \
-                  --wait-for-provisioned-state \
+                  $HANDLE_PROVISIONED_STATE_ARG \
                   $SECURE_BOOT \
                   $SIGNING_CERT \
                   --port ${{variables.netlaunchPort}} 2>&1 | tee ./clean-install-deployment.log
