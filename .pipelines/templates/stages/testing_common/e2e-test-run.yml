@@ -155,6 +155,7 @@ steps:
       set +x
       echo "##vso[task.setvariable variable=version]$new_version"
       echo "##vso[task.setvariable variable=abActiveVolume]volume-b"
+
     timeoutInMinutes: 15
     workingDirectory: $(Build.SourcesDirectory)
     displayName: "🅱️🔄 Stage and finalize A/B update into target OS B"
@@ -229,6 +230,43 @@ steps:
       junitTestFile: "./tests/e2e_tests/${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_B_$(System.JobAttempt).junit.xml"
       displayNameSpecifier: "A/B update into target OS B"
       artifactName: "junit_for_trident_ab_update_B"
+
+  # Test UEFI-fallback scenario after A/B update into target OS B.
+  # This scenario will configure an update into target OS A that 
+  # will configure UEFI-fallback (rollback) to OS B. When OS A is
+  # booted, a service will clear the UEFI variables and reboot.
+  # Upon reboot, the system should boot into OS B.
+  #
+  # This scenario is configured to run for all VM e2e tests that
+  # do A/B update, and for BM e2e tests that do A/B update in the
+  # weekly build purpose.
+  - template: ./e2e-test-abupdate-scenario.yml
+    parameters:
+      # Rollback-specific parameters
+      updateScenarioName: "uefi-fallback-rollback"
+      updateScenarioTargetOs: "A"
+      updateScenarioFlag: "--uefi-fallback rollback"
+      expectActiveVolume: volume-b
+      incrementUpdateVersion: false
+      updateScenarioTestName: "uefifallback"
+      expectCommitFailure: true
+      updateEmoji: "💫"
+      # Pass all other parameters through
+      buildPurpose: ${{ parameters.buildPurpose }}
+      tridentConfigurationName: ${{ parameters.tridentConfigurationName }}
+      tridentConfigFile: $(tridentConfigFile)
+      deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
+      runtimeEnv: ${{ parameters.runtimeEnv }}
+      hostIp: ${{ parameters.hostIp }}
+      tridentConfigPath: ${{ parameters.tridentConfigPath }}
+      jUnitXMLIdentifier: ${{ parameters.jUnitXMLIdentifier }}
+      sshKeyPath: ${{ parameters.sshKeyPath }}
+      userName: ${{ parameters.userName }}
+      artifactsDirectory: ${{ parameters.artifactsDirectory }}
+      netlistenPort: ${{ parameters.netlistenPort }}
+      netlistenConfigFile: ${{ parameters.netlistenConfigFile }}
+      httpsProxy: ${{ parameters.httpsProxy }}
+
 
   - bash: |
       set -eux

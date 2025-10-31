@@ -597,6 +597,15 @@
             }
           ]
         },
+        "uefiFallback": {
+          "description": "Options for configuring the UEFI fallback.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/UefiFallbackMode"
+            }
+          ],
+          "nullable": true
+        },
         "users": {
           "description": "Users to configure on the host.",
           "default": [],
@@ -1459,6 +1468,35 @@
         }
       },
       "additionalProperties": false
+    },
+    "UefiFallbackMode": {
+      "description": "UEFIFallback mode\n\nUEFI provides a mechanism for booting from an EFI file without a corresponding boot variable existing in NVRAM. This is known as the UEFI fallback mode, and it uses a specific file path (\\EFI\\BOOT) to locate the fallback bootloader.\n\nThis configuration option allows specifying how Trident should populate the UEFI fallback boot files during OS installation or update.",
+      "oneOf": [
+        {
+          "title": "Rollback",
+          "description": "In 'rollback' mode, the servicing OS boot files will be used as the UEFI fallback boot files. This mode is not valid for clean installs.",
+          "type": "string",
+          "enum": [
+            "rollback"
+          ]
+        },
+        {
+          "title": "Rollforward",
+          "description": "In 'rollforward' mode, the newly installed or updated OS (the target OS) boot files will be used as the UEFI fallback boot files.",
+          "type": "string",
+          "enum": [
+            "rollforward"
+          ]
+        },
+        {
+          "title": "None",
+          "description": "This is the default mode, where no UEFI fallback boot files are installed.",
+          "type": "string",
+          "enum": [
+            "none"
+          ]
+        }
+      ]
     },
     "User": {
       "description": "Configuration for a specific user.",

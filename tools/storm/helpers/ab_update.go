@@ -3,6 +3,7 @@ package helpers
 import (
 	"context"
 	"crypto/sha512"
+	_ "embed"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -35,6 +36,7 @@ type AbUpdateHelper struct {
 		FinalizeAbUpdate     bool     `short:"f" help:"Controls whether A/B update should be finalized."`
 		EnvVars              []string `short:"e" help:"Environment variables. Multiple vars can be passed as a list of comma-separated strings, or this flag can be used multiple times. Each var should include the env var name, i.e. HTTPS_PROXY=http://0.0.0.0."`
 		ExpectFailedCommit   bool     `help:"Controls whether this test treats failed commits as successful." default:"false"`
+		UefiFallback         string   `help:"Type of UEFI fallback to use." default:"none"`
 	}
 
 	client *ssh.Client
@@ -166,6 +168,12 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 	}
 	internalParams["selfUpgradeTrident"] = false
 
+	// Handle UEFI-fallback settings if configured
+	err = h.handleUefiFallback(tc)
+	if err != nil {
+		return fmt.Errorf("failed to handle UEFI fallback: %w", err)
+	}
+
 	// Delete the storage section from the config, not needed for A/B update
 	delete(h.config, "storage")
 
@@ -182,6 +190,7 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal YAML: %w", err)
 	}
+	logrus.Tracef("New Trident configuration:\n%v", string(hc_yaml))
 
 	sftpClient, err := utils.NewSftpSudoClient(h.client)
 	if err != nil {
@@ -216,6 +225,93 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 		return fmt.Errorf("failed to change ownership of new Host Config file: %w", err)
 	}
 
+	return nil
+}
+
+//go:embed uefi_fallback_rollback_script_contents.txt
+var UefiFallbackRollbackContents string
+
+func (h *AbUpdateHelper) handleUefiFallback(tc storm.TestCase) error {
+	scripts, ok := h.config["scripts"].(map[string]any)
+	if !ok {
+		scripts = make(map[string]any)
+	}
+	if h.args.UefiFallback != "none" {
+		logrus.Tracef("Configuring UEFI-fallback rollback settings in Host Configuration")
+		os, ok := h.config["os"].(map[string]any)
+		if !ok {
+			os = make(map[string]any)
+		}
+		os["uefiFallback"] = h.args.UefiFallback
+		h.config["os"] = os
+
+		postConfigureScripts, ok := scripts["postConfigure"].([]any)
+		if !ok {
+			postConfigureScripts = make([]any, 0)
+		}
+		scriptContents := UefiFallbackRollbackContents
+		// Use image in Host Configuration to determine if the image is
+		// root-verity
+		imageUrl, ok := h.config["image"].(map[string]interface{})["url"].(string)
+		if !ok {
+			return fmt.Errorf("failed to get image URL from config")
+		}
+
+		// Generally, use / path
+		finalPath := "/reset-uefi-and-reboot.sh"
+		needWritableEtcInternalParam := false
+		if strings.Contains(imageUrl, "verity") {
+			if !strings.Contains(imageUrl, "usrverity") {
+				// root-verity image, use /var/lib/trident/ path
+				finalPath = "/var/lib/trident/reset-uefi-and-reboot.sh"
+				needWritableEtcInternalParam = true
+			} else {
+				// usr-verity image, use / path
+				finalPath = "/reset-uefi-and-reboot.sh"
+			}
+		}
+		scriptContents = strings.ReplaceAll(
+			scriptContents,
+			"/FINAL_PATH/reset-uefi-and-reboot.sh",
+			finalPath,
+		)
+
+		scripts["postConfigure"] = append(postConfigureScripts, map[string]any{
+			"name":    "reset-uefi-and-reboot",
+			"content": scriptContents,
+			"runOn":   []string{"ab-update"},
+		})
+		h.config["scripts"] = scripts
+
+		if needWritableEtcInternalParam {
+			// Ensure writableEtcOverlayHooks is set to true when using root-verity
+			internalParams, ok := h.config["internalParams"].(map[string]any)
+			if !ok {
+				internalParams = make(map[string]any)
+			}
+			internalParams["writableEtcOverlayHooks"] = true
+			h.config["internalParams"] = internalParams
+		}
+	} else {
+		logrus.Tracef("Ensuring UEFI-fallback rollback settings are not in Host Configuration")
+		os, ok := h.config["os"].(map[string]any)
+		if ok {
+			os["uefiFallback"] = "none"
+			h.config["os"] = os
+		}
+
+		postConfigureScripts, ok := scripts["postConfigure"].([]any)
+		if ok {
+			filteredPostConfigureScripts := make([]any, 0)
+			for _, script := range postConfigureScripts {
+				if script.(map[string]any)["name"] != "reset-uefi-and-reboot" {
+					filteredPostConfigureScripts = append(filteredPostConfigureScripts, script)
+				}
+			}
+			scripts["postConfigure"] = filteredPostConfigureScripts
+			h.config["scripts"] = scripts
+		}
+	}
 	return nil
 }
 

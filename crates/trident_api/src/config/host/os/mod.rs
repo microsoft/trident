@@ -1,4 +1,8 @@
 use std::collections::HashSet;
+use std::{
+    fmt::{Display, Formatter, Result as FmtResult},
+    str::FromStr,
+};
 
 use log::warn;
 use netplan_types::NetworkConfig;
@@ -80,6 +84,10 @@ pub struct Os {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[cfg_attr(feature = "schemars", schemars(skip))]
     pub confexts: Vec<Extension>,
+
+    /// Options for configuring the UEFI fallback.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub uefi_fallback: Option<UefiFallbackMode>,
 }
 
 /// Additional kernel command line options to add to the image.
@@ -128,8 +136,8 @@ pub enum SelinuxMode {
     Enforcing,
 }
 
-impl std::fmt::Display for SelinuxMode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Display for SelinuxMode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         let mode_str = match self {
             SelinuxMode::Disabled => "disabled",
             SelinuxMode::Permissive => "permissive",
@@ -139,7 +147,7 @@ impl std::fmt::Display for SelinuxMode {
     }
 }
 
-impl std::str::FromStr for SelinuxMode {
+impl FromStr for SelinuxMode {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -148,6 +156,64 @@ impl std::str::FromStr for SelinuxMode {
             "permissive" => Ok(SelinuxMode::Permissive),
             "enforcing" => Ok(SelinuxMode::Enforcing),
             _ => Err(anyhow::anyhow!("Invalid SELinux mode: {}", s)),
+        }
+    }
+}
+
+/// UEFIFallback mode
+///
+/// UEFI provides a mechanism for booting from an EFI file without
+/// a corresponding boot variable existing in NVRAM. This is known
+/// as the UEFI fallback mode, and it uses a specific file path
+/// (\EFI\BOOT) to locate the fallback bootloader.
+///
+/// This configuration option allows specifying how Trident should
+/// populate the UEFI fallback boot files during OS installation or
+/// update.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Copy)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
+pub enum UefiFallbackMode {
+    /// # Rollback
+    ///
+    /// In 'rollback' mode, the servicing OS boot files will be used as
+    /// the UEFI fallback boot files. This mode is not valid for clean
+    /// installs.
+    Rollback,
+
+    /// # Rollforward
+    ///
+    /// In 'rollforward' mode, the newly installed or updated OS (the
+    /// target OS) boot files will be used as the UEFI fallback boot files.
+    Rollforward,
+
+    /// # None
+    ///
+    /// This is the default mode, where no UEFI fallback boot files
+    /// are installed.
+    None,
+}
+
+impl Display for UefiFallbackMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mode_str = match self {
+            UefiFallbackMode::Rollback => "rollback",
+            UefiFallbackMode::Rollforward => "rollforward",
+            UefiFallbackMode::None => "none",
+        };
+        write!(f, "{mode_str}")
+    }
+}
+
+impl FromStr for UefiFallbackMode {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "rollback" => Ok(UefiFallbackMode::Rollback),
+            "rollforward" => Ok(UefiFallbackMode::Rollforward),
+            "none" => Ok(UefiFallbackMode::None),
+            _ => Err(anyhow::anyhow!("Invalid UEFI fallback mode: {}", s)),
         }
     }
 }
