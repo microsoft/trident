@@ -25,7 +25,7 @@ steps:
       inlineScript: |
         set -eux
 
-        if [ ${{ parameters.config }} == 'misc' ]; then
+        if [ "${{ parameters.config }}" == 'misc' ]; then
           # Remove COSI images
           ./bin/storm-trident script acr-delete \
             --config ${{ parameters.config }} \
@@ -35,7 +35,7 @@ steps:
             --build-id $(Build.BuildId) \
             --num-clones 4
 
-        elif [ ${{ parameters.config }} == 'extensions' ]; then
+        elif [ "${{ parameters.config }}" == 'extensions' ]; then
           ./bin/storm-trident script acr-delete \
             --config ${{ parameters.config }} \
             --deployment-environment ${{ parameters.deploymentEnvironment }} \
