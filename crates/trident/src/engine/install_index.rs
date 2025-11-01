@@ -56,123 +56,137 @@ mod tests {
     use tempfile::TempDir;
 
     use crate::engine::boot::make_esp_dir_name_candidates;
+    use trident_api::error::ErrorKind;
 
-    /// Simple case for find_first_available_install_index
-    #[test]
-    fn test_find_first_available_install_index_simple() {
-        let test_dir = TempDir::new().unwrap();
-        let index = find_first_available_install_index(test_dir.path()).unwrap();
-        assert_eq!(index, 0, "First available index should be 0");
+    fn setup_esp_efi_path(mount_point: &std::path::Path) -> std::path::PathBuf {
+        let esp_efi_path = mount_point
+            .join(ESP_RELATIVE_MOUNT_POINT_PATH)
+            .join(ESP_EFI_DIRECTORY);
+        fs::create_dir_all(&esp_efi_path).unwrap();
+        esp_efi_path
     }
 
-    /// Test that find_first_available_install_index will skip unavailable
-    /// indices
     #[test]
-    fn test_find_first_available_install_index_existing_all() {
+    fn test_install_index_variants() {
+        // Simple, empty case
         let test_dir = TempDir::new().unwrap();
+        let esp_efi_path = setup_esp_efi_path(test_dir.path());
+        assert_eq!(next_install_index(test_dir.path()).unwrap(), 0);
+        assert_eq!(
+            find_first_available_install_index(&esp_efi_path).unwrap(),
+            0
+        );
 
-        // Create all ESP directories for indices 0-9
+        // All indices 0-9 present for both volumes
+        let test_dir = TempDir::new().unwrap();
+        let esp_efi_path = setup_esp_efi_path(test_dir.path());
         make_esp_dir_name_candidates()
             .take(10)
             .for_each(|(_, dir_names)| {
                 for dir_name in dir_names {
-                    fs::create_dir(test_dir.path().join(dir_name)).unwrap();
+                    fs::create_dir(esp_efi_path.join(dir_name)).unwrap();
+                }
+            });
+        assert_eq!(next_install_index(test_dir.path()).unwrap(), 10);
+        assert_eq!(
+            find_first_available_install_index(&esp_efi_path).unwrap(),
+            10
+        );
+
+        // Only volume A present for 0-9
+        let test_dir = TempDir::new().unwrap();
+        let esp_efi_path = setup_esp_efi_path(test_dir.path());
+        make_esp_dir_name_candidates()
+            .take(10)
+            .for_each(|(_, dir_names)| {
+                fs::create_dir(esp_efi_path.join(&dir_names[0])).unwrap();
+            });
+        assert_eq!(next_install_index(test_dir.path()).unwrap(), 10);
+        assert_eq!(
+            find_first_available_install_index(&esp_efi_path).unwrap(),
+            10
+        );
+
+        // Only volume B present for 0-9
+        let test_dir = TempDir::new().unwrap();
+        let esp_efi_path = setup_esp_efi_path(test_dir.path());
+        make_esp_dir_name_candidates()
+            .take(10)
+            .for_each(|(_, dir_names)| {
+                fs::create_dir(esp_efi_path.join(&dir_names[1])).unwrap();
+            });
+        assert_eq!(next_install_index(test_dir.path()).unwrap(), 10);
+        assert_eq!(
+            find_first_available_install_index(&esp_efi_path).unwrap(),
+            10
+        );
+
+        // Alternating A/B, starting with A
+        let test_dir = TempDir::new().unwrap();
+        let esp_efi_path = setup_esp_efi_path(test_dir.path());
+        let mut volume_selector = (0..=1).cycle();
+        make_esp_dir_name_candidates()
+            .take(10)
+            .for_each(|(_, dir_names)| {
+                fs::create_dir(esp_efi_path.join(&dir_names[volume_selector.next().unwrap()]))
+                    .unwrap();
+            });
+        assert_eq!(next_install_index(test_dir.path()).unwrap(), 10);
+        assert_eq!(
+            find_first_available_install_index(&esp_efi_path).unwrap(),
+            10
+        );
+
+        // Alternating A/B, starting with B
+        let test_dir = TempDir::new().unwrap();
+        let esp_efi_path = setup_esp_efi_path(test_dir.path());
+        let mut volume_selector = (0..=1).cycle();
+        volume_selector.next(); // Advance to start with B
+        make_esp_dir_name_candidates()
+            .take(10)
+            .for_each(|(_, dir_names)| {
+                fs::create_dir(esp_efi_path.join(&dir_names[volume_selector.next().unwrap()]))
+                    .unwrap();
+            });
+        assert_eq!(next_install_index(test_dir.path()).unwrap(), 10);
+        assert_eq!(
+            find_first_available_install_index(&esp_efi_path).unwrap(),
+            10
+        );
+    }
+
+    #[test]
+    fn test_no_available_install_index() {
+        let test_dir = tempfile::TempDir::new().unwrap();
+        let esp_efi_path = test_dir
+            .path()
+            .join(trident_api::constants::ESP_RELATIVE_MOUNT_POINT_PATH)
+            .join(trident_api::constants::ESP_EFI_DIRECTORY);
+        std::fs::create_dir_all(&esp_efi_path).unwrap();
+
+        // Exhaust all possible indices (up to 1000)
+        crate::engine::boot::make_esp_dir_name_candidates()
+            .take(1000)
+            .for_each(|(_, dir_names)| {
+                for dir_name in dir_names {
+                    std::fs::create_dir(esp_efi_path.join(dir_name)).unwrap();
                 }
             });
 
-        // The first available index should be 10
-        let index = find_first_available_install_index(test_dir.path()).unwrap();
-        assert_eq!(index, 10, "First available index should be 10");
-    }
+        assert_eq!(
+            find_first_available_install_index(&esp_efi_path)
+                .unwrap_err()
+                .kind(),
+            &ErrorKind::UnsupportedConfiguration(
+                UnsupportedConfigurationError::NoAvailableInstallIndex
+            )
+        );
 
-    /// Test that find_first_available_install_index will skip unavailable
-    /// indices, even when only the A volume IDs are present
-    #[test]
-    fn test_find_first_available_install_index_existing_a() {
-        let test_dir = TempDir::new().unwrap();
-
-        // Create Volume A ESP directories for indices 0-9
-        make_esp_dir_name_candidates()
-            .take(10)
-            .for_each(|(_, dir_names)| {
-                fs::create_dir(test_dir.path().join(&dir_names[0])).unwrap();
-            });
-
-        // The first available index should be 10
-        let index = find_first_available_install_index(test_dir.path()).unwrap();
-        assert_eq!(index, 10, "First available index should be 10");
-    }
-
-    /// Test that find_first_available_install_index will skip unavailable
-    /// indices, even when only the B volume IDs are present
-    #[test]
-    fn test_find_first_available_install_index_existing_b() {
-        let test_dir = TempDir::new().unwrap();
-
-        // Create Volume B ESP directories for indices 0-9
-        make_esp_dir_name_candidates()
-            .take(10)
-            .for_each(|(_, dir_names)| {
-                fs::create_dir(test_dir.path().join(&dir_names[1])).unwrap();
-            });
-
-        // The first available index should be 10
-        let index = find_first_available_install_index(test_dir.path()).unwrap();
-        assert_eq!(index, 10, "First available index should be 10");
-    }
-
-    /// Test that find_first_available_install_index will skip unavailable
-    /// indices, even when only ONE ID is present per install.
-    #[test]
-    fn test_find_first_available_install_index_existing_mixed_1() {
-        let test_dir = TempDir::new().unwrap();
-
-        // Iterator to cycle between 0 and 1
-        let mut volume_selector = (0..=1).cycle();
-
-        // Create alternating A/B Volume ESP directories for indices 0-9, starting with A
-        make_esp_dir_name_candidates()
-            .take(10)
-            .for_each(|(_, dir_names)| {
-                fs::create_dir(
-                    test_dir
-                        .path()
-                        .join(&dir_names[volume_selector.next().unwrap()]),
-                )
-                .unwrap();
-            });
-
-        // The first available index should be 10
-        let index = find_first_available_install_index(test_dir.path()).unwrap();
-        assert_eq!(index, 10, "First available index should be 10");
-    }
-
-    /// Test that find_first_available_install_index will skip unavailable
-    /// indices, even when only ONE ID is present per install.
-    #[test]
-    fn test_find_first_available_install_index_existing_mixed_2() {
-        let test_dir = TempDir::new().unwrap();
-
-        // Iterator to cycle between 0 and 1
-        let mut volume_selector = (0..=1).cycle();
-
-        // Advance the volume selector to start with B
-        volume_selector.next();
-
-        // Create alternating A/B Volume ESP directories for indices 0-9, starting with B
-        make_esp_dir_name_candidates()
-            .take(10)
-            .for_each(|(_, dir_names)| {
-                fs::create_dir(
-                    test_dir
-                        .path()
-                        .join(&dir_names[volume_selector.next().unwrap()]),
-                )
-                .unwrap();
-            });
-
-        // The first available index should be 10
-        let index = find_first_available_install_index(test_dir.path()).unwrap();
-        assert_eq!(index, 10, "First available index should be 10");
+        assert_eq!(
+            next_install_index(test_dir.path()).unwrap_err().kind(),
+            &ErrorKind::UnsupportedConfiguration(
+                UnsupportedConfigurationError::NoAvailableInstallIndex
+            )
+        );
     }
 }
