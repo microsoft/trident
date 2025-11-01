@@ -487,12 +487,23 @@ def test_uefi_fallback(connection, hostConfiguration):
         return
 
     # Check that /efi/boot/EFI/BOOT/* is same as /efi/azl/EFI/<CURRENTBOOT>/*
-    result = connection.run("sudo efibootmgr | grep BootCurrent | awk '{print $2}')")
-    current_boot_entry = result.stdout.strip().splitlines()
-    result = connection.run(
-        f"sudo efibootmgr | grep Boot{current_boot_entry} | awk '{{print $2}}'"
-    )
-    current_boot_name = result.stdout.strip().splitlines()
+    result = connection.run("sudo efibootmgr")
+    efi_output = result.stdout.strip().splitlines()
+
+    current_boot_entry = ""
+    for line in efi_output:
+        if "BootCurrent" in line:
+            current_boot_entry = line.split(":")[1].strip()
+            break
+    assert current_boot_entry != ""
+
+    current_boot_name = ""
+    for line in efi_output:
+        if f"Boot{current_boot_entry}" in line:
+            current_boot_name = line.split()[1]
+            break
+    assert current_boot_name != ""
+
     connection.run(
         f"sudo diff /efi/boot/EFI/BOOT/* /efi/azl/EFI/{current_boot_name}/* && exit 1 || exit 0"
     )
