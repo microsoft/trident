@@ -16,7 +16,7 @@ This configuration option allows specifying how Trident should populate the UEFI
 
 ### Rollback
 
-In 'rollback' mode, the servicing OS boot files will be used as the UEFI fallback boot files. This mode is not valid for clean installs.
+In 'rollback' mode, during an OS update, the UEFI fallback will boot the servicing OS (the existing OS) until `commit` validates the target OS as healthy, at which point the UEFI fallback will be updated to boot the target OS. This aligns with how Trident handles the UEFI boot variables during an update.
 
 | Characteristic | Value      |
 | -------------- | ---------- |
@@ -25,7 +25,7 @@ In 'rollback' mode, the servicing OS boot files will be used as the UEFI fallbac
 
 ### Rollforward
 
-In 'rollforward' mode, the newly installed or updated OS (the target OS) boot files will be used as the UEFI fallback boot files.
+In 'rollforward' mode, during an OS update, the UEFI fallback will boot will be updated to boot the target OS (the newly installed OS) during the finalize stage.
 
 | Characteristic | Value         |
 | -------------- | ------------- |
@@ -34,7 +34,7 @@ In 'rollforward' mode, the newly installed or updated OS (the target OS) boot fi
 
 ### None
 
-This is the default mode, where no UEFI fallback boot files are installed.
+No UEFI fallback boot files are installed.
 
 | Characteristic | Value    |
 | -------------- | -------- |

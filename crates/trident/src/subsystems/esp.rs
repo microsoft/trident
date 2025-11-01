@@ -248,7 +248,7 @@ fn find_uefi_fallback_source_dir_name(
                     Some(AbVolumeSelection::VolumeA) => AbVolumeSelection::VolumeB,
                 },
             )),
-            Some(UefiFallbackMode::Rollback) => Some(boot::make_esp_dir_name(
+            None | Some(UefiFallbackMode::Rollback) => Some(boot::make_esp_dir_name(
                 ctx.install_index,
                 match ctx.ab_active_volume {
                     None | Some(AbVolumeSelection::VolumeA) => AbVolumeSelection::VolumeA,
@@ -258,7 +258,7 @@ fn find_uefi_fallback_source_dir_name(
             _ => None,
         },
         ServicingState::AbUpdateFinalized => match ctx.spec.os.uefi_fallback {
-            Some(UefiFallbackMode::Rollback) => Some(boot::make_esp_dir_name(
+            None | Some(UefiFallbackMode::Rollback) => Some(boot::make_esp_dir_name(
                 ctx.install_index,
                 match ctx.ab_active_volume {
                     None | Some(AbVolumeSelection::VolumeA) => AbVolumeSelection::VolumeA,
@@ -762,7 +762,7 @@ mod tests {
                 .read_to_string(&mut fallback_file_contents)
                 .unwrap();
             match ctx.spec.os.uefi_fallback {
-                None | Some(UefiFallbackMode::None) =>
+                Some(UefiFallbackMode::None) =>
                 // Fallback should not have been updated
                 {
                     assert!(
@@ -771,7 +771,7 @@ mod tests {
                         fallback_file.display()
                     )
                 }
-                Some(UefiFallbackMode::Rollback) | Some(UefiFallbackMode::Rollforward) =>
+                None | Some(UefiFallbackMode::Rollback) | Some(UefiFallbackMode::Rollforward) =>
                 // Fallback should have been updated
                 {
                     assert!(
@@ -915,6 +915,12 @@ mod tests {
             },
             ..Default::default()
         };
+
+        // Validate ABUpdate None with active volume A ==> copy /EFI/AZLA to /EFI/BOOT
+        ctx.spec.os.uefi_fallback = None;
+        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
+        ctx.servicing_type = ServicingType::AbUpdate;
+        validate_fallback(&ctx, ServicingState::AbUpdateStaged, &file_names, "AZLA");
 
         // Validate ABUpdate Rollback with active volume A ==> copy /EFI/AZLA to /EFI/BOOT
         ctx.spec.os.uefi_fallback = Some(UefiFallbackMode::Rollback);
