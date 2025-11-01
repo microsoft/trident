@@ -32,6 +32,7 @@ use crate::{
     engine::{self, bootentries, install_index, storage, EngineContext, SUBSYSTEMS},
     monitor_metrics,
     osimage::OsImage,
+    subsystems::esp,
     subsystems::hooks::HooksSubsystem,
     ExitKind, SAFETY_OVERRIDE_CHECK_PATH,
 };
@@ -325,6 +326,10 @@ pub(crate) fn finalize_clean_install(
     // On clean install, need to verify that AZLA entry exists in /mnt/newroot/boot/efi
     let esp_path = join_relative(new_root.path(), ESP_MOUNT_POINT_PATH);
     bootentries::create_and_update_boot_variables(&ctx, &esp_path)?;
+    // Analgous to how UEFI variables are configured, finalize must start configuring
+    // UEFI fallback, and a successful commit will finish it.
+    esp::configure_uefi_fallback(&ctx, ServicingState::CleanInstallStaged, new_root.path())
+        .structured(ServicingError::UefiFallback)?;
 
     debug!(
         "Updating host's servicing state to '{:?}'",

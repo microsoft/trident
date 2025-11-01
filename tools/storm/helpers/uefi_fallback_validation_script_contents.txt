@@ -1,0 +1,17 @@
+
+
+if _REPLACE_EXPECT_EMPTY_; then
+  if sudo find /efi/boot/EFI/BOOT/*; then
+    echo "/efi/boot/EFI/BOOT is not empty"
+    exit 1
+  else
+    echo "/efi/boot/EFI/BOOT is empty"
+    exit 0
+  fi
+elif diff /efi/boot/EFI/BOOT/ _REPLACE_EXPECTED_FOLDER_/; then
+  echo "no difference detected between /efi/boot/EFI/BOOT/ and _REPLACE_EXPECTED_FOLDER_/"
+  exit 0
+else
+  echo "difference detected between /efi/boot/EFI/BOOT/ and _REPLACE_EXPECTED_FOLDER_/"
+  exit 1
+fi

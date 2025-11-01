@@ -27,6 +27,7 @@ use crate::{
     },
     monitor_metrics,
     osimage::OsImage,
+    subsystems::esp,
     subsystems::hooks::HooksSubsystem,
     ExitKind,
 };
@@ -329,6 +330,10 @@ pub(crate) fn finalize_update(
         PathBuf::from(ESP_MOUNT_POINT_PATH)
     };
     bootentries::create_and_update_boot_variables(&ctx, &esp_path)?;
+    // Analgous to how UEFI variables are configured, finalize must start configuring
+    // UEFI fallback, and a successful commit will finish it.
+    esp::configure_uefi_fallback(&ctx, ServicingState::AbUpdateStaged, &esp_path)
+        .structured(ServicingError::UefiFallback)?;
 
     debug!(
         "Updating host's servicing state to '{:?}'",
