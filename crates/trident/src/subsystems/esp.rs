@@ -221,16 +221,16 @@ fn copy_file_artifacts(
 /// baswed on the servicing state and UEFI fallback mode.
 ///
 /// 1. During finalize
-///       * For clean install, use volumeA (this is the target OS volume for clean install)
-///       * For A/B update
-///             - rollforward: use the opposite of the active volume
-///             - rollback: use the active volume (this may be a redundant copy)
+///  * For clean install, use volumeA (this is the target OS volume for clean install)
+///  * For A/B update
+///    - rollforward: use the opposite of the active volume
+///    - rollback: use the active volume (this may be a redundant copy)
 /// 2. During commit, after the target OS boot has been verified, the target OS boot files
 ///    are copied to the UEFI fallback folder.
-///        * For clean install, no copy is needed as it was done during finalize
-///        * For A/B update
-///             - rollforward: no copy is needed as it was done during finalize
-///             - rollback: use the newly active volume
+///  * For clean install, no copy is needed as it was done during finalize
+///  * For A/B update
+///    - rollforward: no copy is needed as it was done during finalize
+///    - rollback: use the newly active volume
 fn find_uefi_fallback_source_dir_name(
     ctx: &EngineContext,
     servicing_state: ServicingState,
