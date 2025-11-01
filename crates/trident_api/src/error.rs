@@ -624,6 +624,9 @@ pub enum ServicingError {
     #[error("Trident rebuild-raid validation failed")]
     ValidateRebuildRaid,
 
+    #[error("Failed to set up UEFI fallback boot files")]
+    UefiFallback,
+
     #[error("Failed to unmount newroot, unable to unmount '{dir}'")]
     UnmountNewroot { dir: String },
 

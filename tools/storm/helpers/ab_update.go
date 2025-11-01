@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -303,14 +304,10 @@ func (h *AbUpdateHelper) handleAutoRollback(tc storm.TestCase) error {
 	return nil
 }
 
-//go:embed uefi_fallback_rollback_script_contents.txt
-var UefiFallbackRollbackContents string
+//go:embed uefi_fallback_validation_script_contents.txt
+var UefiFallbackValidationContents string
 
 func (h *AbUpdateHelper) handleUefiFallback(tc storm.TestCase) error {
-	scripts, ok := h.config["scripts"].(map[string]any)
-	if !ok {
-		scripts = make(map[string]any)
-	}
 	if h.args.UefiFallback != "none" {
 		logrus.Tracef("Configuring UEFI-fallback rollback settings in Host Configuration")
 		os, ok := h.config["os"].(map[string]any)
@@ -320,71 +317,82 @@ func (h *AbUpdateHelper) handleUefiFallback(tc storm.TestCase) error {
 		os["uefiFallback"] = h.args.UefiFallback
 		h.config["os"] = os
 
-		postConfigureScripts, ok := scripts["postConfigure"].([]any)
+		// Create health check script that diffs the UEFI fallback path with
+		// the efi boot path for the current update version.
+		//
+		// Assumes that h.args.Version = 2 for first A/B update (which creates
+		// AZLB), h.args.Version = 3 for second A/B update (which creates AZLA),
+		// etc.
+		health, ok := h.config["health"].(map[string]any)
 		if !ok {
-			postConfigureScripts = make([]any, 0)
+			health = make(map[string]any)
 		}
-		scriptContents := UefiFallbackRollbackContents
-		// Use image in Host Configuration to determine if the image is
-		// root-verity
-		imageUrl, ok := h.config["image"].(map[string]interface{})["url"].(string)
+		checks, ok := health["checks"].([]any)
 		if !ok {
-			return fmt.Errorf("failed to get image URL from config")
+			checks = make([]any, 0)
 		}
 
-		// Generally, use / path
-		finalPath := "/reset-uefi-and-reboot.sh"
-		needWritableEtcInternalParam := false
-		if strings.Contains(imageUrl, "verity") {
-			if !strings.Contains(imageUrl, "usrverity") {
-				// root-verity image, use /var/lib/trident/ path
-				finalPath = "/var/lib/trident/reset-uefi-and-reboot.sh"
-				needWritableEtcInternalParam = true
-			} else {
-				// usr-verity image, use / path
-				finalPath = "/reset-uefi-and-reboot.sh"
-			}
+		// Read script from file
+		scriptContents := UefiFallbackValidationContents
+		// Update script contents based on version and fallback configuration
+		versionNumber, err := strconv.Atoi(h.args.Version)
+		if err != nil {
+			return fmt.Errorf("failed to convert version to integer: %w", err)
 		}
+		partitionLetterRollforward := "A"
+		partitionLetterRollback := "B"
+		if versionNumber%2 == 0 {
+			partitionLetterRollforward = "B"
+			partitionLetterRollback = "A"
+		}
+		partitionLetter := partitionLetterRollback
+		if h.args.UefiFallback == "rollforward" {
+			partitionLetter = partitionLetterRollforward
+		}
+		noneCheck := "false"
+		if h.args.UefiFallback == "none" {
+			noneCheck = "true"
+		}
+
 		scriptContents = strings.ReplaceAll(
 			scriptContents,
-			"/FINAL_PATH/reset-uefi-and-reboot.sh",
-			finalPath,
+			"_REPLACE_EXPECTED_FOLDER_",
+			fmt.Sprintf("/efi/boot/EFI/AZL%s/", partitionLetter),
+		)
+		scriptContents = strings.ReplaceAll(
+			scriptContents,
+			"_REPLACE_EXPECT_EMPTY_",
+			noneCheck,
 		)
 
-		scripts["postConfigure"] = append(postConfigureScripts, map[string]any{
-			"name":    "reset-uefi-and-reboot",
+		health["checks"] = append(checks, map[string]any{
+			"name":    "validate-uefi-fallback-before-commit",
 			"content": scriptContents,
 			"runOn":   []string{"ab-update"},
 		})
-		h.config["scripts"] = scripts
 
-		if needWritableEtcInternalParam {
-			// Ensure writableEtcOverlayHooks is set to true when using root-verity
-			internalParams, ok := h.config["internalParams"].(map[string]any)
-			if !ok {
-				internalParams = make(map[string]any)
-			}
-			internalParams["writableEtcOverlayHooks"] = true
-			h.config["internalParams"] = internalParams
-		}
 	} else {
 		logrus.Tracef("Ensuring UEFI-fallback rollback settings are not in Host Configuration")
+		// Reset os.uefiFallback to empty
 		os, ok := h.config["os"].(map[string]any)
 		if ok {
-			os["uefiFallback"] = "none"
+			delete(os, "uefiFallback")
 			h.config["os"] = os
 		}
 
-		postConfigureScripts, ok := scripts["postConfigure"].([]any)
+		health, ok := h.config["health"].(map[string]any)
 		if ok {
-			filteredPostConfigureScripts := make([]any, 0)
-			for _, script := range postConfigureScripts {
-				if script.(map[string]any)["name"] != "reset-uefi-and-reboot" {
-					filteredPostConfigureScripts = append(filteredPostConfigureScripts, script)
+			checks, ok := health["checks"].([]any)
+			if ok {
+				filteredChecks := make([]any, 0)
+				for _, check := range checks {
+					if check.(map[string]any)["name"] != "validate-uefi-fallback-before-commit" {
+						filteredChecks = append(filteredChecks, check)
+					}
 				}
+				health["checks"] = filteredChecks
+				h.config["health"] = health
 			}
-			scripts["postConfigure"] = filteredPostConfigureScripts
-			h.config["scripts"] = scripts
 		}
 	}
 	return nil
