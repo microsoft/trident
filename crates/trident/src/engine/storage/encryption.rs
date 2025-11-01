@@ -577,8 +577,7 @@ mod functional_test {
 
     #[functional_test(feature = "helpers")]
     fn test_get_binary_paths_pcrlock() {
-        // Create a temporary directory to use as ESP path
-        let esp_path = tempfile::tempdir().unwrap().into_path();
+        let esp_path = PathBuf::from(ESP_MOUNT_POINT_PATH);
         let esp_uki_path = esp_path.join(UKI_DIRECTORY);
 
         let ctx = EngineContext {
