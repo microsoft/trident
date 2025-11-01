@@ -1,4 +1,4 @@
-package trident
+package e2e
 
 import (
 	"fmt"

@@ -1,7 +1,8 @@
-package trident
+package e2e
 
 import (
 	"embed"
+	"fmt"
 
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
@@ -17,14 +18,13 @@ type tridentConfig struct {
 }
 
 // Discovers all defined Trident E2E test scenarios.
-func DiscoverTridentScenarios(log *logrus.Logger) []TridentE2EScenario {
+func DiscoverTridentScenarios(log *logrus.Logger) ([]TridentE2EScenario, error) {
 	entries, err := content.ReadDir("configurations/trident_configurations")
 	if err != nil {
-		log.Errorf("Failed to read configurations directory: %v", err)
-		return nil
+		return nil, fmt.Errorf("failed to read configurations directory: %w", err)
 	}
 
-	var tridentConfigs = make(map[string]*tridentConfig)
+	var tridentConfigs = make(map[string]map[string]any)
 
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -38,14 +38,13 @@ func DiscoverTridentScenarios(log *logrus.Logger) []TridentE2EScenario {
 			log.Fatalf("Failed to read configuration file: %v", err)
 		}
 
-		scenario := CreateTridentScenario(entry.Name())
-
-		err = yaml.Unmarshal(configYaml, &scenario.config)
+		var config map[string]any
+		err = yaml.Unmarshal(configYaml, &config)
 		if err != nil {
-			log.Fatalf("Failed to unmarshal configuration file for '%s': %v", scenario.Name(), err)
+			log.Fatalf("Failed to unmarshal configuration file for '%s': %v", entry.Name(), err)
 		}
 
-		tridentConfigs[entry.Name()] = &tridentConfig{scenario: scenario, used: false}
+		tridentConfigs[entry.Name()] = config
 	}
 
 	// Check that all targets exist and that all configs have at least one target
