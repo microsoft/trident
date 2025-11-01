@@ -66,53 +66,56 @@ def inject_uefi_fallback_testing(host_config_path):
         host_config["os"] = {}
     # Only inject testing values if uefiFallback
     # is not already set.
-    if not hasattr(host_config["os"], "name"):
+    if not hasattr(host_config["os"], "uefiFallback"):
         uefi_fallback_modes = ["none", "rollback", "rollforward"]
         # Randomly pick a fallback mode for testing.
         random_mode = random.choice(uefi_fallback_modes)
         host_config["os"]["uefiFallback"] = random_mode
-        health_check_content = """
+        health_check_content = """set -eux
+EFI_PATH="/boot/efi/EFI"
+FALLBACK_PATH="$EFI_PATH/BOOT"
+
 CURRENT_BOOT="$(efibootmgr | grep BootCurrent)"
 if [ -z "$CURRENT_BOOT" ]; then
-  echo "Failed to get current boot entry"
-  exit 1
+    echo "Failed to get current boot entry"
+    exit 1
 fi
 
 CURRENT_BOOT_ENTRY="$(echo $CURRENT_BOOT | awk '{print $2}')"
 if [ -z "$CURRENT_BOOT_ENTRY" ]; then
-  echo "Failed to parse current boot entry"
-  exit 1
+    echo "Failed to parse current boot entry"
+    exit 1
 fi
 
-CURRENT_AZL_BOOT_NAME="$(efibootmgr | grep "Boot${CURRENT_BOOT_ENTRY}" | awk '{print $2}') | grep AZL"
+CURRENT_AZL_BOOT_NAME="$(efibootmgr | grep "Boot${CURRENT_BOOT_ENTRY}" | awk '{print $2}' | grep AZL)"
 if [ -z "$CURRENT_AZL_BOOT_NAME" ]; then
-  echo "Current boot entry is not an AZL boot entry"
-  exit 1
+    echo "Current boot entry is not an AZL boot entry"
+    exit 1
 fi
 
 if [ "_REPLACE_FALLBACK_NODE_" == "none" ]; then
-  # if none, check that /efi/boot/EFI/BOOT is empty
-  if sudo find /efi/boot/EFI/BOOT/*; then
-    echo "/efi/boot/EFI/BOOT is not empty"
+    # if none, check that $FALLBACK_PATH is empty
+    if sudo find $FALLBACK_PATH/*; then
+    echo "$FALLBACK_PATH is not empty"
     exit 1
-  else
-    echo "/efi/boot/EFI/BOOT is empty"
+    else
+    echo "$FALLBACK_PATH is empty"
     exit 0
-  fi
+    fi
 else
-  AZL_BOOT_NAME_TO_CHECK="$CURRENT_AZL_BOOT_NAME"
-  if [ "_REPLACE_FALLBACK_NODE_" == "rollback" ]; then
-    # if rollback, check that /efi/boot/EFI/BOOT == opposite of /efi/boot/EFI/$CURRENT_AZL_BOOT_NAME
-    AZL_BOOT_NAME_TO_CHECK="$(echo $CURRENT_AZL_BOOT_NAME | sed "s/AZLA/AZLA_TMP/g; s/AZLB/AZLA/g; s/AZLA_TMP/AZLB/g")"
-  fi
+    AZL_BOOT_NAME_TO_CHECK="$CURRENT_AZL_BOOT_NAME"
+    if [ "_REPLACE_FALLBACK_NODE_" == "rollback" ] && _REPLACE_NOT_INSTALL_; then
+        # if rollback, check that $FALLBACK_PATH == opposite of $EFI_PATH/$CURRENT_AZL_BOOT_NAME
+        AZL_BOOT_NAME_TO_CHECK="$(echo $CURRENT_AZL_BOOT_NAME | sed "s/AZLA/AZLA_TMP/g; s/AZLB/AZLA/g; s/AZLA_TMP/AZLB/g")"
+    fi
 
-  if diff /efi/boot/EFI/BOOT/ /efi/boot/EFI/$AZL_BOOT_NAME_TO_CHECK/; then
-    echo "no difference detected between /efi/boot/EFI/BOOT/ and /efi/boot/EFI/$AZL_BOOT_NAME_TO_CHECK/"
-    exit 0
-  else
-    echo "difference detected between /efi/boot/EFI/BOOT/ and /efi/boot/EFI/$AZL_BOOT_NAME_TO_CHECK/"
-    exit 1
-  fi
+    if diff $FALLBACK_PATH/ $EFI_PATH/$AZL_BOOT_NAME_TO_CHECK/; then
+        echo "no difference detected between $FALLBACK_PATH and $EFI_PATH/$AZL_BOOT_NAME_TO_CHECK/"
+        exit 0
+    else
+        echo "difference detected between $FALLBACK_PATH and $EFI_PATH/$AZL_BOOT_NAME_TO_CHECK/"
+        exit 1
+    fi
 fi
 """
         health_check_content = health_check_content.replace(
@@ -125,9 +128,20 @@ fi
             host_config["health"]["checks"] = []
         host_config["health"]["checks"].append(
             {
-                "name": "uefi-fallback-pre-commit-validation",
-                "content": health_check_content,
-                "runOn": ["clean-install", "ab-update"],
+                "name": "uefi-fallback-validation-update",
+                "content": health_check_content.replace(
+                    "_REPLACE_NOT_INSTALL_", "true"
+                ),
+                "runOn": ["ab-update"],
+            }
+        )
+        host_config["health"]["checks"].append(
+            {
+                "name": "uefi-fallback-validation-install",
+                "content": health_check_content.replace(
+                    "_REPLACE_NOT_INSTALL_", "false"
+                ),
+                "runOn": ["clean-install"],
             }
         )
 
