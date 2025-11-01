@@ -471,3 +471,28 @@ def test_users(connection, hostConfiguration):
         assert group in users_by_group
         for user in expected_groups[group]:
             assert user in users_by_group[group]
+
+
+def test_uefi_fallback(connection, hostConfiguration):
+    mode = "rollback"  # Default mode if not set
+    if "uefiFallback" in hostConfiguration:
+        mode = hostConfiguration["os"]["uefiFallback"]
+
+    if mode not in ["none", "rollback", "rollforward"]:
+        raise Exception(f"Unknown uefiFallback mode: {mode}")
+
+    if mode == "none":
+        # Check that /efi/boot/EFI/BOOT is empty
+        connection.run("sudo find /efi/boot/EFI/BOOT/* && exit 1 || exit 0")
+        return
+
+    # Check that /efi/boot/EFI/BOOT/* is same as /efi/azl/EFI/<CURRENTBOOT>/*
+    result = connection.run("sudo efibootmgr | grep BootCurrent | awk '{print $2}')")
+    current_boot_entry = result.stdout.strip().splitlines()
+    result = connection.run(
+        f"sudo efibootmgr | grep Boot{current_boot_entry} | awk '{{print $2}}'"
+    )
+    current_boot_name = result.stdout.strip().splitlines()
+    connection.run(
+        f"sudo diff /efi/boot/EFI/BOOT/* /efi/azl/EFI/{current_boot_name}/* && exit 1 || exit 0"
+    )
