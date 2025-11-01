@@ -21,7 +21,9 @@ for multiboot scenarios or when the UEFI fallback is managed outside of
 Trident.
 
 The default mode is `rollback` which aligns to how Trident manages the UEFI
-boot variables during OS servicing:
+boot variables during OS servicing. `rollforward` is very similar to `rollback`
+but updates the UEFI fallback path contents to the target OS earlier (during
+`finalize` instead of `commit`):
 
 * `trident install`
   * `finalize`: Trident updates the UEFI boot order and UEFI fallback path so that
