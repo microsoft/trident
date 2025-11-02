@@ -3,6 +3,7 @@ package e2e
 import (
 	"embed"
 	"fmt"
+	"tridenttools/storm/e2e/scenario"
 
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
@@ -18,7 +19,7 @@ const (
 var content embed.FS
 
 // Discovers all defined Trident E2E test scenarios.
-func DiscoverTridentScenarios(log *logrus.Logger) ([]TridentE2EScenario, error) {
+func DiscoverTridentScenarios(log *logrus.Logger) ([]scenario.TridentE2EScenario, error) {
 	rawConfigs, err := content.ReadFile("configurations/configurations.yaml")
 	if err != nil {
 		return nil, fmt.Errorf("failed to read configurations file: %w", err)
@@ -30,7 +31,7 @@ func DiscoverTridentScenarios(log *logrus.Logger) ([]TridentE2EScenario, error) 
 		return nil, fmt.Errorf("failed to parse e2e configurations file: %w", err)
 	}
 
-	var tridentE2EScenarios []TridentE2EScenario = make([]TridentE2EScenario, 0, len(cfg))
+	var tridentE2EScenarios []scenario.TridentE2EScenario = make([]scenario.TridentE2EScenario, 0, len(cfg))
 
 	for name, conf := range cfg {
 		configPath := getConfigPath(name)
@@ -57,25 +58,25 @@ func getConfigPath(scenarioName string) string {
 	return "configurations/trident_configurations/" + scenarioName + "/trident-config.yaml"
 }
 
-func produceScenariosFromConfig(name string, conf scenarioConfig, config map[string]interface{}) []TridentE2EScenario {
-	var scenarios []TridentE2EScenario
+func produceScenariosFromConfig(name string, conf scenarioConfig, config map[string]interface{}) []scenario.TridentE2EScenario {
+	var scenarios []scenario.TridentE2EScenario
 
-	bmScenario := produceScenario(name, config, HardwareTypeBM, RuntimeTypeHost, conf.Bm.Host)
+	bmScenario := produceScenario(name, config, scenario.HardwareTypeBM, scenario.RuntimeTypeHost, conf.Bm.Host)
 	if bmScenario != nil {
 		scenarios = append(scenarios, *bmScenario)
 	}
 
-	bmContainerScenario := produceScenario(name, config, HardwareTypeBM, RuntimeTypeContainer, conf.Bm.Container)
+	bmContainerScenario := produceScenario(name, config, scenario.HardwareTypeBM, scenario.RuntimeTypeContainer, conf.Bm.Container)
 	if bmContainerScenario != nil {
 		scenarios = append(scenarios, *bmContainerScenario)
 	}
 
-	vmScenario := produceScenario(name, config, HardwareTypeVM, RuntimeTypeHost, conf.Vm.Host)
+	vmScenario := produceScenario(name, config, scenario.HardwareTypeVM, scenario.RuntimeTypeHost, conf.Vm.Host)
 	if vmScenario != nil {
 		scenarios = append(scenarios, *vmScenario)
 	}
 
-	vmContainerScenario := produceScenario(name, config, HardwareTypeVM, RuntimeTypeContainer, conf.Vm.Container)
+	vmContainerScenario := produceScenario(name, config, scenario.HardwareTypeVM, scenario.RuntimeTypeContainer, conf.Vm.Container)
 	if vmContainerScenario != nil {
 		scenarios = append(scenarios, *vmContainerScenario)
 	}
@@ -83,7 +84,13 @@ func produceScenariosFromConfig(name string, conf scenarioConfig, config map[str
 	return scenarios
 }
 
-func produceScenario(name string, config map[string]interface{}, hardware HardwareType, runtime RuntimeType, lowest_ring testRing) *TridentE2EScenario {
+func produceScenario(
+	name string,
+	config map[string]interface{},
+	hardware scenario.HardwareType,
+	runtime scenario.RuntimeType,
+	lowest_ring testRing,
+) *scenario.TridentE2EScenario {
 	rings := lowest_ring.GetTargetList()
 
 	if len(rings) == 0 {
@@ -95,13 +102,13 @@ func produceScenario(name string, config map[string]interface{}, hardware Hardwa
 		tags = append(tags, string(ring))
 	}
 
-	return &TridentE2EScenario{
-		name:     fmt.Sprintf("%s_%s-%s", name, hardware, runtime),
-		tags:     tags,
-		config:   config,
-		hardware: hardware,
-		runtime:  runtime,
-	}
+	return scenario.NewTridentE2EScenario(
+		fmt.Sprintf("%s_%s-%s", name, hardware, runtime),
+		tags,
+		config,
+		hardware,
+		runtime,
+	)
 }
 
 type configs map[string]scenarioConfig

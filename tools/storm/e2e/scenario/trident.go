@@ -1,4 +1,4 @@
-package e2e
+package scenario
 
 import (
 	"fmt"
@@ -37,6 +37,16 @@ type TridentE2EScenario struct {
 	config   map[string]interface{}
 	hardware HardwareType
 	runtime  RuntimeType
+}
+
+func NewTridentE2EScenario(name string, tags []string, config map[string]interface{}, hardware HardwareType, runtime RuntimeType) *TridentE2EScenario {
+	return &TridentE2EScenario{
+		name:     name,
+		tags:     tags,
+		config:   config,
+		hardware: hardware,
+		runtime:  runtime,
+	}
 }
 
 func (s *TridentE2EScenario) Name() string {
