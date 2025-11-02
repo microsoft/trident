@@ -8,30 +8,32 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const (
+	SCENARIO_TAG_E2E = "e2e"
+)
+
 //go:generate cp -r ../../../tests/e2e_tests/trident_configurations configurations
+//go:generate python3 invert.py
 //go:embed configurations/*
 var content embed.FS
 
-type tridentConfig struct {
-	scenario TridentE2EScenario
-	used     bool
-}
-
 // Discovers all defined Trident E2E test scenarios.
 func DiscoverTridentScenarios(log *logrus.Logger) ([]TridentE2EScenario, error) {
-	entries, err := content.ReadDir("configurations/trident_configurations")
+	rawConfigs, err := content.ReadFile("configurations/configurations.yaml")
 	if err != nil {
-		return nil, fmt.Errorf("failed to read configurations directory: %w", err)
+		return nil, fmt.Errorf("failed to read configurations file: %w", err)
 	}
 
-	var tridentConfigs = make(map[string]map[string]any)
+	var cfg configs
+	err = yaml.Unmarshal(rawConfigs, &cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse e2e configurations file: %w", err)
+	}
 
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
+	var tridentE2EScenarios []TridentE2EScenario = make([]TridentE2EScenario, 0, len(cfg))
 
-		configPath := "configurations/trident_configurations/" + entry.Name() + "/trident-config.yaml"
+	for name, conf := range cfg {
+		configPath := getConfigPath(name)
 
 		configYaml, err := content.ReadFile(configPath)
 		if err != nil {
@@ -41,141 +43,105 @@ func DiscoverTridentScenarios(log *logrus.Logger) ([]TridentE2EScenario, error) 
 		var config map[string]any
 		err = yaml.Unmarshal(configYaml, &config)
 		if err != nil {
-			log.Fatalf("Failed to unmarshal configuration file for '%s': %v", entry.Name(), err)
+			log.Fatalf("Failed to unmarshal configuration file for '%s': %v", name, err)
 		}
 
-		tridentConfigs[entry.Name()] = config
+		scenarios := produceScenariosFromConfig(name, conf, config)
+		tridentE2EScenarios = append(tridentE2EScenarios, scenarios...)
 	}
 
-	// Check that all targets exist and that all configs have at least one target
-	for stagePath, targets := range STAGE_PATHS_TARGETS {
-		for _, target := range targets {
-			config, ok := tridentConfigs[target]
-			if !ok {
-				log.Fatalf("Target '%s' in stage path '%s' references non-existing configuration", target, stagePath)
-			}
-			config.used = true
-			config.scenario.AddStagePath(stagePath.String())
-		}
-	}
+	return tridentE2EScenarios, nil
+}
 
+func getConfigPath(scenarioName string) string {
+	return "configurations/trident_configurations/" + scenarioName + "/trident-config.yaml"
+}
+
+func produceScenariosFromConfig(name string, conf scenarioConfig, config map[string]interface{}) []TridentE2EScenario {
 	var scenarios []TridentE2EScenario
-	for _, config := range tridentConfigs {
-		if !config.used {
-			log.Warnf("Configuration '%s' is not used in any stage path", config.scenario.Name())
-		}
-		scenarios = append(scenarios, config.scenario)
+
+	bmScenario := produceScenario(name, config, HardwareTypeBM, RuntimeTypeHost, conf.Bm.Host)
+	if bmScenario != nil {
+		scenarios = append(scenarios, *bmScenario)
+	}
+
+	bmContainerScenario := produceScenario(name, config, HardwareTypeBM, RuntimeTypeContainer, conf.Bm.Container)
+	if bmContainerScenario != nil {
+		scenarios = append(scenarios, *bmContainerScenario)
+	}
+
+	vmScenario := produceScenario(name, config, HardwareTypeVM, RuntimeTypeHost, conf.Vm.Host)
+	if vmScenario != nil {
+		scenarios = append(scenarios, *vmScenario)
+	}
+
+	vmContainerScenario := produceScenario(name, config, HardwareTypeVM, RuntimeTypeContainer, conf.Vm.Container)
+	if vmContainerScenario != nil {
+		scenarios = append(scenarios, *vmContainerScenario)
 	}
 
 	return scenarios
 }
 
-var STAGE_PATHS_TARGETS = map[TridentE2EStagePath][]string{
-	NewTridentE2EStagePath(TridentPipelinePr, TridentMachineVm, TridentRuntimeHost): {
-		"base",
-		"combined",
-		"raid-mirrored",
-		"raid-resync-small",
-		"rerun",
-		"simple",
-		"verity-raid",
-	},
-	NewTridentE2EStagePath(TridentPipelinePr, TridentMachineVm, TridentRuntimeContainer): {
-		"base",
-		"combined",
-		"raid-mirrored",
-		"raid-resync-small",
-		"rerun",
-		"simple",
-		"verity-raid",
-	},
-	NewTridentE2EStagePath(TridentPipelineCi, TridentMachineVm, TridentRuntimeHost): {
-		"base",
-		"combined",
-		"encrypted-partition",
-		"encrypted-raid",
-		"encrypted-swap",
-		"memory-constraint-combined",
-		"raid-mirrored",
-		"misc",
-		"raid-small",
-		"raid-resync-small",
-		"rerun",
-		"simple",
-		"verity",
-		"verity-raid",
-	},
-	NewTridentE2EStagePath(TridentPipelineCi, TridentMachineVm, TridentRuntimeContainer): {
-		"base",
-		"combined",
-		// "encrypted-partition",  // TODO(9768): Re-enabled once the issue is fixed
-		// "encrypted-raid",       // TODO(9768): Re-enabled once the issue is fixed
-		// "encrypted-swap",       // TODO(9768): Re-enabled once the issue is fixed
-		"raid-mirrored",
-		"raid-small",
-		"raid-resync-small",
-		"rerun",
-		"simple",
-		"verity",
-		"verity-raid",
-	},
-	NewTridentE2EStagePath(TridentPipelinePre, TridentMachineVm, TridentRuntimeHost): {
-		"base",
-		"combined",
-		"encrypted-partition",
-		"encrypted-raid",
-		"encrypted-swap",
-		"memory-constraint-combined",
-		"raid-mirrored",
-		"misc",
-		"raid-small",
-		"raid-resync-small",
-		"rerun",
-		"simple",
-		"verity",
-		"verity-raid",
-	},
-	NewTridentE2EStagePath(TridentPipelinePre, TridentMachineVm, TridentRuntimeContainer): {
-		"base",
-		"combined",
-		// "encrypted-partition",  // TODO(9768): Re-enabled once the issue is fixed
-		// "encrypted-raid",       // TODO(9768): Re-enabled once the issue is fixed
-		// "encrypted-swap",       // TODO(9768): Re-enabled once the issue is fixed
-		"raid-mirrored",
-		"raid-small",
-		"raid-resync-small",
-		"rerun",
-		"simple",
-		"verity",
-		"verity-raid",
-	},
-	NewTridentE2EStagePath(TridentPipelinePre, TridentMachineBareMetal, TridentRuntimeHost): {
-		"base",
-		"combined",
-		"raid-big",
-		"raid-resync-small",
-		"encrypted-partition",
-		"encrypted-raid",
-		"encrypted-swap",
-		"memory-constraint-combined",
-		"raid-mirrored",
-		"rerun",
-		"simple",
-		"verity",
-		"verity-raid",
-	},
-	NewTridentE2EStagePath(TridentPipelinePre, TridentMachineBareMetal, TridentRuntimeContainer): {
-		"base",
-		"combined",
-		// "encrypted-partition",  # TODO(9768): Re-enabled once the issue is fixed
-		// "encrypted-raid",       # TODO(9768): Re-enabled once the issue is fixed
-		// "encrypted-swap",       # TODO(9768): Re-enabled once the issue is fixed
-		"raid-mirrored",
-		"raid-small",
-		"raid-resync-small",
-		// "rerun",                # TODO(9767): Re-enabled once the issue is fixed
-		"simple",
-		"verity",
-		"verity-raid",
-	},
+func produceScenario(name string, config map[string]interface{}, hardware HardwareType, runtime RuntimeType, lowest_ring testRing) *TridentE2EScenario {
+	rings := lowest_ring.GetTargetList()
+
+	if len(rings) == 0 {
+		return nil
+	}
+
+	tags := []string{SCENARIO_TAG_E2E, hardware.ToString(), runtime.ToString()}
+	for _, ring := range rings {
+		tags = append(tags, string(ring))
+	}
+
+	return &TridentE2EScenario{
+		name:     fmt.Sprintf("%s_%s-%s", name, hardware, runtime),
+		tags:     tags,
+		config:   config,
+		hardware: hardware,
+		runtime:  runtime,
+	}
+}
+
+type configs map[string]scenarioConfig
+
+type scenarioConfig struct {
+	Bm runtimeConfig `yaml:"bm"`
+	Vm runtimeConfig `yaml:"vm"`
+}
+
+type runtimeConfig struct {
+	Host      testRing `yaml:"host"`
+	Container testRing `yaml:"container"`
+}
+
+type testRing string
+
+const (
+	TestRingPrE2e          testRing = "pr-e2e"
+	TestRingCi             testRing = "ci"
+	TestRingPre            testRing = "pre"
+	TestRingFullValidation testRing = "full-validation"
+)
+
+var pipelineRingsOrder = []testRing{
+	TestRingPrE2e,
+	TestRingCi,
+	TestRingPre,
+	TestRingFullValidation,
+}
+
+func (tr testRing) GetTargetList() []testRing {
+	var targets []testRing
+	found := false
+	for _, ring := range pipelineRingsOrder {
+		if ring == tr {
+			found = true
+		}
+		if found {
+			targets = append(targets, ring)
+		}
+	}
+	return targets
 }
