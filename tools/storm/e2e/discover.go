@@ -4,6 +4,7 @@ import (
 	"embed"
 	"fmt"
 	"tridenttools/storm/e2e/scenario"
+	"tridenttools/storm/e2e/testrings"
 
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
@@ -89,7 +90,7 @@ func produceScenario(
 	config map[string]interface{},
 	hardware scenario.HardwareType,
 	runtime scenario.RuntimeType,
-	lowest_ring testRing,
+	lowest_ring testrings.TestRing,
 ) *scenario.TridentE2EScenario {
 	rings := lowest_ring.GetTargetList()
 
@@ -108,6 +109,7 @@ func produceScenario(
 		config,
 		hardware,
 		runtime,
+		rings,
 	)
 }
 
@@ -119,36 +121,6 @@ type scenarioConfig struct {
 }
 
 type runtimeConfig struct {
-	Host      testRing `yaml:"host"`
-	Container testRing `yaml:"container"`
-}
-
-type testRing string
-
-const (
-	TestRingPrE2e          testRing = "pr-e2e"
-	TestRingCi             testRing = "ci"
-	TestRingPre            testRing = "pre"
-	TestRingFullValidation testRing = "full-validation"
-)
-
-var pipelineRingsOrder = []testRing{
-	TestRingPrE2e,
-	TestRingCi,
-	TestRingPre,
-	TestRingFullValidation,
-}
-
-func (tr testRing) GetTargetList() []testRing {
-	var targets []testRing
-	found := false
-	for _, ring := range pipelineRingsOrder {
-		if ring == tr {
-			found = true
-		}
-		if found {
-			targets = append(targets, ring)
-		}
-	}
-	return targets
+	Host      testrings.TestRing `yaml:"host"`
+	Container testrings.TestRing `yaml:"container"`
 }

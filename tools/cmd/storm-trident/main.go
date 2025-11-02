@@ -1,7 +1,7 @@
 package main
 
 import (
-	trident "tridenttools/storm/e2e"
+	"tridenttools/storm/e2e"
 	"tridenttools/storm/helpers"
 	"tridenttools/storm/servicing"
 
@@ -17,7 +17,7 @@ func main() {
 	discoveryLogger.SetLevel(logrus.DebugLevel)
 
 	// Add Trident E2E scenarios (disabled for now)
-	scenarios, err := trident.DiscoverTridentScenarios(discoveryLogger)
+	scenarios, err := e2e.DiscoverTridentScenarios(discoveryLogger)
 	if err != nil {
 		storm.Logger().Fatalf("Failed to discover Trident E2E scenarios: %v", err)
 	}
@@ -25,6 +25,9 @@ func main() {
 	for _, scenario := range scenarios {
 		storm.AddScenario(&scenario)
 	}
+
+	// Add Trident E2E ADO matrix script set
+	storm.AddScriptSet(&e2e.TridentE2EMatrixScriptSet{})
 
 	// Add Trident servicing scenario
 	storm.AddScenario(&servicing.TridentServicingScenario{})

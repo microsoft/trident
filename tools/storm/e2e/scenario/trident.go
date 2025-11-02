@@ -2,51 +2,36 @@ package scenario
 
 import (
 	"fmt"
+	"tridenttools/storm/e2e/testrings"
 
 	"github.com/microsoft/storm"
 
 	"github.com/sirupsen/logrus"
 )
 
-type RuntimeType string
-
-const (
-	RuntimeTypeHost      RuntimeType = "host"
-	RuntimeTypeContainer RuntimeType = "container"
-)
-
-func (rt RuntimeType) ToString() string {
-	return string(rt)
-}
-
-type HardwareType string
-
-const (
-	HardwareTypeBM HardwareType = "bm"
-	HardwareTypeVM HardwareType = "vm"
-)
-
-func (ht HardwareType) ToString() string {
-	return string(ht)
-}
-
 type TridentE2EScenario struct {
 	storm.BaseScenario
-	name     string
-	tags     []string
-	config   map[string]interface{}
-	hardware HardwareType
-	runtime  RuntimeType
+	name      string
+	tags      []string
+	config    map[string]interface{}
+	hardware  HardwareType
+	runtime   RuntimeType
+	testRings testrings.TestRingSet
 }
 
-func NewTridentE2EScenario(name string, tags []string, config map[string]interface{}, hardware HardwareType, runtime RuntimeType) *TridentE2EScenario {
+func NewTridentE2EScenario(name string, tags []string, config map[string]interface{}, hardware HardwareType, runtime RuntimeType, testRings testrings.TestRingSet) *TridentE2EScenario {
 	return &TridentE2EScenario{
-		name:     name,
-		tags:     tags,
-		config:   config,
-		hardware: hardware,
-		runtime:  runtime,
+		name:      name,
+		tags:      tags,
+		config:    config,
+		hardware:  hardware,
+		runtime:   runtime,
+		testRings: testRings,
 	}
+}
+
+func (s *TridentE2EScenario) TestRings() testrings.TestRingSet {
+	return s.testRings
 }
 
 func (s *TridentE2EScenario) Name() string {
@@ -55,6 +40,14 @@ func (s *TridentE2EScenario) Name() string {
 
 func (s *TridentE2EScenario) Tags() []string {
 	return s.tags
+}
+
+func (s *TridentE2EScenario) HardwareType() HardwareType {
+	return s.hardware
+}
+
+func (s *TridentE2EScenario) RuntimeType() RuntimeType {
+	return s.runtime
 }
 
 func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {

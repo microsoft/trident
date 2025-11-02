@@ -31,6 +31,7 @@ github.com/fsnotify/fsnotify v1.7.0 h1:8JEhPFa5W2WU7YfeZzPNqzMP6Lwt7L2715Ggo0nos
 github.com/fsnotify/fsnotify v1.7.0/go.mod h1:40Bi/Hjc2AVfZrqy+aj+yEI+/bRxZnMJyTJwOpGvigM=
 github.com/go-logr/logr v1.4.2 h1:6pFjapn8bFcIbiKo3XT4j/BhANplGihG6tvd+8rYgrY=
 github.com/go-logr/logr v1.4.2/go.mod h1:9T104GzyrTigFIr8wt5mBrctHMim0Nb2HLGrmQ40KvY=
+github.com/google/go-cmp v0.5.8/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
 github.com/google/go-cmp v0.6.0 h1:ofyhxvXcZhMsU5ulbFiLKl/XBFqE1GSq7atu8tAmTRI=
 github.com/google/go-cmp v0.6.0/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
 github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
@@ -50,6 +51,8 @@ github.com/jacobweinstock/iamt v0.0.0-20230502042727-d7cdbe67d9ef h1:G4k02HGmBUf
 github.com/jacobweinstock/iamt v0.0.0-20230502042727-d7cdbe67d9ef/go.mod h1:FgmiLTU6cJewV4Xgrq6m5o8CUlTQOJtqzaFLGA0mG+E=
 github.com/jacobweinstock/registrar v0.4.7 h1:s4dOExccgD+Pc7rJC+f3Mc3D+NXHcXUaOibtcEsPxOc=
 github.com/jacobweinstock/registrar v0.4.7/go.mod h1:PWmkdGFG5/ZdCqgMo7pvB3pXABOLHc5l8oQ0sgmBNDU=
+github.com/jstemmer/go-junit-report/v2 v2.1.0 h1:X3+hPYlSczH9IMIpSC9CQSZA0L+BipYafciZUWHEmsc=
+github.com/jstemmer/go-junit-report/v2 v2.1.0/go.mod h1:mgHVr7VUo5Tn8OLVr1cKnLuEy0M92wdRntM99h7RkgQ=
 github.com/klauspost/compress v1.17.10 h1:oXAz+Vh0PMUvJczoi+flxpnBEPxoER1IaAnU/NMPtT0=
 github.com/klauspost/compress v1.17.10/go.mod h1:pMDklpSncoRMuLFrf1W9Ss9KT+0rH90U12bZKk7uwG0=
 github.com/kr/fs v0.1.0 h1:Jskdu9ieNAYnjxsi0LbQp1ulIKZV1LAFgK1tWhpZgl8=
@@ -67,6 +70,8 @@ github.com/mattn/go-isatty v0.0.20 h1:xfD0iDuEKnDkl03q4limB+vH+GxLEtL/jb4xVJSWWE
 github.com/mattn/go-isatty v0.0.20/go.mod h1:W+V8PltTTMOvKvAeJH7IuucS94S2C6jfK/D7dTCTo3Y=
 github.com/microsoft/storm v0.1.1 h1:+U3YnNoJ3BzjCbFfcDslWO+73B0FOTP+RFPPMLZrYJA=
 github.com/microsoft/storm v0.1.1/go.mod h1:BJi2oCf0MEC38GZvdIWWCKh4sLjGZ09PbDsVXIt8q08=
+github.com/microsoft/storm v0.3.0 h1:tT5mTFEUieoagL17hBPq0aewm2+M6ez2us4m8RDkMkA=
+github.com/microsoft/storm v0.3.0/go.mod h1:QMLHpLhA/rI2bmMFor4Vxd6N99k1eadlrXv6lPLbXks=
 github.com/mitchellh/mapstructure v1.5.0 h1:jeMsZIYE/09sWLaz43PL7Gy6RuMjD2eJVyuac5Z2hdY=
 github.com/mitchellh/mapstructure v1.5.0/go.mod h1:bFUtVrKA4DC2yAKiSyO/QUcy7e+RRV2QTWOzhPopBRo=
 github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8Oi/yOhh5U=
