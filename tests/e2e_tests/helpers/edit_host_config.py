@@ -71,11 +71,13 @@ def inject_uefi_fallback_testing(host_config_path):
         # Randomly pick a fallback mode for testing.
         random_mode = random.choice(uefi_fallback_modes)
         host_config["os"]["uefiFallback"] = random_mode
-        health_check_content = """set -eux
-EFI_PATH="/boot/efi/EFI"
+        health_check_content = """EFI_PATH="/boot/efi/EFI"
 FALLBACK_PATH="$EFI_PATH/BOOT"
 
-CURRENT_BOOT="$(efibootmgr | grep "BootCurrent")"
+EFI_OUTPUT="$(efibootmgr)"
+echo "$EFI_OUTPUT"
+
+CURRENT_BOOT="$(echo "$EFI_OUTPUT" | grep "BootCurrent")"
 if [ -z "$CURRENT_BOOT" ]; then
     echo "Failed to get current boot entry"
     exit 1
@@ -87,7 +89,7 @@ if [ -z "$CURRENT_BOOT_ENTRY" ]; then
     exit 1
 fi
 
-CURRENT_AZL_BOOT_NAME="$(efibootmgr | grep "Boot${CURRENT_BOOT_ENTRY}" | awk '{print $2}' | grep "AZL")"
+CURRENT_AZL_BOOT_NAME="$(echo "$EFI_OUTPUT" | grep "Boot${CURRENT_BOOT_ENTRY}" | awk '{print $2}' | grep "AZL")"
 if [ -z "$CURRENT_AZL_BOOT_NAME" ]; then
     echo "Current boot entry is not an AZL boot entry"
     exit 1
