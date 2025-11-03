@@ -74,6 +74,7 @@ steps:
         done
 
         # Set variable for sysext and confext repositories
+        set +x
         echo "##vso[task.setvariable variable=TAG_BASE]$tag_base"
     displayName: "Push extension images to ACR"
     retryCountOnTaskFailure: 3
