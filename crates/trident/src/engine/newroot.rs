@@ -280,9 +280,11 @@ impl NewrootMount {
         debug!("Mounting tmpfs to '{}'", target_path_full.display());
 
         if !target_path_full.exists() {
-            fs::create_dir(&target_path_full).structured(ServicingError::MountNewrootSpecialDir {
-                dir: target_path_full.clone().to_string_lossy().to_string(),
-            })?;
+            fs::create_dir(&target_path_full).structured(
+                ServicingError::MountNewrootSpecialDir {
+                    dir: target_path_full.clone().to_string_lossy().to_string(),
+                },
+            )?;
         }
 
         // Do the actual tmpfs mount
