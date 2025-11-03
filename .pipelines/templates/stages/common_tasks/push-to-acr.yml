@@ -78,6 +78,7 @@ steps:
         done
 
         # Set variable for tag base of pushed images
+        set +x
         echo "##vso[task.setvariable variable=TAG_BASE]$tag_base"
     displayName: "Push to ACR"
     retryCountOnTaskFailure: 3
