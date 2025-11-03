@@ -912,7 +912,7 @@ mod tests {
                         ctx.spec.os.uefi_fallback = Some(mode);
                         ctx.ab_active_volume = Some(ab_volume);
                         ctx.servicing_type = servicing_type;
-                        assert!(find_uefi_fallback_source_dir_name(&ctx, stage).is_none());
+                        assert!(find_uefi_fallback_source_dir_name(&ctx, stage).is_none(), "Unsupported combo should always result in None: {:?} + {:?} + {:?} + {:?}", stage, mode, ab_volume, servicing_type);
                     }
                 }
             }
