@@ -11,6 +11,10 @@ parameters:
       - HOST
       - CONTAINER
 
+  - name: testingRun
+    type: boolean
+    default: false
+
 stages:
   - stage: E2ETesting_${{ parameters.hardwareType }}_${{ parameters.runtimeType }}
     displayName: E2E ${{ parameters.hardwareType }} ${{ parameters.runtimeType }} Testing
