@@ -2,13 +2,13 @@
 
 EFI_PATH="_REPLACE_ROOT_PREFIX_/boot/efi/EFI"
 FALLBACK_PATH="$EFI_PATH/BOOT"
-CURRENT_BOOT_ENTRY="$(efibootmgr | grep "BootCurrent" | head -n 1 | awk '{print $2}')"
+CURRENT_BOOT_ENTRY="$(efibootmgr | grep "BootCurrent" | head -n 1 | tr '\t' ' '| cut -d' ' -f2)"
 if [ -z "$CURRENT_BOOT_ENTRY" ]; then
     echo "Failed to parse current boot entry from [$CURRENT_BOOT]"
     exit 1
 fi
 
-CURRENT_AZL_BOOT_NAME="$(efibootmgr | grep "Boot${CURRENT_BOOT_ENTRY}" | head -n 1 | awk '{print $2}' | grep "AZL")"
+CURRENT_AZL_BOOT_NAME="$(efibootmgr | grep "Boot${CURRENT_BOOT_ENTRY}" | head -n 1 | tr '\t' ' '| cut -d' ' -f2 | grep "AZL")"
 if [ -z "$CURRENT_AZL_BOOT_NAME" ]; then
     echo "Current boot entry is not an AZL boot entry (from [$CURRENT_BOOT_ENTRY_INFO])"
     exit 1
