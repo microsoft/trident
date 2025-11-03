@@ -679,7 +679,9 @@ mod functional_test {
         // Remove all created files
         expected_paths.extend(expected_paths_mnt.clone());
         for p in expected_paths {
-            fs::remove_file(p).unwrap();
+            if Path::new(&p).exists() {
+                fs::remove_file(p).unwrap();
+            }
         }
     }
 }
