@@ -64,10 +64,13 @@ steps:
       # Execute the command
       "${cmd[@]}"
 
-      # Inject UEFI fallback testing configuration
-      python3 ${{ parameters.tridentSourceDirectory }}/tests/e2e_tests/helpers/inject_uefi_fallback_validation.py \
-        --hostconfig ${{ parameters.tridentConfigPath }}/trident-config.yaml \
-        --runtimeEnv ${{ parameters.runtimeEnv }}
+      if [ "${{ parameters.config }}" != "rerun" ]; then
+        # Inject UEFI fallback testing configuration, skip rerun + fallback validation because
+        # the combination leads to a Host Configuration that is too big to inject into the ISO.
+        python3 ${{ parameters.tridentSourceDirectory }}/tests/e2e_tests/helpers/inject_uefi_fallback_validation.py \
+          --hostconfig ${{ parameters.tridentConfigPath }}/trident-config.yaml \
+          --runtimeEnv ${{ parameters.runtimeEnv }}
+      fi
 
       # Print out the config
       cat ${{ parameters.tridentConfigPath }}/trident-config.yaml
