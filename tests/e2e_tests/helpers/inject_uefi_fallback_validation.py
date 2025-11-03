@@ -4,7 +4,7 @@ import random
 import yaml
 
 
-def inject_uefi_fallback_testing(host_config_path, uefi_fallback_mode=None):
+def inject_uefi_fallback_testing(host_config_path, runtimeEnv, uefiFallbackMode=None):
     with open(host_config_path, "r") as f:
         host_config = yaml.safe_load(f)
 
@@ -13,11 +13,11 @@ def inject_uefi_fallback_testing(host_config_path, uefi_fallback_mode=None):
     # Only inject testing values if uefiFallback
     # is not already set.
     if not hasattr(host_config["os"], "uefiFallback"):
-        if uefi_fallback_mode is None:
+        if uefiFallbackMode is None:
             uefi_fallback_modes = ["none", "rollback", "rollforward"]
             # Randomly pick a fallback mode for testing.
-            uefi_fallback_mode = random.choice(uefi_fallback_modes)
-        host_config["os"]["uefiFallback"] = uefi_fallback_mode
+            uefiFallbackMode = random.choice(uefi_fallback_modes)
+        host_config["os"]["uefiFallback"] = uefiFallbackMode
 
         # Get uefi fallback health check script content
         health_check_script_path = (
@@ -29,7 +29,13 @@ def inject_uefi_fallback_testing(host_config_path, uefi_fallback_mode=None):
 
         # Replace placeholder with selected uefi fallback mode
         health_check_content = health_check_content.replace(
-            "_REPLACE_FALLBACK_NODE_", uefi_fallback_mode
+            "_REPLACE_FALLBACK_NODE_", uefiFallbackMode
+        )
+        root_path = ""
+        if runtimeEnv == "container":
+            root_path = "/host"
+        health_check_content = health_check_content.replace(
+            "_REPLACE_ROOT_PREFIX_", root_path
         )
 
         if "health" not in host_config:
@@ -71,14 +77,24 @@ def main():
         help="Path to the Trident configuration file.",
     )
     parser.add_argument(
-        "--uefi-fallback-mode",
+        "--uefiFallbackMode",
         type=str,
         required=False,
         help="UEFI fallback mode to inject.",
     )
+    parser.add_argument(
+        "-r",
+        "--runtimeEnv",
+        type=str,
+        required=True,
+        choices=["host", "container"],
+        help="The runtime environment of Trident (e.g., host or container).",
+    )
     args = parser.parse_args()
 
-    inject_uefi_fallback_testing(args.hostconfig, args.uefi_fallback_mode)
+    inject_uefi_fallback_testing(
+        args.hostconfig, args.runtimeEnv, args.uefiFallbackMode
+    )
 
 
 if __name__ == "__main__":
