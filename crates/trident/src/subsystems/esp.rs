@@ -813,15 +813,24 @@ mod tests {
                 Some(UefiFallbackMode::None),
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::CleanInstall,
-                None::<String>,
+                None::<String>, // with None, we do not copy anything
                 "Validate CleanInstallStaged + Some(None) + active volume A ==> None",
+            ),
+            (
+                ServicingState::CleanInstallStaged,
+                Some(UefiFallbackMode::Rollback),
+                Some(AbVolumeSelection::VolumeA),
+                ServicingType::CleanInstall,
+                // TODO:  should this be None???  i.e. do we want to have install and update behave the same way?
+                Some("AZLA".to_string()), // in finalize, with rollback, copy from volumeA (volume we just put COSI files on)
+                "Validate CleanInstallStaged + Some(Rollback) + active volume A ==> AZLA",
             ),
             (
                 ServicingState::CleanInstallStaged,
                 Some(UefiFallbackMode::Rollforward),
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::CleanInstall,
-                Some("AZLA".to_string()),
+                Some("AZLA".to_string()), // in finalize, with rollforward, copy from volumeA (volume we just put COSI files on)
                 "Validate CleanInstallStaged + Some(Rollforward) + active volume A ==> AZLA",
             ),
             (
@@ -829,7 +838,7 @@ mod tests {
                 Some(UefiFallbackMode::Rollback),
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::AbUpdate,
-                Some("AZLA".to_string()),
+                Some("AZLA".to_string()), // in finalize, with rollback, copy from active volume (the COSI bits have not been validated yet)
                 "Validate AbUpdateStaged + Some(Rollback) + active volume A ==> AZLA",
             ),
             (
@@ -837,15 +846,23 @@ mod tests {
                 Some(UefiFallbackMode::Rollforward),
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::AbUpdate,
-                Some("AZLB".to_string()),
+                Some("AZLB".to_string()), // in finalize, with rollforward, copy from inactive volume (that we just put COSI files on)
                 "Validate AbUpdateStaged + Some(Rollforward) + active volume A ==> AZLB",
+            ),
+            (
+                ServicingState::AbUpdateStaged,
+                Some(UefiFallbackMode::None),
+                Some(AbVolumeSelection::VolumeA),
+                ServicingType::AbUpdate,
+                None::<String>, // with None, we do not copy anything
+                "Validate AbUpdateStaged + Some(None) + active volume A ==> None",
             ),
             (
                 ServicingState::AbUpdateFinalized,
                 Some(UefiFallbackMode::Rollback),
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::AbUpdate,
-                Some("AZLA".to_string()),
+                Some("AZLA".to_string()), // in finalize, with rollback, copy from active volume
                 "Validate AbUpdateFinalized + Some(Rollback) + active volume A ==> AZLA",
             ),
             (
@@ -853,8 +870,16 @@ mod tests {
                 Some(UefiFallbackMode::Rollforward),
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::AbUpdate,
-                None,
+                None, // in commit, with rollforward, no copy is needed because it was done in finalize
                 "Validate AbUpdateFinalized + Some(Rollforward) + active volume A ==> None",
+            ),
+            (
+                ServicingState::AbUpdateFinalized,
+                Some(UefiFallbackMode::None),
+                Some(AbVolumeSelection::VolumeA),
+                ServicingType::AbUpdate,
+                None::<String>, // with None, we do not copy anything
+                "Validate AbUpdateFinalized + Some(None) + active volume A ==> None",
             ),
         ];
         for test_case in test_cases {
