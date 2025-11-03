@@ -4,7 +4,7 @@ FALLBACK_PATH="$EFI_PATH/BOOT"
 EFI_OUTPUT="$(efibootmgr)"
 echo "$EFI_OUTPUT"
 
-CURRENT_BOOT="$(echo "$EFI_OUTPUT" | grep "BootCurrent")"
+CURRENT_BOOT="$(echo -e "$EFI_OUTPUT" | grep "BootCurrent" | head -n 1)"
 if [ -z "$CURRENT_BOOT" ]; then
     echo "Failed to get current boot entry"
     exit 1
@@ -16,7 +16,7 @@ if [ -z "$CURRENT_BOOT_ENTRY" ]; then
     exit 1
 fi
 
-CURRENT_AZL_BOOT_NAME="$(echo "$EFI_OUTPUT" | grep "Boot${CURRENT_BOOT_ENTRY}" | awk '{print $2}' | grep "AZL")"
+CURRENT_AZL_BOOT_NAME="$(echo -e "$EFI_OUTPUT" | grep "Boot${CURRENT_BOOT_ENTRY}" | head -n 1 | awk '{print $2}' | grep "AZL")"
 if [ -z "$CURRENT_AZL_BOOT_NAME" ]; then
     echo "Current boot entry is not an AZL boot entry"
     exit 1
