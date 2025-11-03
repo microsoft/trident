@@ -20,7 +20,20 @@ steps:
   - bash: |
       set -eux
 
-      if [ ${{ parameters.config }} != 'misc' ]; then
+      if [ "${{ parameters.config }}" != 'extensions' ]; then
+        echo "Skipping step. Configuration is '${{ parameters.config }}'."
+        exit 0
+      fi
+
+      ./bin/storm-trident script build-extension-images --build-sysexts --build-confexts --num-clones 2
+
+    displayName: "Build test sysext and confext images"
+    workingDirectory: $(Build.SourcesDirectory)
+    retryCountOnTaskFailure: 3
+
+  - bash: |
+      set -eux
+      if [ "${{ parameters.config }}" != 'misc' ] && [ "${{ parameters.config }}" != 'extensions' ]; then
         echo "Skipping step. Configuration is '${{ parameters.config }}'."
         exit 0
       fi
@@ -42,43 +55,43 @@ steps:
       inlineScript: |
         set -eux
 
-        if [ ${{ parameters.config }} != 'misc' ]; then
+        if [ "${{ parameters.config }}" == 'misc' ]; then
+          ./bin/storm-trident script acr-push \
+            --config ${{ parameters.config }} \
+            --deployment-environment ${{ parameters.deploymentEnvironment }} \
+            --acr-name $(ACR_NAME) \
+            --repo-name ${{ parameters.imageName }} \
+            --build-id $(Build.BuildId) \
+            --file-paths $(Build.SourcesDirectory)/artifacts/test-image/regular.cosi \
+            --file-paths $(Build.SourcesDirectory)/artifacts/test-image/regular_v2.cosi \
+            --file-paths $(Build.SourcesDirectory)/artifacts/test-image/regular_v3.cosi \
+            --file-paths $(Build.SourcesDirectory)/artifacts/test-image/regular_v4.cosi \
+            --tag-var-name TAG_BASE
+
+        elif [ "${{ parameters.config }}" == 'extensions' ]; then
+          ./bin/storm-trident script acr-push \
+            --config ${{ parameters.config }} \
+            --deployment-environment ${{ parameters.deploymentEnvironment }} \
+            --acr-name $(ACR_NAME) \
+            --repo-name sysext \
+            --build-id $(Build.BuildId) \
+            --file-paths $(Build.SourcesDirectory)/test-sysext-1.raw \
+            --file-paths $(Build.SourcesDirectory)/test-sysext-2.raw \
+            --tag-var-name TAG_BASE
+          ./bin/storm-trident script acr-push \
+            --config ${{ parameters.config }} \
+            --deployment-environment ${{ parameters.deploymentEnvironment }} \
+            --acr-name $(ACR_NAME) \
+            --repo-name confext \
+            --build-id $(Build.BuildId) \
+            --file-paths $(Build.SourcesDirectory)/test-confext-1.raw \
+            --file-paths $(Build.SourcesDirectory)/test-confext-2.raw \
+            --tag-var-name TAG_BASE
+
+        else
           echo "Skipping step. Configuration is '${{ parameters.config }}'."
           exit 0
         fi
 
-        # Login to ACR
-        az acr login -n $(ACR_NAME)
-
-        repository_name=${{ parameters.imageName }}
-        build_id="$(Build.BuildId)"
-
-
-        cd $(Build.SourcesDirectory)/artifacts/test-image
-
-        tag_base="v${build_id}.${{ parameters.config }}.${{ parameters.deploymentEnvironment }}"
-        for version in {1..4}; do
-          if [[ $version == 1 ]]; then
-            filename="regular.cosi"
-          else
-            filename="regular_v${version}.cosi"
-          fi
-
-          tag="$tag_base.${version}"
-
-          if [[ -f "$filename" ]]; then
-            echo "Pushing $filename with tag $tag to $(ACR_NAME).azurecr.io"
-            oras push $(ACR_NAME).azurecr.io/$repository_name:$tag "$filename"
-            sleep 3
-            echo "Verifying $filename was pushed successfully..."
-            az acr repository show --name $(ACR_NAME) --image ${repository_name}:${tag}
-          else
-            echo "File $filename not found"
-          fi
-        done
-
-        # Set variable for tag base of pushed images
-        set +x
-        echo "##vso[task.setvariable variable=TAG_BASE]$tag_base"
     displayName: "Push to ACR"
     retryCountOnTaskFailure: 3

@@ -127,16 +127,11 @@ stages:
               downloadTridentContainer: ${{ variables.downloadTridentContainer }}
               tridentTestImageUsrVerity: ${{ variables.usrVerityTestImageName }}
 
-          # Push (regular or container) testimage to ACR
+          # Push (regular or container) testimages, confexts, and/or sysexts to
+          # ACR
           - template: ../common_tasks/push-to-acr.yml
             parameters:
               imageName: ${{ variables.testImageName }}
-              config: ${{ variables.tridentConfigurationName }}
-              deploymentEnvironment: "virtualMachine"
-
-          # Produce test sysext and confext images and push to ACR
-          - template: ../common_tasks/extension-images.yml
-            parameters:
               config: ${{ variables.tridentConfigurationName }}
               deploymentEnvironment: "virtualMachine"
 
@@ -332,6 +327,7 @@ stages:
             parameters:
               repository: ${{ variables.testImageName }}
               config: ${{ variables.tridentConfigurationName }}
+              deploymentEnvironment: "virtualMachine"
 
           - bash: |
               set -eux

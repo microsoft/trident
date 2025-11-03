@@ -1,4 +1,4 @@
-package helpers
+package build_extension_images
 
 import (
 	"fmt"
@@ -6,37 +6,36 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/microsoft/storm"
+	"github.com/sirupsen/logrus"
 )
 
-type BuildExtensionImagesHelper struct {
-	args struct {
-		NumClones int `required:"" help:"Number of sysexts and confexts to build." type:"int"`
+type BuildExtensionImagesScriptSet struct {
+	BuildExtensionImages BuildExtensionImagesScript `cmd:"" help:"Builds sample sysexts and confexts"`
+}
+
+type BuildExtensionImagesScript struct {
+	NumClones     int  `required:"" help:"Number of sysexts and confexts to build."`
+	BuildSysexts  bool `help:"Indicates that test sysext images should be built."`
+	BuildConfexts bool `help:"Indicates that test confext images should be built."`
+}
+
+func (s *BuildExtensionImagesScript) Run() error {
+	if !s.BuildConfexts && !s.BuildSysexts {
+		logrus.Warn("Neither --build-sysexts nor --build-confexts is specified. Returning early.")
+		return nil
 	}
-}
 
-func (h BuildExtensionImagesHelper) Name() string {
-	return "build-extension-images"
-}
-
-func (h *BuildExtensionImagesHelper) Args() any {
-	return &h.args
-}
-
-func (h *BuildExtensionImagesHelper) RegisterTestCases(r storm.TestRegistrar) error {
-	r.RegisterTestCase("build-extension-images", h.buildExtensionImages)
-	return nil
-}
-
-func (h *BuildExtensionImagesHelper) buildExtensionImages(tc storm.TestCase) error {
-	// Create two sysexts and confexts each
-	err := buildImage("sysext", h.args.NumClones)
-	if err != nil {
-		return fmt.Errorf("failed to build sysext images: %w", err)
+	if s.BuildSysexts {
+		err := buildImage("sysext", s.NumClones)
+		if err != nil {
+			return fmt.Errorf("failed to build sysext images: %w", err)
+		}
 	}
-	err = buildImage("confext", h.args.NumClones)
-	if err != nil {
-		return fmt.Errorf("failed to build confext images: %w", err)
+	if s.BuildConfexts {
+		err := buildImage("confext", s.NumClones)
+		if err != nil {
+			return fmt.Errorf("failed to build confext images: %w", err)
+		}
 	}
 
 	// Verify the images were created
@@ -50,10 +49,10 @@ func (h *BuildExtensionImagesHelper) buildExtensionImages(tc storm.TestCase) err
 		if err != nil {
 			return fmt.Errorf("failed to stat file %s: %w", file, err)
 		}
-		fmt.Printf("%s %d %s\n", info.Mode(), info.Size(), file)
+		logrus.Infof("Built image: %s %d %s", info.Mode(), info.Size(), file)
 	}
 
-	fmt.Println("Extension images created successfully!")
+	logrus.Infof("Extension images created successfully!")
 	return nil
 }
 
