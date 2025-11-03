@@ -48,6 +48,10 @@ stages:
           matrix: $[ stageDependencies.DefineTests_E2E.DefineTests.outputs['matrices.TEST_MATRIX_E2E_${{ parameters.hardwareType }}_${{ parameters.runtimeType }}'] ]
 
         variables:
+          - name: ob_outputDirectory
+            value: $(Build.SourcesDirectory)/output
+          - name: ob_artifactBaseName
+            value: $(scenario)_$(System.JobAttempt)
           - ${{ if eq(parameters.runtimeType, 'CONTAINER') }}:
               - name: installerISOName
                 value: trident-container-installer
