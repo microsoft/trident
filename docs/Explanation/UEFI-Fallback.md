@@ -38,6 +38,15 @@ boot variables during OS servicing.
   * `commit`: If the target OS boots successfully and the UEFI Fallback mode
     is `rollback`, the UEFI fallback path is updated to boot the target OS.
 
+The following table summarizes how Trident manages UEFI fallback with `rollback`
+during OS servicing:
+
+| Trident Stage | `trident install` | `trident update` |
+|---------------|-------------------|------------------|
+| *stage* | UEFI fallback unchanged. | UEFI fallback unchanged. |
+| *finalize* | UEFI fallback updated to boot target OS. | UEFI fallback updated to boot the servicing OS, meaning that any failures will cause the machine to boot into the servicing OS. |
+| *commit* | No changes needed. | UEFI fallback updated to boot the target OS. |
+
 `rollforward` is very similar to `rollback` but updates the UEFI fallback path
 contents to the target OS earlier (during `finalize` instead of `commit`):
 
@@ -53,6 +62,15 @@ contents to the target OS earlier (during `finalize` instead of `commit`):
   * `commit`: If the target OS boots successfully and the UEFI Fallback mode
     is `rollforward`, no update to the UEFI fallback path is needed as it is
     already updated to boot the target OS.
+
+The following table summarizes how Trident manages UEFI fallback with `rollforward`
+during OS servicing:
+
+| Trident Stage | `trident install` | `trident update` |
+|---------------|-------------------|------------------|
+| *stage* | UEFI fallback unchanged. | UEFI fallback unchanged. |
+| *finalize* | UEFI fallback updated to boot target OS. | UEFI fallback updated to boot the target OS. |
+| *commit* | No changes needed. | No changes needed. |
 
 To summarize, the available UEFI fallback modes are:
 
