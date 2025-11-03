@@ -28,3 +28,12 @@ is always in a bootable state and to ensure that the desired OS is booted.
     successfuly.
   * `commit`: If the target OS boots successfully, Trident updates the
     `BootOrder` to boot the target OS on all subsequent boots.
+
+The following table summarizes how Trident manages UEFI variables during OS
+servicing:
+
+| Trident Stage | `trident install` | `trident update` |
+|---------------|-------------------|------------------|
+| *stage* | UEFI variables are unchanged. | UEFI variables are unchanged. |
+| *finalize* | `BootOrder` updated to boot target OS. | `BootNext` updated to boot target OS, ensure target OS is last in `BootOrder`. This means that the next boot will boot the Target OS, but any failures will cause the machine to boot into the servicing OS. |
+| *commit* | UEFI variables are unchanged. | The target OS `BootEntry` is moved to first in `BootOrder`. |
