@@ -18,40 +18,51 @@ for the UEFI fallback path during OS servicing: `none`, `rollforward`, and
 Specifying `none` as the UEFI fallback mode means that Trident will not
 populate the UEFI fallback boot files during OS servicing. This is useful
 for multiboot scenarios or when the UEFI fallback is managed outside of
-Trident.
+Trident. Note that if there are no UEFI fallback files present, the system may
+not boot successfully if the UEFI variables are not found.
+
+The remaining modes, `rollback` and `rollforward`, are designed to complement
+Trident's [UEFI variable](./UEFI-Variables.md) management during OS servicing.
 
 The default mode is `rollback` which aligns to how Trident manages the UEFI
-boot variables during OS servicing. `rollforward` is very similar to `rollback`
-but updates the UEFI fallback path contents to the target OS earlier (during
-`finalize` instead of `commit`):
+boot variables during OS servicing.
 
 * `trident install`
-  * `finalize`: Trident updates the UEFI boot order and UEFI fallback path so that
-      the newly installed OS (the target OS) is booted.
-  * `commit`: No changes to UEFI boot variables or fallback path are needed as the
-      target OS is already configured to be booted.
+  * `finalize`: Trident updates the UEFI boot order **and UEFI fallback path**
+    so that the target OS is booted.
+  * `commit`: No changes to UEFI boot variables **or UEFI fallback path** are
+    needed as the target OS is already configured to be booted.
 * `trident update`
-  * `finalize`: Trident updates the UEFI BootNext variable to boot the newly
-      updated OS (the target OS) on the next reboot. The UEFI boot order is configured
-      to **rollback** to the previous OS if the target OS fails to boot successfuly.
-      If the UEFI Fallback mode is `rollback`, the UEFI fallback path is also updated
-      to boot the previous OS (the servicing OS). If the UEFI Fallback mode is `rollforward`,
-      the UEFI fallback path is updated to boot the newly serviced target OS.
-  * `commit`: If the target OS boots successfully, Trident updates the UEFI boot
-      order to boot the target OS on all subsequent reboots. If the UEFI Fallback mode
-      is `rollback`, the UEFI fallback path is updated to boot the target OS. If the
-      UEFI Fallback mode is `rollforward`, no update to the UEFI fallback path is needed
-      as it is already updated to boot the newly serviced target OS.
+  * `finalize`: If the UEFI Fallback mode is `rollback`, the UEFI fallback path
+    is updated to boot the **servicing OS**. This **aligns** to the UEFI variables.
+  * `commit`: If the target OS boots successfully and the UEFI Fallback mode
+    is `rollback`, the UEFI fallback path is updated to boot the target OS.
+
+`rollforward` is very similar to `rollback` but updates the UEFI fallback path
+contents to the target OS earlier (during `finalize` instead of `commit`):
+
+* `trident install`
+  * `finalize`: Trident updates the UEFI boot order **and UEFI fallback path**
+    so that the target OS is booted.
+  * `commit`: No changes to UEFI boot variables **or UEFI fallback path** are
+    needed as the target OS is already configured to be booted.
+* `trident update`
+  * `finalize`: If the UEFI Fallback mode is `rollforward`, the UEFI fallback
+    path is updated to boot the **target OS**. This **differs** from the UEFI
+    variables.
+  * `commit`: If the target OS boots successfully and the UEFI Fallback mode
+    is `rollforward`, no update to the UEFI fallback path is needed as it is
+    already updated to boot the target OS.
 
 To summarize, the available UEFI fallback modes are:
 
-* `rollback`: This is the default mode. `install` will configure
-  the target OS as the UEFI fallback OS in `finalize`.  `update` will configure
-  the target OS as the UEFI fallback OS in `commit` after verifying the boot.
+* `rollback`: This is the default mode. `install` will configure the target OS
+  as the UEFI fallback OS in `finalize`. `update` will configure the servicing
+  the servicing OS as the UEFI fallback OS in `finalize` and the target OS in
+  `commit` after verifying the boot.
 * `rollforward`: `install` and `update` will configure the target OS as the UEFI
   fallback OS in `finalize`.
-* `none`: No updates are made for the UEFI fallback path. This is useful for
-   multiboot or scenarios where the UEFI fallback is handled outside of Trident.
+* `none`: No updates are made for the UEFI fallback path.
 
 The UEFI fallback mode can be specified in the Host Configuration file under
 the `os` section using the `uefiFallback` key. For example:
