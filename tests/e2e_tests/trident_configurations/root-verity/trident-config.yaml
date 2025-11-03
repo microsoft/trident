@@ -55,12 +55,6 @@ storage:
         - id: var
           type: linux-generic
           size: 1G
-        - id: exts-a
-          type: linux-generic
-          size: 1G
-        - id: exts-b
-          type: linux-generic
-          size: 1G
     - id: disk2
       device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
       partitionTableType: gpt
@@ -112,8 +106,6 @@ storage:
       mountPoint: /var/lib/confexts
     - deviceId: var
       mountPoint: /var
-    - deviceId: exts
-      mountPoint: /var/lib
     - deviceId: root
       mountPoint:
         path: /
