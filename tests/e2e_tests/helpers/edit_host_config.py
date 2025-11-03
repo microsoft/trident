@@ -75,19 +75,19 @@ def inject_uefi_fallback_testing(host_config_path):
 EFI_PATH="/boot/efi/EFI"
 FALLBACK_PATH="$EFI_PATH/BOOT"
 
-CURRENT_BOOT="$(efibootmgr | grep BootCurrent)"
+CURRENT_BOOT="$(efibootmgr | grep "BootCurrent")"
 if [ -z "$CURRENT_BOOT" ]; then
     echo "Failed to get current boot entry"
     exit 1
 fi
 
-CURRENT_BOOT_ENTRY="$(echo $CURRENT_BOOT | cut -d ' ' -f2"
+CURRENT_BOOT_ENTRY="$(echo "$CURRENT_BOOT" | awk '{print $2}'"
 if [ -z "$CURRENT_BOOT_ENTRY" ]; then
     echo "Failed to parse current boot entry"
     exit 1
 fi
 
-CURRENT_AZL_BOOT_NAME="$(efibootmgr | grep "Boot${CURRENT_BOOT_ENTRY}" | tr '\t' ' ' | cut -d ' ' -f2 | grep AZL)"
+CURRENT_AZL_BOOT_NAME="$(efibootmgr | grep "Boot${CURRENT_BOOT_ENTRY}" | awk '{print $2}' | grep "AZL")"
 if [ -z "$CURRENT_AZL_BOOT_NAME" ]; then
     echo "Current boot entry is not an AZL boot entry"
     exit 1
@@ -96,11 +96,11 @@ fi
 if [ "_REPLACE_FALLBACK_NODE_" == "none" ]; then
     # if none, check that $FALLBACK_PATH is empty
     if sudo find $FALLBACK_PATH/*; then
-    echo "$FALLBACK_PATH is not empty"
-    exit 1
+        echo "$FALLBACK_PATH is not empty"
+        exit 1
     else
-    echo "$FALLBACK_PATH is empty"
-    exit 0
+        echo "$FALLBACK_PATH is empty"
+        exit 0
     fi
 else
     AZL_BOOT_NAME_TO_CHECK="$CURRENT_AZL_BOOT_NAME"
