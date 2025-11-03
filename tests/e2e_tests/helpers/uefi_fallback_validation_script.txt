@@ -1,3 +1,5 @@
+#!/bin/sh
+
 EFI_PATH="/boot/efi/EFI"
 FALLBACK_PATH="$EFI_PATH/BOOT"
 
