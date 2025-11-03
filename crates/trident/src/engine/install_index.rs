@@ -51,14 +51,14 @@ fn find_first_available_install_index(esp_efi_path: &Path) -> Result<usize, Trid
 mod tests {
     use super::*;
 
-    use std::fs;
+    use std::{fs, path::PathBuf};
 
     use tempfile::TempDir;
 
     use crate::engine::boot::make_esp_dir_name_candidates;
     use trident_api::error::ErrorKind;
 
-    fn setup_esp_efi_path(mount_point: &std::path::Path) -> std::path::PathBuf {
+    fn setup_esp_efi_path(mount_point: &Path) -> PathBuf {
         let esp_efi_path = mount_point
             .join(ESP_RELATIVE_MOUNT_POINT_PATH)
             .join(ESP_EFI_DIRECTORY);
@@ -158,11 +158,7 @@ mod tests {
     #[test]
     fn test_no_available_install_index() {
         let test_dir = tempfile::TempDir::new().unwrap();
-        let esp_efi_path = test_dir
-            .path()
-            .join(trident_api::constants::ESP_RELATIVE_MOUNT_POINT_PATH)
-            .join(trident_api::constants::ESP_EFI_DIRECTORY);
-        std::fs::create_dir_all(&esp_efi_path).unwrap();
+        let esp_efi_path = setup_esp_efi_path(test_dir.path());
 
         // Exhaust all possible indices (up to 1000)
         crate::engine::boot::make_esp_dir_name_candidates()

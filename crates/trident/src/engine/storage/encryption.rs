@@ -556,7 +556,7 @@ mod functional_test {
         let expected_paths = vec![esp_uki_path.join(current_entry)];
         assert_eq!(get_uki_paths(&esp_path, None).unwrap(), expected_paths);
 
-        // Test case #2: Mount_path provided, so two paths are returned, i.e. current entry and
+        // Test case #2: mount_path provided, so two paths are returned, i.e. current entry and
         // update entry.
         let mount_path = PathBuf::from("/mnt");
         let expected_mount_paths = vec![
