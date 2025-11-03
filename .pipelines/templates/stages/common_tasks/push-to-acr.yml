@@ -16,6 +16,12 @@ parameters:
       - virtualMachine
       - bareMetal
 
+  - name: "runtimeEnvironment"
+    type: string
+    values:
+      - container
+      - host
+
 steps:
   - bash: |
       set -eux
@@ -75,7 +81,7 @@ steps:
             --config ${{ parameters.config }} \
             --deployment-environment ${{ parameters.deploymentEnvironment }} \
             --acr-name $(ACR_NAME) \
-            --repo-name sysext \
+            --repo-name sysext-${{ parameters.runtimeEnvironment }} \
             --build-id $(Build.BuildId) \
             --file-paths $(Build.SourcesDirectory)/test-sysext-1.raw \
             --file-paths $(Build.SourcesDirectory)/test-sysext-2.raw \
@@ -86,7 +92,7 @@ steps:
             --config ${{ parameters.config }} \
             --deployment-environment ${{ parameters.deploymentEnvironment }} \
             --acr-name $(ACR_NAME) \
-            --repo-name confext \
+            --repo-name sysext-${{ parameters.runtimeEnvironment }} \
             --build-id $(Build.BuildId) \
             --file-paths $(Build.SourcesDirectory)/test-sysext-1.raw \
             --file-paths $(Build.SourcesDirectory)/test-sysext-2.raw \
@@ -95,7 +101,7 @@ steps:
             --config ${{ parameters.config }} \
             --deployment-environment ${{ parameters.deploymentEnvironment }} \
             --acr-name $(ACR_NAME) \
-            --repo-name confext \
+            --repo-name confext-${{ parameters.runtimeEnvironment }} \
             --build-id $(Build.BuildId) \
             --file-paths $(Build.SourcesDirectory)/test-confext-1.raw \
             --file-paths $(Build.SourcesDirectory)/test-confext-2.raw \
