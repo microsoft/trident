@@ -215,6 +215,13 @@ mod functional_test {
         assert_eq!(decode_utf16le(&data), current_entry);
 
         set_default("").unwrap();
+
+        // Unset the current entry
+        set_efi_variable(
+            &format!("{BOOTLOADER_INTERFACE_GUID}-{LOADER_ENTRY_SELECTED}"),
+            &encode_utf16le(""),
+        )
+        .unwrap();
     }
 
     #[functional_test(feature = "helpers")]

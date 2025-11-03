@@ -573,6 +573,9 @@ mod functional_test {
             get_uki_paths(&esp_path, Some(&mount_path)).unwrap(),
             expected_mount_paths
         );
+
+        // Unset the current entry
+        efivar::set_efi_variable(&var_name, &efivar::encode_utf16le("")).unwrap();
     }
 
     /// Helper: create dirs and test files at the given paths
@@ -674,5 +677,8 @@ mod functional_test {
             get_binary_paths_pcrlock(&ctx, pcrs, Some(&mount_path)).unwrap(),
             (expected_uki, expected_bootloader)
         );
+
+        // Unset the current entry
+        efivar::set_efi_variable(&var_name, &efivar::encode_utf16le("")).unwrap();
     }
 }
