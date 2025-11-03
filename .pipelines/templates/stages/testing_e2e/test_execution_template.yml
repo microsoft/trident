@@ -48,7 +48,7 @@ stages:
         strategy:
           matrix: $[ stageDependencies.DefineTests_E2E.DefineTests.outputs['matrices.TEST_MATRIX_E2E_${{ parameters.hardwareType }}_${{ parameters.runtimeType }}'] ]
 
-        condition: ne(variables.scenario, "")
+        condition: ne(variables.scenario, '')
         variables:
           - name: ob_outputDirectory
             value: $(Build.SourcesDirectory)/output
