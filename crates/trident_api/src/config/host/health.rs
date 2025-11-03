@@ -106,8 +106,9 @@ pub struct SystemdCheck {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub systemd_services: Vec<String>,
 
-    /// Timeout for the systemd check. If the service is found to be
-    /// in an unsuccessful state, it will be requeried until the timeout is reached.
+    /// Timeout for the systemd check, in seconds. If the service is found to be
+    /// in an unsuccessful state, it will be requeried every 100ms until the timeout is reached.
+    /// If the timeout is reached and the service is still unsuccessful, an error is returned.
     pub timeout_seconds: usize,
 
     /// List of servicing types that the check should run on.
