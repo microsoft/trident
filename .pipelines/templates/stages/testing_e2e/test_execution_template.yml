@@ -48,7 +48,7 @@ stages:
           matrix: $[ stageDependencies.DefineTests_E2E.DefineTests.outputs['matrices.TEST_MATRIX_E2E_${{ parameters.hardwareType }}_${{ parameters.runtimeType }}'] ]
 
         variables:
-          - ${{ if eq(parameters.runtimeEnv, 'CONTAINER') }}:
+          - ${{ if eq(parameters.runtimeType, 'CONTAINER') }}:
               - name: installerISOName
                 value: trident-container-installer
               - name: testImageName
