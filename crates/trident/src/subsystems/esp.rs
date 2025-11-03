@@ -320,6 +320,17 @@ fn copy_boot_files_for_uefi_fallback(
         .join(ESP_RELATIVE_MOUNT_POINT_PATH)
         .join(ESP_EFI_DIRECTORY)
         .join(source_esp_name);
+    if source_esp_dir_path.exists() == false {
+        // Source ESP dir does not exist, log a warning and return. This
+        // can happen in the VM scenario where the initial boot is from a
+        // VHD that does not create the expected AZL* directories.
+        warn!(
+            "Source ESP directory {} does not exist",
+            source_esp_dir_path.display()
+        );
+        return Ok(());
+    }
+
     let uefi_fallback_path = mount_point
         .join(ESP_RELATIVE_MOUNT_POINT_PATH)
         .join(ESP_EFI_DIRECTORY)
