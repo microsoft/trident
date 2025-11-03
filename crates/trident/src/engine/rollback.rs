@@ -15,12 +15,10 @@ use crate::{
     subsystems::esp,
     DataStore,
 };
-use osutils::{
-    block_devices, container, efivar, lsblk, path::join_relative, pcrlock, veritysetup, virt,
-};
+use osutils::{block_devices, container, efivar, lsblk, pcrlock, veritysetup, virt};
 use trident_api::{
     constants::internal_params::VIRTDEPLOY_BOOT_ORDER_WORKAROUND,
-    constants::ESP_MOUNT_POINT_PATH,
+    constants::ROOT_MOUNT_POINT_PATH,
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::{AbVolumeSelection, ServicingState, ServicingType},
     BlockDeviceId,
@@ -225,15 +223,14 @@ fn commit_finalized_on_expected_root(
 
     // Commit must finish configuring UEFI fallback as configured
     let current_servicing_state = datastore.host_status().servicing_state;
-    let esp_path = if container::is_running_in_container()
+    let root_path = if container::is_running_in_container()
         .message("Failed to check if Trident is running in a container")?
     {
-        let host_root = container::get_host_root_path().message("Failed to get host root path")?;
-        join_relative(host_root, ESP_MOUNT_POINT_PATH)
+        container::get_host_root_path().message("Failed to get host root path")?
     } else {
-        PathBuf::from(ESP_MOUNT_POINT_PATH)
+        PathBuf::from(ROOT_MOUNT_POINT_PATH)
     };
-    esp::configure_uefi_fallback(ctx, current_servicing_state, &esp_path)
+    esp::configure_uefi_fallback(ctx, current_servicing_state, &root_path)
         .structured(ServicingError::UefiFallback)?;
 
     // If this is a UKI image, then we need to re-generate pcrlock policy to include the PCRs
