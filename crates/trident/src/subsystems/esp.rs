@@ -301,7 +301,12 @@ pub fn configure_uefi_fallback(
             "Configuring UEFI fallback for servicing state {:?} using source ESP dir '{}'",
             servicing_state, source_esp_dir_name
         );
-        copy_boot_files_for_uefi_fallback(mount_point, &source_esp_dir_name, &ctx.servicing_type)?;
+        copy_boot_files_for_uefi_fallback(
+            mount_point,
+            &source_esp_dir_name,
+            &ctx.servicing_type,
+            ctx.install_index,
+        )?;
     } else {
         debug!(
             "No UEFI fallback configuration needed for servicing state {:?}",
@@ -311,30 +316,55 @@ pub fn configure_uefi_fallback(
     Ok(())
 }
 
+/// Skip UEFI fallback copy when AZLA and AZLB boot paths do not exist. This
+/// is an expected VM scnenario when offline-initialize is used to prepare a
+/// VMD-based image for A/B update.
+fn skip_uefi_fallback_copy(
+    esp_dir_path: &Path,
+    servicing_type: &ServicingType,
+    install_index: usize,
+) -> bool {
+    if servicing_type == &ServicingType::AbUpdate {
+        // For A/B update, check for the presence of AZLA and AZLB
+        // boot paths, if neither exist, skip the UEFI fallback copy.
+        if !esp_dir_path
+            .join(boot::make_esp_dir_name(
+                install_index,
+                AbVolumeSelection::VolumeA,
+            ))
+            .exists()
+            && !esp_dir_path
+                .join(boot::make_esp_dir_name(
+                    install_index,
+                    AbVolumeSelection::VolumeB,
+                ))
+                .exists()
+        {
+            return true;
+        }
+    }
+    false
+}
+
 fn copy_boot_files_for_uefi_fallback(
     mount_point: &Path,
     source_esp_name: &str,
     servicing_type: &ServicingType,
+    install_index: usize,
 ) -> Result<(), Error> {
-    let source_esp_dir_path = mount_point
+    let esp_dir_path = mount_point
         .join(ESP_RELATIVE_MOUNT_POINT_PATH)
-        .join(ESP_EFI_DIRECTORY)
-        .join(source_esp_name);
-    if source_esp_dir_path.exists() == false {
-        // Source ESP dir does not exist, log a warning and return. This
-        // can happen in the VM scenario where the initial boot is from a
-        // VHD that does not create the expected AZL* directories.
-        warn!(
-            "Source ESP directory {} does not exist",
-            source_esp_dir_path.display()
+        .join(ESP_EFI_DIRECTORY);
+    if skip_uefi_fallback_copy(&esp_dir_path, servicing_type, install_index) {
+        debug!(
+            "Skipping UEFI fallback copy for servicing type {:?}",
+            servicing_type
         );
         return Ok(());
     }
 
-    let uefi_fallback_path = mount_point
-        .join(ESP_RELATIVE_MOUNT_POINT_PATH)
-        .join(ESP_EFI_DIRECTORY)
-        .join(EFI_DEFAULT_BIN_DIRECTORY);
+    let source_esp_dir_path = esp_dir_path.join(source_esp_name);
+    let uefi_fallback_path = esp_dir_path.join(EFI_DEFAULT_BIN_DIRECTORY);
     debug!(
         "{:?} detected. Copying boot files from {} to {}.",
         servicing_type,
