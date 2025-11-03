@@ -103,7 +103,7 @@ impl MockOsImage {
     }
 
     /// Returns the ESP filesystem image.
-    pub fn esp_filesystem(&self) -> Result<OsImageFileSystem, Error> {
+    pub fn esp_filesystem(&self) -> Result<OsImageFileSystem<'_>, Error> {
         if let Some(esp_img) = self
             .images
             .iter()
@@ -126,7 +126,7 @@ impl MockOsImage {
     }
 
     /// Returns non-ESP filesystems.
-    pub fn filesystems(&self) -> impl Iterator<Item = OsImageFileSystem> {
+    pub fn filesystems(&self) -> impl Iterator<Item = OsImageFileSystem<'_>> {
         self.images
             .iter()
             .filter(|fs| fs.part_type != DiscoverablePartitionType::Esp)

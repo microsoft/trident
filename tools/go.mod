@@ -13,7 +13,7 @@ require (
 	github.com/dustin/go-humanize v1.0.1
 	github.com/fatih/color v1.18.0
 	github.com/google/uuid v1.6.0
-	github.com/microsoft/storm v0.1.1
+	github.com/microsoft/storm v0.3.0
 	github.com/pkg/errors v0.9.1
 	github.com/pkg/sftp v1.13.9
 	github.com/sirupsen/logrus v1.9.3
@@ -26,6 +26,7 @@ require (
 )
 
 require (
+	github.com/jstemmer/go-junit-report/v2 v2.1.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/rogpeppe/go-internal v1.12.0 // indirect

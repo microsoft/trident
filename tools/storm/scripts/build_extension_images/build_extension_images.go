@@ -1,4 +1,4 @@
-package helpers
+package build_extension_images
 
 import (
 	"fmt"
@@ -6,40 +6,33 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/microsoft/storm"
 	"github.com/sirupsen/logrus"
 )
 
-type BuildExtensionImagesHelper struct {
-	args struct {
-		NumClones     int  `help:"Number of sysexts and confexts to build." type:"int"`
-		BuildSysexts  bool `help:"Indicates that test sysext images should be built." type:"bool"`
-		BuildConfexts bool `help:"Indicates that test confext images should be built." type:"bool"`
+type BuildExtensionImagesScriptSet struct {
+	BuildExtensionImages BuildExtensionImagesScript `cmd:"" help:"Builds sample sysexts and confexts"`
+}
+
+type BuildExtensionImagesScript struct {
+	NumClones     int  `required:"" help:"Number of sysexts and confexts to build."`
+	BuildSysexts  bool `help:"Indicates that test sysext images should be built."`
+	BuildConfexts bool `help:"Indicates that test confext images should be built."`
+}
+
+func (s *BuildExtensionImagesScript) Run() error {
+	if !s.BuildConfexts && !s.BuildSysexts {
+		logrus.Warn("Neither --build-sysexts nor --build-confexts is specified. Returning early.")
+		return nil
 	}
-}
 
-func (h BuildExtensionImagesHelper) Name() string {
-	return "build-extension-images"
-}
-
-func (h *BuildExtensionImagesHelper) Args() any {
-	return &h.args
-}
-
-func (h *BuildExtensionImagesHelper) RegisterTestCases(r storm.TestRegistrar) error {
-	r.RegisterTestCase("build-extension-images", h.buildExtensionImages)
-	return nil
-}
-
-func (h *BuildExtensionImagesHelper) buildExtensionImages(tc storm.TestCase) error {
-	if h.args.BuildSysexts {
-		err := buildImage("sysext", h.args.NumClones)
+	if s.BuildSysexts {
+		err := buildImage("sysext", s.NumClones)
 		if err != nil {
 			return fmt.Errorf("failed to build sysext images: %w", err)
 		}
 	}
-	if h.args.BuildConfexts {
-		err := buildImage("confext", h.args.NumClones)
+	if s.BuildConfexts {
+		err := buildImage("confext", s.NumClones)
 		if err != nil {
 			return fmt.Errorf("failed to build confext images: %w", err)
 		}

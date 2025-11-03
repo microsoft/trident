@@ -20,17 +20,12 @@ steps:
   - bash: |
       set -eux
 
-      if [ ${{ parameters.config }} == 'extensions' ]; then
-        ./bin/storm-trident helper build-extension-images --build-sysexts --num-clones 2
-        ls
-        sha384sum test-sysext-1.raw
-        sha384sum test-sysext-2.raw
-      elif [ ${{ parameters.config }} == 'root-verity' ]; then
-        ./bin/storm-trident helper build-extension-images --build-confexts --num-clones 2
-      else
+      if [ "${{ parameters.config }}" != 'extensions' ]; then
         echo "Skipping step. Configuration is '${{ parameters.config }}'."
         exit 0
       fi
+
+      ./bin/storm-trident script build-extension-images --build-sysexts --build-confexts --num-clones 2
 
     displayName: "Build test sysext and confext images"
     workingDirectory: $(Build.SourcesDirectory)
@@ -38,7 +33,7 @@ steps:
 
   - bash: |
       set -eux
-      if [ ${{ parameters.config }} != 'misc' ] && [ ${{ parameters.config }} != 'extensions' ]; then
+      if [ "${{ parameters.config }}" != 'misc' ] && [ "${{ parameters.config }}" != 'extensions' ]; then
         echo "Skipping step. Configuration is '${{ parameters.config }}'."
         exit 0
       fi
@@ -60,9 +55,8 @@ steps:
       inlineScript: |
         set -eux
 
-        if [ ${{ parameters.config }} == 'misc' ]; then
-          ./bin/storm-trident helper acr \
-            --push \
+        if [ "${{ parameters.config }}" == 'misc' ]; then
+          ./bin/storm-trident script acr-push \
             --config ${{ parameters.config }} \
             --deployment-environment ${{ parameters.deploymentEnvironment }} \
             --acr-name $(ACR_NAME) \
@@ -71,29 +65,28 @@ steps:
             --file-paths $(Build.SourcesDirectory)/artifacts/test-image/regular.cosi \
             --file-paths $(Build.SourcesDirectory)/artifacts/test-image/regular_v2.cosi \
             --file-paths $(Build.SourcesDirectory)/artifacts/test-image/regular_v3.cosi \
-            --file-paths $(Build.SourcesDirectory)/artifacts/test-image/regular_v4.cosi
+            --file-paths $(Build.SourcesDirectory)/artifacts/test-image/regular_v4.cosi \
+            --tag-var-name TAG_BASE
 
-        elif [ ${{ parameters.config }} == 'extensions' ]; then
-          ./bin/storm-trident helper acr \
-            --push \
+        elif [ "${{ parameters.config }}" == 'extensions' ]; then
+          ./bin/storm-trident script acr-push \
             --config ${{ parameters.config }} \
             --deployment-environment ${{ parameters.deploymentEnvironment }} \
             --acr-name $(ACR_NAME) \
             --repo-name sysext \
             --build-id $(Build.BuildId) \
             --file-paths $(Build.SourcesDirectory)/test-sysext-1.raw \
-            --file-paths $(Build.SourcesDirectory)/test-sysext-2.raw
-
-        elif [ ${{ parameters.config }} == 'root-verity' ]; then
-          ./bin/storm-trident helper acr \
-            --push \
+            --file-paths $(Build.SourcesDirectory)/test-sysext-2.raw \
+            --tag-var-name TAG_BASE
+          ./bin/storm-trident script acr-push \
             --config ${{ parameters.config }} \
             --deployment-environment ${{ parameters.deploymentEnvironment }} \
             --acr-name $(ACR_NAME) \
             --repo-name confext \
             --build-id $(Build.BuildId) \
             --file-paths $(Build.SourcesDirectory)/test-confext-1.raw \
-            --file-paths $(Build.SourcesDirectory)/test-confext-2.raw
+            --file-paths $(Build.SourcesDirectory)/test-confext-2.raw \
+            --tag-var-name TAG_BASE
 
         else
           echo "Skipping step. Configuration is '${{ parameters.config }}'."

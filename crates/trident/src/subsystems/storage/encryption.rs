@@ -135,7 +135,7 @@ pub(super) fn validate_host_config(ctx: &EngineContext) -> Result<(), TridentErr
 }
 
 /// Provisions encrypted volumes by re-generating the pcrlock policy, when necessary. Also,
-/// persists the pcrlock policy to the update volume.
+/// persists the pcrlock policy to the target OS.
 ///
 /// On clean install:
 /// 1. TODO: UKI MOS + UKI target OS -> re-generate pcrlock policy to include PCRs 4,7,11 as
@@ -155,7 +155,7 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
         // Determine if pcrlock policy should be re-generated to include updated PCRs
         let updated_pcrs = match ctx.servicing_type {
             ServicingType::CleanInstall => None,
-            // On A/B update, use PCRs selected by the user through the API
+            // On A/B update, use PCRs selected by the user in Host Configuration
             ServicingType::AbUpdate => {
                 if ctx.is_uki()? {
                     let bitflags = encryption

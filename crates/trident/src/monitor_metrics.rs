@@ -552,9 +552,11 @@ mod stat_tests {
 mod functional_test {
     use super::*;
 
-    use pytest_gen::functional_test;
     use std::sync::{Arc, Mutex};
+
     use tracing_subscriber::{layer::SubscriberExt, Registry};
+
+    use pytest_gen::functional_test;
 
     #[derive(Debug, Clone, Default)]
     struct TestTraceWriter {
