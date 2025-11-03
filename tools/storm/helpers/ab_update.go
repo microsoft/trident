@@ -3,7 +3,6 @@ package helpers
 import (
 	"context"
 	"crypto/sha512"
-	_ "embed"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -11,7 +10,6 @@ import (
 	"os"
 	"path"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -173,12 +171,6 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 	}
 	internalParams["selfUpgradeTrident"] = false
 
-	// Handle UEFI-fallback settings if configured
-	err = h.handleUefiFallback(tc)
-	if err != nil {
-		return fmt.Errorf("failed to handle UEFI fallback: %w", err)
-	}
-
 	// Delete the storage section from the config, not needed for A/B update
 	delete(h.config, "storage")
 
@@ -298,100 +290,6 @@ func (h *AbUpdateHelper) handleAutoRollback(tc storm.TestCase) error {
 					newChecks = append(newChecks, check)
 				}
 				health["checks"] = newChecks
-			}
-		}
-	}
-	return nil
-}
-
-//go:embed uefi_fallback_validation_script_contents.txt
-var UefiFallbackValidationContents string
-
-func (h *AbUpdateHelper) handleUefiFallback(tc storm.TestCase) error {
-	if h.args.UefiFallback != "none" {
-		logrus.Tracef("Configuring UEFI-fallback rollback settings in Host Configuration")
-		os, ok := h.config["os"].(map[string]any)
-		if !ok {
-			os = make(map[string]any)
-		}
-		os["uefiFallback"] = h.args.UefiFallback
-		h.config["os"] = os
-
-		// Create health check script that diffs the UEFI fallback path with
-		// the efi boot path for the current update version.
-		//
-		// Assumes that h.args.Version = 2 for first A/B update (which creates
-		// AZLB), h.args.Version = 3 for second A/B update (which creates AZLA),
-		// etc.
-		health, ok := h.config["health"].(map[string]any)
-		if !ok {
-			health = make(map[string]any)
-		}
-		checks, ok := health["checks"].([]any)
-		if !ok {
-			checks = make([]any, 0)
-		}
-
-		// Read script from file
-		scriptContents := UefiFallbackValidationContents
-		// Update script contents based on version and fallback configuration
-		versionNumber, err := strconv.Atoi(h.args.Version)
-		if err != nil {
-			return fmt.Errorf("failed to convert version to integer: %w", err)
-		}
-		partitionLetterRollforward := "A"
-		partitionLetterRollback := "B"
-		if versionNumber%2 == 0 {
-			partitionLetterRollforward = "B"
-			partitionLetterRollback = "A"
-		}
-		partitionLetter := partitionLetterRollback
-		if h.args.UefiFallback == "rollforward" {
-			partitionLetter = partitionLetterRollforward
-		}
-		noneCheck := "false"
-		if h.args.UefiFallback == "none" {
-			noneCheck = "true"
-		}
-
-		scriptContents = strings.ReplaceAll(
-			scriptContents,
-			"_REPLACE_EXPECTED_FOLDER_",
-			fmt.Sprintf("/efi/boot/EFI/AZL%s/", partitionLetter),
-		)
-		scriptContents = strings.ReplaceAll(
-			scriptContents,
-			"_REPLACE_EXPECT_EMPTY_",
-			noneCheck,
-		)
-
-		health["checks"] = append(checks, map[string]any{
-			"name":    "validate-uefi-fallback-before-commit",
-			"content": scriptContents,
-			"runOn":   []string{"ab-update"},
-		})
-
-	} else {
-		logrus.Tracef("Ensuring UEFI-fallback rollback settings are not in Host Configuration")
-		// Reset os.uefiFallback to empty
-		os, ok := h.config["os"].(map[string]any)
-		if ok {
-			delete(os, "uefiFallback")
-			h.config["os"] = os
-		}
-
-		health, ok := h.config["health"].(map[string]any)
-		if ok {
-			checks, ok := health["checks"].([]any)
-			if ok {
-				filteredChecks := make([]any, 0)
-				for _, check := range checks {
-					if check.(map[string]any)["name"] != "validate-uefi-fallback-before-commit" {
-						filteredChecks = append(filteredChecks, check)
-					}
-				}
-				health["checks"] = filteredChecks
-				h.config["health"] = health
 			}
 		}
 	}

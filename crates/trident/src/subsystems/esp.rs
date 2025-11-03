@@ -235,11 +235,18 @@ fn find_uefi_fallback_source_dir_name(
     ctx: &EngineContext,
     servicing_state: ServicingState,
 ) -> Option<String> {
+    trace!(
+        "Finding UEFI fallback source dir name for servicing state {:?} and UEFI fallback mode {:?}",
+        servicing_state,
+        ctx.spec.os.uefi_fallback
+    );
     match servicing_state {
-        ServicingState::CleanInstallStaged => Some(boot::make_esp_dir_name(
-            ctx.install_index,
-            AbVolumeSelection::VolumeA,
-        )),
+        ServicingState::CleanInstallStaged => match ctx.spec.os.uefi_fallback {
+            Some(UefiFallbackMode::Rollforward) | Some(UefiFallbackMode::Rollback) => Some(
+                boot::make_esp_dir_name(ctx.install_index, AbVolumeSelection::VolumeA),
+            ),
+            _ => None,
+        },
         ServicingState::AbUpdateStaged => match ctx.spec.os.uefi_fallback {
             Some(UefiFallbackMode::Rollforward) => Some(boot::make_esp_dir_name(
                 ctx.install_index,
@@ -800,6 +807,68 @@ mod tests {
             ..Default::default()
         };
 
+        let test_cases = vec![
+            (
+                ServicingState::CleanInstallStaged,
+                Some(UefiFallbackMode::None),
+                Some(AbVolumeSelection::VolumeA),
+                ServicingType::CleanInstall,
+                None::<String>,
+                "Validate CleanInstallStaged + Some(None) + active volume A ==> None",
+            ),
+            (
+                ServicingState::CleanInstallStaged,
+                Some(UefiFallbackMode::Rollforward),
+                Some(AbVolumeSelection::VolumeA),
+                ServicingType::CleanInstall,
+                Some("AZLA".to_string()),
+                "Validate CleanInstallStaged + Some(Rollforward) + active volume A ==> AZLA",
+            ),
+            (
+                ServicingState::AbUpdateStaged,
+                Some(UefiFallbackMode::Rollback),
+                Some(AbVolumeSelection::VolumeA),
+                ServicingType::AbUpdate,
+                Some("AZLA".to_string()),
+                "Validate AbUpdateStaged + Some(Rollback) + active volume A ==> AZLA",
+            ),
+            (
+                ServicingState::AbUpdateStaged,
+                Some(UefiFallbackMode::Rollforward),
+                Some(AbVolumeSelection::VolumeA),
+                ServicingType::AbUpdate,
+                Some("AZLB".to_string()),
+                "Validate AbUpdateStaged + Some(Rollforward) + active volume A ==> AZLB",
+            ),
+            (
+                ServicingState::AbUpdateFinalized,
+                Some(UefiFallbackMode::Rollback),
+                Some(AbVolumeSelection::VolumeA),
+                ServicingType::AbUpdate,
+                Some("AZLA".to_string()),
+                "Validate AbUpdateFinalized + Some(Rollback) + active volume A ==> AZLA",
+            ),
+            (
+                ServicingState::AbUpdateFinalized,
+                Some(UefiFallbackMode::Rollforward),
+                Some(AbVolumeSelection::VolumeA),
+                ServicingType::AbUpdate,
+                None,
+                "Validate AbUpdateFinalized + Some(Rollforward) + active volume A ==> None",
+            ),
+        ];
+        for test_case in test_cases {
+            ctx.spec.os.uefi_fallback = test_case.1;
+            ctx.ab_active_volume = test_case.2;
+            ctx.servicing_type = test_case.3;
+            assert_eq!(
+                find_uefi_fallback_source_dir_name(&ctx, test_case.0),
+                test_case.4,
+                "{}",
+                test_case.5
+            );
+        }
+
         //
         // No-op for all unsupported stages
         //
@@ -823,55 +892,6 @@ mod tests {
                 }
             }
         }
-
-        // Validate ABUpdateStaged + Rollback + active volume A ==> AZLA
-        ctx.spec.os.uefi_fallback = Some(UefiFallbackMode::Rollback);
-        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
-        ctx.servicing_type = ServicingType::AbUpdate;
-        assert_eq!(
-            find_uefi_fallback_source_dir_name(&ctx, ServicingState::AbUpdateStaged).unwrap(),
-            "AZLA".to_string()
-        );
-        // Validate ABUpdateStaged + Rollback + active volume B ==> AZLB
-        ctx.spec.os.uefi_fallback = Some(UefiFallbackMode::Rollback);
-        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
-        ctx.servicing_type = ServicingType::AbUpdate;
-        assert_eq!(
-            find_uefi_fallback_source_dir_name(&ctx, ServicingState::AbUpdateStaged).unwrap(),
-            "AZLB".to_string()
-        );
-        // Validate ABUpdateStaged + Rollforward + active volume A ==> AZLB
-        ctx.spec.os.uefi_fallback = Some(UefiFallbackMode::Rollforward);
-        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
-        ctx.servicing_type = ServicingType::AbUpdate;
-        assert_eq!(
-            find_uefi_fallback_source_dir_name(&ctx, ServicingState::AbUpdateStaged).unwrap(),
-            "AZLB".to_string()
-        );
-        // Validate ABUpdateStaged + Rollforward + active volume B ==> AZLA
-        ctx.spec.os.uefi_fallback = Some(UefiFallbackMode::Rollforward);
-        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
-        ctx.servicing_type = ServicingType::AbUpdate;
-        assert_eq!(
-            find_uefi_fallback_source_dir_name(&ctx, ServicingState::AbUpdateStaged).unwrap(),
-            "AZLA".to_string()
-        );
-        // Validate CleanInstallStaged + Rollforward + active volume A ==> AZLA
-        ctx.spec.os.uefi_fallback = Some(UefiFallbackMode::Rollforward);
-        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
-        ctx.servicing_type = ServicingType::CleanInstall;
-        assert_eq!(
-            find_uefi_fallback_source_dir_name(&ctx, ServicingState::CleanInstallStaged).unwrap(),
-            "AZLA".to_string()
-        );
-        // Validate CleanInstallStaged + Rollback + active volume B ==> AZLA
-        ctx.spec.os.uefi_fallback = Some(UefiFallbackMode::Rollback);
-        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
-        ctx.servicing_type = ServicingType::CleanInstall;
-        assert_eq!(
-            find_uefi_fallback_source_dir_name(&ctx, ServicingState::CleanInstallStaged).unwrap(),
-            "AZLA".to_string()
-        );
 
         //
         // No-op combinations: these are combinations that copying would be redundant
