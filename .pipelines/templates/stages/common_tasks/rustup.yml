@@ -3,7 +3,7 @@ steps:
     inputs:
       # Can be any "MSRustup" version, such as ms-stable, ms-1.54 or ms-stable-20210513.5 - for more details see https://mscodehub.visualstudio.com/Rust/_git/rust.msrustup
       # For supported versions see https://mscodehub.visualstudio.com/Rust/_packaging?_a=package&feed=Rust&view=versions&package=rust.tools-x86_64-pc-windows-msvc&protocolType=NuGet
-      rustVersion: ms-1.88
+      rustVersion: ms-prod-1.90
       # Space separated list of additional targets: only the host target is supported with the toolchain by default.
       #additionalTargets: $(additionalRustTargets)
       # URL of an Azure Artifacts feed configured with a crates.io upstream. Must be within the current ADO collection.
