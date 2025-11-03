@@ -20,23 +20,26 @@ stages:
     displayName: E2E ${{ parameters.hardwareType }} ${{ parameters.runtimeType }} Testing
     dependsOn:
       - DefineTests_E2E
-      - ${{ if eq(parameters.testingRun, true) }}:
-          - DownloadTestingElements
-      - ${{ else }}:
-          - BuildingTools
-          - ${{ if eq(parameters.runtimeType, 'CONTAINER') }}:
-              - BuildTridentContainerImage
-              - TridentTestImg_trident_container_installer
-              - TridentTestImg_trident_container_testimage
-              - TridentTestImg_trident_container_verity_testimage
-              - TridentTestImg_trident_container_usrverity_testimage
-          - ${{ else }}:
-              - TridentTestImg_trident_split_installer
-              - TridentTestImg_trident_installer
-              - TridentTestImg_trident_testimage
-              - TridentTestImg_trident_verity_testimage
-              - TridentTestImg_trident_usrverity_testimage
-    condition: ne('{}', dependencies.DefineTests_E2E.DefineTests.outputs['matrices.TEST_MATRIX_E2E_${{ parameters.hardwareType }}_${{ parameters.runtimeType }}'])
+      # - ${{ if eq(parameters.testingRun, true) }}:
+      #     - DownloadTestingElements
+      # - ${{ else }}:
+      #     - BuildingTools
+      #     - ${{ if eq(parameters.runtimeType, 'CONTAINER') }}:
+      #         - BuildTridentContainerImage
+      #         - TridentTestImg_trident_container_installer
+      #         - TridentTestImg_trident_container_testimage
+      #         - TridentTestImg_trident_container_verity_testimage
+      #         - TridentTestImg_trident_container_usrverity_testimage
+      #     - ${{ else }}:
+      #         - TridentTestImg_trident_split_installer
+      #         - TridentTestImg_trident_installer
+      #         - TridentTestImg_trident_testimage
+      #         - TridentTestImg_trident_verity_testimage
+      #         - TridentTestImg_trident_usrverity_testimage
+    variables:
+      - name: matrixJson
+        value: "$[ stageDependencies.DefineTests_E2E.DefineTests.outputs['matrices.TEST_MATRIX_E2E_${{ parameters.hardwareType }}_${{ parameters.runtimeType }}'] ]"
+    condition: ne('{}', variables['matrixJson'])
     jobs:
       - job: Testing
         timeoutInMinutes: 50
@@ -46,9 +49,9 @@ stages:
           hostArchitecture: amd64
 
         strategy:
-          matrix: $[ stageDependencies.DefineTests_E2E.DefineTests.outputs['matrices.TEST_MATRIX_E2E_${{ parameters.hardwareType }}_${{ parameters.runtimeType }}'] ]
+          matrix: $[ variables['matrixJson'] ]
 
-        condition: ne(variables['scenario'], '')
+        condition: ne(variables['matrixJson'], '{}')
         variables:
           - name: ob_outputDirectory
             value: $(Build.SourcesDirectory)/output
@@ -78,14 +81,14 @@ stages:
                 value: false
 
         steps:
-          # Download all test images
-          - template: ../testing_common/download-test-images.yml
-            parameters:
-              installerISO: $(installerISOName)
-              tridentTestImage: ${{ variables.testImageName }}
-              tridentTestImageVerity: ${{ variables.verityTestImageName }}
-              downloadTridentContainer: ${{ variables.downloadTridentContainer }}
-              tridentTestImageUsrVerity: ${{ variables.usrVerityTestImageName }}
+          # # Download all test images
+          # - template: ../testing_common/download-test-images.yml
+          #   parameters:
+          #     installerISO: $(installerISOName)
+          #     tridentTestImage: ${{ variables.testImageName }}
+          #     tridentTestImageVerity: ${{ variables.verityTestImageName }}
+          #     downloadTridentContainer: ${{ variables.downloadTridentContainer }}
+          #     tridentTestImageUsrVerity: ${{ variables.usrVerityTestImageName }}
           - bash: |
               set -eux
 
