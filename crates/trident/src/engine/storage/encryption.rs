@@ -663,7 +663,8 @@ mod functional_test {
         let mount_path = PathBuf::from("/mnt");
 
         // Construct expected paths
-        let mount_esp_azlb_path = mount_path.join("EFI").join("AZLB");
+        let esp_azlb_path = esp_path.join("EFI").join("AZLB");
+        let mount_esp_azlb_path = join_relative(&mount_path, &esp_azlb_path);
         let expected_uki = vec![uki_path.clone(), esp_uki_path.join(TMP_UKI_NAME)];
         let mut expected_bootloader = expected_paths_a.clone();
         expected_bootloader.extend(vec![
