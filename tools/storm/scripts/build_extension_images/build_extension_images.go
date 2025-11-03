@@ -10,7 +10,6 @@ import (
 )
 
 type BuildExtensionImagesScriptSet struct {
-	// This field represents the "build-extension-images" subcommand.
 	BuildExtensionImages BuildExtensionImagesScript `cmd:"" help:"Builds sample sysexts and confexts"`
 }
 
