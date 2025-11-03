@@ -655,10 +655,11 @@ mod functional_test {
             (vec![uki_path.clone()], vec![])
         );
 
-        // Test case #5: PCRs 4 and 11 requested, mount_path provided, A is active
-        // Should return current plus B’s bootloader/UKI in /mnt (mount_path)
+        // Test case #5: PCRs 4 and 11 requested, mount_path provided, A is active, so should
+        // return mounted binaries in B.
         let pcrs = BitFlags::from(Pcr::Pcr4) | BitFlags::from(Pcr::Pcr11);
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
+        ctx.servicing_type = ServicingType::AbUpdate;
         let mount_path = PathBuf::from("/mnt");
 
         // Construct expected paths
