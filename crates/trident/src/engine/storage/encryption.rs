@@ -675,5 +675,11 @@ mod functional_test {
 
         // Unset the current entry
         efivar::set_efi_variable(&var_name, &efivar::encode_utf16le("")).unwrap();
+
+        // Remove all created files
+        expected_paths.extend(expected_paths_mnt.clone());
+        for p in expected_paths {
+            fs::remove_file(p).unwrap();
+        }
     }
 }
