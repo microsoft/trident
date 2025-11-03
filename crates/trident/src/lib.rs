@@ -283,11 +283,8 @@ impl Trident {
         // to preserve the last error across any recovery. This aids in
         // surfacing the original error.
         info!(
-            "Execute and record error with current servicing state: {:?}",
-            datastore.host_status().servicing_state
-        );
-        info!(
-            "Execute and record error with current last error: {:?}",
+            "Execute and record error with servicing state: {:?} and last error: {:?}",
+            datastore.host_status().servicing_state,
             datastore.host_status().last_error
         );
         let last_error_to_preserve = if datastore.host_status().servicing_state
@@ -631,7 +628,7 @@ impl Trident {
                 | ServicingState::AbUpdateFinalized
                 | ServicingState::AbUpdateHealthCheckFailed
         ) {
-            info!("No update in progress, skipping commit");
+            info!("No servicing in progress, skipping commit");
             return Ok(ExitKind::Done);
         }
 
@@ -652,8 +649,8 @@ impl Trident {
 
         match rollback_result {
             Ok(rollback::BootValidationResult::CorrectBootProvisioned) => Ok(ExitKind::Done),
-            Ok(rollback::BootValidationResult::CorrectBootInvalid(e)) => {
-                debug!("Correct boot, but validation failed: {e:?}");
+            Ok(rollback::BootValidationResult::CorrectBootHealthCheckFailed(e)) => {
+                debug!("Correct boot, but health check failed: {e:?}");
                 Ok(ExitKind::NeedsReboot)
             }
             Err(e) => {

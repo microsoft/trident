@@ -15,7 +15,7 @@ pub struct Health {
     /// the checks fail, the commit will not be completed and, for A/B update, a rollback will be
     /// triggered.
     ///
-    /// These checks run for installs and A/B updates. If `runOn` is specified for anything other
+    /// These checks can run for installs and A/B updates. If `runOn` is specified for anything other
     /// than 'clean-install' or 'ab-update' type, the check will be ignored. If 'all' is
     /// specified, the check will run for both 'clean-install' and 'ab-update'.
     ///
@@ -44,7 +44,7 @@ pub enum Check {
 }
 
 impl Check {
-    /// Returns true if servicing type is enabled for this script.
+    /// Returns true if the check should be executed on this servicing type.
     pub fn should_run(&self, servicing_type: ServicingType) -> bool {
         match servicing_type {
             ServicingType::CleanInstall | ServicingType::AbUpdate => { /* valid */ }
@@ -110,7 +110,8 @@ pub struct SystemdCheck {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub systemd_services: Vec<String>,
 
-    /// Timeout for the systemd check.
+    /// Timeout for the systemd check. If the service is found to be
+    /// in an unsuccessful state, it will be requeried until the timeout is reached.
     pub timeout_seconds: usize,
 
     /// List of servicing types that the check should run on.

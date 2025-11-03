@@ -9,7 +9,7 @@ use std::{
 };
 
 use anyhow::{Context, Error};
-use log::{debug, info, trace};
+use log::{debug, error, info, trace};
 
 use osutils::{dependencies::Dependency, exe::OutputChecker, files, scripts::ScriptRunner};
 use trident_api::{
@@ -223,6 +223,13 @@ impl HooksSubsystem {
         Ok(())
     }
 
+    /// This function will be called outside the standard subsystem flow
+    /// by execute_health_checks.
+    ///
+    /// It checks that the specified systemd service(s), when queried with
+    /// systemctl status, are in good running state. If not, the function
+    /// will retry until the specified timeout is reached. On timeout, the
+    /// last error will be returned.
     fn run_systemd_check(&self, check: &SystemdCheck) -> Result<(), TridentError> {
         let start_time = Instant::now();
         let timeout_duration = Duration::from_secs(check.timeout_seconds as u64);
@@ -431,12 +438,13 @@ impl HooksSubsystem {
             .collect::<Vec<String>>()
             .join("\n");
         if !health_check_errors.lock().unwrap().is_empty() {
-            debug!(
+            error!(
                 "Health checks completed with errors:\n{}",
                 health_check_errors_message
             );
             return Err(TridentError::new(ServicingError::HealthChecksFailed {
                 details: health_check_errors_message,
+                servicing_type: format!("{:?}", ctx.servicing_type),
             }));
         }
         Ok(())

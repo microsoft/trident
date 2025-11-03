@@ -28,7 +28,7 @@ pub enum BootValidationResult {
     /// Target OS booted successfully, and the health checks succeeded
     CorrectBootProvisioned,
     /// Target OS booted successfully, and the health checks failed
-    CorrectBootInvalid(TridentError),
+    CorrectBootHealthCheckFailed(TridentError),
 }
 
 /// Validates that the firmware did not perform a rollback, i.e. correctly booted from the updated
@@ -193,9 +193,11 @@ fn commit_finalized_on_expected_root(
     // Run health checks to ensure the system is in the desired state
     let health_check_status =
         run_health_checks(ctx, datastore, current_servicing_state, servicing_type)?;
-    if let BootValidationResult::CorrectBootInvalid(err) = health_check_status {
+    if let BootValidationResult::CorrectBootHealthCheckFailed(err) = health_check_status {
         match servicing_type {
-            ServicingType::AbUpdate => return Ok(BootValidationResult::CorrectBootInvalid(err)),
+            ServicingType::AbUpdate => {
+                return Ok(BootValidationResult::CorrectBootHealthCheckFailed(err))
+            }
             ServicingType::CleanInstall => return Err(err),
             _ => {}
         };
@@ -344,7 +346,7 @@ fn run_health_checks(
                             );
                         }
                     }
-                    return Ok(BootValidationResult::CorrectBootInvalid(e));
+                    return Ok(BootValidationResult::CorrectBootHealthCheckFailed(e));
                 }
             };
         }

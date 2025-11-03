@@ -307,7 +307,7 @@ pub enum ServicingError {
     },
 
     #[error(
-        "A/B update health check failed and rollback booted from the expected device \
+        "A/B update health check failed, rollback executed, and the host booted from the expected device \
         '{expected_device_path}'"
     )]
     AbUpdateHealthCheckCommitCheck { expected_device_path: String },
@@ -511,8 +511,11 @@ pub enum ServicingError {
     #[error("Failed to get SELINUXTYPE")]
     GetSelinuxType,
 
-    #[error("Failed health-checks: '{details}'")]
-    HealthChecksFailed { details: String },
+    #[error("Failed health-checks during '{servicing_type}': '{details}'")]
+    HealthChecksFailed {
+        details: String,
+        servicing_type: String,
+    },
 
     #[error("Failed to list boot entries via efibootmgr or parse them")]
     ListAndParseBootEntries,

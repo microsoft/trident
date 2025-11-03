@@ -102,7 +102,7 @@ pub enum ServicingState {
     /// Servicing has been completed, and the host successfully booted from the updated target OS
     /// image. Trident is ready to begin a new servicing.
     Provisioned,
-    /// A/B update has been completed, the host booted into the target OS but the Health Checks failed.
+    /// A/B update has been completed, the host booted into the target OS but the health checks failed.
     AbUpdateHealthCheckFailed,
 }
 
