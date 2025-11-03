@@ -3,13 +3,13 @@ package e2e
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"tridenttools/storm/e2e/scenario"
 	"tridenttools/storm/e2e/testrings"
 	"tridenttools/storm/utils"
 
 	"github.com/microsoft/storm/pkg/storm/core"
-	"github.com/sirupsen/logrus"
 )
 
 type TridentE2EMatrixScriptSet struct {
@@ -24,13 +24,20 @@ func (s *TridentE2EScenarioMatrix) Run(suite core.SuiteContext) error {
 	for _, hw := range scenario.HardwareTypes() {
 		for _, rt := range scenario.RuntimeTypes() {
 			matchingScenarios := GetScenariosByHardwareAndRuntime(suite, hw, rt, s.TestRing)
+			slices.Sort(matchingScenarios)
+
 			matrixJson, err := s.GenerateMatrix(matchingScenarios, hw, rt)
 			if err != nil {
 				return fmt.Errorf("failed to generate matrix for hardware '%s' and runtime '%s': %w", hw, rt, err)
 			}
 			variable := fmt.Sprintf("TEST_MATRIX_E2E_%s_%s", strings.ToUpper(hw.ToString()), strings.ToUpper(rt.ToString()))
-			utils.SetAzureDevopsVariables(variable, matrixJson)
-			logrus.Infof("Generated matrix for hardware '%s' and runtime '%s' with %d scenarios: %s", hw, rt, len(matchingScenarios), variable)
+			utils.SetAzureDevopsOutputVariable(variable, matrixJson)
+
+			scenarioNames := ""
+			for _, name := range matchingScenarios {
+				scenarioNames += fmt.Sprintf(" - %s\n", name)
+			}
+			suite.Logger().Infof("Generated matrix for hardware '%s' and runtime '%s' with %d scenarios:\n%s", hw, rt, len(matchingScenarios), scenarioNames)
 		}
 	}
 
