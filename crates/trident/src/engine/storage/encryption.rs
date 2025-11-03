@@ -611,11 +611,8 @@ mod functional_test {
             esp_azla_path.join("grubx64.efi"),
         ];
         let uki_path = esp_uki_path.join(current_entry);
-        let mut expected_paths = expected_paths_a.clone();
-        expected_paths.push(uki_path.clone());
-        let err = get_binary_paths_pcrlock(&ctx, pcrs, None)
-            .unwrap_err()
-            .to_string();
+        let mut expected_paths = vec![uki_path.clone()];
+        expected_paths.extend(expected_paths_a.clone());
         let expected_error_message = format!(
             "Following binary paths required for pcrlock encryption do not exist:\n{}",
             expected_paths
@@ -624,7 +621,12 @@ mod functional_test {
                 .collect::<Vec<_>>()
                 .join("\n")
         );
-        assert_eq!(err, expected_error_message);
+        assert_eq!(
+            get_binary_paths_pcrlock(&ctx, pcrs, None)
+                .unwrap_err()
+                .to_string(),
+            expected_error_message
+        );
 
         // Test case #3: All files exist, should return correct vectors
         for path in &expected_paths {
