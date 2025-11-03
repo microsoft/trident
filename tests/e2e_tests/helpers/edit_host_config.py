@@ -70,7 +70,6 @@ def inject_uefi_fallback_testing(host_config_path):
         uefi_fallback_modes = ["none", "rollback", "rollforward"]
         # Randomly pick a fallback mode for testing.
         random_mode = random.choice(uefi_fallback_modes)
-        random_mode = "none"
         host_config["os"]["uefiFallback"] = random_mode
         health_check_content = """set -eux
 EFI_PATH="/boot/efi/EFI"
@@ -239,30 +238,30 @@ def main():
     )
     args = parser.parse_args()
 
-    # public_key = generate_rsa_key(args.keypath)
-    # add_key(args.hostconfig, public_key)
+    public_key = generate_rsa_key(args.keypath)
+    add_key(args.hostconfig, public_key)
 
     inject_uefi_fallback_testing(args.hostconfig)
 
-    # if args.runtimeEnv == "container":
-    #     add_copy_command(args.hostconfig)
+    if args.runtimeEnv == "container":
+        add_copy_command(args.hostconfig)
 
-    # if args.ociCosiUrl:
-    #     rename_oci_url(args.hostconfig, args.ociCosiUrl)
+    if args.ociCosiUrl:
+        rename_oci_url(args.hostconfig, args.ociCosiUrl)
 
-    # if (
-    #     args.ociSysextUrl
-    #     and args.sysextHash
-    #     and args.ociConfextUrl
-    #     and args.confextHash
-    # ):
-    #     add_extension_images(
-    #         args.hostconfig,
-    #         args.ociSysextUrl,
-    #         args.ociConfextUrl,
-    #         args.sysextHash,
-    #         args.confextHash,
-    #     )
+    if (
+        args.ociSysextUrl
+        and args.sysextHash
+        and args.ociConfextUrl
+        and args.confextHash
+    ):
+        add_extension_images(
+            args.hostconfig,
+            args.ociSysextUrl,
+            args.ociConfextUrl,
+            args.sysextHash,
+            args.confextHash,
+        )
 
 
 if __name__ == "__main__":
