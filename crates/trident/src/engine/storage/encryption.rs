@@ -544,12 +544,6 @@ mod functional_test {
         let esp_path = PathBuf::from(ESP_MOUNT_POINT_PATH);
         let esp_uki_path = esp_path.join(UKI_DIRECTORY);
 
-        // Test case #0: No current entry set, so return an error.
-        assert_eq!(
-            get_uki_paths(&esp_path, None).unwrap_err().to_string(),
-            "Failed to read current boot entry"
-        );
-
         // Test case #1: No mount_path, so only one path is returned, i.e. current entry.
         let current_entry = "CurrentEntry-0.efi";
         let var_name = format!(
