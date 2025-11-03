@@ -18,6 +18,10 @@ var pipelineRingsOrder = TestRingSet{
 	TestRingFullValidation,
 }
 
+func (tr TestRing) ToString() string {
+	return string(tr)
+}
+
 func (tr TestRing) GetTargetList() TestRingSet {
 	var targets []TestRing
 	found := false

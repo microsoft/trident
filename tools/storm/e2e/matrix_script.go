@@ -21,6 +21,7 @@ type TridentE2EScenarioMatrix struct {
 }
 
 func (s *TridentE2EScenarioMatrix) Run(suite core.SuiteContext) error {
+	suite.Logger().Infof("Generating Trident E2E test matrices for test ring '%s'", s.TestRing.ToString())
 	for _, hw := range scenario.HardwareTypes() {
 		for _, rt := range scenario.RuntimeTypes() {
 			matchingScenarios := GetScenariosByHardwareAndRuntime(suite, hw, rt, s.TestRing)
