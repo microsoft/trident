@@ -81,13 +81,13 @@ if [ -z "$CURRENT_BOOT" ]; then
     exit 1
 fi
 
-CURRENT_BOOT_ENTRY="$(echo $CURRENT_BOOT | awk '{print $2}')"
+CURRENT_BOOT_ENTRY="$(echo $CURRENT_BOOT | cut -d ' ' -f2"
 if [ -z "$CURRENT_BOOT_ENTRY" ]; then
     echo "Failed to parse current boot entry"
     exit 1
 fi
 
-CURRENT_AZL_BOOT_NAME="$(efibootmgr | grep "Boot${CURRENT_BOOT_ENTRY}" | awk '{print $2}' | grep AZL)"
+CURRENT_AZL_BOOT_NAME="$(efibootmgr | grep "Boot${CURRENT_BOOT_ENTRY}" | tr '\t' ' ' | cut -d ' ' -f2 | grep AZL)"
 if [ -z "$CURRENT_AZL_BOOT_NAME" ]; then
     echo "Current boot entry is not an AZL boot entry"
     exit 1
