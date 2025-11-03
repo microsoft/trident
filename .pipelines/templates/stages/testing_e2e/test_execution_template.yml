@@ -36,7 +36,7 @@ stages:
               - TridentTestImg_trident_testimage
               - TridentTestImg_trident_verity_testimage
               - TridentTestImg_trident_usrverity_testimage
-    condition: ne('{}', stageDependencies.DefineTests_E2E.DefineTests.outputs['matrices.TEST_MATRIX_E2E_${{ parameters.hardwareType }}_${{ parameters.runtimeType }}'])
+    condition: ne('{}', dependencies.DefineTests_E2E.DefineTests.outputs['matrices.TEST_MATRIX_E2E_${{ parameters.hardwareType }}_${{ parameters.runtimeType }}'])
     jobs:
       - job: Testing
         timeoutInMinutes: 50
@@ -48,7 +48,7 @@ stages:
         strategy:
           matrix: $[ stageDependencies.DefineTests_E2E.DefineTests.outputs['matrices.TEST_MATRIX_E2E_${{ parameters.hardwareType }}_${{ parameters.runtimeType }}'] ]
 
-        condition: ne(variables.scenario, '')
+        condition: ne(variables['scenario'], '')
         variables:
           - name: ob_outputDirectory
             value: $(Build.SourcesDirectory)/output
