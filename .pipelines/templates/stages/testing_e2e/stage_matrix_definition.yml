@@ -1,0 +1,36 @@
+parameters:
+  - name: "stageType"
+    displayName: "Pipeline configuration type"
+    type: string
+
+stages:
+  - stage: DefineTests_E2E
+    displayName: Define all E2E test matrices
+    dependsOn:
+      - BuildingTools
+    jobs:
+      - job: DefineTests
+        displayName: Get List of tests to run
+        timeoutInMinutes: 10
+        pool:
+          type: linux
+
+        variables:
+          ob_outputDirectory: $(Build.SourcesDirectory)/build
+          ob_artifactBaseName: select_tests_${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_$(System.JobAttempt)
+
+        steps:
+          - task: DownloadPipelineArtifact@2
+            displayName: "Download go-tools"
+            inputs:
+              buildType: current
+              artifactName: "go-tools"
+              patterns: |
+                storm-trident
+              targetPath: "$(Build.SourcesDirectory)/bin"
+          - bash: |
+              chmod +x ./bin/storm-trident
+              ./bin/storm-trident script e2e-matrix "${{ parameters.stageType }}"
+              python3 ./tests/e2e_tests/helpers/read_target_configurations.py \
+            name: configs
+            displayName: Matrix of Trident configurations for E2E Tests
