@@ -677,7 +677,7 @@ mod functional_test {
         efivar::set_efi_variable(&var_name, &efivar::encode_utf16le("")).unwrap();
 
         // Remove all created files
-        expected_paths.extend(expected_paths_mnt.clone());
+        expected_paths.extend(expected_paths_mnt);
         for p in expected_paths {
             if Path::new(&p).exists() {
                 fs::remove_file(p).unwrap();
