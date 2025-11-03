@@ -16,6 +16,12 @@ parameters:
       - virtualMachine
       - bareMetal
 
+  - name: "runtimeEnvironment"
+    type: string
+    values:
+      - container
+      - host
+
 steps:
   - task: AzureCLI@2
     inputs:
