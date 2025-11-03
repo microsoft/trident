@@ -12,8 +12,8 @@ parameters:
       - CONTAINER
 
 stages:
-  - stage: DeploymentTesting_${{ parameters.hardwareType }}_${{ parameters.runtimeType }}
-    displayName: Deployment ${{ parameters.hardwareType }}-${{ parameters.runtimeType }} Testing
+  - stage: E2ETesting_${{ parameters.hardwareType }}_${{ parameters.runtimeType }}
+    displayName: E2E ${{ parameters.hardwareType }} ${{ parameters.runtimeType }} Testing
     dependsOn:
       - DefineTests_E2E
       - ${{ if eq(parameters.testingRun, true) }}:

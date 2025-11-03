@@ -33,3 +33,23 @@ stages:
               ./bin/storm-trident script e2e-matrix "${{ parameters.stageType }}"
             name: matrices
             displayName: Matrix of Trident configurations for E2E Tests
+
+  - template: test_execution_template.yml
+    parameters:
+      hardwareType: "VM"
+      runtimeType: "HOST"
+
+  - template: test_execution_template.yml
+    parameters:
+      hardwareType: "VM"
+      runtimeType: "CONTAINER"
+
+  - template: test_execution_template.yml
+    parameters:
+      hardwareType: "BM"
+      runtimeType: "HOST"
+
+  - template: test_execution_template.yml
+    parameters:
+      hardwareType: "BM"
+      runtimeType: "CONTAINER"
