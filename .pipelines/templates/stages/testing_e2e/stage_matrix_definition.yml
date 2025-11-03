@@ -31,6 +31,5 @@ stages:
           - bash: |
               chmod +x ./bin/storm-trident
               ./bin/storm-trident script e2e-matrix "${{ parameters.stageType }}"
-              python3 ./tests/e2e_tests/helpers/read_target_configurations.py \
-            name: configs
+            name: matrices
             displayName: Matrix of Trident configurations for E2E Tests
