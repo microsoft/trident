@@ -36,6 +36,7 @@ stages:
               - TridentTestImg_trident_testimage
               - TridentTestImg_trident_verity_testimage
               - TridentTestImg_trident_usrverity_testimage
+    condition: ne("{}", stageDependencies.DefineTests_E2E.DefineTests.outputs['matrices.TEST_MATRIX_E2E_${{ parameters.hardwareType }}_${{ parameters.runtimeType }}'])
     jobs:
       - job: Testing
         timeoutInMinutes: 50
@@ -88,4 +89,4 @@ stages:
               set -eux
 
               ./bin/storm-trident run "$(scenario)"
-            displayName: "Run E2E Test"
+            displayName: "🧪 Run E2E Test"
