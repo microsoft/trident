@@ -914,7 +914,7 @@ mod tests {
                         ctx.servicing_type = servicing_type;
                         assert!(
                             find_uefi_fallback_source_dir_name(&ctx, stage).is_none(),
-                            "Unsupported combo should always result in None: {:?} + {:?} + {:?} + {:?}", stage, mode, ab_volume, servicing_type
+                            "Unsupported combo should always result in None: {stage:?} + {mode:?} + {ab_volume:?} + {servicing_type:?}"
                         );
                     }
                 }
