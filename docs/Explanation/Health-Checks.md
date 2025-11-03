@@ -17,8 +17,7 @@ If any health check fails:
   validate the boot partition and update the Host Status state to `Provisioned`
   (reflecting that the machine is now Provisioned to the previous OS).
 * **for clean install**: a rollback will **NOT** be initiated as there is no
-  previous OS. Instead, the Host Status state will be set to `NotProvisioned`
-  and `trident install` will need to be re-run to provision the machine.
+  previous OS. Instead, the Host Status state will be set to `NotProvisioned`.
 
 ## Configuring Health Checks
 
