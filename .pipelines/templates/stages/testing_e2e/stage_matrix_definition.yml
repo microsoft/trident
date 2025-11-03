@@ -17,7 +17,7 @@ stages:
 
         variables:
           ob_outputDirectory: $(Build.SourcesDirectory)/build
-          ob_artifactBaseName: select_tests_${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_$(System.JobAttempt)
+          ob_artifactBaseName: storm-e2e-select-tests
 
         steps:
           - task: DownloadPipelineArtifact@2
