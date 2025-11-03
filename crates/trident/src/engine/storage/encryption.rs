@@ -532,10 +532,9 @@ mod tests {
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
-    use pytest_gen::functional_test;
-
     use super::*;
 
+    use pytest_gen::functional_test;
     use trident_api::status::ServicingType;
 
     #[functional_test(feature = "helpers")]

@@ -367,9 +367,10 @@ pub(super) fn build_storage_graph(storage: &Storage) -> Result<StorageGraph, Tri
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
     use super::*;
-    use pytest_gen::functional_test;
 
     use tempfile::tempdir;
+
+    use pytest_gen::functional_test;
 
     /// Helper function to check if the persisted background log and metrics file exist in the log
     /// directory.

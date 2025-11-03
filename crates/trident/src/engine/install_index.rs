@@ -55,9 +55,11 @@ mod tests {
 
     use tempfile::TempDir;
 
-    use crate::engine::boot::make_esp_dir_name_candidates;
     use trident_api::error::ErrorKind;
 
+    use crate::engine::boot::make_esp_dir_name_candidates;
+
+    // Helper that constructs the ESP EFI path, creates the directories, and returns the path.
     fn setup_esp_efi_path(mount_point: &Path) -> PathBuf {
         let esp_efi_path = mount_point
             .join(ESP_RELATIVE_MOUNT_POINT_PATH)
@@ -68,7 +70,7 @@ mod tests {
 
     #[test]
     fn test_install_index_variants() {
-        // Simple, empty case
+        // Test case #0: No existing install directories.
         let test_dir = TempDir::new().unwrap();
         let esp_efi_path = setup_esp_efi_path(test_dir.path());
         assert_eq!(next_install_index(test_dir.path()).unwrap(), 0);
@@ -77,7 +79,7 @@ mod tests {
             0
         );
 
-        // All indices 0-9 present for both volumes
+        // Test case #1: Install directories 0-9 exist.
         let test_dir = TempDir::new().unwrap();
         let esp_efi_path = setup_esp_efi_path(test_dir.path());
         make_esp_dir_name_candidates()
@@ -93,7 +95,8 @@ mod tests {
             10
         );
 
-        // Only volume A present for 0-9
+        // Test case #2: Install directories 0-9 exist. Func will skip unavailable indices, even
+        // when only the A volume IDs are present.
         let test_dir = TempDir::new().unwrap();
         let esp_efi_path = setup_esp_efi_path(test_dir.path());
         make_esp_dir_name_candidates()
@@ -107,7 +110,8 @@ mod tests {
             10
         );
 
-        // Only volume B present for 0-9
+        // Test case #3: Install directories 0-9 exist. Func will skip unavailable indices, even
+        // when only the A volume IDs are present.
         let test_dir = TempDir::new().unwrap();
         let esp_efi_path = setup_esp_efi_path(test_dir.path());
         make_esp_dir_name_candidates()
@@ -121,7 +125,8 @@ mod tests {
             10
         );
 
-        // Alternating A/B, starting with A
+        // Test case #4: Install directories 0-9 exist. Func will skip unavailable indices, even
+        // when only one ID is present per install.
         let test_dir = TempDir::new().unwrap();
         let esp_efi_path = setup_esp_efi_path(test_dir.path());
         let mut volume_selector = (0..=1).cycle();
@@ -137,7 +142,6 @@ mod tests {
             10
         );
 
-        // Alternating A/B, starting with B
         let test_dir = TempDir::new().unwrap();
         let esp_efi_path = setup_esp_efi_path(test_dir.path());
         let mut volume_selector = (0..=1).cycle();

@@ -575,14 +575,14 @@ mod tests {
 mod functional_test {
     use super::*;
 
-    use osutils::{
-        filesystems::{MkfsFileSystemType, MountFileSystemType},
-        mkfs, mount,
-    };
     use sha2::{Digest, Sha384};
     use tempfile::{env::temp_dir, TempDir};
     use url::Url;
 
+    use osutils::{
+        filesystems::{MkfsFileSystemType, MountFileSystemType},
+        mkfs, mount,
+    };
     use pytest_gen::functional_test;
     use trident_api::constants::{DEFAULT_CONFEXT_DIRECTORY, DEFAULT_SYSEXT_DIRECTORY};
 

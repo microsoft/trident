@@ -757,8 +757,6 @@ mod tests {
 mod functional_test {
     use super::*;
 
-    use pytest_gen::functional_test;
-
     use std::path::PathBuf;
 
     use const_format::formatcp;
@@ -768,7 +766,7 @@ mod functional_test {
         repart::{OS_DISK_DEVICE_PATH, TEST_DISK_DEVICE_PATH},
         verity::{self},
     };
-
+    use pytest_gen::functional_test;
     use trident_api::{
         config::{
             self, AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, HostConfiguration,

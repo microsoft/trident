@@ -472,10 +472,11 @@ mod tests {
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
     use super::*;
-    use pytest_gen::functional_test;
 
     use const_format::formatcp;
     use tempfile;
+
+    use pytest_gen::functional_test;
 
     use crate::testutils::repart::OS_DISK_DEVICE_PATH;
     use crate::{files::create_file, path::join_relative};
