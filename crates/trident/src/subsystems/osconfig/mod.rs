@@ -395,8 +395,9 @@ mod tests {
 mod functional_test {
     use super::*;
 
-    use pytest_gen::functional_test;
     use sys_mount::{MountBuilder, MountFlags, Unmount, UnmountFlags};
+
+    use pytest_gen::functional_test;
     use trident_api::config::{HostConfiguration, Os};
 
     #[functional_test(feature = "helpers")]

@@ -7,17 +7,17 @@ use trident_api::error::{ReportError, ServicingError, TridentError, TridentResul
 
 use crate::dependencies::{Dependency, DependencyResultExt};
 
-const BOOTLOADER_INTERFACE_GUID: &str = "4a67b082-0a4c-41cf-b6c7-440b29bb8c4f";
+pub const BOOTLOADER_INTERFACE_GUID: &str = "4a67b082-0a4c-41cf-b6c7-440b29bb8c4f";
 const EFI_GLOBAL_VARIABLE_GUID: &str = "8be4df61-93ca-11d2-aa0d-00e098032b8c";
 
 const SECURE_BOOT: &str = "SecureBoot";
 
 const LOADER_ENTRY_ONESHOT: &str = "LoaderEntryOneShot";
 const LOADER_ENTRY_DEFAULT: &str = "LoaderEntryDefault";
-const LOADER_ENTRY_SELECTED: &str = "LoaderEntrySelected";
+pub const LOADER_ENTRY_SELECTED: &str = "LoaderEntrySelected";
 
 /// Converts a UTF‑8 Rust string to a UTF-16LE byte array.
-fn encode_utf16le(data: &str) -> Vec<u8> {
+pub fn encode_utf16le(data: &str) -> Vec<u8> {
     data.encode_utf16()
         .flat_map(|u| u.to_le_bytes())
         .chain([0; 2])
@@ -45,7 +45,7 @@ fn decode_utf16le(mut data: &[u8]) -> String {
 /// Sets an EFI variable using the efivar command-line tool.
 /// - `name` should include the GUID, e.g. "BootNext-8be4df61-93ca-11d2-aa0d-00e098032b8c"
 /// - `data` should be a hex string, e.g. "0100" for BootNext=0001 (little-endian)
-fn set_efi_variable(name: &str, data_utf16: &[u8]) -> Result<(), TridentError> {
+pub fn set_efi_variable(name: &str, data_utf16: &[u8]) -> Result<(), TridentError> {
     debug!(
         "Setting EFI variable '{name}' to '{}'",
         decode_utf16le(data_utf16)
@@ -170,9 +170,9 @@ mod tests {
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
-    use pytest_gen::functional_test;
-
     use super::*;
+
+    use pytest_gen::functional_test;
 
     #[functional_test(feature = "helpers")]
     fn test_set_oneshot() {
@@ -215,6 +215,13 @@ mod functional_test {
         assert_eq!(decode_utf16le(&data), current_entry);
 
         set_default("").unwrap();
+
+        // Unset the current entry
+        set_efi_variable(
+            &format!("{BOOTLOADER_INTERFACE_GUID}-{LOADER_ENTRY_SELECTED}"),
+            &encode_utf16le(""),
+        )
+        .unwrap();
     }
 
     #[functional_test(feature = "helpers")]
