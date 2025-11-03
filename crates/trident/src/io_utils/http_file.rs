@@ -38,7 +38,7 @@ const DOCKER_CONFIG_FILE_PATH: &str = ".docker/config.json";
 pub struct HttpFile {
     url: Url,
     position: u64,
-    size: u64,
+    pub(super) size: u64,
     client: Client,
     timeout: Duration,
     token: Option<String>,

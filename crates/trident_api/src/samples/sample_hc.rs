@@ -918,7 +918,8 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     Swap {
                         device_id: "swap2".into(),
                     },
-                ]
+                ],
+                ..Default::default()
             },
             os: Os {
                 users: vec![User {
