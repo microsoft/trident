@@ -31,15 +31,11 @@ pub struct Health {
 pub enum Check {
     /// Script that will be run. The success or failure of the script will define
     /// the health of the target OS.
-    /// Valid script servicing types are CleanInstall and AbUpdate, or All (which
-    /// will execute for both).
     Script(Script),
 
     /// Define systemd service(s) that need to be in a successful state, defined
     /// by `systemctl status` returning success. The success or failure of this
     /// check will define the health of the target OS.
-    /// Valid script servicing types are CleanInstall and AbUpdate, or All (which
-    /// will execute for both).
     SystemdCheck(SystemdCheck),
 }
 
