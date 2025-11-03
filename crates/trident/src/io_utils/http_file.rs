@@ -306,7 +306,7 @@ impl HttpFile {
         let mut retry = 0;
         let now = Instant::now();
         let timeout_time = now + timeout;
-        let mut sleep_duration = Duration::from_millis(10);
+        let sleep_duration = Duration::from_millis(1000);
         loop {
             if retry != 0 {
                 trace!("Retrying HTTP request (attempt {})", retry + 1);
@@ -343,10 +343,14 @@ impl HttpFile {
                 ));
             }
             thread::sleep(sleep_duration);
-            sleep_duration *= 2;
+            // Exponential backoff for sleep duration, up to 1 second and a bit
+            // if sleep_duration < Duration::from_secs(1) {
+            //     sleep_duration *= 2;
+            // }
             retry += 1;
         }
     }
+    
     /// Performs a request of a specific section of the file. Returns a PartialReader.
     pub fn section_reader(&self, section_offset: u64, size: u64) -> IoResult<PartialReader> {
         let end = section_offset + size - 1;
