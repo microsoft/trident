@@ -1,4 +1,5 @@
 import argparse
+import os
 import random
 import yaml
 
@@ -15,61 +16,20 @@ def inject_uefi_fallback_testing(host_config_path, uefi_fallback_mode=None):
         if uefi_fallback_mode is None:
             uefi_fallback_modes = ["none", "rollback", "rollforward"]
             # Randomly pick a fallback mode for testing.
-            random_mode = random.choice(uefi_fallback_modes)
-            host_config["os"]["uefiFallback"] = random_mode
-        else:
-            host_config["os"]["uefiFallback"] = uefi_fallback_mode
-        health_check_content = """EFI_PATH="/boot/efi/EFI"
-FALLBACK_PATH="$EFI_PATH/BOOT"
+            uefi_fallback_mode = random.choice(uefi_fallback_modes)
+        host_config["os"]["uefiFallback"] = uefi_fallback_mode
 
-EFI_OUTPUT="$(efibootmgr)"
-echo "$EFI_OUTPUT"
+        # Get uefi fallback health check script content
+        health_check_script_path = (
+            os.path.dirname(os.path.abspath(__file__))
+            + "/uefi_fallback_validation_script.txt"
+        )
+        with open(health_check_script_path, "r") as f:
+            health_check_content = f.read()
 
-CURRENT_BOOT="$(echo "$EFI_OUTPUT" | grep "BootCurrent")"
-if [ -z "$CURRENT_BOOT" ]; then
-    echo "Failed to get current boot entry"
-    exit 1
-fi
-
-CURRENT_BOOT_ENTRY="$(echo "$CURRENT_BOOT" | awk '{print $2}'"
-if [ -z "$CURRENT_BOOT_ENTRY" ]; then
-    echo "Failed to parse current boot entry"
-    exit 1
-fi
-
-CURRENT_AZL_BOOT_NAME="$(echo "$EFI_OUTPUT" | grep "Boot${CURRENT_BOOT_ENTRY}" | awk '{print $2}' | grep "AZL")"
-if [ -z "$CURRENT_AZL_BOOT_NAME" ]; then
-    echo "Current boot entry is not an AZL boot entry"
-    exit 1
-fi
-
-if [ "_REPLACE_FALLBACK_NODE_" == "none" ]; then
-    # if none, check that $FALLBACK_PATH is empty
-    if sudo find $FALLBACK_PATH/*; then
-        echo "$FALLBACK_PATH is not empty"
-        exit 1
-    else
-        echo "$FALLBACK_PATH is empty"
-        exit 0
-    fi
-else
-    AZL_BOOT_NAME_TO_CHECK="$CURRENT_AZL_BOOT_NAME"
-    if [ "_REPLACE_FALLBACK_NODE_" == "rollback" ] && _REPLACE_NOT_INSTALL_; then
-        # if rollback, check that $FALLBACK_PATH == opposite of $EFI_PATH/$CURRENT_AZL_BOOT_NAME
-        AZL_BOOT_NAME_TO_CHECK="$(echo $CURRENT_AZL_BOOT_NAME | sed "s/AZLA/AZLA_TMP/g; s/AZLB/AZLA/g; s/AZLA_TMP/AZLB/g")"
-    fi
-
-    if diff $FALLBACK_PATH/ $EFI_PATH/$AZL_BOOT_NAME_TO_CHECK/; then
-        echo "no difference detected between $FALLBACK_PATH and $EFI_PATH/$AZL_BOOT_NAME_TO_CHECK/"
-        exit 0
-    else
-        echo "difference detected between $FALLBACK_PATH and $EFI_PATH/$AZL_BOOT_NAME_TO_CHECK/"
-        exit 1
-    fi
-fi
-"""
+        # Replace placeholder with selected uefi fallback mode
         health_check_content = health_check_content.replace(
-            "_REPLACE_FALLBACK_NODE_", random_mode
+            "_REPLACE_FALLBACK_NODE_", uefi_fallback_mode
         )
 
         if "health" not in host_config:
