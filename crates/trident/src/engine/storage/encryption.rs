@@ -575,13 +575,23 @@ mod functional_test {
         );
     }
 
+    /// Helper: create dirs and test files at the given paths
+    fn create_test_files(paths: &[PathBuf]) {
+        for p in paths {
+            if let Some(parent) = p.parent() {
+                fs::create_dir_all(parent).unwrap();
+            }
+            fs::write(p, b"test-data").unwrap();
+        }
+    }
+
     #[functional_test(feature = "helpers")]
     fn test_get_binary_paths_pcrlock() {
         let esp_path = PathBuf::from(ESP_MOUNT_POINT_PATH);
         let esp_uki_path = esp_path.join(UKI_DIRECTORY);
 
-        let ctx = EngineContext {
-            ab_active_volume: Some(AbVolumeSelection::VolumeA),
+        let mut ctx = EngineContext {
+            ab_active_volume: None,
             install_index: 0,
             servicing_type: ServicingType::CleanInstall,
             ..Default::default()
@@ -596,14 +606,14 @@ mod functional_test {
         );
         efivar::set_efi_variable(&var_name, &efivar::encode_utf16le(current_entry)).unwrap();
 
-        // Test case #1: Neither PCR 4 nor PCR 11 requested, so should return two empty vectors
+        // Test case #1: Neither PCR 4 nor 11 requested, so should return two empty vectors.
         let pcrs_none = BitFlags::empty();
         assert_eq!(
             get_binary_paths_pcrlock(&ctx, pcrs_none, None).unwrap(),
             (vec![], vec![])
         );
 
-        // Test case #2: Both PCRs 4 and 11 are requested, but files don't exist, should return error
+        // Test case #2: Both PCRs 4 and 11 are requested, but files don't exist, expect error.
         let pcrs = BitFlags::from(Pcr::Pcr4) | BitFlags::from(Pcr::Pcr11);
         let esp_azla_path = esp_path.join("EFI").join("AZLA");
         let expected_paths_a = vec![
@@ -628,19 +638,41 @@ mod functional_test {
             expected_error_message
         );
 
-        // Test case #3: All files exist, should return correct vectors
-        for path in &expected_paths {
-            if let Some(parent) = path.parent() {
-                fs::create_dir_all(parent).unwrap();
-            }
-            fs::write(path, b"test").unwrap();
-        }
-        let result = get_binary_paths_pcrlock(&ctx, pcrs, None).unwrap();
-        assert_eq!(result, (vec![uki_path.clone()], expected_paths_a));
+        // Test case #3: All files exist, should return correct vectors.
+        create_test_files(&expected_paths);
+        assert_eq!(
+            get_binary_paths_pcrlock(&ctx, pcrs, None).unwrap(),
+            (vec![uki_path.clone()], expected_paths_a.clone())
+        );
 
-        // Test case #4: Only PCR 11 is requested, so should return only UKI paths
+        // Test case #4: Only PCR 11 is requested, so should return only UKI paths.
         let pcrs_11 = BitFlags::from(Pcr::Pcr11);
-        let result = get_binary_paths_pcrlock(&ctx, pcrs_11, None).unwrap();
-        assert_eq!(result, (vec![uki_path], vec![]));
+        assert_eq!(
+            get_binary_paths_pcrlock(&ctx, pcrs_11, None).unwrap(),
+            (vec![uki_path.clone()], vec![])
+        );
+
+        // Test case #5: PCRs 4 and 11 requested, mount_path provided, A is active
+        // Should return current plus B’s bootloader/UKI in /mnt (mount_path)
+        let pcrs = BitFlags::from(Pcr::Pcr4) | BitFlags::from(Pcr::Pcr11);
+        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
+        let mount_path = PathBuf::from("/mnt");
+
+        // Construct expected paths
+        let mount_esp_azlb_path = mount_path.join("EFI").join("AZLB");
+        let expected_uki = vec![uki_path.clone(), esp_uki_path.join(TMP_UKI_NAME)];
+        let mut expected_bootloader = expected_paths_a.clone();
+        expected_bootloader.extend(vec![
+            mount_esp_azlb_path.join("bootx64.efi"),
+            mount_esp_azlb_path.join("grubx64.efi"),
+        ]);
+        let mut expected_paths_mnt = expected_uki.clone();
+        expected_paths_mnt.extend(expected_bootloader.clone());
+        create_test_files(&expected_paths_mnt);
+
+        assert_eq!(
+            get_binary_paths_pcrlock(&ctx, pcrs, Some(&mount_path)).unwrap(),
+            (expected_uki, expected_bootloader)
+        );
     }
 }
