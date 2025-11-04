@@ -186,7 +186,6 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal YAML: %w", err)
 	}
-	logrus.Tracef("New Trident configuration:\n%v", string(hc_yaml))
 
 	sftpClient, err := utils.NewSftpSudoClient(h.client)
 	if err != nil {
