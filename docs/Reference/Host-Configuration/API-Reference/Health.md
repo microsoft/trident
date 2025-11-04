@@ -14,7 +14,7 @@ Configuration for the host OS health.
 
 Checks to be run before Trident commits a serviced target OS as 'provisioned'. If any of the checks fail, the commit will not be completed and, for A/B update, a rollback will be triggered.
 
-These checks run for installs and A/B updates. If `runOn` is specified for anything other than 'clean-install' or 'ab-update' type, the check will be ignored. If 'all' is specified, the check will run for both 'clean-install' and 'ab-update'.
+These checks can run for installs and A/B updates. If `runOn` is specified for anything other than 'clean-install' or 'ab-update' type, the check will be ignored. If 'all' is specified, the check will run for both 'clean-install' and 'ab-update'.
 
 These checks are run in the target OS. The `$TARGET_ROOT` variable will be set to '/' for consistency with postProvision scripts.
 

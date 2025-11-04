@@ -10,7 +10,7 @@
 
 ### variant-1
 
-Script that will be run. The success or failure of the script will define the health of the target OS. Valid servicing types are CleanInstall and AbUpdate, or All (which will execute for both).
+Script that will be run. The success or failure of the script will define the health of the target OS. The script will run where Trident is running, either in the target OS or in a container running on the target OS (where the target OS '/' is mounted as '/host').
 
 | Characteristic | Value    |
 | -------------- | -------- |
@@ -27,7 +27,7 @@ Script that will be run. The success or failure of the script will define the he
 
 ### variant-2
 
-Define systemd service(s) that need to be in a successful state, defined by `systemctl status` returning success. The success or failure of this check will define the health of the target OS. Valid script servicing types are CleanInstall and AbUpdate, or All (which will execute for both).
+Define systemd service(s) that need to be in a successful state, defined by `systemctl status` returning success. The success or failure of this check will define the health of the target OS.
 
 | Characteristic | Value    |
 | -------------- | -------- |

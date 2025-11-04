@@ -49,7 +49,7 @@ List of systemd services that need to be in successful state.
 
 ### `timeoutSeconds` **<span>(required)</span>**
 
-Timeout for the systemd check.
+Timeout for the systemd check, in seconds. If the service is found to be in an unsuccessful state, it will be requeried every 100ms until the timeout is reached. If the timeout is reached and the service is still unsuccessful, an error is returned.
 
 | Characteristic | Value     |
 | -------------- | --------- |
