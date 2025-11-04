@@ -328,7 +328,7 @@ fn skip_uefi_fallback_copy(
     let azla_dir_name = boot::make_esp_dir_name(install_index, AbVolumeSelection::VolumeA);
     if azla_dir_name == source_esp_name && servicing_type == &ServicingType::AbUpdate {
         // For A/B update, check for the AZLA **not** existing and
-        // AZLB existing. In this case, skip the UEFI fallack copy
+        // AZLB existing. In this case, skip the UEFI fallback copy
         if !esp_dir_path.join(azla_dir_name).exists()
             && esp_dir_path
                 .join(boot::make_esp_dir_name(
