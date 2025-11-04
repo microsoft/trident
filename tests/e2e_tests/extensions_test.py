@@ -20,9 +20,9 @@ def test_extensions(
         sysextsConfig = osConfig["sysexts"]
 
         result = connection.run(
-            "systemd-sysext list --json=pretty --no-pager", warn=True
+            "sudo systemd-sysext list --json=pretty --no-pager", warn=True
         )
-        assert result.ok, "Failed to run 'systemd-sysext list'"
+        assert result.ok, f"failed to run 'systemd-sysext list': {result.stderr}"
         sysext_list = json.loads(result.stdout)
 
         for sysext in sysextsConfig:
@@ -33,11 +33,22 @@ def test_extensions(
 
             # Extract filename from path and check if its in systemd-sysext list
             found = any(ext.get("path") == path for ext in sysext_list)
-            assert found, f"systext at {path} not found in systemd-sysext list"
+            assert found, f"sysext at {path} not found in systemd-sysext list"
     if "confexts" in osConfig:
         confextsConfig = osConfig["confexts"]
+
+        result = connection.run(
+            "sudo systemd-confext list --json=pretty --no-pager", warn=True
+        )
+        assert result.ok, f"failed to run 'systemd-confext list': {result.stderr}"
+        confext_list = json.loads(result.stdout)
+
         for confext in confextsConfig:
             # Verify that the path exists on the target OS
             path = confext["path"]
             result = connection.run(f"test -e {path}", warn=True)
             assert result.ok, f"confext path does not exist: {path}"
+
+            # Extract filename from path and check if its in systemd-confext list
+            found = any(ext.get("path") == path for ext in confext_list)
+            assert found, f"confext at {path} not found in systemd-confext list"
