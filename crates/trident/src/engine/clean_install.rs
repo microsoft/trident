@@ -331,29 +331,13 @@ pub(crate) fn finalize_clean_install(
     // On clean install, need to verify that AZLA entry exists in /mnt/newroot/boot/efi
     let esp_path = join_relative(new_root.path(), ESP_MOUNT_POINT_PATH);
 
-    if ctx.spec.storage.raw_cosi {
-        new_root.unmount_all()?;
-        return if !state
-            .host_status()
-            .spec
-            .internal_params
-            .get_flag(NO_TRANSITION)
-        {
-            Ok(ExitKind::NeedsReboot)
-        } else {
-            warn!(
-                "Skipping reboot as requested by internal parameter '{}'",
-                NO_TRANSITION
-            );
-            Ok(ExitKind::Done)
-        };
+    if !ctx.spec.storage.raw_cosi {
+        bootentries::create_and_update_boot_variables(&ctx, &esp_path)?;
+        // Analogous to how UEFI variables are configured, finalize must start configuring
+        // UEFI fallback, and a successful commit will finish it.
+        esp::set_uefi_fallback_contents(&ctx, ServicingState::CleanInstallStaged, new_root.path())
+            .structured(ServicingError::SetUpUefiFallback)?;
     }
-
-    bootentries::create_and_update_boot_variables(&ctx, &esp_path)?;
-    // Analogous to how UEFI variables are configured, finalize must start configuring
-    // UEFI fallback, and a successful commit will finish it.
-    esp::set_uefi_fallback_contents(&ctx, ServicingState::CleanInstallStaged, new_root.path())
-        .structured(ServicingError::SetUpUefiFallback)?;
 
     debug!(
         "Updating host's servicing state to '{:?}'",
@@ -366,11 +350,13 @@ pub(crate) fn finalize_clean_install(
     grpc::send_host_status_state(sender, state)?;
 
     // Persist the datastore to the new root
-    state.persist(&join_relative(
-        new_root.path(),
-        &state.host_status().spec.trident.datastore_path,
-    ))?;
-    state.close();
+    if !ctx.spec.storage.raw_cosi {
+        state.persist(&join_relative(
+            new_root.path(),
+            &state.host_status().spec.trident.datastore_path,
+        ))?;
+        state.close();
+    }
 
     // Metric for clean install provisioning time in seconds
     if let Some(start_time) = clean_install_start_time {

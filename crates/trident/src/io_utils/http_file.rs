@@ -350,7 +350,7 @@ impl HttpFile {
             retry += 1;
         }
     }
-    
+
     /// Performs a request of a specific section of the file. Returns a PartialReader.
     pub fn section_reader(&self, section_offset: u64, size: u64) -> IoResult<PartialReader> {
         let end = section_offset + size - 1;
