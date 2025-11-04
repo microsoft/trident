@@ -157,6 +157,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     permissions: Some("0755".into()),
                     ..Default::default()
                 }],
+                uefi_fallback: Some(UefiFallbackMode::Rollback),
                 ..Default::default()
             },
             scripts: Scripts {
@@ -372,6 +373,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     permissions: Some("0755".into()),
                     ..Default::default()
                 }],
+                uefi_fallback: Some(UefiFallbackMode::Rollback),
                 ..Default::default()
             },
             scripts: Scripts {
@@ -1145,7 +1147,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     },
                     sysexts: vec![],
                     confexts: vec![],
-                    uefi_fallback: Some(UefiFallbackMode::Rollback),
+                    uefi_fallback: None,
                 },
                 scripts: Scripts {
                     post_configure: vec![Script {
@@ -1293,7 +1295,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     },
                     sysexts: vec![],
                     confexts: vec![],
-                    uefi_fallback: Some(UefiFallbackMode::Rollback),
+                    uefi_fallback: None,
                 },
                 scripts: Scripts {
                     post_configure: vec![Script {
@@ -1460,7 +1462,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     },
                     sysexts: vec![],
                     confexts: vec![],
-                    uefi_fallback: Some(UefiFallbackMode::Rollback),
+                    uefi_fallback: None,
                 },
                 scripts: Scripts {
                     post_configure: vec![Script {
