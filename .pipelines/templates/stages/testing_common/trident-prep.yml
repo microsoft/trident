@@ -49,7 +49,7 @@ steps:
 
       if [ "${{ parameters.config }}" == "extensions" ]; then
         tag="$(TAG_BASE).1"
-        oci_sysext_url="oci://$(ACR_NAME).azurecr.io/sysext:${tag}"
+        oci_sysext_url="oci://$(ACR_NAME).azurecr.io/$(SYSEXT_REPO):${tag}"
         cmd+=(--ociSysextUrl "$oci_sysext_url")
 
         # Calculate SHA384 hashes of extension images.
@@ -59,12 +59,16 @@ steps:
 
       if [ "${{ parameters.config }}" == "root-verity" ]; then
         tag="$(TAG_BASE).1"
-        oci_confext_url="oci://$(ACR_NAME).azurecr.io/confext:${tag}"
+        oci_confext_url="oci://$(ACR_NAME).azurecr.io/$(CONFEXT_REPO):${tag}"
         cmd+=(--ociConfextUrl "$oci_confext_url")
+        oci_sysext_url="oci://$(ACR_NAME).azurecr.io/$(SYSEXT_REPO):${tag}"
+        cmd+=(--ociSysextUrl "$oci_sysext_url")
 
         # Calculate SHA384 hashes of extension images.
         confext_sha384=$(sha384sum test-confext-1.raw | awk '{print $1}')
         cmd+=(--confextHash "$confext_sha384")
+        sysext_sha384=$(sha384sum test-sysext-1.raw | awk '{print $1}')
+        cmd+=(--sysextHash "$sysext_sha384")
       fi
 
       # Execute the command

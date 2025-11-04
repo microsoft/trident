@@ -86,6 +86,7 @@ steps:
             --file-paths $(Build.SourcesDirectory)/test-sysext-1.raw \
             --file-paths $(Build.SourcesDirectory)/test-sysext-2.raw \
             --tag-var-name TAG_BASE
+            --repo-var-name SYSEXT_REPO
 
         elif [ "${{ parameters.config }}" == 'root-verity' ]; then
           ./bin/storm-trident script acr-push \
@@ -97,6 +98,7 @@ steps:
             --file-paths $(Build.SourcesDirectory)/test-sysext-1.raw \
             --file-paths $(Build.SourcesDirectory)/test-sysext-2.raw \
             --tag-var-name TAG_BASE
+            --repo-var-name SYSEXT_REPO
           ./bin/storm-trident script acr-push \
             --config ${{ parameters.config }} \
             --deployment-environment ${{ parameters.deploymentEnvironment }} \
@@ -106,6 +108,7 @@ steps:
             --file-paths $(Build.SourcesDirectory)/test-confext-1.raw \
             --file-paths $(Build.SourcesDirectory)/test-confext-2.raw \
             --tag-var-name TAG_BASE
+            --repo-var-name CONFEXT_REPO
 
         else
           echo "Skipping step. Configuration is '${{ parameters.config }}'."
