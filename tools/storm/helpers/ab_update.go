@@ -223,6 +223,16 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 	return nil
 }
 
+// If ForcedRollback is configured, failing health checks are added to
+// the Host Configuration:
+//   - a script that returns non-zero
+//   - a systemd check that is configured for 2 non-existent services
+//
+// These expected failures are verified by tests/e2e_tests/rollback_test.py
+// after the update finishes.
+//
+// If ForcedRollback is not configured, this function ensures that the
+// above health checks are removed if they exist.
 func (h *AbUpdateHelper) handleAutoRollback(tc storm.TestCase) error {
 	systemdCheckName := "check-non-existent-service-to-invoke-rollback"
 	scriptCheckName := "invoke-rollback-from-script"
