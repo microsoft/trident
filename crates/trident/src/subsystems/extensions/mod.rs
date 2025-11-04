@@ -180,7 +180,6 @@ impl ExtensionsSubsystem {
         if !staging_dir.exists() {
             fs::create_dir_all(staging_dir)
                 .with_context(|| format!("Failed to create dir '{}'", staging_dir.display()))?;
-            log::debug!("Created dir {staging_dir:?}");
         };
 
         self.populate_extensions_inner(ctx, timeout, staging_dir, ExtensionType::Sysext, true)?;
@@ -298,7 +297,6 @@ impl ExtensionsSubsystem {
 
             let ext_data =
                 ext_data_result.context("Failed to get extension-release information")?;
-            log::debug!("ext data is: {ext_data:?}");
             if new {
                 self.extensions.push(ext_data);
             } else {
