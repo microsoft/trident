@@ -194,13 +194,12 @@ fn commit_finalized_on_expected_root(
     let health_check_status =
         run_health_checks(ctx, datastore, current_servicing_state, servicing_type)?;
     if let BootValidationResult::CorrectBootHealthCheckFailed(err) = health_check_status {
-        match servicing_type {
-            ServicingType::AbUpdate => {
-                return Ok(BootValidationResult::CorrectBootHealthCheckFailed(err))
-            }
-            ServicingType::CleanInstall => return Err(err),
-            _ => {}
-        };
+        if servicing_type == ServicingType::AbUpdate {
+            return Ok(BootValidationResult::CorrectBootHealthCheckFailed(err));
+        } else {
+            // Only CleanInstall is possible here; return the error.
+            return Err(err);
+        }
     }
 
     // If it's virtdeploy, after confirming that we have booted into the correct image, we need
