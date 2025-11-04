@@ -1490,8 +1490,7 @@
       "required": [
         "name",
         "runOn",
-        "systemdServices",
-        "timeoutSeconds"
+        "systemdServices"
       ],
       "properties": {
         "name": {
@@ -1514,6 +1513,7 @@
         },
         "timeoutSeconds": {
           "description": "Timeout for the systemd check, in seconds. If the service is found to be in an unsuccessful state, it will be requeried every 100ms until the timeout is reached. If the timeout is reached and the service is still unsuccessful, an error is returned.",
+          "default": 30,
           "type": "integer",
           "format": "uint",
           "minimum": 0.0

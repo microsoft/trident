@@ -6,6 +6,8 @@ use schemars::JsonSchema;
 use crate::config::host::scripts::{Script, ServicingTypeSelection};
 use crate::status::ServicingType;
 
+const DEFAULT_SYSTEMD_CHECK_TIMEOUT_SECONDS: usize = 30;
+
 /// Configuration for the host OS health.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -113,6 +115,7 @@ pub struct SystemdCheck {
     /// Timeout for the systemd check, in seconds. If the service is found to be
     /// in an unsuccessful state, it will be requeried every 100ms until the timeout is reached.
     /// If the timeout is reached and the service is still unsuccessful, an error is returned.
+    #[serde(default = "SystemdCheck::default_timeout")]
     pub timeout_seconds: usize,
 
     /// List of servicing types that the check should run on.
@@ -142,6 +145,11 @@ impl SystemdCheck {
                 .contains(&ServicingTypeSelection::UpdateAndReboot),
             _ => false,
         }
+    }
+
+    /// Default timeout for systemd check.
+    fn default_timeout() -> usize {
+        DEFAULT_SYSTEMD_CHECK_TIMEOUT_SECONDS
     }
 }
 
