@@ -327,7 +327,20 @@ pub(crate) fn finalize_clean_install(
 
     if ctx.spec.storage.raw_cosi {
         new_root.unmount_all()?;
-        return Ok(ExitKind::NeedsReboot);
+        return if !state
+            .host_status()
+            .spec
+            .internal_params
+            .get_flag(NO_TRANSITION)
+        {
+            Ok(ExitKind::NeedsReboot)
+        } else {
+            warn!(
+                "Skipping reboot as requested by internal parameter '{}'",
+                NO_TRANSITION
+            );
+            Ok(ExitKind::Done)
+        };
     }
 
     bootentries::create_and_update_boot_variables(&ctx, &esp_path)?;
