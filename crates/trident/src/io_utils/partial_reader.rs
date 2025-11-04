@@ -53,6 +53,18 @@ impl PartialReader {
 
     /// Fetches the next chunk of data, handling partial responses.
     fn fetch_next_chunk(&mut self) -> IoResult<()> {
+        // Calculate the requested range size to detect partial responses
+        let requested_range_size = match self.requested_end {
+            Some(end) => {
+                if self.current_position <= end {
+                    Some(end - self.current_position + 1)
+                } else {
+                    Some(0) // Already past the end
+                }
+            }
+            None => None, // Open-ended request
+        };
+
         let request_sender = || {
             let mut request = self.client.get(self.url.as_str());
 
@@ -130,6 +142,22 @@ impl PartialReader {
                     u64::MAX
                 }
             };
+
+            // Check if we got a partial response (less than what we requested)
+            let is_partial_response = if let Some(requested_size) = requested_range_size {
+                requested_size > 0 && bytes_to_read < requested_size
+            } else {
+                false // Can't determine for open-ended requests
+            };
+
+            if is_partial_response {
+                trace!(
+                    "Server returned partial response: got {} bytes, requested {} bytes. Sleeping for 1 second.",
+                    bytes_to_read,
+                    requested_range_size.unwrap()
+                );
+                std::thread::sleep(Duration::from_secs(1));
+            }
 
             // If bytes_to_read is 0, we've reached EOF
             if bytes_to_read == 0 {
@@ -802,5 +830,51 @@ mod tests {
         assert_eq!(String::from_utf8(result).unwrap(), "ABCDEFGHIJ");
         mock1.assert();
         mock2.assert();
+    }
+
+    #[test]
+    fn test_partial_reader_sleep_on_partial_response() {
+        env_logger::builder()
+            .filter_level(log::LevelFilter::Trace)
+            .is_test(true)
+            .try_init()
+            .ok();
+
+        let mut server = mockito::Server::new();
+        let file_name = "/test.txt";
+
+        // Mock returns only 5 bytes instead of requested 10
+        let mock = server
+            .mock("GET", file_name)
+            .match_header("Range", "bytes=0-9")
+            .with_status(206)
+            .with_header("Content-Range", "bytes 0-4/20")
+            .with_header("Content-Length", "5")
+            .with_body("HELLO")
+            .expect(1)
+            .create();
+
+        let url = Url::parse(&server.url()).unwrap().join(file_name).unwrap();
+        let client = Client::new();
+
+        let mut reader =
+            PartialReader::new(client, url, None, Some(0), Some(9), Duration::from_secs(5))
+                .unwrap();
+
+        // Measure time to ensure sleep occurs
+        let start = std::time::Instant::now();
+        let mut buffer = String::new();
+        let bytes_read = reader.read_to_string(&mut buffer).unwrap();
+        let elapsed = start.elapsed();
+
+        assert_eq!(bytes_read, 5);
+        assert_eq!(buffer, "HELLO");
+        // Verify that the sleep occurred (should be at least 1 second)
+        assert!(
+            elapsed >= Duration::from_millis(900),
+            "Expected sleep of at least 900ms, but elapsed time was {:?}",
+            elapsed
+        );
+        mock.assert();
     }
 }
