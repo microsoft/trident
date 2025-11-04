@@ -44,8 +44,17 @@ os:
     - name: testing-user
       sshPublicKeys: []
       sshMode: key-only
+  additionalFiles:
+  - destination: /var/lib/trident/local-health-check-file.sh
+    content: |
+      echo 'This is a local health check file.'
+      exit 0
 health:
   checks:
+  - name: invoke-rollback-from-local-script
+    runOn:
+    - clean-install
+    path: /var/lib/trident/local-health-check-file.sh
   - name: invoke-rollback-from-script
     runOn:
     - clean-install

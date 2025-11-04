@@ -3,7 +3,6 @@ use std::{
     ffi::OsStr,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
     thread,
     time::{Duration, Instant},
 };
@@ -11,7 +10,9 @@ use std::{
 use anyhow::{Context, Error};
 use log::{debug, error, info, trace};
 
-use osutils::{dependencies::Dependency, exe::OutputChecker, files, scripts::ScriptRunner};
+use osutils::{
+    container, dependencies::Dependency, exe::OutputChecker, files, scripts::ScriptRunner,
+};
 use trident_api::{
     config::{
         Check, HostConfigurationDynamicValidationError, HostConfigurationStaticValidationError,
@@ -21,7 +22,7 @@ use trident_api::{
         internal_params::WRITABLE_ETC_OVERLAY_HOOKS, DEFAULT_SCRIPT_INTERPRETER,
         ROOT_MOUNT_POINT_PATH,
     },
-    error::{InvalidInputError, ReportError, ServicingError, TridentError},
+    error::{InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::ServicingType,
 };
 
@@ -309,11 +310,36 @@ impl HooksSubsystem {
         let content = match &script.source {
             ScriptSource::Content(content) => content.as_bytes(),
             ScriptSource::Path(path) => {
-                &self
-                    .staged_files
-                    .get(path)
-                    .context(format!("Failed to find staged file '{}'", path.display()))?
-                    .contents
+                if let Some(staged_file) = &self.staged_files.get(path) {
+                    trace!(
+                        "Loading script '{}' from staged files '{}'",
+                        script.name,
+                        path.display()
+                    );
+                    &staged_file.contents
+                } else {
+                    // Script was not staged, check path on local filesystem
+                    let local_path = if container::is_running_in_container()
+                        .unstructured("Failed to determine if running in container")?
+                    {
+                        // If running in container, prepend path with host mount
+                        let host_root_path = container::get_host_root_path()
+                            .unstructured("Failed to get host root path")?;
+                        host_root_path.join(path)
+                    } else {
+                        path.clone()
+                    };
+                    trace!(
+                        "Loading script '{}' from path '{}'",
+                        script.name,
+                        local_path.display()
+                    );
+                    &std::fs::read(&local_path).context(format!(
+                        "Failed to read script '{}' from path '{}'",
+                        script.name,
+                        local_path.display()
+                    ))?
+                }
             }
         };
 
@@ -396,48 +422,60 @@ impl HooksSubsystem {
             debug!("Running health check scripts");
         }
 
-        // Shared vector to collect script errors from threads
-        let health_check_errors = Arc::new(Mutex::new(Vec::new()));
+        // Channel to collect script errors from threads
+        let (tx, rx) = std::sync::mpsc::channel();
         // Create parallel health-check threads within a scope, the
         // threads will all be joined before the scope ends.
         thread::scope(|s| {
             for health_check in health_checks {
                 let subsystem = &self;
-                let loop_script_errors = health_check_errors.clone();
-                s.spawn(move || match health_check {
-                    Check::SystemdCheck(systemd_check) => {
-                        if let Err(err) = subsystem.run_systemd_check(&systemd_check) {
-                            loop_script_errors.lock().unwrap().push(ScriptError {
-                                script_name: systemd_check.name,
-                                error_message: format!("{err:?}"),
-                            });
+                let inner_tx = tx.clone();
+                s.spawn(move || {
+                    match health_check {
+                        Check::SystemdCheck(systemd_check) => {
+                            if let Err(err) = subsystem.run_systemd_check(&systemd_check) {
+                                if let Err(e) = inner_tx.send(ScriptError {
+                                    script_name: systemd_check.name,
+                                    error_message: format!("{err:?}"),
+                                }) {
+                                    error!("Failed to send systemd check error: {e:?}");
+                                }
+                            }
                         }
-                    }
-                    Check::Script(inner_script) => {
-                        if let Err(err) = subsystem.run_script(
-                            &inner_script,
-                            ctx,
-                            Path::new(ROOT_MOUNT_POINT_PATH),
-                        ) {
-                            loop_script_errors.lock().unwrap().push(ScriptError {
-                                script_name: inner_script.name,
-                                error_message: format!("{err:?}"),
-                            });
+                        Check::Script(inner_script) => {
+                            if let Err(err) = subsystem.run_script(
+                                &inner_script,
+                                ctx,
+                                Path::new(ROOT_MOUNT_POINT_PATH),
+                            ) {
+                                if let Err(e) = inner_tx.send(ScriptError {
+                                    script_name: inner_script.name,
+                                    error_message: format!("{err:?}"),
+                                }) {
+                                    error!("Failed to send script error: {e:?}");
+                                }
+                            }
                         }
-                    }
+                    };
+                    drop(inner_tx);
                 });
             }
+            drop(tx);
         });
+
+        // Collect messages from the channel
+        let mut health_check_errors = Vec::new();
+        while let Ok(script_error) = rx.recv() {
+            health_check_errors.push(script_error);
+        }
 
         // Create error collection from individual health check failures
         let health_check_errors_message: String = health_check_errors
-            .lock()
-            .unwrap()
             .iter()
             .map(|e| format!("{}: {:?}", e.script_name, e.error_message))
             .collect::<Vec<String>>()
             .join("\n");
-        if !health_check_errors.lock().unwrap().is_empty() {
+        if !health_check_errors.is_empty() {
             error!(
                 "Health checks completed with errors:\n{}",
                 health_check_errors_message
