@@ -353,7 +353,7 @@ var rootCmd = &cobra.Command{
 		}
 
 		// Wait for something to happen
-		var exitCode = phonehome.ListenLoop(terminateCtx, result, waitForProvisioned, maxFailures, onlyPrintExitCode)
+		var exitCode = phonehome.ListenLoop(terminateCtx, result, waitForProvisioned, maxFailures)
 
 		err = server.Shutdown(context.Background())
 		if err != nil {
