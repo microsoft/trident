@@ -9,6 +9,7 @@ def test_extensions(
     hostConfiguration: dict,
 ) -> None:
     osConfig = hostConfiguration["os"]
+    print(osConfig)
     sysextsConfig = osConfig["sysexts"]
     for sysext in sysextsConfig:
         # Verify that the path exists on the target OS
