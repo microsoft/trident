@@ -321,19 +321,16 @@ pub fn configure_uefi_fallback(
 /// VMD-based image for A/B update.
 fn skip_uefi_fallback_copy(
     esp_dir_path: &Path,
+    source_esp_name: &str,
     servicing_type: &ServicingType,
     install_index: usize,
 ) -> bool {
-    if servicing_type == &ServicingType::AbUpdate {
-        // For A/B update, check for the presence of AZLA and AZLB
-        // boot paths, if neither exist, skip the UEFI fallback copy.
-        if !esp_dir_path
-            .join(boot::make_esp_dir_name(
-                install_index,
-                AbVolumeSelection::VolumeA,
-            ))
-            .exists()
-            && !esp_dir_path
+    let azla_dir_name = boot::make_esp_dir_name(install_index, AbVolumeSelection::VolumeA);
+    if azla_dir_name == source_esp_name && servicing_type == &ServicingType::AbUpdate {
+        // For A/B update, check for the AZLA **not** existing and
+        // AZLB existing. In this case, skip the UEFI fallack copy
+        if !esp_dir_path.join(azla_dir_name).exists()
+            && esp_dir_path
                 .join(boot::make_esp_dir_name(
                     install_index,
                     AbVolumeSelection::VolumeB,
@@ -355,7 +352,12 @@ fn copy_boot_files_for_uefi_fallback(
     let esp_dir_path = mount_point
         .join(ESP_RELATIVE_MOUNT_POINT_PATH)
         .join(ESP_EFI_DIRECTORY);
-    if skip_uefi_fallback_copy(&esp_dir_path, servicing_type, install_index) {
+    if skip_uefi_fallback_copy(
+        &esp_dir_path,
+        source_esp_name,
+        servicing_type,
+        install_index,
+    ) {
         debug!(
             "Skipping UEFI fallback copy for servicing type {:?}",
             servicing_type
