@@ -211,9 +211,7 @@ fn commit_finalized_on_expected_root(
             .get_flag(VIRTDEPLOY_BOOT_ORDER_WORKAROUND);
 
     // Persist the boot order change
-    if current_servicing_state == ServicingState::AbUpdateFinalized
-        || use_virtdeploy_workaround
-    {
+    if current_servicing_state == ServicingState::AbUpdateFinalized || use_virtdeploy_workaround {
         bootentries::persist_boot_order().message("Failed to persist boot order after reboot")?;
     }
 
