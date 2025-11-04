@@ -30,7 +30,9 @@ pub struct Health {
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub enum Check {
     /// Script that will be run. The success or failure of the script will define
-    /// the health of the target OS.
+    /// the health of the target OS. The script will run where Trident is running,
+    /// either in the target OS or in a container running on the target OS (where
+    /// the target OS '/' is mounted as '/host').
     Script(Script),
 
     /// Define systemd service(s) that need to be in a successful state, defined
