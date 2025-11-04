@@ -10,7 +10,7 @@ use anyhow::{bail, ensure, Context, Error};
 use log::warn;
 use tempfile::NamedTempFile;
 
-use osutils::{dependencies::Dependency, path};
+use osutils::{container, dependencies::Dependency, path};
 use trident_api::{
     config::Extension,
     constants::internal_params::HTTP_CONNECTION_TIMEOUT_SECONDS,
@@ -94,20 +94,28 @@ impl Subsystem for ExtensionsSubsystem {
     }
 
     fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
+        let mount_path = if container::is_running_in_container()? {
+            let host_root = container::get_host_root_path()?;
+            path::join_relative(host_root, mount_path)
+        } else {
+            PathBuf::from(mount_path)
+        };
+        log::debug!("Mount path is {mount_path:?}");
+
         // Define staging directory, in which extension images will be downloaded.
-        let staging_dir = path::join_relative(mount_path, EXTENSION_IMAGE_STAGING_DIRECTORY);
+        let staging_dir = path::join_relative(&mount_path, EXTENSION_IMAGE_STAGING_DIRECTORY);
 
         // Download new extension images. Mount and process all extension images.
         self.populate_extensions(ctx, &staging_dir)
             .structured(InternalError::PopulateExtensionImages)?;
 
         // Ensure that desired target directories exist on the target OS.
-        self.create_directories(mount_path)
+        self.create_directories(&mount_path)
             .structured(ServicingError::CreateExtensionImageDirectories)?;
 
         // Determine which images need to be removed and which should be added.
         // Copy extension images to their proper locations.
-        self.set_up_extensions(mount_path, ctx.servicing_type)
+        self.set_up_extensions(&mount_path, ctx.servicing_type)
             .structured(InternalError::SetUpExtensionImages)?;
 
         // Clean-up staging directory. Recursively remove all contents of
@@ -180,6 +188,7 @@ impl ExtensionsSubsystem {
         if !staging_dir.exists() {
             fs::create_dir_all(staging_dir)
                 .with_context(|| format!("Failed to create dir '{}'", staging_dir.display()))?;
+            log::debug!("Created dir {staging_dir:?}");
         };
 
         self.populate_extensions_inner(ctx, timeout, staging_dir, ExtensionType::Sysext, true)?;
@@ -297,6 +306,7 @@ impl ExtensionsSubsystem {
 
             let ext_data =
                 ext_data_result.context("Failed to get extension-release information")?;
+            log::debug!("ext data is: {ext_data:?}");
             if new {
                 self.extensions.push(ext_data);
             } else {
