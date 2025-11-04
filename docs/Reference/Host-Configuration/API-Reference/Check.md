@@ -10,7 +10,7 @@
 
 ### variant-1
 
-Script that will be run. The success or failure of the script will define the health of the target OS. Valid script servicing types are CleanInstall and AbUpdate, or All (which will execute for both).
+Script that will be run. The success or failure of the script will define the health of the target OS. Valid servicing types are CleanInstall and AbUpdate, or All (which will execute for both).
 
 | Characteristic | Value    |
 | -------------- | -------- |
