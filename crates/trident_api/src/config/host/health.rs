@@ -105,11 +105,11 @@ impl serde::Serialize for Check {
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct SystemdCheck {
     /// Name of the check.
-    #[serde(skip_serializing_if = "String::is_empty")]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub name: String,
 
     /// List of systemd services that need to be in successful state.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub systemd_services: Vec<String>,
 
     /// Timeout for the systemd check, in seconds. If the service is found to be
@@ -122,7 +122,7 @@ pub struct SystemdCheck {
     /// Valid servicing types are CleanInstall and AbUpdate, if
     /// All is specified, the check will run for both CleanInstall
     /// and AbUpdate.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub run_on: Vec<ServicingTypeSelection>,
 }
 

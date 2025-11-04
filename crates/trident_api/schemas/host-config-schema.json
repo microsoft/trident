@@ -1157,10 +1157,6 @@
           "additionalProperties": false
         }
       ],
-      "required": [
-        "name",
-        "runOn"
-      ],
       "properties": {
         "arguments": {
           "description": "Arguments to pass to the script.",
@@ -1487,11 +1483,6 @@
     "SystemdCheck": {
       "description": "A check that can be run on the host to ensure systemd service(s) are in a successful state, as defined by `systemctl status` returning success.",
       "type": "object",
-      "required": [
-        "name",
-        "runOn",
-        "systemdServices"
-      ],
       "properties": {
         "name": {
           "description": "Name of the check.",

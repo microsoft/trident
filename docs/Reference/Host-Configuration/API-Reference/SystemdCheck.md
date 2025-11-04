@@ -10,7 +10,7 @@ A check that can be run on the host to ensure systemd service(s) are in a succes
 
 ## Properties
 
-### `name` **<span>(required)</span>**
+### `name` (optional)
 
 Name of the check.
 
@@ -18,7 +18,7 @@ Name of the check.
 | -------------- | -------- |
 | Type           | `string` |
 
-### `runOn` **<span>(required)</span>**
+### `runOn` (optional)
 
 List of servicing types that the check should run on. Valid servicing types are CleanInstall and AbUpdate, if All is specified, the check will run for both CleanInstall and AbUpdate.
 
@@ -33,7 +33,7 @@ List of servicing types that the check should run on. Valid servicing types are 
    | Type           | `ServicingTypeSelection`                              |
    | Link           | [ServicingTypeSelection](./ServicingTypeSelection.md) |
 
-### `systemdServices` **<span>(required)</span>**
+### `systemdServices` (optional)
 
 List of systemd services that need to be in successful state.
 
