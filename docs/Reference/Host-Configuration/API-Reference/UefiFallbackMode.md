@@ -4,7 +4,7 @@
 
 UEFIFallback mode
 
-UEFI provides a mechanism for booting from an EFI file without a corresponding boot variable existing in NVRAM. This is known as the UEFI fallback mode, and it uses a specific file path (\EFI\BOOT) to locate the fallback bootloader.
+UEFI provides a mechanism for booting from an EFI file without a corresponding boot variable existing in NVRAM. This is known as the UEFI fallback mode, and it uses a specific file path (/EFI/BOOT) to locate the fallback bootloader.
 
 This configuration option allows specifying how Trident should populate the UEFI fallback boot files during OS installation or update.
 

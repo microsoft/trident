@@ -218,7 +218,7 @@ fn copy_file_artifacts(
 }
 
 /// Determines the source dir name to copy the UEFI fallback boot files from. This varies
-/// baswed on the servicing state and UEFI fallback mode.
+/// based on the servicing state and UEFI fallback mode.
 ///
 /// 1. During finalize
 ///  * For clean install, use volumeA (this is the target OS volume for clean install)
@@ -318,7 +318,7 @@ pub fn configure_uefi_fallback(
 
 /// Skip UEFI fallback copy when AZLA and AZLB boot paths do not exist. This
 /// is an expected VM scnenario when offline-initialize is used to prepare a
-/// VMD-based image for A/B update.
+/// VHD-based image for A/B update.
 fn skip_uefi_fallback_copy(
     esp_dir_path: &Path,
     source_esp_name: &str,
@@ -368,7 +368,7 @@ fn copy_boot_files_for_uefi_fallback(
     let source_esp_dir_path = esp_dir_path.join(source_esp_name);
     let uefi_fallback_path = esp_dir_path.join(EFI_DEFAULT_BIN_DIRECTORY);
     debug!(
-        "{:?} detected. Copying boot files from {} to {}.",
+        "Copying files dusring {:?} from {} to {}",
         servicing_type,
         source_esp_dir_path.display(),
         uefi_fallback_path.display()
@@ -429,7 +429,7 @@ fn simple_copy_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
                     orig_path.path().display(),
                     to_path.display()
                 ))?;
-                debug!(
+                trace!(
                     "Renamed file {} to {}",
                     orig_path.path().display(),
                     to_path.display()

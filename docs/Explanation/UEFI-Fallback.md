@@ -3,7 +3,7 @@
 
 UEFI provides a mechanism for booting from an EFI file without a corresponding
 boot variable existing in NVRAM. This is known as the UEFI fallback mode, and
-it uses a specific file path (\EFI\BOOT) to locate the fallback bootloader.
+it uses a specific file path (/EFI/BOOT) to locate the fallback bootloader.
 
 Trident leverages this UEFI feature with
 [UEFI fallback modes](../Reference/Host-Configuration/API-Reference/UefiFallbackMode.md)
