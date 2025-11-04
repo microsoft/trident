@@ -1,7 +1,6 @@
 import fabric
 import pytest
 import json
-import os
 
 from base_test import get_host_status
 
