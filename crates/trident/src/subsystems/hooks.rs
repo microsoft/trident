@@ -238,7 +238,7 @@ impl HooksSubsystem {
         let services_list = check.systemd_services.join(" ");
         debug!("Checking status of systemd service(s) '{}'", &services_list);
 
-        for _i in 0.. {
+        loop {
             if start_time.elapsed() >= timeout_duration {
                 return Err(TridentError::new(ServicingError::SystemdCheckTimeout {
                     services: services_list,
