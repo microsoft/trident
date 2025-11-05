@@ -69,39 +69,17 @@ def rename_oci_url(host_config_path, oci_cosi_url):
         yaml.safe_dump(host_config, f)
 
 
-# Sysext images are stored in ACR and tagged based on pipeline build ID, so the
-# HC must be updated for every build.
-def add_sysexts(
-    host_config_path,
-    oci_sysext_url,
-    sysext_hash,
-):
+# Confext and sysext images are stored in ACR and tagged based on pipeline build
+# ID, so the HC must be updated for every build.
+def add_confexts_or_sysexts(host_config_path, ext_type, oci_ext_url, ext_hash):
     with open(host_config_path, "r") as f:
         host_config = yaml.safe_load(f)
 
     if "os" not in host_config:
         host_config["os"] = {}
-    if "sysexts" not in host_config["os"]:
-        host_config["os"]["sysexts"] = []
-    host_config["os"]["sysexts"].append({"url": oci_sysext_url, "sha384": sysext_hash})
-
-    with open(host_config_path, "w") as f:
-        yaml.safe_dump(host_config, f)
-
-
-# Confext images are stored in ACR and tagged based on pipeline build ID, so the
-# HC must be updated for every build.
-def add_confexts(host_config_path, oci_confext_url, confext_hash):
-    with open(host_config_path, "r") as f:
-        host_config = yaml.safe_load(f)
-
-    if "os" not in host_config:
-        host_config["os"] = {}
-    if "confexts" not in host_config["os"]:
-        host_config["os"]["confexts"] = []
-    host_config["os"]["confexts"].append(
-        {"url": oci_confext_url, "sha384": confext_hash}
-    )
+    if ext_type not in host_config["os"]:
+        host_config["os"][ext_type] = []
+    host_config["os"][ext_type].append({"url": oci_ext_url, "sha384": ext_hash})
 
     with open(host_config_path, "w") as f:
         yaml.safe_dump(host_config, f)
@@ -171,15 +149,17 @@ def main():
         rename_oci_url(args.hostconfig, args.ociCosiUrl)
 
     if args.ociSysextUrl and args.sysextHash:
-        add_sysexts(
+        add_confexts_or_sysexts(
             args.hostconfig,
+            "sysexts",
             args.ociSysextUrl,
             args.sysextHash,
         )
 
     if args.ociConfextUrl and args.confextHash:
-        add_confexts(
+        add_confexts_or_sysexts(
             args.hostconfig,
+            "confexts",
             args.ociConfextUrl,
             args.confextHash,
         )
