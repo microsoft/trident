@@ -16,6 +16,11 @@ parameters:
       - "full-validation"
     displayName: "Stage to run"
 
+  - name: forceTridentRebuild
+    displayName: "Force trident rebuild rather than downloading previously built."
+    type: boolean
+    default: false
+
 trigger: none
 
 variables:
@@ -80,3 +85,4 @@ extends:
         parameters:
           targetStage: ${{ parameters.targetStage }}
           blockPublishing: true
+          forceTridentRebuild: ${{ parameters.forceTridentRebuild }}
