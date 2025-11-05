@@ -248,7 +248,6 @@ impl HooksSubsystem {
     fn run_systemd_check(&self, check: &SystemdCheck) -> Result<(), TridentError> {
         let start_time = Instant::now();
         let timeout_duration = Duration::from_secs(check.timeout_seconds as u64);
-        let mut last_error = None;
 
         let services_list = check.systemd_services.join(" ");
         debug!("Checking status of systemd service(s) '{}'", &services_list);
@@ -260,37 +259,36 @@ impl HooksSubsystem {
                 .arg("status")
                 .args(&check.systemd_services)
                 .output();
-            match status {
+            let error = match status {
                 Ok(output) => match output.check() {
                     Ok(_) => {
                         info!(
                             "Service(s) '{services_list}' are active/running: {}",
                             output.output_report()
                         );
-                        break;
+                        return Ok(());
                     }
                     Err(e) => {
                         info!("Service(s) '{services_list}' are not active/running: {e}");
-                        last_error = Some(e);
+                        Some(e)
                     }
                 },
                 Err(e) => {
                     info!("Unable to query service(s) '{services_list}': {e}");
-                    last_error = Some(e);
+                    Some(e)
                 }
-            }
+            };
             thread::sleep(Duration::from_millis(100));
             if start_time.elapsed() >= timeout_duration {
                 return Err(TridentError::new(ServicingError::SystemdCheckTimeout {
                     services: services_list,
                     timeout_seconds: check.timeout_seconds,
-                    last_error: last_error
+                    last_error: error
                         .map(|e| format!("{e:?}"))
                         .unwrap_or_else(|| "No status retrieved".into()),
                 }));
             }
         }
-        Ok(())
     }
 
     fn run_script(
