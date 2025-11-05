@@ -2,38 +2,50 @@
 set -ex
 trap '/bin/bash' ERR
 
-# Mount CD-ROM using symlink
-mkdir -p /mnt/cdrom
-mount /dev/cdrom /mnt/cdrom
-
-LIVEINSTALLER_PATH="/mnt/cdrom/installer/liveinstaller"
-POSSIBLE_HC_TEMPLATE="/mnt/cdrom/installer/trident-config.yaml.tmpl"
-IMAGES_DIR="/mnt/cdrom/images/"
-TRIDENT_CONFIG="/etc/trident/config.yaml"
+CDROM_MOUNT="/mnt/cdrom"
 WORKING_DIR="/root/installer"
+MAGIC_PLACEHOLDER="8505c8ab802dd717290331acd0592804c4e413b030150c53f5018ac998b7831d"
 
-# Copy to execute liveinstaller
-cp "$LIVEINSTALLER_PATH" "$WORKING_DIR"
-cp "$POSSIBLE_HC_TEMPLATE" "$WORKING_DIR/template.yaml"
+# Mount CD-ROM using symlink
+mkdir -p "$CDROM_MOUNT"
+mount /dev/cdrom "$CDROM_MOUNT"
 
-# Check if placeholder magic string is present (not patched)
-if grep -q "^#8505c8ab802dd717290331acd0592804c4e413b030150c53f5018ac998b7831d:" "$WORKING_DIR/template.yaml"; then
+# CD-ROM paths
+LIVEINSTALLER_PATH="$CDROM_MOUNT/installer/liveinstaller"
+POSSIBLE_HC_TEMPLATE="$CDROM_MOUNT/installer/trident-config.yaml.tmpl"
+IMAGES_DIR="$CDROM_MOUNT/images/"
+
+# WORKING_DIR paths
+LIVEINSTALLER_BIN="$WORKING_DIR/liveinstaller"
+TRIDENT_CONFIG_DESTINATION="/etc/trident/config.yaml"
+LOG_FILE="$WORKING_DIR/liveinstaller.log"
+OUTPUT_LOG="$WORKING_DIR/output_liveinstaller.log"
+
+# Copy to WORKING_DIR to execute liveinstaller
+cp "$LIVEINSTALLER_PATH" "$LIVEINSTALLER_BIN"
+
+# Check if placeholder magic string is present (ISO not patched)
+if grep -q "^#${MAGIC_PLACEHOLDER}:" "$POSSIBLE_HC_TEMPLATE"; then
     # Placeholder found - execute attended installation (interactive UI)
     cd "$WORKING_DIR"
-    "$WORKING_DIR/liveinstaller" \
-      --images-dir=$IMAGES_DIR \
-      --host-config-output=$TRIDENT_CONFIG \
+    "$LIVEINSTALLER_BIN" \
+      --images-dir="$IMAGES_DIR" \
+      --host-config-output="$TRIDENT_CONFIG_DESTINATION" \
       --log-level=trace \
-      --log-file=$WORKING_DIR/liveinstaller.log 2>&1 | tee "$WORKING_DIR/output_liveinstaller.log"
+      --log-file="$LOG_FILE" 2>&1 | tee "$OUTPUT_LOG"
 else
-    # Valid config found - execute unattended installation
+    # Placeholder was replaced by a Host Configuration - execute unattended installation
     echo "Pre-configured Host Configuration found. Starting unattended installation..."
+    # Save template in WORKING_DIR in case of failure
+    TEMPLATE_FILE="$WORKING_DIR/template.yaml"
+    cp "$POSSIBLE_HC_TEMPLATE" "$TEMPLATE_FILE"
+    # Execute liveinstaller (unattended)
     cd "$WORKING_DIR"
-    "$WORKING_DIR/liveinstaller" \
+    "$LIVEINSTALLER_BIN" \
       --unattended \
-      --template-file=$WORKING_DIR/template.yaml \
+      --template-file="$TEMPLATE_FILE" \
       --log-level=trace \
-      --log-file=$WORKING_DIR/liveinstaller.log 2>&1 | tee "$WORKING_DIR/output_liveinstaller.log"
+      --log-file="$LOG_FILE" 2>&1 | tee "$OUTPUT_LOG"
 fi
 
 /bin/bash

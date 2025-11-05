@@ -16,7 +16,7 @@ import (
 	"installer/imagegen/attendedinstaller/views/confirmview"
 	"installer/imagegen/attendedinstaller/views/diskview"
 
-	// "installer/imagegen/attendedinstaller/views/eulaview"
+	// "installer/imagegen/attendedinstaller/views/eulaview" // EULA view disabled
 	"installer/imagegen/attendedinstaller/views/hostnameview"
 	"installer/imagegen/attendedinstaller/views/imageselectorview"
 	"installer/imagegen/attendedinstaller/views/installerview"
@@ -370,9 +370,9 @@ func (ai *AttendedInstaller) initializeViews() (err error) {
 		ai.allViews = append(ai.allViews, installerView)
 	}
 
-	// EULA view is disabled for now, as the EULA is not yet available.
-	// The ISO installer is not currently intended for redistribution outside of the
-	// Trident repository, which is covered by the MIT open source license.
+	// EULA view disabled. No official EULA document exists.
+	// The ISO installer is currently only used within the Trident repository,
+	// which is covered by the MIT open source license.
 	// ai.allViews = append(ai.allViews, eulaview.New())
 
 	imageselectorView := imageselectorview.New(ai.availableImages, ai.hostConfigData)
