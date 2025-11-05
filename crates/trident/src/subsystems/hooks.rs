@@ -277,18 +277,18 @@ impl HooksSubsystem {
                         path.clone()
                     };
                     trace!(
-                        "Loading script '{}' from path '{}'",
+                        "Loading script '{}' from filesystem: '{}'",
                         script.name,
                         local_path.display()
                     );
                     &fs::read(&local_path).context(format!(
-                        "Failed to read script '{}' from path '{}'",
+                        "Failed to read script '{}' from filesystem: '{}'",
                         script.name,
                         local_path.display()
                     ))?
                 } else {
                     trace!(
-                        "Loading script '{}' from staged files '{}'",
+                        "Loading script '{}' from staged files: '{}'",
                         script.name,
                         path.display()
                     );
