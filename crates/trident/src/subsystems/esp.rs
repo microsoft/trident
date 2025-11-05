@@ -1331,7 +1331,7 @@ mod tests {
                 .root_cause()
                 .to_string(),
             format!(
-                "Failed to find shim EFI executable at path {}",
+                "Failed to find shim EFI executable at path '{}'",
                 boot_efi_path.display()
             )
         );
