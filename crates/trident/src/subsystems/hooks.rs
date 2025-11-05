@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     ffi::OsStr,
+    fs,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
 };
@@ -218,8 +219,8 @@ impl HooksSubsystem {
         }
 
         let contents =
-            std::fs::read(&path).context(format!("Failed to read file '{}'", path.display()))?;
-        let mode = std::fs::metadata(&path)
+            fs::read(&path).context(format!("Failed to read file '{}'", path.display()))?;
+        let mode = fs::metadata(&path)
             .context(format!(
                 "Failed to read metadata for file '{}'",
                 path.display()
@@ -280,7 +281,7 @@ impl HooksSubsystem {
                         script.name,
                         local_path.display()
                     );
-                    &std::fs::read(&local_path).context(format!(
+                    &fs::read(&local_path).context(format!(
                         "Failed to read script '{}' from path '{}'",
                         script.name,
                         local_path.display()
