@@ -34,17 +34,24 @@ pub struct Extension {
     ///
     /// By default, sysexts are placed in /var/lib/extensions/. Trident supports
     /// placing sysexts in:
+    ///
     /// - /etc/extensions/
+    ///
     /// - /var/lib/extensions/
-    /// - /.extra/sysext
+    ///
+    /// - /.extra/sysext/
     ///
     /// By default, confexts are placed in /var/lib/confexts/. Trident supports
     /// placing confexts in:
+    ///
     /// - /var/lib/confexts/
+    ///
     /// - /usr/lib/confexts/
+    ///
     /// - /usr/local/lib/confexts/
     ///
     /// /run/sysexts/ and /run/confexts/ are not supported.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<PathBuf>,
 }
 

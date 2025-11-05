@@ -71,14 +71,12 @@ pub struct Os {
     #[serde(default, skip_serializing_if = "is_default")]
     pub kernel_command_line: KernelCommandLine,
 
-    /// Data about systext images, which should be merged on the target OS.
+    /// Data about sysext images, which should be active on the target OS.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[cfg_attr(feature = "schemars", schemars(skip))]
     pub sysexts: Vec<Extension>,
 
-    /// Data about confext images, which should be merged on the target OS.
+    /// Data about confext images, which should be active on the target OS.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[cfg_attr(feature = "schemars", schemars(skip))]
     pub confexts: Vec<Extension>,
 }
 
