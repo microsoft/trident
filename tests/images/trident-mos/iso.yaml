@@ -63,7 +63,7 @@ os:
     # Required for systemd-pcrlock & PCR-based encryption; can be removed once
     # AZL 4.0 merges a fix to provide statically defined files inside the same
     # package as the systemd-pcrlock binary, i.e. systemd-udev.
-    - source: "../../packaging/static-pcrlock-files/"
+    - source: "../../../packaging/static-pcrlock-files/"
       destination: "/var/lib/pcrlock.d/"
 
   additionalFiles:
@@ -73,15 +73,15 @@ os:
       destination: /usr/lib/systemd/system/serial-getty@.service
     - source: files/root.profile
       destination: /root/.profile
-    - source: ../../packaging/systemd/trident-install.service
+    - source: ../../../packaging/systemd/trident-install.service
       destination: /usr/lib/systemd/system/trident-install.service
     - source: files/download-trident.service
       destination: /usr/lib/systemd/system/download-trident.service
-    - source: ../../packaging/selinux-policy-trident/trident.if
+    - source: ../../../packaging/selinux-policy-trident/trident.if
       destination: /usr/share/selinux/packages/trident/trident.if
-    - source: ../../packaging/selinux-policy-trident/trident.fc
+    - source: ../../../packaging/selinux-policy-trident/trident.fc
       destination: /usr/share/selinux/packages/trident/trident.fc
-    - source: ../../packaging/selinux-policy-trident/trident.te
+    - source: ../../../packaging/selinux-policy-trident/trident.te
       destination: /usr/share/selinux/packages/trident/trident.te
 
   services:
