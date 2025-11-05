@@ -450,24 +450,29 @@ run-attendedinstaller-simulator: bin/attendedinstaller-simulator
 
 # AZL INSTALLER ISO
 
+# Test image paths
+ARTIFACTS_TEST_IMAGE_DIR := artifacts/test-image
+AZL_INSTALLER_DIR := tests/images/azl-installer
+AZL_INSTALLER_ISO_DIR := $(AZL_INSTALLER_DIR)/iso
+
 # Build the installer ISO using the builder
-artifacts/test-image/azl-installer.iso: \
+$(ARTIFACTS_TEST_IMAGE_DIR)/azl-installer.iso: \
 	bin/RPMS \
 	bin/liveinstaller \
-	artifacts/test-image/regular.cosi \
-	tests/images/azl-installer/installer-iso.yaml \
-	$(shell find tests/images/azl-installer/ -type f 2>/dev/null)
+	$(ARTIFACTS_TEST_IMAGE_DIR)/regular.cosi \
+	$(AZL_INSTALLER_DIR)/installer-iso.yaml \
+	$(shell find $(AZL_INSTALLER_DIR)/ -type f 2>/dev/null)
+	# Prepare dependencies
 	# Copy runtime image
-	rm -rf tests/images/azl-installer/iso/images
-	mkdir -p tests/images/azl-installer/iso/images
-	cp artifacts/test-image/regular.cosi tests/images/azl-installer/iso/images/trident-testimage.cosi
+	rm -rf $(AZL_INSTALLER_ISO_DIR)/images
+	mkdir -p $(AZL_INSTALLER_ISO_DIR)/images
+	cp $(ARTIFACTS_TEST_IMAGE_DIR)/regular.cosi $(AZL_INSTALLER_ISO_DIR)/images/trident-testimage.cosi
 	# Copy installer binary
-	rm -rf tests/images/azl-installer/iso/bin
-	mkdir -p tests/images/azl-installer/iso/bin
-	cp bin/liveinstaller tests/images/azl-installer/iso/bin/
+	rm -rf $(AZL_INSTALLER_ISO_DIR)/bin
+	mkdir -p $(AZL_INSTALLER_ISO_DIR)/bin
+	cp bin/liveinstaller $(AZL_INSTALLER_ISO_DIR)/bin/
 	# Build ISO
-	mkdir -p artifacts/test-image/
-	./tests/images/testimages.py build azl-installer --output-dir artifacts/test-image
+	./tests/images/testimages.py build azl-installer --output-dir $(ARTIFACTS_TEST_IMAGE_DIR)
 
 .PHONY: validate
 validate: $(TRIDENT_CONFIG) bin/trident
@@ -732,7 +737,14 @@ artifacts/imagecustomizer:
 	@chmod +x artifacts/imagecustomizer
 	@touch artifacts/imagecustomizer
 
-bin/trident-mos.iso: artifacts/baremetal.vhdx artifacts/imagecustomizer packaging/systemd/trident-install.service tests/images/trident-mos/iso.yaml tests/images/trident-mos/files/* tests/images/trident-mos/post-install.sh packaging/selinux-policy-trident/*
+bin/trident-mos.iso: \
+	artifacts/baremetal.vhdx \
+	artifacts/imagecustomizer \
+	packaging/systemd/trident-install.service \
+	tests/images/trident-mos/iso.yaml \
+	tests/images/trident-mos/files/* \
+	tests/images/trident-mos/post-install.sh \
+	packaging/selinux-policy-trident/*
 	@mkdir -p bin
 	BUILD_DIR=`mktemp -d` && \
 		trap 'sudo rm -rf $$BUILD_DIR' EXIT; \
