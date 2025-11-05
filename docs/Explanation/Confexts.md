@@ -24,6 +24,7 @@ supports two other directories for placing confexts: `/usr/lib/confexts` and
 Configuration, all confexts must be placed on an A/B volume. In other words,
 Trident will return an error if `/var/lib/confexts/`, or any path specified in
 the Host Configuration for a confext, is located on a shared volume.
+Additionally, the volume must not be read-only.
 
 ### Confext Format
 
