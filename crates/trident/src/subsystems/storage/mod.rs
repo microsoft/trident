@@ -190,10 +190,6 @@ impl Subsystem for StorageSubsystem {
             debug!("Skipping storage configuration because UKI root-verity is in use");
             return Ok(());
         }
-        if ctx.spec.storage.raw_cosi {
-            debug!("Skipping storage configuration because raw COSI is in use");
-            return Ok(());
-        }
 
         fstab::generate_fstab(ctx, Path::new(fstab::DEFAULT_FSTAB_PATH)).structured(
             ServicingError::GenerateFstab {
