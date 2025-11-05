@@ -27,7 +27,7 @@ Additional Files to add to the image.
 
 ### `confexts` (optional)
 
-Data about confext images, which should be merged on the target OS.
+Data about confext images, which should be active on the target OS.
 
 | Characteristic | Value   |
 | -------------- | ------- |
@@ -106,7 +106,7 @@ Options for configuring systemd services.
 
 ### `sysexts` (optional)
 
-Data about sysext images, which should be merged on the target OS.
+Data about sysext images, which should be active on the target OS.
 
 | Characteristic | Value   |
 | -------------- | ------- |
