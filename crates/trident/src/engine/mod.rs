@@ -156,13 +156,24 @@ fn persist_background_log_and_metrics(
         return;
     };
 
-    // Create the full path for the new background log file
-    let new_background_log_path: PathBuf = if let Some(new_root) = newroot_path {
-        join_relative(new_root, datastore_dir).join(new_background_log_filename)
+    let datastore_dir = if let Some(new_root) = newroot_path {
+        join_relative(new_root, datastore_dir)
     } else {
-        datastore_dir.join(new_background_log_filename)
+        datastore_dir.into()
     };
 
+    if !datastore_dir.exists() {
+        if let Err(e) = fs::create_dir_all(&datastore_dir) {
+            warn!(
+                "Failed to create datastore directory '{}': {e}",
+                datastore_dir.display(),
+            );
+            return;
+        }
+    }
+
+    // Create the full path for the new background log file
+    let new_background_log_path: PathBuf = datastore_dir.join(new_background_log_filename);
     debug!(
         "Persisting Trident background log from '{}' to '{}' ",
         TRIDENT_BACKGROUND_LOG_PATH,
@@ -170,12 +181,7 @@ fn persist_background_log_and_metrics(
     );
 
     // Create the full path for the new metrics file
-    let new_metrics_path: PathBuf = if let Some(new_root) = newroot_path {
-        join_relative(new_root, datastore_dir).join(new_metrics_filename)
-    } else {
-        datastore_dir.join(new_metrics_filename)
-    };
-
+    let new_metrics_path: PathBuf = datastore_dir.join(new_metrics_filename);
     debug!(
         "Persisting Trident metrics from '{}' to '{}' ",
         TRIDENT_METRICS_FILE_PATH,
