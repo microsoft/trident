@@ -13,6 +13,7 @@ parameters:
       - "ci"
       - "pre"
       - "rel"
+      - "full-validation"
     displayName: "Stage to run"
 
 trigger: none
