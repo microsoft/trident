@@ -99,6 +99,7 @@ steps:
             --file-paths $(Build.SourcesDirectory)/test-sysext-2.raw \
             --tag-var-name TAG_BASE \
             --repo-var-name SYSEXT_REPO
+            
           ./bin/storm-trident script acr-push \
             --config ${{ parameters.config }} \
             --deployment-environment ${{ parameters.deploymentEnvironment }} \
