@@ -10,11 +10,11 @@ use anyhow::{bail, ensure, Context, Error};
 use log::{trace, warn};
 use tempfile::NamedTempFile;
 
-use osutils::{dependencies::Dependency, path};
+use osutils::{container, dependencies::Dependency, path};
 use trident_api::{
     config::Extension,
     constants::internal_params::HTTP_CONNECTION_TIMEOUT_SECONDS,
-    error::{InternalError, ReportError, ServicingError, TridentError},
+    error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     primitives::hash::Sha384Hash,
     status::ServicingType,
 };
@@ -225,13 +225,14 @@ impl ExtensionsSubsystem {
                         check_for_existing_image(ext, &ctx.spec_old.os.confexts)
                     }
                 } {
+                    let adjusted_path = adjust_path_if_container(existing_file_path.clone())?;
                     ensure!(
-                        existing_file_path.exists(),
+                        adjusted_path.exists(),
                         "Expected to find extension image from URL '{}' at path '{}' based on previous Host Configuration, but path does not exist",
                         ext.url,
-                        existing_file_path.display()
+                        existing_file_path.display() // Display the unadjusted path for readability
                     );
-                    existing_file_path
+                    adjusted_path
                 } else {
                     // The extension is new to the OS, so we need to download it.
                     // Create and persist a temporary file; get its path.
@@ -271,14 +272,16 @@ impl ExtensionsSubsystem {
                         ext.url
                     )
                 })?;
+                // Check if Trident is running in a container, and adjust path accordingly.
+                let adjusted_path = adjust_path_if_container(path.clone())?;
                 // Ensure that file exists
                 ensure!(
-                    path.exists(),
+                    adjusted_path.exists(),
                     "Expected to find extension image from URL '{}' at path '{}', but path does not exist",
                     ext.url,
-                    path.display()
+                    path.display() // Display unadjusted path for readability
                 );
-                path
+                adjusted_path
             };
 
             // Create temporary mountpoint, which will be used to read the extension-release file
@@ -458,6 +461,23 @@ fn check_for_existing_image(ext: &Extension, old_hc_extensions: &[Extension]) ->
         .find(|old_ext| ext.sha384 == old_ext.sha384)?
         .path
         .clone()
+}
+
+/// Helper function that prepends host root path to a path, if Trident is
+/// running in a container.
+fn adjust_path_if_container(path: PathBuf) -> Result<PathBuf, Error> {
+    Ok(
+        if container::is_running_in_container()
+            .unstructured("Failed to check if Trident is running in a container")?
+        {
+            path::join_relative(
+                container::get_host_root_path().unstructured("Failed to get host root path")?,
+                path,
+            )
+        } else {
+            path
+        },
+    )
 }
 
 /// Helper function to mount the extension image.
