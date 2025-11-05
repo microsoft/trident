@@ -34,7 +34,7 @@ pub fn execute_health_checks(ctx: &EngineContext) -> Result<(), TridentError> {
         .filter(|check| check.should_run(ctx.servicing_type))
         .collect::<Vec<_>>();
     if !health_checks.is_empty() {
-        debug!("Running health check scripts");
+        debug!("Running health check(s)");
     }
 
     // Channel to collect script errors from threads

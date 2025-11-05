@@ -307,7 +307,7 @@ pub enum ServicingError {
     },
 
     #[error(
-        "A/B update health check failed, rollback executed, and the host booted from the expected device \
+        "A/B update health check(s) failed, rollback executed, and the host booted from the expected device \
         '{expected_device_path}'"
     )]
     AbUpdateHealthCheckCommitCheck { expected_device_path: String },

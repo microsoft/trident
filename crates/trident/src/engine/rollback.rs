@@ -289,15 +289,14 @@ fn run_health_checks(
 ) -> Result<BootValidationResult, TridentError> {
     match current_servicing_state {
         ServicingState::AbUpdateFinalized | ServicingState::CleanInstallFinalized => {
-            // If health check previously failed, need to re-run the health checks
-            // Execute health checks, if one fails, trigger rollback
+            // Execute health checks, if at least one fails, trigger rollback
             match health::execute_health_checks(ctx) {
                 Ok(()) => {}
                 Err(e) => {
-                    info!("Health check failure: {e:?}");
+                    info!("Health check(s) failure: {e:?}");
                     let structured_error =
                         serde_yaml::to_value(&e).structured(InternalError::SerializeError)?;
-                    // Update host status to reflect health check failure
+                    // Update host status to reflect health check(s) failure
                     datastore.with_host_status(|host_status| {
                         host_status.servicing_state = match servicing_type {
                             ServicingType::AbUpdate => ServicingState::AbUpdateHealthCheckFailed,
@@ -322,7 +321,7 @@ fn run_health_checks(
                             datastore_dir.join(new_commit_failure_log_filename);
 
                         debug!(
-                            "Persisting Trident health check failure to '{}' ",
+                            "Persisting Trident health check(s) failure to '{}' ",
                             new_commit_failure_log_path.display()
                         );
 
@@ -331,13 +330,13 @@ fn run_health_checks(
                             fs::write(&new_commit_failure_log_path, format!("{e:?}"))
                         {
                             warn!(
-                                "Failed to persist Trident health check failure to '{}': {}",
+                                "Failed to persist Trident health check(s) failure to '{}': {}",
                                 new_commit_failure_log_path.display(),
                                 log_error
                             );
                         } else {
                             debug!(
-                                "Successfully persisted Trident health check failure to '{}'",
+                                "Successfully persisted Trident health check(s) failure to '{}'",
                                 new_commit_failure_log_path.display()
                             );
                         }

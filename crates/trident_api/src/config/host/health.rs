@@ -222,7 +222,6 @@ mod tests {
     fn test_health_checks_serde() {
         let health = create_test_health_checks(ServicingTypeSelection::AbUpdate);
         let serialized = serde_yaml::to_string(&health.checks).unwrap();
-        println!("Serialized health check: {}", &serialized);
         assert!(
             !serialized.contains("!Script") && !serialized.contains("!SystemdCheck"),
             "Serialized health check should not use yaml tags to differentiate enum variants"

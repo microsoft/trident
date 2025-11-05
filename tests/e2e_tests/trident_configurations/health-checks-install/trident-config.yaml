@@ -47,7 +47,7 @@ os:
   additionalFiles:
   - destination: /var/lib/trident/local-health-check-file.sh
     content: |
-      echo 'This is a local health check file.'
+      echo 'This is a local health check script.'
       exit 0
 health:
   checks:
