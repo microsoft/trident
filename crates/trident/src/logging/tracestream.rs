@@ -469,12 +469,13 @@ mod tests {
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
-    use std::io::{BufRead, BufReader};
-
     use super::*;
 
-    use pytest_gen::functional_test;
+    use std::io::{BufRead, BufReader};
+
     use tracing_subscriber::{filter, layer::SubscriberExt};
+
+    use pytest_gen::functional_test;
 
     #[functional_test]
     fn test_tracestream_write_metric_event_to_file() {

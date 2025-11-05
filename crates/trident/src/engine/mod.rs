@@ -22,6 +22,7 @@ use crate::{
     engine::boot::BootSubsystem,
     subsystems::{
         esp::EspSubsystem,
+        extensions::ExtensionsSubsystem,
         hooks::HooksSubsystem,
         initrd::InitrdSubsystem,
         management::ManagementSubsystem,
@@ -101,6 +102,11 @@ pub(crate) trait Subsystem: Send {
     fn configure(&mut self, _ctx: &EngineContext) -> Result<(), TridentError> {
         Ok(())
     }
+
+    /// Update the Host Configuration with information from the subsystem.
+    fn update_host_configuration(&self, _ctx: &mut EngineContext) -> Result<(), TridentError> {
+        Ok(())
+    }
 }
 
 lazy_static::lazy_static! {
@@ -112,6 +118,7 @@ lazy_static::lazy_static! {
         Box::<NetworkSubsystem>::default(),
         Box::<OsConfigSubsystem>::default(),
         Box::<ManagementSubsystem>::default(),
+        Box::<ExtensionsSubsystem>::default(),
         Box::<HooksSubsystem>::default(),
         Box::<InitrdSubsystem>::default(),
         Box::<SelinuxSubsystem>::default(),
@@ -319,6 +326,25 @@ fn configure(
     Ok(())
 }
 
+fn update_host_configuration(
+    subsystems: &[Box<dyn Subsystem>],
+    ctx: &mut EngineContext,
+) -> Result<(), TridentError> {
+    info!("Starting step 'Update Host Configuration'");
+    for subsystem in subsystems {
+        debug!(
+            "Starting step 'Update Host Configuration' for subsystem '{}'",
+            subsystem.name()
+        );
+        subsystem.update_host_configuration(ctx).message(format!(
+            "Step 'Update Host Configuration' failed for subsystem '{}'",
+            subsystem.name()
+        ))?;
+    }
+    debug!("Finished step 'Update Host Configuration'");
+    Ok(())
+}
+
 pub fn reboot() -> Result<(), TridentError> {
     // Sync all writes to the filesystem.
     info!("Syncing filesystem");
@@ -367,9 +393,10 @@ pub(super) fn build_storage_graph(storage: &Storage) -> Result<StorageGraph, Tri
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
     use super::*;
-    use pytest_gen::functional_test;
 
     use tempfile::tempdir;
+
+    use pytest_gen::functional_test;
 
     /// Helper function to check if the persisted background log and metrics file exist in the log
     /// directory.

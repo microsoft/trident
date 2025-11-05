@@ -257,6 +257,11 @@ fn stage_clean_install(
         return Err(original_error).message("Failed to execute in chroot");
     }
 
+    // Update the Host Configuration with information produced and stored in the
+    // subsystems. Currently, this step is used only to update the final paths
+    // of sysexts and confexts configured in the extensions subsystem.
+    engine::update_host_configuration(subsystems, &mut ctx)?;
+
     // At this point, clean install has been staged, so update Host Status
     debug!(
         "Updating host's servicing state to '{:?}'",
@@ -265,7 +270,7 @@ fn stage_clean_install(
     state.with_host_status(|hs| {
         *hs = HostStatus {
             servicing_state: ServicingState::CleanInstallStaged,
-            spec: host_config.clone(),
+            spec: ctx.spec,
             spec_old: Default::default(),
             ab_active_volume: None,
             partition_paths: ctx.partition_paths,
