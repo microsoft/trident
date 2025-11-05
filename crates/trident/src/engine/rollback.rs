@@ -19,8 +19,7 @@ use crate::{
         context::EngineContext,
         storage::{encryption, verity},
     },
-    subsystems::hooks::HooksSubsystem,
-    DataStore,
+    health, DataStore,
 };
 
 #[must_use]
@@ -292,7 +291,7 @@ fn run_health_checks(
         ServicingState::AbUpdateFinalized | ServicingState::CleanInstallFinalized => {
             // If health check previously failed, need to re-run the health checks
             // Execute health checks, if one fails, trigger rollback
-            match HooksSubsystem::new_for_local_scripts().execute_health_checks(ctx) {
+            match health::execute_health_checks(ctx) {
                 Ok(()) => {}
                 Err(e) => {
                     info!("Health check failure: {e:?}");

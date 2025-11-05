@@ -3,20 +3,16 @@ use std::{
     ffi::OsStr,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
-    thread,
-    time::{Duration, Instant},
 };
 
 use anyhow::{Context, Error};
-use log::{debug, error, info, trace};
+use log::{debug, info, trace};
 
-use osutils::{
-    container, dependencies::Dependency, exe::OutputChecker, files, scripts::ScriptRunner,
-};
+use osutils::{container, exe::OutputChecker, files, scripts::ScriptRunner};
 use trident_api::{
     config::{
-        Check, HostConfigurationDynamicValidationError, HostConfigurationStaticValidationError,
-        Script, ScriptSource, SystemdCheck,
+        HostConfigurationDynamicValidationError, HostConfigurationStaticValidationError, Script,
+        ScriptSource,
     },
     constants::{
         internal_params::WRITABLE_ETC_OVERLAY_HOOKS, DEFAULT_SCRIPT_INTERPRETER,
@@ -27,12 +23,6 @@ use trident_api::{
 };
 
 use crate::engine::{EngineContext, Subsystem};
-
-#[derive(Debug)]
-struct ScriptError {
-    script_name: String,
-    error_message: String,
-}
 
 #[derive(Clone, Debug)]
 struct StagedFile {
@@ -209,6 +199,10 @@ impl Subsystem for HooksSubsystem {
 }
 
 impl HooksSubsystem {
+    /// Create a new HooksSubsystem that only allows running scripts
+    /// from local filesystem paths. This is needed for preServicing
+    /// scripts and health checks. In both cases, the subsystem is
+    /// used without provisioning (which stages the script files).
     pub fn new_for_local_scripts() -> Self {
         Self {
             only_local_scripts: true,
@@ -238,60 +232,8 @@ impl HooksSubsystem {
         Ok(())
     }
 
-    /// This function will be called outside the standard subsystem flow
-    /// by execute_health_checks.
-    ///
-    /// It checks that the specified systemd service(s), when queried with
-    /// systemctl status, are in good running state. If not, the function
-    /// will retry until the specified timeout is reached. On timeout, the
-    /// last error will be returned.
-    fn run_systemd_check(&self, check: &SystemdCheck) -> Result<(), TridentError> {
-        let start_time = Instant::now();
-        let timeout_duration = Duration::from_secs(check.timeout_seconds as u64);
-
-        let services_list = check.systemd_services.join(" ");
-        debug!("Checking status of systemd service(s) '{}'", &services_list);
-
-        loop {
-            let status = Dependency::Systemctl
-                .cmd()
-                .env("SYSTEMD_IGNORE_CHROOT", "true")
-                .arg("status")
-                .args(&check.systemd_services)
-                .output();
-            let error = match status {
-                Ok(output) => match output.check() {
-                    Ok(_) => {
-                        info!(
-                            "Service(s) '{services_list}' are active/running: {}",
-                            output.output_report()
-                        );
-                        return Ok(());
-                    }
-                    Err(e) => {
-                        info!("Service(s) '{services_list}' are not active/running: {e}");
-                        Some(e)
-                    }
-                },
-                Err(e) => {
-                    info!("Unable to query service(s) '{services_list}': {e}");
-                    Some(e)
-                }
-            };
-            thread::sleep(Duration::from_millis(100));
-            if start_time.elapsed() >= timeout_duration {
-                return Err(TridentError::new(ServicingError::SystemdCheckTimeout {
-                    services: services_list,
-                    timeout_seconds: check.timeout_seconds,
-                    last_error: error
-                        .map(|e| format!("{e:?}"))
-                        .unwrap_or_else(|| "No status retrieved".into()),
-                }));
-            }
-        }
-    }
-
-    fn run_script(
+    /// Run a script from the Host Configuration using the hooks subsystem.
+    pub fn run_script(
         &self,
         script: &Script,
         ctx: &EngineContext,
@@ -419,87 +361,6 @@ impl HooksSubsystem {
                         script_name: script.name.clone(),
                     })
             })?;
-        Ok(())
-    }
-
-    /// This function will be called outside the standard subsystem flow
-    /// before Trident commits a target OS.
-    pub fn execute_health_checks(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
-        let health_checks = ctx
-            .spec
-            .health
-            .checks
-            .clone()
-            .into_iter()
-            .filter(|check| check.should_run(ctx.servicing_type))
-            .collect::<Vec<_>>();
-        if !health_checks.is_empty() {
-            debug!("Running health check scripts");
-        }
-
-        // Channel to collect script errors from threads
-        let (tx, rx) = std::sync::mpsc::channel();
-        // Create parallel health-check threads within a scope, the
-        // threads will all be joined before the scope ends.
-        thread::scope(|s| {
-            for health_check in health_checks {
-                let subsystem = &self;
-                let inner_tx = tx.clone();
-                s.spawn(move || {
-                    match health_check {
-                        Check::SystemdCheck(systemd_check) => {
-                            if let Err(err) = subsystem.run_systemd_check(&systemd_check) {
-                                if let Err(e) = inner_tx.send(ScriptError {
-                                    script_name: systemd_check.name,
-                                    error_message: format!("{err:?}"),
-                                }) {
-                                    error!("Failed to send systemd check error: {e:?}");
-                                }
-                            }
-                        }
-                        Check::Script(inner_script) => {
-                            if let Err(err) = subsystem.run_script(
-                                &inner_script,
-                                ctx,
-                                Path::new(ROOT_MOUNT_POINT_PATH),
-                            ) {
-                                if let Err(e) = inner_tx.send(ScriptError {
-                                    script_name: inner_script.name,
-                                    error_message: format!("{err:?}"),
-                                }) {
-                                    error!("Failed to send script error: {e:?}");
-                                }
-                            }
-                        }
-                    };
-                    drop(inner_tx);
-                });
-            }
-            drop(tx);
-        });
-
-        // Collect messages from the channel
-        let mut health_check_errors = Vec::new();
-        while let Ok(script_error) = rx.recv() {
-            health_check_errors.push(script_error);
-        }
-
-        // Create error collection from individual health check failures
-        let health_check_errors_message: String = health_check_errors
-            .iter()
-            .map(|e| format!("{}: {:?}", e.script_name, e.error_message))
-            .collect::<Vec<String>>()
-            .join("\n");
-        if !health_check_errors.is_empty() {
-            error!(
-                "Health checks completed with errors:\n{}",
-                health_check_errors_message
-            );
-            return Err(TridentError::new(ServicingError::HealthChecksFailed {
-                details: health_check_errors_message,
-                servicing_type: format!("{:?}", ctx.servicing_type),
-            }));
-        }
         Ok(())
     }
 }
