@@ -6,7 +6,7 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
-use log::{debug, trace};
+use log::{debug, trace, warn};
 
 use trident_api::primitives::bytes::ByteCount;
 
@@ -21,7 +21,14 @@ where
     R: Read + HashingReader,
 {
     // Instantiate decoder for ZSTD stream
-    let mut decoder = zstd::stream::read::Decoder::new(BufReader::new(&mut reader))?;
+    let mut context = zstd::zstd_safe::DCtx::create();
+    if let Err(e) = context.set_parameter(zstd::zstd_safe::DParameter::WindowLogMax(30)) {
+        warn!("Failed to change ZSTD decompression window size error={e}");
+    }
+    let mut decoder = zstd::stream::read::Decoder::with_context(
+        BufReader::with_capacity(zstd::zstd_safe::DCtx::in_size(), &mut reader),
+        &mut context,
+    );
 
     write_to_path(&mut decoder, destination_path)?;
 
