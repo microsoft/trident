@@ -287,7 +287,7 @@
       ],
       "properties": {
         "path": {
-          "description": "The absolute path of the extension image in the target OS.\n\nBy default, sysexts are placed in /var/lib/extensions/. Trident supports placing sysexts in:\n\n- /etc/extensions/\n\n- /var/lib/extensions/\n\n- /.extra/sysext\n\nBy default, confexts are placed in /var/lib/confexts/. Trident supports placing confexts in:\n\n- /var/lib/confexts/\n\n- /usr/lib/confexts/\n\n- /usr/local/lib/confexts/\n\n/run/sysexts/ and /run/confexts/ are not supported.",
+          "description": "The absolute path of the extension image in the target OS.\n\nBy default, sysexts are placed in /var/lib/extensions/. Trident supports placing sysexts in:\n\n- /etc/extensions/\n\n- /var/lib/extensions/\n\n- /.extra/sysext/\n\nBy default, confexts are placed in /var/lib/confexts/. Trident supports placing confexts in:\n\n- /var/lib/confexts/\n\n- /usr/lib/confexts/\n\n- /usr/local/lib/confexts/\n\n/run/sysexts/ and /run/confexts/ are not supported.",
           "type": "string",
           "nullable": true
         },

@@ -21,7 +21,7 @@ for how to configure sysexts in the Trident Host Configuration.
 If no `path` is specified for a sysext in the Host Configuration, Trident will
 default to placing the sysext in `/var/lib/extensions/`. Trident currently
 supports two other directories for placing sysexts: `/etc/extensions/` and
-`/.extra/sysexts`. If A/B volumes are configured in the Host Configuration, all
+`/.extra/sysext/`. If A/B volumes are configured in the Host Configuration, all
 sysexts must be placed on an A/B volume. In other words, Trident will return an
 error if `/var/lib/extensions/`, or any path specified in the Host Configuration
 for a sysext, is located on a shared volume. Additionally, the volume must not

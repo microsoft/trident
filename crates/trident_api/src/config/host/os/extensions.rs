@@ -39,7 +39,7 @@ pub struct Extension {
     ///
     /// - /var/lib/extensions/
     ///
-    /// - /.extra/sysext
+    /// - /.extra/sysext/
     ///
     /// By default, confexts are placed in /var/lib/confexts/. Trident supports
     /// placing confexts in:
