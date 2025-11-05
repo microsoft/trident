@@ -221,7 +221,7 @@ fn copy_file_artifacts(
 /// based on the servicing state and UEFI fallback mode.
 ///
 /// 1. During finalize
-///  * For clean install, use volumeA (this is the target OS volume for clean install)
+///  * For clean install, use volume A (this is the target OS volume for clean install)
 ///  * For A/B update
 ///    - rollforward: use the opposite of the active volume
 ///    - rollback: use the active volume (this may be a redundant copy)
@@ -284,7 +284,7 @@ fn find_uefi_fallback_source_dir_name(
 /// Uefi fallback is handled in two stages:
 /// 1. During finalize, the appropriate boot files are copied to the UEFI fallback folder
 ///    based on the servicing state and UEFI fallback mode.
-///       * For clean install, the target OS boot files (always volumeA) are copied.
+///       * For clean install, the target OS boot files (always volume A) are copied.
 ///       * For A/B update, the boot files are copied based on whether rollforward (when
 ///         the target OS boot files are copied) or rollback (no files need to be copied
 ///         because fallback was populated previously) is selected.
@@ -864,8 +864,7 @@ mod tests {
                 Some(UefiFallbackMode::Rollback),
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::CleanInstall,
-                // TODO:  should this be None???  i.e. do we want to have install and update behave the same way?
-                Some("AZLA".to_string()), // in finalize, with rollback, copy from volumeA (volume we just put COSI files on)
+                Some("AZLA".to_string()), // in finalize, with rollback, copy from volume A (volume we just put COSI files on)
                 "Validate CleanInstallStaged + Some(Rollback) + active volume A ==> AZLA",
             ),
             (
@@ -873,7 +872,7 @@ mod tests {
                 Some(UefiFallbackMode::Rollforward),
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::CleanInstall,
-                Some("AZLA".to_string()), // in finalize, with rollforward, copy from volumeA (volume we just put COSI files on)
+                Some("AZLA".to_string()), // in finalize, with rollforward, copy from volume A (volume we just put COSI files on)
                 "Validate CleanInstallStaged + Some(Rollforward) + active volume A ==> AZLA",
             ),
             (
