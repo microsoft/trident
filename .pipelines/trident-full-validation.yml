@@ -3,6 +3,10 @@ parameters:
     displayName: "Enable debug output"
     type: boolean
     default: false
+  - name: forceTridentRebuild
+    displayName: "Force trident rebuild rather than downloading previously built."
+    type: boolean
+    default: false
 
 schedules:
   - cron: "0 4 * * 0" # 4AM UTC Sunday ==> 8PM PST Saturday

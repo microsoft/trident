@@ -27,6 +27,12 @@ parameters:
     type: number
     default: 3
 
+  - name: forceTridentRebuild
+    displayName: "Force trident rebuild rather than downloading previously built."
+    type: boolean
+    default: false
+
+
 stages:
   - ${{ if eq(parameters.targetStage, 'pr') }}:
       - template: pr-template.yml
@@ -38,6 +44,7 @@ stages:
           # Only perform Azure testing from official pipelines, as only those have access to the Azure subscription.
           includeAzure: ${{ or(eq(parameters.targetStage, 'pre'), eq(parameters.targetStage, 'ci'), eq(parameters.targetStage, 'pr-e2e-azure')) }}
           numberOfUpdateIterations: ${{ parameters.numberOfUpdateIterations }}
+          forceTridentRebuild: ${{ parameters.forceTridentRebuild }}
       - template: e2e-arm64-template.yml
         parameters:
           stageType: ${{ parameters.targetStage }}
