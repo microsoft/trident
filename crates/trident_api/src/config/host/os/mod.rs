@@ -177,16 +177,16 @@ pub enum UefiFallbackMode {
     /// # Rollback
     ///
     /// In 'rollback' mode, during an OS update, the UEFI fallback will
-    /// boot the servicing OS (the existing OS) until `commit` validates
-    /// the target OS as healthy, at which point the UEFI fallback will
-    /// be updated to boot the target OS. This aligns with how Trident
-    /// handles the UEFI boot variables during an update.
+    /// be updated to boot to the servicing OS (the existing OS) during
+    /// `finalize` and then will be updated to boot to the target OS when
+    /// `commit` validates the target OS as healthy. This aligns with how
+    /// Trident handles the UEFI boot variables during an update.
     Rollback,
 
     /// # Rollforward
     ///
     /// In 'rollforward' mode, during an OS update, the UEFI fallback will
-    /// boot will be updated to boot the target OS (the newly installed OS)
+    /// be updated to boot to the target OS (the newly installed OS)
     /// during the finalize stage.
     Rollforward,
 
