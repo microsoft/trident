@@ -329,7 +329,6 @@ stages:
               repository: ${{ variables.testImageName }}
               config: ${{ variables.tridentConfigurationName }}
               deploymentEnvironment: "virtualMachine"
-              runtimeEnvironment: ${{ parameters.runtimeEnv }}
 
           - bash: |
               set -eux
