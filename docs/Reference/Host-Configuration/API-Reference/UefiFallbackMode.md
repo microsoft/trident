@@ -2,7 +2,7 @@
 
 # UefiFallbackMode
 
-UEFIFallback mode
+UEFI fallback mode
 
 UEFI provides a mechanism for booting from an EFI file without a corresponding boot variable existing in NVRAM. This is known as the UEFI fallback mode, and it uses a specific file path (/EFI/BOOT) to locate the fallback bootloader.
 
@@ -16,7 +16,7 @@ This configuration option allows specifying how Trident should populate the UEFI
 
 ### Rollback
 
-In 'rollback' mode, during an OS update, the UEFI fallback will be updated to boot to the servicing OS (the existing OS) during `finalize` and then will be updated to boot to the target OS when `commit` validates the target OS as healthy. This aligns with how Trident handles the UEFI boot variables during an update.
+During clean install, the UEFI fallback will be updated during `finalize` to boot to the target OS. During an A/B update, the UEFI fallback will be updated to boot to the servicing OS (the existing OS) during `finalize` and then will be updated to boot to the target OS when `commit` validates the target OS as healthy. This aligns with how Trident handles the UEFI boot variables during an update.
 
 | Characteristic | Value      |
 | -------------- | ---------- |
@@ -25,7 +25,7 @@ In 'rollback' mode, during an OS update, the UEFI fallback will be updated to bo
 
 ### Rollforward
 
-In 'rollforward' mode, during an OS update, the UEFI fallback will be updated to boot to the target OS (the newly installed OS) during the finalize stage.
+During clean install, the UEFI fallback will be updated during `finalize` to boot to the target OS. During an A/B update, the UEFI fallback will be updated to boot to the target OS (the newly installed OS) during the finalize stage.
 
 | Characteristic | Value         |
 | -------------- | ------------- |

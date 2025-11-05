@@ -158,7 +158,7 @@ impl FromStr for SelinuxMode {
     }
 }
 
-/// UEFIFallback mode
+/// UEFI fallback mode
 ///
 /// UEFI provides a mechanism for booting from an EFI file without
 /// a corresponding boot variable existing in NVRAM. This is known
@@ -174,7 +174,9 @@ impl FromStr for SelinuxMode {
 pub enum UefiFallbackMode {
     /// # Rollback
     ///
-    /// In 'rollback' mode, during an OS update, the UEFI fallback will
+    /// During clean install, the UEFI fallback will be updated during
+    /// `finalize` to boot to the target OS.
+    /// During an A/B update, the UEFI fallback will
     /// be updated to boot to the servicing OS (the existing OS) during
     /// `finalize` and then will be updated to boot to the target OS when
     /// `commit` validates the target OS as healthy. This aligns with how
@@ -183,7 +185,9 @@ pub enum UefiFallbackMode {
 
     /// # Rollforward
     ///
-    /// In 'rollforward' mode, during an OS update, the UEFI fallback will
+    /// During clean install, the UEFI fallback will be updated during
+    /// `finalize` to boot to the target OS.
+    /// During an A/B update, the UEFI fallback will
     /// be updated to boot to the target OS (the newly installed OS)
     /// during the finalize stage.
     Rollforward,
@@ -192,30 +196,6 @@ pub enum UefiFallbackMode {
     ///
     /// No UEFI fallback boot files are installed.
     None,
-}
-
-impl Display for UefiFallbackMode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mode_str = match self {
-            UefiFallbackMode::Rollback => "rollback",
-            UefiFallbackMode::Rollforward => "rollforward",
-            UefiFallbackMode::None => "none",
-        };
-        write!(f, "{mode_str}")
-    }
-}
-
-impl FromStr for UefiFallbackMode {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "rollback" => Ok(UefiFallbackMode::Rollback),
-            "rollforward" => Ok(UefiFallbackMode::Rollforward),
-            "none" => Ok(UefiFallbackMode::None),
-            _ => Err(anyhow::anyhow!("Invalid UEFI fallback mode: {}", s)),
-        }
-    }
 }
 
 /// Configuration for the management OS.
@@ -441,5 +421,38 @@ mod tests {
                 path: duplicate_path.display().to_string()
             }
         );
+    }
+
+    #[test]
+    fn test_serde_uefi_fallback_mode() {
+        let mut config = Os {
+            uefi_fallback: Some(UefiFallbackMode::None),
+            ..Default::default()
+        };
+        let serialized = serde_yaml::to_string(&config).unwrap();
+        assert!(serialized.contains("uefiFallback: none"));
+        let deserialized = serde_yaml::from_str::<Os>(&serialized).unwrap();
+        assert_eq!(deserialized.uefi_fallback, Some(UefiFallbackMode::None));
+
+        config.uefi_fallback = Some(UefiFallbackMode::Rollback);
+        let serialized = serde_yaml::to_string(&config).unwrap();
+        assert!(serialized.contains("uefiFallback: rollback"));
+        let deserialized = serde_yaml::from_str::<Os>(&serialized).unwrap();
+        assert_eq!(deserialized.uefi_fallback, Some(UefiFallbackMode::Rollback));
+
+        config.uefi_fallback = Some(UefiFallbackMode::Rollforward);
+        let serialized = serde_yaml::to_string(&config).unwrap();
+        assert!(serialized.contains("uefiFallback: rollforward"));
+        let deserialized = serde_yaml::from_str::<Os>(&serialized).unwrap();
+        assert_eq!(
+            deserialized.uefi_fallback,
+            Some(UefiFallbackMode::Rollforward)
+        );
+
+        config.uefi_fallback = None;
+        let serialized = serde_yaml::to_string(&config).unwrap();
+        assert!(!serialized.contains("uefiFallback:"));
+        let deserialized = serde_yaml::from_str::<Os>(&serialized).unwrap();
+        assert!(deserialized.uefi_fallback.is_none());
     }
 }

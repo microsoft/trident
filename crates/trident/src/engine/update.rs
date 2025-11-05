@@ -331,9 +331,9 @@ pub(crate) fn finalize_update(
     let (root_path, esp_path) = if container::is_running_in_container()
         .message("Failed to check if Trident is running in a container")?
     {
-        let host_root1 = container::get_host_root_path().message("Failed to get host root path")?;
-        let host_root2 = container::get_host_root_path().message("Failed to get host root path")?;
-        (host_root1, join_relative(host_root2, ESP_MOUNT_POINT_PATH))
+        let host_root = container::get_host_root_path().message("Failed to get host root path")?;
+        let esp_root = join_relative(&host_root, ESP_MOUNT_POINT_PATH);
+        (host_root, esp_root)
     } else {
         (
             PathBuf::from(ROOT_MOUNT_POINT_PATH),
