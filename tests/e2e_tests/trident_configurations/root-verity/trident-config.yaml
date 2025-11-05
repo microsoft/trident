@@ -40,6 +40,18 @@ storage:
         - id: trident
           type: linux-generic
           size: 500M
+        - id: sysexts-a
+          type: linux-generic
+          size: 1G
+        - id: sysexts-b
+          type: linux-generic
+          size: 1G
+        - id: confexts-a
+          type: linux-generic
+          size: 200M
+        - id: confexts-b
+          type: linux-generic
+          size: 200M
         - id: var
           type: linux-generic
           size: 1G
@@ -61,6 +73,12 @@ storage:
       - id: trident-overlay
         volumeAId: trident-overlay-a
         volumeBId: trident-overlay-b
+      - id: sysexts
+        volumeAId: sysexts-a
+        volumeBId: sysexts-b
+      - id: confexts
+        volumeAId: confexts-a
+        volumeBId: confexts-b
   verity:
     - id: root
       name: root
@@ -82,6 +100,10 @@ storage:
     - deviceId: trident
       source: new
       mountPoint: /var/lib/trident
+    - deviceId: sysexts
+      mountPoint: /var/lib/extensions
+    - deviceId: confexts
+      mountPoint: /var/lib/confexts
     - deviceId: var
       mountPoint: /var
     - deviceId: root

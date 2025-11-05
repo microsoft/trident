@@ -1,3 +1,4 @@
 compatible:
   - base
   - root_verity
+  - extensions

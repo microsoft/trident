@@ -275,8 +275,8 @@ files_var_lib_filetrans(trident_t, trident_var_lib_t, { dir file lnk_file })
 
 # Allow trident_t domain to interact with files and directories labeled as trident_var_lib_t
 # Necessary so Trident can interact with the datastore at /var/lib/trident
-allow trident_t trident_var_lib_t:dir { getattr search read write add_name create remove_name open mounton relabelto };
-allow trident_t trident_var_lib_t:file { getattr setattr create open read write unlink lock relabelto };
+allow trident_t trident_var_lib_t:dir { getattr search read write add_name create remove_name open mounton relabelto rmdir };
+allow trident_t trident_var_lib_t:file { getattr setattr create open read write unlink lock relabelto rename };
 
 # Allow Trident to relabel its executable
 allow trident_t trident_exec_t:file relabelto;
@@ -857,6 +857,9 @@ allow fsadm_t trident_t:process { siginh rlimitinh noatsecure transition sigchld
 allow fsadm_t fixed_disk_device_t:blk_file { open read write getattr ioctl };
 allow fsadm_t unlabeled_t:file map;
 
+# Allow fsadm_t to use losetup utility on Trident-created files in /var/lib/. Necessary to attach device to extension image.
+allow fsadm_t trident_var_lib_t:file { getattr open read write };
+
 # Create, read, write, and delete files on a efivarfs filesystem
 fs_manage_efivarfs_files(fsadm_t)
 fs_manage_tmpfs_dirs(fsadm_t)
@@ -924,6 +927,9 @@ allow udev_t cloud_init_t:fd use;
 allow udev_t cloud_init_t:fifo_file { append write getattr };
 allow udev_t lvm_t:process { noatsecure rlimitinh siginh };
 allow udev_t unlabeled_t:file getattr;
+
+# Allow losetup to attach an extension image file as a loopback device.
+allow udev_t trident_var_lib_t:file getattr;
 
 files_read_generic_tmp_files(udev_t)
 
