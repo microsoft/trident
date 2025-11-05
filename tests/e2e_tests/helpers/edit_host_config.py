@@ -69,8 +69,8 @@ def rename_oci_url(host_config_path, oci_cosi_url):
         yaml.safe_dump(host_config, f)
 
 
-# Sysext and confext images are stored in ACR and tagged based on pipeline build
-# ID, so the HC must be updated for every build.
+# Sysext images are stored in ACR and tagged based on pipeline build ID, so the
+# HC must be updated for every build.
 def add_sysexts(
     host_config_path,
     oci_sysext_url,
@@ -89,8 +89,8 @@ def add_sysexts(
         yaml.safe_dump(host_config, f)
 
 
-# Sysext and confext images are stored in ACR and tagged based on pipeline build
-# ID, so the HC must be updated for every build.
+# Confext images are stored in ACR and tagged based on pipeline build ID, so the
+# HC must be updated for every build.
 def add_confexts(host_config_path, oci_confext_url, confext_hash):
     with open(host_config_path, "r") as f:
         host_config = yaml.safe_load(f)
