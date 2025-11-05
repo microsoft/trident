@@ -225,7 +225,9 @@ impl ExtensionsSubsystem {
                         check_for_existing_image(ext, &ctx.spec_old.os.confexts)
                     }
                 } {
+                    // Check if Trident is running in a container, and adjust path accordingly.
                     let adjusted_path = adjust_path_if_container(existing_file_path.clone())?;
+                    // Ensure that file exists.
                     ensure!(
                         adjusted_path.exists(),
                         "Expected to find extension image from URL '{}' at path '{}' based on previous Host Configuration, but path does not exist",
