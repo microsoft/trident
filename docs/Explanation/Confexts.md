@@ -19,8 +19,8 @@ for how to configure confexts in the Trident Host Configuration.
 
 If no `path` is specified for a confext in the Host Configuration, Trident will
 default to placing the confext in `/var/lib/confexts/`. Trident currently
-supports two other directories for placing confexts: `/usr/lib/confexts` and
-`/usr/local/lib/confexts`. If A/B volumes are configured in the Host
+supports two other directories for placing confexts: `/usr/lib/confexts/` and
+`/usr/local/lib/confexts/`. If A/B volumes are configured in the Host
 Configuration, all confexts must be placed on an A/B volume. In other words,
 Trident will return an error if `/var/lib/confexts/`, or any path specified in
 the Host Configuration for a confext, is located on a shared volume.
