@@ -135,7 +135,7 @@ steps:
       fi
 
       SSH_TIMEOUT_ARGS="600"
-      elif [ "${{ parameters.deploymentEnvironment }}" == "bareMetal" ] && 
+      if [ "${{ parameters.deploymentEnvironment }}" == "bareMetal" ] && 
          [ "${{ parameters.expectCommitFailure }}" == "True" ]; then
         # SSH Timeout is used by ab-update helper as the timeout for checking
         # the Trident service. With commit failure, the rollback causes this
