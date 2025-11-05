@@ -7,14 +7,14 @@ use std::{
 };
 
 use anyhow::{bail, ensure, Context, Error};
-use log::warn;
+use log::{trace, warn};
 use tempfile::NamedTempFile;
 
-use osutils::{dependencies::Dependency, path};
+use osutils::{container, dependencies::Dependency, path};
 use trident_api::{
     config::Extension,
     constants::internal_params::HTTP_CONNECTION_TIMEOUT_SECONDS,
-    error::{InternalError, ReportError, ServicingError, TridentError},
+    error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     primitives::hash::Sha384Hash,
     status::ServicingType,
 };
@@ -118,6 +118,46 @@ impl Subsystem for ExtensionsSubsystem {
 
         Ok(())
     }
+
+    fn update_host_configuration(&self, ctx: &mut EngineContext) -> Result<(), TridentError> {
+        // Update paths of sysexts in the Host Configuration.
+        self.extensions
+            .iter()
+            .filter(|ext| ext.ext_type == ExtensionType::Sysext)
+            .try_for_each(|sysext| {
+                // Find corresponding sysext in Host Configuration.
+                ctx.spec
+                    .os
+                    .sysexts
+                    .iter_mut()
+                    .find(|ext| ext.sha384 == sysext.sha384)
+                    .structured(InternalError::Internal(
+                        "Failed to find previously processed sysext in Host Configuration",
+                    ))?
+                    .path = Some(sysext.path.clone());
+                Ok::<(), TridentError>(())
+            })?;
+
+        // Update paths of confexts in the Host Configuration.
+        self.extensions
+            .iter()
+            .filter(|ext| ext.ext_type == ExtensionType::Confext)
+            .try_for_each(|confext| {
+                // Find corresponding confext in Host Configuration.
+                ctx.spec
+                    .os
+                    .confexts
+                    .iter_mut()
+                    .find(|ext| ext.sha384 == confext.sha384)
+                    .structured(InternalError::Internal(
+                        "Failed to find previously processed confext in Host Configuration",
+                    ))?
+                    .path = Some(confext.path.clone());
+                Ok::<(), TridentError>(())
+            })?;
+
+        Ok(())
+    }
 }
 
 impl ExtensionsSubsystem {
@@ -185,13 +225,16 @@ impl ExtensionsSubsystem {
                         check_for_existing_image(ext, &ctx.spec_old.os.confexts)
                     }
                 } {
+                    // Check if Trident is running in a container, and adjust path accordingly.
+                    let adjusted_path = adjust_path_if_container(existing_file_path.clone())?;
+                    // Ensure that file exists.
                     ensure!(
-                        existing_file_path.exists(),
+                        adjusted_path.exists(),
                         "Expected to find extension image from URL '{}' at path '{}' based on previous Host Configuration, but path does not exist",
                         ext.url,
-                        existing_file_path.display()
+                        existing_file_path.display() // Display the unadjusted path for readability
                     );
-                    existing_file_path
+                    adjusted_path
                 } else {
                     // The extension is new to the OS, so we need to download it.
                     // Create and persist a temporary file; get its path.
@@ -231,14 +274,16 @@ impl ExtensionsSubsystem {
                         ext.url
                     )
                 })?;
+                // Check if Trident is running in a container, and adjust path accordingly.
+                let adjusted_path = adjust_path_if_container(path.clone())?;
                 // Ensure that file exists
                 ensure!(
-                    path.exists(),
+                    adjusted_path.exists(),
                     "Expected to find extension image from URL '{}' at path '{}', but path does not exist",
                     ext.url,
-                    path.display()
+                    path.display() // Display unadjusted path for readability
                 );
-                path
+                adjusted_path
             };
 
             // Create temporary mountpoint, which will be used to read the extension-release file
@@ -356,6 +401,12 @@ impl ExtensionsSubsystem {
         // Add new extensions that should be added
         for ext in extensions_to_add {
             let new_path = path::join_relative(mount_path, &ext.path);
+            trace!(
+                "Copying {} '{}' to path {}",
+                ext.ext_type,
+                ext.name,
+                new_path.display()
+            );
             // Attempt atomic rename first, for extensions that were newly
             // downloaded to the staging directory.
             if let Err(e) = fs::rename(&ext.temp_path, &new_path) {
@@ -414,6 +465,23 @@ fn check_for_existing_image(ext: &Extension, old_hc_extensions: &[Extension]) ->
         .clone()
 }
 
+/// Helper function that prepends host root path to a path, if Trident is
+/// running in a container.
+fn adjust_path_if_container(path: PathBuf) -> Result<PathBuf, Error> {
+    Ok(
+        if container::is_running_in_container()
+            .unstructured("Failed to check if Trident is running in a container")?
+        {
+            path::join_relative(
+                container::get_host_root_path().unstructured("Failed to get host root path")?,
+                path,
+            )
+        } else {
+            path
+        },
+    )
+}
+
 /// Helper function to mount the extension image.
 fn attach_device_and_mount(image_file_path: &Path, mount_path: &Path) -> Result<String, Error> {
     let loop_device_output = Dependency::Losetup
@@ -470,6 +538,7 @@ mod tests {
     use super::*;
 
     use tempfile::TempDir;
+    use url::Url;
 
     #[test]
     fn test_populate_extensions_empty() {
@@ -567,6 +636,103 @@ mod tests {
         assert!(mount_path.path().join("var/lib/confexts").exists());
         assert!(mount_path.path().join("usr/lib/confexts").exists());
         assert!(mount_path.path().join("usr/local/lib/confexts").exists());
+    }
+
+    #[test]
+    fn test_update_host_configuration_sysexts() {
+        let mut ctx = EngineContext::default();
+        ctx.spec.os.sysexts = vec![
+            Extension {
+                url: Url::parse("https://example.com/sysext1.raw").unwrap(),
+                sha384: Sha384Hash::from("a".repeat(96)),
+                path: None,
+            },
+            Extension {
+                url: Url::parse("https://example.com/sysext2.raw").unwrap(),
+                sha384: Sha384Hash::from("b".repeat(96)),
+                path: Some(PathBuf::from("/etc/extensions/sysext2.raw")),
+            },
+        ];
+
+        let subsystem = ExtensionsSubsystem {
+            extensions: vec![
+                ExtensionData {
+                    id: "sysext1".to_string(),
+                    name: "sysext1".to_string(),
+                    sha384: Sha384Hash::from("a".repeat(96)),
+                    path: PathBuf::from("/var/lib/extensions/sysext1.raw"),
+                    temp_path: PathBuf::from(EXTENSION_IMAGE_STAGING_DIRECTORY).join("sysext1.raw"),
+
+                    ext_type: ExtensionType::Sysext,
+                },
+                ExtensionData {
+                    id: "sysext2".to_string(),
+                    name: "sysext2".to_string(),
+                    sha384: Sha384Hash::from("b".repeat(96)),
+                    path: PathBuf::from("/etc/extensions/sysext2.raw"),
+                    temp_path: PathBuf::from(EXTENSION_IMAGE_STAGING_DIRECTORY).join("sysext2.raw"),
+
+                    ext_type: ExtensionType::Sysext,
+                },
+            ],
+            extensions_old: vec![],
+        };
+        subsystem.update_host_configuration(&mut ctx).unwrap();
+
+        for i in 0..subsystem.extensions.len() {
+            assert_eq!(
+                ctx.spec.os.sysexts[i].path,
+                Some(subsystem.extensions[i].path.clone())
+            )
+        }
+    }
+
+    #[test]
+    fn test_update_host_configuration_confexts() {
+        let mut ctx = EngineContext::default();
+        ctx.spec.os.confexts = vec![
+            Extension {
+                url: Url::parse("https://example.com/confext1.raw").unwrap(),
+                sha384: Sha384Hash::from("a".repeat(96)),
+                path: None,
+            },
+            Extension {
+                url: Url::parse("https://example.com/confext2.raw").unwrap(),
+                sha384: Sha384Hash::from("b".repeat(96)),
+                path: Some(PathBuf::from("/usr/lib/confexts/confext2.raw")),
+            },
+        ];
+
+        let subsystem = ExtensionsSubsystem {
+            extensions: vec![
+                ExtensionData {
+                    id: "confext1".to_string(),
+                    name: "confext1".to_string(),
+                    sha384: Sha384Hash::from("a".repeat(96)),
+                    path: PathBuf::from("/var/lib/confexts/confext1.raw"),
+                    temp_path: PathBuf::from(EXTENSION_IMAGE_STAGING_DIRECTORY)
+                        .join("confext1.raw"),
+                    ext_type: ExtensionType::Confext,
+                },
+                ExtensionData {
+                    id: "confext2".to_string(),
+                    name: "confext2".to_string(),
+                    sha384: Sha384Hash::from("b".repeat(96)),
+                    path: PathBuf::from("/usr/lib/confexts/confext2.raw"),
+                    temp_path: PathBuf::from("/var/lib/extensions/.staging/confext2.raw"),
+                    ext_type: ExtensionType::Confext,
+                },
+            ],
+            extensions_old: vec![],
+        };
+        subsystem.update_host_configuration(&mut ctx).unwrap();
+
+        for i in 0..subsystem.extensions.len() {
+            assert_eq!(
+                ctx.spec.os.confexts[i].path,
+                Some(subsystem.extensions[i].path.clone())
+            )
+        }
     }
 }
 

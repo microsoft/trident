@@ -173,6 +173,7 @@ stages:
               imageName: ${{ variables.IMAGE_NAME }}
               config: $(TRIDENT_CONFIGURATION_NAME)
               deploymentEnvironment: "bareMetal"
+              runtimeEnvironment: ${{ parameters.runtimeEnv }}
 
           #   Run trident prep
           - template: ../testing_common/trident-prep.yml

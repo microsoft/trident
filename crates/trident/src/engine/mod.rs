@@ -22,6 +22,7 @@ use crate::{
     engine::boot::BootSubsystem,
     subsystems::{
         esp::EspSubsystem,
+        extensions::ExtensionsSubsystem,
         hooks::HooksSubsystem,
         initrd::InitrdSubsystem,
         management::ManagementSubsystem,
@@ -101,6 +102,11 @@ pub(crate) trait Subsystem: Send {
     fn configure(&mut self, _ctx: &EngineContext) -> Result<(), TridentError> {
         Ok(())
     }
+
+    /// Update the Host Configuration with information from the subsystem.
+    fn update_host_configuration(&self, _ctx: &mut EngineContext) -> Result<(), TridentError> {
+        Ok(())
+    }
 }
 
 lazy_static::lazy_static! {
@@ -112,6 +118,7 @@ lazy_static::lazy_static! {
         Box::<NetworkSubsystem>::default(),
         Box::<OsConfigSubsystem>::default(),
         Box::<ManagementSubsystem>::default(),
+        Box::<ExtensionsSubsystem>::default(),
         Box::<HooksSubsystem>::default(),
         Box::<InitrdSubsystem>::default(),
         Box::<SelinuxSubsystem>::default(),
@@ -316,6 +323,25 @@ fn configure(
     }
     debug!("Finished step 'Configure'");
 
+    Ok(())
+}
+
+fn update_host_configuration(
+    subsystems: &[Box<dyn Subsystem>],
+    ctx: &mut EngineContext,
+) -> Result<(), TridentError> {
+    info!("Starting step 'Update Host Configuration'");
+    for subsystem in subsystems {
+        debug!(
+            "Starting step 'Update Host Configuration' for subsystem '{}'",
+            subsystem.name()
+        );
+        subsystem.update_host_configuration(ctx).message(format!(
+            "Step 'Update Host Configuration' failed for subsystem '{}'",
+            subsystem.name()
+        ))?;
+    }
+    debug!("Finished step 'Update Host Configuration'");
     Ok(())
 }
 

@@ -134,6 +134,7 @@ stages:
               imageName: ${{ variables.testImageName }}
               config: ${{ variables.tridentConfigurationName }}
               deploymentEnvironment: "virtualMachine"
+              runtimeEnvironment: ${{ parameters.runtimeEnv }}
 
           - template: netlaunch-prep.yml
 

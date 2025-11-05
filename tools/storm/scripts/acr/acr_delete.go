@@ -10,7 +10,7 @@ import (
 
 // Define AcrDeleteScript
 type AcrDeleteScript struct {
-	Config                string `required:"" help:"Trident configuration's name (e.g., 'extensions')" enum:"misc,extensions"`
+	Config                string `required:"" help:"Trident configuration's name (e.g., 'extensions')" enum:"misc,extensions,root-verity"`
 	DeploymentEnvironment string `required:"" help:"Deployment environment (virtualMachine or bareMetal)" enum:"virtualMachine,bareMetal"`
 	AcrName               string `required:"" help:"Azure Container Registry name"`
 	RepoName              string `required:"" help:"Repository name in ACR"`

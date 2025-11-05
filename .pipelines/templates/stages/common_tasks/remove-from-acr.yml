@@ -40,14 +40,23 @@ steps:
             --config ${{ parameters.config }} \
             --deployment-environment ${{ parameters.deploymentEnvironment }} \
             --acr-name $(ACR_NAME) \
-            --repo-name sysext \
+            --repo-name $(SYSEXT_REPO) \
+            --build-id $(Build.BuildId) \
+            --num-clones 2
+
+        elif [ "${{ parameters.config }}" == 'root-verity' ]; then
+          ./bin/storm-trident script acr-delete \
+            --config ${{ parameters.config }} \
+            --deployment-environment ${{ parameters.deploymentEnvironment }} \
+            --acr-name $(ACR_NAME) \
+            --repo-name $(SYSEXT_REPO) \
             --build-id $(Build.BuildId) \
             --num-clones 2
           ./bin/storm-trident script acr-delete \
             --config ${{ parameters.config }} \
             --deployment-environment ${{ parameters.deploymentEnvironment }} \
             --acr-name $(ACR_NAME) \
-            --repo-name confext \
+            --repo-name $(CONFEXT_REPO) \
             --build-id $(Build.BuildId) \
             --num-clones 2
 
