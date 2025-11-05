@@ -1,5 +1,5 @@
 <domain type="kvm">
-  <name>usb-iso-test-vm</name>
+  <name>azl-installer-test-vm</name>
   <memory unit="KiB">12582912</memory>
   <currentMemory unit="KiB">12582912</currentMemory>
   <vcpu placement="static">4</vcpu>
@@ -38,7 +38,7 @@
     <emulator>/usr/bin/qemu-system-x86_64</emulator>
     <disk type="file" device="disk">
       <driver name="qemu" type="qcow2" />
-      <source file="/tmp/usb-iso-test-vm-volume.qcow2" />
+      <source file="/tmp/azl-installer-test-vm-volume.qcow2" />
       <target dev="sda" bus="sata" />
       <address type="drive" controller="0" bus="0" target="0" unit="1" />
     </disk>
@@ -54,19 +54,19 @@
       <address type="pci" domain="0x0000" bus="0x04" slot="0x00" function="0x0" />
     </controller>
     <serial type="pty">
-      <log file="/tmp/usb-iso-test-vm-serial0.log" append="off" />
+      <log file="/tmp/azl-installer-test-vm-serial0.log" append="off" />
       <target type="isa-serial" port="0">
         <model name="isa-serial" />
       </target>
     </serial>
     <interface type="network">
       <mac address="52:54:00:dc:6e:3e" />
-      <source network="usb-iso-test-vm-net" />
+      <source network="azl-installer-test-vm-net" />
       <model type="virtio" />
       <address type="pci" domain="0x0000" bus="0x02" slot="0x00" function="0x0" />
     </interface>
     <console type="pty">
-      <log file="/tmp/usb-iso-test-vm-serial0.log" append="off" />
+      <log file="/tmp/azl-installer-test-vm-serial0.log" append="off" />
       <target type="serial" port="0" />
     </console>
     <memballoon model="virtio">

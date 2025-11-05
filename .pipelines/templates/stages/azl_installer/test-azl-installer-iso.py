@@ -124,7 +124,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--vm-name",
-        default="usb-iso-test-vm",
+        default="azl-installer-test-vm",
         help="VM name",
     )
     parser.add_argument(

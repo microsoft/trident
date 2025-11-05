@@ -125,7 +125,8 @@ stages:
         variables:
           ob_outputDirectory: $(Pipeline.Workspace)/azl-installer-test-unattended
           ob_artifactBaseName: azl-installer-test-unattended-$(System.JobAttempt)
-          ISO_NAME: azl-installer-unattended
 
         steps:
-          - template: ./validate-usb-iso.yml
+          - template: ./validate-azl-installer-iso.yml
+            parameters:
+              isoName: azl-installer-unattended
