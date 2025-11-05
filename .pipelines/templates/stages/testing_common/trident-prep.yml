@@ -41,6 +41,7 @@ steps:
           --runtimeEnv ${{ parameters.runtimeEnv }}
       )
 
+      # TAG_BASE, SYSEXT_REPO, and CONFEXT_REPO are set in push-to-acr.yml
       if [ "${{ parameters.config }}" == "misc" ]; then
         tag="$(TAG_BASE).1"
         oci_url="oci://$(ACR_NAME).azurecr.io/${{ parameters.imageName }}:${tag}"
