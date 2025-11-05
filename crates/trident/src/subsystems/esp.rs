@@ -281,7 +281,7 @@ fn find_uefi_fallback_source_dir_name(
 /// Configures UEFI fallback by copying boot files to the UEFI fallback folder
 /// based on the UEFI fallback mode and servicing type.
 ///
-/// Uefi fallback is handled in two stages:
+/// UEFI fallback is handled in two stages:
 /// 1. During finalize, the appropriate boot files are copied to the UEFI fallback folder
 ///    based on the servicing state and UEFI fallback mode.
 ///       * For clean install, the target OS boot files (always volume A) are copied.
@@ -368,13 +368,13 @@ fn copy_boot_files_for_uefi_fallback(
     let source_esp_dir_path = esp_dir_path.join(source_esp_name);
     let uefi_fallback_path = esp_dir_path.join(EFI_DEFAULT_BIN_DIRECTORY);
     debug!(
-        "Copying files dusring {:?} from {} to {}",
+        "Copying files during {:?} from '{}' to '{}'",
         servicing_type,
         source_esp_dir_path.display(),
         uefi_fallback_path.display()
     );
     simple_copy_boot_files(&source_esp_dir_path, &uefi_fallback_path).context(format!(
-        "Failed to copy boot files from directory {} to directory {}",
+        "Failed to copy boot files from directory '{}' to directory '{}'",
         source_esp_dir_path.display(),
         uefi_fallback_path.display()
     ))?;
@@ -384,13 +384,13 @@ fn copy_boot_files_for_uefi_fallback(
 /// Copies boot files from one folder to another.
 fn simple_copy_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
     trace!(
-        "Copying boot files from {} to {}",
+        "Copying boot files from '{}' to '{}'",
         from_dir.display(),
         to_dir.display()
     );
     // Ensure to_dir exists
     fs::create_dir_all(to_dir)
-        .context(format!("Failed to create directory {}", to_dir.display()))?;
+        .context(format!("Failed to create directory '{}'", to_dir.display()))?;
 
     // Copy all files from from_dir to to_dir as <existing_filename>.new
     fs::read_dir(from_dir)?
@@ -400,12 +400,12 @@ fn simple_copy_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
             let to_file_name = format!("{}.new", from_path.file_name().to_string_lossy());
             let to_path = to_dir.join(to_file_name);
             fs::copy(from_path.path(), &to_path).context(format!(
-                "Failed to copy file {} to {}",
+                "Failed to copy file '{}' to '{}'",
                 from_path.path().display(),
                 to_path.display(),
             ))?;
             trace!(
-                "Copied file {} to {}",
+                "Copied file '{}' to '{}'",
                 from_path.path().display(),
                 to_path.display()
             );
@@ -425,12 +425,12 @@ fn simple_copy_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
                 let new_file_name = orig_file_name_string.trim_end_matches(".new");
                 let to_path = to_dir.join(new_file_name);
                 fs::rename(orig_path.path(), &to_path).context(format!(
-                    "Failed to rename file {} to {}",
+                    "Failed to rename file '{}' to '{}'",
                     orig_path.path().display(),
                     to_path.display()
                 ))?;
                 trace!(
-                    "Renamed file {} to {}",
+                    "Renamed file '{}' to '{}'",
                     orig_path.path().display(),
                     to_path.display()
                 );
@@ -456,7 +456,7 @@ fn copy_boot_files(
         let source_path = temp_mount_dir.join(boot_file);
         // Extract filename from path
         let file_name = Path::new(boot_file).file_name().context(format!(
-            "Failed to extract filename from path {}",
+            "Failed to extract filename from path '{}'",
             boot_file.display()
         ))?;
 
@@ -465,16 +465,16 @@ fn copy_boot_files(
         // Create directories if they don't exist
         if let Some(parent) = destination_path.parent() {
             fs::create_dir_all(parent)
-                .context(format!("Failed to create directory {}", parent.display()))?;
+                .context(format!("Failed to create directory '{}'", parent.display()))?;
         }
 
         debug!(
-            "Copying file {} to {}",
+            "Copying file '{}' to '{}'",
             source_path.display(),
             destination_path.display()
         );
         fs::copy(&source_path, &destination_path).context(format!(
-            "Failed to copy file {} to {}",
+            "Failed to copy file '{}' to '{}'",
             source_path.display(),
             destination_path.display()
         ))?;
@@ -558,7 +558,7 @@ fn generate_boot_filepaths(temp_mount_dir: &Path) -> Result<Vec<PathBuf>, Error>
         .join(BOOT_EFI);
     if !boot_efi_path.exists() {
         bail!(
-            "Failed to find shim EFI executable at path {}",
+            "Failed to find shim EFI executable at path '{}'",
             boot_efi_path.display()
         );
     }
