@@ -10,7 +10,9 @@
 
 ### Script
 
-Script that will be run. The success or failure of the script will define the health of the target OS. The script will run where Trident is running, either in the target OS or in a container running on the target OS (where the target OS '/' is mounted as '/host').
+Script that will be run to validate the target OS. The success or failure of the script will define the health of the target OS. The script will run where Trident is running, either in the target OS or in a container running on the target OS (where the target OS '/' is mounted as '/host').
+
+Scripts that are configured with a path source must exist in the target OS.
 
 | Characteristic | Value    |
 | -------------- | -------- |

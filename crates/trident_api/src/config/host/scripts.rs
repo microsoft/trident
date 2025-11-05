@@ -17,6 +17,9 @@ use super::error::HostConfigurationStaticValidationError;
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct Scripts {
     /// Scripts to be run before Trident begins servicing the host.
+    ///
+    /// These scripts are run in the servicing OS. Scripts that are configured
+    /// with a path source must exist in the servicing OS.
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub pre_servicing: Vec<Script>,

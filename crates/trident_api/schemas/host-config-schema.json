@@ -184,7 +184,7 @@
       "oneOf": [
         {
           "title": "Script",
-          "description": "Script that will be run. The success or failure of the script will define the health of the target OS. The script will run where Trident is running, either in the target OS or in a container running on the target OS (where the target OS '/' is mounted as '/host').",
+          "description": "Script that will be run to validate the target OS. The success or failure of the script will define the health of the target OS. The script will run where Trident is running, either in the target OS or in a container running on the target OS (where the target OS '/' is mounted as '/host').\n\nScripts that are configured with a path source must exist in the target OS.",
           "type": "object",
           "required": [
             "Script"
@@ -1210,7 +1210,7 @@
           }
         },
         "preServicing": {
-          "description": "Scripts to be run before Trident begins servicing the host.",
+          "description": "Scripts to be run before Trident begins servicing the host.\n\nThese scripts are run in the servicing OS. Scripts that are configured with a path source must exist in the servicing OS.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/Script"
