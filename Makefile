@@ -408,6 +408,7 @@ bin/netlisten: tools/cmd/netlisten/* tools/go.sum tools/pkg/*
 	@mkdir -p bin
 	cd tools && go build -o ../bin/netlisten ./cmd/netlisten
 
+# isopatch injects files into an ISO with placeholders without rebuilding it
 bin/isopatch: tools/cmd/isopatch/* tools/go.sum tools/pkg/isopatcher/*
 	@mkdir -p bin
 	cd tools && go build -o ../bin/isopatch ./cmd/isopatch
