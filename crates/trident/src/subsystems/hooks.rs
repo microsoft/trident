@@ -254,16 +254,6 @@ impl HooksSubsystem {
         debug!("Checking status of systemd service(s) '{}'", &services_list);
 
         loop {
-            if start_time.elapsed() >= timeout_duration {
-                return Err(TridentError::new(ServicingError::SystemdCheckTimeout {
-                    services: services_list,
-                    timeout_seconds: check.timeout_seconds,
-                    last_error: last_error
-                        .map(|e| format!("{e:?}"))
-                        .unwrap_or_else(|| "No status retrieved".into()),
-                }));
-            }
-
             let status = Dependency::Systemctl
                 .cmd()
                 .env("SYSTEMD_IGNORE_CHROOT", "true")
@@ -290,6 +280,15 @@ impl HooksSubsystem {
                 }
             }
             thread::sleep(Duration::from_millis(100));
+            if start_time.elapsed() >= timeout_duration {
+                return Err(TridentError::new(ServicingError::SystemdCheckTimeout {
+                    services: services_list,
+                    timeout_seconds: check.timeout_seconds,
+                    last_error: last_error
+                        .map(|e| format!("{e:?}"))
+                        .unwrap_or_else(|| "No status retrieved".into()),
+                }));
+            }
         }
         Ok(())
     }
