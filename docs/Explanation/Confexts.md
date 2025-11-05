@@ -42,10 +42,11 @@ Per systemd-confext documentation, confexts ["are strictly read-only by
 default"](https://man.archlinux.org/man/systemd-confext.8.en). Mutable confexts
 are not currently supported in Azure Linux 3.0 (systemd v255). It is important
 to note that configuring confexts will result in `/etc` becoming read-only. This
-can be problematic if other services that run on boot require writing to `/etc`.
+can be problematic if anything requires writing to `/etc`.
 
 ### SELinux
 
-Servicing of confexts is not currently compatible with SELinux. Therefore,
+Servicing of confexts is not currently compatible with SELinux in systemd 255,
+as mounting the confext overlay results in `/etc` being mislabeled. Therefore,
 [SELinux](../Reference/Host-Configuration/API-Reference/Selinux.md) should be
 configured to `disabled` in the Host Configuration.
