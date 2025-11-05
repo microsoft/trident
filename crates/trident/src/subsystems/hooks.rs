@@ -44,6 +44,7 @@ struct StagedFile {
 pub struct HooksSubsystem {
     staged_files: HashMap<PathBuf, StagedFile>,
     writable_etc_overlay: bool,
+    only_local_scripts: bool,
 }
 impl Subsystem for HooksSubsystem {
     fn name(&self) -> &'static str {
@@ -208,7 +209,20 @@ impl Subsystem for HooksSubsystem {
 }
 
 impl HooksSubsystem {
+    pub fn new_for_local_scripts() -> Self {
+        Self {
+            only_local_scripts: true,
+            ..Default::default()
+        }
+    }
+
     fn stage_file(&mut self, path: PathBuf) -> Result<(), Error> {
+        if self.only_local_scripts {
+            return Err(anyhow::anyhow!(
+                "Staging of files is disabled in only_local_scripts mode"
+            ));
+        }
+
         let contents =
             std::fs::read(&path).context(format!("Failed to read file '{}'", path.display()))?;
         let mode = std::fs::metadata(&path)
@@ -310,14 +324,7 @@ impl HooksSubsystem {
         let content = match &script.source {
             ScriptSource::Content(content) => content.as_bytes(),
             ScriptSource::Path(path) => {
-                if let Some(staged_file) = &self.staged_files.get(path) {
-                    trace!(
-                        "Loading script '{}' from staged files '{}'",
-                        script.name,
-                        path.display()
-                    );
-                    &staged_file.contents
-                } else {
+                if self.only_local_scripts {
                     // Script was not staged, check path on local filesystem
                     let local_path = if container::is_running_in_container()
                         .unstructured("Failed to determine if running in container")?
@@ -339,6 +346,17 @@ impl HooksSubsystem {
                         script.name,
                         local_path.display()
                     ))?
+                } else {
+                    trace!(
+                        "Loading script '{}' from staged files '{}'",
+                        script.name,
+                        path.display()
+                    );
+                    &self
+                        .staged_files
+                        .get(path)
+                        .context(format!("Failed to find staged file '{}'", path.display()))?
+                        .contents
                 }
             }
         };

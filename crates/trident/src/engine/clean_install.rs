@@ -209,7 +209,7 @@ fn stage_clean_install(
     };
 
     // Execute pre-servicing scripts
-    HooksSubsystem::default().execute_pre_servicing_scripts(&ctx)?;
+    HooksSubsystem::new_for_local_scripts().execute_pre_servicing_scripts(&ctx)?;
 
     engine::validate_host_config(subsystems, &ctx)?;
 

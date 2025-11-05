@@ -292,7 +292,7 @@ fn run_health_checks(
         ServicingState::AbUpdateFinalized | ServicingState::CleanInstallFinalized => {
             // If health check previously failed, need to re-run the health checks
             // Execute health checks, if one fails, trigger rollback
-            match HooksSubsystem::default().execute_health_checks(ctx) {
+            match HooksSubsystem::new_for_local_scripts().execute_health_checks(ctx) {
                 Ok(()) => {}
                 Err(e) => {
                     info!("Health check failure: {e:?}");
