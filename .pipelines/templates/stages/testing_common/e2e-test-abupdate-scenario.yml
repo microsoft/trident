@@ -134,12 +134,23 @@ steps:
         EXPECT_FAILURE_ARG="--expect-failed-commit"
       fi
 
+      SSH_TIMEOUT_ARGS="600"
+      elif [ "${{ parameters.deploymentEnvironment }}" == "bareMetal" ] && 
+         [ "${{ parameters.expectCommitFailure }}" == "True" ]; then
+        # SSH Timeout is used by ab-update helper as the timeout for checking
+        # the Trident service. With commit failure, the rollback causes this
+        # to take longer.  Especially on bare metal.
+        SSH_TIMEOUT_ARGS="1200"
+      fi
+
       echo "Running script to stage and finalize A/B update..."
       ./bin/storm-trident helper ab-update \
           "${{ parameters.sshKeyPath }}" \
           "${{ parameters.hostIp }}" \
           "${{ parameters.userName }}" \
           "${{ parameters.runtimeEnv }}" \
+          22 \
+          $SSH_TIMEOUT_ARGS \
           --trident-config ${{ parameters.tridentConfigFile }} \
           --version $(version) \
           --stage-ab-update \
@@ -158,7 +169,7 @@ steps:
         echo "##vso[task.setvariable variable=version]$new_version"
       fi
 
-    timeoutInMinutes: 15
+    timeoutInMinutes: 30
     workingDirectory: $(Build.SourcesDirectory)
     displayName: "🔄${{ parameters.updateEmoji }} Stage and finalize A/B update into target OS ${{ parameters.updateScenarioTargetOs }} testing ${{ parameters.updateScenarioName }}"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
