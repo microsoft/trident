@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
 };
 
@@ -57,6 +57,51 @@ impl TabFile {
     /// Render this tab file as a string.
     pub fn render(&self) -> String {
         self.entries.iter().map(|entry| entry.render()).collect()
+    }
+
+    pub fn merge_and_write(&self, tab_file_path: impl AsRef<Path>) -> Result<(), Error> {
+        let existing_contents = std::fs::read_to_string(tab_file_path.as_ref())
+            .context("Failed to read existing fstab file")?;
+
+        let merged_contents = self.merge_with_existing(&existing_contents);
+        std::fs::write(tab_file_path.as_ref(), merged_contents.as_bytes()).with_context(|| {
+            format!(
+                "Failed to write merged {}",
+                tab_file_path.as_ref().display()
+            )
+        })
+    }
+
+    pub fn merge_with_existing(&self, existing: &str) -> String {
+        let mut merged = String::new();
+
+        let mount_points = self
+            .entries
+            .iter()
+            .filter_map(|e| match e.mount_point {
+                TabMountPoint::Path(ref p) => Some(&**p),
+                TabMountPoint::None => None,
+            })
+            .collect::<HashSet<_>>();
+
+        for line in existing.lines() {
+            let trimmed = line.trim();
+            if !trimmed.is_empty() && !trimmed.starts_with('#') {
+                let parts: Vec<&str> = trimmed.split_whitespace().collect();
+                if let Some(ref path) = parts.get(1) {
+                    if mount_points.contains(Path::new(path)) {
+                        continue;
+                    }
+                }
+            }
+
+            merged.push_str(line);
+            merged.push('\n');
+        }
+
+        merged.push_str("\nEntries below were created by Trident:\n");
+        merged.push_str(&self.render());
+        merged
     }
 }
 

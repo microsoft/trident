@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Error};
 use log::trace;
@@ -70,11 +73,21 @@ pub(super) fn generate_fstab(ctx: &EngineContext, output_path: &Path) -> Result<
 
     let fstab = TabFile { entries };
 
-    fstab
-        .write(output_path)
-        .context(format!("Failed to write {}", output_path.display()))?;
+    if ctx.spec.storage.raw_cosi {
+        fstab
+            .merge_and_write(output_path)
+            .context(format!("Failed to update {}", output_path.display()))?;
+    } else {
+        fstab
+            .write(output_path)
+            .context(format!("Failed to write {}", output_path.display()))?;
+    }
 
-    trace!("Wrote '{}', contents: '{:?}'", output_path.display(), fstab);
+    log::debug!(
+        "Wrote '{}', contents: '{:?}'",
+        output_path.display(),
+        fs::read_to_string(output_path).unwrap_or("<failed to read>".to_string())
+    );
 
     Ok(())
 }
