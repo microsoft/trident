@@ -3,7 +3,7 @@ use std::{fs, path::PathBuf};
 use anyhow::{Context, Error};
 use chrono::Utc;
 use enumflags2::BitFlags;
-use log::{debug, info, trace, warn};
+use log::{debug, error, info, trace, warn};
 
 use osutils::{block_devices, efivar, lsblk, pcrlock, veritysetup, virt};
 use trident_api::{
@@ -118,7 +118,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
             // For A/B Update, when health checks previously failed and host
             // failed to rollback, i.e boot from the servicing OS, report error
             // and leave host status alone
-            info!("Host failed to rollback into the servicing OS");
+            error!("Host failed to rollback into the servicing OS");
             return Err(TridentError::new(ServicingError::AbUpdateRebootCheck {
                 root_device_path: current_root_path.to_string_lossy().to_string(),
                 expected_device_path: expected_root_path.to_string_lossy().to_string(),
