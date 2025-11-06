@@ -49,18 +49,16 @@ impl Subsystem for BootSubsystem {
                 return Ok(());
             };
 
-            let fs_uuid = &ctx
-                .image
-                .as_ref()
-                .structured(InternalError::Internal("No image found in engine context"))?
+            // TODO: Use PARTUUID rather than PARTLABEL
+            let root_device_label = ctx
                 .root_filesystem()
                 .structured(InternalError::Internal("No root filesystem in image"))?
-                .fs_uuid;
+                .device_id;
 
             let regex =
                 regex::Regex::new(r"\broot=((PARTUUID|PARTLABEL)=([a-fA-F0-9\-]{36}))\b").unwrap();
             let updated = regex
-                .replace_all(&grub_cfg, format!("root=UUID={fs_uuid}").as_str())
+                .replace_all(&grub_cfg, format!("root=PARTLABEL={root_device_label}").as_str())
                 .to_string();
             trace!("Updated grub.cfg:\n{}", &updated);
             fs::write(path, updated)
