@@ -84,7 +84,7 @@ func buildCosiFile(variant ImageVariant) error {
 
 	cosiMetadata := metadata.MetadataJson{
 		Version: "1.0",
-		OsArch:  "x86_64",
+		OsArch:  "aarch64",
 		Id:      uuid.New().String(),
 		Images:  make([]metadata.Image, len(expectedImages)),
 	}
@@ -214,6 +214,7 @@ func DecompressImage(source string) (*os.File, error) {
 		return nil, fmt.Errorf("failed to create temporary file: %w", err)
 	}
 
+	// Configure decoder to support larger window sizes (up to 1GB for --long=30)
 	zr, err := zstd.NewReader(src, zstd.WithDecoderMaxWindow(1<<30))
 	if err != nil {
 		tmpFile.Close()
