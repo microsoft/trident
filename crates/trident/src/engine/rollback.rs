@@ -44,7 +44,7 @@ pub fn commit(datastore: &mut DataStore) -> Result<BootValidationResult, Trident
     let ctx = CommitContext::new(datastore)?;
     // Deterine if we booted from the expected device
     let booted_from_expected = ctx.booted_from_target_os()?;
-    // Handle error states for commit
+    // Handle error states asociated with booting from unexpected device
     let _ = ctx.catch_error_states(datastore, booted_from_expected)?;
     // Run health checks to ensure the system is in the desired state
     let health_check_status = ctx.run_health_checks(datastore)?;
