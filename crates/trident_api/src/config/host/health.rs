@@ -63,7 +63,7 @@ impl Check {
     }
 }
 
-/// Custom serialization and deserialization for UpdateCheck enum.
+/// Custom serialization and deserialization for Check enum.
 /// This is needed to avoid using YAML tags (i.e. !Script and !SystemdCheck) in
 /// the serialized output.
 impl<'de> serde::Deserialize<'de> for Check {
