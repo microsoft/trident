@@ -408,7 +408,7 @@ bin/netlisten: tools/cmd/netlisten/* tools/go.sum tools/pkg/*
 	@mkdir -p bin
 	cd tools && go build -o ../bin/netlisten ./cmd/netlisten
 
-# isopatch injects files into an ISO with placeholders without rebuilding it.
+# isopatch injects files into an ISO with placeholders without rebuilding the ISO.
 # It can be used to transform the AZL INSTALLER ISO from attended to unattended
 # by injecting a Host Configuration file.
 bin/isopatch: tools/cmd/isopatch/* tools/go.sum tools/pkg/isopatcher/*
