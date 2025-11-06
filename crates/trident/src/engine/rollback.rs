@@ -43,9 +43,9 @@ struct CommitContext {
 pub fn commit(datastore: &mut DataStore) -> Result<BootValidationResult, TridentError> {
     let ctx = CommitContext::new(datastore)?;
     // Deterine if we booted from the expected device
-    let booted_from_target_os = ctx.booted_from_target_os()?;
+    let booted_from_expected = ctx.booted_from_target_os()?;
     // Handle error states for commit
-    let _ = ctx.catch_error_states(datastore, booted_from_target_os)?;
+    let _ = ctx.catch_error_states(datastore, booted_from_expected)?;
     // Run health checks to ensure the system is in the desired state
     let health_check_status = ctx.run_health_checks(datastore)?;
     if let BootValidationResult::ValidBootHealthCheckFailed(err) = health_check_status {
@@ -140,9 +140,9 @@ impl CommitContext {
     fn catch_error_states(
         &self,
         datastore: &mut DataStore,
-        booted_correct_os: bool,
+        booted_from_expected: bool,
     ) -> Result<BootValidationResult, TridentError> {
-        match (booted_correct_os, self.servicing_state) {
+        match (booted_from_expected, self.servicing_state) {
             // Correct boot cases, proceed to finish commit
             (true, ServicingState::CleanInstallFinalized)
             | (true, ServicingState::AbUpdateFinalized) => {
