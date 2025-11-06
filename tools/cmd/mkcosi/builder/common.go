@@ -214,7 +214,7 @@ func DecompressImage(source string) (*os.File, error) {
 		return nil, fmt.Errorf("failed to create temporary file: %w", err)
 	}
 
-	zr, err := zstd.NewReader(src)
+	zr, err := zstd.NewReader(src, zstd.WithDecoderMaxWindow(1<<30))
 	if err != nil {
 		tmpFile.Close()
 		return nil, fmt.Errorf("failed to create zstd reader: %w", err)
