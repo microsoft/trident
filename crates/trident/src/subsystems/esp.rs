@@ -56,6 +56,44 @@ impl Subsystem for EspSubsystem {
     }
 }
 
+/// Configures UEFI fallback by copying boot files to the UEFI fallback folder
+/// based on the UEFI fallback mode and servicing type.
+///
+/// UEFI fallback is handled in two stages:
+/// 1. During finalize, the appropriate boot files are copied to the UEFI fallback folder
+///    based on the servicing state and UEFI fallback mode.
+///       * For clean install, the target OS boot files (always volume A) are copied.
+///       * For A/B update, the boot files are copied based on whether rollforward (when
+///         the target OS boot files are copied) or rollback (no files need to be copied
+///         because fallback was populated previously) is selected.
+/// 2. During commit, after the target OS boot has been verified, the target OS boot files
+///    are copied to the UEFI fallback folder.
+pub fn set_uefi_fallback_contents(
+    ctx: &EngineContext,
+    servicing_state: ServicingState,
+    mount_point: &Path,
+) -> Result<(), Error> {
+    let source_esp_dir_name = find_uefi_fallback_source_dir_name(ctx, servicing_state);
+    if let Some(source_esp_dir_name) = source_esp_dir_name {
+        debug!(
+            "Configuring UEFI fallback for servicing state {:?} using source ESP dir '{}'",
+            servicing_state, source_esp_dir_name
+        );
+        copy_boot_files_for_uefi_fallback(
+            mount_point,
+            &source_esp_dir_name,
+            &ctx.servicing_type,
+            ctx.install_index,
+        )?;
+    } else {
+        debug!(
+            "No UEFI fallback configuration needed for servicing state {:?}",
+            servicing_state
+        );
+    }
+    Ok(())
+}
+
 /// Performs file-based deployment of ESP images from the OS image.
 fn deploy_esp(ctx: &EngineContext, mount_point: &Path) -> Result<(), Error> {
     trace!("Deploying ESP from OS image");
@@ -278,44 +316,6 @@ fn find_uefi_fallback_source_dir_name(
     }
 }
 
-/// Configures UEFI fallback by copying boot files to the UEFI fallback folder
-/// based on the UEFI fallback mode and servicing type.
-///
-/// UEFI fallback is handled in two stages:
-/// 1. During finalize, the appropriate boot files are copied to the UEFI fallback folder
-///    based on the servicing state and UEFI fallback mode.
-///       * For clean install, the target OS boot files (always volume A) are copied.
-///       * For A/B update, the boot files are copied based on whether rollforward (when
-///         the target OS boot files are copied) or rollback (no files need to be copied
-///         because fallback was populated previously) is selected.
-/// 2. During commit, after the target OS boot has been verified, the target OS boot files
-///    are copied to the UEFI fallback folder.
-pub fn configure_uefi_fallback(
-    ctx: &EngineContext,
-    servicing_state: ServicingState,
-    mount_point: &Path,
-) -> Result<(), Error> {
-    let source_esp_dir_name = find_uefi_fallback_source_dir_name(ctx, servicing_state);
-    if let Some(source_esp_dir_name) = source_esp_dir_name {
-        debug!(
-            "Configuring UEFI fallback for servicing state {:?} using source ESP dir '{}'",
-            servicing_state, source_esp_dir_name
-        );
-        copy_boot_files_for_uefi_fallback(
-            mount_point,
-            &source_esp_dir_name,
-            &ctx.servicing_type,
-            ctx.install_index,
-        )?;
-    } else {
-        debug!(
-            "No UEFI fallback configuration needed for servicing state {:?}",
-            servicing_state
-        );
-    }
-    Ok(())
-}
-
 /// Skip UEFI fallback copy when AZLA and AZLB boot paths do not exist. This
 /// is an expected VM scnenario when offline-initialize is used to prepare a
 /// VHD-based image for A/B update.
@@ -343,6 +343,7 @@ fn skip_uefi_fallback_copy(
     false
 }
 
+/// Copies all files from 'source_esp_name' folder to the UEFI fallback folder.
 fn copy_boot_files_for_uefi_fallback(
     mount_point: &Path,
     source_esp_name: &str,
@@ -803,7 +804,7 @@ mod tests {
         );
         create_and_fill_esp(&mount_point, azl_boot_name, file_names, NEW_BOOT_CONTENT);
 
-        configure_uefi_fallback(ctx, servicing_state, mount_point.path()).unwrap();
+        set_uefi_fallback_contents(ctx, servicing_state, mount_point.path()).unwrap();
         for file in file_names {
             let fallback_file = fallback_esp_dir.join(file);
             let mut fallback_file_contents = String::new();
@@ -984,7 +985,7 @@ mod tests {
     }
 
     #[test]
-    fn test_configure_uefi_fallback() {
+    fn test_set_uefi_fallback_contents() {
         // Create a list of boot files
         let file_names = vec![
             PathBuf::from(GRUB2_CONFIG_FILENAME),

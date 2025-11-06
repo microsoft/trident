@@ -9,8 +9,9 @@ several UEFI variables that Trident interacts with, including:
   the path to the bootloader and any associated parameters.
 * `BootOrder`: This variable defines the order in which UEFI boot entries are
   attempted during system startup.
-* `BootNext`: This variable specifies the next boot entry to be used on the
-  next reboot.
+* `BootNext`: This variable specifies the boot entry to be used on the next
+  boot. It only applies to the next boot and is reset during that boot. If that
+  boot fails, then UEFI will attempt to boot the entries inside BootOrder.
 
 Trident manages these variables during OS servicing to ensure that the system
 is always in a bootable state and to ensure that the desired OS is booted.
@@ -21,9 +22,10 @@ is always in a bootable state and to ensure that the desired OS is booted.
   * `commit`: No changes to UEFI variables are needed as the target OS is
     already configured to be booted.
 * `trident update`
-  * `finalize`: Trident updates the `BootNext` variable to boot the target OS
-    (the newly updated OS) on the next boot. The `BootOrder` is still
-    configured to boot the servicing OS (the previous OS). This enables the
+  * `finalize`: Trident updates the `BootNext` variable to boot the
+    [target OS](../Reference/Glossary.md#target-os) on the next boot. The
+    `BootOrder` is still configured to boot the
+    [servicing OS](../Reference/Glossary.md#servicing-os). This enables the
     machine to **rollback** to the previous OS if the target OS fails to boot
     successfuly.
   * `commit`: If the target OS boots successfully, Trident updates the
