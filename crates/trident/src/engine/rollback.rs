@@ -125,9 +125,9 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
             }));
         }
         (false, ServicingState::CleanInstallFinalized) => {
-            // For Clean Install, when not booting from expected root, reset
+            // For Clean Install, when not booting from expected root, re-set
             // host status state to NotProvisioned
-            info!("Update host status from {current_servicing_state:?} to NotProvisioned");
+            info!("Re-set host status from {current_servicing_state:?} to NotProvisioned");
             datastore.with_host_status(|host_status| {
                 host_status.spec = Default::default();
                 host_status.servicing_state = ServicingState::NotProvisioned;
