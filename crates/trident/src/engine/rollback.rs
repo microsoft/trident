@@ -139,9 +139,9 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
             }));
         }
         (true, ServicingState::AbUpdateHealthCheckFailed) => {
-            // * AbUpdateHealthCheckFailed, when booting from expected root (the servicing OS), mark host
-            //   status state as Provisioned
-            info!("Update host status from {current_servicing_state:?} to Provisioned");
+            // AbUpdateHealthCheckFailed, when booting from expected root (the servicing OS), mark host
+            // status state as Provisioned
+            info!("Rollback to servicing OS succeeded, setting host status from {current_servicing_state:?} to Provisioned");
             datastore.with_host_status(|host_status| {
                 host_status.spec = host_status.spec_old.clone();
                 host_status.spec_old = Default::default();
