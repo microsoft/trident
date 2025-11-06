@@ -6,9 +6,12 @@ steps:
       buildType: current
       artifactName: "azl-installer"
       targetPath: $(Pipeline.Workspace)/azl-installer
-  # Test usb-iso by using serial connection to invoke trident
+
   - bash: |
       set -eux
+
+      # Proactively try to fix any possible issue from previous task failure
+      sudo dpkg --configure -a
 
       sudo NEEDRESTART_MODE=a apt-get install -y \
           swtpm \
@@ -28,6 +31,14 @@ steps:
           python3-bcrypt \
           python3-jinja2 \
           zstd
+
+    timeoutInMinutes: 5
+    displayName: "Install dependencies"
+    retryCountOnTaskFailure: 3
+
+  # Test usb-iso by using serial connection to invoke trident
+  - bash: |
+      set -eux
 
       sudo usermod -aG docker $USER
       sudo usermod -a -G libvirt $USER
