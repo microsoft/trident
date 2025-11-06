@@ -56,9 +56,9 @@ pub fn commit(datastore: &mut DataStore) -> Result<BootValidationResult, Trident
             return Err(err);
         }
     }
-    // If we reached here, we booted from the expected root device. Complete
-    // the commit.
-    ctx.update_boot(datastore)
+    // If we reached here, we booted from the expected root device. Persist
+    // the changes, update encryption policy and mark as Provisioned.
+    ctx.persist_boot(datastore)
 }
 
 impl CommitContext {
@@ -297,7 +297,10 @@ impl CommitContext {
     /// Completes the commit for AbUpdateFinalized and CleanInstallFinalized states when
     /// the host has booted from the expected root device. This includes updating boot order,
     /// updating the encryption pcrlock policy if needed, and updating the Host Status.
-    fn update_boot(&self, datastore: &mut DataStore) -> Result<BootValidationResult, TridentError> {
+    fn persist_boot(
+        &self,
+        datastore: &mut DataStore,
+    ) -> Result<BootValidationResult, TridentError> {
         // If it's virtdeploy, after confirming that we have booted into the correct image, we need
         // to update the `BootOrder` to boot from the correct image next time.
         let use_virtdeploy_workaround = virt::is_virtdeploy()
