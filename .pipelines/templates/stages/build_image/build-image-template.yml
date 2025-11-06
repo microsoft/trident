@@ -99,7 +99,7 @@ steps:
       imageVersion: ${{ parameters.baseimgVersion }}
       azureLinuxVersion: ${{ parameters.azureLinuxVersion }}
 
-  # For dev builds, the RPMs are not neccessarily published, so download them here
+  # For dev builds, the RPMs are not necessarily published, so download them here
   - ${{ if eq(parameters.baseimgBuildType, 'dev') }}:
       - template: common/rpms-download-template.yaml@platform-pipelines
         parameters:
@@ -133,8 +133,6 @@ steps:
         mv "$(Build.ArtifactStagingDirectory)/trident"/*.rpm bin/RPMS/x86_64/
         rm -rf "$(Build.ArtifactStagingDirectory)/trident"
       fi
-      
-      ls $(Build.ArtifactStagingDirectory)/
     displayName: "Prepare and move requirements"
     workingDirectory: $(Build.SourcesDirectory)
 
