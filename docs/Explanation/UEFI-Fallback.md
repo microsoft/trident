@@ -76,7 +76,7 @@ To summarize, the available UEFI fallback modes are:
 
 * `rollback`: This is the default mode. `install` will configure the target OS
   as the UEFI fallback OS in `finalize`. `update` will configure the servicing
-  the servicing OS as the UEFI fallback OS in `finalize` and the target OS in
+  OS as the UEFI fallback OS in `finalize` and the target OS in
   `commit` after verifying the boot.
 * `rollforward`: `install` and `update` will configure the target OS as the UEFI
   fallback OS in `finalize`.
