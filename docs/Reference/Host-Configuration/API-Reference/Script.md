@@ -22,14 +22,6 @@ Conflicts with:
 | -------------- | -------- |
 | Type           | `string` |
 
-### `name` **<span>(required)</span>**
-
-Name of the script.
-
-| Characteristic | Value    |
-| -------------- | -------- |
-| Type           | `string` |
-
 ### `path` **<span>(required)</span>**
 
 Path to a script in the execution OS.
@@ -41,21 +33,6 @@ Conflicts with:
 | Characteristic | Value    |
 | -------------- | -------- |
 | Type           | `string` |
-
-### `runOn` **<span>(required)</span>**
-
-List of servicing types that the script should run on.
-
-| Characteristic | Value   |
-| -------------- | ------- |
-| Type           | `array` |
-
-- Items of the array must have the type:
-
-   | Characteristic | Value                                                 |
-   | -------------- | ----------------------------------------------------- |
-   | Type           | `ServicingTypeSelection`                              |
-   | Link           | [ServicingTypeSelection](./ServicingTypeSelection.md) |
 
 ### `arguments` (optional)
 
@@ -92,4 +69,27 @@ Binary to run the script with. The default is `/bin/sh`.
 | Characteristic | Value    |
 | -------------- | -------- |
 | Type           | `string` |
+
+### `name` (optional)
+
+Name of the script.
+
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+
+### `runOn` (optional)
+
+List of servicing types that the script should run on.
+
+| Characteristic | Value   |
+| -------------- | ------- |
+| Type           | `array` |
+
+- Items of the array must have the type:
+
+   | Characteristic | Value                                                 |
+   | -------------- | ----------------------------------------------------- |
+   | Type           | `ServicingTypeSelection`                              |
+   | Link           | [ServicingTypeSelection](./ServicingTypeSelection.md) |
 

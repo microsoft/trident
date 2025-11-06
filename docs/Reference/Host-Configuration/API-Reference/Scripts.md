@@ -48,6 +48,8 @@ These scripts are run with the root filesystem of the target OS mounted at `$TAR
 
 Scripts to be run before Trident begins servicing the host.
 
+These scripts are run in the servicing OS. Scripts that are configured with a path source must exist in the servicing OS.
+
 | Characteristic | Value   |
 | -------------- | ------- |
 | Type           | `array` |
