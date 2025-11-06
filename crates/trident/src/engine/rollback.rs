@@ -5,6 +5,15 @@ use chrono::Utc;
 use enumflags2::BitFlags;
 use log::{debug, error, info, trace, warn};
 
+use osutils::{block_devices, container, efivar, lsblk, pcrlock, veritysetup, virt};
+use trident_api::{
+    constants::internal_params::VIRTDEPLOY_BOOT_ORDER_WORKAROUND,
+    constants::ROOT_MOUNT_POINT_PATH,
+    error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
+    status::{AbVolumeSelection, ServicingState, ServicingType},
+    BlockDeviceId,
+};
+
 use crate::{
     engine::{
         self, bootentries,
@@ -14,14 +23,6 @@ use crate::{
     health,
     subsystems::esp,
     DataStore,
-};
-use osutils::{block_devices, container, efivar, lsblk, pcrlock, veritysetup, virt};
-use trident_api::{
-    constants::internal_params::VIRTDEPLOY_BOOT_ORDER_WORKAROUND,
-    constants::ROOT_MOUNT_POINT_PATH,
-    error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
-    status::{AbVolumeSelection, ServicingState, ServicingType},
-    BlockDeviceId,
 };
 
 #[must_use]
@@ -222,7 +223,6 @@ fn commit_finalized_on_expected_root(
     }
 
     // Commit must finish configuring UEFI fallback as configured
-    let current_servicing_state = datastore.host_status().servicing_state;
     let root_path = if container::is_running_in_container()
         .message("Failed to check if Trident is running in a container")?
     {
