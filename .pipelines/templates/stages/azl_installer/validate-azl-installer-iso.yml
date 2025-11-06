@@ -15,6 +15,9 @@ steps:
   - bash: |
       set -eux
 
+      # Proactively try to fix any possible issue from previous task failure
+      sudo dpkg --configure -a
+
       sudo NEEDRESTART_MODE=a apt-get install -y \
           swtpm \
           swtpm-tools \
