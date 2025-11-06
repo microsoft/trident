@@ -27,7 +27,7 @@ is always in a bootable state and to ensure that the desired OS is booted.
     `BootOrder` is still configured to boot the
     [servicing OS](../Reference/Glossary.md#servicing-os). This enables the
     machine to **rollback** to the previous OS if the target OS fails to boot
-    successfuly.
+    successfully.
   * `commit`: If the target OS boots successfully, Trident updates the
     `BootOrder` to boot the target OS on all subsequent boots.
 
