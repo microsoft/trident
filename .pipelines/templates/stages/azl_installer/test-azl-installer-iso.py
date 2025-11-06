@@ -90,7 +90,7 @@ def validate_trident_usb_iso(vm_name: str, output_log_file: str):
         # Clean log files from any previous run
         os.remove(output_log_file)
 
-    with open(f"{output_log_file}", "a") as log_file_stream:
+    with open(output_log_file, "a") as log_file_stream:
         # start VM
         print(f"Start VM: {vm_name}")
         start_domain(vm_name)
@@ -101,9 +101,9 @@ def validate_trident_usb_iso(vm_name: str, output_log_file: str):
         )
         print(f"Find serial port for {vm_name}: {serial_pts_device}")
 
-        print(f"Wait for azl-installer ISO to boot and start installation.")
+        print("Wait for azl-installer ISO to boot and start installation.")
         print(
-            f"The liveinstaller will automatically detect the disk and run trident install."
+            "The liveinstaller will automatically detect the disk and run trident install."
         )
         watch_for_usb_iso_login(
             vm_name,
@@ -111,13 +111,13 @@ def validate_trident_usb_iso(vm_name: str, output_log_file: str):
             output_log_file,
             log_file_stream,
         )
-        print(f"... azl-installer has booted and started installation script.")
+        print("... azl-installer has booted and started installation script.")
 
-        print(f"Wait while new OS is installing (this may take several minutes).")
+        print("Wait while new OS is installing (this may take several minutes).")
         watch_for_usb_iso_login(
             vm_name, "trident-testimg login:", output_log_file, log_file_stream
         )
-        print(f"... finished installing new OS.")
+        print("... finished installing new OS.")
 
 
 def main():
