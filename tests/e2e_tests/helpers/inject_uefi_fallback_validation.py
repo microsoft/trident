@@ -12,7 +12,7 @@ def inject_uefi_fallback_testing(host_config_path, runtimeEnv, uefiFallbackMode=
         host_config["os"] = {}
     # Only inject testing values if uefiFallback
     # is not already set.
-    if not hasattr(host_config["os"], "uefiFallback"):
+    if "uefiFallback" not in host_config["os"]:
         if uefiFallbackMode is None:
             uefi_fallback_modes = ["none", "rollback", "rollforward"]
             # Randomly pick a fallback mode for testing.
