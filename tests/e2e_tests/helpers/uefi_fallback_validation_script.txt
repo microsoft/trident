@@ -10,7 +10,7 @@ fi
 
 CURRENT_AZL_BOOT_NAME="$(efibootmgr | grep "Boot${CURRENT_BOOT_ENTRY}" | head -n 1 | tr '\t' ' '| cut -d' ' -f2 | grep "AZL")"
 if [ -z "$CURRENT_AZL_BOOT_NAME" ]; then
-    echo "Current boot entry is not an AZL boot entry (from [$CURRENT_BOOT_ENTRY_INFO])"
+    echo "Current boot entry is not an AZL boot entry (from [$CURRENT_BOOT_ENTRY])"
     exit 1
 fi
 
