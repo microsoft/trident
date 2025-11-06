@@ -115,7 +115,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
         // Every case below will return an error.
         //
         (false, ServicingState::AbUpdateHealthCheckFailed) => {
-            // For AB Update, when health checks previously failed and not
+            // For A/B Update, when health checks previously failed and not
             // booting from expected root (the servicing OS), report error
             // and leave host status alone
             info!("Host failed to rollback into the servicing OS");
