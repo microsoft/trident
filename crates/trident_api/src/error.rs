@@ -511,7 +511,7 @@ pub enum ServicingError {
     #[error("Failed to get SELINUXTYPE")]
     GetSelinuxType,
 
-    #[error("Failed health-check(s) during '{servicing_type}': '{details}'")]
+    #[error("Failed health check(s) during '{servicing_type}': '{details}'")]
     HealthChecksFailed {
         details: String,
         servicing_type: String,

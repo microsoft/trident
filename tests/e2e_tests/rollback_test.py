@@ -20,7 +20,7 @@ def test_rollback(
     assert host_status["servicingState"] == expectedHostStatusState
     # Assert that the last error reflects health.checks failure
     serializedLastError = yaml.dump(host_status["lastError"], default_flow_style=False)
-    assert "Failed health-check(s)" in serializedLastError
+    assert "Failed health check(s)" in serializedLastError
 
     if expectedHostStatusState == "not-provisioned":
         # Assert that the active volume has not been set

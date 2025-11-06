@@ -40,7 +40,7 @@ pub fn execute_health_checks(ctx: &EngineContext) -> Result<(), TridentError> {
 
     // Channel to collect script errors from threads
     let (tx, rx) = mpsc::channel();
-    // Create parallel health-check threads within a scope, the
+    // Create parallel health check threads within a scope, the
     // threads will all be joined before the scope ends.
     thread::scope(|s| {
         for health_check in health_checks {
