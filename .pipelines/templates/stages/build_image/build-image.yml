@@ -1,5 +1,3 @@
-# TODO: Migrate test images to Trident repository and build them locally
-# https://dev.azure.com/mariner-org/polar/_workitems/edit/16117
 parameters:
   - name: imageName
     type: string
