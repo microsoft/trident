@@ -133,9 +133,8 @@ steps:
         mv "$(Build.ArtifactStagingDirectory)/trident"/*.rpm bin/RPMS/x86_64/
         rm -rf "$(Build.ArtifactStagingDirectory)/trident"
       fi
-
-      # Clean up MIC staging directory (builder uses Docker container, not binary)
-      rm -rf $(Build.ArtifactStagingDirectory)/mic
+      
+      ls $(Build.ArtifactStagingDirectory)/
     displayName: "Prepare and move requirements"
     workingDirectory: $(Build.SourcesDirectory)
 
