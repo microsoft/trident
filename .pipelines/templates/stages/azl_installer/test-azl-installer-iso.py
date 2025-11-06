@@ -48,7 +48,7 @@ def create_console_connection(vm_name: str) -> libvirt.virStream:
     return stream
 
 
-def watch_for_usb_iso_login(
+def watch_for_azl_installer_login(
     vm_name: str, success_string: str, output_log_filepath: str, log_file_stream
 ):
     # Create console connection
@@ -85,7 +85,7 @@ def send_command_to_vm(vm_name, cmd, log_file_stream, output_log_filepath):
     stream.finish()
 
 
-def validate_trident_usb_iso(vm_name: str, output_log_file: str):
+def validate_azl_installer_iso(vm_name: str, output_log_file: str):
     if os.path.exists(output_log_file):
         # Clean log files from any previous run
         os.remove(output_log_file)
@@ -105,7 +105,7 @@ def validate_trident_usb_iso(vm_name: str, output_log_file: str):
         print(
             "The liveinstaller will automatically detect the disk and run trident install."
         )
-        watch_for_usb_iso_login(
+        watch_for_azl_installer_login(
             vm_name,
             "azl-installer login:",
             output_log_file,
@@ -114,7 +114,7 @@ def validate_trident_usb_iso(vm_name: str, output_log_file: str):
         print("... azl-installer has booted and started installation script.")
 
         print("Wait while new OS is installing (this may take several minutes).")
-        watch_for_usb_iso_login(
+        watch_for_azl_installer_login(
             vm_name, "trident-testimg login:", output_log_file, log_file_stream
         )
         print("... finished installing new OS.")
@@ -134,7 +134,7 @@ def main():
     )
     args = parser.parse_args()
 
-    validate_trident_usb_iso(
+    validate_azl_installer_iso(
         args.vm_name,
         args.log,
     )
