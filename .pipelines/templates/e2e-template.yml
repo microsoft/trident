@@ -194,7 +194,7 @@ stages:
       - template: stages/azl_installer/azl-installer.yml
         parameters:
           micBuildType: ${{ parameters.micBuildType }}
-          micVersion: ${{ parameters.micVersion }}     
+          micVersion: ${{ parameters.micVersion }}
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
   # dom0 is failing for not known reasons ... comment out for now to unblock, longterm this may
