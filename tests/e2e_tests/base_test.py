@@ -475,7 +475,7 @@ def test_users(connection, hostConfiguration):
 
 def test_uefi_fallback(connection, hostConfiguration):
     mode = "rollback"  # Default mode if not set
-    if "uefiFallback" in hostConfiguration:
+    if "os" in hostConfiguration and "uefiFallback" in hostConfiguration["os"]:
         mode = hostConfiguration["os"]["uefiFallback"]
 
     if mode not in ["none", "rollback", "rollforward"]:
