@@ -293,7 +293,7 @@ fn run_health_checks(
             match health::execute_health_checks(ctx) {
                 Ok(()) => {}
                 Err(e) => {
-                    info!("Health check(s) failure: {e:?}");
+                    error!("Health check(s) failure: {e:?}");
                     let structured_error =
                         serde_yaml::to_value(&e).structured(InternalError::SerializeError)?;
                     // Update host status to reflect health check(s) failure
