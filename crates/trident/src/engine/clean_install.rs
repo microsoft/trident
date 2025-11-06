@@ -334,7 +334,7 @@ pub(crate) fn finalize_clean_install(
     // Analogous to how UEFI variables are configured, finalize must start configuring
     // UEFI fallback, and a successful commit will finish it.
     esp::configure_uefi_fallback(&ctx, ServicingState::CleanInstallStaged, new_root.path())
-        .structured(ServicingError::UefiFallback)?;
+        .structured(ServicingError::SetUpUefiFallback)?;
 
     debug!(
         "Updating host's servicing state to '{:?}'",

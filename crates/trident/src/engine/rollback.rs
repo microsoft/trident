@@ -231,7 +231,7 @@ fn commit_finalized_on_expected_root(
         PathBuf::from(ROOT_MOUNT_POINT_PATH)
     };
     esp::configure_uefi_fallback(ctx, current_servicing_state, &root_path)
-        .structured(ServicingError::UefiFallback)?;
+        .structured(ServicingError::SetUpUefiFallback)?;
 
     // If this is a UKI image, then we need to re-generate pcrlock policy to include the PCRs
     // selected by the user for the current boot only.
