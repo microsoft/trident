@@ -4,6 +4,7 @@ AbVolumePair
 AdditionalFile
 AdoptedPartition
 ByteCount
+Check
 Disk
 EncryptedVolume
 Encryption
@@ -11,6 +12,7 @@ Extension
 FileSystem
 FileSystemSource
 FileSystemType
+Health
 ImageSha384
 KernelCommandLine
 LoadMode
@@ -37,6 +39,7 @@ SoftwareRaidArray
 SshMode
 Storage
 Swap
+SystemdCheck
 Trident
 User
 VerityCorruptionOption

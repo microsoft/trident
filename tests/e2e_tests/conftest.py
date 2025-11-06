@@ -61,6 +61,14 @@ def pytest_addoption(parser):
         default="host",
         help="Runtime environment for trident: 'host' or 'container'. Default is 'host'.",
     )
+    parser.addoption(
+        "-S",
+        "--expected-host-status-state",
+        action="store",
+        type=str,
+        default="provisioned",
+        help="Expected host status state.",
+    )
 
 
 @pytest.fixture(scope="session")
@@ -136,6 +144,11 @@ def isUki(request):
 @pytest.fixture
 def abActiveVolume(request):
     return request.config.getoption("--ab-active-volume")
+
+
+@pytest.fixture
+def expectedHostStatusState(request):
+    return request.config.getoption("--expected-host-status-state")
 
 
 def define_tests(file_path):

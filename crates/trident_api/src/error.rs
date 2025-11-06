@@ -306,6 +306,12 @@ pub enum ServicingError {
         expected_device_path: String,
     },
 
+    #[error(
+        "A/B update health check(s) failed, rollback executed, and the host booted from the expected device \
+        '{expected_device_path}'"
+    )]
+    AbUpdateHealthCheckCommitCheck { expected_device_path: String },
+
     #[error("Failed to bind encryption to pcrlock policy")]
     BindEncryptionToPcrlockPolicy,
 
@@ -505,6 +511,12 @@ pub enum ServicingError {
     #[error("Failed to get SELINUXTYPE")]
     GetSelinuxType,
 
+    #[error("Failed health check(s) during '{servicing_type}': '{details}'")]
+    HealthChecksFailed {
+        details: String,
+        servicing_type: String,
+    },
+
     #[error("Failed to list boot entries via efibootmgr or parse them")]
     ListAndParseBootEntries,
 
@@ -589,6 +601,13 @@ pub enum ServicingError {
 
     #[error("Failed to start network")]
     StartNetwork,
+
+    #[error("Service(s) '{services}' did not become active/running within {timeout_seconds} seconds: {last_error}")]
+    SystemdCheckTimeout {
+        services: String,
+        timeout_seconds: usize,
+        last_error: String,
+    },
 
     #[error("Failed to update UKI")]
     UpdateUki,

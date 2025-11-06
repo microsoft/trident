@@ -11,11 +11,11 @@ use netplan_types::{
 use crate::{
     config::{
         host::os::{KernelCommandLine, Selinux, SelinuxMode},
-        AbUpdate, AbVolumePair, AdditionalFile, Disk, EncryptedVolume, Encryption, FileSystem,
-        FileSystemSource, HostConfiguration, ImageSha384, MountOptions, MountPoint,
-        NewFileSystemType, Os, OsImage, Partition, PartitionTableType, PartitionType, Raid,
-        RaidLevel, Script, ScriptSource, Scripts, Services, ServicingTypeSelection,
-        SoftwareRaidArray, SshMode, Storage, Swap, User, VerityDevice,
+        AbUpdate, AbVolumePair, AdditionalFile, Check, Disk, EncryptedVolume, Encryption,
+        FileSystem, FileSystemSource, Health, HostConfiguration, ImageSha384, MountOptions,
+        MountPoint, NewFileSystemType, Os, OsImage, Partition, PartitionTableType, PartitionType,
+        Raid, RaidLevel, Script, ScriptSource, Scripts, Services, ServicingTypeSelection,
+        SoftwareRaidArray, SshMode, Storage, Swap, SystemdCheck, User, VerityDevice,
     },
     constants::{self, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
 };
@@ -182,6 +182,26 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     )]),
                     ..Default::default()
                 }],
+            },
+            health: Health {
+                checks: vec![
+                    Check::Script(
+                        Script {
+                            name: "sample-commit-script".into(),
+                            run_on: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
+                            source: ScriptSource::Content("echo 'success'".into()),
+                            ..Default::default()
+                        }
+                    ),
+                    Check::SystemdCheck(
+                        SystemdCheck {
+                            name: "systemd-networkd".into(),
+                            systemd_services: vec!["systemd-networkd".into()],
+                            timeout_seconds: 10,
+                            run_on: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
+                        }
+                    )
+                ],
             },
             ..Default::default()
             }
@@ -376,6 +396,26 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     )]),
                     ..Default::default()
                 }],
+            },
+            health: Health {
+                checks: vec![
+                    Check::Script(
+                        Script {
+                            name: "sample-commit-script".into(),
+                            run_on: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
+                            source: ScriptSource::Content("echo 'success'".into()),
+                            ..Default::default()
+                        }
+                    ),
+                    Check::SystemdCheck(
+                        SystemdCheck {
+                            name: "systemd-networkd".into(),
+                            systemd_services: vec!["systemd-networkd".into()],
+                            timeout_seconds: 10,
+                            run_on: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
+                        }
+                    )
+                ],
             },
             ..Default::default()
             }
