@@ -317,7 +317,7 @@ fn find_uefi_fallback_source_dir_name(
 }
 
 /// Skip UEFI fallback copy when AZLA and AZLB boot paths do not exist. This
-/// is an expected VM scnenario when offline-initialize is used to prepare a
+/// is an expected VM scenario when offline-initialize is used to prepare a
 /// VHD-based image for A/B update.
 fn skip_uefi_fallback_copy(
     esp_dir_path: &Path,
