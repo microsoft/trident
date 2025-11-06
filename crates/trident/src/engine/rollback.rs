@@ -30,324 +30,356 @@ pub enum BootValidationResult {
     ValidBootHealthCheckFailed(TridentError),
 }
 
-/// Validates that the firmware did not perform a rollback, i.e. correctly booted from the updated
-/// target OS image.
-///
-/// If the firmware did not boot from the expected root device, this function will return an error.
-/// In either case, the function will update the Host Status.
-#[tracing::instrument(skip_all)]
-pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, TridentError> {
-    info!("Validating whether host correctly booted from target OS image");
-
-    let current_servicing_state = datastore.host_status().servicing_state;
-    let ab_active_volume = match current_servicing_state {
-        // For *Finalized, use the active volume set in Host Status
-        ServicingState::AbUpdateFinalized | ServicingState::CleanInstallFinalized => {
-            datastore.host_status().ab_active_volume
-        }
-        // For AbUpdateHealthCheckFailed, use the opposite active volume of the one
-        // set in Host Status
-        ServicingState::AbUpdateHealthCheckFailed => {
-            match datastore.host_status().ab_active_volume {
-                Some(AbVolumeSelection::VolumeB) => Some(AbVolumeSelection::VolumeA),
-                Some(AbVolumeSelection::VolumeA) => Some(AbVolumeSelection::VolumeB),
-                None => None,
-            }
-        }
-        // For any other state, this function should not have been called
-        state => {
-            return Err(TridentError::new(InternalError::UnexpectedServicingState {
-                state,
-            }));
-        }
-    };
-
-    let servicing_type = match current_servicing_state {
-        ServicingState::AbUpdateFinalized | ServicingState::AbUpdateHealthCheckFailed => {
-            ServicingType::AbUpdate
-        }
-        ServicingState::CleanInstallFinalized => ServicingType::CleanInstall,
-        _ => ServicingType::NoActiveServicing,
-    };
-
-    // Create an EngineContext based on the Host Status
-    let ctx = EngineContext {
-        spec: datastore.host_status().spec.clone(),
-        spec_old: datastore.host_status().spec_old.clone(),
-        servicing_type,
-        ab_active_volume,
-        partition_paths: datastore.host_status().partition_paths.clone(),
-        disk_uuids: datastore.host_status().disk_uuids.clone(),
-        install_index: datastore.host_status().install_index,
-        image: None, // Not used for boot validation logic
-        storage_graph: engine::build_storage_graph(&datastore.host_status().spec.storage)?, // Build storage graph
-        filesystems: Vec::new(), // Left empty since context does not have image
-        is_uki: Some(efivar::current_var_is_uki()),
-    };
-
-    // Get the block device path of the current root
-    let current_root_path =
-        get_current_root_device_path(&ctx).message("Failed to get root block device path")?;
-
-    // Get expected root device path
-    let expected_root_path =
-        get_expected_root_device_path(&ctx).message("Failed to get expected root device path")?;
-
-    // Check that the machine booted from the expected root device
-    let booted_to_expected_root =
-        compare_root_device_paths(current_root_path.clone(), expected_root_path.clone())
-            .message("Host failed to boot from expected root device")?;
-
-    match (booted_to_expected_root, current_servicing_state) {
-        (true, ServicingState::CleanInstallFinalized)
-        | (true, ServicingState::AbUpdateFinalized) => {
-            // For *Finalized states, when booting from the expected
-            // root, finish the commit process
-            info!("Host successfully booted from updated target OS image");
-            return commit_finalized_on_expected_root(
-                &ctx,
-                datastore,
-                current_servicing_state,
-                servicing_type,
-            );
-        }
-        //
-        // Every case below will return an error.
-        //
-        (false, ServicingState::AbUpdateHealthCheckFailed) => {
-            // For A/B Update, when health checks previously failed and host
-            // failed to rollback, i.e boot from the servicing OS, report error
-            // and leave host status alone
-            error!("Host failed to rollback into the servicing OS");
-            return Err(TridentError::new(ServicingError::AbUpdateRebootCheck {
-                root_device_path: current_root_path.to_string_lossy().to_string(),
-                expected_device_path: expected_root_path.to_string_lossy().to_string(),
-            }));
-        }
-        (false, ServicingState::CleanInstallFinalized) => {
-            // For Clean Install, when not booting from expected root, re-set
-            // host status state to NotProvisioned
-            info!("Re-set host status from {current_servicing_state:?} to NotProvisioned");
-            datastore.with_host_status(|host_status| {
-                host_status.spec = Default::default();
-                host_status.servicing_state = ServicingState::NotProvisioned;
-            })?;
-
-            return Err(TridentError::new(ServicingError::CleanInstallRebootCheck {
-                root_device_path: current_root_path.to_string_lossy().to_string(),
-                expected_device_path: expected_root_path.to_string_lossy().to_string(),
-            }));
-        }
-        (true, ServicingState::AbUpdateHealthCheckFailed) => {
-            // AbUpdateHealthCheckFailed, when booting from expected root (the servicing OS), mark host
-            // status state as Provisioned
-            info!("Rollback to servicing OS succeeded, setting host status from {current_servicing_state:?} to Provisioned");
-            datastore.with_host_status(|host_status| {
-                host_status.spec = host_status.spec_old.clone();
-                host_status.spec_old = Default::default();
-                host_status.servicing_state = ServicingState::Provisioned;
-            })?;
-
-            return Err(TridentError::new(
-                ServicingError::AbUpdateHealthCheckCommitCheck {
-                    expected_device_path: current_root_path.to_string_lossy().to_string(),
-                },
-            ));
-        }
-        (false, ServicingState::AbUpdateFinalized) => {
-            // AbUpdateFinalize, when booting from incorrect root (the servicing OS), mark host status
-            // state as Provisioned
-            error!("Update host status from {current_servicing_state:?} to Provisioned");
-            datastore.with_host_status(|host_status| {
-                host_status.spec = host_status.spec_old.clone();
-                host_status.spec_old = Default::default();
-                host_status.servicing_state = ServicingState::Provisioned;
-            })?;
-
-            return Err(TridentError::new(ServicingError::AbUpdateRebootCheck {
-                root_device_path: current_root_path.to_string_lossy().to_string(),
-                expected_device_path: expected_root_path.to_string_lossy().to_string(),
-            }));
-        }
-        (_, state) => {
-            // No other states should happen, return error
-            error!("Unexpected status: {current_servicing_state:?}");
-            return Err(TridentError::new(InternalError::UnexpectedServicingState {
-                state,
-            }));
-        }
-    }
+struct CommitContext {
+    engine_context: EngineContext,
+    servicing_type: ServicingType,
+    servicing_state: ServicingState,
+    current_root_path: PathBuf,
+    expected_root_path: PathBuf,
 }
 
-/// Completes the commit for AbUpdateFinalized and CleanInstallFinalized states when
-/// the host has booted from the expected root device. This includes running health
-/// checks, updating boot order, updating the encryption pcrlock policy if needed, and
-/// updating the Host Status.
-fn commit_finalized_on_expected_root(
-    ctx: &EngineContext,
-    datastore: &mut DataStore,
-    current_servicing_state: ServicingState,
-    servicing_type: ServicingType,
-) -> Result<BootValidationResult, TridentError> {
+/// Commit the servicing operation.
+#[tracing::instrument(skip_all)]
+pub fn commit(datastore: &mut DataStore) -> Result<BootValidationResult, TridentError> {
+    let ctx = CommitContext::new(datastore)?;
+    // Deterine if we booted from the expected device
+    let booted_from_target_os = ctx.booted_from_target_os()?;
+    // Handle error states for commit
+    let _ = ctx.catch_error_states(datastore, booted_from_target_os)?;
     // Run health checks to ensure the system is in the desired state
-    let health_check_status =
-        run_health_checks(ctx, datastore, current_servicing_state, servicing_type)?;
+    let health_check_status = ctx.run_health_checks(datastore)?;
     if let BootValidationResult::ValidBootHealthCheckFailed(err) = health_check_status {
-        if servicing_type == ServicingType::AbUpdate {
+        if ctx.servicing_type == ServicingType::AbUpdate {
             return Ok(BootValidationResult::ValidBootHealthCheckFailed(err));
         } else {
             // Only CleanInstall is possible here; return the error.
             return Err(err);
         }
     }
-
-    // If it's virtdeploy, after confirming that we have booted into the correct image, we need
-    // to update the `BootOrder` to boot from the correct image next time.
-    let use_virtdeploy_workaround = virt::is_virtdeploy()
-        || ctx
-            .spec
-            .internal_params
-            .get_flag(VIRTDEPLOY_BOOT_ORDER_WORKAROUND);
-
-    // Persist the boot order change
-    if current_servicing_state == ServicingState::AbUpdateFinalized || use_virtdeploy_workaround {
-        bootentries::persist_boot_order().message("Failed to persist boot order after reboot")?;
-    }
-
-    // In UKI mode, set systemd-boot's default boot option to the currently running one.
-    if ctx.is_uki()? {
-        efivar::set_default_to_current().message("Failed to set default boot entry to current")?;
-    }
-
-    // If this is a UKI image, then we need to re-generate pcrlock policy to include the PCRs
-    // selected by the user for the current boot only.
-    if let Some(ref encryption) = ctx.spec.storage.encryption {
-        if ctx.is_uki()? {
-            debug!("Regenerating pcrlock policy for current boot");
-
-            // Get the PCRs from Host Configuration
-            let pcrs = encryption
-                .pcrs
-                .iter()
-                .fold(BitFlags::empty(), |acc, &pcr| acc | BitFlags::from(pcr));
-
-            // Get UKI and bootloader binaries for .pcrlock file generation
-            let (uki_binaries, bootloader_binaries) =
-                encryption::get_binary_paths_pcrlock(ctx, pcrs, None)
-                    .structured(ServicingError::GetBinaryPathsForPcrlockEncryption)?;
-
-            // Generate a pcrlock policy
-            pcrlock::generate_pcrlock_policy(pcrs, uki_binaries, bootloader_binaries)?;
-        } else {
-            debug!(
-                "Target OS image is a grub image, \
-                so skipping re-generating pcrlock policy for current boot"
-            );
-        }
-    }
-    match datastore.host_status().servicing_state {
-        ServicingState::CleanInstallFinalized => {
-            info!("Clean install of target OS succeeded");
-            tracing::info!(metric_name = "clean_install_success", value = true);
-        }
-        ServicingState::AbUpdateFinalized => {
-            info!("A/B update succeeded");
-            tracing::info!(metric_name = "ab_update_success", value = true);
-        }
-        // Because the boot validation logic is currently called only on clean install and A/B
-        // update, this should be unreachable.
-        // TODO: When/If `UpdateAndReboot` is used, this should be updated.
-        state => {
-            return Err(TridentError::new(InternalError::UnexpectedServicingState {
-                state,
-            }));
-        }
-    }
-
-    debug!(
-        "Updating host's servicing state to '{:?}'",
-        ServicingState::Provisioned
-    );
-
-    datastore.with_host_status(|host_status| {
-        host_status.servicing_state = ServicingState::Provisioned;
-        host_status.spec_old = Default::default();
-        host_status.ab_active_volume = match host_status.ab_active_volume {
-            None | Some(AbVolumeSelection::VolumeB) => Some(AbVolumeSelection::VolumeA),
-            Some(AbVolumeSelection::VolumeA) => Some(AbVolumeSelection::VolumeB),
-        };
-    })?;
-
-    Ok(BootValidationResult::ValidBootProvisioned)
+    // If we reached here, we booted from the expected root device. Complete
+    // the commit.
+    ctx.update_boot(datastore)
 }
 
-fn run_health_checks(
-    ctx: &EngineContext,
-    datastore: &mut DataStore,
-    current_servicing_state: ServicingState,
-    servicing_type: ServicingType,
-) -> Result<BootValidationResult, TridentError> {
-    match current_servicing_state {
-        ServicingState::AbUpdateFinalized | ServicingState::CleanInstallFinalized => {
-            // Execute health checks, if at least one fails, trigger rollback
-            match health::execute_health_checks(ctx) {
-                Ok(()) => {}
-                Err(e) => {
-                    error!("Health check(s) failure: {e:?}");
-                    let structured_error =
-                        serde_yaml::to_value(&e).structured(InternalError::SerializeError)?;
-                    // Update host status to reflect health check(s) failure
-                    datastore.with_host_status(|host_status| {
-                        host_status.servicing_state = match servicing_type {
-                            ServicingType::AbUpdate => ServicingState::AbUpdateHealthCheckFailed,
-                            ServicingType::CleanInstall => ServicingState::NotProvisioned,
-                            // Shouldn't happen because of previous checks
-                            _ => current_servicing_state,
-                        };
-                        host_status.last_error = Some(structured_error);
-                    })?;
+impl CommitContext {
+    /// Create CommitContext from the datastore
+    fn new(datastore: &mut DataStore) -> Result<Self, TridentError> {
+        let servicing_state = datastore.host_status().servicing_state;
+        let ab_active_volume = match servicing_state {
+            // For *Finalized, use the active volume set in Host Status
+            ServicingState::AbUpdateFinalized | ServicingState::CleanInstallFinalized => {
+                datastore.host_status().ab_active_volume
+            }
+            // For AbUpdateHealthCheckFailed, use the opposite active volume of the one
+            // set in Host Status
+            ServicingState::AbUpdateHealthCheckFailed => {
+                match datastore.host_status().ab_active_volume {
+                    Some(AbVolumeSelection::VolumeB) => Some(AbVolumeSelection::VolumeA),
+                    Some(AbVolumeSelection::VolumeA) => Some(AbVolumeSelection::VolumeB),
+                    None => None,
+                }
+            }
+            // For any other state, this function should not have been called
+            state => {
+                return Err(TridentError::new(InternalError::UnexpectedServicingState {
+                    state,
+                }));
+            }
+        };
 
-                    // Generate the new log filename
-                    let new_commit_failure_log_filename = format!(
-                        "trident-health-check-failure-{}.log",
-                        Utc::now().format("%Y%m%dT%H%M%SZ")
-                    );
+        let servicing_type = match servicing_state {
+            ServicingState::AbUpdateFinalized | ServicingState::AbUpdateHealthCheckFailed => {
+                ServicingType::AbUpdate
+            }
+            ServicingState::CleanInstallFinalized => ServicingType::CleanInstall,
+            _ => ServicingType::NoActiveServicing,
+        };
 
-                    // Fetch the directory path from the full datastore path
-                    let datastore_path =
-                        datastore.host_status().spec.trident.datastore_path.clone();
-                    if let Some(datastore_dir) = datastore_path.parent() {
-                        let new_commit_failure_log_path: PathBuf =
-                            datastore_dir.join(new_commit_failure_log_filename);
+        let engine_context = EngineContext {
+            spec: datastore.host_status().spec.clone(),
+            spec_old: datastore.host_status().spec_old.clone(),
+            servicing_type,
+            ab_active_volume,
+            partition_paths: datastore.host_status().partition_paths.clone(),
+            disk_uuids: datastore.host_status().disk_uuids.clone(),
+            install_index: datastore.host_status().install_index,
+            image: None, // Not used for boot validation logic
+            storage_graph: engine::build_storage_graph(&datastore.host_status().spec.storage)?, // Build storage graph
+            filesystems: Vec::new(), // Left empty since context does not have image
+            is_uki: Some(efivar::current_var_is_uki()),
+        };
 
-                        debug!(
-                            "Persisting Trident health check(s) failure to '{}' ",
-                            new_commit_failure_log_path.display()
+        let current_root_path = get_current_root_device_path(&engine_context)
+            .message("Failed to get root block device path")?;
+        let expected_root_path = get_expected_root_device_path(&engine_context)
+            .message("Failed to get expected root device path")?;
+
+        // Create an EngineContext based on the Host Status
+        let instance = CommitContext {
+            engine_context,
+            servicing_type,
+            servicing_state,
+            current_root_path,
+            expected_root_path,
+        };
+
+        Ok(instance)
+    }
+
+    /// Determine if the host booted from the expected root device
+    fn booted_from_target_os(&self) -> Result<bool, TridentError> {
+        let booted_from_target_os = compare_root_device_paths(
+            self.current_root_path.clone(),
+            self.expected_root_path.clone(),
+        )
+        .message("Host failed to boot from expected root device")?;
+        Ok(booted_from_target_os)
+    }
+
+    /// Handle error states during commit
+    fn catch_error_states(
+        &self,
+        datastore: &mut DataStore,
+        booted_correct_os: bool,
+    ) -> Result<BootValidationResult, TridentError> {
+        match (booted_correct_os, self.servicing_state) {
+            // Correct boot cases, proceed to finish commit
+            (true, ServicingState::CleanInstallFinalized)
+            | (true, ServicingState::AbUpdateFinalized) => {
+                Ok(BootValidationResult::ValidBootProvisioned)
+            }
+
+            //
+            // Every case below will return an error, halting the commit.
+            //
+            (true, ServicingState::AbUpdateHealthCheckFailed) => {
+                // AbUpdateHealthCheckFailed, when booting from expected root (the servicing OS), mark host
+                // status state as Provisioned
+                info!("Rollback to servicing OS succeeded, setting host status from {:?} to Provisioned", self.servicing_state);
+                datastore.with_host_status(|host_status| {
+                    host_status.spec = host_status.spec_old.clone();
+                    host_status.spec_old = Default::default();
+                    host_status.servicing_state = ServicingState::Provisioned;
+                })?;
+
+                Err(TridentError::new(
+                    ServicingError::AbUpdateHealthCheckCommitCheck {
+                        expected_device_path: self.expected_root_path.to_string_lossy().to_string(),
+                    },
+                ))
+            }
+            (false, ServicingState::AbUpdateHealthCheckFailed) => {
+                // For A/B Update, when health checks previously failed and host
+                // failed to rollback, i.e boot from the servicing OS, report error
+                // and leave host status alone
+                error!("Host failed to rollback into the servicing OS");
+                Err(TridentError::new(ServicingError::AbUpdateRebootCheck {
+                    root_device_path: self.current_root_path.to_string_lossy().to_string(),
+                    expected_device_path: self.expected_root_path.to_string_lossy().to_string(),
+                }))
+            }
+            (false, ServicingState::CleanInstallFinalized) => {
+                // For Clean Install, when not booting from expected root, re-set
+                // host status state to NotProvisioned
+                info!(
+                    "Re-set host status from {:?} to NotProvisioned",
+                    self.servicing_state
+                );
+                datastore.with_host_status(|host_status| {
+                    host_status.spec = Default::default();
+                    host_status.servicing_state = ServicingState::NotProvisioned;
+                })?;
+
+                Err(TridentError::new(ServicingError::CleanInstallRebootCheck {
+                    root_device_path: self.current_root_path.to_string_lossy().to_string(),
+                    expected_device_path: self.expected_root_path.to_string_lossy().to_string(),
+                }))
+            }
+            (false, ServicingState::AbUpdateFinalized) => {
+                // AbUpdateFinalize, when booting from incorrect root (the servicing OS), mark host status
+                // state as Provisioned
+                error!(
+                    "Update host status from {:?} to Provisioned",
+                    self.servicing_state
+                );
+                datastore.with_host_status(|host_status| {
+                    host_status.spec = host_status.spec_old.clone();
+                    host_status.spec_old = Default::default();
+                    host_status.servicing_state = ServicingState::Provisioned;
+                })?;
+
+                Err(TridentError::new(ServicingError::AbUpdateRebootCheck {
+                    root_device_path: self.current_root_path.to_string_lossy().to_string(),
+                    expected_device_path: self.expected_root_path.to_string_lossy().to_string(),
+                }))
+            }
+            (_, state) => {
+                // No other states should happen, return error
+                error!("Unexpected status: {state:?}");
+                Err(TridentError::new(InternalError::UnexpectedServicingState {
+                    state,
+                }))
+            }
+        }
+    }
+
+    // Run health checks after booting into target OS
+    fn run_health_checks(
+        &self,
+        datastore: &mut DataStore,
+    ) -> Result<BootValidationResult, TridentError> {
+        let current_servicing_state = self.servicing_state;
+        match current_servicing_state {
+            ServicingState::AbUpdateFinalized | ServicingState::CleanInstallFinalized => {
+                // Execute health checks, if at least one fails, trigger rollback
+                match health::execute_health_checks(&self.engine_context) {
+                    Ok(()) => {}
+                    Err(e) => {
+                        error!("Health check(s) failure: {e:?}");
+                        let structured_error =
+                            serde_yaml::to_value(&e).structured(InternalError::SerializeError)?;
+                        // Update host status to reflect health check(s) failure
+                        datastore.with_host_status(|host_status| {
+                            host_status.servicing_state = match self.servicing_type {
+                                ServicingType::AbUpdate => {
+                                    ServicingState::AbUpdateHealthCheckFailed
+                                }
+                                ServicingType::CleanInstall => ServicingState::NotProvisioned,
+                                // Shouldn't happen because of previous checks
+                                _ => current_servicing_state,
+                            };
+                            host_status.last_error = Some(structured_error);
+                        })?;
+
+                        // Generate the new log filename
+                        let new_commit_failure_log_filename = format!(
+                            "trident-health-check-failure-{}.log",
+                            Utc::now().format("%Y%m%dT%H%M%SZ")
                         );
 
-                        // Copy the background log file to the new location
-                        if let Err(log_error) =
-                            fs::write(&new_commit_failure_log_path, format!("{e:?}"))
-                        {
-                            warn!(
-                                "Failed to persist Trident health check(s) failure to '{}': {}",
-                                new_commit_failure_log_path.display(),
-                                log_error
-                            );
-                        } else {
+                        // Fetch the directory path from the full datastore path
+                        let datastore_path =
+                            datastore.host_status().spec.trident.datastore_path.clone();
+                        if let Some(datastore_dir) = datastore_path.parent() {
+                            let new_commit_failure_log_path: PathBuf =
+                                datastore_dir.join(new_commit_failure_log_filename);
+
                             debug!(
-                                "Successfully persisted Trident health check(s) failure to '{}'",
+                                "Persisting Trident health check(s) failure to '{}' ",
                                 new_commit_failure_log_path.display()
                             );
+
+                            // Copy the background log file to the new location
+                            if let Err(log_error) =
+                                fs::write(&new_commit_failure_log_path, format!("{e:?}"))
+                            {
+                                warn!(
+                                    "Failed to persist Trident health check(s) failure to '{}': {}",
+                                    new_commit_failure_log_path.display(),
+                                    log_error
+                                );
+                            } else {
+                                debug!(
+                                    "Successfully persisted Trident health check(s) failure to '{}'",
+                                    new_commit_failure_log_path.display()
+                                );
+                            }
                         }
+                        return Ok(BootValidationResult::ValidBootHealthCheckFailed(e));
                     }
-                    return Ok(BootValidationResult::ValidBootHealthCheckFailed(e));
-                }
-            };
+                };
+            }
+            _ => {}
         }
-        _ => {}
+        Ok(BootValidationResult::ValidBootProvisioned)
     }
-    Ok(BootValidationResult::ValidBootProvisioned)
+
+    /// Completes the commit for AbUpdateFinalized and CleanInstallFinalized states when
+    /// the host has booted from the expected root device. This includes updating boot order,
+    /// updating the encryption pcrlock policy if needed, and updating the Host Status.
+    fn update_boot(&self, datastore: &mut DataStore) -> Result<BootValidationResult, TridentError> {
+        // If it's virtdeploy, after confirming that we have booted into the correct image, we need
+        // to update the `BootOrder` to boot from the correct image next time.
+        let use_virtdeploy_workaround = virt::is_virtdeploy()
+            || self
+                .engine_context
+                .spec
+                .internal_params
+                .get_flag(VIRTDEPLOY_BOOT_ORDER_WORKAROUND);
+
+        // Persist the boot order change
+        if self.servicing_state == ServicingState::AbUpdateFinalized || use_virtdeploy_workaround {
+            bootentries::persist_boot_order()
+                .message("Failed to persist boot order after reboot")?;
+        }
+
+        // In UKI mode, set systemd-boot's default boot option to the currently running one.
+        if self.engine_context.is_uki()? {
+            efivar::set_default_to_current()
+                .message("Failed to set default boot entry to current")?;
+        }
+
+        // If this is a UKI image, then we need to re-generate pcrlock policy to include the PCRs
+        // selected by the user for the current boot only.
+        if let Some(ref encryption) = self.engine_context.spec.storage.encryption {
+            if self.engine_context.is_uki()? {
+                debug!("Regenerating pcrlock policy for current boot");
+
+                // Get the PCRs from Host Configuration
+                let pcrs = encryption
+                    .pcrs
+                    .iter()
+                    .fold(BitFlags::empty(), |acc, &pcr| acc | BitFlags::from(pcr));
+
+                // Get UKI and bootloader binaries for .pcrlock file generation
+                let (uki_binaries, bootloader_binaries) =
+                    encryption::get_binary_paths_pcrlock(&self.engine_context, pcrs, None)
+                        .structured(ServicingError::GetBinaryPathsForPcrlockEncryption)?;
+
+                // Generate a pcrlock policy
+                pcrlock::generate_pcrlock_policy(pcrs, uki_binaries, bootloader_binaries)?;
+            } else {
+                debug!(
+                    "Target OS image is a grub image, \
+                    so skipping re-generating pcrlock policy for current boot"
+                );
+            }
+        }
+        match self.servicing_state {
+            ServicingState::CleanInstallFinalized => {
+                info!("Clean install of target OS succeeded");
+                tracing::info!(metric_name = "clean_install_success", value = true);
+            }
+            ServicingState::AbUpdateFinalized => {
+                info!("A/B update succeeded");
+                tracing::info!(metric_name = "ab_update_success", value = true);
+            }
+            // Because the boot validation logic is currently called only on clean install and A/B
+            // update, this should be unreachable.
+            // TODO: When/If `UpdateAndReboot` is used, this should be updated.
+            state => {
+                return Err(TridentError::new(InternalError::UnexpectedServicingState {
+                    state,
+                }));
+            }
+        }
+
+        debug!(
+            "Updating host's servicing state to '{:?}'",
+            ServicingState::Provisioned
+        );
+
+        datastore.with_host_status(|host_status| {
+            host_status.servicing_state = ServicingState::Provisioned;
+            host_status.spec_old = Default::default();
+            host_status.ab_active_volume = match host_status.ab_active_volume {
+                None | Some(AbVolumeSelection::VolumeB) => Some(AbVolumeSelection::VolumeA),
+                Some(AbVolumeSelection::VolumeA) => Some(AbVolumeSelection::VolumeB),
+            };
+        })?;
+
+        Ok(BootValidationResult::ValidBootProvisioned)
+    }
 }
 
 /// Returns the current root device path, i.e., the path of the root block device that the host
@@ -521,6 +553,42 @@ fn compare_root_device_paths(
     Ok(true)
 }
 
+/// Returns the path of the verity data device for the given block device ID. Uses the
+/// `veritysetup` utility to fetch the actual data device path in the system.
+fn get_verity_data_device_path(
+    ctx: &EngineContext,
+    device_id: &BlockDeviceId,
+) -> Result<PathBuf, Error> {
+    let verity_device_config = ctx.get_verity_config(device_id).context(format!(
+        "Failed to get configuration for verity device '{device_id}'"
+    ))?;
+
+    // Run veritysetup to get the data device path
+    let verity_status = veritysetup::status(&verity_device_config.name)
+        .with_context(|| {
+            format!(
+                "Failed to get verity status for device '{}'",
+                verity_device_config.name
+            )
+        })?
+        .active()
+        .with_context(|| {
+            format!(
+                "Verity device '{}' is not active.",
+                verity_device_config.name
+            )
+        })?;
+
+    trace!(
+        "Verity status for verity device '{}' with block device ID '{}': {:?}",
+        verity_device_config.name,
+        device_id,
+        verity_status
+    );
+
+    Ok(verity_status.data_device_path)
+}
+
 /// Validates that the A/B active volume is set correctly.
 ///
 /// This function is called before starting any update servicing, to confirm that the A/B active
@@ -657,282 +725,6 @@ fn validate_ab_active_volume_internal(
     Ok(())
 }
 
-/// Returns the path of the verity data device for the given block device ID. Uses the
-/// `veritysetup` utility to fetch the actual data device path in the system.
-fn get_verity_data_device_path(
-    ctx: &EngineContext,
-    device_id: &BlockDeviceId,
-) -> Result<PathBuf, Error> {
-    let verity_device_config = ctx.get_verity_config(device_id).context(format!(
-        "Failed to get configuration for verity device '{device_id}'"
-    ))?;
-
-    // Run veritysetup to get the data device path
-    let verity_status = veritysetup::status(&verity_device_config.name)
-        .with_context(|| {
-            format!(
-                "Failed to get verity status for device '{}'",
-                verity_device_config.name
-            )
-        })?
-        .active()
-        .with_context(|| {
-            format!(
-                "Verity device '{}' is not active.",
-                verity_device_config.name
-            )
-        })?;
-
-    trace!(
-        "Verity status for verity device '{}' with block device ID '{}': {:?}",
-        verity_device_config.name,
-        device_id,
-        verity_status
-    );
-
-    Ok(verity_status.data_device_path)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    use std::path::PathBuf;
-
-    use const_format::formatcp;
-    use maplit::btreemap;
-
-    use osutils::testutils::repart::TEST_DISK_DEVICE_PATH;
-    use trident_api::{
-        config::{
-            AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, MountOptions, MountPoint,
-            Partition, PartitionType, VerityDevice,
-        },
-        constants::MOUNT_OPTION_READ_ONLY,
-        error::ErrorKind,
-        status::AbVolumeSelection,
-    };
-
-    #[test]
-    fn test_get_expected_root_device_path() {
-        let mut ctx = EngineContext {
-            servicing_type: ServicingType::CleanInstall,
-            ..Default::default()
-        };
-
-        // Add a disk and partitions
-        ctx.spec.storage.disks.push(Disk {
-            id: "os".to_owned(),
-            device: PathBuf::from("/dev/disk/by-bus/foobar"),
-            partitions: vec![
-                Partition {
-                    id: "esp".to_owned(),
-                    size: 100.into(),
-                    partition_type: PartitionType::Esp,
-                },
-                Partition {
-                    id: "root-a".to_owned(),
-                    size: 900.into(),
-                    partition_type: PartitionType::Root,
-                },
-                Partition {
-                    id: "root-b".to_owned(),
-                    size: 9000.into(),
-                    partition_type: PartitionType::Root,
-                },
-            ],
-            ..Default::default()
-        });
-
-        // Add the required A/B update configuration
-        ctx.spec.storage.ab_update = Some(AbUpdate {
-            volume_pairs: vec![AbVolumePair {
-                id: "root".to_string(),
-                volume_a_id: "root-a".to_string(),
-                volume_b_id: "root-b".to_string(),
-            }],
-        });
-
-        // Test case #0: If no mount points defined, should return an error.
-        assert_eq!(
-            get_expected_root_device_path(&ctx).unwrap_err().kind(),
-            &ErrorKind::Servicing(ServicingError::GetRootBlockDeviceId)
-        );
-
-        // Test case #1: If no root ID in block devices, should return an error.
-        ctx.spec.storage.filesystems = vec![FileSystem {
-            mount_point: Some(MountPoint {
-                path: PathBuf::from("/"),
-                options: MountOptions::empty(),
-            }),
-            device_id: Some("root".to_string()),
-            source: FileSystemSource::Image,
-        }];
-        assert_eq!(
-            get_expected_root_device_path(&ctx).unwrap_err().kind(),
-            &ErrorKind::Servicing(ServicingError::GetBlockDevicePath {
-                device_id: "root".to_string()
-            })
-        );
-
-        // Test case #3: When block devices are defined, should return the expected root device
-        // path of 'root-a'.
-        ctx.partition_paths = btreemap! {
-            "os".to_owned() => PathBuf::from(TEST_DISK_DEVICE_PATH),
-            "efi".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
-            "root-a".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
-            "root-b".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
-        };
-        assert_eq!(
-            get_expected_root_device_path(&ctx).unwrap(),
-            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"))
-        );
-
-        // Test case #4: After rebooting after an A/B update, should return the expected root
-        // device path of 'root-b'.
-        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
-        ctx.servicing_type = ServicingType::AbUpdate;
-        assert_eq!(
-            get_expected_root_device_path(&ctx).unwrap(),
-            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3"))
-        );
-    }
-
-    /// Validates that get_expected_root_device_path() returns the expected root device path when
-    /// root is a verity device.
-    #[test]
-    fn test_get_expected_root_device_path_verity() {
-        let mut ctx = EngineContext {
-            servicing_type: ServicingType::CleanInstall,
-            ..Default::default()
-        };
-
-        // Add a disk and partitions
-        ctx.spec.storage.disks.push(Disk {
-            id: "os".to_owned(),
-            device: PathBuf::from("/dev/disk/by-bus/foobar"),
-            partitions: vec![
-                Partition {
-                    id: "esp".to_owned(),
-                    size: 4096.into(),
-                    partition_type: PartitionType::Esp,
-                },
-                Partition {
-                    id: "root-data-a".to_owned(),
-                    size: 4096.into(),
-                    partition_type: PartitionType::Root,
-                },
-                Partition {
-                    id: "root-data-b".to_owned(),
-                    size: 4096.into(),
-                    partition_type: PartitionType::Root,
-                },
-                Partition {
-                    id: "root-hash-a".to_owned(),
-                    size: 4096.into(),
-                    partition_type: PartitionType::RootVerity,
-                },
-                Partition {
-                    id: "root-hash-b".to_owned(),
-                    size: 4096.into(),
-                    partition_type: PartitionType::RootVerity,
-                },
-                Partition {
-                    id: "trident-overlay-a".to_owned(),
-                    size: 4096.into(),
-                    partition_type: PartitionType::LinuxGeneric,
-                },
-                Partition {
-                    id: "trident-overlay-b".to_owned(),
-                    size: 4096.into(),
-                    partition_type: PartitionType::LinuxGeneric,
-                },
-            ],
-            ..Default::default()
-        });
-
-        // Add the required A/B update configuration
-        ctx.spec.storage.ab_update = Some(AbUpdate {
-            volume_pairs: vec![
-                AbVolumePair {
-                    id: "root-data".to_string(),
-                    volume_a_id: "root-data-a".to_string(),
-                    volume_b_id: "root-data-b".to_string(),
-                },
-                AbVolumePair {
-                    id: "root-hash".to_string(),
-                    volume_a_id: "root-hash-a".to_string(),
-                    volume_b_id: "root-hash-b".to_string(),
-                },
-                AbVolumePair {
-                    id: "trident-overlay".to_string(),
-                    volume_a_id: "trident-overlay-a".to_string(),
-                    volume_b_id: "trident-overlay-b".to_string(),
-                },
-            ],
-        });
-
-        // Update the block device paths
-        ctx.partition_paths = btreemap! {
-            "os".to_owned() => PathBuf::from(TEST_DISK_DEVICE_PATH),
-            "esp".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
-            "root-data-a".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
-            "root-data-b".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
-            "root-hash-a".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
-            "root-hash-b".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}5")),
-            "trident-overlay-a".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}6")),
-            "trident-overlay-b".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}7")),
-        };
-
-        // Add verity dev
-        ctx.spec.storage.verity = vec![VerityDevice {
-            id: "root".into(),
-            name: "root".into(),
-            data_device_id: "root-data".into(),
-            hash_device_id: "root-hash".into(),
-            ..Default::default()
-        }];
-
-        // Add root FS
-        ctx.spec.storage.filesystems = vec![FileSystem {
-            device_id: Some("root".into()),
-            mount_point: Some(MountPoint {
-                path: PathBuf::from("/"),
-                options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
-            }),
-            source: FileSystemSource::Image,
-        }];
-
-        // Build storage graph
-        ctx.storage_graph = ctx.spec.storage.build_graph().unwrap();
-
-        // Test case #1. Should correctly return the expected root device path
-        // of 'root-data-a', since servicing type is CleanInstall.
-        assert_eq!(
-            get_expected_root_device_path(&ctx).unwrap(),
-            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"))
-        );
-
-        // Test case #2. Change active volume to VolumeA and servicing type to AbUpdate, and
-        // validate that the expected root device path is now the verity data device path of
-        // 'root-data-b'.
-        ctx.servicing_type = ServicingType::AbUpdate;
-        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
-        assert_eq!(
-            get_expected_root_device_path(&ctx).unwrap(),
-            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3"))
-        );
-
-        // Test case #3. Change active volume to VolumeB and validate that the expected root device
-        // path is now the verity data device path of 'root-data-a'.
-        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
-        assert_eq!(
-            get_expected_root_device_path(&ctx).unwrap(),
-            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"))
-        );
-    }
-}
-
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
@@ -957,36 +749,6 @@ mod functional_test {
         error::ErrorKind,
         status::AbVolumeSelection,
     };
-
-    #[functional_test]
-    fn test_compare_root_device_paths() {
-        // Test case #0: If current root device path is the same as the expected root device path,
-        // should return true.
-        assert!(compare_root_device_paths(
-            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
-            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"))
-        )
-        .unwrap());
-
-        // Test case #1: If current root device path is NOT the same as the expected root device
-        // path, should return false.
-        assert!(!compare_root_device_paths(
-            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
-            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3"))
-        )
-        .unwrap());
-    }
-
-    #[functional_test]
-    fn test_construct_by_partuuid_path() {
-        // Test with a valid device path having a part_uuid
-        let device_path = PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}1"));
-        construct_by_partuuid_path(&device_path).unwrap();
-
-        // Test with an invalid device path
-        let device_path = PathBuf::from("/dev/invalid");
-        assert_eq!(construct_by_partuuid_path(&device_path), None);
-    }
 
     /// Validates that validate_ab_active_volume_internal() works as a expected.
     #[functional_test]
