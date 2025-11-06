@@ -155,9 +155,9 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
             ));
         }
         (false, ServicingState::AbUpdateFinalized) => {
-            // * AbUpdateFinalize, when booting from incorrect root (the servicing OS), mark host status
-            //   state as Provisioned
-            info!("Update host status from {current_servicing_state:?} to Provisioned");
+            // AbUpdateFinalize, when booting from incorrect root (the servicing OS), mark host status
+            // state as Provisioned
+            error!("Update host status from {current_servicing_state:?} to Provisioned");
             datastore.with_host_status(|host_status| {
                 host_status.spec = host_status.spec_old.clone();
                 host_status.spec_old = Default::default();
@@ -171,7 +171,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
         }
         (_, state) => {
             // No other states should happen, return error
-            info!("Unexpected status: {current_servicing_state:?}");
+            error!("Unexpected status: {current_servicing_state:?}");
             return Err(TridentError::new(InternalError::UnexpectedServicingState {
                 state,
             }));
