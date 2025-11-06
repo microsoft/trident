@@ -283,7 +283,7 @@ impl Trident {
         // AbUpdateHealthCheckFailed is a special case where we would like
         // to preserve the last error across any recovery. This aids in
         // surfacing the original error.
-        info!(
+        debug!(
             "Execute and record error with servicing state: {:?} and last error: {:?}",
             datastore.host_status().servicing_state,
             datastore.host_status().last_error
