@@ -56,8 +56,9 @@ pub fn commit(datastore: &mut DataStore) -> Result<BootValidationResult, Trident
             return Err(err);
         }
     }
-    // If we reached here, we booted from the expected root device. Persist
-    // the changes, update encryption policy and mark as Provisioned.
+    // If we reached here, we booted from the expected device and the device is
+    // healthy. Persist the changes, update encryption policy and mark as
+    // Provisioned.
     ctx.persist_boot(datastore)
 }
 
