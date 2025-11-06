@@ -25,9 +25,9 @@ use crate::{
 #[must_use]
 pub enum BootValidationResult {
     /// Target OS booted successfully, and the health checks succeeded
-    CorrectBootProvisioned,
+    ValidBootProvisioned,
     /// Target OS booted successfully, and the health checks failed
-    CorrectBootHealthCheckFailed(TridentError),
+    ValidBootHealthCheckFailed(TridentError),
 }
 
 /// Validates that the firmware did not perform a rollback, i.e. correctly booted from the updated
@@ -192,9 +192,9 @@ fn commit_finalized_on_expected_root(
     // Run health checks to ensure the system is in the desired state
     let health_check_status =
         run_health_checks(ctx, datastore, current_servicing_state, servicing_type)?;
-    if let BootValidationResult::CorrectBootHealthCheckFailed(err) = health_check_status {
+    if let BootValidationResult::ValidBootHealthCheckFailed(err) = health_check_status {
         if servicing_type == ServicingType::AbUpdate {
-            return Ok(BootValidationResult::CorrectBootHealthCheckFailed(err));
+            return Ok(BootValidationResult::ValidBootHealthCheckFailed(err));
         } else {
             // Only CleanInstall is possible here; return the error.
             return Err(err);
@@ -278,7 +278,7 @@ fn commit_finalized_on_expected_root(
         };
     })?;
 
-    Ok(BootValidationResult::CorrectBootProvisioned)
+    Ok(BootValidationResult::ValidBootProvisioned)
 }
 
 fn run_health_checks(
@@ -341,13 +341,13 @@ fn run_health_checks(
                             );
                         }
                     }
-                    return Ok(BootValidationResult::CorrectBootHealthCheckFailed(e));
+                    return Ok(BootValidationResult::ValidBootHealthCheckFailed(e));
                 }
             };
         }
         _ => {}
     }
-    Ok(BootValidationResult::CorrectBootProvisioned)
+    Ok(BootValidationResult::ValidBootProvisioned)
 }
 
 /// Returns the current root device path, i.e., the path of the root block device that the host

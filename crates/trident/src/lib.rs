@@ -649,8 +649,8 @@ impl Trident {
         }
 
         match rollback_result {
-            Ok(rollback::BootValidationResult::CorrectBootProvisioned) => Ok(ExitKind::Done),
-            Ok(rollback::BootValidationResult::CorrectBootHealthCheckFailed(e)) => {
+            Ok(rollback::BootValidationResult::ValidBootProvisioned) => Ok(ExitKind::Done),
+            Ok(rollback::BootValidationResult::ValidBootHealthCheckFailed(e)) => {
                 debug!("Correct boot, but health check(s) failed: {e:?}");
                 Ok(ExitKind::NeedsReboot)
             }
