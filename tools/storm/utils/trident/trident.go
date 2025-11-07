@@ -45,9 +45,9 @@ func BuildTridentContainerCommand(envVars []string) string {
 // - The SSH session cannot be created
 // - There was an error starting the command.
 // - Some IO error occurred while reading stdout or stderr.
-func InvokeTrident(environment stormenv.TridentEnvironment, client *ssh.Client, envVars []string, arguments string) (*stormsshconfig.SshCmdOutput, error) {
+func InvokeTrident(env stormenv.TridentEnvironment, client *ssh.Client, envVars []string, arguments string) (*stormsshconfig.SshCmdOutput, error) {
 	var cmd string
-	switch environment {
+	switch env {
 	case stormenv.TridentEnvironmentHost:
 		cmd = TRIDENT_BINARY
 	case stormenv.TridentEnvironmentContainer:
@@ -55,7 +55,7 @@ func InvokeTrident(environment stormenv.TridentEnvironment, client *ssh.Client, 
 	case stormenv.TridentEnvironmentNone:
 		return nil, fmt.Errorf("trident service is not running")
 	default:
-		return nil, fmt.Errorf("invalid environment: %s", environment)
+		return nil, fmt.Errorf("invalid environment: %s", env)
 	}
 
 	var cmdPrefix string
@@ -111,19 +111,19 @@ func LoadTridentContainer(client *ssh.Client) error {
 	return nil
 }
 
-func CheckTridentService(client *ssh.Client, environment stormenv.TridentEnvironment, timeout time.Duration, expectSuccessfulCommit bool) error {
+func CheckTridentService(client *ssh.Client, env stormenv.TridentEnvironment, timeout time.Duration, expectSuccessfulCommit bool) error {
 	if client == nil {
 		return fmt.Errorf("SSH client is nil")
 	}
 
 	var serviceName string
-	switch environment {
+	switch env {
 	case stormenv.TridentEnvironmentHost:
 		serviceName = "trident.service"
 	case stormenv.TridentEnvironmentContainer:
 		serviceName = "trident-container.service"
 	default:
-		return fmt.Errorf("unsupported environment: %s", environment)
+		return fmt.Errorf("unsupported environment: %s", env)
 	}
 
 	reconnectNeeded, err := stormretry.Retry(
