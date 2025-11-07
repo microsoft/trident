@@ -31,7 +31,11 @@ func WaitForLoginMessageInSerialLog(vmSerialLog string, verbose bool, iteration 
 	if err != nil {
 		return fmt.Errorf("failed to open serial log file: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		if cerr := file.Close(); cerr != nil {
+			logrus.Errorf("Failed to close serial log file: %v", cerr)
+		}
+	}()
 
 	reader := bufio.NewReader(file)
 	lineBuffer := ""
