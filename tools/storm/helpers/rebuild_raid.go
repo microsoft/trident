@@ -432,19 +432,16 @@ func (h *RebuildRaidHelper) tridentRebuildRaid(client *ssh.Client, tridentConfig
 
 	output, err := stormtrident.InvokeTrident(h.args.Env, client, []string{}, "rebuild-raid -v trace")
 	if err != nil {
-		return fmt.Errorf("failed to invoke Trident: %w", err)
+		logrus.Errorf("Failed to invoke Trident: %w", err)
+		return err
 	}
 	if err := output.Check(); err != nil {
 		logrus.Errorf("Trident rebuild-raid stderr:\n%s", output.Stderr)
-		return fmt.Errorf("failed to run trident to get host config: %w", err)
-	}
-
-	logrus.Infof("Trident rebuild-raid output:\n%s\n%s", output.Stdout, output.Stderr)
-
-	if err != nil {
 		return err
 	}
+
 	logrus.Info("Trident rebuild-raid succeeded")
+	logrus.Tracef("Trident rebuild-raid output:\n%s\n%s", output.Stdout, output.Stderr)
 	return nil
 }
 
