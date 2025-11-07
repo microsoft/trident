@@ -78,8 +78,8 @@ func getSerialPathFromNetlistenConfig(netlistenConfigPath string) string {
 		if netlisten, ok := netlistenConfig["netlisten"].(map[string]interface{}); ok {
 			if bmc, ok := netlisten["bmc"].(map[string]interface{}); ok {
 				if serialOverSsh, ok := bmc["serialOverSsh"].(map[string]interface{}); ok {
-					if logFile, ok := serialOverSsh["logFile"].(string); ok {
-						return logFile
+					if output, ok := serialOverSsh["output"].(string); ok {
+						return output
 					}
 				}
 			}
