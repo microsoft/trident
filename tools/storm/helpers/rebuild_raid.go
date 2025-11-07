@@ -258,6 +258,7 @@ func (h *RebuildRaidHelper) replaceVirtualMachineRaidDisk(tc storm.TestCase) err
 		tc.Error(err)
 		return err
 	}
+	defer client.Close()
 
 	logrus.Info("Efibootmgr entries in the VM.")
 	output, err := stormsshclient.CommandOutput(client, "sudo efibootmgr")
