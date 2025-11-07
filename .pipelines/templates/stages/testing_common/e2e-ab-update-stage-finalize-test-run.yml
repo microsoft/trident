@@ -100,7 +100,7 @@ steps:
           --trident-log-file "$(Build.SourcesDirectory)/stage-ab-update-deployment.log" \
           --artifacts-folder "$(ob_outputDirectory)"
     displayName: "📄 Stage A/B update deployment logs"
-    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
+    condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
 
   - bash: |
       set -eux
@@ -187,7 +187,7 @@ steps:
           --trident-log-file "$(Build.SourcesDirectory)/finalize-ab-update.log" \
           --artifacts-folder "$(ob_outputDirectory)"
     displayName: "📄 Finalize A/B update deployment logs"
-    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
+    condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
 
   - bash: |
       set -eux

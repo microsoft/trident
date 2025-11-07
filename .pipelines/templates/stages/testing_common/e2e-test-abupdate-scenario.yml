@@ -183,7 +183,7 @@ steps:
           --trident-trace-log-file "$(Build.SourcesDirectory)/logstream-full.log" \
           --artifacts-folder "$(ob_outputDirectory)"
     displayName: "📄${{ parameters.updateEmoji }} A/B update deployment logs for target OS ${{ parameters.updateScenarioTargetOs }}"
-    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
+    condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
 
   - bash: |
       set -eux

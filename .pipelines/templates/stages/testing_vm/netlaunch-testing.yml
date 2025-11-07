@@ -246,6 +246,7 @@ stages:
                   --trident-trace-log-file "$(tridentSourceDirectory)/logstream-full.log" \
                   --artifacts-folder "$(ob_outputDirectory)"
             displayName: "📄Display clean install logs"
+            condition: succeededOrFailed()
 
           - bash: |
               set -ux

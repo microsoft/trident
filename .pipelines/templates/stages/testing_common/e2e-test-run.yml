@@ -192,7 +192,7 @@ steps:
           --trident-trace-log-file "$(Build.SourcesDirectory)/logstream-full.log" \
           --artifacts-folder "$(ob_outputDirectory)"
     displayName: "📄 A/B update deployment logs for target OS B"
-    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
+    condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
 
   - bash: |
       set -eux
@@ -342,7 +342,7 @@ steps:
           --trident-trace-log-file "$(Build.SourcesDirectory)/logstream-full.log" \
           --artifacts-folder "$(ob_outputDirectory)"
     displayName: "📄 A/B update deployment logs for target OS A"
-    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
+    condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
 
   - bash: |
       set -eux

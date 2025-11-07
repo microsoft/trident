@@ -310,6 +310,7 @@ stages:
                   --trident-trace-log-file "${{ variables.TRIDENT_SOURCE_DIR }}/logstream-full.log" \
                   --artifacts-folder "$(ob_outputDirectory)"
             displayName: "Display clean install logs"
+            condition: succeededOrFailed()
 
           - bash: |
               CLEAN_INSTALL_LOG="${{ variables.TRIDENT_SOURCE_DIR }}/clean-install-deployment.log"
