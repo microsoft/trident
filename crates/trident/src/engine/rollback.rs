@@ -5,9 +5,10 @@ use chrono::Utc;
 use enumflags2::BitFlags;
 use log::{debug, error, info, trace, warn};
 
-use osutils::{block_devices, efivar, lsblk, pcrlock, veritysetup, virt};
+use osutils::{block_devices, container, efivar, lsblk, pcrlock, veritysetup, virt};
 use trident_api::{
     constants::internal_params::VIRTDEPLOY_BOOT_ORDER_WORKAROUND,
+    constants::ROOT_MOUNT_POINT_PATH,
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::{AbVolumeSelection, ServicingState, ServicingType},
     BlockDeviceId,
@@ -19,7 +20,9 @@ use crate::{
         context::EngineContext,
         storage::{encryption, verity},
     },
-    health, DataStore,
+    health,
+    subsystems::esp,
+    DataStore,
 };
 
 #[must_use]
@@ -218,6 +221,17 @@ fn commit_finalized_on_expected_root(
     if ctx.is_uki()? {
         efivar::set_default_to_current().message("Failed to set default boot entry to current")?;
     }
+
+    // Commit must finish configuring UEFI fallback as configured
+    let root_path = if container::is_running_in_container()
+        .message("Failed to check if Trident is running in a container")?
+    {
+        container::get_host_root_path().message("Failed to get host root path")?
+    } else {
+        PathBuf::from(ROOT_MOUNT_POINT_PATH)
+    };
+    esp::set_uefi_fallback_contents(ctx, current_servicing_state, &root_path)
+        .structured(ServicingError::SetUpUefiFallback)?;
 
     // If this is a UKI image, then we need to re-generate pcrlock policy to include the PCRs
     // selected by the user for the current boot only.

@@ -11,7 +11,7 @@ pub use host::{
         modules::{LoadMode, Module},
         services::Services,
         users::{Password, SshMode, User},
-        KernelCommandLine, ManagementOs, Os, Selinux, SelinuxMode,
+        KernelCommandLine, ManagementOs, Os, Selinux, SelinuxMode, UefiFallbackMode,
     },
     scripts::{Script, ScriptSource, Scripts, ServicingTypeSelection},
     storage::abupdate::{AbUpdate, AbVolumePair},
