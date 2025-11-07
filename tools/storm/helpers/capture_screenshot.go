@@ -12,7 +12,7 @@ type CaptureScreenshotHelper struct {
 	args struct {
 		VmName             string `help:"Name of VM." type:"string" default:"virtdeploy-vm-0"`
 		ScreenshotFilename string `help:"File name for the screenshot." type:"string" default:""`
-		ArtifactsFolder    string `help:"Folder to copy log files into." type:"string" default:""`
+		ArtifactsFolder    string `help:"Folder to save screenshots into." type:"string" default:""`
 	}
 }
 
