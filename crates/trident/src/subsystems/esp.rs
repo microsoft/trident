@@ -16,12 +16,14 @@ use osutils::{
     path,
 };
 use trident_api::{
+    config::UefiFallbackMode,
     constants::{
-        internal_params::DISABLE_GRUB_NOPREFIX_CHECK, EFI_DEFAULT_BIN_RELATIVE_PATH,
-        ESP_EFI_DIRECTORY, ESP_RELATIVE_MOUNT_POINT_PATH, GRUB2_CONFIG_FILENAME,
-        GRUB2_CONFIG_RELATIVE_PATH,
+        internal_params::DISABLE_GRUB_NOPREFIX_CHECK, EFI_DEFAULT_BIN_DIRECTORY,
+        EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY, ESP_RELATIVE_MOUNT_POINT_PATH,
+        GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH,
     },
     error::{ReportError, ServicingError, TridentError, TridentResultExt},
+    status::{AbVolumeSelection, ServicingState, ServicingType},
 };
 
 use crate::{
@@ -52,6 +54,44 @@ impl Subsystem for EspSubsystem {
 
         Ok(())
     }
+}
+
+/// Configures UEFI fallback by copying boot files to the UEFI fallback folder
+/// based on the UEFI fallback mode and servicing type.
+///
+/// UEFI fallback is handled in two stages:
+/// 1. During finalize, the appropriate boot files are copied to the UEFI fallback folder
+///    based on the servicing state and UEFI fallback mode.
+///       * For clean install, the target OS boot files (always volume A) are copied.
+///       * For A/B update, the boot files are copied based on whether rollforward (when
+///         the target OS boot files are copied) or rollback (no files need to be copied
+///         because fallback was populated previously) is selected.
+/// 2. During commit, after the target OS boot has been verified, the target OS boot files
+///    are copied to the UEFI fallback folder.
+pub fn set_uefi_fallback_contents(
+    ctx: &EngineContext,
+    servicing_state: ServicingState,
+    mount_point: &Path,
+) -> Result<(), Error> {
+    let source_esp_dir_name = find_uefi_fallback_source_dir_name(ctx, servicing_state);
+    if let Some(source_esp_dir_name) = source_esp_dir_name {
+        debug!(
+            "Configuring UEFI fallback for servicing state {:?} using source ESP dir '{}'",
+            servicing_state, source_esp_dir_name
+        );
+        copy_boot_files_for_uefi_fallback(
+            mount_point,
+            &source_esp_dir_name,
+            &ctx.servicing_type,
+            ctx.install_index,
+        )?;
+    } else {
+        debug!(
+            "No UEFI fallback configuration needed for servicing state {:?}",
+            servicing_state
+        );
+    }
+    Ok(())
 }
 
 /// Performs file-based deployment of ESP images from the OS image.
@@ -215,6 +255,193 @@ fn copy_file_artifacts(
     Ok(())
 }
 
+/// Determines the source dir name to copy the UEFI fallback boot files from. This varies
+/// based on the servicing state and UEFI fallback mode.
+///
+/// 1. During finalize
+///  * For clean install, use volume A (this is the target OS volume for clean install)
+///  * For A/B update
+///    - rollforward: use the opposite of the active volume
+///    - rollback: use the active volume (this may be a redundant copy)
+/// 2. During commit, after the target OS boot has been verified, the target OS boot files
+///    are copied to the UEFI fallback folder.
+///  * For clean install, no copy is needed as it was done during finalize
+///  * For A/B update
+///    - rollforward: no copy is needed as it was done during finalize
+///    - rollback: use the newly active volume
+fn find_uefi_fallback_source_dir_name(
+    ctx: &EngineContext,
+    servicing_state: ServicingState,
+) -> Option<String> {
+    trace!(
+        "Finding UEFI fallback source dir name for servicing state {:?} and UEFI fallback mode {:?}",
+        servicing_state,
+        ctx.spec.os.uefi_fallback
+    );
+    match servicing_state {
+        ServicingState::CleanInstallStaged => match ctx.spec.os.uefi_fallback {
+            Some(UefiFallbackMode::Rollforward) | Some(UefiFallbackMode::Rollback) => Some(
+                boot::make_esp_dir_name(ctx.install_index, AbVolumeSelection::VolumeA),
+            ),
+            _ => None,
+        },
+        ServicingState::AbUpdateStaged => match ctx.spec.os.uefi_fallback {
+            Some(UefiFallbackMode::Rollforward) => Some(boot::make_esp_dir_name(
+                ctx.install_index,
+                match ctx.ab_active_volume {
+                    None | Some(AbVolumeSelection::VolumeB) => AbVolumeSelection::VolumeA,
+                    Some(AbVolumeSelection::VolumeA) => AbVolumeSelection::VolumeB,
+                },
+            )),
+            None | Some(UefiFallbackMode::Rollback) => Some(boot::make_esp_dir_name(
+                ctx.install_index,
+                match ctx.ab_active_volume {
+                    None | Some(AbVolumeSelection::VolumeA) => AbVolumeSelection::VolumeA,
+                    Some(AbVolumeSelection::VolumeB) => AbVolumeSelection::VolumeB,
+                },
+            )),
+            _ => None,
+        },
+        ServicingState::AbUpdateFinalized => match ctx.spec.os.uefi_fallback {
+            None | Some(UefiFallbackMode::Rollback) => Some(boot::make_esp_dir_name(
+                ctx.install_index,
+                match ctx.ab_active_volume {
+                    None | Some(AbVolumeSelection::VolumeA) => AbVolumeSelection::VolumeA,
+                    Some(AbVolumeSelection::VolumeB) => AbVolumeSelection::VolumeB,
+                },
+            )),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Skip UEFI fallback copy when AZLA and AZLB boot paths do not exist. This
+/// is an expected VM scenario when offline-initialize is used to prepare a
+/// VHD-based image for A/B update.
+fn skip_uefi_fallback_copy(
+    esp_dir_path: &Path,
+    source_esp_name: &str,
+    servicing_type: &ServicingType,
+    install_index: usize,
+) -> bool {
+    let azla_dir_name = boot::make_esp_dir_name(install_index, AbVolumeSelection::VolumeA);
+    if azla_dir_name == source_esp_name && servicing_type == &ServicingType::AbUpdate {
+        // For A/B update, check for the AZLA **not** existing and
+        // AZLB existing. In this case, skip the UEFI fallback copy
+        if !esp_dir_path.join(azla_dir_name).exists()
+            && esp_dir_path
+                .join(boot::make_esp_dir_name(
+                    install_index,
+                    AbVolumeSelection::VolumeB,
+                ))
+                .exists()
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// Copies all files from 'source_esp_name' folder to the UEFI fallback folder.
+fn copy_boot_files_for_uefi_fallback(
+    mount_point: &Path,
+    source_esp_name: &str,
+    servicing_type: &ServicingType,
+    install_index: usize,
+) -> Result<(), Error> {
+    let esp_dir_path = mount_point
+        .join(ESP_RELATIVE_MOUNT_POINT_PATH)
+        .join(ESP_EFI_DIRECTORY);
+    if skip_uefi_fallback_copy(
+        &esp_dir_path,
+        source_esp_name,
+        servicing_type,
+        install_index,
+    ) {
+        debug!(
+            "Skipping UEFI fallback copy for servicing type {:?}",
+            servicing_type
+        );
+        return Ok(());
+    }
+
+    let source_esp_dir_path = esp_dir_path.join(source_esp_name);
+    let uefi_fallback_path = esp_dir_path.join(EFI_DEFAULT_BIN_DIRECTORY);
+    debug!(
+        "Copying files during {:?} from '{}' to '{}'",
+        servicing_type,
+        source_esp_dir_path.display(),
+        uefi_fallback_path.display()
+    );
+    simple_copy_boot_files(&source_esp_dir_path, &uefi_fallback_path).context(format!(
+        "Failed to copy boot files from directory '{}' to directory '{}'",
+        source_esp_dir_path.display(),
+        uefi_fallback_path.display()
+    ))?;
+    Ok(())
+}
+
+/// Copies boot files from one folder to another.
+fn simple_copy_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
+    trace!(
+        "Copying boot files from '{}' to '{}'",
+        from_dir.display(),
+        to_dir.display()
+    );
+    // Ensure to_dir exists
+    fs::create_dir_all(to_dir)
+        .context(format!("Failed to create directory '{}'", to_dir.display()))?;
+
+    // Copy all files from from_dir to to_dir as <existing_filename>.new
+    fs::read_dir(from_dir)?
+        .collect::<Result<Vec<_>, _>>()?
+        .iter()
+        .try_for_each(|from_path| {
+            let to_file_name = format!("{}.new", from_path.file_name().to_string_lossy());
+            let to_path = to_dir.join(to_file_name);
+            fs::copy(from_path.path(), &to_path).context(format!(
+                "Failed to copy file '{}' to '{}'",
+                from_path.path().display(),
+                to_path.display(),
+            ))?;
+            trace!(
+                "Copied file '{}' to '{}'",
+                from_path.path().display(),
+                to_path.display()
+            );
+            Ok::<(), Error>(())
+        })
+        .context("Failed to copy files")?;
+
+    // Rename all copied files from to_dir/<filename>.new to to_dir/<filename>
+    fs::read_dir(to_dir)?
+        .collect::<Result<Vec<_>, _>>()?
+        .iter()
+        .try_for_each(|orig_path| {
+            let orig_file_name = orig_path.file_name();
+            // Skip files that do not end with .new
+            if orig_file_name.to_string_lossy().ends_with(".new") {
+                let orig_file_name_string = orig_file_name.to_string_lossy();
+                let new_file_name = orig_file_name_string.trim_end_matches(".new");
+                let to_path = to_dir.join(new_file_name);
+                fs::rename(orig_path.path(), &to_path).context(format!(
+                    "Failed to rename file '{}' to '{}'",
+                    orig_path.path().display(),
+                    to_path.display()
+                ))?;
+                trace!(
+                    "Renamed file '{}' to '{}'",
+                    orig_path.path().display(),
+                    to_path.display()
+                );
+            }
+            Ok::<(), Error>(())
+        })
+        .context("Failed to rename copied files")?;
+    Ok(())
+}
+
 /// Copies boot files from temp_mount_dir, where image was mounted to, to given dir esp_dir.
 ///
 /// Returns a boolean indicating whether grub-noprefix.efi is used.
@@ -230,7 +457,7 @@ fn copy_boot_files(
         let source_path = temp_mount_dir.join(boot_file);
         // Extract filename from path
         let file_name = Path::new(boot_file).file_name().context(format!(
-            "Failed to extract filename from path {}",
+            "Failed to extract filename from path '{}'",
             boot_file.display()
         ))?;
 
@@ -239,16 +466,16 @@ fn copy_boot_files(
         // Create directories if they don't exist
         if let Some(parent) = destination_path.parent() {
             fs::create_dir_all(parent)
-                .context(format!("Failed to create directory {}", parent.display()))?;
+                .context(format!("Failed to create directory '{}'", parent.display()))?;
         }
 
         debug!(
-            "Copying file {} to {}",
+            "Copying file '{}' to '{}'",
             source_path.display(),
             destination_path.display()
         );
         fs::copy(&source_path, &destination_path).context(format!(
-            "Failed to copy file {} to {}",
+            "Failed to copy file '{}' to '{}'",
             source_path.display(),
             destination_path.display()
         ))?;
@@ -332,7 +559,7 @@ fn generate_boot_filepaths(temp_mount_dir: &Path) -> Result<Vec<PathBuf>, Error>
         .join(BOOT_EFI);
     if !boot_efi_path.exists() {
         bail!(
-            "Failed to find shim EFI executable at path {}",
+            "Failed to find shim EFI executable at path '{}'",
             boot_efi_path.display()
         );
     }
@@ -377,14 +604,14 @@ mod tests {
 
     use fs::File;
 
-    use trident_api::{
-        constants::GRUB2_RELATIVE_PATH,
-        status::{AbVolumeSelection, ServicingType},
-    };
-
     use crate::engine::{
         boot::{get_update_esp_dir_name, make_esp_dir_name_candidates},
         install_index,
+    };
+    use trident_api::config::{HostConfiguration, Os};
+    use trident_api::{
+        constants::GRUB2_RELATIVE_PATH,
+        status::{AbVolumeSelection, ServicingType},
     };
 
     #[test]
@@ -522,15 +749,15 @@ mod tests {
     }
 
     /// Creates mock boot files in temp_mount_dir
-    fn create_boot_files(temp_mount_dir: &Path, boot_files: &[PathBuf]) {
+    fn create_boot_files(temp_mount_dir: &Path, boot_files: &[PathBuf], content: &str) {
         for path in boot_files {
             let full_path = temp_mount_dir.join(path);
 
             if let Some(parent) = full_path.parent() {
                 fs::create_dir_all(parent).unwrap();
             }
-            let mut file = File::create(full_path).unwrap();
-            writeln!(file, "Mock content for {}", path.display()).unwrap();
+            let mut file = File::create(&full_path).unwrap();
+            writeln!(file, "Mock content for {}: {}", path.display(), content).unwrap();
         }
     }
 
@@ -541,6 +768,371 @@ mod tests {
         File::open(file1).unwrap().read_to_end(&mut buf1).unwrap();
         File::open(file2).unwrap().read_to_end(&mut buf2).unwrap();
         buf1 == buf2
+    }
+
+    fn create_and_fill_esp(
+        mount_point: &TempDir,
+        esp_name: &str,
+        file_names: &[PathBuf],
+        content: &str,
+    ) -> PathBuf {
+        let fallback_esp_dir = mount_point
+            .path()
+            .join(ESP_RELATIVE_MOUNT_POINT_PATH)
+            .join(ESP_EFI_DIRECTORY)
+            .join(esp_name);
+        fs::create_dir_all(&fallback_esp_dir).unwrap();
+        create_boot_files(&fallback_esp_dir, file_names, content);
+        fallback_esp_dir
+    }
+
+    fn validate_fallback(
+        ctx: &EngineContext,
+        servicing_state: ServicingState,
+        file_names: &[PathBuf],
+        azl_boot_name: &str,
+    ) {
+        const ORIGINAL_FALLBACK_CONTENT: &str = "original-fallback";
+        const NEW_BOOT_CONTENT: &str = "new-boot";
+
+        let mount_point = TempDir::new().unwrap();
+        let fallback_esp_dir = create_and_fill_esp(
+            &mount_point,
+            EFI_DEFAULT_BIN_DIRECTORY,
+            file_names,
+            ORIGINAL_FALLBACK_CONTENT,
+        );
+        create_and_fill_esp(&mount_point, azl_boot_name, file_names, NEW_BOOT_CONTENT);
+
+        set_uefi_fallback_contents(ctx, servicing_state, mount_point.path()).unwrap();
+        for file in file_names {
+            let fallback_file = fallback_esp_dir.join(file);
+            let mut fallback_file_contents = String::new();
+            File::open(&fallback_file)
+                .unwrap()
+                .read_to_string(&mut fallback_file_contents)
+                .unwrap();
+            match ctx.spec.os.uefi_fallback {
+                Some(UefiFallbackMode::None) =>
+                // Fallback should not have been updated
+                {
+                    assert!(
+                        fallback_file_contents.contains(ORIGINAL_FALLBACK_CONTENT),
+                        "{} was updated, but should not have been",
+                        fallback_file.display()
+                    )
+                }
+                None | Some(UefiFallbackMode::Rollback) | Some(UefiFallbackMode::Rollforward) =>
+                // Fallback should have been updated
+                {
+                    assert!(
+                        fallback_file_contents.contains(NEW_BOOT_CONTENT),
+                        "{} was not updated, but should have been",
+                        fallback_file.display()
+                    )
+                }
+            };
+        }
+    }
+
+    #[test]
+    fn test_find_uefi_fallback_source_dir_name() {
+        let mut ctx = EngineContext {
+            servicing_type: ServicingType::AbUpdate,
+            ab_active_volume: Some(AbVolumeSelection::VolumeA),
+            install_index: 0,
+            spec: HostConfiguration {
+                os: Os {
+                    uefi_fallback: Some(UefiFallbackMode::Rollback),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let test_cases = vec![
+            (
+                ServicingState::CleanInstallStaged,
+                Some(UefiFallbackMode::None),
+                Some(AbVolumeSelection::VolumeA),
+                ServicingType::CleanInstall,
+                None::<String>, // with None, we do not copy anything
+                "Validate CleanInstallStaged + Some(None) + active volume A ==> None",
+            ),
+            (
+                ServicingState::CleanInstallStaged,
+                Some(UefiFallbackMode::Rollback),
+                Some(AbVolumeSelection::VolumeA),
+                ServicingType::CleanInstall,
+                Some("AZLA".to_string()), // in finalize, with rollback, copy from volume A (volume we just put COSI files on)
+                "Validate CleanInstallStaged + Some(Rollback) + active volume A ==> AZLA",
+            ),
+            (
+                ServicingState::CleanInstallStaged,
+                Some(UefiFallbackMode::Rollforward),
+                Some(AbVolumeSelection::VolumeA),
+                ServicingType::CleanInstall,
+                Some("AZLA".to_string()), // in finalize, with rollforward, copy from volume A (volume we just put COSI files on)
+                "Validate CleanInstallStaged + Some(Rollforward) + active volume A ==> AZLA",
+            ),
+            (
+                ServicingState::AbUpdateStaged,
+                Some(UefiFallbackMode::Rollback),
+                Some(AbVolumeSelection::VolumeA),
+                ServicingType::AbUpdate,
+                Some("AZLA".to_string()), // in finalize, with rollback, copy from active volume (the COSI bits have not been validated yet)
+                "Validate AbUpdateStaged + Some(Rollback) + active volume A ==> AZLA",
+            ),
+            (
+                ServicingState::AbUpdateStaged,
+                Some(UefiFallbackMode::Rollforward),
+                Some(AbVolumeSelection::VolumeA),
+                ServicingType::AbUpdate,
+                Some("AZLB".to_string()), // in finalize, with rollforward, copy from inactive volume (that we just put COSI files on)
+                "Validate AbUpdateStaged + Some(Rollforward) + active volume A ==> AZLB",
+            ),
+            (
+                ServicingState::AbUpdateStaged,
+                Some(UefiFallbackMode::None),
+                Some(AbVolumeSelection::VolumeA),
+                ServicingType::AbUpdate,
+                None::<String>, // with None, we do not copy anything
+                "Validate AbUpdateStaged + Some(None) + active volume A ==> None",
+            ),
+            (
+                ServicingState::AbUpdateFinalized,
+                Some(UefiFallbackMode::Rollback),
+                Some(AbVolumeSelection::VolumeA),
+                ServicingType::AbUpdate,
+                Some("AZLA".to_string()), // in finalize, with rollback, copy from active volume
+                "Validate AbUpdateFinalized + Some(Rollback) + active volume A ==> AZLA",
+            ),
+            (
+                ServicingState::AbUpdateFinalized,
+                Some(UefiFallbackMode::Rollforward),
+                Some(AbVolumeSelection::VolumeA),
+                ServicingType::AbUpdate,
+                None, // in commit, with rollforward, no copy is needed because it was done in finalize
+                "Validate AbUpdateFinalized + Some(Rollforward) + active volume A ==> None",
+            ),
+            (
+                ServicingState::AbUpdateFinalized,
+                Some(UefiFallbackMode::None),
+                Some(AbVolumeSelection::VolumeA),
+                ServicingType::AbUpdate,
+                None::<String>, // with None, we do not copy anything
+                "Validate AbUpdateFinalized + Some(None) + active volume A ==> None",
+            ),
+        ];
+        for test_case in test_cases {
+            ctx.spec.os.uefi_fallback = test_case.1;
+            ctx.ab_active_volume = test_case.2;
+            ctx.servicing_type = test_case.3;
+            assert_eq!(
+                find_uefi_fallback_source_dir_name(&ctx, test_case.0),
+                test_case.4,
+                "{}",
+                test_case.5
+            );
+        }
+
+        //
+        // No-op for all unsupported stages
+        //
+        for stage in [ServicingState::NotProvisioned, ServicingState::Provisioned] {
+            // Validate <unsupported stages> ==> None
+            for mode in [
+                UefiFallbackMode::None,
+                UefiFallbackMode::Rollforward,
+                UefiFallbackMode::Rollback,
+            ] {
+                // Validate <all uefi fallback modes>
+                for ab_volume in [AbVolumeSelection::VolumeA, AbVolumeSelection::VolumeB] {
+                    // Validate <both volumes>
+                    for servicing_type in [ServicingType::AbUpdate, ServicingType::CleanInstall] {
+                        // all should be None
+                        ctx.spec.os.uefi_fallback = Some(mode);
+                        ctx.ab_active_volume = Some(ab_volume);
+                        ctx.servicing_type = servicing_type;
+                        assert!(
+                            find_uefi_fallback_source_dir_name(&ctx, stage).is_none(),
+                            "Unsupported combo should always result in None: {stage:?} + {mode:?} + {ab_volume:?} + {servicing_type:?}"
+                        );
+                    }
+                }
+            }
+        }
+
+        //
+        // No-op combinations: these are combinations that copying would be redundant
+        //
+        // Validate CleanInstallFinalized + Rollback + active volume B ==> None
+        ctx.spec.os.uefi_fallback = Some(UefiFallbackMode::Rollback);
+        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
+        ctx.servicing_type = ServicingType::CleanInstall;
+        assert!(
+            find_uefi_fallback_source_dir_name(&ctx, ServicingState::CleanInstallFinalized)
+                .is_none()
+        );
+        // Validate AbUpdateFinalized + Rollforward + active volume B ==> None
+        ctx.spec.os.uefi_fallback = Some(UefiFallbackMode::Rollforward);
+        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
+        ctx.servicing_type = ServicingType::AbUpdate;
+        assert!(
+            find_uefi_fallback_source_dir_name(&ctx, ServicingState::AbUpdateFinalized).is_none()
+        );
+    }
+
+    #[test]
+    fn test_set_uefi_fallback_contents() {
+        // Create a list of boot files
+        let file_names = vec![
+            PathBuf::from(GRUB2_CONFIG_FILENAME),
+            PathBuf::from(GRUB_EFI),
+            PathBuf::from(BOOT_EFI),
+        ];
+
+        let mut ctx = EngineContext {
+            servicing_type: ServicingType::AbUpdate,
+            ab_active_volume: Some(AbVolumeSelection::VolumeA),
+            install_index: 0,
+            spec: HostConfiguration {
+                os: Os {
+                    uefi_fallback: Some(UefiFallbackMode::Rollback),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        // Validate ABUpdate None with active volume A ==> copy /EFI/AZLA to /EFI/BOOT
+        ctx.spec.os.uefi_fallback = None;
+        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
+        ctx.servicing_type = ServicingType::AbUpdate;
+        validate_fallback(&ctx, ServicingState::AbUpdateStaged, &file_names, "AZLA");
+
+        // Validate ABUpdate Rollback with active volume A ==> copy /EFI/AZLA to /EFI/BOOT
+        ctx.spec.os.uefi_fallback = Some(UefiFallbackMode::Rollback);
+        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
+        ctx.servicing_type = ServicingType::AbUpdate;
+        validate_fallback(&ctx, ServicingState::AbUpdateStaged, &file_names, "AZLA");
+
+        // Validate ABUpdate Rollback with active volume B ==> copy /EFI/AZLB to /EFI/BOOT
+        ctx.spec.os.uefi_fallback = Some(UefiFallbackMode::Rollback);
+        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
+        ctx.servicing_type = ServicingType::AbUpdate;
+        validate_fallback(&ctx, ServicingState::AbUpdateStaged, &file_names, "AZLB");
+
+        // Validate ABUpdate Rollforward with active volume A ==> copy /EFI/AZLB to /EFI/BOOT
+        ctx.spec.os.uefi_fallback = Some(UefiFallbackMode::Rollforward);
+        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
+        ctx.servicing_type = ServicingType::AbUpdate;
+        validate_fallback(&ctx, ServicingState::AbUpdateStaged, &file_names, "AZLB");
+
+        // Validate ABUpdate Rollforward with active volume B ==> copy /EFI/AZLA to /EFI/BOOT
+        ctx.spec.os.uefi_fallback = Some(UefiFallbackMode::Rollforward);
+        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
+        ctx.servicing_type = ServicingType::AbUpdate;
+        validate_fallback(&ctx, ServicingState::AbUpdateStaged, &file_names, "AZLA");
+
+        // Validate CleanInstall Rollback with active volume None ==> copy /EFI/AZLA to /EFI/BOOT
+        ctx.spec.os.uefi_fallback = Some(UefiFallbackMode::Rollback);
+        ctx.ab_active_volume = None;
+        ctx.servicing_type = ServicingType::CleanInstall;
+        validate_fallback(
+            &ctx,
+            ServicingState::CleanInstallStaged,
+            &file_names,
+            "AZLA",
+        );
+
+        // Validate CleanInstall Rollforward with active volume None ==> copy /EFI/AZLA to /EFI/BOOT
+        ctx.spec.os.uefi_fallback = Some(UefiFallbackMode::Rollforward);
+        ctx.ab_active_volume = None;
+        ctx.servicing_type = ServicingType::CleanInstall;
+        validate_fallback(
+            &ctx,
+            ServicingState::CleanInstallStaged,
+            &file_names,
+            "AZLA",
+        );
+
+        // Validate ABUpdate None with active volume A ==> /EFI/BOOT unchanged
+        ctx.spec.os.uefi_fallback = Some(UefiFallbackMode::None);
+        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
+        ctx.servicing_type = ServicingType::AbUpdate;
+        validate_fallback(&ctx, ServicingState::AbUpdateStaged, &file_names, "AZLA");
+
+        // Validate ABUpdate None with active volume A ==> /EFI/BOOT unchanged
+        ctx.spec.os.uefi_fallback = None;
+        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
+        ctx.servicing_type = ServicingType::AbUpdate;
+        validate_fallback(&ctx, ServicingState::AbUpdateStaged, &file_names, "AZLA");
+    }
+
+    #[test]
+    fn test_simple_copy_boot_files() {
+        let from_dir = TempDir::new().unwrap();
+        let to_dir = TempDir::new().unwrap();
+
+        let file_infos = vec![
+            ("file1.txt", "New content of file 1"),
+            ("file2.txt", "New content of file 2"),
+        ];
+
+        let existing_file_infos = vec![
+            ("file1.txt", "Content of file 1"),
+            ("file2.txt", "Content of file 2"),
+            ("file3.txt", "Content of file 3"),
+        ];
+
+        // Create files in from_dir
+        for (file_name, content) in &file_infos {
+            let file_path = from_dir.path().join(file_name);
+            let mut file = File::create(&file_path).unwrap();
+            writeln!(file, "{content}").unwrap();
+        }
+
+        // Create existing files in esp_dir
+        for (file_name, content) in &existing_file_infos {
+            let file_path = to_dir.path().join(file_name);
+            let mut file = File::create(&file_path).unwrap();
+            writeln!(file, "{content}").unwrap();
+        }
+
+        // Call the function to copy files
+        simple_copy_boot_files(from_dir.path(), to_dir.path()).unwrap();
+
+        // Verify that files have been copied and renamed correctly
+        for (file_name, _content) in &file_infos {
+            assert!(
+                files_are_identical(
+                    &from_dir.path().join(file_name),
+                    &to_dir.path().join(file_name),
+                ),
+                "Files are not identical: {} and {}",
+                from_dir.path().join(file_name).display(),
+                to_dir.path().join(file_name).display()
+            );
+        }
+
+        // Verify that existing files that were not in from_dir are unchanged
+        for (file_name, content) in &existing_file_infos {
+            if !file_infos.iter().any(|(f, _)| f == file_name) {
+                let mut file_content = String::new();
+                File::open(to_dir.path().join(file_name))
+                    .unwrap()
+                    .read_to_string(&mut file_content)
+                    .unwrap();
+                assert_eq!(
+                    file_content.trim(),
+                    *content,
+                    "Content of existing file {file_name} does not match"
+                );
+            }
+        }
     }
 
     /// Validates that copy_boot_files() correctly copies boot files from temp_mount_dir to esp_dir
@@ -557,7 +1149,7 @@ mod tests {
         ];
 
         // Call helper func to create mock boot files in temp_mount_dir
-        create_boot_files(temp_mount_dir.path(), &file_names);
+        create_boot_files(temp_mount_dir.path(), &file_names, "test-content");
         // Call helper func to copy boot files from temp_mount_dir to esp_dir
         let noprefix =
             copy_boot_files(temp_mount_dir.path(), esp_dir.path(), file_names.clone()).unwrap();
@@ -596,7 +1188,7 @@ mod tests {
         ];
 
         // Call helper func to create mock boot files in temp_mount_dir
-        create_boot_files(temp_mount_dir.path(), &file_names);
+        create_boot_files(temp_mount_dir.path(), &file_names, "test-content");
         // Call helper func to copy boot files from temp_mount_dir to esp_dir
         let noprefix =
             copy_boot_files(temp_mount_dir.path(), esp_dir.path(), file_names.clone()).unwrap();
@@ -740,7 +1332,7 @@ mod tests {
                 .root_cause()
                 .to_string(),
             format!(
-                "Failed to find shim EFI executable at path {}",
+                "Failed to find shim EFI executable at path '{}'",
                 boot_efi_path.display()
             )
         );

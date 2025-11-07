@@ -41,6 +41,7 @@ Storage
 Swap
 SystemdCheck
 Trident
+UefiFallbackMode
 User
 VerityCorruptionOption
 VerityDevice

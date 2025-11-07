@@ -596,6 +596,9 @@ pub enum ServicingError {
     #[error("Failed to set permissions on temporary recovery key file '{key_file}'")]
     SetRecoveryKeyFilePermissions { key_file: String },
 
+    #[error("Failed to set up UEFI fallback boot files")]
+    SetUpUefiFallback,
+
     #[error("Failed to set up users for management OS")]
     SetUpUsers,
 

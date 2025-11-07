@@ -13,6 +13,9 @@ steps:
   - bash: |
       set -eux
 
+      # Proactively try to fix any possible issue from previous task failure
+      sudo dpkg --configure -a
+
       for codename in focal jammy; do
         if grep UBUNTU_CODENAME=$codename /etc/os-release -q; then
           sudo add-apt-repository -y ppa:stefanberger/swtpm-$codename

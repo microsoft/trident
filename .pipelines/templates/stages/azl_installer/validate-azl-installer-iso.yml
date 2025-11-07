@@ -37,6 +37,14 @@ steps:
           python3-jinja2 \
           zstd
 
+    timeoutInMinutes: 5
+    displayName: "Install dependencies"
+    retryCountOnTaskFailure: 3
+
+  # Test usb-iso by using serial connection to invoke trident
+  - bash: |
+      set -eux
+
       sudo usermod -aG docker $USER
       sudo usermod -a -G libvirt $USER
 

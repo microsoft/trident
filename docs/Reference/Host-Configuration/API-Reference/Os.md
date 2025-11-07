@@ -119,6 +119,15 @@ Data about sysext images, which should be active on the target OS.
    | Type           | `Extension`                 |
    | Link           | [Extension](./Extension.md) |
 
+### `uefiFallback` (optional)
+
+Options for configuring the UEFI fallback.
+
+| Characteristic | Value                                     |
+| -------------- | ----------------------------------------- |
+| Type           | `UefiFallbackMode`                        |
+| Link           | [UefiFallbackMode](./UefiFallbackMode.md) |
+
 ### `users` (optional)
 
 Users to configure on the host.
