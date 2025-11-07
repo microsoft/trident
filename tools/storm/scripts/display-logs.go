@@ -141,6 +141,7 @@ func (s *DisplayLogsScript) displaySerial() error {
 
 func (s *DisplayLogsScript) displayTridentLogFile(logFile string, skipMessage string) error {
 	if logFile == "" {
+		logrus.Info(skipMessage)
 		return nil
 	}
 
