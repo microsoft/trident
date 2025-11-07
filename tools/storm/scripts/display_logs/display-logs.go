@@ -1,4 +1,4 @@
-package scripts
+package display_logs
 
 import (
 	"os"
