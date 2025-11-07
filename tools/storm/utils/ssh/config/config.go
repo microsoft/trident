@@ -58,5 +58,4 @@ func (o *SshCmdOutput) Report() string {
 	}
 
 	return stringBuilder.String()
-
 }
