@@ -241,7 +241,7 @@ stages:
 
           - bash: |
               set -eux
-              ./bin/storm-trident helper display-logs -a \
+              ./bin/storm-trident script display-logs -a \
                   --skip-serial-log \
                   --trident-trace-log-file "$(tridentSourceDirectory)/logstream-full.log" \
                   --artifacts-folder "$(ob_outputDirectory)"
