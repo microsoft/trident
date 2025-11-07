@@ -15,8 +15,8 @@ type CaptureScreenshotScriptSet struct {
 
 type CaptureScreenshotScript struct {
 	VmName             string `help:"Name of VM." type:"string" default:"virtdeploy-vm-0"`
-	ScreenshotFilename string `help:"File name for the screenshot." type:"string"`
-	ArtifactsFolder    string `help:"Folder to save screenshots into." type:"string"`
+	ScreenshotFilename string `help:"File name for the screenshot." required:"" type:"string"`
+	ArtifactsFolder    string `help:"Folder to save screenshots into." required:"" type:"string"`
 }
 
 func (s *CaptureScreenshotScript) Run() error {
@@ -24,6 +24,7 @@ func (s *CaptureScreenshotScript) Run() error {
 	if err != nil {
 		return fmt.Errorf("failed to create temporary file: %w", err)
 	}
+	ppmFilename.Close()
 	defer os.Remove(ppmFilename.Name())
 
 	err = capturePpmScreenshot(s.VmName, ppmFilename.Name())
