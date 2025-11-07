@@ -10,7 +10,7 @@ import (
 )
 
 type DisplayLogsScriptSet struct {
-	DisplayLogs DisplayLogsScript `cmd:"" help:"Builds sample sysexts and confexts"`
+	DisplayLogs DisplayLogsScript `cmd:"" help:"Displays and copies serial, trident, and trace logs to artifacts folder."`
 }
 
 type DisplayLogsScript struct {
