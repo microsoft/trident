@@ -408,7 +408,7 @@ func (h *RebuildRaidHelper) checkFileExists(client *ssh.Client, filePath string)
 func (h *RebuildRaidHelper) tridentRebuildRaid(client *ssh.Client) error {
 	output, err := stormtrident.InvokeTrident(h.args.Env, client, []string{}, "rebuild-raid -v trace")
 	if err != nil {
-		logrus.Errorf("Failed to invoke Trident: %w", err)
+		logrus.Errorf("Failed to invoke Trident: %v", err)
 		return err
 	}
 	if err := output.Check(); err != nil {
