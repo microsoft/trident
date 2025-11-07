@@ -1,6 +1,8 @@
 package helpers
 
 import (
+	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 
@@ -11,8 +13,8 @@ import (
 type CaptureScreenshotHelper struct {
 	args struct {
 		VmName             string `help:"Name of VM." type:"string" default:"virtdeploy-vm-0"`
-		ScreenshotFilename string `help:"File name for the screenshot." type:"string" default:""`
-		ArtifactsFolder    string `help:"Folder to save screenshots into." type:"string" default:""`
+		ScreenshotFilename string `help:"File name for the screenshot." type:"string"`
+		ArtifactsFolder    string `help:"Folder to save screenshots into." type:"string"`
 	}
 }
 
@@ -29,14 +31,13 @@ func (h *CaptureScreenshotHelper) RegisterTestCases(r storm.TestRegistrar) error
 	return nil
 }
 
-func (h *CaptureScreenshotHelper) capturePpmScreenshot(vmName string) (string, error) {
-	ppmFilename := "/tmp/screenshot.ppm"
+func (h *CaptureScreenshotHelper) capturePpmScreenshot(vmName string, ppmFilename string) error {
 	virshOutput, virshErr := exec.Command("sudo", "virsh", "screenshot", vmName, ppmFilename).CombinedOutput()
 	logrus.Tracef("virsh screenshot output: %s\n%v", string(virshOutput), virshErr)
 	if virshErr != nil {
-		return "", virshErr
+		return virshErr
 	}
-	return ppmFilename, nil
+	return nil
 }
 
 func (h *CaptureScreenshotHelper) convertPpmToPng(ppmPath string, pngPath string) error {
@@ -49,13 +50,19 @@ func (h *CaptureScreenshotHelper) convertPpmToPng(ppmPath string, pngPath string
 }
 
 func (h *CaptureScreenshotHelper) captureScreenshot(tc storm.TestCase) error {
-	ppmPath, err := h.capturePpmScreenshot(h.args.VmName)
+	ppmFilename, err := os.CreateTemp("", "ppm")
+	if err != nil {
+		return fmt.Errorf("failed to create temporary file: %w", err)
+	}
+	defer os.Remove(ppmFilename.Name())
+
+	err = h.capturePpmScreenshot(h.args.VmName, ppmFilename.Name())
 	if err != nil {
 		return err
 	}
 
 	pngPath := filepath.Join(h.args.ArtifactsFolder, h.args.ScreenshotFilename)
-	if err := h.convertPpmToPng(ppmPath, pngPath); err != nil {
+	if err := h.convertPpmToPng(ppmFilename.Name(), pngPath); err != nil {
 		return err
 	}
 	return nil
