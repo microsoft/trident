@@ -154,9 +154,6 @@ func (h *RebuildRaidHelper) failBaremetalRaids(tc storm.TestCase) error {
 			if len(parts) > 1 && parts[0] == "ARRAY" {
 				raidArrays = append(raidArrays, parts[1])
 			}
-			if len(parts) > 1 && parts[0] == "ARRAY" {
-				raidArrays = append(raidArrays, parts[1])
-			}
 		}
 	}
 	raidDetails := make(map[string][]string)
