@@ -1,0 +1,88 @@
+### This file is used for containerized builds with caching support.
+
+# Stage 1: Dependencies cache
+FROM mcr.microsoft.com/azurelinux/base/core:3.0 AS cache-deps
+
+# Install build dependencies
+RUN tdnf install -y \
+    rust \
+    cargo \
+    openssl-devel \
+    clang-devel \
+    protobuf-devel \
+    git \
+    python3 \
+    make \
+    gcc \
+    ca-certificates \
+    shadow-utils \
+    perl \
+    perl-FindBin \
+    kernel-headers \
+    glibc-devel \
+    && tdnf clean all
+
+# Create a non-root user for building
+RUN useradd -m -u 1000 builder
+USER builder
+WORKDIR /home/builder
+
+# Set up Rust environment
+ENV CARGO_HOME=/home/builder/.cargo
+ENV RUSTUP_HOME=/home/builder/.rustup
+ENV PATH=/home/builder/.cargo/bin:$PATH
+
+# Create cache directories
+RUN mkdir -p /home/builder/.cargo/registry \
+    && mkdir -p /home/builder/.cargo/git \
+    && mkdir -p /home/builder/target
+
+# Copy cargo config
+COPY --chown=builder:builder .cargo/config.toml ./.cargo/config.toml
+
+# Override cargo config to disable BMP_PublicPackages registry for containerized builds
+RUN sed -i 's|replace-with = "BMP_PublicPackages"|# &|' ./.cargo/config.toml
+
+# Set up cargo config for better caching
+RUN printf '\n[build]\ntarget-dir = "/home/builder/target"\n' >> ./.cargo/config.toml
+
+# Copy workspace files
+COPY --chown=builder:builder Cargo.toml Cargo.lock ./
+
+# Create a minimal workspace for dependency building
+RUN mkdir -p crates/dummy/src \
+    && echo '[package]\nname = "dummy"\nversion = "0.1.0"\nedition = "2021"' > crates/dummy/Cargo.toml \
+    && echo 'fn main() {}' > crates/dummy/src/main.rs
+
+# Create a temporary Cargo.toml for dependency caching
+RUN cp Cargo.toml Cargo.toml.orig \
+    && echo '[workspace]\nmembers = ["crates/dummy"]' > Cargo.toml
+
+# Build dependencies (this will cache the registry and git dependencies)
+RUN cargo build --release 2>/dev/null || true
+
+# Restore original Cargo.toml
+RUN mv Cargo.toml.orig Cargo.toml
+
+# Stage 2: Full build
+FROM cache-deps AS full-build
+
+# Copy actual source code
+COPY --chown=builder:builder crates/ ./crates/
+COPY --chown=builder:builder scripts/ ./scripts/
+
+# Set build arguments
+ARG TRIDENT_VERSION=dev-build
+ENV TRIDENT_VERSION=$TRIDENT_VERSION
+
+# Build the project
+RUN cargo build --release --features dangerous-options
+
+# Create output directory and copy binaries there
+RUN mkdir -p /home/builder/output \
+    && cp target/release/trident /home/builder/output/ 2>/dev/null || true \
+    && cp target/release/docbuilder /home/builder/output/ 2>/dev/null || true \
+    && cp target/release/pytest_gen /home/builder/output/ 2>/dev/null || true
+
+# Default command to show what was built
+CMD ["ls", "-la", "/home/builder/output/"]

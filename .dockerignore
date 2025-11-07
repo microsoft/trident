@@ -1,5 +1,54 @@
+# Exclude git and pipeline files
 .git
 .pipelines
 .vscode
 dev
+
+# Exclude build artifacts and caches
+target/
+bin/
+artifacts/
+.cache/
+
+# Exclude editor files
+*.swp
+*.swo
+*~
+
+# Exclude temporary files
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# Exclude website files (for build contexts)
+website/
+dev-docs/
+
+# Exclude test artifacts
+*.profraw
+coverage/
+*.lcov
+
+# Exclude package managers
+node_modules/
+
+# Exclude IDE files
+.idea/
+*.iml
+
+# Exclude OS specific files
+.Trash-*
+.nfs*
+
+# Include documentation for builds that need it
 docs
+
+# Keep necessary files for builds
+!.cargo/
+!crates/
+!scripts/
+!Cargo.toml
+!Cargo.lock
+!packaging/
+!proto/

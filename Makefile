@@ -16,6 +16,10 @@ SERVER_PORT ?= 8133
 .PHONY: all
 all: format check test build-api-docs bin/trident-rpms.tar.gz docker-build build-functional-test coverage validate-configs generate-mermaid-diagrams
 
+# Alternative all target using containerized builds
+.PHONY: all-container
+all-container: format check test build-api-docs build-container docker-build build-functional-test coverage validate-configs generate-mermaid-diagrams
+
 .PHONY: check
 check:
 	cargo fmt -- --check
@@ -79,7 +83,95 @@ build: .cargo/config version-vars
 .PHONY: build-aarch64
 build-aarch64: .cargo/config version-vars
 	@TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
-	cargo build --release --target aarch64-unknown-linux-gnu
+ 	#cargo build --release --target aarch64-unknown-linux-gnu
+	cross build --target aarch64-unknown-linux-gnu --release -p trident
+
+# Variables for cached builds
+CACHE_DIR ?= .cache
+CARGO_CACHE_DIR ?= $(CACHE_DIR)/cargo
+TARGET_CACHE_DIR ?= $(CACHE_DIR)/target
+
+.PHONY: setup-cache-dirs
+setup-cache-dirs:
+	@mkdir -p $(CARGO_CACHE_DIR)/registry
+	@mkdir -p $(CARGO_CACHE_DIR)/git
+	@mkdir -p $(TARGET_CACHE_DIR)
+
+# Build trident inside Azure Linux 3 container with dependency caching
+# This uses multi-stage Docker builds to cache dependencies separately from source code
+.PHONY: build-container
+build-container: setup-cache-dirs .cargo/config version-vars
+	@echo "Building trident in Azure Linux 3 container with caching..."
+	docker build \
+		--build-arg TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
+		--target cache-deps \
+		-t trident/build-cache:latest \
+		-f packaging/docker/Dockerfile.build \
+		. 2>/dev/null || echo "Cache stage build failed or doesn't exist, continuing..."
+	docker build \
+		--build-arg TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
+		-t trident/build:latest \
+		-f packaging/docker/Dockerfile.build \
+		.
+	@mkdir -p bin/
+	@echo "Extracting built binaries from container..."
+	@id=$$(docker create trident/build:latest) && \
+		docker cp $$id:/home/builder/output/trident bin/ 2>/dev/null || true && \
+		docker cp $$id:/home/builder/output/docbuilder bin/ 2>/dev/null || true && \
+		docker cp $$id:/home/builder/output/pytest_gen bin/ 2>/dev/null || true && \
+		docker rm $$id
+	@echo "Build completed successfully!"
+	@ls -lh bin/
+
+# Build trident for aarch64 inside Azure Linux 3 container with dependency caching
+.PHONY: build-container-aarch64
+build-container-aarch64: setup-cache-dirs .cargo/config version-vars
+	@echo "Building trident for aarch64 in Azure Linux 3 container with caching..."
+	docker build \
+		--platform linux/arm64 \
+		--build-arg TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
+		--target cache-deps \
+		-t trident/build-cache-aarch64:latest \
+		-f packaging/docker/Dockerfile.build-aarch64 \
+		. 2>/dev/null || echo "Cache stage build failed or doesn't exist, continuing..."
+	docker build \
+		--platform linux/arm64 \
+		--build-arg TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
+		-t trident/build-aarch64:latest \
+		-f packaging/docker/Dockerfile.build-aarch64 \
+		.
+	@mkdir -p bin/
+	@echo "Extracting built binaries from container..."
+	@id=$$(docker create --platform linux/arm64 trident/build-aarch64:latest) && \
+		docker cp $$id:/home/builder/output/trident bin/trident-aarch64 2>/dev/null || true && \
+		docker cp $$id:/home/builder/output/docbuilder bin/docbuilder-aarch64 2>/dev/null || true && \
+		docker cp $$id:/home/builder/output/pytest_gen bin/pytest_gen-aarch64 2>/dev/null || true && \
+		docker rm $$id
+	@echo "aarch64 build completed successfully!"
+	@ls -lh bin/
+
+# Pre-build dependency cache for faster subsequent builds
+.PHONY: build-deps-cache
+build-deps-cache: setup-cache-dirs .cargo/config
+	@echo "Pre-building dependency cache..."
+	@docker build \
+		--target cache-deps \
+		-t trident/build-cache:latest \
+		-f packaging/docker/Dockerfile.build \
+		.
+	@echo "Dependency cache built successfully!"
+
+# Pre-build dependency cache for aarch64 for faster subsequent builds
+.PHONY: build-deps-cache-aarch64
+build-deps-cache-aarch64: setup-cache-dirs .cargo/config
+	@echo "Pre-building dependency cache for aarch64..."
+	@docker build \
+		--platform linux/arm64 \
+		--target cache-deps \
+		-t trident/build-cache-aarch64:latest \
+		-f packaging/docker/Dockerfile.build-aarch64 \
+		.
+	@echo "aarch64 dependency cache built successfully!"
 
 .PHONY: format
 format:
@@ -141,7 +233,7 @@ ARTIFACTS_DIR="artifacts"
 # git clone https://github.com/microsoft/azure-linux-image-tools
 
 artifacts/osmodifier: packaging/docker/Dockerfile-osmodifier.azl3
-	@docker build -t trident/osmodifier-build:latest \
+	@docker build -t trident/osmodifier-build:latest --progress=plain \
 		-f packaging/docker/Dockerfile-osmodifier.azl3 \
 		.
 	@mkdir -p "$(ARTIFACTS_DIR)"
@@ -150,7 +242,7 @@ artifacts/osmodifier: packaging/docker/Dockerfile-osmodifier.azl3
 	    docker rm -v $$id
 
 artifacts/osmodifier-aarch64: packaging/docker/Dockerfile-osmodifier.azl3
-	@docker build --platform linux/arm64 -t trident/osmodifier-build:latest \
+	@docker build --platform linux/arm64 -t trident/osmodifier-build:latest --progress=plain \
 		-f packaging/docker/Dockerfile-osmodifier.azl3 \
 		.
 	@mkdir -p "$(ARTIFACTS_DIR)"
@@ -286,6 +378,15 @@ clean:
 	rm -rf bin/
 	rm -rf artifacts/
 	find . -name "*.profraw" -type f -delete
+
+.PHONY: clean-cache
+clean-cache:
+	rm -rf $(CACHE_DIR)
+	docker rmi trident/build:latest trident/build-aarch64:latest trident/build-cache:latest trident/build-cache-aarch64:latest 2>/dev/null || true
+	@echo "Cache directories and Docker images cleaned!"
+
+.PHONY: clean-all
+clean-all: clean clean-cache clean-coverage
 
 # Locally we generally want to compile in debugging mode to reuse local artifacts.
 # On pipelines, though, we compile in release mode. This variable allows us to
