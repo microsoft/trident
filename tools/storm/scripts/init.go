@@ -8,4 +8,5 @@ import (
 var TRIDENT_SCRIPTSETS = []any{
 	&acr.AcrScriptSet{},
 	&build_extension_images.BuildExtensionImagesScriptSet{},
+	&CaptureScreenshotScriptSet{},
 }

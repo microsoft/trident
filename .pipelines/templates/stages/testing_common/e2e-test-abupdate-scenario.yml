@@ -167,7 +167,7 @@ steps:
   - ${{ if eq(parameters.deploymentEnvironment, 'virtualMachine') }}:
     - bash: |
         set -eux
-        ./bin/storm-trident helper capture-screenshot \
+        ./bin/storm-trident script capture-screenshot \
             --screenshot-filename "update-${{ parameters.updateScenarioName }}.png" \
             --artifacts-folder "$(ob_outputDirectory)"
       displayName: "📷 Capture ${{ parameters.updateScenarioName }} update screenshot"
