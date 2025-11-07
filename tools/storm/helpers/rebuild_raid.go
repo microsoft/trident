@@ -120,25 +120,20 @@ func (h *RebuildRaidHelper) failBaremetalRaids(tc storm.TestCase) error {
 	if err != nil {
 		tc.Error(err)
 	}
+	defer client.Close()
 
-	session, err := client.NewSession()
-	if err != nil {
-		tc.Error(err)
-	}
-	defer session.Close()
-
-	output, err := session.CombinedOutput("sudo dd if=/dev/zero of=/dev/sdb bs=512 count=1")
+	output, err := stormsshclient.CommandOutput(client, "sudo dd if=/dev/zero of=/dev/sdb bs=512 count=1")
 	if err != nil {
 		tc.Error(err)
 	}
 	logrus.Debugf("Output of zeroing /dev/sdb:\n%s", string(output))
-	output, err = session.CombinedOutput("echo 'label: gpt' | sudo sfdisk /dev/sdb --force")
+	output, err = stormsshclient.CommandOutput(client, "echo 'label: gpt' | sudo sfdisk /dev/sdb --force")
 	if err != nil {
 		tc.Error(err)
 	}
 	logrus.Debugf("Output of partitioning /dev/sdb:\n%s", string(output))
 
-	output, err = session.CombinedOutput("sudo mdadm --detail --scan")
+	output, err = stormsshclient.CommandOutput(client, "sudo mdadm --detail --scan")
 	if err != nil {
 		tc.Error(err)
 	}
@@ -158,9 +153,7 @@ func (h *RebuildRaidHelper) failBaremetalRaids(tc storm.TestCase) error {
 	}
 	raidDetails := make(map[string][]string)
 	for _, raid := range raidArrays {
-		arrayResult, err := session.CombinedOutput(
-			"sudo mdadm --detail " + raid,
-		)
+		arrayResult, err := stormsshclient.CommandOutput(client, "sudo mdadm --detail "+raid)
 		if err != nil {
 			tc.Error(err)
 		}
@@ -213,9 +206,7 @@ func (h *RebuildRaidHelper) failBaremetalRaids(tc storm.TestCase) error {
 	}
 
 	failRaidArray := func(raid string, device string) error {
-		output, err := session.CombinedOutput(
-			"sudo mdadm --fail " + raid + " " + device,
-		)
+		output, err := stormsshclient.CommandOutput(client, "sudo mdadm --fail "+raid+" "+device)
 		if err != nil {
 			return fmt.Errorf("failed to fail device %s in RAID array %s: %w\nOutput: %s", device, raid, err, string(output))
 		}
@@ -240,7 +231,7 @@ func (h *RebuildRaidHelper) failBaremetalRaids(tc storm.TestCase) error {
 		logrus.Infof("No RAID arrays found on the host.")
 	}
 
-	output, err = session.CombinedOutput("sudo reboot")
+	output, err = stormsshclient.CommandOutput(client, "sudo reboot")
 	logrus.Tracef("Output of `sudo reboot` (%+v):\n%s", err, string(output))
 	return nil
 }
@@ -268,15 +259,8 @@ func (h *RebuildRaidHelper) replaceVirtualMachineRaidDisk(tc storm.TestCase) err
 		return err
 	}
 
-	session, err := client.NewSession()
-	if err != nil {
-		tc.Error(err)
-		return err
-	}
-	defer session.Close()
-
 	logrus.Info("Efibootmgr entries in the VM.")
-	output, err := session.CombinedOutput("sudo efibootmgr")
+	output, err := stormsshclient.CommandOutput(client, "sudo efibootmgr")
 	if err != nil {
 		tc.Error(err)
 		return err
@@ -420,13 +404,7 @@ func (h *RebuildRaidHelper) checkFileExists(client *ssh.Client, filePath string)
 }
 
 // Runs "trident rebuild-raid" to trigger rebuilding RAID and checks if RAID was rebuilt successfully.
-func (h *RebuildRaidHelper) tridentRebuildRaid(client *ssh.Client, tridentConfig string) error {
-	clientSession, err := client.NewSession()
-	if err != nil {
-		return err
-	}
-	defer clientSession.Close()
-
+func (h *RebuildRaidHelper) tridentRebuildRaid(client *ssh.Client) error {
 	output, err := stormtrident.InvokeTrident(h.args.Env, client, []string{}, "rebuild-raid -v trace")
 	if err != nil {
 		logrus.Errorf("Failed to invoke Trident: %w", err)
@@ -444,12 +422,6 @@ func (h *RebuildRaidHelper) tridentRebuildRaid(client *ssh.Client, tridentConfig
 
 // Copy the Trident config to the host if it isn't already there.
 func (h *RebuildRaidHelper) copyHostConfig(client *ssh.Client, tridentConfig string) error {
-	clientSession, err := client.NewSession()
-	if err != nil {
-		return err
-	}
-	defer clientSession.Close()
-
 	fileExists, err := h.checkFileExists(client, tridentConfig)
 	if err != nil {
 		return err
@@ -458,7 +430,7 @@ func (h *RebuildRaidHelper) copyHostConfig(client *ssh.Client, tridentConfig str
 		LOCAL_TRIDENT_CONFIG_PATH := "/etc/trident/config.yaml"
 		logrus.Infof("File %s does not exist. Copying from %s", tridentConfig, LOCAL_TRIDENT_CONFIG_PATH)
 		copyCommand := fmt.Sprintf("sudo cp %s %s", LOCAL_TRIDENT_CONFIG_PATH, tridentConfig)
-		output, err := clientSession.CombinedOutput(copyCommand)
+		output, err := stormsshclient.CommandOutput(client, copyCommand)
 		if err != nil {
 			logrus.Errorf("Failed to copy Trident config to host: %s\n%s", err, string(output))
 			// Maintaining previous behavior: error is ignored here
@@ -466,7 +438,7 @@ func (h *RebuildRaidHelper) copyHostConfig(client *ssh.Client, tridentConfig str
 	}
 
 	catCommand := fmt.Sprintf("sudo cat %s", tridentConfig)
-	tridentConfigOutput, err := clientSession.CombinedOutput(catCommand)
+	tridentConfigOutput, err := stormsshclient.CommandOutput(client, catCommand)
 	if err != nil {
 		logrus.Errorf("Failed to read Trident config on host: %s\n%s", err, string(tridentConfigOutput))
 		// Maintaining previous behavior: error is ignored here
@@ -492,7 +464,7 @@ func (h *RebuildRaidHelper) triggerRebuildRaid(tridentConfig string) error {
 
 	// Re-build RAID and capture logs
 	logrus.Info("Re-building RAID")
-	err = h.tridentRebuildRaid(client, tridentConfig)
+	err = h.tridentRebuildRaid(client)
 	if err != nil {
 		return err
 	}
