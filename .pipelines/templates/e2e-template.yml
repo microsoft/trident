@@ -189,19 +189,13 @@ stages:
       micVersion: ${{ parameters.micVersion }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
-  - ${{ if or(parameters.forceTridentRebuild, eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e-azure')) }}:
-      # Build USB-ISO
-      - template: stages/trident_usb_iso/trident-usb-iso.yml
+# Build AzL installer ISO (attended and unattended)
+  - ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e-azure')) }}:
+      - template: stages/azl_installer/azl-installer.yml
         parameters:
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
-  - ${{ else }}:
-      # Download USB-ISO from previous
-      - template: stages/download_staged/download-staged.yml
-        parameters:
-          stageType: ${{ parameters.stageType }}
-          artifactName: azl-installer
-          packageName: usb-iso
+          dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
   # dom0 is failing for not known reasons ... comment out for now to unblock, longterm this may
   # be removed from Trident pipelines alltogether in favor of being only test-images

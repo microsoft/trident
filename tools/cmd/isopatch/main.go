@@ -54,7 +54,7 @@ Example:
 
 		// Check for patch requests
 		if len(patchSpecs) == 0 {
-			log.Fatal("No patch operations specified (use --patch)")
+			log.Fatal("No patch operations specified. Use --patch <source-file>:<destination-path> or see --help")
 		}
 	},
 	Run: func(cmd *cobra.Command, args []string) {

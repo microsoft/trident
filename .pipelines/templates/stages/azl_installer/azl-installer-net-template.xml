@@ -1,11 +1,11 @@
 <network>
-    <name>usb-iso-test-vm-net</name>
+    <name>azl-installer-test-vm-net</name>
     <forward mode="route" />
-    <domain name="usb-iso-test-vm-net" />
+    <domain name="azl-installer-test-vm-net" />
     <ip address='192.168.242.1' netmask='255.255.255.0'>
       <dhcp>
         <range start='192.168.242.2' end='192.168.242.254'/>
-        <host mac='52:54:00:dc:6e:3e' name='usb-iso-test-vm' ip='192.168.242.2'/>
+        <host mac='52:54:00:dc:6e:3e' name='azl-installer-test-vm' ip='192.168.242.2'/>
       </dhcp>
     </ip>
 </network>
