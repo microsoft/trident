@@ -10,8 +10,8 @@ import (
 
 	stormenv "tridenttools/storm/utils/env"
 	stormretry "tridenttools/storm/utils/retry"
-	sshclient "tridenttools/storm/utils/ssh/client"
-	sshconfig "tridenttools/storm/utils/ssh/config"
+	stormsshclient "tridenttools/storm/utils/ssh/client"
+	stormsshconfig "tridenttools/storm/utils/ssh/config"
 )
 
 const (
@@ -45,7 +45,7 @@ func BuildTridentContainerCommand(envVars []string) string {
 // - The SSH session cannot be created
 // - There was an error starting the command.
 // - Some IO error occurred while reading stdout or stderr.
-func InvokeTrident(environment stormenv.TridentEnvironment, client *ssh.Client, envVars []string, arguments string) (*sshconfig.SshCmdOutput, error) {
+func InvokeTrident(environment stormenv.TridentEnvironment, client *ssh.Client, envVars []string, arguments string) (*stormsshconfig.SshCmdOutput, error) {
 	var cmd string
 	switch environment {
 	case stormenv.TridentEnvironmentHost:
@@ -70,7 +70,7 @@ func InvokeTrident(environment stormenv.TridentEnvironment, client *ssh.Client, 
 	}
 
 	logrus.Debug(fmt.Sprintf("Running command: %s %s %s", cmdPrefix, cmd, arguments))
-	return sshclient.RunCommand(client, fmt.Sprintf("%s %s %s", cmdPrefix, cmd, arguments))
+	return stormsshclient.RunCommand(client, fmt.Sprintf("%s %s %s", cmdPrefix, cmd, arguments))
 }
 
 // Loads the Trident container stored in DOCKER_IMAGE_PATH int the remote host's
@@ -83,7 +83,7 @@ func LoadTridentContainer(client *ssh.Client) error {
 		return fmt.Errorf("SSH client is nil")
 	}
 
-	out, err := sshclient.RunCommand(client, fmt.Sprintf("sudo docker images --format json %s", DOCKER_IMAGE_PATH))
+	out, err := stormsshclient.RunCommand(client, fmt.Sprintf("sudo docker images --format json %s", DOCKER_IMAGE_PATH))
 	if err != nil {
 		return fmt.Errorf("failed to run docker images command: %w", err)
 	}
@@ -99,7 +99,7 @@ func LoadTridentContainer(client *ssh.Client) error {
 	}
 
 	// Load the image
-	out, err = sshclient.RunCommand(client, fmt.Sprintf("sudo docker load --input %s", DOCKER_IMAGE_PATH))
+	out, err = stormsshclient.RunCommand(client, fmt.Sprintf("sudo docker load --input %s", DOCKER_IMAGE_PATH))
 	if err != nil {
 		return fmt.Errorf("failed to load docker image: %w", err)
 	}
