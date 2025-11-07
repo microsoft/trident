@@ -96,7 +96,7 @@ steps:
   - bash: |
       set -eux
       ./bin/storm-trident helper display-logs \
-          --skip-serial \
+          --skip-serial-log \
           --trident-log-file "$(Build.SourcesDirectory)/stage-ab-update-deployment.log" \
           --artifacts-folder "$(ob_outputDirectory)"
     displayName: "📄 Stage A/B update deployment logs"
