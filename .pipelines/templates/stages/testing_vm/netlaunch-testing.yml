@@ -245,7 +245,7 @@ stages:
                   --skip-serial-log \
                   --trident-trace-log-file "$(tridentSourceDirectory)/logstream-full.log" \
                   --artifacts-folder "$(ob_outputDirectory)"
-            displayName: "📄Display clean install logs"
+            displayName: "📄 Display clean install logs"
             condition: succeededOrFailed()
 
           - bash: |
