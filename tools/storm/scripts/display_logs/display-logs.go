@@ -15,13 +15,13 @@ type DisplayLogsScriptSet struct {
 
 type DisplayLogsScript struct {
 	SkipSerialLog               bool   `help:"Skip displaying serial log." default:"false"`
-	NetlistenConfig             string `help:"Path to netlisten config file."`
+	NetlistenConfig             string `help:"Path to netlisten config file." required:""`
 	SerialLogFallbackFolder     string `help:"Folder to search for serial log files." default:"/tmp"`
 	SerialLogFallbackFileSuffix string `help:"File suffix to match when searching for serial log files in fallback folder." default:"serial0.log"`
-	SerialLogArtifactFileName   string `help:"Filename to use when copying serial log to artifacts folder."`
+	SerialLogArtifactFileName   string `help:"Filename to use when copying serial log to artifacts folder." required:""`
 	TridentLogFile              string `help:"File containing trident log output." default:""`
 	TridentTraceLogFile         string `help:"File containing trace log output." default:""`
-	ArtifactsFolder             string `help:"Folder to copy log files into."`
+	ArtifactsFolder             string `help:"Folder to copy log files into." required:""`
 }
 
 func (s *DisplayLogsScript) Run() error {
