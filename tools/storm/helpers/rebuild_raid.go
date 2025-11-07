@@ -290,21 +290,21 @@ func (h *RebuildRaidHelper) replaceVirtualMachineRaidDisk(tc storm.TestCase) err
 	logrus.Tracef("virsh shutdown output: %s\n%v", string(virshOutput), virshErr)
 	if virshErr != nil {
 		tc.Error(virshErr)
-		return err
+		return virshErr
 	}
 
 	rmOutput, rmErr := exec.Command("sudo", "rm", "-f", fmt.Sprintf("/var/lib/libvirt/images/virtdeploy-pool/%s-1-volume.qcow2", h.args.VmName)).CombinedOutput()
 	logrus.Tracef("rm volume output: %s\n%v", string(rmOutput), rmErr)
 	if rmErr != nil {
 		tc.Error(rmErr)
-		return err
+		return rmErr
 	}
 
 	createOutput, createErr := exec.Command("sudo", "qemu-img", "create", "-f", "qcow2", fmt.Sprintf("/var/lib/libvirt/images/virtdeploy-pool/%s-1-volume.qcow2", h.args.VmName), "16G").CombinedOutput()
 	logrus.Tracef("qemu-img create output: %s\n%v", string(createOutput), createErr)
 	if createErr != nil {
 		tc.Error(createErr)
-		return err
+		return createErr
 	}
 
 	sleepTime := time.Duration(10) * time.Second
@@ -316,7 +316,7 @@ func (h *RebuildRaidHelper) replaceVirtualMachineRaidDisk(tc storm.TestCase) err
 		domstateOutput, domstateErr := exec.Command("sudo", "virsh", "domstate", h.args.VmName).CombinedOutput()
 		if domstateErr != nil {
 			tc.Error(domstateErr)
-			return err
+			return domstateErr
 		}
 		logrus.Infof("Domain state attempt %d: %s", i, strings.TrimSpace(string(domstateOutput)))
 
@@ -353,6 +353,7 @@ func (h *RebuildRaidHelper) replaceVirtualMachineRaidDisk(tc storm.TestCase) err
 	dumpxmlOutput, dumpxmlErr := exec.Command("sudo", "virsh", "dumpxml", h.args.VmName).CombinedOutput()
 	if dumpxmlErr != nil {
 		tc.Error(dumpxmlErr)
+		return dumpxmlErr
 	}
 	parsedDomainXml := &libvirtxml.Domain{}
 	if err := parsedDomainXml.Unmarshal(string(dumpxmlOutput)); err != nil {
@@ -375,6 +376,7 @@ func (h *RebuildRaidHelper) replaceVirtualMachineRaidDisk(tc storm.TestCase) err
 	err = stormutils.WaitForLoginMessageInSerialLog(vmSerialLog, true, 1, fmt.Sprintf("%s/serial.log", h.args.ArtifactsFolder), time.Minute*5)
 	if err != nil {
 		tc.Error(err)
+		return err
 	}
 	return nil
 }
