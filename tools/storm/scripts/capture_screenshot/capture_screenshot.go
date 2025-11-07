@@ -1,4 +1,4 @@
-package scripts
+package capture_screenshot
 
 import (
 	"fmt"
