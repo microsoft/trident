@@ -10,4 +10,5 @@ var TRIDENT_SCRIPTSETS = []any{
 	&acr.AcrScriptSet{},
 	&build_extension_images.BuildExtensionImagesScriptSet{},
 	&capture_screenshot.CaptureScreenshotScriptSet{},
+	&DisplayLogsScriptSet{},
 }
