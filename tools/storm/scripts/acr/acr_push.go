@@ -5,7 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"time"
-	"tridenttools/storm/utils/retry"
+	stormretry "tridenttools/storm/utils/retry"
 
 	"github.com/microsoft/storm/pkg/storm/core"
 	"github.com/sirupsen/logrus"
@@ -55,7 +55,7 @@ func (s *AcrPushScript) pushFiles(tagBase string) error {
 		tag := fmt.Sprintf("%s.%d", tagBase, i+1)
 
 		// Push the file with retry (5 seconds total until time out; 1 second backoff between attempts)
-		_, err := retry.Retry(5*time.Second, 1*time.Second, func(attempt int) (*bool, error) {
+		_, err := stormretry.Retry(5*time.Second, 1*time.Second, func(attempt int) (*bool, error) {
 			err := s.pushImage(filePath, tag)
 			if err != nil {
 				return nil, err

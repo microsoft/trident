@@ -8,8 +8,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
 
-	"tridenttools/storm/utils/env"
-	"tridenttools/storm/utils/retry"
+	stormenv "tridenttools/storm/utils/env"
+	stormretry "tridenttools/storm/utils/retry"
 	sshclient "tridenttools/storm/utils/ssh/client"
 	sshconfig "tridenttools/storm/utils/ssh/config"
 )
@@ -45,14 +45,14 @@ func BuildTridentContainerCommand(envVars []string) string {
 // - The SSH session cannot be created
 // - There was an error starting the command.
 // - Some IO error occurred while reading stdout or stderr.
-func InvokeTrident(environment env.TridentEnvironment, client *ssh.Client, envVars []string, arguments string) (*sshconfig.SshCmdOutput, error) {
+func InvokeTrident(environment stormenv.TridentEnvironment, client *ssh.Client, envVars []string, arguments string) (*sshconfig.SshCmdOutput, error) {
 	var cmd string
 	switch environment {
-	case env.TridentEnvironmentHost:
+	case stormenv.TridentEnvironmentHost:
 		cmd = TRIDENT_BINARY
-	case env.TridentEnvironmentContainer:
+	case stormenv.TridentEnvironmentContainer:
 		cmd = BuildTridentContainerCommand(envVars)
-	case env.TridentEnvironmentNone:
+	case stormenv.TridentEnvironmentNone:
 		return nil, fmt.Errorf("trident service is not running")
 	default:
 		return nil, fmt.Errorf("invalid environment: %s", environment)
@@ -111,22 +111,22 @@ func LoadTridentContainer(client *ssh.Client) error {
 	return nil
 }
 
-func CheckTridentService(client *ssh.Client, environment env.TridentEnvironment, timeout time.Duration, expectSuccessfulCommit bool) error {
+func CheckTridentService(client *ssh.Client, environment stormenv.TridentEnvironment, timeout time.Duration, expectSuccessfulCommit bool) error {
 	if client == nil {
 		return fmt.Errorf("SSH client is nil")
 	}
 
 	var serviceName string
 	switch environment {
-	case env.TridentEnvironmentHost:
+	case stormenv.TridentEnvironmentHost:
 		serviceName = "trident.service"
-	case env.TridentEnvironmentContainer:
+	case stormenv.TridentEnvironmentContainer:
 		serviceName = "trident-container.service"
 	default:
 		return fmt.Errorf("unsupported environment: %s", environment)
 	}
 
-	reconnectNeeded, err := retry.Retry(
+	reconnectNeeded, err := stormretry.Retry(
 		timeout,
 		time.Second*5,
 		func(attempt int) (*bool, error) {
