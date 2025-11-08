@@ -95,7 +95,7 @@ steps:
 
   - bash: |
       set -eux
-      ./bin/storm-trident script display-logs \
+      ./bin/storm-trident helper display-logs \
           --skip-serial-log \
           --trident-log-file "$(Build.SourcesDirectory)/stage-ab-update-deployment.log" \
           --artifacts-folder "$(ob_outputDirectory)"
@@ -181,7 +181,7 @@ steps:
 
   - bash: |
       set -eux
-      ./bin/storm-trident script display-logs \
+      ./bin/storm-trident helper display-logs \
           --netlisten-config "${{ parameters.netlistenConfigFile }}" \
           --serial-log-artifact-file-name "finalize-ab-update-B-serial.log" \
           --trident-log-file "$(Build.SourcesDirectory)/finalize-ab-update.log" \

@@ -16,6 +16,7 @@ type DisplayLogsScriptSet struct {
 
 type DisplayLogsScript struct {
 	SkipSerialLog               bool   `help:"Skip displaying serial log." default:"false"`
+	SerialLogPath               string `help:"Path to serial log file." default:""`
 	NetlistenConfig             string `help:"Path to netlisten config file." default:""`
 	SerialLogFallbackFolder     string `help:"Folder to search for serial log files." default:"/tmp"`
 	SerialLogFallbackFileSuffix string `help:"File suffix to match when searching for serial log files in fallback folder." default:"serial0.log"`
@@ -113,7 +114,14 @@ func (s *DisplayLogsScript) displaySerial() error {
 	if s.SerialLogArtifactFileName == "" {
 		return fmt.Errorf("serial log artifact file name must be specified when not skipping serial log")
 	}
-	serialLogFile := getSerialPathFromNetlistenConfig(s.NetlistenConfig)
+
+	// First look at specified serial log file
+	serialLogFile := s.SerialLogPath
+	// If serial log file is not explicitly specified, try getting from netlisten config
+	if serialLogFile != "" {
+		serialLogFile = getSerialPathFromNetlistenConfig(s.NetlistenConfig)
+	}
+	// If serial log file is still not set, try looking in fallback folder
 	if serialLogFile == "" {
 		// Look for a file in the fallback folder that ends with the specified suffix
 		entries, err := os.ReadDir(s.SerialLogFallbackFolder)

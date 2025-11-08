@@ -176,7 +176,7 @@ steps:
   - bash: |
       set -eux
       # sudo is needed to read qemu VM serial logs, `-w` is needed with sudo
-      sudo ./bin/storm-trident script display-logs -a \
+      sudo ./bin/storm-trident helper display-logs -a \
           --netlisten-config "${{ parameters.netlistenConfigFile }}" \
           --serial-log-artifact-file-name "stage-finalize-ab-update-target-os-${{ parameters.updateScenarioTargetOs }}-${{ parameters.updateScenarioName }}-serial.log" \
           --trident-log-file "$(Build.SourcesDirectory)/stage-finalize-ab-update-target-os-${{ parameters.updateScenarioTargetOs }}-${{ parameters.updateScenarioName }}.log" \
