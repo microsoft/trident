@@ -314,27 +314,6 @@ stages:
             condition: succeededOrFailed()
 
           - bash: |
-              CLEAN_INSTALL_LOG="${{ variables.TRIDENT_SOURCE_DIR }}/clean-install-deployment.log"
-              SERIAL_LOG="${{ variables.TRIDENT_SOURCE_DIR }}/baremetal-serial.log"
-
-              # Copy the logs to the output directory
-              if [ -f $CLEAN_INSTALL_LOG ]; then
-                cp $CLEAN_INSTALL_LOG $(ob_outputDirectory)/
-              fi
-
-              # Output the serial log
-              if [ -f $SERIAL_LOG ]; then
-                cp $SERIAL_LOG $(ob_outputDirectory)/
-                echo "Serial log found:"
-                cat $SERIAL_LOG
-              else
-                echo "Serial log not found!"
-                echo "(No serial log captured)" > $SERIAL_LOG
-              fi
-            displayName: "Output serial log"
-            condition: always()
-
-          - bash: |
               set -eux
               ./bin/storm-trident helper check-selinux \
                   "$(Build.SourcesDirectory)/tests/e2e_tests/helpers/key" \
