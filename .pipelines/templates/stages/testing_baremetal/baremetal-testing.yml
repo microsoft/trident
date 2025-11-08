@@ -307,7 +307,7 @@ stages:
               set -eux
               ./bin/storm-trident helper display-logs \
                   --serial-log-file "${{ variables.TRIDENT_SOURCE_DIR }}/baremetal-serial.log" \
-                  --serial-log-artifact-file-name "stage-finalize-ab-update-target-os-B-serial.log" \
+                  --serial-log-artifact-file-name "clean-install-target-os-A-serial.log" \
                   --trident-trace-log-file "${{ variables.TRIDENT_SOURCE_DIR }}/logstream-full.log" \
                   --artifacts-folder "$(ob_outputDirectory)"
             displayName: "Display clean install logs"

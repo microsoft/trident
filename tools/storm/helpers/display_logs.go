@@ -148,9 +148,9 @@ func (h *DisplayLogsHelper) displaySerial(tc storm.TestCase) error {
 	return copyAndDisplayLogFile(serialLogFile, h.args.SerialLogArtifactFileName, h.args.ArtifactsFolder)
 }
 
-func (h *DisplayLogsHelper) displayTridentLogFile(logFile string, skipMessage string) error {
+func (h *DisplayLogsHelper) displayTridentLogFile(tc storm.TestCase, logFile string, skipMessage string) error {
 	if logFile == "" {
-		logrus.Info(skipMessage)
+		tc.Skip(skipMessage)
 		return nil
 	}
 
@@ -158,9 +158,9 @@ func (h *DisplayLogsHelper) displayTridentLogFile(logFile string, skipMessage st
 }
 
 func (h *DisplayLogsHelper) displayTrident(tc storm.TestCase) error {
-	return h.displayTridentLogFile(h.args.TridentLogFile, "No trident log file specified")
+	return h.displayTridentLogFile(tc, h.args.TridentLogFile, "No trident log file specified")
 }
 
 func (h *DisplayLogsHelper) displayTraceTrident(tc storm.TestCase) error {
-	return h.displayTridentLogFile(h.args.TridentTraceLogFile, "No trident trace log file specified")
+	return h.displayTridentLogFile(tc, h.args.TridentTraceLogFile, "No trident trace log file specified")
 }
