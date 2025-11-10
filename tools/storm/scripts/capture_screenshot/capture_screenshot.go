@@ -32,6 +32,11 @@ func (s *CaptureScreenshotScript) Run() error {
 		return err
 	}
 
+	err = os.MkdirAll(s.ArtifactsFolder, 0755)
+	if err != nil {
+		return err
+	}
+
 	pngPath := filepath.Join(s.ArtifactsFolder, s.ScreenshotFilename)
 	if err := convertPpmToPng(ppmFilename.Name(), pngPath); err != nil {
 		return err
