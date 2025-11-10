@@ -104,6 +104,15 @@ stages:
                       #     # ACTUAL:
                       #     # ${{ convertToJson(step) }}
 
+                  # OneBranch uses PS scripts to publish artifacts and those
+                  # scripts check for the existence of the output directory.
+                  # For MockOB, before we publish, ensure the directory exists.
+                  # We do this after the job.steps to ensure the steps do not
+                  # depend on this divergence from OneBranch behavior.
+                  - bash: |
+                      set -eux
+                      mkdir -p "${{ variables.ob_outputDirectory }}"
+                    displayName: "Create output directory"
                   - publish: ${{ variables.ob_outputDirectory }}
                     artifact: ${{ variables.ob_customArtifactName }}
                     condition: succeeded()
