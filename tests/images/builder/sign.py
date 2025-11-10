@@ -15,16 +15,16 @@ logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger(__name__)
 
 # Common name of CA (Certificate Authority) certificate
-CA_CN = "Internal Test Ephemeral CA"
+CA_CN = "Trident Testing CA"
 
 # Name of CA certificate
-CA_NAME = "ephemeral_ca"
+CA_NAME = "trident_ca"
 
 # Common name of signing key
-KEY_CN = "Internal Test Ephemeral Signing Key"
+KEY_CN = "Trident Testing Signing Key"
 
 # Name of signing key
-KEY_NAME = "ephemeral_signing_key"
+KEY_NAME = "trident_signing_key"
 
 # Directory for the NSS key database
 NSS_KEY_DB = "db"
