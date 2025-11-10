@@ -112,7 +112,7 @@ stages:
                   - bash: |
                       set -eux
                       mkdir -p "${{ variables.ob_outputDirectory }}"
-                    displayName: "Create output directory"
+                    displayName: "Ensure output directory exists before publishing artifacts"
                   - publish: ${{ variables.ob_outputDirectory }}
                     artifact: ${{ variables.ob_customArtifactName }}
                     condition: succeeded()
