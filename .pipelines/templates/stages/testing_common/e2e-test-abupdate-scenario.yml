@@ -164,10 +164,14 @@ steps:
     displayName: "🔄${{ parameters.updateEmoji }} Stage and finalize A/B update into target OS ${{ parameters.updateScenarioTargetOs }} testing ${{ parameters.updateScenarioName }}"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
-  - template: ./capture-screenshot.yml
-    parameters:
-      screenshotName: "update-a-${{ parameters.updateScenarioName }}"
-      deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
+  - ${{ if eq(parameters.deploymentEnvironment, 'virtualMachine') }}:
+    - bash: |
+        set -eux
+        ./bin/storm-trident script capture-screenshot \
+            --screenshot-filename "update-${{ parameters.updateScenarioName }}.png" \
+            --artifacts-folder "$(ob_outputDirectory)"
+      displayName: "📷 Capture ${{ parameters.updateScenarioName }} update screenshot"
+      condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
 
   - template: ./display-serial-logs.yml
     parameters:
