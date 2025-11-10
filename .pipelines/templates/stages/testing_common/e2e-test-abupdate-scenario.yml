@@ -94,10 +94,11 @@ steps:
         echo "Test ${{ parameters.updateScenarioName }} for all VM tests that do A/B Update"
         internalSetting=$existingAbActiveVolume
       # TODO: re-enable BM tests when test timeouts are working (#16112)
-      # elif [ "${{ parameters.deploymentEnvironment }}" == "bareMetal" ] && 
+      elif [ "${{ parameters.deploymentEnvironment }}" == "bareMetal" ] && 
       #    [ "${{ parameters.buildPurpose }}" == "weekly" ]; then
-      #   echo "Test ${{ parameters.updateScenarioName }} for BM tests that do A/B Update for Full Validation"
-      #   internalSetting=$existingAbActiveVolume
+           true ]; then
+        echo "Test ${{ parameters.updateScenarioName }} for BM tests that do A/B Update for Full Validation"
+        internalSetting=$existingAbActiveVolume
       else
         echo "Do not test ${{ parameters.updateScenarioName }}"
         internalSetting='null'
