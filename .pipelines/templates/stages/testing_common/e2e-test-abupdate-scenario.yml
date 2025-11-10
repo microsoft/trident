@@ -131,22 +131,21 @@ steps:
         PROXY_ARG="--env-vars HTTPS_PROXY=${{ parameters.httpsProxy }}"
       fi
 
-      SSH_CONNECTION_ARGS="22 600"
+      SSH_TIMEOUT_ARG=""
       EXPECT_FAILURE_ARG=""
       if [ "${{ parameters.expectCommitFailure }}" == "True" ]; then
         EXPECT_FAILURE_ARG="--expect-failed-commit"
         # For bare metal, a commit failure that results in rollback can take longer
         if [ "${{ parameters.deploymentEnvironment }}" == "bareMetal" ]; then
-          EXPECT_FAILURE_ARG="22 1200"
+          SSH_TIMEOUT_ARG="-t 1200"
         fi
       fi
-
 
       echo "Running script to stage and finalize A/B update..."
       ./bin/storm-trident helper ab-update \
           "${{ parameters.sshKeyPath }}" \
           "${{ parameters.hostIp }}" \
-          $SSH_CONNECTION_ARGS \
+          $SSH_TIMEOUT_ARG \
           "${{ parameters.userName }}" \
           "${{ parameters.runtimeEnv }}" \
           --trident-config ${{ parameters.tridentConfigFile }} \
