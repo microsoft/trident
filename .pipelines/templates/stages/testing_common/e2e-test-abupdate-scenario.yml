@@ -97,7 +97,7 @@ steps:
       elif [ "${{ parameters.deploymentEnvironment }}" == "bareMetal" ] && 
       #    [ "${{ parameters.buildPurpose }}" == "weekly" ]; then
            true ]; then
-        echo "Test ${{ parameters.updateScenarioName }} for BM tests that do A/B Update for Full Validation"
+        echo "Test ${{ parameters.updateScenarioName }} for BM tests that do A/B Update for bare metal Full Validation"
         internalSetting=$existingAbActiveVolume
       else
         echo "Do not test ${{ parameters.updateScenarioName }}"
@@ -160,10 +160,13 @@ steps:
         echo "##vso[task.setvariable variable=version]$new_version"
       fi
 
-    timeoutInMinutes: 15
     workingDirectory: $(Build.SourcesDirectory)
     displayName: "🔄${{ parameters.updateEmoji }} Stage and finalize A/B update into target OS ${{ parameters.updateScenarioTargetOs }} testing ${{ parameters.updateScenarioName }}"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
+    ${{ parameters.deploymentEnvironment }}" == "bareMetal" }}:
+      timeoutInMinutes: 30
+    ${{ else }}:
+      timeoutInMinutes: 15
 
   - ${{ if eq(parameters.deploymentEnvironment, 'virtualMachine') }}:
     - bash: |
