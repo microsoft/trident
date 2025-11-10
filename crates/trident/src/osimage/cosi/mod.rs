@@ -10,7 +10,6 @@ use log::{debug, trace};
 use tar::Archive;
 use url::Url;
 
-use sysdefs::arch::SystemArchitecture;
 use trident_api::{
     config::{ImageSha384, OsImage},
     primitives::hash::Sha384Hash,
@@ -34,10 +33,10 @@ const COSI_METADATA_PATH: &str = "metadata.json";
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub(super) struct Cosi {
-    source: Url,
+    pub source: Url,
     entries: HashMap<PathBuf, CosiEntry>,
-    metadata: CosiMetadata,
-    metadata_sha384: Sha384Hash,
+    pub metadata: CosiMetadata,
+    pub metadata_sha384: Sha384Hash,
     reader: FileReader,
 }
 
@@ -75,15 +74,6 @@ impl Cosi {
         })
     }
 
-    /// Returns the source URL of the COSI file.
-    pub(super) fn source(&self) -> &Url {
-        &self.source
-    }
-
-    pub(super) fn is_uki(&self) -> bool {
-        self.metadata.is_uki()
-    }
-
     /// Returns the ESP filesystem image.
     pub(super) fn esp_filesystem(&self) -> Result<OsImageFileSystem<'_>, Error> {
         self.metadata
@@ -103,15 +93,6 @@ impl Cosi {
         self.metadata
             .get_regular_filesystems()
             .map(|image| cosi_image_to_os_image_filesystem(&self.reader, image))
-    }
-
-    /// Returns the architecture of the OS contained in the COSI file.
-    pub(super) fn architecture(&self) -> SystemArchitecture {
-        self.metadata.os_arch
-    }
-
-    pub(super) fn metadata_sha384(&self) -> Sha384Hash {
-        self.metadata_sha384.clone()
     }
 }
 
