@@ -33,6 +33,18 @@ func BuildCosi(output io.Writer, cosiMetadata *metadata.MetadataJson) error {
 		return fmt.Errorf("failed to add metadata file: %w", err)
 	}
 
+	if cosiMetadata.HostConfigurationTemplate != nil {
+		file, err := os.ReadFile(cosiMetadata.HostConfigurationTemplate.SourceFile)
+		if err != nil {
+			return fmt.Errorf("failed to open host configuration template file: %w", err)
+		}
+
+		err = addFile(tw, cosiMetadata.HostConfigurationTemplate.Path, uint64(len(file)), bytes.NewReader(file))
+		if err != nil {
+			return fmt.Errorf("failed to add host configuration template file: %w", err)
+		}
+	}
+
 	for _, img := range cosiMetadata.Images {
 
 		err = addImage(tw, &img.Image)
