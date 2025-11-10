@@ -182,7 +182,7 @@ steps:
           --trident-log-file "$(Build.SourcesDirectory)/stage-finalize-ab-update-target-os-${{ parameters.updateScenarioTargetOs }}-${{ parameters.updateScenarioName }}.log" \
           --trident-trace-log-file "$(Build.SourcesDirectory)/logstream-full.log" \
           --artifacts-folder "$(ob_outputDirectory)"
-    displayName: "📄${{ parameters.updateEmoji }} A/B update deployment logs for target OS ${{ parameters.updateScenarioTargetOs }}"
+    displayName: "📄 ${{ parameters.updateEmoji }} A/B update deployment logs for target OS ${{ parameters.updateScenarioTargetOs }}"
     condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
 
   - bash: |
