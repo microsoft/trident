@@ -343,7 +343,9 @@ mod tests {
     use uuid::Uuid;
 
     use osutils::osrelease::OsRelease;
-    use sysdefs::{osuuid::OsUuid, partition_types::DiscoverablePartitionType};
+    use sysdefs::{
+        arch::SystemArchitecture, osuuid::OsUuid, partition_types::DiscoverablePartitionType,
+    };
     use trident_api::primitives::hash::Sha384Hash;
 
     use crate::osimage::OsImageFileSystemType;
@@ -635,7 +637,7 @@ mod tests {
             "Incorrect number of entries"
         );
 
-        assert_eq!(&url, cosi.source(), "Incorrect source URL in COSI instance")
+        assert_eq!(url, cosi.source, "Incorrect source URL in COSI instance")
     }
 
     #[test]
