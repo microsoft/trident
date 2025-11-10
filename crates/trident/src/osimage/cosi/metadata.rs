@@ -119,7 +119,7 @@ impl CosiMetadata {
         Ok(())
     }
 
-    pub(super) fn is_uki(&self) -> bool {
+    pub(crate) fn is_uki(&self) -> bool {
         match &self.bootloader {
             Some(bootloader) => bootloader.systemd_boot.iter().any(|sb| {
                 sb.entries
