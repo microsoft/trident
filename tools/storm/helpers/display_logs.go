@@ -115,7 +115,7 @@ func (h *DisplayLogsHelper) displaySerial(tc storm.TestCase) error {
 	// First look at specified serial log file
 	serialLogFile := h.args.SerialLogPath
 	// If serial log file is not explicitly specified, try getting from netlisten config
-	if serialLogFile != "" {
+	if serialLogFile == "" {
 		serialLogFile = getSerialPathFromNetlistenConfig(h.args.NetlistenConfig)
 	}
 	// If serial log file is still not set, try looking in fallback folder
