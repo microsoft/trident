@@ -76,11 +76,6 @@ stages:
                     submodules: recursive
                     path: s
 
-                  - bash: |
-                      set -eux
-                      mkdir -p "${{ variables.ob_outputDirectory }}"
-                    displayName: "Create output directory"
-
                   - ${{ each step in job.steps }}:
                       - ${{ if ne(step.task, '') }}:
                           task: ${{ step.task }}
