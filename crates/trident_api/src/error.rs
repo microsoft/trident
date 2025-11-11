@@ -280,6 +280,9 @@ pub enum InvalidInputError {
         fs_type: String,
     },
 
+    #[error("Unsupported hash kind")]
+    UnsupportedHashKind,
+
     #[error(
         "Filesystem at '{mount_point}' in OS Image is not being used by the provided Host \
         Configuration. This could mean that the Host Configuration is missing a filesystem \

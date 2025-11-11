@@ -65,13 +65,9 @@ impl OsImage {
     /// Load the OS given the image source from the Host Configuration and either validate or
     /// populate the associated metadata sha384 checksum.
     pub(crate) fn load(
-        image_source: &mut Option<config::OsImage>,
+        image_source: &mut config::OsImage,
         timeout: Duration,
     ) -> Result<Self, TridentError> {
-        let Some(ref mut image_source) = image_source else {
-            return Err(TridentError::new(InvalidInputError::MissingOsImage));
-        };
-
         debug!("Attempting to load COSI file from '{}'", image_source.url);
         let os_image =
             OsImage::cosi(image_source, timeout).structured(InvalidInputError::LoadCosi {
@@ -181,6 +177,14 @@ impl OsImage {
             OsImageInner::Cosi(cosi) => cosi.metadata_sha384.clone(),
             #[cfg(test)]
             OsImageInner::Mock(mock) => mock.metadata_sha384(),
+        }
+    }
+
+    pub(crate) fn host_configuration_template(&self) -> Option<&[u8]> {
+        match &self.0 {
+            OsImageInner::Cosi(cosi) => cosi.host_configuration_template.as_deref(),
+            #[cfg(test)]
+            OsImageInner::Mock(_) => None,
         }
     }
 }
