@@ -1,4 +1,8 @@
 use std::collections::HashSet;
+use std::{
+    fmt::{Display, Formatter, Result as FmtResult},
+    str::FromStr,
+};
 
 use log::warn;
 use netplan_types::NetworkConfig;
@@ -71,15 +75,17 @@ pub struct Os {
     #[serde(default, skip_serializing_if = "is_default")]
     pub kernel_command_line: KernelCommandLine,
 
-    /// Data about systext images, which should be merged on the target OS.
+    /// Data about sysext images, which should be active on the target OS.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[cfg_attr(feature = "schemars", schemars(skip))]
     pub sysexts: Vec<Extension>,
 
-    /// Data about confext images, which should be merged on the target OS.
+    /// Data about confext images, which should be active on the target OS.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[cfg_attr(feature = "schemars", schemars(skip))]
     pub confexts: Vec<Extension>,
+
+    /// Options for configuring the UEFI fallback.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub uefi_fallback: Option<UefiFallbackMode>,
 }
 
 /// Additional kernel command line options to add to the image.
@@ -128,8 +134,8 @@ pub enum SelinuxMode {
     Enforcing,
 }
 
-impl std::fmt::Display for SelinuxMode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Display for SelinuxMode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         let mode_str = match self {
             SelinuxMode::Disabled => "disabled",
             SelinuxMode::Permissive => "permissive",
@@ -139,7 +145,7 @@ impl std::fmt::Display for SelinuxMode {
     }
 }
 
-impl std::str::FromStr for SelinuxMode {
+impl FromStr for SelinuxMode {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -150,6 +156,46 @@ impl std::str::FromStr for SelinuxMode {
             _ => Err(anyhow::anyhow!("Invalid SELinux mode: {}", s)),
         }
     }
+}
+
+/// UEFI fallback mode
+///
+/// UEFI provides a mechanism for booting from an EFI file without
+/// a corresponding boot variable existing in NVRAM. This is known
+/// as the UEFI fallback mode, and it uses a specific file path
+/// (/EFI/BOOT) to locate the fallback bootloader.
+///
+/// This configuration option allows specifying how Trident should
+/// populate the UEFI fallback boot files during OS installation or
+/// update.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Copy)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
+pub enum UefiFallbackMode {
+    /// # Rollback
+    ///
+    /// During clean install, the UEFI fallback will be updated during
+    /// `finalize` to boot to the target OS.
+    /// During an A/B update, the UEFI fallback will
+    /// be updated to boot to the servicing OS (the existing OS) during
+    /// `finalize` and then will be updated to boot to the target OS when
+    /// `commit` validates the target OS as healthy. This aligns with how
+    /// Trident handles the UEFI boot variables during an update.
+    Rollback,
+
+    /// # Rollforward
+    ///
+    /// During clean install, the UEFI fallback will be updated during
+    /// `finalize` to boot to the target OS.
+    /// During an A/B update, the UEFI fallback will
+    /// be updated to boot to the target OS (the newly installed OS)
+    /// during the finalize stage.
+    Rollforward,
+
+    /// # None
+    ///
+    /// No UEFI fallback boot files are installed.
+    None,
 }
 
 /// Configuration for the management OS.
@@ -375,5 +421,38 @@ mod tests {
                 path: duplicate_path.display().to_string()
             }
         );
+    }
+
+    #[test]
+    fn test_serde_uefi_fallback_mode() {
+        let mut config = Os {
+            uefi_fallback: Some(UefiFallbackMode::None),
+            ..Default::default()
+        };
+        let serialized = serde_yaml::to_string(&config).unwrap();
+        assert!(serialized.contains("uefiFallback: none"));
+        let deserialized = serde_yaml::from_str::<Os>(&serialized).unwrap();
+        assert_eq!(deserialized.uefi_fallback, Some(UefiFallbackMode::None));
+
+        config.uefi_fallback = Some(UefiFallbackMode::Rollback);
+        let serialized = serde_yaml::to_string(&config).unwrap();
+        assert!(serialized.contains("uefiFallback: rollback"));
+        let deserialized = serde_yaml::from_str::<Os>(&serialized).unwrap();
+        assert_eq!(deserialized.uefi_fallback, Some(UefiFallbackMode::Rollback));
+
+        config.uefi_fallback = Some(UefiFallbackMode::Rollforward);
+        let serialized = serde_yaml::to_string(&config).unwrap();
+        assert!(serialized.contains("uefiFallback: rollforward"));
+        let deserialized = serde_yaml::from_str::<Os>(&serialized).unwrap();
+        assert_eq!(
+            deserialized.uefi_fallback,
+            Some(UefiFallbackMode::Rollforward)
+        );
+
+        config.uefi_fallback = None;
+        let serialized = serde_yaml::to_string(&config).unwrap();
+        assert!(!serialized.contains("uefiFallback:"));
+        let deserialized = serde_yaml::from_str::<Os>(&serialized).unwrap();
+        assert!(deserialized.uefi_fallback.is_none());
     }
 }

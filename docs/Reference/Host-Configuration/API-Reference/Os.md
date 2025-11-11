@@ -25,6 +25,21 @@ Additional Files to add to the image.
    | Type           | `AdditionalFile`                      |
    | Link           | [AdditionalFile](./AdditionalFile.md) |
 
+### `confexts` (optional)
+
+Data about confext images, which should be active on the target OS.
+
+| Characteristic | Value   |
+| -------------- | ------- |
+| Type           | `array` |
+
+- Items of the array must have the type:
+
+   | Characteristic | Value                       |
+   | -------------- | --------------------------- |
+   | Type           | `Extension`                 |
+   | Link           | [Extension](./Extension.md) |
+
 ### `hostname` (optional)
 
 Hostname of the system.
@@ -88,6 +103,30 @@ Options for configuring systemd services.
 | -------------- | ------------------------- |
 | Type           | `Services`                |
 | Link           | [Services](./Services.md) |
+
+### `sysexts` (optional)
+
+Data about sysext images, which should be active on the target OS.
+
+| Characteristic | Value   |
+| -------------- | ------- |
+| Type           | `array` |
+
+- Items of the array must have the type:
+
+   | Characteristic | Value                       |
+   | -------------- | --------------------------- |
+   | Type           | `Extension`                 |
+   | Link           | [Extension](./Extension.md) |
+
+### `uefiFallback` (optional)
+
+Options for configuring the UEFI fallback.
+
+| Characteristic | Value                                     |
+| -------------- | ----------------------------------------- |
+| Type           | `UefiFallbackMode`                        |
+| Link           | [UefiFallbackMode](./UefiFallbackMode.md) |
 
 ### `users` (optional)
 

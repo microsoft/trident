@@ -13,13 +13,14 @@ import (
 
 // Define AcrPushScript
 type AcrPushScript struct {
-	Config                string   `required:"" help:"Trident configuration's name (e.g., 'extensions')" enum:"misc,extensions"`
+	Config                string   `required:"" help:"Trident configuration's name (e.g., 'extensions')" enum:"misc,extensions,root-verity"`
 	DeploymentEnvironment string   `required:"" help:"Deployment environment (virtualMachine or bareMetal)" enum:"virtualMachine,bareMetal"`
 	AcrName               string   `required:"" help:"Azure Container Registry name"`
 	RepoName              string   `required:"" help:"Repository name in ACR"`
 	BuildId               string   `required:"" help:"Build ID"`
 	FilePaths             []string `required:"" help:"Array of file paths to push to ACR" type:"existingfile"`
 	TagVarName            string   `required:"" help:"ADO variable name in which to store images' tag base"`
+	RepoVarName           string   `help:"ADO variable name in which to store images' repo name"`
 }
 
 func (s *AcrPushScript) Run(suite core.SuiteContext) error {
@@ -37,8 +38,11 @@ func (s *AcrPushScript) Run(suite core.SuiteContext) error {
 	}
 
 	if suite.AzureDevops() {
-		// Set output variable by writing to stdout
+		// Set output variables by writing to stdout
 		fmt.Printf("##vso[task.setvariable variable=%s]%s\n", s.TagVarName, tagBase)
+		if s.RepoVarName != "" {
+			fmt.Printf("##vso[task.setvariable variable=%s]%s\n", s.RepoVarName, s.RepoName)
+		}
 	}
 	logrus.Infof("%s set to: %s", s.TagVarName, tagBase)
 

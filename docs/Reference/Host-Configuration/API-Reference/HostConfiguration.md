@@ -10,6 +10,15 @@ HostConfiguration is the configuration for a host. Trident agent will use this t
 
 ## Properties
 
+### `health` (optional)
+
+Health configuration for the target OS.
+
+| Characteristic | Value                 |
+| -------------- | --------------------- |
+| Type           | `Health`              |
+| Link           | [Health](./Health.md) |
+
 ### `image` (optional)
 
 Data about the image to deploy on the host, including sourcing and integrity information.

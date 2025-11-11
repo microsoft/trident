@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     ffi::OsStr,
+    fs,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
 };
@@ -8,7 +9,7 @@ use std::{
 use anyhow::{Context, Error};
 use log::{debug, info, trace};
 
-use osutils::{exe::OutputChecker, files, scripts::ScriptRunner};
+use osutils::{container, exe::OutputChecker, files, scripts::ScriptRunner};
 use trident_api::{
     config::{
         HostConfigurationDynamicValidationError, HostConfigurationStaticValidationError, Script,
@@ -18,22 +19,23 @@ use trident_api::{
         internal_params::WRITABLE_ETC_OVERLAY_HOOKS, DEFAULT_SCRIPT_INTERPRETER,
         ROOT_MOUNT_POINT_PATH,
     },
-    error::{InvalidInputError, ReportError, ServicingError, TridentError},
+    error::{InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::ServicingType,
 };
 
 use crate::engine::{EngineContext, Subsystem};
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct StagedFile {
     contents: Vec<u8>,
     mode: u32,
 }
 
-#[derive(Default, Debug)]
+#[derive(Clone, Default, Debug)]
 pub struct HooksSubsystem {
     staged_files: HashMap<PathBuf, StagedFile>,
     writable_etc_overlay: bool,
+    only_local_scripts: bool,
 }
 impl Subsystem for HooksSubsystem {
     fn name(&self) -> &'static str {
@@ -198,10 +200,27 @@ impl Subsystem for HooksSubsystem {
 }
 
 impl HooksSubsystem {
+    /// Create a new HooksSubsystem that only allows running scripts
+    /// from local filesystem paths. This is needed for preServicing
+    /// scripts and health checks. In both cases, the subsystem is
+    /// used without provisioning (which stages the script files).
+    pub fn new_for_local_scripts() -> Self {
+        Self {
+            only_local_scripts: true,
+            ..Default::default()
+        }
+    }
+
     fn stage_file(&mut self, path: PathBuf) -> Result<(), Error> {
+        if self.only_local_scripts {
+            return Err(anyhow::anyhow!(
+                "Staging of files is disabled in only_local_scripts mode"
+            ));
+        }
+
         let contents =
-            std::fs::read(&path).context(format!("Failed to read file '{}'", path.display()))?;
-        let mode = std::fs::metadata(&path)
+            fs::read(&path).context(format!("Failed to read file '{}'", path.display()))?;
+        let mode = fs::metadata(&path)
             .context(format!(
                 "Failed to read metadata for file '{}'",
                 path.display()
@@ -214,7 +233,8 @@ impl HooksSubsystem {
         Ok(())
     }
 
-    fn run_script(
+    /// Run a script from the Host Configuration using the hooks subsystem.
+    pub fn run_script(
         &self,
         script: &Script,
         ctx: &EngineContext,
@@ -244,11 +264,40 @@ impl HooksSubsystem {
         let content = match &script.source {
             ScriptSource::Content(content) => content.as_bytes(),
             ScriptSource::Path(path) => {
-                &self
-                    .staged_files
-                    .get(path)
-                    .context(format!("Failed to find staged file '{}'", path.display()))?
-                    .contents
+                if self.only_local_scripts {
+                    // Script was not staged, check path on local filesystem
+                    let local_path = if container::is_running_in_container()
+                        .unstructured("Failed to determine if running in container")?
+                    {
+                        // If running in container, prepend path with host mount
+                        let host_root_path = container::get_host_root_path()
+                            .unstructured("Failed to get host root path")?;
+                        host_root_path.join(path)
+                    } else {
+                        path.clone()
+                    };
+                    trace!(
+                        "Loading script '{}' from filesystem: '{}'",
+                        script.name,
+                        local_path.display()
+                    );
+                    &fs::read(&local_path).context(format!(
+                        "Failed to read script '{}' from filesystem: '{}'",
+                        script.name,
+                        local_path.display()
+                    ))?
+                } else {
+                    trace!(
+                        "Loading script '{}' from staged files: '{}'",
+                        script.name,
+                        path.display()
+                    );
+                    &self
+                        .staged_files
+                        .get(path)
+                        .context(format!("Failed to find staged file '{}'", path.display()))?
+                        .contents
+                }
             }
         };
 

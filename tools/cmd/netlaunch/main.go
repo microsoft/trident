@@ -6,13 +6,13 @@ package main
 import (
 	"sync"
 	"tridenttools/pkg/config"
+	"tridenttools/pkg/isopatcher"
 	"tridenttools/pkg/netfinder"
 	"tridenttools/pkg/phonehome"
 	"tridenttools/storm/utils"
 
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -31,14 +31,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// `MagicString` is used to locate placeholder files in the initrd. Each placeholder file will be
-// `PlaceholderLengthBytes` bytes long and start with this string, followed by the name
-// of the file wrapped in colons. Unlike other files which may be compressed, each placeholder
-// will directly have its bytes present in the output ISO so that it can be located and patched.
-// This enables us to later replace the placeholder with the actual file contents without having
-// to parse the ISO file format.
-var MagicString = `#8505c8ab802dd717290331acd0592804c4e413b030150c53f5018ac998b7831d`
-
 var (
 	netlaunchConfigFile string
 	tridentConfigFile   string
@@ -51,40 +43,12 @@ var (
 	traceFile           string
 	forceColor          bool
 	waitForProvisioned  bool
+	onlyPrintExitCode   bool
 	secureBoot          bool
 	signingCert         string
 )
 
 var backgroundLogstreamFull string
-
-func patchFile(iso []byte, filename string, contents []byte) error {
-	// Search for magic string
-	i := bytes.Index(iso, []byte(MagicString+":"+filename+":"))
-	if i == -1 {
-		return errors.New("could not find magic string")
-	}
-
-	// Determine placeholder size
-	placeholderLength := bytes.IndexByte(iso[i:], byte('\n')) + 1
-	if len(contents) > placeholderLength {
-		return errors.New("file is too big to fit in placeholder")
-	}
-
-	// If the contents are smaller than the placeholder then add a trailing newline.
-	if len(contents) < placeholderLength {
-		contents = append(contents, byte('\n'))
-	}
-
-	// If the contents are still smaller, then pad with # symbols and one final newline.
-	if len(contents) < placeholderLength {
-		padding := placeholderLength - len(contents)
-		contents = append(contents, []byte(strings.Repeat("#", padding-1)+"\n")...)
-	}
-
-	copy(iso[i:], contents)
-
-	return nil
-}
 
 var rootCmd = &cobra.Command{
 	Use: "netlaunch",
@@ -214,14 +178,14 @@ var rootCmd = &cobra.Command{
 				log.WithError(err).Fatalf("failed to marshal Trident config")
 			}
 
-			err = patchFile(iso, "/etc/trident/config.yaml", tridentConfig)
+			err = isopatcher.PatchFile(iso, "/etc/trident/config.yaml", tridentConfig)
 			if err != nil {
 				log.WithError(err).Fatalf("failed to patch Trident config into ISO")
 			}
 
 			if config.Iso.PreTridentScript != nil {
 				log.Info("Patching in pre-trident script!")
-				err = patchFile(iso, "/trident_cdrom/pre-trident-script.sh", []byte(*config.Iso.PreTridentScript))
+				err = isopatcher.PatchFile(iso, "/trident_cdrom/pre-trident-script.sh", []byte(*config.Iso.PreTridentScript))
 				if err != nil {
 					log.WithError(err).Fatalf("failed to patch pre-trident script into ISO")
 				}
@@ -229,7 +193,7 @@ var rootCmd = &cobra.Command{
 
 			if config.Iso.ServiceOverride != nil {
 				log.Info("Patching Trident service override!")
-				err = patchFile(iso, "/trident_cdrom/trident-override.conf", []byte(*config.Iso.ServiceOverride))
+				err = isopatcher.PatchFile(iso, "/trident_cdrom/trident-override.conf", []byte(*config.Iso.ServiceOverride))
 				if err != nil {
 					log.WithError(err).Fatalf("failed to patch service override into ISO")
 				}
@@ -359,6 +323,11 @@ var rootCmd = &cobra.Command{
 			log.WithError(err).Errorln("failed to shutdown server")
 		}
 
+		fmt.Printf("Phone home exited: %d\n", exitCode)
+		if onlyPrintExitCode {
+			return
+		}
+
 		os.Exit(exitCode)
 	},
 }
@@ -398,6 +367,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&traceFile, "trace-file", "m", "", "File for writing metrics collected from Trident.")
 	rootCmd.PersistentFlags().StringVarP(&backgroundLogstreamFull, "full-logstream", "b", "logstream-full.log", "File to write full logstream output to. (Requires -l)")
 	rootCmd.PersistentFlags().BoolVarP(&waitForProvisioned, "wait-for-provisioned-state", "", false, "Wait for Host Status servicingState to be 'provisioned'")
+	rootCmd.PersistentFlags().BoolVarP(&onlyPrintExitCode, "only-print-exit-code", "", false, "Only print the exit code")
 	rootCmd.PersistentFlags().BoolVarP(&forceColor, "force-color", "", false, "Force colored output")
 	rootCmd.PersistentFlags().BoolVarP(&secureBoot, "secure-boot", "", false, "Enable SecureBoot")
 	rootCmd.PersistentFlags().StringVarP(&signingCert, "signing-cert", "", "", "Path to signing certificate")

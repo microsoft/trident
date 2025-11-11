@@ -16,16 +16,24 @@ parameters:
       - virtualMachine
       - bareMetal
 
+  - name: "runtimeEnvironment"
+    type: string
+    values:
+      - container
+      - host
+
 steps:
   - bash: |
       set -eux
 
-      if [ "${{ parameters.config }}" != 'extensions' ]; then
+      if [ "${{ parameters.config }}" == 'extensions' ]; then
+        ./bin/storm-trident script build-extension-images --build-sysexts --num-clones 2
+      elif [ "${{ parameters.config }}" == 'root-verity' ]; then
+        ./bin/storm-trident script build-extension-images --build-sysexts --build-confexts --num-clones 2
+      else
         echo "Skipping step. Configuration is '${{ parameters.config }}'."
         exit 0
       fi
-
-      ./bin/storm-trident script build-extension-images --build-sysexts --build-confexts --num-clones 2
 
     displayName: "Build test sysext and confext images"
     workingDirectory: $(Build.SourcesDirectory)
@@ -33,7 +41,7 @@ steps:
 
   - bash: |
       set -eux
-      if [ "${{ parameters.config }}" != 'misc' ] && [ "${{ parameters.config }}" != 'extensions' ]; then
+      if [ "${{ parameters.config }}" != 'misc' ] && [ "${{ parameters.config }}" != 'extensions' ] && [ "${{ parameters.config }}" != 'root-verity' ]; then
         echo "Skipping step. Configuration is '${{ parameters.config }}'."
         exit 0
       fi
@@ -73,20 +81,35 @@ steps:
             --config ${{ parameters.config }} \
             --deployment-environment ${{ parameters.deploymentEnvironment }} \
             --acr-name $(ACR_NAME) \
-            --repo-name sysext \
+            --repo-name sysext-${{ parameters.runtimeEnvironment }} \
             --build-id $(Build.BuildId) \
             --file-paths $(Build.SourcesDirectory)/test-sysext-1.raw \
             --file-paths $(Build.SourcesDirectory)/test-sysext-2.raw \
-            --tag-var-name TAG_BASE
+            --tag-var-name TAG_BASE \
+            --repo-var-name SYSEXT_REPO
+
+        elif [ "${{ parameters.config }}" == 'root-verity' ]; then
           ./bin/storm-trident script acr-push \
             --config ${{ parameters.config }} \
             --deployment-environment ${{ parameters.deploymentEnvironment }} \
             --acr-name $(ACR_NAME) \
-            --repo-name confext \
+            --repo-name sysext-${{ parameters.runtimeEnvironment }} \
+            --build-id $(Build.BuildId) \
+            --file-paths $(Build.SourcesDirectory)/test-sysext-1.raw \
+            --file-paths $(Build.SourcesDirectory)/test-sysext-2.raw \
+            --tag-var-name TAG_BASE \
+            --repo-var-name SYSEXT_REPO
+            
+          ./bin/storm-trident script acr-push \
+            --config ${{ parameters.config }} \
+            --deployment-environment ${{ parameters.deploymentEnvironment }} \
+            --acr-name $(ACR_NAME) \
+            --repo-name confext-${{ parameters.runtimeEnvironment }} \
             --build-id $(Build.BuildId) \
             --file-paths $(Build.SourcesDirectory)/test-confext-1.raw \
             --file-paths $(Build.SourcesDirectory)/test-confext-2.raw \
-            --tag-var-name TAG_BASE
+            --tag-var-name TAG_BASE \
+            --repo-var-name CONFEXT_REPO
 
         else
           echo "Skipping step. Configuration is '${{ parameters.config }}'."

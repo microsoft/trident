@@ -111,7 +111,7 @@ impl OsImage {
 
     pub(crate) fn is_uki(&self) -> bool {
         match &self.0 {
-            OsImageInner::Cosi(cosi) => cosi.is_uki(),
+            OsImageInner::Cosi(cosi) => cosi.metadata.is_uki(),
             #[cfg(test)]
             OsImageInner::Mock(mock) => mock.is_uki,
         }
@@ -120,7 +120,7 @@ impl OsImage {
     /// Returns the source URL of the OS image.
     pub(crate) fn source(&self) -> &Url {
         match &self.0 {
-            OsImageInner::Cosi(cosi) => cosi.source(),
+            OsImageInner::Cosi(cosi) => &cosi.source,
             #[cfg(test)]
             OsImageInner::Mock(mock) => &mock.source,
         }
@@ -146,7 +146,7 @@ impl OsImage {
     /// Returns the OS architecture of the image.
     pub(crate) fn architecture(&self) -> SystemArchitecture {
         match &self.0 {
-            OsImageInner::Cosi(cosi) => cosi.architecture(),
+            OsImageInner::Cosi(cosi) => cosi.metadata.os_arch,
             #[cfg(test)]
             OsImageInner::Mock(mock) => mock.architecture(),
         }
@@ -178,7 +178,7 @@ impl OsImage {
 
     pub(crate) fn metadata_sha384(&self) -> Sha384Hash {
         match &self.0 {
-            OsImageInner::Cosi(cosi) => cosi.metadata_sha384(),
+            OsImageInner::Cosi(cosi) => cosi.metadata_sha384.clone(),
             #[cfg(test)]
             OsImageInner::Mock(mock) => mock.metadata_sha384(),
         }

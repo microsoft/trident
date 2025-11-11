@@ -9,7 +9,7 @@ use trident_api::{
     config::{HostConfiguration, Operations},
     constants::{
         internal_params::{ENABLE_UKI_SUPPORT, NO_TRANSITION},
-        ESP_MOUNT_POINT_PATH,
+        ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH,
     },
     error::{
         InternalError, InvalidInputError, ReportError, ServicingError, TridentError,
@@ -27,6 +27,7 @@ use crate::{
     },
     monitor_metrics,
     osimage::OsImage,
+    subsystems::esp,
     subsystems::hooks::HooksSubsystem,
     ExitKind,
 };
@@ -102,7 +103,7 @@ pub(crate) fn update(
     ctx.servicing_type = servicing_type;
 
     // Execute pre-servicing scripts
-    HooksSubsystem::default().execute_pre_servicing_scripts(&ctx)?;
+    HooksSubsystem::new_for_local_scripts().execute_pre_servicing_scripts(&ctx)?;
 
     engine::validate_host_config(&subsystems, &ctx)?;
 
@@ -183,7 +184,7 @@ pub(crate) fn update(
 #[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", ctx.servicing_type)))]
 fn stage_update(
     subsystems: &mut [Box<dyn Subsystem>],
-    ctx: EngineContext,
+    mut ctx: EngineContext,
     state: &mut DataStore,
     #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
@@ -253,6 +254,13 @@ fn stage_update(
         engine::configure(subsystems, &ctx)?;
     };
 
+    // Update the Host Configuration with information produced and stored in the
+    // subsystems. Currently, this step is used only to update the final paths
+    // of sysexts and confexts configured in the extensions subsystem.
+    engine::update_host_configuration(subsystems, &mut ctx)?;
+    // Turn ctx into an immutable variable.
+    let ctx = ctx;
+
     // At this point, deployment has been staged, so update servicing state
     debug!(
         "Updating host's servicing state to '{:?}'",
@@ -320,15 +328,23 @@ pub(crate) fn finalize_update(
         is_uki: None,
     };
 
-    let esp_path = if container::is_running_in_container()
+    let (root_path, esp_path) = if container::is_running_in_container()
         .message("Failed to check if Trident is running in a container")?
     {
         let host_root = container::get_host_root_path().message("Failed to get host root path")?;
-        join_relative(host_root, ESP_MOUNT_POINT_PATH)
+        let esp_root = join_relative(&host_root, ESP_MOUNT_POINT_PATH);
+        (host_root, esp_root)
     } else {
-        PathBuf::from(ESP_MOUNT_POINT_PATH)
+        (
+            PathBuf::from(ROOT_MOUNT_POINT_PATH),
+            PathBuf::from(ESP_MOUNT_POINT_PATH),
+        )
     };
     bootentries::create_and_update_boot_variables(&ctx, &esp_path)?;
+    // Analogous to how UEFI variables are configured, finalize must start configuring
+    // UEFI fallback, and a successful commit will finish it.
+    esp::set_uefi_fallback_contents(&ctx, ServicingState::AbUpdateStaged, &root_path)
+        .structured(ServicingError::SetUpUefiFallback)?;
 
     debug!(
         "Updating host's servicing state to '{:?}'",

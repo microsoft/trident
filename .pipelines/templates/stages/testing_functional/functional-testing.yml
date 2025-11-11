@@ -86,6 +86,9 @@ stages:
           - bash: |
               set -eux
 
+              # Proactively try to fix any possible issue from previous task failure
+              sudo dpkg --configure -a
+
               sudo apt install -y protobuf-compiler clang bc
               sudo apt remove python3-openssl
               pip install pytest assertpy paramiko pyopenssl

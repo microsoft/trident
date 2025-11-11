@@ -32,6 +32,7 @@ use crate::{
     engine::{self, bootentries, install_index, storage, EngineContext, SUBSYSTEMS},
     monitor_metrics,
     osimage::OsImage,
+    subsystems::esp,
     subsystems::hooks::HooksSubsystem,
     ExitKind, SAFETY_OVERRIDE_CHECK_PATH,
 };
@@ -209,7 +210,7 @@ fn stage_clean_install(
     };
 
     // Execute pre-servicing scripts
-    HooksSubsystem::default().execute_pre_servicing_scripts(&ctx)?;
+    HooksSubsystem::new_for_local_scripts().execute_pre_servicing_scripts(&ctx)?;
 
     engine::validate_host_config(subsystems, &ctx)?;
 
@@ -257,6 +258,11 @@ fn stage_clean_install(
         return Err(original_error).message("Failed to execute in chroot");
     }
 
+    // Update the Host Configuration with information produced and stored in the
+    // subsystems. Currently, this step is used only to update the final paths
+    // of sysexts and confexts configured in the extensions subsystem.
+    engine::update_host_configuration(subsystems, &mut ctx)?;
+
     // At this point, clean install has been staged, so update Host Status
     debug!(
         "Updating host's servicing state to '{:?}'",
@@ -265,7 +271,7 @@ fn stage_clean_install(
     state.with_host_status(|hs| {
         *hs = HostStatus {
             servicing_state: ServicingState::CleanInstallStaged,
-            spec: host_config.clone(),
+            spec: ctx.spec,
             spec_old: Default::default(),
             ab_active_volume: None,
             partition_paths: ctx.partition_paths,
@@ -325,6 +331,10 @@ pub(crate) fn finalize_clean_install(
     // On clean install, need to verify that AZLA entry exists in /mnt/newroot/boot/efi
     let esp_path = join_relative(new_root.path(), ESP_MOUNT_POINT_PATH);
     bootentries::create_and_update_boot_variables(&ctx, &esp_path)?;
+    // Analogous to how UEFI variables are configured, finalize must start configuring
+    // UEFI fallback, and a successful commit will finish it.
+    esp::set_uefi_fallback_contents(&ctx, ServicingState::CleanInstallStaged, new_root.path())
+        .structured(ServicingError::SetUpUefiFallback)?;
 
     debug!(
         "Updating host's servicing state to '{:?}'",

@@ -4,6 +4,14 @@
   "description": "HostConfiguration is the configuration for a host. Trident agent will use this to configure the host.",
   "type": "object",
   "properties": {
+    "health": {
+      "description": "Health configuration for the target OS.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/Health"
+        }
+      ]
+    },
     "image": {
       "description": "Data about the image to deploy on the host, including sourcing and integrity information.",
       "allOf": [
@@ -172,6 +180,38 @@
       ],
       "format": "\\d+\\s*[KMGT]?"
     },
+    "Check": {
+      "oneOf": [
+        {
+          "title": "Script",
+          "description": "Script that will be run to validate the target OS. The success or failure of the script will define the health of the target OS. The script will run where Trident is running, either in the target OS or in a container running on the target OS (where the target OS '/' is mounted as '/host').\n\nScripts that are configured with a path source must exist in the target OS.",
+          "type": "object",
+          "required": [
+            "Script"
+          ],
+          "properties": {
+            "Script": {
+              "$ref": "#/definitions/Script"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "title": "SystemdCheck",
+          "description": "Define systemd service(s) that need to be in a successful state, defined by `systemctl status` returning success. The success or failure of this check will define the health of the target OS.",
+          "type": "object",
+          "required": [
+            "SystemdCheck"
+          ],
+          "properties": {
+            "SystemdCheck": {
+              "$ref": "#/definitions/SystemdCheck"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
     "Disk": {
       "description": "Per disk configuration.",
       "type": "object",
@@ -274,6 +314,32 @@
           "items": {
             "$ref": "#/definitions/EncryptedVolume"
           }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Extension": {
+      "description": "Data about an extension image (sysext or confext) to merge onto the target OS.\n\nExtension image must be a [Discoverable Disk Image](https://uapi-group.org/specifications/specs/discoverable_disk_image/).",
+      "type": "object",
+      "required": [
+        "sha384",
+        "url"
+      ],
+      "properties": {
+        "path": {
+          "description": "The absolute path of the extension image in the target OS.\n\nBy default, sysexts are placed in /var/lib/extensions/. Trident supports placing sysexts in:\n\n- /etc/extensions/\n\n- /var/lib/extensions/\n\n- /.extra/sysext/\n\nBy default, confexts are placed in /var/lib/confexts/. Trident supports placing confexts in:\n\n- /var/lib/confexts/\n\n- /usr/lib/confexts/\n\n- /usr/local/lib/confexts/\n\n/run/sysexts/ and /run/confexts/ are not supported.",
+          "type": "string",
+          "nullable": true
+        },
+        "sha384": {
+          "description": "The Sha384 of the entire extension image file.",
+          "type": "string",
+          "format": "[a-fA-F0-9]{96}"
+        },
+        "url": {
+          "description": "The path to the extension image file, which must be a [Discoverable Disk Image](https://uapi-group.org/specifications/specs/discoverable_disk_image/).\n\nURLs may have one of the following four schemes: `http://`, `https://`, `file://`, or `oci://`. Extension image files stored in OCI registries must allow for anonymous pulls.",
+          "type": "string",
+          "format": "uri"
         }
       },
       "additionalProperties": false
@@ -399,6 +465,20 @@
           ]
         }
       ]
+    },
+    "Health": {
+      "description": "Configuration for the host OS health.",
+      "type": "object",
+      "properties": {
+        "checks": {
+          "description": "Checks to be run before Trident commits a serviced target OS as 'provisioned'. If any of the checks fail, the commit will not be completed and, for A/B update, a rollback will be triggered.\n\nThese checks can run for installs and A/B updates. If `runOn` is specified for anything other than 'clean-install' or 'ab-update' type, the check will be ignored. If 'all' is specified, the check will run for both 'clean-install' and 'ab-update'.\n\nThese checks are run in the target OS. The `$TARGET_ROOT` variable will be set to '/' for consistency with postProvision scripts.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Check"
+          }
+        }
+      },
+      "additionalProperties": false
     },
     "ImageSha384": {
       "description": "Image SHA384 checksum.",
@@ -552,6 +632,13 @@
             "$ref": "#/definitions/AdditionalFile"
           }
         },
+        "confexts": {
+          "description": "Data about confext images, which should be active on the target OS.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Extension"
+          }
+        },
         "hostname": {
           "description": "Hostname of the system.",
           "type": "string",
@@ -596,6 +683,22 @@
               "$ref": "#/definitions/Services"
             }
           ]
+        },
+        "sysexts": {
+          "description": "Data about sysext images, which should be active on the target OS.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Extension"
+          }
+        },
+        "uefiFallback": {
+          "description": "Options for configuring the UEFI fallback.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/UefiFallbackMode"
+            }
+          ],
+          "nullable": true
         },
         "users": {
           "description": "Users to configure on the host.",
@@ -1103,10 +1206,6 @@
           "additionalProperties": false
         }
       ],
-      "required": [
-        "name",
-        "runOn"
-      ],
       "properties": {
         "arguments": {
           "description": "Arguments to pass to the script.",
@@ -1160,7 +1259,7 @@
           }
         },
         "preServicing": {
-          "description": "Scripts to be run before Trident begins servicing the host.",
+          "description": "Scripts to be run before Trident begins servicing the host.\n\nThese scripts are run in the servicing OS. Scripts that are configured with a path source must exist in the servicing OS.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/Script"
@@ -1430,6 +1529,38 @@
       },
       "additionalProperties": false
     },
+    "SystemdCheck": {
+      "description": "A check that can be run on the host to ensure systemd service(s) are in a successful state, as defined by `systemctl status` returning success.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Name of the check.",
+          "type": "string"
+        },
+        "runOn": {
+          "description": "List of servicing types that the check should run on. Valid servicing types are CleanInstall and AbUpdate, if All is specified, the check will run for both CleanInstall and AbUpdate.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ServicingTypeSelection"
+          }
+        },
+        "systemdServices": {
+          "description": "List of systemd services that need to be in successful state.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "timeoutSeconds": {
+          "description": "Timeout for the systemd check, in seconds. If the service is found to be in an unsuccessful state, it will be requeried every 100ms until the timeout is reached. If the timeout is reached and the service is still unsuccessful, an error is returned. If 0 is specified, the services will be checked once and the check will return immediately.",
+          "default": 30,
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
     "Trident": {
       "description": "The Trident Management configuration controls the installation of the Trident agent onto the target OS.",
       "type": "object",
@@ -1459,6 +1590,35 @@
         }
       },
       "additionalProperties": false
+    },
+    "UefiFallbackMode": {
+      "description": "UEFI fallback mode\n\nUEFI provides a mechanism for booting from an EFI file without a corresponding boot variable existing in NVRAM. This is known as the UEFI fallback mode, and it uses a specific file path (/EFI/BOOT) to locate the fallback bootloader.\n\nThis configuration option allows specifying how Trident should populate the UEFI fallback boot files during OS installation or update.",
+      "oneOf": [
+        {
+          "title": "Rollback",
+          "description": "During clean install, the UEFI fallback will be updated during `finalize` to boot to the target OS. During an A/B update, the UEFI fallback will be updated to boot to the servicing OS (the existing OS) during `finalize` and then will be updated to boot to the target OS when `commit` validates the target OS as healthy. This aligns with how Trident handles the UEFI boot variables during an update.",
+          "type": "string",
+          "enum": [
+            "rollback"
+          ]
+        },
+        {
+          "title": "Rollforward",
+          "description": "During clean install, the UEFI fallback will be updated during `finalize` to boot to the target OS. During an A/B update, the UEFI fallback will be updated to boot to the target OS (the newly installed OS) during the finalize stage.",
+          "type": "string",
+          "enum": [
+            "rollforward"
+          ]
+        },
+        {
+          "title": "None",
+          "description": "No UEFI fallback boot files are installed.",
+          "type": "string",
+          "enum": [
+            "none"
+          ]
+        }
+      ]
     },
     "User": {
       "description": "Configuration for a specific user.",

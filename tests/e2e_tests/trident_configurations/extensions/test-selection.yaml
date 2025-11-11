@@ -1,2 +1,3 @@
 compatible:
   - base
+  - extensions
