@@ -89,3 +89,20 @@ steps:
     timeoutInMinutes: 1
     displayName: "Dump azl-installer serial test log"
     condition: always()
+  
+  # Capture VHD
+  - bash: |
+      set -eu
+
+      virsh shutdown azl-installer-test-vm || true
+      while virsh list --all | grep azl-installer-test-vm; do
+        virsh list --all | grep azl-installer-test-vm | grep "shut off" && break
+        sleep 1
+      done
+
+      sudo mkdir -p $(Pipeline.Workspace)/azl-installer-test
+      sudo cp /tmp/azl-installer-test-vm-volume.qcow2 $(Pipeline.Workspace)/azl-installer-test/azl-installer-test-vm-volume.qcow2
+
+    timeoutInMinutes: 5
+    displayName: "Capture azl-installer VHD"
+    condition: failed()
