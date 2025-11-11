@@ -58,15 +58,26 @@ steps:
   - bash: |
       set -eux
       
-      cp $(Pipeline.Workspace)/azl-installer/${{ parameters.isoName }}.iso /tmp/azl-installer.iso
+      virsh shutdown azl-installer-test-vm || true
+      while virsh list --all | grep azl-installer-test-vm; do
+        virsh list --all | grep azl-installer-test-vm | grep "shut off" && break
+        sleep 1
+      done
+
+      sudo cp $(Pipeline.Workspace)/azl-installer/${{ parameters.isoName }}.iso /tmp/azl-installer.iso
       sudo qemu-img create -f qcow2 /tmp/azl-installer-test-vm-volume.qcow2 16G
 
-      sudo virsh net-create $(Build.SourcesDirectory)/.pipelines/templates/stages/azl_installer/azl-installer-net-template.xml
-      sudo virsh define $(Build.SourcesDirectory)/.pipelines/templates/stages/azl_installer/azl-installer-vm-template.xml
-      
+      if ! sudo virsh net-info azl-installer-test-vm-net; then
+        sudo virsh net-create $(Build.SourcesDirectory)/.pipelines/templates/stages/azl_installer/azl-installer-net-template.xml
+      fi
+      if ! sudo virsh list --all | grep azl-installer-test-vm; then
+        sudo virsh define $(Build.SourcesDirectory)/.pipelines/templates/stages/azl_installer/azl-installer-vm-template.xml
+      fi
+
       sudo python3 $(Build.SourcesDirectory)/.pipelines/templates/stages/azl_installer/test-azl-installer-iso.py
     timeoutInMinutes: 10
     displayName: "Test azl-installer ISO (unattended installation)"
+    retryCountOnTaskFailure: 3
   
   # Dump serial log of test vm
   - bash: |
