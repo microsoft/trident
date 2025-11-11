@@ -58,9 +58,9 @@ steps:
   - bash: |
       set -eux
       
-      virsh shutdown azl-installer-test-vm || true
-      while virsh list --all | grep azl-installer-test-vm; do
-        virsh list --all | grep azl-installer-test-vm | grep "shut off" && break
+      sudo virsh shutdown azl-installer-test-vm || true
+      while sudo virsh list --all | grep azl-installer-test-vm; do
+        sudo virsh list --all | grep azl-installer-test-vm | grep "shut off" && break
         sleep 1
       done
 
@@ -94,9 +94,9 @@ steps:
   - bash: |
       set -eu
 
-      virsh shutdown azl-installer-test-vm || true
-      while virsh list --all | grep azl-installer-test-vm; do
-        virsh list --all | grep azl-installer-test-vm | grep "shut off" && break
+      sudo virsh shutdown azl-installer-test-vm || true
+      while sudo virsh list --all | grep azl-installer-test-vm; do
+        sudo virsh list --all | grep azl-installer-test-vm | grep "shut off" && break
         sleep 1
       done
 
