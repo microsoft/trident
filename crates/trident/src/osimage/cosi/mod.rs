@@ -819,6 +819,7 @@ mod tests {
             },
             reader: FileReader::Buffer(data),
             metadata_sha384: Sha384Hash::from("0".repeat(96)),
+            host_configuration_template: None,
         }
     }
 
@@ -836,9 +837,11 @@ mod tests {
                 images: vec![],
                 os_packages: None,
                 bootloader: None,
+                host_configuration_template: None,
             },
             reader: FileReader::Buffer(Cursor::new(Vec::<u8>::new())),
             metadata_sha384: Sha384Hash::from("0".repeat(96)),
+            host_configuration_template: None,
         };
 
         // Weird behavior with none/multiple ESPs is primarily tested by the
