@@ -83,6 +83,11 @@ parameters:
     type: string
 
 steps:
+  # Enable scenario tests for:
+  #  - Tests that are not called out in skipConfigurations
+  #  - All virtual machine pipeline tests that do A/B update
+  #  - Bare metal deployments that do A/B update for 'weekly' pipelines
+  #  - Bare metal 'combined' tests for non-weekly pipelines
   - bash: |
       set -eux
       existingAbActiveVolume=$(abActiveVolume)
@@ -93,12 +98,14 @@ steps:
       elif [ "${{ parameters.deploymentEnvironment }}" == "virtualMachine" ]; then
         echo "Test ${{ parameters.updateScenarioName }} for all VM tests that do A/B Update"
         internalSetting=$existingAbActiveVolume
-      # TODO: re-enable BM tests when test timeouts are working (#16112)
-      elif [ "${{ parameters.deploymentEnvironment }}" == "bareMetal" ] && 
-      #    [ "${{ parameters.buildPurpose }}" == "weekly" ]; then
-           true ]; then
-        echo "Test ${{ parameters.updateScenarioName }} for BM tests that do A/B Update for bare metal Full Validation"
-        internalSetting=$existingAbActiveVolume
+      elif [ "${{ parameters.deploymentEnvironment }}" == "bareMetal" ] ]; then
+        if [ "${{ parameters.buildPurpose }}" == "weekly" ]; then
+          echo "Test ${{ parameters.updateScenarioName }} for BM tests that do A/B Update for bare metal Full Validation"
+          internalSetting=$existingAbActiveVolume
+        elif [ "${{ parameters.tridentConfigurationName }}" == "combined" ]; then
+          echo "Test ${{ parameters.updateScenarioName }} for BM tests that do A/B Update for combined configuration"
+          internalSetting=$existingAbActiveVolume
+        fi
       else
         echo "Do not test ${{ parameters.updateScenarioName }}"
         internalSetting='null'
