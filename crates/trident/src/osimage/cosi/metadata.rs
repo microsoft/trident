@@ -68,7 +68,7 @@ pub(crate) struct CosiMetadata {
 
     /// Template for a host configuration embedded within the image.
     #[serde(default)]
-    pub host_configuration_template: Option<AuxillaryFile>,
+    pub host_configuration_template: Option<AuxiliaryFile>,
 }
 
 impl CosiMetadata {
@@ -303,7 +303,7 @@ pub(crate) struct BootloaderEntry {
 
 #[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct AuxillaryFile {
+pub(crate) struct AuxiliaryFile {
     pub path: PathBuf,
     pub sha384: Sha384Hash,
 }
