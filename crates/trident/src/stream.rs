@@ -56,42 +56,6 @@ pub fn config_from_image_url(
 }
 
 fn expand_template(template: &str) -> Result<String, anyhow::Error> {
-    struct DetectDisks;
-    impl tera::Function for DetectDisks {
-        fn call(
-            &self,
-            _args: &std::collections::HashMap<String, tera::Value>,
-        ) -> tera::Result<tera::Value> {
-            Ok(tera::Value::Array(
-                lsblk::list()
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter(|b| b.blkdev_type == BlockDeviceType::Disk)
-                    .filter(|d| {
-                        d.name.starts_with("sd")
-                            || d.name.starts_with("nvme")
-                            || d.name.starts_with("vd")
-                    })
-                    .map(|b| {
-                        let mut m = serde_json::Map::new();
-                        m.insert("name".into(), tera::Value::String(b.name.clone()));
-                        m.insert(
-                            "path".into(),
-                            tera::Value::String(format!("/dev/{}", b.name)),
-                        );
-                        m.insert("size".into(), tera::Value::Number(b.size.into()));
-
-                        println!(
-                            "Detected disk: name='{}' path='/dev/{}' size={}",
-                            b.name, b.name, b.size
-                        );
-                        tera::Value::Object(m)
-                    })
-                    .collect(),
-            ))
-        }
-    }
-
     struct SizeRange;
     impl tera::Filter for SizeRange {
         fn filter(
@@ -128,15 +92,129 @@ fn expand_template(template: &str) -> Result<String, anyhow::Error> {
         }
     }
 
+    let disks = tera::Value::Array(
+        lsblk::list()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|b| b.blkdev_type == BlockDeviceType::Disk)
+            .filter(|d| {
+                d.name.starts_with("sd") || d.name.starts_with("nvme") || d.name.starts_with("vd")
+            })
+            .map(|b| {
+                let mut m = serde_json::Map::new();
+                m.insert("name".into(), tera::Value::String(b.name.clone()));
+                m.insert(
+                    "path".into(),
+                    tera::Value::String(format!("/dev/{}", b.name)),
+                );
+                m.insert("size".into(), tera::Value::Number(b.size.into()));
+
+                println!(
+                    "Detected disk: name='{}' path='/dev/{}' size={}",
+                    b.name, b.name, b.size
+                );
+                tera::Value::Object(m)
+            })
+            .collect(),
+    );
+
     let mut tera = Tera::default();
-    tera.register_function("detect_disks", DetectDisks);
     tera.register_filter("size_range", SizeRange);
     tera.add_raw_template("config.yaml", template)?;
 
     let mut context = tera::Context::new();
+    context.insert("disks", &disks);
     context.insert("KB", &1024);
     context.insert("MB", &(1024 * 1024));
     context.insert("GB", &(1024 * 1024 * 1024));
 
     Ok(tera.render("config.yaml", &context)?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_expand_template_basic_context() {
+        assert_eq!(
+            expand_template(
+                r#"
+kb_value: {{ KB }}
+mb_value: {{ MB }}
+gb_value: {{ GB }}
+"#
+            )
+            .unwrap(),
+            r#"
+kb_value: 1024
+mb_value: 1048576
+gb_value: 1073741824
+"#
+        );
+    }
+
+    #[test]
+    fn test_expand_template_detect_disks_function() {
+        assert!(expand_template(
+            r#"
+disks: {{ disks }}
+"#
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn test_expand_template_size_range_filter() {
+        let result = expand_template(
+            r#"
+small_disks: {{ disks | size_range(high=1073741824) }}
+large_disks: {{ disks | size_range(low=1073741824) }}
+"#,
+        )
+        .unwrap();
+        assert!(result.starts_with("\nsmall_disks: "));
+        assert!(result.contains("\nlarge_disks: "));
+    }
+
+    #[test]
+    fn test_expand_template_invalid_syntax() {
+        assert!(expand_template(
+            r#"
+invalid: {{ unclosed_brace
+"#
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn test_expand_template_combined_features() {
+        let result = expand_template(
+            r#"
+storage:
+  min_size: {{ 10 * GB }}
+  detected_disks: {{ disks | size_range(low=1073741824) }}
+"#,
+        )
+        .unwrap();
+        assert!(result.starts_with("\nstorage:\n  min_size: 10737418240\n  detected_disks: "));
+    }
+}
+
+#[cfg(feature = "functional-test")]
+#[cfg_attr(not(test), allow(unused_imports, dead_code))]
+mod functional_test {
+    use super::*;
+    use pytest_gen::functional_test;
+
+    #[functional_test]
+    fn test_detect_disks() {
+        assert_eq!(
+            expand_template(
+                r#"{{ disks | filter(attribute="name", value="sda") | first | get(key="path")}}"#
+            )
+            .unwrap(),
+            "/dev/sda"
+        );
+    }
 }
