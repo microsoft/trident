@@ -42,13 +42,17 @@ func DiscoverTridentScenarios(log *logrus.Logger) ([]scenario.TridentE2EScenario
 			log.Fatalf("Failed to read configuration file: %v", err)
 		}
 
-		var config map[string]any
-		err = yaml.Unmarshal(configYaml, &config)
+		var hostConfig map[string]any
+		err = yaml.Unmarshal(configYaml, &hostConfig)
 		if err != nil {
 			log.Fatalf("Failed to unmarshal configuration file for '%s': %v", name, err)
 		}
 
-		scenarios := produceScenariosFromConfig(name, conf, config)
+		scenarios, err := produceScenariosFromConfig(name, conf, hostConfig)
+		if err != nil {
+			log.Fatalf("Failed to produce scenarios for '%s': %v", name, err)
+		}
+
 		tridentE2EScenarios = append(tridentE2EScenarios, scenarios...)
 	}
 
@@ -59,30 +63,31 @@ func getConfigPath(scenarioName string) string {
 	return "configurations/trident_configurations/" + scenarioName + "/trident-config.yaml"
 }
 
-func produceScenariosFromConfig(name string, conf scenarioConfig, config map[string]interface{}) []scenario.TridentE2EScenario {
+func produceScenariosFromConfig(name string, conf scenarioConfig, hostConfig map[string]interface{}) ([]scenario.TridentE2EScenario, error) {
 	var scenarios []scenario.TridentE2EScenario
 
-	bmScenario := produceScenario(name, config, scenario.HardwareTypeBM, scenario.RuntimeTypeHost, conf.Bm.Host)
-	if bmScenario != nil {
-		scenarios = append(scenarios, *bmScenario)
+	groups := []struct {
+		hardware scenario.HardwareType
+		runtime  scenario.RuntimeType
+		ring     testrings.TestRing
+	}{
+		{scenario.HardwareTypeBM, scenario.RuntimeTypeHost, conf.Bm.Host},
+		{scenario.HardwareTypeBM, scenario.RuntimeTypeContainer, conf.Bm.Container},
+		{scenario.HardwareTypeVM, scenario.RuntimeTypeHost, conf.Vm.Host},
+		{scenario.HardwareTypeVM, scenario.RuntimeTypeContainer, conf.Vm.Container},
 	}
 
-	bmContainerScenario := produceScenario(name, config, scenario.HardwareTypeBM, scenario.RuntimeTypeContainer, conf.Bm.Container)
-	if bmContainerScenario != nil {
-		scenarios = append(scenarios, *bmContainerScenario)
+	for _, group := range groups {
+		scenario, err := produceScenario(name, hostConfig, group.hardware, group.runtime, group.ring)
+		if err != nil {
+			return nil, err
+		}
+		if scenario != nil {
+			scenarios = append(scenarios, *scenario)
+		}
 	}
 
-	vmScenario := produceScenario(name, config, scenario.HardwareTypeVM, scenario.RuntimeTypeHost, conf.Vm.Host)
-	if vmScenario != nil {
-		scenarios = append(scenarios, *vmScenario)
-	}
-
-	vmContainerScenario := produceScenario(name, config, scenario.HardwareTypeVM, scenario.RuntimeTypeContainer, conf.Vm.Container)
-	if vmContainerScenario != nil {
-		scenarios = append(scenarios, *vmContainerScenario)
-	}
-
-	return scenarios
+	return scenarios, nil
 }
 
 func produceScenario(
@@ -91,11 +96,14 @@ func produceScenario(
 	hardware scenario.HardwareType,
 	runtime scenario.RuntimeType,
 	lowest_ring testrings.TestRing,
-) *scenario.TridentE2EScenario {
-	rings := lowest_ring.GetTargetList()
+) (*scenario.TridentE2EScenario, error) {
+	rings, err := lowest_ring.GetTargetList()
+	if err != nil {
+		return nil, err
+	}
 
 	if len(rings) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	tags := []string{SCENARIO_TAG_E2E, hardware.ToString(), runtime.ToString()}
@@ -110,7 +118,7 @@ func produceScenario(
 		hardware,
 		runtime,
 		rings,
-	)
+	), nil
 }
 
 type configs map[string]scenarioConfig

@@ -67,7 +67,10 @@ def main():
                     hw_rename = hw_renames.get(hw, hw)
                     pl_rename = pl_renames.get(pl)
                     if pl_rename is None:
-                        print(f"Warning: Unknown pipeline type '{pl}' for scenario '{name}', hardware '{hw}', runtime '{rt}'. Skipping.", file=sys.stderr)
+                        print(
+                            f"Warning: Unknown pipeline type '{pl}' for scenario '{name}', hardware '{hw}', runtime '{rt}'. Skipping.",
+                            file=sys.stderr,
+                        )
                         continue
                     hw_cfg = inverted.setdefault(name, {}).setdefault(hw_rename, {})
                     rt_cfg = hw_cfg.setdefault(rt, [])

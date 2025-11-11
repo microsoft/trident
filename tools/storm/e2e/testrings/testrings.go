@@ -1,10 +1,15 @@
 package testrings
 
-import "slices"
+import (
+	"fmt"
+	"slices"
+)
 
 type TestRing string
 
 const (
+	TestRingEmpty          TestRing = ""
+	TestRingNone           TestRing = "none"
 	TestRingPrE2e          TestRing = "pr-e2e"
 	TestRingCi             TestRing = "ci"
 	TestRingPre            TestRing = "pre"
@@ -16,13 +21,39 @@ var pipelineRingsOrder = TestRingSet{
 	TestRingCi,
 	TestRingPre,
 	TestRingFullValidation,
+	// The options below mean nothing should be run
+	TestRingNone,
+	TestRingEmpty,
+}
+
+func (tr *TestRing) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var ringStr string
+	if err := unmarshal(&ringStr); err != nil {
+		return err
+	}
+
+	if !pipelineRingsOrder.Contains(TestRing(ringStr)) {
+		return fmt.Errorf("unknown test ring: %s", ringStr)
+	}
+
+	*tr = TestRing(ringStr)
+	return nil
 }
 
 func (tr TestRing) ToString() string {
 	return string(tr)
 }
 
-func (tr TestRing) GetTargetList() TestRingSet {
+func (tr TestRing) IsNone() bool {
+	return tr == TestRingNone || tr == TestRingEmpty
+}
+
+func (tr TestRing) GetTargetList() (TestRingSet, error) {
+	if tr.IsNone() {
+		// On empty or 'none' ring, return an empty list
+		return TestRingSet{}, nil
+	}
+
 	var targets []TestRing
 	found := false
 	for _, ring := range pipelineRingsOrder {
@@ -33,7 +64,12 @@ func (tr TestRing) GetTargetList() TestRingSet {
 			targets = append(targets, ring)
 		}
 	}
-	return targets
+
+	if !found {
+		return nil, fmt.Errorf("unknown test ring: %s", tr)
+	}
+
+	return targets, nil
 }
 
 type TestRingSet []TestRing
