@@ -58,23 +58,30 @@ steps:
   - bash: |
       set -eux
       
-      sudo virsh shutdown azl-installer-test-vm || true
-      while sudo virsh list --all | grep azl-installer-test-vm; do
-        sudo virsh list --all | grep azl-installer-test-vm | grep "shut off" && break
+      VM_NAME="azl-installer-test-vm"
+      sudo virsh shutdown $VM_NAME || true
+      while sudo virsh list --all | grep $VM_NAME; do
+        sudo virsh list --all | grep $VM_NAME | grep "shut off" && break
         sleep 1
       done
 
       sudo cp $(Pipeline.Workspace)/azl-installer/${{ parameters.isoName }}.iso /tmp/azl-installer.iso
-      sudo qemu-img create -f qcow2 /tmp/azl-installer-test-vm-volume.qcow2 16G
+      sudo qemu-img create -f qcow2 /tmp/$VM_NAME-volume.qcow2 16G
 
-      if ! sudo virsh net-info azl-installer-test-vm-net; then
+      if ! sudo virsh net-info $VM_NAME-net; then
         sudo virsh net-create $(Build.SourcesDirectory)/.pipelines/templates/stages/azl_installer/azl-installer-net-template.xml
       fi
-      if ! sudo virsh list --all | grep azl-installer-test-vm; then
+      if ! sudo virsh list --all | grep $VM_NAME; then
         sudo virsh define $(Build.SourcesDirectory)/.pipelines/templates/stages/azl_installer/azl-installer-vm-template.xml
       fi
 
       sudo python3 $(Build.SourcesDirectory)/.pipelines/templates/stages/azl_installer/test-azl-installer-iso.py
+      EXIT_CODE=$?
+      if [ $EXIT_CODE -ne 0 ]; then
+        echo "AZL installer ISO validation failed. Dump serial log below:"
+        sudo cat /tmp/$VM_NAME-serial0.log
+        exit $EXIT_CODE
+      fi
     timeoutInMinutes: 10
     displayName: "Test azl-installer ISO (unattended installation)"
     retryCountOnTaskFailure: 3
