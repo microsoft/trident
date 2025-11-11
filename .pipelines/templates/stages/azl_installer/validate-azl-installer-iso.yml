@@ -80,6 +80,9 @@ steps:
       if [ $EXIT_CODE -ne 0 ]; then
         echo "AZL installer ISO validation failed. Dump serial log below:"
         sudo cat /tmp/$VM_NAME-serial0.log
+
+        sudo mkdir -p $(Pipeline.Workspace)/azl-installer-test
+        sudo cp /tmp/$VM_NAME-serial0.log $(Pipeline.Workspace)/azl-installer-test/$VM_NAME-serial-$(date +"%Y%m%d_%H%M%S").log
         exit $EXIT_CODE
       fi
     timeoutInMinutes: 10
