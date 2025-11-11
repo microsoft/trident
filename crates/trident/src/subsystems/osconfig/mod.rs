@@ -67,6 +67,14 @@ impl Subsystem for OsConfigSubsystem {
         "os-config"
     }
 
+    fn compatible_servicing_types(&self) -> &[ServicingType] {
+        &[
+            ServicingType::CleanInstall,
+            ServicingType::AbUpdate,
+            ServicingType::HotPatch,
+        ]
+    }
+
     fn validate_host_config(&self, ctx: &EngineContext) -> Result<(), TridentError> {
         // If the os-modifier binary is required but not present, return an error.
         if os_config_requires_os_modifier(ctx) && !Path::new(OS_MODIFIER_BINARY_PATH).exists() {
@@ -212,6 +220,10 @@ pub struct MosConfigSubsystem;
 impl Subsystem for MosConfigSubsystem {
     fn name(&self) -> &'static str {
         "mos-config"
+    }
+
+    fn compatible_servicing_types(&self) -> &[ServicingType] {
+        &[ServicingType::CleanInstall, ServicingType::AbUpdate]
     }
 
     fn validate_host_config(&self, ctx: &EngineContext) -> Result<(), TridentError> {

@@ -93,6 +93,18 @@ impl Subsystem for ExtensionsSubsystem {
         "extensions"
     }
 
+    fn compatible_servicing_types(&self) -> &[ServicingType] {
+        &[
+            ServicingType::CleanInstall,
+            ServicingType::AbUpdate,
+            ServicingType::HotPatch,
+        ]
+    }
+
+    fn select_servicing_type(&self, _ctx: &EngineContext) -> Result<ServicingType, TridentError> {
+        Ok(ServicingType::HotPatch)
+    }
+
     fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
         // Define staging directory, in which extension images will be downloaded.
         let staging_dir = path::join_relative(mount_path, EXTENSION_IMAGE_STAGING_DIRECTORY);

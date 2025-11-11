@@ -149,18 +149,15 @@ impl Subsystem for StorageSubsystem {
         Ok(())
     }
 
-    fn select_servicing_type(
-        &self,
-        ctx: &EngineContext,
-    ) -> Result<Option<ServicingType>, TridentError> {
+    fn select_servicing_type(&self, ctx: &EngineContext) -> Result<ServicingType, TridentError> {
         // If ab_update_required() returns true, A/B update is required.
         if image::ab_update_required(ctx)
             .message("Failed to determine if A/B update is required")?
         {
-            return Ok(Some(ServicingType::AbUpdate));
+            return Ok(ServicingType::AbUpdate);
         }
 
-        Ok(Some(ServicingType::NoActiveServicing))
+        Ok(ServicingType::NoActiveServicing)
     }
 
     fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
