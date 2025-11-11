@@ -5,7 +5,10 @@ use url::Url;
 
 #[cfg(feature = "schemars")]
 use crate::schema_helpers::unit_enum_with_untagged_variant;
-use crate::{error::{InvalidInputError, TridentError}, primitives::hash::Sha384Hash};
+use crate::{
+    error::{InvalidInputError, TridentError},
+    primitives::hash::Sha384Hash,
+};
 
 /// Data about the image to deploy on the host, including sourcing and integrity information.
 ///
