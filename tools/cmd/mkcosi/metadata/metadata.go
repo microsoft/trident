@@ -8,7 +8,7 @@ type MetadataJson struct {
 	OsPackages                []map[string]interface{} `json:"osPackages"`
 	Id                        string                   `json:"id"`
 	Bootloader                map[string]interface{}   `json:"bootloader"`
-	HostConfigurationTemplate *AuxillaryFile           `json:"hostConfigurationTemplate,omitempty"`
+	HostConfigurationTemplate *AuxiliaryFile           `json:"hostConfigurationTemplate,omitempty"`
 }
 
 type Image struct {
@@ -40,7 +40,7 @@ type ImageFile struct {
 
 type PartitionType string
 
-type AuxillaryFile struct {
+type AuxiliaryFile struct {
 	Path   string `json:"path"`
 	Sha384 string `json:"sha384"`
 

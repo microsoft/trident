@@ -34,7 +34,7 @@ func (t *InsertTemplate) Run() error {
 	if err != nil {
 		return fmt.Errorf("failed to calculate sha384 of %s: %w", t.Template, err)
 	}
-	cosi.Metadata.HostConfigurationTemplate = &metadata.AuxillaryFile{
+	cosi.Metadata.HostConfigurationTemplate = &metadata.AuxiliaryFile{
 		Path:       HostConfigurationTemplateFilename,
 		Sha384:     sha384,
 		SourceFile: t.Template,
