@@ -75,10 +75,11 @@ steps:
         sudo virsh define $(Build.SourcesDirectory)/.pipelines/templates/stages/azl_installer/azl-installer-vm-template.xml
       fi
 
-      if ! sudo python3 $(Build.SourcesDirectory)/.pipelines/templates/stages/azl_installer/test-azl-installer-iso.py; then
+      if sudo python3 $(Build.SourcesDirectory)/.pipelines/templates/stages/azl_installer/test-azl-installer-iso.py; then
+        echo "AZL installer ISO validation passed."
+      else 
         EXIT_CODE=$?
   
-        echo "AZL installer ISO validation failed. Dump serial log below:"
         sudo cat /tmp/$VM_NAME-serial0.log
 
         sudo mkdir -p $(Pipeline.Workspace)/azl-installer-test
