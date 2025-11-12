@@ -177,9 +177,9 @@ steps:
     displayName: "🔄${{ parameters.updateEmoji }} Stage and finalize A/B update into target OS ${{ parameters.updateScenarioTargetOs }} testing ${{ parameters.updateScenarioName }}"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
     ${{ if eq(parameters.deploymentEnvironment, 'bareMetal') }}:
-      timeoutInMinutes: 30
+      timeoutInMinutes: 22
     ${{ else }}:
-      timeoutInMinutes: 15
+      timeoutInMinutes: 12
 
   - ${{ if eq(parameters.deploymentEnvironment, 'virtualMachine') }}:
     - bash: |
