@@ -178,11 +178,11 @@ pub enum Commands {
 
     #[cfg(feature = "dangerous-options")]
     StreamImage {
-        /// URL of the image to stream.
+        /// URL of the image to stream
         #[clap(index = 1)]
         image: url::Url,
 
-        /// Hash of the image manifest.
+        /// Hash of the image manifest
         #[clap(long)]
         hash: String,
 
