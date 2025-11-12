@@ -451,8 +451,8 @@ allow trident_t udev_runtime_t:dir { add_name create read remove_name watch writ
 allow trident_t udev_runtime_t:file { create rename setattr unlink write };
 allow trident_t udev_runtime_t:sock_file write;
 allow trident_t unlabeled_t:chr_file { create getattr link rename unlink };
-allow trident_t unlabeled_t:dir { create add_name setattr open read remove_name search write mounton relabelfrom ioctl rename reparent rmdir };
-allow trident_t unlabeled_t:file { create lock open read setattr unlink write ioctl relabelfrom append execute execute_no_trans link map relabelto rename };
+allow trident_t unlabeled_t:dir { create add_name getattr setattr open read remove_name search write mounton relabelfrom ioctl rename reparent rmdir };
+allow trident_t unlabeled_t:file { create getattr lock open read setattr unlink write ioctl relabelfrom append execute execute_no_trans link map relabelto rename };
 allow trident_t unlabeled_t:lnk_file { create getattr read relabelfrom rename unlink };
 allow trident_t unreserved_port_t:tcp_socket name_connect;
 allow trident_t useradd_exec_t:file { execute execute_no_trans map open read };
