@@ -280,7 +280,7 @@ pub enum InvalidInputError {
         fs_type: String,
     },
 
-    #[error("Unsupported hash kind")]
+    #[error("Unsupported hash kind. Expected 'ignored' or 'sha384:' prefix.")]
     UnsupportedHashKind,
 
     #[error(
