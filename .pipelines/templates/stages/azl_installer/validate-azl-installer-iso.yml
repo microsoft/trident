@@ -82,8 +82,10 @@ steps:
   
         sudo cat /tmp/$VM_NAME-serial0.log
 
-        sudo mkdir -p $(ob_outputDirectory)
-        sudo cp /tmp/$VM_NAME-serial0.log $(ob_outputDirectory)/$VM_NAME-serial-$(date +"%Y%m%d_%H%M%S").log
+        mkdir -p $(ob_outputDirectory)
+        ARTIFACT_LOG_PATH=$(ob_outputDirectory)/$VM_NAME-serial-$(date +"%Y%m%d_%H%M%S").log
+        sudo cp /tmp/$VM_NAME-serial0.log $ARTIFACT_LOG_PATH
+        sudo chmod 777 $ARTIFACT_LOG_PATH
         exit $EXIT_CODE
       fi
     timeoutInMinutes: 10
@@ -112,8 +114,10 @@ steps:
         sleep 1
       done
 
+      ARTIFACT_PATH=$(ob_outputDirectory)/$VM_NAME-volume.qcow2
       sudo mkdir -p $(ob_outputDirectory)
-      sudo cp /tmp/$VM_NAME-volume.qcow2 $(ob_outputDirectory)/.
+      sudo cp /tmp/$VM_NAME-volume.qcow2 $ARTIFACT_PATH
+      sudo chmod 777 $ARTIFACT_PATH
 
     timeoutInMinutes: 5
     displayName: "Capture azl-installer VHD"
