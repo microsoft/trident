@@ -97,10 +97,11 @@ fn expand_template(template: &str) -> Result<String, anyhow::Error> {
             .unwrap_or_default()
             .into_iter()
             .filter(|b| b.blkdev_type == BlockDeviceType::Disk)
-            .filter(|d| {
-                d.name.starts_with("sd") || d.name.starts_with("nvme") || d.name.starts_with("vd")
-            })
-            .map(|b| {
+            .filter_map(|b| {
+                let kind = ["sd", "nvme", "vd", "hd", "mmcblk"]
+                    .into_iter()
+                    .find(|k| b.name.starts_with(*k))?;
+
                 let mut m = serde_json::Map::new();
                 m.insert("name".into(), tera::Value::String(b.name.clone()));
                 m.insert(
@@ -108,12 +109,9 @@ fn expand_template(template: &str) -> Result<String, anyhow::Error> {
                     tera::Value::String(format!("/dev/{}", b.name)),
                 );
                 m.insert("size".into(), tera::Value::Number(b.size.into()));
+                m.insert("kind".into(), tera::Value::String(kind.into()));
 
-                println!(
-                    "Detected disk: name='{}' path='/dev/{}' size={}",
-                    b.name, b.name, b.size
-                );
-                tera::Value::Object(m)
+                Some(tera::Value::Object(m))
             })
             .collect(),
     );
@@ -134,70 +132,61 @@ fn expand_template(template: &str) -> Result<String, anyhow::Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use indoc::indoc;
 
     #[test]
     fn test_expand_template_basic_context() {
         assert_eq!(
-            expand_template(
-                r#"
-kb_value: {{ KB }}
-mb_value: {{ MB }}
-gb_value: {{ GB }}
-"#
-            )
+            expand_template(indoc! {r#"
+                kb_value: {{ KB }}
+                mb_value: {{ MB }}
+                gb_value: {{ GB }}
+            "#})
             .unwrap(),
-            r#"
-kb_value: 1024
-mb_value: 1048576
-gb_value: 1073741824
-"#
+            indoc! {r#"
+                kb_value: 1024
+                mb_value: 1048576
+                gb_value: 1073741824
+            "#}
         );
     }
 
     #[test]
     fn test_expand_template_detect_disks_function() {
-        assert!(expand_template(
-            r#"
-disks: {{ disks }}
-"#
-        )
+        assert!(expand_template(indoc! {r#"
+            disks: {{ disks }}
+        "#})
         .is_ok());
     }
 
     #[test]
     fn test_expand_template_size_range_filter() {
-        let result = expand_template(
-            r#"
-small_disks: {{ disks | size_range(high=1073741824) }}
-large_disks: {{ disks | size_range(low=1073741824) }}
-"#,
-        )
+        let result = expand_template(indoc! {r#"
+            small_disks: {{ disks | size_range(high=1073741824) }}
+            large_disks: {{ disks | size_range(low=1073741824) }}
+        "#})
         .unwrap();
-        assert!(result.starts_with("\nsmall_disks: "));
+        assert!(result.starts_with("small_disks: "));
         assert!(result.contains("\nlarge_disks: "));
     }
 
     #[test]
     fn test_expand_template_invalid_syntax() {
-        assert!(expand_template(
-            r#"
-invalid: {{ unclosed_brace
-"#
-        )
+        assert!(expand_template(indoc! {r#"
+            invalid: {{ unclosed_brace
+        "#})
         .is_err());
     }
 
     #[test]
     fn test_expand_template_combined_features() {
-        let result = expand_template(
-            r#"
-storage:
-  min_size: {{ 10 * GB }}
-  detected_disks: {{ disks | size_range(low=1073741824) }}
-"#,
-        )
+        let result = expand_template(indoc! {r#"
+            storage:
+              min_size: {{ 10 * GB }}
+              detected_disks: {{ disks | size_range(low=1073741824) }}
+        "#})
         .unwrap();
-        assert!(result.starts_with("\nstorage:\n  min_size: 10737418240\n  detected_disks: "));
+        assert!(result.starts_with("storage:\n  min_size: 10737418240\n  detected_disks: "));
     }
 }
 
@@ -205,15 +194,13 @@ storage:
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
     use super::*;
+    use indoc::indoc;
     use pytest_gen::functional_test;
 
     #[functional_test]
     fn test_detect_disks() {
         assert_eq!(
-            expand_template(
-                r#"{{ disks | filter(attribute="name", value="sda") | first | get(key="path")}}"#
-            )
-            .unwrap(),
+            expand_template(indoc! {r#"{{ disks | filter(attribute="name", value="sda") | first | get(key="path")}}"#}).unwrap(),
             "/dev/sda"
         );
     }
