@@ -2,14 +2,22 @@ syntax = "proto3";
 package trident;
 
 service HostManagement {
+    rpc CosiToHostConfiguration (CosiToHostConfigurationRequest) returns (CosiToHostConfigurationResponse);
     rpc UpdateHost (HostUpdateRequest) returns (stream HostStatusState);
+}
+
+message CosiToHostConfigurationRequest {
+    string cosiUrl = 1;
+    string cosiHash = 2;
+}
+message CosiToHostConfigurationResponse {
+    string hostConfiguration = 1;
 }
 
 message HostUpdateRequest {
     string hostConfiguration = 1;
     string allowedOperations = 2;
 }
-
 message HostStatusState {
     string status = 1;
 }

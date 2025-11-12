@@ -37,6 +37,7 @@ pub(super) struct Cosi {
     entries: HashMap<PathBuf, CosiEntry>,
     pub metadata: CosiMetadata,
     pub metadata_sha384: Sha384Hash,
+    pub host_configuration_template: Option<Vec<u8>>,
     reader: FileReader,
 }
 
@@ -64,6 +65,26 @@ impl Cosi {
         let (metadata, sha384) = read_cosi_metadata(&cosi_reader, &entries, source.sha384.clone())
             .context("Failed to read COSI file metadata.")?;
 
+        let host_configuration_template =
+            if let Some(ref file) = metadata.host_configuration_template {
+                let entry = entries.get(&file.path).context(
+                    "COSI metadata corrupt: host configuration template referenced but missing",
+                )?;
+
+                let mut contents = Vec::new();
+                let mut reader =
+                    HashingReader384::new(cosi_reader.section_reader(entry.offset, entry.size)?);
+                reader.read_to_end(&mut contents)?;
+
+                if file.sha384 != reader.hash() {
+                    bail!("COSI host configuration template hash does not match expected hash");
+                }
+
+                Some(contents)
+            } else {
+                None
+            };
+
         // Create a new COSI instance.
         Ok(Cosi {
             metadata,
@@ -71,6 +92,7 @@ impl Cosi {
             source: source.url.clone(),
             reader: cosi_reader,
             metadata_sha384: sha384,
+            host_configuration_template,
         })
     }
 
@@ -793,9 +815,11 @@ mod tests {
                 os_packages: None,
                 images,
                 bootloader: None,
+                host_configuration_template: None,
             },
             reader: FileReader::Buffer(data),
             metadata_sha384: Sha384Hash::from("0".repeat(96)),
+            host_configuration_template: None,
         }
     }
 
@@ -813,9 +837,11 @@ mod tests {
                 images: vec![],
                 os_packages: None,
                 bootloader: None,
+                host_configuration_template: None,
             },
             reader: FileReader::Buffer(Cursor::new(Vec::<u8>::new())),
             metadata_sha384: Sha384Hash::from("0".repeat(96)),
+            host_configuration_template: None,
         };
 
         // Weird behavior with none/multiple ESPs is primarily tested by the
