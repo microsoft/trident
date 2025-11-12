@@ -100,7 +100,7 @@ steps:
         internalSetting=$existingAbActiveVolume
       elif [ "${{ parameters.deploymentEnvironment }}" == "bareMetal" ] ]; then
         if [ "${{ parameters.buildPurpose }}" == "weekly" ]; then
-          echo "Test ${{ parameters.updateScenarioName }} for BM tests that do A/B Update for bare metal Full Validation"
+          echo "Test ${{ parameters.updateScenarioName }} for BM tests that do A/B Update for Full Validation"
           internalSetting=$existingAbActiveVolume
         elif [ "${{ parameters.tridentConfigurationName }}" == "combined" ]; then
           echo "Test ${{ parameters.updateScenarioName }} for BM tests that do A/B Update for combined configuration"
