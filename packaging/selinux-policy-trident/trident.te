@@ -401,7 +401,7 @@ allow trident_t sulogin_exec_t:file { execute map open read relabelto setattr un
 allow trident_t sysctl_fs_t:dir search;
 allow trident_t sysctl_fs_t:file { ioctl open read };
 allow trident_t sysctl_kernel_t:dir search;
-allow trident_t sysctl_kernel_t:file { ioctl open read };
+allow trident_t sysctl_kernel_t:file { getattr ioctl open read };
 allow trident_t sysctl_vm_overcommit_t:file { open read };
 allow trident_t sysctl_vm_t:dir search;
 allow trident_t sysfs_t:filesystem { mount unmount };
