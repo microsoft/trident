@@ -62,7 +62,9 @@ pub fn config_from_image_url(
 ///
 /// # Provided Context
 ///
-/// * `disks`: A list of detected block devices of type `disk`. Each disk has the following fields:
+/// * `get_disks()`: Returns a list of detected block devices of type `disk`. Accepts optional
+///   arguments `min_size` and `max_size` to filter disks by size in bytes. Each disk has the
+///   following fields:
 ///   * `name`: The device name (e.g., `sda`, `nvme0n1`).
 ///   * `path`: The full device path (e.g., `/dev/sda`, `/dev/nvme0n1`).
 ///   * `size`: The size of the device in bytes.
@@ -70,87 +72,78 @@ pub fn config_from_image_url(
 ///
 /// * `KiB`, `MiB`, `GiB`: Constants representing the number of bytes in a kilobyte, megabyte, etc.
 ///
-/// * Size Range Filter: A filter `size_range` that can be applied to lists of disks to filter them by size.
-///   It accepts optional arguments `low` and `high` to specify the size range in bytes
-///
 /// # Examples
 ///
 /// Select the smallest disk at least 10 GiB in size:
 /// ```yaml
-/// device: "{{ disks | size_range(low=10*GiB) | sort(attribute="size") | first | get(key='path') }}"
+/// device: "{{ get_disks(min_size=10*GiB) | sort(attribute='size') | first | get(key='path') }}"
 /// ```
 ///
 /// Select the largest NVMe disk:
 /// ```yaml
-/// device: "{{ disks | filter(attribute="kind", value="nvme") | sort(attribute="size") | last | get(key='path') }}"
+/// device: "{{ get_disks() | filter(attribute='kind', value='nvme') | sort(attribute='size') | last | get(key='path') }}"
 /// ```
 fn expand_template(template: &str) -> Result<String, anyhow::Error> {
-    struct SizeRange;
-    impl tera::Filter for SizeRange {
-        fn filter(
-            &self,
-            value: &tera::Value,
-            args: &HashMap<String, tera::Value>,
-        ) -> tera::Result<tera::Value> {
-            match value.clone() {
-                tera::Value::Array(a) => {
-                    let low = match args.get("low") {
-                        Some(v) => v.as_u64().unwrap_or(0),
-                        None => 0,
-                    };
-                    let high = match args.get("high") {
-                        Some(v) => v.as_u64().unwrap_or(u64::MAX),
-                        None => u64::MAX,
-                    };
+    let disks: Vec<_> = lsblk::list()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|b| b.blkdev_type == BlockDeviceType::Disk)
+        .filter_map(|b| {
+            let kind = ["sd", "nvme", "vd", "hd", "mmcblk"]
+                .into_iter()
+                .find(|k| b.name.starts_with(*k))?;
 
-                    let filtered: Vec<tera::Value> = a
-                        .into_iter()
-                        .filter(|item| {
-                            if let Some(size) = item.get("size").and_then(|s| s.as_u64()) {
-                                size >= low && size <= high
-                            } else {
-                                false
-                            }
-                        })
-                        .collect();
+            let mut m = serde_json::Map::new();
+            m.insert("name".into(), tera::Value::String(b.name.clone()));
+            m.insert(
+                "path".into(),
+                tera::Value::String(format!("/dev/{}", b.name)),
+            );
+            m.insert("size".into(), tera::Value::Number(b.size.into()));
+            m.insert("kind".into(), tera::Value::String(kind.into()));
 
-                    Ok(tera::Value::Array(filtered))
-                }
-                x => Ok(x),
-            }
+            Some(tera::Value::Object(m))
+        })
+        .collect();
+
+    struct GetDisks(Vec<tera::Value>);
+    impl tera::Function for GetDisks {
+        fn call(&self, args: &HashMap<String, tera::Value>) -> tera::Result<tera::Value> {
+            let low = match args.get("min_size") {
+                Some(v) => v
+                    .as_u64()
+                    .ok_or_else(|| tera::Error::msg("Invalid 'min_size' value"))?,
+                None => 0,
+            };
+            let high = match args.get("max_size") {
+                Some(v) => v
+                    .as_u64()
+                    .ok_or_else(|| tera::Error::msg("Invalid 'max_size' value"))?,
+                None => u64::MAX,
+            };
+
+            let filtered: Vec<tera::Value> = self
+                .0
+                .iter()
+                .filter(|item| {
+                    if let Some(size) = item.get("size").and_then(|s| s.as_u64()) {
+                        size >= low && size <= high
+                    } else {
+                        false
+                    }
+                })
+                .cloned()
+                .collect();
+
+            Ok(tera::Value::Array(filtered))
         }
     }
 
-    let disks = tera::Value::Array(
-        lsblk::list()
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|b| b.blkdev_type == BlockDeviceType::Disk)
-            .filter_map(|b| {
-                let kind = ["sd", "nvme", "vd", "hd", "mmcblk"]
-                    .into_iter()
-                    .find(|k| b.name.starts_with(*k))?;
-
-                let mut m = serde_json::Map::new();
-                m.insert("name".into(), tera::Value::String(b.name.clone()));
-                m.insert(
-                    "path".into(),
-                    tera::Value::String(format!("/dev/{}", b.name)),
-                );
-                m.insert("size".into(), tera::Value::Number(b.size.into()));
-                m.insert("kind".into(), tera::Value::String(kind.into()));
-
-                Some(tera::Value::Object(m))
-            })
-            .collect(),
-    );
-
     let mut tera = Tera::default();
-    tera.register_filter("size_range", SizeRange);
+    tera.register_function("get_disks", GetDisks(disks));
     tera.add_raw_template("config.yaml", template)?;
 
     let mut context = tera::Context::new();
-    context.insert("disks", &disks);
     context.insert("KiB", &1024);
     context.insert("MiB", &(1024 * 1024));
     context.insert("GiB", &(1024 * 1024 * 1024));
@@ -183,7 +176,7 @@ mod tests {
     #[test]
     fn test_expand_template_detect_disks_function() {
         assert!(expand_template(indoc! {r#"
-            disks: {{ disks }}
+            disks: {{ get_disks() }}
         "#})
         .is_ok());
     }
@@ -191,8 +184,8 @@ mod tests {
     #[test]
     fn test_expand_template_size_range_filter() {
         let result = expand_template(indoc! {r#"
-            small_disks: {{ disks | size_range(high=1073741824) }}
-            large_disks: {{ disks | size_range(low=1073741824) }}
+            small_disks: {{ get_disks(max_size=1073741824) }}
+            large_disks: {{ get_disks(min_size=1073741824 + 1) }}
         "#})
         .unwrap();
         assert!(result.starts_with("small_disks: "));
@@ -212,7 +205,7 @@ mod tests {
         let result = expand_template(indoc! {r#"
             storage:
               min_size: {{ 10 * GiB }}
-              detected_disks: {{ disks | size_range(low=1073741824) }}
+              detected_disks: {{ get_disks(min_size=1073741824) }}
         "#})
         .unwrap();
         assert!(result.starts_with("storage:\n  min_size: 10737418240\n  detected_disks: "));
@@ -229,7 +222,7 @@ mod functional_test {
     #[functional_test]
     fn test_detect_disks() {
         assert_eq!(
-            expand_template(indoc! {r#"{{ disks | filter(attribute="name", value="sda") | first | get(key="path")}}"#}).unwrap(),
+            expand_template(indoc! {r#"{{ get_disks() | filter(attribute="name", value="sda") | first | get(key="path")}}"#}).unwrap(),
             "/dev/sda"
         );
     }
