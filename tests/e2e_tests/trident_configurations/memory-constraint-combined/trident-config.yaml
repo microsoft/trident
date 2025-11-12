@@ -66,6 +66,7 @@ storage:
       - boot-loader-code # 4
       - secure-boot-policy # 7
       - kernel-boot # 11
+    clearTpmOnInstall: true
   raid:
     software:
       - id: root-a
