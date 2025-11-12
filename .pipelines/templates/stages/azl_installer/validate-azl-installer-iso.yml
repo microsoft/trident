@@ -82,8 +82,8 @@ steps:
   
         sudo cat /tmp/$VM_NAME-serial0.log
 
-        sudo mkdir -p $(Pipeline.Workspace)/azl-installer-test
-        sudo cp /tmp/$VM_NAME-serial0.log $(Pipeline.Workspace)/azl-installer-test/$VM_NAME-serial-$(date +"%Y%m%d_%H%M%S").log
+        sudo mkdir -p $(ob_outputDirectory)
+        sudo cp /tmp/$VM_NAME-serial0.log $(ob_outputDirectory)/$VM_NAME-serial-$(date +"%Y%m%d_%H%M%S").log
         exit $EXIT_CODE
       fi
     timeoutInMinutes: 10
@@ -95,8 +95,8 @@ steps:
       set -eu
       sudo cat /tmp/test.log
       
-      sudo mkdir -p $(Pipeline.Workspace)/azl-installer-test
-      sudo cp /tmp/test.log $(Pipeline.Workspace)/azl-installer-test/test.log
+      sudo mkdir -p $(ob_outputDirectory)
+      sudo cp /tmp/test.log $(ob_outputDirectory)/test.log
     timeoutInMinutes: 1
     displayName: "Dump azl-installer serial test log"
     condition: always()
@@ -112,8 +112,8 @@ steps:
         sleep 1
       done
 
-      sudo mkdir -p $(Pipeline.Workspace)/azl-installer-test
-      sudo cp /tmp/$VM_NAME-volume.qcow2 $(Pipeline.Workspace)/azl-installer-test/.
+      sudo mkdir -p $(ob_outputDirectory)
+      sudo cp /tmp/$VM_NAME-volume.qcow2 $(ob_outputDirectory)/.
 
     timeoutInMinutes: 5
     displayName: "Capture azl-installer VHD"
