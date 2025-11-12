@@ -13,14 +13,14 @@ import (
 
 type DisplayLogsHelper struct {
 	args struct {
-		SkipSerialLog               bool   `help:"Skip displaying serial log." default:"false"`
-		SerialLogPath               string `help:"Path to serial log file." default:""`
-		NetlistenConfig             string `help:"Path to netlisten config file." default:""`
-		SerialLogFallbackFolder     string `help:"Folder to search for serial log files." default:"/tmp"`
-		SerialLogFallbackFileSuffix string `help:"File suffix to match when searching for serial log files in fallback folder." default:"serial0.log"`
-		SerialLogArtifactFileName   string `help:"Filename to use when copying serial log to artifacts folder." default:""`
-		TridentLogFile              string `help:"File containing trident log output." default:""`
-		TridentTraceLogFile         string `help:"File containing trace log output." default:""`
+		SkipSerialLog               bool   `help:"Skip serial log handling." default:"false"`
+		SerialLogPath               string `help:"If specified, this is the serial log file path." default:""`
+		NetlistenConfig             string `help:"If specified and --serial-log-path is not set, the netlisten config file specified here is queried for the serial log path." default:""`
+		SerialLogFallbackFolder     string `help:"If --serial-log-path and --netlisten-config are not specified, this folder is searched for serial log files." default:"/tmp"`
+		SerialLogFallbackFileSuffix string `help:"If --serial-log-path and --netlisten-config are not specified, this suffix is used to match files in --serial-log-fallback-folder." default:"serial0.log"`
+		SerialLogArtifactFileName   string `help:"Filename to use when copying serial log to artifacts folder, required if serial log is not skipped." default:""`
+		TridentLogFile              string `help:"File containing trident log output, skipped if not specified." default:""`
+		TridentTraceLogFile         string `help:"File containing trident trace log output, skipped if not specified." default:""`
 		ArtifactsFolder             string `help:"Folder to copy log files into." required:""`
 	}
 }
@@ -37,26 +37,6 @@ func (h *DisplayLogsHelper) RegisterTestCases(r storm.TestRegistrar) error {
 	r.RegisterTestCase("display-serial", h.displaySerial)
 	r.RegisterTestCase("display-trident", h.displayTrident)
 	r.RegisterTestCase("display-trace-trident", h.displayTraceTrident)
-	return nil
-}
-
-func copyFileToArtifactsFolder(sourcePath, artifactsFolder, artifactFileName string) error {
-	// Ensure artifacts folder exists
-	err := os.MkdirAll(artifactsFolder, 0755)
-	if err != nil {
-		return err
-	}
-
-	destinationPath := filepath.Join(artifactsFolder, artifactFileName)
-	input, err := os.ReadFile(sourcePath)
-	if err != nil {
-		return err
-	}
-	err = os.WriteFile(destinationPath, input, 0644)
-	if err != nil {
-		return err
-	}
-	logrus.Tracef("Copied file to artifacts folder: %s", destinationPath)
 	return nil
 }
 
@@ -87,12 +67,9 @@ func getSerialPathFromNetlistenConfig(netlistenConfigPath string) string {
 	return ""
 }
 
-func copyAndDisplayLogFile(logFilePath string, artifactFileName string, artifactFolder string) error {
+func copyAndDisplayLogFile(tc storm.TestCase, logFilePath string, artifactFileName string, artifactFolder string) error {
 	logrus.Infof("== Copy Log from %s to %s ==", logFilePath, artifactFolder)
-	err := copyFileToArtifactsFolder(logFilePath, artifactFolder, artifactFileName)
-	if err != nil {
-		return err
-	}
+	tc.ArtifactBroker().PublishLogFile(artifactFileName, logFilePath)
 
 	logrus.Infof("== Log Output from %s ==", logFilePath)
 	logs, err := os.ReadFile(logFilePath)
@@ -154,7 +131,7 @@ func (h *DisplayLogsHelper) displayTridentLogFile(tc storm.TestCase, logFile str
 		return nil
 	}
 
-	return copyAndDisplayLogFile(logFile, filepath.Base(logFile), h.args.ArtifactsFolder)
+	return copyAndDisplayLogFile(tc, logFile, filepath.Base(logFile), h.args.ArtifactsFolder)
 }
 
 func (h *DisplayLogsHelper) displayTrident(tc storm.TestCase) error {

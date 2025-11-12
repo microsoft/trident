@@ -190,7 +190,7 @@ steps:
           --serial-log-artifact-file-name "stage-finalize-ab-update-target-os-B-serial.log" \
           --trident-log-file "$(Build.SourcesDirectory)/stage-finalize-ab-update-target-os-B.log" \
           --trident-trace-log-file "$(Build.SourcesDirectory)/logstream-full.log" \
-          --artifacts-folder "$(ob_outputDirectory)"
+          --logs-dir "$(ob_outputDirectory)"
     displayName: "📄 A/B update deployment logs for target OS B"
     condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
 
@@ -340,7 +340,7 @@ steps:
           --serial-log-artifact-file-name "stage-finalize-ab-update-target-os-A-serial.log" \
           --trident-log-file "$(Build.SourcesDirectory)/stage-finalize-ab-update-target-os-A.log" \
           --trident-trace-log-file "$(Build.SourcesDirectory)/logstream-full.log" \
-          --artifacts-folder "$(ob_outputDirectory)"
+          --logs-dir "$(ob_outputDirectory)"
     displayName: "📄 A/B update deployment logs for target OS A"
     condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
 
