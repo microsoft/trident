@@ -10,6 +10,7 @@ use url::Url;
 
 use crate::osimage::OsImage;
 
+/// Stream a Host Configuration template from a COSI and expand it.
 pub fn config_from_image_url(
     image_url: Url,
     hash: &str,
@@ -55,6 +56,34 @@ pub fn config_from_image_url(
     Ok(config)
 }
 
+/// Use the `tera` templating engine to expand a Host Configuration template.
+///
+/// See https://keats.github.io/tera/docs for details on the templating syntax.
+///
+/// # Provided Context
+///
+/// * `disks`: A list of detected block devices of type `disk`. Each disk has the following fields:
+///   * `name`: The device name (e.g., `sda`, `nvme0n1`).
+///   * `path`: The full device path (e.g., `/dev/sda`, `/dev/nvme0n1`).
+///   * `size`: The size of the device in bytes.
+///   * `kind`: The kind of device (e.g., `sd`, `nvme`, `vd`, `hd`, `mmcblk`).
+///
+/// * `KiB`, `MiB`, `GiB`: Constants representing the number of bytes in a kilobyte, megabyte, etc.
+///
+/// * Size Range Filter: A filter `size_range` that can be applied to lists of disks to filter them by size.
+///   It accepts optional arguments `low` and `high` to specify the size range in bytes
+///
+/// # Examples
+///
+/// Select the smallest disk at least 10 GiB in size:
+/// ```yaml
+/// device: "{{ disks | size_range(low=10*GiB) | sort(attribute="size") | first | get(key='path') }}"
+/// ```
+///
+/// Select the largest NVMe disk:
+/// ```yaml
+/// device: "{{ disks | filter(attribute="kind", value="nvme") | sort(attribute="size") | last | get(key='path') }}"
+/// ```
 fn expand_template(template: &str) -> Result<String, anyhow::Error> {
     struct SizeRange;
     impl tera::Filter for SizeRange {
@@ -122,9 +151,9 @@ fn expand_template(template: &str) -> Result<String, anyhow::Error> {
 
     let mut context = tera::Context::new();
     context.insert("disks", &disks);
-    context.insert("KB", &1024);
-    context.insert("MB", &(1024 * 1024));
-    context.insert("GB", &(1024 * 1024 * 1024));
+    context.insert("KiB", &1024);
+    context.insert("MiB", &(1024 * 1024));
+    context.insert("GiB", &(1024 * 1024 * 1024));
 
     Ok(tera.render("config.yaml", &context)?)
 }
@@ -138,9 +167,9 @@ mod tests {
     fn test_expand_template_basic_context() {
         assert_eq!(
             expand_template(indoc! {r#"
-                kb_value: {{ KB }}
-                mb_value: {{ MB }}
-                gb_value: {{ GB }}
+                kb_value: {{ KiB }}
+                mb_value: {{ MiB }}
+                gb_value: {{ GiB }}
             "#})
             .unwrap(),
             indoc! {r#"
@@ -182,7 +211,7 @@ mod tests {
     fn test_expand_template_combined_features() {
         let result = expand_template(indoc! {r#"
             storage:
-              min_size: {{ 10 * GB }}
+              min_size: {{ 10 * GiB }}
               detected_disks: {{ disks | size_range(low=1073741824) }}
         "#})
         .unwrap();

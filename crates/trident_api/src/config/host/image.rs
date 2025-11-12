@@ -55,7 +55,9 @@ impl ImageSha384 {
         } else if let Some(hash) = hash.strip_prefix("sha384:") {
             Ok(ImageSha384::Checksum(Sha384Hash::from(hash)))
         } else {
-            Err(TridentError::new(InvalidInputError::UnsupportedHashKind))
+            Err(TridentError::new(InvalidInputError::UnsupportedHashKind(
+                hash.to_string(),
+            )))
         }
     }
 }
