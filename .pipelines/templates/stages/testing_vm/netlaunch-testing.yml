@@ -273,9 +273,9 @@ stages:
           - bash: |
               set -eux
               sudo ./bin/storm-trident helper display-logs -a \
+                  --log-dir "$(ob_outputDirectory)" \
                   --serial-log-artifact-file-name "clean-install-target-os-A-serial.log" \
-                  --trident-trace-log-file "$(tridentSourceDirectory)/logstream-full.log" \
-                  --logs-dir "$(ob_outputDirectory)"
+                  --trident-trace-log-file "$(tridentSourceDirectory)/logstream-full.log"
             displayName: "📄 Display clean install logs"
             condition: succeededOrFailed()
 

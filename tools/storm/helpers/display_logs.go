@@ -21,7 +21,6 @@ type DisplayLogsHelper struct {
 		SerialLogArtifactFileName   string `help:"Filename to use when copying serial log to artifacts folder, required if serial log is not skipped." default:""`
 		TridentLogFile              string `help:"File containing trident log output, skipped if not specified." default:""`
 		TridentTraceLogFile         string `help:"File containing trident trace log output, skipped if not specified." default:""`
-		ArtifactsFolder             string `help:"Folder to copy log files into." required:""`
 	}
 }
 
@@ -67,8 +66,8 @@ func getSerialPathFromNetlistenConfig(netlistenConfigPath string) string {
 	return ""
 }
 
-func copyAndDisplayLogFile(tc storm.TestCase, logFilePath string, artifactFileName string, artifactFolder string) error {
-	logrus.Infof("== Copy Log from %s to %s ==", logFilePath, artifactFolder)
+func copyAndDisplayLogFile(tc storm.TestCase, logFilePath string, artifactFileName string) error {
+	logrus.Infof("== Copy Log from %s to artifacts ==", logFilePath)
 	tc.ArtifactBroker().PublishLogFile(artifactFileName, logFilePath)
 
 	logrus.Infof("== Log Output from %s ==", logFilePath)
@@ -122,7 +121,7 @@ func (h *DisplayLogsHelper) displaySerial(tc storm.TestCase) error {
 		logrus.Tracef("Using fallback serial log file: %s", serialLogFile)
 	}
 
-	return copyAndDisplayLogFile(serialLogFile, h.args.SerialLogArtifactFileName, h.args.ArtifactsFolder)
+	return copyAndDisplayLogFile(tc, serialLogFile, h.args.SerialLogArtifactFileName)
 }
 
 func (h *DisplayLogsHelper) displayTridentLogFile(tc storm.TestCase, logFile string, skipMessage string) error {
@@ -131,7 +130,7 @@ func (h *DisplayLogsHelper) displayTridentLogFile(tc storm.TestCase, logFile str
 		return nil
 	}
 
-	return copyAndDisplayLogFile(tc, logFile, filepath.Base(logFile), h.args.ArtifactsFolder)
+	return copyAndDisplayLogFile(tc, logFile, filepath.Base(logFile))
 }
 
 func (h *DisplayLogsHelper) displayTrident(tc storm.TestCase) error {

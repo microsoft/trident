@@ -95,10 +95,10 @@ steps:
 
   - bash: |
       set -eux
-      ./bin/storm-trident helper display-logs \
+      ./bin/storm-trident helper display-logs -a \
+          --log-dir "$(ob_outputDirectory)" \
           --skip-serial-log \
-          --trident-log-file "$(Build.SourcesDirectory)/stage-ab-update-deployment.log" \
-          --logs-dir "$(ob_outputDirectory)"
+          --trident-log-file "$(Build.SourcesDirectory)/stage-ab-update-deployment.log"
     displayName: "📄 Stage A/B update deployment logs"
     condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
 
@@ -181,11 +181,11 @@ steps:
 
   - bash: |
       set -eux
-      ./bin/storm-trident helper display-logs \
+      ./bin/storm-trident helper display-logs -a \
+          --log-dir "$(ob_outputDirectory)" \
           --netlisten-config "${{ parameters.netlistenConfigFile }}" \
           --serial-log-artifact-file-name "finalize-ab-update-B-serial.log" \
-          --trident-log-file "$(Build.SourcesDirectory)/finalize-ab-update.log" \
-          --logs-dir "$(ob_outputDirectory)"
+          --trident-log-file "$(Build.SourcesDirectory)/finalize-ab-update.log"
     displayName: "📄 Finalize A/B update deployment logs"
     condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
 

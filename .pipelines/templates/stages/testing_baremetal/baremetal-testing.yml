@@ -305,11 +305,11 @@ stages:
 
           - bash: |
               set -eux
-              sudo ./bin/storm-trident helper display-logs \
+              sudo ./bin/storm-trident helper display-logs -a \
+                  --log-dir "$(ob_outputDirectory)" \
                   --serial-log-path "${{ variables.TRIDENT_SOURCE_DIR }}/baremetal-serial.log" \
                   --serial-log-artifact-file-name "clean-install-target-os-A-serial.log" \
-                  --trident-trace-log-file "${{ variables.TRIDENT_SOURCE_DIR }}/logstream-full.log" \
-                  --logs-dir "$(ob_outputDirectory)"
+                  --trident-trace-log-file "${{ variables.TRIDENT_SOURCE_DIR }}/logstream-full.log"
             displayName: "Display clean install logs"
             condition: succeededOrFailed()
 

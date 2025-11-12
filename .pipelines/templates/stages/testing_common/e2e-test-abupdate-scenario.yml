@@ -177,11 +177,11 @@ steps:
       set -eux
       # sudo is needed to read qemu VM serial logs, `-w` is needed with sudo
       sudo ./bin/storm-trident helper display-logs -a \
+          --log-dir "$(ob_outputDirectory)" \
           --netlisten-config "${{ parameters.netlistenConfigFile }}" \
           --serial-log-artifact-file-name "stage-finalize-ab-update-target-os-${{ parameters.updateScenarioTargetOs }}-${{ parameters.updateScenarioName }}-serial.log" \
           --trident-log-file "$(Build.SourcesDirectory)/stage-finalize-ab-update-target-os-${{ parameters.updateScenarioTargetOs }}-${{ parameters.updateScenarioName }}.log" \
-          --trident-trace-log-file "$(Build.SourcesDirectory)/logstream-full.log" \
-          --logs-dir "$(ob_outputDirectory)"
+          --trident-trace-log-file "$(Build.SourcesDirectory)/logstream-full.log"
     displayName: "📄 ${{ parameters.updateEmoji }} A/B update deployment logs for target OS ${{ parameters.updateScenarioTargetOs }}"
     condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
 
