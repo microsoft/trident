@@ -77,7 +77,7 @@ steps:
 
       if sudo python3 $(Build.SourcesDirectory)/.pipelines/templates/stages/azl_installer/test-azl-installer-iso.py; then
         echo "AZL installer ISO validation passed."
-      else 
+      else
         EXIT_CODE=$?
   
         sudo cat /tmp/$VM_NAME-serial0.log
