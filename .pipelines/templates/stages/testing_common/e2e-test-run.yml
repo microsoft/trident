@@ -418,12 +418,12 @@ steps:
       set -eux
       # To allow storm to access VM serial logs, need sudo. '-w' is needed with sudo
       sudo $(Build.SourcesDirectory)/bin/storm-trident helper rebuild-raid -a \
+          --log-dir "$(ob_outputDirectory)" \
           "${{ parameters.sshKeyPath }}" \
           "${{ parameters.hostIp }}" \
           "${{ parameters.userName }}" \
           "${{ parameters.runtimeEnv }}" \
           --trident-config-path "${{ parameters.tridentConfigPath }}/trident-config.yaml" \
-          --deployment-environment "${{ parameters.deploymentEnvironment }}" \
-          --artifacts-folder "$(ob_outputDirectory)"
+          --deployment-environment "${{ parameters.deploymentEnvironment }}"
     displayName: "Test Trident rebuild-raid"
     timeoutInMinutes: 15

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"strings"
 	"time"
 
@@ -30,7 +31,6 @@ type RebuildRaidHelper struct {
 		VmName                        string `help:"Name of VM." type:"string" default:"virtdeploy-vm-0"`
 		Disk                          string `help:"Disk to fail in RAID array." type:"string" default:"/dev/sdb"`
 		SkipRebuildRaid               bool   `help:"Skip the rebuild RAID step." type:"bool" default:"false"`
-		ArtifactsFolder               string `help:"Folder to copy log files into." type:"string" default:""`
 	}
 
 	failed bool
@@ -355,7 +355,15 @@ func (h *RebuildRaidHelper) replaceVirtualMachineRaidDisk(tc storm.TestCase) err
 		tc.Error(fmt.Errorf("failed to find VM serial log path"))
 	}
 
-	err = stormutils.WaitForLoginMessageInSerialLog(vmSerialLog, true, 1, fmt.Sprintf("%s/serial.log", h.args.ArtifactsFolder), time.Minute*5)
+	tempDir, err := os.MkdirTemp("", "rebuild-raid-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp dir: %w", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	outputPath := path.Join(tempDir, "serial.log")
+	err = stormutils.WaitForLoginMessageInSerialLog(vmSerialLog, true, 1, outputPath, time.Minute*5)
+	tc.ArtifactBroker().PublishLogFile(outputPath, outputPath)
 	if err != nil {
 		tc.Error(err)
 		return err
