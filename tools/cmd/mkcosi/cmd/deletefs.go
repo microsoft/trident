@@ -14,7 +14,7 @@ import (
 type DeleteFs struct {
 	Source      string   `arg:"" help:"Path to the COSI file to read metadata from." type:"existingfile" required:""`
 	Output      string   `arg:"" help:"Path to write the new COSI file to." type:"path" required:""`
-	FsMntPoints []string `arg:"" help:"Mount point(s) of the target filesystem(s)." required:""`
+	FsMntPoints []string `arg:"" help:"Mount point(s) of the filesystem(s) to delete." required:""`
 }
 
 func (r *DeleteFs) Run() error {
