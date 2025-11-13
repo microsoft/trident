@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 
+# Invert the target-configurations.yaml file to produce a configurations.yaml file
+# that lists, for each test configuration, the lowest pipeline ring it should be run in.
+
 import sys
 import yaml
 
@@ -43,11 +46,13 @@ def main():
     with open(input_file, "r") as f:
         data = yaml.safe_load(f)
 
+    # Rename hardware types
     hw_renames = {
         "bareMetal": "bm",
         "virtualMachine": "vm",
     }
 
+    # Rename pipelines to ring names
     pl_renames = {
         "weekly": "full-validation",
         "daily": "pre",
@@ -60,22 +65,28 @@ def main():
 
     inverted = {}
 
+    # Read the data
     for hw, rts in data.items():
         for rt, pls in rts.items():
             for pl, names in pls.items():
                 for name in names:
+                    # Apply renames
                     hw_rename = hw_renames.get(hw, hw)
                     pl_rename = pl_renames.get(pl)
+
                     if pl_rename is None:
                         print(
                             f"Warning: Unknown pipeline type '{pl}' for scenario '{name}', hardware '{hw}', runtime '{rt}'. Skipping.",
                             file=sys.stderr,
                         )
                         continue
+
+                    # Build inverted structure
                     hw_cfg = inverted.setdefault(name, {}).setdefault(hw_rename, {})
                     rt_cfg = hw_cfg.setdefault(rt, [])
                     rt_cfg.append(pl_rename)
 
+    # For each scenario, hardware, and runtime, keep only the earliest pipeline ring
     for name, hws in inverted.items():
         for hw, rts in hws.items():
             for rt, pls in rts.items():

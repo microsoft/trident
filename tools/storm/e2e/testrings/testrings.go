@@ -7,6 +7,7 @@ import (
 
 type TestRing string
 
+// Definition of known test rings.
 const (
 	TestRingEmpty          TestRing = ""
 	TestRingNone           TestRing = "none"
@@ -16,6 +17,7 @@ const (
 	TestRingFullValidation TestRing = "full-validation"
 )
 
+// Ordered list of test rings from lowest to highest.
 var pipelineRingsOrder = TestRingSet{
 	TestRingPrE2e,
 	TestRingCi,
@@ -48,6 +50,9 @@ func (tr TestRing) IsNone() bool {
 	return tr == TestRingNone || tr == TestRingEmpty
 }
 
+// For a given test ring, return the list of this test ring and all "higher"
+// rings in the pipeline order. If the ring is 'none' or 'empty', an empty list
+// is returned.
 func (tr TestRing) GetTargetList() (TestRingSet, error) {
 	if tr.IsNone() {
 		// On empty or 'none' ring, return an empty list
