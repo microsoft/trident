@@ -46,8 +46,8 @@ func (h *RebuildRaidHelper) Args() any {
 
 func (h *RebuildRaidHelper) RegisterTestCases(r storm.TestRegistrar) error {
 	r.RegisterTestCase("check-if-needed", h.checkIfNeeded)
-	r.RegisterTestCase("fail-bm-raids", h.failBaremetalRaids)
-	r.RegisterTestCase("replace-vm-raid-disk", h.replaceVirtualMachineRaidDisk)
+	r.RegisterTestCase("stop-bm-raids", h.stopBaremetalRaids)
+	r.RegisterTestCase("stop-vm-raids", h.stopVmRaids)
 	r.RegisterTestCase("check-ssh", h.checkTridentServiceWithSsh)
 	r.RegisterTestCase("rebuild-raid", h.rebuildRaid)
 	return nil
@@ -99,7 +99,7 @@ func (h *RebuildRaidHelper) checkIfNeeded(tc storm.TestCase) error {
 }
 
 // Get list of RAID arrays and their devices on the host and fail a device in each array.
-func (h *RebuildRaidHelper) failBaremetalRaids(tc storm.TestCase) error {
+func (h *RebuildRaidHelper) stopBaremetalRaids(tc storm.TestCase) error {
 	if h.failed {
 		tc.Skip("Previous step failed; skipping this test case.")
 		return nil
@@ -237,7 +237,7 @@ func (h *RebuildRaidHelper) failBaremetalRaids(tc storm.TestCase) error {
 }
 
 // Replace the test disk with a new disk
-func (h *RebuildRaidHelper) replaceVirtualMachineRaidDisk(tc storm.TestCase) error {
+func (h *RebuildRaidHelper) stopVmRaids(tc storm.TestCase) error {
 	if h.failed {
 		tc.Skip("Previous step failed; skipping this test case.")
 		return nil
@@ -361,9 +361,10 @@ func (h *RebuildRaidHelper) replaceVirtualMachineRaidDisk(tc storm.TestCase) err
 	}
 	defer os.RemoveAll(tempDir)
 
-	outputPath := path.Join(tempDir, "serial.log")
+	serialLog := "serial.log"
+	outputPath := path.Join(tempDir, serialLog)
 	err = stormutils.WaitForLoginMessageInSerialLog(vmSerialLog, true, 1, outputPath, time.Minute*5)
-	tc.ArtifactBroker().PublishLogFile(outputPath, outputPath)
+	tc.ArtifactBroker().PublishLogFile(serialLog, outputPath)
 	if err != nil {
 		tc.Error(err)
 		return err
