@@ -89,6 +89,11 @@ stages:
   # Build tools (Go stuff)
   - template: stages/building_tools/building-tools.yml
 
+  # E2E Test Matrix Definition
+  - template: stages/testing_e2e/storm_e2e.yml
+    parameters:
+      stageType: ${{ parameters.stageType }}
+
   # Makefile validation, only for CI
   - ${{ if eq(parameters.stageType, 'ci') }}:
       - template: stages/validate_makefile/dev-build.yml
