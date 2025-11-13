@@ -1,11 +1,14 @@
 package metadata
 
 type MetadataJson struct {
-	Version   string  `json:"version"`
-	OsArch    string  `json:"osArch"`
-	Images    []Image `json:"images"`
-	OsRelease string  `json:"osRelease"`
-	Id        string  `json:"id"`
+	Version                   string                   `json:"version"`
+	OsArch                    string                   `json:"osArch"`
+	Images                    []Image                  `json:"images"`
+	OsRelease                 string                   `json:"osRelease"`
+	OsPackages                []map[string]interface{} `json:"osPackages"`
+	Id                        string                   `json:"id"`
+	Bootloader                map[string]interface{}   `json:"bootloader"`
+	HostConfigurationTemplate *AuxiliaryFile           `json:"hostConfigurationTemplate,omitempty"`
 }
 
 type Image struct {
@@ -36,6 +39,17 @@ type ImageFile struct {
 }
 
 type PartitionType string
+
+type AuxiliaryFile struct {
+	Path   string `json:"path"`
+	Sha384 string `json:"sha384"`
+
+	// Used internally when building/extracting a COSI file to store the
+	// location of the source file outside of the COSI file. This is NOT part
+	// of the COSI spec, just an implementation detail for convenience. This
+	// field is not serialized to JSON.
+	SourceFile string `json:"-"`
+}
 
 const (
 	PartitionTypeEsp                PartitionType = "c12a7328-f81f-11d2-ba4b-00a0c93ec93b"
