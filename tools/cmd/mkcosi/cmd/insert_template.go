@@ -15,12 +15,12 @@ const HostConfigurationTemplateFilename = "hostConfigurationTemplate.yaml"
 type InsertTemplate struct {
 	Source   string `arg:"" help:"Path to the COSI file to read metadata from." type:"existingfile" required:""`
 	Output   string `arg:"" help:"Path to write the new COSI file to." type:"path" required:""`
-	Template string `arg:"" help:"Path to the host configuration template file to insert." type:"existingfile" required:""`
+	Template string `arg:"" help:"Path to the Host Configuration template file to insert." type:"existingfile" required:""`
 }
 
 func (t *InsertTemplate) Run() error {
 	log.WithField("source", t.Source).Info("Loading COSI file")
-	log.WithField("template", t.Template).Info("Loading host configuration template file")
+	log.WithField("template", t.Template).Info("Loading Host Configuration template file")
 
 	// Read the COSI file once to get the metadata.
 	cosi, err := cosi.ReadCosiFile(t.Source)
