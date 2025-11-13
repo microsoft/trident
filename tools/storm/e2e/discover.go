@@ -129,7 +129,7 @@ func produceScenario(
 	// Get the list of all target rings for this scenario. This is the list of
 	// rings from the lowest declared ring up to the highest existing ring.
 	// For example, if the lowest ring is 'ci', the returned list will be
-	// ['ci', 'prerelease', 'full-validation'].
+	// ['ci', 'pre', 'full-validation'].
 	//
 	// If the lowest ring is 'none' or empty string, an empty list is returned.
 	rings, err := lowest_ring.GetTargetList()
