@@ -17,7 +17,7 @@ func main() {
 	discoveryLogger := logrus.New()
 	discoveryLogger.SetLevel(logrus.DebugLevel)
 
-	// Add Trident E2E scenarios (disabled for now)
+	// Add Trident E2E scenarios
 	scenarios, err := e2e.DiscoverTridentScenarios(discoveryLogger)
 	if err != nil {
 		storm.Logger().Fatalf("Failed to discover Trident E2E scenarios: %v", err)
