@@ -49,13 +49,13 @@ func DiscoverTridentScenarios(log *logrus.Logger) ([]scenario.TridentE2EScenario
 		var hostConfig map[string]any
 		err = yaml.Unmarshal(configYaml, &hostConfig)
 		if err != nil {
-			log.Fatalf("Failed to unmarshal configuration file for '%s': %v", name, err)
+			return nil, fmt.Errorf("failed to unmarshal configuration file for '%s': %v", name, err)
 		}
 
 		// Produce scenarios from this configuration.
 		scenarios, err := produceScenariosFromConfig(name, conf, hostConfig)
 		if err != nil {
-			log.Fatalf("Failed to produce scenarios for '%s': %v", name, err)
+			return nil, fmt.Errorf("failed to produce scenarios for '%s': %v", name, err)
 		}
 
 		tridentE2EScenarios = append(tridentE2EScenarios, scenarios...)
