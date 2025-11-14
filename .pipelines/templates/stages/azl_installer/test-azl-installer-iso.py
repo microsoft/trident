@@ -5,6 +5,7 @@ import libvirt
 import os
 import subprocess
 import xml.etree.ElementTree as ET
+from typing import Optional
 
 
 def run_command(command: str) -> str:
@@ -49,7 +50,11 @@ def create_console_connection(vm_name: str) -> libvirt.virStream:
 
 
 def watch_for_azl_installer_login(
-    vm_name: str, success_string: str, output_log_filepath: str, log_file_stream
+    vm_name: str,
+    success_string: str,
+    failure_string: Optional[str],
+    output_log_filepath: str,
+    log_file_stream,
 ):
     # Create console connection
     stream = create_console_connection(vm_name)
@@ -61,6 +66,13 @@ def watch_for_azl_installer_login(
         log_file_stream.flush()
         if check_logfile_for_string(output_log_filepath, success_string):
             break
+        if failure_string and check_logfile_for_string(
+            output_log_filepath, failure_string
+        ):
+            print(
+                f"Found '{failure_string}' in serial log before reaching login prompt, raising exception"
+            )
+            raise Exception("installation finished without reaching login prompt")
     # Close console connection
     stream.finish()
 
@@ -108,6 +120,7 @@ def validate_azl_installer_iso(vm_name: str, output_log_file: str):
         watch_for_azl_installer_login(
             vm_name,
             "azl-installer login:",
+            None,
             output_log_file,
             log_file_stream,
         )
@@ -115,7 +128,11 @@ def validate_azl_installer_iso(vm_name: str, output_log_file: str):
 
         print("Wait while new OS is installing (this may take several minutes).")
         watch_for_azl_installer_login(
-            vm_name, "trident-testimg login:", output_log_file, log_file_stream
+            vm_name,
+            "trident-testimg login:",
+            "Trident failed",
+            output_log_file,
+            log_file_stream,
         )
         print("... finished installing new OS.")
 

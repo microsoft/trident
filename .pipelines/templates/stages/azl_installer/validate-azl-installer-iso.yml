@@ -58,23 +58,67 @@ steps:
   - bash: |
       set -eux
       
-      cp $(Pipeline.Workspace)/azl-installer/${{ parameters.isoName }}.iso /tmp/azl-installer.iso
-      sudo qemu-img create -f qcow2 /tmp/azl-installer-test-vm-volume.qcow2 16G
+      VM_NAME="azl-installer-test-vm"
+      sudo virsh shutdown $VM_NAME || true
+      while sudo virsh list --all | grep $VM_NAME; do
+        sudo virsh list --all | grep $VM_NAME | grep "shut off" && break
+        sleep 1
+      done
 
-      sudo virsh net-create $(Build.SourcesDirectory)/.pipelines/templates/stages/azl_installer/azl-installer-net-template.xml
-      sudo virsh define $(Build.SourcesDirectory)/.pipelines/templates/stages/azl_installer/azl-installer-vm-template.xml
-      
-      sudo python3 $(Build.SourcesDirectory)/.pipelines/templates/stages/azl_installer/test-azl-installer-iso.py
+      sudo cp $(Pipeline.Workspace)/azl-installer/${{ parameters.isoName }}.iso /tmp/azl-installer.iso
+      sudo qemu-img create -f qcow2 /tmp/$VM_NAME-volume.qcow2 16G
+
+      if ! sudo virsh net-info $VM_NAME-net; then
+        sudo virsh net-create $(Build.SourcesDirectory)/.pipelines/templates/stages/azl_installer/azl-installer-net-template.xml
+      fi
+      if ! sudo virsh list --all | grep $VM_NAME; then
+        sudo virsh define $(Build.SourcesDirectory)/.pipelines/templates/stages/azl_installer/azl-installer-vm-template.xml
+      fi
+
+      if sudo python3 $(Build.SourcesDirectory)/.pipelines/templates/stages/azl_installer/test-azl-installer-iso.py; then
+        echo "AZL installer ISO validation passed."
+      else
+        EXIT_CODE=$?
+  
+        sudo cat /tmp/$VM_NAME-serial0.log
+
+        mkdir -p $(ob_outputDirectory)
+        ARTIFACT_LOG_PATH=$(ob_outputDirectory)/$VM_NAME-serial-$(date +"%Y%m%d_%H%M%S").log
+        sudo cp /tmp/$VM_NAME-serial0.log $ARTIFACT_LOG_PATH
+        sudo chmod 777 $ARTIFACT_LOG_PATH
+        exit $EXIT_CODE
+      fi
     timeoutInMinutes: 10
     displayName: "Test azl-installer ISO (unattended installation)"
+    retryCountOnTaskFailure: 3
   
   # Dump serial log of test vm
   - bash: |
       set -eu
       sudo cat /tmp/test.log
       
-      sudo mkdir -p $(Pipeline.Workspace)/azl-installer-test
-      sudo cp /tmp/test.log $(Pipeline.Workspace)/azl-installer-test/test.log
+      sudo mkdir -p $(ob_outputDirectory)
+      sudo cp /tmp/test.log $(ob_outputDirectory)/test.log
     timeoutInMinutes: 1
     displayName: "Dump azl-installer serial test log"
     condition: always()
+  
+  # Capture VHD
+  - bash: |
+      set -eu
+
+      VM_NAME="azl-installer-test-vm"
+      sudo virsh shutdown $VM_NAME || true
+      while sudo virsh list --all | grep $VM_NAME; do
+        sudo virsh list --all | grep $VM_NAME | grep "shut off" && break
+        sleep 1
+      done
+
+      ARTIFACT_PATH=$(ob_outputDirectory)/$VM_NAME-volume.qcow2
+      sudo mkdir -p $(ob_outputDirectory)
+      sudo cp /tmp/$VM_NAME-volume.qcow2 $ARTIFACT_PATH
+      sudo chmod 777 $ARTIFACT_PATH
+
+    timeoutInMinutes: 5
+    displayName: "Capture azl-installer VHD"
+    condition: failed()
