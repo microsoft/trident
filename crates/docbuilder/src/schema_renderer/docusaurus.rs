@@ -1,4 +1,4 @@
-use std::{collections::HashMap};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(super) struct FrontMatter {
