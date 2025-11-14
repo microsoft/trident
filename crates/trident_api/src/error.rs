@@ -86,6 +86,9 @@ pub enum ContainerConfigurationError {
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum InternalError {
+    #[error("Failed to collect diagnostics information")]
+    DiagnosticBundleGeneration,
+
     #[error("Failed to get the ESP partition information")]
     GetEspDeviceInfo,
 

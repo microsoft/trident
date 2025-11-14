@@ -24,6 +24,8 @@ Commands:
   rebuild-raid        Rebuild software RAID arrays managed by
                           Trident
   get                 Query the current state of the system
+  diagnose            Generate diagnostic information and create a
+                          support bundle
   validate            Validate the provided Host Configuration
   offline-initialize  Initialize for a system that wasn't
                           installed by Trident
@@ -47,6 +49,7 @@ Options:
 - [rebuild-raid](#rebuild-raid)
 - [start-network](#start-network)
 - [get](#get)
+- [diagnose](#diagnose)
 - [validate](#validate)
 - [offline-initialize](#offline-initialize)
 - [help](#help)
@@ -385,6 +388,42 @@ Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
 Default: `DEBUG`
 
 
+## diagnose
+
+Generate diagnostic information and create a support bundle
+
+Usage:
+
+```
+trident diagnose [OPTIONS] --output <OUTPUT>
+```
+
+Argument summary:
+
+```
+Options:
+  -o, --output <OUTPUT>
+          Path where the support bundle will be saved
+  -v, --verbosity <VERBOSITY>
+          Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
+          [default: DEBUG]
+```
+
+
+### Argument Details
+
+#### <span>--output &lt;OUTPUT&gt;</span> (REQUIRED)
+
+Path where the support bundle will be saved
+
+
+#### <span>--verbosity &lt;VERBOSITY&gt;</span>
+
+Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
+
+Default: `DEBUG`
+
+
 ## validate
 
 Validate the provided Host Configuration
@@ -529,6 +568,8 @@ Commands:
   rebuild-raid        Rebuild software RAID arrays managed by
                           Trident
   get                 Query the current state of the system
+  diagnose            Generate diagnostic information and create a
+                          support bundle
   validate            Validate the provided Host Configuration
   offline-initialize  Initialize for a system that wasn't
                           installed by Trident

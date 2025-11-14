@@ -76,6 +76,12 @@ fn run_trident(
                 .map(|()| ExitKind::Done);
         }
 
+        Commands::Diagnose { output } => {
+            return Trident::diagnose(output)
+                .message("Failed to generate diagnostics")
+                .map(|()| ExitKind::Done);
+        }
+
         Commands::StartNetwork { config } => {
             // Lock the streams if we're starting the network
             // We have no network yet, so we can't send logs or traces anywhere
