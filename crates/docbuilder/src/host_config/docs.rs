@@ -36,14 +36,6 @@ fn make_docusaurus_category_file(
     // Create the _category_.json file in the dest directory
     let category_index_path = dest.join("_category_.json");
 
-    // Set the name of the category to the last component of the dest path
-    let category_name = dest
-        .components()
-        .last()
-        .context("Failed to get category name")?
-        .as_os_str()
-        .to_string_lossy();
-
     // Get the output path relative to docusaurus root
     let output_relative_path = dest.strip_prefix(docusaurus_root).with_context(|| {
         format!(
@@ -68,7 +60,7 @@ fn make_docusaurus_category_file(
 
     // Create the category object
     let category_obj = json!({
-        "label": category_name,
+        "label": "Schema",
         "link": {
             "type": "doc",
             "id": first_page_relative_path_to_docusaurus
