@@ -67,12 +67,14 @@ func (h *RebuildRaidHelper) checkIfNeeded(tc storm.TestCase) error {
 	if err != nil {
 		logrus.Tracef("Failed to read trident config file %s: %v", h.args.TridentConfigPath, err)
 		h.FailFromError(tc, err)
+		return err
 	}
 	tridentConfig := make(map[string]interface{})
 	err = yaml.UnmarshalStrict(tridentConfigContents, &tridentConfig)
 	if err != nil {
 		logrus.Tracef("Failed to parse trident config file %s: %v", h.args.TridentConfigPath, err)
 		h.FailFromError(tc, err)
+		return err
 	}
 
 	raidExists := false
