@@ -26,7 +26,7 @@ func WaitForLoginMessageInSerialLog(vmSerialLog string, verbose bool, iteration 
 		}
 	}
 
-	// Create the file if it doesn't exist
+	// Open the file for reading and writing (file is guaranteed to exist)
 	file, err := os.OpenFile(vmSerialLog, os.O_RDWR, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to open serial log file: %w", err)
