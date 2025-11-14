@@ -97,13 +97,15 @@ func printAndSave(line string, verbose bool, localSerialLog string) {
 		if err != nil {
 			return
 		}
+		defer func() {
+			if cerr := logFile.Close(); cerr != nil {
+				logrus.Errorf("Failed to close output file: %v", cerr)
+			}
+		}()
 
 		_, err = logFile.WriteString(line + "\n")
 		if err != nil {
 			logrus.Errorf("Failed to append line to output file: %v", err)
-		}
-		if cerr := logFile.Close(); cerr != nil {
-			logrus.Errorf("Failed to close output file: %v", cerr)
 		}
 	}
 }
