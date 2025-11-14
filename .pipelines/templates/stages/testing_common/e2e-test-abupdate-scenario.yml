@@ -173,22 +173,17 @@ steps:
       displayName: "📷 Capture ${{ parameters.updateScenarioName }} update screenshot"
       condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
 
-  - template: ./display-serial-logs.yml
-    parameters:
-      netlistenConfigFile: ${{ parameters.netlistenConfigFile }}
-      outputDirectory: $(ob_outputDirectory)
-      partition: ${{ parameters.updateScenarioTargetOs }}
-      displayNameSuffix: "testing ${{ parameters.updateScenarioName }}"
-
-  - template: ./display-deployment-logs.yml
-    parameters:
-      deploymentLogPath: $(Build.SourcesDirectory)/stage-finalize-ab-update-target-os-${{ parameters.updateScenarioTargetOs }}-${{ parameters.updateScenarioName }}.log
-      displayName: "📄 Display A/B update deployment logs for target OS ${{ parameters.updateScenarioTargetOs }} testing ${{ parameters.updateScenarioName }}"
-
-  - template: ./display-deployment-logs.yml
-    parameters:
-      deploymentLogPath: $(Build.SourcesDirectory)/logstream-full.log
-      displayName: "📄 [TRACE] Display A/B update deployment logs for target OS ${{ parameters.updateScenarioTargetOs }} testing ${{ parameters.updateScenarioName }}"
+  - bash: |
+      set -eux
+      # sudo is needed to read qemu VM serial logs, `-w` is needed with sudo
+      sudo ./bin/storm-trident helper display-logs -a \
+          --netlisten-config "${{ parameters.netlistenConfigFile }}" \
+          --serial-log-artifact-file-name "stage-finalize-ab-update-target-os-${{ parameters.updateScenarioTargetOs }}-${{ parameters.updateScenarioName }}-serial.log" \
+          --trident-log-file "$(Build.SourcesDirectory)/stage-finalize-ab-update-target-os-${{ parameters.updateScenarioTargetOs }}-${{ parameters.updateScenarioName }}.log" \
+          --trident-trace-log-file "$(Build.SourcesDirectory)/logstream-full.log" \
+          --artifacts-folder "$(ob_outputDirectory)"
+    displayName: "📄 ${{ parameters.updateEmoji }} A/B update deployment logs for target OS ${{ parameters.updateScenarioTargetOs }}"
+    condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
 
   - bash: |
       set -eux
