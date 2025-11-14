@@ -83,6 +83,11 @@ parameters:
     type: string
 
 steps:
+  # Enable scenario tests for:
+  #  - Tests that are not called out in skipConfigurations
+  #  - All virtual machine pipeline tests that do A/B update
+  #  - Bare metal deployments that do A/B update for 'weekly' pipelines
+  #  - Bare metal 'combined' tests for non-weekly pipelines
   - bash: |
       set -eux
       existingAbActiveVolume=$(abActiveVolume)
@@ -93,11 +98,14 @@ steps:
       elif [ "${{ parameters.deploymentEnvironment }}" == "virtualMachine" ]; then
         echo "Test ${{ parameters.updateScenarioName }} for all VM tests that do A/B Update"
         internalSetting=$existingAbActiveVolume
-      # TODO: re-enable BM tests when test timeouts are working (#16112)
-      # elif [ "${{ parameters.deploymentEnvironment }}" == "bareMetal" ] && 
-      #    [ "${{ parameters.buildPurpose }}" == "weekly" ]; then
-      #   echo "Test ${{ parameters.updateScenarioName }} for BM tests that do A/B Update for Full Validation"
-      #   internalSetting=$existingAbActiveVolume
+      elif [ "${{ parameters.deploymentEnvironment }}" == "bareMetal" ] ]; then
+        if [ "${{ parameters.buildPurpose }}" == "weekly" ]; then
+          echo "Test ${{ parameters.updateScenarioName }} for BM tests that do A/B Update for Full Validation"
+          internalSetting=$existingAbActiveVolume
+        elif [ "${{ parameters.tridentConfigurationName }}" == "combined" ]; then
+          echo "Test ${{ parameters.updateScenarioName }} for BM tests that do A/B Update for combined configuration"
+          internalSetting=$existingAbActiveVolume
+        fi
       else
         echo "Do not test ${{ parameters.updateScenarioName }}"
         internalSetting='null'
@@ -130,15 +138,21 @@ steps:
         PROXY_ARG="--env-vars HTTPS_PROXY=${{ parameters.httpsProxy }}"
       fi
 
+      SSH_TIMEOUT_ARG=""
       EXPECT_FAILURE_ARG=""
       if [ "${{ parameters.expectCommitFailure }}" == "True" ]; then
         EXPECT_FAILURE_ARG="--expect-failed-commit"
+        # For bare metal, a commit failure that results in rollback can take longer
+        if [ "${{ parameters.deploymentEnvironment }}" == "bareMetal" ]; then
+          SSH_TIMEOUT_ARG="-t 1200"
+        fi
       fi
 
       echo "Running script to stage and finalize A/B update..."
       ./bin/storm-trident helper ab-update \
           "${{ parameters.sshKeyPath }}" \
           "${{ parameters.hostIp }}" \
+          $SSH_TIMEOUT_ARG \
           "${{ parameters.userName }}" \
           "${{ parameters.runtimeEnv }}" \
           --trident-config ${{ parameters.tridentConfigFile }} \
@@ -159,10 +173,13 @@ steps:
         echo "##vso[task.setvariable variable=version]$new_version"
       fi
 
-    timeoutInMinutes: 15
     workingDirectory: $(Build.SourcesDirectory)
     displayName: "🔄${{ parameters.updateEmoji }} Stage and finalize A/B update into target OS ${{ parameters.updateScenarioTargetOs }} testing ${{ parameters.updateScenarioName }}"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
+    ${{ if eq(parameters.deploymentEnvironment, 'bareMetal') }}:
+      timeoutInMinutes: 22
+    ${{ else }}:
+      timeoutInMinutes: 12
 
   - ${{ if eq(parameters.deploymentEnvironment, 'virtualMachine') }}:
     - bash: |
