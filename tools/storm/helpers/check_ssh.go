@@ -14,8 +14,7 @@ type CheckSshHelper struct {
 	args struct {
 		stormsshconfig.SshCliSettings `embed:""`
 		stormenv.EnvCliSettings       `embed:""`
-		CheckActiveVolume             string `help:"Check that the indicated volume is the active one"`
-		ExpectFailedCommit            bool   `help:"Controls whether this test treats failed commits as successful." default:"false"`
+		ExpectFailedCommit            bool `help:"Controls whether this test treats failed commits as successful." default:"false"`
 	}
 }
 
