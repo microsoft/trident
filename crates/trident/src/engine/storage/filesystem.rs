@@ -55,6 +55,7 @@ fn block_devices_needing_fs_creation(
             FileSystemData::Image(ifs)
                 if ctx.servicing_type == ServicingType::CleanInstall
                     && fs.is_esp()
+                    && !ctx.spec.storage.raw_cosi
                     && !ctx
                         .storage_graph
                         .is_adopted(&ifs.device_id)

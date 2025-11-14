@@ -28,6 +28,10 @@ impl Chroot {
             return Err(TridentError::new(ServicingError::EnterChroot));
         }
 
+        let _ = fs::create_dir(path.join("dev"));
+        let _ = fs::create_dir(path.join("proc"));
+        let _ = fs::create_dir(path.join("sys"));
+
         // Mount special dirs.
         debug!("Mounting special directories");
         let mounts = vec![
