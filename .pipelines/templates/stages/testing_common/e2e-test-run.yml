@@ -416,7 +416,7 @@ steps:
 
   - bash: |
       set -eux
-      # To allow storm to access VM serial logs, need sudo. '-w' is needed with sudo
+      # To allow storm to access VM serial logs, need sudo.
       sudo $(Build.SourcesDirectory)/bin/storm-trident helper rebuild-raid -a \
           --log-dir "$(ob_outputDirectory)" \
           "${{ parameters.sshKeyPath }}" \
