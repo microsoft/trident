@@ -114,7 +114,7 @@ func (h *RebuildRaidHelper) stopBaremetalRaids(tc storm.TestCase) error {
 	}
 	logrus.Infof("Failing bare metal raids")
 
-	// # Set up SSH client
+	// Set up SSH client
 	var err error
 	client, err := stormsshclient.OpenSshClient(h.args.SshCliSettings)
 	if err != nil {
