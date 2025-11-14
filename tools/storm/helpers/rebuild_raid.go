@@ -120,24 +120,28 @@ func (h *RebuildRaidHelper) stopBaremetalRaids(tc storm.TestCase) error {
 	var err error
 	client, err := stormsshclient.OpenSshClient(h.args.SshCliSettings)
 	if err != nil {
-		tc.Error(err)
+		tc.FailFromError(err)
+		return err
 	}
 	defer client.Close()
 
 	output, err := stormsshclient.CommandOutput(client, "sudo dd if=/dev/zero of=/dev/sdb bs=512 count=1")
 	if err != nil {
-		tc.Error(err)
+		tc.FailFromError(err)
+		return err
 	}
 	logrus.Debugf("Output of zeroing /dev/sdb:\n%s", string(output))
 	output, err = stormsshclient.CommandOutput(client, "echo 'label: gpt' | sudo sfdisk /dev/sdb --force")
 	if err != nil {
-		tc.Error(err)
+		tc.FailFromError(err)
+		return err
 	}
 	logrus.Debugf("Output of partitioning /dev/sdb:\n%s", string(output))
 
 	output, err = stormsshclient.CommandOutput(client, "sudo mdadm --detail --scan")
 	if err != nil {
-		tc.Error(err)
+		tc.FailFromError(err)
+		return err
 	}
 	logrus.Debugf("Output of mdadm --detail --scan:\n%s", string(output))
 	// Sample output:
@@ -157,7 +161,8 @@ func (h *RebuildRaidHelper) stopBaremetalRaids(tc storm.TestCase) error {
 	for _, raid := range raidArrays {
 		arrayResult, err := stormsshclient.CommandOutput(client, "sudo mdadm --detail "+raid)
 		if err != nil {
-			tc.Error(err)
+			tc.FailFromError(err)
+			return err
 		}
 		// Sample output:
 		// /dev/md/esp-raid:
@@ -224,7 +229,8 @@ func (h *RebuildRaidHelper) stopBaremetalRaids(tc storm.TestCase) error {
 					// fail the device in the RAID array
 					err := failRaidArray(raid, device)
 					if err != nil {
-						tc.Error(err)
+						tc.FailFromError(err)
+						return err
 					}
 				}
 			}
@@ -257,7 +263,7 @@ func (h *RebuildRaidHelper) stopVmRaids(tc storm.TestCase) error {
 	var err error
 	client, err := stormsshclient.OpenSshClient(h.args.SshCliSettings)
 	if err != nil {
-		tc.Error(err)
+		tc.FailFromError(err)
 		return err
 	}
 	defer client.Close()
@@ -265,7 +271,7 @@ func (h *RebuildRaidHelper) stopVmRaids(tc storm.TestCase) error {
 	logrus.Info("Efibootmgr entries in the VM.")
 	output, err := stormsshclient.CommandOutput(client, "sudo efibootmgr")
 	if err != nil {
-		tc.Error(err)
+		tc.FailFromError(err)
 		return err
 	}
 	logrus.Infof("Output of efibootmgr:\n%s", string(output))
@@ -273,21 +279,21 @@ func (h *RebuildRaidHelper) stopVmRaids(tc storm.TestCase) error {
 	virshOutput, virshErr := exec.Command("sudo", "virsh", "shutdown", h.args.VmName).CombinedOutput()
 	logrus.Tracef("virsh shutdown output: %s\n%v", string(virshOutput), virshErr)
 	if virshErr != nil {
-		tc.Error(virshErr)
+		tc.FailFromError(virshErr)
 		return virshErr
 	}
 
 	rmOutput, rmErr := exec.Command("sudo", "rm", "-f", fmt.Sprintf("/var/lib/libvirt/images/virtdeploy-pool/%s-1-volume.qcow2", h.args.VmName)).CombinedOutput()
 	logrus.Tracef("rm volume output: %s\n%v", string(rmOutput), rmErr)
 	if rmErr != nil {
-		tc.Error(rmErr)
+		tc.FailFromError(rmErr)
 		return rmErr
 	}
 
 	createOutput, createErr := exec.Command("sudo", "qemu-img", "create", "-f", "qcow2", fmt.Sprintf("/var/lib/libvirt/images/virtdeploy-pool/%s-1-volume.qcow2", h.args.VmName), "16G").CombinedOutput()
 	logrus.Tracef("qemu-img create output: %s\n%v", string(createOutput), createErr)
 	if createErr != nil {
-		tc.Error(createErr)
+		tc.FailFromError(createErr)
 		return createErr
 	}
 
@@ -299,7 +305,7 @@ func (h *RebuildRaidHelper) stopVmRaids(tc storm.TestCase) error {
 	for i := 1; i <= 30; i++ {
 		domstateOutput, domstateErr := exec.Command("sudo", "virsh", "domstate", h.args.VmName).CombinedOutput()
 		if domstateErr != nil {
-			tc.Error(domstateErr)
+			tc.FailFromError(domstateErr)
 			return domstateErr
 		}
 		logrus.Infof("Domain state attempt %d: %s", i, strings.TrimSpace(string(domstateOutput)))
@@ -310,7 +316,7 @@ func (h *RebuildRaidHelper) stopVmRaids(tc storm.TestCase) error {
 			startOutput, startErr := exec.Command("sudo", "virsh", "start", h.args.VmName).CombinedOutput()
 			logrus.Tracef("virsh start output: %s\n%v", string(startOutput), startErr)
 			if startErr != nil {
-				tc.Error(startErr)
+				tc.FailFromError(startErr)
 				return startErr
 			}
 
@@ -325,18 +331,18 @@ func (h *RebuildRaidHelper) stopVmRaids(tc storm.TestCase) error {
 	}
 
 	if !domainShutdown {
-		tc.Error(fmt.Errorf("the domain did not shut down after 30 attempts"))
+		tc.FailFromError(fmt.Errorf("the domain did not shut down after 30 attempts"))
 		return nil
 	}
 	if !domainStarted {
-		tc.Error(fmt.Errorf("the domain did not start after 30 attempts"))
+		tc.FailFromError(fmt.Errorf("the domain did not start after 30 attempts"))
 		return nil
 	}
 
 	// Get the VM serial log file path
 	dumpxmlOutput, dumpxmlErr := exec.Command("sudo", "virsh", "dumpxml", h.args.VmName).CombinedOutput()
 	if dumpxmlErr != nil {
-		tc.Error(dumpxmlErr)
+		tc.FailFromError(dumpxmlErr)
 		return dumpxmlErr
 	}
 	parsedDomainXml := &libvirtxml.Domain{}
@@ -354,7 +360,8 @@ func (h *RebuildRaidHelper) stopVmRaids(tc storm.TestCase) error {
 		}
 	}
 	if vmSerialLog == "" {
-		tc.Error(fmt.Errorf("failed to find VM serial log path"))
+		tc.FailFromError(fmt.Errorf("failed to find VM serial log path"))
+		return nil
 	}
 
 	tempDir, err := os.MkdirTemp("", "rebuild-raid-*")
@@ -368,7 +375,7 @@ func (h *RebuildRaidHelper) stopVmRaids(tc storm.TestCase) error {
 	err = stormutils.WaitForLoginMessageInSerialLog(vmSerialLog, true, 1, outputPath, time.Minute*5)
 	tc.ArtifactBroker().PublishLogFile(serialLog, outputPath)
 	if err != nil {
-		tc.Error(err)
+		tc.FailFromError(err)
 		return err
 	}
 	return nil
@@ -394,6 +401,7 @@ func (h *RebuildRaidHelper) checkTridentServiceWithSsh(tc storm.TestCase) error 
 	if err != nil {
 		logrus.Errorf("Trident service check via SSH failed: %s", err)
 		h.FailFromError(tc, err)
+		return err
 	}
 	return nil
 }
@@ -496,6 +504,7 @@ func (h *RebuildRaidHelper) rebuildRaid(tc storm.TestCase) error {
 	err := h.triggerRebuildRaid("/var/lib/trident/config.yaml")
 	if err != nil {
 		h.FailFromError(tc, err)
+		return err
 	}
 
 	return nil
