@@ -331,12 +331,14 @@ func (h *RebuildRaidHelper) stopVmRaids(tc storm.TestCase) error {
 	}
 
 	if !domainShutdown {
-		tc.FailFromError(fmt.Errorf("the domain did not shut down after 30 attempts"))
-		return nil
+		err := fmt.Errorf("the domain did not shut down after 30 attempts")
+		tc.FailFromError(err)
+		return err
 	}
 	if !domainStarted {
-		tc.FailFromError(fmt.Errorf("the domain did not start after 30 attempts"))
-		return nil
+		err := fmt.Errorf("the domain did not start after 30 attempts")
+		tc.FailFromError(err)
+		return err
 	}
 
 	// Get the VM serial log file path
