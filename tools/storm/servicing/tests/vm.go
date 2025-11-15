@@ -3,14 +3,14 @@ package tests
 import (
 	"fmt"
 	"tridenttools/storm/servicing/utils/config"
-	"tridenttools/storm/utils"
+	"tridenttools/storm/servicing/utils/vmip"
 
 	"github.com/sirupsen/logrus"
 )
 
 func CheckDeployment(cfg config.ServicingConfig) error {
 	logrus.Tracef("Get VM IP address(es)")
-	vmIPs, err := utils.GetAllVmIPAddresses(cfg)
+	vmIPs, err := vmip.GetAllVmIPAddresses(cfg)
 	if err != nil {
 		return fmt.Errorf("failed to get VM IP addresses: %w", err)
 	}
