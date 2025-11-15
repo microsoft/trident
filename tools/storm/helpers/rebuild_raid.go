@@ -125,18 +125,18 @@ func (h *RebuildRaidHelper) stopBaremetalRaids(tc storm.TestCase) error {
 	}
 	defer client.Close()
 
-	output, err := stormsshclient.CommandOutput(client, "sudo dd if=/dev/zero of=/dev/sdb bs=512 count=1")
+	output, err := stormsshclient.CommandOutput(client, fmt.Sprintf("sudo dd if=/dev/zero of=%s bs=512 count=1", h.args.Disk))
 	if err != nil {
 		tc.FailFromError(err)
 		return err
 	}
-	logrus.Debugf("Output of zeroing /dev/sdb:\n%s", string(output))
-	output, err = stormsshclient.CommandOutput(client, "echo 'label: gpt' | sudo sfdisk /dev/sdb --force")
+	logrus.Debugf("Output of zeroing %s:\n%s", h.args.Disk, string(output))
+	output, err = stormsshclient.CommandOutput(client, fmt.Sprintf("echo 'label: gpt' | sudo sfdisk %s --force", h.args.Disk))
 	if err != nil {
 		tc.FailFromError(err)
 		return err
 	}
-	logrus.Debugf("Output of partitioning /dev/sdb:\n%s", string(output))
+	logrus.Debugf("Output of partitioning %s:\n%s", h.args.Disk, string(output))
 
 	output, err = stormsshclient.CommandOutput(client, "sudo mdadm --detail --scan")
 	if err != nil {
