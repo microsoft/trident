@@ -23,6 +23,43 @@ func BuildCosi(output io.Writer, cosiMetadata *metadata.MetadataJson) error {
 	tw := tar.NewWriter(output)
 	defer tw.Close()
 
+	// Pre-calculate offsets
+	const tarHeaderSize uint64 = 512
+	const tarBlockSize uint64 = 512
+
+	// Start the offset after the tar header of the first image file
+	var currentOffset uint64 = tarHeaderSize
+
+	// Helper function to move the offset forward based on an image file
+	moveOffsetWithImage := func(img *metadata.ImageFile) {
+		// Set the offset for this image
+		img.Offset = currentOffset
+
+		log.WithField("path", img.Path).WithField(
+			"offset",
+			fmt.Sprintf("%d[0x%X]", img.Offset, img.Offset),
+		).Debug("Set image offset")
+
+		// Now move the offset forward by the size of the image file, rounded up to
+		// the next tar block
+		blocks := (img.CompressedSize + tarBlockSize - 1) / tarBlockSize
+		currentOffset += blocks * tarBlockSize
+
+		// Add the size of the tar header for the next image
+		currentOffset += tarHeaderSize
+	}
+
+	// Iterate over all images to set their offsets
+	for i := range cosiMetadata.Images {
+		img := &cosiMetadata.Images[i]
+		moveOffsetWithImage(&img.Image)
+
+		// If there is a verity image, set its offset as well
+		if img.Verity != nil {
+			moveOffsetWithImage(&img.Verity.Image)
+		}
+	}
+
 	marshalledMetadata, err := json.MarshalIndent(cosiMetadata, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal metadata: %w", err)

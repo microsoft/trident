@@ -27,6 +27,7 @@ type ImageFile struct {
 	CompressedSize   uint64 `json:"compressedSize"`
 	UncompressedSize uint64 `json:"uncompressedSize"`
 	Sha384           string `json:"sha384"`
+	Offset           uint64 `json:"offset"`
 
 	// Used internally when building/extracting a COSI file to store the
 	// location of the source image outside of the COSI file. This is NOT part

@@ -13,6 +13,7 @@ type CLI struct {
 	ReadMetadata    cmd.ReadMetadata    `cmd:"" help:"Read metadata from a COSI file."`
 	RandomizeFsUuid cmd.RandomizeFsUuid `cmd:"" help:"Randomize the UUID of the specified filesystems in a COSI file."`
 	DeleteFs        cmd.DeleteFs        `cmd:"" help:"Delete the specified filesystems from a COSI file."`
+	Rebuild         cmd.RebuildCmd      `cmd:"" help:"Rebuild a COSI file from its metadata."`
 	ForceColor      bool                `help:"Force color output." short:"c"`
 	Trace           bool                `help:"Enable trace logging." short:"t"`
 }
