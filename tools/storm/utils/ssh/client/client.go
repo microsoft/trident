@@ -13,12 +13,12 @@ import (
 )
 
 func OpenSshClient(settings stormsshconfig.SshCliSettings) (*ssh.Client, error) {
-	private_key, err := os.ReadFile(settings.PrivateKeyPath)
+	privateKey, err := os.ReadFile(settings.PrivateKeyPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read SSH key file '%s': %w", settings.PrivateKeyPath, err)
 	}
 
-	signer, err := ssh.ParsePrivateKey(private_key)
+	signer, err := ssh.ParsePrivateKey(privateKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse SSH key: %w", err)
 	}
