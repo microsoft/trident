@@ -12,37 +12,6 @@ title: COSI Spec
 | [1.1](#revision-11) | 2025-05-08 |
 | [1.0](#revision-10) | 2024-10-09 |
 
-## Background
-
-Trident is an image-based installer for Azure Linux. However, it does not deploy
-simple disk images like other image-based installers, but instead, allows for
-composability in the storage layout and structure. Because of that, it requires
-a set of discrete images to install an Operating System.
-
-Trident's original design was to consume multiple files, one per partition that
-needed to be imaged. This design requires the user to manage multiple files in
-all stages:
-
-- Creation: Users need to create multiple files, one per partition. (Done
-  through PRISM).
-- Configuration: Users need to specify the paths to the multiple files in the
-  Trident Host Configuration.
-- Distribution: Users need to make sure all the images are available to Trident
-  at the time of installation/update.
-
-The multiple-files approach has manifested a few drawbacks, and not many
-advantages. Some of the key drawbacks are:
-
-- The need to manage multiple files.
-- The risk of mixing files from different versions.
-- The risk of missing files.
-- The added verbosity of the Trident Host Configuration.
-- The error-prone process of updating several image filenames and hashes in
-  configuration files.
-
-See more in the [Image Bundle Proposal
-One-Pager](https://microsoft.sharepoint-df.com/:fl:/g/contentstorage/CSP_f0da4e64-56d1-4a82-845f-0fc5e98b83bb/EfVovKhKi89AjKbQX4bf0pgB_8S9SrV5qstrK6EriF541g?e=7AdTyk&nav=cz0lMkZjb250ZW50c3RvcmFnZSUyRkNTUF9mMGRhNGU2NC01NmQxLTRhODItODQ1Zi0wZmM1ZTk4YjgzYmImZD1iJTIxWkU3YThORldna3FFWHdfRjZZdUR1eU54N3hib3pXOUlqUXdma0Y0cnE3amo5MFgxdGhINFFhMHhscXdwMEJZcCZmPTAxM0ZKWk5WUFZOQzZLUVNVTFo1QUlaSldRTDZETjdVVVkmYz0lMkYmYT1Mb29wQXBwJnA9JTQwZmx1aWR4JTJGbG9vcC1wYWdlLWNvbnRhaW5lciZ4PSU3QiUyMnclMjIlM0ElMjJUMFJUVUh4dGFXTnliM052Wm5RdWMyaGhjbVZ3YjJsdWRDMWtaaTVqYjIxOFlpRmFSVGRoT0U1R1YyZHJjVVZZZDE5R05sbDFSSFY1VG5nM2VHSnZlbGM1U1dwUmQyWnJSalJ5Y1RkcWFqa3dXREYwYUVnMFVXRXdlR3h4ZDNBd1FsbHdmREF4TTBaS1drNVdTVFEzTTFvMk1sazFVelJhUWtsYVUwdERXVXhZUTBSTFRFbyUzRCUyMiUyQyUyMmklMjIlM0ElMjIxYjI1NThkMi05YzM5LTQ5NzgtOTgxZS0zMjUyOTgzMzY5ZTElMjIlN0Q%3D).
-
 ## Overview
 
 This document describes the Composable OS Image (COSI) Specification. The COSI
@@ -67,6 +36,16 @@ COSI should:
 
 The COSI file itself MUST be a simple uncompressed tarball with the extension
 `.cosi`.
+
+The tarball section of the COSI file MUST end with the standard tar
+end-of-archive marker: two 512-byte blocks of zeroes, aligned to 512 bytes.
+
+After the end-of-archive marker, the COSI file MAY contain additional data that
+is not part of the tar archive. This additional data can be used for extensions
+such as footers or checksums.
+
+Readers MUST stop interpreting the COSI file as a tarball after the
+end-of-archive marker.
 
 ### Contents
 
