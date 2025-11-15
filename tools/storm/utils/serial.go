@@ -24,6 +24,7 @@ func WaitForLoginMessageInSerialLog(vmSerialLog string, verbose bool, iteration 
 		if _, err := os.Stat(vmSerialLog); err == nil {
 			break
 		}
+		time.Sleep(100 * time.Millisecond)
 	}
 
 	// Open the file for reading and writing (file is guaranteed to exist)
