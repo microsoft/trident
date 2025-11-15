@@ -38,7 +38,7 @@ func BuildCosi(output io.Writer, cosiMetadata *metadata.MetadataJson) error {
 		log.WithField("path", img.Path).WithField(
 			"offset",
 			fmt.Sprintf("%d[0x%X]", img.Offset, img.Offset),
-		).Debug("Set image offset")
+		).Debug("Set image relative offset")
 
 		// Now move the offset forward by the size of the image file, rounded up to
 		// the next tar block
@@ -49,7 +49,7 @@ func BuildCosi(output io.Writer, cosiMetadata *metadata.MetadataJson) error {
 		currentOffset += tarHeaderSize
 	}
 
-	// Iterate over all images to set their offsets
+	// Iterate over all images to set their relative offsets
 	for i := range cosiMetadata.Images {
 		img := &cosiMetadata.Images[i]
 		moveOffsetWithImage(&img.Image)
@@ -82,6 +82,27 @@ func BuildCosi(output io.Writer, cosiMetadata *metadata.MetadataJson) error {
 			if err != nil {
 				return fmt.Errorf("failed to add verity file: %w", err)
 			}
+		}
+	}
+
+	metadataSize := uint64(len(marshalledMetadata))
+	offsetOffset := tarHeaderSize + ((metadataSize+tarBlockSize-1)/tarBlockSize)*tarBlockSize
+
+	logRealOffsets := func(img *metadata.ImageFile) {
+		log.WithField("path", img.Path).WithField(
+			"real-offset",
+			fmt.Sprintf("%d[0x%X]", img.Offset+offsetOffset, img.Offset+offsetOffset),
+		).WithField("relative-offset",
+			fmt.Sprintf("%d[0x%X]", img.Offset, img.Offset),
+		).Debug("Image offsets")
+	}
+
+	// for debugging, iterate over all images to output their absolute offsets
+	for _, img := range cosiMetadata.Images {
+		logRealOffsets(&img.Image)
+
+		if img.Verity != nil {
+			logRealOffsets(&img.Verity.Image)
 		}
 	}
 
