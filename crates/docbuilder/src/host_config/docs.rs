@@ -53,7 +53,7 @@ fn make_docusaurus_category_file(
 
     // Get the first page relative path to docusaurus root without extension
     let first_page_relative_path_to_docusaurus = output_relative_path
-        .join(&first_page_relative_path)
+        .join(first_page_relative_path)
         .with_extension("")
         .to_string_lossy()
         .to_string();
