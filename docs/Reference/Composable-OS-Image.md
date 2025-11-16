@@ -9,6 +9,7 @@ title: COSI Spec
 
 | Revision            | Spec Date  |
 | ------------------- | ---------- |
+| [1.2](#revision-12) | TBD        |
 | [1.1](#revision-11) | 2025-05-08 |
 | [1.0](#revision-10) | 2024-10-09 |
 
@@ -86,7 +87,7 @@ The tarball MUST NOT have a common root directory. The metadata file MUST be at
 the root of the tarball. If it were extracted with a standard `tar` invocation,
 the metadata file would be placed in the current directory.
 
-The metadata file SHOULD, be placed at the beginning of the tarball to allow for
+The metadata file MUST, be placed at the beginning of the tarball to allow for
 quick access to the metadata without having to traverse the entire tarball.
 
 ### Partition Image Files
@@ -176,6 +177,7 @@ device on top of a data device.
 | `compressedSize`   | number | 1.0      | Yes (since 1.0) | Size of the compressed image in bytes.                                                    |
 | `uncompressedSize` | number | 1.0      | Yes (since 1.0) | Size of the raw uncompressed image in bytes.                                              |
 | `sha384`           | string | 1.0      | Yes (since 1.1) | SHA-384 hash of the compressed hash image.                                                |
+| `offset`           | number | 1.2      | Yes (since 1.2) | Relative offset of the image in bytes.                                                    |
 
 ##### `OsArchitecture` Enum
 
@@ -379,7 +381,94 @@ A string that represents the type of the systemd-boot entry.
 }
 ```
 
+## Relative Offsets
+
+To optimize reading the COSI tarball, each image file in the metadata, starting
+with revision 1.2, MUST include an `offset` field indicating the relative offset
+of the image within the tarball in bytes. This allows reader to produce a full
+address map of all the contents of the COSI file without having to scan the
+entire tarball.
+
+The offset is relative to the base address, which is defines as the first byte
+of the second header of the tarball, the first header being the one for the
+`metadata.json` file.
+
+The offset points to the beginning of the data section of the image file, not
+the header.
+
+For example, consider the following COSI file layout:
+
+```text
+   0x0000 0000 - 0x000 001FF (      512 bytes) : Header 'metadata.json'
+   0x0000 0200 - 0x000 00DFF (     3072 bytes) : Data (2792 bytes, padded to 3072) 'metadata.json'
+   0x0000 0E00 - 0x000 00FFF (      512 bytes) : Header 'images/update_1.raw.zst'
+   0x0000 1000 - 0x065 44DFF (106184192 bytes) : Data (106183830 bytes, padded to 106184192) 'images/update_1.raw.zst'
+   0x0654 4E00 - 0x065 44FFF (      512 bytes) : Header 'images/update_2.raw.zst'
+   0x0654 5000 - 0x098 973FF ( 53814272 bytes) : Data (53814043 bytes, padded to 53814272) 'images/update_2.raw.zst'
+   0x0989 7400 - 0x6F9 D9FFF (     1024 bytes) : End of Archive Marker
+```
+
+In this example, the base address for the offsets is `0x00000E00`, which is the
+first byte of the second header. The relative offsets for the images would be:
+
+- `images/update_1.raw.zst`: `0x0000 0200` -> 512 bytes after the base address
+- `images/update_2.raw.zst`: `0x0654 4E00` -> 106184192 bytes after the base address
+
+The reason for this design is the complexity of injecting absolute offsets into
+the metadata. Because the metadata is places at the beginning of the file, this
+would require knowing the size of the metadata file before its full content is
+known. THis could be achieved by a multiple-pass approach, but that would add
+unnecessary complexity to the COSI file creation process. Relative offsets are
+much simpler to compute, and readers can easily compute absolute offsets after
+just having read the metadata.
+
+### Absolute Offset Computation
+
+Example algorithm to compute absolute offsets from relative offsets:
+
+```python
+metadata_address = <Location of the matadata file>
+metadata_size = <Size of the metadata file>
+
+# Calculate the first address immediately after the metadata file
+address_after_metadata = metadata_address + metadata_size
+
+# Calculate the beginning of the second header (next 512-byte boundary)
+if address_after_metadata % 512 == 0:
+    second_header_address = address_after_metadata
+else:
+    second_header_address = ((address_after_metadata // 512) + 1) * 512
+
+for image in images:
+    absolute_offset = second_header_address + image['offset']
+    print(f"Image {image['path']} is at absolute offset {absolute_offset}")
+```
+
+### Relative Offset Computation
+
+Example algorithm to compute relative offsets from absolute offsets:
+
+```python
+offset = 0
+
+for image in images:
+    offset += 512  # Header size
+    image['offset'] = offset
+    offset += image['compressedSize']
+    # Pad to next 512-byte boundary
+    if offset % 512 != 0:
+        offset += 512 - (offset % 512)
+```
+
 ## Changelog
+
+### Revision 1.2
+
+- Enforced the placement of the metadata file at the beginning of the tarball.
+  This allows for quick access to the metadata without having to traverse the
+  entire tarball.
+- Added `offset` field to `ImageFile` object to support relative offsets within
+  the COSI tarball.
 
 ### Revision 1.1
 

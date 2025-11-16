@@ -38,7 +38,6 @@ const TAR_BLOCK_SIZE: u64 = 512;
 #[derive(Debug, Clone)]
 pub(super) struct Cosi {
     pub source: Url,
-    entries: HashMap<PathBuf, CosiEntry>,
     pub metadata: CosiMetadata,
     pub metadata_sha384: Sha384Hash,
     pub host_configuration_template: Option<Vec<u8>>,
@@ -64,16 +63,16 @@ impl Cosi {
 
         // First, attempt to read the metadata with offsets from the metadata.
         // This will only fail if there was an actual IO error when reading the
-        // file. If the the full entry map cannot be obtained from the metadata, this will
-        // return None.
-        let (metadata, sha384, entries) = if let Some(result) =
+        // file. If the the full entry map cannot be obtained from the metadata,
+        // this will return None.
+        let (metadata, sha384) = if let Some(result) =
             read_cosi_metadata_from_tar_archive(&cosi_reader, source.sha384.clone())
                 .context("Failed to read COSI metadata with offsets.")?
         {
             result
         } else {
-            // If that didn't work, fallback to full scan.
-            // Scan all entries in the COSI file by seeking to all headers in the file.
+            // If that didn't work, fallback to full scan. Scan all entries in
+            // the COSI file by seeking to all headers in the file.
             let entries = read_entries_from_tar_archive(cosi_reader.reader()?)?;
             trace!("Collected {} COSI entries", entries.len());
 
@@ -81,18 +80,15 @@ impl Cosi {
                 read_cosi_metadata_and_validate(&cosi_reader, &entries, source.sha384.clone())
                     .context("Failed to read COSI file metadata.")?;
 
-            (metadata, sha384, entries)
+            (metadata, sha384)
         };
 
         let host_configuration_template =
             if let Some(ref file) = metadata.host_configuration_template {
-                let entry = entries.get(&file.path).context(
-                    "COSI metadata corrupt: host configuration template referenced but missing",
-                )?;
-
                 let mut contents = Vec::new();
-                let mut reader =
-                    HashingReader384::new(cosi_reader.section_reader(entry.offset, entry.size)?);
+                let mut reader = HashingReader384::new(
+                    cosi_reader.section_reader(file.entry.offset, file.entry.size)?,
+                );
                 reader.read_to_end(&mut contents)?;
 
                 if file.sha384 != reader.hash() {
@@ -107,7 +103,6 @@ impl Cosi {
         // Create a new COSI instance.
         Ok(Cosi {
             metadata,
-            entries,
             source: source.url.clone(),
             reader: cosi_reader,
             metadata_sha384: sha384,
@@ -142,10 +137,11 @@ fn cosi_image_to_os_image_filesystem<'a>(
     cosi_reader: &'a FileReader,
     image: &metadata::Image,
 ) -> OsImageFileSystem<'a> {
-    // Make an early copy so the borrow checker knows that we are not keeping a reference to the
-    // original image. Calling as_rer().map() on image.verity seems to tell the borrow checker
-    // that we are keeping a reference to the original image, even if we only clone stuff and don't
-    // keep a reference to the original image.
+    // Make an early copy so the borrow checker knows that we are not keeping a
+    // reference to the original image. Calling as_rer().map() on image.verity
+    // seems to tell the borrow checker that we are keeping a reference to the
+    // original image, even if we only clone stuff and don't keep a reference to
+    // the original image.
     let image = image.clone();
     OsImageFileSystem {
         mount_point: image.mount_point,
@@ -180,8 +176,7 @@ fn cosi_image_to_os_image_filesystem<'a>(
 
 /// Reads JUST the metadata from the given COSI file.
 ///
-/// Returns the metadata, its SHA-384 hash, and a map of all entries in the COSI
-/// file.
+/// Returns the metadata populated with entries, and its SHA-384 hash.
 ///
 /// This will only fail if there was an actual IO error when reading the file.
 /// If the the full entry map cannot be obtained from the metadata, this will
@@ -189,12 +184,14 @@ fn cosi_image_to_os_image_filesystem<'a>(
 ///
 /// A None will happen when:
 /// - The metadata is not the first entry in the tar archive.
-/// - At least one image in the metadata does not have a relative offset.
+/// - Not all file references include an offset.
 fn read_cosi_metadata_from_tar_archive(
     cosi_reader: &FileReader,
     expected_sha384: ImageSha384,
-) -> Result<Option<(CosiMetadata, Sha384Hash, HashMap<PathBuf, CosiEntry>)>, Error> {
+) -> Result<Option<(CosiMetadata, Sha384Hash)>, Error> {
+    // Create a tar archive reader.
     let mut archive = Archive::new(cosi_reader.reader()?);
+    // Get the first entry in the archive.
     let first_entry = archive
         .entries()
         .context("Failed to read COSI file")?
@@ -202,6 +199,7 @@ fn read_cosi_metadata_from_tar_archive(
         .context("COSI file is empty")?
         .context("Failed to read first COSI entry")?;
 
+    // Ensure that the first entry is the metadata.
     if first_entry
         .path()
         .context("Failed to read first COSI entry path")?
@@ -209,68 +207,116 @@ fn read_cosi_metadata_from_tar_archive(
     {
         // First entry is NOT the metadata, so we cannot have relative offsets.
         log::warn!(
-            "COSI file does not have metadata as the first entry; relative offsets will not be supported"
+            "Non-compliant COSI file: metadata is not the first entry; relative offsets will not be supported"
         );
         return Ok(None);
     }
 
+    // Read the metadata from the first entry.
+    let (mut metadata, actual_sha384) = read_cosi_metadata(
+        cosi_reader,
+        &CosiEntry {
+            offset: first_entry.raw_file_position(),
+            size: first_entry.size(),
+        },
+        expected_sha384,
+    )?;
+
     // Calculate the address of the first byte after the metadata.
     let address_after_metadata = first_entry.raw_file_position() + first_entry.size();
 
-    // Now calculate the start of the second header. This is the first byte
-    // address after the metadata, aligned to the next TAR block boundary. If
-    // the metadata ends exactly at a TAR block boundary, the start of the
-    // second header is the same as the address after the metadata. In other
-    // words, if address_after_metadata % TAR_BLOCK_SIZE == 0, then
-    // start_of_second_header == address_after_metadata.
-    //
-    // In all other cases, we round up to the next TAR block boundary.
+    // Now calculate the start of the second header. This is the first multiple
+    // of 512 bytes (tar block boundary) after the end of the metadata. If the
+    // metadata ends exactly at a TAR block boundary, the start of the second
+    // header is the same as the address immediately after the metadata. In
+    // other words, if address_after_metadata % TAR_BLOCK_SIZE == 0, then
+    // start_of_second_header == address_after_metadata. In all other cases, we
+    // round up to the next TAR block boundary.
     //
     // This can be done without the IF, but this is more readable.
     let start_of_second_header = if address_after_metadata % TAR_BLOCK_SIZE == 0 {
+        // Metadata ends exactly at a TAR block boundary. The start of the
+        // second header is the same as the address immediately after the
+        // metadata.
         address_after_metadata
     } else {
+        // Metadata does not end at a TAR block boundary. Round up to the next
+        // TAR block boundary by adding the difference between the next TAR
+        // block boundary and the current address.
         address_after_metadata + (TAR_BLOCK_SIZE - (address_after_metadata % TAR_BLOCK_SIZE))
     };
 
-    let entry = CosiEntry {
-        offset: first_entry.raw_file_position(),
-        size: first_entry.size(),
-    };
-
-    let (mut metadata, actual_sha384) = read_cosi_metadata(cosi_reader, &entry, expected_sha384)?;
-
-    let entries = metadata
+    // Get an iterator over all image files in the metadata.
+    let image_files = metadata
         .images
         // Iterate over all images
         .iter_mut()
-        // Get a flattened iterator over the image files and their verity files (if any)
+        // Get a flattened iterator over the image files and their verity files
+        // (if any)
         .flat_map(|fs| {
             iter::once(&mut fs.file).chain(fs.verity.as_mut().map(|verity| &mut verity.file))
         })
-        // Map each image file to its path and CosiEntry
-        .map(|img| {
-            // Ensure that the image has a relative offset.
-            let relative_offset = img.offset?;
-            let entry = CosiEntry {
-                offset: start_of_second_header + relative_offset,
-                size: img.compressed_size,
-            };
-            img.entry = entry;
-            Some((img.path.clone(), entry))
-        })
-        .collect::<Option<HashMap<PathBuf, CosiEntry>>>();
+        .collect::<Vec<_>>();
 
-    let Some(entries) = entries else {
-        // At least one image did not have a relative offset, we cannot build
-        // the full list of entries.
-        log::warn!(
-            "At least one image in the COSI metadata does not have a relative offset. The the full file will be scanned instead."
-        );
+    // Check if at least one image has an offset defined in the metadata. If
+    // not, we assume this is an older COSI and needs full-file scanning.
+    if image_files.iter().any(|img| img.offset.is_some()) {
+        // No images have relative offsets, we cannot build the full list of
+        // entries.
+        log::info!("No images in the COSI metadata have relative offsets.");
         return Ok(None);
-    };
+    }
 
-    Ok(Some((metadata, actual_sha384, entries)))
+    for img in image_files {
+        trace!(
+            "Processing image file at path for absolute offset '{}'",
+            img.path.display()
+        );
+
+        let Some(relative_offset) = img.offset else {
+            // Image does not have a relative offset, we cannot build the full
+            // list of entries.
+            log::error!(
+                "Image '{}' in the COSI metadata does not have a relative offset.",
+                img.path.display()
+            );
+            return Ok(None);
+        };
+
+        img.entry = CosiEntry {
+            offset: start_of_second_header + relative_offset,
+            size: img.compressed_size,
+        };
+    }
+
+    if let Some(hc_file) = metadata.host_configuration_template.as_mut() {
+        trace!(
+            "Processing Host Configuration template at path for absolute offset '{}'",
+            hc_file.path.display()
+        );
+
+        let Some(relative_offset) = hc_file.offset else {
+            // Host Configuration template does not have a relative offset,
+            // we cannot build the full list of entries.
+            log::error!(
+                "Host Configuration template '{}' in the COSI metadata does not have a relative offset.",
+                hc_file.path.display()
+            );
+            return Ok(None);
+        };
+
+        hc_file.entry = CosiEntry {
+            offset: start_of_second_header + relative_offset,
+            size: hc_file.size,
+        };
+    }
+
+    debug!(
+        "Successfully read COSI metadata [v{}.{}] with relative offsets",
+        metadata.version.major, metadata.version.minor
+    );
+
+    Ok(Some((metadata, actual_sha384)))
 }
 
 /// Reads all entries from the given COSI tar archive.
@@ -475,6 +521,21 @@ fn populate_cosi_metadata_content_location(
                 )
             })?;
         }
+    }
+
+    if let Some(host_config) = metadata.host_configuration_template.as_mut() {
+        trace!(
+            "Looking for entry for Host Configuration template at '{}'",
+            host_config.path.display()
+        );
+        let Some(entry) = entries.get(&host_config.path) else {
+            bail!(
+                "COSI metadata contains an entry for a Host Configuration template at '{}', but the entry was not found in the COSI file",
+                host_config.path.display()
+            );
+        };
+
+        host_config.entry = *entry;
     }
 
     Ok(())

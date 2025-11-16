@@ -309,6 +309,13 @@ pub(crate) struct BootloaderEntry {
 pub(crate) struct AuxiliaryFile {
     pub path: PathBuf,
     pub sha384: Sha384Hash,
+    pub size: u64,
+
+    #[serde(default)]
+    pub offset: Option<u64>,
+
+    #[serde(skip)]
+    pub(super) entry: CosiEntry,
 }
 
 #[cfg(test)]
