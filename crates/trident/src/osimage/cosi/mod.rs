@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     io::{Read, Seek},
+    iter,
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -28,6 +29,9 @@ use super::{OsImageFile, OsImageFileSystem, OsImageVerityHash};
 
 /// Path to the COSI metadata file. Part of the COSI specification.
 const COSI_METADATA_PATH: &str = "metadata.json";
+
+/// Size of a tar block in bytes.
+const TAR_BLOCK_SIZE: u64 = 512;
 
 /// Top-level COSI file representation.
 #[allow(dead_code)]
@@ -58,12 +62,27 @@ impl Cosi {
         let cosi_reader =
             FileReader::new(&source.url, timeout).context("Failed to create COSI reader.")?;
 
-        // Scan all entries in the COSI file by seeking to all headers in the file.
-        let entries = read_entries_from_tar_archive(cosi_reader.reader()?)?;
-        trace!("Collected {} COSI entries", entries.len());
+        // First, attempt to read the metadata with offsets from the metadata.
+        // This will only fail if there was an actual IO error when reading the
+        // file. If the the full entry map cannot be obtained from the metadata, this will
+        // return None.
+        let (metadata, sha384, entries) = if let Some(result) =
+            read_cosi_metadata_from_tar_archive(&cosi_reader, source.sha384.clone())
+                .context("Failed to read COSI metadata with offsets.")?
+        {
+            result
+        } else {
+            // If that didn't work, fallback to full scan.
+            // Scan all entries in the COSI file by seeking to all headers in the file.
+            let entries = read_entries_from_tar_archive(cosi_reader.reader()?)?;
+            trace!("Collected {} COSI entries", entries.len());
 
-        let (metadata, sha384) = read_cosi_metadata(&cosi_reader, &entries, source.sha384.clone())
-            .context("Failed to read COSI file metadata.")?;
+            let (metadata, sha384) =
+                read_cosi_metadata_and_validate(&cosi_reader, &entries, source.sha384.clone())
+                    .context("Failed to read COSI file metadata.")?;
+
+            (metadata, sha384, entries)
+        };
 
         let host_configuration_template =
             if let Some(ref file) = metadata.host_configuration_template {
@@ -159,6 +178,101 @@ fn cosi_image_to_os_image_filesystem<'a>(
     }
 }
 
+/// Reads JUST the metadata from the given COSI file.
+///
+/// Returns the metadata, its SHA-384 hash, and a map of all entries in the COSI
+/// file.
+///
+/// This will only fail if there was an actual IO error when reading the file.
+/// If the the full entry map cannot be obtained from the metadata, this will
+/// return None.
+///
+/// A None will happen when:
+/// - The metadata is not the first entry in the tar archive.
+/// - At least one image in the metadata does not have a relative offset.
+fn read_cosi_metadata_from_tar_archive(
+    cosi_reader: &FileReader,
+    expected_sha384: ImageSha384,
+) -> Result<Option<(CosiMetadata, Sha384Hash, HashMap<PathBuf, CosiEntry>)>, Error> {
+    let mut archive = Archive::new(cosi_reader.reader()?);
+    let first_entry = archive
+        .entries()
+        .context("Failed to read COSI file")?
+        .next()
+        .context("COSI file is empty")?
+        .context("Failed to read first COSI entry")?;
+
+    if first_entry
+        .path()
+        .context("Failed to read first COSI entry path")?
+        != Path::new(COSI_METADATA_PATH)
+    {
+        // First entry is NOT the metadata, so we cannot have relative offsets.
+        log::warn!(
+            "COSI file does not have metadata as the first entry; relative offsets will not be supported"
+        );
+        return Ok(None);
+    }
+
+    // Calculate the address of the first byte after the metadata.
+    let address_after_metadata = first_entry.raw_file_position() + first_entry.size();
+
+    // Now calculate the start of the second header. This is the first byte
+    // address after the metadata, aligned to the next TAR block boundary. If
+    // the metadata ends exactly at a TAR block boundary, the start of the
+    // second header is the same as the address after the metadata. In other
+    // words, if address_after_metadata % TAR_BLOCK_SIZE == 0, then
+    // start_of_second_header == address_after_metadata.
+    //
+    // In all other cases, we round up to the next TAR block boundary.
+    //
+    // This can be done without the IF, but this is more readable.
+    let start_of_second_header = if address_after_metadata % TAR_BLOCK_SIZE == 0 {
+        address_after_metadata
+    } else {
+        address_after_metadata + (TAR_BLOCK_SIZE - (address_after_metadata % TAR_BLOCK_SIZE))
+    };
+
+    let entry = CosiEntry {
+        offset: first_entry.raw_file_position(),
+        size: first_entry.size(),
+    };
+
+    let (mut metadata, actual_sha384) = read_cosi_metadata(cosi_reader, &entry, expected_sha384)?;
+
+    let entries = metadata
+        .images
+        // Iterate over all images
+        .iter_mut()
+        // Get a flattened iterator over the image files and their verity files (if any)
+        .flat_map(|fs| {
+            iter::once(&mut fs.file).chain(fs.verity.as_mut().map(|verity| &mut verity.file))
+        })
+        // Map each image file to its path and CosiEntry
+        .map(|img| {
+            // Ensure that the image has a relative offset.
+            let relative_offset = img.offset?;
+            let entry = CosiEntry {
+                offset: start_of_second_header + relative_offset,
+                size: img.compressed_size,
+            };
+            img.entry = entry;
+            Some((img.path.clone(), entry))
+        })
+        .collect::<Option<HashMap<PathBuf, CosiEntry>>>();
+
+    let Some(entries) = entries else {
+        // At least one image did not have a relative offset, we cannot build
+        // the full list of entries.
+        log::warn!(
+            "At least one image in the COSI metadata does not have a relative offset. The the full file will be scanned instead."
+        );
+        return Ok(None);
+    };
+
+    Ok(Some((metadata, actual_sha384, entries)))
+}
+
 /// Reads all entries from the given COSI tar archive.
 fn read_entries_from_tar_archive<R: Read + Seek>(
     cosi_reader: R,
@@ -217,7 +331,7 @@ fn read_entries_from_tar_archive<R: Read + Seek>(
 /// - Validates the metadata version.
 /// - Ensures that all images defined in the metadata are present in the COSI file.
 /// - Populates metadata with the actual content location of the images.
-fn read_cosi_metadata(
+fn read_cosi_metadata_and_validate(
     cosi_reader: &FileReader,
     entries: &HashMap<PathBuf, CosiEntry>,
     expected_sha384: ImageSha384,
@@ -236,9 +350,34 @@ fn read_cosi_metadata(
         metadata_location.size
     );
 
+    let (mut metadata, actual_sha384) =
+        read_cosi_metadata(cosi_reader, metadata_location, expected_sha384)?;
+
+    // Populate the metadata with the actual content location of the images.
+    populate_cosi_metadata_content_location(entries, &mut metadata)?;
+
+    debug!(
+        "Successfully read COSI metadata [v{}.{}]",
+        metadata.version.major, metadata.version.minor
+    );
+
+    Ok((metadata, actual_sha384))
+}
+
+/// Retrieves the COSI metadata from the given COSI file.
+///
+/// It also:
+/// - Validates the metadata version.
+/// - Ensures that all images defined in the metadata are present in the COSI file.
+/// - Populates metadata with the actual content location of the images.
+fn read_cosi_metadata(
+    cosi_reader: &FileReader,
+    entry: &CosiEntry,
+    expected_sha384: ImageSha384,
+) -> Result<(CosiMetadata, Sha384Hash), Error> {
     let mut metadata_reader = HashingReader384::new(
         cosi_reader
-            .section_reader(metadata_location.offset, metadata_location.size)
+            .section_reader(entry.offset, entry.size)
             .context("Failed to create COSI metadata reader")?,
     );
 
@@ -263,19 +402,11 @@ fn read_cosi_metadata(
     )?;
 
     // Now, parse the full metadata.
-    let mut metadata: CosiMetadata =
+    let metadata: CosiMetadata =
         serde_json::from_str(&raw_metadata).context("Failed to parse COSI metadata")?;
 
     // Validate the metadata.
     metadata.validate()?;
-
-    // Populate the metadata with the actual content location of the images.
-    populate_cosi_metadata_content_location(entries, &mut metadata)?;
-
-    debug!(
-        "Successfully read COSI metadata [v{}.{}]",
-        metadata.version.major, metadata.version.minor
-    );
 
     Ok((metadata, actual_sha384))
 }
@@ -578,7 +709,7 @@ mod tests {
         .collect::<HashMap<_, _>>();
 
         // Read the metadata.
-        let metadata = read_cosi_metadata(
+        let metadata = read_cosi_metadata_and_validate(
             &cosi_reader,
             &entries,
             ImageSha384::Checksum(metadata_sha384.into()),
@@ -676,6 +807,7 @@ mod tests {
                     offset: 0,
                     size: data.len() as u64,
                 },
+                offset: None,
             },
             mount_point: PathBuf::from("/some/mount/point"),
             fs_type: OsImageFileSystemType::Ext4,
@@ -722,6 +854,7 @@ mod tests {
                     offset: 0,
                     size: verity_data.len() as u64,
                 },
+                offset: None,
             },
             roothash: root_hash.to_string(),
         });
@@ -795,6 +928,7 @@ mod tests {
                     uncompressed_size: file_data.len() as u64,
                     sha384: Sha384Hash::from(format!("{:x}", Sha384::digest(file_data.as_bytes()))),
                     entry,
+                    offset: None,
                 },
                 mount_point: PathBuf::from(mntpt),
                 fs_type: *fs_type,

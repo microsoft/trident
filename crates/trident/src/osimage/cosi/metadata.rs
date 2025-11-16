@@ -206,6 +206,9 @@ pub(crate) struct ImageFile {
 
     pub sha384: Sha384Hash,
 
+    #[serde(default)]
+    pub offset: Option<u64>,
+
     #[serde(skip)]
     pub(super) entry: CosiEntry,
 }
@@ -345,6 +348,7 @@ mod tests {
             uncompressed_size: 100,
             sha384: Sha384Hash::from("sample_sha384"),
             entry: CosiEntry::default(),
+            offset: None,
         }
     }
 
