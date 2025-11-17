@@ -175,6 +175,25 @@ pub enum Commands {
         #[arg(long, conflicts_with = "hs_path")]
         history_path: Option<PathBuf>,
     },
+
+    #[cfg(feature = "dangerous-options")]
+    StreamImage {
+        /// URL of the image to stream
+        #[clap(index = 1)]
+        image: url::Url,
+
+        /// Hash of the image manifest
+        #[clap(long)]
+        hash: String,
+
+        /// Path to save the resulting HostStatus
+        #[clap(short, long)]
+        status: Option<PathBuf>,
+
+        /// Path to save an eventual fatal error
+        #[clap(short, long)]
+        error: Option<PathBuf>,
+    },
 }
 
 impl Commands {
@@ -191,6 +210,8 @@ impl Commands {
             #[cfg(feature = "pytest-generator")]
             Commands::Pytest => "pytest",
             Commands::OfflineInitialize { .. } => "offline-initialize",
+            #[cfg(feature = "dangerous-options")]
+            Commands::StreamImage { .. } => "stream-image",
         }
     }
 }

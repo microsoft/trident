@@ -280,6 +280,9 @@ pub enum InvalidInputError {
         fs_type: String,
     },
 
+    #[error("Hash '{0}' has unsupported hash kind. Expected 'ignored' or 'sha384:' prefix.")]
+    UnsupportedHashKind(String),
+
     #[error(
         "Filesystem at '{mount_point}' in OS Image is not being used by the provided Host \
         Configuration. This could mean that the Host Configuration is missing a filesystem \
@@ -595,6 +598,9 @@ pub enum ServicingError {
 
     #[error("Failed to set permissions on temporary recovery key file '{key_file}'")]
     SetRecoveryKeyFilePermissions { key_file: String },
+
+    #[error("Failed to set up UEFI fallback boot files")]
+    SetUpUefiFallback,
 
     #[error("Failed to set up users for management OS")]
     SetUpUsers,

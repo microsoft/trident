@@ -3,9 +3,12 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::primitives::hash::Sha384Hash;
 #[cfg(feature = "schemars")]
 use crate::schema_helpers::unit_enum_with_untagged_variant;
+use crate::{
+    error::{InvalidInputError, TridentError},
+    primitives::hash::Sha384Hash,
+};
 
 /// Data about the image to deploy on the host, including sourcing and integrity information.
 ///
@@ -43,6 +46,20 @@ pub enum ImageSha384 {
     /// The SHA384 checksum of the image.
     #[serde(untagged)]
     Checksum(Sha384Hash),
+}
+
+impl ImageSha384 {
+    pub fn new(hash: &str) -> Result<Self, TridentError> {
+        if hash == "ignored" {
+            Ok(ImageSha384::Ignored)
+        } else if let Some(hash) = hash.strip_prefix("sha384:") {
+            Ok(ImageSha384::Checksum(Sha384Hash::from(hash)))
+        } else {
+            Err(TridentError::new(InvalidInputError::UnsupportedHashKind(
+                hash.to_string(),
+            )))
+        }
+    }
 }
 
 impl std::fmt::Display for ImageSha384 {

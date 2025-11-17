@@ -188,6 +188,9 @@ pub mod internal_params {
     /// Allow unused images in a COSI file.
     pub const ALLOW_UNUSED_FILESYSTEMS_IN_COSI: &str = "allowUnusedFilesystems";
 
+    /// Allow updates that include changes to the storage section in the Host Configuration.
+    pub const ALLOW_HC_STORAGE_CHANGE: &str = "allowHostConfigStorageChange";
+
     /// Disable check that filesystem size does not exceed the size of its block device.
     pub const DISABLE_FS_BLOCK_DEVICE_SIZE_CHECK: &str = "disableFsBlockDeviceSizeCheck";
 

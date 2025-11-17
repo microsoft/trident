@@ -123,6 +123,7 @@ os:
   - destination: /var/config-script.sh
     content: 'echo ''Running from newly deployed chroot: $SAMPLE_VARIABLE'''
     permissions: '0755'
+  uefiFallback: rollback
 image:
   url: file:///path/to/image.cosi
   sha384: ec9a9aa23f02b30f4ec6a168b9bc24733b652eeab4f8abc243630666a5e34cea1667c34313a13ec1564ac4871b80112f

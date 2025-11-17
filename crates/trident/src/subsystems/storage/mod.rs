@@ -8,7 +8,7 @@ use log::{debug, error, warn};
 use osutils::lsblk;
 use trident_api::{
     config::HostConfigurationDynamicValidationError,
-    constants::internal_params::RELAXED_COSI_VALIDATION,
+    constants::internal_params::{ALLOW_HC_STORAGE_CHANGE, RELAXED_COSI_VALIDATION},
     error::{
         InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt,
         UnsupportedConfigurationError,
@@ -37,7 +37,9 @@ impl Subsystem for StorageSubsystem {
     }
 
     fn validate_host_config(&self, ctx: &EngineContext) -> Result<(), TridentError> {
-        if ctx.servicing_type != ServicingType::CleanInstall {
+        if ctx.servicing_type != ServicingType::CleanInstall
+            && !ctx.spec.internal_params.get_flag(ALLOW_HC_STORAGE_CHANGE)
+        {
             // Ensure that relevant portions of the Host Configuration have not changed.
             if ctx.spec_old.storage.disks != ctx.spec.storage.disks
                 || ctx.spec_old.storage.raid != ctx.spec.storage.raid

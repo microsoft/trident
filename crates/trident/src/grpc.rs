@@ -11,9 +11,8 @@ use tonic::{transport::Server, Request, Response, Status};
 
 use osutils::dependencies::Dependency;
 use trident_api::{
-    config::HostConfiguration,
-    config::{GrpcConfiguration, Operations},
-    error::{InternalError, ReportError, ServicingError, TridentError},
+    config::{GrpcConfiguration, HostConfiguration, Operations},
+    error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
 };
 
 use crate::{datastore::DataStore, OrchestratorConnection};
@@ -34,6 +33,31 @@ pub struct HostManagementImpl(Sender<(HostConfiguration, Operations, GrpcSender)
 #[tonic::async_trait]
 impl host_management_server::HostManagement for HostManagementImpl {
     type UpdateHostStream = UnboundedReceiverStream<Result<HostStatusState, Status>>;
+
+    async fn cosi_to_host_configuration(
+        &self,
+        request: Request<CosiToHostConfigurationRequest>,
+    ) -> Result<Response<CosiToHostConfigurationResponse>, Status> {
+        info!("Received cosi_to_host_configuration request");
+        let request = request.into_inner();
+
+        let host_config = crate::stream::config_from_image_url(
+            request.cosi_url.parse().map_err(|e| {
+                Status::invalid_argument(format!("Failed to parse COSI URL: {e:?}"))
+            })?,
+            &request.cosi_hash,
+        )
+        .unstructured("Failed to convert COSI to Host Configuration")
+        .map_err(|e| Status::internal(format!("{e:?}")))?;
+
+        let response = CosiToHostConfigurationResponse {
+            host_configuration: serde_yaml::to_string(&host_config)
+                .context("Failed to serialize Host Configuration")
+                .map_err(|e| Status::internal(format!("{e:?}")))?,
+        };
+
+        Ok(Response::new(response))
+    }
 
     async fn update_host(
         &self,

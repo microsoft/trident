@@ -5,6 +5,7 @@ import libvirt
 import os
 import subprocess
 import xml.etree.ElementTree as ET
+from typing import Optional
 
 
 def run_command(command: str) -> str:
@@ -48,8 +49,12 @@ def create_console_connection(vm_name: str) -> libvirt.virStream:
     return stream
 
 
-def watch_for_usb_iso_login(
-    vm_name: str, success_string: str, output_log_filepath: str, log_file_stream
+def watch_for_azl_installer_login(
+    vm_name: str,
+    success_string: str,
+    failure_string: Optional[str],
+    output_log_filepath: str,
+    log_file_stream,
 ):
     # Create console connection
     stream = create_console_connection(vm_name)
@@ -61,6 +66,13 @@ def watch_for_usb_iso_login(
         log_file_stream.flush()
         if check_logfile_for_string(output_log_filepath, success_string):
             break
+        if failure_string and check_logfile_for_string(
+            output_log_filepath, failure_string
+        ):
+            print(
+                f"Found '{failure_string}' in serial log before reaching login prompt, raising exception"
+            )
+            raise Exception("installation finished without reaching login prompt")
     # Close console connection
     stream.finish()
 
@@ -85,21 +97,15 @@ def send_command_to_vm(vm_name, cmd, log_file_stream, output_log_filepath):
     stream.finish()
 
 
-def validate_trident_usb_iso(vm_name: str, output_log_file: str):
+def validate_azl_installer_iso(vm_name: str, output_log_file: str):
     if os.path.exists(output_log_file):
         # Clean log files from any previous run
         os.remove(output_log_file)
 
-    with open(f"{output_log_file}", "a") as log_file_stream:
+    with open(output_log_file, "a") as log_file_stream:
         # start VM
         print(f"Start VM: {vm_name}")
         start_domain(vm_name)
-
-        # get disk device
-        target_device = get_xml_element_attribute(
-            vm_name, "./devices/disk[@device='disk']/target", "dev"
-        )
-        print(f"Find target device for {vm_name}: {target_device}")
 
         # get serial pts device
         serial_pts_device = get_xml_element_attribute(
@@ -107,45 +113,35 @@ def validate_trident_usb_iso(vm_name: str, output_log_file: str):
         )
         print(f"Find serial port for {vm_name}: {serial_pts_device}")
 
-        print(f"Wait for usb-iso to be ready.")
-        watch_for_usb_iso_login(
-            vm_name,
-            "azl-installer-mos login: root (automatic login)",
-            output_log_file,
-            log_file_stream,
-        )
-        print(f"... usb-iso to has started.")
-
+        print("Wait for azl-installer ISO to boot and start installation.")
         print(
-            f"Send CTRL-C to VM over serial for some reason to re-enable serial input."
+            "The liveinstaller will automatically detect the disk and run trident install."
         )
-        run_command(f"echo -e '\x03' > {serial_pts_device}")
-        print(f"... CTRL-C sent.")
-
-        print(f"Modify embedded config.yaml to reflect {target_device}.")
-        send_command_to_vm(
+        watch_for_azl_installer_login(
             vm_name,
-            f"sed -i 's|device: /dev/nvme0n1|device: /dev/{target_device}|' /etc/trident/config.yaml",
-            log_file_stream,
+            "azl-installer login:",
+            None,
             output_log_file,
+            log_file_stream,
         )
+        print("... azl-installer has booted and started installation script.")
 
-        print(f"Start OS installation")
-        # Open a serial console connection
-        send_command_to_vm(vm_name, "trident install", log_file_stream, output_log_file)
-
-        print(f"Wait while new OS is installing.")
-        watch_for_usb_iso_login(
-            vm_name, "trident-testimg login:", output_log_file, log_file_stream
+        print("Wait while new OS is installing (this may take several minutes).")
+        watch_for_azl_installer_login(
+            vm_name,
+            "trident-testimg login:",
+            "Trident failed",
+            output_log_file,
+            log_file_stream,
         )
-        print(f"... finished installing new OS.")
+        print("... finished installing new OS.")
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--vm-name",
-        default="usb-iso-test-vm",
+        default="azl-installer-test-vm",
         help="VM name",
     )
     parser.add_argument(
@@ -155,7 +151,7 @@ def main():
     )
     args = parser.parse_args()
 
-    validate_trident_usb_iso(
+    validate_azl_installer_iso(
         args.vm_name,
         args.log,
     )

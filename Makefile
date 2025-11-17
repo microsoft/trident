@@ -388,7 +388,7 @@ generate-functional-test-manifest: .cargo/config
 
 .PHONY: validate-configs
 validate-configs: bin/trident
-	$(eval DETECTED_HC_FILES := $(shell grep -R '^storage:' . --include '*.yaml' -l | grep -E -v '\./(target|dev|azure-linux-image-tools|crates/docbuilder|tests/images)'))
+	$(eval DETECTED_HC_FILES := $(shell grep -R '^storage:' . --include '*.yaml' -l | grep -E -v '\./(target|dev|azure-linux-image-tools|crates/docbuilder|tests/images|tests/azl-installer)'))
 	@for file in $(DETECTED_HC_FILES); do \
 		echo "Validating $$file"; \
 		$< validate $$file -v info || exit 1; \
@@ -408,6 +408,9 @@ bin/netlisten: tools/cmd/netlisten/* tools/go.sum tools/pkg/*
 	@mkdir -p bin
 	cd tools && go build -o ../bin/netlisten ./cmd/netlisten
 
+# isopatch injects files into an ISO with placeholders without rebuilding the ISO.
+# It can be used to transform the AZL INSTALLER ISO from attended to unattended
+# by injecting a Host Configuration file.
 bin/isopatch: tools/cmd/isopatch/* tools/go.sum tools/pkg/isopatcher/*
 	@mkdir -p bin
 	cd tools && go build -o ../bin/isopatch ./cmd/isopatch

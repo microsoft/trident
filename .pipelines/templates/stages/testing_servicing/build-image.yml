@@ -40,7 +40,7 @@ parameters:
 jobs:
   - job: PrepareImage_${{ replace(parameters.label, '-', '_') }}
     displayName: Prepare Image ${{ parameters.label }}
-    timeoutInMinutes: 15
+    timeoutInMinutes: 20
     pool:
       type: linux
 

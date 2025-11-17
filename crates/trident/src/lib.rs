@@ -36,6 +36,7 @@ mod monitor_metrics;
 pub mod offline_init;
 mod orchestrate;
 pub mod osimage;
+pub mod stream;
 mod subsystems;
 pub mod validation;
 
@@ -342,7 +343,10 @@ impl Trident {
             Some(Ok(timeout)) => Duration::from_secs(timeout),
             _ => Duration::from_secs(10), // Default timeout
         };
-        OsImage::load(&mut host_config.image, cosi_timeout)
+        match host_config.image {
+            Some(ref mut image_source) => OsImage::load(image_source, cosi_timeout),
+            None => Err(TridentError::new(InvalidInputError::MissingOsImage)),
+        }
     }
 
     /// Rebuilds RAID devices on replaced disks on the host

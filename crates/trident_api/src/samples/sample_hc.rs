@@ -15,7 +15,8 @@ use crate::{
         FileSystem, FileSystemSource, Health, HostConfiguration, ImageSha384, MountOptions,
         MountPoint, NewFileSystemType, Os, OsImage, Partition, PartitionTableType, PartitionType,
         Raid, RaidLevel, Script, ScriptSource, Scripts, Services, ServicingTypeSelection,
-        SoftwareRaidArray, SshMode, Storage, Swap, SystemdCheck, User, VerityDevice,
+        SoftwareRaidArray, SshMode, Storage, Swap, SystemdCheck, UefiFallbackMode, User,
+        VerityDevice,
     },
     constants::{self, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
 };
@@ -156,6 +157,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     permissions: Some("0755".into()),
                     ..Default::default()
                 }],
+                uefi_fallback: Some(UefiFallbackMode::Rollback),
                 ..Default::default()
             },
             scripts: Scripts {
@@ -371,6 +373,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     permissions: Some("0755".into()),
                     ..Default::default()
                 }],
+                uefi_fallback: Some(UefiFallbackMode::Rollback),
                 ..Default::default()
             },
             scripts: Scripts {
@@ -1144,6 +1147,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     },
                     sysexts: vec![],
                     confexts: vec![],
+                    uefi_fallback: None,
                 },
                 scripts: Scripts {
                     post_configure: vec![Script {
@@ -1291,6 +1295,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     },
                     sysexts: vec![],
                     confexts: vec![],
+                    uefi_fallback: None,
                 },
                 scripts: Scripts {
                     post_configure: vec![Script {
@@ -1457,6 +1462,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     },
                     sysexts: vec![],
                     confexts: vec![],
+                    uefi_fallback: None,
                 },
                 scripts: Scripts {
                     post_configure: vec![Script {

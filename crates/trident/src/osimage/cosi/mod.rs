@@ -10,7 +10,6 @@ use log::{debug, trace};
 use tar::Archive;
 use url::Url;
 
-use sysdefs::arch::SystemArchitecture;
 use trident_api::{
     config::{ImageSha384, OsImage},
     primitives::hash::Sha384Hash,
@@ -34,10 +33,11 @@ const COSI_METADATA_PATH: &str = "metadata.json";
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub(super) struct Cosi {
-    source: Url,
+    pub source: Url,
     entries: HashMap<PathBuf, CosiEntry>,
-    metadata: CosiMetadata,
-    metadata_sha384: Sha384Hash,
+    pub metadata: CosiMetadata,
+    pub metadata_sha384: Sha384Hash,
+    pub host_configuration_template: Option<Vec<u8>>,
     reader: FileReader,
 }
 
@@ -65,6 +65,26 @@ impl Cosi {
         let (metadata, sha384) = read_cosi_metadata(&cosi_reader, &entries, source.sha384.clone())
             .context("Failed to read COSI file metadata.")?;
 
+        let host_configuration_template =
+            if let Some(ref file) = metadata.host_configuration_template {
+                let entry = entries.get(&file.path).context(
+                    "COSI metadata corrupt: host configuration template referenced but missing",
+                )?;
+
+                let mut contents = Vec::new();
+                let mut reader =
+                    HashingReader384::new(cosi_reader.section_reader(entry.offset, entry.size)?);
+                reader.read_to_end(&mut contents)?;
+
+                if file.sha384 != reader.hash() {
+                    bail!("COSI host configuration template hash does not match expected hash");
+                }
+
+                Some(contents)
+            } else {
+                None
+            };
+
         // Create a new COSI instance.
         Ok(Cosi {
             metadata,
@@ -72,16 +92,8 @@ impl Cosi {
             source: source.url.clone(),
             reader: cosi_reader,
             metadata_sha384: sha384,
+            host_configuration_template,
         })
-    }
-
-    /// Returns the source URL of the COSI file.
-    pub(super) fn source(&self) -> &Url {
-        &self.source
-    }
-
-    pub(super) fn is_uki(&self) -> bool {
-        self.metadata.is_uki()
     }
 
     /// Returns the ESP filesystem image.
@@ -103,15 +115,6 @@ impl Cosi {
         self.metadata
             .get_regular_filesystems()
             .map(|image| cosi_image_to_os_image_filesystem(&self.reader, image))
-    }
-
-    /// Returns the architecture of the OS contained in the COSI file.
-    pub(super) fn architecture(&self) -> SystemArchitecture {
-        self.metadata.os_arch
-    }
-
-    pub(super) fn metadata_sha384(&self) -> Sha384Hash {
-        self.metadata_sha384.clone()
     }
 }
 
@@ -362,7 +365,9 @@ mod tests {
     use uuid::Uuid;
 
     use osutils::osrelease::OsRelease;
-    use sysdefs::{osuuid::OsUuid, partition_types::DiscoverablePartitionType};
+    use sysdefs::{
+        arch::SystemArchitecture, osuuid::OsUuid, partition_types::DiscoverablePartitionType,
+    };
     use trident_api::primitives::hash::Sha384Hash;
 
     use crate::osimage::OsImageFileSystemType;
@@ -654,7 +659,7 @@ mod tests {
             "Incorrect number of entries"
         );
 
-        assert_eq!(&url, cosi.source(), "Incorrect source URL in COSI instance")
+        assert_eq!(url, cosi.source, "Incorrect source URL in COSI instance")
     }
 
     #[test]
@@ -810,9 +815,11 @@ mod tests {
                 os_packages: None,
                 images,
                 bootloader: None,
+                host_configuration_template: None,
             },
             reader: FileReader::Buffer(data),
             metadata_sha384: Sha384Hash::from("0".repeat(96)),
+            host_configuration_template: None,
         }
     }
 
@@ -830,9 +837,11 @@ mod tests {
                 images: vec![],
                 os_packages: None,
                 bootloader: None,
+                host_configuration_template: None,
             },
             reader: FileReader::Buffer(Cursor::new(Vec::<u8>::new())),
             metadata_sha384: Sha384Hash::from("0".repeat(96)),
+            host_configuration_template: None,
         };
 
         // Weird behavior with none/multiple ESPs is primarily tested by the

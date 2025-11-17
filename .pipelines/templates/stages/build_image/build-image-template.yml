@@ -1,0 +1,154 @@
+# TODO: Migrate test images to Trident repository and build them locally #16117
+parameters:
+  - name: imageName
+    type: string
+
+  - name: architecture
+    displayName: System Architecture
+    type: string
+    default: "amd64"
+    values:
+      - arm64
+      - amd64
+
+  - name: azureLinuxVersion
+    displayName: Version of AzureLinux for the Base Image
+    type: string
+    values:
+      - "2.0"
+      - "3.0"
+    default: "3.0"
+
+  - name: micBuildType
+    displayName: MIC Build Type
+    type: string
+    values:
+      - dev
+      - preview
+      - release
+    default: release
+
+  - name: micVersion
+    displayName: MIC Version
+    type: string
+    default: "*.*.*"
+
+  - name: baseimgBuildType
+    displayName: Base Image build type
+    type: string
+    default: "release"
+    # values:
+    #   - dev
+    #   - preview
+    #   - release
+
+  - name: baseimgVersion
+    displayName: Base Image Version
+    type: string
+    default: "*.*.*"
+
+  - name: clones
+    type: number
+    default: 1
+    displayName: Number of clones to create
+
+steps:
+  - template: ../common_tasks/avoid-pypi-usage.yml
+
+  - template: common/sfi-enforce-isolation-with-etc-hosts.yaml@platform-pipelines
+
+  - script: |
+      set -eux
+
+      if which tdnf; then
+        sudo tdnf install -y veritysetup
+        sudo systemctl start docker
+      else
+        # Ubuntu is used for building and testing of VM images suitable for
+        # servicing by Trident
+        sudo apt install -y createrepo-c swtpm
+      fi
+      az extension add --name azure-devops
+    displayName: "Install native dependencies"
+    retryCountOnTaskFailure: 3
+
+  - bash: |
+      ./tests/images/testimages.py show-image ${{ parameters.imageName }} base-image --devops-var baseImageType
+    displayName: "Get Image Info"
+    workingDirectory: $(Build.SourcesDirectory)
+
+  - bash: |
+      echo "Image type: $(baseImageType)"
+      echo "Defined variables:"
+      env | sort
+    displayName: "Show defined variables"
+
+  - template: common/mic-download-template.yaml@platform-pipelines
+    parameters:
+      buildType: ${{ parameters.micBuildType }}
+      arch: ${{ parameters.architecture }}
+      micVersion: ${{ parameters.micVersion }}
+  
+# Note: DHCP packages are not being installed in this image template.
+# If needed use template download-dhcp.yml on test-images.
+
+  - template: common/base-images-download-template.yaml@platform-pipelines
+    parameters:
+      buildType: ${{ parameters.baseimgBuildType }}
+      baseImageType: $(baseImageType)
+      imageVersion: ${{ parameters.baseimgVersion }}
+      azureLinuxVersion: ${{ parameters.azureLinuxVersion }}
+
+  # For dev builds, the RPMs are not necessarily published, so download them here
+  - ${{ if eq(parameters.baseimgBuildType, 'dev') }}:
+      - template: common/rpms-download-template.yaml@platform-pipelines
+        parameters:
+          imageVersion: ${{ parameters.baseimgVersion }}
+          azureLinuxVersion: ${{ parameters.azureLinuxVersion }}
+
+  - bash: |
+      set -ex
+
+      # Move base VHDX to artifacts/ (builder expects artifacts/*.vhdx)
+      mkdir -p artifacts
+      if ls "$(Build.ArtifactStagingDirectory)/images" | grep -q ".*\.vhdx$"; then
+        mv $(Build.ArtifactStagingDirectory)/images/*.vhdx artifacts/
+        rm -rf $(Build.ArtifactStagingDirectory)/images
+      else
+        echo "No base image found"
+        exit 1
+      fi
+
+      # Move dev RPM overrides to artifacts/rpm-overrides/
+      if ls "$(Build.ArtifactStagingDirectory)/rpms/" 2>/dev/null | grep -q "rpms.tar.gz"; then
+        mkdir -p artifacts/rpm-overrides
+        tar -xvf $(Build.ArtifactStagingDirectory)/rpms/rpms.tar.gz \
+          --strip-components=2 \
+          -C artifacts/rpm-overrides
+      fi
+
+      # Move Trident RPMs to bin/RPMS/ (builder expects bin/RPMS/*.rpm)
+      if [ -d "$(Build.ArtifactStagingDirectory)/trident" ]; then
+        mkdir -p bin/RPMS/x86_64
+        mv "$(Build.ArtifactStagingDirectory)/trident"/*.rpm bin/RPMS/x86_64/
+        rm -rf "$(Build.ArtifactStagingDirectory)/trident"
+      fi
+    displayName: "Prepare and move requirements"
+    workingDirectory: $(Build.SourcesDirectory)
+
+  - bash: |
+      set -ex
+
+      EXTRA_ARGS=""
+
+      if [[ "${{ parameters.micBuildType }}" == "dev" ]]; then
+        EXTRA_ARGS+=" --container imagecustomizer:dev"
+      fi
+
+      python3  ./tests/images/testimages.py build \
+          "${{ parameters.imageName }}" $EXTRA_ARGS \
+          --output-dir $(ob_outputDirectory) \
+          --no-download \
+          --clones ${{ parameters.clones }}
+    displayName: "Build ${{ parameters.imageName }}"
+    workingDirectory: $(Build.SourcesDirectory)

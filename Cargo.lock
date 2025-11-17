@@ -3324,6 +3324,7 @@ dependencies = [
  "sysinfo",
  "tar",
  "tempfile",
+ "tera",
  "tokio",
  "tokio-stream",
  "tonic",

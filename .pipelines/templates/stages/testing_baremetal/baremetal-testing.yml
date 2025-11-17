@@ -303,32 +303,15 @@ stages:
             workingDirectory: ${{ variables.TRIDENT_SOURCE_DIR }}
             displayName: "Run netlaunch for testing"
 
-          - template: ../testing_common/display-deployment-logs.yml
-            parameters:
-              deploymentLogPath: ${{ variables.TRIDENT_SOURCE_DIR }}/logstream-full.log
-              displayName: "Display clean install logs"
-              forceRun: true
-
           - bash: |
-              CLEAN_INSTALL_LOG="${{ variables.TRIDENT_SOURCE_DIR }}/clean-install-deployment.log"
-              SERIAL_LOG="${{ variables.TRIDENT_SOURCE_DIR }}/baremetal-serial.log"
-
-              # Copy the logs to the output directory
-              if [ -f $CLEAN_INSTALL_LOG ]; then
-                cp $CLEAN_INSTALL_LOG $(ob_outputDirectory)/
-              fi
-
-              # Output the serial log
-              if [ -f $SERIAL_LOG ]; then
-                cp $SERIAL_LOG $(ob_outputDirectory)/
-                echo "Serial log found:"
-                cat $SERIAL_LOG
-              else
-                echo "Serial log not found!"
-                echo "(No serial log captured)" > $SERIAL_LOG
-              fi
-            displayName: "Output serial log"
-            condition: always()
+              set -eux
+              sudo ./bin/storm-trident helper display-logs -a \
+                  --serial-log-path "${{ variables.TRIDENT_SOURCE_DIR }}/baremetal-serial.log" \
+                  --serial-log-artifact-file-name "clean-install-target-os-A-serial.log" \
+                  --trident-trace-log-file "${{ variables.TRIDENT_SOURCE_DIR }}/logstream-full.log" \
+                  --artifacts-folder "$(ob_outputDirectory)"
+            displayName: "Display clean install logs"
+            condition: succeededOrFailed()
 
           - bash: |
               set -eux

@@ -65,6 +65,10 @@ pub(crate) struct CosiMetadata {
     #[allow(dead_code)]
     #[serde(default)]
     pub bootloader: Option<Bootloader>,
+
+    /// Template for a host configuration embedded within the image.
+    #[serde(default)]
+    pub host_configuration_template: Option<AuxiliaryFile>,
 }
 
 impl CosiMetadata {
@@ -119,7 +123,7 @@ impl CosiMetadata {
         Ok(())
     }
 
-    pub(super) fn is_uki(&self) -> bool {
+    pub(crate) fn is_uki(&self) -> bool {
         match &self.bootloader {
             Some(bootloader) => bootloader.systemd_boot.iter().any(|sb| {
                 sb.entries
@@ -297,6 +301,13 @@ pub(crate) struct BootloaderEntry {
     pub cmdline: String,
 }
 
+#[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct AuxiliaryFile {
+    pub path: PathBuf,
+    pub sha384: Sha384Hash,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -347,6 +358,7 @@ mod tests {
             os_packages: None,
             id: None,
             bootloader: None,
+            host_configuration_template: None,
         };
 
         // No images
@@ -417,6 +429,7 @@ mod tests {
             os_packages: None,
             id: None,
             bootloader: None,
+            host_configuration_template: None,
         };
 
         // No images
