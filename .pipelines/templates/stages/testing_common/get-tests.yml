@@ -25,8 +25,8 @@ parameters:
 
 jobs:
   - job: DefineTests
-    displayName: Get List of tests to run
-    timeoutInMinutes: 10
+    displayName: Get list of tests to run
+    timeoutInMinutes: 12
     pool:
       type: linux
 
