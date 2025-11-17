@@ -41,7 +41,6 @@ endif
 	./scripts/test-pipeline rel -q $(BRANCH_FLAG)
 	./scripts/test-pipeline testing -q $(BRANCH_FLAG)
 	./scripts/test-pipeline tester -q $(BRANCH_FLAG)
-	./scripts/test-pipeline scale -q $(BRANCH_FLAG)
 	./scripts/test-pipeline scale-official -q $(BRANCH_FLAG)
 	./scripts/test-pipeline full-validation -q $(BRANCH_FLAG)
 
