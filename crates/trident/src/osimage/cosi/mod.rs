@@ -69,8 +69,12 @@ impl Cosi {
             read_cosi_metadata_from_tar_archive(&cosi_reader, source.sha384.clone())
                 .context("Failed to read COSI metadata with offsets.")?
         {
+            log::debug!("COSI metadata successfully read with relative offsets.");
             result
         } else {
+            log::debug!(
+                "COSI metadata does not contain relative offsets; falling back to full scan"
+            );
             // If that didn't work, fallback to full scan. Scan all entries in
             // the COSI file by seeking to all headers in the file.
             let entries = read_entries_from_tar_archive(cosi_reader.reader()?)?;
@@ -212,18 +216,55 @@ fn read_cosi_metadata_from_tar_archive(
         return Ok(None);
     }
 
+    let a = CosiEntry {
+        offset: first_entry.raw_file_position(),
+        size: first_entry.size(),
+    };
+
+    read_cosi_metadata_with_offsets(cosi_reader, &a, expected_sha384)
+}
+
+/// Reads the metadata from the COSI file using the given entry offsets.
+/// Returns the metadata populated with entries, and its SHA-384 hash.
+///
+/// Inner implementation of `read_cosi_metadata_from_tar_archive`.
+fn read_cosi_metadata_with_offsets(
+    cosi_reader: &FileReader,
+    metadata_entry: &CosiEntry,
+    expected_sha384: ImageSha384,
+) -> Result<Option<(CosiMetadata, Sha384Hash)>, Error> {
     // Read the metadata from the first entry.
-    let (mut metadata, actual_sha384) = read_cosi_metadata(
-        cosi_reader,
-        &CosiEntry {
-            offset: first_entry.raw_file_position(),
-            size: first_entry.size(),
-        },
-        expected_sha384,
-    )?;
+    let (mut metadata, actual_sha384) =
+        read_cosi_metadata(cosi_reader, metadata_entry, expected_sha384)?;
+
+    // Store the size of the full cosi file to validate offsets later.
+    let cosi_file_size = cosi_reader
+        .size()
+        .context("Failed to get size of COSI file")?;
+
+    // Get an iterator over all image files in the metadata.
+    let image_files = metadata
+        .images
+        // Iterate over all images
+        .iter_mut()
+        // Get a flattened iterator over the image files and their verity files
+        // (if any)
+        .flat_map(|fs| {
+            iter::once(&mut fs.file).chain(fs.verity.as_mut().map(|verity| &mut verity.file))
+        })
+        .collect::<Vec<_>>();
+
+    // Check if at least one image has an offset defined in the metadata. If
+    // not, we assume this is an older COSI and needs full-file scanning.
+    if !image_files.iter().any(|img| img.offset.is_some()) {
+        // No images have relative offsets, we cannot build the full list of
+        // entries.
+        log::trace!("No images in the COSI metadata have relative offsets.");
+        return Ok(None);
+    }
 
     // Calculate the address of the first byte after the metadata.
-    let address_after_metadata = first_entry.raw_file_position() + first_entry.size();
+    let address_after_metadata = metadata_entry.offset + metadata_entry.size;
 
     // Now calculate the start of the second header. This is the first multiple
     // of 512 bytes (tar block boundary) after the end of the metadata. If the
@@ -246,33 +287,7 @@ fn read_cosi_metadata_from_tar_archive(
         address_after_metadata + (TAR_BLOCK_SIZE - (address_after_metadata % TAR_BLOCK_SIZE))
     };
 
-    // Get an iterator over all image files in the metadata.
-    let image_files = metadata
-        .images
-        // Iterate over all images
-        .iter_mut()
-        // Get a flattened iterator over the image files and their verity files
-        // (if any)
-        .flat_map(|fs| {
-            iter::once(&mut fs.file).chain(fs.verity.as_mut().map(|verity| &mut verity.file))
-        })
-        .collect::<Vec<_>>();
-
-    // Check if at least one image has an offset defined in the metadata. If
-    // not, we assume this is an older COSI and needs full-file scanning.
-    if image_files.iter().any(|img| img.offset.is_some()) {
-        // No images have relative offsets, we cannot build the full list of
-        // entries.
-        log::info!("No images in the COSI metadata have relative offsets.");
-        return Ok(None);
-    }
-
     for img in image_files {
-        trace!(
-            "Processing image file at path for absolute offset '{}'",
-            img.path.display()
-        );
-
         let Some(relative_offset) = img.offset else {
             // Image does not have a relative offset, we cannot build the full
             // list of entries.
@@ -283,10 +298,40 @@ fn read_cosi_metadata_from_tar_archive(
             return Ok(None);
         };
 
+        // Since offsets are relative to a tar block boundary, they must also be aligned to a tar block boundary.
+        if relative_offset % TAR_BLOCK_SIZE != 0 {
+            log::error!(
+                "COSI metadata specifies a relative offset of {} for image at path '{}', which is not aligned to a tar block boundary ({} bytes)",
+                relative_offset,
+                img.path.display(),
+                TAR_BLOCK_SIZE
+            );
+            return Ok(None);
+        }
+
         img.entry = CosiEntry {
             offset: start_of_second_header + relative_offset,
             size: img.compressed_size,
         };
+
+        // Now, ensure that the absolute offset + size does not exceed the file size.
+        if img.entry.offset + img.entry.size > cosi_file_size {
+            log::error!(
+                "COSI metadata specifies an image at path '{}' with offset {} and size {}, which exceeds the total COSI file size of {} bytes",
+                img.path.display(),
+                img.entry.offset,
+                img.entry.size,
+                cosi_file_size
+            );
+            return Ok(None);
+        }
+
+        trace!(
+            "Computed absolute offset for image '{}' at {} [{} bytes]",
+            img.path.display(),
+            img.entry.offset,
+            img.entry.size
+        );
     }
 
     if let Some(hc_file) = metadata.host_configuration_template.as_mut() {
@@ -309,6 +354,18 @@ fn read_cosi_metadata_from_tar_archive(
             offset: start_of_second_header + relative_offset,
             size: hc_file.size,
         };
+
+        // Now, ensure that the absolute offset + size does not exceed the file size.
+        if hc_file.entry.offset + hc_file.entry.size > cosi_file_size {
+            log::error!(
+                "COSI metadata specifies an image at path '{}' with offset {} and size {}, which exceeds the total COSI file size of {} bytes",
+                hc_file.path.display(),
+                hc_file.entry.offset,
+                hc_file.entry.size,
+                cosi_file_size
+            );
+            return Ok(None);
+        }
     }
 
     debug!(
@@ -641,6 +698,113 @@ mod tests {
         )
     }
 
+    /// Generate a sample COSI v1.3 metadata file from the given entries.
+    ///
+    /// An entry is a tuple of (path, data).
+    ///
+    /// Since this is a spec, hard-coding a string made by following the spec
+    /// means we also check compliance. It also prevents us from having to
+    /// implement Serialize for the metadata only for testing.
+    fn generate_sample_metadata_v1_3<'a>(
+        images: impl Iterator<Item = (&'static str, u64, &'a str, u64)>,
+    ) -> String {
+        let images = images
+            .map(|(path, size, hash, relative_offset)| {
+                format!(
+                    indoc::indoc! {r#"
+                        {{
+                            "image": {{
+                                "path": "{}",
+                                "compressedSize": {},
+                                "uncompressedSize": 2048,
+                                "sha384": "{sha384}",
+                                "offset": {relative_offset}
+                            }},
+                            "mountPoint": "/some/mount/point/{}",
+                            "fsType": "ext4",
+                            "fsUuid": "{fsuuid}",
+                            "partType": "{parttype}"
+                        }}
+                    "#},
+                    path,
+                    size,
+                    path,
+                    sha384 = hash,
+                    fsuuid = Uuid::new_v4(),
+                    parttype = DiscoverablePartitionType::LinuxGeneric.to_uuid(),
+                    relative_offset = relative_offset,
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(",\n");
+
+        format!(
+            indoc::indoc! {r#"
+                {{
+                    "version": "1.3",
+                    "id": "{id}",
+                    "osArch": "x86_64",
+                    "osRelease": "",
+                    "images": [
+                        {}
+                    ],
+                    "bootloader": {{
+                        "type": "grub"
+                    }}
+                }}
+            "#},
+            images,
+            id = Uuid::new_v4(),
+        )
+    }
+
+    /// Asserts that all CosiEntries in the metadata are populated.
+    /// Returns the total number of entries found.
+    fn assert_entries_populated(metadata: &CosiMetadata) -> usize {
+        let mut total_entries = 0;
+        for image in metadata.images.iter() {
+            total_entries += 1;
+            assert!(
+                image.file.entry.size > 0,
+                "Image file entry '{}' size not populated",
+                image.file.path.display()
+            );
+            assert!(
+                image.file.entry.offset > 0,
+                "Image file entry '{}' offset not populated",
+                image.file.path.display()
+            );
+
+            if let Some(verity) = image.verity.as_ref() {
+                total_entries += 1;
+                assert!(
+                    verity.file.entry.size > 0,
+                    "Verity file entry '{}' size not populated",
+                    verity.file.path.display()
+                );
+                assert!(
+                    verity.file.entry.offset > 0,
+                    "Verity file entry '{}' offset not populated",
+                    verity.file.path.display()
+                );
+            }
+        }
+
+        if let Some(host_config) = metadata.host_configuration_template.as_ref() {
+            total_entries += 1;
+            assert!(
+                host_config.entry.size > 0,
+                "Host Configuration template entry size not populated"
+            );
+            assert!(
+                host_config.entry.offset > 0,
+                "Host Configuration template entry offset not populated"
+            );
+        }
+
+        total_entries
+    }
+
     #[test]
     fn test_read_entries_from_tar_archive() {
         env_logger::builder()
@@ -845,9 +1009,11 @@ mod tests {
         )
         .unwrap();
 
+        let total_entries = assert_entries_populated(&cosi.metadata);
+
         assert_eq!(
-            cosi.entries.len(),
-            mock_images.len() + 1,
+            total_entries,
+            mock_images.len(),
             "Incorrect number of entries"
         );
 
@@ -969,7 +1135,6 @@ mod tests {
     ) -> Cosi {
         // Reader data
         let mut data = Cursor::new(Vec::<u8>::new());
-        let mut entries = HashMap::new();
         let mut images = Vec::new();
 
         for (mntpt, fs_type, pt_type, file_data) in mock_images.iter() {
@@ -978,7 +1143,6 @@ mod tests {
                 offset: data.position(),
                 size: file_data.len() as u64,
             };
-            entries.insert(PathBuf::from(&filename), entry);
 
             data.write_all(file_data.as_bytes()).unwrap();
 
@@ -1001,7 +1165,6 @@ mod tests {
 
         Cosi {
             source: Url::parse("mock://").unwrap(),
-            entries,
             metadata: CosiMetadata {
                 version: MetadataVersion { major: 1, minor: 0 },
                 id: Some(Uuid::new_v4()),
@@ -1023,7 +1186,6 @@ mod tests {
         // Test with an empty COSI file.
         let empty = Cosi {
             source: Url::parse("mock://").unwrap(),
-            entries: HashMap::new(),
             metadata: CosiMetadata {
                 version: MetadataVersion { major: 1, minor: 0 },
                 id: Some(Uuid::new_v4()),
@@ -1228,5 +1390,96 @@ mod tests {
 
             assert_eq!(read_data, expected_data);
         }
+    }
+
+    #[test]
+    fn test_cosi_with_relative_offsets() {
+        env_logger::builder()
+            .filter_level(log::LevelFilter::Trace)
+            .is_test(true)
+            .try_init()
+            .ok();
+
+        let mut offset = 0u64;
+        let mock_images_good = [
+            ("some/image/path/A", "this is some example data [A]"),
+            ("some/image/path/B", "this is some example data [B]"),
+            ("some/image/path/C", "this is some example data [C]"),
+        ]
+        .into_iter()
+        .map(|(path, data)| {
+            let size = data.len() as u64;
+            let hash = format!("{:x}", Sha384::digest(data.as_bytes()));
+            let relative_offset = offset;
+            offset += TAR_BLOCK_SIZE + size;
+            if offset % TAR_BLOCK_SIZE != 0 {
+                offset += TAR_BLOCK_SIZE - (offset % TAR_BLOCK_SIZE);
+            }
+            (path, data, size, hash, relative_offset)
+        })
+        .collect::<Vec<_>>();
+
+        // Helper function to test reading COSI metadata with offsets.
+        fn test_read_cosi_metadata_with_offsets(
+            mock_images: &Vec<(&'static str, &'static str, u64, String, u64)>,
+        ) -> Result<Option<(CosiMetadata, Sha384Hash)>, Error> {
+            // Generate a sample COSI metadata file.
+            let sample_metadata = generate_sample_metadata_v1_3(mock_images.iter().map(
+                |(path, _, size, hash, relative_offset)| {
+                    (*path, *size, hash.as_str(), *relative_offset)
+                },
+            ))
+            .as_bytes()
+            .to_vec();
+
+            // Generate a sample COSI file.
+            let cosi_file = FileReader::Buffer(Cursor::new(generate_test_tarball(
+                [(COSI_METADATA_PATH, sample_metadata.as_slice())]
+                    .into_iter()
+                    .chain(
+                        mock_images
+                            .iter()
+                            .map(|(path, data, _, _, _)| (*path, data.as_bytes())),
+                    ),
+            )));
+
+            // Create a FileReader from the sample metadata.
+            read_cosi_metadata_from_tar_archive(&cosi_file, ImageSha384::Ignored)
+        }
+
+        // First a good pass to ensure the test function works.
+        let (metadata, _) = test_read_cosi_metadata_with_offsets(&mock_images_good)
+            .unwrap()
+            .unwrap();
+        let entries = assert_entries_populated(&metadata);
+        assert_eq!(
+            entries,
+            mock_images_good.len(),
+            "Incorrect number of entries with relative offsets"
+        );
+
+        // Now let's make the file small so all offsets are out of bounds.
+        let mut mock_images_1 = mock_images_good.clone();
+        for img in mock_images_1.iter_mut() {
+            img.4 = 0x8_0000; // Set an out-of-bounds offset. This is a multiple of TAR_BLOCK_SIZE.
+        }
+        let val = test_read_cosi_metadata_with_offsets(&mock_images_1).unwrap();
+        assert!(val.is_none(), "Expected None due to out-of-bounds offsets");
+
+        // Now let's make the size of the last image too large.
+        let mut mock_images_2 = mock_images_good.clone();
+        if let Some(last) = mock_images_2.last_mut() {
+            last.2 = 0x8_0000; // Set a too-large size.
+        }
+        let val = test_read_cosi_metadata_with_offsets(&mock_images_2).unwrap();
+        assert!(val.is_none(), "Expected None due to too-large size");
+
+        // Now let's make the last offset unaligned.
+        let mut mock_images_3 = mock_images_good.clone();
+        if let Some(last) = mock_images_3.last_mut() {
+            last.4 += 1; // Set an unaligned offset.
+        }
+        let val = test_read_cosi_metadata_with_offsets(&mock_images_3).unwrap();
+        assert!(val.is_none(), "Expected None due to unaligned offset");
     }
 }

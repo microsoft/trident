@@ -139,6 +139,18 @@ impl FileReader {
             }
         })
     }
+
+    pub(crate) fn size(&self) -> IoResult<u64> {
+        match self {
+            Self::File(file_path) => {
+                let metadata = std::fs::metadata(file_path)?;
+                Ok(metadata.len())
+            }
+            Self::Http(http_file) => Ok(http_file.size),
+            #[cfg(test)]
+            Self::Buffer(cursor) => Ok(cursor.get_ref().len() as u64),
+        }
+    }
 }
 
 /// A FILE-like object that is obtained through an HTTP request using range

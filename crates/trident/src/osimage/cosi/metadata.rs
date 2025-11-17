@@ -1,4 +1,4 @@
-use std::{collections::HashSet, path::PathBuf};
+use std::{cmp::Ordering, collections::HashSet, path::PathBuf};
 
 use anyhow::{bail, ensure, Error};
 use log::trace;
@@ -16,6 +16,24 @@ use trident_api::primitives::hash::Sha384Hash;
 use crate::osimage::OsImageFileSystemType;
 
 use super::CosiEntry;
+
+/// Enum of known COSI metadata versions up to the current implementation.
+#[allow(dead_code)]
+enum KnownMetadataVersion {
+    V1_0,
+    V1_1,
+    V1_2,
+}
+
+impl KnownMetadataVersion {
+    fn as_version(&self) -> MetadataVersion {
+        match self {
+            KnownMetadataVersion::V1_0 => MetadataVersion { major: 1, minor: 0 },
+            KnownMetadataVersion::V1_1 => MetadataVersion { major: 1, minor: 1 },
+            KnownMetadataVersion::V1_2 => MetadataVersion { major: 1, minor: 2 },
+        }
+    }
+}
 
 /// COSI metadata version reader.
 ///
@@ -114,8 +132,25 @@ impl CosiMetadata {
                 }
             }
             None => {
-                if self.version.major > 1 || (self.version.major == 1 && self.version.minor > 0) {
+                if self.version >= KnownMetadataVersion::V1_1.as_version() {
                     bail!("Bootloader is required for COSI version >= 1.1, but not provided");
+                }
+            }
+        }
+
+        // Validate offset fields in COSI 1.2+
+        if self.version >= KnownMetadataVersion::V1_2.as_version() {
+            for image in &self.images {
+                if image.file.offset.is_none() {
+                    bail!(
+                        "Missing offset field for image at mount point '{}'",
+                        image.mount_point.display()
+                    );
+                }
+            }
+            if let Some(aux_file) = &self.host_configuration_template {
+                if aux_file.offset.is_none() {
+                    bail!("Missing offset field for host configuration template");
                 }
             }
         }
@@ -316,6 +351,21 @@ pub(crate) struct AuxiliaryFile {
 
     #[serde(skip)]
     pub(super) entry: CosiEntry,
+}
+
+impl PartialOrd for MetadataVersion {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for MetadataVersion {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match self.major.cmp(&other.major) {
+            Ordering::Equal => self.minor.cmp(&other.minor),
+            ord => ord,
+        }
+    }
 }
 
 #[cfg(test)]
