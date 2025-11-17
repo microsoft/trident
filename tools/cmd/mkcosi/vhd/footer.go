@@ -48,11 +48,11 @@ func CreateVpcFooter(fileSize uint64) ([512]byte, error) {
 	offset += 4
 
 	// Original Size (8 bytes): size of the hard disk in bytes
-	binary.BigEndian.PutUint64(footer[offset:], uint64(fileSize))
+	binary.BigEndian.PutUint64(footer[offset:], fileSize)
 	offset += 8
 
 	// Current Size (8 bytes): same as original size for fixed disks
-	binary.BigEndian.PutUint64(footer[offset:], uint64(fileSize))
+	binary.BigEndian.PutUint64(footer[offset:], fileSize)
 	offset += 8
 
 	// Disk Geometry (4 bytes): Calculate CHS values
@@ -105,8 +105,9 @@ type DiskGeometry struct {
 	SectorsPerTrack uint8
 }
 
-// calculateDiskGeometry calculates CHS values from disk size.
-// This follows the algorithm from the VHD specification appendix.
+// calculateDiskGeometry calculates CHS values from disk size. This follows the
+// algorithm from the VHD specification appendix in
+// https://www.microsoft.com/en-us/download/details.aspx?id=23850
 func calculateDiskGeometry(totalSize uint64) DiskGeometry {
 	const sectorSize = 512
 
@@ -126,7 +127,7 @@ func calculateDiskGeometry(totalSize uint64) DiskGeometry {
 	}
 
 	// Calculate sectors per track
-	if totalSectors >= 66059280 { // > 63 * 16 * 255 * 512
+	if totalSectors >= 66059280 { // > 65535 * 16 * 63
 		sectorsPerTrack = 255
 		heads = 16
 		cylinderTimesHeads = totalSectors / sectorsPerTrack

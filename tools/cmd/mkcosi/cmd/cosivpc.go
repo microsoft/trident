@@ -12,7 +12,7 @@ import (
 )
 
 type AddVpcCmd struct {
-	Source string `arg:"" help:"Path to the COSI file to read metadata from." type:"existingfile" required:""`
+	Source string `arg:"" help:"Path to the source COSI file." type:"existingfile" required:""`
 	Output string `arg:"" help:"Path to write the new COSI file to." type:"path" required:""`
 }
 
