@@ -75,65 +75,62 @@ Health checks are run during `trident commit` after a `trident install` or
 `trident update` have staged and finalized. You can see how `health checks`
 fit into the overall servicing flow in these diagrams:
 
+### Clean Install with Health Checks
+
 ```mermaid
 ---
 config:
-  theme: redux
-  layout: dagre
+      theme: redux
 ---
 flowchart TD
-    A["NotProvisioned"] ==> B{"trident install"}
-    B ==> C["CleanInstallStaged"]
-    C ==> D["CleanInstallFinalized"]
-    D === G(["Finalize Reboot"])
-    G ==> E{"trident commit **A**"}
-    E == Commit succeeded ==> F["Provisioned **A**"]
-    E -.- Z(["Health Check Failure"])
-    Z -.-> A
-    AA["Provisioned **A**"] ==> BB{"trident update"}
-    BB ==> CC["AbUpdateStaged"]
-    CC ==> DD["AbUpdateFinalized"]
-    DD === JJ(["Finalize Reboot"])
-    JJ ==> EE{"trident commit **B**"}
-    EE == Commit succeeded ==> FF["Provisioned **B**"]
-    EE -.- ZZ(["Health Check failure"])
-    ZZ -.-> HH["AbUpdateHealthCheckFailed"]
-    HH -.- KK(["Rollback Reboot"])
-    KK -.-> II{"trident commit **A**"}
-    II -. Commit succeeded .-> AA
-    style A fill:#FFF9C4
-    style C fill:#FFF9C4
-    style D fill:#FFF9C4
-    style G fill:#BBDEFB
-    style F fill:#00C853
-    style Z fill:#FFCDD2
-    style AA fill:#FFF9C4
-    style CC fill:#FFF9C4
-    style DD fill:#FFF9C4
-    style JJ fill:#BBDEFB
-    style FF fill:#00C853
-    style ZZ fill:#FFCDD2
-    style HH fill:#FFF9C4
-    style KK fill:#BBDEFB
-    linkStyle 0 stroke:#00C853,fill:none
-    linkStyle 1 stroke:#00C853,fill:none
-    linkStyle 2 stroke:#00C853,fill:none
-    linkStyle 3 stroke:#00C853,fill:none
-    linkStyle 4 stroke:#00C853,fill:none
-    linkStyle 5 stroke:#00C853,fill:none
-    linkStyle 6 stroke:#D50000,fill:none
-    linkStyle 7 stroke:#D50000,fill:none
-    linkStyle 8 stroke:#00C853,fill:none
-    linkStyle 9 stroke:#00C853,fill:none
-    linkStyle 10 stroke:#00C853,fill:none
-    linkStyle 11 stroke:#00C853,fill:none
-    linkStyle 12 stroke:#00C853,fill:none
-    linkStyle 13 stroke:#00C853,fill:none
-    linkStyle 14 stroke:#D50000,fill:none
-    linkStyle 15 stroke:#D50000,fill:none
-    linkStyle 16 stroke:#D50000,fill:none
-    linkStyle 17 stroke:#D50000,fill:none
-    linkStyle 18 stroke:#D50000,fill:none
+        A(["Clean Install (to A)"])
+        style A color:#085
+        A --> B["CleanInstallStaged"]
+        B --> C["CleanInstallFinalized<br/>(reboot)"]
+        C --> D{"Commit<br/>(unknown OS)"}
+        D --booted in A--> XX("in target OS (A)")
+        style XX color:#085
+        XX --health checks<br/>succeeded--> F["Provisioned (A)<br/>no errors"]
+        style F color:#085
+        D --did NOT boot in A--> YY("in unepected OS")
+        style YY color:#822
+        YY --> E["NotProvisioned with last_error set"]
+        style E color:#822
+        XX --health check<br/>failed--> E
+        XX --commit failure--> E
+```
+
+### A/B Update with Health Checks
+
+```mermaid
+---
+config:
+      theme: redux
+---
+flowchart TD
+        AA["Provisioned (A)"]
+        style AA color:#085
+        AA --> A(["A/B Update<br/>from servicing OS A<br/>to target OS B"])
+        style A color:#085
+        A --> B["AbUpdateStaged"]
+        B --> C["AbUpdateFinalized<br/>(reboot)"]
+        C --> D{"Commit<br/>(unknown OS)"}
+        D --booted in B--> XX("in target OS (B)")
+        style XX color:#085
+        XX --health checks<br/>succeeded--> F["Provisioned (B)<br/>no errors"]
+        style F color:#085
+        XX --commit infra failure<br/>last_error set --> Z["AbUpdateRollbackFailed (B)"]
+        style Z color:#822
+        XX --health checks<br/>failed--> G["AbUpdateHealthCheckFailed"]
+        style G color:#822
+        D --booted in A--> YY("in servicing OS (A)")
+        style YY color:#822
+        G --> GG["Auto-rollback<br/>(reboot)"]
+        GG --> H{"Commit<br/>(unknown OS)"}
+        H --failed to rollback<br/>in target OS (B)--> Z
+        H --rolled back<br/>servicing OS (A)--> YY
+        YY --> J["Provisioned (A)<br/>with last_error set"]
+        style J color:#822
 ```
 
 ## Health Check failures

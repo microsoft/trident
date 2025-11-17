@@ -99,6 +99,8 @@ pub enum ServicingState {
     /// A/B update has been finalized. For the next boot, the firmware will boot from the updated
     /// target OS image.
     AbUpdateFinalized,
+    /// A/B update has attempted to roll back to the servicing OS but failed.
+    AbUpdateRollbackFailed,
     /// Servicing has been completed, and the host successfully booted from the updated target OS
     /// image. Trident is ready to begin a new servicing.
     Provisioned,
