@@ -305,7 +305,7 @@ stages:
 
           - bash: |
               set -eux
-              sudo ./bin/storm-trident helper display-logs \
+              sudo ./bin/storm-trident helper display-logs -a \
                   --serial-log-path "${{ variables.TRIDENT_SOURCE_DIR }}/baremetal-serial.log" \
                   --serial-log-artifact-file-name "clean-install-target-os-A-serial.log" \
                   --trident-trace-log-file "${{ variables.TRIDENT_SOURCE_DIR }}/logstream-full.log" \
