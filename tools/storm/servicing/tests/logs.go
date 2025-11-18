@@ -3,13 +3,13 @@ package tests
 import (
 	"tridenttools/storm/servicing/utils/config"
 	"tridenttools/storm/servicing/utils/ssh"
-	"tridenttools/storm/utils"
+	"tridenttools/storm/servicing/utils/vmip"
 
 	"github.com/sirupsen/logrus"
 )
 
 func FetchLogs(cfg config.ServicingConfig) error {
-	vmIP, err := utils.GetVmIP(cfg)
+	vmIP, err := vmip.GetVmIP(cfg)
 	if err != nil {
 		return err
 	}

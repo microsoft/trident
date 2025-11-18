@@ -13,7 +13,8 @@ import (
 	"tridenttools/storm/servicing/utils/config"
 	"tridenttools/storm/servicing/utils/file"
 	"tridenttools/storm/servicing/utils/ssh"
-	"tridenttools/storm/utils"
+	"tridenttools/storm/servicing/utils/vmip"
+	stormretry "tridenttools/storm/utils/retry"
 
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
@@ -79,7 +80,7 @@ func innerUpdateLoop(cfg config.ServicingConfig, rollback bool) error {
 	}
 	logrus.Tracef("Using update config file: %s", updateConfig)
 
-	vmIP, err := utils.GetVmIP(cfg)
+	vmIP, err := vmip.GetVmIP(cfg)
 	if err != nil {
 		return fmt.Errorf("failed to get VM IP: %w", err)
 	}
@@ -269,7 +270,7 @@ func innerUpdateLoop(cfg config.ServicingConfig, rollback bool) error {
 		}
 
 		logrus.Tracef("Check if VM IP has changed after update")
-		newVmIP, err := utils.GetVmIP(cfg)
+		newVmIP, err := vmip.GetVmIP(cfg)
 		if err != nil {
 			return fmt.Errorf("failed to get new VM IP after update: %w", err)
 		}
@@ -472,7 +473,7 @@ func validateRollback(cfg config.VMConfig, vmIP string) error {
 }
 
 func checkActiveVolume(cfg config.VMConfig, vmIP string, expectedVolume string) error {
-	_, err := utils.Retry(
+	_, err := stormretry.Retry(
 		time.Second*600,
 		time.Second,
 		func(attempt int) (*bool, error) {
