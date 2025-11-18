@@ -120,3 +120,31 @@ graph TD
     linkStyle 8 max-width:500px,white-space:normal,overflow-wrap:break-word
     linkStyle 9 max-width:500px,white-space:normal,overflow-wrap:break-word
 ```
+
+## Troubleshooting with Servicing State
+
+When troubleshooting Trident servicing issues, it is important to check both
+the `ServicingState` and `LastError` of the host in the Host Status. The
+Host Status can be viewed using the `trident get status` command.
+
+- If the `ServicingState` is `NotProvisioned`, it indicates that the host is
+  running from the servicing OS and has not yet been provisioned by Trident.
+  The `LastError` field may provide additional information about any issues
+  encountered during the initial provisioning process. Use this information to
+  modify your Host Configuration and run `trident install` from a servicing OS
+  (e.g., a live ISO).
+
+- If the `ServicingState` is `Provisioned` and there is no `LastError`, it indicates
+  that the host has been successfully provisioned and is running the target OS
+  image without any issues. If the `LastError` field contains an error message, it
+  indicates that there were issues encountered during the servicing process and
+  the host is likely booting from the servicing OS or a health check failed and
+  the host failed to roll back into the servicing OS. In either case, use the
+  `LastError` information to troubleshoot and modify your Host Configuration as
+  needed and run `trident update`.
+
+- If the `ServicingState` is `AbUpdateRollbackFailed`, it indicates that the host
+  failed to configure itself to boot from the servicing OS after an A/B update failure.
+  The `LastError` field may provide additional information about the rollback failure.
+  This state likely requires manual intervention to boot the host from a servicing OS
+  and rerun `trident commit`.
