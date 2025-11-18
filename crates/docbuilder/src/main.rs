@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{self, PathBuf};
 
 use anyhow::{bail, Context, Error};
 use clap::{Args, Parser, Subcommand, ValueEnum};
@@ -178,8 +178,8 @@ fn main() -> Result<(), Error> {
 fn build_host_config_docs(mut opts: HostConfigMarkdownOpts) -> Result<(), Error> {
     info!("Building host config docs");
 
-    opts.output = opts.output.canonicalize().context(format!(
-        "Failed to canonicalize output path {}",
+    opts.output = path::absolute(&opts.output).context(format!(
+        "Failed to get absolute path for output: {}",
         opts.output.display()
     ))?;
 

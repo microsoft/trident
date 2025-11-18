@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(super) struct FrontMatter {
-    fields: HashMap<String, String>,
+    fields: BTreeMapMap<String, String>,
 }
 
 impl FrontMatter {
