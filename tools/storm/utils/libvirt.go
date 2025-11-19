@@ -138,6 +138,16 @@ func (vm *LibvirtVm) Disconnect() {
 	}
 }
 
+// CaptureScreenshot captures a screenshot of the specified VM and saves it as a PNG file.
+// It creates a temporary PPM file, captures the screenshot using virsh, converts it to PNG
+// using ImageMagick, and saves it to the specified artifacts folder.
+//
+// Parameters:
+//   - vmName: Name of the VM to capture
+//   - artifactsFolder: Directory where the screenshot will be saved
+//   - screenshotFilename: Name of the PNG file to create
+//
+// Returns an error if screenshot capture, conversion, or file operations fail.
 func CaptureScreenshot(vmName string, artifactsFolder string, screenshotFilename string) error {
 	ppmFilename, err := os.CreateTemp("", "ppm")
 	if err != nil {
