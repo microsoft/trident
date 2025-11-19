@@ -255,6 +255,13 @@ func innerUpdateLoop(cfg stormsvcconfig.ServicingConfig, rollback bool) error {
 					fmt.Sprintf("%s-vm-failure-after-update.png", fmt.Sprintf("%03d", i)),
 				)
 				return fmt.Errorf("VM did not come back up after update for iteration %d: %w", i, err)
+			} else {
+				// TODO: remove before merging
+				stormutils.CaptureScreenshot(
+					cfg.VMConfig.Name,
+					cfg.TestConfig.OutputPath,
+					fmt.Sprintf("%s-vm-success-after-update.png", fmt.Sprintf("%03d", i)),
+				)
 			}
 		} else if cfg.VMConfig.Platform == stormsvcconfig.PlatformAzure {
 			time.Sleep(15 * time.Second)
