@@ -180,7 +180,9 @@ jobs:
           cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* ~/.ssh/
           chmod -R 700 ~/.ssh/
           mkdir -p $(ob_outputDirectory)
-        displayName: Set up SSH Keys and setup output directory
+          sudo apt-get update
+          sudo apt-get install -y imagemagick
+        displayName: Set up SSH Keys and setup output directory and install imagemagick
 
       - bash: |
           echo "##vso[task.setvariable variable=STORM_SCENARIO_FINISHED;]false"
