@@ -10,25 +10,26 @@ import (
 	"regexp"
 	"strings"
 	"time"
-	"tridenttools/storm/servicing/utils/config"
-	"tridenttools/storm/servicing/utils/file"
-	"tridenttools/storm/servicing/utils/ssh"
-	"tridenttools/storm/servicing/utils/vmip"
+	stormsvcconfig "tridenttools/storm/servicing/utils/config"
+	stormsvcfile "tridenttools/storm/servicing/utils/file"
+	stormsvcssh "tridenttools/storm/servicing/utils/ssh"
+	stormsvcvmip "tridenttools/storm/servicing/utils/vmip"
+	stormutils "tridenttools/storm/utils"
 	stormretry "tridenttools/storm/utils/retry"
 
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
 )
 
-func UpdateLoop(cfg config.ServicingConfig) error {
+func UpdateLoop(cfg stormsvcconfig.ServicingConfig) error {
 	return innerUpdateLoop(cfg, false)
 }
 
-func Rollback(cfg config.ServicingConfig) error {
+func Rollback(cfg stormsvcconfig.ServicingConfig) error {
 	return innerUpdateLoop(cfg, true)
 }
 
-func innerUpdateLoop(cfg config.ServicingConfig, rollback bool) error {
+func innerUpdateLoop(cfg stormsvcconfig.ServicingConfig, rollback bool) error {
 	// Create context to ensure goroutines exit cleanly
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -53,7 +54,7 @@ func innerUpdateLoop(cfg config.ServicingConfig, rollback bool) error {
 	logrus.Tracef("Contents of update-b directory:\n%s", lsbOut)
 
 	// Check for COSI files
-	cosiFile, err := file.FindFile(cfg.TestConfig.ArtifactsDir+"/update-a", ".*\\.cosi$")
+	cosiFile, err := stormsvcfile.FindFile(cfg.TestConfig.ArtifactsDir+"/update-a", ".*\\.cosi$")
 	if err != nil {
 		return fmt.Errorf("failed to find COSI file: %w", err)
 	}
@@ -80,7 +81,7 @@ func innerUpdateLoop(cfg config.ServicingConfig, rollback bool) error {
 	}
 	logrus.Tracef("Using update config file: %s", updateConfig)
 
-	vmIP, err := vmip.GetVmIP(cfg)
+	vmIP, err := stormsvcvmip.GetVmIP(cfg)
 	if err != nil {
 		return fmt.Errorf("failed to get VM IP: %w", err)
 	}
@@ -98,19 +99,19 @@ func innerUpdateLoop(cfg config.ServicingConfig, rollback bool) error {
 			"sudo cp /var/lib/trident/update-config.yaml /var/lib/trident/update-config2.yaml && " +
 			// use update port b for second config (for all cases, including rollback after update, this will set port correctly)
 			fmt.Sprintf("sudo sed -i 's/%d/%d/' /var/lib/trident/update-config2.yaml", cfg.TestConfig.UpdatePortA, cfg.TestConfig.UpdatePortB)
-	configChangesOutput, err := ssh.SshCommand(cfg.VMConfig, vmIP, configChanges)
+	configChangesOutput, err := stormsvcssh.SshCommand(cfg.VMConfig, vmIP, configChanges)
 	if err != nil {
 		logrus.Tracef("Failed to update config files:\n%s", configChangesOutput)
 		return fmt.Errorf("failed to create config for b updates")
 	}
 
 	if cfg.TestConfig.Verbose {
-		configaOut, err := ssh.SshCommand(cfg.VMConfig, vmIP, "sudo cat /var/lib/trident/update-config.yaml")
+		configaOut, err := stormsvcssh.SshCommand(cfg.VMConfig, vmIP, "sudo cat /var/lib/trident/update-config.yaml")
 		if err != nil {
 			return fmt.Errorf("failed to get config a contents")
 		}
 		logrus.Tracef("Trident config-a contents:\n%s", configaOut)
-		configbOut, err := ssh.SshCommand(cfg.VMConfig, vmIP, "sudo cat /var/lib/trident/update-config2.yaml")
+		configbOut, err := stormsvcssh.SshCommand(cfg.VMConfig, vmIP, "sudo cat /var/lib/trident/update-config2.yaml")
 		if err != nil {
 			return fmt.Errorf("failed to get config b contents")
 		}
@@ -125,7 +126,7 @@ func innerUpdateLoop(cfg config.ServicingConfig, rollback bool) error {
 	for i := 1; i <= loopCount; i++ {
 		logrus.Infof("Update attempt #%d for VM '%s' (%s)", i, cfg.VMConfig.Name, cfg.VMConfig.Platform)
 
-		if cfg.VMConfig.Platform == config.PlatformQEMU {
+		if cfg.VMConfig.Platform == stormsvcconfig.PlatformQEMU {
 			if _, err := os.Stat(cfg.QemuConfig.SerialLog); err == nil {
 				if err := exec.Command("truncate", "-s", "0", cfg.QemuConfig.SerialLog).Run(); err != nil {
 					return fmt.Errorf("failed to truncate serial log file: %w", err)
@@ -155,15 +156,15 @@ func innerUpdateLoop(cfg config.ServicingConfig, rollback bool) error {
 
 		logrus.Tracef("Setting up SSH proxy ports for update servers")
 		aStartedChannel := make(chan bool)
-		go ssh.StartSshProxyPortAndWait(ctx, cfg.TestConfig.UpdatePortA, vmIP, cfg.VMConfig.User, cfg.VMConfig.SshPrivateKeyPath, aStartedChannel)
+		go stormsvcssh.StartSshProxyPortAndWait(ctx, cfg.TestConfig.UpdatePortA, vmIP, cfg.VMConfig.User, cfg.VMConfig.SshPrivateKeyPath, aStartedChannel)
 		bStartedChannel := make(chan bool)
-		go ssh.StartSshProxyPortAndWait(ctx, cfg.TestConfig.UpdatePortB, vmIP, cfg.VMConfig.User, cfg.VMConfig.SshPrivateKeyPath, bStartedChannel)
+		go stormsvcssh.StartSshProxyPortAndWait(ctx, cfg.TestConfig.UpdatePortB, vmIP, cfg.VMConfig.User, cfg.VMConfig.SshPrivateKeyPath, bStartedChannel)
 		// Wait for both SSH proxy ports to be ready
 		<-aStartedChannel
 		<-bStartedChannel
 
 		logrus.Tracef("Checking for crash dumps on host")
-		crashDumpOutput, err := ssh.SshCommand(cfg.VMConfig, vmIP, "ls /var/crash/*")
+		crashDumpOutput, err := stormsvcssh.SshCommand(cfg.VMConfig, vmIP, "ls /var/crash/*")
 		if err == nil {
 			logrus.Debugf("Crash files found on host during iteration %d: %s", i, crashDumpOutput)
 			logrus.Error("Crash files found on host")
@@ -177,7 +178,7 @@ func innerUpdateLoop(cfg config.ServicingConfig, rollback bool) error {
 		}
 
 		if cfg.TestConfig.Verbose {
-			configContents, err := ssh.SshCommand(cfg.VMConfig, vmIP, fmt.Sprintf("sudo cat %s", updateConfig))
+			configContents, err := stormsvcssh.SshCommand(cfg.VMConfig, vmIP, fmt.Sprintf("sudo cat %s", updateConfig))
 			if err != nil {
 				return fmt.Errorf("failed to read update config file after modification: %w", err)
 			}
@@ -190,7 +191,7 @@ func innerUpdateLoop(cfg config.ServicingConfig, rollback bool) error {
 		}
 
 		logrus.Tracef("Running Trident update staging command on VM")
-		combinedStagingOutput, stageErr := ssh.SshCommandCombinedOutput(cfg.VMConfig, vmIP, fmt.Sprintf("sudo trident update %s %s --allowed-operations stage", tridentLoggingArg, updateConfig))
+		combinedStagingOutput, stageErr := stormsvcssh.SshCommandCombinedOutput(cfg.VMConfig, vmIP, fmt.Sprintf("sudo trident update %s %s --allowed-operations stage", tridentLoggingArg, updateConfig))
 		if cfg.TestConfig.Verbose {
 			logrus.Tracef("Staging output for iteration %d:\n%s", i, combinedStagingOutput)
 		}
@@ -202,7 +203,7 @@ func innerUpdateLoop(cfg config.ServicingConfig, rollback bool) error {
 		stageLogLocalTmpPath := stageLogLocalTmpFile.Name()
 		defer os.Remove(stageLogLocalTmpPath)
 
-		err = ssh.ScpDownloadFile(cfg.VMConfig, vmIP, "/var/log/trident-full.log", stageLogLocalTmpPath)
+		err = stormsvcssh.ScpDownloadFile(cfg.VMConfig, vmIP, "/var/log/trident-full.log", stageLogLocalTmpPath)
 		if err != nil {
 			return fmt.Errorf("failed to download staged trident log: %w", err)
 		}
@@ -239,23 +240,28 @@ func innerUpdateLoop(cfg config.ServicingConfig, rollback bool) error {
 		}
 
 		logrus.Tracef("Running Trident update finalize command on VM")
-		combinedFinalizeOutput, finalizeErr := ssh.SshCommandCombinedOutput(cfg.VMConfig, vmIP, fmt.Sprintf("sudo trident update %s %s --allowed-operations finalize", tridentLoggingArg, updateConfig))
+		combinedFinalizeOutput, finalizeErr := stormsvcssh.SshCommandCombinedOutput(cfg.VMConfig, vmIP, fmt.Sprintf("sudo trident update %s %s --allowed-operations finalize", tridentLoggingArg, updateConfig))
 		if cfg.TestConfig.Verbose {
 			logrus.Tracef("Finalize output for iteration %d:\n%s\n%v", i, combinedFinalizeOutput, finalizeErr)
 		}
 
 		logrus.Tracef("Wait for VM to come back up after finalize reboot")
-		if cfg.VMConfig.Platform == config.PlatformQEMU {
+		if cfg.VMConfig.Platform == stormsvcconfig.PlatformQEMU {
 			err := cfg.QemuConfig.WaitForLogin(cfg.VMConfig.Name, cfg.TestConfig.OutputPath, cfg.TestConfig.Verbose, i)
 			if err != nil {
+				stormutils.CaptureScreenshot(
+					cfg.VMConfig.Name,
+					cfg.TestConfig.OutputPath,
+					fmt.Sprintf("%s-vm-failure-after-update.png", fmt.Sprintf("%03d", i)),
+				)
 				return fmt.Errorf("VM did not come back up after update for iteration %d: %w", i, err)
 			}
-		} else if cfg.VMConfig.Platform == config.PlatformAzure {
+		} else if cfg.VMConfig.Platform == stormsvcconfig.PlatformAzure {
 			time.Sleep(15 * time.Second)
 
 			success := false
 			for j := 0; j < 10; j++ {
-				if _, err = ssh.SshCommand(cfg.VMConfig, vmIP, "hostname"); err == nil {
+				if _, err = stormsvcssh.SshCommand(cfg.VMConfig, vmIP, "hostname"); err == nil {
 					success = true
 					break
 				}
@@ -270,7 +276,7 @@ func innerUpdateLoop(cfg config.ServicingConfig, rollback bool) error {
 		}
 
 		logrus.Tracef("Check if VM IP has changed after update")
-		newVmIP, err := vmip.GetVmIP(cfg)
+		newVmIP, err := stormsvcvmip.GetVmIP(cfg)
 		if err != nil {
 			return fmt.Errorf("failed to get new VM IP after update: %w", err)
 		}
@@ -283,11 +289,11 @@ func innerUpdateLoop(cfg config.ServicingConfig, rollback bool) error {
 		logrus.Tracef("Validate active volume after update")
 		checkActiveVolumeErr := checkActiveVolume(cfg.VMConfig, vmIP, expectedVolume)
 		logrus.Tracef("Get journal logs after post-update reboot %d", i)
-		if _, postUpdateJournalLogErr := ssh.SshCommand(cfg.VMConfig, vmIP, "sudo journalctl --no-pager > /tmp/post-reboot-update-journal.log && sudo chmod 644 /tmp/post-reboot-update-journal.log"); postUpdateJournalLogErr == nil {
+		if _, postUpdateJournalLogErr := stormsvcssh.SshCommand(cfg.VMConfig, vmIP, "sudo journalctl --no-pager > /tmp/post-reboot-update-journal.log && sudo chmod 644 /tmp/post-reboot-update-journal.log"); postUpdateJournalLogErr == nil {
 			// Download file via scp if creating post-reboot-update-journal.log succeeded
 			padIteration := fmt.Sprintf("%03d", i)
 			logrus.Tracef("Downloading post-reboot-update-journal.log from VM '%s' to local machine", cfg.VMConfig.Name)
-			ssh.ScpDownloadFile(cfg.VMConfig, vmIP, "/tmp/post-reboot-update-journal.log", fmt.Sprintf("%s/%s-%s", cfg.TestConfig.OutputPath, padIteration, "post-reboot-update-journal.log"))
+			stormsvcssh.ScpDownloadFile(cfg.VMConfig, vmIP, "/tmp/post-reboot-update-journal.log", fmt.Sprintf("%s/%s-%s", cfg.TestConfig.OutputPath, padIteration, "post-reboot-update-journal.log"))
 		}
 		if checkActiveVolumeErr != nil {
 			return fmt.Errorf("failed to verify active volume after update: %w", checkActiveVolumeErr)
@@ -299,7 +305,7 @@ func innerUpdateLoop(cfg config.ServicingConfig, rollback bool) error {
 		}
 
 		if cfg.TestConfig.Verbose {
-			hostStatusStr, err := ssh.SshCommand(cfg.VMConfig, vmIP, "sudo trident get")
+			hostStatusStr, err := stormsvcssh.SshCommand(cfg.VMConfig, vmIP, "sudo trident get")
 			if err != nil {
 				return fmt.Errorf("failed to get host status: %w", err)
 			}
@@ -323,24 +329,24 @@ func innerUpdateLoop(cfg config.ServicingConfig, rollback bool) error {
 	return nil
 }
 
-func prepareRollback(cfg config.ServicingConfig, vmIP string, updateConfig string, expectedVolume string, iteration int) error {
+func prepareRollback(cfg stormsvcconfig.ServicingConfig, vmIP string, updateConfig string, expectedVolume string, iteration int) error {
 	logrus.Tracef("Testing Rollback for iteration %d", iteration)
 
 	triggerRollbackScript := ".pipelines/templates/stages/testing_common/scripts/trigger-rollback.sh"
 	scriptHostCopy := "/var/lib/trident/trigger-rollback.sh"
 
 	logrus.Tracef("Copying rollback script to VM")
-	if err := ssh.ScpUploadFileWithSudo(cfg.VMConfig, vmIP, triggerRollbackScript, scriptHostCopy); err != nil {
+	if err := stormsvcssh.ScpUploadFileWithSudo(cfg.VMConfig, vmIP, triggerRollbackScript, scriptHostCopy); err != nil {
 		return fmt.Errorf("failed to upload rollback script: %w", err)
 	}
 	logrus.Tracef("Make rollback script executable")
-	if _, err := ssh.SshCommand(cfg.VMConfig, vmIP, fmt.Sprintf("sudo chmod +x %s", scriptHostCopy)); err != nil {
+	if _, err := stormsvcssh.SshCommand(cfg.VMConfig, vmIP, fmt.Sprintf("sudo chmod +x %s", scriptHostCopy)); err != nil {
 		return fmt.Errorf("failed to make rollback script executable: %w", err)
 	}
 
 	localConfig := "./config.yaml"
 	logrus.Tracef("Downloading %s from VM to local machine: %s", updateConfig, updateConfig)
-	if err := ssh.ScpDownloadFile(cfg.VMConfig, vmIP, updateConfig, localConfig); err != nil {
+	if err := stormsvcssh.ScpDownloadFile(cfg.VMConfig, vmIP, updateConfig, localConfig); err != nil {
 		return fmt.Errorf("failed to download update config file: %w", err)
 	}
 
@@ -374,7 +380,7 @@ func prepareRollback(cfg config.ServicingConfig, vmIP string, updateConfig strin
 	}
 
 	logrus.Tracef("Upload modified config file to VM: %s", updateConfig)
-	if err := ssh.ScpUploadFileWithSudo(cfg.VMConfig, vmIP, localConfig, updateConfig); err != nil {
+	if err := stormsvcssh.ScpUploadFileWithSudo(cfg.VMConfig, vmIP, localConfig, updateConfig); err != nil {
 		return fmt.Errorf("failed to upload rollback script: %w", err)
 	}
 	return nil
@@ -433,9 +439,9 @@ func startNetListenAndWait(ctx context.Context, port int, partition string, arti
 	return nil
 }
 
-func validateRollback(cfg config.VMConfig, vmIP string) error {
+func validateRollback(cfg stormsvcconfig.VMConfig, vmIP string) error {
 	// Get host status, but ensure this is done **after** trident.service runs
-	hostStatusStr, err := ssh.SshCommand(cfg, vmIP, "set -o pipefail; sudo systemd-run --pipe --property=After=trident.service trident get")
+	hostStatusStr, err := stormsvcssh.SshCommand(cfg, vmIP, "set -o pipefail; sudo systemd-run --pipe --property=After=trident.service trident get")
 	if err != nil {
 		return fmt.Errorf("failed to get host status: %w", err)
 	}
@@ -472,13 +478,13 @@ func validateRollback(cfg config.VMConfig, vmIP string) error {
 	return nil
 }
 
-func checkActiveVolume(cfg config.VMConfig, vmIP string, expectedVolume string) error {
+func checkActiveVolume(cfg stormsvcconfig.VMConfig, vmIP string, expectedVolume string) error {
 	_, err := stormretry.Retry(
 		time.Second*600,
 		time.Second,
 		func(attempt int) (*bool, error) {
 			logrus.Tracef("Checking active volume (attempt %d)", attempt)
-			hostStatusStr, err := ssh.SshCommandWithRetries(cfg, vmIP, "sudo trident get", 5, 5)
+			hostStatusStr, err := stormsvcssh.SshCommandWithRetries(cfg, vmIP, "sudo trident get", 5, 5)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get host status: %w", err)
 			}
