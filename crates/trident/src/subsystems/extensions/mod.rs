@@ -10,7 +10,7 @@ use anyhow::{bail, ensure, Context, Error};
 use log::{trace, warn};
 use tempfile::NamedTempFile;
 
-use osutils::{container, dependencies::Dependency, path};
+use osutils::{container, dependencies::Dependency, exe::RunAndCheck, path};
 use trident_api::{
     config::Extension,
     constants::internal_params::HTTP_CONNECTION_TIMEOUT_SECONDS,
@@ -97,12 +97,12 @@ impl Subsystem for ExtensionsSubsystem {
         &[
             ServicingType::CleanInstall,
             ServicingType::AbUpdate,
-            ServicingType::HotPatch,
+            ServicingType::RuntimeUpdate,
         ]
     }
 
     fn select_servicing_type(&self, _ctx: &EngineContext) -> Result<ServicingType, TridentError> {
-        Ok(ServicingType::HotPatch)
+        Ok(ServicingType::RuntimeUpdate)
     }
 
     fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
@@ -122,11 +122,20 @@ impl Subsystem for ExtensionsSubsystem {
         self.set_up_extensions(mount_path, ctx.servicing_type)
             .structured(InternalError::SetUpExtensionImages)?;
 
-        // Clean-up staging directory. Recursively remove all contents of
-        // staging directory as well as the directory itself.
-        fs::remove_dir_all(staging_dir).structured(InternalError::Internal(
-            "Failed to remove extension image staging directory",
-        ))?;
+        if ctx.servicing_type == ServicingType::RuntimeUpdate {
+            std::process::Command::new("systemd-sysext")
+                .arg("refresh")
+                .run_and_check()
+                .structured(InternalError::Internal(
+                    "Failed to run systemd-sysext refresh",
+                ))?;
+            std::process::Command::new("systemd-confext")
+                .arg("refresh")
+                .run_and_check()
+                .structured(InternalError::Internal(
+                    "Failed to run systemd-confext refresh",
+                ))?;
+        }
 
         Ok(())
     }
@@ -167,6 +176,25 @@ impl Subsystem for ExtensionsSubsystem {
                     .path = Some(confext.path.clone());
                 Ok::<(), TridentError>(())
             })?;
+
+        Ok(())
+    }
+
+    fn rollback(
+        &self,
+        ctx: &EngineContext,
+        result: &Option<TridentError>,
+    ) -> Result<(), TridentError> {
+        if let Some(_err) = result {
+            log::debug!("Rolling back extensions subsystem changes");
+        }
+
+        // Clean-up staging directory. Recursively remove all contents of
+        // staging directory as well as the directory itself.
+        let staging_dir = PathBuf::from(EXTENSION_IMAGE_STAGING_DIRECTORY);
+        fs::remove_dir_all(staging_dir).structured(InternalError::Internal(
+            "Failed to remove extension image staging directory",
+        ))?;
 
         Ok(())
     }
@@ -434,7 +462,7 @@ impl ExtensionsSubsystem {
                     "Failed to copy extension image from '{}' to '{}'",
                     ext.temp_path.display(),
                     new_path.display()
-                ))?;
+                ))?; // move to staging dir
             }
         }
 
@@ -1212,7 +1240,7 @@ mod functional_test {
 
         // Run set_up_extensions with HotPath (should remove old extensions)
         subsystem
-            .set_up_extensions(mount_path.path(), ServicingType::HotPatch)
+            .set_up_extensions(mount_path.path(), ServicingType::RuntimeUpdate)
             .unwrap();
         // Verify the extension was removed
         assert!(!old_ext.path().exists(), "Old extension should be removed");
@@ -1287,7 +1315,7 @@ mod functional_test {
     }
 
     #[functional_test]
-    fn test_set_up_extensions_update_replace_hotpatch() {
+    fn test_set_up_extensions_update_replace_runtime_update() {
         // Test scenario where an old sysext and a new sysext match on ID, and
         // an update is required (mismatched hashes), on a hot patch update.
         // Create old extension.
@@ -1336,7 +1364,7 @@ mod functional_test {
         subsystem.create_directories(mount_path.path()).unwrap();
         // Run set_up_extensions; hot patch update
         subsystem
-            .set_up_extensions(mount_path.path(), ServicingType::HotPatch)
+            .set_up_extensions(mount_path.path(), ServicingType::RuntimeUpdate)
             .unwrap();
 
         // Verify old extension was removed, since servicing type is not A/B
@@ -1433,7 +1461,7 @@ mod functional_test {
     }
 
     #[functional_test]
-    fn test_set_up_extensions_update_maintain_hotpatch() {
+    fn test_set_up_extensions_update_maintain_RuntimeUpdate() {
         // Test scenario where an old sysext and a new sysext match on ID, and
         // an update is NOT required (matching hashes), on a hot patch update.
         // Create old extension.
@@ -1471,7 +1499,7 @@ mod functional_test {
         subsystem.create_directories(mount_path.path()).unwrap();
         // Run set_up_extensions
         subsystem
-            .set_up_extensions(mount_path.path(), ServicingType::HotPatch)
+            .set_up_extensions(mount_path.path(), ServicingType::RuntimeUpdate)
             .unwrap();
 
         // Verify old extension was removed. Since servicing OS == target OS,

@@ -5,7 +5,7 @@ use log::{debug, info, warn};
 use tokio::sync::mpsc;
 
 use trident_api::{
-    constants::ROOT_MOUNT_POINT_PATH,
+    constants::{internal_params::ENABLE_UKI_SUPPORT, ROOT_MOUNT_POINT_PATH},
     error::TridentError,
     status::{HostStatus, ServicingState, ServicingType},
 };
@@ -14,8 +14,14 @@ use trident_api::{
 use crate::grpc;
 use crate::{
     datastore::DataStore,
-    engine::{self, EngineContext},
-    monitor_metrics, ExitKind,
+    engine::{
+        self,
+        rollback::{self, BootValidationResult},
+        EngineContext,
+    },
+    monitor_metrics,
+    osimage::OsImage,
+    ExitKind,
 };
 
 use super::Subsystem;
@@ -50,13 +56,13 @@ pub(crate) fn stage_update(
     // At this point, deployment has been staged, so update servicing state
     debug!(
         "Updating host's servicing state to '{:?}'",
-        ServicingState::AbUpdateStaged
+        ServicingState::RuntimeUpdateStaged
     );
     state.with_host_status(|hs| {
         *hs = HostStatus {
             spec: ctx.spec,
             spec_old: ctx.spec_old,
-            servicing_state: ServicingState::AbUpdateStaged,
+            servicing_state: ServicingState::RuntimeUpdateStaged,
             ab_active_volume: ctx.ab_active_volume,
             partition_paths: ctx.partition_paths,
             disk_uuids: ctx.disk_uuids,
@@ -86,6 +92,7 @@ pub(crate) fn stage_update(
 #[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", servicing_type)))]
 pub(crate) fn finalize_update(
     subsystems: &mut [Box<dyn Subsystem>],
+    image: OsImage,
     state: &mut DataStore,
     servicing_type: ServicingType,
     update_start_time: Option<Instant>,
@@ -95,7 +102,7 @@ pub(crate) fn finalize_update(
 ) -> Result<ExitKind, TridentError> {
     info!("Finalizing update");
 
-    if servicing_type != ServicingType::HotPatch {
+    if servicing_type != ServicingType::RuntimeUpdate {
         return Err(TridentError::internal(
             "Unimplemented servicing type for finalize",
         ));
@@ -109,15 +116,30 @@ pub(crate) fn finalize_update(
         partition_paths: state.host_status().partition_paths.clone(),
         disk_uuids: state.host_status().disk_uuids.clone(),
         install_index: state.host_status().install_index,
-        image: None, // Not used in finalize_update
+        image: Some(image.clone()), // Not used in finalize_update
         storage_graph: engine::build_storage_graph(&state.host_status().spec.storage)?, // Build storage graph
         filesystems: Vec::new(), // Left empty since context does not have image
-        is_uki: None,
+        is_uki: Some(
+            image.is_uki()
+                || state
+                    .host_status()
+                    .spec
+                    .internal_params
+                    .get_flag(ENABLE_UKI_SUPPORT),
+        ),
     };
 
-    engine::provision(subsystems, &ctx, Path::new(ROOT_MOUNT_POINT_PATH))?;
+    let res = engine::provision(subsystems, &ctx, Path::new(ROOT_MOUNT_POINT_PATH));
+    if let Err(err) = res {
+        log::error!("Provision failed with error: {err:?}\nAttempting rollback.");
+        rollback::runtime_rollback(&ctx, subsystems)?;
+    }
 
-    engine::configure(subsystems, &ctx)?;
+    let res = engine::configure(subsystems, &ctx);
+    if let Err(err) = res {
+        log::error!("Configure failed with error: {err:?}\nAttempting rollback.");
+        rollback::runtime_rollback(&ctx, subsystems)?;
+    }
 
     // Update the Host Configuration with information produced and stored in the
     // subsystems. Currently, this step is used only to update the final paths
@@ -125,14 +147,27 @@ pub(crate) fn finalize_update(
     engine::update_host_configuration(subsystems, &mut ctx)?;
     // Turn ctx into an immutable variable.
     let ctx = ctx;
+    state.with_host_status(|status| status.spec = ctx.spec.clone())?;
+
+    // Run health checks
+    debug!("Running health checks");
+    let validation_result = rollback::run_health_checks(
+        &ctx,
+        state,
+        ServicingState::RuntimeUpdateStaged,
+        ServicingType::RuntimeUpdate,
+    )?;
+
+    if let BootValidationResult::ValidBootHealthCheckFailed(_) = validation_result {
+        debug!("boot validation failed");
+    }
 
     debug!(
         "Updating host's servicing state to '{:?}'",
-        ServicingState::AbUpdateFinalized
+        ServicingState::Provisioned
     );
     state.with_host_status(|status| {
-        status.servicing_state = ServicingState::AbUpdateFinalized;
-        status.spec = ctx.spec;
+        status.servicing_state = ServicingState::Provisioned;
     })?;
     #[cfg(feature = "grpc-dangerous")]
     grpc::send_host_status_state(sender, state)?;

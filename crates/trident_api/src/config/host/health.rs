@@ -142,13 +142,10 @@ impl SystemdCheck {
             ServicingType::CleanInstall => {
                 self.run_on.contains(&ServicingTypeSelection::CleanInstall)
             }
-            ServicingType::NormalUpdate => {
-                self.run_on.contains(&ServicingTypeSelection::NormalUpdate)
-            }
             ServicingType::AbUpdate => self.run_on.contains(&ServicingTypeSelection::AbUpdate),
-            ServicingType::UpdateAndReboot => self
-                .run_on
-                .contains(&ServicingTypeSelection::UpdateAndReboot),
+            ServicingType::RuntimeUpdate => {
+                self.run_on.contains(&ServicingTypeSelection::RuntimeUpdate)
+            }
             _ => false,
         }
     }
@@ -209,7 +206,7 @@ mod tests {
                 assert!(check.should_run(ServicingType::AbUpdate));
                 assert!(check.should_run(ServicingType::CleanInstall));
             });
-        create_test_health_checks(ServicingTypeSelection::NormalUpdate)
+        create_test_health_checks(ServicingTypeSelection::RuntimeUpdate)
             .checks
             .iter()
             .for_each(|check| {

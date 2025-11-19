@@ -185,7 +185,8 @@ pub(crate) fn validate_rebuild_raid(
         ServicingState::Provisioned
         | ServicingState::AbUpdateStaged
         | ServicingState::AbUpdateFinalized
-        | ServicingState::AbUpdateHealthCheckFailed => {}
+        | ServicingState::AbUpdateHealthCheckFailed
+        | ServicingState::RuntimeUpdateStaged => {}
     }
 
     validate_raid_recovery(host_config, disks_to_rebuild)

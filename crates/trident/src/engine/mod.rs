@@ -114,6 +114,15 @@ pub(crate) trait Subsystem: Send {
     fn update_host_configuration(&self, _ctx: &mut EngineContext) -> Result<(), TridentError> {
         Ok(())
     }
+
+    /// Roll back the operations of the subsystem performed during runtime update.
+    fn runtime_rollback(
+        &self,
+        _ctx: &EngineContext,
+        _result: &Option<TridentError>,
+    ) -> Result<(), TridentError> {
+        Ok(())
+    }
 }
 
 lazy_static::lazy_static! {
@@ -374,6 +383,31 @@ fn update_host_configuration(
         }
     }
     debug!("Finished step 'Update Host Configuration'");
+    Ok(())
+}
+
+fn rollback(
+    subsystems: &[Box<dyn Subsystem>],
+    ctx: &EngineContext,
+    result: &Option<TridentError>,
+) -> Result<(), TridentError> {
+    info!("Starting step 'Rollback'");
+    for subsystem in subsystems {
+        if subsystem
+            .compatible_servicing_types()
+            .contains(&ctx.servicing_type)
+        {
+            debug!(
+                "Starting step 'Rollback' for subsystem '{}'",
+                subsystem.name()
+            );
+            subsystem.rollback(ctx, result).message(format!(
+                "Step 'Rollback' failed for subsystem '{}'",
+                subsystem.name()
+            ))?;
+        }
+    }
+    debug!("Finished step 'Rollback'");
     Ok(())
 }
 

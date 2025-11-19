@@ -65,11 +65,7 @@ pub struct HostStatus {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub enum ServicingType {
     /// Update that can be applied without pausing the workload.
-    HotPatch = 1,
-    /// Update that requires pausing the workload.
-    NormalUpdate = 2,
-    /// Update that requires rebooting the host.
-    UpdateAndReboot = 3,
+    RuntimeUpdate = 1,
     /// Update that requires switching to a different root partition and rebooting.
     AbUpdate = 4,
     /// Clean install of the target OS image when the host is booted from the provisioning OS.
@@ -104,6 +100,7 @@ pub enum ServicingState {
     Provisioned,
     /// A/B update has been completed, the host booted into the target OS but the health checks failed.
     AbUpdateHealthCheckFailed,
+    RuntimeUpdateStaged,
 }
 
 /// A/B volume selection. Determines which set of volumes are currently

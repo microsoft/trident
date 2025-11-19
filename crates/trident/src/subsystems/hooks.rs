@@ -368,9 +368,7 @@ impl HooksSubsystem {
 
 fn match_servicing_type_env_var(servicing_type: &ServicingType) -> &OsStr {
     match servicing_type {
-        ServicingType::HotPatch => OsStr::new("hot_patch"),
-        ServicingType::NormalUpdate => OsStr::new("normal_update"),
-        ServicingType::UpdateAndReboot => OsStr::new("update_and_reboot"),
+        ServicingType::RuntimeUpdate => OsStr::new("runtime_update"),
         ServicingType::AbUpdate => OsStr::new("ab_update"),
         ServicingType::CleanInstall => OsStr::new("clean_install"),
         ServicingType::NoActiveServicing => OsStr::new("none"),
@@ -585,7 +583,7 @@ mod tests {
         environment_variables.insert("TEST_DIR".into(), test_dir.to_str().unwrap().into());
         let script = Script {
             name: "test-script".into(),
-            run_on: vec![ServicingTypeSelection::NormalUpdate],
+            run_on: vec![ServicingTypeSelection::RuntimeUpdate],
             interpreter: Some("/bin/bash".into()),
             source: ScriptSource::Content("mkdir $TEST_DIR_NAME".into()),
             environment_variables,

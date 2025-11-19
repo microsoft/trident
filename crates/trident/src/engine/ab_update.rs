@@ -6,11 +6,7 @@ use tokio::sync::mpsc;
 
 use osutils::{chroot, container, path::join_relative};
 use trident_api::{
-    config::{HostConfiguration, Operations},
-    constants::{
-        internal_params::{ENABLE_UKI_SUPPORT, NO_TRANSITION},
-        ESP_MOUNT_POINT_PATH,
-    },
+    constants::{internal_params::NO_TRANSITION, ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
     error::{
         InternalError, InvalidInputError, ReportError, ServicingError, TridentError,
         TridentResultExt,
@@ -18,22 +14,19 @@ use trident_api::{
     status::{HostStatus, ServicingState, ServicingType},
 };
 
+#[cfg(feature = "grpc-dangerous")]
+use crate::grpc;
 use crate::{
     datastore::DataStore,
     engine::{
-        self, bootentries, rollback,
+        self, bootentries,
         storage::{self, verity},
-        EngineContext, NewrootMount, SUBSYSTEMS,
+        EngineContext, NewrootMount, Subsystem,
     },
     monitor_metrics,
-    osimage::OsImage,
-    subsystems::hooks::HooksSubsystem,
+    subsystems::esp,
     ExitKind,
 };
-#[cfg(feature = "grpc-dangerous")]
-use crate::{grpc, GrpcSender};
-
-use super::Subsystem;
 
 /// Stages an update. Takes in 3-4 arguments:
 /// - subsystems: A mutable reference to the list of subsystems.
@@ -43,7 +36,7 @@ use super::Subsystem;
 ///
 /// On success, returns an Option<NewrootMount>; This is not null only for A/B updates.
 #[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", ctx.servicing_type)))]
-pub(crate) fn stage_update(
+pub fn stage_update(
     subsystems: &mut [Box<dyn Subsystem>],
     mut ctx: EngineContext,
     state: &mut DataStore,
@@ -51,6 +44,23 @@ pub(crate) fn stage_update(
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
 ) -> Result<(), TridentError> {
+    match ctx.servicing_type {
+        ServicingType::CleanInstall => {
+            return Err(TridentError::new(
+                InvalidInputError::CleanInstallOnProvisionedHost,
+            ));
+        }
+        ServicingType::NoActiveServicing => {
+            return Err(TridentError::internal("No active servicing type"))
+        }
+        _ => {
+            info!(
+                "Staging update of servicing type '{:?}'",
+                ctx.servicing_type
+            )
+        }
+    }
+
     // Best effort to measure memory, CPU, and network usage during execution
     let monitor = match monitor_metrics::MonitorMetrics::new("stage_update".to_string()) {
         Ok(monitor) => Some(monitor),
@@ -172,15 +182,23 @@ pub(crate) fn finalize_update(
         is_uki: None,
     };
 
-    let esp_path = if container::is_running_in_container()
+    let (root_path, esp_path) = if container::is_running_in_container()
         .message("Failed to check if Trident is running in a container")?
     {
         let host_root = container::get_host_root_path().message("Failed to get host root path")?;
-        join_relative(host_root, ESP_MOUNT_POINT_PATH)
+        let esp_root = join_relative(&host_root, ESP_MOUNT_POINT_PATH);
+        (host_root, esp_root)
     } else {
-        PathBuf::from(ESP_MOUNT_POINT_PATH)
+        (
+            PathBuf::from(ROOT_MOUNT_POINT_PATH),
+            PathBuf::from(ESP_MOUNT_POINT_PATH),
+        )
     };
     bootentries::create_and_update_boot_variables(&ctx, &esp_path)?;
+    // Analogous to how UEFI variables are configured, finalize must start configuring
+    // UEFI fallback, and a successful commit will finish it.
+    esp::set_uefi_fallback_contents(&ctx, ServicingState::AbUpdateStaged, &root_path)
+        .structured(ServicingError::SetUpUefiFallback)?;
 
     debug!(
         "Updating host's servicing state to '{:?}'",

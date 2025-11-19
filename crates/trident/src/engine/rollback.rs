@@ -19,6 +19,7 @@ use crate::{
         self, bootentries,
         context::EngineContext,
         storage::{encryption, verity},
+        Subsystem,
     },
     health,
     subsystems::esp,
@@ -295,7 +296,16 @@ fn commit_finalized_on_expected_root(
     Ok(BootValidationResult::ValidBootProvisioned)
 }
 
-fn run_health_checks(
+/// Roll-back a runtime update
+pub fn runtime_rollback(
+    ctx: &EngineContext,
+    subsystems: &[Box<dyn Subsystem>],
+) -> Result<(), TridentError> {
+    // engine::rollback(subsystems, ctx)?;
+    Ok(())
+}
+
+pub fn run_health_checks(
     ctx: &EngineContext,
     datastore: &mut DataStore,
     current_servicing_state: ServicingState,

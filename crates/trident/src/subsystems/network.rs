@@ -3,8 +3,11 @@ use std::{fs, path::Path};
 use anyhow::Context;
 use log::debug;
 
-use osutils::netplan;
-use trident_api::error::{ReportError, ServicingError, TridentError};
+use osutils::{exe::RunAndCheck, netplan};
+use trident_api::{
+    error::{InternalError, ReportError, ServicingError, TridentError},
+    status::ServicingType,
+};
 
 use crate::engine::{EngineContext, Subsystem};
 
@@ -17,6 +20,14 @@ pub struct NetworkSubsystem;
 impl Subsystem for NetworkSubsystem {
     fn name(&self) -> &'static str {
         "network"
+    }
+
+    fn compatible_servicing_types(&self) -> &[ServicingType] {
+        &[
+            ServicingType::CleanInstall,
+            ServicingType::AbUpdate,
+            ServicingType::RuntimeUpdate,
+        ]
     }
 
     #[tracing::instrument(name = "network_configuration", skip_all)]
@@ -32,6 +43,12 @@ impl Subsystem for NetworkSubsystem {
                 // deploy additional configurations that are undesired and may
                 // conflict with or otherwise affect Trident's network setup.
                 disable_cloud_init_networking(CLOUD_INIT_CONFIG_DIR)?;
+                if ctx.servicing_type == ServicingType::RuntimeUpdate {
+                    std::process::Command::new("netplan")
+                        .arg("apply")
+                        .run_and_check()
+                        .structured(InternalError::Internal("Failed to run netplan apply"))?;
+                }
             }
             None => {
                 debug!("Network config not provided");

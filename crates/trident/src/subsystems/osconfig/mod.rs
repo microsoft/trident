@@ -1,6 +1,6 @@
 use std::{fs, path::Path};
 
-use anyhow::Context;
+use anyhow::{ensure, Context};
 use log::{debug, error, info, warn};
 
 use osutils::{osmodifier::OSModifierConfig, path};
@@ -71,7 +71,7 @@ impl Subsystem for OsConfigSubsystem {
         &[
             ServicingType::CleanInstall,
             ServicingType::AbUpdate,
-            ServicingType::HotPatch,
+            ServicingType::RuntimeUpdate,
         ]
     }
 
@@ -85,6 +85,7 @@ impl Subsystem for OsConfigSubsystem {
                 },
             ));
         }
+        debug!("Validated that OS modifier binary exists at {OS_MODIFIER_BINARY_PATH}");
 
         Ok(())
     }
@@ -118,6 +119,7 @@ impl Subsystem for OsConfigSubsystem {
     fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
         if ctx.servicing_type != ServicingType::CleanInstall
             && ctx.servicing_type != ServicingType::AbUpdate
+            && ctx.servicing_type != ServicingType::RuntimeUpdate
         {
             debug!(
                 "Skipping step 'Configure' for subsystem '{}' during servicing type '{:?}'",
@@ -136,6 +138,10 @@ impl Subsystem for OsConfigSubsystem {
         } else if ctx.is_uki()? && ctx.storage_graph.root_fs_is_verity() {
             error!("Skipping OS configuration changes requested in Host Configuration because UKI root-verity is in use.");
             return Ok(());
+        }
+
+        if !Path::new(OS_MODIFIER_BINARY_PATH).exists() {
+            error!("Cound not find os modifier binary at: {OS_MODIFIER_BINARY_PATH:?}");
         }
 
         let mut os_modifier_config = OSModifierConfig::default();
@@ -207,9 +213,15 @@ impl Subsystem for OsConfigSubsystem {
             os_modifier_config.selinux = Some(ctx.spec.os.selinux.clone());
         }
 
-        os_modifier_config
-            .call_os_modifier(Path::new(OS_MODIFIER_NEWROOT_PATH))
-            .structured(ServicingError::RunOsModifier)?;
+        if ctx.servicing_type == ServicingType::RuntimeUpdate {
+            os_modifier_config
+                .call_os_modifier(Path::new(OS_MODIFIER_BINARY_PATH))
+                .structured(ServicingError::RunOsModifier)?;
+        } else {
+            os_modifier_config
+                .call_os_modifier(Path::new(OS_MODIFIER_NEWROOT_PATH))
+                .structured(ServicingError::RunOsModifier)?;
+        }
 
         Ok(())
     }
