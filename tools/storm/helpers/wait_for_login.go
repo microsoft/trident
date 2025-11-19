@@ -15,8 +15,9 @@ import (
 
 type WaitForLoginHelper struct {
 	args struct {
-		VmName          string `help:"Name of VM." type:"string" default:"virtdeploy-vm-0"`
-		ArtifactsFolder string `help:"Folder to copy log files into." type:"string" default:""`
+		VmName           string `help:"Name of VM." type:"string" default:"virtdeploy-vm-0"`
+		ArtifactsFolder  string `help:"Folder to copy log files into." type:"string" default:""`
+		TimeoutInSeconds int    `help:"Maximum time to wait for VM to reach login prompt." default:"1200"`
 	}
 }
 
@@ -56,10 +57,19 @@ func (h *WaitForLoginHelper) waitForLogin(tc storm.TestCase) error {
 		}
 	}
 	if vmSerialLog == "" {
-		tc.Error(fmt.Errorf("failed to find VM serial log path"))
+		err := fmt.Errorf("failed to find VM serial log path")
+		tc.FailFromError(err)
+		return err
 	}
 
+	timeout := time.Duration(h.args.TimeoutInSeconds) * time.Second
+	startTime := time.Now()
 	for {
+		if time.Since(startTime) >= timeout {
+			err := fmt.Errorf("timed out waiting for serial log file to be created after %d seconds", h.args.TimeoutInSeconds)
+			tc.FailFromError(err)
+			return err
+		}
 		// Wait for the serial log to be created
 		logrus.Infof("Waiting for VM serial log file to be created...")
 		stat, err := os.Stat(vmSerialLog)
