@@ -234,7 +234,7 @@ stages:
           - bash: |
               set -eux
 
-              ./bin/storm-trident helper wait-for-login -a \
+              sudo ./bin/storm-trident helper wait-for-login -a \
                   --vm-name "$(jq -r '.virtualmachines[0].name' $(tridentSourceDirectory)/tools/virt-deploy-metadata.json)" \
                   --artifacts-folder "$(ob_outputDirectory)"
 
