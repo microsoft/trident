@@ -158,17 +158,17 @@ func CaptureScreenshot(vmName string, artifactsFolder string, screenshotFilename
 
 	err = capturePpmScreenshot(vmName, ppmFilename.Name())
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create PPM screenshot: %w", err)
 	}
 
 	err = os.MkdirAll(artifactsFolder, 0755)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create artifacts folder: %w", err)
 	}
 
 	pngPath := filepath.Join(artifactsFolder, screenshotFilename)
 	if err := convertPpmToPng(ppmFilename.Name(), pngPath); err != nil {
-		return err
+		return fmt.Errorf("failed to convert PPM to PNG: %w", err)
 	}
 	return nil
 }
@@ -176,10 +176,7 @@ func CaptureScreenshot(vmName string, artifactsFolder string, screenshotFilename
 func capturePpmScreenshot(vmName string, ppmFilename string) error {
 	virshOutput, virshErr := exec.Command("sudo", "virsh", "screenshot", vmName, ppmFilename).CombinedOutput()
 	logrus.Tracef("virsh screenshot output: %s\n%v", string(virshOutput), virshErr)
-	if virshErr != nil {
-		return virshErr
-	}
-	return nil
+	return virshErr
 }
 
 func convertPpmToPng(ppmPath string, pngPath string) error {
