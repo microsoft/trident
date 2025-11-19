@@ -11,7 +11,7 @@ use osutils::dependencies::Dependency;
 use trident_api::{
     config::{Check, SystemdCheck},
     constants::ROOT_MOUNT_POINT_PATH,
-    error::{ServicingError, TridentError},
+    error::{HealthChecksError, ServicingError, TridentError},
 };
 
 use crate::{engine::EngineContext, subsystems::hooks};
@@ -96,7 +96,7 @@ pub fn execute_health_checks(ctx: &EngineContext) -> Result<(), TridentError> {
             "Health checks completed with errors:\n{}",
             health_check_errors_message
         );
-        return Err(TridentError::new(ServicingError::HealthChecksFailed {
+        return Err(TridentError::new(HealthChecksError::HealthChecksFailed {
             details: health_check_errors_message,
             servicing_type: format!("{:?}", ctx.servicing_type),
         }));
