@@ -175,8 +175,5 @@ func capturePpmScreenshot(vmName string, ppmFilename string) error {
 func convertPpmToPng(ppmPath string, pngPath string) error {
 	virshOutput, virshErr := exec.Command("convert", ppmPath, pngPath).CombinedOutput()
 	logrus.Tracef("convert output: %s\n%v", string(virshOutput), virshErr)
-	if virshErr != nil {
-		return virshErr
-	}
-	return nil
+	return virshErr
 }
