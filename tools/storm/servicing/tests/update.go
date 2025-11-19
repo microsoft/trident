@@ -249,12 +249,12 @@ func innerUpdateLoop(cfg stormsvcconfig.ServicingConfig, rollback bool) error {
 		if cfg.VMConfig.Platform == stormsvcconfig.PlatformQEMU {
 			err := cfg.QemuConfig.WaitForLogin(cfg.VMConfig.Name, cfg.TestConfig.OutputPath, cfg.TestConfig.Verbose, i)
 			if err != nil {
-				if err := stormutils.CaptureScreenshot(
+				if captureErr := stormutils.CaptureScreenshot(
 					cfg.VMConfig.Name,
 					cfg.TestConfig.OutputPath,
 					fmt.Sprintf("%s-vm-failure-after-update.png", fmt.Sprintf("%03d", i)),
-				); err != nil {
-					logrus.Warnf("failed to capture screenshot: %v", err)
+				); captureErr != nil {
+					logrus.Warnf("failed to capture screenshot: %v", captureErr)
 				}
 				return fmt.Errorf("VM did not come back up after update for iteration %d: %w", i, err)
 			}
