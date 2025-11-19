@@ -19,7 +19,7 @@ type CaptureScreenshotScript struct {
 func (s *CaptureScreenshotScript) Run() error {
 	err := stormutils.CaptureScreenshot(s.VmName, s.ArtifactsFolder, s.ScreenshotFilename)
 	if err != nil {
-		return fmt.Errorf("failed to create temporary file: %w", err)
+		return fmt.Errorf("failed to capture screenshot: %w", err)
 	}
 	return nil
 }
