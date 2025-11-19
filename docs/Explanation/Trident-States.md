@@ -127,24 +127,43 @@ When troubleshooting Trident servicing issues, it is important to check both
 the `ServicingState` and `LastError` of the host in the Host Status. The
 Host Status can be viewed using the `trident get status` command.
 
-- If the `ServicingState` is `NotProvisioned`, it indicates that the host is
-  running from the servicing OS and has not yet been provisioned by Trident.
-  The `LastError` field may provide additional information about any issues
-  encountered during the initial provisioning process. Use this information to
-  modify your Host Configuration and run `trident install` from a servicing OS
+- If the `ServicingState` is `NotProvisioned`, it indicates that the host has
+  not yet been successfully provisioned by Trident. If `trident install` was run,
+  the `LastError` field may provide additional information about any issues
+  encountered during the install. Use this information to modify your Host
+  Configuration prior to running `trident install` from a servicing OS
   (e.g., a live ISO).
 
 - If the `ServicingState` is `Provisioned` and there is no `LastError`, it indicates
   that the host has been successfully provisioned and is running the target OS
   image without any issues. If the `LastError` field contains an error message, it
   indicates that there were issues encountered during the servicing process and
-  the host is likely booting from the servicing OS or a health check failed and
-  the host failed to roll back into the servicing OS. In either case, use the
-  `LastError` information to troubleshoot and modify your Host Configuration as
-  needed and run `trident update`.
+  the host is booting from an unexpected OS. This could be doe to either:
 
-- If the `ServicingState` is `AbUpdateRollbackFailed`, it indicates that the host
-  failed to configure itself to boot from the servicing OS after an A/B update failure.
-  The `LastError` field may provide additional information about the rollback failure.
-  This state likely requires manual intervention to boot the host from a servicing OS
-  and rerun `trident commit`.
+  - The host failed to boot into the target OS after `AbUpdateFinalize`, reflecting
+    a failure to set the UEFI BootNext variable to the target OS or a failure of UEFI
+    to recognize/use the BootNext variable. In either case, the host is not booting from
+    the target OS as expected. Options at this point are:
+
+    - Use `efibootmgr` to ensure that the target OS boot entry is present and
+      configured for BootNext and boot into the target OS to run `trident commit`.
+
+    - Adjust the Host Configuration based on `LastError` and run `trident update`.
+
+  - The machine booted into the target OS, a health check failed, and the host rolled
+    back into the servicing OS. In this case, `LastError` should have details regarding
+    the failed health check(s). Adjust the Host Configuration and run `trident update`.
+
+- If the `ServicingState` is `AbUpdateRollbackFailed`, it indicates that Trident failed
+  to successfully handle rollback during an A/B update. This could be due to either:
+
+  - The host booted into the target OS, but failed to prioritize the target OS boot entry
+    in the UEFI `BootOrder` variable or failed to update the Trident datastore. Use
+    `LastError` to help understand what to address, whether it be using `efibootmgr` to
+    configure `BootOrder` or verifying/ensuring that the Trident datastore is accessible.
+    Once addressed, run `trident commit`.
+
+  - The machine booted into the target OS and a health check failed, but the host failed
+    to roll back into the servicing OS. Use `efibootmgr` to ensure that the servicing OS
+    boot entry is present and configured as the first entry in the `BootOrder` variable,
+    boot into the servicing OS, and run `trident commit`.
