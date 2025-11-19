@@ -252,7 +252,7 @@ func innerUpdateLoop(cfg stormsvcconfig.ServicingConfig, rollback bool) error {
 				if captureErr := stormutils.CaptureScreenshot(
 					cfg.VMConfig.Name,
 					cfg.TestConfig.OutputPath,
-					fmt.Sprintf("%s-vm-failure-after-update.png", fmt.Sprintf("%03d", i)),
+					fmt.Sprintf("%03d-vm-failure-after-update.png", i),
 				); captureErr != nil {
 					logrus.Warnf("failed to capture screenshot: %v", captureErr)
 				}
