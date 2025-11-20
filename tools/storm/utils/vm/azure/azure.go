@@ -32,6 +32,8 @@ type AzureConfig struct {
 	Offer                       string `help:"Azure offer for the VM" default:"trident-vm-grub-verity-azure-offer"`
 	Size                        string `help:"Azure VM size" default:"Standard_D2ds_v5"`
 	TestResourceGroup           string `help:"Azure resource group for the VM" default:""`
+	UsePrivateIpAddress         bool   `help:"Use private IP address for Azure VM" default:"false"`
+	BuildId                     string `help:"Build ID for the ADO pipeline" default:""`
 }
 
 func (cfg AzureConfig) GetStorageAccountUrl() string {
@@ -193,12 +195,12 @@ func (cfg AzureConfig) CleanupAzureVM() error {
 	return nil
 }
 
-func (cfg AzureConfig) PublishSigImage(artifactsDir string, buildId string) error {
+func (cfg AzureConfig) PublishSigImage(artifactsDir string) error {
 	if err := cfg.SetSubscription(); err != nil {
 		return fmt.Errorf("failed to set Azure subscription: %w", err)
 	}
 
-	imageVersion := cfg.GetImageVersion(buildId, true)
+	imageVersion := cfg.GetImageVersion(cfg.BuildId, true)
 	logrus.Infof("Using image version %s", imageVersion)
 
 	if err := cfg.checkImageVersionExists(imageVersion); err == nil {
@@ -468,9 +470,9 @@ func (cfg AzureConfig) GetStorageContainerName() string {
 	return fmt.Sprintf("%s-test", cfg.GetWhoAmI())
 }
 
-func (cfg AzureConfig) GetAllVmIPAddresses(vmName string, buildId string) ([]string, error) {
+func (cfg AzureConfig) GetAllVmIPAddresses(vmName string) ([]string, error) {
 	ipType := "publicIps"
-	if buildId != "" {
+	if cfg.UsePrivateIpAddress {
 		ipType = "privateIps" // Use private IPs for build tests
 	}
 	logrus.Tracef("Fetching Azure VM IP addresses for type '%s'", ipType)

@@ -3,6 +3,7 @@ package main
 import (
 	"tridenttools/storm/e2e"
 	"tridenttools/storm/helpers"
+	"tridenttools/storm/rollback"
 	"tridenttools/storm/scripts"
 	"tridenttools/storm/servicing"
 
@@ -32,6 +33,9 @@ func main() {
 
 	// Add Trident servicing scenario
 	storm.AddScenario(&servicing.TridentServicingScenario{})
+
+	// Add Trident rollback scenario
+	storm.AddScenario(&rollback.TridentRollbackScenario{})
 
 	// Register Trident helpers
 	for _, helper := range helpers.TRIDENT_HELPERS {
