@@ -32,6 +32,9 @@ installation and servicing operations. The CLI supports the following commands:
   provided Host Configuration is syntactically correct and self consistent. Can
   be run on any system including a development machine, and thus does not
   consider the current system state.
+- [`diagnose`](How-To-Guides/Diagnostics.md): Generates a
+  diagnostics bundle containing system information, logs, and configuration data
+  for troubleshooting and support purposes.
 
 Please consult [CLI reference](Reference/Trident-CLI.md) for detailed
 information on each command and its usage.
