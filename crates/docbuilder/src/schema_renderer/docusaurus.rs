@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(super) struct FrontMatter {
-    fields: BTreeMapMap<String, String>,
+    fields: BTreeMap<String, String>,
 }
 
 impl FrontMatter {
