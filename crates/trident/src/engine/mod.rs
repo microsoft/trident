@@ -75,6 +75,13 @@ pub(crate) trait Subsystem: Send {
         Ok(None)
     }
 
+    /// List of servicing types on which a subsystem may run. By default, all
+    /// subsystems may run on Clean Install and A/B Update. Some are also run on
+    /// Runtime Update, depending on changes in the new Host Configuration.
+    fn runs_on(&self, _ctx: &EngineContext) -> &[ServicingType] {
+        &[ServicingType::CleanInstall, ServicingType::AbUpdate]
+    }
+
     /// Validate that the Host Configuration in `ctx.spec` can be applied on the system.
     ///
     /// Implementations should consider the previous Host Configuration in `ctx.spec_old` and the
@@ -229,14 +236,16 @@ fn validate_host_config(
 ) -> Result<(), TridentError> {
     info!("Starting step 'Validate'");
     for subsystem in subsystems {
-        debug!(
-            "Starting step 'Validate' for subsystem '{}'",
-            subsystem.name()
-        );
-        subsystem.validate_host_config(ctx).message(format!(
-            "Step 'Validate' failed for subsystem '{}'",
-            subsystem.name()
-        ))?;
+        if subsystem.runs_on(ctx).contains(&ctx.servicing_type) {
+            debug!(
+                "Starting step 'Validate' for subsystem '{}'",
+                subsystem.name()
+            );
+            subsystem.validate_host_config(ctx).message(format!(
+                "Step 'Validate' failed for subsystem '{}'",
+                subsystem.name()
+            ))?;
+        }
     }
     debug!("Finished step 'Validate'");
     Ok(())
@@ -245,14 +254,16 @@ fn validate_host_config(
 fn prepare(subsystems: &mut [Box<dyn Subsystem>], ctx: &EngineContext) -> Result<(), TridentError> {
     info!("Starting step 'Prepare'");
     for subsystem in subsystems {
-        debug!(
-            "Starting step 'Prepare' for subsystem '{}'",
-            subsystem.name()
-        );
-        subsystem.prepare(ctx).message(format!(
-            "Step 'Prepare' failed for subsystem '{}'",
-            subsystem.name()
-        ))?;
+        if subsystem.runs_on(ctx).contains(&ctx.servicing_type) {
+            debug!(
+                "Starting step 'Prepare' for subsystem '{}'",
+                subsystem.name()
+            );
+            subsystem.prepare(ctx).message(format!(
+                "Step 'Prepare' failed for subsystem '{}'",
+                subsystem.name()
+            ))?;
+        }
     }
     debug!("Finished step 'Prepare'");
     Ok(())
@@ -269,22 +280,24 @@ fn provision(
 
     info!("Starting step 'Provision'");
     for subsystem in subsystems {
-        debug!(
-            "Starting step 'Provision' for subsystem '{}'",
-            subsystem.name()
-        );
-        let _etc_overlay_mount = if use_overlay {
-            Some(etc_overlay::create(
-                Path::new(new_root_path),
-                subsystem.writable_etc_overlay(),
-            )?)
-        } else {
-            None
-        };
-        subsystem.provision(ctx, new_root_path).message(format!(
-            "Step 'Provision' failed for subsystem '{}'",
-            subsystem.name()
-        ))?;
+        if subsystem.runs_on(ctx).contains(&ctx.servicing_type) {
+            debug!(
+                "Starting step 'Provision' for subsystem '{}'",
+                subsystem.name()
+            );
+            let _etc_overlay_mount = if use_overlay {
+                Some(etc_overlay::create(
+                    Path::new(new_root_path),
+                    subsystem.writable_etc_overlay(),
+                )?)
+            } else {
+                None
+            };
+            subsystem.provision(ctx, new_root_path).message(format!(
+                "Step 'Provision' failed for subsystem '{}'",
+                subsystem.name()
+            ))?;
+        }
     }
     debug!("Finished step 'Provision'");
     Ok(())
@@ -303,23 +316,25 @@ fn configure(
 
     info!("Starting step 'Configure'");
     for subsystem in subsystems {
-        debug!(
-            "Starting step 'Configure' for subsystem '{}'",
-            subsystem.name()
-        );
-        // unmount on drop
-        let _etc_overlay_mount = if use_overlay {
-            Some(etc_overlay::create(
-                Path::new("/"),
-                subsystem.writable_etc_overlay(),
-            )?)
-        } else {
-            None
-        };
-        subsystem.configure(ctx).message(format!(
-            "Step 'Configure' failed for subsystem '{}'",
-            subsystem.name()
-        ))?;
+        if subsystem.runs_on(ctx).contains(&ctx.servicing_type) {
+            debug!(
+                "Starting step 'Configure' for subsystem '{}'",
+                subsystem.name()
+            );
+            // unmount on drop
+            let _etc_overlay_mount = if use_overlay {
+                Some(etc_overlay::create(
+                    Path::new("/"),
+                    subsystem.writable_etc_overlay(),
+                )?)
+            } else {
+                None
+            };
+            subsystem.configure(ctx).message(format!(
+                "Step 'Configure' failed for subsystem '{}'",
+                subsystem.name()
+            ))?;
+        }
     }
     debug!("Finished step 'Configure'");
 
@@ -332,14 +347,16 @@ fn update_host_configuration(
 ) -> Result<(), TridentError> {
     info!("Starting step 'Update Host Configuration'");
     for subsystem in subsystems {
-        debug!(
-            "Starting step 'Update Host Configuration' for subsystem '{}'",
-            subsystem.name()
-        );
-        subsystem.update_host_configuration(ctx).message(format!(
-            "Step 'Update Host Configuration' failed for subsystem '{}'",
-            subsystem.name()
-        ))?;
+        if subsystem.runs_on(ctx).contains(&ctx.servicing_type) {
+            debug!(
+                "Starting step 'Update Host Configuration' for subsystem '{}'",
+                subsystem.name()
+            );
+            subsystem.update_host_configuration(ctx).message(format!(
+                "Step 'Update Host Configuration' failed for subsystem '{}'",
+                subsystem.name()
+            ))?;
+        }
     }
     debug!("Finished step 'Update Host Configuration'");
     Ok(())
