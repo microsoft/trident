@@ -1,124 +1,53 @@
-# Generate Diagnostics and Support Bundles
+# Generate a Diagnostics Bundle
 
-Trident provides a diagnose command that collects system information, logs, and configuration data into a single support bundle. This is useful for troubleshooting issues and reporting bugs.
+When troubleshooting Trident issues or reporting bugs, you can collect system information, logs, and configuration into a support bundle for analysis.
 
-## What Information is Collected?
+## Generate the Bundle
 
-The diagnostics bundle includes:
-
-- **System Information**: Host platform details, virtualization info, disk configuration
-- **Trident Version**: Version information of the running Trident instance
-- **Host Status**: Current state from the Trident datastore
-- **Current Logs**: Active Trident execution log and metrics (see [View Trident's Background Log](./View-Trident's-Background-Log.md) for more details)
-- **Historical Logs**: Persisted logs and metrics from past servicing operations
-- **Datastore Files**: Current, temporary, and configured datastore databases
-
-All collected data is packaged into a compressed tarball (`.tar.zst`).
-
-## Generating a Diagnostics Bundle
-
-To generate a diagnostics bundle, use the `diagnose` command:
+Run the diagnose command to create a support bundle:
 
 ```bash
 sudo trident diagnose --output /tmp/trident-diagnostics.tar.zst
 ```
 
-This will create a compressed bundle at `/tmp/trident-diagnostics.tar.zst` containing all diagnostic information.
+This creates a compressed bundle containing:
+- System and platform information
+- Trident version and configuration
+- Current and historical logs (see [View Trident's Background Log](./View-Trident's-Background-Log.md))
+- Datastore files
 
-### Required Arguments
+**Note**: If you encounter an "access denied" error, SELinux may be preventing Trident from writing to that location. Use `/tmp` as shown above.
 
-- `--output` or `-o`: Path where the support bundle will be saved
+## Extract and Review the Bundle
 
-### Optional Arguments
-
-- `--verbosity` or `-v`: Logging verbosity level (default: `DEBUG`)
-  - Available levels: `OFF`, `ERROR`, `WARN`, `INFO`, `DEBUG`, `TRACE`
-
-**Note**: If you encounter an "access denied" error when running this command, it may be due to SELinux configuration preventing Trident from writing to the specified location. In this case, try outputting the bundle to `/tmp` as shown in the example above.
-
-## Bundle Structure
-
-The generated bundle has the following structure:
-
-```
-trident-diagnostics/
-├── report.json                    # Diagnostic report with metadata
-└── logs/
-    ├── trident-full.log           # Current Trident execution log
-    ├── trident-metrics.jsonl      # Current Trident metrics
-    ├── historical/                # Logs from past servicing
-    │   ├── trident-<servicing_state>-<timestamp>.log
-    │   ├── trident-metrics-<servicing_state>-<timestamp>.log
-    │   └── ...
-    ├── datastore.sqlite           # Default datastore
-    ├── datastore-tmp.sqlite       # Temporary datastore (if applicable)
-    └── datastore-configured.sqlite # Configured datastore (if applicable)
-```
-
-## Understanding the Report
-
-The `report.json` file contains structured information about your system:
-
-### Report Fields
-
-| Field               | Description                                              |
-| ------------------- | -------------------------------------------------------- |
-| `timestamp`         | When the report was generated (RFC3339 format)           |
-| `version`           | Trident version                                          |
-| `host_description`  | Platform, virtualization, container, and disk information|
-| `host_status`       | Current state from the datastore (if available)          |
-| `collected_files`   | List of files included in the bundle with metadata      |
-
-### Host Description
-
-The host description includes:
-
-- `is_container`: Whether Trident is running in a container
-- `is_virtual`: Whether the host is a virtual machine
-- `virt_type`: Type of virtualization (e.g., `qemu`, `hyperv`, `none detected`)
-- `platform_info`: Detailed platform metadata
-- `disk_info`: Block device information from `lsblk`
-
-## Use Cases
-
-### Bug Reports
-
-When reporting a bug, generate a diagnostics bundle and attach it to your issue:
-
-```bash
-sudo trident diagnose --output /tmp/trident-bug-report.tar.zst
-```
-
-The bundle provides developers with context about your system state.
-
-### Troubleshooting Failed Updates
-
-If an update fails, the bundle includes both current and historical logs showing what happened during each stage:
-
-```bash
-sudo trident diagnose --output /tmp/failed-update-diagnostics.tar.zst
-```
-
-## Extracting the Bundle
-
-To extract and examine the contents of a diagnostics bundle:
+To examine the bundle contents:
 
 ```bash
 tar --use-compress-program=unzstd -xvf trident-diagnostics.tar.zst
+cd trident-diagnostics
 ```
 
-This will extract the contents to a `trident-diagnostics/` directory in your current location.
+The bundle contains:
+- `report.json` - System metadata and diagnostics summary
+- `datastore.sqlite` - Trident datastore (and variants if present)
+- `logs/trident-full.log` - Current execution log
+- `logs/trident-metrics.jsonl` - Current metrics
+- `logs/historical/` - Logs from past servicing operations
 
-## Privacy and Security Considerations
+## Share the Bundle for Support
 
-The diagnostics bundle may contain sensitive information:
+When reporting an issue:
 
-- System configuration details
-- Disk layout and partition information
-- Datastore contents (which may include custom configurations)
-- Execution logs (which may contain system paths and information)
+1. Generate the bundle:
+   ```bash
+   sudo trident diagnose --output /tmp/trident-issue-12345.tar.zst
+   ```
 
-**Review the bundle contents before sharing** and ensure it's appropriate for your security and privacy requirements.
+2. Review the contents to ensure no sensitive data is included
+
+3. Attach the bundle to your bug report or support request
+
+**Privacy Note**: The bundle contains system configuration, disk layout, and execution logs. Review before sharing externally.
 
 ## Related Documentation
 
