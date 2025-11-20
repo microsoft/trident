@@ -309,12 +309,6 @@ pub enum ServicingError {
         expected_device_path: String,
     },
 
-    #[error(
-        "A/B update health check(s) failed, rollback executed, and the host booted from the expected device \
-        '{expected_device_path}'"
-    )]
-    AbUpdateHealthCheckCommitCheck { expected_device_path: String },
-
     #[error("Failed to bind encryption to pcrlock policy")]
     BindEncryptionToPcrlockPolicy,
 
@@ -514,12 +508,6 @@ pub enum ServicingError {
     #[error("Failed to get SELINUXTYPE")]
     GetSelinuxType,
 
-    #[error("Failed health check(s) during '{servicing_type}': '{details}'")]
-    HealthChecksFailed {
-        details: String,
-        servicing_type: String,
-    },
-
     #[error("Failed to list boot entries via efibootmgr or parse them")]
     ListAndParseBootEntries,
 
@@ -672,6 +660,23 @@ pub enum DatastoreError {
     WriteToDatastore,
 }
 
+/// Identifies errors that occur when interacting with failed health checks.
+#[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum HealthChecksError {
+    #[error(
+        "A/B update health check(s) failed, rollback executed, and the host booted from the expected device \
+        '{expected_device_path}'"
+    )]
+    AbUpdateHealthCheckCommitCheck { expected_device_path: String },
+
+    #[error("Failed health check(s) during '{servicing_type}': '{details}'")]
+    HealthChecksFailed {
+        details: String,
+        servicing_type: String,
+    },
+}
+
 /// Identifies errors that occur when clean install or update fail due to the current configuration
 /// of the host.
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
@@ -694,6 +699,10 @@ pub enum ErrorKind {
     /// Identifies errors that occur when the execution environment is misconfigured.
     #[error(transparent)]
     ExecutionEnvironmentMisconfiguration(#[from] ExecutionEnvironmentMisconfigurationError),
+
+    /// Identifies errors that are related to health checks.
+    #[error(transparent)]
+    HealthChecks(#[from] HealthChecksError),
 
     /// Identifies errors that occur when Trident fails to initialize.
     #[error(transparent)]
@@ -838,6 +847,7 @@ impl Serialize for TridentError {
             ErrorKind::ExecutionEnvironmentMisconfiguration(ref e) => {
                 state.serialize_field("error", e)?
             }
+            ErrorKind::HealthChecks(ref e) => state.serialize_field("error", e)?,
             ErrorKind::Initialization(ref e) => state.serialize_field("error", e)?,
             ErrorKind::Internal(ref e) => state.serialize_field("error", e)?,
             ErrorKind::InvalidInput(ref e) => state.serialize_field("error", e)?,
@@ -864,6 +874,7 @@ impl Debug for TridentError {
                 f,
                 "Trident failed due to a misconfigured execution environment"
             )?,
+            ErrorKind::HealthChecks(_) => writeln!(f, "Trident reported failed health checks")?,
             ErrorKind::Initialization(_) => writeln!(f, "Trident failed to initialize")?,
             ErrorKind::Internal(_) => writeln!(f, "Trident failed due to an internal error")?,
             ErrorKind::InvalidInput(_) => writeln!(f, "Trident failed due to invalid input")?,

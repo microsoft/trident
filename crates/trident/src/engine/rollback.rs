@@ -9,7 +9,10 @@ use osutils::{block_devices, container, efivar, lsblk, pcrlock, veritysetup, vir
 use trident_api::{
     constants::internal_params::VIRTDEPLOY_BOOT_ORDER_WORKAROUND,
     constants::ROOT_MOUNT_POINT_PATH,
-    error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
+    error::{
+        HealthChecksError, InternalError, ReportError, ServicingError, TridentError,
+        TridentResultExt,
+    },
     status::{AbVolumeSelection, ServicingState, ServicingType},
     BlockDeviceId,
 };
@@ -152,7 +155,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
             })?;
 
             return Err(TridentError::new(
-                ServicingError::AbUpdateHealthCheckCommitCheck {
+                HealthChecksError::AbUpdateHealthCheckCommitCheck {
                     expected_device_path: current_root_path.to_string_lossy().to_string(),
                 },
             ));
