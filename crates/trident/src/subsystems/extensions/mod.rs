@@ -12,7 +12,7 @@ use tempfile::NamedTempFile;
 
 use osutils::{container, dependencies::Dependency, path};
 use trident_api::{
-    config::Extension,
+    config::{Extension, HostConfiguration},
     constants::internal_params::HTTP_CONNECTION_TIMEOUT_SECONDS,
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     primitives::hash::Sha384Hash,
@@ -91,6 +91,18 @@ pub struct ExtensionsSubsystem {
 impl Subsystem for ExtensionsSubsystem {
     fn name(&self) -> &'static str {
         "extensions"
+    }
+
+    fn select_servicing_type(&self, ctx: &EngineContext) -> Result<ServicingType, TridentError> {
+        if ctx.spec_old == HostConfiguration::default() {
+            return Ok(ServicingType::CleanInstall);
+        }
+        if ctx.spec_old.os.sysexts != ctx.spec.os.sysexts
+            || ctx.spec_old.os.confexts != ctx.spec.os.confexts
+        {
+            return Ok(ServicingType::RuntimeUpdate);
+        }
+        Ok(ServicingType::NoActiveServicing)
     }
 
     fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {

@@ -4,7 +4,11 @@ use anyhow::Context;
 use log::debug;
 
 use osutils::netplan;
-use trident_api::error::{ReportError, ServicingError, TridentError};
+use trident_api::{
+    config::HostConfiguration,
+    error::{ReportError, ServicingError, TridentError},
+    status::ServicingType,
+};
 
 use crate::engine::{EngineContext, Subsystem};
 
@@ -17,6 +21,16 @@ pub struct NetworkSubsystem;
 impl Subsystem for NetworkSubsystem {
     fn name(&self) -> &'static str {
         "network"
+    }
+
+    fn select_servicing_type(&self, ctx: &EngineContext) -> Result<ServicingType, TridentError> {
+        if ctx.spec_old == HostConfiguration::default() {
+            return Ok(ServicingType::CleanInstall);
+        }
+        if ctx.spec_old.os.netplan != ctx.spec.os.netplan {
+            return Ok(ServicingType::RuntimeUpdate);
+        }
+        Ok(ServicingType::NoActiveServicing)
     }
 
     #[tracing::instrument(name = "network_configuration", skip_all)]
