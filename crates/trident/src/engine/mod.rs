@@ -75,9 +75,9 @@ pub(crate) trait Subsystem: Send {
         Ok(None)
     }
 
-    /// List of servicing types on which a subsystem may run. By default, all
-    /// subsystems may run on Clean Install and A/B Update. Some are also run on
-    /// Runtime Update, depending on changes in the new Host Configuration.
+    /// Servicing types on which a subsystem may run. By default, all subsystems
+    /// may run on Clean Install and A/B Update. Some also run on Runtime
+    /// Update, depending on changes in the new Host Configuration.
     fn runs_on(&self, _ctx: &EngineContext) -> &[ServicingType] {
         &[ServicingType::CleanInstall, ServicingType::AbUpdate]
     }
