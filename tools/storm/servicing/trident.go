@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"tridenttools/storm/servicing/tests"
-	"tridenttools/storm/servicing/utils/azure"
-	"tridenttools/storm/servicing/utils/config"
-	"tridenttools/storm/servicing/utils/qemu"
+
+	stormsvctests "tridenttools/storm/servicing/tests"
+	stormsvcconfig "tridenttools/storm/servicing/utils/config"
+	stormvmazure "tridenttools/storm/utils/vm/azure"
+	stormvmconfig "tridenttools/storm/utils/vm/config"
+	stormvmqemu "tridenttools/storm/utils/vm/qemu"
 
 	"github.com/microsoft/storm"
 
@@ -19,11 +21,11 @@ type TridentServicingScenario struct {
 }
 
 type TridentServicingScenarioArgs struct {
-	config.TestConfig `embed:""`
-	config.VMConfig   `embed:""`
-	qemu.QemuConfig   `embed:""`
-	azure.AzureConfig `embed:""`
-	TestCaseToRun     string `help:"Name of the test case to run. If not specified, all test cases will be run." default:"all"`
+	stormsvcconfig.TestConfig `embed:""`
+	stormvmconfig.VMConfig    `embed:""`
+	stormvmqemu.QemuConfig    `embed:""`
+	stormvmazure.AzureConfig  `embed:""`
+	TestCaseToRun             string `help:"Name of the test case to run. If not specified, all test cases will be run." default:"all"`
 }
 
 func (s *TridentServicingScenario) Name() string {
@@ -64,17 +66,18 @@ func (s TridentServicingScenario) Setup(ctx storm.SetupCleanupContext) error {
 func (h *TridentServicingScenario) Cleanup(ctx storm.SetupCleanupContext) error {
 	if h.args.TestConfig.ForceCleanup {
 		// Best effort to clean up azure resources in case there was a failure
-		tests.CleanupVM(config.ServicingConfig{
-			TestConfig:  h.args.TestConfig,
-			VMConfig:    h.args.VMConfig,
-			QemuConfig:  h.args.QemuConfig,
-			AzureConfig: h.args.AzureConfig,
-		})
+		stormsvctests.CleanupVM(
+			h.args.TestConfig,
+			stormvmconfig.AllVMConfig{
+				VMConfig:    h.args.VMConfig,
+				QemuConfig:  h.args.QemuConfig,
+				AzureConfig: h.args.AzureConfig,
+			})
 	}
 	return nil
 }
 
-func (h *TridentServicingScenario) runTestCase(tc storm.TestCase, testFunc func(config.ServicingConfig) error) error {
+func (h *TridentServicingScenario) runTestCase(tc storm.TestCase, testFunc func(stormsvcconfig.TestConfig, stormvmconfig.AllVMConfig) error) error {
 	if tc.Name() != h.args.TestCaseToRun && h.args.TestCaseToRun != "all" {
 		tc.Skip(fmt.Sprintf("Test case '%s' does not align to TestCaseToRun '%s'", tc.Name(), h.args.TestCaseToRun))
 	} else {
@@ -88,12 +91,13 @@ func (h *TridentServicingScenario) runTestCase(tc storm.TestCase, testFunc func(
 				tc.FailFromError(err)
 			}
 		}
-		err := testFunc(config.ServicingConfig{
-			TestConfig:  testCaseSpecificConfig,
-			VMConfig:    h.args.VMConfig,
-			QemuConfig:  h.args.QemuConfig,
-			AzureConfig: h.args.AzureConfig,
-		})
+		err := testFunc(
+			testCaseSpecificConfig,
+			stormvmconfig.AllVMConfig{
+				VMConfig:    h.args.VMConfig,
+				QemuConfig:  h.args.QemuConfig,
+				AzureConfig: h.args.AzureConfig,
+			})
 		if err != nil {
 			logrus.Infof("test case '%s' failed", tc.Name())
 			tc.FailFromError(err)
@@ -105,15 +109,15 @@ func (h *TridentServicingScenario) runTestCase(tc storm.TestCase, testFunc func(
 }
 
 func (h *TridentServicingScenario) deployVm(tc storm.TestCase) error {
-	return h.runTestCase(tc, tests.DeployVM)
+	return h.runTestCase(tc, stormsvctests.DeployVM)
 }
 
 func (h *TridentServicingScenario) checkDeployment(tc storm.TestCase) error {
-	return h.runTestCase(tc, tests.CheckDeployment)
+	return h.runTestCase(tc, stormsvctests.CheckDeployment)
 }
 
 func (h *TridentServicingScenario) updateLoop(tc storm.TestCase) error {
-	return h.runTestCase(tc, tests.UpdateLoop)
+	return h.runTestCase(tc, stormsvctests.UpdateLoop)
 }
 
 func (h *TridentServicingScenario) rollback(tc storm.TestCase) error {
@@ -121,22 +125,22 @@ func (h *TridentServicingScenario) rollback(tc storm.TestCase) error {
 		tc.Skip("Test case 'rollback' is skipped because rollback testing is disabled")
 		return nil // No action needed if rollback is not enabled
 	}
-	return h.runTestCase(tc, tests.Rollback)
+	return h.runTestCase(tc, stormsvctests.Rollback)
 }
 
 func (h *TridentServicingScenario) collectLogs(tc storm.TestCase) error {
-	return h.runTestCase(tc, tests.FetchLogs)
+	return h.runTestCase(tc, stormsvctests.FetchLogs)
 }
 
 func (h *TridentServicingScenario) cleanupVm(tc storm.TestCase) error {
-	return h.runTestCase(tc, tests.CleanupVM)
+	return h.runTestCase(tc, stormsvctests.CleanupVM)
 }
 
 func (h *TridentServicingScenario) publishSigImage(tc storm.TestCase) error {
-	if h.args.Platform != config.PlatformAzure {
+	if h.args.Platform != stormvmconfig.PlatformAzure {
 		tc.Skip("Test case 'publish-sig-image' is only applicable for Azure platform")
 		return nil // No action needed for non-Azure platforms
 	}
 
-	return h.runTestCase(tc, tests.PublishSigImage)
+	return h.runTestCase(tc, stormsvctests.PublishSigImage)
 }

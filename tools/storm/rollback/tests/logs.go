@@ -1,11 +1,11 @@
 package tests
 
 import (
-	stormsvcconfig "tridenttools/storm/servicing/utils/config"
+	stormrollbackconfig "tridenttools/storm/rollback/utils/config"
 	stormvm "tridenttools/storm/utils/vm"
 	stormvmconfig "tridenttools/storm/utils/vm/config"
 )
 
-func FetchLogs(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfig.AllVMConfig) error {
+func FetchLogs(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmconfig.AllVMConfig) error {
 	return stormvm.FetchLogs(vmConfig, testConfig.OutputPath)
 }
