@@ -127,7 +127,7 @@ pub(crate) fn update(
     .message("Failed to stage update")?;
 
     match servicing_type {
-        ServicingType::UpdateAndReboot | ServicingType::AbUpdate => {
+        ServicingType::AbUpdate => {
             if !allowed_operations.has_finalize() {
                 info!("Finalizing of update not requested, skipping reboot");
 
@@ -150,7 +150,7 @@ pub(crate) fn update(
                 .message("Failed to finalize update")
             }
         }
-        ServicingType::NormalUpdate | ServicingType::HotPatch => {
+        ServicingType::RuntimeUpdate => {
             state.with_host_status(|host_status| {
                 host_status.servicing_state = ServicingState::Provisioned;
             })?;

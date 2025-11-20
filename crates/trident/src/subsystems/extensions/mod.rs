@@ -1198,9 +1198,9 @@ mod functional_test {
         // Verify that nothing has been copied to the target OS.
         assert!(mount_path.path().read_dir().unwrap().next().is_none());
 
-        // Run set_up_extensions with HotPath (should remove old extensions)
+        // Run set_up_extensions with RuntimeUpdate (should remove old extensions)
         subsystem
-            .set_up_extensions(mount_path.path(), ServicingType::HotPatch)
+            .set_up_extensions(mount_path.path(), ServicingType::RuntimeUpdate)
             .unwrap();
         // Verify the extension was removed
         assert!(!old_ext.path().exists(), "Old extension should be removed");
@@ -1322,9 +1322,9 @@ mod functional_test {
 
         // Create necessary directories
         subsystem.create_directories(mount_path.path()).unwrap();
-        // Run set_up_extensions; hot patch update
+        // Run set_up_extensions; runtime update
         subsystem
-            .set_up_extensions(mount_path.path(), ServicingType::HotPatch)
+            .set_up_extensions(mount_path.path(), ServicingType::RuntimeUpdate)
             .unwrap();
 
         // Verify old extension was removed, since servicing type is not A/B
@@ -1459,7 +1459,7 @@ mod functional_test {
         subsystem.create_directories(mount_path.path()).unwrap();
         // Run set_up_extensions
         subsystem
-            .set_up_extensions(mount_path.path(), ServicingType::HotPatch)
+            .set_up_extensions(mount_path.path(), ServicingType::RuntimeUpdate)
             .unwrap();
 
         // Verify old extension was removed. Since servicing OS == target OS,
