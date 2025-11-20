@@ -199,7 +199,11 @@ func (cfg AzureConfig) PublishSigImage(artifactsDir string) error {
 		return fmt.Errorf("failed to set Azure subscription: %w", err)
 	}
 
+<<<<<<< HEAD
 	imageVersion := cfg.GetImageVersion(true)
+=======
+	imageVersion := cfg.GetImageVersion(cfg.BuildId, true)
+>>>>>>> 47d4536b6 (refactor and create rollback skeleton)
 	logrus.Infof("Using image version %s", imageVersion)
 
 	if err := cfg.checkImageVersionExists(imageVersion); err == nil {
