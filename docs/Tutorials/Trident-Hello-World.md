@@ -345,3 +345,13 @@ In Hyper-V Manager, right-click your VM and select **Connect**, then click
 
 In Hyper-V Manager, right-click the VM and select **Delete** to remove it
 completely.
+
+## Troubleshooting
+
+If you encounter issues during the installation process, you can generate a diagnostics bundle to help identify the problem:
+
+```bash
+sudo trident diagnose --output /tmp/trident-diagnostics.tar.zst
+```
+
+This bundle contains system information, logs, and configuration details that can help diagnose issues. For more information, see [Generate Diagnostics and Support Bundles](../How-To-Guides/Diagnostics.md).

@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha512"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -499,7 +500,7 @@ func (h *AbUpdateHelper) verifyDiagnosticBundleContents(bundlePath string) error
 
 	// Validate report.json content
 	var report map[string]interface{}
-	if err := yaml.Unmarshal(reportJSON, &report); err != nil {
+	if err := json.Unmarshal(reportJSON, &report); err != nil {
 		return fmt.Errorf("failed to parse report.json: %w", err)
 	}
 

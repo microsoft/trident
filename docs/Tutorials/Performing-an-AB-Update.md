@@ -306,6 +306,16 @@ TARGET_MACHINE_IP="<IP ADDRESS>"
 ssh -i $HOME/.ssh/id_rsa tutorial-user@$TARGET_MACHINE_IP trident update /tmp/host-config-update.yaml
 ```
 
+## Troubleshooting
+
+If you encounter issues during the update process, you can generate a diagnostics bundle to help identify the problem:
+
+```bash
+sudo trident diagnose --output /tmp/trident-diagnostics.tar.zst
+```
+
+This bundle contains system information, logs, and configuration details that can help diagnose issues. For more information, see [Generate Diagnostics and Support Bundles](../How-To-Guides/Diagnostics.md).
+
 ## Conclusion
 
 We have now seen how to build an update image, Trident Host Configuration, and
