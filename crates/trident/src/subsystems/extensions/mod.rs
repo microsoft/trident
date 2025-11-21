@@ -20,7 +20,7 @@ use trident_api::{
 };
 
 use crate::{
-    engine::{EngineContext, Subsystem},
+    engine::{EngineContext, Subsystem, RUNS_ON_ALL},
     io_utils::{
         file_reader::FileReader, hashing_reader::HashingReader384, image_streamer::stream_and_hash,
     },
@@ -94,11 +94,7 @@ impl Subsystem for ExtensionsSubsystem {
     }
 
     fn runs_on(&self, _ctx: &EngineContext) -> &[ServicingType] {
-        &[
-            ServicingType::CleanInstall,
-            ServicingType::AbUpdate,
-            ServicingType::RuntimeUpdate,
-        ]
+        RUNS_ON_ALL
     }
 
     fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
