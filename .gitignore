@@ -364,3 +364,5 @@ baremetal-serial.log
 # Virtdeploy files
 /tools/vm-netlaunch.yaml
 /tools/virt-deploy-metadata.json
+
+/base/

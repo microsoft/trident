@@ -64,8 +64,11 @@ os:
   additionalFiles:
     - source: files/sudoers-wheel
       destination: /etc/sudoers.d/wheel
+<<<<<<< HEAD
     - source: files/99-dhcp-eth0.network
       destination: /etc/systemd/network/99-dhcp-eth0.network
+=======
+>>>>>>> 25cd2243e (move servicing build images from test-images)
 
 scripts:
   postCustomization:
@@ -73,3 +76,7 @@ scripts:
     - path: scripts/ssh-move-host-keys.sh
     - path: scripts/duid-type-to-link-layer.sh
     - path: scripts/update-os-release.sh
+<<<<<<< HEAD
+=======
+    - path: scripts/patch-dracut.sh
+>>>>>>> 25cd2243e (move servicing build images from test-images)

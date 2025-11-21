@@ -149,3 +149,7 @@ scripts:
     - path: scripts/ssh-move-host-keys.sh
     - path: scripts/update-os-release.sh
     - path: scripts/duid-type-to-link-layer.sh
+<<<<<<< HEAD
+=======
+    - path: scripts/patch-dracut.sh
+>>>>>>> 25cd2243e (move servicing build images from test-images)

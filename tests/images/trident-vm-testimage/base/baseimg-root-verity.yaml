@@ -173,6 +173,10 @@ scripts:
       arguments:
         - uki
     - path: scripts/duid-type-to-link-layer.sh
+<<<<<<< HEAD
+=======
+    - path: scripts/patch-dracut.sh
+>>>>>>> 25cd2243e (move servicing build images from test-images)
 
 previewFeatures:
   - uki

@@ -466,7 +466,6 @@ $(ARTIFACTS_TEST_IMAGE_DIR)/regular.cosi: download-runtime-images
 
 # Build the installer ISO using the builder
 $(ARTIFACTS_TEST_IMAGE_DIR)/azl-installer.iso: \
-	bin/RPMS \
 	bin/liveinstaller \
 	artifacts/baremetal.vhdx \
 	$(ARTIFACTS_TEST_IMAGE_DIR)/regular.cosi \
