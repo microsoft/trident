@@ -104,7 +104,7 @@ steps:
       - task: DownloadPipelineArtifact@2
         inputs:
           buildType: current
-          artifactName: trident-binaries
+          artifactName: ${{ parameters.tridentArtifactName}}
           targetPath: "$(Build.ArtifactStagingDirectory)/trident"
         displayName: Download Trident RPMs
 
@@ -186,6 +186,7 @@ steps:
           -C $base_dir/rpm-overrides
       fi
 
+      find $(Build.ArtifactStagingDirectory)
       if [ -d "$(Build.ArtifactStagingDirectory)/trident" ]; then
         rpm_dir='$(Build.SourcesDirectory)/bin/RPMS'
         mkdir -p $rpm_dir
