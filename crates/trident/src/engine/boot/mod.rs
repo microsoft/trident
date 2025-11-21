@@ -31,6 +31,10 @@ impl Subsystem for BootSubsystem {
             debug!("Skipping grub configuration because UKI is in use");
             return Ok(());
         }
+        if ctx.spec.storage.raw_cosi {
+            debug!("Skipping grub configuration because raw COSI is in use");
+            return Ok(());
+        }
 
         grub::update_configs(ctx, Path::new(OS_MODIFIER_NEWROOT_PATH))
             .structured(ServicingError::UpdateGrubConfigs)?;
