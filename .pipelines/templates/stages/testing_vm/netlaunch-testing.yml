@@ -232,31 +232,11 @@ stages:
             timeoutInMinutes: 20
 
           - bash: |
-              set -ux
+              set -eux
 
-              VM_NAME=$(jq -r '.virtualmachines[0].name' $(tridentSourceDirectory)/tools/virt-deploy-metadata.json)
-              VM_SERIAL_LOG="/tmp/$VM_NAME-serial0.log"
-
-              until [ -f "$VM_SERIAL_LOG" ]
-              do
-                  sleep 0.1
-              done
-
-              echo "Found VM serial log file: $VM_SERIAL_LOG"
-              echo "VM serial log:"
-
-              sudo $(tridentSourceDirectory)/tests/e2e_tests/helpers/wait_for_login.py \
-                  -d "$VM_SERIAL_LOG" \
-                  -o ./serial.log \
-                  -t 250 \
-                  -v
-
-              WAIT_FOR_LOGIN_EXITCODE=$?
-
-              mkdir -p $(ob_outputDirectory)
-              sudo cp ./serial.log $(ob_outputDirectory)/serial.log
-
-              exit $WAIT_FOR_LOGIN_EXITCODE
+              sudo ./bin/storm-trident helper wait-for-login -a \
+                  --vm-name "$(jq -r '.virtualmachines[0].name' $(tridentSourceDirectory)/tools/virt-deploy-metadata.json)" \
+                  --artifacts-folder "$(ob_outputDirectory)"
 
             timeoutInMinutes: 5
             condition: succeededOrFailed()
