@@ -208,7 +208,7 @@ stages:
   #   # Build Trident test image (dom0: mshv+ch)
   #   - template: stages/build_image/trident-mshvch-dom0-testimg.yml
 
-  # Test Servicing on VMs
+  # Test Runtime Updates and Rollback on VMs
   - template: stages/testing_rollback/vm-testing.yml
     parameters:
       includeQemu: true

@@ -54,7 +54,7 @@ func PrepareQcow2(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 	customizerConfigContent := fmt.Sprintf(
 		IMAGE_CUSTOMIZER_CONFIG_TEMPLATE,
 		filepath.Join("/artifacts", extensionFileName),
-		fmt.Sprintf("%s.raw", testConfig.ExtensionName),
+		extensionFileName,
 	)
 	if err := os.WriteFile(customizerConfigPath, []byte(customizerConfigContent), 0644); err != nil {
 		return fmt.Errorf("failed to write image customizer config file: %w", err)
