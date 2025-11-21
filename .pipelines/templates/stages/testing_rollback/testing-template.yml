@@ -60,7 +60,7 @@ jobs:
           - task: DownloadPipelineArtifact@2
             inputs:
               buildType: current
-              artifactName: image-rollback-${{ parameters.platform }}-base
+              artifactName: image-${{ parameters.platform }}-base
               targetPath: "$(Build.ArtifactStagingDirectory)/"
             displayName: Download Base Image
           - task: AzureCLI@2
@@ -114,7 +114,7 @@ jobs:
           - task: DownloadPipelineArtifact@2
             inputs:
               buildType: current
-              artifactName: image-rollback-${{ parameters.platform }}-base
+              artifactName: image-${{ parameters.platform }}-base
               targetPath: "$(Build.ArtifactStagingDirectory)/"
             displayName: Download Base Image
 
@@ -122,14 +122,14 @@ jobs:
           - task: DownloadPipelineArtifact@2
             inputs:
               buildType: current
-              artifactName: image-rollback-${{ parameters.flavor }}-base
+              artifactName: image-${{ parameters.flavor }}-base
               targetPath: "$(Build.ArtifactStagingDirectory)/"
             displayName: Download Base Image
 
       - task: DownloadPipelineArtifact@2
         inputs:
           buildType: current
-          artifactName: image-rollback-${{ parameters.flavor }}-update-a
+          artifactName: image-${{ parameters.flavor }}-update-a
           targetPath: "$(Build.ArtifactStagingDirectory)"
         displayName: Download Update Image
 
