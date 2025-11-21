@@ -83,7 +83,7 @@ func (cfg AzureConfig) CreateImageVersion(imageVersion string, storageAccountRes
 	return nil
 }
 
-func (cfg AzureConfig) DeployAzureVM(vmName string, user string, buildId string) error {
+func (cfg AzureConfig) DeployAzureVM(vmName string, user string) error {
 	if err := cfg.SetSubscription(); err != nil {
 		return fmt.Errorf("failed to set Azure subscription: %w", err)
 	}
@@ -112,7 +112,7 @@ func (cfg AzureConfig) DeployAzureVM(vmName string, user string, buildId string)
 		}
 	}
 
-	imageVersion := cfg.GetImageVersion(buildId, false)
+	imageVersion := cfg.GetImageVersion(false)
 
 	// Create the VM
 	vmCreateArgs := []string{
@@ -200,7 +200,7 @@ func (cfg AzureConfig) PublishSigImage(artifactsDir string) error {
 		return fmt.Errorf("failed to set Azure subscription: %w", err)
 	}
 
-	imageVersion := cfg.GetImageVersion(cfg.BuildId, true)
+	imageVersion := cfg.GetImageVersion(true)
 	logrus.Infof("Using image version %s", imageVersion)
 
 	if err := cfg.checkImageVersionExists(imageVersion); err == nil {
@@ -521,9 +521,9 @@ func (cfg AzureConfig) GetLatestVersion() string {
 	return versions[len(versions)-1] // Return the latest version
 }
 
-func (cfg AzureConfig) GetImageVersion(buildId string, increment bool) string {
+func (cfg AzureConfig) GetImageVersion(increment bool) string {
 	imageVersion := "0.0.1"
-	if buildId == "" {
+	if cfg.BuildId == "" {
 		// If no build ID is provided, get the latest version
 		imageVersion = cfg.GetLatestVersion()
 		if imageVersion == "" {
@@ -545,7 +545,7 @@ func (cfg AzureConfig) GetImageVersion(buildId string, increment bool) string {
 		}
 	} else {
 		// Use the build ID as the patch version
-		imageVersion = fmt.Sprintf("0.0.%s", buildId)
+		imageVersion = fmt.Sprintf("0.0.%s", cfg.BuildId)
 	}
 
 	logrus.Infof("Image version: %s", imageVersion)
