@@ -46,6 +46,7 @@ func (s *TridentRollbackScenario) StagePaths() []string {
 }
 
 func (s *TridentRollbackScenario) RegisterTestCases(r storm.TestRegistrar) error {
+	r.RegisterTestCase("prepare-qcow2", s.prepareQcow2)
 	r.RegisterTestCase("deploy-vm", s.deployVm)
 	r.RegisterTestCase("check-deployment", s.checkDeployment)
 	r.RegisterTestCase("update-and-rollback", s.updateAndRollback)
@@ -105,6 +106,10 @@ func (h *TridentRollbackScenario) runTestCase(tc storm.TestCase, testFunc func(s
 	}
 	return nil
 
+}
+
+func (h *TridentRollbackScenario) prepareQcow2(tc storm.TestCase) error {
+	return h.runTestCase(tc, tests.PrepareQcow2)
 }
 
 func (h *TridentRollbackScenario) deployVm(tc storm.TestCase) error {
