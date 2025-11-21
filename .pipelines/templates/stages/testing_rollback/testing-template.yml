@@ -30,63 +30,6 @@ parameters:
     default: "trident-ubuntu-1es-pool-eastus2"
 
 jobs:
-  # For azure tests where there are multiple workers, use a dedicated job to publish the base
-  # image.  Otherwise, the publish will be done as part of the actual test.
-  - ${{ if eq(parameters.platform, 'azure') }}:
-      - job: PublishAzureImageForRollback
-        displayName: Publish Azure Image
-        timeoutInMinutes: 20
-        pool:
-          type: linux
-          name: ${{ parameters.pool }}
-          hostArchitecture: amd64
-        variables:
-          ob_outputDirectory: $(Build.SourcesDirectory)/logs
-          tridentSourceDirectory: $(Build.SourcesDirectory)
-        steps:
-          - task: DownloadPipelineArtifact@2
-            displayName: "Download go-tools: storm"
-            inputs:
-              buildType: current
-              artifactName: "go-tools"
-              patterns: |
-                storm-trident
-              targetPath: "$(tridentSourceDirectory)/bin"
-          - bash: |
-              set -eux
-              chmod +x $(tridentSourceDirectory)/bin/storm-trident
-              mkdir -p $(ob_outputDirectory)
-            displayName: Make storm executable and create output directory
-          - task: DownloadPipelineArtifact@2
-            inputs:
-              buildType: current
-              artifactName: image-${{ parameters.platform }}-base
-              targetPath: "$(Build.ArtifactStagingDirectory)/"
-            displayName: Download Base Image
-          - task: AzureCLI@2
-            inputs:
-              azureSubscription: trident-servicing-test
-              scriptType: bash
-              scriptLocation: inlineScript
-              inlineScript: |
-                set -eux
-
-                ./bin/storm-trident run rollback -a \
-                  --output-path $(ob_outputDirectory) \
-                  --platform ${{ parameters.platform }} \
-                  --artifacts-dir $ARTIFACTS \
-                  --use-private-ip-address \
-                  --build-id $(Build.BuildId) \
-                  --subscription $(SUBSCRIPTION) \
-                  --image-definition $(IMAGE_DEFINITION) \
-                  --storage-account $(STORAGE_ACCOUNT) \
-                  --storage-account-resource-group $(RESOURCE_GROUP) \
-                  --test-case-to-run publish-sig-image
-            displayName: Publish Base Image
-            env:
-              ARTIFACTS: $(Build.ArtifactStagingDirectory)
-              AZCOPY_AUTO_LOGIN_TYPE: "AZCLI"
-
   - job: RollbackTesting_${{ parameters.flavor }}
     displayName: Rollback Testing - ${{ parameters.flavor }}
     timeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
@@ -94,9 +37,6 @@ jobs:
       type: linux
       name: ${{ parameters.pool }}
       hostArchitecture: amd64
-    dependsOn:
-      - ${{ if eq(parameters.platform, 'azure') }}:
-          - PublishAzureImageForRollback
 
     variables:
       tridentSourceDirectory: $(Build.SourcesDirectory)
@@ -110,26 +50,17 @@ jobs:
           echo "##vso[task.setvariable variable=TEST_RESOURCE_GROUP;]trident-vm-rollback-validation-$(Build.BuildId)"
         displayName: "Set variables"
 
-      - ${{ if eq(parameters.platform, 'azure') }}:
-          - task: DownloadPipelineArtifact@2
-            inputs:
-              buildType: current
-              artifactName: image-${{ parameters.platform }}-base
-              targetPath: "$(Build.ArtifactStagingDirectory)/"
-            displayName: Download Base Image
-
-      - ${{ if eq(parameters.platform, 'qemu') }}:
-          - task: DownloadPipelineArtifact@2
-            inputs:
-              buildType: current
-              artifactName: image-${{ parameters.flavor }}-base
-              targetPath: "$(Build.ArtifactStagingDirectory)/"
-            displayName: Download Base Image
+      - task: DownloadPipelineArtifact@2
+        inputs:
+          buildType: current
+          artifactName: image-rollback-${{ parameters.flavor }}-base
+          targetPath: "$(Build.ArtifactStagingDirectory)/"
+        displayName: Download Base Image
 
       - task: DownloadPipelineArtifact@2
         inputs:
           buildType: current
-          artifactName: image-${{ parameters.flavor }}-update-a
+          artifactName: image-rollback-${{ parameters.flavor }}-update-a
           targetPath: "$(Build.ArtifactStagingDirectory)"
         displayName: Download Update Image
 
@@ -162,10 +93,6 @@ jobs:
       - bash: |
           set -eux
           ./bin/storm-trident script build-extension-images --build-sysexts --num-clones 3
-          # for i in $(seq 1 3); do
-          #   mkdir $(Build.ArtifactStagingDirectory)/test-sysext-$i
-          #   mv ./test-sysext-$i.raw $(Build.ArtifactStagingDirectory)/test-sysext-$i/test-sysext.raw
-          # done
           mv ./test-sysext-*.raw $(Build.ArtifactStagingDirectory)/
 
           find $(Build.ArtifactStagingDirectory)
@@ -189,86 +116,27 @@ jobs:
           echo "##vso[task.setvariable variable=STORM_FLAGS;]$FLAGS"
         displayName: "Set flags"
 
-      - ${{ if eq(parameters.platform, 'azure') }}:
-          - task: AzureCLI@2
-            inputs:
-              azureSubscription: trident-servicing-test
-              scriptType: bash
-              scriptLocation: inlineScript
-              inlineScript: |
-                set -eux
-
-                ./bin/storm-trident run rollback $(STORM_FLAGS) \
-                  --artifacts-dir $(Build.ArtifactStagingDirectory) \
-                  --output-path $(ob_outputDirectory) \
-                  --subscription $(SUBSCRIPTION) \
-                  --image-definition $(IMAGE_DEFINITION) \
-                  --storage-account $(STORAGE_ACCOUNT) \
-                  --storage-account-resource-group $(RESOURCE_GROUP) \
-                  --test-resource-group $(TEST_RESOURCE_GROUP) \
-                  --platform ${{ parameters.platform }} \
-                  --subnet-id $(SUBNET_ID) \
-                  --ssh-private-key-path $(SSH_PRIVATE_KEY_PATH) \
-                  --ssh-public-key-path $(SSH_PUBLIC_KEY_PATH) \
-                  --build-id $(Build.BuildId) \
-                  --use-private-ip-address \
-                  --force-cleanup
-                set +x
-                echo "##vso[task.setvariable variable=STORM_SCENARIO_FINISHED;]true"
-            displayName: "Rollback test (${{ parameters.platform }})"
-            env:
-              AZCOPY_AUTO_LOGIN_TYPE: "AZCLI"
-          - task: AzureCLI@2
-            inputs:
-              azureSubscription: trident-servicing-test
-              scriptType: bash
-              scriptLocation: inlineScript
-              inlineScript: |
-                set -eux
-
-                # If platform is azure AND the test failed to finish, run cleanup to
-                # ensure there are no azure resources left behind
-                if [ "${STORM_SCENARIO_FINISHED}" != "true" ]; then
-                  FLAGS="-a"
-                  if [ "${{ parameters.verboseLogging }}" == "True" ]; then
-                    FLAGS="$FLAGS --verbose"
-                  fi
-
-                  ./bin/storm-trident run rollback $FLAGS \
-                    --output-path $(ob_outputDirectory) \
-                    --subscription $(SUBSCRIPTION) \
-                    --test-resource-group $(TEST_RESOURCE_GROUP) \
-                    --platform ${{ parameters.platform }} \
-                    --test-case-to-run cleanup-vm
-                fi
-            displayName: "Cleanup even if timeout"
-            retryCountOnTaskFailure: 3
-            timeoutInMinutes: 20
-            condition: always()
-
-      - ${{ else }}:
-          - bash: |
-              set -eux
-              sudo ./bin/storm-trident run rollback $(STORM_FLAGS) \
-                --artifacts-dir $(Build.ArtifactStagingDirectory) \
-                --output-path $(ob_outputDirectory) \
-                --platform ${{ parameters.platform }} \
-                --ssh-private-key-path $(SSH_PRIVATE_KEY_PATH) \
-                --ssh-public-key-path $(SSH_PUBLIC_KEY_PATH) \
-                --build-id $(Build.BuildId) \
-                --use-private-ip-address \
-                --force-cleanup
-              set +x
-              echo "##vso[task.setvariable variable=STORM_SCENARIO_FINISHED;]true"
-            displayName: "Rollback test (${{ parameters.platform }})"
+      - bash: |
+          set -eux
+          sudo ./bin/storm-trident run rollback $(STORM_FLAGS) \
+            --artifacts-dir $(Build.ArtifactStagingDirectory) \
+            --output-path $(ob_outputDirectory) \
+            --platform ${{ parameters.platform }} \
+            --ssh-private-key-path $(SSH_PRIVATE_KEY_PATH) \
+            --ssh-public-key-path $(SSH_PUBLIC_KEY_PATH) \
+            --build-id $(Build.BuildId) \
+            --use-private-ip-address \
+            --force-cleanup
+          set +x
+          echo "##vso[task.setvariable variable=STORM_SCENARIO_FINISHED;]true"
+        displayName: "Rollback test (${{ parameters.platform }})"
 
       - bash: |
           set -eux
 
-          if [ "${{ parameters.platform }}" == "qemu" ]; then
-              sudo zstd -T0 $(Build.ArtifactStagingDirectory)/booted.qcow2
-              sudo mv $(Build.ArtifactStagingDirectory)/booted.qcow2.zst $(ob_outputDirectory)/
-          fi
+          sudo zstd -T0 $(Build.ArtifactStagingDirectory)/booted.qcow2
+          sudo mv $(Build.ArtifactStagingDirectory)/booted.qcow2.zst $(ob_outputDirectory)/
+
           # TODO: use
           # https://learn.microsoft.com/en-us/azure/virtual-machines/linux/download-vhd?tabs=azure-cli
           # for Azure images
