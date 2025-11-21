@@ -88,7 +88,6 @@ pub(crate) fn update(
         .map(|m| m.select_servicing_type(&ctx))
         .collect::<Result<Vec<_>, TridentError>>()?
         .into_iter()
-        .flatten()
         .max()
         .unwrap_or(ServicingType::NoActiveServicing);
     if servicing_type == ServicingType::NoActiveServicing {
