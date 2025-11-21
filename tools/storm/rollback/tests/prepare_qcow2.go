@@ -33,6 +33,8 @@ func PrepareQcow2(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 		return fmt.Errorf("failed to find image file: %w", err)
 	}
 	logrus.Tracef("Found image file: %s", imageFile)
+	imageFileFolder := filepath.Dir(imageFile)
+	imageFileName := filepath.Base(imageFile)
 
 	// Find existing image file
 	extensionFileName := "test-sysext-1.raw"
@@ -41,6 +43,7 @@ func PrepareQcow2(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 		return fmt.Errorf("failed to find extension file: %w", err)
 	}
 	logrus.Tracef("Found extension file: %s", extensionFile)
+
 	// Create Image Customizer config file
 	customizerConfigPath := filepath.Join(testConfig.ArtifactsDir, "image-customizer-config.yaml")
 	customizerConfigContent := fmt.Sprintf(
@@ -68,12 +71,13 @@ func PrepareQcow2(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 		"--pull=never",
 		"--rm",
 		"--privileged",
+		"-v", fmt.Sprintf("%s:/input-image:z", imageFileFolder),
 		"-v", ".:/repo:z",
 		"-v", "/dev:/dev",
 		testConfig.ImageCustomizerImage,
 		"--log-level", "debug",
 		"--build-dir", "/build",
-		"--image-file", fmt.Sprintf("/repo/%s", imageFile),
+		"--image-file", fmt.Sprintf("/input-image/%s", imageFileName),
 		"--output-image-file", "/repo/trident-vm-rollback-testimage.qcow2",
 		"--output-image-format", "qcow2",
 		"--config-file", fmt.Sprintf("/repo/%s", customizerConfigPath),
