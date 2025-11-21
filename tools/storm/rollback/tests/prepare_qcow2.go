@@ -28,13 +28,13 @@ os:
 // by injecting the extension v1.0.0
 func PrepareQcow2(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmconfig.AllVMConfig) error {
 	// Find existing image file
-	imageFile, err := stormfile.FindFile(testConfig.ArtifactsDir, vmConfig.QemuConfig.Qcow2Pattern)
+	imageFilePath, err := stormfile.FindFile(testConfig.ArtifactsDir, vmConfig.QemuConfig.Qcow2Pattern)
 	if err != nil {
 		return fmt.Errorf("failed to find image file: %w", err)
 	}
-	logrus.Tracef("Found image file: %s", imageFile)
-	imageFileFolder := filepath.Dir(imageFile)
-	imageFileName := filepath.Base(imageFile)
+	logrus.Tracef("Found image file: %s", imageFilePath)
+	imageFileFolder := filepath.Dir(imageFilePath)
+	imageFileName := filepath.Base(imageFilePath)
 
 	// Find existing image file
 	extensionFileName := "test-sysext-1.raw"
@@ -44,8 +44,9 @@ func PrepareQcow2(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 	}
 	logrus.Tracef("Found extension file: %s", extensionFile)
 
-	// Create Image Customizer config file
-	customizerConfigPath := filepath.Join(testConfig.ArtifactsDir, "image-customizer-config.yaml")
+	// Create Image Customizer config
+	customizerConfigFile := "image-customizer-config.yaml"
+	customizerConfigPath := filepath.Join(testConfig.ArtifactsDir, customizerConfigFile)
 	customizerConfigContent := fmt.Sprintf(
 		IMAGE_CUSTOMIZER_CONFIG_TEMPLATE,
 		extensionFile,
@@ -66,6 +67,7 @@ func PrepareQcow2(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 	logrus.Tracef("Pulled Image Customizer image: %s", testConfig.ImageCustomizerImage)
 
 	// Run Image Customizer
+	customizedImageFileName := "trident-vm-rollback-testimage.qcow2"
 	icRunArgs := []string{
 		"run",
 		"--pull=never",
@@ -78,9 +80,9 @@ func PrepareQcow2(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 		"--log-level", "debug",
 		"--build-dir", "/build",
 		"--image-file", fmt.Sprintf("/input-image/%s", imageFileName),
-		"--output-image-file", "/artifacts/trident-vm-rollback-testimage.qcow2",
+		"--output-image-file", fmt.Sprintf("/artifacts/%s", customizedImageFileName),
 		"--output-image-format", "qcow2",
-		"--config-file", fmt.Sprintf("/artifacts/%s", customizerConfigPath),
+		"--config-file", fmt.Sprintf("/artifacts/%s", customizerConfigFile),
 	}
 	logrus.Tracef("Running Image Customizer command: %v", icRunArgs)
 	icRunOutput, err := exec.Command("docker", icRunArgs...).CombinedOutput()
@@ -91,16 +93,17 @@ func PrepareQcow2(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 	logrus.Tracef("Image Customizer completed successfully")
 
 	// Remove original image file
-	if err := os.Remove(imageFile); err != nil {
+	if err := os.Remove(imageFilePath); err != nil {
 		return fmt.Errorf("failed to remove original image file: %w", err)
 	}
-	logrus.Tracef("Removed original image file: %s", imageFile)
+	logrus.Tracef("Removed original image file: %s", imageFilePath)
 
 	// Move new image file to original file location
-	if err := exec.Command("mv", "trident-vm-rollback-testimage.qcow2", imageFile).Run(); err != nil {
+	customizedImageFilePath := filepath.Join(testConfig.ArtifactsDir, customizedImageFileName)
+	if err := exec.Command("mv", customizedImageFilePath, imageFilePath).Run(); err != nil {
 		return fmt.Errorf("failed to move new image file to original location: %w", err)
 	}
-	logrus.Tracef("Moved new image file to original location: %s", imageFile)
+	logrus.Tracef("Moved new image file to original location: %s", imageFilePath)
 
 	return nil
 }
