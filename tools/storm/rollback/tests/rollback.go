@@ -3,6 +3,7 @@ package tests
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	stormrollbackconfig "tridenttools/storm/rollback/utils/config"
 	stormnetlisten "tridenttools/storm/utils/netlisten"
@@ -166,8 +167,21 @@ func validateOs(
 	// TODO: Verify extension
 	if extensionVersion > 0 {
 		logrus.Tracef("Checking extension version '%d'", extensionVersion)
+		extensionTestCommand := "test-extension.sh"
+		extensionTestOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, extensionTestCommand)
+		if err != nil {
+			return fmt.Errorf("failed to check extension on VM (%w):\n%s", err, extensionTestOutput)
+		}
+		if strings.TrimSpace(extensionTestOutput) != fmt.Sprintf("%d", extensionVersion) {
+			return fmt.Errorf("extension version mismatch: expected %d, got %s", extensionVersion, extensionTestOutput)
+		}
 	} else {
 		logrus.Tracef("Checking that extension is not present")
+		extensionTestCommand := "test-extension.sh"
+		extensionTestOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, extensionTestCommand)
+		if err == nil {
+			return fmt.Errorf("extension is unexpectedly still available (%w):\n%s", err, extensionTestOutput)
+		}
 	}
 	// TODO: Verify that there is 1 available rollback
 	logrus.Tracef("Checking number of available rollbacks, expecting '%d'", expectedAvailableRollbacks)
