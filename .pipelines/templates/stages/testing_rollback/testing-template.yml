@@ -1,19 +1,4 @@
 parameters:
-  - name: updateIterationCount
-    displayName: "Number of updates to test"
-    type: number
-    default: 1
-
-  - name: rollbackTesting
-    displayName: "Run rollback test"
-    type: boolean
-    default: true
-
-  - name: workers
-    displayName: "Number of workers to use"
-    type: number
-    default: 1
-
   - name: updateCheckTimeoutInMinutes
     displayName: "Timeout for checking target OS deployment in minutes"
     type: number
@@ -47,8 +32,8 @@ parameters:
 jobs:
   # For azure tests where there are multiple workers, use a dedicated job to publish the base
   # image.  Otherwise, the publish will be done as part of the actual test.
-  - ${{ if and(eq(parameters.platform, 'azure'), gt(parameters.workers, 1)) }}:
-      - job: PublishAzureImage
+  - ${{ if eq(parameters.platform, 'azure') }}:
+      - job: PublishAzureImageForRollback
         displayName: Publish Azure Image
         timeoutInMinutes: 20
         pool:
@@ -102,29 +87,27 @@ jobs:
               ARTIFACTS: $(Build.ArtifactStagingDirectory)
               AZCOPY_AUTO_LOGIN_TYPE: "AZCLI"
 
-  - job: UpdateTesting_${{ parameters.flavor }}
-    displayName: Update Testing - ${{ parameters.flavor }}
+  - job: RollbackTesting_${{ parameters.flavor }}
+    displayName: Rollback Testing - ${{ parameters.flavor }}
     timeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
     pool:
       type: linux
       name: ${{ parameters.pool }}
       hostArchitecture: amd64
-    strategy:
-      parallel: ${{ parameters.workers }}
     dependsOn:
-      - ${{ if and(eq(parameters.platform, 'azure'), gt(parameters.workers, 1)) }}:
-          - PublishAzureImage
+      - ${{ if eq(parameters.platform, 'azure') }}:
+          - PublishAzureImageForRollback
 
     variables:
       tridentSourceDirectory: $(Build.SourcesDirectory)
       ob_outputDirectory: $(tridentSourceDirectory)/deployment_logs_${{ parameters.flavor }}
-      ob_artifactBaseName: "update-testing-${{ parameters.flavor }}-$(System.JobPositionInPhase)"
+      ob_artifactBaseName: "rollback-testing-${{ parameters.flavor }}"
       TEST_RESOURCE_GROUP: trident-vm-servicing-validation-$(Build.BuildId)-$(System.JobPositionInPhase)
 
     steps:
       - bash: |
-          echo "##vso[task.setvariable variable=ob_artifactBaseName;]update-testing-${{ parameters.flavor }}-$(printf '%03d' $(System.JobPositionInPhase))"
-          echo "##vso[task.setvariable variable=TEST_RESOURCE_GROUP;]trident-vm-servicing-validation-$(Build.BuildId)-$(printf '%03d' $(System.JobPositionInPhase))"
+          echo "##vso[task.setvariable variable=ob_artifactBaseName;]rollback-testing-${{ parameters.flavor }}"
+          echo "##vso[task.setvariable variable=TEST_RESOURCE_GROUP;]trident-vm-rollback-validation-$(Build.BuildId)"
         displayName: "Set variables"
 
       - ${{ if eq(parameters.platform, 'azure') }}:
@@ -149,13 +132,6 @@ jobs:
           artifactName: image-${{ parameters.flavor }}-update-a
           targetPath: "$(Build.ArtifactStagingDirectory)/update-a"
         displayName: Download Update Image A
-
-      - task: DownloadPipelineArtifact@2
-        inputs:
-          buildType: current
-          artifactName: image-${{ parameters.flavor }}-update-b
-          targetPath: "$(Build.ArtifactStagingDirectory)/update-b"
-        displayName: Download Update Image B
 
       - task: DownloadPipelineArtifact@2
         inputs:
@@ -197,9 +173,6 @@ jobs:
           if [ "${{ parameters.flavor }}" != "uki" ]; then
             FLAGS="$FLAGS --secure-boot"
           fi
-          if [ "${{ parameters.rollbackTesting }}" == "True" ]; then
-            FLAGS="$FLAGS --rollback-retry-count ${{ parameters.updateIterationCount }} --rollback"
-          fi
           set +x
           echo "##vso[task.setvariable variable=STORM_FLAGS;]$FLAGS"
         displayName: "Set flags"
@@ -225,7 +198,6 @@ jobs:
                   --subnet-id $(SUBNET_ID) \
                   --ssh-private-key-path $(SSH_PRIVATE_KEY_PATH) \
                   --ssh-public-key-path $(SSH_PUBLIC_KEY_PATH) \
-                  --retry-count ${{ parameters.updateIterationCount }} \
                   --build-id $(Build.BuildId) \
                   --use-private-ip-address \
                   --force-cleanup
@@ -269,10 +241,8 @@ jobs:
                 --artifacts-dir $(Build.ArtifactStagingDirectory) \
                 --output-path $(ob_outputDirectory) \
                 --platform ${{ parameters.platform }} \
-                --subnet-id $(SUBNET_ID) \
                 --ssh-private-key-path $(SSH_PRIVATE_KEY_PATH) \
                 --ssh-public-key-path $(SSH_PUBLIC_KEY_PATH) \
-                --retry-count ${{ parameters.updateIterationCount }} \
                 --build-id $(Build.BuildId) \
                 --use-private-ip-address \
                 --force-cleanup
