@@ -54,11 +54,6 @@ parameters:
 
 stages:
   - ${{ if eq(parameters.testingRun, false) }}:
-      - stage: PrepareSSHKeys
-        displayName: Prepare SSH Keys
-        jobs:
-          - template: ../testing_servicing/generate-ssh-keys.yml
-
       - ${{ if eq(parameters.includeQemu, true) }}:
           - stage: BuildImagesQemuForRollbackTests
             displayName: Build Base and Update Images for QEMU
