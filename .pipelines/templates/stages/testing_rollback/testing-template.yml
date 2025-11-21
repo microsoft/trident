@@ -160,6 +160,14 @@ jobs:
         displayName: Set up SSH Keys and setup output directory
 
       - bash: |
+          set -eux
+          ./bin/storm-trident script build-extension-images --build-sysexts --num-clones 3
+          mv ./test-sysext-*.raw $(Build.ArtifactStagingDirectory)/
+
+          find $(Build.ArtifactStagingDirectory)
+        displayName: "Create extensions for test"
+
+      - bash: |
           echo "##vso[task.setvariable variable=STORM_SCENARIO_FINISHED;]false"
         displayName: "Initialize STORM_SCENARIO_FINISHED=false"
 
