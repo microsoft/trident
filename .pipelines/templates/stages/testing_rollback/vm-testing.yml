@@ -56,7 +56,7 @@ stages:
   - ${{ if eq(parameters.testingRun, false) }}:
       - ${{ if eq(parameters.includeQemu, true) }}:
           - stage: BuildImagesQemuForRollbackTests
-            displayName: Build Base and Update Images for QEMU
+            displayName: (Rollback) Build Base and Update Images for QEMU
             dependsOn:
               - PrepareSSHKeys
               - GetTridentBinaries_rpms_amd64
@@ -86,7 +86,7 @@ stages:
 
       - ${{ if eq(parameters.includeAzure, true) }}:
           - stage: BuildImagesAzureForRollbackTests
-            displayName: Build Base and Update Images for Azure
+            displayName: (Rollback) Build Base and Update Images for Azure
             dependsOn:
               - PrepareSSHKeys
               - GetTridentBinaries_rpms_amd64
@@ -114,7 +114,7 @@ stages:
 
       - ${{ if eq(parameters.includeUKI, true) }}:
           - stage: BuildImagesUKIForRollbackTests
-            displayName: Build Base and Update Images for UKI
+            displayName: (Rollback) Build Base and Update Images for UKI
             dependsOn:
               - PrepareSSHKeys
               - GetTridentBinaries_rpms_amd64
