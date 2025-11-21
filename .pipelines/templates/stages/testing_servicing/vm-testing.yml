@@ -76,7 +76,7 @@ stages:
 
       - ${{ if eq(parameters.includeQemu, true) }}:
           - stage: BuildImagesQemu
-            displayName: Build Base and Update Images for QEMU
+            displayName: (Servicing) Build Base and Update Images for QEMU
             dependsOn:
               - PrepareSSHKeys
               - GetTridentBinaries_rpms_amd64
@@ -116,7 +116,7 @@ stages:
 
       - ${{ if eq(parameters.includeAzure, true) }}:
           - stage: BuildImagesAzure
-            displayName: Build Base and Update Images for Azure
+            displayName: (Servicing) Build Base and Update Images for Azure
             dependsOn:
               - PrepareSSHKeys
               - GetTridentBinaries_rpms_amd64
@@ -153,7 +153,7 @@ stages:
 
       - ${{ if eq(parameters.includeUKI, true) }}:
           - stage: BuildImagesUKI
-            displayName: Build Base and Update Images for UKI
+            displayName: (Servicing) Build Base and Update Images for UKI
             dependsOn:
               - PrepareSSHKeys
               - GetTridentBinaries_rpms_amd64
