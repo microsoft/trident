@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/sirupsen/logrus"
 )
@@ -60,28 +61,39 @@ func buildImage(extType string, numClones int) error {
 	for i := 1; i <= numClones; i++ {
 		extName := fmt.Sprintf("test-%s-%d", extType, i)
 		// Create extension-release file
-		var dir string
-		var fileContent string
-		var err error
-		if extType == "sysext" {
-			dir = fmt.Sprintf("%s-image-%d/usr/lib/extension-release.d", extType, i)
-			err = os.MkdirAll(dir, 0755)
-			if err != nil {
-				return fmt.Errorf("failed to create sysext directory %s: %w", dir, err)
-			}
-			fileContent = fmt.Sprintf("ID=_any\nSYSEXT_ID=test-sysext\nSYSEXT_VERSION_ID=%d.0.0\nARCHITECTURE=x86-64\n", i)
-		} else {
-			dir = fmt.Sprintf("%s-image-%d/etc/extension-release.d", extType, i)
-			err = os.MkdirAll(dir, 0755)
-			if err != nil {
-				return fmt.Errorf("failed to create confext directory %s: %w", dir, err)
-			}
-			fileContent = fmt.Sprintf("ID=_any\nCONFEXT_ID=test-confext\nCONFEXT_VERSION_ID=%d.0.0\nARCHITECTURE=x86-64\n", i)
+		dir := fmt.Sprintf("%s-image-%d/usr/lib/extension-release.d", extType, i)
+		err := os.MkdirAll(dir, 0755)
+		if err != nil {
+			return fmt.Errorf("failed to create sysext directory %s: %w", dir, err)
 		}
+		extTypeUpper := strings.ToUpper(extType)
+		fileContent := fmt.Sprintf(
+			"ID=_any\n%s_ID=test-%s\n%s_VERSION_ID=%d.0.0\nARCHITECTURE=x86-64\n",
+			extTypeUpper, extType, extTypeUpper, i,
+		)
 		extensionReleaseFile := filepath.Join(dir, fmt.Sprintf("extension-release.%s", extName))
 		err = os.WriteFile(extensionReleaseFile, []byte(fileContent), 0644)
 		if err != nil {
 			return fmt.Errorf("failed to write %s extension-release file %s: %w", extType, extensionReleaseFile, err)
+		}
+
+		logrus.Infof("bcf: %s %d", extType, i)
+		if extType == "sysext" {
+			// Create script that outputs version
+			binDir := fmt.Sprintf("%s-image-%d/usr/bin", extType, i)
+			err := os.MkdirAll(binDir, 0755)
+			if err != nil {
+				return fmt.Errorf("failed to create sysext directory %s: %w", binDir, err)
+			}
+			extensionScriptFile := filepath.Join(binDir, "test-extension.sh")
+			err = os.WriteFile(
+				extensionScriptFile,
+				[]byte(fmt.Sprintf("#!/bin/sh\necho \"%d\"", i)),
+				0777,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to write %s extension-release file %s: %w", extType, extensionReleaseFile, err)
+			}
 		}
 
 		// Create DDI files using mksquashfs
