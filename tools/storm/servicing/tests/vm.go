@@ -23,7 +23,7 @@ func DeployVM(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfig.AllVM
 		}
 	} else if vmConfig.VMConfig.Platform == stormvmconfig.PlatformAzure {
 		logrus.Tracef("Deploying VM on Azure platform with name '%s'", vmConfig.VMConfig.Name)
-		if err := vmConfig.AzureConfig.DeployAzureVM(vmConfig.VMConfig.Name, vmConfig.VMConfig.User, testConfig.BuildId); err != nil {
+		if err := vmConfig.AzureConfig.DeployAzureVM(vmConfig.VMConfig.Name, vmConfig.VMConfig.User); err != nil {
 			return fmt.Errorf("failed to deploy azure vm: %w", err)
 		}
 	}
