@@ -1,0 +1,221 @@
+parameters:
+  - name: testingRun
+    displayName: "Download prebuilt test artifacts"
+    type: boolean
+    default: false
+
+  - name: baseimgAzlVersion
+    displayName: Base Image AZL version
+    type: string
+    default: "3.0"
+
+  - name: updateIterationCount
+    displayName: "Number of updates to test"
+    type: number
+    default: 3
+
+  - name: rollbackTesting
+    displayName: "Run rollback test"
+    type: boolean
+    default: true
+
+  - name: workers
+    displayName: "Number of workers to use"
+    type: number
+    default: 1
+
+  - name: updateCheckTimeoutInMinutes
+    displayName: "Timeout for checking target OS deployment in minutes"
+    type: number
+    default: 30
+
+  - name: verboseLogging
+    displayName: "Enable verbose logging"
+    type: boolean
+    default: false
+
+  - name: includeQemu
+    displayName: "Include qemu testing"
+    type: boolean
+    default: false
+
+  - name: includeAzure
+    displayName: "Include Azure testing"
+    type: boolean
+    default: false
+
+  - name: includeUKI
+    displayName: "Include UKI testing"
+    type: boolean
+    default: false
+
+  - name: micBuildType
+    displayName: MIC Build Type
+    type: string
+    values:
+      - dev
+      - preview
+      - release
+    default: release
+
+  - name: micVersion
+    displayName: MIC Version
+    type: string
+    default: "*.*.*"
+
+  - name: dependsOnStage
+    type: string
+    default: ""
+
+stages:
+  - ${{ if eq(parameters.testingRun, false) }}:
+      - stage: PrepareSSHKeys
+        displayName: Prepare SSH Keys
+        jobs:
+          - template: generate-ssh-keys.yml
+
+      - ${{ if eq(parameters.includeQemu, true) }}:
+          - stage: BuildImagesQemuForRollbackTests
+            displayName: Build Base and Update Images for QEMU
+            dependsOn:
+              - PrepareSSHKeys
+              - GetTridentBinaries_rpms_amd64
+              - ${{ if ne(parameters.dependsOnStage, '') }}:
+                  - ${{ parameters.dependsOnStage }}
+
+            jobs:
+              - template: build-image.yml
+                parameters:
+                  label: "qemu-base"
+                  makeTarget: "build/trident-vm-grub-verity-testimage.qcow2"
+                  baseimgType: qemu_guest
+                  baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+                  micBuildType: ${{ parameters.micBuildType }}
+                  micVersion: ${{ parameters.micVersion }}
+                  useStagedSshKeys: true
+
+              - template: build-image.yml
+                parameters:
+                  label: "qemu-update-a"
+                  makeTarget: "build/trident-vm-grub-verity-testimage.cosi"
+                  baseimgType: qemu_guest
+                  baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+                  micBuildType: ${{ parameters.micBuildType }}
+                  micVersion: ${{ parameters.micVersion }}
+                  useStagedSshKeys: true
+
+      - ${{ if eq(parameters.includeAzure, true) }}:
+          - stage: BuildImagesAzureForRollbackTests
+            displayName: Build Base and Update Images for Azure
+            dependsOn:
+              - PrepareSSHKeys
+              - GetTridentBinaries_rpms_amd64
+              - ${{ if ne(parameters.dependsOnStage, '') }}:
+                  - ${{ parameters.dependsOnStage }}
+
+            jobs:
+              - template: build-image.yml
+                parameters:
+                  label: "azure-base"
+                  makeTarget: "build/trident-vm-grub-verity-azure-testimage.vhd"
+                  baseimgType: core_selinux
+                  baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+                  micBuildType: ${{ parameters.micBuildType }}
+                  micVersion: ${{ parameters.micVersion }}
+
+              - template: build-image.yml
+                parameters:
+                  label: "azure-update-a"
+                  makeTarget: "build/trident-vm-grub-verity-azure-testimage.cosi"
+                  baseimgType: core_selinux
+                  baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+                  micBuildType: ${{ parameters.micBuildType }}
+                  micVersion: ${{ parameters.micVersion }}
+
+      - ${{ if eq(parameters.includeUKI, true) }}:
+          - stage: BuildImagesUKIForRollbackTests
+            displayName: Build Base and Update Images for UKI
+            dependsOn:
+              - PrepareSSHKeys
+              - GetTridentBinaries_rpms_amd64
+              - ${{ if ne(parameters.dependsOnStage, '') }}:
+                  - ${{ parameters.dependsOnStage }}
+
+            jobs:
+              - template: build-image.yml
+                parameters:
+                  label: "uki-base"
+                  makeTarget: "build/trident-vm-usr-verity-testimage.qcow2"
+                  baseimgType: qemu_guest
+                  baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+                  micBuildType: ${{ parameters.micBuildType }}
+                  micVersion: ${{ parameters.micVersion }}
+                  useStagedSshKeys: true
+
+              - template: build-image.yml
+                parameters:
+                  label: "uki-update-a"
+                  makeTarget: "build/trident-vm-usr-verity-testimage.cosi"
+                  baseimgType: qemu_guest
+                  baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+                  micBuildType: ${{ parameters.micBuildType }}
+                  micVersion: ${{ parameters.micVersion }}
+                  useStagedSshKeys: true
+
+  - stage: RuntimeUpdateAndRollbackTesting
+    displayName: Runtime Update and Rollback Testing
+    dependsOn:
+      - ${{ if eq(parameters.testingRun, true) }}:
+          - DownloadTestingElements
+      - ${{ else }}:
+          - BuildingTools
+          - ${{ if eq(parameters.includeQemu, true) }}:
+              - BuildImagesQemuForRollbackTests
+          - ${{ if eq(parameters.includeAzure, true) }}:
+              - BuildImagesAzureForRollbackTests
+          - ${{ if eq(parameters.includeUKI, true) }}:
+              - BuildImagesUKIForRollbackTests
+
+    variables:
+      - group: servicing_testing_params
+      - name: SSH_PRIVATE_KEY_PATH
+        value: "$HOME/.ssh/id_rsa"
+      - name: SSH_PUBLIC_KEY_PATH
+        value: "$(SSH_PRIVATE_KEY_PATH).pub"
+      - name: IMAGE_DEFINITION
+        value: "trident-vm-grub-verity-testimage-$(System.DefinitionId)"
+
+    jobs:
+      - ${{ if eq(parameters.includeQemu, true) }}:
+          - template: testing-template.yml
+            parameters:
+              updateIterationCount: ${{ parameters.updateIterationCount }}
+              rollbackTesting: ${{ parameters.rollbackTesting }}
+              workers: ${{ parameters.workers }}
+              updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
+              verboseLogging: ${{ parameters.verboseLogging }}
+              platform: qemu
+              flavor: qemu
+
+      - ${{ if eq(parameters.includeAzure, true) }}:
+          - template: testing-template.yml
+            parameters:
+              updateIterationCount: ${{ parameters.updateIterationCount }}
+              rollbackTesting: ${{ parameters.rollbackTesting }}
+              workers: ${{ parameters.workers }}
+              updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
+              verboseLogging: ${{ parameters.verboseLogging }}
+              platform: azure
+              flavor: azure
+              pool: trident-ubuntu-official-1es-pool-eastus2
+
+      - ${{ if eq(parameters.includeUKI, true) }}:
+          - template: testing-template.yml
+            parameters:
+              updateIterationCount: ${{ parameters.updateIterationCount }}
+              rollbackTesting: ${{ parameters.rollbackTesting }}
+              workers: ${{ parameters.workers }}
+              updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
+              verboseLogging: ${{ parameters.verboseLogging }}
+              platform: qemu
+              flavor: uki
