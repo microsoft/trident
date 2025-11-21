@@ -1,7 +1,7 @@
 parameters:
   - name: outputDirectory
     type: string
-    default: "$(Pipeline.Workspace)/s/test-images/output"
+    default: "$(Build.SourcesDirectory)/output"
 
   - name: target
     type: string
@@ -100,9 +100,6 @@ steps:
 
   - template: common/sfi-enforce-isolation-with-etc-hosts.yaml@platform-pipelines
 
-  - checkout: ${{ parameters.testImagesRepo }}
-    path: s/test-images
-
   - ${{ if eq(parameters.downloadTrident, true) }}:
       - task: DownloadPipelineArtifact@2
         inputs:
@@ -115,15 +112,15 @@ steps:
       - bash: |
           set -eux
 
-          mkdir -p $(Pipeline.Workspace)/s/test-images/build
-          ssh-keygen -t rsa -b 2048 -f $(Pipeline.Workspace)/s/test-images/build/id_rsa -q -N ""
+          mkdir -p $(Build.SourcesDirectory)/build
+          ssh-keygen -t rsa -b 2048 -f $(Build.SourcesDirectory)/build/id_rsa -q -N ""
         displayName: Set up SSH Keys
   - ${{ if eq(parameters.useStagedSshKeys, true) }}:
       - bash: |
           set -eux
 
-          mkdir -p $(Pipeline.Workspace)/s/test-images/build
-          cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* $(Pipeline.Workspace)/s/test-images/build/
+          mkdir -p $(Build.SourcesDirectory)/build
+          cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* $(Build.SourcesDirectory)/build/
         displayName: Copy SSH Keys
 
   - script: |
