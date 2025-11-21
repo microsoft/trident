@@ -862,8 +862,14 @@ VM_IMAGE_PATH_PREFIX = tests/images/trident-vm-testimage/base
 base/rpm-overrides:
 	@mkdir -p base/rpm-overrides
 
-$(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub: ~/.ssh/id_rsa.pub
-	cp ~/.ssh/id_rsa.pub $(VM_IMAGE_PATH_PREFIX)/files/
+build/id_rsa:
+	@echo "Generating SSH key..."
+	@mkdir -p build
+	@ssh-keygen -t rsa -b 2048 -f build/id_rsa -q -N ""
+	@echo "SSH key generated at build/id_rsa"
+
+$(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub: build/id_rsa.pub
+	cp build/id_rsa.pub $(VM_IMAGE_PATH_PREFIX)/files/
 
 QEMU_GUEST_IMAGE_NAME ?= qemu_guest_vhdx-3.0-stable
 QEMU_GUEST_IMAGE_VERSION ?= *
