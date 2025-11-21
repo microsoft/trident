@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 
 	stormrollbackconfig "tridenttools/storm/rollback/utils/config"
 	stormfile "tridenttools/storm/utils/file"
@@ -23,24 +24,11 @@ os:
     - systemd-sysext
 `
 
-const IMAGE_CUSTOMIZER_CMD_TEMPLATE = `docker run --rm \
-	--privileged \
-	-v ".:/repo:z" \
-	-v "/dev:/dev" \
-	%s \
-		--log-level debug \
-		--build-dir /build \
-		--image-file /repo/%s \
-		--output-image-file /repo/%s \
-		--output-image-format qcow2 \
-		--config-file /repo/%s
-`
-
 // Use Image Customizer to prepare the qcow2 image for rollback testing
 // by injecting the extension v1.0.0
 func PrepareQcow2(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmconfig.AllVMConfig) error {
 	// Find existing image file
-	imageFile, err := stormfile.FindFile(testConfig.ArtifactsDir, "^trident-vm-.*-testimage.qcow2$")
+	imageFile, err := stormfile.FindFile(testConfig.ArtifactsDir, vmConfig.QemuConfig.Qcow2Pattern)
 	if err != nil {
 		return fmt.Errorf("failed to find image file: %w", err)
 	}
@@ -54,7 +42,7 @@ func PrepareQcow2(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 	}
 	logrus.Tracef("Found extension file: %s", extensionFile)
 	// Create Image Customizer config file
-	customizerConfigPath := fmt.Sprintf("%s/image-customizer-config.yaml", testConfig.OutputPath)
+	customizerConfigPath := filepath.Join(testConfig.ArtifactsDir, "image-customizer-config.yaml")
 	customizerConfigContent := fmt.Sprintf(
 		IMAGE_CUSTOMIZER_CONFIG_TEMPLATE,
 		extensionFile,
@@ -64,15 +52,36 @@ func PrepareQcow2(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 	}
 	logrus.Tracef("Wrote image customizer config file: %s", customizerConfigPath)
 
+	// Pull Image Customizer image
+	pullArgs := []string{"pull", testConfig.ImageCustomizerImage}
+	logrus.Tracef("Pulling Image Customizer image: %v", pullArgs)
+	pullOutput, err := exec.Command("docker", pullArgs...).CombinedOutput()
+	logrus.Tracef("Pull image customizer (%v):\n%s", err, string(pullOutput))
+	if err != nil {
+		return fmt.Errorf("failed to pull image customizer image: %w", err)
+	}
+	logrus.Tracef("Pulled Image Customizer image: %s", testConfig.ImageCustomizerImage)
+
 	// Run Image Customizer
-	imageCustmizerCommand := fmt.Sprintf(
-		IMAGE_CUSTOMIZER_CMD_TEMPLATE,
+	icRunArgs := []string{
+		"run",
+		"--pull=never",
+		"--rm",
+		"--privileged",
+		"-v", ".:/repo:z",
+		"-v", "/dev:/dev",
 		testConfig.ImageCustomizerImage,
-		imageFile,
-		"trident-vm-rollback-testimage.qcow2",
-		customizerConfigPath)
-	logrus.Tracef("Running Image Customizer command: %s", imageCustmizerCommand)
-	if err := exec.Command(imageCustmizerCommand).Run(); err != nil {
+		"--log-level", "debug",
+		"--build-dir", "/build",
+		"--image-file", fmt.Sprintf("/repo/%s", imageFile),
+		"--output-image-file", "/repo/trident-vm-rollback-testimage.qcow2",
+		"--output-image-format", "qcow2",
+		"--config-file", fmt.Sprintf("/repo/%s", customizerConfigPath),
+	}
+	logrus.Tracef("Running Image Customizer command: %v", icRunArgs)
+	icRunOutput, err := exec.Command("docker", icRunArgs...).CombinedOutput()
+	logrus.Tracef("Run image customizer (%v):\n%s", err, string(icRunOutput))
+	if err != nil {
 		return fmt.Errorf("failed to run image customizer: %w", err)
 	}
 	logrus.Tracef("Image Customizer completed successfully")
