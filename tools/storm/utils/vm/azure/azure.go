@@ -200,10 +200,14 @@ func (cfg AzureConfig) PublishSigImage(artifactsDir string) error {
 	}
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 	imageVersion := cfg.GetImageVersion(true)
 =======
 	imageVersion := cfg.GetImageVersion(cfg.BuildId, true)
 >>>>>>> 47d4536b6 (refactor and create rollback skeleton)
+=======
+	imageVersion := cfg.GetImageVersion(true)
+>>>>>>> 0b18811c9 (fix dup buildid)
 	logrus.Infof("Using image version %s", imageVersion)
 
 	if err := cfg.checkImageVersionExists(imageVersion); err == nil {
