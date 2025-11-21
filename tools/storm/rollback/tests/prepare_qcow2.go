@@ -72,15 +72,15 @@ func PrepareQcow2(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 		"--rm",
 		"--privileged",
 		"-v", fmt.Sprintf("%s:/input-image:z", imageFileFolder),
-		"-v", ".:/repo:z",
+		"-v", fmt.Sprintf("%s:/artifacts", testConfig.ArtifactsDir),
 		"-v", "/dev:/dev",
 		testConfig.ImageCustomizerImage,
 		"--log-level", "debug",
 		"--build-dir", "/build",
 		"--image-file", fmt.Sprintf("/input-image/%s", imageFileName),
-		"--output-image-file", "/repo/trident-vm-rollback-testimage.qcow2",
+		"--output-image-file", "/artifacts/trident-vm-rollback-testimage.qcow2",
 		"--output-image-format", "qcow2",
-		"--config-file", fmt.Sprintf("/repo/%s", customizerConfigPath),
+		"--config-file", fmt.Sprintf("/artifacts/%s", customizerConfigPath),
 	}
 	logrus.Tracef("Running Image Customizer command: %v", icRunArgs)
 	icRunOutput, err := exec.Command("docker", icRunArgs...).CombinedOutput()
