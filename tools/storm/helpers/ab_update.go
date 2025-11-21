@@ -2,10 +2,7 @@ package helpers
 
 import (
 	"context"
-	"crypto/sha512"
-	"encoding/hex"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path"
@@ -22,6 +19,7 @@ import (
 	"oras.land/oras-go/v2/registry/remote"
 
 	stormenv "tridenttools/storm/utils/env"
+	stormsha384 "tridenttools/storm/utils/sha384"
 	stormsshcheck "tridenttools/storm/utils/ssh/check"
 	stormsshclient "tridenttools/storm/utils/ssh/client"
 	stormsshconfig "tridenttools/storm/utils/ssh/config"
@@ -477,14 +475,5 @@ func pullImageAndCalculateSha384(imageUrl string) (string, error) {
 	rawFilePath := path.Join(tempDir, files[0].Name())
 
 	// Hash the .raw file
-	file, err := os.Open(rawFilePath)
-	if err != nil {
-		return "", fmt.Errorf("failed to open .raw file: %w", err)
-	}
-	defer file.Close()
-	hasher := sha512.New384()
-	if _, err := io.Copy(hasher, file); err != nil {
-		return "", fmt.Errorf("failed to calculate hash: %w", err)
-	}
-	return hex.EncodeToString(hasher.Sum(nil)), nil
+	return stormsha384.CalculateSha384(rawFilePath)
 }
