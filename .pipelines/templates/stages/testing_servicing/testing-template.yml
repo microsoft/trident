@@ -182,6 +182,13 @@ jobs:
           mkdir -p $(ob_outputDirectory)
         displayName: Set up SSH Keys and setup output directory
 
+      - ${{ if eq(parameters.platform, 'qemu') }}:
+        - bash: |
+            set -eux
+            sudo apt update
+            sudo apt install -y imagemagick
+          displayName: "Install imagemagick for libvirt screenshot capture"
+
       - bash: |
           echo "##vso[task.setvariable variable=STORM_SCENARIO_FINISHED;]false"
         displayName: "Initialize STORM_SCENARIO_FINISHED=false"
