@@ -53,6 +53,37 @@ parameters:
     default: ""
 
 stages:
+  - ${{ if eq(parameters.testingRun, false) }}:
+      - ${{ if eq(parameters.includeQemu, true) }}:
+          - stage: BuildImagesQemuForRollback
+            displayName: (Rollback) Build Base and Update Images for QEMU
+            dependsOn:
+              - PrepareSSHKeys
+              - GetTridentBinaries_rpms_amd64
+              - ${{ if ne(parameters.dependsOnStage, '') }}:
+                  - ${{ parameters.dependsOnStage }}
+
+            jobs:
+              - template: build-image.yml
+                parameters:
+                  label: "rollback-qemu-base"
+                  makeTarget: "artifacts/trident-vm-grub-testimage.qcow2"
+                  baseimgType: qemu_guest
+                  baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+                  micBuildType: ${{ parameters.micBuildType }}
+                  micVersion: ${{ parameters.micVersion }}
+                  useStagedSshKeys: true
+
+              - template: build-image.yml
+                parameters:
+                  label: "rollback-qemu-update-a"
+                  makeTarget: "artifacts/trident-vm-grub-testimage.cosi"
+                  baseimgType: qemu_guest
+                  baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+                  micBuildType: ${{ parameters.micBuildType }}
+                  micVersion: ${{ parameters.micVersion }}
+                  useStagedSshKeys: true
+
   - stage: RuntimeUpdateAndRollbackTesting
     displayName: Runtime Update and Rollback Testing
     dependsOn:
@@ -61,11 +92,7 @@ stages:
       - ${{ else }}:
           - BuildingTools
           - ${{ if eq(parameters.includeQemu, true) }}:
-              - BuildImagesQemu
-          - ${{ if eq(parameters.includeAzure, true) }}:
-              - BuildImagesAzure
-          - ${{ if eq(parameters.includeUKI, true) }}:
-              - BuildImagesUKI
+              - BuildImagesQemuForRollback
 
     variables:
       - group: servicing_testing_params
@@ -84,20 +111,3 @@ stages:
               verboseLogging: ${{ parameters.verboseLogging }}
               platform: qemu
               flavor: qemu
-
-      - ${{ if eq(parameters.includeAzure, true) }}:
-          - template: testing-template.yml
-            parameters:
-              updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
-              verboseLogging: ${{ parameters.verboseLogging }}
-              platform: azure
-              flavor: azure
-              pool: trident-ubuntu-official-1es-pool-eastus2
-
-      - ${{ if eq(parameters.includeUKI, true) }}:
-          - template: testing-template.yml
-            parameters:
-              updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
-              verboseLogging: ${{ parameters.verboseLogging }}
-              platform: qemu
-              flavor: uki
