@@ -6,7 +6,6 @@ use log::debug;
 use osutils::netplan;
 use trident_api::{
     error::{ReportError, ServicingError, TridentError},
-    is_default,
     status::ServicingType,
 };
 
@@ -23,14 +22,12 @@ impl Subsystem for NetworkSubsystem {
         "network"
     }
 
-    fn select_servicing_type(&self, ctx: &EngineContext) -> Result<ServicingType, TridentError> {
-        if is_default(&ctx.spec_old) {
-            return Ok(ServicingType::CleanInstall);
-        }
-        if ctx.spec_old.os.netplan != ctx.spec.os.netplan {
-            return Ok(ServicingType::RuntimeUpdate);
-        }
-        Ok(ServicingType::NoActiveServicing)
+    fn runs_on(&self, _ctx: &EngineContext) -> &[ServicingType] {
+        &[
+            ServicingType::CleanInstall,
+            ServicingType::AbUpdate,
+            ServicingType::RuntimeUpdate,
+        ]
     }
 
     #[tracing::instrument(name = "network_configuration", skip_all)]

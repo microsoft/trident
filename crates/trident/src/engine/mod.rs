@@ -58,6 +58,17 @@ pub(crate) use context::{filesystem, EngineContext};
 pub use newroot::NewrootMount;
 pub(crate) use update::{finalize_update, update};
 
+/// Runs on Clean Install, A/B Update, and Runtime Update.
+pub const RUNS_ON_ALL: &[ServicingType] = &[
+    ServicingType::CleanInstall,
+    ServicingType::AbUpdate,
+    ServicingType::RuntimeUpdate,
+];
+
+/// Runs on Clean Install and A/B Update.
+pub const RUNS_ON_DEFAULT: &[ServicingType] =
+    &[ServicingType::CleanInstall, ServicingType::AbUpdate];
+
 pub(crate) trait Subsystem: Send {
     fn name(&self) -> &'static str;
 
@@ -80,7 +91,7 @@ pub(crate) trait Subsystem: Send {
     /// may run on Clean Install and A/B Update. Some also run on Runtime
     /// Update, depending on changes in the new Host Configuration.
     fn runs_on(&self, _ctx: &EngineContext) -> &[ServicingType] {
-        &[ServicingType::CleanInstall, ServicingType::AbUpdate]
+        RUNS_ON_DEFAULT
     }
 
     /// Validate that the Host Configuration in `ctx.spec` can be applied on the system.
