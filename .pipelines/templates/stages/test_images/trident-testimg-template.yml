@@ -190,8 +190,8 @@ steps:
       if [ -d "$(Build.ArtifactStagingDirectory)/trident" ]; then
         rpm_dir='$(Build.SourcesDirectory)/bin/RPMS'
         mkdir -p $rpm_dir
-        cp -r "$(Build.ArtifactStagingDirectory)/trident/*" "$rpm_dir/" || echo 'no rpms to copy'
-        rm -rf "$(Build.ArtifactStagingDirectory)/trident"
+        cp -r"$(Build.ArtifactStagingDirectory)/trident/* $rpm_dir/ || echo 'no rpms to copy'
+        rm -rf $(Build.ArtifactStagingDirectory)/trident
       fi
 
     workingDirectory: $(Build.SourcesDirectory)
