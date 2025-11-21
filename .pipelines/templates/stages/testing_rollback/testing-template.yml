@@ -60,7 +60,7 @@ jobs:
           - task: DownloadPipelineArtifact@2
             inputs:
               buildType: current
-              artifactName: image-${{ parameters.platform }}-base
+              artifactName: rollback-image-${{ parameters.platform }}-base
               targetPath: "$(Build.ArtifactStagingDirectory)/"
             displayName: Download Base Image
           - task: AzureCLI@2
@@ -114,7 +114,7 @@ jobs:
           - task: DownloadPipelineArtifact@2
             inputs:
               buildType: current
-              artifactName: image-${{ parameters.platform }}-base
+              artifactName: rollback-image-${{ parameters.platform }}-base
               targetPath: "$(Build.ArtifactStagingDirectory)/"
             displayName: Download Base Image
 
@@ -122,16 +122,16 @@ jobs:
           - task: DownloadPipelineArtifact@2
             inputs:
               buildType: current
-              artifactName: image-${{ parameters.flavor }}-base
+              artifactName: rollback-image-${{ parameters.flavor }}-base
               targetPath: "$(Build.ArtifactStagingDirectory)/"
             displayName: Download Base Image
 
       - task: DownloadPipelineArtifact@2
         inputs:
           buildType: current
-          artifactName: image-${{ parameters.flavor }}-update-a
-          targetPath: "$(Build.ArtifactStagingDirectory)/update-a"
-        displayName: Download Update Image A
+          artifactName: rollback-image-${{ parameters.flavor }}-update-a
+          targetPath: "$(Build.ArtifactStagingDirectory)"
+        displayName: Download Update Image
 
       - task: DownloadPipelineArtifact@2
         inputs:
@@ -222,7 +222,7 @@ jobs:
                     FLAGS="$FLAGS --verbose"
                   fi
 
-                  ./bin/storm-trident run rollback -a $FLAGS \
+                  ./bin/storm-trident run rollback $FLAGS \
                     --output-path $(ob_outputDirectory) \
                     --subscription $(SUBSCRIPTION) \
                     --test-resource-group $(TEST_RESOURCE_GROUP) \

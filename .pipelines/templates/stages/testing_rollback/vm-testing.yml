@@ -66,7 +66,7 @@ stages:
             jobs:
               - template: ../testing_servicing/build-image.yml
                 parameters:
-                  label: "qemu-base"
+                  label: "rollback-qemu-base"
                   makeTarget: "artifacts/trident-vm-grub-verity-testimage.qcow2"
                   baseimgType: qemu_guest
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
@@ -76,7 +76,7 @@ stages:
 
               - template: ../testing_servicing/build-image.yml
                 parameters:
-                  label: "qemu-update-a"
+                  label: "rollback-qemu-update-a"
                   makeTarget: "artifacts/trident-vm-grub-verity-testimage.cosi"
                   baseimgType: qemu_guest
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
@@ -96,7 +96,7 @@ stages:
             jobs:
               - template: ../testing_servicing/build-image.yml
                 parameters:
-                  label: "azure-base"
+                  label: "rollback-azure-base"
                   makeTarget: "artifacts/trident-vm-grub-verity-azure-testimage.vhd"
                   baseimgType: core_selinux
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
@@ -105,7 +105,7 @@ stages:
 
               - template: ../testing_servicing/build-image.yml
                 parameters:
-                  label: "azure-update-a"
+                  label: "rollback-azure-update-a"
                   makeTarget: "artifacts/trident-vm-grub-verity-azure-testimage.cosi"
                   baseimgType: core_selinux
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
@@ -124,7 +124,7 @@ stages:
             jobs:
               - template: ../testing_servicing/build-image.yml
                 parameters:
-                  label: "uki-base"
+                  label: "rollback-uki-base"
                   makeTarget: "artifacts/trident-vm-usr-verity-testimage.qcow2"
                   baseimgType: qemu_guest
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
@@ -134,7 +134,7 @@ stages:
 
               - template: ../testing_servicing/build-image.yml
                 parameters:
-                  label: "uki-update-a"
+                  label: "rollback-uki-update-a"
                   makeTarget: "artifacts/trident-vm-usr-verity-testimage.cosi"
                   baseimgType: qemu_guest
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
