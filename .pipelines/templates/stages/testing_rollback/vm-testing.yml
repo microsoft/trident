@@ -9,21 +9,6 @@ parameters:
     type: string
     default: "3.0"
 
-  - name: updateIterationCount
-    displayName: "Number of updates to test"
-    type: number
-    default: 3
-
-  - name: rollbackTesting
-    displayName: "Run rollback test"
-    type: boolean
-    default: true
-
-  - name: workers
-    displayName: "Number of workers to use"
-    type: number
-    default: 1
-
   - name: updateCheckTimeoutInMinutes
     displayName: "Timeout for checking target OS deployment in minutes"
     type: number
@@ -189,9 +174,6 @@ stages:
       - ${{ if eq(parameters.includeQemu, true) }}:
           - template: testing-template.yml
             parameters:
-              updateIterationCount: ${{ parameters.updateIterationCount }}
-              rollbackTesting: ${{ parameters.rollbackTesting }}
-              workers: ${{ parameters.workers }}
               updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
               verboseLogging: ${{ parameters.verboseLogging }}
               platform: qemu
@@ -200,9 +182,6 @@ stages:
       - ${{ if eq(parameters.includeAzure, true) }}:
           - template: testing-template.yml
             parameters:
-              updateIterationCount: ${{ parameters.updateIterationCount }}
-              rollbackTesting: ${{ parameters.rollbackTesting }}
-              workers: ${{ parameters.workers }}
               updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
               verboseLogging: ${{ parameters.verboseLogging }}
               platform: azure
@@ -212,9 +191,6 @@ stages:
       - ${{ if eq(parameters.includeUKI, true) }}:
           - template: testing-template.yml
             parameters:
-              updateIterationCount: ${{ parameters.updateIterationCount }}
-              rollbackTesting: ${{ parameters.rollbackTesting }}
-              workers: ${{ parameters.workers }}
               updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
               verboseLogging: ${{ parameters.verboseLogging }}
               platform: qemu
