@@ -209,6 +209,17 @@ stages:
   #   - template: stages/build_image/trident-mshvch-dom0-testimg.yml
 
   # Test Servicing on VMs
+  - template: stages/testing_rollback/vm-testing.yml
+    parameters:
+      includeQemu: true
+      includeUKI: false
+      includeAzure: false
+      micBuildType: ${{ parameters.micBuildType }}
+      micVersion: ${{ parameters.micVersion }}
+      verboseLogging: true
+      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+
+  # Test Servicing on VMs
   - template: stages/testing_servicing/vm-testing.yml
     parameters:
       includeQemu: true

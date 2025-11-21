@@ -270,7 +270,6 @@ jobs:
                 --artifacts-dir $(Build.ArtifactStagingDirectory) \
                 --output-path $(ob_outputDirectory) \
                 --platform ${{ parameters.platform }} \
-                --subnet-id $(SUBNET_ID) \
                 --ssh-private-key-path $(SSH_PRIVATE_KEY_PATH) \
                 --ssh-public-key-path $(SSH_PUBLIC_KEY_PATH) \
                 --retry-count ${{ parameters.updateIterationCount }} \
