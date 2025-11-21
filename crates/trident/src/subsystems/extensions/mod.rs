@@ -12,9 +12,10 @@ use tempfile::NamedTempFile;
 
 use osutils::{container, dependencies::Dependency, path};
 use trident_api::{
-    config::{Extension, HostConfiguration},
+    config::Extension,
     constants::internal_params::HTTP_CONNECTION_TIMEOUT_SECONDS,
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
+    is_default,
     primitives::hash::Sha384Hash,
     status::ServicingType,
 };
@@ -94,7 +95,7 @@ impl Subsystem for ExtensionsSubsystem {
     }
 
     fn select_servicing_type(&self, ctx: &EngineContext) -> Result<ServicingType, TridentError> {
-        if ctx.spec_old == HostConfiguration::default() {
+        if is_default(&ctx.spec_old) {
             return Ok(ServicingType::CleanInstall);
         }
         if ctx.spec_old.os.sysexts != ctx.spec.os.sysexts

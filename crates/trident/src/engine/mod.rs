@@ -11,9 +11,10 @@ use log::{debug, error, info, warn};
 
 use osutils::{dependencies::Dependency, path::join_relative};
 use trident_api::{
-    config::{HostConfiguration, Storage},
+    config::Storage,
     constants,
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
+    is_default,
     status::{ServicingState, ServicingType},
     storage_graph::graph::StorageGraph,
 };
@@ -69,7 +70,7 @@ pub(crate) trait Subsystem: Send {
 
     /// Select the servicing type based on the Host Status and Host Configuration.
     fn select_servicing_type(&self, ctx: &EngineContext) -> Result<ServicingType, TridentError> {
-        if ctx.spec_old == HostConfiguration::default() {
+        if is_default(&ctx.spec_old) {
             return Ok(ServicingType::CleanInstall);
         }
         Ok(ServicingType::AbUpdate)

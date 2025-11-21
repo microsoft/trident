@@ -5,8 +5,8 @@ use log::debug;
 
 use osutils::netplan;
 use trident_api::{
-    config::HostConfiguration,
     error::{ReportError, ServicingError, TridentError},
+    is_default,
     status::ServicingType,
 };
 
@@ -24,7 +24,7 @@ impl Subsystem for NetworkSubsystem {
     }
 
     fn select_servicing_type(&self, ctx: &EngineContext) -> Result<ServicingType, TridentError> {
-        if ctx.spec_old == HostConfiguration::default() {
+        if is_default(&ctx.spec_old) {
             return Ok(ServicingType::CleanInstall);
         }
         if ctx.spec_old.os.netplan != ctx.spec.os.netplan {
