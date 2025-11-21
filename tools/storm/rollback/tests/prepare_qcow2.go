@@ -34,10 +34,14 @@ func PrepareQcow2(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 	}
 	logrus.Tracef("Found image file: %s", imageFilePath)
 	imageFileFolder := filepath.Dir(imageFilePath)
+	imageFileFolder, err = filepath.Abs(imageFileFolder)
+	if err != nil {
+		return fmt.Errorf("failed to get absolute path of image file folder: %w", err)
+	}
 	imageFileName := filepath.Base(imageFilePath)
 
 	// Find existing image file
-	extensionFileName := "test-sysext-1.raw"
+	extensionFileName := fmt.Sprintf("%s-1.raw", testConfig.ExtensionName)
 	extensionFile, err := stormfile.FindFile(testConfig.ArtifactsDir, fmt.Sprintf("^%s$", extensionFileName))
 	if err != nil {
 		return fmt.Errorf("failed to find extension file: %w", err)
@@ -49,8 +53,9 @@ func PrepareQcow2(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 	customizerConfigPath := filepath.Join(testConfig.ArtifactsDir, customizerConfigFile)
 	customizerConfigContent := fmt.Sprintf(
 		IMAGE_CUSTOMIZER_CONFIG_TEMPLATE,
-		extensionFile,
-		extensionFileName)
+		filepath.Join("/artifacts", extensionFileName),
+		fmt.Sprintf("%s.raw", testConfig.ExtensionName),
+	)
 	if err := os.WriteFile(customizerConfigPath, []byte(customizerConfigContent), 0644); err != nil {
 		return fmt.Errorf("failed to write image customizer config file: %w", err)
 	}

@@ -5,7 +5,7 @@ type TestConfig struct {
 	OutputPath           string `help:"Path to the output directory for logs and artifacts" default:"./output"`
 	Verbose              bool   `help:"Enable verbose logging" default:"false"`
 	HostConfig           string `help:"Host Configuration to use for updates" default:"./input/trident.yaml"`
-	ExtensionName        string `help:"Extension Name to test" default:"testextension"`
+	ExtensionName        string `help:"Extension Name to test" default:"test-sysext"`
 	FileServerPort       int    `help:"Port for the cosi and extension file server" default:"8000"`
 	ExpectedVolume       string `help:"Expected active volume after update" default:"volume-a"`
 	ForceCleanup         bool   `help:"Force cleanup of VM when test finishes" default:"false"`
