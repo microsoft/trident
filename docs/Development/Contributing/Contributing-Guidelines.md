@@ -32,3 +32,11 @@ Resources:
 - [Microsoft Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/)
 - Contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with questions
   or concerns
+
+## Substantial Changes
+
+Many contributions such as bug fixes, documentation updates, or minor
+enhancements do not require extensive review and can be submitted directly as
+pull requests or issues. Changes that are considered substantial should follow
+the RFC process outlined in the [RFCs](../RFCs) section to ensure that
+all stakeholders have the opportunity to review and provide input.

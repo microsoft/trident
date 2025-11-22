@@ -798,6 +798,12 @@ website-serve: website-build
 	cd ./website && \
 		npm run serve -- --port $(SERVER_PORT)
 
+# Useful if you edit website/docs files in place and want to copy them back to ./docs
+.PHONY: website-reverse
+website-reverse: website/docs
+	rm -rf ./docs
+	cp -r ./website/docs ./
+
 .PHONY: validate-pipeline-website-artifact
 validate-pipeline-website-artifact:
 	if ! which gh > /dev/null; then \

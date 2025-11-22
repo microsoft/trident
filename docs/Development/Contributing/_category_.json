@@ -1,5 +1,6 @@
 {
     "label": "Contributing",
+    "position": 3,
     "link": {
         "type": "doc",
         "id": "Development/Contributing/Contributing-Guidelines"
