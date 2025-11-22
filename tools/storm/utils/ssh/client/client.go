@@ -10,6 +10,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	stormsshconfig "tridenttools/storm/utils/ssh/config"
+	"tridenttools/storm/utils/ssh/sftp"
 )
 
 func OpenSshClient(settings stormsshconfig.SshCliSettings) (*ssh.Client, error) {
@@ -114,4 +115,31 @@ func CommandOutput(client *ssh.Client, command string) (string, error) {
 	}
 
 	return output.Stdout, nil
+}
+
+// CopyRemoteFileToLocal copies a file from a remote host to the local system via SFTP.
+func CopyRemoteFileToLocal(client *ssh.Client, remotePath string, localFilePath string) error {
+	sftpClient, err := sftp.NewSftpSudoClient(client)
+	if err != nil {
+		return fmt.Errorf("failed to create SFTP client: %w", err)
+	}
+	defer sftpClient.Close()
+
+	remoteFile, err := sftpClient.Open(remotePath)
+	if err != nil {
+		return fmt.Errorf("failed to open remote file %s: %w", remotePath, err)
+	}
+	defer remoteFile.Close()
+
+	localFile, err := os.Create(localFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to create local file: %w", err)
+	}
+	defer localFile.Close()
+
+	if _, err := io.Copy(localFile, remoteFile); err != nil {
+		return fmt.Errorf("failed to copy file to local system: %w", err)
+	}
+
+	return nil
 }
