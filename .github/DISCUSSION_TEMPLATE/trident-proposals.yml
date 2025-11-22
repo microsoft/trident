@@ -1,0 +1,94 @@
+title: "[Proposal] "
+labels: ["proposal"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Trident Design & Change Proposal
+        Thank you for contributing a proposal to Trident! Please fill out this one-pager to help the community understand and discuss your idea.
+
+  - type: input
+    id: proposal-title
+    attributes:
+      label: Proposal Title
+      description: A short, descriptive title for your proposal
+      placeholder: "Example: Add support for encrypted swap partitions"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: proposal-category
+    attributes:
+      label: Category
+      description: What type of change does this proposal introduce?
+      options:
+        - New Feature
+        - Enhancement
+        - API Change
+        - Performance Improvement
+        - Architecture Change
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem-statement
+    attributes:
+      label: Problem Statement
+      description: What problem does this proposal solve? Who is affected?
+      placeholder: Describe the current limitation or pain point this proposal addresses
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed Solution
+      description: How do you propose to solve this problem? Include high-level design or approach.
+      placeholder: Describe your proposed solution, including key design decisions and any alternatives considered
+    validations:
+      required: true
+
+  - type: textarea
+    id: impact-scope
+    attributes:
+      label: Impact & Scope
+      description: What components, APIs, or workflows will be affected? What are the breaking changes (if any)?
+      placeholder: |
+        - Components affected:
+        - Breaking changes:
+        - Migration path (if applicable):
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: What other approaches did you consider? Why was this solution chosen?
+      placeholder: Briefly describe alternative solutions and trade-offs
+
+  - type: textarea
+    id: open-questions
+    attributes:
+      label: Open Questions
+      description: What aspects need further discussion or community input?
+      placeholder: List any unresolved questions or areas where you'd like feedback
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      description: Please confirm the following
+      options:
+        - label: I have searched existing discussions to ensure this hasn't been proposed before
+          required: true
+        - label: I have considered backward compatibility and migration paths
+          required: false
+        - label: I am willing to help implement this proposal
+          required: false
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        **Next Steps:** The maintainers and community will review your proposal and provide feedback. Be prepared to iterate on the design based on discussion.
