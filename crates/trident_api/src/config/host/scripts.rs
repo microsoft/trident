@@ -103,13 +103,10 @@ impl Script {
             ServicingType::CleanInstall => {
                 self.run_on.contains(&ServicingTypeSelection::CleanInstall)
             }
-            ServicingType::NormalUpdate => {
-                self.run_on.contains(&ServicingTypeSelection::NormalUpdate)
+            ServicingType::RuntimeUpdate => {
+                self.run_on.contains(&ServicingTypeSelection::RuntimeUpdate)
             }
             ServicingType::AbUpdate => self.run_on.contains(&ServicingTypeSelection::AbUpdate),
-            ServicingType::UpdateAndReboot => self
-                .run_on
-                .contains(&ServicingTypeSelection::UpdateAndReboot),
             _ => false,
         }
     }
@@ -127,21 +124,17 @@ pub enum ServicingTypeSelection {
     /// host is booted from the provisioning OS.
     CleanInstall,
 
-    /// # Normal Update
+    /// # Runtime Update
     ///
-    /// This selection only includes NormalUpdate, an update that requires pausing the workload.
-    NormalUpdate,
+    /// This selection only includes RuntimeUpdate, an update that does not require pausing the
+    /// workload or rebooting.
+    RuntimeUpdate,
 
     /// # A/B Update
     ///
     /// This selection only includes AbUpdate, an update that requires switching to a different
     /// root partition and rebooting.
     AbUpdate,
-
-    /// # Update and Reboot
-    ///
-    /// This selection only includes UpdateAndReboot, an update that requires rebooting the host.
-    UpdateAndReboot,
 
     /// # All
     ///
@@ -203,7 +196,7 @@ mod tests {
             environment_variables: HashMap::new(),
             arguments: vec![],
         };
-        assert!(!script.should_run(ServicingType::NormalUpdate));
+        assert!(!script.should_run(ServicingType::RuntimeUpdate));
     }
 
     #[test]

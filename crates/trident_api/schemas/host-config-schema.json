@@ -1347,11 +1347,11 @@
           ]
         },
         {
-          "title": "Normal Update",
-          "description": "This selection only includes NormalUpdate, an update that requires pausing the workload.",
+          "title": "Runtime Update",
+          "description": "This selection only includes RuntimeUpdate, an update that does not require pausing the workload or rebooting.",
           "type": "string",
           "enum": [
-            "normal-update"
+            "runtime-update"
           ]
         },
         {
@@ -1360,14 +1360,6 @@
           "type": "string",
           "enum": [
             "ab-update"
-          ]
-        },
-        {
-          "title": "Update and Reboot",
-          "description": "This selection only includes UpdateAndReboot, an update that requires rebooting the host.",
-          "type": "string",
-          "enum": [
-            "update-and-reboot"
           ]
         },
         {

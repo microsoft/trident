@@ -88,7 +88,6 @@ pub(crate) fn update(
         .map(|m| m.select_servicing_type(&ctx))
         .collect::<Result<Vec<_>, TridentError>>()?
         .into_iter()
-        .flatten()
         .max()
         .unwrap_or(ServicingType::NoActiveServicing);
     if servicing_type == ServicingType::NoActiveServicing {
@@ -127,7 +126,7 @@ pub(crate) fn update(
     .message("Failed to stage update")?;
 
     match servicing_type {
-        ServicingType::UpdateAndReboot | ServicingType::AbUpdate => {
+        ServicingType::AbUpdate => {
             if !allowed_operations.has_finalize() {
                 info!("Finalizing of update not requested, skipping reboot");
 
@@ -150,7 +149,7 @@ pub(crate) fn update(
                 .message("Failed to finalize update")
             }
         }
-        ServicingType::NormalUpdate | ServicingType::HotPatch => {
+        ServicingType::RuntimeUpdate => {
             state.with_host_status(|host_status| {
                 host_status.servicing_state = ServicingState::Provisioned;
             })?;
