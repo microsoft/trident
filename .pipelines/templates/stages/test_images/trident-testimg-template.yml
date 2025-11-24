@@ -112,15 +112,15 @@ steps:
       - bash: |
           set -eux
 
-          mkdir -p $(Build.SourcesDirectory)/build
-          ssh-keygen -t rsa -b 2048 -f $(Build.SourcesDirectory)/build/id_rsa -q -N ""
+          mkdir -p $(Build.SourcesDirectory)/artifacts
+          ssh-keygen -t rsa -b 2048 -f $(Build.SourcesDirectory)/artifacts/id_rsa -q -N ""
         displayName: Set up SSH Keys
   - ${{ if eq(parameters.useStagedSshKeys, true) }}:
       - bash: |
           set -eux
 
-          mkdir -p $(Build.SourcesDirectory)/build
-          cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* $(Build.SourcesDirectory)/build/
+          mkdir -p $(Build.SourcesDirectory)/artifacts
+          cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* $(Build.SourcesDirectory)/artifacts/
         displayName: Copy SSH Keys
 
   - script: |
