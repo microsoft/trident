@@ -868,7 +868,7 @@ artifacts/id_rsa:
 	@ssh-keygen -t rsa -b 2048 -f artifacts/id_rsa -q -N ""
 	@echo "SSH key generated at artifacts/id_rsa"
 
-$(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub: artifacts/id_rsa.pub
+$(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub: artifacts/id_rsa artifacts/id_rsa.pub
 	cp artifacts/id_rsa.pub $(VM_IMAGE_PATH_PREFIX)/files/
 
 QEMU_GUEST_IMAGE_NAME ?= qemu_guest_vhdx-3.0-stable
