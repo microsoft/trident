@@ -118,7 +118,17 @@ jobs:
 
       - bash: |
           set -eux
-          sudo ./bin/storm-trident run rollback $(STORM_FLAGS) \
+          
+          SKIP_FLAGS=""
+          # TODO: enable manual rollback testing when it is implemented
+          SKIP_FLAGS="$SKIP_FLAGS --skip-manual-rollbacks"
+          # TODO: enable runtime update testing when it is implemented
+          SKIP_FLAGS="$SKIP_FLAGS --skip-runtime-updates"
+
+          # Allow testing for non-extension scenarios
+          SKIP_FLAGS="$SKIP_FLAGS --skip-extension-testing"
+
+          sudo ./bin/storm-trident run rollback -a $(STORM_FLAGS) $SKIP_FLAGS \
             --artifacts-dir $(Build.ArtifactStagingDirectory) \
             --output-path $(ob_outputDirectory) \
             --platform ${{ parameters.platform }} \

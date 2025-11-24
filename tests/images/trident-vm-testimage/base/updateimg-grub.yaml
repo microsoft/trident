@@ -64,6 +64,8 @@ os:
   additionalFiles:
     - source: files/sudoers-wheel
       destination: /etc/sudoers.d/wheel
+    - source: files/99-dhcp-eth0.network
+      destination: /etc/systemd/network/99-dhcp-eth0.network
 
 scripts:
   postCustomization:
