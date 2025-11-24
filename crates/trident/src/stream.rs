@@ -30,13 +30,7 @@ pub fn config_from_image_url(
         })
         .message("Image file does not contain a Host Configuration template")?;
 
-    let template_data = String::from_utf8(template.to_vec())
-        .structured(InvalidInputError::LoadCosi {
-            url: image_url.clone(),
-        })
-        .message("Host Configuration template is not valid UTF-8")?;
-
-    let expanded = expand_template(&template_data)
+    let expanded = expand_template(template)
         .structured(InvalidInputError::LoadCosi {
             url: image_url.clone(),
         })
