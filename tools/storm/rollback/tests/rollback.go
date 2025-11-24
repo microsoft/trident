@@ -343,6 +343,16 @@ func doUpdateTest(
 	}
 	logrus.Tracef("VM ready after update")
 
+	// Check VM IP
+	newVmIP, err := stormvm.GetVmIP(vmConfig)
+	if err != nil {
+		return fmt.Errorf("failed to get VM IP after update: %w", err)
+	}
+	if newVmIP != vmIP {
+		return fmt.Errorf("VM IP changed after update: was '%s', now '%s'", vmIP, newVmIP)
+	}
+	logrus.Infof("VM IP remains the same after update: %s", vmIP)
+
 	// Validate OS state
 	err = validateOs(testConfig, vmConfig, vmIP, extensionVersion, expectedVolume, expectedAvailableRollbacks)
 	if err != nil {
