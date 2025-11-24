@@ -72,7 +72,7 @@ func PrepareQcow2(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 	logrus.Tracef("Pulled Image Customizer image: %s", testConfig.ImageCustomizerImage)
 
 	// Run Image Customizer
-	customizedImageFileName := "trident-vm-rollback-testimage.qcow2"
+	customizedImageFileName := "tmp-adjusted-rollback-testimage.qcow2"
 	icRunArgs := []string{
 		"run",
 		"--pull=never",

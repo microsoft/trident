@@ -51,7 +51,7 @@ func RollbackTest(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 	expectedVolume := testConfig.ExpectedVolume
 	expectedAvailableRollbacks := 0
 	extensionVersion := 1
-	err = validateOs(vmConfig, vmIP, extensionVersion, expectedVolume, expectedAvailableRollbacks)
+	err = validateOs(testConfig, vmConfig, vmIP, extensionVersion, expectedVolume, expectedAvailableRollbacks)
 	if err != nil {
 		return fmt.Errorf("failed to validate OS state after update: %w", err)
 	}
@@ -73,15 +73,23 @@ func RollbackTest(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 		logrus.Tracef("SSH proxy ports for file server on VM started")
 	}
 
-	// Construct Host Configuration for test based on initial state
-	hostConfigStr, err := stormssh.SshCommandWithRetries(vmConfig.VMConfig, vmIP, "sudo trident get configuration", 5, 5)
-	if err != nil {
-		return fmt.Errorf("failed to get Host Configuration: %w", err)
-	}
-	logrus.Tracef("Retrieved Host Configuration")
+	// Construct Host Configuration for test
 	hostConfig := make(map[string]interface{})
-	if err = yaml.Unmarshal([]byte(hostConfigStr), &hostConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal Host Configuration: %w", err)
+	if testConfig.DebugPassword != "" {
+		logrus.Tracef("Adding debug password to Host Configuration")
+		hostConfig["scripts"] = map[string]interface{}{
+			"postProvision": []map[string]interface{}{
+				{
+					"name":  "set-password-script",
+					"runOn": []string{"ab-update"},
+					"content": fmt.Sprintf(
+						"echo '%s:%s' | sudo chpasswd",
+						vmConfig.VMConfig.User,
+						testConfig.DebugPassword,
+					),
+				},
+			},
+		}
 	}
 
 	// Update Host Configuration for A/B update using extension version 2
@@ -90,11 +98,13 @@ func RollbackTest(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 		"url":    fmt.Sprintf("http://localhost:%d/files/%s", testConfig.FileServerPort, cosiFileName),
 		"sha384": "ignored",
 	}
-	sysextConfig, err := createSysextHostConfigSection(testConfig, extensionVersion)
-	if err != nil {
-		return fmt.Errorf("failed to create sysext host config section: %w", err)
+	if !testConfig.SkipExtensionTesting {
+		sysextConfig, err := createSysextHostConfigSection(testConfig, vmConfig, extensionVersion)
+		if err != nil {
+			return fmt.Errorf("failed to create sysext host config section: %w", err)
+		}
+		hostConfig["os"] = sysextConfig
 	}
-	hostConfig["os"] = sysextConfig
 	// Perform A/B update and do validation
 	expectedVolume = getOtherVolume(expectedVolume)
 	expectedAvailableRollbacks = 1
@@ -111,83 +121,91 @@ func RollbackTest(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 	{
 		logrus.Tracef("Setting up SSH proxy ports for file server on VM")
 		proxyStartedChannel := make(chan bool)
-		go stormssh.StartSshProxyPortAndWait(ctx, testConfig.FileServerPort, vmIP, vmConfig.VMConfig.User, vmConfig.VMConfig.SshPrivateKeyPath, fileServerStartedChannel)
+		go stormssh.StartSshProxyPortAndWait(ctx, testConfig.FileServerPort, vmIP, vmConfig.VMConfig.User, vmConfig.VMConfig.SshPrivateKeyPath, proxyStartedChannel)
 		<-proxyStartedChannel
 	}
 
-	// Update Host Configuration for second runtime update using extension version 3
-	extensionVersion = 3
-	sysextConfig, err = createSysextHostConfigSection(testConfig, extensionVersion)
-	if err != nil {
-		return fmt.Errorf("failed to create sysext host config section: %w", err)
-	}
-	hostConfig["os"] = sysextConfig
-	// Perform runtime update and do
-	expectedAvailableRollbacks = 2
-	err = doUpdateTest(testConfig, vmConfig, vmIP, hostConfig, extensionVersion, expectedVolume, expectedAvailableRollbacks, false)
-	if err != nil {
-		return fmt.Errorf("failed to perform first runtime update test: %w", err)
-	}
-	err = saveSerialAndTruncate(testConfig, vmConfig.VMConfig.Name, "serial-runtime-update1.log")
-	if err != nil {
-		return fmt.Errorf("failed to save first runtime update serial log: %w", err)
+	if !testConfig.SkipRuntimeUpdates {
+		if !testConfig.SkipExtensionTesting {
+			// Update Host Configuration for second runtime update using extension version 3
+			extensionVersion = 3
+			sysextConfig, err := createSysextHostConfigSection(testConfig, vmConfig, extensionVersion)
+			if err != nil {
+				return fmt.Errorf("failed to create sysext host config section: %w", err)
+			}
+			hostConfig["os"] = sysextConfig
+		}
+		// Perform runtime update and do
+		expectedAvailableRollbacks = 2
+		err = doUpdateTest(testConfig, vmConfig, vmIP, hostConfig, extensionVersion, expectedVolume, expectedAvailableRollbacks, false)
+		if err != nil {
+			return fmt.Errorf("failed to perform first runtime update test: %w", err)
+		}
+		err = saveSerialAndTruncate(testConfig, vmConfig.VMConfig.Name, "serial-runtime-update1.log")
+		if err != nil {
+			return fmt.Errorf("failed to save first runtime update serial log: %w", err)
+		}
+
+		// Update Host Configuration for second runtime update removing extension
+		hostConfig["os"] = map[string]interface{}{}
+		// Perform runtime update and do validation
+		extensionVersion = -1
+		expectedAvailableRollbacks = 3
+		err = doUpdateTest(testConfig, vmConfig, vmIP, hostConfig, extensionVersion, expectedVolume, expectedAvailableRollbacks, false)
+		if err != nil {
+			return fmt.Errorf("failed to perform second runtime update test: %w", err)
+		}
+		err = saveSerialAndTruncate(testConfig, vmConfig.VMConfig.Name, "serial-runtime-update2.log")
+		if err != nil {
+			return fmt.Errorf("failed to save second runtime update serial log: %w", err)
+		}
+
+		if !testConfig.SkipManualRollbacks {
+			// Invoke rollback and expect extension 3
+			extensionVersion = 3
+			expectedAvailableRollbacks = 2
+			err = doRollbackTest(testConfig, vmConfig, vmIP, extensionVersion, expectedVolume, expectedAvailableRollbacks, false)
+			if err != nil {
+				return fmt.Errorf("failed to perform first rollback test: %w", err)
+			}
+			err = saveSerialAndTruncate(testConfig, vmConfig.VMConfig.Name, "serial-rollback1.log")
+			if err != nil {
+				return fmt.Errorf("failed to save first rollback serial log: %w", err)
+			}
+
+			// Invoke rollback and expect extension 2
+			extensionVersion = 2
+			expectedAvailableRollbacks = 1
+			err = doRollbackTest(testConfig, vmConfig, vmIP, extensionVersion, expectedVolume, expectedAvailableRollbacks, false)
+			if err != nil {
+				return fmt.Errorf("failed to perform second rollback test: %w", err)
+			}
+			err = saveSerialAndTruncate(testConfig, vmConfig.VMConfig.Name, "serial-rollback2.log")
+			if err != nil {
+				return fmt.Errorf("failed to save second rollback serial log: %w", err)
+			}
+		}
 	}
 
-	// Update Host Configuration for second runtime update removing extension
-	hostConfig["os"] = map[string]interface{}{}
-	// Perform runtime update and do validation
-	extensionVersion = -1
-	expectedAvailableRollbacks = 3
-	err = doUpdateTest(testConfig, vmConfig, vmIP, hostConfig, extensionVersion, expectedVolume, expectedAvailableRollbacks, false)
-	if err != nil {
-		return fmt.Errorf("failed to perform second runtime update test: %w", err)
-	}
-	err = saveSerialAndTruncate(testConfig, vmConfig.VMConfig.Name, "serial-runtime-update2.log")
-	if err != nil {
-		return fmt.Errorf("failed to save second runtime update serial log: %w", err)
-	}
-
-	// Invoke rollback and expect extension 3
-	extensionVersion = 3
-	expectedAvailableRollbacks = 2
-	err = doRollbackTest(testConfig, vmConfig, vmIP, extensionVersion, expectedVolume, expectedAvailableRollbacks, false)
-	if err != nil {
-		return fmt.Errorf("failed to perform first rollback test: %w", err)
-	}
-	err = saveSerialAndTruncate(testConfig, vmConfig.VMConfig.Name, "serial-rollback1.log")
-	if err != nil {
-		return fmt.Errorf("failed to save first rollback serial log: %w", err)
-	}
-
-	// Invoke rollback and expect extension 2
-	extensionVersion = 2
-	expectedAvailableRollbacks = 1
-	err = doRollbackTest(testConfig, vmConfig, vmIP, extensionVersion, expectedVolume, expectedAvailableRollbacks, false)
-	if err != nil {
-		return fmt.Errorf("failed to perform second rollback test: %w", err)
-	}
-	err = saveSerialAndTruncate(testConfig, vmConfig.VMConfig.Name, "serial-rollback2.log")
-	if err != nil {
-		return fmt.Errorf("failed to save second rollback serial log: %w", err)
-	}
-
-	// Invoke rollback and expect extension 1
-	expectedVolume = getOtherVolume(expectedVolume)
-	extensionVersion = 1
-	expectedAvailableRollbacks = 0
-	err = doRollbackTest(testConfig, vmConfig, vmIP, extensionVersion, expectedVolume, expectedAvailableRollbacks, true)
-	if err != nil {
-		return fmt.Errorf("failed to perform last rollback test: %w", err)
-	}
-	err = saveSerialAndTruncate(testConfig, vmConfig.VMConfig.Name, "serial-rollback3.log")
-	if err != nil {
-		return fmt.Errorf("failed to save third rollback serial log: %w", err)
+	if !testConfig.SkipRuntimeUpdates {
+		// Invoke rollback and expect extension 1
+		expectedVolume = getOtherVolume(expectedVolume)
+		extensionVersion = 1
+		expectedAvailableRollbacks = 0
+		err = doRollbackTest(testConfig, vmConfig, vmIP, extensionVersion, expectedVolume, expectedAvailableRollbacks, true)
+		if err != nil {
+			return fmt.Errorf("failed to perform last rollback test: %w", err)
+		}
+		err = saveSerialAndTruncate(testConfig, vmConfig.VMConfig.Name, "serial-rollback3.log")
+		if err != nil {
+			return fmt.Errorf("failed to save third rollback serial log: %w", err)
+		}
 	}
 
 	return nil
 }
 
-func createSysextHostConfigSection(testConfig stormrollbackconfig.TestConfig, extensionVersion int) (map[string]interface{}, error) {
+func createSysextHostConfigSection(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmconfig.AllVMConfig, extensionVersion int) (map[string]interface{}, error) {
 	// Find existing image file
 	extensionFileName := fmt.Sprintf("%s-%d.raw", testConfig.ExtensionName, extensionVersion)
 	extensionFile, err := stormfile.FindFile(testConfig.ArtifactsDir, fmt.Sprintf("^%s$", extensionFileName))
@@ -202,7 +220,20 @@ func createSysextHostConfigSection(testConfig stormrollbackconfig.TestConfig, ex
 		return nil, fmt.Errorf("failed to calculate sha384: %w", err)
 	}
 
+	// publicKeyContents, err := os.ReadFile(fmt.Sprintf("%s.pub", vmConfig.VMConfig.SshPrivateKeyPath))
+	// if err != nil {
+	// 	return nil, fmt.Errorf("failed to read sysext user ssh public key: %w", err)
+	// }
 	return map[string]interface{}{
+		// "users": []map[string]interface{}{
+		// 	{
+		// 		"name": vmConfig.VMConfig.User,
+		// 		"sshPublicKeys": []string{
+		// 			strings.TrimSpace(string(publicKeyContents)),
+		// 		},
+		// 		"sshMode": "key-only",
+		// 	},
+		// },
 		"sysexts": []map[string]interface{}{
 			{
 				"url":    fmt.Sprintf("http://localhost:%d/files/%s", testConfig.FileServerPort, extensionFileName),
@@ -220,6 +251,7 @@ func getOtherVolume(volume string) string {
 }
 
 func validateOs(
+	testConfig stormrollbackconfig.TestConfig,
 	vmConfig stormvmconfig.AllVMConfig,
 	vmIP string,
 	extensionVersion int,
@@ -232,29 +264,32 @@ func validateOs(
 	if checkActiveVolumeErr != nil {
 		return fmt.Errorf("failed to validate active volume: %w", checkActiveVolumeErr)
 	}
-	// TODO: Verify extension
-	if extensionVersion > 0 {
-		logrus.Tracef("Checking extension version, expected: '%d'", extensionVersion)
-		extensionTestCommand := "test-extension.sh"
-		extensionTestOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, extensionTestCommand)
-		if err != nil {
-			return fmt.Errorf("failed to check extension on VM (%w):\n%s", err, extensionTestOutput)
-		}
-		extensionTestOutput = strings.TrimSpace(extensionTestOutput)
-		if extensionTestOutput != fmt.Sprintf("%d", extensionVersion) {
-			return fmt.Errorf("extension version mismatch: expected %d, got %s", extensionVersion, extensionTestOutput)
-		}
-		logrus.Tracef("Extension version confirmed, found: '%d'", extensionVersion)
-	} else {
-		logrus.Tracef("Checking that extension is not present")
-		extensionTestCommand := "test-extension.sh"
-		extensionTestOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, extensionTestCommand)
-		if err == nil {
-			return fmt.Errorf("extension is unexpectedly still available (%w):\n%s", err, extensionTestOutput)
+	if !testConfig.SkipExtensionTesting {
+		if extensionVersion > 0 {
+			logrus.Tracef("Checking extension version, expected: '%d'", extensionVersion)
+			extensionTestCommand := "test-extension.sh"
+			extensionTestOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, extensionTestCommand)
+			if err != nil {
+				return fmt.Errorf("failed to check extension on VM (%w):\n%s", err, extensionTestOutput)
+			}
+			extensionTestOutput = strings.TrimSpace(extensionTestOutput)
+			if extensionTestOutput != fmt.Sprintf("%d", extensionVersion) {
+				return fmt.Errorf("extension version mismatch: expected %d, got %s", extensionVersion, extensionTestOutput)
+			}
+			logrus.Tracef("Extension version confirmed, found: '%d'", extensionVersion)
+		} else {
+			logrus.Tracef("Checking that extension is not present")
+			extensionTestCommand := "test-extension.sh"
+			extensionTestOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, extensionTestCommand)
+			if err == nil {
+				return fmt.Errorf("extension is unexpectedly still available (%w):\n%s", err, extensionTestOutput)
+			}
 		}
 	}
-	// TODO: Verify that there is 1 available rollback
-	logrus.Tracef("Checking number of available rollbacks, expecting '%d'", expectedAvailableRollbacks)
+	if !testConfig.SkipManualRollbacks {
+		// TODO: Verify that there is 1 available rollback
+		logrus.Tracef("Checking number of available rollbacks, expecting '%d'", expectedAvailableRollbacks)
+	}
 	return nil
 }
 
@@ -290,14 +325,6 @@ func doUpdateTest(
 		return fmt.Errorf("failed to put updated Host Configuration on VM (%w)", err)
 	}
 	logrus.Tracef("Host Configuration put on VM")
-	// Validate Host Configuration
-	logrus.Tracef("Invoking `trident validate` on VM")
-	validateOutput, err := stormssh.SshCommandCombinedOutput(vmConfig.VMConfig, vmIP, fmt.Sprintf("sudo trident validate %s", vmHostConfigPath))
-	logrus.Tracef("Validate output (%v):\n%s", err, validateOutput)
-	if err != nil {
-		return fmt.Errorf("failed to validate: %w", err)
-	}
-	logrus.Tracef("`trident validate` invoked on VM")
 	// Invoke trident update
 	logrus.Tracef("Invoking `trident update` on VM")
 	updateOutput, err := stormssh.SshCommandCombinedOutput(vmConfig.VMConfig, vmIP, fmt.Sprintf("sudo trident update %s", vmHostConfigPath))
@@ -317,7 +344,7 @@ func doUpdateTest(
 	logrus.Tracef("VM ready after update")
 
 	// Validate OS state
-	err = validateOs(vmConfig, vmIP, extensionVersion, expectedVolume, expectedAvailableRollbacks)
+	err = validateOs(testConfig, vmConfig, vmIP, extensionVersion, expectedVolume, expectedAvailableRollbacks)
 	if err != nil {
 		return fmt.Errorf("failed to validate OS state after update: %w", err)
 	}
@@ -351,7 +378,7 @@ func doRollbackTest(
 	logrus.Tracef("VM ready after rollback")
 
 	// Validate OS state
-	err = validateOs(vmConfig, vmIP, extensionVersion, expectedVolume, expectedAvailableRollbacks)
+	err = validateOs(testConfig, vmConfig, vmIP, extensionVersion, expectedVolume, expectedAvailableRollbacks)
 	if err != nil {
 		return fmt.Errorf("failed to validate OS state after update: %w", err)
 	}

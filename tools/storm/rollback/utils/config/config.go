@@ -10,4 +10,8 @@ type TestConfig struct {
 	ExpectedVolume       string `help:"Expected active volume after update" default:"volume-a"`
 	ForceCleanup         bool   `help:"Force cleanup of VM when test finishes" default:"false"`
 	ImageCustomizerImage string `help:"Image Customizer version to use" default:"mcr.microsoft.com/azurelinux/imagecustomizer:latest"`
+	DebugPassword        string `help:"Debug password for the VM" default:""`
+	SkipRuntimeUpdates   bool   `help:"Skip runtime updates during the test" default:"false"`
+	SkipManualRollbacks  bool   `help:"Skip manual rollbacks during the test" default:"false"`
+	SkipExtensionTesting bool   `help:"Skip extension testing during the test" default:"false"`
 }
