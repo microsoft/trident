@@ -101,7 +101,7 @@ stages:
       - name: SSH_PUBLIC_KEY_PATH
         value: "$(SSH_PRIVATE_KEY_PATH).pub"
       - name: IMAGE_DEFINITION
-        value: "trident-vm-grub-verity-testimage-$(System.DefinitionId)"
+        value: "trident-vm-grub-testimage-$(System.DefinitionId)"
 
     jobs:
       - ${{ if eq(parameters.includeQemu, true) }}:
