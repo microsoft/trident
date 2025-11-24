@@ -19,6 +19,7 @@ func CheckActiveVolume(cfg stormvmconfig.VMConfig, vmIP string, expectedVolume s
 		func(attempt int) (*bool, error) {
 			logrus.Tracef("Checking active volume (attempt %d)", attempt)
 			hostStatusStr, err := stormssh.SshCommandWithRetries(cfg, vmIP, "sudo trident get", 5, 5)
+			logrus.Tracef("(attempt %d) [%v]: %s", attempt, err, hostStatusStr)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get host status: %w", err)
 			}
