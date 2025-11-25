@@ -86,5 +86,4 @@ scripts:
   postCustomization:
     - path: scripts/post-install.sh
     - path: scripts/ssh-move-host-keys.sh
-    - path: scripts/duid-type-to-link-layer.sh
     - path: scripts/update-os-release.sh
