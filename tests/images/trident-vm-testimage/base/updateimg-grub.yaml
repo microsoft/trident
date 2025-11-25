@@ -41,33 +41,29 @@ os:
   hostname: trident-vm-testimg
 
   packages:
-    remove:
-      - grub2-efi-binary
-
     install:
       # replace grub2-efi-binary with grub2-efi-binary-noprefix
       - grub2-efi-binary-noprefix
       - curl
+      - device-mapper
       - dnf
+      - dracut-overlayfs
       - efibootmgr
+      - grub2-efi-binary-noprefix
       - iproute
       - iptables
+      - jq
+      - kexec-tools
       - lsof
-      - mdadm
+      - lvm2
       - netplan
       - openssh-server
-      - tpm2-tools
+      - systemd-udev
       - trident-service
-      - vim
-      - audit
-      # Packages required for functional tests, which currently use this image:
-      - device-mapper
-      - dosfstools
-      - lvm2
       - veritysetup
-      # Optional dependencies for NTFS
-      - ntfs-3g
-      - ntfsprogs
+      - vim
+    remove:
+      - grub2-efi-binary
 
   services:
     enable:
