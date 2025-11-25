@@ -121,8 +121,7 @@ stages:
               updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
               verboseLogging: ${{ parameters.verboseLogging }}
               platform: qemu
-              flavor: qemu
-              imageOverride: "rollback-qemu-grub"
+              flavor: qemu-grub
       - ${{ if eq(parameters.includeQemu, true) }}:
           - template: testing-template.yml
             parameters:
