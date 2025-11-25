@@ -41,7 +41,6 @@ endif
 	./scripts/test-pipeline rel -q $(BRANCH_FLAG)
 	./scripts/test-pipeline testing -q $(BRANCH_FLAG)
 	./scripts/test-pipeline tester -q $(BRANCH_FLAG)
-	./scripts/test-pipeline scale -q $(BRANCH_FLAG)
 	./scripts/test-pipeline scale-official -q $(BRANCH_FLAG)
 	./scripts/test-pipeline full-validation -q $(BRANCH_FLAG)
 
@@ -286,7 +285,7 @@ build-api-docs: build-api-schema docbuilder
 	cp $(TRIDENT_API_HC_SCHEMA_GENERATED) $(TRIDENT_API_HC_SCHEMA_CHECKED_IN)
 	@echo Updated $(TRIDENT_API_HC_SCHEMA_CHECKED_IN)
 
-	$(DOCBUILDER_BIN) host-config markdown $(TRIDENT_API_HC_MARKDOWN_DIR) --devops-wiki
+	$(DOCBUILDER_BIN) host-config markdown $(TRIDENT_API_HC_MARKDOWN_DIR) --docusaurus-root docs/
 	@echo Wrote Markdown docs to $(TRIDENT_API_HC_MARKDOWN_DIR)
 
 	$(DOCBUILDER_BIN) host-config storage-rules -o $(TRIDENT_API_HC_STORAGE_RULES_FILES)

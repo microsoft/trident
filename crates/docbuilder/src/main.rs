@@ -1,6 +1,6 @@
-use std::path::PathBuf;
+use std::path::{self, PathBuf};
 
-use anyhow::{Context, Error};
+use anyhow::{bail, Context, Error};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use log::info;
 
@@ -117,21 +117,26 @@ enum HostConfigCommands {
 
 #[derive(Debug, Args)]
 struct HostConfigMarkdownOpts {
-    /// Output folder
+    /// Output folder.
     ///
     /// Will delete existing contents of this folder and replace with new docs.
     #[clap(required = true)]
     output: PathBuf,
 
-    /// Whether to create DevOps Wiki ordering file
-    #[clap(long)]
+    /// Whether to create DevOps Wiki ordering file.
+    #[clap(long, group = "flavor")]
     devops_wiki: bool,
 
-    /// Whether to use docfx-only features
+    /// Whether to use docfx-only features.
     ///
     /// This enables features such as tabs.
-    #[clap(long)]
+    #[clap(long, group = "flavor")]
     docfx: bool,
+
+    /// Enable docusaurus-specific features. Expects the path to the root of the
+    /// docusaurus site.
+    #[clap(long, group = "flavor")]
+    docusaurus_root: Option<PathBuf>,
 }
 
 fn main() -> Result<(), Error> {
@@ -170,8 +175,14 @@ fn main() -> Result<(), Error> {
     }
 }
 
-fn build_host_config_docs(opts: HostConfigMarkdownOpts) -> Result<(), Error> {
+fn build_host_config_docs(mut opts: HostConfigMarkdownOpts) -> Result<(), Error> {
     info!("Building host config docs");
+
+    opts.output = path::absolute(&opts.output).context(format!(
+        "Failed to get absolute path for output: {}",
+        opts.output.display()
+    ))?;
+
     // Create output directory if it doesn't exist.
     osutils::files::create_dirs(&opts.output).context(format!(
         "Failed to create directory {}",
@@ -184,11 +195,37 @@ fn build_host_config_docs(opts: HostConfigMarkdownOpts) -> Result<(), Error> {
         opts.output.display()
     ))?;
 
+    if let Some(docusaurus_root) = &mut opts.docusaurus_root {
+        // Canonicalize docusaurus root path.
+        *docusaurus_root = docusaurus_root.canonicalize().context(format!(
+            "Failed to canonicalize docusaurus root path {}",
+            docusaurus_root.display()
+        ))?;
+
+        // Ensure docusaurus root exists.
+        if !docusaurus_root.is_dir() {
+            bail!(format!(
+                "Docusaurus root path '{}' is not an existing directory",
+                docusaurus_root.display()
+            ));
+        }
+
+        // Ensure the output path is inside the docusaurus root.
+        if !opts.output.starts_with(&docusaurus_root) {
+            bail!(
+                "Output path '{}' is not inside the docusaurus root '{}'",
+                opts.output.display(),
+                docusaurus_root.display()
+            );
+        }
+    }
+
     host_config::docs::build(
         opts.output,
         SchemaDocSettings {
             devops_wiki: opts.devops_wiki,
             docfx: opts.docfx,
+            docusaurus: opts.docusaurus_root,
         },
     )
     .context("Failed to build host config docs")
