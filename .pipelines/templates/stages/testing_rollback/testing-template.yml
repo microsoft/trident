@@ -150,7 +150,9 @@ jobs:
           # https://learn.microsoft.com/en-us/azure/virtual-machines/linux/download-vhd?tabs=azure-cli
           # for Azure images
 
-          sudo chmod -R 666 $(ob_outputDirectory)/
+          sudo chmod -R 777 $(ob_outputDirectory)/
+          sudo chown -R $USER:$USER $(ob_outputDirectory)/
+          ls -lR $(ob_outputDirectory)/
         workingDirectory: $(tridentSourceDirectory)
         condition: failed()
         displayName: "Publish logs and OS disk on failure"
