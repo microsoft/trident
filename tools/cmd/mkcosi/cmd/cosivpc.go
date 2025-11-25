@@ -44,12 +44,12 @@ func (r *AddVpcCmd) Run() error {
 
 	log.WithField("size", finalSize).Info("Adding VPC footer to COSI file")
 
-	footer, err := vhd.CreateVpcFooter(finalSize)
+	footer, err := vhd.CreateVpcFooterWithMegaByteAlignment(finalSize)
 	if err != nil {
 		return fmt.Errorf("failed to create VPC footer: %w", err)
 	}
 
-	_, err = outFile.Write(footer[:])
+	_, err = outFile.Write(footer)
 	if err != nil {
 		return fmt.Errorf("failed to write VPC footer: %w", err)
 	}

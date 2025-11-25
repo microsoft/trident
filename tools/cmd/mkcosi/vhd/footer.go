@@ -7,10 +7,40 @@ import (
 	"github.com/google/uuid"
 )
 
+const (
+	VPCFooterSize = 512
+	megaByte      = 1024 * 1024
+)
+
+func CreateVpcFooterWithMegaByteAlignment(fileSize uint64) ([]byte, error) {
+	padding := uint64(0)
+	if fileSize%megaByte != 0 {
+		padding = megaByte - (fileSize % megaByte)
+	}
+
+	// Calculate the size of the mock file, which is the original file size plus padding.
+	dataSize := fileSize + padding
+
+	// Calculate size of the trailer we are appending to the file.
+	trailerSize := padding + VPCFooterSize
+
+	// Create an array with zeroed bytes for the padding, and capacity for the full trailer.
+	result := make([]byte, padding, trailerSize)
+	footer, err := CreateVpcFooter(dataSize)
+	if err != nil {
+		return nil, err
+	}
+
+	// Append the footer to the padding.
+	result = append(result, footer[:]...)
+
+	return result, nil
+}
+
 // CreateVpcFooter creates a fixed-sized VHD footer according to the VHD specification.
 // The footer is 512 bytes and contains metadata about the virtual hard disk.
-func CreateVpcFooter(fileSize uint64) ([512]byte, error) {
-	footer := [512]byte{}
+func CreateVpcFooter(fileSize uint64) ([VPCFooterSize]byte, error) {
+	footer := [VPCFooterSize]byte{}
 	offset := 0
 
 	// Cookie (8 bytes): "conectix" - identifies this as a Microsoft VHD
