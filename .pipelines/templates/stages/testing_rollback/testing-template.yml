@@ -9,6 +9,11 @@ parameters:
     type: boolean
     default: false
 
+  - name: imageOverride
+    displayName: "Image override prefix"
+    type: string
+    default: ""
+
   - name: platform
     displayName: Test platform
     type: string
@@ -50,19 +55,34 @@ jobs:
           echo "##vso[task.setvariable variable=TEST_RESOURCE_GROUP;]trident-vm-rollback-validation-$(Build.BuildId)"
         displayName: "Set variables"
 
-      - task: DownloadPipelineArtifact@2
-        inputs:
-          buildType: current
-          artifactName: image-rollback-${{ parameters.flavor }}-base
-          targetPath: "$(Build.ArtifactStagingDirectory)/"
-        displayName: Download Base Image
+      - ${{ if ne(parameters.imageOverride, '') }}:
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            buildType: current
+            artifactName: ${{ parameters.imageOverride }}-base
+            targetPath: "$(Build.ArtifactStagingDirectory)/"
+          displayName: Download Base Image
 
-      - task: DownloadPipelineArtifact@2
-        inputs:
-          buildType: current
-          artifactName: image-rollback-${{ parameters.flavor }}-update-a
-          targetPath: "$(Build.ArtifactStagingDirectory)"
-        displayName: Download Update Image
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            buildType: current
+            artifactName: ${{ parameters.imageOverride }}-update-a
+            targetPath: "$(Build.ArtifactStagingDirectory)"
+          displayName: Download Update Image
+      - ${{ else }}:
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            buildType: current
+            artifactName: image-rollback-${{ parameters.flavor }}-base
+            targetPath: "$(Build.ArtifactStagingDirectory)/"
+          displayName: Download Base Image
+
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            buildType: current
+            artifactName: image-rollback-${{ parameters.flavor }}-update-a
+            targetPath: "$(Build.ArtifactStagingDirectory)"
+          displayName: Download Update Image
 
       - task: DownloadPipelineArtifact@2
         inputs:
