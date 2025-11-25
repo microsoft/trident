@@ -36,7 +36,7 @@ parameters:
     default: "trident-ubuntu-1es-pool-eastus2"
 
 jobs:
-  - job: RollbackTesting_${{ parameters.flavor }}
+  - job: RollbackTesting_${{ replace(parameters.flavor, '-', '_') }}
     displayName: Rollback Testing - ${{ parameters.flavor }}
     timeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
     pool:
