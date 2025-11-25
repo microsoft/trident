@@ -25,6 +25,7 @@ parameters:
     displayName: Image flavor
     type: string
     values:
+      - qemu-grub
       - qemu
       - azure
       - uki
@@ -55,34 +56,19 @@ jobs:
           echo "##vso[task.setvariable variable=TEST_RESOURCE_GROUP;]trident-vm-rollback-validation-$(Build.BuildId)"
         displayName: "Set variables"
 
-      - ${{ if ne(parameters.imageOverride, '') }}:
-        - task: DownloadPipelineArtifact@2
-          inputs:
-            buildType: current
-            artifactName: ${{ parameters.imageOverride }}-base
-            targetPath: "$(Build.ArtifactStagingDirectory)/"
-          displayName: Download Base Image
+      - task: DownloadPipelineArtifact@2
+        inputs:
+          buildType: current
+          artifactName: image-rollback-${{ parameters.flavor }}-base
+          targetPath: "$(Build.ArtifactStagingDirectory)/"
+        displayName: Download Base Image
 
-        - task: DownloadPipelineArtifact@2
-          inputs:
-            buildType: current
-            artifactName: ${{ parameters.imageOverride }}-update-a
-            targetPath: "$(Build.ArtifactStagingDirectory)"
-          displayName: Download Update Image
-      - ${{ else }}:
-        - task: DownloadPipelineArtifact@2
-          inputs:
-            buildType: current
-            artifactName: image-rollback-${{ parameters.flavor }}-base
-            targetPath: "$(Build.ArtifactStagingDirectory)/"
-          displayName: Download Base Image
-
-        - task: DownloadPipelineArtifact@2
-          inputs:
-            buildType: current
-            artifactName: image-rollback-${{ parameters.flavor }}-update-a
-            targetPath: "$(Build.ArtifactStagingDirectory)"
-          displayName: Download Update Image
+      - task: DownloadPipelineArtifact@2
+        inputs:
+          buildType: current
+          artifactName: image-rollback-${{ parameters.flavor }}-update-a
+          targetPath: "$(Build.ArtifactStagingDirectory)"
+        displayName: Download Update Image
 
       - task: DownloadPipelineArtifact@2
         inputs:
