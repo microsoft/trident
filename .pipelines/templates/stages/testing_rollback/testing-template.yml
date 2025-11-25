@@ -138,6 +138,7 @@ jobs:
           set +x
           echo "##vso[task.setvariable variable=STORM_SCENARIO_FINISHED;]true"
         displayName: "Rollback test (${{ parameters.platform }})"
+        timeoutInMinutes: 5
 
       - bash: |
           set -eux
