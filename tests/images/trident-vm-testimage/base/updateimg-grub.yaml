@@ -21,27 +21,12 @@ storage:
       type: ext4
 
 os:
-  hostname: trident-vm-testimg
-  packages:
-    install:
-      - curl
-      - dnf
-      - efibootmgr
-      - grub2-efi-binary-noprefix
-      - iproute
-      - iptables
-      - jq
-      - lsof
-      - netplan
-      - openssh-server
-      - trident-service
-      - vim
-    remove:
-      - grub2-efi-binary
   bootloader:
     resetType: hard-reset
+
   selinux:
     mode: disabled
+
   kernelCommandLine:
     # Replicates BM base image settings, that would otherwise be lost
     extraCommandLine:
@@ -52,9 +37,43 @@ os:
       - loglevel=6
       - log_buf_len=1M
       - systemd.journald.forward_to_console=1
+
+  hostname: trident-vm-testimg
+
+  packages:
+    remove:
+      - grub2-efi-binary
+
+    install:
+      # replace grub2-efi-binary with grub2-efi-binary-noprefix
+      - grub2-efi-binary-noprefix
+      - curl
+      - dnf
+      - efibootmgr
+      - iproute
+      - iptables
+      - lsof
+      - mdadm
+      - netplan
+      - openssh-server
+      - tpm2-tools
+      - trident-service
+      - vim
+      - audit
+      # Packages required for functional tests, which currently use this image:
+      - device-mapper
+      - dosfstools
+      - lvm2
+      - veritysetup
+      # Optional dependencies for NTFS
+      - ntfs-3g
+      - ntfsprogs
+
   services:
     enable:
+      - sshd
       - trident
+
   users:
     - name: testuser
       sshPublicKeyPaths:
