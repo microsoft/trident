@@ -19,7 +19,7 @@ parameters:
     type: boolean
     default: false
 
-  - name: includeGrub
+  - name: includeQemuGrub
     displayName: "Include qemu grub testing"
     type: boolean
     default: true
@@ -59,7 +59,7 @@ parameters:
 
 stages:
   - ${{ if eq(parameters.testingRun, false) }}:
-      - ${{ if eq(parameters.includeGrub, true) }}:
+      - ${{ if eq(parameters.includeQemuGrub, true) }}:
           - stage: BuildImagesQemuForRollback
             displayName: (Rollback) Build Base and Update Images for QEMU
             dependsOn:
@@ -96,7 +96,7 @@ stages:
           - DownloadTestingElements
       - ${{ else }}:
           - BuildingTools
-          - ${{ if eq(parameters.includeGrub, true) }}:
+          - ${{ if eq(parameters.includeQemuGrub, true) }}:
               - BuildImagesQemuForRollback
           - ${{ if eq(parameters.includeQemu, true) }}:
               - BuildImagesQemu
@@ -115,7 +115,7 @@ stages:
         value: "trident-vm-grub-verity-testimage-$(System.DefinitionId)"
 
     jobs:
-      - ${{ if eq(parameters.includeGrub, true) }}:
+      - ${{ if eq(parameters.includeQemuGrub, true) }}:
           - template: testing-template.yml
             parameters:
               updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}

@@ -211,8 +211,9 @@ stages:
   # Test Runtime Updates and Rollback on VMs
   - template: stages/testing_rollback/vm-testing.yml
     parameters:
+      includeQemuGrub: true
       includeQemu: true
-      includeUKI: false
+      includeUKI: true
       includeAzure: false
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
