@@ -19,6 +19,11 @@ parameters:
     type: boolean
     default: false
 
+  - name: includeGrub
+    displayName: "Include qemu grub testing"
+    type: boolean
+    default: true
+
   - name: includeQemu
     displayName: "Include qemu testing"
     type: boolean
@@ -54,7 +59,7 @@ parameters:
 
 stages:
   - ${{ if eq(parameters.testingRun, false) }}:
-      - ${{ if eq(parameters.includeQemu, true) }}:
+      - ${{ if eq(parameters.includeGrub, true) }}:
           - stage: BuildImagesQemuForRollback
             displayName: (Rollback) Build Base and Update Images for QEMU
             dependsOn:
@@ -66,7 +71,7 @@ stages:
             jobs:
               - template: ../testing_servicing/build-image.yml
                 parameters:
-                  label: "rollback-qemu-base"
+                  label: "rollback-qemu-grup-base"
                   makeTarget: "artifacts/trident-vm-grub-testimage.qcow2"
                   baseimgType: qemu_guest
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
@@ -76,7 +81,7 @@ stages:
 
               - template: ../testing_servicing/build-image.yml
                 parameters:
-                  label: "rollback-qemu-update-a"
+                  label: "rollback-qemu-grub-update-a"
                   makeTarget: "artifacts/trident-vm-grub-testimage.cosi"
                   baseimgType: qemu_guest
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
@@ -91,8 +96,14 @@ stages:
           - DownloadTestingElements
       - ${{ else }}:
           - BuildingTools
-          - ${{ if eq(parameters.includeQemu, true) }}:
+          - ${{ if eq(parameters.includeGrub, true) }}:
               - BuildImagesQemuForRollback
+          - ${{ if eq(parameters.includeQemu, true) }}:
+              - BuildImagesQemu
+          - ${{ if eq(parameters.includeUKI, true) }}:
+              - BuildImagesUKI
+          # - ${{ if eq(parameters.includeAzure, true) }}:
+          #     - BuildImagesAzure
 
     variables:
       - group: servicing_testing_params
@@ -101,9 +112,17 @@ stages:
       - name: SSH_PUBLIC_KEY_PATH
         value: "$(SSH_PRIVATE_KEY_PATH).pub"
       - name: IMAGE_DEFINITION
-        value: "trident-vm-grub-testimage-$(System.DefinitionId)"
+        value: "trident-vm-grub-verity-testimage-$(System.DefinitionId)"
 
     jobs:
+      - ${{ if eq(parameters.includeGrub, true) }}:
+          - template: testing-template.yml
+            parameters:
+              updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
+              verboseLogging: ${{ parameters.verboseLogging }}
+              platform: qemu
+              flavor: qemu
+              imageOverride: "rollback-qemu-grub"
       - ${{ if eq(parameters.includeQemu, true) }}:
           - template: testing-template.yml
             parameters:
@@ -111,3 +130,17 @@ stages:
               verboseLogging: ${{ parameters.verboseLogging }}
               platform: qemu
               flavor: qemu
+      - ${{ if eq(parameters.includeUKI, true) }}:
+          - template: testing-template.yml
+            parameters:
+              updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
+              verboseLogging: ${{ parameters.verboseLogging }}
+              platform: qemu
+              flavor: uki
+      # - ${{ if eq(parameters.includeAzure, true) }}:
+      #     - template: testing-template.yml
+      #       parameters:
+      #         updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
+      #         verboseLogging: ${{ parameters.verboseLogging }}
+      #         platform: azure
+      #         flavor: azure

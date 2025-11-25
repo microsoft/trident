@@ -87,7 +87,7 @@ stages:
               - template: build-image.yml
                 parameters:
                   label: "qemu-base"
-                  makeTarget: "artifacts/trident-vm-grub-testimage.qcow2"
+                  makeTarget: "artifacts/trident-vm-grub-verity-testimage.qcow2"
                   baseimgType: qemu_guest
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
                   micBuildType: ${{ parameters.micBuildType }}
@@ -97,7 +97,7 @@ stages:
               - template: build-image.yml
                 parameters:
                   label: "qemu-update-a"
-                  makeTarget: "artifacts/trident-vm-grub-testimage.cosi"
+                  makeTarget: "artifacts/trident-vm-grub-verity-testimage.cosi"
                   baseimgType: qemu_guest
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
                   micBuildType: ${{ parameters.micBuildType }}
@@ -107,7 +107,7 @@ stages:
               - template: build-image.yml
                 parameters:
                   label: "qemu-update-b"
-                  makeTarget: "artifacts/trident-vm-grub-testimage.cosi"
+                  makeTarget: "artifacts/trident-vm-grub-verity-testimage.cosi"
                   baseimgType: qemu_guest
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
                   micBuildType: ${{ parameters.micBuildType }}
