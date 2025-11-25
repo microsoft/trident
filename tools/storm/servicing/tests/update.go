@@ -92,6 +92,8 @@ func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfi
 	configChanges :=
 		// use COSI file found in update-a and update-b directories
 		fmt.Sprintf("sudo sed -i 's!verity.cosi!files/%s!' /var/lib/trident/update-config.yaml && ", cosiFileBase) +
+			// handle regular.cosi and verity.cosi cases
+			fmt.Sprintf("sudo sed -i 's!regular.cosi!files/%s!' /var/lib/trident/update-config.yaml && ", cosiFileBase) +
 			// use localhost as update server address
 			"sudo sed -i 's/192.168.122.1/localhost/' /var/lib/trident/update-config.yaml &&" +
 			// use update port a for first config (for rollback following update test, this will be no-op)
