@@ -71,7 +71,7 @@ stages:
             jobs:
               - template: ../testing_servicing/build-image.yml
                 parameters:
-                  label: "rollback-qemu-grup-base"
+                  label: "qemu-grub-base"
                   makeTarget: "artifacts/trident-vm-grub-testimage.qcow2"
                   baseimgType: qemu_guest
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
@@ -81,7 +81,7 @@ stages:
 
               - template: ../testing_servicing/build-image.yml
                 parameters:
-                  label: "rollback-qemu-grub-update-a"
+                  label: "qemu-grub-update-a"
                   makeTarget: "artifacts/trident-vm-grub-testimage.cosi"
                   baseimgType: qemu_guest
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
