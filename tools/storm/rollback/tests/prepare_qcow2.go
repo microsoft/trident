@@ -34,7 +34,7 @@ func PrepareQcow2(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 		return nil
 	}
 	// Find existing image file
-	imageFilePath, err := stormfile.FindFile(testConfig.ArtifactsDir, vmConfig.QemuConfig.Qcow2Pattern)
+	imageFilePath, err := stormfile.FindFile(testConfig.ArtifactsDir, "^trident-vm-.*-testimage.qcow2$")
 	if err != nil {
 		return fmt.Errorf("failed to find image file: %w", err)
 	}

@@ -461,9 +461,14 @@ ARTIFACTS_TEST_IMAGE_DIR := artifacts/test-image
 AZL_INSTALLER_DIR := tests/images/azl-installer
 AZL_INSTALLER_ISO_DIR := $(AZL_INSTALLER_DIR)/iso
 
+$(ARTIFACTS_TEST_IMAGE_DIR)/regular.cosi:
+	@$(MAKE) download-runtime-images
+
 # Build the installer ISO using the builder
 $(ARTIFACTS_TEST_IMAGE_DIR)/azl-installer.iso: \
+	bin/RPMS \
 	bin/liveinstaller \
+	artifacts/baremetal.vhdx \
 	$(ARTIFACTS_TEST_IMAGE_DIR)/regular.cosi \
 	$(AZL_INSTALLER_DIR)/installer-iso.yaml \
 	$(shell find $(AZL_INSTALLER_DIR)/ -type f 2>/dev/null)
@@ -580,8 +585,8 @@ download-runtime-images:
 		--artifact-name 'trident-testimage'
 
 #	Move COSI images
-	mv $(DOWNLOAD_DIR)/*_0.cosi ./artifacts/test-image/regular.cosi
-	mv $(DOWNLOAD_DIR)/*_1.cosi ./artifacts/test-image/regular_v2.cosi
+	mv $(DOWNLOAD_DIR)/*_0.cosi $(ARTIFACTS_TEST_IMAGE_DIR)/regular.cosi
+	mv $(DOWNLOAD_DIR)/*_1.cosi $(ARTIFACTS_TEST_IMAGE_DIR)/regular_v2.cosi
 #	Clean temp dir
 	rm -rf $(DOWNLOAD_DIR)
 
@@ -723,10 +728,6 @@ starter-configuration:
 	@echo "\033[33mCreated \033[36m$(TRIDENT_CONFIG)\033[33m. Please review and modify as needed! :)"
 	@echo "\033[33mDon't forget to add your SSH public key to the Host Configuration!"
 
-artifacts/baremetal.vhdx:
-	@mkdir -p artifacts
-	@tests/images/testimages.py download-image baremetal
-
 MIC_PACKAGE_NAME ?= imagecustomizer
 MIC_PACKAGE_VERSION ?= *
 artifacts/imagecustomizer:
@@ -859,8 +860,8 @@ artifacts/trident-functest.qcow2: $$(shell ./tests/images/testimages.py dependen
 
 VM_IMAGE_PATH_PREFIX = tests/images/trident-vm-testimage/base
 
-base/rpm-overrides:
-	@mkdir -p base/rpm-overrides
+artifacts/rpm-overrides:
+	@mkdir -p artifacts/rpm-overrides
 
 artifacts/id_rsa:
 	@echo "Generating SSH key..."
@@ -892,67 +893,30 @@ $(QEMU_GUEST_IMAGE):
 BAREMETAL_IMAGE = artifacts/baremetal.vhdx
 $(BAREMETAL_IMAGE):
 	@mkdir -p artifacts
-	@tempdir=$$(mktemp -d); \
-		result=$$(az artifacts universal download \
-			--organization "https://dev.azure.com/mariner-org/" \
-			--project "36d030d6-1d99-4ebd-878b-09af1f4f722f" \
-			--scope project \
-			--feed "AzureLinuxArtifacts" \
-			--name '$(BAREMETAL_IMAGE_NAME)' \
-			--version '$(BAREMETAL_IMAGE_VERSION)' \
-			--path $$tempdir) && \
-		mv $$tempdir/*.vhdx $(BAREMETAL_IMAGE) && \
-		rm -rf $$tempdir && \
-		echo $$result | jq > $(BAREMETAL_IMAGE).metadata.json
-
+	@tests/images/testimages.py download-image baremetal
 
 CORE_SELINUX_IMAGE = artifacts/core_selinux.vhdx
 $(CORE_SELINUX_IMAGE):
 	@mkdir -p artifacts
-	@tempdir=$$(mktemp -d); \
-		result=$$(az artifacts universal download \
-			--organization "https://dev.azure.com/mariner-org/" \
-			--project "36d030d6-1d99-4ebd-878b-09af1f4f722f" \
-			--scope project \
-			--feed "AzureLinuxArtifacts" \
-			--name 'core_selinux_vhdx-3.0-stable' \
-			--version '*' \
-			--path $$tempdir) && \
-		mv $$tempdir/*.vhdx $(CORE_SELINUX_IMAGE) && \
-		rm -rf $$tempdir && \
-		echo $$result | jq > $(CORE_SELINUX_IMAGE).metadata.json
+	@tests/images/testimages.py download-image core_selinux
 
 
 MINIMAL_IMAGE = artifacts/minimal.vhdx
 $(MINIMAL_IMAGE):
 	@mkdir -p artifacts
-	@tempdir=$$(mktemp -d); \
-		result=$$(az artifacts universal download \
-			--organization "https://dev.azure.com/mariner-org/" \
-			--project "36d030d6-1d99-4ebd-878b-09af1f4f722f" \
-			--scope project \
-			--feed "AzureLinuxArtifacts" \
-			--name 'minimal_vhdx-3.0-stable' \
-			--version '*' \
-			--path $$tempdir) && \
-		mv $$tempdir/*.vhdx $(MINIMAL_IMAGE) && \
-		rm -rf $$tempdir && \
-		echo $$result | jq > $(MINIMAL_IMAGE).metadata.json
+	@tests/images/testimages.py download-image minimal
 
 MINIMAL_IMAGE_AARCH64 = artifacts/minimal_aarch64.vhdx
 $(MINIMAL_IMAGE_AARCH64): 
 	@mkdir -p artifacts
-	@tempdir=$$(mktemp -d); \
-		oras pull --platform linux/arm64 --output $$tempdir mcr.microsoft.com/azurelinux/3.0/image/minimal-os:latest && \
-		mv $$tempdir/*.vhdx $(MINIMAL_IMAGE_AARCH64) && \
-		rm -rf $$tempdir
+	@tests/images/testimages.py download-image minimal_aarch64
 
 artifacts/trident-vm-grub-testimage.qcow2: \
 	$(QEMU_GUEST_IMAGE) \
 	$(TRIDENT_VM_DEPENDENCIES) \
 	$(VM_IMAGE_PATH_PREFIX)/baseimg-grub.yaml \
 	$(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub \
-	base/rpm-overrides
+	artifacts/rpm-overrides
 	@echo "Building $@ from $<"
 	docker run --rm \
 		--privileged \
@@ -961,7 +925,7 @@ artifacts/trident-vm-grub-testimage.qcow2: \
 		${MIC_CONTAINER_IMAGE} \
 			--log-level debug \
 			--rpm-source /repo/bin/RPMS \
-			--rpm-source /repo/base/rpm-overrides \
+			--rpm-source /repo/artifacts/rpm-overrides \
 			--build-dir /build \
 			--image-file /repo/$< \
 			--output-image-file /repo/$@ \
@@ -994,7 +958,7 @@ artifacts/trident-vm-grub-verity-testimage.qcow2: \
 	$(VM_IMAGE_PATH_PREFIX)/files/etc-mount.service \
 	$(VM_IMAGE_PATH_PREFIX)/files/etc-mount.sh \
 	$(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub \
-	base/rpm-overrides
+	artifacts/rpm-overrides
 	@echo "Building $@ from $<"
 	docker run --rm \
 		--privileged \
@@ -1003,7 +967,7 @@ artifacts/trident-vm-grub-verity-testimage.qcow2: \
 		${MIC_CONTAINER_IMAGE} \
 			--log-level debug \
 			--rpm-source /repo/bin/RPMS \
-			--rpm-source /repo/base/rpm-overrides \
+			--rpm-source /repo/artifacts/rpm-overrides \
 			--build-dir /build \
 			--image-file /repo/$< \
 			--output-image-file /repo/$@ \
@@ -1015,7 +979,7 @@ artifacts/trident-vm-root-verity-testimage.qcow2: \
 	$(TRIDENT_VM_DEPENDENCIES) \
 	$(VM_IMAGE_PATH_PREFIX)/baseimg-root-verity.yaml \
 	$(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub \
-	base/rpm-overrides
+	artifacts/rpm-overrides
 	@echo "Building $@ from $<"
 	docker run --rm \
 		--privileged \
@@ -1024,7 +988,7 @@ artifacts/trident-vm-root-verity-testimage.qcow2: \
 		${MIC_CONTAINER_IMAGE} \
 			--log-level debug \
 			--rpm-source /repo/bin/RPMS \
-			--rpm-source /repo/base/rpm-overrides \
+			--rpm-source /repo/artifacts/rpm-overrides \
 			--build-dir /build \
 			--image-file /repo/$< \
 			--output-image-file /repo/$@ \
@@ -1057,7 +1021,7 @@ artifacts/trident-vm-usr-verity-testimage.qcow2: \
 	$(TRIDENT_VM_DEPENDENCIES) \
 	$(VM_IMAGE_PATH_PREFIX)/baseimg-usr-verity.yaml \
 	$(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub \
-	base/rpm-overrides
+	artifacts/rpm-overrides
 	@echo "Building $@ from $<"
 	docker run --rm \
 		--privileged \
@@ -1066,7 +1030,7 @@ artifacts/trident-vm-usr-verity-testimage.qcow2: \
 		${MIC_CONTAINER_IMAGE} \
 			--log-level debug \
 			--rpm-source /repo/bin/RPMS \
-			--rpm-source /repo/base/rpm-overrides \
+			--rpm-source /repo/artifacts/rpm-overrides \
 			--build-dir /build \
 			--image-file /repo/$< \
 			--output-image-file /repo/$@ \
@@ -1080,7 +1044,7 @@ artifacts/trident-vm-grub-verity-azure-testimage.vhd: \
 	$(VM_IMAGE_PATH_PREFIX)/files/etc-mount.service \
 	$(VM_IMAGE_PATH_PREFIX)/files/etc-mount.sh \
 	$(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub \
-	base/rpm-overrides
+	artifacts/rpm-overrides
 	@echo "Building $@ from $<"
 	docker run --rm \
 		--privileged \
@@ -1089,7 +1053,7 @@ artifacts/trident-vm-grub-verity-azure-testimage.vhd: \
 		${MIC_CONTAINER_IMAGE} \
 			--log-level debug \
 			--rpm-source /repo/bin/RPMS \
-			--rpm-source /repo/base/rpm-overrides \
+			--rpm-source /repo/artifacts/rpm-overrides \
 			--build-dir /build \
 			--image-file /repo/$< \
 			--output-image-file /repo/$@ \
