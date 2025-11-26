@@ -309,6 +309,9 @@ pub enum ServicingError {
         expected_device_path: String,
     },
 
+    #[error("Failed to apply Netplan config")]
+    ApplyNetplanConfig,
+
     #[error("Failed to bind encryption to pcrlock policy")]
     BindEncryptionToPcrlockPolicy,
 
@@ -555,6 +558,9 @@ pub enum ServicingError {
 
     #[error("Failed to remove crypttab at path '{crypttab_path}'")]
     RemoveCrypttab { crypttab_path: String },
+
+    #[error("Failed to remove Netplan config")]
+    RemoveNetplanConfig,
 
     #[error("Failed to remove the pre-existing pcrlock policy")]
     RemovePcrlockPolicy,
