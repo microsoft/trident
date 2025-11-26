@@ -6,9 +6,9 @@ sidebar_position: 29
 
 # Pcr
 
-Represents the Platform Configuration Registers (PCRs) in the TPM. Each PCR is associated with a digit number and a string name.
+Represents the Platform Configuration Registers (PCRs) in the TPM 2.0 (Trusted Platform Module) used for Measured Boot and PCR encryption. Each PCR is associated with a digit number. Some are also associated with a string name, which reflects the component of the boot process that is extended into the PCR during boot. The string names below are based on the [`systemd-cryptenroll` documentation](https://www.man7.org/linux/man-pages/man1/systemd-cryptenroll.1.html).
 
-NOTE: In the current encryption logic, only the following PCRs are supported when sealing encrypted volumes against the state of TPM 2.0 device: - 4, or `boot-loader-code` - 7, or `secure-boot-policy` - 11, or `kernel-boot`.
+More information on the common PCR assignments in the Linux ecosystems are available in the [UAPI Linux TPM PCR Registry docs](https://uapi-group.org/specifications/specs/linux_tpm_pcr_registry/).
 
 | Characteristic | Value  |
 | -------------- | ------ |
@@ -16,7 +16,7 @@ NOTE: In the current encryption logic, only the following PCRs are supported whe
 
 ## Variants
 
-### variant-1
+### PCR 0
 
 PCR 0, or `platform-code`.
 
@@ -25,7 +25,7 @@ PCR 0, or `platform-code`.
 | Type           | `string` |
 | Value          | `Pcr0`   |
 
-### variant-2
+### PCR 1
 
 PCR 1, or `platform-config`.
 
@@ -34,7 +34,7 @@ PCR 1, or `platform-config`.
 | Type           | `string` |
 | Value          | `Pcr1`   |
 
-### variant-3
+### PCR 2
 
 PCR 2, or `external-code`.
 
@@ -43,7 +43,7 @@ PCR 2, or `external-code`.
 | Type           | `string` |
 | Value          | `Pcr2`   |
 
-### variant-4
+### PCR 3
 
 PCR 3, or `external-config`.
 
@@ -52,7 +52,7 @@ PCR 3, or `external-config`.
 | Type           | `string` |
 | Value          | `Pcr3`   |
 
-### variant-5
+### PCR 4
 
 PCR 4, or `boot-loader-code`.
 
@@ -61,7 +61,7 @@ PCR 4, or `boot-loader-code`.
 | Type           | `string` |
 | Value          | `Pcr4`   |
 
-### variant-6
+### PCR 5
 
 PCR 5, or `boot-loader-config`.
 
@@ -70,7 +70,7 @@ PCR 5, or `boot-loader-config`.
 | Type           | `string` |
 | Value          | `Pcr5`   |
 
-### variant-7
+### PCR 6
 
 PCR 6, or `host-platform`.
 
@@ -79,7 +79,7 @@ PCR 6, or `host-platform`.
 | Type           | `string` |
 | Value          | `Pcr6`   |
 
-### variant-8
+### PCR 7
 
 PCR 7, or `secure-boot-policy`.
 
@@ -88,7 +88,7 @@ PCR 7, or `secure-boot-policy`.
 | Type           | `string` |
 | Value          | `Pcr7`   |
 
-### variant-9
+### PCR 8
 
 PCR 8.
 
@@ -97,7 +97,7 @@ PCR 8.
 | Type           | `string` |
 | Value          | `Pcr8`   |
 
-### variant-10
+### PCR 9
 
 PCR 9, or `kernel-initrd`.
 
@@ -106,7 +106,7 @@ PCR 9, or `kernel-initrd`.
 | Type           | `string` |
 | Value          | `Pcr9`   |
 
-### variant-11
+### PCR 10
 
 PCR 10, or `ima`.
 
@@ -115,7 +115,7 @@ PCR 10, or `ima`.
 | Type           | `string` |
 | Value          | `Pcr10`  |
 
-### variant-12
+### PCR 11
 
 PCR 11, or `kernel-boot`.
 
@@ -124,7 +124,7 @@ PCR 11, or `kernel-boot`.
 | Type           | `string` |
 | Value          | `Pcr11`  |
 
-### variant-13
+### PCR 12
 
 PCR 12, or `kernel-config`.
 
@@ -133,7 +133,7 @@ PCR 12, or `kernel-config`.
 | Type           | `string` |
 | Value          | `Pcr12`  |
 
-### variant-14
+### PCR 13
 
 PCR 13, or `sysexts`.
 
@@ -142,7 +142,7 @@ PCR 13, or `sysexts`.
 | Type           | `string` |
 | Value          | `Pcr13`  |
 
-### variant-15
+### PCR 14
 
 PCR 14, or `shim-policy`.
 
@@ -151,7 +151,7 @@ PCR 14, or `shim-policy`.
 | Type           | `string` |
 | Value          | `Pcr14`  |
 
-### variant-16
+### PCR 15
 
 PCR 15, or `system-identity`.
 
@@ -160,7 +160,7 @@ PCR 15, or `system-identity`.
 | Type           | `string` |
 | Value          | `Pcr15`  |
 
-### variant-17
+### PCR 16
 
 PCR 16, or `debug`.
 
@@ -169,7 +169,7 @@ PCR 16, or `debug`.
 | Type           | `string` |
 | Value          | `Pcr16`  |
 
-### variant-18
+### PCR 17
 
 PCR 17.
 
@@ -178,7 +178,7 @@ PCR 17.
 | Type           | `string` |
 | Value          | `Pcr17`  |
 
-### variant-19
+### PCR 18
 
 PCR 18.
 
@@ -187,7 +187,7 @@ PCR 18.
 | Type           | `string` |
 | Value          | `Pcr18`  |
 
-### variant-20
+### PCR 19
 
 PCR 19.
 
@@ -196,7 +196,7 @@ PCR 19.
 | Type           | `string` |
 | Value          | `Pcr19`  |
 
-### variant-21
+### PCR 20
 
 PCR 20.
 
@@ -205,7 +205,7 @@ PCR 20.
 | Type           | `string` |
 | Value          | `Pcr20`  |
 
-### variant-22
+### PCR 21
 
 PCR 21.
 
@@ -214,7 +214,7 @@ PCR 21.
 | Type           | `string` |
 | Value          | `Pcr21`  |
 
-### variant-23
+### PCR 22
 
 PCR 22.
 
@@ -223,7 +223,7 @@ PCR 22.
 | Type           | `string` |
 | Value          | `Pcr22`  |
 
-### variant-24
+### PCR 23
 
 PCR 23, or `application-support`.
 

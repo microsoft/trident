@@ -60,4 +60,3 @@ To adopt filesystems from the above partitions:
 
 With this information, Trident will ensure that these partitions are
 preserved in the target OS.
-

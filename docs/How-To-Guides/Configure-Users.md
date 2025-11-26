@@ -34,14 +34,14 @@ By following this guide, you will:
 
 1. Add a `users` section under `os` in your Host Configuration:
 
-```yaml
-os:
-  users:
-    - name: <Desired User Name>
-      sshMode: key-only
-      sshPublicKeys:
-        - <Public SSH Key content>
-```
+   ```yaml
+   os:
+     users:
+       - name: <Desired User Name>
+         sshMode: key-only
+         sshPublicKeys:
+           - <Public SSH Key content>
+   ```
 
 2. Replace `<Desired User Name>` with your desired username.
 3. Be sure to set `sshMode` to **key-only**. The

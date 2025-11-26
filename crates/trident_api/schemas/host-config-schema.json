@@ -943,9 +943,10 @@
       ]
     },
     "Pcr": {
-      "description": "Represents the Platform Configuration Registers (PCRs) in the TPM. Each PCR is associated with a digit number and a string name.\n\nNOTE: In the current encryption logic, only the following PCRs are supported when sealing encrypted volumes against the state of TPM 2.0 device: - 4, or `boot-loader-code` - 7, or `secure-boot-policy` - 11, or `kernel-boot`.",
+      "description": "Represents the Platform Configuration Registers (PCRs) in the TPM 2.0 (Trusted Platform Module) used for Measured Boot and PCR encryption. Each PCR is associated with a digit number. Some are also associated with a string name, which reflects the component of the boot process that is extended into the PCR during boot. The string names below are based on the [`systemd-cryptenroll` documentation](https://www.man7.org/linux/man-pages/man1/systemd-cryptenroll.1.html).\n\nMore information on the common PCR assignments in the Linux ecosystems are available in the [UAPI Linux TPM PCR Registry docs](https://uapi-group.org/specifications/specs/linux_tpm_pcr_registry/).",
       "oneOf": [
         {
+          "title": "PCR 0",
           "description": "PCR 0, or `platform-code`.",
           "type": "string",
           "enum": [
@@ -953,6 +954,7 @@
           ]
         },
         {
+          "title": "PCR 1",
           "description": "PCR 1, or `platform-config`.",
           "type": "string",
           "enum": [
@@ -960,6 +962,7 @@
           ]
         },
         {
+          "title": "PCR 2",
           "description": "PCR 2, or `external-code`.",
           "type": "string",
           "enum": [
@@ -967,6 +970,7 @@
           ]
         },
         {
+          "title": "PCR 3",
           "description": "PCR 3, or `external-config`.",
           "type": "string",
           "enum": [
@@ -974,6 +978,7 @@
           ]
         },
         {
+          "title": "PCR 4",
           "description": "PCR 4, or `boot-loader-code`.",
           "type": "string",
           "enum": [
@@ -981,6 +986,7 @@
           ]
         },
         {
+          "title": "PCR 5",
           "description": "PCR 5, or `boot-loader-config`.",
           "type": "string",
           "enum": [
@@ -988,6 +994,7 @@
           ]
         },
         {
+          "title": "PCR 6",
           "description": "PCR 6, or `host-platform`.",
           "type": "string",
           "enum": [
@@ -995,6 +1002,7 @@
           ]
         },
         {
+          "title": "PCR 7",
           "description": "PCR 7, or `secure-boot-policy`.",
           "type": "string",
           "enum": [
@@ -1002,6 +1010,7 @@
           ]
         },
         {
+          "title": "PCR 8",
           "description": "PCR 8.",
           "type": "string",
           "enum": [
@@ -1009,6 +1018,7 @@
           ]
         },
         {
+          "title": "PCR 9",
           "description": "PCR 9, or `kernel-initrd`.",
           "type": "string",
           "enum": [
@@ -1016,6 +1026,7 @@
           ]
         },
         {
+          "title": "PCR 10",
           "description": "PCR 10, or `ima`.",
           "type": "string",
           "enum": [
@@ -1023,6 +1034,7 @@
           ]
         },
         {
+          "title": "PCR 11",
           "description": "PCR 11, or `kernel-boot`.",
           "type": "string",
           "enum": [
@@ -1030,6 +1042,7 @@
           ]
         },
         {
+          "title": "PCR 12",
           "description": "PCR 12, or `kernel-config`.",
           "type": "string",
           "enum": [
@@ -1037,6 +1050,7 @@
           ]
         },
         {
+          "title": "PCR 13",
           "description": "PCR 13, or `sysexts`.",
           "type": "string",
           "enum": [
@@ -1044,6 +1058,7 @@
           ]
         },
         {
+          "title": "PCR 14",
           "description": "PCR 14, or `shim-policy`.",
           "type": "string",
           "enum": [
@@ -1051,6 +1066,7 @@
           ]
         },
         {
+          "title": "PCR 15",
           "description": "PCR 15, or `system-identity`.",
           "type": "string",
           "enum": [
@@ -1058,6 +1074,7 @@
           ]
         },
         {
+          "title": "PCR 16",
           "description": "PCR 16, or `debug`.",
           "type": "string",
           "enum": [
@@ -1065,6 +1082,7 @@
           ]
         },
         {
+          "title": "PCR 17",
           "description": "PCR 17.",
           "type": "string",
           "enum": [
@@ -1072,6 +1090,7 @@
           ]
         },
         {
+          "title": "PCR 18",
           "description": "PCR 18.",
           "type": "string",
           "enum": [
@@ -1079,6 +1098,7 @@
           ]
         },
         {
+          "title": "PCR 19",
           "description": "PCR 19.",
           "type": "string",
           "enum": [
@@ -1086,6 +1106,7 @@
           ]
         },
         {
+          "title": "PCR 20",
           "description": "PCR 20.",
           "type": "string",
           "enum": [
@@ -1093,6 +1114,7 @@
           ]
         },
         {
+          "title": "PCR 21",
           "description": "PCR 21.",
           "type": "string",
           "enum": [
@@ -1100,6 +1122,7 @@
           ]
         },
         {
+          "title": "PCR 22",
           "description": "PCR 22.",
           "type": "string",
           "enum": [
@@ -1107,6 +1130,7 @@
           ]
         },
         {
+          "title": "PCR 23",
           "description": "PCR 23, or `application-support`.",
           "type": "string",
           "enum": [
