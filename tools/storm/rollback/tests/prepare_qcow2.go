@@ -14,6 +14,8 @@ import (
 )
 
 const IMAGE_CUSTOMIZER_CONFIG_TEMPLATE = `# config.yaml
+previewFeatures:
+- reinitialize-verity
 os:
   additionalFiles:
   - source: %s
