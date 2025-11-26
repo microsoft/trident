@@ -84,7 +84,6 @@ func buildImage(extType string, numClones int) error {
 			return fmt.Errorf("failed to write %s extension-release file %s: %w", extType, extensionReleaseFile, err)
 		}
 
-		logrus.Infof("bcf: %s %d", extType, i)
 		if extType == "sysext" {
 			// Create script that outputs version
 			binDir := fmt.Sprintf("%s-image-%d/usr/bin", extType, i)
