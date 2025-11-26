@@ -132,6 +132,11 @@ pub(crate) trait Subsystem: Send {
     fn update_host_configuration(&self, _ctx: &mut EngineContext) -> Result<(), TridentError> {
         Ok(())
     }
+
+    /// Clean up any temporary files and directories.
+    fn clean_up(&self) -> Result<(), TridentError> {
+        Ok(())
+    }
 }
 
 lazy_static::lazy_static! {
@@ -402,6 +407,30 @@ fn update_host_configuration(
         }
     }
     debug!("Finished step 'Update Host Configuration'");
+    Ok(())
+}
+
+#[allow(dead_code)]
+fn clean_up(subsystems: &[Box<dyn Subsystem>], ctx: &EngineContext) -> Result<(), TridentError> {
+    info!("Starting step 'Clean Up'");
+    for subsystem in subsystems {
+        if subsystem.runs_on_servicing_type(ctx) {
+            debug!(
+                "Starting step 'Clean Up' for subsystem '{}'",
+                subsystem.name()
+            );
+            subsystem.clean_up().message(format!(
+                "Step 'Clean Up' failed for subsystem '{}'",
+                subsystem.name()
+            ))?;
+        } else {
+            debug!(
+                "Skipping step 'Clean Up' for subsystem '{}'",
+                subsystem.name()
+            );
+        }
+    }
+    debug!("Finished step 'Clean Up'");
     Ok(())
 }
 

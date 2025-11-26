@@ -10,7 +10,11 @@ use anyhow::{bail, ensure, Context, Error};
 use log::{trace, warn};
 use tempfile::NamedTempFile;
 
-use osutils::{container, dependencies::Dependency, path};
+use osutils::{
+    container,
+    dependencies::{Dependency, DependencyResultExt},
+    path,
+};
 use trident_api::{
     config::Extension,
     constants::internal_params::HTTP_CONNECTION_TIMEOUT_SECONDS,
@@ -101,18 +105,20 @@ impl Subsystem for ExtensionsSubsystem {
     }
 
     fn prepare(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
-        if ctx.servicing_type != ServicingType::RuntimeUpdate {
-            return Ok(());
+        if ctx.servicing_type == ServicingType::RuntimeUpdate {
+            // Define staging directory and ensure that it is empty.
+            self.staging_dir = PathBuf::from(EXTENSION_IMAGE_STAGING_DIRECTORY);
+            trace!(
+                "Defining staging directory for extension images at '{}'",
+                self.staging_dir.display()
+            );
+            fs::remove_dir_all(&self.staging_dir).structured(InternalError::Internal(
+                "Failed to remove extension image staging directory",
+            ))?;
+            // Download new extension images. Mount and process all extension images.
+            self.populate_extensions(ctx)
+                .structured(InternalError::PopulateExtensionImages)?;
         }
-        // Define staging directory and ensure that it is empty.
-        self.staging_dir = PathBuf::from(EXTENSION_IMAGE_STAGING_DIRECTORY);
-        fs::remove_dir_all(&self.staging_dir).structured(InternalError::Internal(
-            "Failed to remove extension image staging directory",
-        ))?;
-
-        // Download new extension images. Mount and process all extension images.
-        self.populate_extensions(ctx)
-            .structured(InternalError::PopulateExtensionImages)?;
         Ok(())
     }
 
@@ -120,6 +126,10 @@ impl Subsystem for ExtensionsSubsystem {
         if ctx.servicing_type != ServicingType::RuntimeUpdate {
             // Define staging directory and ensure that it is empty.
             self.staging_dir = path::join_relative(mount_path, EXTENSION_IMAGE_STAGING_DIRECTORY);
+            trace!(
+                "Defining staging directory for extension images at '{}'",
+                self.staging_dir.display()
+            );
             fs::remove_dir_all(&self.staging_dir).structured(InternalError::Internal(
                 "Failed to remove extension image staging directory",
             ))?;
@@ -137,11 +147,22 @@ impl Subsystem for ExtensionsSubsystem {
         self.set_up_extensions(mount_path, ctx.servicing_type)
             .structured(InternalError::SetUpExtensionImages)?;
 
-        // Clean-up staging directory. Recursively remove all contents of
-        // staging directory as well as the directory itself.
-        fs::remove_dir_all(&self.staging_dir).structured(InternalError::Internal(
-            "Failed to remove extension image staging directory",
-        ))?;
+        if ctx.servicing_type == ServicingType::RuntimeUpdate {
+            if ctx.spec.os.sysexts != ctx.spec_old.os.sysexts {
+                Dependency::SystemdSysext
+                    .cmd()
+                    .arg("refresh")
+                    .run_and_check()
+                    .message("Failed to refresh sysexts on OS")?;
+            }
+            if ctx.spec.os.confexts != ctx.spec_old.os.confexts {
+                Dependency::SystemdConfext
+                    .cmd()
+                    .arg("refresh")
+                    .run_and_check()
+                    .message("Failed to refresh confexts on the OS")?;
+            }
+        }
 
         Ok(())
     }
@@ -184,6 +205,14 @@ impl Subsystem for ExtensionsSubsystem {
             })?;
 
         Ok(())
+    }
+
+    fn clean_up(&self) -> Result<(), TridentError> {
+        // Clean-up staging directory. Recursively remove all contents of
+        // staging directory as well as the directory itself.
+        fs::remove_dir_all(&self.staging_dir).structured(InternalError::Internal(
+            "Failed to remove extension image staging directory",
+        ))
     }
 }
 
