@@ -62,6 +62,8 @@ func PrepareQcow2(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 		filepath.Join("/artifacts", extensionFileName),
 		extensionFileName,
 	)
+	logrus.Tracef("Creating image customizer config file: %s", customizerConfigPath)
+	logrus.Tracef("Image customizer config content:\n%s", customizerConfigContent)
 	if err := os.WriteFile(customizerConfigPath, []byte(customizerConfigContent), 0644); err != nil {
 		return fmt.Errorf("failed to write image customizer config file: %w", err)
 	}

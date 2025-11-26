@@ -130,7 +130,9 @@ stages:
               verboseLogging: ${{ parameters.verboseLogging }}
               platform: qemu
               flavor: qemu
-              skipExtensionTesting: false
+              # qemu image is grub + root verity. in this setup, Image Customizer cannot add
+              # an extension to the servicing qcow2
+              skipExtensionTesting: true
       - ${{ if eq(parameters.includeUKI, true) }}:
           - template: testing-template.yml
             parameters:
