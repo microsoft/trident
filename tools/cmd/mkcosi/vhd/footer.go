@@ -117,7 +117,7 @@ func CreateVpcFooter(fileSize uint64) ([VPCFooterSize]byte, error) {
 
 	// Calculate and set checksum (one's complement of sum of all bytes except checksum)
 	checksum := uint32(0)
-	for i := 0; i < 512; i++ {
+	for i := 0; i < VPCFooterSize; i++ {
 		if i < checksumOffset || i >= checksumOffset+4 {
 			checksum += uint32(footer[i])
 		}
