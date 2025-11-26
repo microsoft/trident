@@ -12,7 +12,7 @@ use trident_api::{
 };
 
 use crate::{
-    engine::{EngineContext, Subsystem},
+    engine::{EngineContext, Subsystem, REQUIRES_REBOOT, RUNS_ON_ALL},
     OS_MODIFIER_BINARY_PATH, OS_MODIFIER_NEWROOT_PATH,
 };
 
@@ -58,6 +58,22 @@ fn should_carry_over_hostname(ctx: &EngineContext) -> bool {
         && ctx.servicing_type == ServicingType::AbUpdate
 }
 
+/// Returns whether a Runtime Update is sufficient or if an A/B Update is required.
+fn runtime_update_sufficient(ctx: &EngineContext) -> bool {
+    let old_os = &ctx.spec_old.os;
+    let new_os = &ctx.spec.os;
+
+    // Sysexts and confexts are not checked as they can be updated in a runtime
+    // update. Netplan configuration is handled in network subsystem. Additional
+    // files are handled in the hooks subsystem.
+    old_os.users == new_os.users
+        && old_os.hostname == new_os.hostname
+        && old_os.modules == new_os.modules
+        && old_os.services == new_os.services
+        && old_os.kernel_command_line == new_os.kernel_command_line
+        && old_os.selinux == new_os.selinux
+}
+
 #[derive(Default, Debug)]
 pub struct OsConfigSubsystem {
     prev_hostname: Option<String>,
@@ -65,6 +81,13 @@ pub struct OsConfigSubsystem {
 impl Subsystem for OsConfigSubsystem {
     fn name(&self) -> &'static str {
         "os-config"
+    }
+
+    fn runs_on(&self, ctx: &EngineContext) -> &[ServicingType] {
+        if runtime_update_sufficient(ctx) {
+            return RUNS_ON_ALL;
+        }
+        REQUIRES_REBOOT
     }
 
     fn validate_host_config(&self, ctx: &EngineContext) -> Result<(), TridentError> {

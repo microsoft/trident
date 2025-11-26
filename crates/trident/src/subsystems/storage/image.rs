@@ -7,10 +7,10 @@ use trident_api::{
 
 use crate::engine::EngineContext;
 
-/// Checks if the host needs an A/B update. First, compares the partition images in the specs. If
-/// the partition images have not been updated, checks if the new Host Configuration requests an OS
-/// image. If yes, update is needed, unless the old Host Configuration also requested an OS image
-/// and the URLs and SHA256 checksums are the same.
+/// Checks if the host needs an A/B update. Checks if the new Host Configuration
+/// requests an OS image. If yes, update is needed, unless the old Host
+/// Configuration also requested an OS image and the URLs and SHA256 checksums
+/// are the same.
 pub(super) fn ab_update_required(ctx: &EngineContext) -> Result<bool, TridentError> {
     debug!("Checking OS image to determine if an A/B update is required");
     // Otherwise, continue checking OS images
