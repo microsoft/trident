@@ -101,7 +101,7 @@ impl Subsystem for ExtensionsSubsystem {
     }
 
     fn prepare(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
-        if ctx.servicing_type != ServicingType::HotPatch {
+        if ctx.servicing_type != ServicingType::RuntimeUpdate {
             return Ok(());
         }
         // Define staging directory and ensure that it is empty.
@@ -117,7 +117,7 @@ impl Subsystem for ExtensionsSubsystem {
     }
 
     fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
-        if ctx.servicing_type != ServicingType::HotPatch {
+        if ctx.servicing_type != ServicingType::RuntimeUpdate {
             // Define staging directory and ensure that it is empty.
             self.staging_dir = path::join_relative(mount_path, EXTENSION_IMAGE_STAGING_DIRECTORY);
             fs::remove_dir_all(&self.staging_dir).structured(InternalError::Internal(
@@ -1306,7 +1306,7 @@ mod functional_test {
     }
 
     #[functional_test]
-    fn test_set_up_extensions_update_replace_hotpatch() {
+    fn test_set_up_extensions_update_replace_runtime_update() {
         // Test scenario where an old sysext and a new sysext match on ID, and
         // an update is required (mismatched hashes), on a hot patch update.
         // Create old extension.
@@ -1454,7 +1454,7 @@ mod functional_test {
     }
 
     #[functional_test]
-    fn test_set_up_extensions_update_maintain_hotpatch() {
+    fn test_set_up_extensions_update_maintain_runtime_update() {
         // Test scenario where an old sysext and a new sysext match on ID, and
         // an update is NOT required (matching hashes), on a hot patch update.
         // Create old extension.
