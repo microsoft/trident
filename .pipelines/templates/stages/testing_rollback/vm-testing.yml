@@ -58,7 +58,7 @@ parameters:
     default: ""
 
 stages:
-  - ${{ if eq(parameters.testingRun, false) }}:
+  # - ${{ if eq(parameters.testingRun, false) }}:
       # GRUB + Root Verity: works locally, but in pipeline, VM cannot be reconnected
       # after first A/B update
       #
