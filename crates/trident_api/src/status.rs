@@ -64,19 +64,15 @@ pub struct HostStatus {
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub enum ServicingType {
-    /// Update that can be applied without pausing the workload.
-    HotPatch = 0,
-    /// Update that requires pausing the workload.
-    NormalUpdate = 1,
-    /// Update that requires rebooting the host.
-    UpdateAndReboot = 2,
-    /// Update that requires switching to a different root partition and rebooting.
-    AbUpdate = 3,
-    /// Clean install of the target OS image when the host is booted from the provisioning OS.
-    CleanInstall = 4,
     /// No servicing is currently in progress.
     #[default]
-    NoActiveServicing = 5,
+    NoActiveServicing = 0,
+    /// Update that can be applied without necessitating a reboot.
+    RuntimeUpdate = 1,
+    /// Update that requires switching to a different root partition and rebooting.
+    AbUpdate = 2,
+    /// Clean install of the target OS image when the host is booted from the provisioning OS.
+    CleanInstall = 3,
 }
 
 /// Servicing state describes the progress of the servicing that the Trident agent is executing on

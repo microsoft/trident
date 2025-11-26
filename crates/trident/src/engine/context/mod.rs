@@ -83,10 +83,8 @@ impl EngineContext {
         match self.servicing_type {
             // If there is no servicing in progress, update volume is None.
             ServicingType::NoActiveServicing => None,
-            // If host is executing a "normal" update, active and update volumes are the same.
-            ServicingType::HotPatch
-            | ServicingType::NormalUpdate
-            | ServicingType::UpdateAndReboot => self.ab_active_volume,
+            // If host is executing a runtime update, active and update volumes are the same.
+            ServicingType::RuntimeUpdate => self.ab_active_volume,
             // If host is executing an A/B update, update volume is the opposite of active volume.
             ServicingType::AbUpdate => {
                 if self.ab_active_volume == Some(AbVolumeSelection::VolumeA) {

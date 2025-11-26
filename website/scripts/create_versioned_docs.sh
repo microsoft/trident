@@ -46,11 +46,11 @@ check_gh_cli() {
 get_releases() {
     local include_prerelease="$1"
     if [[ "$include_prerelease" == "true" ]]; then
-        # Get all releases (including prereleases)
-        releases=$(gh api "repos/${REPO}/releases" --jq ".[] | .name" --paginate)
+        # Get all releases (including prereleases, but excluding drafts)
+        releases=$(gh api "repos/${REPO}/releases" --jq ".[] | select(.draft==false) | .name" --paginate)
     else
-        # Get only non-prerelease releases (exclude prereleases)
-        releases=$(gh api "repos/${REPO}/releases" --jq ".[] | select(.prerelease==false) | .name" --paginate)
+        # Get only non-prerelease releases (exclude prereleases and drafts)
+        releases=$(gh api "repos/${REPO}/releases" --jq ".[] | select(.prerelease==false and .draft==false) | .name" --paginate)
     fi
     echo "$releases"
 }

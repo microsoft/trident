@@ -4,9 +4,12 @@ use anyhow::Context;
 use log::debug;
 
 use osutils::netplan;
-use trident_api::error::{ReportError, ServicingError, TridentError};
+use trident_api::{
+    error::{ReportError, ServicingError, TridentError},
+    status::ServicingType,
+};
 
-use crate::engine::{EngineContext, Subsystem};
+use crate::engine::{EngineContext, Subsystem, RUNS_ON_ALL};
 
 const CLOUD_INIT_CONFIG_DIR: &str = "/etc/cloud/cloud.cfg.d";
 const CLOUD_INIT_DISABLE_FILE: &str = "99-use-trident-networking.cfg";
@@ -17,6 +20,10 @@ pub struct NetworkSubsystem;
 impl Subsystem for NetworkSubsystem {
     fn name(&self) -> &'static str {
         "network"
+    }
+
+    fn runs_on(&self, _ctx: &EngineContext) -> &[ServicingType] {
+        RUNS_ON_ALL
     }
 
     #[tracing::instrument(name = "network_configuration", skip_all)]
