@@ -5,7 +5,6 @@ import (
 	"os"
 	"tridenttools/cmd/mkcosi/builder"
 	"tridenttools/cmd/mkcosi/cosi"
-	"tridenttools/cmd/mkcosi/metadata"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -29,16 +28,12 @@ func (t *InsertTemplate) Run() error {
 	}
 	defer cosi.Close()
 
-	// Add the template to the COSI.
-	sha384, err := builder.Sha384SumFile(t.Template)
+	// Read the template file
+	template, err := os.ReadFile(t.Template)
 	if err != nil {
-		return fmt.Errorf("failed to calculate sha384 of %s: %w", t.Template, err)
+		return fmt.Errorf("failed to read template file: %w", err)
 	}
-	cosi.Metadata.HostConfigurationTemplate = &metadata.AuxiliaryFile{
-		Path:       HostConfigurationTemplateFilename,
-		Sha384:     sha384,
-		SourceFile: t.Template,
-	}
+	cosi.Metadata.HostConfigurationTemplate = string(template)
 
 	// Write the new COSI file.
 	outFile, err := os.Create(t.Output)

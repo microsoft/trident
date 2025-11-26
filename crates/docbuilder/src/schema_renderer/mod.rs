@@ -9,23 +9,30 @@ use log::info;
 use trident_api::schemars::schema::{RootSchema, SchemaObject};
 
 mod characteristics;
+mod docusaurus;
 pub(crate) mod node;
-mod renderer;
+pub(crate) mod renderer;
 mod tera_context;
 mod tera_extensions;
 
 use node::SchemaNodeModel;
 use renderer::{NodeRenderer, Page};
 
+use crate::schema_renderer::docusaurus::FrontMatter;
+
 use self::tera_context::TeraContextFactory;
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub(crate) struct SchemaDocSettings {
     /// Whether to create a DevOps wiki order file
     pub devops_wiki: bool,
 
     /// Whether to use docfx-only features
     pub docfx: bool,
+
+    /// Whether to use docusaurus-specific features, and the path to the root of
+    /// the docusaurus site.
+    pub docusaurus: Option<PathBuf>,
 }
 
 pub(crate) struct SchemaDocBuilder {
@@ -80,13 +87,24 @@ impl SchemaDocBuilder {
                         p.relative_path
                             .with_extension("")
                             .file_name()
-                            .expect("The page doe snot contain a filename!")
+                            .expect("The page does not contain a filename!")
                             .to_string_lossy()
                             .to_string()
                     })
                     .collect::<Vec<_>>()
                     .join("\n"),
             });
+        }
+
+        // Special handling for docusaurus
+        if self.settings.docusaurus.is_some() {
+            // Inject front matter into each page
+            for (index, page) in pages.iter_mut().enumerate() {
+                let fm = FrontMatter::default()
+                    .with_field("sidebar_position", (index + 1).to_string())
+                    .render();
+                page.content = format!("{}{}", fm, page.content);
+            }
         }
 
         Ok(pages)
