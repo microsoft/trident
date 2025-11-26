@@ -22,15 +22,13 @@ parameters:
   - name: includeQemuGrub
     displayName: "Include qemu grub testing"
     type: boolean
-    default: true
+    # Expect GRUB w/o verity to succeed and it works locally, but
+    # fails in pipeline to reconnect to VM after first A/B update,
+    # so default to false for now
+    default: false
 
   - name: includeQemu
     displayName: "Include qemu testing"
-    type: boolean
-    default: false
-
-  - name: includeAzure
-    displayName: "Include Azure testing"
     type: boolean
     default: false
 
@@ -58,39 +56,36 @@ parameters:
     default: ""
 
 stages:
-  # - ${{ if eq(parameters.testingRun, false) }}:
-      # GRUB w/o verity: works locally, but in pipeline, VM cannot be reconnected
-      # after first A/B update
-      #
-      # - ${{ if eq(parameters.includeQemuGrub, true) }}:
-      #     - stage: BuildImagesQemuGrub
-      #       displayName: Build Base and Update Images for QEMU GRUB
-      #       dependsOn:
-      #         - PrepareSSHKeys
-      #         - GetTridentBinaries_rpms_amd64
-      #         - ${{ if ne(parameters.dependsOnStage, '') }}:
-      #             - ${{ parameters.dependsOnStage }}
+  - ${{ if eq(parameters.testingRun, false) }}:
+      - ${{ if eq(parameters.includeQemuGrub, true) }}:
+          - stage: BuildImagesQemuGrub
+            displayName: Build Base and Update Images for QEMU GRUB
+            dependsOn:
+              - PrepareSSHKeys
+              - GetTridentBinaries_rpms_amd64
+              - ${{ if ne(parameters.dependsOnStage, '') }}:
+                  - ${{ parameters.dependsOnStage }}
 
-      #       jobs:
-      #         - template: ../testing_servicing/build-image.yml
-      #           parameters:
-      #             label: "qemu-grub-base"
-      #             makeTarget: "artifacts/trident-vm-grub-testimage.qcow2"
-      #             baseimgType: qemu_guest
-      #             baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-      #             micBuildType: ${{ parameters.micBuildType }}
-      #             micVersion: ${{ parameters.micVersion }}
-      #             useStagedSshKeys: true
+            jobs:
+              - template: ../testing_servicing/build-image.yml
+                parameters:
+                  label: "qemu-grub-base"
+                  makeTarget: "artifacts/trident-vm-grub-testimage.qcow2"
+                  baseimgType: qemu_guest
+                  baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+                  micBuildType: ${{ parameters.micBuildType }}
+                  micVersion: ${{ parameters.micVersion }}
+                  useStagedSshKeys: true
 
-      #         - template: ../testing_servicing/build-image.yml
-      #           parameters:
-      #             label: "qemu-grub-update-a"
-      #             makeTarget: "artifacts/trident-vm-grub-testimage.cosi"
-      #             baseimgType: qemu_guest
-      #             baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-      #             micBuildType: ${{ parameters.micBuildType }}
-      #             micVersion: ${{ parameters.micVersion }}
-      #             useStagedSshKeys: true
+              - template: ../testing_servicing/build-image.yml
+                parameters:
+                  label: "qemu-grub-update-a"
+                  makeTarget: "artifacts/trident-vm-grub-testimage.cosi"
+                  baseimgType: qemu_guest
+                  baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+                  micBuildType: ${{ parameters.micBuildType }}
+                  micVersion: ${{ parameters.micVersion }}
+                  useStagedSshKeys: true
 
   - stage: RuntimeUpdateAndRollbackTesting
     displayName: Runtime Update and Rollback Testing
@@ -99,14 +94,12 @@ stages:
           - DownloadTestingElements
       - ${{ else }}:
           - BuildingTools
-          # - ${{ if eq(parameters.includeQemuGrub, true) }}:
-          #     - BuildImagesQemuGrub
+          - ${{ if eq(parameters.includeQemuGrub, true) }}:
+              - BuildImagesQemuGrub
           - ${{ if eq(parameters.includeQemu, true) }}:
               - BuildImagesQemu
           - ${{ if eq(parameters.includeUKI, true) }}:
               - BuildImagesUKI
-          # - ${{ if eq(parameters.includeAzure, true) }}:
-          #     - BuildImagesAzure
 
     variables:
       - group: servicing_testing_params
@@ -118,14 +111,14 @@ stages:
         value: "trident-vm-grub-verity-testimage-$(System.DefinitionId)"
 
     jobs:
-      # - ${{ if eq(parameters.includeQemuGrub, true) }}:
-      #     - template: testing-template.yml
-      #       parameters:
-      #         updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
-      #         verboseLogging: ${{ parameters.verboseLogging }}
-      #         platform: qemu
-      #         flavor: qemu-grub
-      #         skipExtensionTesting: false
+      - ${{ if eq(parameters.includeQemuGrub, true) }}:
+          - template: testing-template.yml
+            parameters:
+              updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
+              verboseLogging: ${{ parameters.verboseLogging }}
+              platform: qemu
+              flavor: qemu-grub
+              skipExtensionTesting: false
       - ${{ if eq(parameters.includeQemu, true) }}:
           - template: testing-template.yml
             parameters:
@@ -144,11 +137,3 @@ stages:
               platform: qemu
               flavor: uki
               skipExtensionTesting: false
-      # - ${{ if eq(parameters.includeAzure, true) }}:
-      #     - template: testing-template.yml
-      #       parameters:
-      #         updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
-      #         verboseLogging: ${{ parameters.verboseLogging }}
-      #         platform: azure
-      #         flavor: azure
-      #         skipExtensionTesting: false
