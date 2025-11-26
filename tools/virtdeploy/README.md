@@ -89,9 +89,9 @@ sudo apt-get update
 ```bash
 sudo NEEDRESTART_MODE=a apt-get install -y \
     virt-manager \
-    qemu-efi \
+    qemu-efi=2022.02-3ubuntu0.22.04.3 \
     python3-libvirt \
-    ovmf \
+    ovmf=2022.02-3ubuntu0.22.04.3 \
     openssl \
     python3-netifaces \
     python3-docker \
