@@ -3,7 +3,9 @@ package utils
 import (
 	"fmt"
 	"net/url"
+	"os"
 	"os/exec"
+	"path/filepath"
 
 	libvirtxml "libvirt.org/libvirt-go-xml"
 
@@ -134,4 +136,51 @@ func (vm *LibvirtVm) Disconnect() {
 	if err := vm.libvirt.Disconnect(); err != nil {
 		logrus.Errorf("failed to disconnect from libvirt: %s", err.Error())
 	}
+}
+
+// CaptureScreenshot captures a screenshot of the specified VM and saves it as a PNG file.
+// It creates a temporary PPM file, captures the screenshot using virsh, converts it to PNG
+// using ImageMagick, and saves it to the specified artifacts folder.
+//
+// Parameters:
+//   - vmName: Name of the VM to capture
+//   - artifactsFolder: Directory where the screenshot will be saved
+//   - screenshotFilename: Name of the PNG file to create
+//
+// Returns an error if screenshot capture, conversion, or file operations fail.
+func CaptureScreenshot(vmName string, artifactsFolder string, screenshotFilename string) error {
+	ppmFilename, err := os.CreateTemp("", "ppm")
+	if err != nil {
+		return fmt.Errorf("failed to create temporary file: %w", err)
+	}
+	ppmFilename.Close()
+	defer os.Remove(ppmFilename.Name())
+
+	err = capturePpmScreenshot(vmName, ppmFilename.Name())
+	if err != nil {
+		return fmt.Errorf("failed to create PPM screenshot: %w", err)
+	}
+
+	err = os.MkdirAll(artifactsFolder, 0755)
+	if err != nil {
+		return fmt.Errorf("failed to create artifacts folder: %w", err)
+	}
+
+	pngPath := filepath.Join(artifactsFolder, screenshotFilename)
+	if err := convertPpmToPng(ppmFilename.Name(), pngPath); err != nil {
+		return fmt.Errorf("failed to convert PPM to PNG: %w", err)
+	}
+	return nil
+}
+
+func capturePpmScreenshot(vmName string, ppmFilename string) error {
+	virshOutput, virshErr := exec.Command("sudo", "virsh", "screenshot", vmName, ppmFilename).CombinedOutput()
+	logrus.Tracef("virsh screenshot output: %s\n%v", string(virshOutput), virshErr)
+	return virshErr
+}
+
+func convertPpmToPng(ppmPath string, pngPath string) error {
+	virshOutput, virshErr := exec.Command("convert", ppmPath, pngPath).CombinedOutput()
+	logrus.Tracef("convert output: %s\n%v", string(virshOutput), virshErr)
+	return virshErr
 }
