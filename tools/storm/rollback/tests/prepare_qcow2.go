@@ -29,6 +29,10 @@ os:
 // Use Image Customizer to prepare the qcow2 image for rollback testing
 // by injecting the extension v1.0.0
 func PrepareQcow2(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmconfig.AllVMConfig) error {
+	if testConfig.SkipExtensionTesting {
+		logrus.Infof("Skipping qcow2 preparation since SkipExtensionTesting is set")
+		return nil
+	}
 	// Find existing image file
 	imageFilePath, err := stormfile.FindFile(testConfig.ArtifactsDir, vmConfig.QemuConfig.Qcow2Pattern)
 	if err != nil {
