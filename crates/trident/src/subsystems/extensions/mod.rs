@@ -112,9 +112,11 @@ impl Subsystem for ExtensionsSubsystem {
                 "Defining staging directory for extension images at '{}'",
                 self.staging_dir.display()
             );
-            fs::remove_dir_all(&self.staging_dir).structured(InternalError::Internal(
-                "Failed to remove extension image staging directory",
-            ))?;
+            if self.staging_dir.is_dir() {
+                fs::remove_dir_all(&self.staging_dir).structured(InternalError::Internal(
+                    "Failed to remove extension image staging directory",
+                ))?;
+            }
             // Download new extension images. Mount and process all extension images.
             self.populate_extensions(ctx)
                 .structured(InternalError::PopulateExtensionImages)?;
@@ -130,9 +132,11 @@ impl Subsystem for ExtensionsSubsystem {
                 "Defining staging directory for extension images at '{}'",
                 self.staging_dir.display()
             );
-            fs::remove_dir_all(&self.staging_dir).structured(InternalError::Internal(
-                "Failed to remove extension image staging directory",
-            ))?;
+            if self.staging_dir.is_dir() {
+                fs::remove_dir_all(&self.staging_dir).structured(InternalError::Internal(
+                    "Failed to remove extension image staging directory",
+                ))?;
+            }
             // Download new extension images. Mount and process all extension images.
             self.populate_extensions(ctx)
                 .structured(InternalError::PopulateExtensionImages)?;
@@ -210,9 +214,12 @@ impl Subsystem for ExtensionsSubsystem {
     fn clean_up(&self) -> Result<(), TridentError> {
         // Clean-up staging directory. Recursively remove all contents of
         // staging directory as well as the directory itself.
-        fs::remove_dir_all(&self.staging_dir).structured(InternalError::Internal(
-            "Failed to remove extension image staging directory",
-        ))
+        if self.staging_dir.is_dir() {
+            fs::remove_dir_all(&self.staging_dir).structured(InternalError::Internal(
+                "Failed to remove extension image staging directory",
+            ))?;
+        }
+        Ok(())
     }
 }
 
