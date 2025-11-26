@@ -301,7 +301,7 @@ func doUpdateTest(
 	extensionVersion int,
 	expectedVolume string,
 	expectedAvailableRollbacks int,
-	expecteReboot bool,
+	expectReboot bool,
 ) error {
 	// Put Host Configuration on VM
 	vmHostConfigPath := "/tmp/host_config.yaml"
@@ -329,19 +329,22 @@ func doUpdateTest(
 	logrus.Tracef("Invoking `trident update` on VM")
 	updateOutput, err := stormssh.SshCommandCombinedOutput(vmConfig.VMConfig, vmIP, fmt.Sprintf("sudo trident update %s", vmHostConfigPath))
 	logrus.Tracef("Update output (%v):\n%s", err, updateOutput)
-	if !expecteReboot && err != nil {
+	if !expectReboot && err != nil {
 		// Ignore error from ssh if reboot was expected, but otherwise
 		// an error should end the test
 		return fmt.Errorf("failed to update: %w", err)
 	}
 	logrus.Tracef("`trident update` invoked on VM")
-	// Wait for update to complete
-	logrus.Tracef("Waiting for VM to come back up after update")
-	err = vmConfig.QemuConfig.WaitForLogin(vmConfig.VMConfig.Name, testConfig.OutputPath, testConfig.Verbose, 0)
-	if err != nil {
-		return fmt.Errorf("VM did not come back up after update: %w", err)
+
+	if expectReboot {
+		// Wait for update to complete
+		logrus.Tracef("Waiting for VM to come back up after update")
+		err = vmConfig.QemuConfig.WaitForLogin(vmConfig.VMConfig.Name, testConfig.OutputPath, testConfig.Verbose, 0)
+		if err != nil {
+			return fmt.Errorf("VM did not come back up after update: %w", err)
+		}
+		logrus.Tracef("VM ready after update")
 	}
-	logrus.Tracef("VM ready after update")
 
 	// Check VM IP
 	newVmIP, err := stormvm.GetVmIP(vmConfig)
@@ -379,13 +382,16 @@ func doRollbackTest(
 		return fmt.Errorf("failed to invoke rollback (%w):\n%s", err, updateOutput)
 	}
 	logrus.Tracef("`trident rollback` invoked on VM")
-	// Wait for rollback to complete
-	logrus.Tracef("Waiting for VM to come back up after rollback")
-	err = vmConfig.QemuConfig.WaitForLogin(vmConfig.VMConfig.Name, testConfig.OutputPath, testConfig.Verbose, 0)
-	if err != nil {
-		return fmt.Errorf("VM did not come back up after rollback: %w", err)
+
+	if expectReboot {
+		// Wait for rollback to complete
+		logrus.Tracef("Waiting for VM to come back up after rollback")
+		err = vmConfig.QemuConfig.WaitForLogin(vmConfig.VMConfig.Name, testConfig.OutputPath, testConfig.Verbose, 0)
+		if err != nil {
+			return fmt.Errorf("VM did not come back up after rollback: %w", err)
+		}
+		logrus.Tracef("VM ready after rollback")
 	}
-	logrus.Tracef("VM ready after rollback")
 
 	// Validate OS state
 	err = validateOs(testConfig, vmConfig, vmIP, extensionVersion, expectedVolume, expectedAvailableRollbacks)
