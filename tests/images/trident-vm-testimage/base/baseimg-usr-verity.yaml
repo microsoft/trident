@@ -164,7 +164,6 @@ scripts:
       arguments:
         - uki
     - path: scripts/duid-type-to-link-layer.sh
-    - path: scripts/patch-dracut.sh
 
 previewFeatures:
   - uki
