@@ -66,7 +66,7 @@ pub const RUNS_ON_ALL: &[ServicingType] = &[
 ];
 
 /// Runs on Clean Install and A/B Update.
-pub const RUNS_ON_DEFAULT: &[ServicingType] =
+pub const REQUIRES_REBOOT: &[ServicingType] =
     &[ServicingType::CleanInstall, ServicingType::AbUpdate];
 
 pub(crate) trait Subsystem: Send {
@@ -91,7 +91,13 @@ pub(crate) trait Subsystem: Send {
     /// may run on Clean Install and A/B Update. Some also run on Runtime
     /// Update, depending on changes in the new Host Configuration.
     fn runs_on(&self, _ctx: &EngineContext) -> &[ServicingType] {
-        RUNS_ON_DEFAULT
+        REQUIRES_REBOOT
+    }
+
+    /// Returns whether the subsystem runs on the current servicing type stored
+    /// in the Engine Context.
+    fn runs_on_servicing_type(&self, ctx: &EngineContext) -> bool {
+        self.runs_on(ctx).contains(&ctx.servicing_type)
     }
 
     /// Validate that the Host Configuration in `ctx.spec` can be applied on the system.
@@ -248,7 +254,7 @@ fn validate_host_config(
 ) -> Result<(), TridentError> {
     info!("Starting step 'Validate'");
     for subsystem in subsystems {
-        if subsystem.runs_on(ctx).contains(&ctx.servicing_type) {
+        if subsystem.runs_on_servicing_type(ctx) {
             debug!(
                 "Starting step 'Validate' for subsystem '{}'",
                 subsystem.name()
@@ -257,6 +263,11 @@ fn validate_host_config(
                 "Step 'Validate' failed for subsystem '{}'",
                 subsystem.name()
             ))?;
+        } else {
+            debug!(
+                "Skipping step 'Validate' for subsystem '{}'",
+                subsystem.name()
+            );
         }
     }
     debug!("Finished step 'Validate'");
@@ -266,7 +277,7 @@ fn validate_host_config(
 fn prepare(subsystems: &mut [Box<dyn Subsystem>], ctx: &EngineContext) -> Result<(), TridentError> {
     info!("Starting step 'Prepare'");
     for subsystem in subsystems {
-        if subsystem.runs_on(ctx).contains(&ctx.servicing_type) {
+        if subsystem.runs_on_servicing_type(ctx) {
             debug!(
                 "Starting step 'Prepare' for subsystem '{}'",
                 subsystem.name()
@@ -275,6 +286,11 @@ fn prepare(subsystems: &mut [Box<dyn Subsystem>], ctx: &EngineContext) -> Result
                 "Step 'Prepare' failed for subsystem '{}'",
                 subsystem.name()
             ))?;
+        } else {
+            debug!(
+                "Skipping step 'Prepare' for subsystem '{}'",
+                subsystem.name()
+            );
         }
     }
     debug!("Finished step 'Prepare'");
@@ -292,7 +308,7 @@ fn provision(
 
     info!("Starting step 'Provision'");
     for subsystem in subsystems {
-        if subsystem.runs_on(ctx).contains(&ctx.servicing_type) {
+        if subsystem.runs_on_servicing_type(ctx) {
             debug!(
                 "Starting step 'Provision' for subsystem '{}'",
                 subsystem.name()
@@ -309,6 +325,11 @@ fn provision(
                 "Step 'Provision' failed for subsystem '{}'",
                 subsystem.name()
             ))?;
+        } else {
+            debug!(
+                "Skipping step 'Provision' for subsystem '{}'",
+                subsystem.name()
+            );
         }
     }
     debug!("Finished step 'Provision'");
@@ -328,7 +349,7 @@ fn configure(
 
     info!("Starting step 'Configure'");
     for subsystem in subsystems {
-        if subsystem.runs_on(ctx).contains(&ctx.servicing_type) {
+        if subsystem.runs_on_servicing_type(ctx) {
             debug!(
                 "Starting step 'Configure' for subsystem '{}'",
                 subsystem.name()
@@ -346,6 +367,11 @@ fn configure(
                 "Step 'Configure' failed for subsystem '{}'",
                 subsystem.name()
             ))?;
+        } else {
+            debug!(
+                "Skipping step 'Configure' for subsystem '{}'",
+                subsystem.name()
+            );
         }
     }
     debug!("Finished step 'Configure'");
@@ -359,7 +385,7 @@ fn update_host_configuration(
 ) -> Result<(), TridentError> {
     info!("Starting step 'Update Host Configuration'");
     for subsystem in subsystems {
-        if subsystem.runs_on(ctx).contains(&ctx.servicing_type) {
+        if subsystem.runs_on_servicing_type(ctx) {
             debug!(
                 "Starting step 'Update Host Configuration' for subsystem '{}'",
                 subsystem.name()
@@ -368,6 +394,11 @@ fn update_host_configuration(
                 "Step 'Update Host Configuration' failed for subsystem '{}'",
                 subsystem.name()
             ))?;
+        } else {
+            debug!(
+                "Skipping step 'Update Host Configuration' for subsystem '{}'",
+                subsystem.name()
+            );
         }
     }
     debug!("Finished step 'Update Host Configuration'");

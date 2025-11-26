@@ -12,7 +12,7 @@ use trident_api::{
 };
 
 use crate::{
-    engine::{EngineContext, Subsystem, RUNS_ON_ALL, RUNS_ON_DEFAULT},
+    engine::{EngineContext, Subsystem, REQUIRES_REBOOT, RUNS_ON_ALL},
     OS_MODIFIER_BINARY_PATH, OS_MODIFIER_NEWROOT_PATH,
 };
 
@@ -87,7 +87,7 @@ impl Subsystem for OsConfigSubsystem {
         if runtime_update_sufficient(ctx) {
             return RUNS_ON_ALL;
         }
-        RUNS_ON_DEFAULT
+        REQUIRES_REBOOT
     }
 
     fn validate_host_config(&self, ctx: &EngineContext) -> Result<(), TridentError> {
