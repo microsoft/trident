@@ -220,20 +220,7 @@ func createSysextHostConfigSection(testConfig stormrollbackconfig.TestConfig, vm
 		return nil, fmt.Errorf("failed to calculate sha384: %w", err)
 	}
 
-	// publicKeyContents, err := os.ReadFile(fmt.Sprintf("%s.pub", vmConfig.VMConfig.SshPrivateKeyPath))
-	// if err != nil {
-	// 	return nil, fmt.Errorf("failed to read sysext user ssh public key: %w", err)
-	// }
 	return map[string]interface{}{
-		// "users": []map[string]interface{}{
-		// 	{
-		// 		"name": vmConfig.VMConfig.User,
-		// 		"sshPublicKeys": []string{
-		// 			strings.TrimSpace(string(publicKeyContents)),
-		// 		},
-		// 		"sshMode": "key-only",
-		// 	},
-		// },
 		"sysexts": []map[string]interface{}{
 			{
 				"url":    fmt.Sprintf("http://localhost:%d/files/%s", testConfig.FileServerPort, extensionFileName),
