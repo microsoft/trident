@@ -58,6 +58,7 @@ func (s *BuildExtensionImagesScript) Run() error {
 
 func buildImage(extType string, numClones int) error {
 	for i := 1; i <= numClones; i++ {
+		extName := fmt.Sprintf("test-%s-%d", extType, i)
 		// Create extension-release file
 		var dir string
 		var fileContent string
@@ -77,7 +78,7 @@ func buildImage(extType string, numClones int) error {
 			}
 			fileContent = fmt.Sprintf("ID=_any\nCONFEXT_ID=test-confext\nCONFEXT_VERSION_ID=%d.0.0\nARCHITECTURE=x86-64\n", i)
 		}
-		extensionReleaseFile := filepath.Join(dir, fmt.Sprintf("extension-release.test-%s", extType))
+		extensionReleaseFile := filepath.Join(dir, fmt.Sprintf("extension-release.%s", extName))
 		err = os.WriteFile(extensionReleaseFile, []byte(fileContent), 0644)
 		if err != nil {
 			return fmt.Errorf("failed to write %s extension-release file %s: %w", extType, extensionReleaseFile, err)
@@ -85,7 +86,7 @@ func buildImage(extType string, numClones int) error {
 
 		// Create DDI files using mksquashfs
 		imageDir := fmt.Sprintf("%s-image-%d", extType, i)
-		rawFile := fmt.Sprintf("test-%s-%d.raw", extType, i)
+		rawFile := fmt.Sprintf("%s.raw", extName)
 		cmd := exec.Command("mksquashfs", imageDir, rawFile, "-comp", "xz", "-Xbcj", "x86", "-noappend", "-no-xattrs")
 		err = cmd.Run()
 		if err != nil {

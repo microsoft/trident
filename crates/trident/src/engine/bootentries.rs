@@ -728,9 +728,9 @@ mod tests {
             )
         );
 
-        // Test that servicing types HotPatch, NormalUpdate, UpdateAndReboot will always use the
-        // active volume for updates
-        ctx.servicing_type = ServicingType::NormalUpdate;
+        // Test that servicing type RuntimeUpdate will always use the active
+        // volume for updates
+        ctx.servicing_type = ServicingType::RuntimeUpdate;
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         assert_eq!(
             get_label_and_path(&ctx, BOOT_EFI).unwrap(),
