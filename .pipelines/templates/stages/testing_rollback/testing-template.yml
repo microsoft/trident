@@ -34,6 +34,11 @@ parameters:
     displayName: Agent pool
     type: string
     default: "trident-ubuntu-1es-pool-eastus2"
+  
+  - name: skipExtensionTesting
+    displayName: "Skip extension testing"
+    type: string
+    default: "false"
 
 jobs:
   - job: RollbackTesting_${{ replace(parameters.flavor, '-', '_') }}
@@ -131,8 +136,11 @@ jobs:
           SKIP_FLAGS="$SKIP_FLAGS --skip-manual-rollbacks"
           # TODO: enable runtime update testing when it is implemented
           SKIP_FLAGS="$SKIP_FLAGS --skip-runtime-updates"
-          # # Allow testing for non-extension scenarios
-          # SKIP_FLAGS="$SKIP_FLAGS --skip-extension-testing"
+
+          if [ "${{ parameters.skipExtensionTesting }}" == "true" ]; then
+            # Allow testing for non-extension scenarios
+            SKIP_FLAGS="$SKIP_FLAGS --skip-extension-testing"
+          fi
 
           sudo ./bin/storm-trident run rollback -a $(STORM_FLAGS) $SKIP_FLAGS \
             --artifacts-dir $(Build.ArtifactStagingDirectory) \
@@ -155,11 +163,15 @@ jobs:
           # TODO: use
           # https://learn.microsoft.com/en-us/azure/virtual-machines/linux/download-vhd?tabs=azure-cli
           # for Azure images
-
-          sudo chmod -R 777 $(ob_outputDirectory)/
-          sudo chown -R $USER:$USER $(ob_outputDirectory)/
-          ls -lR $(ob_outputDirectory)/
         workingDirectory: $(tridentSourceDirectory)
         condition: failed()
         displayName: "Publish logs and OS disk on failure"
         timeoutInMinutes: 5
+
+      - bash: |
+          set -eux
+          sudo chmod -R 777 $(ob_outputDirectory)/
+          sudo chown -R $USER:$USER $(ob_outputDirectory)/
+          ls -lR $(ob_outputDirectory)/
+        condition: always()
+        displayName: "Ensure output directory permissions"

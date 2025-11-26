@@ -122,6 +122,7 @@ stages:
               verboseLogging: ${{ parameters.verboseLogging }}
               platform: qemu
               flavor: qemu-grub
+              skipExtensionTesting: false
       - ${{ if eq(parameters.includeQemu, true) }}:
           - template: testing-template.yml
             parameters:
@@ -129,6 +130,7 @@ stages:
               verboseLogging: ${{ parameters.verboseLogging }}
               platform: qemu
               flavor: qemu
+              skipExtensionTesting: false
       - ${{ if eq(parameters.includeUKI, true) }}:
           - template: testing-template.yml
             parameters:
@@ -136,6 +138,7 @@ stages:
               verboseLogging: ${{ parameters.verboseLogging }}
               platform: qemu
               flavor: uki
+              skipExtensionTesting: false
       # - ${{ if eq(parameters.includeAzure, true) }}:
       #     - template: testing-template.yml
       #       parameters:
@@ -143,3 +146,4 @@ stages:
       #         verboseLogging: ${{ parameters.verboseLogging }}
       #         platform: azure
       #         flavor: azure
+      #         skipExtensionTesting: false
