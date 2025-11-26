@@ -410,7 +410,6 @@ fn update_host_configuration(
     Ok(())
 }
 
-#[allow(dead_code)]
 fn clean_up(subsystems: &[Box<dyn Subsystem>], ctx: &EngineContext) -> Result<(), TridentError> {
     info!("Starting step 'Clean Up'");
     for subsystem in subsystems {
