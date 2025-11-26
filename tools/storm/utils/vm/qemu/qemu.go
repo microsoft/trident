@@ -18,9 +18,8 @@ import (
 )
 
 type QemuConfig struct {
-	SecureBoot   bool   `help:"Enable secure boot for the VM" default:"false"`
-	SerialLog    string `help:"Path to the serial log file" default:"/tmp/trident-vm-verity-test.log"`
-	Qcow2Pattern string `help:"Pattern to match qcow2 image files" default:"^trident-vm-.*-testimage.qcow2$"`
+	SecureBoot bool   `help:"Enable secure boot for the VM" default:"false"`
+	SerialLog  string `help:"Path to the serial log file" default:"/tmp/trident-vm-verity-test.log"`
 }
 
 func (cfg QemuConfig) DeployQemuVM(vmName string, artifactsDir string, outputPath string, verbose bool) error {
@@ -32,7 +31,7 @@ func (cfg QemuConfig) DeployQemuVM(vmName string, artifactsDir string, outputPat
 	}
 
 	// Find image file
-	imageFile, err := stormfile.FindFile(artifactsDir, cfg.Qcow2Pattern)
+	imageFile, err := stormfile.FindFile(artifactsDir, "^trident-vm-.*-testimage.qcow2$")
 	if err != nil {
 		return fmt.Errorf("failed to find image file: %w", err)
 	}

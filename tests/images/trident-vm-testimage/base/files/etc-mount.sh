@@ -13,12 +13,8 @@ if [ "$1" == "commit-machine-id" ]; then
 fi
 
 mount -t overlay overlay -o lowerdir=/etc,upperdir=/var/lib/trident-overlay/etc-rw/upper,workdir=/var/lib/trident-overlay/etc-rw/work /etc
-<<<<<<< HEAD
 # Workaround for dracut overlayfs module mounting /etc overlay as 755 on clean install and
 # 750 on abupdate
-=======
-# Workaround for https://dev.azure.com/mariner-org/ECF/_workitems/edit/7349/
->>>>>>> 25cd2243e (move servicing build images from test-images)
 chmod o+rx /etc
 
 if [ "$1" == "commit-machine-id" ]; then

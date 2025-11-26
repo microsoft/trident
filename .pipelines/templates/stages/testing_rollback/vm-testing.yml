@@ -59,12 +59,12 @@ parameters:
 
 stages:
   # - ${{ if eq(parameters.testingRun, false) }}:
-      # GRUB + Root Verity: works locally, but in pipeline, VM cannot be reconnected
+      # GRUB w/o verity: works locally, but in pipeline, VM cannot be reconnected
       # after first A/B update
       #
       # - ${{ if eq(parameters.includeQemuGrub, true) }}:
-      #     - stage: BuildImagesQemuForRollback
-      #       displayName: (Rollback) Build Base and Update Images for QEMU
+      #     - stage: BuildImagesQemuGrub
+      #       displayName: Build Base and Update Images for QEMU GRUB
       #       dependsOn:
       #         - PrepareSSHKeys
       #         - GetTridentBinaries_rpms_amd64
@@ -100,7 +100,7 @@ stages:
       - ${{ else }}:
           - BuildingTools
           # - ${{ if eq(parameters.includeQemuGrub, true) }}:
-          #     - BuildImagesQemuForRollback
+          #     - BuildImagesQemuGrub
           - ${{ if eq(parameters.includeQemu, true) }}:
               - BuildImagesQemu
           - ${{ if eq(parameters.includeUKI, true) }}:
