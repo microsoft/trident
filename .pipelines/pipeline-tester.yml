@@ -28,7 +28,6 @@ variables:
   # OUTPUTROOT: $(REPOROOT)\out
   - name: DEBIAN_FRONTEND
     value: noninteractive
-  - group: bot # added for access to dom0 RPMs
 
 resources:
   repositories:

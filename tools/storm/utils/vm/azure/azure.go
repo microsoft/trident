@@ -32,6 +32,8 @@ type AzureConfig struct {
 	Offer                       string `help:"Azure offer for the VM" default:"trident-vm-grub-verity-azure-offer"`
 	Size                        string `help:"Azure VM size" default:"Standard_D2ds_v5"`
 	TestResourceGroup           string `help:"Azure resource group for the VM" default:""`
+	UsePrivateIpAddress         bool   `help:"Use private IP address for Azure VM" default:"false"`
+	BuildId                     string `help:"Build ID for the ADO pipeline" default:""`
 }
 
 func (cfg AzureConfig) GetStorageAccountUrl() string {
@@ -81,7 +83,7 @@ func (cfg AzureConfig) CreateImageVersion(imageVersion string, storageAccountRes
 	return nil
 }
 
-func (cfg AzureConfig) DeployAzureVM(vmName string, user string, buildId string) error {
+func (cfg AzureConfig) DeployAzureVM(vmName string, user string) error {
 	if err := cfg.SetSubscription(); err != nil {
 		return fmt.Errorf("failed to set Azure subscription: %w", err)
 	}
@@ -110,7 +112,7 @@ func (cfg AzureConfig) DeployAzureVM(vmName string, user string, buildId string)
 		}
 	}
 
-	imageVersion := cfg.GetImageVersion(buildId, false)
+	imageVersion := cfg.GetImageVersion(false)
 
 	// Create the VM
 	vmCreateArgs := []string{
@@ -193,12 +195,12 @@ func (cfg AzureConfig) CleanupAzureVM() error {
 	return nil
 }
 
-func (cfg AzureConfig) PublishSigImage(artifactsDir string, buildId string) error {
+func (cfg AzureConfig) PublishSigImage(artifactsDir string) error {
 	if err := cfg.SetSubscription(); err != nil {
 		return fmt.Errorf("failed to set Azure subscription: %w", err)
 	}
 
-	imageVersion := cfg.GetImageVersion(buildId, true)
+	imageVersion := cfg.GetImageVersion(true)
 	logrus.Infof("Using image version %s", imageVersion)
 
 	if err := cfg.checkImageVersionExists(imageVersion); err == nil {
@@ -468,9 +470,9 @@ func (cfg AzureConfig) GetStorageContainerName() string {
 	return fmt.Sprintf("%s-test", cfg.GetWhoAmI())
 }
 
-func (cfg AzureConfig) GetAllVmIPAddresses(vmName string, buildId string) ([]string, error) {
+func (cfg AzureConfig) GetAllVmIPAddresses(vmName string) ([]string, error) {
 	ipType := "publicIps"
-	if buildId != "" {
+	if cfg.UsePrivateIpAddress {
 		ipType = "privateIps" // Use private IPs for build tests
 	}
 	logrus.Tracef("Fetching Azure VM IP addresses for type '%s'", ipType)
@@ -519,9 +521,9 @@ func (cfg AzureConfig) GetLatestVersion() string {
 	return versions[len(versions)-1] // Return the latest version
 }
 
-func (cfg AzureConfig) GetImageVersion(buildId string, increment bool) string {
+func (cfg AzureConfig) GetImageVersion(increment bool) string {
 	imageVersion := "0.0.1"
-	if buildId == "" {
+	if cfg.BuildId == "" {
 		// If no build ID is provided, get the latest version
 		imageVersion = cfg.GetLatestVersion()
 		if imageVersion == "" {
@@ -543,7 +545,7 @@ func (cfg AzureConfig) GetImageVersion(buildId string, increment bool) string {
 		}
 	} else {
 		// Use the build ID as the patch version
-		imageVersion = fmt.Sprintf("0.0.%s", buildId)
+		imageVersion = fmt.Sprintf("0.0.%s", cfg.BuildId)
 	}
 
 	logrus.Infof("Image version: %s", imageVersion)
