@@ -90,6 +90,7 @@ jobs:
                   --output-path $(ob_outputDirectory) \
                   --platform ${{ parameters.platform }} \
                   --artifacts-dir $ARTIFACTS \
+                  --use-private-ip-address \
                   --build-id $(Build.BuildId) \
                   --subscription $(SUBSCRIPTION) \
                   --image-definition $(IMAGE_DEFINITION) \
@@ -234,6 +235,7 @@ jobs:
                   --retry-count ${{ parameters.updateIterationCount }} \
                   --update-port-a 8123 --update-port-b 8124 \
                   --build-id $(Build.BuildId) \
+                  --use-private-ip-address \
                   --force-cleanup
                 set +x
                 echo "##vso[task.setvariable variable=STORM_SCENARIO_FINISHED;]true"
@@ -275,11 +277,11 @@ jobs:
                 --artifacts-dir $(Build.ArtifactStagingDirectory) \
                 --output-path $(ob_outputDirectory) \
                 --platform ${{ parameters.platform }} \
-                --subnet-id $(SUBNET_ID) \
                 --ssh-private-key-path $(SSH_PRIVATE_KEY_PATH) \
                 --ssh-public-key-path $(SSH_PUBLIC_KEY_PATH) \
                 --retry-count ${{ parameters.updateIterationCount }} \
                 --build-id $(Build.BuildId) \
+                --use-private-ip-address \
                 --force-cleanup
               set +x
               echo "##vso[task.setvariable variable=STORM_SCENARIO_FINISHED;]true"
