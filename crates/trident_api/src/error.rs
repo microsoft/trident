@@ -198,6 +198,9 @@ pub enum InvalidInputError {
     #[error("Invalid --lazy-partitions provided")]
     InvalidLazyPartition,
 
+    #[error("Invalid state for rollback: '{reason}'")]
+    InvalidRollbackState { reason: String },
+
     #[error("Failed to load COSI file from '{url}'")]
     LoadCosi { url: Url },
 

@@ -186,6 +186,10 @@ pub enum Commands {
         #[arg(long, conflicts_with = "runtime")]
         ab: bool,
 
+        /// Comma-separated list of operations that Trident will be allowed to perform
+        #[clap(long, value_delimiter = ',', num_args = 0.., default_value = "stage,finalize")]
+        allowed_operations: Vec<AllowedOperation>,
+
         /// Query whether rollback requires a reboot
         #[clap(long)]
         requires_reboot: bool,

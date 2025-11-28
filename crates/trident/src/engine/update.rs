@@ -169,6 +169,9 @@ pub(crate) fn update(
         ServicingType::CleanInstall => Err(TridentError::new(
             InvalidInputError::CleanInstallOnProvisionedHost,
         )),
+        ServicingType::ManualRollback => Err(TridentError::internal(
+            "Cannot update during manual rollback",
+        )),
         ServicingType::NoActiveServicing => Err(TridentError::internal("No active servicing type")),
     }
 }

@@ -207,12 +207,14 @@ fn run_trident(
                     Commands::Rollback {
                         runtime,
                         ab,
+                        ref allowed_operations,
                         requires_reboot,
                         show_available,
                     } => trident.rollback(
                         &mut datastore,
                         runtime,
                         ab,
+                        cli::to_operations(allowed_operations),
                         requires_reboot,
                         show_available,
                     ),

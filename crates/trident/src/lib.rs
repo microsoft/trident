@@ -336,7 +336,7 @@ impl Trident {
         }
     }
 
-    fn get_cosi_image(host_config: &mut HostConfiguration) -> Result<OsImage, TridentError> {
+    pub fn get_cosi_image(host_config: &mut HostConfiguration) -> Result<OsImage, TridentError> {
         let cosi_timeout = match host_config
             .internal_params
             .get_u64(HTTP_CONNECTION_TIMEOUT_SECONDS)
@@ -705,6 +705,7 @@ impl Trident {
         datastore: &mut DataStore,
         expected_runtime_rollback: bool,
         expected_ab_rollback: bool,
+        allowed_operations: Operations,
         query_requires_reboot: bool,
         show_available_rollbacks: bool,
     ) -> Result<ExitKind, TridentError> {
@@ -715,13 +716,25 @@ impl Trident {
             return Ok(ExitKind::Done);
         }
 
+        if query_requires_reboot {
+            let result = manual_rollback::print_requires_reboot(datastore)
+                .message("Failed to check if rollback requires reboot")?;
+            return Ok(result);
+        }
+
+        if show_available_rollbacks {
+            let result = manual_rollback::print_available_rollbacks(datastore)
+                .message("Failed to get available rollbacks")?;
+            return Ok(result);
+        }
+
         let rollback_result = self.execute_and_record_error(datastore, |datastore| {
             manual_rollback::execute(
                 datastore,
                 expected_runtime_rollback,
                 expected_ab_rollback,
-                query_requires_reboot,
-                show_available_rollbacks,
+                &allowed_operations,
+                &mut |host_config| Self::get_cosi_image(host_config),
             )
             .message("Failed to rollback")
         });

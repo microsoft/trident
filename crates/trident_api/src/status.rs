@@ -73,6 +73,8 @@ pub enum ServicingType {
     AbUpdate = 2,
     /// Clean install of the target OS image when the host is booted from the provisioning OS.
     CleanInstall = 3,
+    /// Manual Rollback of the target OS image to a previously deployed state.
+    ManualRollback = 4,
 }
 
 /// Servicing state describes the progress of the servicing that the Trident agent is executing on

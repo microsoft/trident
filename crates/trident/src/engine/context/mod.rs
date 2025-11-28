@@ -95,6 +95,11 @@ impl EngineContext {
             }
             // If host is executing a clean install, update volume is always A.
             ServicingType::CleanInstall => Some(AbVolumeSelection::VolumeA),
+            // If host is executing a manual rollback, the update volume can either be
+            // the active volume (if rolling back a RuntimeUpdate) or the inactive volume
+            // (if rolling back an A/B udpate). However, for ManualRollback this method is
+            // not invoked, return None.
+            ServicingType::ManualRollback => None,
         }
     }
 
