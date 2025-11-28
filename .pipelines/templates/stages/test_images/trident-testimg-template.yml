@@ -1,7 +1,7 @@
 parameters:
   - name: outputDirectory
     type: string
-    default: "$(Pipeline.Workspace)/s/test-images/output"
+    default: "$(Build.SourcesDirectory)/output"
 
   - name: target
     type: string
@@ -100,29 +100,27 @@ steps:
 
   - template: common/sfi-enforce-isolation-with-etc-hosts.yaml@platform-pipelines
 
-  - checkout: ${{ parameters.testImagesRepo }}
-    path: s/test-images
-
   - ${{ if eq(parameters.downloadTrident, true) }}:
-      - template: download-trident.yml
-        parameters:
-          tridentPipelineRunId: ${{ parameters.tridentPipelineRunId }}
-          tridentPipelineId: ${{ parameters.tridentPipelineId }}
-          tridentArtifactName: ${{ parameters.tridentArtifactName }}
+      - task: DownloadPipelineArtifact@2
+        inputs:
+          buildType: current
+          artifactName: ${{ parameters.tridentArtifactName}}
+          targetPath: "$(Build.ArtifactStagingDirectory)/trident"
+        displayName: Download Trident RPMs
 
   - ${{ if eq(parameters.generateSshKeys, true) }}:
       - bash: |
           set -eux
 
-          mkdir -p $(Pipeline.Workspace)/s/test-images/build
-          ssh-keygen -t rsa -b 2048 -f $(Pipeline.Workspace)/s/test-images/build/id_rsa -q -N ""
+          mkdir -p $(Build.SourcesDirectory)/artifacts
+          ssh-keygen -t rsa -b 2048 -f $(Build.SourcesDirectory)/artifacts/id_rsa -q -N ""
         displayName: Set up SSH Keys
   - ${{ if eq(parameters.useStagedSshKeys, true) }}:
       - bash: |
           set -eux
 
-          mkdir -p $(Pipeline.Workspace)/s/test-images/build
-          cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* $(Pipeline.Workspace)/s/test-images/build/
+          mkdir -p $(Build.SourcesDirectory)/artifacts
+          cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* $(Build.SourcesDirectory)/artifacts/
         displayName: Copy SSH Keys
 
   - script: |
@@ -169,7 +167,7 @@ steps:
   - bash: |
       set -ex
 
-      base_dir='$(Pipeline.Workspace)/s/test-images/base'
+      base_dir='$(Build.SourcesDirectory)/artifacts'
 
       mkdir -p $base_dir
       # Check if there are any .vhdx files in the images directory and move them
@@ -188,12 +186,15 @@ steps:
           -C $base_dir/rpm-overrides
       fi
 
+      find $(Build.ArtifactStagingDirectory)
       if [ -d "$(Build.ArtifactStagingDirectory)/trident" ]; then
-        mv "$(Build.ArtifactStagingDirectory)/trident" "$base_dir/"
-        rm -rf "$(Build.ArtifactStagingDirectory)/trident"
+        rpm_dir='$(Build.SourcesDirectory)/bin/RPMS'
+        mkdir -p $rpm_dir
+        cp -r $(Build.ArtifactStagingDirectory)/trident/* $rpm_dir/ || echo 'no rpms to copy'
+        rm -rf $(Build.ArtifactStagingDirectory)/trident
       fi
 
-    workingDirectory: $(Pipeline.Workspace)/s/test-images
+    workingDirectory: $(Build.SourcesDirectory)
     displayName: "Prepare and move requirements"
 
   - script: |
@@ -201,7 +202,7 @@ steps:
       echo "Local directory: $(pwd)"
 
       echo "Base files:"
-      find base/ -type f | sort
+      find artifacts/ -type f | sort
 
       set -ex
 
@@ -211,7 +212,7 @@ steps:
 
       # Compress the full image & delete the uncompressed image
       make ${{ parameters.target }}
-    workingDirectory: $(Pipeline.Workspace)/s/test-images
+    workingDirectory: $(Build.SourcesDirectory)
     displayName: "Build Test Image"
 
   - script: |
@@ -225,5 +226,5 @@ steps:
         # Everything else is a file
         sudo mv -v "${{ parameters.target }}" "${{ parameters.outputDirectory }}/"
       fi
-    workingDirectory: $(Pipeline.Workspace)/s/test-images
+    workingDirectory: $(Build.SourcesDirectory)
     displayName: "Copy artifacts to output directory"

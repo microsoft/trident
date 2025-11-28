@@ -64,6 +64,8 @@ os:
   additionalFiles:
     - source: files/sudoers-wheel
       destination: /etc/sudoers.d/wheel
+    - source: files/99-dhcp-eth0.network
+      destination: /etc/systemd/network/99-dhcp-eth0.network
 
 scripts:
   postCustomization:
@@ -71,4 +73,3 @@ scripts:
     - path: scripts/ssh-move-host-keys.sh
     - path: scripts/duid-type-to-link-layer.sh
     - path: scripts/update-os-release.sh
-    - path: scripts/patch-dracut.sh
