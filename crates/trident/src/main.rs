@@ -204,6 +204,18 @@ fn run_trident(
                         &mut None,
                     ),
                     Commands::Commit { .. } => trident.commit(&mut datastore),
+                    Commands::Rollback {
+                        runtime,
+                        ab,
+                        requires_reboot,
+                        show_available,
+                    } => trident.rollback(
+                        &mut datastore,
+                        runtime,
+                        ab,
+                        requires_reboot,
+                        show_available,
+                    ),
                     Commands::Listen { .. } => {
                         trident.listen(&mut datastore).map(|()| ExitKind::Done)
                     }

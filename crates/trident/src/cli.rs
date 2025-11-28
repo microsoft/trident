@@ -176,6 +176,25 @@ pub enum Commands {
         history_path: Option<PathBuf>,
     },
 
+    /// Manually rollback to previous state
+    Rollback {
+        /// Declare expectation that rollback undoes a runtime update
+        #[arg(long, conflicts_with = "ab")]
+        runtime: bool,
+
+        /// Declare expectation that rollback undoes an A/B update
+        #[arg(long, conflicts_with = "runtime")]
+        ab: bool,
+
+        /// Query whether rollback requires a reboot
+        #[clap(long)]
+        requires_reboot: bool,
+
+        /// Show available rollback points
+        #[clap(long)]
+        show_available: bool,
+    },
+
     #[cfg(feature = "dangerous-options")]
     StreamImage {
         /// URL of the image to stream
@@ -212,6 +231,7 @@ impl Commands {
             Commands::OfflineInitialize { .. } => "offline-initialize",
             #[cfg(feature = "dangerous-options")]
             Commands::StreamImage { .. } => "stream-image",
+            Commands::Rollback { .. } => "rollback",
         }
     }
 }

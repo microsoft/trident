@@ -559,6 +559,9 @@ pub enum ServicingError {
     #[error("Failed to remove the pre-existing pcrlock policy")]
     RemovePcrlockPolicy,
 
+    #[error("Failed to execute rollback")]
+    ManualRollback,
+
     #[error(
         "Failed to match current root device path '{root_device_path}' to either root volume A \
         path '{root_volume_a_path}' or B path '{root_volume_b_path}'"

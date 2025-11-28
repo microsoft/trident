@@ -32,6 +32,7 @@ mod engine;
 mod health;
 mod io_utils;
 mod logging;
+pub mod manual_rollback;
 mod monitor_metrics;
 pub mod offline_init;
 mod orchestrate;
@@ -697,5 +698,43 @@ impl Trident {
         }
 
         Ok(())
+    }
+
+    pub fn rollback(
+        &mut self,
+        datastore: &mut DataStore,
+        expected_runtime_rollback: bool,
+        expected_ab_rollback: bool,
+        query_requires_reboot: bool,
+        show_available_rollbacks: bool,
+    ) -> Result<ExitKind, TridentError> {
+        // If host's servicing state is *Finalized or *HealthCheckFailed, need to
+        // re-evaluate the current state of the host.
+        if datastore.host_status().servicing_state != ServicingState::Provisioned {
+            info!("Not in Provisioned state, cannot rollback");
+            return Ok(ExitKind::Done);
+        }
+
+        let rollback_result = self.execute_and_record_error(datastore, |datastore| {
+            manual_rollback::execute(
+                datastore,
+                expected_runtime_rollback,
+                expected_ab_rollback,
+                query_requires_reboot,
+                show_available_rollbacks,
+            )
+            .message("Failed to rollback")
+        });
+
+        if rollback_result.is_ok() {
+            if let Some(ref orchestrator) = self.orchestrator {
+                orchestrator.report_success(Some(
+                    serde_yaml::to_string(&datastore.host_status())
+                        .unwrap_or("Failed to serialize Host Status".into()),
+                ))
+            }
+        }
+
+        rollback_result
     }
 }
