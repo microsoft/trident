@@ -87,11 +87,11 @@ sudo apt-get update
 ```
 
 ```bash
-sudo NEEDRESTART_MODE=a apt-get install -y \
+sudo NEEDRESTART_MODE=a apt-get install --no-upgrade -y \
     virt-manager \
-    qemu-efi=2022.02-3ubuntu0.22.04.3 \
+    qemu-efi \
     python3-libvirt \
-    ovmf=2022.02-3ubuntu0.22.04.3 \
+    ovmf \
     openssl \
     python3-netifaces \
     python3-docker \
