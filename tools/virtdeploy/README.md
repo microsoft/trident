@@ -87,7 +87,7 @@ sudo apt-get update
 ```
 
 ```bash
-sudo NEEDRESTART_MODE=a apt-get install --no-upgrade -y \
+sudo NEEDRESTART_MODE=a apt-get install -y \
     virt-manager \
     qemu-efi \
     python3-libvirt \

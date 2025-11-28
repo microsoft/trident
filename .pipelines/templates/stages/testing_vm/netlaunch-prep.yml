@@ -34,7 +34,7 @@ steps:
   - bash: |
       set -eux
 
-      sudo NEEDRESTART_MODE=a apt-get install --no-upgrade -y \
+      sudo NEEDRESTART_MODE=a apt-get install -y \
           swtpm \
           swtpm-tools \
           bridge-utils \
