@@ -9,6 +9,7 @@ use std::{
 
 use anyhow::{bail, Context, Error};
 use log::{debug, info, trace};
+use serde::{Deserialize, Serialize};
 
 use maplit::hashmap;
 use osutils::lsblk;
@@ -67,11 +68,13 @@ pub fn execute(
     Ok(ExitKind::Done)
 }
 
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct RollbackDetail {
-    host_status: HostStatus,
-    host_status_index: i32,
     requires_reboot: bool,
+    host_status: HostStatus,
+    #[serde(skip)]
+    host_status_index: i32,
 }
 struct ManualRollbackContext {
     volume_a_available_rollbacks: Vec<RollbackDetail>,
