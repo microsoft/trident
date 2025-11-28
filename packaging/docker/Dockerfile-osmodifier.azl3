@@ -1,0 +1,20 @@
+### This file is primarily used to build Trident RPMs for local testing.
+
+FROM mcr.microsoft.com/azurelinux/base/core:3.0
+ARG GOLANG_VERSION=1.25.1
+ARG IMAGE_TOOLS_BRANCH=main
+
+RUN tdnf install -y make awk util-linux git python3 ca-certificates
+
+WORKDIR /work
+
+RUN \
+    tdnf list golang && \
+    tdnf install golang-$(tdnf list golang | grep $GOLANG_VERSION | awk '{print $2}' | tail -n 1) -y
+
+RUN \
+    git clone --branch $IMAGE_TOOLS_BRANCH https://github.com/microsoft/azure-linux-image-tools && \
+    mkdir -p ./azure-linux-image-tools/artifacts && \
+    mkdir -p ./azure-linux-image-tools/SPECS && \
+    rm $(find ./azure-linux-image-tools -name '*_test.go') && \
+    make -C ./azure-linux-image-tools/toolkit go-osmodifier REBUILD_TOOLS=y SKIP_LICENSE_SCAN=y GOEXPERIMENT=nosystemcrypto

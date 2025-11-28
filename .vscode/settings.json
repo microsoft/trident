@@ -1,0 +1,21 @@
+{
+    "editor.formatOnSave": true,
+    "rust-analyzer.check.command": "clippy",
+    "rust-analyzer.cargo.features": "all",
+    "black-formatter.args": [],
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.black-formatter",
+    },
+    "files.associations": {
+        ".pipelines/*.yml": "azure-pipelines"
+    },
+    "[azure-pipelines]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "prettier.tabWidth": 2,
+    },
+    "[yaml]": {
+        "editor.insertSpaces": true,
+        "editor.tabSize": 2,
+        "prettier.tabWidth": 2,
+    },
+}

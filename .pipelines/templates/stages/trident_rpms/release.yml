@@ -1,0 +1,67 @@
+parameters:
+  - name: targetArchitecture
+    type: string
+    default: "amd64"
+    values:
+      - arm64
+      - amd64
+
+
+steps:
+  - script: |
+      set -eux
+      TRIDENT_VERSION=$(python3 ./scripts/get-version.py "$(Build.BuildNumber)" --commit)
+      echo "##vso[task.setvariable variable=trident_version]$TRIDENT_VERSION"
+    displayName: "Setting Trident version"
+
+  - task: onebranch.pipeline.version@1
+    displayName: "Set build number"
+    inputs:
+      system: "Custom"
+      customVersion: $(trident_version)
+
+  - script: sudo tdnf install -y moby-buildx p7zip p7zip-plugins zstd
+    displayName: Install native dependencies
+    retryCountOnTaskFailure: 3
+
+  - script: |
+      set -eux
+      sudo systemctl start docker
+    workingDirectory: $(Build.SourcesDirectory)
+    displayName: Start Docker
+
+  - template: ../common_tasks/preview-container.yml
+    parameters:
+      dockerfilePath: $(Build.SourcesDirectory)/packaging/docker/Dockerfile.full
+      dockerBuildContext: $(Build.SourcesDirectory)
+      targetArchitecture: ${{ parameters.targetArchitecture }}
+
+  - script: |
+      set -eux
+      full_version=$(trident_version)
+
+      # Separate into version and prerelease identifier
+      # for the RPM build.
+      version=$(echo $full_version | cut -d'-' -f1)
+      prerelease=$(echo $full_version | cut -d'-' -f2-)
+
+      # Run docker build to create the RPMs
+      # CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN is populated by the CargoAuthenticate task
+      docker build -f packaging/docker/Dockerfile.full -t trident/trident-build:latest \
+        --secret id=registry_token,env=CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN \
+        --build-arg TRIDENT_VERSION="$full_version" \
+        --build-arg RPM_VER="$version"\
+        --build-arg RPM_REL="$prerelease"\
+        .
+
+      id=$(docker create trident/trident-build:latest) && \
+        docker cp -q $id:/work/trident-rpms.tar.gz . && \
+        docker rm -v $id
+
+      mkdir -p $(ob_outputDirectory)
+      tar -xzf trident-rpms.tar.gz -C $(ob_outputDirectory) --strip-components=3
+    workingDirectory: $(Build.SourcesDirectory)
+    displayName: Build RPMs
+
+  - script: ./scripts/extract-binary.sh $(ob_outputDirectory) $(ob_outputDirectory)
+    displayName: Extract Trident binary

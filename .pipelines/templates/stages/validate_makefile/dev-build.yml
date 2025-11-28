@@ -1,0 +1,88 @@
+parameters:
+  - name: osModifierBranch
+    type: string
+    default: "main"
+
+  - name: dependsOnStage
+    type: string
+    default: ""
+
+stages:
+  - stage: MakefileValidation
+    displayName: Validate Makefile targets
+    ${{ if ne(parameters.dependsOnStage, '') }}:
+      dependsOn: ${{ parameters.dependsOnStage }}
+
+    jobs:
+      - job: Make
+        displayName: make
+        timeoutInMinutes: 30
+        pool:
+          type: linux
+          name: trident-ubuntu-1es-pool-eastus2
+          hostArchitecture: amd64
+
+        variables:
+          ob_outputDirectory: $(Build.SourcesDirectory)/build
+
+        steps:
+          - template: ../common_tasks/avoid-pypi-usage.yml
+
+          - bash: |
+              set -eux
+              make artifacts/osmodifier
+              rm -rf artifacts/osmodifier
+            displayName: Invoke make artifacts/osmodifier
+
+          - template: ../common_tasks/download-osmodifier.yml
+            parameters:
+              osModifierBuildType: dev
+              osModifierBranch: ${{ parameters.osModifierBranch }}
+              targetArchitecture: amd64
+
+          - script: |
+              set -eux
+
+              # Proactively try to fix any possible issue from previous task failure
+              sudo dpkg --configure -a
+
+              sudo apt install -y protobuf-compiler clang bc
+            displayName: Install native dependencies
+            retryCountOnTaskFailure: 3
+
+          - template: ../common_tasks/rustup.yml
+          - template: ../common_tasks/cargo-auth.yml
+
+          - bash: |
+              set -eux
+              make validate-configs
+              make bin/trident-rpms.tar.gz
+              make docker-build
+            displayName: Invoke make
+            env:
+              OVERRIDE_RUST_FEED: false
+
+          - script: |
+              set -eux
+
+              make check-sh
+            displayName: "Validate sh files in repo"
+            workingDirectory: $(Build.SourcesDirectory)
+            env:
+              OVERRIDE_RUST_FEED: false
+
+          - script: |
+              set -eux
+
+              make check-pipelines BRANCH=$(Build.SourceBranch)
+            displayName: "Validating pipeline templates work"
+            workingDirectory: $(Build.SourcesDirectory)
+            env:
+              AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
+              OVERRIDE_RUST_FEED: false
+
+          - script: cargo install --locked cargo-deny@0.16.2
+            displayName: Install cargo-deny
+
+          - script: cargo deny --all-features --workspace check licenses
+            displayName: Check licenses

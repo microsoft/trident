@@ -1,0 +1,19 @@
+jobs:
+  - job: PrepareSSHKeys
+    displayName: Prepare SSH Keys
+    timeoutInMinutes: 10
+    pool:
+      type: linux
+
+    variables:
+      ob_outputDirectory: out/
+      ob_artifactBaseName: "ssh-keys"
+
+    steps:
+      - template: ../common_tasks/avoid-pypi-usage.yml
+
+      - bash: |
+          set -eux
+          mkdir -p $(ob_outputDirectory)
+          ssh-keygen -t rsa -b 2048 -f $(ob_outputDirectory)/id_rsa -q -N ""
+        displayName: Generate SSH Keys

@@ -1,0 +1,51 @@
+parameters:
+  - name: codeCoverage
+    type: boolean
+    default: true
+
+  - name: unitTestCoverageBaseline
+    type: number
+
+steps:
+  - script: sudo tdnf install -y protobuf protobuf-c openssl-devel clang-devel rust
+    displayName: Install native dependencies
+    retryCountOnTaskFailure: 3
+
+  - script: |
+      set -eux
+      cargo install cargo-nextest --locked --version 0.9.97
+      cargo install cargo-llvm-cov --locked --version 0.6.16
+
+      # This will create:
+      # - target/lcov.info
+      # - target/coverage.json
+      # - target/nextest/ci/trident_unit_tests.xml
+      make coverage-llvm
+    displayName: Run Unit Tests
+
+  - task: PublishTestResults@2
+    condition: succeededOrFailed()
+    inputs:
+      testResultsFormat: "JUnit"
+      testResultsFiles: "./target/nextest/ci/trident_unit_tests.xml"
+
+  - task: PublishCodeCoverageResults@2
+    condition: and(succeededOrFailed(), eq(${{ parameters.codeCoverage }}, true))
+    inputs:
+      summaryFileLocation: "./target/lcov.info"
+
+  - bash: |
+      set -eux
+      MEASURED_COVERAGE="$(jq '.data[0].totals.lines.percent' ./target/coverage.json)"
+      BASELINE="${{ parameters.unitTestCoverageBaseline }}"
+
+      if (( $(echo "$MEASURED_COVERAGE < $BASELINE" | bc -l) )); then
+        set +x
+        echo "##vso[task.logissue type=error]Code coverage ($MEASURED_COVERAGE) is below baseline ($BASELINE)"
+        set -x
+        exit 1
+      else
+        echo "Code coverage ($MEASURED_COVERAGE) meets or exceeds baseline ($BASELINE)"
+      fi
+    displayName: Assert code coverage is above baseline
+    condition: and(succeededOrFailed(), eq(${{ parameters.codeCoverage }}, true))

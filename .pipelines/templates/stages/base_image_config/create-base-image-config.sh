@@ -1,0 +1,15 @@
+set -eux
+
+BASEIMG_BUILD_TYPE=$1
+BASE_IMAGE_PIPELINE_BUILD_ID=$2
+BASE_IMAGE_ARM64_PIPELINE_BUILD_ID=$3
+OUTPUT_DIRECTORY=$4
+
+mkdir -p $OUTPUT_DIRECTORY
+cat << EOF > $OUTPUT_DIRECTORY/baseimage.json
+{
+    "baseimgBuildType": "$BASEIMG_BUILD_TYPE",
+    "baseImagePipelineBuildId": "$BASE_IMAGE_PIPELINE_BUILD_ID",
+    "baseImageArm64PipelineBuildId": "$BASE_IMAGE_ARM64_PIPELINE_BUILD_ID"
+}
+EOF

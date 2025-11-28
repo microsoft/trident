@@ -1,0 +1,145 @@
+#!/usr/bin/python3
+
+# # # # # # # # # # # # # # # # # # # # #
+#             W A R N I N G             #
+#    This script is used in pipelines   #
+#      and in `make check-pipelines`    #
+#       Be careful when modifying!      #
+# # # # # # # # # # # # # # # # # # # # #
+
+import argparse
+from dataclasses import dataclass
+import subprocess
+import sys
+import tempfile
+import json
+from typing import Any, Dict
+
+
+@dataclass
+class PipelineMetadata:
+    id: int
+    parameters: Dict[str, Any] = None
+
+
+pipeline_metadata_map: Dict[str, PipelineMetadata] = {
+    "pr": PipelineMetadata(id=5066),
+    "pr-e2e": PipelineMetadata(id=5073),
+    "pr-e2e-azure": PipelineMetadata(id=5072),
+    "ci": PipelineMetadata(id=5067),
+    "pre": PipelineMetadata(id=5074),
+    "rel": PipelineMetadata(
+        id=5075,
+        parameters={"specificVersion": "1.0.0"},
+    ),
+    "testing": PipelineMetadata(id=5078),
+    "tester": PipelineMetadata(id=5071),
+    "scale": PipelineMetadata(id=5077),
+    "scale-official": PipelineMetadata(id=5076),
+    "azl-cicd": PipelineMetadata(
+        id=5068,
+        parameters={
+            "baseImagePipelineBuildId": "730139",
+            "baseImageArm64PipelineBuildId": "730138",
+        },
+    ),
+    "prism-cicd": PipelineMetadata(id=5069),
+    "full-validation": PipelineMetadata(id=5070),
+}
+
+parser = argparse.ArgumentParser(description="Preview a pipeline run")
+
+parser.add_argument(
+    "pipeline",
+    type=str,
+    help="The pipeline to preview",
+    choices=pipeline_metadata_map.keys(),
+)
+
+parser.add_argument(
+    "-b",
+    "--branch",
+    type=str,
+    help="The branch to preview the pipeline for",
+    default=None,
+)
+
+parser.add_argument(
+    "-q", "--quiet", action="store_true", help="Suppress YAML output", default=False
+)
+
+args = parser.parse_args()
+
+
+pipeline_metadata = pipeline_metadata_map[args.pipeline]
+
+if pipeline_metadata.id == -1:
+    print("Pipeline does not exist yet", file=sys.stderr)
+    exit(2)
+
+if args.branch:
+    selected_branch = args.branch
+else:
+    selected_branch = (
+        "refs/heads/"
+        + subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True,
+            check=True,
+        )
+        .stdout.decode("utf-8")
+        .strip()
+    )
+
+print(
+    f"Checking pipeline '{args.pipeline}' with ID '{pipeline_metadata.id}' on branch '{selected_branch}'",
+    file=sys.stderr,
+)
+
+payload = {
+    "previewRun": True,
+    "resources": {"repositories": {"self": {"refName": selected_branch}}},
+}
+
+if pipeline_metadata.parameters:
+    payload["templateParameters"] = pipeline_metadata.parameters
+
+with tempfile.NamedTemporaryFile() as payload_file:
+    payload_file.write(json.dumps(payload).encode("utf-8"))
+    payload_file.flush()
+
+    cmd = [
+        "az",
+        "devops",
+        "invoke",
+        "--org",
+        "https://dev.azure.com/mariner-org",
+        "--api-version",
+        "7.0",
+        "--area",
+        "pipelines",
+        "--resource",
+        "runs",
+        "--route-parameters",
+        "project=ECF",
+        f"pipelineId={pipeline_metadata.id}",
+        "--http-method",
+        "POST",
+        "--in-file",
+        payload_file.name,
+    ]
+    output = subprocess.run(
+        cmd,
+        capture_output=True,
+    )
+
+if output.returncode != 0:
+    print("Failed to preview pipeline:", file=sys.stderr)
+    print(output.stderr.decode("utf-8"), file=sys.stderr)
+    exit(1)
+
+print("Pipeline previewed successfully", file=sys.stderr)
+
+if not args.quiet:
+    out_json = json.loads(output.stdout.decode("utf-8"))
+    print(out_json["finalYaml"])

@@ -1,0 +1,113 @@
+parameters:
+  - name: "debug"
+    displayName: "Enable debug output"
+    type: boolean
+    default: false
+
+  - name: definition
+    type: number
+    default: 5067 # [GITHUB]-trident-ci
+    values:
+      # [GITHUB]-trident-ci
+      - 5067
+      # [GITHUB]-trident-pr-e2e
+      - 5073
+      # [GITHUB]-trident-prerelease
+      - 5074
+      # [GITHUB]-trident-testing
+      - 5078
+      # [GITHUB]-trident-pipeline-tester
+      - 5071
+    displayName: "Pipeline definition ID (in order of appearance: Trident CI, Trident PR E2E, Trident PreRelease, Trident Testing, Trident Pipeline Tester)"
+
+  - name: branch
+    type: string
+    default: main
+    displayName: Branch to download Artifacts from
+
+  - name: tridentPipelineRunId
+    type: string
+    default: latestFromBranch
+    displayName: Pipeline Build ID (check the URL of the specific pipeline run), branch and pipeline definition will be ignored if ID is provided.
+
+  - name: runDeploymentVMHost
+    type: boolean
+    default: true
+    displayName: E2E tests Virtual Machines Host
+
+  - name: runDeploymentVMContainer
+    type: boolean
+    default: false
+    displayName: E2E tests Virtual Machines Container
+
+  - name: runDeploymentBMHost
+    type: boolean
+    default: false
+    displayName: E2E tests Bare Metal Host
+
+  - name: runDeploymentBMContainer
+    type: boolean
+    default: false
+    displayName: E2E tests Bare Metal Container
+
+  - name: runFunctionalTests
+    type: boolean
+    default: false
+    displayName: Functional tests
+
+  - name: runServicingTests
+    type: boolean
+    default: false
+    displayName: Servicing VM testing
+
+trigger: none
+
+variables:
+  - name: CDP_DEFINITION_BUILD_COUNT
+    value: $[counter('', 0)] # needed for onebranch.pipeline.version task https://aka.ms/obpipelines/versioning
+  - name: system.debug
+    value: ${{ parameters.debug }}
+  # ENABLE_PRS_DELAYSIGN: 0
+  # ROOT: $(Build.SourcesDirectory)
+  # REPOROOT: $(Build.SourcesDirectory)
+  # OUTPUTROOT: $(REPOROOT)\out
+  - name: DEBIAN_FRONTEND
+    value: noninteractive
+
+resources:
+  repositories:
+    - repository: test-images
+      type: git
+      name: test-images
+      ref: refs/heads/main
+
+    - repository: platform-tests
+      type: git
+      name: platform-tests
+      ref: refs/heads/main
+
+    - repository: platform-pipelines
+      type: git
+      name: platform-pipelines
+      ref: refs/heads/main
+
+    - repository: platform-telemetry
+      name: platform-telemetry
+      type: git
+      ref: refs/heads/main
+
+extends:
+  template: templates/MockOB.yml
+  parameters:
+    stages:
+      - template: templates/test-template.yml
+        parameters:
+          definition: ${{ parameters.definition }}
+          branch: ${{ parameters.branch }}
+          tridentPipelineRunId: ${{ parameters.tridentPipelineRunId }}
+          runDeploymentVMHost: ${{ parameters.runDeploymentVMHost }}
+          runDeploymentVMContainer: ${{ parameters.runDeploymentVMContainer }}
+          runDeploymentBMHost: ${{ parameters.runDeploymentBMHost }}
+          runDeploymentBMContainer: ${{ parameters.runDeploymentBMContainer }}
+          runFunctionalTests: ${{ parameters.runFunctionalTests }}
+          runServicingTests: ${{ parameters.runServicingTests }}

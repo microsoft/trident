@@ -1,0 +1,82 @@
+#################################################################################
+#                               OneBranch Pipelines                             #
+# This pipeline was created by EasyStart from a sample located at:              #
+#   https://aka.ms/obpipelines/easystart/samples                                #
+# Documentation:  https://aka.ms/obpipelines                                    #
+# Yaml Schema:    https://aka.ms/obpipelines/yaml/schema                        #
+# Retail Tasks:   https://aka.ms/obpipelines/tasks                              #
+# Support:        https://aka.ms/onebranchsup                                   #
+#################################################################################
+
+trigger:
+  batch: true
+  branches:
+    include:
+      - main
+
+resources:
+  repositories:
+    - repository: templates
+      type: git
+      name: OneBranch.Pipelines/GovernedTemplates
+      ref: refs/heads/main
+
+    - repository: platform-tests
+      type: git
+      name: platform-tests
+
+    - repository: test-images
+      type: git
+      name: test-images
+      ref: refs/heads/main
+      trigger:
+        batch: true
+        branches:
+          include:
+            - main
+        paths:
+          include:
+            - Makefile
+            - testimages.py
+            - builder/**
+            - platform-integration-images/**
+            - .pipelines/**/*trident*
+          exclude:
+            - platform-integration-images/mshvch-testimage/**
+            - platform-integration-images/k8s-testimage/**
+            - platform-integration-images/qemu-guest-testimage/**
+            - platform-integration-images/remote-qemu-guest-k8s-testimage/**
+
+    - repository: platform-pipelines
+      type: git
+      name: platform-pipelines
+      ref: refs/heads/main
+
+    - repository: platform-telemetry
+      name: platform-telemetry
+      type: git
+      ref: refs/heads/main
+
+extends:
+  template: v2/OneBranch.Official.CrossPlat.yml@templates # https://aka.ms/obpipelines/templates
+  parameters:
+    globalSdl: # https://aka.ms/obpipelines/sdl
+      tsa:
+        # Break build on SDL failures instead of filing bugs.
+        enabled: false # onebranch publish all sdl results to TSA. If TSA is disabled all SDL tools will forced into 'break' build mode.
+      credscan:
+        suppressionsFile: $(Build.SourcesDirectory)\.config\CredScanSuppressions.json
+      policheck:
+        break: true # always break the build on policheck issues. You can disable it by setting to 'false'
+      # suppression:
+      #   suppressionFile: $(Build.SourcesDirectory)\.gdn\global.gdnsuppress
+      cg:
+        alertWarningLevel: Medium
+    featureFlags:
+      runOnHost: true
+      EnableCDPxPAT: false
+
+    stages:
+      - template: templates/pipeline-selector.yml
+        parameters:
+          targetStage: ci

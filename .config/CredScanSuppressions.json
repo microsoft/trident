@@ -1,0 +1,17 @@
+{
+    "tool": "Credential Scanner",
+    "suppressions": [
+        {
+            "file": "azure-linux-image-tools/toolkit/tools/imagegen/configuration/configuration_test.go",
+            "_justification": "Contains password for testing purposes"
+        },
+        {
+            "file": "azure-linux-image-tools/toolkit/tools/imagegen/configuration/user_test.go",
+            "_justification": "Contains password for testing purposes"
+        },
+        {
+            "file": "azure-linux-image-tools/toolkit/tools/imagegen/configuration/testdata/test_configuration.json",
+            "_justification": "Contains password for testing purposes"
+        }
+    ]
+}

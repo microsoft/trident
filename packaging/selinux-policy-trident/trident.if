@@ -1,0 +1,163 @@
+
+## <summary>policy for trident</summary>
+
+########################################
+## <summary>
+##      Execute trident_exec_t in the trident domain.
+## </summary>
+## <param name="domain">
+## <summary>
+##      Domain allowed to transition.
+## </summary>
+## </param>
+#
+interface(`trident_domtrans',`
+        gen_require(`
+                type trident_t, trident_exec_t;
+        ')
+
+        corecmd_search_bin($1)
+        domtrans_pattern($1, trident_exec_t, trident_t)
+')
+
+######################################
+## <summary>
+##      Execute trident in the caller domain.
+## </summary>
+## <param name="domain">
+##      <summary>
+##      Domain allowed access.
+##      </summary>
+## </param>
+#
+interface(`trident_exec',`
+        gen_require(`
+                type trident_exec_t;
+        ')
+
+        corecmd_search_bin($1)
+        can_exec($1, trident_exec_t)
+')
+
+########################################
+## <summary>
+##      Search trident lib directories.
+## </summary>
+## <param name="domain">
+##      <summary>
+##      Domain allowed access.
+##      </summary>
+## </param>
+#
+interface(`trident_search_lib',`
+        gen_require(`
+                type trident_var_lib_t;
+        ')
+
+        allow $1 trident_var_lib_t:dir search_dir_perms;
+        files_search_var_lib($1)
+')
+
+########################################
+## <summary>
+##      Read trident lib files.
+## </summary>
+## <param name="domain">
+##      <summary>
+##      Domain allowed access.
+##      </summary>
+## </param>
+#
+interface(`trident_read_lib_files',`
+        gen_require(`
+                type trident_var_lib_t;
+        ')
+
+        files_search_var_lib($1)
+        read_files_pattern($1, trident_var_lib_t, trident_var_lib_t)
+')
+
+########################################
+## <summary>
+##      Manage trident lib files.
+## </summary>
+## <param name="domain">
+##      <summary>
+##      Domain allowed access.
+##      </summary>
+## </param>
+#
+interface(`trident_manage_lib_files',`
+        gen_require(`
+                type trident_var_lib_t;
+        ')
+
+        files_search_var_lib($1)
+        manage_files_pattern($1, trident_var_lib_t, trident_var_lib_t)
+')
+
+########################################
+## <summary>
+##      Manage trident lib directories.
+## </summary>
+## <param name="domain">
+##      <summary>
+##      Domain allowed access.
+##      </summary>
+## </param>
+#
+interface(`trident_manage_lib_dirs',`
+        gen_require(`
+                type trident_var_lib_t;
+        ')
+
+        files_search_var_lib($1)
+        manage_dirs_pattern($1, trident_var_lib_t, trident_var_lib_t)
+')
+
+
+########################################
+## <summary>
+##      All of the rules required to administrate
+##      an trident environment
+## </summary>
+## <param name="domain">
+##      <summary>
+##      Domain allowed access.
+##      </summary>
+## </param>
+## <param name="role">
+##      <summary>
+##      Role allowed access.
+##      </summary>
+## </param>
+## <rolecap/>
+#
+interface(`trident_admin',`
+        gen_require(`
+                type trident_t;
+                type trident_var_lib_t;
+        ')
+
+        allow $1 trident_t:process { signal_perms };
+        ps_process_pattern($1, trident_t)
+
+        optional_policy(`
+                tunable_policy(`allow_ptrace',`
+                        allow $1 trident_t:process ptrace;
+                ')
+        ')
+
+        optional_policy(`
+                tunable_policy(`deny_ptrace',`
+                        allow $1 trident_t:process ptrace;
+                ')
+        ')
+        
+        files_search_var_lib($1)
+        admin_pattern($1, trident_var_lib_t)
+        optional_policy(`
+                systemd_passwd_agent_exec($1)
+                systemd_read_fifo_file_passwd_run($1)
+        ')
+')

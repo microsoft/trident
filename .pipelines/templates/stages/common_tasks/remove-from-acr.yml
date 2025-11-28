@@ -1,0 +1,70 @@
+parameters:
+  - name: "repository"
+    displayName: "Repository containing COSI images"
+    type: string
+    values:
+      - trident-testimage
+      - trident-container-testimage
+
+  - name: "config"
+    displayName: "Trident configuration"
+    type: string
+
+  - name: "deploymentEnvironment"
+    type: string
+    values:
+      - virtualMachine
+      - bareMetal
+
+steps:
+  - task: AzureCLI@2
+    inputs:
+      azureSubscription: trident-dev-acr-write-umi-ECF
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        set -eux
+
+        if [ "${{ parameters.config }}" == 'misc' ]; then
+          # Remove COSI images
+          ./bin/storm-trident script acr-delete \
+            --config ${{ parameters.config }} \
+            --deployment-environment ${{ parameters.deploymentEnvironment }} \
+            --acr-name $(ACR_NAME) \
+            --repo-name ${{ parameters.repository }} \
+            --build-id $(Build.BuildId) \
+            --num-clones 4
+
+        elif [ "${{ parameters.config }}" == 'extensions' ]; then
+          ./bin/storm-trident script acr-delete \
+            --config ${{ parameters.config }} \
+            --deployment-environment ${{ parameters.deploymentEnvironment }} \
+            --acr-name $(ACR_NAME) \
+            --repo-name $(SYSEXT_REPO) \
+            --build-id $(Build.BuildId) \
+            --num-clones 2
+
+        elif [ "${{ parameters.config }}" == 'root-verity' ]; then
+          ./bin/storm-trident script acr-delete \
+            --config ${{ parameters.config }} \
+            --deployment-environment ${{ parameters.deploymentEnvironment }} \
+            --acr-name $(ACR_NAME) \
+            --repo-name $(SYSEXT_REPO) \
+            --build-id $(Build.BuildId) \
+            --num-clones 2
+          ./bin/storm-trident script acr-delete \
+            --config ${{ parameters.config }} \
+            --deployment-environment ${{ parameters.deploymentEnvironment }} \
+            --acr-name $(ACR_NAME) \
+            --repo-name $(CONFEXT_REPO) \
+            --build-id $(Build.BuildId) \
+            --num-clones 2
+
+        else
+          echo "Skipping step. Configuration is '${{ parameters.config }}'."
+          exit 0
+        fi
+
+    displayName: "Log into ACR and delete images by tag"
+    retryCountOnTaskFailure: 3
+    condition: always()

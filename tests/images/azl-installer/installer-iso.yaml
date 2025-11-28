@@ -1,0 +1,95 @@
+storage:
+  bootType: efi
+
+  disks:
+  - partitionTableType: gpt
+    maxSize: 4G
+    partitions:
+    - id: esp
+      type: esp
+      size: 8M
+
+    - id: rootfs
+      size: grow
+
+  filesystems:
+  - deviceId: esp
+    type: fat32
+    mountPoint:
+      path: /boot/efi
+      options: umask=0077
+
+  - deviceId: rootfs
+    type: ext4
+    mountPoint:
+      path: /
+
+os:
+  hostname: azl-installer
+  bootloader:
+    resetType: hard-reset
+
+  selinux:
+    mode: disabled
+
+  kernelCommandLine:
+    extraCommandLine:
+    - console=tty0
+    - console=ttyS0
+    - rd.info
+    - log_buf_len=1M
+
+  packages:
+    install:
+      - curl
+      - device-mapper
+      - dnf
+      - dosfstools
+      - efibootmgr
+      - iproute
+      - iptables
+      - jq
+      - lsof
+      - mdadm
+      - nano
+      - netplan
+      - openssh-server
+      - squashfs-tools
+      - tar
+      - tpm2-tools
+      - trident-provisioning
+      - vim
+      - veritysetup
+      # Accessibility packages
+      - pcaudiolib
+
+  additionalFiles:
+    # Getty service files for root autologin
+  - source: mos/files/getty@.service
+    destination: /usr/lib/systemd/system/getty@.service
+  - source: mos/files/serial-getty@.service
+    destination: /usr/lib/systemd/system/serial-getty@.service
+  - source: mos/scripts/installation.sh
+    destination: /root/installer/installation.sh 
+
+iso:
+  initramfsType: full-os
+  
+  additionalFiles:
+  - source: iso/images/trident-testimage.cosi
+    destination: /images/azure-linux-core.cosi
+  - source: iso/bin/liveinstaller
+    destination: /installer/liveinstaller
+  - source: iso/files/config-placeholder.yaml
+    destination: /installer/trident-config.yaml.tmpl
+
+  kernelCommandLine:
+    extraCommandLine:
+    - console=tty0
+    - console=tty1
+    - console=ttyS0
+    - loglevel=6
+
+scripts:
+  postCustomization:
+  - path: mos/scripts/startup-command.sh

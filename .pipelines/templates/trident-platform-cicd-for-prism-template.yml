@@ -1,0 +1,42 @@
+# TRIDENT PLATFORM CICD TEMPLATE
+# This template is used by the platform-cicd-preview pipeline to
+# build and test Trident deployment scenarios for a specified AZL
+# preview build.
+
+parameters:
+  - name: micBuildType
+    displayName: MIC Build Type
+    type: string
+    values:
+    - dev
+    - preview
+    - release
+    default: release
+
+  - name: micVersion
+    displayName: MIC Version
+    type: string
+    default: "*.*.*"
+
+  - name: osModifierBranch
+    displayName: OSModifier branch to build from (if not main)
+    type: string
+    default: "main"
+
+stages:
+    - template: stages/base_image_config/create-base-image-config-artifact.yml
+    - template: e2e-template.yml
+      parameters:
+        stageType: ci
+        blockPublishing: true
+        forceTridentRebuild: true
+        micBuildType: ${{ parameters.micBuildType }}
+        micVersion: ${{ parameters.micVersion }}
+        osModifierBranch: ${{ parameters.osModifierBranch }}
+        baseImageArtifactStage: CreateBaseImageConfig
+    - template: e2e-arm64-template.yml
+      parameters:
+        stageType: ci
+        forceTridentRebuild: true
+        osModifierBranch: ${{ parameters.osModifierBranch }}
+        baseImageArtifactStage: CreateBaseImageConfig

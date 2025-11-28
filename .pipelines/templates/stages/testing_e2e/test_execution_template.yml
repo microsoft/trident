@@ -1,0 +1,96 @@
+parameters:
+  - name: hardwareType
+    type: string
+    values:
+      - BM
+      - VM
+
+  - name: runtimeType
+    type: string
+    values:
+      - HOST
+      - CONTAINER
+
+  - name: testingRun
+    type: boolean
+    default: false
+
+stages:
+  - stage: E2ETesting_${{ parameters.hardwareType }}_${{ parameters.runtimeType }}
+    displayName: E2E ${{ parameters.hardwareType }} ${{ parameters.runtimeType }} Testing
+    dependsOn:
+      - DefineTests_E2E
+      - ${{ if eq(parameters.testingRun, true) }}:
+          - DownloadTestingElements
+      - ${{ else }}:
+          - BuildingTools
+          - ${{ if eq(parameters.runtimeType, 'CONTAINER') }}:
+              - BuildTridentContainerImage
+              - TridentTestImg_trident_container_installer
+              - TridentTestImg_trident_container_testimage
+              - TridentTestImg_trident_container_verity_testimage
+              - TridentTestImg_trident_container_usrverity_testimage
+          - ${{ else }}:
+              - TridentTestImg_trident_split_installer
+              - TridentTestImg_trident_installer
+              - TridentTestImg_trident_testimage
+              - TridentTestImg_trident_verity_testimage
+              - TridentTestImg_trident_usrverity_testimage
+    variables:
+      - name: matrixJson
+        value: "$[ stageDependencies.DefineTests_E2E.DefineTests.outputs['matrices.TEST_MATRIX_E2E_${{ parameters.hardwareType }}_${{ parameters.runtimeType }}'] ]"
+
+    jobs:
+      - job: Testing
+        timeoutInMinutes: 50
+        pool:
+          type: linux
+          name: trident-ubuntu-1es-pool-eastus2
+          hostArchitecture: amd64
+
+        strategy:
+          matrix: $[ variables['matrixJson'] ]
+
+        condition: ne(variables['matrixJson'], '{}')
+        variables:
+          - name: ob_outputDirectory
+            value: $(Build.SourcesDirectory)/output
+          - name: ob_artifactBaseName
+            value: $(scenario)_$(System.JobAttempt)
+          - ${{ if eq(parameters.runtimeType, 'CONTAINER') }}:
+              - name: installerISOName
+                value: trident-container-installer
+              - name: testImageName
+                value: trident-container-testimage
+              - name: verityTestImageName
+                value: trident-container-verity-testimage
+              - name: usrVerityTestImageName
+                value: trident-container-usrverity-testimage
+              - name: downloadTridentContainer
+                value: true
+          - ${{ else }}:
+              - name: installerISOName
+                value: trident-installer
+              - name: testImageName
+                value: trident-testimage
+              - name: verityTestImageName
+                value: trident-verity-testimage
+              - name: usrVerityTestImageName
+                value: trident-usrverity-testimage
+              - name: downloadTridentContainer
+                value: false
+
+        steps:
+          # Download all test images
+          - template: ../testing_common/download-test-images.yml
+            parameters:
+              installerISO: $(installerISOName)
+              tridentTestImage: ${{ variables.testImageName }}
+              tridentTestImageVerity: ${{ variables.verityTestImageName }}
+              downloadTridentContainer: ${{ variables.downloadTridentContainer }}
+              tridentTestImageUsrVerity: ${{ variables.usrVerityTestImageName }}
+          - bash: |
+              set -eux
+
+              ./bin/storm-trident run "$(scenario)"
+            displayName: "🧪 Run E2E Test"

@@ -1,0 +1,5 @@
+[profile.default]
+fail-fast = false
+
+[profile.ci.junit] # this can be some other profile, too
+path = "trident_unit_tests.xml"

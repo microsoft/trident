@@ -1,0 +1,172 @@
+parameters:
+  - name: installerISO
+    displayName: "Image used for the installer, source of Trident (container vs host)"
+    type: string
+    default: trident-installer
+    # Test selection is at runtime, and template parameters cannot be validated against runtime variables.
+    # So, do validation in task below rather than specifying this here:
+    # values:
+    #   - trident-installer
+    #   - trident-split-installer
+    #   - trident-container-installer
+
+  - name: tridentTestImage
+    displayName: "Image used in the target OS, source of Trident (container vs host)"
+    type: string
+    default: trident-testimage
+    values:
+      - trident-container-testimage
+      - trident-testimage
+
+  - name: tridentTestImageVerity
+    displayName: "Image used in the root-verity target OS, source of Trident (container vs host)"
+    type: string
+    default: trident-verity-testimage
+    values:
+      - trident-verity-testimage
+      - trident-container-verity-testimage
+
+  - name: tridentTestImageUsrVerity
+    displayName: "Image used in the usr-verity target OS, source of Trident (container vs host)"
+    type: string
+    default: trident-usrverity-testimage
+    values:
+      - trident-usrverity-testimage
+      - trident-container-usrverity-testimage
+
+  - name: downloadTridentContainer
+    displayName: "Download Trident container"
+    type: boolean
+    default: false
+
+  - name: targetDirectory
+    type: string
+    default: "$(Build.SourcesDirectory)/artifacts/test-image"
+
+  - name: isoDirectory
+    type: string
+    default: "$(Build.SourcesDirectory)/artifacts/iso"
+
+  - name: toolsDirectory
+    type: string
+    default: "$(Build.SourcesDirectory)/bin"
+
+  - name: testImageDir
+    type: string
+    default: "$(System.ArtifactsDirectory)/testimage"
+
+  - name: testImageDirVerity
+    type: string
+    default: "$(System.ArtifactsDirectory)/verity-testimage"
+
+  - name: testImageDirUsrVerity
+    type: string
+    default: "$(System.ArtifactsDirectory)/usrverity-testimage"
+
+steps:
+  - bash: |
+      set -eux
+      #
+      # Test selection is at runtime, and template parameters cannot be validated against runtime variables.
+      # So, do validation here.
+      #
+      case "${{ parameters.installerISO }}" in
+          trident-installer|trident-split-installer|trident-container-installer)
+              # Valid image_type, do nothing
+              ;;
+          *)
+              echo "installerISO should be either 'trident-installer', 'trident-split-installer', or 'trident-container-installer'."
+              exit 1
+              ;;
+      esac
+
+    displayName: Validate installer ISO name
+
+  - ${{ if parameters.downloadTridentContainer }}:
+      - task: DownloadPipelineArtifact@2
+        displayName: "Download Trident container"
+        inputs:
+          buildType: current
+          artifactName: "trident-docker-image"
+          patterns: "**/trident-container.tar.gz"
+          targetPath: "${{ parameters.targetDirectory }}"
+
+  - task: DownloadPipelineArtifact@2
+    displayName: "Download ${{ parameters.installerISO }}"
+    inputs:
+      buildType: current
+      artifactName: "${{ parameters.installerISO }}"
+      targetPath: "${{ parameters.isoDirectory }}"
+
+  - task: DownloadPipelineArtifact@2
+    displayName: "Download ${{ parameters.tridentTestImage }}"
+    inputs:
+      buildType: current
+      artifactName: "${{ parameters.tridentTestImage }}"
+      targetPath: "${{ parameters.testImageDir }}"
+
+  - task: DownloadPipelineArtifact@2
+    displayName: "Download ${{ parameters.tridentTestImageVerity }}"
+    inputs:
+      buildType: current
+      artifactName: "${{ parameters.tridentTestImageVerity }}"
+      targetPath: "${{ parameters.testImageDirVerity }}"
+
+  - task: DownloadPipelineArtifact@2
+    displayName: "Download ${{ parameters.tridentTestImageUsrVerity }}"
+    inputs:
+      buildType: current
+      artifactName: "${{ parameters.tridentTestImageUsrVerity }}"
+      targetPath: "${{ parameters.testImageDirUsrVerity }}"
+
+  - task: DownloadPipelineArtifact@2
+    displayName: "Download go-tools"
+    inputs:
+      buildType: current
+      artifactName: "go-tools"
+      patterns: |
+        netlaunch
+        netlisten
+        mkcosi
+        storm-trident
+        virtdeploy
+      targetPath: "${{ parameters.toolsDirectory }}"
+
+  - bash: |
+      # Debug log
+      echo "REGULAR IMAGES:"
+      ls -alh "${{ parameters.testImageDir }}"
+
+      echo ""
+      echo "VERITY IMAGES:"
+      ls -alh "${{ parameters.testImageDirVerity }}"
+
+      set -eux
+
+      # Set tools to be executable
+      chmod +x ${{ parameters.toolsDirectory }}/net*
+      chmod +x ${{ parameters.toolsDirectory }}/mkcosi
+      chmod +x ${{ parameters.toolsDirectory }}/storm-trident
+      chmod +x ${{ parameters.toolsDirectory }}/virtdeploy
+
+      # Call helper to copy and rename images!
+      ${{ parameters.toolsDirectory }}/storm-trident \
+          helper prepare-images -a -- \
+          "${{ parameters.testImageDir }}" \
+          "${{ parameters.testImageDirVerity }}" \
+          "${{ parameters.testImageDirUsrVerity }}" \
+          "${{ parameters.tridentTestImage }}" \
+          "${{ parameters.tridentTestImageVerity }}" \
+          "${{ parameters.tridentTestImageUsrVerity }}" \
+          "${{ parameters.targetDirectory }}" \
+          -v 4
+
+      # List tools in the target directory
+      ls -lh "${{ parameters.toolsDirectory }}"
+
+      # List ISOs in the target directory
+      ls -lh "${{ parameters.isoDirectory }}"
+
+      # List images in the target directory
+      ls -lh "${{ parameters.targetDirectory }}"
+    displayName: "Move and Rename Trident Test Images"

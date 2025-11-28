@@ -1,0 +1,368 @@
+parameters:
+  - name: jobName
+    type: string
+    default: trident_baremetal_tests
+
+  - name: testingRun
+    displayName: "Download prebuilt test artifacts"
+    type: boolean
+    default: false
+
+  - name: buildPurpose
+    type: string
+    default: "daily"
+    values:
+      - daily
+      - validation
+      - weekly
+
+  - name: runtimeEnv
+    displayName: "Runtime environment (host vs container)"
+    type: string
+    default: "host"
+    values:
+      - host
+      - container
+
+  - name: extraDependsOn
+    type: string
+    default: ""
+
+stages:
+  - stage: BaremetalDeploymentTesting_${{ parameters.runtimeEnv }}
+    displayName: Baremetal Deployment Testing ${{ parameters.runtimeEnv }}
+    dependsOn:
+      - ${{ if ne(parameters.extraDependsOn, '') }}:
+          - ${{ parameters.extraDependsOn }}
+      - ${{ if eq(parameters.testingRun, true) }}:
+          - DownloadTestingElements
+      - ${{ else }}:
+          - BuildingTools
+          - ${{ if eq(parameters.runtimeEnv, 'container') }}:
+              - BuildTridentContainerImage
+              - TridentTestImg_trident_container_installer
+              - TridentTestImg_trident_container_testimage
+              - TridentTestImg_trident_container_verity_testimage
+              - TridentTestImg_trident_container_usrverity_testimage
+          - ${{ else }}:
+              - TridentTestImg_trident_verity_testimage
+              - TridentTestImg_trident_installer
+              - TridentTestImg_trident_testimage
+              - TridentTestImg_trident_usrverity_testimage
+
+    jobs:
+      - template: ../testing_common/get-tests.yml
+        parameters:
+          buildPurpose: ${{ parameters.buildPurpose }}
+          deploymentEnvironment: bareMetal
+          runtimeEnv: ${{ parameters.runtimeEnv }}
+
+      - job: ${{ parameters.jobName }}
+        displayName: Run E2E Test
+        dependsOn: DefineTests
+        timeoutInMinutes: 90
+        pool:
+          type: linux
+          name: trident-aods-conn-1es-pool
+          hostArchitecture: amd64
+
+        strategy:
+          matrix: $[ dependencies.DefineTests.outputs['setConfigurations.matrixConfigurations'] ]
+          maxParallel: 1
+
+        variables:
+          # Sourced from the matrix
+          - name: TRIDENT_CONFIGURATION_NAME
+            value: $(configuration)
+
+          - name: TRIDENT_SOURCE_DIR
+            value: $(Build.SourcesDirectory)
+
+          - name: TRIDENT_CONFIG_PATH
+            value: $(TRIDENT_SOURCE_DIR)/tests/e2e_tests/trident_configurations/$(TRIDENT_CONFIGURATION_NAME)
+
+          - name: TRIDENT_CONFIG_FILE
+            value: $(TRIDENT_CONFIG_PATH)/trident-config.yaml
+
+          - name: TEST_SELECTION_FILE
+            value: $(TRIDENT_CONFIG_PATH)/test-selection.yaml
+
+          - name: ob_outputDirectory
+            value: $(Build.SourcesDirectory)/deployment_logs
+
+          - name: ob_artifactBaseName
+            value: $(TRIDENT_CONFIGURATION_NAME)_baremetal_${{ parameters.runtimeEnv }}_deployment_log_$(System.JobAttempt)
+
+          - name: NETLAUNCH_PORT
+            value: 4000
+
+          - name: INSTALLER_ISO_NAME
+            ${{ if eq(parameters.runtimeEnv, 'container') }}:
+              value: "trident-container-installer"
+            ${{ else }}:
+              value: "trident-installer"
+
+          - name: IMAGE_NAME
+            ${{ if eq(parameters.runtimeEnv, 'container') }}:
+              value: "trident-container-testimage"
+            ${{ else }}:
+              value: "trident-testimage"
+
+          - name: VERITY_IMAGE_NAME
+            ${{ if eq(parameters.runtimeEnv, 'container') }}:
+              value: "trident-container-verity-testimage"
+            ${{ else }}:
+              value: "trident-verity-testimage"
+
+          - name: USRVERITY_IMAGE_NAME
+            ${{ if eq(parameters.runtimeEnv, 'container') }}:
+              value: "trident-container-usrverity-testimage"
+            ${{ else }}:
+              value: "trident-usrverity-testimage"
+
+          - group: baremetal_controller
+
+          # Provides: ACR_NAME
+          - group: trident_e2e_params
+
+        steps:
+          - bash: |
+              set -xe
+              ping -c 3 "$(baremetal_controller.lab_canary_ip)"
+            displayName: "Validate if the Baremetal lab is up and running"
+            retryCountOnTaskFailure: 10
+
+          - bash: |
+              set -xe
+
+              # Install packages.
+              sudo apt update
+              sudo apt install -y \
+                libgirepository1.0-dev \
+                python3-venv \
+                python3-dev \
+                openssh-client \
+                ncat \
+                libcairo2-dev \
+                acl \
+                protobuf-compiler
+              sudo snap install yq
+              setfacl --help
+
+              # Install poetry
+              set -o pipefail
+              curl -sSL https://install.python-poetry.org | python3 -
+            displayName: "Install dependencies"
+            retryCountOnTaskFailure: 3
+
+          # Download all test images
+          - template: ../testing_common/download-test-images.yml
+            parameters:
+              installerISO: ${{ variables.INSTALLER_ISO_NAME }}
+              tridentTestImage: ${{ variables.IMAGE_NAME }}
+              tridentTestImageVerity: ${{ variables.VERITY_IMAGE_NAME }}
+              tridentTestImageUsrVerity: ${{ variables.USRVERITY_IMAGE_NAME }}
+              ${{ if eq(parameters.runtimeEnv, 'container') }}:
+                downloadTridentContainer: true
+
+          # Push (regular or container) testimage, sysexts, and/or confexts to
+          # ACR. This step must occur before trident prep, since the ACR image
+          # tag variable is set in this template.
+          - template: ../common_tasks/push-to-acr.yml
+            parameters:
+              imageName: ${{ variables.IMAGE_NAME }}
+              config: $(TRIDENT_CONFIGURATION_NAME)
+              deploymentEnvironment: "bareMetal"
+              runtimeEnvironment: ${{ parameters.runtimeEnv }}
+
+          #   Run trident prep
+          - template: ../testing_common/trident-prep.yml
+            parameters:
+              tridentConfigPath: $(TRIDENT_CONFIG_PATH)
+              runtimeEnv: ${{ parameters.runtimeEnv }}
+              config: $(TRIDENT_CONFIGURATION_NAME)
+              imageName: ${{ variables.IMAGE_NAME }}
+
+          - bash: |
+              set -xe
+
+              # Add poetry to PATH.
+              export PATH="$HOME/.local/bin:$PATH"
+
+              ls -l
+
+              # Run script to update the trident.yaml file
+              python3 ./.pipelines/templates/stages/testing_baremetal/update_host_config.py \
+                    --trident-yaml $(TRIDENT_CONFIG_FILE) \
+                    --test-selection $(TEST_SELECTION_FILE) \
+                    --oam-ip "$(baremetal_controller.oam_ip)" \
+                    --oam-gateway "$(baremetal_controller.oam_gateway)" \
+                    --interface-name "$(baremetal_controller.oam_interface)" \
+                    --oam-mac "$(baremetal_controller.oam_mac)"
+              cat $(TRIDENT_CONFIG_FILE)
+            env:
+              SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+            displayName: "Update Trident Config to inject static IP for OAM interface"
+
+          - bash: |
+              set -eux
+
+              SERVICE_OVERRIDE=""
+              if [ "${{ parameters.runtimeEnv }}" == "host" ]; then 
+                SERVICE_OVERRIDE="[Service]
+                  Environment=\"HTTPS_PROXY=$(baremetal_controller.https_proxy)\""
+              else
+                # When running containerized Trident, we must directly embed the proxy in the docker command
+                SERVICE_OVERRIDE="[Service]
+                  Environment=\"HTTPS_PROXY=$(baremetal_controller.https_proxy)\"
+                  ExecStart=
+                  ExecStart=docker run \\
+                    --env HTTPS_PROXY \\
+                    --name trident_container \\
+                    --pull=never \\
+                    --rm \\
+                    --privileged \\
+                    -v /etc/trident:/etc/trident \\
+                    -v /etc/pki:/etc/pki:ro \\
+                    -v /run/initramfs/live:/trident_cdrom \\
+                    -v /var/lib/trident:/var/lib/trident \\
+                    -v /var/log:/var/log \\
+                    -v /:/host \\
+                    -v /dev:/dev \\
+                    -v /run:/run \\
+                    -v /sys:/sys \\
+                    --pid host \\
+                    --ipc host trident/trident:latest install \\
+                    --verbosity TRACE"
+              fi
+
+              cat << EOF > $(TRIDENT_SOURCE_DIR)/baremetal-netlaunch.yaml
+              netlaunch:
+                bmc:
+                  ip: "$(baremetal_controller.bmc_ip)"
+                  username: "$(baremetal_controller.bmc_username)"
+                  password: "$(baremetal_controller.bmc_password)"
+                  serialOverSsh:
+                    sshPort: 22
+                    comPort: com2
+                    output:  "baremetal-serial.log"
+
+              # Set up proxy variables
+              iso:
+                serviceOverride: |
+                  $SERVICE_OVERRIDE
+              EOF
+
+              cat $(TRIDENT_SOURCE_DIR)/baremetal-netlaunch.yaml | grep -v password
+
+              cat << EOF > $(TRIDENT_SOURCE_DIR)/baremetal-netlisten.yaml
+              netlisten:
+                bmc:
+                  ip: "$(baremetal_controller.bmc_ip)"
+                  username: "$(baremetal_controller.bmc_username)"
+                  password: "$(baremetal_controller.bmc_password)"
+                  serialOverSsh:
+                    sshPort: 22
+                    comPort: com2
+                    output:  "baremetal-serial.log"
+              EOF
+
+              cat $(TRIDENT_SOURCE_DIR)/baremetal-netlisten.yaml | grep -v password
+
+            displayName: "Write Netlaunch and netlisten configuration"
+
+          - bash: |
+              set -euxo pipefail
+              MAX_FAILURES_FLAG=""
+
+              # rerun is expected to fail ONCE
+              if [ ${{ variables['TRIDENT_CONFIGURATION_NAME'] }} == 'rerun' ]; then 
+                MAX_FAILURES_FLAG="--max-failures 1"
+              fi
+
+              # memory-constraint-combined is meant to produce ONE failure
+              # because the first run modifies the service file and exits
+              # prematurely, so that the second run will have the memory
+              # constraints applied.
+              if [ ${{ variables['TRIDENT_CONFIGURATION_NAME'] }} == 'memory-constraint-combined' ]; then 
+                MAX_FAILURES_FLAG="--max-failures 1"
+              fi
+
+              ./bin/netlaunch \
+                  --iso $(TRIDENT_SOURCE_DIR)/artifacts/iso/${{ variables.INSTALLER_ISO_NAME }}.iso \
+                  --config $(TRIDENT_SOURCE_DIR)/baremetal-netlaunch.yaml \
+                  --trident $(TRIDENT_CONFIG_FILE) \
+                  --servefolder ./artifacts/test-image \
+                  --logstream $MAX_FAILURES_FLAG \
+                  --trace-file $(TRIDENT_SOURCE_DIR)/trident-clean-install-metrics.jsonl \
+                  --force-color \
+                  --full-logstream logstream-full.log \
+                  --wait-for-provisioned-state \
+                  --port ${{ variables.NETLAUNCH_PORT }} 2>&1 | tee ./clean-install-deployment.log
+            timeoutInMinutes: 35
+            workingDirectory: ${{ variables.TRIDENT_SOURCE_DIR }}
+            displayName: "Run netlaunch for testing"
+
+          - bash: |
+              set -eux
+              sudo ./bin/storm-trident helper display-logs -a \
+                  --serial-log-path "${{ variables.TRIDENT_SOURCE_DIR }}/baremetal-serial.log" \
+                  --serial-log-artifact-file-name "clean-install-target-os-A-serial.log" \
+                  --trident-trace-log-file "${{ variables.TRIDENT_SOURCE_DIR }}/logstream-full.log" \
+                  --artifacts-folder "$(ob_outputDirectory)"
+            displayName: "Display clean install logs"
+            condition: succeededOrFailed()
+
+          - bash: |
+              set -eux
+              ./bin/storm-trident helper check-selinux \
+                  "$(Build.SourcesDirectory)/tests/e2e_tests/helpers/key" \
+                  "$(baremetal_controller.oam_ip)" \
+                  "testing-user" \
+                  "${{ parameters.runtimeEnv }}" \
+                  --audit-file $(ob_outputDirectory)/audit.log \
+            timeoutInMinutes: 5
+            condition: eq('${{ parameters.runtimeEnv }}', 'host')
+            displayName: "📄 Check for SELinux failures"
+
+          - bash: |
+              set -eux
+              ./bin/storm-trident helper boot-metrics \
+                  "$(Build.SourcesDirectory)/tests/e2e_tests/helpers/key" \
+                  "$(baremetal_controller.oam_ip)" \
+                  "testing-user" \
+                  "${{ parameters.runtimeEnv }}" \
+                  --metrics-file $(TRIDENT_SOURCE_DIR)/trident-clean-install-metrics.jsonl \
+                  --metrics-operation install
+            displayName: "Create boot metrics for booting into target OS"
+
+          - template: ../testing_common/trident-metrics.yml
+            parameters:
+              tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
+              tridentConfigPath: $(TRIDENT_CONFIG_PATH)
+              deploymentEnvironment: bareMetal
+              runtimeEnvironment: ${{ parameters.runtimeEnv }}
+              tridentConfigurationName: $(TRIDENT_CONFIGURATION_NAME)
+              metricsFile: $(TRIDENT_SOURCE_DIR)/trident-clean-install-metrics.jsonl
+              ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
+                kustoTableName: main
+              ${{ if ne(variables['Build.SourceBranchName'], 'main') }}:
+                kustoTableName: dev
+
+          - template: ../testing_common/e2e-test-run.yml
+            parameters:
+              buildPurpose: ${{ parameters.buildPurpose }}
+              deploymentEnvironment: bareMetal
+              tridentConfigurationName: $(TRIDENT_CONFIGURATION_NAME)
+              hostIp: "$(baremetal_controller.oam_ip)"
+              tridentConfigPath: $(TRIDENT_CONFIG_PATH)
+              netlistenPort: ${{ variables.NETLAUNCH_PORT }}
+              runtimeEnv: ${{ parameters.runtimeEnv }}
+              netlistenConfigFile: $(TRIDENT_SOURCE_DIR)/baremetal-netlisten.yaml
+              httpsProxy: "$(baremetal_controller.https_proxy)"
+
+          - template: ../common_tasks/remove-from-acr.yml
+            parameters:
+              repository: ${{ variables.IMAGE_NAME }}
+              config: $(TRIDENT_CONFIGURATION_NAME)
+              deploymentEnvironment: "bareMetal"

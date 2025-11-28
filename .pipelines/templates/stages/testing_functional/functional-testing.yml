@@ -1,0 +1,148 @@
+parameters:
+  - name: downloadPrebuiltImage
+    displayName: "Download prebuilt base image"
+    type: boolean
+    default: true
+
+  - name: rerunTests
+    displayName: "Rerun functional tests on the same VM"
+    type: boolean
+    default: true
+
+  - name: functestImageArtifact
+    type: string
+    default: "trident-functest"
+
+  - name: functestImageArtifactPipeline
+    type: number
+    default: 5067 # [GITHUB]-trident-ci
+    displayName: Where to download prebuilt image from
+
+  - name: osModifierBranch
+    type: string
+    default: "main"
+
+  - name: dependsOnStage
+    type: string
+    default: ""
+
+stages:
+  - stage: FunctionalTesting
+    displayName: Functional Testing
+    dependsOn:
+      - BuildingTools
+      - ${{ if eq(parameters.downloadPrebuiltImage, false) }}:
+          - TridentTestImg_trident_functest
+
+    jobs:
+      - job: FunctionalTests
+        displayName: Functional Tests
+        timeoutInMinutes: 50
+        pool:
+          type: linux
+          name: trident-ubuntu-1es-pool-eastus2
+          hostArchitecture: amd64
+
+        variables:
+          ob_outputDirectory: $(Build.SourcesDirectory)/build
+          baseImageDirectory: "$(Build.SourcesDirectory)/artifacts"
+
+        steps:
+          - checkout: platform-tests
+            fetchDepth: 1
+
+          - template: ../common_tasks/cargo-auth.yml
+
+          - template: ../testing_vm/netlaunch-prep.yml
+
+          - task: DownloadPipelineArtifact@2
+            displayName: "Download go-tools"
+            inputs:
+              buildType: current
+              artifactName: "go-tools"
+              patterns: |
+                virtdeploy
+              targetPath: "$(Build.SourcesDirectory)/bin"
+
+          - ${{ if eq(parameters.downloadPrebuiltImage, false) }}:
+              - task: DownloadPipelineArtifact@2
+                displayName: "Download FT Image from current build"
+                inputs:
+                  buildType: current
+                  artifactName: "${{ parameters.functestImageArtifact }}"
+                  targetPath: "${{ variables.baseImageDirectory }}"
+          - ${{ else }}:
+              - task: DownloadPipelineArtifact@2
+                displayName: "Download FT Image from latest build of ${{ parameters.functestImageArtifactPipeline}}"
+                inputs:
+                  buildType: specific
+                  project: "ECF"
+                  definition: ${{ parameters.functestImageArtifactPipeline}}
+                  buildVersionToDownload: latestFromBranch
+                  branchName: "refs/heads/main"
+                  artifactName: "${{ parameters.functestImageArtifact }}"
+                  targetPath: "${{ variables.baseImageDirectory }}"
+
+          - bash: |
+              set -eux
+
+              # Proactively try to fix any possible issue from previous task failure
+              sudo dpkg --configure -a
+
+              sudo apt install -y protobuf-compiler clang bc
+              sudo apt remove python3-openssl
+              pip install pytest assertpy paramiko pyopenssl
+            displayName: Install dependencies
+            retryCountOnTaskFailure: 3
+
+          - template: ../common_tasks/download-osmodifier.yml
+            parameters:
+              osModifierBranch: ${{ parameters.osModifierBranch }}
+              targetArchitecture: amd64
+
+          - bash: |
+              set -eux
+
+              ssh-keygen -t rsa -b 2048 -f ~/.ssh/id_rsa -q -N ""
+            displayName: Set up SSH Keys
+            retryCountOnTaskFailure: 3
+
+          - template: ../common_tasks/rustup.yml
+
+          - bash: |
+              set -eux
+
+              # Make virt-deploy executable
+              chmod +x ./bin/virtdeploy
+
+              # Copy files from platform-tests to functional_tests
+              cp platform-tests/tools/marinerhci_test_tools/node_interface.py tests/functional_tests/
+              cp platform-tests/tools/marinerhci_test_tools/ssh_node.py tests/functional_tests/
+
+              # Run the core of the functional tests, which means only
+              # rebuilding the test binaries and invoking pytest. The regular
+              # target is meant for local use and does extra setup not required
+              # here.
+              sg libvirt "make functional-test-core"
+            displayName: Execute Functional Tests
+
+          - template: ../common_tasks/coverage.yml
+            parameters:
+              codeCoverageBaseline: 78 # Unit + functional tests
+              executeUnitTests: true
+              installNativeDependencies: false
+              rustup: false
+
+          - template: ../junit/handle-junit-test-results.yml
+            parameters:
+              testRunName: "FunctionalTests_$(System.JobAttempt)"
+              junitTestFile: "$(Build.SourcesDirectory)/target/trident_functional_tests.xml"
+              displayNameSpecifier: "functional tests"
+              artifactName: "junit_for_trident_functionaltests"
+
+          - bash: |
+              set -eux
+
+              sg libvirt "make patch-functional-test"
+            condition: and(succeeded(), eq('${{ parameters.rerunTests }}', 'true'))
+            displayName: Rerun Functional Tests

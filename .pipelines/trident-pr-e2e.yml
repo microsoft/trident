@@ -1,0 +1,41 @@
+#################################################################################
+#                               OneBranch Pipelines                             #
+# This pipeline was created by EasyStart from a sample located at:              #
+#   https://aka.ms/obpipelines/easystart/samples                                #
+# Documentation:  https://aka.ms/obpipelines                                    #
+# Yaml Schema:    https://aka.ms/obpipelines/yaml/schema                        #
+# Retail Tasks:   https://aka.ms/obpipelines/tasks                              #
+# Support:        https://aka.ms/onebranchsup                                   #
+#################################################################################
+
+trigger: none
+
+resources:
+  repositories:
+    - repository: platform-tests
+      type: git
+      name: platform-tests
+
+    - repository: test-images
+      type: git
+      name: test-images
+      ref: refs/heads/main
+
+    - repository: platform-pipelines
+      type: git
+      name: platform-pipelines
+      ref: refs/heads/main
+
+    - repository: platform-telemetry
+      name: platform-telemetry
+      type: git
+      ref: refs/heads/main
+
+extends:
+  template: templates/MockOB.yml
+  parameters:
+    stages:
+      - template: templates/pipeline-selector.yml
+        parameters:
+          targetStage: pr-e2e
+          blockPublishing: true

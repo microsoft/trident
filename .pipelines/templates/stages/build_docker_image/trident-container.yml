@@ -1,0 +1,46 @@
+stages:
+  - stage: BuildTridentContainerImage
+    displayName: Build Docker Image
+    dependsOn:
+      - GetTridentBinaries_rpms_amd64
+
+    jobs:
+      - job: BuildImage
+        displayName: Build Image
+        pool:
+          type: linux
+
+        variables:
+          ob_outputDirectory: "$(Build.SourcesDirectory)/trident/out"
+          ob_artifactBaseName: "trident-docker-image"
+
+        steps:
+          - template: ../common_tasks/avoid-pypi-usage.yml
+
+          - script: |
+              set -eux
+              mkdir -p bin/RPMS
+            displayName: Prepare to build docker image
+            retryCountOnTaskFailure: 3
+
+          - task: DownloadPipelineArtifact@2
+            displayName: "Download Trident rpms"
+            inputs:
+              buildType: current
+              artifactName: "trident-binaries"
+              patterns: "**/*.rpm"
+              targetPath: "$(Build.SourcesDirectory)/bin/RPMS/x86_64"
+
+          - template: ../common_tasks/preview-container.yml
+            parameters:
+              dockerfilePath: $(Build.SourcesDirectory)/packaging/docker/Dockerfile.runtime
+              dockerBuildContext: $(Build.SourcesDirectory)
+
+          - script: |
+              set -euxo pipefail
+
+              mkdir -p $(ob_outputDirectory)
+              DOCKER_BUILDKIT=1 docker build -f packaging/docker/Dockerfile.runtime --progress plain -t trident/trident:latest .
+              docker save trident/trident:latest | gzip > $(ob_outputDirectory)/trident-container.tar.gz
+            workingDirectory: $(Build.SourcesDirectory)
+            displayName: Build Docker image

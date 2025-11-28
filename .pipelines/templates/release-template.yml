@@ -1,0 +1,20 @@
+# Template meant for use in the release pipeline.
+
+parameters:
+  - name: specificVersion
+    type: string
+    displayName: |
+      Specific version of the package to download, leave empty to download latest.
+    default: ""
+
+stages:
+  - template: stages/download_staged/download-staged.yml
+    parameters:
+      stageType: rel
+      artifactName: trident-binaries
+      specificVersion: ${{ parameters.specificVersion }}
+      packageName: rpms
+
+  - template: stages/publishing/publish.yml
+    parameters:
+      stageType: rel

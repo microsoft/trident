@@ -1,0 +1,177 @@
+parameters:
+  - name: updateCheckTimeoutInMinutes
+    displayName: "Timeout for checking target OS deployment in minutes"
+    type: number
+    default: 25
+
+  - name: verboseLogging
+    displayName: "Enable verbose logging"
+    type: boolean
+    default: false
+
+  - name: imageOverride
+    displayName: "Image override prefix"
+    type: string
+    default: ""
+
+  - name: platform
+    displayName: Test platform
+    type: string
+    values:
+      - qemu
+      - azure
+
+  - name: flavor
+    displayName: Image flavor
+    type: string
+    values:
+      - qemu-grub
+      - qemu
+      - azure
+      - uki
+
+  - name: pool
+    displayName: Agent pool
+    type: string
+    default: "trident-ubuntu-1es-pool-eastus2"
+  
+  - name: skipExtensionTesting
+    displayName: "Skip extension testing"
+    type: string
+    default: "false"
+
+jobs:
+  - job: RollbackTesting_${{ replace(parameters.flavor, '-', '_') }}
+    displayName: Rollback Testing - ${{ parameters.flavor }}
+    timeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
+    pool:
+      type: linux
+      name: ${{ parameters.pool }}
+      hostArchitecture: amd64
+
+    variables:
+      tridentSourceDirectory: $(Build.SourcesDirectory)
+      ob_outputDirectory: $(tridentSourceDirectory)/deployment_logs_${{ parameters.flavor }}
+      ob_artifactBaseName: "rollback-testing-${{ parameters.flavor }}"
+      TEST_RESOURCE_GROUP: trident-vm-servicing-validation-$(Build.BuildId)-$(System.JobPositionInPhase)
+
+    steps:
+      - bash: |
+          echo "##vso[task.setvariable variable=ob_artifactBaseName;]rollback-testing-${{ parameters.flavor }}"
+          echo "##vso[task.setvariable variable=TEST_RESOURCE_GROUP;]trident-vm-rollback-validation-$(Build.BuildId)"
+        displayName: "Set variables"
+
+      - task: DownloadPipelineArtifact@2
+        inputs:
+          buildType: current
+          artifactName: image-${{ parameters.flavor }}-base
+          targetPath: "$(Build.ArtifactStagingDirectory)/"
+        displayName: Download Base Image
+
+      - task: DownloadPipelineArtifact@2
+        inputs:
+          buildType: current
+          artifactName: image-${{ parameters.flavor }}-update-a
+          targetPath: "$(Build.ArtifactStagingDirectory)"
+        displayName: Download Update Image
+
+      - task: DownloadPipelineArtifact@2
+        inputs:
+          buildType: current
+          artifactName: ssh-keys
+          targetPath: "$(Build.ArtifactStagingDirectory)/ssh"
+        displayName: Download SSH Keys
+
+      - task: DownloadPipelineArtifact@2
+        displayName: "Download go-tools"
+        inputs:
+          buildType: current
+          artifactName: "go-tools"
+          patterns: |
+            netlisten
+            storm-trident
+          targetPath: "$(tridentSourceDirectory)/bin"
+
+      - bash: |
+          set -eux
+          chmod +x $(tridentSourceDirectory)/bin/netlisten
+          chmod +x $(tridentSourceDirectory)/bin/storm-trident
+          cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* ~/.ssh/
+          chmod -R 700 ~/.ssh/
+          mkdir -p $(ob_outputDirectory)
+          ls -l ~/.ssh/
+        displayName: Set up SSH Keys and setup output directory
+
+      - bash: |
+          set -eux
+          ./bin/storm-trident script build-extension-images --build-sysexts --num-clones 3
+          mv ./test-sysext-*.raw $(Build.ArtifactStagingDirectory)/
+
+          find $(Build.ArtifactStagingDirectory)
+        displayName: "Create extensions for test"
+
+      - bash: |
+          echo "##vso[task.setvariable variable=STORM_SCENARIO_FINISHED;]false"
+        displayName: "Initialize STORM_SCENARIO_FINISHED=false"
+
+      - bash: |
+          set -eux
+
+          FLAGS="-a"
+          if [ "${{ parameters.verboseLogging }}" == "True" ]; then
+            FLAGS="$FLAGS --verbose"
+          fi
+          if [ "${{ parameters.flavor }}" != "uki" ]; then
+            FLAGS="$FLAGS --secure-boot"
+          fi
+          set +x
+          echo "##vso[task.setvariable variable=STORM_FLAGS;]$FLAGS"
+        displayName: "Set flags"
+
+      - bash: |
+          set -eux
+          
+          SKIP_FLAGS=""
+          # TODO: enable manual rollback testing when it is implemented
+          SKIP_FLAGS="$SKIP_FLAGS --skip-manual-rollbacks"
+          # TODO: enable runtime update testing when it is implemented
+          SKIP_FLAGS="$SKIP_FLAGS --skip-runtime-updates"
+
+          if [ "${{ parameters.skipExtensionTesting }}" == "true" ]; then
+            # Allow testing for non-extension scenarios
+            SKIP_FLAGS="$SKIP_FLAGS --skip-extension-testing"
+          fi
+
+          sudo ./bin/storm-trident run rollback -a $(STORM_FLAGS) $SKIP_FLAGS \
+            --artifacts-dir $(Build.ArtifactStagingDirectory) \
+            --output-path $(ob_outputDirectory) \
+            --platform ${{ parameters.platform }} \
+            --ssh-private-key-path $(SSH_PRIVATE_KEY_PATH) \
+            --ssh-public-key-path $(SSH_PUBLIC_KEY_PATH) \
+            --force-cleanup
+          set +x
+          echo "##vso[task.setvariable variable=STORM_SCENARIO_FINISHED;]true"
+        displayName: "Rollback test (${{ parameters.platform }})"
+        timeoutInMinutes: 5
+
+      - bash: |
+          set -eux
+
+          sudo zstd -T0 $(Build.ArtifactStagingDirectory)/booted.qcow2
+          sudo mv $(Build.ArtifactStagingDirectory)/booted.qcow2.zst $(ob_outputDirectory)/
+
+          # TODO: use
+          # https://learn.microsoft.com/en-us/azure/virtual-machines/linux/download-vhd?tabs=azure-cli
+          # for Azure images
+        workingDirectory: $(tridentSourceDirectory)
+        condition: failed()
+        displayName: "Publish logs and OS disk on failure"
+        timeoutInMinutes: 5
+
+      - bash: |
+          set -eux
+          sudo chmod -R 777 $(ob_outputDirectory)/
+          sudo chown -R $USER:$USER $(ob_outputDirectory)/
+          ls -lR $(ob_outputDirectory)/
+        condition: always()
+        displayName: "Ensure output directory permissions"

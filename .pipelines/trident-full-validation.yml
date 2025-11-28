@@ -1,0 +1,57 @@
+parameters:
+  - name: "debug"
+    displayName: "Enable debug output"
+    type: boolean
+    default: false
+
+schedules:
+  - cron: "0 4 * * 0" # 4AM UTC Sunday ==> 8PM PST Saturday
+    displayName: Full Baremetal E2E Tests
+    always: true
+    branches:
+      include:
+        - main
+
+trigger: none
+
+variables:
+  - name: CDP_DEFINITION_BUILD_COUNT
+    value: $[counter('', 0)] # needed for onebranch.pipeline.version task https://aka.ms/obpipelines/versioning
+  - name: system.debug
+    value: ${{ parameters.debug }}
+  # ENABLE_PRS_DELAYSIGN: 0
+  # ROOT: $(Build.SourcesDirectory)
+  # REPOROOT: $(Build.SourcesDirectory)
+  # OUTPUTROOT: $(REPOROOT)\out
+  - name: DEBIAN_FRONTEND
+    value: noninteractive
+
+resources:
+  repositories:
+    - repository: platform-tests
+      type: git
+      name: platform-tests
+      ref: refs/heads/main
+
+    - repository: platform-pipelines
+      type: git
+      name: platform-pipelines
+      ref: refs/heads/main
+
+    - repository: test-images
+      type: git
+      name: test-images
+      ref: refs/heads/main
+
+    - repository: platform-telemetry
+      name: platform-telemetry
+      type: git
+      ref: refs/heads/main
+
+extends:
+  template: templates/MockOB.yml
+  parameters:
+    stages:
+      - template: templates/pipeline-selector.yml
+        parameters:
+          targetStage: 'full-validation'

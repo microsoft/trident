@@ -1,0 +1,132 @@
+parameters:
+  - name: micBuildType
+    displayName: MIC Build Type
+    type: string
+    values:
+      - dev
+      - preview
+      - release
+    default: release
+
+  - name: micVersion
+    displayName: MIC Version
+    type: string
+    default: "*.*.*"
+
+  - name: dependsOnStage
+    type: string
+    default: ''
+
+stages:
+  # Build installer tools
+  - template: build-installer-tools.yml
+
+  - stage: AzureLinux_Installer_ISO
+    displayName: Build azl-installer-iso
+    dependsOn:
+      - BuildInstallerTools
+      - GetTridentBinaries_rpms_amd64
+      - TridentTestImg_trident_testimage
+      - ${{ if ne(parameters.dependsOnStage, '') }}:
+        - ${{ parameters.dependsOnStage }}
+
+    jobs:
+      - job: BuildAzLInstallerISO
+        displayName: Build azl-installers (attended & unattended)
+        timeoutInMinutes: 20
+        pool:
+          type: linux
+
+        variables:
+          ob_outputDirectory: $(Pipeline.Workspace)/s/output
+          ob_artifactBaseName: azl-installer
+          BASEIMG_AZURE_LINUX_VERSION: "3.0"
+
+        steps:
+          - template: ../common_tasks/avoid-pypi-usage.yml
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              buildType: current
+              artifactName: trident-binaries
+              targetPath: "$(Build.ArtifactStagingDirectory)/trident"
+            displayName: Download Trident RPMs
+
+          - task: DownloadPipelineArtifact@2
+            displayName: "Download installer-tools"
+            inputs:
+              buildType: current
+              artifactName: installer-tools
+              targetPath: "$(Build.ArtifactStagingDirectory)/installer-tools"
+
+          - task: DownloadPipelineArtifact@2
+            displayName: "Download trident-testimage"
+            inputs:
+              buildType: current
+              artifactName: trident-testimage
+              targetPath: "$(Build.ArtifactStagingDirectory)/testimage"
+
+          - bash: |
+              set -ex
+              
+              mkdir -p tests/images/azl-installer/iso/bin
+              mkdir -p tests/images/azl-installer/iso/images
+              
+              # Move liveinstaller to bin directory
+              mv "$(Build.ArtifactStagingDirectory)/installer-tools/liveinstaller" tests/images/azl-installer/iso/bin/
+              chmod +x tests/images/azl-installer/iso/bin/liveinstaller
+              
+              # Move .cosi file to the ISO directory. When there are clones (multiple .cosi files), we pick the first one.
+              mv $(ls $(Build.ArtifactStagingDirectory)/testimage/*.cosi | head -n 1) tests/images/azl-installer/iso/images/trident-testimage.cosi
+            displayName: "Prepare installer dependencies"
+            workingDirectory: $(Build.SourcesDirectory)
+
+          - template: ../common_tasks/find-base-image-version.yml
+          
+          - template: ../build_image/build-image-template.yml
+            parameters:
+              imageName: azl-installer
+              baseimgBuildType: $(BASEIMG_BUILD_TYPE)
+              baseimgVersion: $(BASEIMG_VERSION)
+              micBuildType: ${{ parameters.micBuildType }}
+              micVersion: ${{ parameters.micVersion }}
+
+          - bash: |
+              set -ex
+              
+              # Make isopatch executable
+              chmod +x $(Build.ArtifactStagingDirectory)/installer-tools/isopatch
+              
+              # Rename to attended ISO
+              mv $(ob_outputDirectory)/azl-installer.iso $(ob_outputDirectory)/azl-installer-attended.iso
+              
+              # Create unattended ISO by patching the attended ISO with Host Configuration
+              $(Build.ArtifactStagingDirectory)/installer-tools/isopatch \
+                --iso $(ob_outputDirectory)/azl-installer-attended.iso \
+                --output $(ob_outputDirectory)/azl-installer-unattended.iso \
+                --patch tests/azl-installer/host-configuration.yaml:/installer/trident-config.yaml.tmpl
+            displayName: "Create Unattended ISO"
+            workingDirectory: $(Build.SourcesDirectory)
+
+  - stage: Test_AzureLinux_Installer_ISO_Unattended
+    displayName: Test azl-installer-iso (unattended)
+    dependsOn:
+      - AzureLinux_Installer_ISO
+
+    jobs:
+      - job: ValidateAzLInstallerISO_Unattended
+        displayName: Validate Unattended azl-installer-iso
+        timeoutInMinutes: 20
+        pool:
+          type: linux
+          name: trident-ubuntu-1es-pool-eastus2
+          hostArchitecture: amd64
+
+        variables:
+          ob_outputDirectory: $(Pipeline.Workspace)/azl-installer-test-unattended
+          ob_artifactBaseName: azl-installer-test-unattended-$(System.JobAttempt)
+
+        steps:
+          - template: ./validate-azl-installer-iso.yml
+            parameters:
+              isoName: azl-installer-unattended

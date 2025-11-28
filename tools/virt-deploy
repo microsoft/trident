@@ -1,0 +1,8 @@
+#!/usr/bin/python3
+
+from os import path
+
+import virtdeploy
+
+if __name__ == "__main__":
+    virtdeploy.run()

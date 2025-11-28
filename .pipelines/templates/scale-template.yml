@@ -1,0 +1,102 @@
+parameters:
+  - name: "stageType"
+    displayName: "Pipeline configuration type"
+    type: string
+    default: pre
+    values:
+      - pr-e2e
+      - ci
+      - pre
+      - rel
+
+  - name: baseimgBuildType
+    displayName: Base Image build type
+    type: string
+    values:
+      - preview
+      - release
+    default: "release"
+
+  - name: baseImagePipelineBuildId
+    displayName: "Build Id of the pipeline run, default will select latest successful run from pipeline 2116 ([AMD64-6-OneBranch]-Prod-BuildImages) with tag 3.0-preview"
+    type: string
+    default: "latestFromBranch"
+
+  - name: baseImageArm64PipelineBuildId
+    displayName: "Build Id of the pipeline run, default will select latest successful run from pipeline 2117 ([ARM64-6-OneBranch]-Prod-BuildImages) with tag 3.0-preview"
+    type: string
+    default: "latestFromBranch"
+
+  - name: baseimgAzlVersion
+    displayName: Base Image AZL version
+    type: string
+    default: "3.0"
+
+  - name: verboseLogging
+    displayName: "Enable verbose logging"
+    type: boolean
+    default: false
+
+  - name: numberOfWorkers
+    displayName: Number of worker to run tests on (max of 256)
+    type: number
+    default: 256
+
+  - name: numberOfUpdateIterations
+    displayName: Number of times each worker invokes A/B Update
+    type: number
+    default: 100
+
+  - name: forceTridentRebuild
+    displayName: "Force trident rebuild rather than downloading previously built."
+    type: boolean
+    default: false
+
+  - name: includeQemu
+    displayName: "Include qemu testing"
+    type: boolean
+    default: false
+
+  - name: includeAzure
+    displayName: "Include Azure testing"
+    type: boolean
+    default: false
+
+  - name: includeUKI
+    displayName: "Include UKI testing"
+    type: boolean
+    default: false
+
+stages:
+  - template: stages/base_image_config/create-base-image-config-artifact.yml
+    parameters:
+      baseimgBuildType: ${{ parameters.baseimgBuildType }}
+      baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
+      baseImageArm64PipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
+
+  # Build tools (Go stuff)
+  - template: stages/building_tools/building-tools.yml
+
+  # Trident Build/Download
+  - template: stages/trident_rpms/trident-stage.yml
+    parameters:
+      stageType: ${{ parameters.stageType }}
+      tridentArtifactName: trident-binaries
+      codeCoverage: false
+      forceTridentRebuild: ${{ or(eq(parameters.forceTridentRebuild, true), eq(parameters.baseimgBuildType, 'preview')) }}
+      dependsOnStage: CreateBaseImageConfig
+      targetArchitecture: amd64
+
+  # Test Servicing on VMs
+  - template: stages/testing_servicing/vm-testing.yml
+    parameters:
+      rollbackTesting: false
+      updateIterationCount: ${{ parameters.numberOfUpdateIterations }}
+      workers: ${{ parameters.numberOfWorkers }}
+      updateCheckTimeoutInMinutes: 200 # Generally need less than a minute per update, so with buffer, this should be updateIterationCount * 2
+      verboseLogging: ${{ parameters.verboseLogging }}
+      baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+      includeQemu: ${{ parameters.includeQemu }}
+      includeAzure: ${{ parameters.includeAzure }}
+      includeUKI: ${{ parameters.includeUKI }}
+      dependsOnStage: CreateBaseImageConfig

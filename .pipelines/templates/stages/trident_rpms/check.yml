@@ -1,0 +1,45 @@
+steps:
+  - script: sudo tdnf install -y protobuf protobuf-c openssl-devel clang-devel
+    displayName: Install native dependencies
+    retryCountOnTaskFailure: 3
+
+  - template: ../common_tasks/rustup.yml
+  - template: ../common_tasks/cargo-auth.yml
+  - template: ../common_tasks/avoid-pypi-usage.yml
+
+  - script: |
+      set -eux
+      python3 --version
+      python3 -m pip install black==24.1.0
+      python3 -m black --version
+    displayName: Install Python Black
+    retryCountOnTaskFailure: 3
+
+  - script: cargo fmt -- --check 2>&1
+    displayName: Check Rust Formatting
+
+  - script: |
+      set -eux
+      python3 -m black -v --check . --exclude "azure-linux-image-tools"
+    displayName: Check Python Formatting
+
+  - script: |
+      set -ex
+      cargo clippy --version
+      cargo clippy --locked --workspace -- -D warnings 2>&1
+      cargo clippy --locked --workspace --all-features -- -D warnings 2>&1
+      cargo clippy --locked --workspace --tests -- -D warnings 2>&1
+      cargo clippy --locked --workspace --tests --all-features -- -D warnings 2>&1
+    displayName: Clippy (Linting)
+
+  - script: |
+      make validate-api-schema
+    displayName: Validate Trident API Schema
+    env:
+      OVERRIDE_RUST_FEED: false
+
+  - script: cargo check --locked 2>&1
+    displayName: Check Debug
+
+  - script: cargo check --locked --all-features 2>&1
+    displayName: Check with all features

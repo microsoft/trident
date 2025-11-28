@@ -1,0 +1,43 @@
+# TRIDENT PIPELINE SELECTOR
+# This template is used to select the pipeline to run based on the
+# targetStage parameter.
+#
+# All pipeline definitions for Trident release stages (except release, for now at least)
+# should route through here.
+
+parameters:
+  - name: targetStage
+    type: string
+    values:
+      - "pr"
+      - "pr-e2e"
+      - "pr-e2e-azure"
+      - "ci"
+      - "pre"
+      - "full-validation"
+    displayName: "Stage to run"
+
+  - name: blockPublishing
+    type: boolean
+    default: false
+    displayName: "Block publishing to artifact feed."
+
+  - name: numberOfUpdateIterations
+    displayName: Number of times each worker invokes A/B Update
+    type: number
+    default: 3
+
+stages:
+  - ${{ if eq(parameters.targetStage, 'pr') }}:
+      - template: pr-template.yml
+  - ${{ else }}:
+      - template: e2e-template.yml
+        parameters:
+          stageType: ${{ parameters.targetStage }}
+          blockPublishing: ${{ parameters.blockPublishing }}
+          # Only perform Azure testing from official pipelines, as only those have access to the Azure subscription.
+          includeAzure: ${{ or(eq(parameters.targetStage, 'pre'), eq(parameters.targetStage, 'ci'), eq(parameters.targetStage, 'pr-e2e-azure')) }}
+          numberOfUpdateIterations: ${{ parameters.numberOfUpdateIterations }}
+      - template: e2e-arm64-template.yml
+        parameters:
+          stageType: ${{ parameters.targetStage }}

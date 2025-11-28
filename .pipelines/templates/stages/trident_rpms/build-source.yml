@@ -1,0 +1,130 @@
+parameters:
+  - name: tridentArtifactName
+    type: string
+
+  - name: codeCoverage
+    type: boolean
+    default: true
+
+  - name: osModifierBranch
+    type: string
+    default: "main"
+
+  - name: dependsOnStage
+    type: string
+    default: ""
+
+  - name: targetArchitecture
+    type: string
+    values:
+      - amd64
+      - arm64
+
+  - name: osModifierBuildType
+    displayName: OSModifier build type to download from osmodifier pipelines
+    type: string
+    values:
+      - dev
+      - preview
+    default: preview
+
+stages:
+  - stage: GetTridentBinaries_rpms_${{ parameters.targetArchitecture }}
+    displayName: Trident ${{ parameters.targetArchitecture }} RPMs (Build)
+    ${{ if ne(parameters.dependsOnStage, '') }}:
+      dependsOn: ${{ parameters.dependsOnStage }}
+
+    jobs:
+      - ${{ if eq( parameters.targetArchitecture, 'amd64' ) }}:
+          - job: CheckTrident_${{ parameters.targetArchitecture }}
+            displayName: Check ${{ parameters.targetArchitecture }}
+            pool:
+              type: linux
+
+            variables:
+              - name: ob_outputDirectory
+                value: "$(Build.SourcesDirectory)/trident/out"
+
+            steps:
+              - template: ../common_tasks/avoid-pypi-usage.yml
+              - template: check.yml
+
+          - job: TestTrident_${{ parameters.targetArchitecture }}
+            displayName: Unit Test ${{ parameters.targetArchitecture }}
+            pool:
+              type: linux
+
+            variables:
+              - name: ob_outputDirectory
+                value: "$(Build.SourcesDirectory)/trident/out"
+
+            steps:
+              - template: ../common_tasks/avoid-pypi-usage.yml
+              # need newer rust for cargo-nextest, use rustup.yml to install
+              - template: ../common_tasks/rustup.yml
+              - template: ../common_tasks/cargo-auth.yml
+              - template: unit-test.yml
+                parameters:
+                  codeCoverage: ${{ parameters.codeCoverage }}
+                  unitTestCoverageBaseline: 70 # Unit tests
+
+          - job: BuildTrident_${{ parameters.targetArchitecture }}
+            displayName: Build Trident 3.0 ${{ parameters.targetArchitecture }} RPMs
+            pool:
+              type: linux
+
+            variables:
+              - name: ob_artifactBaseName
+                value: ${{ parameters.tridentArtifactName }}
+              - name: ob_outputDirectory
+                value: "$(Build.SourcesDirectory)/out"
+              - template: common/setup-registries-vars-template.yaml@platform-pipelines
+                parameters:
+                  buildType: auto
+
+            steps:
+              - template: ../common_tasks/os-info.yml
+              - template: ../common_tasks/avoid-pypi-usage.yml
+              - template: ../common_tasks/cargo-auth.yml
+              - template: ../common_tasks/download-osmodifier.yml
+                parameters:
+                  targetArchitecture: ${{ parameters.targetArchitecture }}
+                  osModifierBranch: ${{ parameters.osModifierBranch }}
+                  osModifierBuildType: ${{ parameters.osModifierBuildType }}
+              - template: release.yml
+                parameters:
+                  targetArchitecture: ${{ parameters.targetArchitecture }}
+
+      - ${{ elseif eq( parameters.targetArchitecture, 'arm64' ) }}:
+          - job: BuildTrident_${{ parameters.targetArchitecture }}
+            displayName: Build Trident 3.0 ${{ parameters.targetArchitecture }} RPMs
+            pool:
+              type: linux
+              name: azl3-hci-ARM64-1es-pool-westcentralus
+              hostArchitecture: arm64
+
+            variables:
+              - name: ob_artifactBaseName
+                value: ${{ parameters.tridentArtifactName }}-arm64
+              - name: ob_outputDirectory
+                value: "$(Build.SourcesDirectory)/out"
+              - template: common/setup-registries-vars-template.yaml@platform-pipelines
+                parameters:
+                  buildType: auto
+
+            steps:
+              - template: ../common_tasks/avoid-pypi-usage.yml
+              - template: ../common_tasks/cargo-auth.yml
+              - script: |
+                  set -eux
+                  sudo systemctl start docker
+                workingDirectory: $(Build.SourcesDirectory)
+                displayName: Start Docker
+              - template: ../common_tasks/download-osmodifier.yml
+                parameters:
+                  targetArchitecture: ${{ parameters.targetArchitecture }}
+                  osModifierBranch: ${{ parameters.osModifierBranch }}
+                  osModifierBuildType: ${{ parameters.osModifierBuildType }}
+              - template: release.yml
+                parameters:
+                  targetArchitecture: ${{ parameters.targetArchitecture }}

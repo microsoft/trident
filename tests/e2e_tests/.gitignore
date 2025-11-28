@@ -1,0 +1,6 @@
+__pycache__
+.pytest_cache
+**/key
+
+# Json file generated with the explicit set of tests selected in test-selection.yaml
+ts.json

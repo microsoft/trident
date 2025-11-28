@@ -1,0 +1,408 @@
+parameters:
+  - name: hostImages
+    type: boolean
+    default: true
+
+  - name: containerImages
+    type: boolean
+    default: true
+
+  - name: servicingImages
+    type: boolean
+    default: true
+
+  - name: definition
+    type: number
+    default: 5067 # [GITHUB]-trident-ci
+    displayName: Pipeline definition ID
+
+  - name: runVersion
+    type: string
+    default: latestFromBranch
+    displayName: Specific run or latest successful run
+
+  - name: tridentPipelineRunId
+    type: string
+    default: ""
+    displayName: Pipeline run ID
+
+  - name: branch
+    type: string
+    default: main
+    displayName: Branch to download Artifacts from
+
+  - name: allowFailedBuilds
+    type: boolean
+    default: false
+
+stages:
+  - stage: DownloadTestingElements
+    displayName: Download images and tools for testing
+
+    jobs:
+      # Always required:
+      - job: Gotools
+        displayName: "Download go-tools"
+        timeoutInMinutes: 10
+        pool:
+          type: linux
+
+        variables:
+          ob_outputDirectory: $(Build.SourcesDirectory)/build
+          ob_artifactBaseName: "go-tools"
+
+        steps:
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              source: specific
+              project: "ECF"
+              definition: ${{ parameters.definition }}
+              runVersion: ${{ parameters.runVersion }}
+              branchName: "refs/heads/${{ parameters.branch }}"
+              runId: ${{ parameters.tridentPipelineRunId }}
+              allowFailedBuilds: ${{ parameters.allowFailedBuilds }}
+              artifactName: $(ob_artifactBaseName)
+              patterns: |
+                netlaunch
+                netlisten
+                mkcosi
+                storm-trident
+                virtdeploy
+              targetPath: $(ob_outputDirectory)
+
+      # Servicing images:
+      - ${{ if eq(parameters.servicingImages, true) }}:
+          - job: SSHKeys
+            displayName: Download SSH Keys for servicing images
+            timeoutInMinutes: 10
+            pool:
+              type: linux
+
+            variables:
+              ob_outputDirectory: $(Build.SourcesDirectory)/build
+              ob_artifactBaseName: "ssh-keys"
+
+            steps:
+              - task: DownloadPipelineArtifact@2
+                displayName: "Download SSH Keys"
+                inputs:
+                  source: specific
+                  project: "ECF"
+                  definition: ${{ parameters.definition }}
+                  runVersion: ${{ parameters.runVersion }}
+                  branchName: "refs/heads/${{ parameters.branch }}"
+                  runId: ${{ parameters.tridentPipelineRunId }}
+                  allowFailedBuilds: ${{ parameters.allowFailedBuilds }}
+                  artifactName: $(ob_artifactBaseName)
+                  targetPath: $(ob_outputDirectory)
+
+          - job: ServicingQemuBase
+            displayName: Download qemu base image
+            timeoutInMinutes: 10
+            pool:
+              type: linux
+
+            variables:
+              ob_outputDirectory: $(Build.SourcesDirectory)/build
+              ob_artifactBaseName: "image-qemu-base"
+
+            steps:
+              - task: DownloadPipelineArtifact@2
+                displayName: "Download qemu base image"
+                inputs:
+                  source: specific
+                  project: "ECF"
+                  definition: ${{ parameters.definition }}
+                  runVersion: ${{ parameters.runVersion }}
+                  branchName: "refs/heads/${{ parameters.branch }}"
+                  runId: ${{ parameters.tridentPipelineRunId }}
+                  allowFailedBuilds: ${{ parameters.allowFailedBuilds }}
+                  artifactName: $(ob_artifactBaseName)
+                  targetPath: $(ob_outputDirectory)
+
+          - job: ServicingQemuUpdateA
+            displayName: Download qemu update image A
+            timeoutInMinutes: 10
+            pool:
+              type: linux
+
+            variables:
+              ob_outputDirectory: $(Build.SourcesDirectory)/build
+              ob_artifactBaseName: "image-qemu-update-a"
+
+            steps:
+              - task: DownloadPipelineArtifact@2
+                displayName: "Download quemu update image A"
+                inputs:
+                  source: specific
+                  project: "ECF"
+                  definition: ${{ parameters.definition }}
+                  runVersion: ${{ parameters.runVersion }}
+                  branchName: "refs/heads/${{ parameters.branch }}"
+                  runId: ${{ parameters.tridentPipelineRunId }}
+                  allowFailedBuilds: ${{ parameters.allowFailedBuilds }}
+                  artifactName: $(ob_artifactBaseName)
+                  targetPath: $(ob_outputDirectory)
+
+          - job: ServicingQemuUpdateB
+            displayName: Download qemu update image B
+            timeoutInMinutes: 10
+            pool:
+              type: linux
+
+            variables:
+              ob_outputDirectory: $(Build.SourcesDirectory)/build
+              ob_artifactBaseName: "image-qemu-update-b"
+
+            steps:
+              - task: DownloadPipelineArtifact@2
+                displayName: "Download quemu update image B"
+                inputs:
+                  source: specific
+                  project: "ECF"
+                  definition: ${{ parameters.definition }}
+                  runVersion: ${{ parameters.runVersion }}
+                  branchName: "refs/heads/${{ parameters.branch }}"
+                  runId: ${{ parameters.tridentPipelineRunId }}
+                  allowFailedBuilds: ${{ parameters.allowFailedBuilds }}
+                  artifactName: $(ob_artifactBaseName)
+                  targetPath: $(ob_outputDirectory)
+
+      # Container images:
+      - ${{ if eq(parameters.containerImages, true) }}:
+          - job: TridentDockerImage
+            displayName: Download Trident docker image
+            timeoutInMinutes: 10
+            pool:
+              type: linux
+
+            variables:
+              ob_outputDirectory: "$(System.ArtifactsDirectory)/container/"
+              ob_artifactBaseName: "trident-docker-image"
+
+            steps:
+              - task: DownloadPipelineArtifact@2
+                displayName: "Download Trident container"
+                inputs:
+                  source: specific
+                  project: "ECF"
+                  definition: ${{ parameters.definition }}
+                  runVersion: ${{ parameters.runVersion }}
+                  branchName: "refs/heads/${{ parameters.branch }}"
+                  runId: ${{ parameters.tridentPipelineRunId }}
+                  allowFailedBuilds: ${{ parameters.allowFailedBuilds }}
+                  artifactName: $(ob_artifactBaseName)
+                  patterns: "**/trident-container.tar.gz"
+                  targetPath: "$(System.ArtifactsDirectory)/container/"
+
+          - job: TridentContainerInstallerTestimage
+            displayName: Download trident-container-installer
+            timeoutInMinutes: 10
+            pool:
+              type: linux
+
+            variables:
+              ob_outputDirectory: $(Build.SourcesDirectory)/build
+              ob_artifactBaseName: "trident-container-installer"
+
+            steps:
+              - task: DownloadPipelineArtifact@2
+                displayName: "Download installer-iso/installer.iso"
+                inputs:
+                  source: specific
+                  project: "ECF"
+                  definition: ${{ parameters.definition }}
+                  runVersion: ${{ parameters.runVersion }}
+                  branchName: "refs/heads/${{ parameters.branch }}"
+                  runId: ${{ parameters.tridentPipelineRunId }}
+                  allowFailedBuilds: ${{ parameters.allowFailedBuilds }}
+                  artifactName: $(ob_artifactBaseName)
+                  targetPath: $(ob_outputDirectory)
+
+          - job: TridentContainerTestimage
+            displayName: "Download trident-container-testimage"
+            timeoutInMinutes: 10
+            pool:
+              type: linux
+
+            variables:
+              ob_outputDirectory: $(Build.SourcesDirectory)/build
+              ob_artifactBaseName: "trident-container-testimage"
+
+            steps:
+              - task: DownloadPipelineArtifact@2
+                inputs:
+                  source: specific
+                  project: "ECF"
+                  definition: ${{ parameters.definition }}
+                  runVersion: ${{ parameters.runVersion }}
+                  branchName: "refs/heads/${{ parameters.branch }}"
+                  runId: ${{ parameters.tridentPipelineRunId }}
+                  allowFailedBuilds: ${{ parameters.allowFailedBuilds }}
+                  artifactName: $(ob_artifactBaseName)
+                  targetPath: $(ob_outputDirectory)
+
+          - job: TridentContainerVerityTestimage
+            displayName: "Download trident-container-verity-testimage"
+            timeoutInMinutes: 10
+            pool:
+              type: linux
+
+            variables:
+              ob_outputDirectory: $(Build.SourcesDirectory)/build
+              ob_artifactBaseName: "trident-container-verity-testimage"
+
+            steps:
+              - task: DownloadPipelineArtifact@2
+                inputs:
+                  source: specific
+                  project: "ECF"
+                  definition: ${{ parameters.definition }}
+                  runVersion: ${{ parameters.runVersion }}
+                  branchName: "refs/heads/${{ parameters.branch }}"
+                  runId: ${{ parameters.tridentPipelineRunId }}
+                  allowFailedBuilds: ${{ parameters.allowFailedBuilds }}
+                  artifactName: $(ob_artifactBaseName)
+                  targetPath: $(ob_outputDirectory)
+
+          - job: TridentContainerUsrVerityTestimage
+            displayName: "Download trident-container-usrverity-testimage"
+            timeoutInMinutes: 10
+            pool:
+              type: linux
+
+            variables:
+              ob_outputDirectory: $(Build.SourcesDirectory)/build
+              ob_artifactBaseName: "trident-container-usrverity-testimage"
+
+            steps:
+              - task: DownloadPipelineArtifact@2
+                inputs:
+                  source: specific
+                  project: "ECF"
+                  definition: ${{ parameters.definition }}
+                  runVersion: ${{ parameters.runVersion }}
+                  branchName: "refs/heads/${{ parameters.branch }}"
+                  runId: ${{ parameters.tridentPipelineRunId }}
+                  allowFailedBuilds: ${{ parameters.allowFailedBuilds }}
+                  artifactName: $(ob_artifactBaseName)
+                  targetPath: $(ob_outputDirectory)
+
+      # Host images:
+      - ${{ if eq(parameters.hostImages, true) }}:
+          - job: TridentInstallerTestimage
+            displayName: Download trident-installer
+            timeoutInMinutes: 10
+            pool:
+              type: linux
+
+            variables:
+              ob_outputDirectory: $(Build.SourcesDirectory)/build
+              ob_artifactBaseName: "trident-installer"
+
+            steps:
+              - task: DownloadPipelineArtifact@2
+                displayName: "Download installer-iso/installer.iso"
+                inputs:
+                  source: specific
+                  project: "ECF"
+                  definition: ${{ parameters.definition }}
+                  runVersion: ${{ parameters.runVersion }}
+                  branchName: "refs/heads/${{ parameters.branch }}"
+                  runId: ${{ parameters.tridentPipelineRunId }}
+                  allowFailedBuilds: ${{ parameters.allowFailedBuilds }}
+                  artifactName: $(ob_artifactBaseName)
+                  targetPath: $(ob_outputDirectory)
+
+          - job: TridentSplitInstallerTestimage
+            displayName: Download trident-split-installer
+            timeoutInMinutes: 10
+            pool:
+              type: linux
+
+            variables:
+              ob_outputDirectory: $(Build.SourcesDirectory)/build
+              ob_artifactBaseName: "trident-split-installer"
+
+            steps:
+              - task: DownloadPipelineArtifact@2
+                displayName: "Download split-installer-iso/installer.iso"
+                inputs:
+                  source: specific
+                  project: "ECF"
+                  definition: ${{ parameters.definition }}
+                  runVersion: ${{ parameters.runVersion }}
+                  branchName: "refs/heads/${{ parameters.branch }}"
+                  runId: ${{ parameters.tridentPipelineRunId }}
+                  allowFailedBuilds: ${{ parameters.allowFailedBuilds }}
+                  artifactName: $(ob_artifactBaseName)
+                  targetPath: $(ob_outputDirectory)
+
+          - job: TridentTestimage
+            displayName: "Download trident-testimage"
+            timeoutInMinutes: 10
+            pool:
+              type: linux
+
+            variables:
+              ob_outputDirectory: $(Build.SourcesDirectory)/build
+              ob_artifactBaseName: "trident-testimage"
+
+            steps:
+              - task: DownloadPipelineArtifact@2
+                inputs:
+                  source: specific
+                  project: "ECF"
+                  definition: ${{ parameters.definition }}
+                  runVersion: ${{ parameters.runVersion }}
+                  branchName: "refs/heads/${{ parameters.branch }}"
+                  runId: ${{ parameters.tridentPipelineRunId }}
+                  allowFailedBuilds: ${{ parameters.allowFailedBuilds }}
+                  artifactName: $(ob_artifactBaseName)
+                  targetPath: $(ob_outputDirectory)
+
+          - job: TridentVerityTestimage
+            displayName: "Download trident-verity-testimage"
+            timeoutInMinutes: 10
+            pool:
+              type: linux
+
+            variables:
+              ob_outputDirectory: $(Build.SourcesDirectory)/build
+              ob_artifactBaseName: "trident-verity-testimage"
+
+            steps:
+              - task: DownloadPipelineArtifact@2
+                inputs:
+                  source: specific
+                  project: "ECF"
+                  definition: ${{ parameters.definition }}
+                  runVersion: ${{ parameters.runVersion }}
+                  branchName: "refs/heads/${{ parameters.branch }}"
+                  runId: ${{ parameters.tridentPipelineRunId }}
+                  allowFailedBuilds: ${{ parameters.allowFailedBuilds }}
+                  artifactName: $(ob_artifactBaseName)
+                  targetPath: $(ob_outputDirectory)
+
+          - job: TridentUsrVerityTestimage
+            displayName: "Download trident-usrverity-testimage"
+            timeoutInMinutes: 10
+            pool:
+              type: linux
+
+            variables:
+              ob_outputDirectory: $(Build.SourcesDirectory)/build
+              ob_artifactBaseName: "trident-usrverity-testimage"
+
+            steps:
+              - task: DownloadPipelineArtifact@2
+                inputs:
+                  source: specific
+                  project: "ECF"
+                  definition: ${{ parameters.definition }}
+                  runVersion: ${{ parameters.runVersion }}
+                  branchName: "refs/heads/${{ parameters.branch }}"
+                  runId: ${{ parameters.tridentPipelineRunId }}
+                  allowFailedBuilds: ${{ parameters.allowFailedBuilds }}
+                  artifactName: $(ob_artifactBaseName)
+                  targetPath: $(ob_outputDirectory)

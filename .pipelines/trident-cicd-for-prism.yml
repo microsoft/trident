@@ -1,0 +1,61 @@
+parameters:
+  - name: micBuildType
+    displayName: MIC Build Type
+    type: string
+    values:
+    - dev
+    - preview
+    - release
+    default: dev
+
+  - name: micVersion
+    displayName: MIC Version (defaults to latest, specify feed version for release/preview, branch for dev)
+    type: string
+    default: "*.*.*"
+
+  - name: osModifierBranch
+    displayName: OSModifier branch to use for dev build type
+    type: string
+    default: "main"
+
+schedules:
+  - cron: "0 9 * * *" # avoid trident-prerelease time
+    displayName: Daily build
+    always: true
+    branches:
+      include:
+        - main
+
+trigger: none
+
+resources:
+  repositories:
+    - repository: platform-tests
+      type: git
+      name: platform-tests
+      ref: refs/heads/main
+
+    - repository: platform-pipelines
+      type: git
+      name: platform-pipelines
+      ref: refs/heads/main
+
+    - repository: test-images
+      type: git
+      name: test-images
+      ref: refs/heads/main
+
+    - repository: platform-telemetry
+      name: platform-telemetry
+      type: git
+      ref: refs/heads/main
+
+extends:
+  template: templates/MockOB.yml
+  parameters:
+    stages:
+      - template: templates/trident-platform-cicd-for-prism-template.yml
+        parameters:
+          micBuildType: ${{ parameters.micBuildType }}
+          micVersion: ${{ parameters.micVersion }}
+          osModifierBranch: ${{ parameters.osModifierBranch }}

@@ -1,0 +1,15 @@
+stages:
+  - template: stages/trident_rpms/trident-stage.yml
+    parameters:
+      stageType: pr
+      tridentArtifactName: trident-binaries
+      targetArchitecture: amd64
+  - template: stages/trident_rpms/trident-stage.yml
+    parameters:
+      stageType: pr
+      tridentArtifactName: trident-binaries
+      codeCoverage: false
+      targetArchitecture: arm64
+  - template: stages/validate_makefile/dev-build.yml
+  - template: stages/building_tools/building-tools.yml
+  - template: stages/azl_installer/build-installer-tools.yml

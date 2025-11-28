@@ -1,0 +1,97 @@
+parameters:
+  - name: buildNetlaunch
+    type: boolean
+    default: true
+
+  - name: buildNetlisten
+    type: boolean
+    default: true
+
+  - name: buildMiniproxy
+    type: boolean
+    default: true
+
+  - name: buildMkcosi
+    type: boolean
+    default: true
+
+  - name: buildStormTrident
+    type: boolean
+    default: true
+
+  - name: buildVirtdeploy
+    type: boolean
+    default: true
+
+stages:
+  - stage: BuildingTools
+    displayName: Building Tools
+
+    jobs:
+      - job: BuildGoTools
+        displayName: Build Go Tools
+        timeoutInMinutes: 60
+        pool:
+          type: linux
+          name: trident-ubuntu-1es-pool-eastus2
+          hostArchitecture: amd64
+
+        variables:
+          ob_outputDirectory: $(Build.SourcesDirectory)/go-tools
+          ob_artifactBaseName: go-tools
+
+        steps:
+          - template: ../common_tasks/avoid-pypi-usage.yml
+
+          - ${{ if eq(parameters.buildNetlaunch, true) }}:
+              - bash: |
+                  set -eux
+                  make bin/netlaunch
+                  mkdir -p $(ob_outputDirectory)
+                  mv bin/netlaunch $(ob_outputDirectory)
+                workingDirectory: $(Build.SourcesDirectory)
+                displayName: "Building netlaunch"
+
+          - ${{ if eq(parameters.buildNetlaunch, true) }}:
+              - bash: |
+                  set -eux
+                  make bin/netlisten
+                  mkdir -p $(ob_outputDirectory)
+                  mv bin/netlisten $(ob_outputDirectory)
+                workingDirectory: $(Build.SourcesDirectory)
+                displayName: "Building netlisten"
+
+          - ${{ if eq(parameters.buildMiniproxy, true) }}:
+              - bash: |
+                  set -eux
+                  make bin/miniproxy
+                  mkdir -p $(ob_outputDirectory)
+                  mv bin/miniproxy $(ob_outputDirectory)
+                workingDirectory: $(Build.SourcesDirectory)
+                displayName: "Building miniproxy"
+
+          - ${{ if eq(parameters.buildMkcosi, true) }}:
+              - bash: |
+                  set -eux
+                  make bin/mkcosi
+                  mkdir -p $(ob_outputDirectory)
+                  mv bin/mkcosi $(ob_outputDirectory)
+                workingDirectory: $(Build.SourcesDirectory)
+                displayName: "Building mkcosi"
+
+          - ${{ if eq(parameters.buildStormTrident, true) }}:
+              - bash: |
+                  set -eux
+                  make bin/storm-trident
+                  mkdir -p $(ob_outputDirectory)
+                  mv bin/storm-trident $(ob_outputDirectory)
+                workingDirectory: $(Build.SourcesDirectory)
+                displayName: "Building storm-trident"
+
+          - ${{ if eq(parameters.buildVirtdeploy, true) }}:
+              - bash: |
+                  set -eux
+                  make bin/virtdeploy
+                  mkdir -p $(ob_outputDirectory)
+                  mv bin/virtdeploy $(ob_outputDirectory)
+                workingDirectory: $(Build.SourcesDirectory)

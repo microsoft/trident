@@ -1,0 +1,64 @@
+# Download the latest version of a package from the Trident feed.
+
+parameters:
+  - name: packageName
+    type: string
+    displayName: "Name of the package to download"
+
+  - name: downloadLocation
+    type: string
+    displayName: "Location to download the package to"
+
+  - name: outputVersionVariable
+    type: string
+    displayName: "Output variable containing the version of the downloaded package"
+
+  - name: feedName
+    type: string
+    displayName: "Name of the feed to download the package from"
+    default: "Trident"
+
+  - name: specificVersion
+    type: string
+    displayName: |
+      Specific version of the package to download, leave empty to download latest.
+    default: ""
+
+steps:
+  - ${{ if eq(parameters.specificVersion, '')}}:
+      - script: |
+          set -eux
+
+          LATEST_VERSION=$(./scripts/get-packages.py --debug \
+              --package '${{ parameters.packageName }}' \
+              --feed '${{ parameters.feedName }}' \
+              --action=latest)
+
+          echo "Downloading version $LATEST_VERSION of ${{ parameters.packageName }}"
+
+          # Set the desired variable to the latest version
+          set +x
+          echo "##vso[task.setvariable variable=${{ parameters.outputVersionVariable }}]$LATEST_VERSION"
+
+          set -x
+          mkdir -p ${{ parameters.downloadLocation }}
+        displayName: "Getting latest version of ${{ parameters.packageName }} from Trident feed"
+        workingDirectory: $(Build.SourcesDirectory)
+        env:
+          AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
+
+  - ${{ else }}:
+      - script: |
+          echo "Downloading version ${{ parameters.specificVersion }} of ${{ parameters.packageName }}"
+          echo "##vso[task.setvariable variable=${{ parameters.outputVersionVariable }}]${{ parameters.specificVersion }}"
+          mkdir -p ${{ parameters.downloadLocation }}
+
+  - task: UniversalPackages@0
+    displayName: "Downloading ${{ parameters.packageName }} version $(${{ parameters.outputVersionVariable }})"
+    retryCountOnTaskFailure: 3
+    inputs:
+      command: "download"
+      downloadDirectory: "${{ parameters.downloadLocation }}"
+      vstsFeed: "ECF/${{ parameters.feedName }}"
+      vstsFeedPackage: "${{ parameters.packageName }}"
+      vstsPackageVersion: "$(${{ parameters.outputVersionVariable }})"

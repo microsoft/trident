@@ -1,0 +1,107 @@
+parameters:
+  - name: definition
+    type: number
+    default: 5067 # [GITHUB]-trident-ci
+    displayName: Pipeline definition ID
+
+  - name: branch
+    type: string
+    default: main
+    displayName: Branch to download Artifacts from
+
+  - name: tridentPipelineRunId
+    type: string
+    default: latestFromBranch
+    displayName: Pipeline run ID
+
+  - name: runDeploymentVMHost
+    type: boolean
+    default: true
+    displayName: E2E tests Virtual Machines Host
+
+  - name: runDeploymentVMContainer
+    type: boolean
+    default: false
+    displayName: E2E tests Virtual Machines Container
+
+  - name: runDeploymentBMHost
+    type: boolean
+    default: false
+    displayName: E2E tests Bare Metal Host
+
+  - name: runDeploymentBMContainer
+    type: boolean
+    default: false
+    displayName: E2E tests Bare Metal Container
+
+  - name: runFunctionalTests
+    type: boolean
+    default: false
+    displayName: Functional tests
+
+  - name: runServicingTests
+    type: boolean
+    default: false
+    displayName: Servicing VM testing
+
+stages:
+  - ${{ if or(parameters.runDeploymentVMHost, parameters.runDeploymentVMContainer, parameters.runDeploymentBMHost, parameters.runDeploymentBMContainer, parameters.runServicingTests) }}:
+      - template: stages/download_artifacts/get-artifacts.yml
+        parameters:
+          definition: ${{ parameters.definition }}
+          servicingImages: ${{ parameters.runServicingTests }}
+          hostImages: ${{ or(parameters.runDeploymentVMHost, parameters.runDeploymentBMHost) }}
+          containerImages: ${{ or(parameters.runDeploymentVMContainer, parameters.runDeploymentBMContainer) }}
+          ${{ if eq(parameters.tridentPipelineRunId, 'latestFromBranch') }}:
+            runVersion: latestFromBranch
+            branch: ${{ parameters.branch }}
+            allowFailedBuilds: false
+          ${{ else }}:
+            runVersion: specific
+            tridentPipelineRunId: ${{ parameters.tridentPipelineRunId }}
+            allowFailedBuilds: true
+
+  - ${{ if parameters.runFunctionalTests }}:
+      - template: stages/testing_functional/functional-testing.yml
+        parameters:
+          downloadPrebuiltImage: true
+          rerunTests: true
+
+  - ${{ if parameters.runDeploymentVMHost }}:
+      - template: stages/testing_vm/netlaunch-testing.yml
+        parameters:
+          buildPurpose: "validation"
+          runtimeEnv: "host"
+          testingRun: true
+
+  - ${{ if parameters.runDeploymentVMContainer }}:
+      - template: stages/testing_vm/netlaunch-testing.yml
+        parameters:
+          buildPurpose: "validation"
+          runtimeEnv: "container"
+          testingRun: true
+
+  - ${{ if parameters.runDeploymentBMHost }}:
+      - template: stages/testing_baremetal/baremetal-testing.yml
+        parameters:
+          buildPurpose: "validation"
+          runtimeEnv: "host"
+          testingRun: true
+
+  - ${{ if parameters.runDeploymentBMContainer }}:
+      - template: stages/testing_baremetal/baremetal-testing.yml
+        parameters:
+          buildPurpose: "validation"
+          runtimeEnv: "container"
+          testingRun: true
+          ${{ if parameters.runDeploymentBMHost }}:
+            extraDependsOn: "BaremetalDeploymentTesting_host"
+
+          
+  - ${{ if parameters.runServicingTests }}:
+      - template: stages/testing_servicing/vm-testing.yml
+        parameters:
+          testingRun: true
+          verboseLogging: true
+          includeQemu: true
+          includeAzure: false # To test in Azure please use trident-pr-e2e-azure pipeline

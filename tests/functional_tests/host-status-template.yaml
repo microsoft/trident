@@ -1,0 +1,10 @@
+servicingState: provisioned
+installIndex: 0
+partitionPaths:
+  esp: placeholder
+  root-a: placeholder
+  root-b: placeholder
+  swap: placeholder
+  trident: placeholder
+abActiveVolume: volume-a
+diskUuids: {placeholder: placeholder}

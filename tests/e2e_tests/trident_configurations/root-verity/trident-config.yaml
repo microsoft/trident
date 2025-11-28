@@ -1,0 +1,137 @@
+image:
+  url: http://NETLAUNCH_HOST_ADDRESS/files/verity.cosi
+  sha384: ignored
+storage:
+  disks:
+    - id: os
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
+      partitionTableType: gpt
+      partitions:
+        - id: esp
+          type: esp
+          size: 1G
+        - id: boot-a
+          type: xbootldr
+          size: 200M
+        - id: boot-b
+          type: xbootldr
+          size: 200M
+        - id: root-data-a
+          type: root
+          size: 4G
+        - id: root-data-b
+          type: root
+          size: 4G
+        - id: root-hash-a
+          type: root-verity
+          size: 1G
+        - id: root-hash-b
+          type: root-verity
+          size: 1G
+        - id: home
+          type: linux-generic
+          size: 100M
+        - id: trident-overlay-a
+          type: linux-generic
+          size: 100M
+        - id: trident-overlay-b
+          type: linux-generic
+          size: 100M
+        - id: trident
+          type: linux-generic
+          size: 500M
+        - id: sysexts-a
+          type: linux-generic
+          size: 1G
+        - id: sysexts-b
+          type: linux-generic
+          size: 1G
+        - id: confexts-a
+          type: linux-generic
+          size: 200M
+        - id: confexts-b
+          type: linux-generic
+          size: 200M
+        - id: var
+          type: linux-generic
+          size: 1G
+    - id: disk2
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
+      partitionTableType: gpt
+      partitions: []
+  abUpdate:
+    volumePairs:
+      - id: boot
+        volumeAId: boot-a
+        volumeBId: boot-b
+      - id: root-data
+        volumeAId: root-data-a
+        volumeBId: root-data-b
+      - id: root-hash
+        volumeAId: root-hash-a
+        volumeBId: root-hash-b
+      - id: trident-overlay
+        volumeAId: trident-overlay-a
+        volumeBId: trident-overlay-b
+      - id: sysexts
+        volumeAId: sysexts-a
+        volumeBId: sysexts-b
+      - id: confexts
+        volumeAId: confexts-a
+        volumeBId: confexts-b
+  verity:
+    - id: root
+      name: root
+      dataDeviceId: root-data
+      hashDeviceId: root-hash
+  filesystems:
+    - deviceId: home
+      source: new
+      mountPoint: /home
+    - deviceId: esp
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+    - deviceId: trident-overlay
+      source: new
+      mountPoint: /var/lib/trident-overlay
+    - deviceId: boot
+      mountPoint: /boot
+    - deviceId: trident
+      source: new
+      mountPoint: /var/lib/trident
+    - deviceId: sysexts
+      mountPoint: /var/lib/extensions
+    - deviceId: confexts
+      mountPoint: /var/lib/confexts
+    - deviceId: var
+      mountPoint: /var
+    - deviceId: root
+      mountPoint:
+        path: /
+        options: defaults,ro
+scripts:
+  postConfigure:
+    - name: overlay
+      runOn:
+        - clean-install
+        - ab-update
+      content: |
+        mkdir -p /var/lib/trident-overlay/etc-rw/upper
+        mkdir -p /var/lib/trident-overlay/etc-rw/work
+os:
+  selinux:
+    mode: permissive
+  netplan:
+    version: 2
+    ethernets:
+      vmeths:
+        match:
+          name: enp*
+        dhcp4: true
+  users:
+    - name: testing-user
+      sshPublicKeys: []
+      secondaryGroups:
+        - wheel
+      sshMode: key-only

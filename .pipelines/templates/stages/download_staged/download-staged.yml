@@ -1,0 +1,77 @@
+parameters:
+  - name: artifactName
+    type: string
+
+  - name: packageName
+    type: string
+    values:
+      - rpms
+      - usb-iso
+
+  - name: "stageType"
+    displayName: "Pipeline configuration type"
+    type: string
+    values:
+      - pre
+      - rel
+      - full-validation
+
+  - name: specificVersion
+    type: string
+    displayName: |
+      Specific version of the package to download, leave empty to download latest
+    default: ""
+
+  - name: dependsOnStage
+    type: string
+    default: ''
+
+stages:
+  - stage: GetTridentBinaries_${{ replace(parameters.packageName, '-', '_') }}_amd64
+    displayName: Download staged ${{ parameters.packageName }} for ${{ parameters.stageType }}
+    ${{ if ne(parameters.dependsOnStage, '') }}:
+      dependsOn: ${{ parameters.dependsOnStage }}
+
+    jobs:
+      - job: DownloadTrident_amd64
+        displayName: Download Trident
+        pool:
+          type: linux
+
+        variables:
+          # Control the name of the artifact where Trident binaries are stored
+          - name: ob_artifactBaseName
+            value: ${{ parameters.artifactName }}
+          - name: ob_outputDirectory
+            value: "$(Build.SourcesDirectory)/out"
+
+          - template: ../../feed-staging-vars.yml
+
+          # Set the download artifact suffix to be that of the *previous* stage
+          - name: downloadArtifactSuffix
+            ${{ if or(eq(parameters.stageType, 'pre'), eq(parameters.stageType, 'full-validation')) }}:
+              value: ${{ variables.stage_ci_suffix }}
+            ${{ if eq(parameters.stageType, 'rel') }}:
+              value: ${{ variables.stage_pre_suffix }}
+
+        steps:
+          - template: ../common_tasks/download-universal-artifact.yml
+            parameters:
+              packageName: ${{ parameters.packageName }}${{ variables.downloadArtifactSuffix }}
+              downloadLocation: $(ob_outputDirectory)
+              outputVersionVariable: trident_version
+              specificVersion: ${{ parameters.specificVersion }}
+
+          - task: onebranch.pipeline.version@1
+            displayName: "Set build number"
+            inputs:
+              system: "Custom"
+              customVersion: $(trident_version)
+
+          - ${{ if eq(parameters.packageName, 'rpms') }}:
+            - script: sudo tdnf install -y p7zip p7zip-plugins zstd
+              displayName: Install native dependencies to extract Trident binary
+              retryCountOnTaskFailure: 3
+
+            - script: ./scripts/extract-binary.sh $(ob_outputDirectory) $(ob_outputDirectory)
+              displayName: Extract Trident binary

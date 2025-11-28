@@ -1,0 +1,251 @@
+[
+    {
+        "timestamp": "2025-07-15T18:37:11Z",
+        "toolVersion": "0.15.0",
+        "imageUuid": "a1c7d361-ef9c-a24b-4b8c-4ecd17c51935",
+        "config": {
+            "input": {
+                "image": {}
+            },
+            "storage": {
+                "bootType": "efi",
+                "disks": [
+                    {
+                        "partitionTableType": "gpt",
+                        "maxSize": "13186M",
+                        "partitions": [
+                            {
+                                "id": "esp",
+                                "label": "esp",
+                                "start": "1M",
+                                "size": "512M",
+                                "type": "esp"
+                            },
+                            {
+                                "id": "boot-a",
+                                "start": "513M",
+                                "size": "256M"
+                            },
+                            {
+                                "id": "root-a",
+                                "start": "1025M",
+                                "size": "4G"
+                            },
+                            {
+                                "id": "usr-a",
+                                "start": "9217M",
+                                "size": "1G"
+                            },
+                            {
+                                "id": "usr-hash-a",
+                                "start": "11265M",
+                                "size": "128M"
+                            },
+                            {
+                                "id": "trident",
+                                "label": "trident",
+                                "start": "11521M",
+                                "size": "512M"
+                            },
+                            {
+                                "id": "home",
+                                "label": "home",
+                                "start": "12033M",
+                                "size": "1G"
+                            },
+                            {
+                                "id": "srv",
+                                "label": "srv",
+                                "start": "13057M",
+                                "size": "128M"
+                            }
+                        ]
+                    }
+                ],
+                "filesystems": [
+                    {
+                        "deviceId": "esp",
+                        "type": "fat32",
+                        "mountPoint": {
+                            "idType": "part-label",
+                            "options": "umask=0077",
+                            "path": "/boot/efi"
+                        }
+                    },
+                    {
+                        "deviceId": "boot-a",
+                        "type": "ext4",
+                        "mountPoint": {
+                            "idType": "uuid",
+                            "path": "/boot"
+                        }
+                    },
+                    {
+                        "deviceId": "usrverity",
+                        "type": "ext4",
+                        "mountPoint": {
+                            "options": "defaults,ro",
+                            "path": "/usr"
+                        }
+                    },
+                    {
+                        "deviceId": "root-a",
+                        "type": "ext4",
+                        "mountPoint": {
+                            "idType": "uuid",
+                            "path": "/"
+                        }
+                    },
+                    {
+                        "deviceId": "trident",
+                        "type": "ext4",
+                        "mountPoint": {
+                            "idType": "part-label",
+                            "path": "/var/lib/trident"
+                        }
+                    },
+                    {
+                        "deviceId": "home",
+                        "type": "ext4",
+                        "mountPoint": {
+                            "idType": "part-label",
+                            "path": "/home"
+                        }
+                    },
+                    {
+                        "deviceId": "srv",
+                        "type": "ext4",
+                        "mountPoint": {
+                            "idType": "part-label",
+                            "path": "/srv"
+                        }
+                    }
+                ],
+                "verity": [
+                    {
+                        "id": "usrverity",
+                        "name": "usr",
+                        "dataDeviceId": "usr-a",
+                        "dataDeviceMountIdType": "uuid",
+                        "hashDeviceId": "usr-hash-a",
+                        "hashDeviceMountIdType": "uuid"
+                    }
+                ]
+            },
+            "os": {
+                "hostname": "trident-vm-usr-verity-testimg",
+                "packages": {
+                    "install": [
+                        "device-mapper",
+                        "dnf",
+                        "efibootmgr",
+                        "iproute",
+                        "iptables",
+                        "jq",
+                        "kexec-tools",
+                        "lvm2",
+                        "openssh-server",
+                        "systemd-boot",
+                        "systemd-udev",
+                        "trident-service",
+                        "veritysetup",
+                        "vim"
+                    ],
+                    "remove": [
+                        "grub2-efi-binary"
+                    ]
+                },
+                "selinux": {
+                    "mode": "disabled"
+                },
+                "kernelCommandLine": {
+                    "extraCommandLine": [
+                        "console=tty0",
+                        "console=tty1",
+                        "console=ttyS0",
+                        "rd.debug",
+                        "loglevel=6",
+                        "log_buf_len=1M",
+                        "systemd.journald.forward_to_console=1",
+                        "rd.hostonly=0"
+                    ]
+                },
+                "additionalFiles": [
+                    {
+                        "destination": "/etc/systemd/network/99-dhcp-eth0.network",
+                        "source": "files/99-dhcp-eth0.network",
+                        "sha256hash": "de3713d0e3a2d0f34ee9ef61a64f1ee43a230ca138cde0e95bdeded58c519881"
+                    },
+                    {
+                        "destination": "/etc/sudoers.d/wheel",
+                        "source": "files/sudoers-wheel",
+                        "sha256hash": "4ff327102cb80dddb24477c0c2faefd47a5cd99d28aa8b4a3fcc45b1b1adab26"
+                    }
+                ],
+                "users": [
+                    {
+                        "name": "testuser",
+                        "sshPublicKeyPaths": [
+                            "/host/britel-xubuntu/home/bfjelds/kubevirt/test-images/platform-integration-images/trident-vm-testimage/base/files/id_rsa.pub"
+                        ],
+                        "secondaryGroups": [
+                            "wheel"
+                        ]
+                    }
+                ],
+                "services": {
+                    "enable": [
+                        "kdump",
+                        "trident"
+                    ]
+                },
+                "bootloader": {
+                    "resetType": "hard-reset"
+                },
+                "uki": {
+                    "kernels": {
+                        "Auto": true,
+                        "Kernels": null
+                    }
+                }
+            },
+            "scripts": {
+                "postCustomization": [
+                    {
+                        "path": "scripts/post-install.sh",
+                        "sha256hash": "0e01438e4cb5c48fd2e15bee11a5e675fff564d42f63627ab31d6457caae7a00"
+                    },
+                    {
+                        "path": "scripts/update-host-status.sh",
+                        "sha256hash": "17d5364febaaf3c5a1597ff26d957bae06356e3d711ac07d1f3678cd6a1a3278"
+                    },
+                    {
+                        "path": "scripts/prepare-update-config-verity.sh",
+                        "arguments": [
+                            "uki"
+                        ],
+                        "sha256hash": "c24669365210ae3727df803867c9d6d264b01c6c304ff5b7893c0000c1d6c84d"
+                    },
+                    {
+                        "path": "scripts/duid-type-to-link-layer.sh",
+                        "sha256hash": "f82839dea5fa59b685da0e2c76cc7c9bfa692094ae5f22f0822ed7c8794841d3"
+                    },
+                    {
+                        "path": "scripts/patch-dracut.sh",
+                        "sha256hash": "f2142c67bde558934e6ee605e4a75d17a968e5ae80214fc5eee2c74b8119c883"
+                    },
+                    {
+                        "path": "scripts/lsblk.sh",
+                        "sha256hash": "9e3bfd4916d33c8031f7dbad3e0c0300c30ff9cdae01dd89f556af84cf9b0823"
+                    }
+                ]
+            },
+            "previewFeatures": [
+                "uki"
+            ],
+            "output": {
+                "image": {}
+            }
+        }
+    }
+]

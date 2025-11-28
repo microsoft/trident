@@ -1,0 +1,25 @@
+parameters:
+  - name: cargoConfigPath
+    type: string
+    default: .cargo/config.toml
+
+steps:
+  - task: CargoAuthenticate@0
+    displayName: "Authenticate with Cargo"
+    inputs:
+      configFile: ${{ parameters.cargoConfigPath }}
+
+  # The cargo:token credential provider is needed for older versions of cargo to
+  # read the environment variable produced by CargoAuthenticate@0.
+  - script: |
+      set -eux
+      cat << EOF >> ${{ parameters.cargoConfigPath }}
+      [registry]
+      global-credential-providers = ["cargo:token"]
+      EOF
+
+      cat ${{ parameters.cargoConfigPath }}
+
+      set +x
+      echo CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN=${CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN:0:20}...
+    displayName: "Add global-credential-providers to Cargo config"
