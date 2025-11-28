@@ -16,8 +16,8 @@ For both, a set of corresponding update images is available.
 ## Additional Prerequisites
 
 - Artifacts
-  - **Trident RPMs**: expected in `base/trident/*.rpm`. Can be downloaded with
-    `make download-trident-rpms`
+  - **Trident RPMs**: expected in `bin/RPMS/**/*.rpm`. Can be created with
+    `make bin/trident-rpms.tar.gz`
 
 ## Building
 
@@ -25,13 +25,13 @@ To build the base image, run:
 
 | Image type                   | Make command                                        | Output path                                    |
 | ---------------------------- | --------------------------------------------------- | ---------------------------------------------- |
-| Regular                      | `make build/trident-vm-grub-testimage.qcow2`        | `build/trident-vm-grub-testimage.qcow2`        |
-| With verity `qcow2`          | `make build/trident-vm-grub-verity-testimage.qcow2` | `build/trident-vm-grub-verity-testimage.qcow2` |
-| With verity fixed size `vhd` | `make build/trident-vm-grub-verity-testimage.vhd`   | `build/trident-vm-grub-verity-testimage.vhd`   |
+| Regular                      | `make artifacts/trident-vm-grub-testimage.qcow2`        | `artifacts/trident-vm-grub-testimage.qcow2`        |
+| With verity `qcow2`          | `make artifacts/trident-vm-grub-verity-testimage.qcow2` | `artifacts/trident-vm-grub-verity-testimage.qcow2` |
+| With verity fixed size `vhd` | `make artifacts/trident-vm-grub-verity-testimage.vhd`   | `artifacts/trident-vm-grub-verity-testimage.vhd`   |
 
 To build the update images, run:
 
 | Image type  | Make command                            | Output path                         |
 | ----------- | --------------------------------------- | ----------------------------------- |
-| Regular     | `make trident-vm-grub-testimage`        | `build/trident-vm-grub-testimage/*` |
-| With verity | `make trident-vm-grub-verity-testimage` | `build/trident-vm-grub-testimage/*` |
+| Regular     | `make trident-vm-grub-testimage`        | `artifacts/trident-vm-grub-testimage/*` |
+| With verity | `make trident-vm-grub-verity-testimage` | `artifacts/trident-vm-grub-testimage/*` |
