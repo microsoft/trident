@@ -1,0 +1,145 @@
+storage:
+  bootType: efi
+
+  disks:
+    - partitionTableType: gpt
+      partitions:
+        - id: esp
+          type: esp
+          size: 8M
+
+        - id: boot
+          size: 256M
+
+        - id: root
+          size: 4G
+
+        - id: root-hash
+          size: 128M
+
+        - id: var
+          size: 1G
+
+        - id: trident-overlay
+          size: 32M
+
+        - id: srv
+          size: 1G
+
+        - id: home
+          size: 32M
+
+  verity:
+    - id: rootverity
+      name: root
+      dataDeviceId: root
+      hashDeviceId: root-hash
+      dataDeviceMountIdType: uuid
+      hashDeviceMountIdType: uuid
+
+  filesystems:
+    - deviceId: esp
+      type: fat32
+      mountPoint:
+        options: umask=0077
+        path: /boot/efi
+
+    - deviceId: boot
+      type: ext4
+      mountPoint: /boot
+
+    - deviceId: rootverity
+      type: ext4
+      mountPoint:
+        path: /
+        options: defaults,ro
+
+    - deviceId: var
+      type: ext4
+      mountPoint: /var
+
+    - deviceId: trident-overlay
+      type: ext4
+      mountPoint: /var/lib/trident-overlay
+
+    # Throwaway
+    - deviceId: srv
+      type: ext4
+      mountPoint: /srv
+    - deviceId: home
+      type: ext4
+      mountPoint: /home
+
+os:
+  bootloader:
+    resetType: hard-reset
+  hostname: trident-vm-verity-testimg
+
+  selinux:
+    mode: disabled
+
+  kernelCommandLine:
+    # Replicates BM base image settings, that would otherwise be lost
+    extraCommandLine:
+      - console=tty0
+      - console=tty1
+      - console=ttyS0
+      - rd.debug
+      - loglevel=6
+      - log_buf_len=1M
+      - systemd.journald.forward_to_console=1
+
+  packages:
+    install:
+      - curl
+      - device-mapper
+      - dnf
+      - dracut-overlayfs
+      - efibootmgr
+      - grub2-efi-binary-noprefix
+      - iproute
+      - iptables
+      - jq
+      - kexec-tools
+      - lsof
+      - lvm2
+      - netplan
+      - openssh-server
+      - systemd-udev
+      - trident-service
+      - veritysetup
+      - vim
+    remove:
+      - grub2-efi-binary
+
+  additionalFiles:
+    # Early boot one shot service to activate secondary rw /etc overlay
+    - source: files/etc-mount.service
+      destination: /etc/systemd/system/etc-mount.service
+      # Script invoked by the service above to mount the /etc rw overlay
+    - source: files/etc-mount.sh
+      destination: /usr/local/bin/etc-mount.sh
+    - source: files/sudoers-wheel
+      destination: /etc/sudoers.d/wheel
+    - source: files/99-dhcp-eth0.network
+      destination: /etc/systemd/network/99-dhcp-eth0.network
+
+  services:
+    enable:
+      - etc-mount
+      - kdump
+      - trident
+
+  users:
+    - name: testuser
+      sshPublicKeyPaths:
+        - files/id_rsa.pub
+      secondaryGroups:
+        - wheel
+
+scripts:
+  postCustomization:
+    - path: scripts/post-install.sh
+    - path: scripts/ssh-move-host-keys.sh
+    - path: scripts/update-os-release.sh
+    - path: scripts/duid-type-to-link-layer.sh
