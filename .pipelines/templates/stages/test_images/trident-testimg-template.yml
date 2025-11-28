@@ -1,0 +1,229 @@
+parameters:
+  - name: outputDirectory
+    type: string
+    default: "$(Pipeline.Workspace)/s/test-images/output"
+
+  - name: target
+    type: string
+
+  - name: micBuildType
+    displayName: MIC Build Type
+    type: string
+    values:
+      - dev
+      - preview
+      - release
+    default: release
+
+  - name: micArchitecture
+    displayName: Architecture for MIC
+    type: string
+    values:
+      - arm64
+      - amd64
+    default: "amd64"
+
+  - name: micVersion
+    displayName: MIC Version
+    type: string
+    default: "*.*.*"
+
+  - name: baseimgBuildType
+    displayName: Base Image build type
+    type: string
+    default: "release"
+    # values:
+    #   - dev
+    #   - preview
+    #   - release
+
+  - name: baseimgVersion
+    displayName: Base Image Version
+    type: string
+    default: "*.*.*"
+
+  - name: baseimgAzureLinuxVersion
+    displayName: Version of AzureLinux for the Base Image
+    type: string
+    values:
+      - "2.0"
+      - "3.0"
+    default: "3.0"
+
+  - name: baseimgTypes
+    displayName: Base Image Types
+    type: object
+    values:
+      - baremetal
+      - core_arm64
+      - core_selinux
+      - minimal
+      - qemu_guest
+    default: 
+      - baremetal
+
+  - name: downloadTrident
+    type: boolean
+    default: true
+
+  - name: tridentPipelineRunId
+    type: string
+    default: ""
+
+  # Default: trident-ci
+  # https://dev.azure.com/mariner-org/ECF/_build?definitionId=3371
+  - name: tridentPipelineId
+    type: string
+    default: 3371
+
+  - name: tridentArtifactName
+    type: string
+    default: trident-binaries
+
+  - name: testImagesRepo
+    type: string
+    default: self
+
+  - name: generateSshKeys
+    type: boolean
+    default: false
+
+  - name: useStagedSshKeys
+    type: boolean
+    default: false
+
+steps:
+  - task: PipAuthenticate@1
+    displayName: Provision - Authenticate Pip
+    inputs:
+      artifactFeeds: "mariner/Mariner-Pypi-Feed"
+
+  - template: common/sfi-enforce-isolation-with-etc-hosts.yaml@platform-pipelines
+
+  - checkout: ${{ parameters.testImagesRepo }}
+    path: s/test-images
+
+  - ${{ if eq(parameters.downloadTrident, true) }}:
+      - template: download-trident.yml
+        parameters:
+          tridentPipelineRunId: ${{ parameters.tridentPipelineRunId }}
+          tridentPipelineId: ${{ parameters.tridentPipelineId }}
+          tridentArtifactName: ${{ parameters.tridentArtifactName }}
+
+  - ${{ if eq(parameters.generateSshKeys, true) }}:
+      - bash: |
+          set -eux
+
+          mkdir -p $(Pipeline.Workspace)/s/test-images/build
+          ssh-keygen -t rsa -b 2048 -f $(Pipeline.Workspace)/s/test-images/build/id_rsa -q -N ""
+        displayName: Set up SSH Keys
+  - ${{ if eq(parameters.useStagedSshKeys, true) }}:
+      - bash: |
+          set -eux
+
+          mkdir -p $(Pipeline.Workspace)/s/test-images/build
+          cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* $(Pipeline.Workspace)/s/test-images/build/
+        displayName: Copy SSH Keys
+
+  - script: |
+      echo "##[warning]THE PIPELINE TEMPLATE trident-testimg-template.yaml IS DEPRECATED. PLEASE SWITCH TO USING testimages.py TO BUILD TEST IMAGES."
+      cat /etc/os-release
+    displayName: "Report Host Info"
+
+  - script: |
+      set -eux
+
+      if which tdnf; then
+        sudo tdnf install -y veritysetup squashfs-tools lsof
+        sudo systemctl start docker
+      else
+        # Ubuntu is used for building and testing of VM images suitable for
+        # servicing by Trident
+        sudo apt install -y createrepo-c swtpm squashfs-tools lsof
+      fi
+      az extension add --name azure-devops
+    displayName: "Install native dependencies"
+    retryCountOnTaskFailure: 3
+
+  - template: common/mic-download-template.yaml@platform-pipelines
+    parameters:
+      buildType: ${{ parameters.micBuildType }}
+      arch: ${{ parameters.micArchitecture }}
+      micVersion: ${{ parameters.micVersion }}
+
+  - ${{ each baseimgType in parameters.baseimgTypes }}:
+      - template: common/base-images-download-template.yaml@platform-pipelines
+        parameters:
+          buildType: ${{ parameters.baseimgBuildType }}
+          baseImageType: ${{ baseimgType }}
+          imageVersion: ${{ parameters.baseimgVersion }}
+          azureLinuxVersion: ${{ parameters.baseimgAzureLinuxVersion }}
+
+  # For dev builds, the RPMs are not neccessarily published, so download them here
+  - ${{ if eq(parameters.baseimgBuildType, 'dev') }}:
+      - template: common/rpms-download-template.yaml@platform-pipelines
+        parameters:
+          imageVersion: ${{ parameters.baseimgVersion }}
+          azureLinuxVersion: ${{ parameters.baseimgAzureLinuxVersion }}
+
+  - bash: |
+      set -ex
+
+      base_dir='$(Pipeline.Workspace)/s/test-images/base'
+
+      mkdir -p $base_dir
+      # Check if there are any .vhdx files in the images directory and move them
+      if ls "$(Build.ArtifactStagingDirectory)/images/" | grep -q ".*\.vhdx$"; then
+        mv $(Build.ArtifactStagingDirectory)/images/*.vhdx $base_dir/
+        rm -rf $(Build.ArtifactStagingDirectory)/images
+      else
+        echo "No base image found"
+        exit 1
+      fi
+
+      if ls "$(Build.ArtifactStagingDirectory)/rpms/" | grep -q "rpms.tar.gz"; then
+        mkdir -p $base_dir/rpm-overrides
+        tar -xvf $(Build.ArtifactStagingDirectory)/rpms/rpms.tar.gz \
+          --strip-components=2 \
+          -C $base_dir/rpm-overrides
+      fi
+
+      if [ -d "$(Build.ArtifactStagingDirectory)/trident" ]; then
+        mv "$(Build.ArtifactStagingDirectory)/trident" "$base_dir/"
+        rm -rf "$(Build.ArtifactStagingDirectory)/trident"
+      fi
+
+    workingDirectory: $(Pipeline.Workspace)/s/test-images
+    displayName: "Prepare and move requirements"
+
+  - script: |
+      # Meta
+      echo "Local directory: $(pwd)"
+
+      echo "Base files:"
+      find base/ -type f | sort
+
+      set -ex
+
+      if [[ "${{ parameters.micBuildType }}" == "dev" ]]; then
+        export MIC_CONTAINER_IMAGE="imagecustomizer:dev"
+      fi
+
+      # Compress the full image & delete the uncompressed image
+      make ${{ parameters.target }}
+    workingDirectory: $(Pipeline.Workspace)/s/test-images
+    displayName: "Build Test Image"
+
+  - script: |
+      set -ex
+      mkdir -p "${{ parameters.outputDirectory }}"
+      
+      # images that have build/**/ format are expected to have multiple output files
+      if [ -d "build/${{ parameters.target }}" ]; then
+        sudo mv -v build/${{ parameters.target }}/* "${{ parameters.outputDirectory }}/"
+      else
+        # Everything else is a file
+        sudo mv -v "${{ parameters.target }}" "${{ parameters.outputDirectory }}/"
+      fi
+    workingDirectory: $(Pipeline.Workspace)/s/test-images
+    displayName: "Copy artifacts to output directory"
