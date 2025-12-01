@@ -217,8 +217,5 @@ mod functional_test {
         let path = PathBuf::from("/var/lib/extensions/test.raw");
         let result = get_host_relative_path(path.clone()).unwrap();
         assert_eq!(result, path);
-
-        // Cleanup
-        env::remove_var(DOCKER_ENVIRONMENT);
     }
 }
