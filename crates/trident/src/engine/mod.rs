@@ -118,6 +118,8 @@ pub(crate) trait Subsystem: Send {
     ///
     /// This method is called before the chroot is entered, and is used to perform any
     /// provisioning operations that need to be done before the chroot is entered.
+    ///
+    /// Provision is not called during runtime updates.
     fn provision(&mut self, _ctx: &EngineContext, _mount_path: &Path) -> Result<(), TridentError> {
         Ok(())
     }
@@ -307,6 +309,12 @@ fn provision(
     ctx: &EngineContext,
     new_root_path: &Path,
 ) -> Result<(), TridentError> {
+    if ctx.servicing_type == ServicingType::RuntimeUpdate {
+        info!(
+            "Skipping step 'Provision' for all subsystems because servicing type is Runtime Update"
+        );
+        return Ok(());
+    }
     // In root-verity, we can assume that /etc is readonly, so we setup
     // a writable overlay for it.
     let use_overlay = ctx.storage_graph.root_fs_is_verity();

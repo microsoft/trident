@@ -7,18 +7,17 @@ use std::{
 };
 
 use anyhow::{bail, ensure, Context, Error};
-use log::{trace, warn};
+use log::{debug, trace, warn};
 use tempfile::NamedTempFile;
 
 use osutils::{
-    container,
     dependencies::{Dependency, DependencyResultExt},
     path,
 };
 use trident_api::{
     config::Extension,
     constants::internal_params::HTTP_CONNECTION_TIMEOUT_SECONDS,
-    error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
+    error::{InternalError, ReportError, ServicingError, TridentError},
     primitives::hash::Sha384Hash,
     status::ServicingType,
 };
@@ -31,6 +30,7 @@ use crate::{
 };
 
 mod release;
+mod utils;
 
 /// Extension-release
 const EXTENSION_RELEASE: &str = "extension-release";
@@ -104,43 +104,50 @@ impl Subsystem for ExtensionsSubsystem {
         RUNS_ON_ALL
     }
 
+    // prepare() is only called during runtime updates, so as to download the
+    // extension files during Stage.
     fn prepare(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
-        if ctx.servicing_type == ServicingType::RuntimeUpdate {
-            // Define staging directory and ensure that it is empty.
-            self.staging_dir = PathBuf::from(EXTENSION_IMAGE_STAGING_DIRECTORY);
-            trace!(
-                "Defining staging directory for extension images at '{}'",
-                self.staging_dir.display()
-            );
-            if self.staging_dir.is_dir() {
-                fs::remove_dir_all(&self.staging_dir).structured(InternalError::Internal(
-                    "Failed to remove extension image staging directory",
-                ))?;
-            }
-            // Download new extension images. Mount and process all extension images.
-            self.populate_extensions(ctx)
-                .structured(InternalError::PopulateExtensionImages)?;
+        if ctx.servicing_type != ServicingType::RuntimeUpdate {
+            debug!("Skipping step 'prepare' because servicing type is not RuntimeUpdate.");
+            return Ok(());
         }
+        // Define staging directory and ensure that it is empty.
+        self.staging_dir = PathBuf::from(EXTENSION_IMAGE_STAGING_DIRECTORY);
+        trace!(
+            "Defining staging directory for extension images at '{}'",
+            self.staging_dir.display()
+        );
+        if self.staging_dir.is_dir() {
+            fs::remove_dir_all(&self.staging_dir).structured(InternalError::Internal(
+                "Failed to remove extension image staging directory",
+            ))?;
+        }
+        // Download new extension images. Mount and process all extension images.
+        self.populate_extensions(ctx)
+            .structured(InternalError::PopulateExtensionImages)?;
         Ok(())
     }
 
+    // provision() is not called during runtime updates.
     fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
-        if ctx.servicing_type != ServicingType::RuntimeUpdate {
-            // Define staging directory and ensure that it is empty.
-            self.staging_dir = path::join_relative(mount_path, EXTENSION_IMAGE_STAGING_DIRECTORY);
-            trace!(
-                "Defining staging directory for extension images at '{}'",
-                self.staging_dir.display()
-            );
-            if self.staging_dir.is_dir() {
-                fs::remove_dir_all(&self.staging_dir).structured(InternalError::Internal(
-                    "Failed to remove extension image staging directory",
-                ))?;
-            }
-            // Download new extension images. Mount and process all extension images.
-            self.populate_extensions(ctx)
-                .structured(InternalError::PopulateExtensionImages)?;
+        if ctx.servicing_type == ServicingType::RuntimeUpdate {
+            debug!("Skipping step 'provision' because servicing type is RuntimeUpdate.");
+            return Ok(());
         }
+        // Define staging directory and ensure that it is empty.
+        self.staging_dir = path::join_relative(mount_path, EXTENSION_IMAGE_STAGING_DIRECTORY);
+        trace!(
+            "Defining staging directory for extension images at '{}'",
+            self.staging_dir.display()
+        );
+        if self.staging_dir.is_dir() {
+            fs::remove_dir_all(&self.staging_dir).structured(InternalError::Internal(
+                "Failed to remove extension image staging directory",
+            ))?;
+        }
+        // Download new extension images. Mount and process all extension images.
+        self.populate_extensions(ctx)
+            .structured(InternalError::PopulateExtensionImages)?;
 
         // Ensure that desired target directories exist on the target OS.
         self.create_directories(mount_path)
@@ -151,21 +158,38 @@ impl Subsystem for ExtensionsSubsystem {
         self.set_up_extensions(mount_path, ctx.servicing_type)
             .structured(InternalError::SetUpExtensionImages)?;
 
-        if ctx.servicing_type == ServicingType::RuntimeUpdate {
-            if ctx.spec.os.sysexts != ctx.spec_old.os.sysexts {
-                Dependency::SystemdSysext
-                    .cmd()
-                    .arg("refresh")
-                    .run_and_check()
-                    .message("Failed to refresh sysexts on the OS")?;
-            }
-            if ctx.spec.os.confexts != ctx.spec_old.os.confexts {
-                Dependency::SystemdConfext
-                    .cmd()
-                    .arg("refresh")
-                    .run_and_check()
-                    .message("Failed to refresh confexts on the OS")?;
-            }
+        Ok(())
+    }
+
+    // configure() is only called during runtime updates.
+    fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
+        if ctx.servicing_type != ServicingType::RuntimeUpdate {
+            debug!("Skipping step 'configure' because servicing type is not RuntimeUpdate.");
+            return Ok(());
+        }
+        // Ensure that desired target directories exist on the target OS.
+        self.create_directories(Path::new("/"))
+            .structured(ServicingError::CreateExtensionImageDirectories)?;
+
+        // Determine which images need to be removed and which should be added.
+        // Copy extension images to their proper locations.
+        self.set_up_extensions(Path::new("/"), ctx.servicing_type)
+            .structured(InternalError::SetUpExtensionImages)?;
+
+        // Activate sysexts and confexts on the OS.
+        if ctx.spec.os.sysexts != ctx.spec_old.os.sysexts {
+            Dependency::SystemdSysext
+                .cmd()
+                .arg("refresh")
+                .run_and_check()
+                .message("Failed to refresh sysexts on the OS")?;
+        }
+        if ctx.spec.os.confexts != ctx.spec_old.os.confexts {
+            Dependency::SystemdConfext
+                .cmd()
+                .arg("refresh")
+                .run_and_check()
+                .message("Failed to refresh confexts on the OS")?;
         }
 
         Ok(())
@@ -278,14 +302,15 @@ impl ExtensionsSubsystem {
                 // First, check if this extension already exists on the system.
                 if let Some(existing_file_path) = match &ext_type {
                     ExtensionType::Sysext => {
-                        check_for_existing_image(ext, &ctx.spec_old.os.sysexts)
+                        utils::check_for_existing_image(ext, &ctx.spec_old.os.sysexts)
                     }
                     ExtensionType::Confext => {
-                        check_for_existing_image(ext, &ctx.spec_old.os.confexts)
+                        utils::check_for_existing_image(ext, &ctx.spec_old.os.confexts)
                     }
                 } {
                     // Check if Trident is running in a container, and adjust path accordingly.
-                    let adjusted_path = adjust_path_if_container(existing_file_path.clone())?;
+                    let adjusted_path =
+                        utils::adjust_path_if_container(existing_file_path.clone())?;
                     // Ensure that file exists.
                     ensure!(
                         adjusted_path.exists(),
@@ -334,7 +359,7 @@ impl ExtensionsSubsystem {
                     )
                 })?;
                 // Check if Trident is running in a container, and adjust path accordingly.
-                let adjusted_path = adjust_path_if_container(path.clone())?;
+                let adjusted_path = utils::adjust_path_if_container(path.clone())?;
                 // Ensure that file exists
                 ensure!(
                     adjusted_path.exists(),
@@ -349,7 +374,7 @@ impl ExtensionsSubsystem {
             let temp_mp = tempfile::tempdir()?;
 
             // Attach a device and mount the extension
-            let device_path = attach_device_and_mount(&extension_file, temp_mp.path())
+            let device_path = utils::attach_device_and_mount(&extension_file, temp_mp.path())
                 .context("Failed to mount")?;
 
             // Get extension-release file
@@ -357,7 +382,8 @@ impl ExtensionsSubsystem {
                 release::read_extension_release(temp_mp.path(), &extension_file, ext, &ext_type);
 
             // Clean-Up: unmount and detach the device
-            detach_device_and_unmount(device_path, temp_mp.path()).context("Failed to unmount")?;
+            utils::detach_device_and_unmount(device_path, temp_mp.path())
+                .context("Failed to unmount")?;
 
             let ext_data =
                 ext_data_result.context("Failed to get extension-release information")?;
@@ -511,85 +537,6 @@ impl ExtensionsSubsystem {
 
         Ok(())
     }
-}
-
-/// Helper function to identify if the extension exists in the old Host
-/// Configuration, in which case we can reuse its path.
-fn check_for_existing_image(ext: &Extension, old_hc_extensions: &[Extension]) -> Option<PathBuf> {
-    old_hc_extensions
-        .iter()
-        // Extension must match on Sha384 hash
-        .find(|old_ext| ext.sha384 == old_ext.sha384)?
-        .path
-        .clone()
-}
-
-/// Helper function that prepends host root path to a path, if Trident is
-/// running in a container.
-fn adjust_path_if_container(path: PathBuf) -> Result<PathBuf, Error> {
-    Ok(
-        if container::is_running_in_container()
-            .unstructured("Failed to check if Trident is running in a container")?
-        {
-            path::join_relative(
-                container::get_host_root_path().unstructured("Failed to get host root path")?,
-                path,
-            )
-        } else {
-            path
-        },
-    )
-}
-
-/// Helper function to mount the extension image.
-fn attach_device_and_mount(image_file_path: &Path, mount_path: &Path) -> Result<String, Error> {
-    let loop_device_output = Dependency::Losetup
-        .cmd()
-        .arg("-f")
-        .arg("--show")
-        .arg(image_file_path)
-        .output_and_check()
-        .context("Failed to attach loop device")?;
-    let loop_device = loop_device_output.trim();
-
-    // Must mount with option '-t ddi', which internally invokes systemd-dissect
-    // as a helper to parse the partitions in the image.
-    let mount_result = Dependency::Mount
-        .cmd()
-        .arg("-t")
-        .arg("ddi")
-        .arg(loop_device)
-        .arg(mount_path)
-        .run_and_check();
-    if let Err(e) = mount_result {
-        // Detach the loop device if mounting failed.
-        Dependency::Losetup
-            .cmd()
-            .arg("-d")
-            .arg(loop_device)
-            .run_and_check()
-            .context("Failed to clean up loop device after mount failed")?;
-        // After detaching the loop device, return mount error.
-        return Err(e.into());
-    }
-
-    Ok(loop_device.to_string())
-}
-
-/// Helper function to unmount the extension image.
-fn detach_device_and_unmount(device_path: String, mount_path: &Path) -> Result<(), Error> {
-    Dependency::Umount
-        .cmd()
-        .arg(mount_path)
-        .run_and_check()
-        .context("Failed to unmount extension image")?;
-    Dependency::Losetup
-        .cmd()
-        .arg("-d")
-        .arg(device_path)
-        .run_and_check()
-        .context("Failed to detach loop device")?;
-    Ok(())
 }
 
 #[cfg(test)]
