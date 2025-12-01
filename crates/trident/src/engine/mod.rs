@@ -136,7 +136,7 @@ pub(crate) trait Subsystem: Send {
     }
 
     /// Clean up any temporary files and directories.
-    fn clean_up(&self) -> Result<(), TridentError> {
+    fn clean_up(&self, _ctx: &EngineContext) -> Result<(), TridentError> {
         Ok(())
     }
 }
@@ -420,7 +420,7 @@ fn clean_up(subsystems: &[Box<dyn Subsystem>], ctx: &EngineContext) -> Result<()
                 "Starting step 'Clean Up' for subsystem '{}'",
                 subsystem.name()
             );
-            subsystem.clean_up().message(format!(
+            subsystem.clean_up(ctx).message(format!(
                 "Step 'Clean Up' failed for subsystem '{}'",
                 subsystem.name()
             ))?;

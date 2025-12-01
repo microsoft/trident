@@ -117,8 +117,7 @@ impl Subsystem for ExtensionsSubsystem {
             "Defining staging directory for extension images at '{}'",
             self.staging_dir.display()
         );
-        self.reset_staging_dir()
-            .structured(InternalError::Internal("Failed to reset staging directory"))?;
+        self.reset_staging_dir()?;
         // Download new extension images. Mount and process all extension images.
         self.populate_extensions(ctx)
             .structured(InternalError::PopulateExtensionImages)?;
@@ -137,8 +136,7 @@ impl Subsystem for ExtensionsSubsystem {
             "Defining staging directory for extension images at '{}'",
             self.staging_dir.display()
         );
-        self.reset_staging_dir()
-            .structured(InternalError::Internal("Failed to reset staging directory"))?;
+        self.reset_staging_dir()?;
         // Download new extension images. Mount and process all extension images.
         self.populate_extensions(ctx)
             .structured(InternalError::PopulateExtensionImages)?;
@@ -151,6 +149,9 @@ impl Subsystem for ExtensionsSubsystem {
         // Copy extension images to their proper locations.
         self.set_up_extensions(mount_path, ctx.servicing_type)
             .structured(InternalError::SetUpExtensionImages)?;
+
+        // Delete staging directory.
+        self.reset_staging_dir()?;
 
         Ok(())
     }
@@ -185,7 +186,8 @@ impl Subsystem for ExtensionsSubsystem {
                 .run_and_check()
                 .message("Failed to refresh confexts on the OS")?;
         }
-
+        // Note: clean-up of staging directory is separated into clean_up()
+        // method for Runtime Updates.
         Ok(())
     }
 
@@ -229,13 +231,14 @@ impl Subsystem for ExtensionsSubsystem {
         Ok(())
     }
 
-    fn clean_up(&self) -> Result<(), TridentError> {
+    fn clean_up(&self, ctx: &EngineContext) -> Result<(), TridentError> {
+        if ctx.servicing_type != ServicingType::RuntimeUpdate {
+            debug!("Skipping step 'clean up' because servicing type is not RuntimeUpdate.");
+            return Ok(());
+        }
         // Clean-up staging directory. Recursively remove all contents of
         // staging directory as well as the directory itself.
-        self.reset_staging_dir()
-            .structured(InternalError::Internal(
-                "Failed to remove staging directory",
-            ))?;
+        self.reset_staging_dir()?;
         Ok(())
     }
 }
@@ -532,9 +535,10 @@ impl ExtensionsSubsystem {
         Ok(())
     }
 
-    fn reset_staging_dir(&self) -> Result<(), Error> {
+    fn reset_staging_dir(&self) -> Result<(), TridentError> {
         if self.staging_dir.is_dir() {
-            fs::remove_dir_all(&self.staging_dir)?;
+            fs::remove_dir_all(&self.staging_dir)
+                .structured(InternalError::Internal("Failed to reset staging directory"))?;
         };
         Ok(())
     }
