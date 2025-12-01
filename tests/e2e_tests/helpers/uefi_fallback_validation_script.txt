@@ -14,8 +14,8 @@ if [ -z "$CURRENT_AZL_BOOT_NAME" ]; then
     exit 1
 fi
 
-if [ "_REPLACE_FALLBACK_NODE_" == "none" ]; then
-    # if none, check that $FALLBACK_PATH is empty
+if [ "_REPLACE_FALLBACK_NODE_" == "disabled" ]; then
+    # if disabled, check that $FALLBACK_PATH is empty
     if sudo find $FALLBACK_PATH/*; then
         echo "$FALLBACK_PATH is not empty"
         exit 1
@@ -25,8 +25,8 @@ if [ "_REPLACE_FALLBACK_NODE_" == "none" ]; then
     fi
 else
     AZL_BOOT_NAME_TO_CHECK="$CURRENT_AZL_BOOT_NAME"
-    if [ "_REPLACE_FALLBACK_NODE_" == "rollback" ] && _REPLACE_NOT_INSTALL_; then
-        # if rollback, check that $FALLBACK_PATH == opposite of $EFI_PATH/$CURRENT_AZL_BOOT_NAME
+    if [ "_REPLACE_FALLBACK_NODE_" == "conservative" ] && _REPLACE_NOT_INSTALL_; then
+        # if conservative, check that $FALLBACK_PATH == opposite of $EFI_PATH/$CURRENT_AZL_BOOT_NAME
         AZL_BOOT_NAME_TO_CHECK="$(echo "$CURRENT_AZL_BOOT_NAME" | sed "s/AZLA/AZLA_TMP/g; s/AZLB/AZLA/g; s/AZLA_TMP/AZLB/g")"
     fi
 
