@@ -897,7 +897,7 @@ mod tests {
                 UefiFallbackMode::Disabled,
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::AbUpdate,
-                None::<String>, // with None, we do not copy anything
+                None::<String>, // with Disabled, we do not copy anything
                 "Validate AbUpdateStaged + Disabled + active volume A ==> None",
             ),
             (
@@ -921,7 +921,7 @@ mod tests {
                 UefiFallbackMode::Disabled,
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::AbUpdate,
-                None::<String>, // with None, we do not copy anything
+                None::<String>, // with Disabled, we do not copy anything
                 "Validate AbUpdateFinalized + Disabled + active volume A ==> None",
             ),
         ];
