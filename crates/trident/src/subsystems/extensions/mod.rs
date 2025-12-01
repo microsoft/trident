@@ -535,6 +535,8 @@ impl ExtensionsSubsystem {
         Ok(())
     }
 
+    /// Resets staging directory by deleting the directory if it exists.
+    /// `self.staging_dir` should be set before calling.
     fn reset_staging_dir(&self) -> Result<(), TridentError> {
         if self.staging_dir.is_dir() {
             fs::remove_dir_all(&self.staging_dir)
