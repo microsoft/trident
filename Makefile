@@ -911,45 +911,22 @@ $(MINIMAL_IMAGE_AARCH64):
 	@mkdir -p artifacts
 	@tests/images/testimages.py download-image minimal_aarch64
 
-artifacts/trident-vm-grub-testimage.qcow2: \
+artifacts/trident-vm-grub-testimage.qcow2:
 	$(QEMU_GUEST_IMAGE) \
 	$(TRIDENT_VM_DEPENDENCIES) \
 	$(VM_IMAGE_PATH_PREFIX)/baseimg-grub.yaml \
 	$(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub \
 	artifacts/rpm-overrides
 	@echo "Building $@ from $<"
-	docker run --rm \
-		--privileged \
-		-v ".:/repo:z" \
-		-v "/dev:/dev" \
-		${MIC_CONTAINER_IMAGE} \
-			--log-level debug \
-			--rpm-source /repo/bin/RPMS \
-			--rpm-source /repo/artifacts/rpm-overrides \
-			--build-dir /build \
-			--image-file /repo/$< \
-			--output-image-file /repo/$@ \
-			--output-image-format qcow2 \
-			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-grub.yaml
+	./tests/images/testimages.py build trident-vm-grub-testimage --output-dir $(ARTIFACTS_DIR)
 
-artifacts/trident-vm-grub-testimage-arm64.qcow2: \
+artifacts/trident-vm-grub-testimage-arm64.qcow2:
 	base/core_arm64.vhdx \
 	$(TRIDENT_VM_DEPENDENCIES) \
 	$(VM_IMAGE_PATH_PREFIX)/baseimg-grub.yaml \
 	$(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub
 	@echo "Building $@ from $<"
-	docker run --rm \
-		--privileged \
-		-v ".:/repo:z" \
-		-v "/dev:/dev" \
-		${MIC_CONTAINER_IMAGE} \
-			--log-level debug \
-			--rpm-source /repo/bin/RPMS \
-			--build-dir /build \
-			--image-file /repo/$< \
-			--output-image-file /repo/$@ \
-			--output-image-format qcow2 \
-			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-grub-verity.yaml
+	./tests/images/testimages.py build trident-vm-grub-testimage-arm64 --output-dir $(ARTIFACTS_DIR)
 
 artifacts/trident-vm-grub-verity-testimage.qcow2: \
 	$(QEMU_GUEST_IMAGE) \

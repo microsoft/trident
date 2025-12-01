@@ -36,6 +36,7 @@ use crate::{
 };
 
 // Engine functionality
+mod ab_update;
 pub mod bootentries;
 mod clean_install;
 mod context;
@@ -43,6 +44,7 @@ mod kexec;
 mod newroot;
 pub mod provisioning_network;
 pub mod rollback;
+mod runtime_update;
 mod update;
 
 // Trident Subsystems

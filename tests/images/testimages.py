@@ -45,6 +45,7 @@ DEFINED_IMAGES: List[ImageConfig] = [
         config="trident-vm-testimage",
         config_file="base/updateimg-grub.yaml",
         ssh_key="files/id_rsa.pub",
+        output_format=OutputFormat.QCOW2,
     ),
     ImageConfig(
         "trident-vm-grub-verity-testimage",
@@ -52,6 +53,7 @@ DEFINED_IMAGES: List[ImageConfig] = [
         config="trident-vm-testimage",
         config_file="base/updateimg-grub-verity.yaml",
         ssh_key="files/id_rsa.pub",
+        output_format=OutputFormat.QCOW2,
     ),
     ImageConfig(
         "trident-vm-root-verity-testimage",
@@ -60,6 +62,7 @@ DEFINED_IMAGES: List[ImageConfig] = [
         config_file="base/baseimg-root-verity.yaml",
         requires_ukify=True,
         ssh_key="files/id_rsa.pub",
+        output_format=OutputFormat.QCOW2,
     ),
     ImageConfig(
         "trident-vm-usr-verity-testimage",
@@ -68,12 +71,14 @@ DEFINED_IMAGES: List[ImageConfig] = [
         config_file="base/baseimg-usr-verity.yaml",
         requires_ukify=True,
         ssh_key="files/id_rsa.pub",
+        output_format=OutputFormat.QCOW2,
     ),
     ImageConfig(
         "trident-vm-grub-verity-azure-testimage",
         base_image=BaseImage.CORE_SELINUX,
         config="trident-vm-testimage",
         config_file="base/updateimg-grub-verity-azure.yaml",
+        output_format=OutputFormat.VHD,
     ),
     ImageConfig(
         "trident-vm-grub-testimage-arm64",
@@ -82,6 +87,7 @@ DEFINED_IMAGES: List[ImageConfig] = [
         config_file="base/updateimg-grub.yaml",
         ssh_key="files/id_rsa.pub",
         architecture=SystemArchitecture.ARM64,
+        output_format=OutputFormat.QCOW2,
     ),
     ImageConfig(
         "trident-vm-grub-verity-testimage-arm64",
