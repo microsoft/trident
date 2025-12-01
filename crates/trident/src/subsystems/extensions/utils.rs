@@ -2,41 +2,24 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Error};
 
-use osutils::{container, dependencies::Dependency, path};
-use trident_api::{config::Extension, error::TridentResultExt};
+use osutils::dependencies::Dependency;
+use trident_api::{config::Extension, primitives::hash::Sha384Hash};
 
-/// Helper function to identify if the extension exists in the old Host
-/// Configuration, in which case we can reuse its path.
-pub(crate) fn check_for_existing_image(
-    ext: &Extension,
+/// Returns the path of an extension from the old Host Configuration that
+/// matches the given SHA384 hash, if one exists.
+pub(crate) fn find_existing_extension_path(
+    hash: &Sha384Hash,
     old_hc_extensions: &[Extension],
 ) -> Option<PathBuf> {
     old_hc_extensions
         .iter()
         // Extension must match on Sha384 hash
-        .find(|old_ext| ext.sha384 == old_ext.sha384)?
+        .find(|old_ext| hash == &old_ext.sha384)?
         .path
         .clone()
 }
 
-/// Helper function that prepends host root path to a path, if Trident is
-/// running in a container.
-pub(crate) fn adjust_path_if_container(path: PathBuf) -> Result<PathBuf, Error> {
-    Ok(
-        if container::is_running_in_container()
-            .unstructured("Failed to check if Trident is running in a container")?
-        {
-            path::join_relative(
-                container::get_host_root_path().unstructured("Failed to get host root path")?,
-                path,
-            )
-        } else {
-            path
-        },
-    )
-}
-
-/// Helper function to mount the extension image.
+/// Mounts the extension image.
 pub(crate) fn attach_device_and_mount(
     image_file_path: &Path,
     mount_path: &Path,
@@ -74,7 +57,7 @@ pub(crate) fn attach_device_and_mount(
     Ok(loop_device.to_string())
 }
 
-/// Helper function to unmount the extension image.
+/// Unmounts the extension image.
 pub(crate) fn detach_device_and_unmount(
     device_path: String,
     mount_path: &Path,
@@ -104,43 +87,32 @@ mod tests {
     use trident_api::primitives::hash::Sha384Hash;
 
     #[test]
-    fn test_check_for_existing_image_found() {
+    fn test_find_existing_extension_path_found() {
         let hash = Sha384Hash::from("a".repeat(96));
         let path = PathBuf::from("/var/lib/extensions/ext1.raw");
-        let new_ext = Extension {
-            url: Url::parse("https://example.com/ext1.raw").unwrap(),
-            sha384: hash.clone(),
-            path: None,
-        };
         let old_extensions = vec![Extension {
             url: Url::parse("https://example.com/ext1.raw").unwrap(),
-            sha384: hash,
+            sha384: hash.clone(),
             path: Some(path.clone()),
         }];
 
         assert_eq!(
-            check_for_existing_image(&new_ext, &old_extensions),
+            find_existing_extension_path(&hash, &old_extensions),
             Some(path)
         );
     }
 
     #[test]
-    fn test_check_for_existing_image_not_found() {
+    fn test_find_existing_extension_path_not_found() {
         let hash1 = Sha384Hash::from("a".repeat(96));
         let hash2 = Sha384Hash::from("b".repeat(96));
-
-        let new_ext = Extension {
-            url: Url::parse("https://example.com/ext1.raw").unwrap(),
-            sha384: hash1,
-            path: None,
-        };
         let old_extensions = vec![Extension {
             url: Url::parse("https://example.com/ext2.raw").unwrap(),
             sha384: hash2,
             path: Some(PathBuf::from("/var/lib/extensions/ext1.raw")),
         }];
 
-        assert_eq!(check_for_existing_image(&new_ext, &old_extensions), None);
+        assert_eq!(find_existing_extension_path(&hash1, &old_extensions), None);
     }
 }
 

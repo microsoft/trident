@@ -11,12 +11,13 @@ use log::{debug, trace, warn};
 use tempfile::NamedTempFile;
 
 use osutils::{
+    container,
     dependencies::{Dependency, DependencyResultExt},
     path,
 };
 use trident_api::{
-    constants::internal_params::HTTP_CONNECTION_TIMEOUT_SECONDS,
-    error::{InternalError, ReportError, ServicingError, TridentError},
+    constants::{internal_params::HTTP_CONNECTION_TIMEOUT_SECONDS, ROOT_MOUNT_POINT_PATH},
+    error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     primitives::hash::Sha384Hash,
     status::ServicingType,
 };
@@ -161,12 +162,12 @@ impl Subsystem for ExtensionsSubsystem {
             return Ok(());
         }
         // Ensure that desired target directories exist on the target OS.
-        self.create_directories(Path::new("/"))
+        self.create_directories(Path::new(ROOT_MOUNT_POINT_PATH))
             .structured(ServicingError::CreateExtensionImageDirectories)?;
 
         // Determine which images need to be removed and which should be added.
         // Copy extension images to their proper locations.
-        self.set_up_extensions(Path::new("/"), ctx.servicing_type)
+        self.set_up_extensions(Path::new(ROOT_MOUNT_POINT_PATH), ctx.servicing_type)
             .structured(InternalError::SetUpExtensionImages)?;
 
         // Activate sysexts and confexts on the OS.
@@ -293,15 +294,16 @@ impl ExtensionsSubsystem {
                 // First, check if this extension already exists on the system.
                 if let Some(existing_file_path) = match &ext_type {
                     ExtensionType::Sysext => {
-                        utils::check_for_existing_image(ext, &ctx.spec_old.os.sysexts)
+                        utils::find_existing_extension_path(&ext.sha384, &ctx.spec_old.os.sysexts)
                     }
                     ExtensionType::Confext => {
-                        utils::check_for_existing_image(ext, &ctx.spec_old.os.confexts)
+                        utils::find_existing_extension_path(&ext.sha384, &ctx.spec_old.os.confexts)
                     }
                 } {
                     // Check if Trident is running in a container, and adjust path accordingly.
                     let adjusted_path =
-                        utils::adjust_path_if_container(existing_file_path.clone())?;
+                        container::get_host_relative_path(existing_file_path.clone())
+                            .unstructured("Failed to adjust file path for container")?;
                     // Ensure that file exists.
                     ensure!(
                         adjusted_path.exists(),
@@ -350,7 +352,8 @@ impl ExtensionsSubsystem {
                     )
                 })?;
                 // Check if Trident is running in a container, and adjust path accordingly.
-                let adjusted_path = utils::adjust_path_if_container(path.clone())?;
+                let adjusted_path = container::get_host_relative_path(path.clone())
+                    .unstructured("Failed to adjust file path for container")?;
                 // Ensure that file exists
                 ensure!(
                     adjusted_path.exists(),
