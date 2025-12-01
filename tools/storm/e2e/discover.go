@@ -126,6 +126,11 @@ func produceScenario(
 	runtime scenario.RuntimeType,
 	lowest_ring testrings.TestRing,
 ) (*scenario.TridentE2EScenario, error) {
+	// TEMPORARILY ONLY ENABLE VM/HOST SCENARIOS
+	if hardware != scenario.HardwareTypeVM || runtime != scenario.RuntimeTypeHost {
+		return nil, nil
+	}
+
 	// Get the list of all target rings for this scenario. This is the list of
 	// rings from the lowest declared ring up to the highest existing ring.
 	// For example, if the lowest ring is 'ci', the returned list will be

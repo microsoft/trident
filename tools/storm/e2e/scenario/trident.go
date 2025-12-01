@@ -5,8 +5,6 @@ import (
 	"tridenttools/storm/e2e/testrings"
 
 	"github.com/microsoft/storm"
-
-	"github.com/sirupsen/logrus"
 )
 
 type TridentE2EScenario struct {
@@ -17,6 +15,15 @@ type TridentE2EScenario struct {
 	hardware  HardwareType
 	runtime   RuntimeType
 	testRings testrings.TestRingSet
+	args      struct {
+		PipelineRun bool `long:"pipeline-run" help:"Indicates whether the scenario is being run in a pipeline context."`
+	}
+
+	// Stores the SSH private key for VM access
+	sshPrivateKey string
+
+	// Stores information about the test host once it has been set up
+	testHost testHostInfo
 }
 
 func NewTridentE2EScenario(name string, tags []string, config map[string]interface{}, hardware HardwareType, runtime RuntimeType, testRings testrings.TestRingSet) *TridentE2EScenario {
@@ -28,6 +35,19 @@ func NewTridentE2EScenario(name string, tags []string, config map[string]interfa
 		runtime:   runtime,
 		testRings: testRings,
 	}
+}
+
+func (s *TridentE2EScenario) Args() any {
+	return &s.args
+}
+
+func (s *TridentE2EScenario) Cleanup(storm.SetupCleanupContext) error {
+	err := s.testHost.Cleanup()
+	if err != nil {
+		return fmt.Errorf("failed to clean up test host: %w", err)
+	}
+
+	return nil
 }
 
 func (s *TridentE2EScenario) TestRings() testrings.TestRingSet {
@@ -51,19 +71,8 @@ func (s *TridentE2EScenario) RuntimeType() RuntimeType {
 }
 
 func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {
-	r.RegisterTestCase("run", s.Run)
-	return nil
-}
-
-func (s TridentE2EScenario) Run(tc storm.TestCase) error {
-	logrus.Infof("Hello from '%s'!", s.Name())
-
-	logrus.Infof("Hardware Type: %s", s.hardware)
-	logrus.Infof("Runtime Type: %s", s.runtime)
-	logrus.Infof("Configuration: ")
-	fmt.Println(s.config)
-
-	// TODO: Implement the actual scenario logic here
-
+	r.RegisterTestCase("install-vm-deps", s.installVmDependencies)
+	r.RegisterTestCase("prepare-hc", s.prepareHostConfig)
+	r.RegisterTestCase("setup-vm", s.setupTestHost)
 	return nil
 }

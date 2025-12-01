@@ -15,6 +15,10 @@ parameters:
     type: boolean
     default: false
 
+  - name: maxParallel
+    type: string
+    default: null
+
 stages:
   - stage: E2ETesting_${{ parameters.hardwareType }}_${{ parameters.runtimeType }}
     displayName: E2E ${{ parameters.hardwareType }} ${{ parameters.runtimeType }} Testing
@@ -50,6 +54,8 @@ stages:
 
         strategy:
           matrix: $[ variables['matrixJson'] ]
+          ${{ if parameters.maxParallel }}:
+            maxParallel: ${{ parameters.maxParallel }}
 
         condition: ne(variables['matrixJson'], '{}')
         variables:

@@ -75,10 +75,11 @@ def main():
                     pl_rename = pl_renames.get(pl)
 
                     if pl_rename is None:
-                        print(
-                            f"Warning: Unknown pipeline type '{pl}' for scenario '{name}', hardware '{hw}', runtime '{rt}'. Skipping.",
-                            file=sys.stderr,
-                        )
+                        if pl != "validation":
+                            print(
+                                f"Warning: Unknown pipeline type '{pl}' for scenario '{name}', hardware '{hw}', runtime '{rt}'. Skipping.",
+                                file=sys.stderr,
+                            )
                         continue
 
                     # Build inverted structure
