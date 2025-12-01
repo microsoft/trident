@@ -64,7 +64,7 @@ impl Subsystem for EspSubsystem {
 ///    based on the servicing state and UEFI fallback mode.
 ///       * For clean install, the target OS boot files (always volume A) are copied.
 ///       * For A/B update, the boot files are copied based on whether 'optimistic' (when
-///         the target OS boot files are copied) or rollback (no files need to be copied
+///         the target OS boot files are copied) or 'conservative' (no files need to be copied
 ///         because fallback was populated previously) is selected.
 /// 2. During commit, after the target OS boot has been verified, the target OS boot files
 ///    are copied to the UEFI fallback folder.
@@ -262,13 +262,13 @@ fn copy_file_artifacts(
 ///  * For clean install, use volume A (this is the target OS volume for clean install)
 ///  * For A/B update
 ///    - 'optimistic': use the opposite of the active volume
-///    - rollback: use the active volume (this may be a redundant copy)
+///    - 'conservative': use the active volume (this may be a redundant copy)
 /// 2. During commit, after the target OS boot has been verified, the target OS boot files
 ///    are copied to the UEFI fallback folder.
 ///  * For clean install, no copy is needed as it was done during finalize
 ///  * For A/B update
 ///    - 'optimistic': no copy is needed as it was done during finalize
-///    - rollback: use the newly active volume
+///    - 'conservative': use the newly active volume
 fn find_uefi_fallback_source_dir_name(
     ctx: &EngineContext,
     servicing_state: ServicingState,
@@ -865,7 +865,7 @@ mod tests {
                 UefiFallbackMode::Conservative,
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::CleanInstall,
-                Some("AZLA".to_string()), // in finalize, with rollback, copy from volume A (volume we just put COSI files on)
+                Some("AZLA".to_string()), // in finalize, with 'conservative', copy from volume A (volume we just put COSI files on)
                 "Validate CleanInstallStaged + Some(Rollback) + active volume A ==> AZLA",
             ),
             (
@@ -881,7 +881,7 @@ mod tests {
                 UefiFallbackMode::Conservative,
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::AbUpdate,
-                Some("AZLA".to_string()), // in finalize, with rollback, copy from active volume (the COSI bits have not been validated yet)
+                Some("AZLA".to_string()), // in finalize, with 'conservative', copy from active volume (the COSI bits have not been validated yet)
                 "Validate AbUpdateStaged + Some(Rollback) + active volume A ==> AZLA",
             ),
             (
@@ -905,7 +905,7 @@ mod tests {
                 UefiFallbackMode::Conservative,
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::AbUpdate,
-                Some("AZLA".to_string()), // in finalize, with rollback, copy from active volume
+                Some("AZLA".to_string()), // in finalize, with 'conservative', copy from active volume
                 "Validate AbUpdateFinalized + Some(Rollback) + active volume A ==> AZLA",
             ),
             (
