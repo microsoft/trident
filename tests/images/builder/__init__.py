@@ -18,6 +18,9 @@ class BaseImage(Enum):
     QEMU_GUEST = BaseImageData("qemu_guest", Path("artifacts/qemu_guest.vhdx"))
     CORE_ARM64 = BaseImageData("core_arm64", Path("artifacts/core_arm64.vhdx"))
     MINIMAL = BaseImageData("minimal", Path("artifacts/minimal.vhdx"))
+    MINIMAL_AARCH64 = BaseImageData(
+        "minimal_aarch64", Path("artifacts/minimal_aarch64.vhdx")
+    )
 
     @property
     def path(self) -> Path:

@@ -1,0 +1,15 @@
+[Unit]
+Description=/etc Mount Service
+DefaultDependencies=no
+Conflicts=umount.target
+Before=local-fs.target umount.target
+Requires=var-lib-trident\x2doverlay.mount
+After=var-lib-trident\x2doverlay.mount
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=etc-mount.sh commit-machine-id
+
+[Install]
+WantedBy=local-fs.target

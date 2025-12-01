@@ -87,7 +87,7 @@ stages:
               - template: build-image.yml
                 parameters:
                   label: "qemu-base"
-                  makeTarget: "build/trident-vm-grub-verity-testimage.qcow2"
+                  makeTarget: "artifacts/trident-vm-grub-verity-testimage.qcow2"
                   baseimgType: qemu_guest
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
                   micBuildType: ${{ parameters.micBuildType }}
@@ -97,7 +97,7 @@ stages:
               - template: build-image.yml
                 parameters:
                   label: "qemu-update-a"
-                  makeTarget: "build/trident-vm-grub-verity-testimage.cosi"
+                  makeTarget: "artifacts/trident-vm-grub-verity-testimage.cosi"
                   baseimgType: qemu_guest
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
                   micBuildType: ${{ parameters.micBuildType }}
@@ -107,7 +107,7 @@ stages:
               - template: build-image.yml
                 parameters:
                   label: "qemu-update-b"
-                  makeTarget: "build/trident-vm-grub-verity-testimage.cosi"
+                  makeTarget: "artifacts/trident-vm-grub-verity-testimage.cosi"
                   baseimgType: qemu_guest
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
                   micBuildType: ${{ parameters.micBuildType }}
@@ -127,7 +127,7 @@ stages:
               - template: build-image.yml
                 parameters:
                   label: "azure-base"
-                  makeTarget: "build/trident-vm-grub-verity-azure-testimage.vhd"
+                  makeTarget: "artifacts/trident-vm-grub-verity-azure-testimage.vhd"
                   baseimgType: core_selinux
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
                   micBuildType: ${{ parameters.micBuildType }}
@@ -136,7 +136,7 @@ stages:
               - template: build-image.yml
                 parameters:
                   label: "azure-update-a"
-                  makeTarget: "build/trident-vm-grub-verity-azure-testimage.cosi"
+                  makeTarget: "artifacts/trident-vm-grub-verity-azure-testimage.cosi"
                   baseimgType: core_selinux
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
                   micBuildType: ${{ parameters.micBuildType }}
@@ -145,7 +145,7 @@ stages:
               - template: build-image.yml
                 parameters:
                   label: "azure-update-b"
-                  makeTarget: "build/trident-vm-grub-verity-azure-testimage.cosi"
+                  makeTarget: "artifacts/trident-vm-grub-verity-azure-testimage.cosi"
                   baseimgType: core_selinux
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
                   micBuildType: ${{ parameters.micBuildType }}
@@ -164,7 +164,7 @@ stages:
               - template: build-image.yml
                 parameters:
                   label: "uki-base"
-                  makeTarget: "build/trident-vm-usr-verity-testimage.qcow2"
+                  makeTarget: "artifacts/trident-vm-usr-verity-testimage.qcow2"
                   baseimgType: qemu_guest
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
                   micBuildType: ${{ parameters.micBuildType }}
@@ -174,7 +174,7 @@ stages:
               - template: build-image.yml
                 parameters:
                   label: "uki-update-a"
-                  makeTarget: "build/trident-vm-usr-verity-testimage.cosi"
+                  makeTarget: "artifacts/trident-vm-usr-verity-testimage.cosi"
                   baseimgType: qemu_guest
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
                   micBuildType: ${{ parameters.micBuildType }}
@@ -184,7 +184,7 @@ stages:
               - template: build-image.yml
                 parameters:
                   label: "uki-update-b"
-                  makeTarget: "build/trident-vm-usr-verity-testimage.cosi"
+                  makeTarget: "artifacts/trident-vm-usr-verity-testimage.cosi"
                   baseimgType: qemu_guest
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
                   micBuildType: ${{ parameters.micBuildType }}

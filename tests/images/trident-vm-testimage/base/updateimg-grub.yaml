@@ -1,0 +1,75 @@
+storage:
+  bootType: efi
+  disks:
+    - maxSize: 5G
+      partitionTableType: gpt
+      partitions:
+        - id: esp
+          size: 8M
+          type: esp
+        - id: root
+          size: 4G
+
+  filesystems:
+    - deviceId: esp
+      mountPoint:
+        options: umask=0077
+        path: /boot/efi
+      type: fat32
+    - deviceId: root
+      mountPoint: /
+      type: ext4
+
+os:
+  hostname: trident-vm-testimg
+  packages:
+    install:
+      - curl
+      - dnf
+      - efibootmgr
+      - grub2-efi-binary-noprefix
+      - iproute
+      - iptables
+      - jq
+      - lsof
+      - netplan
+      - openssh-server
+      - trident-service
+      - vim
+    remove:
+      - grub2-efi-binary
+  bootloader:
+    resetType: hard-reset
+  selinux:
+    mode: disabled
+  kernelCommandLine:
+    # Replicates BM base image settings, that would otherwise be lost
+    extraCommandLine:
+      - console=tty0
+      - console=tty1
+      - console=ttyS0
+      - rd.debug
+      - loglevel=6
+      - log_buf_len=1M
+      - systemd.journald.forward_to_console=1
+  services:
+    enable:
+      - trident
+  users:
+    - name: testuser
+      sshPublicKeyPaths:
+        - files/id_rsa.pub
+      secondaryGroups:
+        - wheel
+  additionalFiles:
+    - source: files/sudoers-wheel
+      destination: /etc/sudoers.d/wheel
+    - source: files/99-dhcp-eth0.network
+      destination: /etc/systemd/network/99-dhcp-eth0.network
+
+scripts:
+  postCustomization:
+    - path: scripts/post-install.sh
+    - path: scripts/ssh-move-host-keys.sh
+    - path: scripts/duid-type-to-link-layer.sh
+    - path: scripts/update-os-release.sh
