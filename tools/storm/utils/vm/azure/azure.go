@@ -21,7 +21,7 @@ type AzureConfig struct {
 	Subscription                string `help:"Azure subscription"`
 	StorageAccountResourceGroup string `help:"Azure resource group"`
 	StorageAccount              string `help:"Azure storage account for VM artifacts"`
-	StorageContainerName        string `help:"Azure storage continer for VM artifacts" default:""`
+	StorageContainerName        string `help:"Azure storage container for VM artifacts" default:""`
 	WhoAmI                      string `help:"User who is running the tests, used for tagging resources" default:""`
 	Region                      string `help:"Azure region" default:"eastus2"`
 	SubnetId                    string `help:"Azure subnet ID"`
