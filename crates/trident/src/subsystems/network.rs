@@ -50,7 +50,7 @@ impl Subsystem for NetworkSubsystem {
                 // conflict with or otherwise affect Trident's network setup.
                 disable_cloud_init_networking(CLOUD_INIT_CONFIG_DIR)?;
 
-                // Apply Netplan config immediately since there is not reboot in
+                // Apply Netplan config immediately since there is no reboot in
                 // a runtime update.
                 if ctx.servicing_type == ServicingType::RuntimeUpdate {
                     netplan::apply().structured(ServicingError::ApplyNetplanConfig)?;

@@ -157,7 +157,7 @@ impl Subsystem for ExtensionsSubsystem {
                     .cmd()
                     .arg("refresh")
                     .run_and_check()
-                    .message("Failed to refresh sysexts on OS")?;
+                    .message("Failed to refresh sysexts on the OS")?;
             }
             if ctx.spec.os.confexts != ctx.spec_old.os.confexts {
                 Dependency::SystemdConfext
@@ -1344,7 +1344,7 @@ mod functional_test {
     #[functional_test]
     fn test_set_up_extensions_update_replace_runtime_update() {
         // Test scenario where an old sysext and a new sysext match on ID, and
-        // an update is required (mismatched hashes), on a hot patch update.
+        // an update is required (mismatched hashes), on a runtime update.
         // Create old extension.
         let old_ext_dir = TempDir::new().unwrap();
         let old_ext = NamedTempFile::new_in(old_ext_dir.path()).unwrap();
@@ -1492,7 +1492,7 @@ mod functional_test {
     #[functional_test]
     fn test_set_up_extensions_update_maintain_runtime_update() {
         // Test scenario where an old sysext and a new sysext match on ID, and
-        // an update is NOT required (matching hashes), on a hot patch update.
+        // an update is NOT required (matching hashes), on a runtime update.
         // Create old extension.
         let old_ext_dir = TempDir::new().unwrap();
         let old_ext = NamedTempFile::new_in(&old_ext_dir).unwrap();
