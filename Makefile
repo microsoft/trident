@@ -461,8 +461,8 @@ ARTIFACTS_TEST_IMAGE_DIR := artifacts/test-image
 AZL_INSTALLER_DIR := tests/images/azl-installer
 AZL_INSTALLER_ISO_DIR := $(AZL_INSTALLER_DIR)/iso
 
-$(ARTIFACTS_TEST_IMAGE_DIR)/regular.cosi:
-	@$(MAKE) download-runtime-images
+# If regular.cosi is not present, download runtime images
+$(ARTIFACTS_TEST_IMAGE_DIR)/regular.cosi: download-runtime-images
 
 # Build the installer ISO using the builder
 $(ARTIFACTS_TEST_IMAGE_DIR)/azl-installer.iso: \
