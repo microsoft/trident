@@ -858,7 +858,7 @@ mod tests {
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::CleanInstall,
                 None::<String>, // with Disabled mode, we do not copy anything
-                "Validate CleanInstallStaged + Some(None) + active volume A ==> None",
+                "Validate CleanInstallStaged + Disabled + active volume A ==> None",
             ),
             (
                 ServicingState::CleanInstallStaged,
@@ -898,7 +898,7 @@ mod tests {
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::AbUpdate,
                 None::<String>, // with None, we do not copy anything
-                "Validate AbUpdateStaged + Some(None) + active volume A ==> None",
+                "Validate AbUpdateStaged + Disabled + active volume A ==> None",
             ),
             (
                 ServicingState::AbUpdateFinalized,
@@ -922,7 +922,7 @@ mod tests {
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::AbUpdate,
                 None::<String>, // with None, we do not copy anything
-                "Validate AbUpdateFinalized + Some(None) + active volume A ==> None",
+                "Validate AbUpdateFinalized + Disabled + active volume A ==> None",
             ),
         ];
         for test_case in test_cases {
