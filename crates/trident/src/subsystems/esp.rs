@@ -857,7 +857,7 @@ mod tests {
                 UefiFallbackMode::Disabled,
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::CleanInstall,
-                None::<String>, // with None, we do not copy anything
+                None::<String>, // with Disabled mode, we do not copy anything
                 "Validate CleanInstallStaged + Some(None) + active volume A ==> None",
             ),
             (
