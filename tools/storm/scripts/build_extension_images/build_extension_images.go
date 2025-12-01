@@ -84,24 +84,6 @@ func buildImage(extType string, numClones int) error {
 			return fmt.Errorf("failed to write %s extension-release file %s: %w", extType, extensionReleaseFile, err)
 		}
 
-		if extType == "sysext" {
-			// Create script that outputs version
-			binDir := fmt.Sprintf("%s-image-%d/usr/bin", extType, i)
-			err := os.MkdirAll(binDir, 0755)
-			if err != nil {
-				return fmt.Errorf("failed to create sysext directory %s: %w", binDir, err)
-			}
-			extensionScriptFile := filepath.Join(binDir, "test-extension.sh")
-			err = os.WriteFile(
-				extensionScriptFile,
-				[]byte(fmt.Sprintf("#!/bin/sh\necho \"%d\"", i)),
-				0777,
-			)
-			if err != nil {
-				return fmt.Errorf("failed to write %s extension-release file %s: %w", extType, extensionReleaseFile, err)
-			}
-		}
-
 		// Create DDI files using mksquashfs
 		imageDir := fmt.Sprintf("%s-image-%d", extType, i)
 		rawFile := fmt.Sprintf("%s.raw", extName)
