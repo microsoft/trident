@@ -1145,7 +1145,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     },
                     sysexts: vec![],
                     confexts: vec![],
-                    uefi_fallback: UefiFallbackMode::Conservative,
+                    uefi_fallback: UefiFallbackMode::default(),
                 },
                 scripts: Scripts {
                     post_configure: vec![Script {
@@ -1293,7 +1293,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     },
                     sysexts: vec![],
                     confexts: vec![],
-                    uefi_fallback: UefiFallbackMode::Conservative,
+                    uefi_fallback: UefiFallbackMode::default(),
                 },
                 scripts: Scripts {
                     post_configure: vec![Script {
@@ -1460,7 +1460,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     },
                     sysexts: vec![],
                     confexts: vec![],
-                    uefi_fallback: UefiFallbackMode::Conservative,
+                    uefi_fallback: UefiFallbackMode::default(),
                 },
                 scripts: Scripts {
                     post_configure: vec![Script {
