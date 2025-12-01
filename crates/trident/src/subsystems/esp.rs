@@ -1006,7 +1006,7 @@ mod tests {
             ..Default::default()
         };
 
-        // Validate ABUpdate None with active volume A ==> copy /EFI/AZLA to /EFI/BOOT
+        // Validate ABUpdate with default Conservative mode and active volume A ==> copy /EFI/AZLA to /EFI/BOOT
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
         ctx.servicing_type = ServicingType::AbUpdate;
         validate_fallback(&ctx, ServicingState::AbUpdateStaged, &file_names, "AZLA");
