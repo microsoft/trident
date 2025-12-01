@@ -168,7 +168,7 @@ impl FromStr for SelinuxMode {
 /// This configuration option allows specifying how Trident should
 /// populate the UEFI fallback boot files during OS installation or
 /// update.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Copy)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq, Copy)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub enum UefiFallbackMode {
@@ -181,6 +181,7 @@ pub enum UefiFallbackMode {
     /// `finalize` and then will be updated to boot to the target OS when
     /// `commit` validates the target OS as healthy. This aligns with how
     /// Trident handles the UEFI boot variables during an update.
+    #[default]
     Conservative,
 
     /// # Optimistic
@@ -311,13 +312,6 @@ impl ManagementOs {
         }
 
         Ok(())
-    }
-}
-
-impl Default for UefiFallbackMode {
-    /// Get the default UEFI fallback mode.
-    fn default() -> Self {
-        UefiFallbackMode::Conservative
     }
 }
 
