@@ -117,11 +117,8 @@ impl Subsystem for ExtensionsSubsystem {
             "Defining staging directory for extension images at '{}'",
             self.staging_dir.display()
         );
-        if self.staging_dir.is_dir() {
-            fs::remove_dir_all(&self.staging_dir).structured(InternalError::Internal(
-                "Failed to remove extension image staging directory",
-            ))?;
-        }
+        self.reset_staging_dir()
+            .structured(InternalError::Internal("Failed to reset staging directory"))?;
         // Download new extension images. Mount and process all extension images.
         self.populate_extensions(ctx)
             .structured(InternalError::PopulateExtensionImages)?;
@@ -140,11 +137,8 @@ impl Subsystem for ExtensionsSubsystem {
             "Defining staging directory for extension images at '{}'",
             self.staging_dir.display()
         );
-        if self.staging_dir.is_dir() {
-            fs::remove_dir_all(&self.staging_dir).structured(InternalError::Internal(
-                "Failed to remove extension image staging directory",
-            ))?;
-        }
+        self.reset_staging_dir()
+            .structured(InternalError::Internal("Failed to reset staging directory"))?;
         // Download new extension images. Mount and process all extension images.
         self.populate_extensions(ctx)
             .structured(InternalError::PopulateExtensionImages)?;
@@ -238,17 +232,15 @@ impl Subsystem for ExtensionsSubsystem {
     fn clean_up(&self) -> Result<(), TridentError> {
         // Clean-up staging directory. Recursively remove all contents of
         // staging directory as well as the directory itself.
-        if self.staging_dir.is_dir() {
-            fs::remove_dir_all(&self.staging_dir).structured(InternalError::Internal(
-                "Failed to remove extension image staging directory",
+        self.reset_staging_dir()
+            .structured(InternalError::Internal(
+                "Failed to remove staging directory",
             ))?;
-        }
         Ok(())
     }
 }
 
 impl ExtensionsSubsystem {
-    #[allow(unused)]
     fn populate_extensions(&mut self, ctx: &EngineContext) -> Result<(), Error> {
         let timeout = Duration::from_secs(
             ctx.spec
@@ -535,6 +527,13 @@ impl ExtensionsSubsystem {
             }
         }
 
+        Ok(())
+    }
+
+    fn reset_staging_dir(&self) -> Result<(), Error> {
+        if self.staging_dir.is_dir() {
+            fs::remove_dir_all(&self.staging_dir)?;
+        };
         Ok(())
     }
 }
