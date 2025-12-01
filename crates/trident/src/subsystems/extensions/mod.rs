@@ -15,7 +15,6 @@ use osutils::{
     path,
 };
 use trident_api::{
-    config::Extension,
     constants::internal_params::HTTP_CONNECTION_TIMEOUT_SECONDS,
     error::{InternalError, ReportError, ServicingError, TridentError},
     primitives::hash::Sha384Hash,
@@ -545,6 +544,8 @@ mod tests {
     use tempfile::TempDir;
     use url::Url;
 
+    use ::trident_api::config::Extension;
+
     #[test]
     fn test_populate_extensions_empty() {
         // Test with no extensions
@@ -756,7 +757,10 @@ mod functional_test {
         mkfs, mount,
     };
     use pytest_gen::functional_test;
-    use trident_api::constants::{DEFAULT_CONFEXT_DIRECTORY, DEFAULT_SYSEXT_DIRECTORY};
+    use trident_api::{
+        config::Extension,
+        constants::{DEFAULT_CONFEXT_DIRECTORY, DEFAULT_SYSEXT_DIRECTORY},
+    };
 
     /// Helper to create a minimal Discoverable Disk Image extension for testing
     fn create_test_extension_image(
