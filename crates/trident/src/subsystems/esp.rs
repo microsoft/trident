@@ -866,7 +866,7 @@ mod tests {
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::CleanInstall,
                 Some("AZLA".to_string()), // in finalize, with 'conservative', copy from volume A (volume we just put COSI files on)
-                "Validate CleanInstallStaged + Some(Rollback) + active volume A ==> AZLA",
+                "Validate CleanInstallStaged + Conservative + active volume A ==> AZLA",
             ),
             (
                 ServicingState::CleanInstallStaged,
@@ -874,7 +874,7 @@ mod tests {
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::CleanInstall,
                 Some("AZLA".to_string()), // in finalize, with 'optimistic', copy from volume A (volume we just put COSI files on)
-                "Validate CleanInstallStaged + Some(Optimistic) + active volume A ==> AZLA",
+                "Validate CleanInstallStaged + Optimistic + active volume A ==> AZLA",
             ),
             (
                 ServicingState::AbUpdateStaged,
@@ -882,7 +882,7 @@ mod tests {
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::AbUpdate,
                 Some("AZLA".to_string()), // in finalize, with 'conservative', copy from active volume (the COSI bits have not been validated yet)
-                "Validate AbUpdateStaged + Some(Rollback) + active volume A ==> AZLA",
+                "Validate AbUpdateStaged + Conservative + active volume A ==> AZLA",
             ),
             (
                 ServicingState::AbUpdateStaged,
@@ -890,7 +890,7 @@ mod tests {
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::AbUpdate,
                 Some("AZLB".to_string()), // in finalize, with 'optimistic', copy from inactive volume (that we just put COSI files on)
-                "Validate AbUpdateStaged + Some(Optimistic) + active volume A ==> AZLB",
+                "Validate AbUpdateStaged + Optimistic + active volume A ==> AZLB",
             ),
             (
                 ServicingState::AbUpdateStaged,
@@ -906,7 +906,7 @@ mod tests {
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::AbUpdate,
                 Some("AZLA".to_string()), // in finalize, with 'conservative', copy from active volume
-                "Validate AbUpdateFinalized + Some(Rollback) + active volume A ==> AZLA",
+                "Validate AbUpdateFinalized + Conservative + active volume A ==> AZLA",
             ),
             (
                 ServicingState::AbUpdateFinalized,
@@ -914,7 +914,7 @@ mod tests {
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::AbUpdate,
                 None, // in commit, with 'optimistic', no copy is needed because it was done in finalize
-                "Validate AbUpdateFinalized + Some(Optimistic) + active volume A ==> None",
+                "Validate AbUpdateFinalized + Optimistic + active volume A ==> None",
             ),
             (
                 ServicingState::AbUpdateFinalized,
@@ -967,7 +967,7 @@ mod tests {
         //
         // No-op combinations: these are combinations that copying would be redundant
         //
-        // Validate CleanInstallFinalized + Rollback + active volume B ==> None
+        // Validate CleanInstallFinalized + Conservative + active volume B ==> None
         ctx.spec.os.uefi_fallback = UefiFallbackMode::Conservative;
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         ctx.servicing_type = ServicingType::CleanInstall;
@@ -1011,13 +1011,13 @@ mod tests {
         ctx.servicing_type = ServicingType::AbUpdate;
         validate_fallback(&ctx, ServicingState::AbUpdateStaged, &file_names, "AZLA");
 
-        // Validate ABUpdate Rollback with active volume A ==> copy /EFI/AZLA to /EFI/BOOT
+        // Validate ABUpdate Conservative with active volume A ==> copy /EFI/AZLA to /EFI/BOOT
         ctx.spec.os.uefi_fallback = UefiFallbackMode::Conservative;
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
         ctx.servicing_type = ServicingType::AbUpdate;
         validate_fallback(&ctx, ServicingState::AbUpdateStaged, &file_names, "AZLA");
 
-        // Validate ABUpdate Rollback with active volume B ==> copy /EFI/AZLB to /EFI/BOOT
+        // Validate ABUpdate Conservative with active volume B ==> copy /EFI/AZLB to /EFI/BOOT
         ctx.spec.os.uefi_fallback = UefiFallbackMode::Conservative;
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         ctx.servicing_type = ServicingType::AbUpdate;
@@ -1035,7 +1035,7 @@ mod tests {
         ctx.servicing_type = ServicingType::AbUpdate;
         validate_fallback(&ctx, ServicingState::AbUpdateStaged, &file_names, "AZLA");
 
-        // Validate CleanInstall Rollback with active volume None ==> copy /EFI/AZLA to /EFI/BOOT
+        // Validate CleanInstall Conservative with active volume None ==> copy /EFI/AZLA to /EFI/BOOT
         ctx.spec.os.uefi_fallback = UefiFallbackMode::Conservative;
         ctx.ab_active_volume = None;
         ctx.servicing_type = ServicingType::CleanInstall;
