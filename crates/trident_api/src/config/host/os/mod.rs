@@ -432,6 +432,10 @@ mod tests {
 
     #[test]
     fn test_serde_uefi_fallback_mode() {
+        let yaml_without_fallback = "";
+        let deserialized = serde_yaml::from_str::<Os>(yaml_without_fallback).unwrap();
+        assert_eq!(deserialized.uefi_fallback, UefiFallbackMode::Conservative);
+
         let mut config = Os {
             uefi_fallback: UefiFallbackMode::Disabled,
             ..Default::default()
