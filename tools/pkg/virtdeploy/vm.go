@@ -204,12 +204,6 @@ func (vm *VirtDeployVM) asXml(network *virtDeployNetwork, nvramPool storagePool)
 				Log:    &libvirtxml.DomainChardevLog{File: fmt.Sprintf("/tmp/%s-serial0.log", vm.name), Append: "off"},
 			}},
 			TPMs: tpms,
-			RNGs: []libvirtxml.DomainRNG{{
-				Model: "virtio",
-				Backend: &libvirtxml.DomainRNGBackend{
-					Random: &libvirtxml.DomainRNGBackendRandom{Device: "/dev/random"},
-				},
-			}},
 		},
 	}
 
