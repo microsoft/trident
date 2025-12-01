@@ -260,6 +260,8 @@ fn stage_update(
     // Turn ctx into an immutable variable.
     let ctx = ctx;
 
+    engine::clean_up(subsystems, &ctx)?;
+
     // At this point, deployment has been staged, so update servicing state
     debug!(
         "Updating host's servicing state to '{:?}'",

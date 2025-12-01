@@ -118,6 +118,8 @@ pub(crate) trait Subsystem: Send {
     ///
     /// This method is called before the chroot is entered, and is used to perform any
     /// provisioning operations that need to be done before the chroot is entered.
+    ///
+    /// Provision is not called during runtime updates.
     fn provision(&mut self, _ctx: &EngineContext, _mount_path: &Path) -> Result<(), TridentError> {
         Ok(())
     }
@@ -130,6 +132,11 @@ pub(crate) trait Subsystem: Send {
 
     /// Update the Host Configuration with information from the subsystem.
     fn update_host_configuration(&self, _ctx: &mut EngineContext) -> Result<(), TridentError> {
+        Ok(())
+    }
+
+    /// Clean up any temporary files and directories.
+    fn clean_up(&self, _ctx: &EngineContext) -> Result<(), TridentError> {
         Ok(())
     }
 }
@@ -402,6 +409,29 @@ fn update_host_configuration(
         }
     }
     debug!("Finished step 'Update Host Configuration'");
+    Ok(())
+}
+
+fn clean_up(subsystems: &[Box<dyn Subsystem>], ctx: &EngineContext) -> Result<(), TridentError> {
+    info!("Starting step 'Clean Up'");
+    for subsystem in subsystems {
+        if subsystem.runs_on_servicing_type(ctx) {
+            debug!(
+                "Starting step 'Clean Up' for subsystem '{}'",
+                subsystem.name()
+            );
+            subsystem.clean_up(ctx).message(format!(
+                "Step 'Clean Up' failed for subsystem '{}'",
+                subsystem.name()
+            ))?;
+        } else {
+            debug!(
+                "Skipping step 'Clean Up' for subsystem '{}'",
+                subsystem.name()
+            );
+        }
+    }
+    debug!("Finished step 'Clean Up'");
     Ok(())
 }
 

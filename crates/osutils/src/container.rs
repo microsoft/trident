@@ -7,6 +7,8 @@ use trident_api::error::{
     ContainerConfigurationError, InitializationError, InternalError, TridentError,
 };
 
+use crate::path;
+
 /// Path to the root of the host filesystem. Expected to be mounted there when
 /// running in a container.
 pub const HOST_ROOT_PATH: &str = "/host";
@@ -65,6 +67,16 @@ fn get_host_root_path_impl(host_root_path: &Path) -> Result<PathBuf, TridentErro
 /// is returned.
 pub fn get_host_root_path() -> Result<PathBuf, TridentError> {
     get_host_root_path_impl(Path::new(HOST_ROOT_PATH))
+}
+
+/// If running in a container, prepends the host root path to a path. If not
+/// running in a container, returns the path as is.
+pub fn get_host_relative_path(path: PathBuf) -> Result<PathBuf, TridentError> {
+    Ok(if is_running_in_container()? {
+        path::join_relative(get_host_root_path()?, path)
+    } else {
+        path
+    })
 }
 
 #[cfg(test)]
@@ -181,5 +193,29 @@ mod functional_test {
             std::fs::create_dir(test_dir).unwrap();
         }
         assert_eq!(get_host_root_path().unwrap(), Path::new(HOST_ROOT_PATH));
+    }
+
+    #[functional_test(feature = "helpers")]
+    fn test_get_host_relative_path() {
+        // Simulate container environment
+        env::set_var(DOCKER_ENVIRONMENT, "true");
+        let test_dir = Path::new(HOST_ROOT_PATH);
+        if !test_dir.exists() {
+            std::fs::create_dir(test_dir).unwrap();
+        }
+
+        // Test #1: Running in container; absolute path should be prefixed
+        let path = PathBuf::from("/var/lib/extensions/test.raw");
+        let result = get_host_relative_path(path).unwrap();
+        let expected = path::join_relative(HOST_ROOT_PATH, "/var/lib/extensions/test.raw");
+        assert_eq!(result, expected);
+
+        // Cleanup
+        env::remove_var(DOCKER_ENVIRONMENT);
+
+        // Test #2; Not running in a container; path should be returned as-is
+        let path = PathBuf::from("/var/lib/extensions/test.raw");
+        let result = get_host_relative_path(path.clone()).unwrap();
+        assert_eq!(result, path);
     }
 }
