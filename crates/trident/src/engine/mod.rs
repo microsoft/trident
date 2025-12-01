@@ -309,12 +309,6 @@ fn provision(
     ctx: &EngineContext,
     new_root_path: &Path,
 ) -> Result<(), TridentError> {
-    if ctx.servicing_type == ServicingType::RuntimeUpdate {
-        info!(
-            "Skipping step 'Provision' for all subsystems because servicing type is Runtime Update"
-        );
-        return Ok(());
-    }
     // In root-verity, we can assume that /etc is readonly, so we setup
     // a writable overlay for it.
     let use_overlay = ctx.storage_graph.root_fs_is_verity();
