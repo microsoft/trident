@@ -168,8 +168,7 @@ fn read_entries_from_tar_archive<R: Read + Seek>(
             let entry = (
                 {
                     let path = entry.path().context("Failed to read entry path")?;
-                    let path = path.strip_prefix("./").unwrap_or(&path).to_path_buf();
-                    path
+                    path.strip_prefix("./").unwrap_or(&path).to_path_buf()
                 },
                 CosiEntry {
                     offset: entry.raw_file_position(),

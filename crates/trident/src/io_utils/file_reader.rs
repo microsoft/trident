@@ -11,9 +11,9 @@ use std::{
 #[cfg(feature = "dangerous-options")]
 use std::{env, io::BufReader};
 
-use anyhow::{bail, ensure, Context, Error};
+use anyhow::{Context, Error, bail, ensure};
 use log::{debug, trace, warn};
-use oci_client::{secrets::RegistryAuth, Client as OciClient, Reference};
+use oci_client::{Client as OciClient, Reference, secrets::RegistryAuth};
 use reqwest::blocking::{Client, Response};
 use tokio::runtime::Runtime;
 use url::Url;
@@ -214,8 +214,7 @@ impl HttpFile {
         let size = response
             .headers()
             .get("Content-Length")
-            .ok_or(IoError::new(
-                IoErrorKind::Other,
+            .ok_or(IoError::other(
                 "Failed to get 'Content-Length' in the response header",
             ))?
             .to_str()
@@ -241,8 +240,7 @@ impl HttpFile {
         if accept_ranges_header.is_none() && ignore_ranges_header_absence {
             warn!("OCI server does not provide 'Accept-Ranges' header, continuing anyway");
         } else if accept_ranges_header
-            .ok_or(IoError::new(
-                IoErrorKind::Other,
+            .ok_or(IoError::other(
                 "Server does not support range requests: 'Accept-Ranges' header was not provided",
             ))?
             .to_str()
@@ -255,8 +253,7 @@ impl HttpFile {
             .to_lowercase()
             .eq("none")
         {
-            return Err(IoError::new(
-                IoErrorKind::Other,
+            return Err(IoError::other(
                 "Server does not support range requests: 'Accept-Ranges: none'",
             ));
         }
@@ -371,7 +368,7 @@ impl HttpFile {
                 404 => IoError::new(IoErrorKind::NotFound, formatted),
                 408 => IoError::new(IoErrorKind::TimedOut, formatted),
                 500..=599 => IoError::new(IoErrorKind::ConnectionAborted, formatted),
-                _ => IoError::new(IoErrorKind::Other, formatted),
+                _ => IoError::other(formatted),
             }
         } else if e.is_timeout() {
             IoError::new(IoErrorKind::TimedOut, formatted)
@@ -380,7 +377,7 @@ impl HttpFile {
         } else if e.is_request() {
             IoError::new(IoErrorKind::InvalidData, formatted)
         } else {
-            IoError::new(IoErrorKind::Other, formatted)
+            IoError::other(formatted)
         }
     }
 
@@ -466,10 +463,7 @@ impl HttpFile {
         let end = section_offset + size - 1;
         trace!(
             "Reading HTTP file '{}' from {} to {} (inclusive) [{} bytes]",
-            self.url,
-            section_offset,
-            end,
-            size
+            self.url, section_offset, end, size
         );
 
         let response = self.reader(Some(section_offset), Some(end))?;
@@ -525,9 +519,7 @@ impl Seek for HttpFile {
 
         trace!(
             "Seeking HTTP file '{}' to position {} after seek: {:?}",
-            self.url,
-            new_pos,
-            pos
+            self.url, new_pos, pos
         );
 
         self.position = new_pos;
@@ -566,8 +558,8 @@ mod tests {
     use std::{
         io::{SeekFrom, Write},
         sync::{
-            atomic::{AtomicU16, Ordering},
             Arc,
+            atomic::{AtomicU16, Ordering},
         },
     };
 
