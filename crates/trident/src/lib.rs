@@ -53,7 +53,7 @@ pub use logging::{
 };
 pub use orchestrate::OrchestratorConnection;
 
-use crate::osimage::OsImage;
+use crate::{engine::ab_update, osimage::OsImage};
 
 /// Trident version as provided by environment variables at build time
 pub const TRIDENT_VERSION: &str = match option_env!("TRIDENT_VERSION") {
@@ -595,7 +595,7 @@ impl Trident {
                         // If an update has been previously staged, only need to finalize the update.
                         debug!("There is an update staged on the host");
                         if allowed_operations.has_finalize() {
-                            engine::finalize_update(
+                            ab_update::finalize_update(
                                 datastore,
                                 ServicingType::AbUpdate,
                                 None,
