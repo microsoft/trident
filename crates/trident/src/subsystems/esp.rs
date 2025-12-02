@@ -63,8 +63,8 @@ impl Subsystem for EspSubsystem {
 /// 1. During finalize, the appropriate boot files are copied to the UEFI fallback folder
 ///    based on the servicing state and UEFI fallback mode.
 ///       * For clean install, the target OS boot files (always volume A) are copied.
-///       * For A/B update, the boot files are copied based on whether rollforward (when
-///         the target OS boot files are copied) or rollback (no files need to be copied
+///       * For A/B update, the boot files are copied based on whether 'optimistic' (when
+///         the target OS boot files are copied) or 'conservative' (no files need to be copied
 ///         because fallback was populated previously) is selected.
 /// 2. During commit, after the target OS boot has been verified, the target OS boot files
 ///    are copied to the UEFI fallback folder.
@@ -261,14 +261,14 @@ fn copy_file_artifacts(
 /// 1. During finalize
 ///  * For clean install, use volume A (this is the target OS volume for clean install)
 ///  * For A/B update
-///    - rollforward: use the opposite of the active volume
-///    - rollback: use the active volume (this may be a redundant copy)
+///    - 'optimistic': use the opposite of the active volume
+///    - 'conservative': use the active volume (this may be a redundant copy)
 /// 2. During commit, after the target OS boot has been verified, the target OS boot files
 ///    are copied to the UEFI fallback folder.
 ///  * For clean install, no copy is needed as it was done during finalize
 ///  * For A/B update
-///    - rollforward: no copy is needed as it was done during finalize
-///    - rollback: use the newly active volume
+///    - 'optimistic': no copy is needed as it was done during finalize
+///    - 'conservative': use the newly active volume
 fn find_uefi_fallback_source_dir_name(
     ctx: &EngineContext,
     servicing_state: ServicingState,
@@ -280,20 +280,20 @@ fn find_uefi_fallback_source_dir_name(
     );
     match servicing_state {
         ServicingState::CleanInstallStaged => match ctx.spec.os.uefi_fallback {
-            Some(UefiFallbackMode::Rollforward) | Some(UefiFallbackMode::Rollback) => Some(
+            UefiFallbackMode::Optimistic | UefiFallbackMode::Conservative => Some(
                 boot::make_esp_dir_name(ctx.install_index, AbVolumeSelection::VolumeA),
             ),
             _ => None,
         },
         ServicingState::AbUpdateStaged => match ctx.spec.os.uefi_fallback {
-            Some(UefiFallbackMode::Rollforward) => Some(boot::make_esp_dir_name(
+            UefiFallbackMode::Optimistic => Some(boot::make_esp_dir_name(
                 ctx.install_index,
                 match ctx.ab_active_volume {
                     None | Some(AbVolumeSelection::VolumeB) => AbVolumeSelection::VolumeA,
                     Some(AbVolumeSelection::VolumeA) => AbVolumeSelection::VolumeB,
                 },
             )),
-            None | Some(UefiFallbackMode::Rollback) => Some(boot::make_esp_dir_name(
+            UefiFallbackMode::Conservative => Some(boot::make_esp_dir_name(
                 ctx.install_index,
                 match ctx.ab_active_volume {
                     None | Some(AbVolumeSelection::VolumeA) => AbVolumeSelection::VolumeA,
@@ -303,7 +303,7 @@ fn find_uefi_fallback_source_dir_name(
             _ => None,
         },
         ServicingState::AbUpdateFinalized => match ctx.spec.os.uefi_fallback {
-            None | Some(UefiFallbackMode::Rollback) => Some(boot::make_esp_dir_name(
+            UefiFallbackMode::Conservative => Some(boot::make_esp_dir_name(
                 ctx.install_index,
                 match ctx.ab_active_volume {
                     None | Some(AbVolumeSelection::VolumeA) => AbVolumeSelection::VolumeA,
@@ -813,7 +813,7 @@ mod tests {
                 .read_to_string(&mut fallback_file_contents)
                 .unwrap();
             match ctx.spec.os.uefi_fallback {
-                Some(UefiFallbackMode::None) =>
+                UefiFallbackMode::Disabled =>
                 // Fallback should not have been updated
                 {
                     assert!(
@@ -822,7 +822,7 @@ mod tests {
                         fallback_file.display()
                     )
                 }
-                None | Some(UefiFallbackMode::Rollback) | Some(UefiFallbackMode::Rollforward) =>
+                UefiFallbackMode::Conservative | UefiFallbackMode::Optimistic =>
                 // Fallback should have been updated
                 {
                     assert!(
@@ -843,7 +843,7 @@ mod tests {
             install_index: 0,
             spec: HostConfiguration {
                 os: Os {
-                    uefi_fallback: Some(UefiFallbackMode::Rollback),
+                    uefi_fallback: UefiFallbackMode::Conservative,
                     ..Default::default()
                 },
                 ..Default::default()
@@ -854,75 +854,75 @@ mod tests {
         let test_cases = vec![
             (
                 ServicingState::CleanInstallStaged,
-                Some(UefiFallbackMode::None),
+                UefiFallbackMode::Disabled,
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::CleanInstall,
-                None::<String>, // with None, we do not copy anything
-                "Validate CleanInstallStaged + Some(None) + active volume A ==> None",
+                None::<String>, // with Disabled mode, we do not copy anything
+                "Validate CleanInstallStaged + Disabled + active volume A ==> None",
             ),
             (
                 ServicingState::CleanInstallStaged,
-                Some(UefiFallbackMode::Rollback),
+                UefiFallbackMode::Conservative,
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::CleanInstall,
-                Some("AZLA".to_string()), // in finalize, with rollback, copy from volume A (volume we just put COSI files on)
-                "Validate CleanInstallStaged + Some(Rollback) + active volume A ==> AZLA",
+                Some("AZLA".to_string()), // in finalize, with 'conservative', copy from volume A (volume we just put COSI files on)
+                "Validate CleanInstallStaged + Conservative + active volume A ==> AZLA",
             ),
             (
                 ServicingState::CleanInstallStaged,
-                Some(UefiFallbackMode::Rollforward),
+                UefiFallbackMode::Optimistic,
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::CleanInstall,
-                Some("AZLA".to_string()), // in finalize, with rollforward, copy from volume A (volume we just put COSI files on)
-                "Validate CleanInstallStaged + Some(Rollforward) + active volume A ==> AZLA",
+                Some("AZLA".to_string()), // in finalize, with 'optimistic', copy from volume A (volume we just put COSI files on)
+                "Validate CleanInstallStaged + Optimistic + active volume A ==> AZLA",
             ),
             (
                 ServicingState::AbUpdateStaged,
-                Some(UefiFallbackMode::Rollback),
+                UefiFallbackMode::Conservative,
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::AbUpdate,
-                Some("AZLA".to_string()), // in finalize, with rollback, copy from active volume (the COSI bits have not been validated yet)
-                "Validate AbUpdateStaged + Some(Rollback) + active volume A ==> AZLA",
+                Some("AZLA".to_string()), // in finalize, with 'conservative', copy from active volume (the COSI bits have not been validated yet)
+                "Validate AbUpdateStaged + Conservative + active volume A ==> AZLA",
             ),
             (
                 ServicingState::AbUpdateStaged,
-                Some(UefiFallbackMode::Rollforward),
+                UefiFallbackMode::Optimistic,
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::AbUpdate,
-                Some("AZLB".to_string()), // in finalize, with rollforward, copy from inactive volume (that we just put COSI files on)
-                "Validate AbUpdateStaged + Some(Rollforward) + active volume A ==> AZLB",
+                Some("AZLB".to_string()), // in finalize, with 'optimistic', copy from inactive volume (that we just put COSI files on)
+                "Validate AbUpdateStaged + Optimistic + active volume A ==> AZLB",
             ),
             (
                 ServicingState::AbUpdateStaged,
-                Some(UefiFallbackMode::None),
+                UefiFallbackMode::Disabled,
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::AbUpdate,
-                None::<String>, // with None, we do not copy anything
-                "Validate AbUpdateStaged + Some(None) + active volume A ==> None",
+                None::<String>, // with Disabled, we do not copy anything
+                "Validate AbUpdateStaged + Disabled + active volume A ==> None",
             ),
             (
                 ServicingState::AbUpdateFinalized,
-                Some(UefiFallbackMode::Rollback),
+                UefiFallbackMode::Conservative,
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::AbUpdate,
-                Some("AZLA".to_string()), // in finalize, with rollback, copy from active volume
-                "Validate AbUpdateFinalized + Some(Rollback) + active volume A ==> AZLA",
+                Some("AZLA".to_string()), // in finalize, with 'conservative', copy from active volume
+                "Validate AbUpdateFinalized + Conservative + active volume A ==> AZLA",
             ),
             (
                 ServicingState::AbUpdateFinalized,
-                Some(UefiFallbackMode::Rollforward),
+                UefiFallbackMode::Optimistic,
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::AbUpdate,
-                None, // in commit, with rollforward, no copy is needed because it was done in finalize
-                "Validate AbUpdateFinalized + Some(Rollforward) + active volume A ==> None",
+                None, // in commit, with 'optimistic', no copy is needed because it was done in finalize
+                "Validate AbUpdateFinalized + Optimistic + active volume A ==> None",
             ),
             (
                 ServicingState::AbUpdateFinalized,
-                Some(UefiFallbackMode::None),
+                UefiFallbackMode::Disabled,
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::AbUpdate,
-                None::<String>, // with None, we do not copy anything
-                "Validate AbUpdateFinalized + Some(None) + active volume A ==> None",
+                None::<String>, // with Disabled, we do not copy anything
+                "Validate AbUpdateFinalized + Disabled + active volume A ==> None",
             ),
         ];
         for test_case in test_cases {
@@ -943,16 +943,16 @@ mod tests {
         for stage in [ServicingState::NotProvisioned, ServicingState::Provisioned] {
             // Validate <unsupported stages> ==> None
             for mode in [
-                UefiFallbackMode::None,
-                UefiFallbackMode::Rollforward,
-                UefiFallbackMode::Rollback,
+                UefiFallbackMode::Disabled,
+                UefiFallbackMode::Optimistic,
+                UefiFallbackMode::Conservative,
             ] {
                 // Validate <all uefi fallback modes>
                 for ab_volume in [AbVolumeSelection::VolumeA, AbVolumeSelection::VolumeB] {
                     // Validate <both volumes>
                     for servicing_type in [ServicingType::AbUpdate, ServicingType::CleanInstall] {
                         // all should be None
-                        ctx.spec.os.uefi_fallback = Some(mode);
+                        ctx.spec.os.uefi_fallback = mode;
                         ctx.ab_active_volume = Some(ab_volume);
                         ctx.servicing_type = servicing_type;
                         assert!(
@@ -967,16 +967,16 @@ mod tests {
         //
         // No-op combinations: these are combinations that copying would be redundant
         //
-        // Validate CleanInstallFinalized + Rollback + active volume B ==> None
-        ctx.spec.os.uefi_fallback = Some(UefiFallbackMode::Rollback);
+        // Validate CleanInstallFinalized + Conservative + active volume B ==> None
+        ctx.spec.os.uefi_fallback = UefiFallbackMode::Conservative;
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         ctx.servicing_type = ServicingType::CleanInstall;
         assert!(
             find_uefi_fallback_source_dir_name(&ctx, ServicingState::CleanInstallFinalized)
                 .is_none()
         );
-        // Validate AbUpdateFinalized + Rollforward + active volume B ==> None
-        ctx.spec.os.uefi_fallback = Some(UefiFallbackMode::Rollforward);
+        // Validate AbUpdateFinalized + Optimistic + active volume B ==> None
+        ctx.spec.os.uefi_fallback = UefiFallbackMode::Optimistic;
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         ctx.servicing_type = ServicingType::AbUpdate;
         assert!(
@@ -999,7 +999,6 @@ mod tests {
             install_index: 0,
             spec: HostConfiguration {
                 os: Os {
-                    uefi_fallback: Some(UefiFallbackMode::Rollback),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -1007,38 +1006,37 @@ mod tests {
             ..Default::default()
         };
 
-        // Validate ABUpdate None with active volume A ==> copy /EFI/AZLA to /EFI/BOOT
-        ctx.spec.os.uefi_fallback = None;
+        // Validate ABUpdate with default Conservative mode and active volume A ==> copy /EFI/AZLA to /EFI/BOOT
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
         ctx.servicing_type = ServicingType::AbUpdate;
         validate_fallback(&ctx, ServicingState::AbUpdateStaged, &file_names, "AZLA");
 
-        // Validate ABUpdate Rollback with active volume A ==> copy /EFI/AZLA to /EFI/BOOT
-        ctx.spec.os.uefi_fallback = Some(UefiFallbackMode::Rollback);
+        // Validate ABUpdate Conservative with active volume A ==> copy /EFI/AZLA to /EFI/BOOT
+        ctx.spec.os.uefi_fallback = UefiFallbackMode::Conservative;
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
         ctx.servicing_type = ServicingType::AbUpdate;
         validate_fallback(&ctx, ServicingState::AbUpdateStaged, &file_names, "AZLA");
 
-        // Validate ABUpdate Rollback with active volume B ==> copy /EFI/AZLB to /EFI/BOOT
-        ctx.spec.os.uefi_fallback = Some(UefiFallbackMode::Rollback);
+        // Validate ABUpdate Conservative with active volume B ==> copy /EFI/AZLB to /EFI/BOOT
+        ctx.spec.os.uefi_fallback = UefiFallbackMode::Conservative;
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         ctx.servicing_type = ServicingType::AbUpdate;
         validate_fallback(&ctx, ServicingState::AbUpdateStaged, &file_names, "AZLB");
 
-        // Validate ABUpdate Rollforward with active volume A ==> copy /EFI/AZLB to /EFI/BOOT
-        ctx.spec.os.uefi_fallback = Some(UefiFallbackMode::Rollforward);
+        // Validate ABUpdate Optimistic with active volume A ==> copy /EFI/AZLB to /EFI/BOOT
+        ctx.spec.os.uefi_fallback = UefiFallbackMode::Optimistic;
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
         ctx.servicing_type = ServicingType::AbUpdate;
         validate_fallback(&ctx, ServicingState::AbUpdateStaged, &file_names, "AZLB");
 
-        // Validate ABUpdate Rollforward with active volume B ==> copy /EFI/AZLA to /EFI/BOOT
-        ctx.spec.os.uefi_fallback = Some(UefiFallbackMode::Rollforward);
+        // Validate ABUpdate Optimistic with active volume B ==> copy /EFI/AZLA to /EFI/BOOT
+        ctx.spec.os.uefi_fallback = UefiFallbackMode::Optimistic;
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         ctx.servicing_type = ServicingType::AbUpdate;
         validate_fallback(&ctx, ServicingState::AbUpdateStaged, &file_names, "AZLA");
 
-        // Validate CleanInstall Rollback with active volume None ==> copy /EFI/AZLA to /EFI/BOOT
-        ctx.spec.os.uefi_fallback = Some(UefiFallbackMode::Rollback);
+        // Validate CleanInstall Conservative with active volume None ==> copy /EFI/AZLA to /EFI/BOOT
+        ctx.spec.os.uefi_fallback = UefiFallbackMode::Conservative;
         ctx.ab_active_volume = None;
         ctx.servicing_type = ServicingType::CleanInstall;
         validate_fallback(
@@ -1048,8 +1046,8 @@ mod tests {
             "AZLA",
         );
 
-        // Validate CleanInstall Rollforward with active volume None ==> copy /EFI/AZLA to /EFI/BOOT
-        ctx.spec.os.uefi_fallback = Some(UefiFallbackMode::Rollforward);
+        // Validate CleanInstall Optimistic with active volume None ==> copy /EFI/AZLA to /EFI/BOOT
+        ctx.spec.os.uefi_fallback = UefiFallbackMode::Optimistic;
         ctx.ab_active_volume = None;
         ctx.servicing_type = ServicingType::CleanInstall;
         validate_fallback(
@@ -1059,14 +1057,8 @@ mod tests {
             "AZLA",
         );
 
-        // Validate ABUpdate None with active volume A ==> /EFI/BOOT unchanged
-        ctx.spec.os.uefi_fallback = Some(UefiFallbackMode::None);
-        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
-        ctx.servicing_type = ServicingType::AbUpdate;
-        validate_fallback(&ctx, ServicingState::AbUpdateStaged, &file_names, "AZLA");
-
-        // Validate ABUpdate None with active volume A ==> /EFI/BOOT unchanged
-        ctx.spec.os.uefi_fallback = None;
+        // Validate ABUpdate Disabled with active volume A ==> /EFI/BOOT unchanged
+        ctx.spec.os.uefi_fallback = UefiFallbackMode::Disabled;
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
         ctx.servicing_type = ServicingType::AbUpdate;
         validate_fallback(&ctx, ServicingState::AbUpdateStaged, &file_names, "AZLA");

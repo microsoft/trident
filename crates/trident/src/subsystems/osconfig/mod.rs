@@ -316,7 +316,7 @@ mod tests {
     use trident_api::{
         config::{
             HostConfiguration, KernelCommandLine, ManagementOs, Module, Os, Password, Selinux,
-            Services, User,
+            Services, UefiFallbackMode, User,
         },
         status::ServicingType,
     };
@@ -343,7 +343,7 @@ mod tests {
                     kernel_command_line: KernelCommandLine::default(),
                     sysexts: vec![],
                     confexts: vec![],
-                    uefi_fallback: None,
+                    uefi_fallback: UefiFallbackMode::default(),
                 },
                 ..Default::default()
             },

@@ -474,14 +474,14 @@ def test_users(connection, hostConfiguration):
 
 
 def test_uefi_fallback(connection, hostConfiguration):
-    mode = "rollback"  # Default mode if not set
+    mode = "conservative"  # Default mode if not set
     if "os" in hostConfiguration and "uefiFallback" in hostConfiguration["os"]:
         mode = hostConfiguration["os"]["uefiFallback"]
 
-    if mode not in ["none", "rollback", "rollforward"]:
+    if mode not in ["disabled", "conservative", "optimistic"]:
         raise Exception(f"Unknown uefiFallback mode: {mode}")
 
-    if mode == "none":
+    if mode == "disabled":
         # Check that /efi/boot/EFI/BOOT is empty
         connection.run("sudo find /efi/boot/EFI/BOOT/* && exit 1 || exit 0")
         return
