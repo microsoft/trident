@@ -11,9 +11,9 @@ use std::{
 #[cfg(feature = "dangerous-options")]
 use std::{env, io::BufReader};
 
-use anyhow::{Context, Error, bail, ensure};
+use anyhow::{bail, ensure, Context, Error};
 use log::{debug, trace, warn};
-use oci_client::{Client as OciClient, Reference, secrets::RegistryAuth};
+use oci_client::{secrets::RegistryAuth, Client as OciClient, Reference};
 use reqwest::blocking::{Client, Response};
 use tokio::runtime::Runtime;
 use url::Url;
@@ -463,7 +463,10 @@ impl HttpFile {
         let end = section_offset + size - 1;
         trace!(
             "Reading HTTP file '{}' from {} to {} (inclusive) [{} bytes]",
-            self.url, section_offset, end, size
+            self.url,
+            section_offset,
+            end,
+            size
         );
 
         let response = self.reader(Some(section_offset), Some(end))?;
@@ -519,7 +522,9 @@ impl Seek for HttpFile {
 
         trace!(
             "Seeking HTTP file '{}' to position {} after seek: {:?}",
-            self.url, new_pos, pos
+            self.url,
+            new_pos,
+            pos
         );
 
         self.position = new_pos;
@@ -558,8 +563,8 @@ mod tests {
     use std::{
         io::{SeekFrom, Write},
         sync::{
-            Arc,
             atomic::{AtomicU16, Ordering},
+            Arc,
         },
     };
 
