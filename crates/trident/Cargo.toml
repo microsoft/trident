@@ -70,6 +70,7 @@ tokio-stream = { version = "0.1.17", optional = true }
 sha2 = "0.10.8"
 zstd = "0.13.3"
 tera = "1.20.0"
+systemd-journal-logger = "2.2.2"
 
 [build-dependencies]
 tonic-build = { version = "0.12.3", optional = true }
