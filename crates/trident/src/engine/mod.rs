@@ -144,7 +144,7 @@ pub(crate) trait Subsystem: Send {
 }
 
 lazy_static::lazy_static! {
-    static ref SUBSYSTEMS: Mutex<Vec<Box<dyn Subsystem>>> = Mutex::new(vec![
+    pub(crate) static ref SUBSYSTEMS: Mutex<Vec<Box<dyn Subsystem>>> = Mutex::new(vec![
         Box::<MosConfigSubsystem>::default(),
         Box::<EspSubsystem>::default(),
         Box::<StorageSubsystem>::default(),

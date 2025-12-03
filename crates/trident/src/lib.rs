@@ -54,7 +54,7 @@ pub use logging::{
 pub use orchestrate::OrchestratorConnection;
 
 use crate::{
-    engine::{ab_update, runtime_update},
+    engine::{ab_update, runtime_update, SUBSYSTEMS},
     osimage::OsImage,
 };
 
@@ -613,11 +613,14 @@ impl Trident {
                     }
                     ServicingState::RuntimeUpdateStaged => {
                         debug!("There is a runtime update staged on the host");
+                        let mut subsystems = SUBSYSTEMS.lock().unwrap();
                         if allowed_operations.has_finalize() {
                             runtime_update::finalize_update(
+                                &mut subsystems,
                                 datastore,
                                 ServicingType::RuntimeUpdate,
                                 None,
+                                image,
                                 #[cfg(feature = "grpc-dangerous")]
                                 sender,
                             )
@@ -636,7 +639,7 @@ impl Trident {
                         Err(TridentError::new(InternalError::UnexpectedServicingState {
                             state: servicing_state,
                         }))
-                        .message("Failed to A/B update with same Host Configuration")
+                        .message("Failed to perform A/B update or runtime update with same Host Configuration")
                     }
                 }
             }
