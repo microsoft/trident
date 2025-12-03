@@ -946,7 +946,7 @@ mod functional_test {
                 PathBuf::from(expected_dir).join(format!("{}.raw", subsystem_ext.name))
             );
 
-            // Verify that the extension was staged file name is the extension's hash.
+            // Verify that the staged file name is the extension's hash.
             assert_eq!(
                 subsystem_ext.temp_path,
                 subsystem
