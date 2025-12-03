@@ -155,13 +155,10 @@ mod functional_test {
 
     use std::fs::File;
 
-    use serial_test::serial;
-
     use pytest_gen::functional_test;
     use trident_api::error::{ContainerConfigurationError, ErrorKind};
 
     #[functional_test(feature = "helpers")]
-    #[serial]
     fn test_is_running_in_container() {
         let dockerenv = Path::new("/.dockerenv");
         if dockerenv.exists() {
@@ -201,7 +198,6 @@ mod functional_test {
     }
 
     #[functional_test(feature = "helpers")]
-    #[serial]
     fn test_get_host_root_path_in_simulated_container() {
         unsafe {
             env::set_var(DOCKER_ENVIRONMENT, "true");
@@ -215,7 +211,6 @@ mod functional_test {
     }
 
     #[functional_test(feature = "helpers")]
-    #[serial]
     fn test_get_host_relative_path() {
         // Simulate container environment
         unsafe {
