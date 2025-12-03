@@ -59,7 +59,7 @@ pub(crate) fn update(
         disk_uuids: state.host_status().disk_uuids.clone(),
         install_index: state.host_status().install_index,
         is_uki: Some(image.is_uki() || host_config.internal_params.get_flag(ENABLE_UKI_SUPPORT)),
-        image: Some(image),
+        image: Some(image.clone()),
         storage_graph: engine::build_storage_graph(&host_config.storage)?, // Build storage graph
         filesystems: Vec::new(), // Will be populated after dynamic validation
     };
@@ -180,6 +180,7 @@ pub(crate) fn update(
                     state,
                     servicing_type,
                     Some(update_start_time),
+                    image,
                     #[cfg(feature = "grpc-dangerous")]
                     sender,
                 )

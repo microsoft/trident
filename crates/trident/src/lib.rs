@@ -53,7 +53,10 @@ pub use logging::{
 };
 pub use orchestrate::OrchestratorConnection;
 
-use crate::{engine::ab_update, osimage::OsImage};
+use crate::{
+    engine::{ab_update, runtime_update},
+    osimage::OsImage,
+};
 
 /// Trident version as provided by environment variables at build time
 pub const TRIDENT_VERSION: &str = match option_env!("TRIDENT_VERSION") {
@@ -593,7 +596,7 @@ impl Trident {
                 match datastore.host_status().servicing_state {
                     ServicingState::AbUpdateStaged => {
                         // If an update has been previously staged, only need to finalize the update.
-                        debug!("There is an update staged on the host");
+                        debug!("There is an A/B update staged on the host");
                         if allowed_operations.has_finalize() {
                             ab_update::finalize_update(
                                 datastore,
@@ -602,9 +605,25 @@ impl Trident {
                                 #[cfg(feature = "grpc-dangerous")]
                                 sender,
                             )
-                            .message("Failed to finalize update")
+                            .message("Failed to finalize A/B update")
                         } else {
-                            warn!("There is an update staged on the host, but allowed operations do not include 'finalize'. Add 'finalize' and re-run to finalize the update");
+                            warn!("There is an A/B update staged on the host, but allowed operations do not include 'finalize'. Add 'finalize' and re-run to finalize the A/B update");
+                            Ok(ExitKind::Done)
+                        }
+                    }
+                    ServicingState::RuntimeUpdateStaged => {
+                        debug!("There is a runtime update staged on the host");
+                        if allowed_operations.has_finalize() {
+                            runtime_update::finalize_update(
+                                datastore,
+                                ServicingType::RuntimeUpdate,
+                                None,
+                                #[cfg(feature = "grpc-dangerous")]
+                                sender,
+                            )
+                            .message("Failed to finalize runtime update")
+                        } else {
+                            warn!("There is a runtime update staged on the host, but allowed operations do not include 'finalize'. Add 'finalize' and re-run to finalize the runtime update");
                             Ok(ExitKind::Done)
                         }
                     }

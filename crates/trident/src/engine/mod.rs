@@ -44,7 +44,7 @@ mod kexec;
 mod newroot;
 pub mod provisioning_network;
 pub mod rollback;
-mod runtime_update;
+pub mod runtime_update;
 mod update;
 
 // Trident Subsystems

@@ -5,6 +5,7 @@ use log::{debug, info, warn};
 use tokio::sync::mpsc;
 
 use trident_api::{
+    constants::internal_params::ENABLE_UKI_SUPPORT,
     error::{InvalidInputError, TridentError},
     status::{HostStatus, ServicingState, ServicingType},
 };
@@ -14,7 +15,9 @@ use crate::grpc;
 use crate::{
     datastore::DataStore,
     engine::{self, EngineContext},
-    monitor_metrics, ExitKind,
+    monitor_metrics,
+    osimage::OsImage,
+    ExitKind,
 };
 
 use super::Subsystem;
@@ -105,6 +108,7 @@ pub(crate) fn finalize_update(
     state: &mut DataStore,
     servicing_type: ServicingType,
     update_start_time: Option<Instant>,
+    image: OsImage,
     #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
@@ -125,10 +129,17 @@ pub(crate) fn finalize_update(
         partition_paths: state.host_status().partition_paths.clone(),
         disk_uuids: state.host_status().disk_uuids.clone(),
         install_index: state.host_status().install_index,
-        image: None, // Not used in finalize_update
+        is_uki: Some(
+            image.is_uki()
+                || state
+                    .host_status()
+                    .spec
+                    .internal_params
+                    .get_flag(ENABLE_UKI_SUPPORT),
+        ),
+        image: Some(image),
         storage_graph: engine::build_storage_graph(&state.host_status().spec.storage)?, // Build storage graph
-        filesystems: Vec::new(), // Left empty since context does not have image
-        is_uki: None,
+        filesystems: Vec::new(), // Left empty since not needed for finalizing runtime update.
     };
 
     // Note: provision() is not called during runtime updates.
