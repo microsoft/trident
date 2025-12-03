@@ -87,11 +87,10 @@ mod tests {
 
     #[test]
     fn test_get_host_root_path() {
-        // Do cleanup
-        env::remove_var(DOCKER_ENVIRONMENT);
-
         // Test case #1: Running in a container
-        env::set_var(DOCKER_ENVIRONMENT, "true");
+        unsafe {
+            env::set_var(DOCKER_ENVIRONMENT, "true");
+        }
         assert_eq!(
             super::get_host_root_path_impl(Path::new(".")).unwrap(),
             Path::new(".")
@@ -110,7 +109,9 @@ mod tests {
         );
 
         // Test case #3: Not running in a container
-        env::remove_var(DOCKER_ENVIRONMENT);
+        unsafe {
+            env::remove_var(DOCKER_ENVIRONMENT);
+        }
         assert_eq!(
             get_host_root_path().unwrap_err().kind(),
             &ErrorKind::Internal(InternalError::RunInContainer)
@@ -123,7 +124,9 @@ mod tests {
         );
 
         // Test case #4: Running in a container but HOST_ROOT_PATH does not exist
-        env::set_var(DOCKER_ENVIRONMENT, "true");
+        unsafe {
+            env::set_var(DOCKER_ENVIRONMENT, "true");
+        }
         let test_dir = Path::new(HOST_ROOT_PATH);
         if test_dir.exists() {
             assert_eq!(super::get_host_root_path_impl(test_dir).unwrap(), test_dir);
@@ -139,7 +142,9 @@ mod tests {
         );
 
         // Do cleanup
-        env::remove_var(DOCKER_ENVIRONMENT);
+        unsafe {
+            env::remove_var(DOCKER_ENVIRONMENT);
+        }
     }
 }
 
@@ -150,25 +155,36 @@ mod functional_test {
 
     use std::fs::File;
 
+    use serial_test::serial;
+
     use pytest_gen::functional_test;
     use trident_api::error::{ContainerConfigurationError, ErrorKind};
 
     #[functional_test(feature = "helpers")]
+    #[serial]
     fn test_is_running_in_container() {
         let dockerenv = Path::new("/.dockerenv");
         if dockerenv.exists() {
             std::fs::remove_file(dockerenv).unwrap();
         }
 
-        env::set_var(DOCKER_ENVIRONMENT, "1");
+        unsafe {
+            env::set_var(DOCKER_ENVIRONMENT, "1");
+        }
         assert!(super::is_running_in_container().unwrap());
-        env::remove_var(DOCKER_ENVIRONMENT);
+        unsafe {
+            env::remove_var(DOCKER_ENVIRONMENT);
+        }
         assert!(!super::is_running_in_container().unwrap());
 
         File::create(dockerenv).unwrap();
-        env::set_var(DOCKER_ENVIRONMENT, "1");
+        unsafe {
+            env::set_var(DOCKER_ENVIRONMENT, "1");
+        }
         let result = super::is_running_in_container();
-        env::remove_var(DOCKER_ENVIRONMENT);
+        unsafe {
+            env::remove_var(DOCKER_ENVIRONMENT);
+        }
         let result2 = super::is_running_in_container();
 
         std::fs::remove_file(dockerenv).unwrap();
@@ -185,8 +201,11 @@ mod functional_test {
     }
 
     #[functional_test(feature = "helpers")]
+    #[serial]
     fn test_get_host_root_path_in_simulated_container() {
-        env::set_var(DOCKER_ENVIRONMENT, "true");
+        unsafe {
+            env::set_var(DOCKER_ENVIRONMENT, "true");
+        }
 
         let test_dir = Path::new(HOST_ROOT_PATH);
         if !test_dir.exists() {
@@ -196,9 +215,12 @@ mod functional_test {
     }
 
     #[functional_test(feature = "helpers")]
+    #[serial]
     fn test_get_host_relative_path() {
         // Simulate container environment
-        env::set_var(DOCKER_ENVIRONMENT, "true");
+        unsafe {
+            env::set_var(DOCKER_ENVIRONMENT, "true");
+        }
         let test_dir = Path::new(HOST_ROOT_PATH);
         if !test_dir.exists() {
             std::fs::create_dir(test_dir).unwrap();
@@ -211,7 +233,9 @@ mod functional_test {
         assert_eq!(result, expected);
 
         // Cleanup
-        env::remove_var(DOCKER_ENVIRONMENT);
+        unsafe {
+            env::remove_var(DOCKER_ENVIRONMENT);
+        }
 
         // Test #2; Not running in a container; path should be returned as-is
         let path = PathBuf::from("/var/lib/extensions/test.raw");
