@@ -310,18 +310,14 @@ impl ExtensionsSubsystem {
         for ext in hc_extensions {
             let extension_file = if new {
                 // First, check if this extension already exists on the OS.
-                if let Some(existing_file_path) = match &ext_type {
-                    ExtensionType::Sysext => utils::find_existing_extension_path(
-                        &ext.sha384,
-                        &ctx.spec.os.sysexts,
-                        &ctx.spec_old.os.sysexts,
-                    )?,
-                    ExtensionType::Confext => utils::find_existing_extension_path(
-                        &ext.sha384,
-                        &ctx.spec.os.confexts,
-                        &ctx.spec_old.os.confexts,
-                    )?,
-                } {
+                if let Some(existing_file_path) =
+                    match &ext_type {
+                        ExtensionType::Sysext => self
+                            .find_existing_extension_path(&ext.sha384, &ctx.spec_old.os.sysexts)?,
+                        ExtensionType::Confext => self
+                            .find_existing_extension_path(&ext.sha384, &ctx.spec_old.os.confexts)?,
+                    }
+                {
                     existing_file_path
                 } else {
                     // The extension is new to the OS, so we need to download it.
@@ -351,7 +347,20 @@ impl ExtensionsSubsystem {
                         )
                     }
 
-                    temp_file
+                    // Rename the file to use the hash as the filename. This is
+                    // useful for identifying the extension image in the staging
+                    // directory if Finalize of a runtime update is called
+                    // separately from Stage.
+                    let hash_based_filename =
+                        self.staging_dir.join(format!("{computed_sha384}.raw"));
+                    fs::rename(&temp_file, &hash_based_filename).with_context(|| {
+                        format!(
+                            "Failed to rename downloaded file to hash-based name: '{}'",
+                            hash_based_filename.display()
+                        )
+                    })?;
+
+                    hash_based_filename
                 }
             } else {
                 // For extension images from the old Host Configuration, use the
