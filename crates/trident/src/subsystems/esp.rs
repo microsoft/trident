@@ -1196,7 +1196,7 @@ mod tests {
             // Create full path of destination_path
             let mut destination_path = esp_dir.path().join(file_name.clone());
 
-            if file_name == PathBuf::from(GRUB_NOPREFIX_EFI) {
+            if file_name == Path::new(GRUB_NOPREFIX_EFI) {
                 destination_path = esp_dir.path().join(GRUB_EFI);
             }
 
