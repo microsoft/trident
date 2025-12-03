@@ -57,9 +57,6 @@ resources:
       type: git
       ref: refs/heads/main
 
-variables:
-  - group: bot # added for access to dom0 RPMs
-
 extends:
   template: v2/OneBranch.Official.CrossPlat.yml@templates # https://aka.ms/obpipelines/templates
   parameters:
