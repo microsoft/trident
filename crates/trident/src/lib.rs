@@ -575,6 +575,8 @@ impl Trident {
                 .message("Invalid Host Configuration provided")?;
 
             let image = Self::get_cosi_image(&mut host_config)?;
+            // check sysexts and confexts
+            // if every entry in host_config and datastore.host_status().spec is the same except for `path`, then fill in the path for the sysexts and confexts so that the == check next succeeds.
 
             // If HS.spec in the datastore is different from the new HC, need to both stage and
             // finalize the update, regardless of state

@@ -2,21 +2,34 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Error};
 
-use osutils::dependencies::Dependency;
-use trident_api::{config::Extension, primitives::hash::Sha384Hash};
+use osutils::{container, dependencies::Dependency};
+use trident_api::{config::Extension, error::TridentResultExt, primitives::hash::Sha384Hash};
 
-/// Returns the path of an extension from the old Host Configuration that
+/// Returns the path of an extension from the new or old Host Configuration that
 /// matches the given SHA384 hash, if one exists.
 pub(crate) fn find_existing_extension_path(
-    hash: &Sha384Hash,
+    target_hash: &Sha384Hash,
+    new_hc_extensions: &[Extension],
     old_hc_extensions: &[Extension],
-) -> Option<PathBuf> {
-    old_hc_extensions
+) -> Result<Option<PathBuf>, Error> {
+    // Search the old and new Host Configurations for the extension. If a path
+    // exists for the extension and a file exists at the path, return the path.
+    if let Some(ext_path) = old_hc_extensions
         .iter()
+        .chain(new_hc_extensions.iter())
         // Extension must match on Sha384 hash
-        .find(|old_ext| hash == &old_ext.sha384)?
-        .path
-        .clone()
+        .find(|hc_ext| *target_hash == hc_ext.sha384)
+        .and_then(|ext| ext.path.clone())
+    {
+        // Check if Trident is running in a container, and adjust path accordingly.
+        let adjusted_path = container::get_host_relative_path(ext_path)
+            .unstructured("Failed to adjust file path for container")?;
+        // Ensure that file exists before returning it.
+        if adjusted_path.exists() {
+            return Ok(Some(adjusted_path));
+        }
+    }
+    Ok(None)
 }
 
 /// Mounts the extension image.
@@ -80,8 +93,9 @@ pub(crate) fn detach_device_and_unmount(
 mod tests {
     use super::*;
 
-    use std::path::PathBuf;
+    use std::{env, fs, path::PathBuf};
 
+    use tempfile::NamedTempFile;
     use url::Url;
 
     use trident_api::primitives::hash::Sha384Hash;
@@ -89,15 +103,16 @@ mod tests {
     #[test]
     fn test_find_existing_extension_path_found() {
         let hash = Sha384Hash::from("a".repeat(96));
-        let path = PathBuf::from("/var/lib/extensions/ext1.raw");
-        let old_extensions = vec![Extension {
+        let file = NamedTempFile::new().unwrap();
+        let path = file.path().to_path_buf();
+        let extensions = vec![Extension {
             url: Url::parse("https://example.com/ext1.raw").unwrap(),
             sha384: hash.clone(),
             path: Some(path.clone()),
         }];
 
         assert_eq!(
-            find_existing_extension_path(&hash, &old_extensions),
+            find_existing_extension_path(&hash, &extensions, &extensions).unwrap(),
             Some(path)
         );
     }
@@ -106,13 +121,23 @@ mod tests {
     fn test_find_existing_extension_path_not_found() {
         let hash1 = Sha384Hash::from("a".repeat(96));
         let hash2 = Sha384Hash::from("b".repeat(96));
-        let old_extensions = vec![Extension {
+        let extensions = vec![Extension {
             url: Url::parse("https://example.com/ext2.raw").unwrap(),
             sha384: hash2,
             path: Some(PathBuf::from("/var/lib/extensions/ext1.raw")),
         }];
+        assert_eq!(
+            find_existing_extension_path(&hash1, &extensions, &extensions).unwrap(),
+            None
+        );
 
-        assert_eq!(find_existing_extension_path(&hash1, &old_extensions), None);
+        // Validate same behavior in container scenario
+        env::set_var(container::DOCKER_ENVIRONMENT, "true");
+        assert_eq!(
+            find_existing_extension_path(&hash1, &extensions, &extensions).unwrap(),
+            None
+        );
+        env::remove_var(container::DOCKER_ENVIRONMENT);
     }
 }
 
@@ -121,11 +146,41 @@ mod tests {
 mod functional_tests {
     use super::*;
 
-    use std::fs;
+    use std::{env, fs};
 
     use tempfile::{NamedTempFile, TempDir};
+    use url::Url;
 
+    use osutils::container::HOST_ROOT_PATH;
     use pytest_gen::functional_test;
+
+    #[functional_test]
+    fn test_find_existing_extension_path_found_container() {
+        // Simulate container environment
+        env::set_var(container::DOCKER_ENVIRONMENT, "true");
+        let host_root = PathBuf::from(HOST_ROOT_PATH);
+        if !host_root.exists() {
+            fs::create_dir(&host_root).unwrap();
+        }
+
+        let hash = Sha384Hash::from("a".repeat(96));
+        let file = NamedTempFile::new_in(&host_root).unwrap();
+        let path_in_host = file.path().to_path_buf();
+        let original_path = PathBuf::from(path_in_host.strip_prefix(HOST_ROOT_PATH).unwrap());
+        let extensions = vec![Extension {
+            url: Url::parse("https://example.com/ext1.raw").unwrap(),
+            sha384: hash.clone(),
+            path: Some(original_path.clone()),
+        }];
+
+        assert_eq!(
+            find_existing_extension_path(&hash, &extensions, &extensions).unwrap(),
+            Some(path_in_host)
+        );
+
+        // Clean up
+        env::remove_var(container::DOCKER_ENVIRONMENT);
+    }
 
     #[functional_test]
     fn test_attach_device_and_mount_unmount() {
