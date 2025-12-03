@@ -201,6 +201,9 @@ pub enum InvalidInputError {
     #[error("Invalid --lazy-partitions provided")]
     InvalidLazyPartition,
 
+    #[error("Invalid rollback expectation: '{reason}'")]
+    InvalidRollbackExpectation { reason: String },
+
     #[error("Invalid state for rollback: '{reason}'")]
     InvalidRollbackState { reason: String },
 

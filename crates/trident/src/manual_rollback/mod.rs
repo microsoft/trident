@@ -104,6 +104,23 @@ pub fn execute_rollback(
     }
 
     let first_rollback = &available_rollbacks[0];
+    if expected_runtime_rollback && first_rollback.requires_reboot {
+        return Err(TridentError::new(
+            InvalidInputError::InvalidRollbackExpectation {
+                reason: "expected to undo a runtime update but rollback will undo an A/B update"
+                    .to_string(),
+            },
+        ));
+    }
+    if expected_ab_rollback && !first_rollback.requires_reboot {
+        return Err(TridentError::new(
+            InvalidInputError::InvalidRollbackExpectation {
+                reason: "expected to undo an A/B update but rollback will undo a runtime update"
+                    .to_string(),
+            },
+        ));
+    }
+
     let mut first_rollback_host_config = first_rollback.host_status.spec.clone();
     let mut skip_finalize_state_check = false;
 
