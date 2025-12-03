@@ -43,7 +43,7 @@ parameters:
   - name: skipManualRollbackTesting
     displayName: "Skip manual rollback testing"
     type: string
-    default: "true"
+    default: "false"
 
 jobs:
   - job: RollbackTesting_${{ replace(parameters.flavor, '-', '_') }}

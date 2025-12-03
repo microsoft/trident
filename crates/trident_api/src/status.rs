@@ -73,6 +73,8 @@ pub enum ServicingType {
     AbUpdate = 2,
     /// Clean install of the target OS image when the host is booted from the provisioning OS.
     CleanInstall = 3,
+    /// Manual Rollback of the target OS image to a previously deployed state.
+    ManualRollback = 4,
 }
 
 /// Servicing state describes the progress of the servicing that the Trident agent is executing on
@@ -89,12 +91,18 @@ pub enum ServicingState {
     CleanInstallStaged,
     /// A/B update has been staged. The new target OS images have been deployed onto block devices.
     AbUpdateStaged,
+    /// Manual rollback has been staged.
+    ManualRollbackStaged,
+    /// Runtime update has been staged.
+    RuntimeUpdateStaged,
     /// Clean install has been finalized, i.e., UEFI variables have been set, so that firmware boots
     /// from the target OS image after reboot.
     CleanInstallFinalized,
     /// A/B update has been finalized. For the next boot, the firmware will boot from the updated
     /// target OS image.
     AbUpdateFinalized,
+    /// Manual rollback has been finalized.
+    ManualRollbackFinalized,
     /// Servicing has been completed, and the host successfully booted from the updated target OS
     /// image. Trident is ready to begin a new servicing.
     Provisioned,

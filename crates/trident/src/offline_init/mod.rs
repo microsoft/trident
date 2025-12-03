@@ -18,7 +18,10 @@ use trident_api::{
         MountOptions, MountPoint, Partition, PartitionSize, PartitionTableType, PartitionType,
         VerityCorruptionOption, VerityDevice,
     },
-    constants::internal_params::ENABLE_UKI_SUPPORT,
+    constants::{
+        internal_params::ENABLE_UKI_SUPPORT, EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY,
+        ESP_RELATIVE_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH,
+    },
     error::{
         ExecutionEnvironmentMisconfigurationError, InitializationError, InvalidInputError,
         ReportError, TridentError, TridentResultExt,
@@ -28,7 +31,7 @@ use trident_api::{
 };
 use uuid::Uuid;
 
-use crate::datastore::DataStore;
+use crate::{datastore::DataStore, subsystems::esp};
 
 #[derive(Clone, Debug, serde::Deserialize)]
 struct PrismPartition {
@@ -479,6 +482,21 @@ pub fn execute(
         .validate()
         .map_err(Into::into)
         .message("The provided Host Status has an invalid Host Configuration")?;
+
+    // Ensure AZLA/AZLB esp scheme is present by copying boot files from fallback location if needed.
+    let esp_path = PathBuf::from(ROOT_MOUNT_POINT_PATH).join(ESP_RELATIVE_MOUNT_POINT_PATH);
+    let azla_esp_path = esp_path.join(ESP_EFI_DIRECTORY).join("AZLA");
+    trace!("Checking for AZLA volume ESP path at {:?}", &azla_esp_path);
+    if !azla_esp_path.exists() {
+        trace!(
+            "AZLA volume ESP path {:?} does not exist, attempting to copy from fallback location",
+            azla_esp_path
+        );
+        let boot_esp_path = esp_path.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
+        esp::replace_boot_files(&boot_esp_path, &azla_esp_path)
+            .structured(InvalidInputError::InvalidBootConfiguration)
+            .message("Failed to copy boot files to AZLA ESP path")?;
+    }
 
     let datastore_path = host_status.spec.trident.datastore_path.clone();
 

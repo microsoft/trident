@@ -32,6 +32,7 @@ mod engine;
 mod health;
 mod io_utils;
 mod logging;
+pub mod manual_rollback;
 mod monitor_metrics;
 pub mod offline_init;
 mod orchestrate;
@@ -335,7 +336,7 @@ impl Trident {
         }
     }
 
-    fn get_cosi_image(host_config: &mut HostConfiguration) -> Result<OsImage, TridentError> {
+    pub fn get_cosi_image(host_config: &mut HostConfiguration) -> Result<OsImage, TridentError> {
         let cosi_timeout = match host_config
             .internal_params
             .get_u64(HTTP_CONNECTION_TIMEOUT_SECONDS)
@@ -632,15 +633,27 @@ impl Trident {
             ServicingState::CleanInstallFinalized
                 | ServicingState::AbUpdateFinalized
                 | ServicingState::AbUpdateHealthCheckFailed
+                | ServicingState::ManualRollbackFinalized
         ) {
-            info!("No servicing in progress, skipping commit");
+            info!(
+                "No servicing in progress ({:?}), skipping commit",
+                datastore.host_status().servicing_state
+            );
             return Ok(ExitKind::Done);
         }
 
         let rollback_result = self.execute_and_record_error(datastore, |datastore| {
-            rollback::validate_boot(datastore).message(
+            let result = rollback::validate_boot(datastore).message(
                 "Failed to validate that firmware correctly booted from updated target OS image",
-            )
+            );
+            // Persist the Trident background log and metrics file.
+            engine::persist_background_log_and_metrics(
+                &datastore.host_status().spec.trident.datastore_path,
+                None,
+                datastore.host_status().servicing_state,
+            );
+
+            result
         });
 
         if rollback_result.is_ok() {
@@ -697,5 +710,60 @@ impl Trident {
         }
 
         Ok(())
+    }
+
+    pub fn rollback(
+        &mut self,
+        datastore: &mut DataStore,
+        expected_runtime_rollback: bool,
+        expected_ab_rollback: bool,
+        allowed_operations: Operations,
+        query_requires_reboot: bool,
+        show_available_rollbacks: bool,
+    ) -> Result<ExitKind, TridentError> {
+        // If host's servicing state is *Finalized or *HealthCheckFailed, need to
+        // re-evaluate the current state of the host.
+        if !matches!(
+            datastore.host_status().servicing_state,
+            ServicingState::Provisioned
+                | ServicingState::ManualRollbackStaged
+                | ServicingState::ManualRollbackFinalized
+        ) {
+            info!("Not in Provisioned or ManualRollbackStaged state, cannot rollback");
+            return Ok(ExitKind::Done);
+        }
+
+        if query_requires_reboot {
+            let result = manual_rollback::print_requires_reboot(datastore)
+                .message("Failed to check if rollback requires reboot")?;
+            return Ok(result);
+        }
+
+        if show_available_rollbacks {
+            let result = manual_rollback::print_available_rollbacks(datastore)
+                .message("Failed to get available rollbacks")?;
+            return Ok(result);
+        }
+
+        let rollback_result = self.execute_and_record_error(datastore, |datastore| {
+            manual_rollback::execute_rollback(
+                datastore,
+                expected_runtime_rollback,
+                expected_ab_rollback,
+                &allowed_operations,
+            )
+            .message("Failed to rollback")
+        });
+
+        if rollback_result.is_ok() {
+            if let Some(ref orchestrator) = self.orchestrator {
+                orchestrator.report_success(Some(
+                    serde_yaml::to_string(&datastore.host_status())
+                        .unwrap_or("Failed to serialize Host Status".into()),
+                ))
+            }
+        }
+
+        rollback_result
     }
 }

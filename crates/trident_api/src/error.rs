@@ -180,6 +180,9 @@ pub enum InvalidInputError {
     #[error("Image contains invalid agent configuration")]
     ImageBadAgentConfiguration,
 
+    #[error("Invalid boot configuration")]
+    InvalidBootConfiguration,
+
     #[error("Host Configuration failed dynamic validation: {inner}")]
     InvalidHostConfigurationDynamic {
         #[from]
@@ -197,6 +200,9 @@ pub enum InvalidInputError {
 
     #[error("Invalid --lazy-partitions provided")]
     InvalidLazyPartition,
+
+    #[error("Invalid state for rollback: '{reason}'")]
+    InvalidRollbackState { reason: String },
 
     #[error("Failed to load COSI file from '{url}'")]
     LoadCosi { url: Url },
@@ -564,6 +570,9 @@ pub enum ServicingError {
 
     #[error("Failed to remove the pre-existing pcrlock policy")]
     RemovePcrlockPolicy,
+
+    #[error("Failed to execute rollback")]
+    ManualRollback,
 
     #[error(
         "Failed to match current root device path '{root_device_path}' to either root volume A \

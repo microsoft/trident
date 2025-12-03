@@ -176,7 +176,11 @@ pub(crate) fn validate_rebuild_raid(
     match host_status.servicing_state {
         ServicingState::NotProvisioned
         | ServicingState::CleanInstallStaged
-        | ServicingState::CleanInstallFinalized => {
+        | ServicingState::CleanInstallFinalized
+        | ServicingState::AbUpdateHealthCheckFailed
+        | ServicingState::ManualRollbackStaged
+        | ServicingState::ManualRollbackFinalized
+        | ServicingState::RuntimeUpdateStaged => {
             bail!(
                 "rebuild-raid command is not allowed when servicing state is {:?}",
                 host_status.servicing_state
@@ -184,8 +188,7 @@ pub(crate) fn validate_rebuild_raid(
         }
         ServicingState::Provisioned
         | ServicingState::AbUpdateStaged
-        | ServicingState::AbUpdateFinalized
-        | ServicingState::AbUpdateHealthCheckFailed => {}
+        | ServicingState::AbUpdateFinalized => {}
     }
 
     validate_raid_recovery(host_config, disks_to_rebuild)
