@@ -139,7 +139,7 @@ jobs:
           SKIP_FLAGS=""
 
           if [ "${{ parameters.skipManualRollbackTesting }}" == "true" ]; then
-            # TODO: enable manual rollback testing when it is implemented
+            # skip enable manual rollback testing
             SKIP_FLAGS="$SKIP_FLAGS --skip-manual-rollbacks"
           fi
 

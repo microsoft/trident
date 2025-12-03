@@ -136,7 +136,7 @@ func RollbackTest(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 			}
 			hostConfig["os"] = sysextConfig
 		}
-		// Perform runtime update and do
+		// Perform runtime update and do validation
 		expectedAvailableRollbacks = 2
 		err = doUpdateTest(testConfig, vmConfig, vmIP, hostConfig, extensionVersion, expectedVolume, expectedAvailableRollbacks, false)
 		if err != nil {
@@ -276,7 +276,6 @@ func validateOs(
 		}
 	}
 	if !testConfig.SkipManualRollbacks {
-		// TODO: Verify that there is 1 available rollback
 		logrus.Tracef("Checking number of available rollbacks, expecting '%d'", expectedAvailableRollbacks)
 
 		availableRollbacksOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo trident rollback --show-available")

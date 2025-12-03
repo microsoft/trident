@@ -46,7 +46,7 @@ func PrepareQcow2(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 	}
 	imageFileName := filepath.Base(imageFilePath)
 
-	// Find existing image file
+	// Find extension file
 	extensionFileName := fmt.Sprintf("%s-1.raw", testConfig.ExtensionName)
 	extensionFile, err := stormfile.FindFile(testConfig.ArtifactsDir, fmt.Sprintf("^%s$", extensionFileName))
 	if err != nil {
