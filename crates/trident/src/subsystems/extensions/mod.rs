@@ -171,6 +171,10 @@ impl Subsystem for ExtensionsSubsystem {
                 "Defining staging directory for extension images at '{}'",
                 self.staging_dir.display()
             );
+            // In this call to populate_extensions(), all extension images
+            // should already be downloaded to the staging directory.
+            self.populate_extensions(ctx)
+                .structured(InternalError::PopulateExtensionImages)?;
         }
 
         // Ensure that desired target directories exist on the target OS.
@@ -940,6 +944,14 @@ mod functional_test {
             assert_eq!(
                 subsystem_ext.path,
                 PathBuf::from(expected_dir).join(format!("{}.raw", subsystem_ext.name))
+            );
+
+            // Verify that the extension was staged file name is the extension's hash.
+            assert_eq!(
+                subsystem_ext.temp_path,
+                subsystem
+                    .staging_dir
+                    .join(format!("{}.raw", subsystem_ext.sha384))
             );
         }
     }
