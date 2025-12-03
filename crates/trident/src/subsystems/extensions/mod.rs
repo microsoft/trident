@@ -165,7 +165,7 @@ impl Subsystem for ExtensionsSubsystem {
 
         // If Finalize is called separately from Stage during a runtime update,
         // we need to re-populate the subsystem's state.
-        if self.extensions.is_empty() || self.extensions_old.is_empty() {
+        if self.extensions.is_empty() && self.extensions_old.is_empty() {
             self.staging_dir = PathBuf::from(EXTENSION_IMAGE_STAGING_DIRECTORY);
             trace!(
                 "Defining staging directory for extension images at '{}'",
