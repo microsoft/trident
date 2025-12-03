@@ -261,15 +261,10 @@ fn copy_file_artifacts(
 /// 1. During finalize
 ///  * For clean install, use volume A (this is the target OS volume for clean install)
 ///  * For A/B update
-<<<<<<< HEAD
 ///    - 'optimistic': use the opposite of the active volume
 ///    - 'conservative': use the active volume (this may be a redundant copy)
-=======
-///    - rollforward: use the opposite of the active volume
-///    - rollback: use the active volume (this may be a redundant copy)
 ///  * For manual rollback (this should only be called during manual rollback of an a/b update)
 ///    - use the opposite of the active volume
->>>>>>> 6f95f239 (implement manual rollback for abupdate)
 /// 2. During commit, after the target OS boot has been verified, the target OS boot files
 ///    are copied to the UEFI fallback folder.
 ///  * For clean install, no copy is needed as it was done during finalize
@@ -320,7 +315,7 @@ fn find_uefi_fallback_source_dir_name(
             _ => None,
         },
         ServicingState::ManualRollbackStaged => match ctx.spec.os.uefi_fallback {
-            None | Some(UefiFallbackMode::Rollback) | Some(UefiFallbackMode::Rollforward) => {
+            UefiFallbackMode::Conservative | UefiFallbackMode::Optimistic => {
                 Some(boot::make_esp_dir_name(
                     ctx.install_index,
                     match ctx.ab_active_volume {
@@ -989,27 +984,27 @@ mod tests {
             ),
             (
                 ServicingState::ManualRollbackStaged,
-                Some(UefiFallbackMode::Rollback),
+                UefiFallbackMode::Conservative,
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::ManualRollback,
-                Some("AZLB".to_string()), // in ManualRollbackStaged, with rollback, copy from inactive volume
-                "Validate ManualRollbackStaged + Some(Rollback) + active volume A ==> AZLB",
+                Some("AZLB".to_string()), // in ManualRollbackStaged, with 'conservative', copy from inactive volume
+                "Validate ManualRollbackStaged + Conservative + active volume A ==> AZLB",
             ),
             (
                 ServicingState::ManualRollbackStaged,
-                Some(UefiFallbackMode::Rollforward),
+                UefiFallbackMode::Optimistic,
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::ManualRollback,
-                Some("AZLB".to_string()), // in ManualRollback staged, with rollforward, copy from inactive volume
-                "Validate ManualRollbackStaged + Some(Rollforward) + active volume A ==> AZLB",
+                Some("AZLB".to_string()), // in ManualRollback staged, with 'optimistic', copy from inactive volume
+                "Validate ManualRollbackStaged + Optimistic + active volume A ==> AZLB",
             ),
             (
                 ServicingState::ManualRollbackStaged,
-                Some(UefiFallbackMode::None),
+                UefiFallbackMode::Disabled,
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::ManualRollback,
-                None::<String>, // with None, we do not copy anything
-                "Validate ManualRollbackStaged + Some(None) + active volume A ==> None",
+                None::<String>, // with Disabled, we do not copy anything
+                "Validate ManualRollbackStaged + Disabled + active volume A ==> None",
             ),
         ];
         for test_case in test_cases {
