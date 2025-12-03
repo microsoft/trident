@@ -32,7 +32,7 @@ func CheckActiveVolume(cfg stormvmconfig.VMConfig, vmIP string, expectedVolume s
 			if hostStatus["servicingState"] != "provisioned" {
 				return nil, fmt.Errorf("trident state is not 'provisioned'")
 			}
-			logrus.Tracef("Host satus servicingState is 'provisioned'")
+			logrus.Tracef("Host status servicingState is 'provisioned'")
 			hsActiveVol := hostStatus["abActiveVolume"]
 			if hsActiveVol != expectedVolume {
 				return nil, fmt.Errorf("expected active volume '%s', got '%s'", expectedVolume, hsActiveVol)
