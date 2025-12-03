@@ -8,8 +8,9 @@ use trident_api::{config::Extension, error::TridentResultExt, primitives::hash::
 use super::ExtensionsSubsystem;
 
 impl ExtensionsSubsystem {
-    /// Returns the path of an extension from the new or old Host Configuration that
-    /// matches the given SHA384 hash, if one exists.
+    /// Returns the path of an extension from the old Host Configuration that
+    /// matches the given SHA384 hash, if one exists. Otherwise, checks to see
+    /// if the extension has been downloaded already in the staging directory.
     pub(crate) fn find_existing_extension_path(
         &self,
         target_hash: &Sha384Hash,
