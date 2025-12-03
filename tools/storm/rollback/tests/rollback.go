@@ -2,6 +2,7 @@ package tests
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -51,7 +52,7 @@ func RollbackTest(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 	expectedVolume := testConfig.ExpectedVolume
 	expectedAvailableRollbacks := 0
 	extensionVersion := 1
-	err = validateOs(testConfig, vmConfig, vmIP, extensionVersion, expectedVolume, expectedAvailableRollbacks)
+	err = validateOs(testConfig, vmConfig, vmIP, extensionVersion, expectedVolume, expectedAvailableRollbacks, false)
 	if err != nil {
 		return fmt.Errorf("failed to validate OS state after update: %w", err)
 	}
@@ -164,7 +165,7 @@ func RollbackTest(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 			// Invoke rollback and expect extension 3
 			extensionVersion = 3
 			expectedAvailableRollbacks = 2
-			err = doRollbackTest(testConfig, vmConfig, vmIP, extensionVersion, expectedVolume, expectedAvailableRollbacks, false)
+			err = doRollbackTest(testConfig, vmConfig, vmIP, extensionVersion, expectedVolume, expectedAvailableRollbacks, false, false, false)
 			if err != nil {
 				return fmt.Errorf("failed to perform first rollback test: %w", err)
 			}
@@ -176,7 +177,7 @@ func RollbackTest(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 			// Invoke rollback and expect extension 2
 			extensionVersion = 2
 			expectedAvailableRollbacks = 1
-			err = doRollbackTest(testConfig, vmConfig, vmIP, extensionVersion, expectedVolume, expectedAvailableRollbacks, false)
+			err = doRollbackTest(testConfig, vmConfig, vmIP, extensionVersion, expectedVolume, expectedAvailableRollbacks, false, true, false)
 			if err != nil {
 				return fmt.Errorf("failed to perform second rollback test: %w", err)
 			}
@@ -187,12 +188,12 @@ func RollbackTest(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 		}
 	}
 
-	if !testConfig.SkipRuntimeUpdates {
+	if !testConfig.SkipManualRollbacks {
 		// Invoke rollback and expect extension 1
 		expectedVolume = getOtherVolume(expectedVolume)
 		extensionVersion = 1
 		expectedAvailableRollbacks = 0
-		err = doRollbackTest(testConfig, vmConfig, vmIP, extensionVersion, expectedVolume, expectedAvailableRollbacks, true)
+		err = doRollbackTest(testConfig, vmConfig, vmIP, extensionVersion, expectedVolume, expectedAvailableRollbacks, true, false, true)
 		if err != nil {
 			return fmt.Errorf("failed to perform last rollback test: %w", err)
 		}
@@ -244,6 +245,7 @@ func validateOs(
 	extensionVersion int,
 	expectedVolume string,
 	expectedAvailableRollbacks int,
+	expectedFirstRollbackNeedsReboot bool,
 ) error {
 	// Verify active volume is as expected
 	logrus.Tracef("Checking active volume, expecting '%s'", expectedVolume)
@@ -276,6 +278,34 @@ func validateOs(
 	if !testConfig.SkipManualRollbacks {
 		// TODO: Verify that there is 1 available rollback
 		logrus.Tracef("Checking number of available rollbacks, expecting '%d'", expectedAvailableRollbacks)
+
+		availableRollbacksOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo trident rollback --show-available")
+		if err != nil {
+			return fmt.Errorf("failed to get available rollbacks from VM: %v", err)
+		}
+		logrus.Tracef("Reported available rollbacks:\n%s", availableRollbacksOutput)
+
+		var availableRollbacks []map[string]interface{}
+		err = json.Unmarshal([]byte(strings.TrimSpace(availableRollbacksOutput)), &availableRollbacks)
+		if err != nil {
+			return fmt.Errorf("failed to unmarshal available rollbacks: %w", err)
+		}
+
+		if len(availableRollbacks) != expectedAvailableRollbacks {
+			return fmt.Errorf("available rollbacks mismatch: expected %d, got %d", expectedAvailableRollbacks, len(availableRollbacks))
+		}
+		logrus.Tracef("Available rollbacks confirmed, found: '%d'", expectedAvailableRollbacks)
+
+		if expectedAvailableRollbacks > 0 {
+			firstRollback := availableRollbacks[0]
+			needsReboot, ok := firstRollback["requiresReboot"].(bool)
+			if !ok {
+				return fmt.Errorf("failed to parse requiresReboot from available rollback")
+			}
+			if needsReboot != expectedFirstRollbackNeedsReboot {
+				return fmt.Errorf("first available rollback requiresReboot mismatch: expected %v, got %v", expectedFirstRollbackNeedsReboot, needsReboot)
+			}
+		}
 	}
 	return nil
 }
@@ -344,7 +374,7 @@ func doUpdateTest(
 	logrus.Infof("VM IP remains the same after update: %s", vmIP)
 
 	// Validate OS state
-	err = validateOs(testConfig, vmConfig, vmIP, extensionVersion, expectedVolume, expectedAvailableRollbacks)
+	err = validateOs(testConfig, vmConfig, vmIP, extensionVersion, expectedVolume, expectedAvailableRollbacks, expectReboot)
 	if err != nil {
 		return fmt.Errorf("failed to validate OS state after update: %w", err)
 	}
@@ -359,6 +389,8 @@ func doRollbackTest(
 	expectedVolume string,
 	expectedAvailableRollbacks int,
 	expectReboot bool,
+	expectedNextRollbackNeedsReboot bool,
+	needManualCommit bool,
 ) error {
 	// Invoke trident rollback
 	logrus.Tracef("Invoking `trident rollback` on VM")
@@ -380,8 +412,19 @@ func doRollbackTest(
 		logrus.Tracef("VM ready after rollback")
 	}
 
+	// If rolling back to initial install, trident.service is not installed, must
+	// invoke commit manually
+	if needManualCommit {
+		logrus.Tracef("Manually invoking `trident commit` on VM")
+		commitOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo trident commit -v trace")
+		if err != nil {
+			return fmt.Errorf("failed to invoke commit (%w):\n%s", err, commitOutput)
+		}
+		logrus.Tracef("`trident commit` invoked on VM")
+	}
+
 	// Validate OS state
-	err = validateOs(testConfig, vmConfig, vmIP, extensionVersion, expectedVolume, expectedAvailableRollbacks)
+	err = validateOs(testConfig, vmConfig, vmIP, extensionVersion, expectedVolume, expectedAvailableRollbacks, expectedNextRollbackNeedsReboot)
 	if err != nil {
 		return fmt.Errorf("failed to validate OS state after update: %w", err)
 	}

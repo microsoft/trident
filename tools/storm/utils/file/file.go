@@ -1,4 +1,5 @@
-// Package provides file utility functions.
+// Package storm provides helpers for Trident loop-update Storm tests.
+// This file contains helpers converted from Bash scripts in scripts/loop-update.
 package file
 
 import (

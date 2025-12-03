@@ -40,6 +40,11 @@ parameters:
     type: string
     default: "false"
 
+  - name: skipManualRollbackTesting
+    displayName: "Skip manual rollback testing"
+    type: string
+    default: "true"
+
 jobs:
   - job: RollbackTesting_${{ replace(parameters.flavor, '-', '_') }}
     displayName: Rollback Testing - ${{ parameters.flavor }}
@@ -132,8 +137,12 @@ jobs:
           set -eux
           
           SKIP_FLAGS=""
-          # TODO: enable manual rollback testing when it is implemented
-          SKIP_FLAGS="$SKIP_FLAGS --skip-manual-rollbacks"
+
+          if [ "${{ parameters.skipManualRollbackTesting }}" == "true" ]; then
+            # TODO: enable manual rollback testing when it is implemented
+            SKIP_FLAGS="$SKIP_FLAGS --skip-manual-rollbacks"
+          fi
+
           # TODO: enable runtime update testing when it is implemented
           SKIP_FLAGS="$SKIP_FLAGS --skip-runtime-updates"
 
