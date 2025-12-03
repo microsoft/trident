@@ -214,8 +214,7 @@ impl HttpFile {
         let size = response
             .headers()
             .get("Content-Length")
-            .ok_or(IoError::new(
-                IoErrorKind::Other,
+            .ok_or(IoError::other(
                 "Failed to get 'Content-Length' in the response header",
             ))?
             .to_str()
@@ -241,8 +240,7 @@ impl HttpFile {
         if accept_ranges_header.is_none() && ignore_ranges_header_absence {
             warn!("OCI server does not provide 'Accept-Ranges' header, continuing anyway");
         } else if accept_ranges_header
-            .ok_or(IoError::new(
-                IoErrorKind::Other,
+            .ok_or(IoError::other(
                 "Server does not support range requests: 'Accept-Ranges' header was not provided",
             ))?
             .to_str()
@@ -255,8 +253,7 @@ impl HttpFile {
             .to_lowercase()
             .eq("none")
         {
-            return Err(IoError::new(
-                IoErrorKind::Other,
+            return Err(IoError::other(
                 "Server does not support range requests: 'Accept-Ranges: none'",
             ));
         }
@@ -371,7 +368,7 @@ impl HttpFile {
                 404 => IoError::new(IoErrorKind::NotFound, formatted),
                 408 => IoError::new(IoErrorKind::TimedOut, formatted),
                 500..=599 => IoError::new(IoErrorKind::ConnectionAborted, formatted),
-                _ => IoError::new(IoErrorKind::Other, formatted),
+                _ => IoError::other(formatted),
             }
         } else if e.is_timeout() {
             IoError::new(IoErrorKind::TimedOut, formatted)
@@ -380,7 +377,7 @@ impl HttpFile {
         } else if e.is_request() {
             IoError::new(IoErrorKind::InvalidData, formatted)
         } else {
-            IoError::new(IoErrorKind::Other, formatted)
+            IoError::other(formatted)
         }
     }
 

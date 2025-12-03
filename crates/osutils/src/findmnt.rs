@@ -174,7 +174,7 @@ impl FindMnt {
     pub fn root(self) -> Option<MountpointMetadata> {
         self.filesystems
             .into_iter()
-            .find(|fs| fs.target == PathBuf::from(ROOT_MOUNT_POINT_PATH))
+            .find(|fs| fs.target == Path::new(ROOT_MOUNT_POINT_PATH))
     }
 }
 

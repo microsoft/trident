@@ -119,7 +119,7 @@ pub(crate) fn send_host_status_state(
     sender: &mut Option<mpsc::UnboundedSender<Result<HostStatusState, tonic::Status>>>,
     state: &DataStore,
 ) -> Result<(), TridentError> {
-    if let Some(ref mut sender) = sender {
+    if let Some(sender) = sender {
         sender
             .send(Ok(HostStatusState {
                 status: serde_yaml::to_string(state.host_status())
