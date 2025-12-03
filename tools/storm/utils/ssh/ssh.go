@@ -8,25 +8,24 @@ import (
 	"strings"
 	"time"
 
-	"tridenttools/storm/servicing/utils/config"
-
 	stormretry "tridenttools/storm/utils/retry"
 	stormsshclient "tridenttools/storm/utils/ssh/client"
 	stormsshconfig "tridenttools/storm/utils/ssh/config"
+	stormvmconfig "tridenttools/storm/utils/vm/config"
 
 	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
 )
 
-func SshCommandWithRetries(cfg config.VMConfig, vmIP, command string, connectionRetryCount int, commandRetryCount int) (string, error) {
+func SshCommandWithRetries(cfg stormvmconfig.VMConfig, vmIP, command string, connectionRetryCount int, commandRetryCount int) (string, error) {
 	return innerSshCommand(cfg, vmIP, command, false, connectionRetryCount, commandRetryCount)
 }
 
-func SshCommand(cfg config.VMConfig, vmIP, command string) (string, error) {
+func SshCommand(cfg stormvmconfig.VMConfig, vmIP, command string) (string, error) {
 	return innerSshCommand(cfg, vmIP, command, false, 0, 0)
 }
 
-func SshCommandCombinedOutput(cfg config.VMConfig, vmIP, command string) (string, error) {
+func SshCommandCombinedOutput(cfg stormvmconfig.VMConfig, vmIP, command string) (string, error) {
 	return innerSshCommand(cfg, vmIP, command, true, 0, 0)
 }
 
@@ -62,7 +61,7 @@ func StartSshProxyPortAndWait(ctx context.Context, port int, vmIP string, sshUse
 	return nil
 }
 
-func ScpDownloadFile(cfg config.VMConfig, vmIP, src, dest string) error {
+func ScpDownloadFile(cfg stormvmconfig.VMConfig, vmIP, src, dest string) error {
 	args := []string{
 		"-i", cfg.SshPrivateKeyPath,
 		"-r",
@@ -76,7 +75,7 @@ func ScpDownloadFile(cfg config.VMConfig, vmIP, src, dest string) error {
 	return cmd.Run()
 }
 
-func ScpUploadFile(cfg config.VMConfig, vmIP, src, dest string) error {
+func ScpUploadFile(cfg stormvmconfig.VMConfig, vmIP, src, dest string) error {
 	args := []string{
 		"-i", cfg.SshPrivateKeyPath,
 		"-r",
@@ -90,7 +89,7 @@ func ScpUploadFile(cfg config.VMConfig, vmIP, src, dest string) error {
 	return cmd.Run()
 }
 
-func ScpUploadFileWithSudo(cfg config.VMConfig, vmIP, src, dest string) error {
+func ScpUploadFileWithSudo(cfg stormvmconfig.VMConfig, vmIP, src, dest string) error {
 	// Create a temporary file on the VM to upload the file
 	tmpFile, err := SshCommand(cfg, vmIP, "mktemp")
 	if err != nil {
@@ -107,7 +106,7 @@ func ScpUploadFileWithSudo(cfg config.VMConfig, vmIP, src, dest string) error {
 	return nil
 }
 
-func innerSshCommand(cfg config.VMConfig, vmIP, command string, combineOutput bool, connectionRetryCount int, commandRetryCount int) (string, error) {
+func innerSshCommand(cfg stormvmconfig.VMConfig, vmIP, command string, combineOutput bool, connectionRetryCount int, commandRetryCount int) (string, error) {
 	sshCliSettings := stormsshconfig.SshCliSettings{
 		PrivateKeyPath: cfg.SshPrivateKeyPath,
 		Host:           vmIP,
