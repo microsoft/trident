@@ -208,6 +208,11 @@ mod functional_test {
             std::fs::create_dir(test_dir).unwrap();
         }
         assert_eq!(get_host_root_path().unwrap(), Path::new(HOST_ROOT_PATH));
+
+        // Clean-up
+        unsafe {
+            env::remove_var(DOCKER_ENVIRONMENT);
+        }
     }
 
     #[functional_test(feature = "helpers")]
