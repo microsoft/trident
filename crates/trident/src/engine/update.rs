@@ -140,7 +140,6 @@ pub(crate) fn update(
             } else {
                 ab_update::finalize_update(
                     state,
-                    servicing_type,
                     Some(update_start_time),
                     #[cfg(feature = "grpc-dangerous")]
                     sender,
@@ -174,7 +173,6 @@ pub(crate) fn update(
                 runtime_update::finalize_update(
                     &mut subsystems,
                     state,
-                    servicing_type,
                     Some(update_start_time),
                     #[cfg(feature = "grpc-dangerous")]
                     sender,

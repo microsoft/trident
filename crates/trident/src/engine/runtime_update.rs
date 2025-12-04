@@ -76,14 +76,12 @@ pub(crate) fn stage_update(
 /// Finalizes a runtime update. Takes in 4-5 arguments:
 /// - subsystems: A mutable reference to the list of subsystems.
 /// - state: A mutable reference to the DataStore.
-/// - servicing_type: The current servicing type, expected to be RuntimeUpdate.
 /// - update_start_time: Optional, the time at which the update staging began.
 /// - sender: Optional mutable reference to the gRPC sender.
-#[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", servicing_type)))]
+#[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", ServicingType::RuntimeUpdate)))]
 pub(crate) fn finalize_update(
     subsystems: &mut [Box<dyn Subsystem>],
     state: &mut DataStore,
-    servicing_type: ServicingType,
     update_start_time: Option<Instant>,
     #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
@@ -91,16 +89,16 @@ pub(crate) fn finalize_update(
 ) -> Result<ExitKind, TridentError> {
     info!("Finalizing runtime update");
 
-    if servicing_type != ServicingType::RuntimeUpdate {
+    if state.host_status().servicing_state != ServicingState::RuntimeUpdateStaged {
         return Err(TridentError::internal(
-            "Unimplemented servicing type for runtime update finalize",
+            "Runtime update must be staged before calling finalize",
         ));
     }
 
     let mut ctx = EngineContext {
         spec: state.host_status().spec.clone(),
         spec_old: state.host_status().spec_old.clone(),
-        servicing_type,
+        servicing_type: ServicingType::RuntimeUpdate,
         ab_active_volume: state.host_status().ab_active_volume,
         partition_paths: state.host_status().partition_paths.clone(),
         disk_uuids: state.host_status().disk_uuids.clone(),
@@ -149,7 +147,7 @@ pub(crate) fn finalize_update(
         tracing::info!(
             metric_name = "update_time_secs",
             value = start_time.elapsed().as_secs_f64(),
-            servicing_type = format!("{:?}", servicing_type)
+            servicing_type = format!("{:?}", ServicingType::RuntimeUpdate)
         );
     }
 

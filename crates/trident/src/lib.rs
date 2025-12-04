@@ -600,7 +600,6 @@ impl Trident {
                         if allowed_operations.has_finalize() {
                             ab_update::finalize_update(
                                 datastore,
-                                ServicingType::AbUpdate,
                                 None,
                                 #[cfg(feature = "grpc-dangerous")]
                                 sender,
@@ -619,7 +618,6 @@ impl Trident {
                             runtime_update::finalize_update(
                                 &mut subsystems,
                                 datastore,
-                                ServicingType::RuntimeUpdate,
                                 None,
                                 #[cfg(feature = "grpc-dangerous")]
                                 sender,

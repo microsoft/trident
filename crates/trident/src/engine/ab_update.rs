@@ -137,10 +137,9 @@ pub(super) fn stage_update(
 /// Finalizes an update. Takes in 2 arguments:
 /// - state: A mutable reference to the DataStore.
 /// - sender: Optional mutable reference to the gRPC sender.
-#[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", servicing_type)))]
+#[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", ServicingType::AbUpdate)))]
 pub(crate) fn finalize_update(
     state: &mut DataStore,
-    servicing_type: ServicingType,
     update_start_time: Option<Instant>,
     #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
@@ -148,16 +147,16 @@ pub(crate) fn finalize_update(
 ) -> Result<ExitKind, TridentError> {
     info!("Finalizing A/B update");
 
-    if servicing_type != ServicingType::AbUpdate {
+    if state.host_status().servicing_state != ServicingState::AbUpdateStaged {
         return Err(TridentError::internal(
-            "Unimplemented servicing type for A/B update finalize",
+            "A/B update must be staged before calling finalize",
         ));
     }
 
     let ctx = EngineContext {
         spec: state.host_status().spec.clone(),
         spec_old: state.host_status().spec_old.clone(),
-        servicing_type,
+        servicing_type: ServicingType::AbUpdate,
         ab_active_volume: state.host_status().ab_active_volume,
         partition_paths: state.host_status().partition_paths.clone(),
         disk_uuids: state.host_status().disk_uuids.clone(),
@@ -190,7 +189,7 @@ pub(crate) fn finalize_update(
         tracing::info!(
             metric_name = "update_time_secs",
             value = start_time.elapsed().as_secs_f64(),
-            servicing_type = format!("{:?}", servicing_type)
+            servicing_type = format!("{:?}", ServicingType::AbUpdate)
         );
     }
 
