@@ -6,7 +6,7 @@ use tokio::sync::mpsc;
 
 use osutils::efivar;
 use trident_api::{
-    error::{InvalidInputError, TridentError},
+    error::TridentError,
     status::{HostStatus, ServicingState, ServicingType},
 };
 
@@ -34,24 +34,12 @@ pub(crate) fn stage_update(
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
 ) -> Result<(), TridentError> {
-    match ctx.servicing_type {
-        ServicingType::CleanInstall => {
-            return Err(TridentError::new(
-                InvalidInputError::CleanInstallOnProvisionedHost,
-            ));
-        }
-        ServicingType::NoActiveServicing => {
-            return Err(TridentError::internal("No active servicing type"))
-        }
-        ServicingType::AbUpdate => {
-            return Err(TridentError::internal(
-                "Runtime update staging called for A/B update servicing type",
-            ))
-        }
-        ServicingType::RuntimeUpdate => {
-            info!("Staging runtime update")
-        }
+    if ctx.servicing_type != ServicingType::RuntimeUpdate {
+        return Err(TridentError::internal(
+            "Runtime update staging called for unsupported servicing type",
+        ));
     }
+    info!("Staging runtime update");
 
     // Best effort to measure memory, CPU, and network usage during execution
     let monitor = match monitor_metrics::MonitorMetrics::new("stage_update".to_string()) {
