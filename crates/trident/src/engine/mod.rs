@@ -14,6 +14,7 @@ use trident_api::{
     config::Storage,
     constants,
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
+    is_default,
     status::{ServicingState, ServicingType},
     storage_graph::graph::StorageGraph,
 };
@@ -81,7 +82,12 @@ pub(crate) trait Subsystem: Send {
     // fn dependencies(&self) -> &'static [&'static str];
 
     /// Select the servicing type based on the Host Status and Host Configuration.
-    fn select_servicing_type(&self, ctx: &EngineContext) -> Result<ServicingType, TridentError>;
+    fn select_servicing_type(&self, ctx: &EngineContext) -> Result<ServicingType, TridentError> {
+        if is_default(&ctx.spec_old) {
+            return Ok(ServicingType::CleanInstall);
+        }
+        Ok(ServicingType::AbUpdate)
+    }
 
     /// Servicing types on which a subsystem may run. By default, all subsystems
     /// may run on Clean Install and A/B Update. Some also run on Runtime

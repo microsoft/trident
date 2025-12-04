@@ -78,7 +78,11 @@ pub(crate) fn update(
     debug!("Determining servicing type of required update");
     let servicing_type = subsystems
         .iter()
-        .map(|m| m.select_servicing_type(&ctx))
+        .map(|m| {
+            let res = m.select_servicing_type(&ctx);
+            debug!("subsystem '{}' requires servicing type: {res:?}", m.name());
+            res
+        })
         .collect::<Result<Vec<_>, TridentError>>()?
         .into_iter()
         .max()

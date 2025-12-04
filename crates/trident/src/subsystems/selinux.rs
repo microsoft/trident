@@ -15,7 +15,6 @@ use trident_api::{
     config::{HostConfigurationDynamicValidationError, SelinuxMode},
     constants::SELINUX_CONFIG,
     error::{InvalidInputError, ReportError, ServicingError, TridentError},
-    is_default,
     status::ServicingType,
 };
 
@@ -76,15 +75,6 @@ pub struct SelinuxSubsystem;
 impl Subsystem for SelinuxSubsystem {
     fn name(&self) -> &'static str {
         "selinux"
-    }
-
-    fn select_servicing_type(&self, ctx: &EngineContext) -> Result<ServicingType, TridentError> {
-        if is_default(&ctx.spec_old) {
-            return Ok(ServicingType::CleanInstall);
-        } else if ctx.spec.os.selinux != ctx.spec_old.os.selinux {
-            return Ok(ServicingType::AbUpdate);
-        }
-        Ok(ServicingType::NoActiveServicing)
     }
 
     #[tracing::instrument(name = "selinux_configuration", skip_all)]

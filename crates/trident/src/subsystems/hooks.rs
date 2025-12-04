@@ -20,7 +20,6 @@ use trident_api::{
         ROOT_MOUNT_POINT_PATH,
     },
     error::{InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt},
-    is_default,
     status::ServicingType,
 };
 
@@ -41,15 +40,6 @@ pub struct HooksSubsystem {
 impl Subsystem for HooksSubsystem {
     fn name(&self) -> &'static str {
         "hooks"
-    }
-
-    fn select_servicing_type(&self, ctx: &EngineContext) -> Result<ServicingType, TridentError> {
-        if is_default(&ctx.spec_old) {
-            return Ok(ServicingType::CleanInstall);
-        } else if !is_default(&ctx.spec.scripts) {
-            return Ok(ServicingType::AbUpdate);
-        }
-        Ok(ServicingType::NoActiveServicing)
     }
 
     fn writable_etc_overlay(&self) -> bool {

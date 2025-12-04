@@ -14,7 +14,6 @@ use trident_api::{
         internal_params::SELF_UPGRADE_TRIDENT, AGENT_CONFIG_PATH, TRIDENT_DATASTORE_PATH_DEFAULT,
     },
     error::{InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt},
-    is_default,
     status::ServicingType,
 };
 
@@ -28,15 +27,6 @@ pub struct ManagementSubsystem;
 impl Subsystem for ManagementSubsystem {
     fn name(&self) -> &'static str {
         "management"
-    }
-
-    fn select_servicing_type(&self, ctx: &EngineContext) -> Result<ServicingType, TridentError> {
-        if is_default(&ctx.spec_old) {
-            return Ok(ServicingType::CleanInstall);
-        } else if ctx.spec.image != ctx.spec_old.image {
-            return Ok(ServicingType::AbUpdate);
-        }
-        Ok(ServicingType::NoActiveServicing)
     }
 
     fn validate_host_config(&self, ctx: &EngineContext) -> Result<(), TridentError> {

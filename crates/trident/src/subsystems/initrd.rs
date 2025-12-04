@@ -1,10 +1,7 @@
 use log::{debug, info};
 
 use osutils::mkinitrd;
-use trident_api::{
-    constants::internal_params::DRACUT_DEBUG, error::TridentError, is_default,
-    status::ServicingType,
-};
+use trident_api::{constants::internal_params::DRACUT_DEBUG, error::TridentError};
 
 use crate::engine::{EngineContext, Subsystem};
 
@@ -17,15 +14,6 @@ impl Subsystem for InitrdSubsystem {
 
     fn writable_etc_overlay(&self) -> bool {
         false
-    }
-
-    fn select_servicing_type(&self, ctx: &EngineContext) -> Result<ServicingType, TridentError> {
-        if is_default(&ctx.spec_old) {
-            return Ok(ServicingType::CleanInstall);
-        } else if ctx.spec.image != ctx.spec_old.image {
-            return Ok(ServicingType::AbUpdate);
-        }
-        Ok(ServicingType::NoActiveServicing)
     }
 
     #[tracing::instrument(name = "initrd_regeneration", skip_all)]

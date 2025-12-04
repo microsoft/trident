@@ -23,7 +23,6 @@ use trident_api::{
         GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH,
     },
     error::{ReportError, ServicingError, TridentError, TridentResultExt},
-    is_default,
     status::{AbVolumeSelection, ServicingState, ServicingType},
 };
 
@@ -43,15 +42,6 @@ pub struct EspSubsystem;
 impl Subsystem for EspSubsystem {
     fn name(&self) -> &'static str {
         "esp"
-    }
-
-    fn select_servicing_type(&self, ctx: &EngineContext) -> Result<ServicingType, TridentError> {
-        if is_default(&ctx.spec_old) {
-            return Ok(ServicingType::CleanInstall);
-        } else if ctx.spec.image != ctx.spec_old.image {
-            return Ok(ServicingType::AbUpdate);
-        }
-        Ok(ServicingType::NoActiveServicing)
     }
 
     #[tracing::instrument(name = "esp_provision", skip_all)]

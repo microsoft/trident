@@ -6,8 +6,7 @@ use strum::IntoEnumIterator;
 use trident_api::{
     constants::{AB_VOLUME_A_NAME, AB_VOLUME_B_NAME, AZURE_LINUX_INSTALL_ID_PREFIX, VAR_TMP_PATH},
     error::{ReportError, ServicingError, TridentError},
-    is_default,
-    status::{AbVolumeSelection, ServicingType},
+    status::AbVolumeSelection,
 };
 
 use crate::{engine::Subsystem, OS_MODIFIER_NEWROOT_PATH};
@@ -24,18 +23,6 @@ pub(super) struct BootSubsystem;
 impl Subsystem for BootSubsystem {
     fn name(&self) -> &'static str {
         "boot"
-    }
-
-    fn select_servicing_type(
-        &self,
-        ctx: &EngineContext,
-    ) -> Result<trident_api::status::ServicingType, TridentError> {
-        if is_default(&ctx.spec_old) {
-            return Ok(ServicingType::CleanInstall);
-        } else if ctx.spec.image != ctx.spec_old.image {
-            return Ok(ServicingType::AbUpdate);
-        }
-        Ok(ServicingType::NoActiveServicing)
     }
 
     #[tracing::instrument(name = "boot_configuration", skip_all)]
