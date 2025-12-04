@@ -251,6 +251,15 @@ impl Subsystem for MosConfigSubsystem {
         "mos-config"
     }
 
+    fn select_servicing_type(&self, ctx: &EngineContext) -> Result<ServicingType, TridentError> {
+        if is_default(&ctx.spec_old) {
+            return Ok(ServicingType::CleanInstall);
+        } else if ctx.spec.management_os != ctx.spec_old.management_os {
+            return Ok(ServicingType::AbUpdate);
+        }
+        Ok(ServicingType::NoActiveServicing)
+    }
+
     fn validate_host_config(&self, ctx: &EngineContext) -> Result<(), TridentError> {
         if ctx.servicing_type != ServicingType::CleanInstall {
             debug!(
