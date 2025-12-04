@@ -69,19 +69,7 @@ pub(crate) fn stage_update(
         "Updating host's servicing state to '{:?}'",
         ServicingState::RuntimeUpdateStaged
     );
-    state.with_host_status(|hs| {
-        *hs = HostStatus {
-            spec: ctx.spec,
-            spec_old: ctx.spec_old,
-            servicing_state: ServicingState::RuntimeUpdateStaged,
-            ab_active_volume: ctx.ab_active_volume,
-            partition_paths: ctx.partition_paths,
-            disk_uuids: ctx.disk_uuids,
-            install_index: ctx.install_index,
-            last_error: None,
-            is_management_os: false,
-        };
-    })?;
+    state.with_host_status(|hs| hs.servicing_state = ServicingState::RuntimeUpdateStaged)?;
     #[cfg(feature = "grpc-dangerous")]
     grpc::send_host_status_state(sender, state)?;
 
@@ -151,7 +139,19 @@ pub(crate) fn finalize_update(
         "Updating host's servicing state to '{:?}'",
         ServicingState::Provisioned
     );
-    state.with_host_status(|status| status.servicing_state = ServicingState::Provisioned)?;
+    state.with_host_status(|hs| {
+        *hs = HostStatus {
+            spec: ctx.spec, // Update Host Status with updated spec.
+            spec_old: ctx.spec_old,
+            servicing_state: ServicingState::Provisioned,
+            ab_active_volume: ctx.ab_active_volume,
+            partition_paths: ctx.partition_paths,
+            disk_uuids: ctx.disk_uuids,
+            install_index: ctx.install_index,
+            last_error: None,
+            is_management_os: false,
+        };
+    })?;
     #[cfg(feature = "grpc-dangerous")]
     grpc::send_host_status_state(sender, state)?;
     state.close();
