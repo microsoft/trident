@@ -28,7 +28,7 @@ import (
 	"net"
 	"os/signal"
 	"syscall"
-	"tridenttools/pkg/config"
+	"tridenttools/pkg/netlaunch"
 	"tridenttools/pkg/phonehome"
 
 	"context"
@@ -117,7 +117,7 @@ var rootCmd = &cobra.Command{
 					log.WithError(err).Fatal("failed to read configuration file")
 				}
 
-				config := config.NetListenConfig{}
+				config := netlaunch.NetListenConfig{}
 				if err := viper.UnmarshalExact(&config); err != nil {
 					log.WithError(err).Fatal("could not unmarshal configuration")
 				}
@@ -143,7 +143,10 @@ var rootCmd = &cobra.Command{
 		// Wait for done signal.
 		// HACK: Ignore the first failure from phonehome to support the 'rerun'
 		// E2E test.
-		exitCode := phonehome.ListenLoop(ctx, result, false, 1)
+		phonehomeErr := phonehome.ListenLoop(ctx, result, false, 1)
+
+		// Get an exit code based on the error and log it
+		var exitCode int = phonehome.GetExitCodeFromErrorAndLog(phonehomeErr)
 
 		log.Info("Shutting down server...")
 		server.Shutdown(context.Background())
