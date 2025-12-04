@@ -1,22 +1,56 @@
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Error};
+use anyhow::{ensure, Context, Error};
 
-use osutils::dependencies::Dependency;
-use trident_api::{config::Extension, primitives::hash::Sha384Hash};
+use osutils::{container, dependencies::Dependency};
+use trident_api::{config::Extension, error::TridentResultExt, primitives::hash::Sha384Hash};
 
-/// Returns the path of an extension from the old Host Configuration that
-/// matches the given SHA384 hash, if one exists.
-pub(crate) fn find_existing_extension_path(
-    hash: &Sha384Hash,
-    old_hc_extensions: &[Extension],
-) -> Option<PathBuf> {
-    old_hc_extensions
-        .iter()
-        // Extension must match on Sha384 hash
-        .find(|old_ext| hash == &old_ext.sha384)?
-        .path
-        .clone()
+use super::ExtensionsSubsystem;
+
+impl ExtensionsSubsystem {
+    /// Returns the path of an extension from the old Host Configuration that
+    /// matches the given SHA384 hash, if one exists. Otherwise, checks to see
+    /// if the extension has been downloaded already in the staging directory.
+    pub(crate) fn find_existing_extension_path(
+        &self,
+        target_hash: &Sha384Hash,
+        old_hc_extensions: &[Extension],
+    ) -> Result<Option<PathBuf>, Error> {
+        // Search the old Host Configurations for the extension. If a path exists
+        // for the extension and a file exists at the path, return the path.
+        if let Some(ext) = old_hc_extensions
+            .iter()
+            // Extension must match on Sha384 hash
+            .find(|hc_ext| *target_hash == hc_ext.sha384)
+        {
+            let ext_path = ext.path.clone().with_context(|| {
+                format!("Failed to retrieve path of extension image '{}'", ext.url)
+            })?;
+            // Check if Trident is running in a container, and adjust path accordingly.
+            let adjusted_path = container::get_host_relative_path(ext_path.clone())
+                .unstructured("Failed to adjust file path for container")?;
+            // Ensure that file exists.
+            ensure!(
+                adjusted_path.exists(),
+                "Expected to find extension image from URL '{}' at path '{}', but path does not exist",
+                ext.url,
+                ext_path.display() // Display unadjusted path for readability
+            );
+            return Ok(Some(adjusted_path));
+        }
+
+        // Check if file has been downloaded already to the staging directory.
+        let expected_staging_directory_file_path =
+            self.staging_dir.join(format!("{target_hash}.raw"));
+        let adjusted_path = container::get_host_relative_path(expected_staging_directory_file_path)
+            .unstructured("Failed to adjust file path for container")?;
+        // Ensure that file exists before returning it.
+        if adjusted_path.exists() {
+            return Ok(Some(adjusted_path));
+        }
+
+        Ok(None)
+    }
 }
 
 /// Mounts the extension image.
@@ -80,30 +114,49 @@ pub(crate) fn detach_device_and_unmount(
 mod tests {
     use super::*;
 
-    use std::path::PathBuf;
+    use std::{fs, path::PathBuf};
 
+    use tempfile::{NamedTempFile, TempDir};
     use url::Url;
 
     use trident_api::primitives::hash::Sha384Hash;
 
     #[test]
     fn test_find_existing_extension_path_found() {
+        // Test Case: match hash to an extension in the old Host Configuration.
         let hash = Sha384Hash::from("a".repeat(96));
-        let path = PathBuf::from("/var/lib/extensions/ext1.raw");
+        let file = NamedTempFile::new().unwrap();
+        let path = file.path().to_path_buf();
+        let mut subsystem = ExtensionsSubsystem::default();
         let old_extensions = vec![Extension {
             url: Url::parse("https://example.com/ext1.raw").unwrap(),
             sha384: hash.clone(),
             path: Some(path.clone()),
         }];
-
         assert_eq!(
-            find_existing_extension_path(&hash, &old_extensions),
-            Some(path)
+            subsystem
+                .find_existing_extension_path(&hash, &old_extensions)
+                .unwrap(),
+            Some(path.clone())
         );
+
+        // Test Case: match hash to a file in the staging directory.
+        subsystem.staging_dir = TempDir::new().unwrap().into_path();
+        let staging_dir_file_path = subsystem.staging_dir.join(format!("{hash}.raw"));
+        fs::rename(path, &staging_dir_file_path).unwrap();
+        assert_eq!(
+            subsystem.find_existing_extension_path(&hash, &[]).unwrap(),
+            Some(staging_dir_file_path.clone())
+        );
+
+        // Clean-up
+        fs::remove_file(staging_dir_file_path).unwrap();
     }
 
     #[test]
     fn test_find_existing_extension_path_not_found() {
+        // Test Case: target hash not found in old Host Configuration and no
+        // file is found in the staging directory.
         let hash1 = Sha384Hash::from("a".repeat(96));
         let hash2 = Sha384Hash::from("b".repeat(96));
         let old_extensions = vec![Extension {
@@ -111,8 +164,13 @@ mod tests {
             sha384: hash2,
             path: Some(PathBuf::from("/var/lib/extensions/ext1.raw")),
         }];
-
-        assert_eq!(find_existing_extension_path(&hash1, &old_extensions), None);
+        let subsystem = ExtensionsSubsystem::default();
+        assert_eq!(
+            subsystem
+                .find_existing_extension_path(&hash1, &old_extensions)
+                .unwrap(),
+            None
+        );
     }
 }
 

@@ -162,6 +162,21 @@ impl Subsystem for ExtensionsSubsystem {
             debug!("Skipping step 'configure' because servicing type is not RuntimeUpdate.");
             return Ok(());
         }
+
+        // If Finalize is called separately from Stage during a runtime update,
+        // we need to re-populate the subsystem's state.
+        if self.extensions.is_empty() && self.extensions_old.is_empty() {
+            self.staging_dir = PathBuf::from(EXTENSION_IMAGE_STAGING_DIRECTORY);
+            trace!(
+                "Defining staging directory for extension images at '{}'",
+                self.staging_dir.display()
+            );
+            // In this call to populate_extensions(), all extension images
+            // should already be downloaded to the staging directory.
+            self.populate_extensions(ctx)
+                .structured(InternalError::PopulateExtensionImages)?;
+        }
+
         // Ensure that desired target directories exist on the target OS.
         self.create_directories(Path::new(ROOT_MOUNT_POINT_PATH))
             .structured(ServicingError::CreateExtensionImageDirectories)?;
@@ -256,6 +271,10 @@ impl ExtensionsSubsystem {
         // Create temporary directory in which to download extension images
         // before copying them to their final path.
         if !self.staging_dir.exists() {
+            trace!(
+                "Creating staging directory at '{}'",
+                self.staging_dir.display()
+            );
             fs::create_dir_all(&self.staging_dir).with_context(|| {
                 format!("Failed to create dir '{}'", self.staging_dir.display())
             })?;
@@ -294,27 +313,16 @@ impl ExtensionsSubsystem {
 
         for ext in hc_extensions {
             let extension_file = if new {
-                // First, check if this extension already exists on the system.
-                if let Some(existing_file_path) = match &ext_type {
-                    ExtensionType::Sysext => {
-                        utils::find_existing_extension_path(&ext.sha384, &ctx.spec_old.os.sysexts)
+                // First, check if this extension already exists on the OS.
+                if let Some(existing_file_path) =
+                    match &ext_type {
+                        ExtensionType::Sysext => self
+                            .find_existing_extension_path(&ext.sha384, &ctx.spec_old.os.sysexts)?,
+                        ExtensionType::Confext => self
+                            .find_existing_extension_path(&ext.sha384, &ctx.spec_old.os.confexts)?,
                     }
-                    ExtensionType::Confext => {
-                        utils::find_existing_extension_path(&ext.sha384, &ctx.spec_old.os.confexts)
-                    }
-                } {
-                    // Check if Trident is running in a container, and adjust path accordingly.
-                    let adjusted_path =
-                        container::get_host_relative_path(existing_file_path.clone())
-                            .unstructured("Failed to adjust file path for container")?;
-                    // Ensure that file exists.
-                    ensure!(
-                        adjusted_path.exists(),
-                        "Expected to find extension image from URL '{}' at path '{}' based on previous Host Configuration, but path does not exist",
-                        ext.url,
-                        existing_file_path.display() // Display the unadjusted path for readability
-                    );
-                    adjusted_path
+                {
+                    existing_file_path
                 } else {
                     // The extension is new to the OS, so we need to download it.
                     // Create and persist a temporary file; get its path.
@@ -343,7 +351,20 @@ impl ExtensionsSubsystem {
                         )
                     }
 
-                    temp_file
+                    // Rename the file to use the hash as the filename. This is
+                    // useful for identifying the extension image in the staging
+                    // directory if Finalize of a runtime update is called
+                    // separately from Stage.
+                    let hash_based_filename =
+                        self.staging_dir.join(format!("{computed_sha384}.raw"));
+                    fs::rename(&temp_file, &hash_based_filename).with_context(|| {
+                        format!(
+                            "Failed to rename downloaded file to hash-based name: '{}'",
+                            hash_based_filename.display()
+                        )
+                    })?;
+
+                    hash_based_filename
                 }
             } else {
                 // For extension images from the old Host Configuration, use the
@@ -923,6 +944,14 @@ mod functional_test {
             assert_eq!(
                 subsystem_ext.path,
                 PathBuf::from(expected_dir).join(format!("{}.raw", subsystem_ext.name))
+            );
+
+            // Verify that the staged file name is the extension's hash.
+            assert_eq!(
+                subsystem_ext.temp_path,
+                subsystem
+                    .staging_dir
+                    .join(format!("{}.raw", subsystem_ext.sha384))
             );
         }
     }
