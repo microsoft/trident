@@ -23,13 +23,13 @@ steps:
           swtpm-tools \
           bridge-utils \
           virt-manager \
-          qemu-efi=2022.02-3ubuntu0.22.04.3 \
+          qemu-efi \
           qemu-kvm \
           libtpms0 \
           libvirt-daemon-system \
           libvirt-clients \
           python3-libvirt \
-          ovmf=2022.02-3ubuntu0.22.04.3 \
+          ovmf \
           openssl \
           python3-netifaces \
           python3-docker \

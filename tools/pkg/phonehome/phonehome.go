@@ -1,6 +1,7 @@
 package phonehome
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -32,15 +33,16 @@ func (result *PhoneHomeResult) Log() {
 	}
 }
 
-func (result *PhoneHomeResult) ExitCode() int {
-	if result.State == PhoneHomeResultSuccess {
-		return 0
-	} else if result.State == PhoneHomeResultFailure {
-		// Two is the specific error code for Trident failure
-		return 2
-	} else {
-		// One is the generic error code
-		return 1
+func (result *PhoneHomeResult) ToError() error {
+	switch result.State {
+	case PhoneHomeResultSuccess:
+		return nil
+	case PhoneHomeResultFailure:
+		return &PhoneHomeFailureError{PhoneHomeResult: *result}
+	case PhoneHomeResultError:
+		return fmt.Errorf("logstream had an error: %s", result.Message)
+	default:
+		return fmt.Errorf("unknown state '%s'", result.State)
 	}
 }
 
@@ -49,6 +51,15 @@ func errorPhoneHomeResult(err error) PhoneHomeResult {
 		State:   PhoneHomeResultError,
 		Message: err.Error(),
 	}
+}
+
+// Error type for when Trident reports a failure state.
+type PhoneHomeFailureError struct {
+	PhoneHomeResult
+}
+
+func (e *PhoneHomeFailureError) Error() string {
+	return fmt.Sprintf("Trident reported status '%s'", e.State)
 }
 
 type PhoneHomeResultState string
@@ -109,4 +120,21 @@ func SetupPhoneHomeServer(result chan<- PhoneHomeResult, remoteAddressFile strin
 			log.WithField("state", message.State).WithField("host_status", message.Host_Status).Info(message.Message)
 		}
 	})
+}
+
+// GetExitCodeFromErrorAndLog logs the error and returns the appropriate exit code.
+func GetExitCodeFromErrorAndLog(err error) int {
+	if err == nil {
+		return 0
+	}
+
+	if tridentErr, ok := err.(*PhoneHomeFailureError); ok {
+		log.Errorf("Trident failed:\n%s\n", tridentErr.Message)
+		// Exit code is 2 for Trident failures.
+		return 2
+	} else {
+		log.Errorf("%v", err)
+		// Return 1 for generic errors.
+		return 1
+	}
 }

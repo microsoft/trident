@@ -84,8 +84,8 @@ pub struct Os {
     pub confexts: Vec<Extension>,
 
     /// Options for configuring the UEFI fallback.
-    #[serde(default, skip_serializing_if = "is_default")]
-    pub uefi_fallback: Option<UefiFallbackMode>,
+    #[serde(default)]
+    pub uefi_fallback: UefiFallbackMode,
 }
 
 /// Additional kernel command line options to add to the image.
@@ -168,11 +168,11 @@ impl FromStr for SelinuxMode {
 /// This configuration option allows specifying how Trident should
 /// populate the UEFI fallback boot files during OS installation or
 /// update.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Copy)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq, Copy)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub enum UefiFallbackMode {
-    /// # Rollback
+    /// # Conservative
     ///
     /// During clean install, the UEFI fallback will be updated during
     /// `finalize` to boot to the target OS.
@@ -181,21 +181,22 @@ pub enum UefiFallbackMode {
     /// `finalize` and then will be updated to boot to the target OS when
     /// `commit` validates the target OS as healthy. This aligns with how
     /// Trident handles the UEFI boot variables during an update.
-    Rollback,
+    #[default]
+    Conservative,
 
-    /// # Rollforward
+    /// # Optimistic
     ///
     /// During clean install, the UEFI fallback will be updated during
     /// `finalize` to boot to the target OS.
     /// During an A/B update, the UEFI fallback will
     /// be updated to boot to the target OS (the newly installed OS)
     /// during the finalize stage.
-    Rollforward,
+    Optimistic,
 
-    /// # None
+    /// # Disabled
     ///
     /// No UEFI fallback boot files are installed.
-    None,
+    Disabled,
 }
 
 /// Configuration for the management OS.
@@ -425,34 +426,29 @@ mod tests {
 
     #[test]
     fn test_serde_uefi_fallback_mode() {
+        let yaml_without_fallback = "";
+        let deserialized = serde_yaml::from_str::<Os>(yaml_without_fallback).unwrap();
+        assert_eq!(deserialized.uefi_fallback, UefiFallbackMode::Conservative);
+
         let mut config = Os {
-            uefi_fallback: Some(UefiFallbackMode::None),
+            uefi_fallback: UefiFallbackMode::Disabled,
             ..Default::default()
         };
         let serialized = serde_yaml::to_string(&config).unwrap();
-        assert!(serialized.contains("uefiFallback: none"));
+        assert!(serialized.contains("uefiFallback: disabled"));
         let deserialized = serde_yaml::from_str::<Os>(&serialized).unwrap();
-        assert_eq!(deserialized.uefi_fallback, Some(UefiFallbackMode::None));
+        assert_eq!(deserialized.uefi_fallback, UefiFallbackMode::Disabled);
 
-        config.uefi_fallback = Some(UefiFallbackMode::Rollback);
+        config.uefi_fallback = UefiFallbackMode::Conservative;
         let serialized = serde_yaml::to_string(&config).unwrap();
-        assert!(serialized.contains("uefiFallback: rollback"));
+        assert!(serialized.contains("uefiFallback: conservative"));
         let deserialized = serde_yaml::from_str::<Os>(&serialized).unwrap();
-        assert_eq!(deserialized.uefi_fallback, Some(UefiFallbackMode::Rollback));
+        assert_eq!(deserialized.uefi_fallback, UefiFallbackMode::Conservative);
 
-        config.uefi_fallback = Some(UefiFallbackMode::Rollforward);
+        config.uefi_fallback = UefiFallbackMode::Optimistic;
         let serialized = serde_yaml::to_string(&config).unwrap();
-        assert!(serialized.contains("uefiFallback: rollforward"));
+        assert!(serialized.contains("uefiFallback: optimistic"));
         let deserialized = serde_yaml::from_str::<Os>(&serialized).unwrap();
-        assert_eq!(
-            deserialized.uefi_fallback,
-            Some(UefiFallbackMode::Rollforward)
-        );
-
-        config.uefi_fallback = None;
-        let serialized = serde_yaml::to_string(&config).unwrap();
-        assert!(!serialized.contains("uefiFallback:"));
-        let deserialized = serde_yaml::from_str::<Os>(&serialized).unwrap();
-        assert!(deserialized.uefi_fallback.is_none());
+        assert_eq!(deserialized.uefi_fallback, UefiFallbackMode::Optimistic);
     }
 }

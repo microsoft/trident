@@ -14,7 +14,7 @@ def inject_uefi_fallback_testing(host_config_path, runtimeEnv, uefiFallbackMode=
     # is not already set.
     if "uefiFallback" not in host_config["os"]:
         if uefiFallbackMode is None:
-            uefi_fallback_modes = ["none", "rollback", "rollforward"]
+            uefi_fallback_modes = ["disabled", "conservative", "optimistic"]
             # Randomly pick a fallback mode for testing.
             uefiFallbackMode = random.choice(uefi_fallback_modes)
         host_config["os"]["uefiFallback"] = uefiFallbackMode

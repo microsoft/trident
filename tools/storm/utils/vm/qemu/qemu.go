@@ -1,5 +1,4 @@
-// Package storm provides helpers for Trident loop-update Storm tests.
-// This file contains helpers converted from Bash scripts in scripts/loop-update.
+// Package provides libvirt/qemu VM utility functions.
 package qemu
 
 import (
@@ -10,8 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-	"tridenttools/storm/servicing/utils/file"
+
 	stormutils "tridenttools/storm/utils"
+	stormfile "tridenttools/storm/utils/file"
 
 	"github.com/digitalocean/go-libvirt"
 	"github.com/sirupsen/logrus"
@@ -31,7 +31,7 @@ func (cfg QemuConfig) DeployQemuVM(vmName string, artifactsDir string, outputPat
 	}
 
 	// Find image file
-	imageFile, err := file.FindFile(artifactsDir, "^trident-vm-.*-testimage.qcow2$")
+	imageFile, err := stormfile.FindFile(artifactsDir, "^trident-vm-.*-testimage.qcow2$")
 	if err != nil {
 		return fmt.Errorf("failed to find image file: %w", err)
 	}

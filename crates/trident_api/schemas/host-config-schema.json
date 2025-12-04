@@ -693,12 +693,12 @@
         },
         "uefiFallback": {
           "description": "Options for configuring the UEFI fallback.",
+          "default": "conservative",
           "allOf": [
             {
               "$ref": "#/definitions/UefiFallbackMode"
             }
-          ],
-          "nullable": true
+          ]
         },
         "users": {
           "description": "Users to configure on the host.",
@@ -1611,27 +1611,27 @@
       "description": "UEFI fallback mode\n\nUEFI provides a mechanism for booting from an EFI file without a corresponding boot variable existing in NVRAM. This is known as the UEFI fallback mode, and it uses a specific file path (/EFI/BOOT) to locate the fallback bootloader.\n\nThis configuration option allows specifying how Trident should populate the UEFI fallback boot files during OS installation or update.",
       "oneOf": [
         {
-          "title": "Rollback",
+          "title": "Conservative",
           "description": "During clean install, the UEFI fallback will be updated during `finalize` to boot to the target OS. During an A/B update, the UEFI fallback will be updated to boot to the servicing OS (the existing OS) during `finalize` and then will be updated to boot to the target OS when `commit` validates the target OS as healthy. This aligns with how Trident handles the UEFI boot variables during an update.",
           "type": "string",
           "enum": [
-            "rollback"
+            "conservative"
           ]
         },
         {
-          "title": "Rollforward",
+          "title": "Optimistic",
           "description": "During clean install, the UEFI fallback will be updated during `finalize` to boot to the target OS. During an A/B update, the UEFI fallback will be updated to boot to the target OS (the newly installed OS) during the finalize stage.",
           "type": "string",
           "enum": [
-            "rollforward"
+            "optimistic"
           ]
         },
         {
-          "title": "None",
+          "title": "Disabled",
           "description": "No UEFI fallback boot files are installed.",
           "type": "string",
           "enum": [
-            "none"
+            "disabled"
           ]
         }
       ]

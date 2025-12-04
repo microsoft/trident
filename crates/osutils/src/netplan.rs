@@ -41,6 +41,17 @@ fn render_netplan_yaml(value: &NetworkConfig) -> Result<String, Error> {
     serde_yaml::to_string(&NetplanConfig { network: value })
         .context("Failed to render netplan yaml")
 }
+
+/// Remove Trident's netplan config file.
+pub fn remove() -> Result<(), Error> {
+    if fs::exists(TRIDENT_NETPLAN_FILE)? {
+        fs::remove_file(TRIDENT_NETPLAN_FILE).with_context(|| {
+            format!("Failed to remove netplan config at {TRIDENT_NETPLAN_FILE}")
+        })?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

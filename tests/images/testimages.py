@@ -39,6 +39,58 @@ DEFINED_IMAGES: List[ImageConfig] = [
             Path("tests/images/azl-installer/iso/images/trident-testimage.cosi"),
         ],
     ),
+    ImageConfig(
+        "trident-vm-grub-testimage",
+        base_image=BaseImage.QEMU_GUEST,
+        config="trident-vm-testimage",
+        config_file="base/updateimg-grub.yaml",
+        ssh_key="files/id_rsa.pub",
+    ),
+    ImageConfig(
+        "trident-vm-grub-verity-testimage",
+        base_image=BaseImage.QEMU_GUEST,
+        config="trident-vm-testimage",
+        config_file="base/updateimg-grub-verity.yaml",
+        ssh_key="files/id_rsa.pub",
+    ),
+    ImageConfig(
+        "trident-vm-root-verity-testimage",
+        base_image=BaseImage.QEMU_GUEST,
+        config="trident-vm-testimage",
+        config_file="base/baseimg-root-verity.yaml",
+        requires_ukify=True,
+        ssh_key="files/id_rsa.pub",
+    ),
+    ImageConfig(
+        "trident-vm-usr-verity-testimage",
+        base_image=BaseImage.QEMU_GUEST,
+        config="trident-vm-testimage",
+        config_file="base/baseimg-usr-verity.yaml",
+        requires_ukify=True,
+        ssh_key="files/id_rsa.pub",
+    ),
+    ImageConfig(
+        "trident-vm-grub-verity-azure-testimage",
+        base_image=BaseImage.CORE_SELINUX,
+        config="trident-vm-testimage",
+        config_file="base/updateimg-grub-verity-azure.yaml",
+    ),
+    ImageConfig(
+        "trident-vm-grub-testimage-arm64",
+        base_image=BaseImage.CORE_ARM64,
+        config="trident-vm-testimage",
+        config_file="base/updateimg-grub.yaml",
+        ssh_key="files/id_rsa.pub",
+        architecture=SystemArchitecture.ARM64,
+    ),
+    ImageConfig(
+        "trident-vm-grub-verity-testimage-arm64",
+        base_image=BaseImage.CORE_ARM64,
+        config="trident-vm-testimage",
+        config_file="base/updateimg-grub-verity.yaml",
+        ssh_key="files/id_rsa.pub",
+        architecture=SystemArchitecture.ARM64,
+    ),
 ]
 
 ARTIFACTS = ArtifactManifest(

@@ -11,7 +11,7 @@ import (
 // If a result file is specified, it writes the result to that file.
 // If the result indicates that we should terminate, it returns.
 // If the terminate channel receives something, it returns.
-func ListenLoop(ctx context.Context, result <-chan PhoneHomeResult, waitForProvisioned bool, maxFailures uint) int {
+func ListenLoop(ctx context.Context, result <-chan PhoneHomeResult, waitForProvisioned bool, maxFailures uint) error {
 	failureCount := uint(0)
 
 	// Loop forever!
@@ -21,7 +21,7 @@ func ListenLoop(ctx context.Context, result <-chan PhoneHomeResult, waitForProvi
 
 		case <-ctx.Done():
 			// If we're told to terminate, then we're done.
-			return 0
+			return ctx.Err()
 
 		case result := <-result:
 			// If we get a result log it.
@@ -35,7 +35,7 @@ func ListenLoop(ctx context.Context, result <-chan PhoneHomeResult, waitForProvi
 			default:
 				if !waitForProvisioned {
 					// First successful phonehome message should return the exit code.
-					return result.ExitCode()
+					return result.ToError()
 				}
 
 				var hostStatus map[string]interface{}
@@ -47,14 +47,14 @@ func ListenLoop(ctx context.Context, result <-chan PhoneHomeResult, waitForProvi
 				} else if hostStatus["servicingState"] == "provisioned" {
 					// Only phonehome message with provisioned servicingState should
 					// return the exit code.
-					return result.ExitCode()
+					return result.ToError()
 				}
 			}
 
 			// Check if we've exceeded the maximum number of failures.
 			if failureCount > maxFailures {
 				log.Errorf("Maximum number of failures (%d) exceeded. Terminating.", maxFailures)
-				return result.ExitCode()
+				return result.ToError()
 			}
 		}
 	}

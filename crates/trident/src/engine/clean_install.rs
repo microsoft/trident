@@ -263,6 +263,8 @@ fn stage_clean_install(
     // of sysexts and confexts configured in the extensions subsystem.
     engine::update_host_configuration(subsystems, &mut ctx)?;
 
+    engine::clean_up(subsystems, &ctx)?;
+
     // At this point, clean install has been staged, so update Host Status
     debug!(
         "Updating host's servicing state to '{:?}'",

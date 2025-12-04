@@ -141,7 +141,9 @@ struct HostConfigMarkdownOpts {
 
 fn main() -> Result<(), Error> {
     if std::env::var("RUST_LOG").is_err() {
-        std::env::set_var("RUST_LOG", "docbuilder=info");
+        unsafe {
+            std::env::set_var("RUST_LOG", "docbuilder=info");
+        }
     }
 
     pretty_env_logger::init();

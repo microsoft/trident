@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"tridenttools/pkg/config"
+	"tridenttools/pkg/netlaunch"
 	"tridenttools/pkg/ref"
 	"tridenttools/pkg/virtdeploy"
 
@@ -127,8 +127,8 @@ func (c *CreateOneCmd) Run() error {
 
 	if c.Netlaunch != "" {
 		// Netlaunch can figure out everything but the VM UUID itself.
-		config := config.NetLaunchConfig{
-			Netlaunch: config.NetlaunchConfigInner{
+		config := netlaunch.NetLaunchConfig{
+			Netlaunch: netlaunch.HostConnectionConfiguration{
 				LocalVmUuid:  ref.Of(status.VMs[0].Uuid.String()),
 				LocalVmNvRam: &status.VMs[0].NvramPath,
 			},

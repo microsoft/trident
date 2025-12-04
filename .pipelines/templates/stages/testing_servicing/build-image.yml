@@ -66,7 +66,7 @@ jobs:
         displayName: Download SSH Keys
 
       - template: ../common_tasks/find-base-image-version.yml
-      - template: .pipelines/templates/trident-testimg-template.yml@test-images
+      - template: ../test_images/trident-testimg-template.yml
         parameters:
           target: ${{ parameters.makeTarget }}
           outputDirectory: "$(ob_outputDirectory)"
@@ -76,7 +76,6 @@ jobs:
           baseimgBuildType: $(BASEIMG_BUILD_TYPE)
           baseimgVersion: $(BASEIMG_VERSION)
           baseimgAzureLinuxVersion: ${{ parameters.baseimgAzlVersion }}
-          downloadTrident: false
           baseimgTypes: 
             - ${{ parameters.baseimgType }}
           useStagedSshKeys: ${{ parameters.useStagedSshKeys }}
