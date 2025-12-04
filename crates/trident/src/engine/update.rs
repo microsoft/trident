@@ -119,29 +119,19 @@ pub(crate) fn update(
         servicing_state = format!("{:?}", state.host_status().servicing_state),
     );
 
-    // Stage update
-    if servicing_type == ServicingType::AbUpdate {
-        ab_update::stage_update(
-            &mut subsystems,
-            ctx,
-            state,
-            #[cfg(feature = "grpc-dangerous")]
-            sender,
-        )
-        .message("Failed to stage A/B update")?;
-    } else if servicing_type == ServicingType::RuntimeUpdate {
-        runtime_update::stage_update(
-            &mut subsystems,
-            ctx,
-            state,
-            #[cfg(feature = "grpc-dangerous")]
-            sender,
-        )
-        .message("Failed to stage runtime update")?;
-    }
-
     match servicing_type {
         ServicingType::AbUpdate => {
+            // Stage update.
+            ab_update::stage_update(
+                &mut subsystems,
+                ctx,
+                state,
+                #[cfg(feature = "grpc-dangerous")]
+                sender,
+            )
+            .message("Failed to stage A/B update")?;
+
+            // Determine if finalize is required or not.
             if !allowed_operations.has_finalize() {
                 info!("Finalizing of A/B update not requested, skipping reboot");
 
@@ -165,6 +155,17 @@ pub(crate) fn update(
             }
         }
         ServicingType::RuntimeUpdate => {
+            // Stage update.
+            runtime_update::stage_update(
+                &mut subsystems,
+                ctx,
+                state,
+                #[cfg(feature = "grpc-dangerous")]
+                sender,
+            )
+            .message("Failed to stage runtime update")?;
+
+            // Determine if finalize is required or not.
             if !allowed_operations.has_finalize() {
                 info!("Finalizing of runtime update not requested, skipping reboot");
                 // Persist the Trident background log and metrics file to the new root. Otherwise,
