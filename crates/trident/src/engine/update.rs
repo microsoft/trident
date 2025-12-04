@@ -46,7 +46,7 @@ pub(crate) fn update(
         })?;
     }
 
-    // Need to re-set the Host Status in case another A/B update has been previously staged
+    // Need to re-set the Host Status in case another runtime update has been previously staged
     if state.host_status().servicing_state == ServicingState::RuntimeUpdateStaged {
         debug!("Resetting runtime update state");
         state.with_host_status(|host_status| {
