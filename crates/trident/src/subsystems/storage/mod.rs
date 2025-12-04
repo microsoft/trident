@@ -21,7 +21,6 @@ use crate::engine::{EngineContext, Subsystem};
 
 mod encryption;
 mod fstab;
-mod image;
 mod osimage;
 mod raid;
 mod verity;
@@ -159,7 +158,8 @@ impl Subsystem for StorageSubsystem {
         }
 
         // If ab_update_required() returns true, A/B update is required.
-        if image::ab_update_required(ctx)
+        if ctx
+            .ab_update_required()
             .message("Failed to determine if A/B update is required")?
         {
             return Ok(ServicingType::AbUpdate);

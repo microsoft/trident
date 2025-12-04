@@ -20,7 +20,7 @@ use crate::osimage::OsImage;
 
 #[allow(dead_code)]
 pub mod filesystem;
-
+pub mod image;
 #[cfg(test)]
 mod test_utils;
 

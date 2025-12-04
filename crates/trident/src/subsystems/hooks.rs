@@ -46,6 +46,15 @@ impl Subsystem for HooksSubsystem {
         self.writable_etc_overlay
     }
 
+    fn select_servicing_type(&self, ctx: &EngineContext) -> Result<ServicingType, TridentError> {
+        if trident_api::is_default(&ctx.spec_old) {
+            return Ok(ServicingType::CleanInstall);
+        } else if !trident_api::is_default(&ctx.spec.scripts) {
+            return Ok(ServicingType::AbUpdate);
+        }
+        Ok(ServicingType::NoActiveServicing)
+    }
+
     fn validate_host_config(&self, ctx: &EngineContext) -> Result<(), TridentError> {
         // Ensure that all scripts that should be run and have a path actually exist
         for script in ctx

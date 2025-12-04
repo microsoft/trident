@@ -85,8 +85,14 @@ pub(crate) trait Subsystem: Send {
     fn select_servicing_type(&self, ctx: &EngineContext) -> Result<ServicingType, TridentError> {
         if is_default(&ctx.spec_old) {
             return Ok(ServicingType::CleanInstall);
+        } else if ctx
+            .ab_update_required()
+            .message("Failed to determine if A/B update is required")?
+        {
+            return Ok(ServicingType::AbUpdate);
         }
-        Ok(ServicingType::AbUpdate)
+
+        Ok(ServicingType::NoActiveServicing)
     }
 
     /// Servicing types on which a subsystem may run. By default, all subsystems
