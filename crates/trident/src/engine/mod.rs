@@ -36,6 +36,7 @@ use crate::{
 };
 
 // Engine functionality
+pub mod ab_update;
 pub mod bootentries;
 mod clean_install;
 mod context;
@@ -56,7 +57,7 @@ pub(crate) mod install_index;
 pub(crate) use clean_install::{clean_install, finalize_clean_install};
 pub(crate) use context::{filesystem, EngineContext};
 pub use newroot::NewrootMount;
-pub(crate) use update::{finalize_update, update};
+pub(crate) use update::update;
 
 /// Runs on Clean Install, A/B Update, and Runtime Update.
 pub const RUNS_ON_ALL: &[ServicingType] = &[
