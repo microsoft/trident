@@ -113,13 +113,13 @@ pub(crate) fn finalize_update(
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
 ) -> Result<ExitKind, TridentError> {
+    info!("Finalizing runtime update");
+
     if servicing_type != ServicingType::RuntimeUpdate {
         return Err(TridentError::internal(
-            "Unimplemented servicing type for finalize",
+            "Unimplemented servicing type for runtime update finalize",
         ));
     }
-
-    info!("Finalizing runtime update");
 
     let mut ctx = EngineContext {
         spec: state.host_status().spec.clone(),

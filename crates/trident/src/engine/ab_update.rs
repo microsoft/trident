@@ -4,7 +4,7 @@ use log::{debug, info, warn};
 #[cfg(feature = "grpc-dangerous")]
 use tokio::sync::mpsc;
 
-use osutils::{chroot, container, path::join_relative};
+use osutils::{chroot, container};
 use trident_api::{
     constants::{internal_params::NO_TRANSITION, ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
     error::{
@@ -161,13 +161,13 @@ pub(crate) fn finalize_update(
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
 ) -> Result<ExitKind, TridentError> {
+    info!("Finalizing A/B update");
+
     if servicing_type != ServicingType::AbUpdate {
         return Err(TridentError::internal(
-            "Unimplemented servicing type for finalize",
+            "Unimplemented servicing type for A/B update finalize",
         ));
     }
-
-    info!("Finalizing A/B update");
 
     let ctx = EngineContext {
         spec: state.host_status().spec.clone(),
@@ -183,18 +183,8 @@ pub(crate) fn finalize_update(
         is_uki: None,
     };
 
-    let (root_path, esp_path) = if container::is_running_in_container()
-        .message("Failed to check if Trident is running in a container")?
-    {
-        let host_root = container::get_host_root_path().message("Failed to get host root path")?;
-        let esp_root = join_relative(&host_root, ESP_MOUNT_POINT_PATH);
-        (host_root, esp_root)
-    } else {
-        (
-            PathBuf::from(ROOT_MOUNT_POINT_PATH),
-            PathBuf::from(ESP_MOUNT_POINT_PATH),
-        )
-    };
+    let root_path = container::get_host_relative_path(PathBuf::from(ROOT_MOUNT_POINT_PATH))?;
+    let esp_path = container::get_host_relative_path(PathBuf::from(ESP_MOUNT_POINT_PATH))?;
     bootentries::create_and_update_boot_variables(&ctx, &esp_path)?;
     // Analogous to how UEFI variables are configured, finalize must start configuring
     // UEFI fallback, and a successful commit will finish it.
