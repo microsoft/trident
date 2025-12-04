@@ -135,8 +135,8 @@ pub(crate) fn update(
             if !allowed_operations.has_finalize() {
                 info!("Finalizing of A/B update not requested, skipping reboot");
 
-                // Persist the Trident background log and metrics file to the new root. Otherwise,
-                // the staging logs would be lost.
+                // Persist the Trident background log and metrics file to the
+                // target OS. Otherwise, the staging logs would be lost.
                 engine::persist_background_log_and_metrics(
                     &state.host_status().spec.trident.datastore_path,
                     None,
@@ -167,7 +167,7 @@ pub(crate) fn update(
 
             // Determine if finalize is required or not.
             if !allowed_operations.has_finalize() {
-                info!("Finalizing of runtime update not requested, skipping reboot");
+                info!("Finalizing of runtime update not requested.");
                 // Persist the Trident background log and metrics file to the new root. Otherwise,
                 // the staging logs would be lost.
                 engine::persist_background_log_and_metrics(
