@@ -1,10 +1,10 @@
 use std::time::Instant;
 
 use log::{debug, info, warn};
-use osutils::efivar;
 #[cfg(feature = "grpc-dangerous")]
 use tokio::sync::mpsc;
 
+use osutils::efivar;
 use trident_api::{
     error::{InvalidInputError, TridentError},
     status::{HostStatus, ServicingState, ServicingType},
