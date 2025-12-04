@@ -69,13 +69,13 @@ pub(crate) fn stage_update(
     // At this point, deployment has been staged, so update servicing state
     debug!(
         "Updating host's servicing state to '{:?}'",
-        ServicingState::AbUpdateStaged
+        ServicingState::RuntimeUpdateStaged
     );
     state.with_host_status(|hs| {
         *hs = HostStatus {
             spec: ctx.spec,
             spec_old: ctx.spec_old,
-            servicing_state: ServicingState::AbUpdateStaged,
+            servicing_state: ServicingState::RuntimeUpdateStaged,
             ab_active_volume: ctx.ab_active_volume,
             partition_paths: ctx.partition_paths,
             disk_uuids: ctx.disk_uuids,
@@ -160,9 +160,9 @@ pub(crate) fn finalize_update(
 
     debug!(
         "Updating host's servicing state to '{:?}'",
-        ServicingState::AbUpdateFinalized
+        ServicingState::Provisioned
     );
-    state.with_host_status(|status| status.servicing_state = ServicingState::AbUpdateFinalized)?;
+    state.with_host_status(|status| status.servicing_state = ServicingState::Provisioned)?;
     #[cfg(feature = "grpc-dangerous")]
     grpc::send_host_status_state(sender, state)?;
     state.close();
