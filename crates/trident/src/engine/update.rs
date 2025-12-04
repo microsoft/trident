@@ -31,24 +31,18 @@ pub(crate) fn update(
     let mut subsystems = SUBSYSTEMS.lock().unwrap();
 
     // Need to re-set the Host Status in case another update has been previously staged.
-    match state.host_status().servicing_state {
-        ServicingState::AbUpdateStaged => {
-            debug!("Resetting A/B update state");
-            state.with_host_status(|host_status| {
-                host_status.spec = host_status.spec_old.clone();
-                host_status.spec_old = Default::default();
-                host_status.servicing_state = ServicingState::Provisioned;
-            })?;
-        }
-        ServicingState::RuntimeUpdateStaged => {
-            debug!("Resetting runtime update state");
-            state.with_host_status(|host_status| {
-                host_status.spec = host_status.spec_old.clone();
-                host_status.spec_old = Default::default();
-                host_status.servicing_state = ServicingState::Provisioned;
-            })?;
-        }
-        _ => {}
+    if state.host_status().servicing_state == ServicingState::AbUpdateStaged
+        || state.host_status().servicing_state == ServicingState::RuntimeUpdateStaged
+    {
+        debug!(
+            "Resetting '{:?}' state",
+            state.host_status().servicing_state
+        );
+        state.with_host_status(|host_status| {
+            host_status.spec = host_status.spec_old.clone();
+            host_status.spec_old = Default::default();
+            host_status.servicing_state = ServicingState::Provisioned;
+        })?;
     }
 
     let mut ctx = EngineContext {
