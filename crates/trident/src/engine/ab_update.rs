@@ -35,8 +35,6 @@ use super::Subsystem;
 /// - ctx: EngineContext.
 /// - state: A mutable reference to the DataStore.
 /// - sender: Optional mutable reference to the gRPC sender.
-///
-/// On success, returns an Option<NewrootMount>; This is not null only for A/B updates.
 #[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", ctx.servicing_type)))]
 pub(crate) fn stage_update(
     subsystems: &mut [Box<dyn Subsystem>],
@@ -55,7 +53,12 @@ pub(crate) fn stage_update(
         ServicingType::NoActiveServicing => {
             return Err(TridentError::internal("No active servicing type"))
         }
-        _ => {}
+        _ => {
+            info!(
+                "Staging update of servicing type '{:?}'",
+                ctx.servicing_type
+            )
+        }
     }
 
     // Best effort to measure memory, CPU, and network usage during execution
@@ -147,9 +150,10 @@ pub(crate) fn stage_update(
     Ok(())
 }
 
-/// Finalizes an A/B update. Takes in 3 arguments:
+/// Finalizes an A/B update. Takes in 4 arguments:
 /// - state: A mutable reference to the DataStore.
 /// - servicing_type: The current servicing type, expected to be AbUpdate.
+/// - update_start_time: Optional, the time at which the update started staging.
 /// - sender: Optional mutable reference to the gRPC sender.
 #[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", servicing_type)))]
 pub(crate) fn finalize_update(
@@ -160,7 +164,7 @@ pub(crate) fn finalize_update(
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
 ) -> Result<ExitKind, TridentError> {
-    info!("Finalizing update");
+    info!("Finalizing A/B update");
 
     if servicing_type != ServicingType::AbUpdate {
         return Err(TridentError::internal(

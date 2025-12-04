@@ -27,8 +27,6 @@ use super::Subsystem;
 /// - ctx: EngineContext.
 /// - state: A mutable reference to the DataStore.
 /// - sender: Optional mutable reference to the gRPC sender.
-///
-/// On success, returns an Option<NewrootMount>; This is not null only for A/B updates.
 #[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", ctx.servicing_type)))]
 pub(crate) fn stage_update(
     subsystems: &mut [Box<dyn Subsystem>],
@@ -66,7 +64,7 @@ pub(crate) fn stage_update(
 
     engine::prepare(subsystems, &ctx)?;
 
-    // At this point, deployment has been staged, so update servicing state
+    // At this point, the runtime update has been staged, so update servicing state
     debug!(
         "Updating host's servicing state to '{:?}'",
         ServicingState::RuntimeUpdateStaged
@@ -103,7 +101,7 @@ pub(crate) fn stage_update(
 /// - subsystems: A mutable reference to the list of subsystems.
 /// - state: A mutable reference to the DataStore.
 /// - servicing_type: The current servicing type, expected to be RuntimeUpdate.
-/// - update_start_time: The time at which this function was called.
+/// - update_start_time: Optional, the time at which the update staging began.
 /// - image: The OS image.
 /// - sender: Optional mutable reference to the gRPC sender.
 #[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", servicing_type)))]
