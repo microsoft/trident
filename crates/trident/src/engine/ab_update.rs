@@ -154,6 +154,8 @@ pub(crate) fn finalize_update(
         ));
     }
 
+    info!("Finalizing A/B update");
+
     let ctx = EngineContext {
         spec: state.host_status().spec.clone(),
         spec_old: state.host_status().spec_old.clone(),

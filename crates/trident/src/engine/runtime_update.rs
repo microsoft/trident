@@ -95,6 +95,8 @@ pub(crate) fn finalize_update(
         ));
     }
 
+    info!("Finalizing runtime update");
+
     let mut ctx = EngineContext {
         spec: state.host_status().spec.clone(),
         spec_old: state.host_status().spec_old.clone(),
