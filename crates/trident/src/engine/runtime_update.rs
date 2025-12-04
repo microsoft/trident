@@ -99,8 +99,12 @@ pub(crate) fn stage_update(
     Ok(())
 }
 
-/// Finalizes an update. Takes in 2 arguments:
+/// Finalizes an update. Takes in 6 arguments:
+/// - subsystems: A mutable reference to the list of subsystems.
 /// - state: A mutable reference to the DataStore.
+/// - servicing_type: The current servicing type, expected to be RuntimeUpdate.
+/// - update_start_time: The time at which this function was called.
+/// - image: The OS image.
 /// - sender: Optional mutable reference to the gRPC sender.
 #[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", servicing_type)))]
 pub(crate) fn finalize_update(

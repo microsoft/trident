@@ -147,8 +147,9 @@ pub(crate) fn stage_update(
     Ok(())
 }
 
-/// Finalizes an A/B update. Takes in 2 arguments:
+/// Finalizes an A/B update. Takes in 3 arguments:
 /// - state: A mutable reference to the DataStore.
+/// - servicing_type: The current servicing type, expected to be AbUpdate.
 /// - sender: Optional mutable reference to the gRPC sender.
 #[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", servicing_type)))]
 pub(crate) fn finalize_update(
