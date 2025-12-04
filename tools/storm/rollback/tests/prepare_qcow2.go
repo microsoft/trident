@@ -62,20 +62,20 @@ func PrepareQcow2(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 		filepath.Join("/artifacts", extensionFileName),
 		extensionFileName,
 	)
-	logrus.Tracef("Creating image customizer config file: %s", customizerConfigPath)
+	logrus.Tracef("Creating Image Customizer config file: %s", customizerConfigPath)
 	logrus.Tracef("Image customizer config content:\n%s", customizerConfigContent)
 	if err := os.WriteFile(customizerConfigPath, []byte(customizerConfigContent), 0644); err != nil {
-		return fmt.Errorf("failed to write image customizer config file: %w", err)
+		return fmt.Errorf("failed to write Image Customizer config file: %w", err)
 	}
-	logrus.Tracef("Wrote image customizer config file: %s", customizerConfigPath)
+	logrus.Tracef("Wrote Image Customizer config file: %s", customizerConfigPath)
 
 	// Pull Image Customizer image
 	pullArgs := []string{"pull", testConfig.ImageCustomizerImage}
 	logrus.Tracef("Pulling Image Customizer image: %v", pullArgs)
 	pullOutput, err := exec.Command("docker", pullArgs...).CombinedOutput()
-	logrus.Tracef("Pull image customizer (%v):\n%s", err, string(pullOutput))
+	logrus.Tracef("Pull Image Customizer (%v):\n%s", err, string(pullOutput))
 	if err != nil {
-		return fmt.Errorf("failed to pull image customizer image: %w", err)
+		return fmt.Errorf("failed to pull Image Customizer image: %w", err)
 	}
 	logrus.Tracef("Pulled Image Customizer image: %s", testConfig.ImageCustomizerImage)
 
@@ -99,9 +99,9 @@ func PrepareQcow2(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 	}
 	logrus.Tracef("Running Image Customizer command: %v", icRunArgs)
 	icRunOutput, err := exec.Command("docker", icRunArgs...).CombinedOutput()
-	logrus.Tracef("Run image customizer (%v):\n%s", err, string(icRunOutput))
+	logrus.Tracef("Run Image Customizer (%v):\n%s", err, string(icRunOutput))
 	if err != nil {
-		return fmt.Errorf("failed to run image customizer: %w", err)
+		return fmt.Errorf("failed to run Image Customizer: %w", err)
 	}
 	logrus.Tracef("Image Customizer completed successfully")
 
