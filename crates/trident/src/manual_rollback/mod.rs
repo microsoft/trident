@@ -31,6 +31,7 @@ use trident_api::{
 use uuid::Uuid;
 
 use crate::{
+    cli::RollbackShowOperation,
     container,
     datastore::{self, DataStore},
     engine::{
@@ -60,7 +61,10 @@ pub fn print_requires_reboot(datastore: &mut DataStore) -> Result<ExitKind, Trid
     Ok(ExitKind::Done)
 }
 
-pub fn print_available_rollbacks(datastore: &mut DataStore) -> Result<ExitKind, TridentError> {
+pub fn print_show(
+    datastore: &mut DataStore,
+    show_operation: RollbackShowOperation,
+) -> Result<ExitKind, TridentError> {
     // Get all HostStatus entries from the datastore.
     let host_statuses = datastore
         .get_host_statuses()
@@ -68,12 +72,48 @@ pub fn print_available_rollbacks(datastore: &mut DataStore) -> Result<ExitKind, 
     // Create ManualRollback context from HostStatus entries.
     let context = ManualRollbackContext::new(&host_statuses)
         .message("Failed to create manual rollback context")?;
-
-    let available_rollbacks_output = context
-        .get_available_rollbacks_output()
+    let rollback_chain = context
+        .get_rollback_chain()
         .structured(ServicingError::ManualRollback)
-        .message("Failed to query for --show-available-rollbacks")?;
-    println!("{}", available_rollbacks_output);
+        .message("Failed to get available rollbacks")?;
+
+    match show_operation {
+        RollbackShowOperation::Validation => {
+            if let Some(first_rollback_host_status) = rollback_chain.first() {
+                if first_rollback_host_status.requires_reboot {
+                    info!("Next available rollback is A/B update rollback requiring reboot");
+                    println!("ab");
+                } else {
+                    info!(
+                        "Next available rollback is runtime update rollback not requiring reboot"
+                    );
+                    println!("runtime");
+                }
+            } else {
+                info!("No available rollbacks to show validation for");
+                println!("none");
+            }
+        }
+        RollbackShowOperation::Target => {
+            if let Some(first_rollback_host_status) = rollback_chain.first() {
+                let target_output =
+                    serde_json::to_string(&first_rollback_host_status.host_status.spec)
+                        .structured(ServicingError::ManualRollback)
+                        .message("Failed to serialize first rollback HostStatus spec")?;
+                println!("{}", target_output);
+            } else {
+                info!("No available rollbacks to show target for");
+                println!("{{}}");
+            }
+        }
+        RollbackShowOperation::Chain => {
+            let available_rollbacks_output = context
+                .get_rollback_chain_json()
+                .structured(ServicingError::ManualRollback)
+                .message("Failed to query for --show=chain")?;
+            println!("{}", available_rollbacks_output);
+        }
+    }
     Ok(ExitKind::Done)
 }
 
@@ -95,7 +135,7 @@ pub fn execute_rollback(
         .message("Failed to create manual rollback context")?;
 
     let available_rollbacks = rollback_context
-        .get_available_rollbacks()
+        .get_rollback_chain()
         .structured(ServicingError::ManualRollback)
         .message("Failed to get available rollbacks")?;
     if available_rollbacks.is_empty() {
@@ -460,7 +500,7 @@ impl ManualRollbackContext {
     }
 
     fn get_first_rollback_host_status(&self) -> Result<Option<HostStatus>, Error> {
-        self.get_available_rollbacks()
+        self.get_rollback_chain()
             .context("Failed to get available rollbacks")?
             .into_iter()
             .next()
@@ -506,7 +546,7 @@ impl ManualRollbackContext {
         Ok(requires_reboot.to_string())
     }
 
-    fn get_available_rollbacks(&self) -> Result<Vec<RollbackDetail>, Error> {
+    fn get_rollback_chain(&self) -> Result<Vec<RollbackDetail>, Error> {
         let mut contexts = self
             .volume_a_available_rollbacks
             .clone()
@@ -518,8 +558,8 @@ impl ManualRollbackContext {
         Ok(contexts)
     }
 
-    fn get_available_rollbacks_output(&self) -> Result<String, Error> {
-        let contexts = self.get_available_rollbacks()?;
+    fn get_rollback_chain_json(&self) -> Result<String, Error> {
+        let contexts = self.get_rollback_chain()?;
         let full_json =
             serde_json::to_string(&contexts).context("Failed to serialize rollback contexts")?;
         info!("Available rollbacks:\n{}", full_json);
@@ -613,7 +653,7 @@ mod tests {
                 hs.expected_requires_reboot.to_string()
             );
             let serialized_output = serde_yaml::from_str::<Vec<RollbackDetail>>(
-                &context.get_available_rollbacks_output().unwrap(),
+                &context.get_rollback_chain_json().unwrap(),
             )
             .unwrap();
             assert_eq!(
@@ -655,7 +695,7 @@ mod tests {
             false.to_string()
         );
         let serialized_output = serde_yaml::from_str::<Vec<RollbackDetail>>(
-            &context.get_available_rollbacks_output().unwrap(),
+            &context.get_rollback_chain_json().unwrap(),
         )
         .unwrap();
         // Pre manual rollback, there were 3 runtime updates to rollback
@@ -697,7 +737,7 @@ mod tests {
             true.to_string()
         );
         let serialized_output = serde_yaml::from_str::<Vec<RollbackDetail>>(
-            &context.get_available_rollbacks_output().unwrap(),
+            &context.get_rollback_chain_json().unwrap(),
         )
         .unwrap();
         // Pre a/b rollback, there was 1 runtime update to rollback
@@ -726,7 +766,7 @@ mod tests {
             false.to_string()
         );
         let serialized_output = serde_yaml::from_str::<Vec<RollbackDetail>>(
-            &context.get_available_rollbacks_output().unwrap(),
+            &context.get_rollback_chain_json().unwrap(),
         )
         .unwrap();
         // Only offline-init has run, so there should be 0 updates to rollback
@@ -758,7 +798,7 @@ mod tests {
             true.to_string()
         );
         let serialized_output = serde_yaml::from_str::<Vec<RollbackDetail>>(
-            &context.get_available_rollbacks_output().unwrap(),
+            &context.get_rollback_chain_json().unwrap(),
         )
         .unwrap();
         assert_eq!(serialized_output.len(), 1)
@@ -785,7 +825,7 @@ mod tests {
             false.to_string()
         );
         let serialized_output = serde_yaml::from_str::<Vec<RollbackDetail>>(
-            &context.get_available_rollbacks_output().unwrap(),
+            &context.get_rollback_chain_json().unwrap(),
         )
         .unwrap();
         assert_eq!(serialized_output.len(), 0)
@@ -815,7 +855,7 @@ mod tests {
             true.to_string()
         );
         let serialized_output = serde_yaml::from_str::<Vec<RollbackDetail>>(
-            &context.get_available_rollbacks_output().unwrap(),
+            &context.get_rollback_chain_json().unwrap(),
         )
         .unwrap();
         assert_eq!(serialized_output.len(), 1)

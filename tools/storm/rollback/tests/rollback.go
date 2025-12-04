@@ -136,7 +136,7 @@ func RollbackTest(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 			}
 			hostConfig["os"] = sysextConfig
 		}
-		// Perform runtime update and do
+		// Perform runtime update and do validation
 		expectedAvailableRollbacks = 2
 		err = doUpdateTest(testConfig, vmConfig, vmIP, hostConfig, extensionVersion, expectedVolume, expectedAvailableRollbacks, false)
 		if err != nil {
@@ -238,52 +238,21 @@ func getOtherVolume(volume string) string {
 	return "volume-a"
 }
 
-func validateOs(
+func validateRollbacksAvailable(
 	testConfig stormrollbackconfig.TestConfig,
 	vmConfig stormvmconfig.AllVMConfig,
 	vmIP string,
-	extensionVersion int,
-	expectedVolume string,
 	expectedAvailableRollbacks int,
 	expectedFirstRollbackNeedsReboot bool,
 ) error {
-	// Verify active volume is as expected
-	logrus.Tracef("Checking active volume, expecting '%s'", expectedVolume)
-	checkActiveVolumeErr := stormtridentactivevolume.CheckActiveVolume(vmConfig.VMConfig, vmIP, expectedVolume)
-	if checkActiveVolumeErr != nil {
-		return fmt.Errorf("failed to validate active volume: %w", checkActiveVolumeErr)
-	}
-	if !testConfig.SkipExtensionTesting {
-		if extensionVersion > 0 {
-			logrus.Tracef("Checking extension version, expected: '%d'", extensionVersion)
-			extensionTestCommand := "test-extension.sh"
-			extensionTestOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, extensionTestCommand)
-			if err != nil {
-				return fmt.Errorf("failed to check extension on VM (%w):\n%s", err, extensionTestOutput)
-			}
-			extensionTestOutput = strings.TrimSpace(extensionTestOutput)
-			if extensionTestOutput != fmt.Sprintf("%d", extensionVersion) {
-				return fmt.Errorf("extension version mismatch: expected %d, got %s", extensionVersion, extensionTestOutput)
-			}
-			logrus.Tracef("Extension version confirmed, found: '%d'", extensionVersion)
-		} else {
-			logrus.Tracef("Checking that extension is not present")
-			extensionTestCommand := "test-extension.sh"
-			extensionTestOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, extensionTestCommand)
-			if err == nil {
-				return fmt.Errorf("extension is unexpectedly still available (%w):\n%s", err, extensionTestOutput)
-			}
-		}
-	}
 	if !testConfig.SkipManualRollbacks {
-		// TODO: Verify that there is 1 available rollback
 		logrus.Tracef("Checking number of available rollbacks, expecting '%d'", expectedAvailableRollbacks)
 
-		availableRollbacksOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo trident rollback --show-available")
+		availableRollbacksOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo trident rollback --show chain")
 		if err != nil {
-			return fmt.Errorf("failed to get available rollbacks from VM: %v", err)
+			return fmt.Errorf("'rollback --show chain' failed to from VM: %v", err)
 		}
-		logrus.Tracef("Reported available rollbacks:\n%s", availableRollbacksOutput)
+		logrus.Tracef("Reported 'rollback --show chain':\n%s", availableRollbacksOutput)
 
 		var availableRollbacks []map[string]interface{}
 		err = json.Unmarshal([]byte(strings.TrimSpace(availableRollbacksOutput)), &availableRollbacks)
@@ -306,8 +275,98 @@ func validateOs(
 				return fmt.Errorf("first available rollback requiresReboot mismatch: expected %v, got %v", expectedFirstRollbackNeedsReboot, needsReboot)
 			}
 		}
+
+		rollbackShowValidationOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo trident rollback --show validation")
+		if err != nil {
+			return fmt.Errorf("'rollback --show validation' failed to from VM: %v", err)
+		}
+		logrus.Tracef("Reported 'rollback --show validation':\n%s", rollbackShowValidationOutput)
+		if expectedAvailableRollbacks > 0 {
+			if expectedFirstRollbackNeedsReboot {
+				if strings.TrimSpace(rollbackShowValidationOutput) != "ab" {
+					return fmt.Errorf("expected 'ab' from 'rollback --show validation', got: %s", rollbackShowValidationOutput)
+				}
+			} else {
+				if strings.TrimSpace(rollbackShowValidationOutput) != "runtime" {
+					return fmt.Errorf("expected 'runtime' from 'rollback --show validation', got: %s", rollbackShowValidationOutput)
+				}
+			}
+		} else {
+			if strings.TrimSpace(rollbackShowValidationOutput) != "none" {
+				return fmt.Errorf("expected 'none' from 'rollback --show validation', got: %s", rollbackShowValidationOutput)
+			}
+		}
+
+		rollbackShowTargetOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo trident rollback --show target")
+		if err != nil {
+			return fmt.Errorf("'rollback --show target' failed to from VM: %v", err)
+		}
+		logrus.Tracef("Reported 'rollback --show target':\n%s", rollbackShowTargetOutput)
+		if expectedAvailableRollbacks > 0 {
+			if expectedFirstRollbackNeedsReboot {
+				if strings.TrimSpace(rollbackShowTargetOutput) == "{}" {
+					return fmt.Errorf("expected Host Configuration from 'rollback --show target', got: %s", rollbackShowTargetOutput)
+				}
+			}
+		} else {
+			if strings.TrimSpace(rollbackShowTargetOutput) != "{}" {
+				return fmt.Errorf("expected '{}' from 'rollback --show target', got: %s", rollbackShowTargetOutput)
+			}
+		}
 	}
 	return nil
+}
+
+func validateExtension(
+	testConfig stormrollbackconfig.TestConfig,
+	vmConfig stormvmconfig.AllVMConfig,
+	vmIP string,
+	extensionVersion int,
+) error {
+	if !testConfig.SkipExtensionTesting {
+		if extensionVersion > 0 {
+			logrus.Tracef("Checking extension version, expected: '%d'", extensionVersion)
+			extensionTestCommand := "test-extension.sh"
+			extensionTestOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, extensionTestCommand)
+			if err != nil {
+				return fmt.Errorf("failed to check extension on VM (%w):\n%s", err, extensionTestOutput)
+			}
+			extensionTestOutput = strings.TrimSpace(extensionTestOutput)
+			if extensionTestOutput != fmt.Sprintf("%d", extensionVersion) {
+				return fmt.Errorf("extension version mismatch: expected %d, got %s", extensionVersion, extensionTestOutput)
+			}
+			logrus.Tracef("Extension version confirmed, found: '%d'", extensionVersion)
+		} else {
+			logrus.Tracef("Checking that extension is not present")
+			extensionTestCommand := "test-extension.sh"
+			extensionTestOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, extensionTestCommand)
+			if err == nil {
+				return fmt.Errorf("extension is unexpectedly still available (%w):\n%s", err, extensionTestOutput)
+			}
+		}
+	}
+	return nil
+}
+
+func validateOs(
+	testConfig stormrollbackconfig.TestConfig,
+	vmConfig stormvmconfig.AllVMConfig,
+	vmIP string,
+	extensionVersion int,
+	expectedVolume string,
+	expectedAvailableRollbacks int,
+	expectedFirstRollbackNeedsReboot bool,
+) error {
+	// Verify active volume is as expected
+	logrus.Tracef("Checking active volume, expecting '%s'", expectedVolume)
+	checkActiveVolumeErr := stormtridentactivevolume.CheckActiveVolume(vmConfig.VMConfig, vmIP, expectedVolume)
+	if checkActiveVolumeErr != nil {
+		return fmt.Errorf("failed to validate active volume: %w", checkActiveVolumeErr)
+	}
+	if err := validateExtension(testConfig, vmConfig, vmIP, extensionVersion); err != nil {
+		return fmt.Errorf("failed to validate extension: %w", err)
+	}
+	return validateRollbacksAvailable(testConfig, vmConfig, vmIP, expectedAvailableRollbacks, expectedFirstRollbackNeedsReboot)
 }
 
 func doUpdateTest(

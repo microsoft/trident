@@ -39,6 +39,14 @@ pub fn to_operations(allowed_operations: &[AllowedOperation]) -> Operations {
     ops
 }
 
+/// The operations that Trident is allowed to perform
+#[derive(clap::ValueEnum, Copy, Clone, Debug, Eq, PartialEq)]
+pub enum RollbackShowOperation {
+    Validation,
+    Target,
+    Chain,
+}
+
 #[derive(Subcommand, Debug)]
 pub enum Commands {
     /// Initiate an install of Azure Linux
@@ -190,13 +198,9 @@ pub enum Commands {
         #[clap(long, value_delimiter = ',', num_args = 0.., default_value = "stage,finalize")]
         allowed_operations: Vec<AllowedOperation>,
 
-        /// Query whether rollback requires a reboot
-        #[clap(long)]
-        requires_reboot: bool,
-
         /// Show available rollback points
         #[clap(long)]
-        show_available: bool,
+        show: Option<RollbackShowOperation>,
 
         /// Path to save the resulting Host Status
         #[clap(short, long)]

@@ -209,16 +209,14 @@ fn run_trident(
                         runtime,
                         ab,
                         ref allowed_operations,
-                        requires_reboot,
-                        show_available,
+                        show,
                         ..
                     } => trident.rollback(
                         &mut datastore,
                         runtime,
                         ab,
                         cli::to_operations(allowed_operations),
-                        requires_reboot,
-                        show_available,
+                        show,
                     ),
                     Commands::Listen { .. } => {
                         trident.listen(&mut datastore).map(|()| ExitKind::Done)

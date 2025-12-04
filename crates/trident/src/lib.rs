@@ -54,7 +54,7 @@ pub use logging::{
 };
 pub use orchestrate::OrchestratorConnection;
 
-use crate::osimage::OsImage;
+use crate::{cli::RollbackShowOperation, osimage::OsImage};
 
 /// Trident version as provided by environment variables at build time
 pub const TRIDENT_VERSION: &str = match option_env!("TRIDENT_VERSION") {
@@ -718,8 +718,7 @@ impl Trident {
         expected_runtime_rollback: bool,
         expected_ab_rollback: bool,
         allowed_operations: Operations,
-        query_requires_reboot: bool,
-        show_available_rollbacks: bool,
+        show_operation: Option<RollbackShowOperation>,
     ) -> Result<ExitKind, TridentError> {
         // If host's servicing state is *Finalized or *HealthCheckFailed, need to
         // re-evaluate the current state of the host.
@@ -733,15 +732,9 @@ impl Trident {
             return Ok(ExitKind::Done);
         }
 
-        if query_requires_reboot {
-            let result = manual_rollback::print_requires_reboot(datastore)
-                .message("Failed to check if rollback requires reboot")?;
-            return Ok(result);
-        }
-
-        if show_available_rollbacks {
-            let result = manual_rollback::print_available_rollbacks(datastore)
-                .message("Failed to get available rollbacks")?;
+        if let Some(show_op) = show_operation {
+            let result = manual_rollback::print_show(datastore, show_op)
+                .message("Failed to query for --show")?;
             return Ok(result);
         }
 

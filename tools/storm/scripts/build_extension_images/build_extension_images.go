@@ -98,7 +98,7 @@ func buildImage(extType string, numClones int) error {
 				0777,
 			)
 			if err != nil {
-				return fmt.Errorf("failed to write %s extension-release file %s: %w", extType, extensionReleaseFile, err)
+				return fmt.Errorf("failed to write %s extension script file %s: %w", extType, extensionReleaseFile, err)
 			}
 		}
 
