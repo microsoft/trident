@@ -30,24 +30,25 @@ pub(crate) fn update(
     info!("Starting update");
     let mut subsystems = SUBSYSTEMS.lock().unwrap();
 
-    // Need to re-set the Host Status in case another A/B update has been previously staged
-    if state.host_status().servicing_state == ServicingState::AbUpdateStaged {
-        debug!("Resetting A/B update state");
-        state.with_host_status(|host_status| {
-            host_status.spec = host_status.spec_old.clone();
-            host_status.spec_old = Default::default();
-            host_status.servicing_state = ServicingState::Provisioned;
-        })?;
-    }
-
-    // Need to re-set the Host Status in case another runtime update has been previously staged
-    if state.host_status().servicing_state == ServicingState::RuntimeUpdateStaged {
-        debug!("Resetting runtime update state");
-        state.with_host_status(|host_status| {
-            host_status.spec = host_status.spec_old.clone();
-            host_status.spec_old = Default::default();
-            host_status.servicing_state = ServicingState::Provisioned;
-        })?;
+    // Need to re-set the Host Status in case another update has been previously staged.
+    match state.host_status().servicing_state {
+        ServicingState::AbUpdateStaged => {
+            debug!("Resetting A/B update state");
+            state.with_host_status(|host_status| {
+                host_status.spec = host_status.spec_old.clone();
+                host_status.spec_old = Default::default();
+                host_status.servicing_state = ServicingState::Provisioned;
+            })?;
+        }
+        ServicingState::RuntimeUpdateStaged => {
+            debug!("Resetting runtime update state");
+            state.with_host_status(|host_status| {
+                host_status.spec = host_status.spec_old.clone();
+                host_status.spec_old = Default::default();
+                host_status.servicing_state = ServicingState::Provisioned;
+            })?;
+        }
+        _ => {}
     }
 
     let mut ctx = EngineContext {
@@ -127,7 +128,7 @@ pub(crate) fn update(
             #[cfg(feature = "grpc-dangerous")]
             sender,
         )
-        .message("Failed to stage update")?;
+        .message("Failed to stage A/B update")?;
     } else if servicing_type == ServicingType::RuntimeUpdate {
         runtime_update::stage_update(
             &mut subsystems,
@@ -136,7 +137,7 @@ pub(crate) fn update(
             #[cfg(feature = "grpc-dangerous")]
             sender,
         )
-        .message("Failed to stage update")?;
+        .message("Failed to stage runtime update")?;
     }
 
     match servicing_type {

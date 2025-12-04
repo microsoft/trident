@@ -619,14 +619,14 @@ impl Trident {
                             runtime_update::finalize_update(
                                 &mut subsystems,
                                 datastore,
-                                ServicingType::AbUpdate,
+                                ServicingType::RuntimeUpdate,
                                 None,
                                 #[cfg(feature = "grpc-dangerous")]
                                 sender,
                             )
                             .message("Failed to finalize runtime update")
                         } else {
-                            warn!("There is an runtime update staged on the host, but allowed operations do not include 'finalize'. Add 'finalize' and re-run to finalize the runtime update");
+                            warn!("There is a runtime update staged on the host, but allowed operations do not include 'finalize'. Add 'finalize' and re-run to finalize the runtime update");
                             Ok(ExitKind::Done)
                         }
                     }
