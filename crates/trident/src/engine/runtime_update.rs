@@ -6,7 +6,7 @@ use osutils::efivar;
 use tokio::sync::mpsc;
 
 use trident_api::{
-    error::TridentError,
+    error::{InvalidInputError, TridentError},
     status::{HostStatus, ServicingState, ServicingType},
 };
 
@@ -34,8 +34,24 @@ pub(crate) fn stage_update(
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
 ) -> Result<(), TridentError> {
-    // This function is only called when servicing type is runtime update.
-    info!("Staging runtime update");
+    match ctx.servicing_type {
+        ServicingType::CleanInstall => {
+            return Err(TridentError::new(
+                InvalidInputError::CleanInstallOnProvisionedHost,
+            ));
+        }
+        ServicingType::NoActiveServicing => {
+            return Err(TridentError::internal("No active servicing type"))
+        }
+        ServicingType::AbUpdate => {
+            return Err(TridentError::internal(
+                "Runtime update staging called for A/B update servicing type",
+            ))
+        }
+        ServicingType::RuntimeUpdate => {
+            info!("Staging runtime update")
+        }
+    }
 
     // Best effort to measure memory, CPU, and network usage during execution
     let monitor = match monitor_metrics::MonitorMetrics::new("stage_update".to_string()) {
@@ -76,7 +92,7 @@ pub(crate) fn stage_update(
         }
     }
 
-    info!("Staging of update '{:?}' succeeded", ctx.servicing_type);
+    info!("Staging of runtime update succeeded");
 
     Ok(())
 }
@@ -97,13 +113,13 @@ pub(crate) fn finalize_update(
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
 ) -> Result<ExitKind, TridentError> {
-    info!("Finalizing runtime update");
-
     if servicing_type != ServicingType::RuntimeUpdate {
         return Err(TridentError::internal(
             "Unimplemented servicing type for finalize",
         ));
     }
+
+    info!("Finalizing runtime update");
 
     let mut ctx = EngineContext {
         spec: state.host_status().spec.clone(),
