@@ -146,8 +146,11 @@ mod tests {
         fs::rename(path, &staging_dir_file_path).unwrap();
         assert_eq!(
             subsystem.find_existing_extension_path(&hash, &[]).unwrap(),
-            Some(staging_dir_file_path)
-        )
+            Some(staging_dir_file_path.clone())
+        );
+
+        // Clean-up
+        fs::remove_file(staging_dir_file_path).unwrap();
     }
 
     #[test]
