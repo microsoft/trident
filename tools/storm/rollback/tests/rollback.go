@@ -271,7 +271,7 @@ func validateOs(
 			extensionTestCommand := "test-extension.sh"
 			extensionTestOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, extensionTestCommand)
 			if err == nil {
-				return fmt.Errorf("extension is unexpectedly still available (%w):\n%s", err, extensionTestOutput)
+				return fmt.Errorf("extension is unexpectedly still available:\n%s", extensionTestOutput)
 			}
 		}
 	}

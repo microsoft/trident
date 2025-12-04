@@ -124,7 +124,7 @@ jobs:
             STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --secure-boot"
           fi
           if [ "${{ parameters.skipManualRollbackTesting }}" == "true" ]; then
-            # skip enable manual rollback testing
+            # skip manual rollback testing
             STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --skip-manual-rollbacks"
           fi
           if [ "${{ parameters.skipRuntimeUpdateTesting }}" == "true" ]; then

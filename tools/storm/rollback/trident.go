@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"tridenttools/storm/rollback/tests"
 	stormrollbacktests "tridenttools/storm/rollback/tests"
 	stormrollbackconfig "tridenttools/storm/rollback/utils/config"
 	stormvmazure "tridenttools/storm/utils/vm/azure"
@@ -63,28 +62,28 @@ func (s TridentRollbackScenario) Setup(ctx storm.SetupCleanupContext) error {
 	return nil
 }
 
-func (h *TridentRollbackScenario) Cleanup(ctx storm.SetupCleanupContext) error {
-	if h.args.TestConfig.ForceCleanup {
+func (s *TridentRollbackScenario) Cleanup(ctx storm.SetupCleanupContext) error {
+	if s.args.TestConfig.ForceCleanup {
 		// Best effort to clean up azure resources in case there was a failure
 		stormrollbacktests.CleanupVM(
-			h.args.TestConfig,
+			s.args.TestConfig,
 			stormvmconfig.AllVMConfig{
-				VMConfig:    h.args.VMConfig,
-				QemuConfig:  h.args.QemuConfig,
-				AzureConfig: h.args.AzureConfig,
+				VMConfig:    s.args.VMConfig,
+				QemuConfig:  s.args.QemuConfig,
+				AzureConfig: s.args.AzureConfig,
 			})
 	}
 	return nil
 }
 
-func (h *TridentRollbackScenario) runTestCase(tc storm.TestCase, testFunc func(stormrollbackconfig.TestConfig, stormvmconfig.AllVMConfig) error) error {
-	if tc.Name() != h.args.TestCaseToRun && h.args.TestCaseToRun != "all" {
-		tc.Skip(fmt.Sprintf("Test case '%s' does not align to TestCaseToRun '%s'", tc.Name(), h.args.TestCaseToRun))
+func (s *TridentRollbackScenario) runTestCase(tc storm.TestCase, testFunc func(stormrollbackconfig.TestConfig, stormvmconfig.AllVMConfig) error) error {
+	if tc.Name() != s.args.TestCaseToRun && s.args.TestCaseToRun != "all" {
+		tc.Skip(fmt.Sprintf("Test case '%s' does not align to TestCaseToRun '%s'", tc.Name(), s.args.TestCaseToRun))
 	} else {
 		logrus.Infof("Running test case '%s'", tc.Name())
 		// create test-specific output directory
-		testCaseSpecificConfig := h.args.TestConfig
-		testCaseSpecificConfig.OutputPath = h.args.TestConfig.OutputPath
+		testCaseSpecificConfig := s.args.TestConfig
+		testCaseSpecificConfig.OutputPath = s.args.TestConfig.OutputPath
 		if testCaseSpecificConfig.OutputPath != "" {
 			testCaseSpecificConfig.OutputPath = filepath.Join(testCaseSpecificConfig.OutputPath, tc.Name())
 			if err := os.MkdirAll(testCaseSpecificConfig.OutputPath, 0755); err != nil {
@@ -94,9 +93,9 @@ func (h *TridentRollbackScenario) runTestCase(tc storm.TestCase, testFunc func(s
 		err := testFunc(
 			testCaseSpecificConfig,
 			stormvmconfig.AllVMConfig{
-				VMConfig:    h.args.VMConfig,
-				QemuConfig:  h.args.QemuConfig,
-				AzureConfig: h.args.AzureConfig,
+				VMConfig:    s.args.VMConfig,
+				QemuConfig:  s.args.QemuConfig,
+				AzureConfig: s.args.AzureConfig,
 			})
 		if err != nil {
 			logrus.Infof("test case '%s' failed", tc.Name())
@@ -108,26 +107,26 @@ func (h *TridentRollbackScenario) runTestCase(tc storm.TestCase, testFunc func(s
 
 }
 
-func (h *TridentRollbackScenario) prepareQcow2(tc storm.TestCase) error {
-	return h.runTestCase(tc, tests.PrepareQcow2)
+func (s *TridentRollbackScenario) prepareQcow2(tc storm.TestCase) error {
+	return s.runTestCase(tc, stormrollbacktests.PrepareQcow2)
 }
 
-func (h *TridentRollbackScenario) deployVm(tc storm.TestCase) error {
-	return h.runTestCase(tc, tests.DeployVM)
+func (s *TridentRollbackScenario) deployVm(tc storm.TestCase) error {
+	return s.runTestCase(tc, stormrollbacktests.DeployVM)
 }
 
-func (h *TridentRollbackScenario) checkDeployment(tc storm.TestCase) error {
-	return h.runTestCase(tc, tests.CheckDeployment)
+func (s *TridentRollbackScenario) checkDeployment(tc storm.TestCase) error {
+	return s.runTestCase(tc, stormrollbacktests.CheckDeployment)
 }
 
-func (h *TridentRollbackScenario) updateAndRollback(tc storm.TestCase) error {
-	return h.runTestCase(tc, tests.RollbackTest)
+func (s *TridentRollbackScenario) updateAndRollback(tc storm.TestCase) error {
+	return s.runTestCase(tc, stormrollbacktests.RollbackTest)
 }
 
-func (h *TridentRollbackScenario) collectLogs(tc storm.TestCase) error {
-	return h.runTestCase(tc, tests.FetchLogs)
+func (s *TridentRollbackScenario) collectLogs(tc storm.TestCase) error {
+	return s.runTestCase(tc, stormrollbacktests.FetchLogs)
 }
 
-func (h *TridentRollbackScenario) cleanupVm(tc storm.TestCase) error {
-	return h.runTestCase(tc, tests.CleanupVM)
+func (s *TridentRollbackScenario) cleanupVm(tc storm.TestCase) error {
+	return s.runTestCase(tc, stormrollbacktests.CleanupVM)
 }
