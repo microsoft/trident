@@ -257,7 +257,7 @@ func RunNetlaunch(config *NetLaunchConfig) error {
 	}
 
 	if exitError != nil {
-		log.WithError(err).Errorln("phonehome.ListenLoop exited with error")
+		log.WithError(exitError).Errorln("phonehome returned an error")
 		return exitError
 	}
 
