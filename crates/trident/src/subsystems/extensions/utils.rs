@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Error};
+use anyhow::{ensure, Context, Error};
 
 use osutils::{container, dependencies::Dependency};
 use trident_api::{config::Extension, error::TridentResultExt, primitives::hash::Sha384Hash};
@@ -18,19 +18,25 @@ impl ExtensionsSubsystem {
     ) -> Result<Option<PathBuf>, Error> {
         // Search the old Host Configurations for the extension. If a path exists
         // for the extension and a file exists at the path, return the path.
-        if let Some(ext_path) = old_hc_extensions
+        if let Some(ext) = old_hc_extensions
             .iter()
             // Extension must match on Sha384 hash
             .find(|hc_ext| *target_hash == hc_ext.sha384)
-            .and_then(|ext| ext.path.clone())
         {
+            let ext_path = ext.path.clone().with_context(|| {
+                format!("Failed to retrieve path of extension image '{}'", ext.url)
+            })?;
             // Check if Trident is running in a container, and adjust path accordingly.
-            let adjusted_path = container::get_host_relative_path(ext_path)
+            let adjusted_path = container::get_host_relative_path(ext_path.clone())
                 .unstructured("Failed to adjust file path for container")?;
-            // Ensure that file exists before returning it.
-            if adjusted_path.exists() {
-                return Ok(Some(adjusted_path));
-            }
+            // Ensure that file exists.
+            ensure!(
+                adjusted_path.exists(),
+                "Expected to find extension image from URL '{}' at path '{}', but path does not exist",
+                ext.url,
+                ext_path.display() // Display unadjusted path for readability
+            );
+            return Ok(Some(adjusted_path));
         }
 
         // Check if file has been downloaded already to the staging directory.
