@@ -8,6 +8,7 @@ use trident_api::{
     config::{ManagementOs, SshMode},
     constants::internal_params::DISABLE_HOSTNAME_CARRY_OVER,
     error::{ExecutionEnvironmentMisconfigurationError, ReportError, ServicingError, TridentError},
+    is_default,
     status::ServicingType,
 };
 
@@ -88,6 +89,19 @@ impl Subsystem for OsConfigSubsystem {
             return RUNS_ON_ALL;
         }
         REQUIRES_REBOOT
+    }
+
+    fn select_servicing_type(&self, ctx: &EngineContext) -> Result<ServicingType, TridentError> {
+        if is_default(&ctx.spec_old) {
+            return Ok(ServicingType::CleanInstall);
+        } else if ctx.spec.os != ctx.spec_old.os {
+            if runtime_update_sufficient(ctx) {
+                return Ok(ServicingType::RuntimeUpdate);
+            } else {
+                return Ok(ServicingType::AbUpdate);
+            }
+        }
+        Ok(ServicingType::NoActiveServicing)
     }
 
     fn validate_host_config(&self, ctx: &EngineContext) -> Result<(), TridentError> {
