@@ -139,7 +139,8 @@ fn run_trident(
             | Commands::Update { status, error, .. }
             | Commands::Commit { status, error }
             | Commands::Listen { status, error }
-            | Commands::RebuildRaid { status, error, .. } => {
+            | Commands::RebuildRaid { status, error, .. }
+            | Commands::Rollback { status, error, .. } => {
                 let config_path = match &args.command {
                     Commands::Update { config, .. } | Commands::Install { config, .. } => {
                         Some(config.clone())
@@ -204,6 +205,19 @@ fn run_trident(
                         &mut None,
                     ),
                     Commands::Commit { .. } => trident.commit(&mut datastore),
+                    Commands::Rollback {
+                        runtime,
+                        ab,
+                        ref allowed_operations,
+                        show,
+                        ..
+                    } => trident.rollback(
+                        &mut datastore,
+                        runtime,
+                        ab,
+                        cli::to_operations(allowed_operations),
+                        show,
+                    ),
                     Commands::Listen { .. } => {
                         trident.listen(&mut datastore).map(|()| ExitKind::Done)
                     }
