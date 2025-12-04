@@ -6,7 +6,7 @@ use tokio::sync::mpsc;
 
 use trident_api::{
     constants::internal_params::ENABLE_UKI_SUPPORT,
-    error::{InvalidInputError, TridentError},
+    error::TridentError,
     status::{HostStatus, ServicingState, ServicingType},
 };
 
@@ -36,22 +36,8 @@ pub(crate) fn stage_update(
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
 ) -> Result<(), TridentError> {
-    match ctx.servicing_type {
-        ServicingType::CleanInstall => {
-            return Err(TridentError::new(
-                InvalidInputError::CleanInstallOnProvisionedHost,
-            ));
-        }
-        ServicingType::NoActiveServicing => {
-            return Err(TridentError::internal("No active servicing type"))
-        }
-        _ => {
-            info!(
-                "Staging update of servicing type '{:?}'",
-                ctx.servicing_type
-            )
-        }
-    }
+    // This function is only called when servicing type is runtime update.
+    info!("Staging runtime update");
 
     // Best effort to measure memory, CPU, and network usage during execution
     let monitor = match monitor_metrics::MonitorMetrics::new("stage_update".to_string()) {

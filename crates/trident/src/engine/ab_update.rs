@@ -7,10 +7,7 @@ use tokio::sync::mpsc;
 use osutils::{chroot, container, path::join_relative};
 use trident_api::{
     constants::{internal_params::NO_TRANSITION, ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
-    error::{
-        InternalError, InvalidInputError, ReportError, ServicingError, TridentError,
-        TridentResultExt,
-    },
+    error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::{HostStatus, ServicingState, ServicingType},
 };
 
@@ -44,22 +41,8 @@ pub(crate) fn stage_update(
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
 ) -> Result<(), TridentError> {
-    match ctx.servicing_type {
-        ServicingType::CleanInstall => {
-            return Err(TridentError::new(
-                InvalidInputError::CleanInstallOnProvisionedHost,
-            ));
-        }
-        ServicingType::NoActiveServicing => {
-            return Err(TridentError::internal("No active servicing type"))
-        }
-        _ => {
-            info!(
-                "Staging update of servicing type '{:?}'",
-                ctx.servicing_type
-            )
-        }
-    }
+    // This function is only called when the servicing type is A/B update.
+    info!("Staging A/B update");
 
     // Best effort to measure memory, CPU, and network usage during execution
     let monitor = match monitor_metrics::MonitorMetrics::new("stage_update".to_string()) {
@@ -72,41 +55,36 @@ pub(crate) fn stage_update(
 
     engine::prepare(subsystems, &ctx)?;
 
-    if let ServicingType::AbUpdate = ctx.servicing_type {
-        debug!("Preparing storage to mount new root");
+    debug!("Preparing storage to mount new root");
 
-        // Close any pre-existing verity devices
-        verity::stop_trident_servicing_devices(&ctx.spec)
-            .structured(ServicingError::CleanupVerity)?;
+    // Close any pre-existing verity devices
+    verity::stop_trident_servicing_devices(&ctx.spec).structured(ServicingError::CleanupVerity)?;
 
-        storage::initialize_block_devices(&ctx)?;
-        let newroot_mount = NewrootMount::create_and_mount(
-            &ctx.spec,
-            &ctx.partition_paths,
-            ctx.get_ab_update_volume()
-                .structured(InternalError::Internal(
-                    "No update volume despite there being an A/B update in progress",
-                ))?,
-        )?;
+    storage::initialize_block_devices(&ctx)?;
+    let newroot_mount = NewrootMount::create_and_mount(
+        &ctx.spec,
+        &ctx.partition_paths,
+        ctx.get_ab_update_volume()
+            .structured(InternalError::Internal(
+                "No update volume despite there being an A/B update in progress",
+            ))?,
+    )?;
 
-        engine::provision(subsystems, &ctx, newroot_mount.path())?;
+    engine::provision(subsystems, &ctx, newroot_mount.path())?;
 
-        debug!("Entering '{}' chroot", newroot_mount.path().display());
-        let result = chroot::enter_update_chroot(newroot_mount.path())
-            .message("Failed to enter chroot")?
-            .execute_and_exit(|| engine::configure(subsystems, &ctx));
+    debug!("Entering '{}' chroot", newroot_mount.path().display());
+    let result = chroot::enter_update_chroot(newroot_mount.path())
+        .message("Failed to enter chroot")?
+        .execute_and_exit(|| engine::configure(subsystems, &ctx));
 
-        if let Err(original_error) = result {
-            if let Err(e) = newroot_mount.unmount_all() {
-                warn!("While handling an earlier error: {e:?}");
-            }
-            return Err(original_error).message("Failed to execute in chroot");
+    if let Err(original_error) = result {
+        if let Err(e) = newroot_mount.unmount_all() {
+            warn!("While handling an earlier error: {e:?}");
         }
+        return Err(original_error).message("Failed to execute in chroot");
+    }
 
-        newroot_mount.unmount_all()?;
-    } else {
-        engine::configure(subsystems, &ctx)?;
-    };
+    newroot_mount.unmount_all()?;
 
     // Update the Host Configuration with information produced and stored in the
     // subsystems. Currently, this step is used only to update the final paths
