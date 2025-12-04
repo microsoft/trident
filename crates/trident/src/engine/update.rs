@@ -9,15 +9,15 @@ use trident_api::{
     status::{ServicingState, ServicingType},
 };
 
+#[cfg(feature = "grpc-dangerous")]
+use crate::GrpcSender;
 use crate::{
     datastore::DataStore,
-    engine::{self, ab_update, rollback, EngineContext, SUBSYSTEMS},
+    engine::{self, ab_update, rollback, runtime_update, EngineContext, SUBSYSTEMS},
     osimage::OsImage,
     subsystems::hooks::HooksSubsystem,
     ExitKind,
 };
-#[cfg(feature = "grpc-dangerous")]
-use crate::{grpc, GrpcSender};
 
 #[tracing::instrument(skip_all)]
 pub(crate) fn update(
@@ -30,9 +30,19 @@ pub(crate) fn update(
     info!("Starting update");
     let mut subsystems = SUBSYSTEMS.lock().unwrap();
 
+    // Need to re-set the Host Status in case another A/B update has been previously staged
     if state.host_status().servicing_state == ServicingState::AbUpdateStaged {
-        // Need to re-set the Host Status in case another update has been previously staged
         debug!("Resetting A/B update state");
+        state.with_host_status(|host_status| {
+            host_status.spec = host_status.spec_old.clone();
+            host_status.spec_old = Default::default();
+            host_status.servicing_state = ServicingState::Provisioned;
+        })?;
+    }
+
+    // Need to re-set the Host Status in case another A/B update has been previously staged
+    if state.host_status().servicing_state == ServicingState::RuntimeUpdateStaged {
+        debug!("Resetting runtime update state");
         state.with_host_status(|host_status| {
             host_status.spec = host_status.spec_old.clone();
             host_status.spec_old = Default::default();
@@ -73,19 +83,29 @@ pub(crate) fn update(
         .into_iter()
         .max()
         .unwrap_or(ServicingType::NoActiveServicing);
-    if servicing_type == ServicingType::NoActiveServicing {
-        info!("No update servicing required");
-        return Ok(ExitKind::Done);
+    match servicing_type {
+        ServicingType::NoActiveServicing => {
+            info!("No update servicing required");
+            return Ok(ExitKind::Done);
+        }
+        ServicingType::RuntimeUpdate => {}
+        ServicingType::AbUpdate => {
+            // Execute pre-servicing scripts
+            HooksSubsystem::new_for_local_scripts().execute_pre_servicing_scripts(&ctx)?;
+        }
+        ServicingType::CleanInstall => {
+            return Err(TridentError::new(
+                InvalidInputError::CleanInstallOnProvisionedHost,
+            ));
+        }
     }
+
     debug!(
         "Update of servicing type '{:?}' is required",
         servicing_type
     );
 
     ctx.servicing_type = servicing_type;
-
-    // Execute pre-servicing scripts
-    HooksSubsystem::new_for_local_scripts().execute_pre_servicing_scripts(&ctx)?;
 
     engine::validate_host_config(&subsystems, &ctx)?;
 
@@ -99,19 +119,30 @@ pub(crate) fn update(
     );
 
     // Stage update
-    ab_update::stage_update(
-        &mut subsystems,
-        ctx,
-        state,
-        #[cfg(feature = "grpc-dangerous")]
-        sender,
-    )
-    .message("Failed to stage update")?;
+    if servicing_type == ServicingType::AbUpdate {
+        ab_update::stage_update(
+            &mut subsystems,
+            ctx,
+            state,
+            #[cfg(feature = "grpc-dangerous")]
+            sender,
+        )
+        .message("Failed to stage update")?;
+    } else if servicing_type == ServicingType::RuntimeUpdate {
+        runtime_update::stage_update(
+            &mut subsystems,
+            ctx,
+            state,
+            #[cfg(feature = "grpc-dangerous")]
+            sender,
+        )
+        .message("Failed to stage update")?;
+    }
 
     match servicing_type {
         ServicingType::AbUpdate => {
             if !allowed_operations.has_finalize() {
-                info!("Finalizing of update not requested, skipping reboot");
+                info!("Finalizing of A/B update not requested, skipping reboot");
 
                 // Persist the Trident background log and metrics file to the new root. Otherwise,
                 // the staging logs would be lost.
@@ -129,25 +160,31 @@ pub(crate) fn update(
                     #[cfg(feature = "grpc-dangerous")]
                     sender,
                 )
-                .message("Failed to finalize update")
+                .message("Failed to finalize A/B update")
             }
         }
         ServicingType::RuntimeUpdate => {
-            state.with_host_status(|host_status| {
-                host_status.servicing_state = ServicingState::Provisioned;
-            })?;
-            #[cfg(feature = "grpc-dangerous")]
-            grpc::send_host_status_state(sender, state)?;
-
-            // Persist the Trident background log and metrics file to the updated target OS
-            engine::persist_background_log_and_metrics(
-                &state.host_status().spec.trident.datastore_path,
-                None,
-                state.host_status().servicing_state,
-            );
-
-            info!("Update of servicing type '{:?}' succeeded", servicing_type);
-            Ok(ExitKind::Done)
+            if !allowed_operations.has_finalize() {
+                info!("Finalizing of runtime update not requested, skipping reboot");
+                // Persist the Trident background log and metrics file to the new root. Otherwise,
+                // the staging logs would be lost.
+                engine::persist_background_log_and_metrics(
+                    &state.host_status().spec.trident.datastore_path,
+                    None,
+                    state.host_status().servicing_state,
+                );
+                Ok(ExitKind::Done)
+            } else {
+                runtime_update::finalize_update(
+                    &mut subsystems,
+                    state,
+                    servicing_type,
+                    Some(update_start_time),
+                    #[cfg(feature = "grpc-dangerous")]
+                    sender,
+                )
+                .message("Failed to finalize runtime update")
+            }
         }
         ServicingType::CleanInstall => Err(TridentError::new(
             InvalidInputError::CleanInstallOnProvisionedHost,
