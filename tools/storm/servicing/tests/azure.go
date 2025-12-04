@@ -2,11 +2,12 @@ package tests
 
 import (
 	"fmt"
-	"tridenttools/storm/servicing/utils/config"
+	stormsvcconfig "tridenttools/storm/servicing/utils/config"
+	stormvmconfig "tridenttools/storm/utils/vm/config"
 )
 
-func PublishSigImage(cfg config.ServicingConfig) error {
-	if err := cfg.AzureConfig.PublishSigImage(cfg.TestConfig.ArtifactsDir, cfg.TestConfig.BuildId); err != nil {
+func PublishSigImage(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfig.AllVMConfig) error {
+	if err := vmConfig.AzureConfig.PublishSigImage(testConfig.ArtifactsDir); err != nil {
 		return fmt.Errorf("failed to publish Azure Shared Image Gallery image: %w", err)
 	}
 	return nil
