@@ -59,11 +59,6 @@ pub fn create_and_update_boot_variables(
     // Get the label and path for the EFI bootloader of the inactive A/B update volume.
     let (entry_label_new, bootloader_path_new) =
         get_label_and_path(ctx, BOOT_EFI).structured(ServicingError::GetLabelAndPath)?;
-    debug!(
-        "Creating boot entry with label '{}' and bootloader path '{:?}'",
-        entry_label_new.as_str(),
-        bootloader_path_new,
-    );
 
     // Check if the boot entry already exists, if so, delete the entry and
     // remove it from the `BootOrder`.
