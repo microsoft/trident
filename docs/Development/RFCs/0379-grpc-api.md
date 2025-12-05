@@ -15,20 +15,6 @@ communication with Trident meant to be used by complex orchestrators.
 
 # Motivation and Goals
 
-<!-- (DELETE ME)
-Include a link to the original Idea Discussion, when applicable.
-
-Explain the reason for making this change. What problem does it solve and what
-goals does it aim to achieve?
-
-This section should be largely based on the outcomes of the Idea Discussion,
-and expanded upon to ensure the problem is explained in detail and all
-necessary background is provided.
-
-When possible, include specific use cases or customer stories that illustrate the
-need for this change.
--->
-
 The ultimate goal of this proposal is to enable a new way for agents to interact
 with Trident that is fully programmatic and structured. This is achieved via a
 new gRPC-based API that exposes all of Trident's functionality and adds new
