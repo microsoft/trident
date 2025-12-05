@@ -57,7 +57,7 @@ func RunGroup(commands ...*CommandRunner) error {
 }
 
 func (c *CommandRunner) Run() error {
-	_, err := c.CombinedOutput()
+	_, err := c.run()
 	return err
 }
 
