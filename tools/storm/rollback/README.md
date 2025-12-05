@@ -39,6 +39,8 @@ pushd ./artifacts
 ../bin/storm-trident script build-extension-images --build-sysexts --num-clones 3
 popd
 # Build the Trident rpms 
+sudo rm bin/trident-rpms.tar.gz
+sudo rm -rf bin/RPMS
 make bin/trident-rpms.tar.gz
 # Ensure that there are no previous test images that the test might pick up
 sudo rm artifacts/trident-vm-*-testimage.qcow2 artifacts/trident-vm-*-testimage.cosi

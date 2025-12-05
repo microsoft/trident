@@ -269,6 +269,7 @@ fn finalize_rollback(
 
         datastore.with_host_status(|host_status| {
             host_status.spec = engine_context.spec.clone();
+            host_status.spec_old = Default::default();
             host_status.servicing_state = ServicingState::Provisioned;
         })?;
         return Ok(ExitKind::Done);
