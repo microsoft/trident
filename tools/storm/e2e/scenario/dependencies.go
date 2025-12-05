@@ -87,6 +87,21 @@ func installUbuntuDependencies(osRelease *env.OsReleaseInfo) error {
 		return fmt.Errorf("failed to install ubuntu dependencies: %w", err)
 	}
 
+	// install virt-firmware
+	switch osRelease.VersionCodename {
+	case "focal":
+		fallthrough
+	case "jammy":
+		err = cmd.Run("sudo", "pip3", "install", "virt-firmware")
+	case "noble":
+		err = cmd.Run("sudo", "apt-get", "-y", "install", "python3-virt-firmware")
+	default:
+		return fmt.Errorf("unsupported Ubuntu version for virt-firmware installation: %s", osRelease.VersionCodename)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to install virt-firmware: %w", err)
+	}
+
 	return nil
 }
 
