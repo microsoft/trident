@@ -8,12 +8,13 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
+use enumflags2::BitFlags;
 use log::{debug, info, trace};
-use serde::{Deserialize, Serialize};
-
 use maplit::hashmap;
-use osutils::{efivar, lsblk};
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
+use osutils::{efivar, lsblk, pcrlock};
 use trident_api::{
     config::{
         AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, HostConfiguration,
@@ -28,7 +29,6 @@ use trident_api::{
     status::{decode_host_status, AbVolumeSelection, HostStatus, ServicingState, ServicingType},
     BlockDeviceId,
 };
-use uuid::Uuid;
 
 use crate::{
     cli::GetKind,
@@ -37,7 +37,9 @@ use crate::{
     engine::{
         self,
         boot::{self, uki, ESP_EXTRACTION_DIRECTORY},
-        bootentries, rollback, EngineContext, REQUIRES_REBOOT,
+        bootentries, rollback,
+        storage::encryption,
+        EngineContext, REQUIRES_REBOOT,
     },
     subsystems::esp,
     ExitKind, OsImage,
@@ -345,8 +347,32 @@ fn finalize_rollback(
     )
     .structured(ServicingError::SetUpUefiFallback)?;
 
+    // If we have encrypted volumes and this is a UKI image, then we need to re-generate pcrlock
+    // policy to include both the current boot and the rollback boot.
     if let Some(ref encryption) = engine_context.spec.storage.encryption {
         // TODO: Handle any pcr-lock encryption related changes needed
+        if engine_context.is_uki()? {
+            debug!("Regenerating pcrlock policy to include rollback boot");
+
+            // Get the PCRs from Host Configuration
+            let pcrs = encryption
+                .pcrs
+                .iter()
+                .fold(BitFlags::empty(), |acc, &pcr| acc | BitFlags::from(pcr));
+
+            // Get UKI and bootloader binaries for .pcrlock file generation
+            let (uki_binaries, bootloader_binaries) =
+                encryption::get_binary_paths_pcrlock(engine_context, pcrs, None)
+                    .structured(ServicingError::GetBinaryPathsForPcrlockEncryption)?;
+
+            // Generate a pcrlock policy
+            pcrlock::generate_pcrlock_policy(pcrs, uki_binaries, bootloader_binaries)?;
+        } else {
+            debug!(
+                "Rollback OS is a grub image, \
+                so skipping re-generating pcrlock policy for manual rollback"
+            );
+        }
     }
 
     datastore.with_host_status(|host_status| {
