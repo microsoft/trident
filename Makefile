@@ -78,7 +78,7 @@ build: .cargo/config version-vars
 .PHONY: build-aarch64
 build-aarch64: .cargo/config version-vars
 	@TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
-	cargo build --release --target aarch64-unknown-linux-gnu
+	cargo build --release --target aarch64-unknown-linux-gnu --features dangerous-options
 
 .PHONY: format
 format:
