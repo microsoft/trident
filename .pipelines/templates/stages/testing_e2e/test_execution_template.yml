@@ -106,6 +106,8 @@ stages:
           - bash: |
               set -eux
 
+              mkdir -p $(ob_outputDirectory)
+
               ./bin/storm-trident run "$(scenario)" -- \
                   --pipeline-run \
                   --iso "./artifacts/iso/$(installerISOName).iso"
