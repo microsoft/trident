@@ -15,6 +15,7 @@ const SECURE_BOOT: &str = "SecureBoot";
 const LOADER_ENTRY_ONESHOT: &str = "LoaderEntryOneShot";
 const LOADER_ENTRY_DEFAULT: &str = "LoaderEntryDefault";
 pub const LOADER_ENTRY_SELECTED: &str = "LoaderEntrySelected";
+const LOADER_ENTRIES_DEFAULT: &str = "LoaderEntries";
 
 /// Converts a UTF‑8 Rust string to a UTF-16LE byte array.
 pub fn encode_utf16le(data: &str) -> Vec<u8> {
@@ -40,6 +41,52 @@ fn decode_utf16le(mut data: &[u8]) -> String {
         .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
         .collect();
     String::from_utf16_lossy(&utf16_data)
+}
+
+/// Converts a UTF-16LE byte array to a UTF‑8 Rust string.
+fn decode_utf16le_to_strings(data: &[u8]) -> Vec<String> {
+    let mut result = Vec::new();
+    if data.len() <= 2 {
+        return result;
+    }
+
+    let mut start = 0;
+    let u16_null = u16::from_le_bytes([0, 0]);
+
+    // Iterate through the byte slice
+    for (i, &byte) in data.iter().enumerate() {
+        // Combine 2 u8 bytes into a u16
+        if i % 2 == 0 {
+            // Only judge on u16 boundaries
+            continue;
+        }
+        // We are at the second byte of a u16
+        let u16_byte = u16::from_le_bytes([data[i - 1], byte]);
+        if u16_byte == u16_null {
+            // Skip the null-terminating character
+            let end = i - 1;
+            let current_bytes = &data[start..end];
+
+            // If we encounter an empty string (two consecutive nulls, or a null at the very beginning/end)
+            // this usually signifies the end of the list itself.
+            if current_bytes.is_empty() {
+                // Check if this is the final, extra null terminator for the list
+                if i == data.len() - 1 && data.ends_with(b"\0\0") {
+                    break; // End of list found
+                }
+            } else {
+                let utf16_data: Vec<u16> = current_bytes
+                    .chunks(2)
+                    .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+                    .collect();
+                let decoded_string = String::from_utf16_lossy(&utf16_data);
+                result.push(decoded_string);
+            }
+            start = i + 1; // Move the start position past the null terminator
+        }
+    }
+
+    result
 }
 
 /// Sets an EFI variable using the efivar command-line tool.
@@ -146,6 +193,32 @@ pub fn set_default_to_current() -> Result<(), TridentError> {
     set_efi_variable(
         &format!("{BOOTLOADER_INTERFACE_GUID}-{LOADER_ENTRY_DEFAULT}"),
         &current,
+    )
+}
+
+/// Sets the LoaderEntryDefault EFI variable to the previous boot entry
+pub fn set_default_to_previous() -> Result<(), TridentError> {
+    let current = read_efi_variable(BOOTLOADER_INTERFACE_GUID, LOADER_ENTRY_SELECTED)?;
+    let current_decoded = decode_utf16le(&current);
+    let boot_entries = read_efi_variable(BOOTLOADER_INTERFACE_GUID, LOADER_ENTRIES_DEFAULT)?;
+    let boot_entries_decoded = decode_utf16le_to_strings(&boot_entries);
+    if boot_entries_decoded.len() < 2 {
+        return Err(TridentError::new(ServicingError::SetEfiVariable {
+            name: LOADER_ENTRIES_DEFAULT.to_string(),
+        }))
+        .message("Not enough boot entries to determine previous entry");
+    }
+    if boot_entries_decoded[0] != current_decoded {
+        return Err(TridentError::new(ServicingError::SetEfiVariable {
+            name: LOADER_ENTRIES_DEFAULT.to_string(),
+        }))
+        .message("Current boot entry does not match first entry in boot entries list");
+    }
+    let previous = &boot_entries_decoded[1];
+
+    set_efi_variable(
+        &format!("{BOOTLOADER_INTERFACE_GUID}-{LOADER_ENTRY_DEFAULT}"),
+        &encode_utf16le(previous),
     )
 }
 
