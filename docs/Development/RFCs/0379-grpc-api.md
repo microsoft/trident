@@ -1,7 +1,7 @@
-# 0000 gRPC API
+# 0379 gRPC API
 
 - Date: 2025-09-22
-- RFC PR: [microsoft/trident#0000](https://github.com/microsoft/trident/pull/0000)
+- RFC PR: [microsoft/trident#379](https://github.com/microsoft/trident/pull/379)
 - Issue: [microsoft/trident#0000](https://github.com/microsoft/trident/issues/0000)
 
 # Summary
