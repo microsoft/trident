@@ -41,7 +41,7 @@ parameters:
   - name: skipManualRollbackTesting
     displayName: "Skip manual rollback testing"
     type: string
-    default: "true"
+    default: "false"
 
   - name: skipRuntimeUpdateTesting
     displayName: "Skip runtime update testing"

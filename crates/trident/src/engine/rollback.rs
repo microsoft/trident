@@ -48,9 +48,9 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
     let current_servicing_state = datastore.host_status().servicing_state;
     let ab_active_volume = match current_servicing_state {
         // For *Finalized, use the active volume set in Host Status
-        ServicingState::AbUpdateFinalized | ServicingState::CleanInstallFinalized => {
-            datastore.host_status().ab_active_volume
-        }
+        ServicingState::AbUpdateFinalized
+        | ServicingState::CleanInstallFinalized
+        | ServicingState::ManualRollbackFinalized => datastore.host_status().ab_active_volume,
         // For AbUpdateHealthCheckFailed, use the opposite active volume of the one
         // set in Host Status
         ServicingState::AbUpdateHealthCheckFailed => {
@@ -73,6 +73,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
             ServicingType::AbUpdate
         }
         ServicingState::CleanInstallFinalized => ServicingType::CleanInstall,
+        ServicingState::ManualRollbackFinalized => ServicingType::ManualRollback,
         _ => ServicingType::NoActiveServicing,
     };
 
@@ -116,6 +117,17 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
                 current_servicing_state,
                 servicing_type,
             );
+        }
+        (true, ServicingState::ManualRollbackFinalized) => {
+            datastore.with_host_status(|host_status| {
+                host_status.servicing_state = ServicingState::Provisioned;
+                host_status.spec_old = Default::default();
+                host_status.ab_active_volume = match host_status.ab_active_volume {
+                    None | Some(AbVolumeSelection::VolumeB) => Some(AbVolumeSelection::VolumeA),
+                    Some(AbVolumeSelection::VolumeA) => Some(AbVolumeSelection::VolumeB),
+                };
+            })?;
+            return Ok(BootValidationResult::ValidBootProvisioned);
         }
         //
         // Every case below will return an error.
