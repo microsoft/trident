@@ -89,9 +89,11 @@ func (s *TridentE2EScenario) Args() any {
 }
 
 func (s *TridentE2EScenario) Cleanup(storm.SetupCleanupContext) error {
-	err := s.testHost.Cleanup()
-	if err != nil {
-		return fmt.Errorf("failed to clean up test host: %w", err)
+	if s.testHost != nil {
+		err := s.testHost.Cleanup()
+		if err != nil {
+			return fmt.Errorf("failed to clean up test host: %w", err)
+		}
 	}
 
 	return nil

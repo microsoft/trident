@@ -3,6 +3,7 @@ package scenario
 import (
 	"fmt"
 	"os"
+	"os/user"
 	"path/filepath"
 	"slices"
 	"tridenttools/storm/utils/cmd"
@@ -118,7 +119,12 @@ func prepareSwtpmUbuntu(osRelease *env.OsReleaseInfo) error {
 }
 
 func configureLibvirtAccess() error {
-	err := cmd.Run("sudo", "usermod", "-aG", "libvirt", "$USER")
+	currentUser, err := user.Current()
+	if err != nil {
+		return fmt.Errorf("failed to get current user: %w", err)
+	}
+
+	err = cmd.Run("sudo", "usermod", "-aG", "libvirt", currentUser.Username)
 	if err != nil {
 		return fmt.Errorf("failed to add user to libvirt group: %w", err)
 	}
