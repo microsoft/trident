@@ -46,16 +46,6 @@ pub(crate) fn update(
         })?;
     }
 
-    // Need to re-set the Host Status in case another runtime update has been previously staged
-    if state.host_status().servicing_state == ServicingState::RuntimeUpdateStaged {
-        debug!("Resetting runtime update state");
-        state.with_host_status(|host_status| {
-            host_status.spec = host_status.spec_old.clone();
-            host_status.spec_old = Default::default();
-            host_status.servicing_state = ServicingState::Provisioned;
-        })?;
-    }
-
     let mut ctx = EngineContext {
         spec: host_config.clone(),
         spec_old: state.host_status().spec.clone(),

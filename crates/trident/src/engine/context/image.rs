@@ -11,28 +11,32 @@ use crate::engine::EngineContext;
 /// requests an OS image. If yes, update is needed, unless the old Host
 /// Configuration also requested an OS image and the URLs and SHA256 checksums
 /// are the same.
-pub(super) fn ab_update_required(ctx: &EngineContext) -> Result<bool, TridentError> {
-    debug!("Checking OS image to determine if an A/B update is required");
-    // Otherwise, continue checking OS images
-    match (&ctx.spec_old.image, &ctx.spec.image) {
-        // If OS image is not requested in the new spec, no update is needed.
-        (None, None) => Ok(false),
+impl EngineContext {
+    pub(crate) fn ab_update_required(&self) -> Result<bool, TridentError> {
+        debug!("Checking OS image to determine if an A/B update is required");
+        // Otherwise, continue checking OS images
+        match (&self.spec_old.image, &self.spec.image) {
+            // If OS image is not requested in the new spec, no update is needed.
+            (None, None) => Ok(false),
 
-        (None, Some(_)) => {
-            // This is most likely an offline-init's first update.
-            Ok(true)
-        }
+            (None, Some(_)) => {
+                // This is most likely an offline-init's first update.
+                Ok(true)
+            }
 
-        // Update if the sha384 has changed (including if one is 'ignored'), or both are ignored but
-        // the URL has changed.
-        (Some(old_os_image), Some(new_os_image)) => Ok(old_os_image.sha384 != new_os_image.sha384
-            || old_os_image.sha384 == ImageSha384::Ignored && old_os_image.url != new_os_image.url),
+            // Update if the sha384 has changed (including if one is 'ignored'), or both are ignored but
+            // the URL has changed.
+            (Some(old_os_image), Some(new_os_image)) => Ok(old_os_image.sha384
+                != new_os_image.sha384
+                || old_os_image.sha384 == ImageSha384::Ignored
+                    && old_os_image.url != new_os_image.url),
 
-        (Some(_), None) => {
-            // Return an error if the old spec requests an OS image but the new spec does not.
-            Err(TridentError::new(InvalidInputError::from(
-                HostConfigurationDynamicValidationError::DeployPartitionImagesAfterOsImage,
-            )))
+            (Some(_), None) => {
+                // Return an error if the old spec requests an OS image but the new spec does not.
+                Err(TridentError::new(InvalidInputError::from(
+                    HostConfigurationDynamicValidationError::DeployPartitionImagesAfterOsImage,
+                )))
+            }
         }
     }
 }
@@ -182,7 +186,7 @@ mod tests {
             image: Some(os_image),
             ..Default::default()
         };
-        assert!(!ab_update_required(&ctx).unwrap());
+        assert!(!ctx.ab_update_required().unwrap());
 
         // Test case #2: If OS image has changed, return true.
         let mut hc_os_image_updated = hc_os_image.clone();
@@ -192,6 +196,6 @@ mod tests {
             sha384: ImageSha384::Ignored,
         });
         ctx.spec = hc_os_image_updated;
-        assert!(ab_update_required(&ctx).unwrap());
+        assert!(ctx.ab_update_required().unwrap());
     }
 }

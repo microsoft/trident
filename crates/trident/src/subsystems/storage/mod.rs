@@ -21,7 +21,6 @@ use crate::engine::{EngineContext, Subsystem};
 
 mod encryption;
 mod fstab;
-mod image;
 mod osimage;
 mod raid;
 mod verity;
@@ -149,23 +148,6 @@ impl Subsystem for StorageSubsystem {
         }
 
         Ok(())
-    }
-
-    fn select_servicing_type(&self, ctx: &EngineContext) -> Result<ServicingType, TridentError> {
-        // Any changes to the storage section of the Host Configuration require
-        // a Clean Install.
-        if ctx.spec_old.storage != ctx.spec.storage {
-            return Ok(ServicingType::CleanInstall);
-        }
-
-        // If the OS image has been updated, an A/B update is required.
-        if image::ab_update_required(ctx)
-            .message("Failed to determine if A/B update is required")?
-        {
-            return Ok(ServicingType::AbUpdate);
-        }
-
-        Ok(ServicingType::NoActiveServicing)
     }
 
     fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {

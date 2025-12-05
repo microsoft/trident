@@ -20,6 +20,7 @@ use trident_api::{
         ROOT_MOUNT_POINT_PATH,
     },
     error::{InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt},
+    is_default,
     status::ServicingType,
 };
 
@@ -47,7 +48,7 @@ impl Subsystem for HooksSubsystem {
     }
 
     fn select_servicing_type(&self, ctx: &EngineContext) -> Result<ServicingType, TridentError> {
-        if !trident_api::is_default(&ctx.spec.scripts) {
+        if !is_default(&ctx.spec.scripts) {
             return Ok(ServicingType::AbUpdate);
         }
         Ok(ServicingType::NoActiveServicing)
