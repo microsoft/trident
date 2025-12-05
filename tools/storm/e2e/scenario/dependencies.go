@@ -61,7 +61,7 @@ func installUbuntuDependencies(osRelease *env.OsReleaseInfo) error {
 	}
 
 	err = cmd.Run("sudo", "NEEDRESTART_MODE=a",
-		"apt-get", "-y",
+		"apt-get", "-y", "install",
 		"swtpm",
 		"swtpm-tools",
 		"bridge-utils",
