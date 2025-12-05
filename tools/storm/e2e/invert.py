@@ -35,7 +35,7 @@ header = """\
 # Scenarios not listed in this file will not be run in any ring.
 """
 
-# Only allow these configurations
+# While on development, only allow these configurations:
 ALLOWED_CONFIGS = ["base"]
 ALLOWED_HARDWARES = ["vm"]
 ALLOWED_RUNTIMES = ["host"]
