@@ -304,7 +304,7 @@ impl Trident {
         }
     }
 
-    pub fn get_cosi_image(host_config: &mut HostConfiguration) -> Result<OsImage, TridentError> {
+    fn get_cosi_image(host_config: &mut HostConfiguration) -> Result<OsImage, TridentError> {
         let cosi_timeout = match host_config
             .internal_params
             .get_u64(HTTP_CONNECTION_TIMEOUT_SECONDS)
@@ -679,6 +679,8 @@ impl Trident {
         Ok(())
     }
 
+    /// Handle a manual rollback request. Either print information about
+    /// available rollbacks, or execute a rollback.
     pub fn rollback(
         &mut self,
         datastore: &mut DataStore,
