@@ -7,7 +7,7 @@ use std::{
 };
 
 use chrono::Utc;
-use log::{debug, error, info, warn};
+use log::{debug, error, info, trace, warn};
 
 use osutils::{dependencies::Dependency, path::join_relative};
 use trident_api::{
@@ -293,7 +293,7 @@ fn validate_host_config(
                 subsystem.name()
             ))?;
         } else {
-            debug!(
+            trace!(
                 "Skipping step 'Validate' for subsystem '{}'",
                 subsystem.name()
             );
@@ -316,7 +316,7 @@ fn prepare(subsystems: &mut [Box<dyn Subsystem>], ctx: &EngineContext) -> Result
                 subsystem.name()
             ))?;
         } else {
-            debug!(
+            trace!(
                 "Skipping step 'Prepare' for subsystem '{}'",
                 subsystem.name()
             );
@@ -355,7 +355,7 @@ fn provision(
                 subsystem.name()
             ))?;
         } else {
-            debug!(
+            trace!(
                 "Skipping step 'Provision' for subsystem '{}'",
                 subsystem.name()
             );
@@ -397,7 +397,7 @@ fn configure(
                 subsystem.name()
             ))?;
         } else {
-            debug!(
+            trace!(
                 "Skipping step 'Configure' for subsystem '{}'",
                 subsystem.name()
             );
@@ -424,7 +424,7 @@ fn update_host_configuration(
                 subsystem.name()
             ))?;
         } else {
-            debug!(
+            trace!(
                 "Skipping step 'Update Host Configuration' for subsystem '{}'",
                 subsystem.name()
             );
@@ -447,7 +447,7 @@ fn clean_up(subsystems: &[Box<dyn Subsystem>], ctx: &EngineContext) -> Result<()
                 subsystem.name()
             ))?;
         } else {
-            debug!(
+            trace!(
                 "Skipping step 'Clean Up' for subsystem '{}'",
                 subsystem.name()
             );
