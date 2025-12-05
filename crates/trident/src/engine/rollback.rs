@@ -248,8 +248,8 @@ fn commit_finalized_on_expected_root(
     esp::set_uefi_fallback_contents(ctx, current_servicing_state, &root_path)
         .structured(ServicingError::SetUpUefiFallback)?;
 
-    // If this is a UKI image, then we need to re-generate pcrlock policy to include the PCRs
-    // selected by the user for the current boot only.
+    // If we have encrypted volumes and this is a UKI image, then we need to re-generate pcrlock
+    // policy for the current boot only.
     if let Some(ref encryption) = ctx.spec.storage.encryption {
         if ctx.is_uki()? {
             debug!("Regenerating pcrlock policy for current boot");
