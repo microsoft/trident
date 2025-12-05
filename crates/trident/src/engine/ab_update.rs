@@ -51,7 +51,7 @@ pub(super) fn stage_update(
     info!("Staging A/B update");
 
     // Best effort to measure memory, CPU, and network usage during execution
-    let monitor = match monitor_metrics::MonitorMetrics::new("stage_update".to_string()) {
+    let monitor = match monitor_metrics::MonitorMetrics::new("stage_ab_update".to_string()) {
         Ok(monitor) => Some(monitor),
         Err(e) => {
             warn!("Failed to create metrics monitor: {e:?}");
@@ -134,8 +134,9 @@ pub(super) fn stage_update(
     Ok(())
 }
 
-/// Finalizes an update. Takes in 2 arguments:
+/// Finalizes an update. Takes in 2-3 arguments:
 /// - state: A mutable reference to the DataStore.
+/// - update_start_type: The time at which the update began staging.
 /// - sender: Optional mutable reference to the gRPC sender.
 #[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", ServicingType::AbUpdate)))]
 pub(crate) fn finalize_update(

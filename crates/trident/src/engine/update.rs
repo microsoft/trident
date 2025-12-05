@@ -31,9 +31,10 @@ pub(crate) fn update(
     let mut subsystems = SUBSYSTEMS.lock().unwrap();
 
     // Need to re-set the Host Status in case another update has been previously staged.
-    if state.host_status().servicing_state == ServicingState::AbUpdateStaged
-        || state.host_status().servicing_state == ServicingState::RuntimeUpdateStaged
-    {
+    if matches!(
+        state.host_status().servicing_state,
+        ServicingState::AbUpdateStaged | ServicingState::RuntimeUpdateStaged
+    ) {
         debug!(
             "Resetting '{:?}' state",
             state.host_status().servicing_state
@@ -161,7 +162,7 @@ pub(crate) fn update(
             // Determine if finalize is required or not.
             if !allowed_operations.has_finalize() {
                 info!("Finalizing of runtime update not requested.");
-                // Persist the Trident background log and metrics file to the new root. Otherwise,
+                // Persist the Trident background log and metrics file to the target OS. Otherwise,
                 // the staging logs would be lost.
                 engine::persist_background_log_and_metrics(
                     &state.host_status().spec.trident.datastore_path,

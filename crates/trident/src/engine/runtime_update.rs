@@ -42,7 +42,7 @@ pub(crate) fn stage_update(
     info!("Staging runtime update");
 
     // Best effort to measure memory, CPU, and network usage during execution
-    let monitor = match monitor_metrics::MonitorMetrics::new("stage_update".to_string()) {
+    let monitor = match monitor_metrics::MonitorMetrics::new("stage_runtime_update".to_string()) {
         Ok(monitor) => Some(monitor),
         Err(e) => {
             warn!("Failed to create metrics monitor: {e:?}");
