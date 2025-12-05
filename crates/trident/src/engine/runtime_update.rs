@@ -73,7 +73,7 @@ pub(crate) fn stage_update(
     Ok(())
 }
 
-/// Finalizes a runtime update. Takes in 4-5 arguments:
+/// Finalizes a runtime update. Takes in 3-4 arguments:
 /// - subsystems: A mutable reference to the list of subsystems.
 /// - state: A mutable reference to the DataStore.
 /// - update_start_time: Optional, the time at which the update staging began.

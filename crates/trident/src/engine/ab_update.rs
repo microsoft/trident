@@ -136,7 +136,7 @@ pub(super) fn stage_update(
 
 /// Finalizes an update. Takes in 2-3 arguments:
 /// - state: A mutable reference to the DataStore.
-/// - update_start_type: The time at which the update began staging.
+/// - update_start_time: The time at which the update began staging.
 /// - sender: Optional mutable reference to the gRPC sender.
 #[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", ServicingType::AbUpdate)))]
 pub(crate) fn finalize_update(
