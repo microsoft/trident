@@ -280,10 +280,14 @@ fn encrypt_and_open_device(
     Ok(())
 }
 
-/// Returns paths of UKI and bootloader binaries that `systemd-pcrlock` tool should seal to. During
-/// encryption provisioning, returns binaries used for the current boot, i.e. servicing OS, as well
-/// as binaries that will be used in the future boot, i.e. target OS. During boot validation,
-/// returns binaries used for the current boot only.
+/// Returns paths of UKI and bootloader binaries that `systemd-pcrlock` tool should seal to.
+///
+/// 1. While staging an A/B update, during encryption provisioning, returns binaries used for the
+///     current boot, i.e. servicing OS, as well as binaries that will be used in the future boot,
+///     i.e. target OS.
+/// 2. During boot validation, returns binaries used for the current boot only.
+/// 3. During the staging of a manual rollback, returns binaries used for the current boot, as well
+///    as binaries that will be used in the future boot, i.e. rollback OS.
 ///
 /// Returns a tuple containing two vectors:
 /// - uki_binaries: Paths to the UKI binaries,
@@ -299,22 +303,18 @@ pub fn get_binary_paths_pcrlock(
     }
 
     // Determine ESP path depending on the environment
-    let esp_path = if container::is_running_in_container()
-        .unstructured("Failed to determine if running in container")?
-    {
-        let host_root =
-            container::get_host_root_path().unstructured("Failed to get host root path")?;
-        join_relative(host_root, ESP_MOUNT_POINT_PATH)
-    } else {
-        PathBuf::from(ESP_MOUNT_POINT_PATH)
-    };
+    let esp_path = container::get_host_relative_path(PathBuf::from(ESP_MOUNT_POINT_PATH))
+        .unstructured("Failed to get host-relative ESP mount path")?;
+
+    // If servicing state is ManualRollbackStaged, then this logic is being called during staging of a
+    // TODO
 
     // If either PCR 4 or PCR 11 is requested, construct UKI paths
     let uki_binaries = get_uki_paths(&esp_path, mount_path)?;
 
     // If PCR 4 is requested, construct bootloader paths
     let bootloader_binaries = if pcrs.contains(Pcr::Pcr4) {
-        get_bootloader_paths(&esp_path, mount_path, ctx)?
+        get_bootloader_paths(ctx, &esp_path, mount_path)?
     } else {
         vec![]
     };
@@ -347,7 +347,7 @@ pub fn get_binary_paths_pcrlock(
 fn get_uki_paths(esp_path: &Path, mount_path: Option<&Path>) -> Result<Vec<PathBuf>, Error> {
     let mut uki_binaries: Vec<PathBuf> = Vec::new();
 
-    // If mount_path is null, this logic is called on rollback detection, when active volume is
+    // If mount_path is null, this logic is called on boot validation, when active volume is
     // still set to the old volume, so we request UKI suffix for update image, to get it for the
     // current boot. Otherwise, when staging an A/B update, for_update is set to false.
     let esp_uki_directory = join_relative(esp_path, UKI_DIRECTORY);
@@ -356,13 +356,17 @@ fn get_uki_paths(esp_path: &Path, mount_path: Option<&Path>) -> Result<Vec<PathB
     let uki_current = esp_uki_directory.join(uki_filename);
     uki_binaries.push(Path::new(&uki_current).to_path_buf());
 
-    // If this is done during encryption provisioning, i.e. update image is mounted at mount_path,
-    // we also construct the update UKI binary path
+    // If this is done during staging of A/B update, i.e. update image is mounted at mount_path, we
+    // also construct the update UKI binary path
     if mount_path.is_some() {
         // UKI binary in target OS to be measured; it's currently staged at designated path
         let uki_update = esp_uki_directory.join(TMP_UKI_NAME);
         uki_binaries.push(uki_update.clone());
     }
+
+    // If this is done during staging of manual rollback, we also construct the rollback UKI binary
+    // path
+    if manual_rollback {}
 
     debug!("Paths of UKI binaries required for pcrlock encryption:");
     for (i, path) in uki_binaries.iter().enumerate() {
@@ -380,9 +384,9 @@ fn get_uki_paths(esp_path: &Path, mount_path: Option<&Path>) -> Result<Vec<PathB
 /// so the bootloader binary for the target OS is requested. Otherwise, this logic is called on
 /// boot validation, and so we're re-generating the pcrlock policy for the current boot only.
 fn get_bootloader_paths(
+    ctx: &EngineContext,
     esp_path: &Path,
     mount_path: Option<&Path>,
-    ctx: &EngineContext,
 ) -> Result<Vec<PathBuf>, Error> {
     let mut bootloader_binaries: Vec<PathBuf> = Vec::new();
 
@@ -392,7 +396,7 @@ fn get_bootloader_paths(
         Some(_) => ctx.ab_active_volume.ok_or_else(|| {
             anyhow::anyhow!("Active volume is not set outside of clean install servicing")
         })?,
-        // If mount_path is null, this logic is called on rollback detection, when active volume is
+        // If mount_path is null, this logic is called on boot validation, when active volume is
         // still set to the old volume, so we need to determine the actual active volume
         None => match ctx.ab_active_volume {
             None | Some(AbVolumeSelection::VolumeB) => AbVolumeSelection::VolumeA,
@@ -462,7 +466,7 @@ mod tests {
             esp_azla_path.join("grubx64.efi"),
         ];
         assert_eq!(
-            get_bootloader_paths(&esp_path, None, &ctx).unwrap(),
+            get_bootloader_paths(&ctx, &esp_path, None).unwrap(),
             expected_paths_a
         );
 
@@ -470,7 +474,7 @@ mod tests {
         // booting into A.
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         assert_eq!(
-            get_bootloader_paths(&esp_path, None, &ctx).unwrap(),
+            get_bootloader_paths(&ctx, &esp_path, None).unwrap(),
             expected_paths_a
         );
 
@@ -483,7 +487,7 @@ mod tests {
             esp_azlb_path.join("grubx64.efi"),
         ];
         assert_eq!(
-            get_bootloader_paths(&esp_path, None, &ctx).unwrap(),
+            get_bootloader_paths(&ctx, &esp_path, None).unwrap(),
             expected_paths_b
         );
 
@@ -493,7 +497,7 @@ mod tests {
         ctx.servicing_type = ServicingType::AbUpdate;
         ctx.ab_active_volume = None;
         assert_eq!(
-            get_bootloader_paths(&esp_path, Some(&mount_path), &ctx)
+            get_bootloader_paths(&ctx, &esp_path, Some(&mount_path))
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
@@ -510,7 +514,7 @@ mod tests {
             mount_esp_azlb_path.join("grubx64.efi"),
         ]);
         assert_eq!(
-            get_bootloader_paths(&esp_path, Some(&mount_path), &ctx).unwrap(),
+            get_bootloader_paths(&ctx, &esp_path, Some(&mount_path)).unwrap(),
             expected_paths_a
         );
 
@@ -523,7 +527,7 @@ mod tests {
             mount_esp_azla_path.join("grubx64.efi"),
         ]);
         assert_eq!(
-            get_bootloader_paths(&esp_path, Some(&mount_path), &ctx).unwrap(),
+            get_bootloader_paths(&ctx, &esp_path, Some(&mount_path)).unwrap(),
             expected_paths_b
         );
     }
