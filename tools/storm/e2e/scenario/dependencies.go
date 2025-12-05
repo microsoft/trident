@@ -129,29 +129,36 @@ func configureLibvirtAccess() error {
 		return fmt.Errorf("failed to add user to libvirt group: %w", err)
 	}
 
-	//Get user's home directory
+	// Get user's home directory
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("failed to get user's home directory: %w", err)
 	}
 
-	//Create ~/.config/libvirt directory if it doesn't exist
+	// Create ~/.config/libvirt directory if it doesn't exist
 	libVirtConfigDir := filepath.Join(homeDir, ".config", "libvirt")
 	err = os.MkdirAll(libVirtConfigDir, 0755)
 	if err != nil {
 		return fmt.Errorf("failed to create libvirt config directory: %w", err)
 	}
 
-	//Create empty libvirt.conf file if it doesn't exist
+	// Create empty libvirt.conf file if it doesn't exist
 	libVirtConfFile := filepath.Join(libVirtConfigDir, "libvirt.conf")
 	err = os.WriteFile(libVirtConfFile, []byte("uri_default = \"qemu:///system\""), 0644)
 	if err != nil {
 		return fmt.Errorf("failed to create libvirt.conf file: %w", err)
 	}
 
+	tmpFileName := filepath.Join(os.TempDir(), "libvirt-socket-override.conf")
+	err = os.WriteFile(tmpFileName, []byte("[Socket]\nSocketMode=0666\n"), 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write to temporary file: %w", err)
+	}
+	defer os.Remove(tmpFileName)
+
 	err = cmd.RunGroup(
 		cmd.Cmd("sudo", "mkdir", "-p", "/etc/systemd/system/libvirtd.socket.d"),
-		cmd.Cmd("sudo", "bash", "-c", "echo '[Socket]\\nListenStream=/var/run/libvirt/libvirt-sock' > /etc/systemd/system/libvirtd.socket.d/override.conf"),
+		cmd.Cmd("sudo", "cp", tmpFileName, "/etc/systemd/system/libvirtd.socket.d/mode.conf"),
 		cmd.Cmd("sudo", "systemctl", "daemon-reload"),
 		cmd.Cmd("sudo", "systemctl", "restart", "libvirtd.socket"),
 	)
