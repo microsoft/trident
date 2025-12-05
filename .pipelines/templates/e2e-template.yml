@@ -312,27 +312,26 @@ stages:
           runtimeEnv: "container"
 
   # TESTING stages for PR-E2E
-  # TEMPORARILY DISABLED FOR TESTING STORM
-  #  - ${{ if eq(parameters.stageType, 'pr-e2e') }}:
-  #      # Functional Testing (short version)
-  #      - template: stages/testing_functional/functional-testing.yml
-  #        parameters:
-  #          rerunTests: false
-  #          dependsOnStage: ${{ parameters.baseImageArtifactStage }}
-  #          ${{ if parameters.forceFunctionalTestImageRebuild }}:
-  #            downloadPrebuiltImage: false
-  #
-  #      # VM Testing (host, pullrequest)
-  #      - template: stages/testing_vm/netlaunch-testing.yml
-  #        parameters:
-  #          buildPurpose: "pullrequest"
-  #          runtimeEnv: "host"
-  #
-  #      # VM Testing (container, pullrequest)
-  #      - template: stages/testing_vm/netlaunch-testing.yml
-  #        parameters:
-  #          buildPurpose: "pullrequest"
-  #          runtimeEnv: "container"
+  - ${{ if eq(parameters.stageType, 'pr-e2e') }}:
+      # Functional Testing (short version)
+      - template: stages/testing_functional/functional-testing.yml
+        parameters:
+          rerunTests: false
+          dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+          ${{ if parameters.forceFunctionalTestImageRebuild }}:
+            downloadPrebuiltImage: false
+
+      # VM Testing (host, pullrequest)
+      - template: stages/testing_vm/netlaunch-testing.yml
+        parameters:
+          buildPurpose: "pullrequest"
+          runtimeEnv: "host"
+
+      # VM Testing (container, pullrequest)
+      - template: stages/testing_vm/netlaunch-testing.yml
+        parameters:
+          buildPurpose: "pullrequest"
+          runtimeEnv: "container"
 
   # PUBLISHING
   #
