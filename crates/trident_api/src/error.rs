@@ -529,6 +529,15 @@ pub enum ServicingError {
     #[error("Failed to list boot entries via efibootmgr or parse them")]
     ListAndParseBootEntries,
 
+    #[error(
+        "Manual rollback failed as host booted from '{root_device_path}' instead of the expected device \
+        '{expected_device_path}'"
+    )]
+    ManualRollbackRebootCheck {
+        root_device_path: String,
+        expected_device_path: String,
+    },
+
     #[error("Failed to mount execroot binary")]
     MountExecrootBinary,
 
