@@ -1,21 +1,19 @@
 package virtdeploy
 
 import (
-	"bytes"
-	"errors"
 	"fmt"
 	"math/big"
 	"math/rand"
 	"net"
+	"tridenttools/pkg/netfinder"
 
 	"github.com/seancfoley/ipaddress-go/ipaddr"
 	log "github.com/sirupsen/logrus"
-	"github.com/vishvananda/netlink"
 	"libvirt.org/go/libvirtxml"
 )
 
 const (
-	AutoDetectNatInterface = "auto"
+	AutoDetectNatInterfaceValue = "auto"
 )
 
 type ipv4Iterator = ipaddr.Iterator[*ipaddr.IPv4Address]
@@ -59,7 +57,7 @@ func newVirtDeployNetwork(name string, stdIpNet net.IPNet, natInterface string) 
 	}
 
 	// Auto-detect the NAT interface if requested
-	if natInterface == AutoDetectNatInterface {
+	if natInterface == AutoDetectNatInterfaceValue {
 		log.Debug("Auto-detecting NAT interface")
 		var err error
 		natInterface, err = autoDetectNatInterface()
@@ -182,56 +180,9 @@ func networkOffset(base net.IP, offset uint64) net.IP {
 }
 
 func autoDetectNatInterface() (string, error) {
-	// Strategy:
-	// 1. Enumerate IPv4 routes and look for the default route (Dst == nil).
-	// 2. Prefer a default route that has a gateway (Gw != nil).
-	// 3. Resolve the link name from the route's LinkIndex.
-	// 4. If nothing found for IPv4, attempt IPv6 default as a fallback.
-
-	routes, err := netlink.RouteList(nil, netlink.FAMILY_V4)
+	link, err := netfinder.FindDefaultOutboundInterface()
 	if err != nil {
-		return "", fmt.Errorf("listing routes failed: %w", err)
-	}
-
-	isDefaultNet := func(network *net.IPNet) bool {
-		if network == nil {
-			return false
-		}
-		defaultNetwork := net.IPNet{
-			IP:   net.IPv4(0, 0, 0, 0),
-			Mask: net.CIDRMask(0, 32),
-		}
-		return network.IP.Equal(defaultNetwork.IP) && bytes.Equal(network.Mask, defaultNetwork.Mask)
-	}
-
-	var candidate *netlink.Route
-	for i := range routes {
-		r := &routes[i]
-		log.Tracef("Checking Route: %+v", *r)
-		if !isDefaultNet(r.Dst) {
-			// Route does not target the default network
-			log.Trace("Not a default route, skipping")
-			continue
-		}
-
-		if r.Gw == nil {
-			// Skip routes without a gateway
-			log.Trace("No gateway, skipping")
-			continue
-		}
-
-		candidate = r
-		// Good enough
-		break
-	}
-
-	if candidate == nil {
-		return "", errors.New("no default route found")
-	}
-
-	link, err := netlink.LinkByIndex(candidate.LinkIndex)
-	if err != nil {
-		return "", fmt.Errorf("resolve link by index %d: %w", candidate.LinkIndex, err)
+		return "", fmt.Errorf("failed to find default outbound interface: %w", err)
 	}
 
 	return link.Attrs().Name, nil

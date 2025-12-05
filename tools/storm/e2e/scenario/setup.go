@@ -3,18 +3,18 @@ package scenario
 import (
 	"fmt"
 	"net"
-	"tridenttools/pkg/config"
+
+	"tridenttools/pkg/netlaunch"
 	"tridenttools/pkg/ref"
 	"tridenttools/pkg/virtdeploy"
 
 	"github.com/microsoft/storm"
 	log "github.com/sirupsen/logrus"
-	"gopkg.in/yaml.v2"
 )
 
 type testHostInfo interface {
 	IPAddress() net.IP
-	NetlaunchConfig() []byte
+	NetlaunchConnectionConfig() netlaunch.HostConnectionConfiguration
 	Cleanup() error
 }
 
@@ -53,40 +53,30 @@ func (s *TridentE2EScenario) setupTestHostVm(tc storm.TestCase) error {
 		return fmt.Errorf("failed to create VM resources: %w", err)
 	}
 
-	// Netlaunch can figure out everything but the VM UUID itself.
-	config := config.NetLaunchConfig{
-		Netlaunch: config.NetlaunchConfigInner{
+	s.testHost = &testHostVirtDeploy{
+		vm:        status.VMs[0],
+		namespace: status.Namespace,
+		connection: netlaunch.HostConnectionConfiguration{
 			LocalVmUuid:  ref.Of(status.VMs[0].Uuid.String()),
 			LocalVmNvRam: &status.VMs[0].NvramPath,
 		},
-	}
-
-	yamlData, err := yaml.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("failed to marshal YAML: %w", err)
-	}
-
-	s.testHost = &testHostVirtDeploy{
-		vm:        status.VMs[0],
-		netlaunch: yamlData,
-		namespace: status.Namespace,
 	}
 
 	return nil
 }
 
 type testHostVirtDeploy struct {
-	namespace string
-	vm        virtdeploy.VirtDeployVMStatus
-	netlaunch []byte
+	namespace  string
+	vm         virtdeploy.VirtDeployVMStatus
+	connection netlaunch.HostConnectionConfiguration
 }
 
 func (t *testHostVirtDeploy) IPAddress() net.IP {
 	return net.ParseIP(t.vm.IPAddress)
 }
 
-func (t *testHostVirtDeploy) NetlaunchConfig() []byte {
-	return t.netlaunch
+func (t *testHostVirtDeploy) NetlaunchConnectionConfig() netlaunch.HostConnectionConfiguration {
+	return t.connection
 }
 
 func (t *testHostVirtDeploy) Cleanup() error {

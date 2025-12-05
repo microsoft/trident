@@ -6,6 +6,8 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+
+	"golang.org/x/crypto/ssh"
 )
 
 // GenerateRsaKeyPair generates an RSA key pair of the specified bit size.
@@ -25,13 +27,10 @@ func GenerateRsaKeyPair(bitSize int) (privateKey []byte, publicKey []byte, err e
 		},
 	)
 
-	// Encode public key to PKCS#1 ASN.1 PEM.
-	pubPEM := pem.EncodeToMemory(
-		&pem.Block{
-			Type:  "RSA PUBLIC KEY",
-			Bytes: x509.MarshalPKCS1PublicKey(pub.(*rsa.PublicKey)),
-		},
-	)
+	pubKeySsh, err := ssh.NewPublicKey(pub)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to encode SSH public key: %w", err)
+	}
 
-	return keyPEM, pubPEM, nil
+	return keyPEM, ssh.MarshalAuthorizedKey(pubKeySsh), nil
 }

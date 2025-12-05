@@ -2,9 +2,10 @@ package scenario
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"tridenttools/storm/utils/ssh/keys"
 
-	"github.com/Jeffail/gabs/v2"
 	"github.com/microsoft/storm"
 )
 
@@ -13,8 +14,6 @@ const (
 )
 
 func (s *TridentE2EScenario) prepareHostConfig(tc storm.TestCase) error {
-	c := gabs.Wrap(s.config)
-
 	// Generate an SSH key pair for VM access, store the private key for later use
 	private, public, err := keys.GenerateRsaKeyPair(2048)
 	if err != nil {
@@ -22,9 +21,22 @@ func (s *TridentE2EScenario) prepareHostConfig(tc storm.TestCase) error {
 	}
 	s.sshPrivateKey = string(private)
 
+	// Dump the private key to a file if requested
+	if s.args.DumpSshKeyFile != "" {
+		err := os.MkdirAll(filepath.Dir(s.args.DumpSshKeyFile), 0755)
+		if err != nil {
+			return fmt.Errorf("failed to create directory for SSH key file: %w", err)
+		}
+
+		err = os.WriteFile(s.args.DumpSshKeyFile, private, 0600)
+		if err != nil {
+			return fmt.Errorf("failed to write SSH private key to file %s: %w", s.args.DumpSshKeyFile, err)
+		}
+	}
+
 	// Add the public key to the testing user
 	found := false
-	for _, user := range c.S("os", "users").Children() {
+	for _, user := range s.config.S("os", "users").Children() {
 		if user.S("name").Data().(string) == testingUsername {
 			user.ArrayAppend(string(public), "sshPublicKeys")
 			found = true
@@ -32,7 +44,7 @@ func (s *TridentE2EScenario) prepareHostConfig(tc storm.TestCase) error {
 	}
 
 	if !found {
-		c.ArrayConcat(map[string]interface{}{
+		s.config.ArrayConcat(map[string]interface{}{
 			"name":          testingUsername,
 			"sshPublicKeys": []string{string(public)},
 		}, "os", "users")
@@ -44,11 +56,8 @@ func (s *TridentE2EScenario) prepareHostConfig(tc storm.TestCase) error {
 			"source":      "/var/lib/trident/trident-container.tar.gz",
 			"destination": "/var/lib/trident/trident-container.tar.gz",
 		}
-		c.ArrayAppend(containerAdditionalFile, "os", "additionalFiles")
+		s.config.ArrayAppend(containerAdditionalFile, "os", "additionalFiles")
 	}
-
-	// Update the scenario config
-	s.config = c.Data().(map[string]interface{})
 
 	return nil
 }

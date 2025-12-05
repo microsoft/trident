@@ -26,7 +26,7 @@ func RunNetlaunch(config *NetLaunchConfig) error {
 	// Read the ISO
 	iso, err := os.ReadFile(config.IsoPath)
 	if err != nil {
-		log.WithError(err).Fatalf("failed to find iso for testing")
+		return fmt.Errorf("failed to read ISO file '%s': %v", config.IsoPath, err)
 	}
 
 	localListenAddress := fmt.Sprintf(":%d", config.ListenPort)
@@ -58,13 +58,20 @@ func RunNetlaunch(config *NetLaunchConfig) error {
 	if config.Netlaunch.AnnounceIp != nil {
 		// If an IP is specified, use it.
 		announceIp = *config.Netlaunch.AnnounceIp
-	} else {
+	} else if config.Netlaunch.Bmc != nil && config.Netlaunch.Bmc.Ip != "" {
 		// Otherwise, try to be clever...
 		// We need to find the IP of the local interface that can reach the BMC.
 		log.Warn("No announce IP specified. Attempting to find local IP to announce based on BMC IP.")
 		announceIp, err = netfinder.FindLocalIpForTargetIp(config.Netlaunch.Bmc.Ip)
 		if err != nil {
 			return fmt.Errorf("failed to find local IP for BMC: %v", err)
+		}
+	} else {
+		// If we have no BMC, find the default outbound IP.
+		log.Warn("No announce IP specified. Attempting to find default outbound IP to announce.")
+		announceIp, err = netfinder.FindDefaultOutboundIp()
+		if err != nil {
+			return fmt.Errorf("failed to find default outbound IP: %v", err)
 		}
 	}
 

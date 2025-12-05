@@ -87,6 +87,14 @@ stages:
                 value: false
 
         steps:
+          - bash: |
+              if [ ${{ variables['tridentConfigurationName'] }} == 'split' ]; then
+                splitInstallerIsoName="trident-split-installer"
+                echo "setting variable.installerISOName to $splitInstallerIsoName"
+                echo "##vso[task.setvariable variable=installerISOName]$splitInstallerIsoName"
+              fi
+            displayName: Special handle for split test
+
           # Download all test images
           - template: ../testing_common/download-test-images.yml
             parameters:
@@ -98,5 +106,6 @@ stages:
           - bash: |
               set -eux
 
-              ./bin/storm-trident run "$(scenario)"
+              ./bin/storm-trident run "$(scenario)" \
+                  --iso "./artifacts/iso/$(installerISOName).iso"
             displayName: "🧪 Run E2E Test"

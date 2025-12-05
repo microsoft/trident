@@ -97,7 +97,7 @@ func (c *CreateOneCmd) Run() error {
 	status, err := virtdeploy.CreateResources(virtdeploy.VirtDeployConfig{
 		Namespace:    c.Namespace,
 		IPNet:        *network,
-		NatInterface: virtdeploy.AutoDetectNatInterface,
+		NatInterface: virtdeploy.AutoDetectNatInterfaceValue,
 		VMs: []virtdeploy.VirtDeployVM{
 			{
 				Cpus:        c.CPUs,
