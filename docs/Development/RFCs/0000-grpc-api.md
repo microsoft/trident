@@ -207,6 +207,13 @@ Elaborate on any impacts to backwards and forwards compatibility, and any
 mitigations.
 -->
 
+# Implementation Plan
+
+<!-- (DELETE ME)
+[OPTIONAL]
+When needed or appropriate, outline a phased implementation plan for the proposal.
+-->
+
 # Counter-Arguments
 
 ## Drawbacks
@@ -240,3 +247,7 @@ Describe any future work that could build on this proposal.
 
 - Trident CLI could become a portable go-base binary, there is no need for it to
   be rust and it could allow us to easily run it in most Linux systems.
+- Trident could eventually be configured to act as a client when establishing
+  the connection to the orchestrator, so that a central orchestrator could
+  manage multiple Trident instances remotely without necessarilly knowing how to
+  reach out to them.
