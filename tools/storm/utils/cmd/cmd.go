@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os/exec"
 	"strings"
 
@@ -18,6 +19,18 @@ import (
 // Output will be captured and logged in case of failure.
 func Run(name string, arg ...string) error {
 	return Cmd(name, arg...).Run()
+}
+
+// Output runs the command and returns its combined standard output, regardless
+// of exit code.
+func Output(name string, arg ...string) (string, error) {
+	return Cmd(name, arg...).Output()
+}
+
+// CombinedOutput runs the command and returns its combined standard output and
+// standard error, regardless of exit code.
+func CombinedOutput(name string, arg ...string) (string, error) {
+	return Cmd(name, arg...).CombinedOutput()
 }
 
 type CommandRunner struct {
@@ -44,10 +57,29 @@ func RunGroup(commands ...*CommandRunner) error {
 }
 
 func (c *CommandRunner) Run() error {
-	var output bytes.Buffer
+	_, err := c.CombinedOutput()
+	return err
+}
+
+// Output runs the command and returns its combined standard output, regardless
+// of exit code.
+func (c *CommandRunner) Output() (string, error) {
+	p, err := c.run()
+	return p.stdout.String(), err
+}
+
+// CombinedOutput runs the command and returns its combined standard output and
+// standard error, regardless of exit code.
+func (c *CommandRunner) CombinedOutput() (string, error) {
+	p, err := c.run()
+	return p.combined.String(), err
+}
+
+func (c *CommandRunner) run() (*cmdOutProcessor, error) {
 	cmd := exec.Command(c.name, c.args...)
-	cmd.Stdout = &output
-	cmd.Stderr = &output
+	p := newCmdOutProcessor()
+	cmd.Stdout = p.StdoutWriter()
+	cmd.Stderr = p.StderrWriter()
 
 	if strings.HasSuffix(c.name, "sudo") {
 		log.Infof("Running command with elevated privileges: %s %v", c.name, c.args)
@@ -57,9 +89,39 @@ func (c *CommandRunner) Run() error {
 
 	err := cmd.Run()
 	if err != nil {
-		log.Errorf("Process '%s' with args %v failed. Command output:\n%s", c.name, c.args, output.String())
-		return fmt.Errorf("process '%s' failed: %v", c.name, err)
+		log.Errorf("Process '%s' with args %v failed. Command output:\n%s", c.name, c.args, p.combined.String())
+		return p, fmt.Errorf("process '%s' failed: %v", c.name, err)
 	}
 
-	return nil
+	return p, nil
+}
+
+type cmdOutProcessor struct {
+	combined bytes.Buffer
+	stdout   bytes.Buffer
+	stderr   bytes.Buffer
+}
+
+func newCmdOutProcessor() *cmdOutProcessor {
+	return &cmdOutProcessor{}
+}
+
+func (p *cmdOutProcessor) StdoutWriter() io.Writer {
+	return &multiWriter{writers: []*bytes.Buffer{&p.combined, &p.stdout}}
+}
+
+func (p *cmdOutProcessor) StderrWriter() io.Writer {
+	return &multiWriter{writers: []*bytes.Buffer{&p.combined, &p.stderr}}
+}
+
+type multiWriter struct {
+	writers []*bytes.Buffer
+}
+
+func (mw *multiWriter) Write(p []byte) (n int, err error) {
+	for _, w := range mw.writers {
+		// Writing to bytes.Buffer never fails
+		_, _ = w.Write(p)
+	}
+	return len(p), nil
 }

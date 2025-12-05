@@ -150,19 +150,28 @@ func configureLibvirtAccess() error {
 	}
 
 	tmpFileName := filepath.Join(os.TempDir(), "libvirt-socket-override.conf")
-	err = os.WriteFile(tmpFileName, []byte("[Socket]\nSocketMode=0666\n"), 0644)
+	contents := "[Socket]\nSocketMode=0666\n"
+	err = os.WriteFile(tmpFileName, []byte(contents), 0644)
 	if err != nil {
 		return fmt.Errorf("failed to write to temporary file: %w", err)
 	}
 	defer os.Remove(tmpFileName)
+	log.Debugf("Wrote socket override to '%s':\n%s", tmpFileName, contents)
 
 	err = cmd.RunGroup(
 		cmd.Cmd("sudo", "mkdir", "-p", "/etc/systemd/system/libvirtd.socket.d"),
 		cmd.Cmd("sudo", "cp", tmpFileName, "/etc/systemd/system/libvirtd.socket.d/mode.conf"),
 		cmd.Cmd("sudo", "systemctl", "daemon-reload"),
+		cmd.Cmd("sudo", "systemctl", "stop", "libvirtd.service"),
 		cmd.Cmd("sudo", "systemctl", "restart", "libvirtd.socket"),
+		cmd.Cmd("sudo", "systemctl", "start", "libvirtd.service"),
 	)
 	if err != nil {
+		out, journalErr := cmd.Output("sudo", "journalctl", "-xe")
+		if journalErr == nil {
+			log.Errorf("Journalctl output:\n%s", out)
+		}
+
 		return fmt.Errorf("failed to configure libvirt socket: %w", err)
 	}
 
