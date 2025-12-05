@@ -281,6 +281,7 @@ fn stage_clean_install(
             install_index: ctx.install_index,
             last_error: None,
             is_management_os: true,
+            trident_version: Default::default(),
         }
     })?;
     #[cfg(feature = "grpc-dangerous")]
