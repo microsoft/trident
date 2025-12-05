@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	AutoDetectNatInterfaceValue = "auto"
+	AutoDetectNatInterface = "auto"
 )
 
 type ipv4Iterator = ipaddr.Iterator[*ipaddr.IPv4Address]
@@ -57,7 +57,7 @@ func newVirtDeployNetwork(name string, stdIpNet net.IPNet, natInterface string) 
 	}
 
 	// Auto-detect the NAT interface if requested
-	if natInterface == AutoDetectNatInterfaceValue {
+	if natInterface == AutoDetectNatInterface {
 		log.Debug("Auto-detecting NAT interface")
 		var err error
 		natInterface, err = autoDetectNatInterface()
