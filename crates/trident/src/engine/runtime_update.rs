@@ -7,7 +7,7 @@ use tokio::sync::mpsc;
 use osutils::efivar;
 use trident_api::{
     error::TridentError,
-    status::{HostStatus, ServicingState, ServicingType},
+    status::{ServicingState, ServicingType},
 };
 
 #[cfg(feature = "grpc-dangerous")]
@@ -126,17 +126,8 @@ pub(crate) fn finalize_update(
         ServicingState::Provisioned
     );
     state.with_host_status(|hs| {
-        *hs = HostStatus {
-            spec: ctx.spec, // Update Host Status with updated spec.
-            spec_old: ctx.spec_old,
-            servicing_state: ServicingState::Provisioned,
-            ab_active_volume: ctx.ab_active_volume,
-            partition_paths: ctx.partition_paths,
-            disk_uuids: ctx.disk_uuids,
-            install_index: ctx.install_index,
-            last_error: None,
-            is_management_os: false,
-        };
+        hs.servicing_state = ServicingState::Provisioned;
+        hs.spec = ctx.spec;
     })?;
     #[cfg(feature = "grpc-dangerous")]
     grpc::send_host_status_state(sender, state)?;
