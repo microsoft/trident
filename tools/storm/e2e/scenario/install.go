@@ -93,10 +93,5 @@ func prepareHostConfig(hostConfigYaml string) (string, error) {
 		return "", fmt.Errorf("failed to sync temporary host config file: %w", err)
 	}
 
-	err = tempHostConfigFile.Close()
-	if err != nil {
-		return "", fmt.Errorf("failed to close temporary host config file: %w", err)
-	}
-
 	return tempHostConfigFile.Name(), nil
 }
