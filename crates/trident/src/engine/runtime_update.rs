@@ -25,7 +25,7 @@ use super::Subsystem;
 /// - ctx: EngineContext.
 /// - state: A mutable reference to the DataStore.
 /// - sender: Optional mutable reference to the gRPC sender.
-#[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", ctx.servicing_type)))]
+#[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", ServicingType::RuntimeUpdate)))]
 pub(crate) fn stage_update(
     subsystems: &mut [Box<dyn Subsystem>],
     ctx: EngineContext,
