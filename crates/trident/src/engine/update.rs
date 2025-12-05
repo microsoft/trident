@@ -71,7 +71,7 @@ pub(crate) fn update(
     debug!("Determining servicing type of required update");
     let servicing_type = engine::select_servicing_type(&subsystems, &ctx)?;
     match servicing_type {
-        ServicingType::NoActiveServicing => {
+        ServicingType::ManualRollback | ServicingType::NoActiveServicing => {
             info!("No update servicing required");
             return Ok(ExitKind::Done);
         }
@@ -150,6 +150,9 @@ pub(crate) fn update(
         }
         ServicingType::CleanInstall => Err(TridentError::new(
             InvalidInputError::CleanInstallOnProvisionedHost,
+        )),
+        ServicingType::ManualRollback => Err(TridentError::internal(
+            "Cannot update during manual rollback",
         )),
         ServicingType::NoActiveServicing => Err(TridentError::internal("No active servicing type")),
     }
