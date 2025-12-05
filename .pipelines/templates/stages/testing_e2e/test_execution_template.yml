@@ -54,7 +54,7 @@ stages:
 
         strategy:
           matrix: $[ variables['matrixJson'] ]
-          ${{ if and(parameters.maxParallel, ne(parameters.maxParallel, null), ne(parameters.maxParallel, ''), ne(parameters.maxParallel, 0) }}:
+          ${{ if and(parameters.maxParallel, ne(parameters.maxParallel, null), ne(parameters.maxParallel, ''), ne(parameters.maxParallel, 0)) }}:
             maxParallel: ${{ parameters.maxParallel }}
 
         condition: ne(variables['matrixJson'], '{}')
