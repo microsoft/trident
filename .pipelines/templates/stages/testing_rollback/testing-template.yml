@@ -32,7 +32,7 @@ parameters:
     displayName: Agent pool
     type: string
     default: "trident-ubuntu-1es-pool-eastus2"
-  
+
   - name: skipExtensionTesting
     displayName: "Skip extension testing"
     type: string
@@ -46,7 +46,7 @@ parameters:
   - name: skipRuntimeUpdateTesting
     displayName: "Skip runtime update testing"
     type: string
-    default: "true"
+    default: "false"
 
 jobs:
   - job: RollbackTesting_${{ replace(parameters.flavor, '-', '_') }}
@@ -115,7 +115,7 @@ jobs:
 
       - bash: |
           set -eux
-          
+
           STORM_DYNAMIC_FLAGS=""
           if [ "${{ parameters.verboseLogging }}" == "True" ]; then
             STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --verbose"

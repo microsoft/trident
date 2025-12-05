@@ -20,6 +20,7 @@ use trident_api::{
         ROOT_MOUNT_POINT_PATH,
     },
     error::{InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt},
+    is_default,
     status::ServicingType,
 };
 
@@ -44,6 +45,13 @@ impl Subsystem for HooksSubsystem {
 
     fn writable_etc_overlay(&self) -> bool {
         self.writable_etc_overlay
+    }
+
+    fn select_servicing_type(&self, ctx: &EngineContext) -> Result<ServicingType, TridentError> {
+        if !is_default(&ctx.spec.scripts) {
+            return Ok(ServicingType::AbUpdate);
+        }
+        Ok(ServicingType::NoActiveServicing)
     }
 
     fn validate_host_config(&self, ctx: &EngineContext) -> Result<(), TridentError> {

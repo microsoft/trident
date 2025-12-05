@@ -7,7 +7,7 @@ use std::{
 };
 
 use chrono::Utc;
-use log::{debug, error, info, warn};
+use log::{debug, error, info, trace, warn};
 
 use osutils::{dependencies::Dependency, path::join_relative};
 use trident_api::{
@@ -81,12 +81,10 @@ pub(crate) trait Subsystem: Send {
     // TODO: Implement dependencies
     // fn dependencies(&self) -> &'static [&'static str];
 
-    /// Select the servicing type based on the Host Status and Host Configuration.
-    fn select_servicing_type(&self, ctx: &EngineContext) -> Result<ServicingType, TridentError> {
-        if is_default(&ctx.spec_old) {
-            return Ok(ServicingType::CleanInstall);
-        }
-        Ok(ServicingType::AbUpdate)
+    /// Select the servicing type based on information in the Host Status
+    /// relevant to a subsystem.
+    fn select_servicing_type(&self, _ctx: &EngineContext) -> Result<ServicingType, TridentError> {
+        Ok(ServicingType::NoActiveServicing)
     }
 
     /// Servicing types on which a subsystem may run. By default, all subsystems
@@ -256,6 +254,28 @@ fn persist_background_log_and_metrics(
     }
 }
 
+fn select_servicing_type(
+    subsystems: &[Box<dyn Subsystem>],
+    ctx: &EngineContext,
+) -> Result<ServicingType, TridentError> {
+    if is_default(&ctx.spec_old) {
+        return Ok(ServicingType::CleanInstall);
+    } else if ctx
+        .ab_update_required()
+        .message("Failed to determine if A/B update is required")?
+    {
+        return Ok(ServicingType::AbUpdate);
+    }
+
+    Ok(subsystems
+        .iter()
+        .map(|m| m.select_servicing_type(ctx))
+        .collect::<Result<Vec<_>, TridentError>>()?
+        .into_iter()
+        .max()
+        .unwrap_or(ServicingType::NoActiveServicing))
+}
+
 #[tracing::instrument(skip_all)]
 fn validate_host_config(
     subsystems: &[Box<dyn Subsystem>],
@@ -273,7 +293,7 @@ fn validate_host_config(
                 subsystem.name()
             ))?;
         } else {
-            debug!(
+            trace!(
                 "Skipping step 'Validate' for subsystem '{}'",
                 subsystem.name()
             );
@@ -296,7 +316,7 @@ fn prepare(subsystems: &mut [Box<dyn Subsystem>], ctx: &EngineContext) -> Result
                 subsystem.name()
             ))?;
         } else {
-            debug!(
+            trace!(
                 "Skipping step 'Prepare' for subsystem '{}'",
                 subsystem.name()
             );
@@ -335,7 +355,7 @@ fn provision(
                 subsystem.name()
             ))?;
         } else {
-            debug!(
+            trace!(
                 "Skipping step 'Provision' for subsystem '{}'",
                 subsystem.name()
             );
@@ -377,7 +397,7 @@ fn configure(
                 subsystem.name()
             ))?;
         } else {
-            debug!(
+            trace!(
                 "Skipping step 'Configure' for subsystem '{}'",
                 subsystem.name()
             );
@@ -404,7 +424,7 @@ fn update_host_configuration(
                 subsystem.name()
             ))?;
         } else {
-            debug!(
+            trace!(
                 "Skipping step 'Update Host Configuration' for subsystem '{}'",
                 subsystem.name()
             );
@@ -427,7 +447,7 @@ fn clean_up(subsystems: &[Box<dyn Subsystem>], ctx: &EngineContext) -> Result<()
                 subsystem.name()
             ))?;
         } else {
-            debug!(
+            trace!(
                 "Skipping step 'Clean Up' for subsystem '{}'",
                 subsystem.name()
             );
