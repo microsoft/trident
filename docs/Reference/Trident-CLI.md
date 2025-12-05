@@ -27,6 +27,7 @@ Commands:
   validate            Validate the provided Host Configuration
   offline-initialize  Initialize for a system that wasn't
                           installed by Trident
+  rollback            Manually rollback to previous state
   help                Print this message or the help of the given
                           subcommand(s)
 
@@ -49,6 +50,7 @@ Options:
 - [get](#get)
 - [validate](#validate)
 - [offline-initialize](#offline-initialize)
+- [rollback](#rollback)
 - [help](#help)
 
 
@@ -506,6 +508,101 @@ Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
 Default: `DEBUG`
 
 
+## rollback
+
+Manually rollback to previous state
+
+Usage:
+
+```
+trident rollback [OPTIONS]
+```
+
+Argument summary:
+
+```
+Options:
+      --runtime
+          Declare expectation that rollback undoes a runtime update
+  -v, --verbosity <VERBOSITY>
+          Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
+          [default: DEBUG]
+      --ab
+          Declare expectation that rollback undoes an A/B update
+      --allowed-operations [<ALLOWED_OPERATIONS>...]
+          Comma-separated list of operations that Trident will be
+          allowed to perform [default: stage,finalize] [possible
+          values: stage, finalize]
+      --show <SHOW>
+          Show available rollback points [possible values: validation,
+          target, chain]
+  -s, --status <STATUS>
+          Path to save the resulting Host Status
+  -e, --error <ERROR>
+          Path to save an eventual fatal error
+```
+
+
+### Argument Details
+
+#### <span>--runtime &lt;RUNTIME&gt;</span>
+
+Declare expectation that rollback undoes a runtime update
+
+Conflicts with:
+
+- `--ab <AB>`
+
+
+#### <span>--ab &lt;AB&gt;</span>
+
+Declare expectation that rollback undoes an A/B update
+
+Conflicts with:
+
+- `--runtime <RUNTIME>`
+
+
+#### <span>--allowed_operations &lt;ALLOWED_OPERATIONS&gt;</span>
+
+Comma-separated list of operations that Trident will be allowed to perform
+
+Possible values:
+
+- `stage`
+- `finalize`
+
+Default: `stage,finalize`
+
+
+#### <span>--show &lt;SHOW&gt;</span>
+
+Show available rollback points
+
+Possible values:
+
+- `validation`: Show the next available rollback type. 'ab' if an A/B update will be rolled back, 'runtime' if a runtime update will be rolled back, or 'none' if no rollback is possible 
+- `target`: Show the next available rollback Host Configuration 
+- `chain`: Show the full list of available rollbacks 
+
+
+#### <span>--status &lt;STATUS&gt;</span>
+
+Path to save the resulting Host Status
+
+
+#### <span>--error &lt;ERROR&gt;</span>
+
+Path to save an eventual fatal error
+
+
+#### <span>--verbosity &lt;VERBOSITY&gt;</span>
+
+Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
+
+Default: `DEBUG`
+
+
 ## help
 
 Print this message or the help of the given subcommand(s)
@@ -532,6 +629,7 @@ Commands:
   validate            Validate the provided Host Configuration
   offline-initialize  Initialize for a system that wasn't
                           installed by Trident
+  rollback            Manually rollback to previous state
   help                Print this message or the help of the given
                           subcommand(s)
 ```
