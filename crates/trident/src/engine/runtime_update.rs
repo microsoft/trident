@@ -57,7 +57,14 @@ pub(crate) fn stage_update(
         "Updating host's servicing state to '{:?}'",
         ServicingState::RuntimeUpdateStaged
     );
-    state.with_host_status(|hs| hs.servicing_state = ServicingState::RuntimeUpdateStaged)?;
+    state.with_host_status(|hs| {
+        hs.servicing_state = ServicingState::RuntimeUpdateStaged;
+        // Update spec inside the Host Status with the new Host Configuration
+        // (stored in ctx.spec).
+        hs.spec = ctx.spec;
+        // Update spec_old to the previous spec (ctx.spec_old == hs.spec)
+        hs.spec_old = ctx.spec_old;
+    })?;
     #[cfg(feature = "grpc-dangerous")]
     grpc::send_host_status_state(sender, state)?;
 
@@ -127,7 +134,8 @@ pub(crate) fn finalize_update(
     );
     state.with_host_status(|hs| {
         hs.servicing_state = ServicingState::Provisioned;
-        hs.spec = ctx.spec;
+        hs.spec = ctx.spec; // Update spec after call to engine::update_host_configuration()
+        hs.spec_old = Default::default(); // Clear spec_old now that state is Provisioned
     })?;
     #[cfg(feature = "grpc-dangerous")]
     grpc::send_host_status_state(sender, state)?;
