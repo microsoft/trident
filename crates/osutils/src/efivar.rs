@@ -43,7 +43,7 @@ fn decode_utf16le(mut data: &[u8]) -> String {
     String::from_utf16_lossy(&utf16_data)
 }
 
-/// Converts a UTF-16LE byte array to a UTF‑8 Rust string.
+/// Converts a UTF-16LE byte array to a list of UTF‑8 Rust strings.
 fn decode_utf16le_to_strings(data: &[u8]) -> Vec<String> {
     let mut result = Vec::new();
     if data.len() <= 2 {

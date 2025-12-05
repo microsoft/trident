@@ -76,6 +76,7 @@ impl DataStore {
         })
     }
 
+    /// Retrieve all HostStatus entries from the datastore.
     pub(crate) fn get_host_statuses(&self) -> Result<Vec<HostStatus>, TridentError> {
         let mut all_rows_data: Vec<HostStatus> = Vec::new();
 

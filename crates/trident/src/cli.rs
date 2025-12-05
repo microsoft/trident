@@ -43,8 +43,13 @@ pub fn to_operations(allowed_operations: &[AllowedOperation]) -> Operations {
 /// The operations that Trident is allowed to perform
 #[derive(clap::ValueEnum, Copy, Clone, Debug, Eq, PartialEq)]
 pub enum RollbackShowOperation {
+    /// Show the next available rollback type. 'ab' if an
+    /// A/B update will be rolled back, 'runtime' if a runtime update
+    /// will be rolled back, or 'none' if no rollback is possible.
     Validation,
+    /// Show the next available rollback Host Configuration.
     Target,
+    /// Show the full list of available rollbacks.
     Chain,
 }
 
