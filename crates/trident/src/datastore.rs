@@ -10,6 +10,8 @@ use trident_api::{
     status::{decode_host_status, HostStatus},
 };
 
+use crate::TRIDENT_VERSION;
+
 pub struct DataStore {
     db: Option<sqlite::Connection>,
     host_status: HostStatus,
@@ -134,6 +136,7 @@ impl DataStore {
         if self.temporary {
             let persistent_db = Self::make_datastore(path)?;
             self.host_status.is_management_os = false;
+            self.host_status.trident_version = TRIDENT_VERSION.to_string();
             Self::write_host_status(&persistent_db, self.host_status())?;
 
             self.db = Some(persistent_db);
@@ -147,13 +150,15 @@ impl DataStore {
         db: &sqlite::Connection,
         host_status: &HostStatus,
     ) -> Result<(), TridentError> {
+        let mut local_host_status = host_status.clone();
+        local_host_status.trident_version = TRIDENT_VERSION.to_string();
         let mut statement = db
             .prepare("INSERT INTO hoststatus (contents) VALUES (?)")
             .structured(ServicingError::from(DatastoreError::WriteToDatastore))?;
         statement
             .bind((
                 1,
-                &*serde_yaml::to_string(host_status)
+                &*serde_yaml::to_string(&local_host_status)
                     .structured(InternalError::SerializeHostStatus)?,
             ))
             .structured(ServicingError::from(DatastoreError::WriteToDatastore))?;

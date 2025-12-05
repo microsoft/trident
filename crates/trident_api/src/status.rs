@@ -58,6 +58,10 @@ pub struct HostStatus {
     /// Whether this HostStatus is stored on the management OS.
     #[serde(default, skip_serializing_if = "is_default")]
     pub is_management_os: bool,
+
+    /// Version of Trident that last updated this HostStatus.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub trident_version: String,
 }
 
 /// Servicing type is the type of servicing that the Trident agent is executing on the host.

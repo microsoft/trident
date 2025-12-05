@@ -109,6 +109,7 @@ pub(super) fn stage_update(
             install_index: ctx.install_index,
             last_error: None,
             is_management_os: false,
+            trident_version: Default::default(),
         };
     })?;
 
