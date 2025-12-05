@@ -27,9 +27,7 @@ impl Subsystem for NetworkSubsystem {
     }
 
     fn select_servicing_type(&self, ctx: &EngineContext) -> Result<ServicingType, TridentError> {
-        if trident_api::is_default(&ctx.spec_old) {
-            return Ok(ServicingType::CleanInstall);
-        } else if ctx.spec.os.netplan != ctx.spec_old.os.netplan {
+        if ctx.spec.os.netplan != ctx.spec_old.os.netplan {
             return Ok(ServicingType::RuntimeUpdate);
         }
 

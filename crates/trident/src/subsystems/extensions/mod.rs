@@ -105,9 +105,7 @@ impl Subsystem for ExtensionsSubsystem {
     }
 
     fn select_servicing_type(&self, ctx: &EngineContext) -> Result<ServicingType, TridentError> {
-        if trident_api::is_default(&ctx.spec_old) {
-            return Ok(ServicingType::CleanInstall);
-        } else if ctx.spec.os.sysexts != ctx.spec_old.os.sysexts
+        if ctx.spec.os.sysexts != ctx.spec_old.os.sysexts
             || ctx.spec.os.confexts != ctx.spec_old.os.confexts
         {
             return Ok(ServicingType::RuntimeUpdate);

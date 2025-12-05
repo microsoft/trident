@@ -82,13 +82,7 @@ pub(crate) fn update(
     }
 
     debug!("Determining servicing type of required update");
-    let servicing_type = subsystems
-        .iter()
-        .map(|m| m.select_servicing_type(&ctx))
-        .collect::<Result<Vec<_>, TridentError>>()?
-        .into_iter()
-        .max()
-        .unwrap_or(ServicingType::NoActiveServicing);
+    let servicing_type = engine::select_servicing_type(&subsystems, &ctx)?;
     match servicing_type {
         ServicingType::NoActiveServicing => {
             info!("No update servicing required");

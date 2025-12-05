@@ -91,9 +91,7 @@ impl Subsystem for OsConfigSubsystem {
     }
 
     fn select_servicing_type(&self, ctx: &EngineContext) -> Result<ServicingType, TridentError> {
-        if trident_api::is_default(&ctx.spec_old) {
-            return Ok(ServicingType::CleanInstall);
-        } else if ctx.spec.os != ctx.spec_old.os {
+        if ctx.spec.os != ctx.spec_old.os {
             if runtime_update_sufficient(ctx) {
                 return Ok(ServicingType::RuntimeUpdate);
             } else {

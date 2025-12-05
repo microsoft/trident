@@ -47,9 +47,7 @@ impl Subsystem for HooksSubsystem {
     }
 
     fn select_servicing_type(&self, ctx: &EngineContext) -> Result<ServicingType, TridentError> {
-        if trident_api::is_default(&ctx.spec_old) {
-            return Ok(ServicingType::CleanInstall);
-        } else if !trident_api::is_default(&ctx.spec.scripts) {
+        if !trident_api::is_default(&ctx.spec.scripts) {
             return Ok(ServicingType::AbUpdate);
         }
         Ok(ServicingType::NoActiveServicing)
