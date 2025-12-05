@@ -180,9 +180,9 @@ impl OsImage {
         }
     }
 
-    pub(crate) fn host_configuration_template(&self) -> Option<&[u8]> {
+    pub(crate) fn host_configuration_template(&self) -> Option<&str> {
         match &self.0 {
-            OsImageInner::Cosi(cosi) => cosi.host_configuration_template.as_deref(),
+            OsImageInner::Cosi(cosi) => cosi.metadata.host_configuration_template.as_deref(),
             #[cfg(test)]
             OsImageInner::Mock(_) => None,
         }

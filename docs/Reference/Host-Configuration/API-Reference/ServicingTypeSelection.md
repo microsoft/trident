@@ -23,14 +23,14 @@ This selection only includes CleanInstall, a clean install of the target OS imag
 | Type           | `string`        |
 | Value          | `clean-install` |
 
-### Normal Update
+### Runtime Update
 
-This selection only includes NormalUpdate, an update that requires pausing the workload.
+This selection only includes RuntimeUpdate, an update that does not require pausing the workload or rebooting.
 
-| Characteristic | Value           |
-| -------------- | --------------- |
-| Type           | `string`        |
-| Value          | `normal-update` |
+| Characteristic | Value            |
+| -------------- | ---------------- |
+| Type           | `string`         |
+| Value          | `runtime-update` |
 
 ### A/B Update
 
@@ -40,15 +40,6 @@ This selection only includes AbUpdate, an update that requires switching to a di
 | -------------- | ----------- |
 | Type           | `string`    |
 | Value          | `ab-update` |
-
-### Update and Reboot
-
-This selection only includes UpdateAndReboot, an update that requires rebooting the host.
-
-| Characteristic | Value               |
-| -------------- | ------------------- |
-| Type           | `string`            |
-| Value          | `update-and-reboot` |
 
 ### All
 

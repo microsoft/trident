@@ -37,7 +37,6 @@ pub(super) struct Cosi {
     entries: HashMap<PathBuf, CosiEntry>,
     pub metadata: CosiMetadata,
     pub metadata_sha384: Sha384Hash,
-    pub host_configuration_template: Option<Vec<u8>>,
     reader: FileReader,
 }
 
@@ -65,26 +64,6 @@ impl Cosi {
         let (metadata, sha384) = read_cosi_metadata(&cosi_reader, &entries, source.sha384.clone())
             .context("Failed to read COSI file metadata.")?;
 
-        let host_configuration_template =
-            if let Some(ref file) = metadata.host_configuration_template {
-                let entry = entries.get(&file.path).context(
-                    "COSI metadata corrupt: host configuration template referenced but missing",
-                )?;
-
-                let mut contents = Vec::new();
-                let mut reader =
-                    HashingReader384::new(cosi_reader.section_reader(entry.offset, entry.size)?);
-                reader.read_to_end(&mut contents)?;
-
-                if file.sha384 != reader.hash() {
-                    bail!("COSI host configuration template hash does not match expected hash");
-                }
-
-                Some(contents)
-            } else {
-                None
-            };
-
         // Create a new COSI instance.
         Ok(Cosi {
             metadata,
@@ -92,7 +71,6 @@ impl Cosi {
             source: source.url.clone(),
             reader: cosi_reader,
             metadata_sha384: sha384,
-            host_configuration_template,
         })
     }
 
@@ -190,8 +168,7 @@ fn read_entries_from_tar_archive<R: Read + Seek>(
             let entry = (
                 {
                     let path = entry.path().context("Failed to read entry path")?;
-                    let path = path.strip_prefix("./").unwrap_or(&path).to_path_buf();
-                    path
+                    path.strip_prefix("./").unwrap_or(&path).to_path_buf()
                 },
                 CosiEntry {
                     offset: entry.raw_file_position(),
@@ -663,6 +640,79 @@ mod tests {
     }
 
     #[test]
+    fn test_create_cosi_with_footer() {
+        env_logger::builder()
+            .filter_level(log::LevelFilter::Trace)
+            .is_test(true)
+            .try_init()
+            .ok();
+
+        // In this test we're building a fake COSI file with a few mock images
+        // (aka files with arbitrary data) and metadata. We will then create a
+        // COSI file instance from it and validate that the metadata is correct.
+
+        // These are the mock "images". We don't need them to actually be
+        // images, so we just have text files.
+        let mock_images = [
+            ("some/image/path/A", "this is some example data [A]"),
+            ("some/image/path/B", "this is some example data [B]"),
+            ("some/image/path/C", "this is some example data [C]"),
+        ];
+
+        let data_hashes = mock_images
+            .iter()
+            .map(|(_, data)| format!("{:x}", Sha384::digest(data.as_bytes())))
+            .collect::<Vec<_>>();
+
+        // Generate a sample COSI metadata file.
+        let sample_metadata = generate_sample_metadata_v1_0(
+            mock_images
+                .iter()
+                .zip(data_hashes.iter())
+                .map(|((path, data), hash)| (*path, data.len() as u64, hash.as_str())),
+        );
+
+        // Generate a sample COSI file.
+        let mut cosi_file = generate_test_tarball(
+            [(COSI_METADATA_PATH, sample_metadata.as_bytes())]
+                .into_iter()
+                .chain(
+                    mock_images
+                        .iter()
+                        .map(|(path, data)| (*path, data.as_bytes())),
+                ),
+        );
+
+        // Append a mock vpc footer to the COSI file.
+        let mut mock_vpc_footer = vec![0u8; 512];
+        mock_vpc_footer[0..8].copy_from_slice(b"conectix");
+        cosi_file.append(&mut mock_vpc_footer);
+
+        // Write the COSI file to a temp file.
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(&cosi_file).unwrap();
+
+        // Create a COSI instance from the temp file.
+        let url = Url::from_file_path(temp_file.path()).unwrap();
+        let cosi = Cosi::new(
+            &OsImage {
+                url: url.clone(),
+                sha384: ImageSha384::Ignored,
+            },
+            Duration::from_secs(5),
+        )
+        .unwrap();
+
+        assert_eq!(
+            cosi.entries.len(),
+            mock_images.len() + 1,
+            "Incorrect number of entries"
+        );
+
+        assert_eq!(url, cosi.source, "Incorrect source URL in COSI instance")
+    }
+
+    #[test]
     fn test_cosi_image_to_os_image_filesystem() {
         let data = "some data";
         let reader = FileReader::Buffer(Cursor::new(data.as_bytes().to_vec()));
@@ -819,7 +869,6 @@ mod tests {
             },
             reader: FileReader::Buffer(data),
             metadata_sha384: Sha384Hash::from("0".repeat(96)),
-            host_configuration_template: None,
         }
     }
 
@@ -841,7 +890,6 @@ mod tests {
             },
             reader: FileReader::Buffer(Cursor::new(Vec::<u8>::new())),
             metadata_sha384: Sha384Hash::from("0".repeat(96)),
-            host_configuration_template: None,
         };
 
         // Weird behavior with none/multiple ESPs is primarily tested by the

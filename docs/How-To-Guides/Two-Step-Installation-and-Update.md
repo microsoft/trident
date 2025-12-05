@@ -10,12 +10,12 @@ Staging an update involves streaming partition images and applying the indicated
 OS and bootloader configuration. It generally takes on the order of 1-5 minutes,
 but the workload can continue running while staging is in progress:
 
-```
+``` bash
 trident update --allowed-operations stage /etc/trident/config.yaml
 ```
 
 Finalizing an update just sets the new boot order and triggers a reboot:
 
-```
+``` bash
 trident update --allowed-operations finalize /etc/trident/config.yaml
 ```

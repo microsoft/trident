@@ -6,88 +6,136 @@ use strum_macros::{EnumString, IntoStaticStr};
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 
-/// Represents the Platform Configuration Registers (PCRs) in the TPM. Each PCR is associated with
-/// a digit number and a string name.
+/// Represents the Platform Configuration Registers (PCRs) in the TPM 2.0 (Trusted Platform
+/// Module) used for Measured Boot and PCR encryption. Each PCR is associated with a digit number.
+/// Some are also associated with a string name, which reflects the component of the boot process
+/// that is extended into the PCR during boot. The string names below are based on the
+/// [`systemd-cryptenroll` documentation](https://www.man7.org/linux/man-pages/man1/systemd-cryptenroll.1.html).
 ///
-/// NOTE: In the current encryption logic, only the following PCRs are supported when sealing
-/// encrypted volumes against the state of TPM 2.0 device:
-/// - 4, or `boot-loader-code`
-/// - 7, or `secure-boot-policy`
-/// - 11, or `kernel-boot`.
+/// More information on the common PCR assignments in the Linux ecosystems are available in the
+/// [UAPI Linux TPM PCR Registry docs](https://uapi-group.org/specifications/specs/linux_tpm_pcr_registry/).
 #[bitflags]
 #[repr(u32)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, IntoStaticStr, EnumString)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub enum Pcr {
+    /// # PCR 0
+    ///
     /// PCR 0, or `platform-code`.
     #[strum(serialize = "platform-code")]
     Pcr0 = 1 << 0,
+    /// # PCR 1
+    ///
     /// PCR 1, or `platform-config`.
     #[strum(serialize = "platform-config")]
     Pcr1 = 1 << 1,
+    /// # PCR 2
+    ///
     /// PCR 2, or `external-code`.
     #[strum(serialize = "external-code")]
     Pcr2 = 1 << 2,
+    /// # PCR 3
+    ///
     /// PCR 3, or `external-config`.
     #[strum(serialize = "external-config")]
     Pcr3 = 1 << 3,
+    /// # PCR 4
+    ///
     /// PCR 4, or `boot-loader-code`.
     #[strum(serialize = "boot-loader-code")]
     Pcr4 = 1 << 4,
+    /// # PCR 5
+    ///
     /// PCR 5, or `boot-loader-config`.
     #[strum(serialize = "boot-loader-config")]
     Pcr5 = 1 << 5,
+    /// # PCR 6
+    ///
     /// PCR 6, or `host-platform`.
     #[strum(serialize = "host-platform")]
     Pcr6 = 1 << 6,
+    /// # PCR 7
+    ///
     /// PCR 7, or `secure-boot-policy`.
     #[strum(serialize = "secure-boot-policy")]
     Pcr7 = 1 << 7,
+    /// # PCR 8
+    ///
     /// PCR 8.
     #[strum(serialize = "pcr8")]
     Pcr8 = 1 << 8,
+    /// # PCR 9
+    ///
     /// PCR 9, or `kernel-initrd`.
     #[strum(serialize = "kernel-initrd")]
     Pcr9 = 1 << 9,
+    /// # PCR 10
+    ///
     /// PCR 10, or `ima`.
     #[strum(serialize = "ima")]
     Pcr10 = 1 << 10,
+    /// # PCR 11
+    ///
     /// PCR 11, or `kernel-boot`.
     #[strum(serialize = "kernel-boot")]
     Pcr11 = 1 << 11,
+    /// # PCR 12
+    ///
     /// PCR 12, or `kernel-config`.
     #[strum(serialize = "kernel-config")]
     Pcr12 = 1 << 12,
+    /// # PCR 13
+    ///
     /// PCR 13, or `sysexts`.
     #[strum(serialize = "sysexts")]
     Pcr13 = 1 << 13,
+    /// # PCR 14
+    ///
     /// PCR 14, or `shim-policy`.
     #[strum(serialize = "shim-policy")]
     Pcr14 = 1 << 14,
+    /// # PCR 15
+    ///
     /// PCR 15, or `system-identity`.
     #[strum(serialize = "system-identity")]
     Pcr15 = 1 << 15,
+    /// # PCR 16
+    ///
     /// PCR 16, or `debug`.
     #[strum(serialize = "debug")]
     Pcr16 = 1 << 16,
+    /// # PCR 17
+    ///
     /// PCR 17.
     #[strum(serialize = "pcr17")]
     Pcr17 = 1 << 17,
+    /// # PCR 18
+    ///
     /// PCR 18.
     #[strum(serialize = "pcr18")]
     Pcr18 = 1 << 18,
+    /// # PCR 19
+    ///
     /// PCR 19.
     #[strum(serialize = "pcr19")]
     Pcr19 = 1 << 19,
+    /// # PCR 20
+    ///
     /// PCR 20.
     #[strum(serialize = "pcr20")]
     Pcr20 = 1 << 20,
+    /// # PCR 21
+    ///
     /// PCR 21.
     #[strum(serialize = "pcr21")]
     Pcr21 = 1 << 21,
+    /// # PCR 22
+    ///
     /// PCR 22.
     #[strum(serialize = "pcr22")]
     Pcr22 = 1 << 22,
+    /// # PCR 23
+    ///
     /// PCR 23, or `application-support`.
     #[strum(serialize = "application-support")]
     Pcr23 = 1 << 23,

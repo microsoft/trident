@@ -345,7 +345,7 @@ impl EngineContext {
     pub fn root_filesystem(&self) -> Option<FileSystemDataImage> {
         self.filesystems()
             .filter_map(|fs| fs.as_image().cloned())
-            .find(|img_fs| img_fs.mount_point.path == PathBuf::from(ROOT_MOUNT_POINT_PATH))
+            .find(|img_fs| img_fs.mount_point.path == Path::new(ROOT_MOUNT_POINT_PATH))
     }
 
     /// Get the ESP filesystem.
@@ -354,7 +354,7 @@ impl EngineContext {
     pub fn esp_filesystem(&self) -> Option<FileSystemDataImage> {
         self.filesystems()
             .filter_map(|fs| fs.as_image().cloned())
-            .find(|img_fs| img_fs.mount_point.path == PathBuf::from(ESP_MOUNT_POINT_PATH))
+            .find(|img_fs| img_fs.mount_point.path == Path::new(ESP_MOUNT_POINT_PATH))
     }
 }
 

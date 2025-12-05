@@ -54,7 +54,7 @@ pub fn create_partitions_on_disk(
     partition_paths: &mut BTreeMap<BlockDeviceId, PathBuf>,
     disk_uuids: &mut HashMap<BlockDeviceId, Uuid>,
 ) -> Result<(), Error> {
-    let mut repart = SystemdRepartInvoker::new(&disk.bus_path, RepartEmptyMode::Force);
+    let mut repart = SystemdRepartInvoker::new(&disk.dev_path, RepartEmptyMode::Force);
 
     // If the disk has adopted partitions we need to match them and delete the rest.
     adopt_partitions(disk, &mut repart)
@@ -102,7 +102,7 @@ pub fn create_partitions_on_disk(
         );
         // If we fail to re-read the partition table, we log an error but
         // continue with the rest of the operation.
-        let success = block_devices::partx_update(&disk.bus_path)
+        let success = block_devices::partx_update(&disk.dev_path)
             .map_err(|e| {
                 error!(
                     "Failed to re-read partition table for disk '{}': {:?}",
@@ -115,7 +115,7 @@ pub fn create_partitions_on_disk(
     }
 
     // Get the updated disk information.
-    let disk_information = SfDisk::get_info(&disk.bus_path).context(format!(
+    let disk_information = SfDisk::get_info(&disk.dev_path).context(format!(
         "Failed to retrieve information for disk '{}'",
         disk.id
     ))?;
@@ -168,7 +168,7 @@ fn partitioning_safety_check(disks: &Vec<ResolvedDisk>) -> Result<(), Error> {
         debug!("Running partitioning safety check for disk '{}'", disk.id);
 
         let blkdev_info =
-            lsblk::get(&disk.bus_path).context("Failed to retrieve partition table information")?;
+            lsblk::get(&disk.dev_path).context("Failed to retrieve partition table information")?;
 
         // Figure out if anything in the disk is mounted.
         if blkdev_info.get_all_mountpoints_recursive().is_empty() {
@@ -196,7 +196,7 @@ fn partitioning_safety_check(disks: &Vec<ResolvedDisk>) -> Result<(), Error> {
             );
         }
 
-        let disk_info = SfDisk::get_info(&disk.bus_path).context(format!(
+        let disk_info = SfDisk::get_info(&disk.dev_path).context(format!(
             "Failed to retrieve information for disk '{}', the partition table could be missing or corrupted.",
             disk.id
         ))?;
@@ -272,7 +272,7 @@ fn adopt_partitions(disk: &ResolvedDisk, repart: &mut SystemdRepartInvoker) -> R
         disk.id
     );
 
-    let disk_info = SfDisk::get_info(&disk.bus_path).context(format!(
+    let disk_info = SfDisk::get_info(&disk.dev_path).context(format!(
         "Failed to retrieve information for disk '{}', the partition table could be missing or corrupted.",
         disk.id
     ))?;

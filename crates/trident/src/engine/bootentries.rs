@@ -544,15 +544,13 @@ fn get_esp_metadata(
         format!("Failed to find device path for ESP partition with device ID '{esp_device_id}'",)
     })?;
 
-    let esp_disk_path = block_devices::block_device_by_path(
+    let esp_disk_path =
         block_devices::get_disk_for_partition(device_path.as_path()).with_context(|| {
             format!(
                 "Failed to get disk for ESP partition '{esp_device_id}' with device path '{}'",
                 device_path.display()
             )
-        })?,
-    )
-    .context("Failed to get by-path symlink for disk")?;
+        })?;
     debug!(
         "Found disk for ESP partition '{esp_device_id}' with device path '{}'",
         esp_disk_path.display()
@@ -728,9 +726,9 @@ mod tests {
             )
         );
 
-        // Test that servicing types HotPatch, NormalUpdate, UpdateAndReboot will always use the
-        // active volume for updates
-        ctx.servicing_type = ServicingType::NormalUpdate;
+        // Test that servicing type RuntimeUpdate will always use the active
+        // volume for updates
+        ctx.servicing_type = ServicingType::RuntimeUpdate;
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         assert_eq!(
             get_label_and_path(&ctx, BOOT_EFI).unwrap(),

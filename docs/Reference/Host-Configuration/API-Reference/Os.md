@@ -130,6 +130,7 @@ Options for configuring the UEFI fallback.
 | Characteristic | Value                                     |
 | -------------- | ----------------------------------------- |
 | Type           | `UefiFallbackMode`                        |
+| Default        | `"conservative"`                          |
 | Link           | [UefiFallbackMode](./UefiFallbackMode.md) |
 
 ### `users` (optional)

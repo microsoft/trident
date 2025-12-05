@@ -7,26 +7,30 @@ use std::{
 };
 
 use anyhow::{bail, ensure, Context, Error};
-use log::{trace, warn};
+use log::{debug, trace, warn};
 use tempfile::NamedTempFile;
 
-use osutils::{container, dependencies::Dependency, path};
+use osutils::{
+    container,
+    dependencies::{Dependency, DependencyResultExt},
+    path,
+};
 use trident_api::{
-    config::Extension,
-    constants::internal_params::HTTP_CONNECTION_TIMEOUT_SECONDS,
+    constants::{internal_params::HTTP_CONNECTION_TIMEOUT_SECONDS, ROOT_MOUNT_POINT_PATH},
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     primitives::hash::Sha384Hash,
     status::ServicingType,
 };
 
 use crate::{
-    engine::{EngineContext, Subsystem},
+    engine::{EngineContext, Subsystem, RUNS_ON_ALL},
     io_utils::{
         file_reader::FileReader, hashing_reader::HashingReader384, image_streamer::stream_and_hash,
     },
 };
 
 mod release;
+mod utils;
 
 /// Extension-release
 const EXTENSION_RELEASE: &str = "extension-release";
@@ -87,18 +91,54 @@ pub struct ExtensionsSubsystem {
 
     /// Extension images that are currently merged on the servicing OS.
     extensions_old: Vec<ExtensionData>,
+
+    /// Directory in which extension images are downloaded.
+    staging_dir: PathBuf,
 }
 impl Subsystem for ExtensionsSubsystem {
     fn name(&self) -> &'static str {
         "extensions"
     }
 
-    fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
-        // Define staging directory, in which extension images will be downloaded.
-        let staging_dir = path::join_relative(mount_path, EXTENSION_IMAGE_STAGING_DIRECTORY);
+    fn runs_on(&self, _ctx: &EngineContext) -> &[ServicingType] {
+        RUNS_ON_ALL
+    }
 
+    // prepare() is only called during runtime updates, so as to download the
+    // extension files during Stage.
+    fn prepare(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
+        if ctx.servicing_type != ServicingType::RuntimeUpdate {
+            debug!("Skipping step 'prepare' because servicing type is not RuntimeUpdate.");
+            return Ok(());
+        }
+        // Define staging directory and ensure that it is empty.
+        self.staging_dir = PathBuf::from(EXTENSION_IMAGE_STAGING_DIRECTORY);
+        trace!(
+            "Defining staging directory for extension images at '{}'",
+            self.staging_dir.display()
+        );
+        self.reset_staging_dir()?;
         // Download new extension images. Mount and process all extension images.
-        self.populate_extensions(ctx, &staging_dir)
+        self.populate_extensions(ctx)
+            .structured(InternalError::PopulateExtensionImages)?;
+        Ok(())
+    }
+
+    // provision() is not called during runtime updates.
+    fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
+        if ctx.servicing_type == ServicingType::RuntimeUpdate {
+            debug!("Skipping step 'provision' because servicing type is RuntimeUpdate.");
+            return Ok(());
+        }
+        // Define staging directory and ensure that it is empty.
+        self.staging_dir = path::join_relative(mount_path, EXTENSION_IMAGE_STAGING_DIRECTORY);
+        trace!(
+            "Defining staging directory for extension images at '{}'",
+            self.staging_dir.display()
+        );
+        self.reset_staging_dir()?;
+        // Download new extension images. Mount and process all extension images.
+        self.populate_extensions(ctx)
             .structured(InternalError::PopulateExtensionImages)?;
 
         // Ensure that desired target directories exist on the target OS.
@@ -110,12 +150,59 @@ impl Subsystem for ExtensionsSubsystem {
         self.set_up_extensions(mount_path, ctx.servicing_type)
             .structured(InternalError::SetUpExtensionImages)?;
 
-        // Clean-up staging directory. Recursively remove all contents of
-        // staging directory as well as the directory itself.
-        fs::remove_dir_all(staging_dir).structured(InternalError::Internal(
-            "Failed to remove extension image staging directory",
-        ))?;
+        // Delete staging directory.
+        self.reset_staging_dir()?;
 
+        Ok(())
+    }
+
+    // configure() is only called during runtime updates.
+    fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
+        if ctx.servicing_type != ServicingType::RuntimeUpdate {
+            debug!("Skipping step 'configure' because servicing type is not RuntimeUpdate.");
+            return Ok(());
+        }
+
+        // If Finalize is called separately from Stage during a runtime update,
+        // we need to re-populate the subsystem's state.
+        if self.extensions.is_empty() && self.extensions_old.is_empty() {
+            self.staging_dir = PathBuf::from(EXTENSION_IMAGE_STAGING_DIRECTORY);
+            trace!(
+                "Defining staging directory for extension images at '{}'",
+                self.staging_dir.display()
+            );
+            // In this call to populate_extensions(), all extension images
+            // should already be downloaded to the staging directory.
+            self.populate_extensions(ctx)
+                .structured(InternalError::PopulateExtensionImages)?;
+        }
+
+        // Ensure that desired target directories exist on the target OS.
+        self.create_directories(Path::new(ROOT_MOUNT_POINT_PATH))
+            .structured(ServicingError::CreateExtensionImageDirectories)?;
+
+        // Determine which images need to be removed and which should be added.
+        // Copy extension images to their proper locations.
+        self.set_up_extensions(Path::new(ROOT_MOUNT_POINT_PATH), ctx.servicing_type)
+            .structured(InternalError::SetUpExtensionImages)?;
+
+        // Activate sysexts and confexts on the OS.
+        if ctx.spec.os.sysexts != ctx.spec_old.os.sysexts {
+            Dependency::SystemdSysext
+                .cmd()
+                .arg("refresh")
+                .run_and_check()
+                .message("Failed to refresh sysexts on the OS")?;
+        }
+        if ctx.spec.os.confexts != ctx.spec_old.os.confexts {
+            Dependency::SystemdConfext
+                .cmd()
+                .arg("refresh")
+                .run_and_check()
+                .message("Failed to refresh confexts on the OS")?;
+        }
+        // Note: clean-up of staging directory is separated into clean_up()
+        // method for Runtime Updates.
         Ok(())
     }
 
@@ -158,15 +245,21 @@ impl Subsystem for ExtensionsSubsystem {
 
         Ok(())
     }
+
+    fn clean_up(&self, ctx: &EngineContext) -> Result<(), TridentError> {
+        if ctx.servicing_type != ServicingType::RuntimeUpdate {
+            debug!("Skipping step 'clean up' because servicing type is not RuntimeUpdate.");
+            return Ok(());
+        }
+        // Clean-up staging directory. Recursively remove all contents of
+        // staging directory as well as the directory itself.
+        self.reset_staging_dir()?;
+        Ok(())
+    }
 }
 
 impl ExtensionsSubsystem {
-    #[allow(unused)]
-    fn populate_extensions(
-        &mut self,
-        ctx: &EngineContext,
-        staging_dir: &Path,
-    ) -> Result<(), Error> {
+    fn populate_extensions(&mut self, ctx: &EngineContext) -> Result<(), Error> {
         let timeout = Duration::from_secs(
             ctx.spec
                 .internal_params
@@ -177,15 +270,20 @@ impl ExtensionsSubsystem {
 
         // Create temporary directory in which to download extension images
         // before copying them to their final path.
-        if !staging_dir.exists() {
-            fs::create_dir_all(staging_dir)
-                .with_context(|| format!("Failed to create dir '{}'", staging_dir.display()))?;
+        if !self.staging_dir.exists() {
+            trace!(
+                "Creating staging directory at '{}'",
+                self.staging_dir.display()
+            );
+            fs::create_dir_all(&self.staging_dir).with_context(|| {
+                format!("Failed to create dir '{}'", self.staging_dir.display())
+            })?;
         };
 
-        self.populate_extensions_inner(ctx, timeout, staging_dir, ExtensionType::Sysext, true)?;
-        self.populate_extensions_inner(ctx, timeout, staging_dir, ExtensionType::Sysext, false)?;
-        self.populate_extensions_inner(ctx, timeout, staging_dir, ExtensionType::Confext, true)?;
-        self.populate_extensions_inner(ctx, timeout, staging_dir, ExtensionType::Confext, false)?;
+        self.populate_extensions_inner(ctx, timeout, ExtensionType::Sysext, true)?;
+        self.populate_extensions_inner(ctx, timeout, ExtensionType::Sysext, false)?;
+        self.populate_extensions_inner(ctx, timeout, ExtensionType::Confext, true)?;
+        self.populate_extensions_inner(ctx, timeout, ExtensionType::Confext, false)?;
         Ok(())
     }
 
@@ -203,7 +301,6 @@ impl ExtensionsSubsystem {
         &mut self,
         ctx: &EngineContext,
         timeout: Duration,
-        staging_dir: &Path,
         ext_type: ExtensionType,
         new: bool,
     ) -> Result<(), Error> {
@@ -216,29 +313,20 @@ impl ExtensionsSubsystem {
 
         for ext in hc_extensions {
             let extension_file = if new {
-                // First, check if this extension already exists on the system.
-                if let Some(existing_file_path) = match &ext_type {
-                    ExtensionType::Sysext => {
-                        check_for_existing_image(ext, &ctx.spec_old.os.sysexts)
+                // First, check if this extension already exists on the OS.
+                if let Some(existing_file_path) =
+                    match &ext_type {
+                        ExtensionType::Sysext => self
+                            .find_existing_extension_path(&ext.sha384, &ctx.spec_old.os.sysexts)?,
+                        ExtensionType::Confext => self
+                            .find_existing_extension_path(&ext.sha384, &ctx.spec_old.os.confexts)?,
                     }
-                    ExtensionType::Confext => {
-                        check_for_existing_image(ext, &ctx.spec_old.os.confexts)
-                    }
-                } {
-                    // Check if Trident is running in a container, and adjust path accordingly.
-                    let adjusted_path = adjust_path_if_container(existing_file_path.clone())?;
-                    // Ensure that file exists.
-                    ensure!(
-                        adjusted_path.exists(),
-                        "Expected to find extension image from URL '{}' at path '{}' based on previous Host Configuration, but path does not exist",
-                        ext.url,
-                        existing_file_path.display() // Display the unadjusted path for readability
-                    );
-                    adjusted_path
+                {
+                    existing_file_path
                 } else {
                     // The extension is new to the OS, so we need to download it.
                     // Create and persist a temporary file; get its path.
-                    let temp_file: PathBuf = NamedTempFile::new_in(staging_dir)
+                    let temp_file: PathBuf = NamedTempFile::new_in(&self.staging_dir)
                         .context("Failed to create temporary file")?
                         .into_temp_path()
                         .keep()
@@ -263,7 +351,20 @@ impl ExtensionsSubsystem {
                         )
                     }
 
-                    temp_file
+                    // Rename the file to use the hash as the filename. This is
+                    // useful for identifying the extension image in the staging
+                    // directory if Finalize of a runtime update is called
+                    // separately from Stage.
+                    let hash_based_filename =
+                        self.staging_dir.join(format!("{computed_sha384}.raw"));
+                    fs::rename(&temp_file, &hash_based_filename).with_context(|| {
+                        format!(
+                            "Failed to rename downloaded file to hash-based name: '{}'",
+                            hash_based_filename.display()
+                        )
+                    })?;
+
+                    hash_based_filename
                 }
             } else {
                 // For extension images from the old Host Configuration, use the
@@ -275,7 +376,8 @@ impl ExtensionsSubsystem {
                     )
                 })?;
                 // Check if Trident is running in a container, and adjust path accordingly.
-                let adjusted_path = adjust_path_if_container(path.clone())?;
+                let adjusted_path = container::get_host_relative_path(path.clone())
+                    .unstructured("Failed to adjust file path for container")?;
                 // Ensure that file exists
                 ensure!(
                     adjusted_path.exists(),
@@ -290,7 +392,7 @@ impl ExtensionsSubsystem {
             let temp_mp = tempfile::tempdir()?;
 
             // Attach a device and mount the extension
-            let device_path = attach_device_and_mount(&extension_file, temp_mp.path())
+            let device_path = utils::attach_device_and_mount(&extension_file, temp_mp.path())
                 .context("Failed to mount")?;
 
             // Get extension-release file
@@ -298,7 +400,8 @@ impl ExtensionsSubsystem {
                 release::read_extension_release(temp_mp.path(), &extension_file, ext, &ext_type);
 
             // Clean-Up: unmount and detach the device
-            detach_device_and_unmount(device_path, temp_mp.path()).context("Failed to unmount")?;
+            utils::detach_device_and_unmount(device_path, temp_mp.path())
+                .context("Failed to unmount")?;
 
             let ext_data =
                 ext_data_result.context("Failed to get extension-release information")?;
@@ -452,85 +555,16 @@ impl ExtensionsSubsystem {
 
         Ok(())
     }
-}
 
-/// Helper function to identify if the extension exists in the old Host
-/// Configuration, in which case we can reuse its path.
-fn check_for_existing_image(ext: &Extension, old_hc_extensions: &[Extension]) -> Option<PathBuf> {
-    old_hc_extensions
-        .iter()
-        // Extension must match on Sha384 hash
-        .find(|old_ext| ext.sha384 == old_ext.sha384)?
-        .path
-        .clone()
-}
-
-/// Helper function that prepends host root path to a path, if Trident is
-/// running in a container.
-fn adjust_path_if_container(path: PathBuf) -> Result<PathBuf, Error> {
-    Ok(
-        if container::is_running_in_container()
-            .unstructured("Failed to check if Trident is running in a container")?
-        {
-            path::join_relative(
-                container::get_host_root_path().unstructured("Failed to get host root path")?,
-                path,
-            )
-        } else {
-            path
-        },
-    )
-}
-
-/// Helper function to mount the extension image.
-fn attach_device_and_mount(image_file_path: &Path, mount_path: &Path) -> Result<String, Error> {
-    let loop_device_output = Dependency::Losetup
-        .cmd()
-        .arg("-f")
-        .arg("--show")
-        .arg(image_file_path)
-        .output_and_check()
-        .context("Failed to attach loop device")?;
-    let loop_device = loop_device_output.trim();
-
-    // Must mount with option '-t ddi', which internally invokes systemd-dissect
-    // as a helper to parse the partitions in the image.
-    let mount_result = Dependency::Mount
-        .cmd()
-        .arg("-t")
-        .arg("ddi")
-        .arg(loop_device)
-        .arg(mount_path)
-        .run_and_check();
-    if let Err(e) = mount_result {
-        // Detach the loop device if mounting failed.
-        Dependency::Losetup
-            .cmd()
-            .arg("-d")
-            .arg(loop_device)
-            .run_and_check()
-            .context("Failed to clean up loop device after mount failed")?;
-        // After detaching the loop device, return mount error.
-        return Err(e.into());
+    /// Resets staging directory by deleting the directory if it exists.
+    /// `self.staging_dir` should be set before calling.
+    fn reset_staging_dir(&self) -> Result<(), TridentError> {
+        if self.staging_dir.is_dir() {
+            fs::remove_dir_all(&self.staging_dir)
+                .structured(InternalError::Internal("Failed to reset staging directory"))?;
+        };
+        Ok(())
     }
-
-    Ok(loop_device.to_string())
-}
-
-/// Helper function to unmount the extension image.
-fn detach_device_and_unmount(device_path: String, mount_path: &Path) -> Result<(), Error> {
-    Dependency::Umount
-        .cmd()
-        .arg(mount_path)
-        .run_and_check()
-        .context("Failed to unmount extension image")?;
-    Dependency::Losetup
-        .cmd()
-        .arg("-d")
-        .arg(device_path)
-        .run_and_check()
-        .context("Failed to detach loop device")?;
-    Ok(())
 }
 
 #[cfg(test)]
@@ -540,14 +574,17 @@ mod tests {
     use tempfile::TempDir;
     use url::Url;
 
+    use ::trident_api::config::Extension;
+
     #[test]
     fn test_populate_extensions_empty() {
         // Test with no extensions
-        let mut subsystem = ExtensionsSubsystem::default();
+        let mut subsystem = ExtensionsSubsystem {
+            staging_dir: TempDir::new().unwrap().path().to_path_buf(),
+            ..Default::default()
+        };
         let ctx = EngineContext::default();
-        subsystem
-            .populate_extensions(&ctx, TempDir::new().unwrap().path())
-            .unwrap();
+        subsystem.populate_extensions(&ctx).unwrap();
 
         assert!(
             subsystem.extensions.is_empty(),
@@ -618,7 +655,7 @@ mod tests {
                     ext_type: ExtensionType::Confext,
                 },
             ],
-            extensions_old: vec![],
+            ..Default::default()
         };
 
         let mount_path = TempDir::new().unwrap();
@@ -675,7 +712,7 @@ mod tests {
                     ext_type: ExtensionType::Sysext,
                 },
             ],
-            extensions_old: vec![],
+            ..Default::default()
         };
         subsystem.update_host_configuration(&mut ctx).unwrap();
 
@@ -723,7 +760,7 @@ mod tests {
                     ext_type: ExtensionType::Confext,
                 },
             ],
-            extensions_old: vec![],
+            ..Default::default()
         };
         subsystem.update_host_configuration(&mut ctx).unwrap();
 
@@ -750,7 +787,10 @@ mod functional_test {
         mkfs, mount,
     };
     use pytest_gen::functional_test;
-    use trident_api::constants::{DEFAULT_CONFEXT_DIRECTORY, DEFAULT_SYSEXT_DIRECTORY};
+    use trident_api::{
+        config::Extension,
+        constants::{DEFAULT_CONFEXT_DIRECTORY, DEFAULT_SYSEXT_DIRECTORY},
+    };
 
     /// Helper to create a minimal Discoverable Disk Image extension for testing
     fn create_test_extension_image(
@@ -875,8 +915,11 @@ mod functional_test {
 
         // Process extensions
         let ctx = create_test_extensions(&test_inputs);
-        let mut subsystem = ExtensionsSubsystem::default();
-        subsystem.populate_extensions(&ctx, &temp_dir()).unwrap();
+        let mut subsystem = ExtensionsSubsystem {
+            staging_dir: temp_dir(),
+            ..Default::default()
+        };
+        subsystem.populate_extensions(&ctx).unwrap();
 
         // Verify results
         let subsystem_extensions = subsystem.extensions;
@@ -901,6 +944,14 @@ mod functional_test {
             assert_eq!(
                 subsystem_ext.path,
                 PathBuf::from(expected_dir).join(format!("{}.raw", subsystem_ext.name))
+            );
+
+            // Verify that the staged file name is the extension's hash.
+            assert_eq!(
+                subsystem_ext.temp_path,
+                subsystem
+                    .staging_dir
+                    .join(format!("{}.raw", subsystem_ext.sha384))
             );
         }
     }
@@ -941,8 +992,11 @@ mod functional_test {
 
         // Process extensions with new=false
         let ctx = create_test_extensions(&test_inputs);
-        let mut subsystem = ExtensionsSubsystem::default();
-        subsystem.populate_extensions(&ctx, &temp_dir()).unwrap();
+        let mut subsystem = ExtensionsSubsystem {
+            staging_dir: temp_dir(),
+            ..Default::default()
+        };
+        subsystem.populate_extensions(&ctx).unwrap();
 
         // Verify results
         let subsystem_extensions = subsystem.extensions_old;
@@ -989,11 +1043,11 @@ mod functional_test {
         // Attempt to process - should fail due to hash mismatch
         let mut ctx = EngineContext::default();
         ctx.spec.os.sysexts = vec![hc_extension];
-        let mut subsystem = ExtensionsSubsystem::default();
-        let error = subsystem
-            .populate_extensions(&ctx, &temp_dir())
-            .unwrap_err()
-            .to_string();
+        let mut subsystem = ExtensionsSubsystem {
+            staging_dir: temp_dir(),
+            ..Default::default()
+        };
+        let error = subsystem.populate_extensions(&ctx).unwrap_err().to_string();
 
         assert_eq!(error, format!("SHA384 mismatch for extension image at '{extension_url}': expected {wrong_hash}, got {actual_hash}"));
     }
@@ -1025,11 +1079,11 @@ mod functional_test {
         // Attempt to process as an existing Extension
         let mut ctx = EngineContext::default();
         ctx.spec_old.os.sysexts = vec![hc_extension];
-        let mut subsystem = ExtensionsSubsystem::default();
-        let error = subsystem
-            .populate_extensions(&ctx, &temp_dir())
-            .unwrap_err()
-            .to_string();
+        let mut subsystem = ExtensionsSubsystem {
+            staging_dir: temp_dir(),
+            ..Default::default()
+        };
+        let error = subsystem.populate_extensions(&ctx).unwrap_err().to_string();
 
         assert_eq!(error, format!("Expected to find extension image from URL '{ext_url}' at path '{}', but path does not exist", ext_path.display()));
     }
@@ -1060,7 +1114,7 @@ mod functional_test {
                 temp_path: temp_file.path().to_path_buf(),
                 ext_type: ExtensionType::Sysext,
             }],
-            extensions_old: vec![],
+            ..Default::default()
         };
 
         // Create necessary directories
@@ -1127,7 +1181,7 @@ mod functional_test {
                     ext_type: ExtensionType::Confext,
                 },
             ],
-            extensions_old: vec![],
+            ..Default::default()
         };
 
         // Create necessary directories
@@ -1172,7 +1226,6 @@ mod functional_test {
             "ID=_any\nSYSEXT_ID=old_ext",
         );
         let subsystem = ExtensionsSubsystem {
-            extensions: vec![],
             extensions_old: vec![ExtensionData {
                 id: "old_ext".to_string(),
                 name: "old_ext".to_string(),
@@ -1181,6 +1234,7 @@ mod functional_test {
                 temp_path: old_ext.path().to_path_buf(),
                 ext_type: ExtensionType::Sysext,
             }],
+            ..Default::default()
         };
 
         let mount_path = TempDir::new().unwrap();
@@ -1198,9 +1252,9 @@ mod functional_test {
         // Verify that nothing has been copied to the target OS.
         assert!(mount_path.path().read_dir().unwrap().next().is_none());
 
-        // Run set_up_extensions with HotPath (should remove old extensions)
+        // Run set_up_extensions with RuntimeUpdate (should remove old extensions)
         subsystem
-            .set_up_extensions(mount_path.path(), ServicingType::HotPatch)
+            .set_up_extensions(mount_path.path(), ServicingType::RuntimeUpdate)
             .unwrap();
         // Verify the extension was removed
         assert!(!old_ext.path().exists(), "Old extension should be removed");
@@ -1252,6 +1306,7 @@ mod functional_test {
                 temp_path: old_ext.path().to_path_buf(),
                 ext_type: ExtensionType::Sysext,
             }],
+            ..Default::default()
         };
 
         // Create necessary directories
@@ -1275,9 +1330,9 @@ mod functional_test {
     }
 
     #[functional_test]
-    fn test_set_up_extensions_update_replace_hotpatch() {
+    fn test_set_up_extensions_update_replace_runtime_update() {
         // Test scenario where an old sysext and a new sysext match on ID, and
-        // an update is required (mismatched hashes), on a hot patch update.
+        // an update is required (mismatched hashes), on a runtime update.
         // Create old extension.
         let old_ext_dir = TempDir::new().unwrap();
         let old_ext = NamedTempFile::new_in(old_ext_dir.path()).unwrap();
@@ -1318,13 +1373,14 @@ mod functional_test {
                 temp_path: old_ext.path().to_path_buf(),
                 ext_type: ExtensionType::Sysext,
             }],
+            ..Default::default()
         };
 
         // Create necessary directories
         subsystem.create_directories(mount_path.path()).unwrap();
-        // Run set_up_extensions; hot patch update
+        // Run set_up_extensions; runtime update
         subsystem
-            .set_up_extensions(mount_path.path(), ServicingType::HotPatch)
+            .set_up_extensions(mount_path.path(), ServicingType::RuntimeUpdate)
             .unwrap();
 
         // Verify old extension was removed, since servicing type is not A/B
@@ -1387,6 +1443,7 @@ mod functional_test {
                 temp_path: old_ext.path().to_path_buf(),
                 ext_type: ExtensionType::Sysext,
             }],
+            ..Default::default()
         };
 
         let mount_path = TempDir::new().unwrap();
@@ -1421,9 +1478,9 @@ mod functional_test {
     }
 
     #[functional_test]
-    fn test_set_up_extensions_update_maintain_hotpatch() {
+    fn test_set_up_extensions_update_maintain_runtime_update() {
         // Test scenario where an old sysext and a new sysext match on ID, and
-        // an update is NOT required (matching hashes), on a hot patch update.
+        // an update is NOT required (matching hashes), on a runtime update.
         // Create old extension.
         let old_ext_dir = TempDir::new().unwrap();
         let old_ext = NamedTempFile::new_in(&old_ext_dir).unwrap();
@@ -1452,6 +1509,7 @@ mod functional_test {
                 temp_path: old_ext.path().to_path_buf(),
                 ext_type: ExtensionType::Sysext,
             }],
+            ..Default::default()
         };
 
         let mount_path = TempDir::new().unwrap();
@@ -1459,7 +1517,7 @@ mod functional_test {
         subsystem.create_directories(mount_path.path()).unwrap();
         // Run set_up_extensions
         subsystem
-            .set_up_extensions(mount_path.path(), ServicingType::HotPatch)
+            .set_up_extensions(mount_path.path(), ServicingType::RuntimeUpdate)
             .unwrap();
 
         // Verify old extension was removed. Since servicing OS == target OS,

@@ -10,4 +10,5 @@ var TRIDENT_HELPERS = []storm.Helper{
 	&CheckSelinuxHelper{},
 	&DisplayLogsHelper{},
 	&RebuildRaidHelper{},
+	&WaitForLoginHelper{},
 }

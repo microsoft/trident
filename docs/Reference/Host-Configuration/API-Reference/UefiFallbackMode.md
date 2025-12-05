@@ -18,30 +18,30 @@ This configuration option allows specifying how Trident should populate the UEFI
 
 ## Variants
 
-### Rollback
+### Conservative
 
 During clean install, the UEFI fallback will be updated during `finalize` to boot to the target OS. During an A/B update, the UEFI fallback will be updated to boot to the servicing OS (the existing OS) during `finalize` and then will be updated to boot to the target OS when `commit` validates the target OS as healthy. This aligns with how Trident handles the UEFI boot variables during an update.
+
+| Characteristic | Value          |
+| -------------- | -------------- |
+| Type           | `string`       |
+| Value          | `conservative` |
+
+### Optimistic
+
+During clean install, the UEFI fallback will be updated during `finalize` to boot to the target OS. During an A/B update, the UEFI fallback will be updated to boot to the target OS (the newly installed OS) during the finalize stage.
+
+| Characteristic | Value        |
+| -------------- | ------------ |
+| Type           | `string`     |
+| Value          | `optimistic` |
+
+### Disabled
+
+No UEFI fallback boot files are installed.
 
 | Characteristic | Value      |
 | -------------- | ---------- |
 | Type           | `string`   |
-| Value          | `rollback` |
-
-### Rollforward
-
-During clean install, the UEFI fallback will be updated during `finalize` to boot to the target OS. During an A/B update, the UEFI fallback will be updated to boot to the target OS (the newly installed OS) during the finalize stage.
-
-| Characteristic | Value         |
-| -------------- | ------------- |
-| Type           | `string`      |
-| Value          | `rollforward` |
-
-### None
-
-No UEFI fallback boot files are installed.
-
-| Characteristic | Value    |
-| -------------- | -------- |
-| Type           | `string` |
-| Value          | `none`   |
+| Value          | `disabled` |
 

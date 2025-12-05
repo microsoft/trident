@@ -4,9 +4,12 @@ use anyhow::Context;
 use log::debug;
 
 use osutils::netplan;
-use trident_api::error::{ReportError, ServicingError, TridentError};
+use trident_api::{
+    error::{ReportError, ServicingError, TridentError},
+    status::ServicingType,
+};
 
-use crate::engine::{EngineContext, Subsystem};
+use crate::engine::{EngineContext, Subsystem, RUNS_ON_ALL};
 
 const CLOUD_INIT_CONFIG_DIR: &str = "/etc/cloud/cloud.cfg.d";
 const CLOUD_INIT_DISABLE_FILE: &str = "99-use-trident-networking.cfg";
@@ -17,6 +20,20 @@ pub struct NetworkSubsystem;
 impl Subsystem for NetworkSubsystem {
     fn name(&self) -> &'static str {
         "network"
+    }
+
+    fn runs_on(&self, _ctx: &EngineContext) -> &[ServicingType] {
+        RUNS_ON_ALL
+    }
+
+    fn prepare(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
+        if ctx.servicing_type == ServicingType::RuntimeUpdate
+            && ctx.spec.os.netplan != ctx.spec_old.os.netplan
+        {
+            // Remove old configuration
+            netplan::remove().structured(ServicingError::RemoveNetplanConfig)?;
+        }
+        Ok(())
     }
 
     #[tracing::instrument(name = "network_configuration", skip_all)]
@@ -32,6 +49,12 @@ impl Subsystem for NetworkSubsystem {
                 // deploy additional configurations that are undesired and may
                 // conflict with or otherwise affect Trident's network setup.
                 disable_cloud_init_networking(CLOUD_INIT_CONFIG_DIR)?;
+
+                // Apply Netplan config immediately since there is no reboot in
+                // a runtime update.
+                if ctx.servicing_type == ServicingType::RuntimeUpdate {
+                    netplan::apply().structured(ServicingError::ApplyNetplanConfig)?;
+                }
             }
             None => {
                 debug!("Network config not provided");

@@ -9,6 +9,7 @@ import (
 )
 
 type CLI struct {
+	AddVpc          cmd.AddVpcCmd       `cmd:"" help:"Add a VPC footer to a COSI file."`
 	Build           BuildCmd            `cmd:"" help:"Build a COSI file from existing test images!"`
 	DeleteFs        cmd.DeleteFs        `cmd:"" help:"Delete the specified filesystems from a COSI file."`
 	InsertTemplate  cmd.InsertTemplate  `cmd:"" help:"Insert a Host Configuration template into a COSI file."`
