@@ -20,7 +20,7 @@ type TridentE2EHostConfigParams struct {
 	// Ignore Trident Phonehome failures
 	IgnorePhonehomeFailures bool `yaml:"ignorePhonehomeFailures"`
 
-	// Whether this configuration uses a UKI-base image.
+	// Whether this configuration uses a UKI-based image.
 	IsUki bool `yaml:"isUki"`
 }
 
