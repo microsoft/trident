@@ -419,6 +419,7 @@ fn get_bootloader_paths(
         },
     };
 
+    // Construct current primary bootloader path, i.e. shim EFI executable
     let esp_dir_name = boot::make_esp_dir_name(ctx.install_index, active_volume);
     let shim_path = Path::new(ESP_EFI_DIRECTORY)
         .join(&esp_dir_name)
@@ -447,10 +448,35 @@ fn get_bootloader_paths(
         bootloader_binaries.push(systemd_boot_update);
     }
 
-    // If this is done during staging of manual rollback, we also construct the rollback UKI binary
-    // path
-    // TODO!
-    if manual_rollback {}
+    // If this is done during staging of manual rollback, we also construct paths to rollback
+    // bootloader binaries
+    if manual_rollback {
+        // Determine rollback volume
+        let rollback_volume = match ctx.ab_active_volume {
+            None => {
+                return Err(anyhow::anyhow!(
+                    "Current active volume must be set during manual rollback"
+                ))
+            }
+            Some(AbVolumeSelection::VolumeB) => AbVolumeSelection::VolumeA,
+            Some(AbVolumeSelection::VolumeA) => AbVolumeSelection::VolumeB,
+        };
+
+        // Construct current primary bootloader path, i.e. shim EFI executable
+        let esp_dir_name = boot::make_esp_dir_name(ctx.install_index, rollback_volume);
+        let shim_path = Path::new(ESP_EFI_DIRECTORY)
+            .join(&esp_dir_name)
+            .join(BOOT_EFI);
+        let shim_current = join_relative(esp_path, &shim_path);
+        bootloader_binaries.push(shim_current);
+
+        // Construct current secondary bootloader path, i.e. systemd-boot EFI executable
+        let systemd_boot_path = Path::new(ESP_EFI_DIRECTORY)
+            .join(&esp_dir_name)
+            .join(GRUB_EFI);
+        let systemd_boot_current = join_relative(esp_path, &systemd_boot_path);
+        bootloader_binaries.push(systemd_boot_current);
+    }
 
     debug!("Paths of bootloader binaries required for pcrlock encryption:");
     for (i, path) in bootloader_binaries.iter().enumerate() {
