@@ -61,15 +61,15 @@ func (c *CommandRunner) Run() error {
 	return err
 }
 
-// Output runs the command and returns its combined standard output, regardless
-// of exit code.
+// Output runs the command and returns its combined standard output.
+// Output is returned in all cases, but error is also returned to indicate success or failure (i.e., exit code is not ignored).
 func (c *CommandRunner) Output() (string, error) {
 	p, err := c.run()
 	return p.stdout.String(), err
 }
 
-// CombinedOutput runs the command and returns its combined standard output and
-// standard error, regardless of exit code.
+// CombinedOutput runs the command and returns its combined standard output and standard error.
+// Output is returned in all cases, but error is also returned to indicate success or failure (i.e., exit code is not ignored).
 func (c *CommandRunner) CombinedOutput() (string, error) {
 	p, err := c.run()
 	return p.combined.String(), err

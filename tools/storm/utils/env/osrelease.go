@@ -80,7 +80,7 @@ func ParseOsReleaseString(data []byte) (*OsReleaseInfo, error) {
 		values[key] = trimQuotes(strings.TrimSpace(parts[1]))
 	}
 
-	// Reflectively set the fields of OsReleaseInfo
+	// Set the fields of OsReleaseInfo via reflection
 	infoValue := reflect.ValueOf(&info).Elem()
 	infoTypeValue := infoValue.Type()
 

@@ -26,7 +26,7 @@ func RunNetlaunch(config *NetLaunchConfig) error {
 	// Read the ISO
 	iso, err := os.ReadFile(config.IsoPath)
 	if err != nil {
-		return fmt.Errorf("failed to read ISO file '%s': %v", config.IsoPath, err)
+		return fmt.Errorf("failed to read ISO file '%s': %w", config.IsoPath, err)
 	}
 
 	localListenAddress := fmt.Sprintf(":%d", config.ListenPort)
