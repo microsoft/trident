@@ -354,27 +354,29 @@ fn get_uki_paths(
 ) -> Result<Vec<PathBuf>, Error> {
     let mut uki_binaries: Vec<PathBuf> = Vec::new();
 
-    // If mount_path is null, this logic is called on boot validation, when active volume is
-    // still set to the old volume, so we request UKI suffix for update image, to get it for the
-    // current boot. Otherwise, when staging an A/B update, for_update is set to false.
+    // Always construct current UKI binary path
     let esp_uki_directory = join_relative(esp_path, UKI_DIRECTORY);
     let uki_filename =
         efivar::read_current_var().unstructured("Failed to read current boot entry")?;
     let uki_current = esp_uki_directory.join(uki_filename);
     uki_binaries.push(Path::new(&uki_current).to_path_buf());
 
-    // If this is done during staging of A/B update, i.e. update image is mounted at mount_path, we
-    // also construct the update UKI binary path
+    // During staging of A/B update, i.e. update image is mounted at mount_path, also construct the
+    // update UKI binary path
     if mount_path.is_some() {
         // UKI binary in target OS to be measured; it's currently staged at designated path
         let uki_update = esp_uki_directory.join(TMP_UKI_NAME);
         uki_binaries.push(uki_update.clone());
     }
 
-    // If this is done during staging of manual rollback, we also construct the rollback UKI binary
-    // path
-    // TODO!
-    if manual_rollback {}
+    // During staging of manual rollback, also construct the rollback UKI binary path
+    if manual_rollback {
+        // Fetch previous boot entry
+        let uki_filename =
+            efivar::read_previous_var().unstructured("Failed to read previous boot entry")?;
+        let uki_rollback = esp_uki_directory.join(uki_filename);
+        uki_binaries.push(Path::new(&uki_rollback).to_path_buf());
+    }
 
     debug!("Paths of UKI binaries required for pcrlock encryption:");
     for (i, path) in uki_binaries.iter().enumerate() {
@@ -482,7 +484,7 @@ mod tests {
             esp_azla_path.join("grubx64.efi"),
         ];
         assert_eq!(
-            get_bootloader_paths(&ctx, &esp_path, None).unwrap(),
+            get_bootloader_paths(&ctx, &esp_path, None, false).unwrap(),
             expected_paths_a
         );
 
@@ -490,7 +492,7 @@ mod tests {
         // booting into A.
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         assert_eq!(
-            get_bootloader_paths(&ctx, &esp_path, None).unwrap(),
+            get_bootloader_paths(&ctx, &esp_path, None, false).unwrap(),
             expected_paths_a
         );
 
@@ -503,7 +505,7 @@ mod tests {
             esp_azlb_path.join("grubx64.efi"),
         ];
         assert_eq!(
-            get_bootloader_paths(&ctx, &esp_path, None).unwrap(),
+            get_bootloader_paths(&ctx, &esp_path, None, false).unwrap(),
             expected_paths_b
         );
 
@@ -513,7 +515,7 @@ mod tests {
         ctx.servicing_type = ServicingType::AbUpdate;
         ctx.ab_active_volume = None;
         assert_eq!(
-            get_bootloader_paths(&ctx, &esp_path, Some(&mount_path))
+            get_bootloader_paths(&ctx, &esp_path, Some(&mount_path), false)
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
@@ -530,7 +532,7 @@ mod tests {
             mount_esp_azlb_path.join("grubx64.efi"),
         ]);
         assert_eq!(
-            get_bootloader_paths(&ctx, &esp_path, Some(&mount_path)).unwrap(),
+            get_bootloader_paths(&ctx, &esp_path, Some(&mount_path), false).unwrap(),
             expected_paths_a
         );
 
@@ -543,9 +545,11 @@ mod tests {
             mount_esp_azla_path.join("grubx64.efi"),
         ]);
         assert_eq!(
-            get_bootloader_paths(&ctx, &esp_path, Some(&mount_path)).unwrap(),
+            get_bootloader_paths(&ctx, &esp_path, Some(&mount_path), false).unwrap(),
             expected_paths_b
         );
+
+        // TODO: Add unit tests to validate manual rollback scenario!
     }
 }
 
@@ -573,7 +577,11 @@ mod functional_test {
         efivar::set_efi_variable(&var_name, &efivar::encode_utf16le(current_entry)).unwrap();
 
         let expected_paths = vec![esp_uki_path.join(current_entry)];
-        assert_eq!(get_uki_paths(&esp_path, None).unwrap(), expected_paths);
+        assert_eq!(
+            get_uki_paths(&esp_path, None).unwrap(),
+            expected_paths,
+            false
+        );
 
         // Test case #2: mount_path provided, so two paths are returned, i.e. current entry and
         // update entry.
@@ -583,9 +591,11 @@ mod functional_test {
             esp_uki_path.join(TMP_UKI_NAME),
         ];
         assert_eq!(
-            get_uki_paths(&esp_path, Some(&mount_path)).unwrap(),
+            get_uki_paths(&esp_path, Some(&mount_path), false).unwrap(),
             expected_mount_paths
         );
+
+        // TODO: Add tests for manual rollback scenario!
 
         // Unset the current entry
         efivar::set_efi_variable(&var_name, &efivar::encode_utf16le("")).unwrap();
@@ -692,6 +702,8 @@ mod functional_test {
             get_binary_paths_pcrlock(&ctx, pcrs, Some(&mount_path)).unwrap(),
             (expected_uki, expected_bootloader)
         );
+
+        // TODO: Add tests for manual rollback scenario!
 
         // Unset the current entry
         efivar::set_efi_variable(&var_name, &efivar::encode_utf16le("")).unwrap();
