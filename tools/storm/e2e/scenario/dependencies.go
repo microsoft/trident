@@ -52,10 +52,6 @@ func (s *TridentE2EScenario) installVmDependencies(tc storm.TestCase) error {
 }
 
 func installUbuntuDependencies(osRelease *env.OsReleaseInfo) error {
-	if osRelease.Id != "ubuntu" {
-		return fmt.Errorf("unsupported OS for dependency installation on ubuntu: %s", osRelease.Id)
-	}
-
 	err := prepareSwtpmUbuntu(osRelease)
 	if err != nil {
 		return fmt.Errorf("failed to install swtpm: %w", err)

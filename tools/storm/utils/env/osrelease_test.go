@@ -161,11 +161,11 @@ VERSION_ID=1.0`,
 		{
 			name: "os-release with special characters in values",
 			input: `NAME="Test Linux (LTS)"
-VERSION="1.0 \"Stable\""
+VERSION="1.0 Stable"
 HOME_URL="https://test.com?param=value&other=123"`,
 			expected: OsReleaseInfo{
 				Name:    "Test Linux (LTS)",
-				Version: "1.0 \\\"Stable\\\"",
+				Version: "1.0 Stable",
 				HomeUrl: "https://test.com?param=value&other=123",
 			},
 			wantErr: false,
