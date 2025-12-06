@@ -183,7 +183,7 @@ pub fn read_current_var() -> Result<String, TridentError> {
     Ok(decode_utf16le(&data))
 }
 
-/// Sets the LoaderEntryDefault EFI variable to the current boot entry
+/// Sets the LoaderEntryDefault EFI variable to the current boot entry.
 pub fn set_default_to_current() -> Result<(), TridentError> {
     let current = read_efi_variable(BOOTLOADER_INTERFACE_GUID, LOADER_ENTRY_SELECTED)?;
     debug!(
@@ -196,10 +196,9 @@ pub fn set_default_to_current() -> Result<(), TridentError> {
     )
 }
 
-/// Sets the LoaderEntryDefault EFI variable to the previous boot entry
-pub fn set_default_to_previous() -> Result<(), TridentError> {
-    let current = read_efi_variable(BOOTLOADER_INTERFACE_GUID, LOADER_ENTRY_SELECTED)?;
-    let current_decoded = decode_utf16le(&current);
+/// Returns the value of the previous boot entry from LoaderEntries EFI variable.
+pub fn read_previous_var() -> Result<String, TridentError> {
+    let current = read_current_var()?;
     let boot_entries = read_efi_variable(BOOTLOADER_INTERFACE_GUID, LOADER_ENTRIES_DEFAULT)?;
     let boot_entries_decoded = decode_utf16le_to_strings(&boot_entries);
     if boot_entries_decoded.len() < 2 {
@@ -208,17 +207,23 @@ pub fn set_default_to_previous() -> Result<(), TridentError> {
         }))
         .message("Not enough boot entries to determine previous entry");
     }
-    if boot_entries_decoded[0] != current_decoded {
+    if boot_entries_decoded[0] != current {
         return Err(TridentError::new(ServicingError::SetEfiVariable {
             name: LOADER_ENTRIES_DEFAULT.to_string(),
         }))
         .message("Current boot entry does not match first entry in boot entries list");
     }
     let previous = &boot_entries_decoded[1];
+    Ok(previous.clone())
+}
+
+/// Sets the LoaderEntryDefault EFI variable to the previous boot entry.
+pub fn set_default_to_previous() -> Result<(), TridentError> {
+    let previous = read_previous_var()?;
 
     set_efi_variable(
         &format!("{BOOTLOADER_INTERFACE_GUID}-{LOADER_ENTRY_DEFAULT}"),
-        &encode_utf16le(previous),
+        &encode_utf16le(&previous),
     )
 }
 
