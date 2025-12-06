@@ -252,19 +252,29 @@ fn setup_logging(args: &Cli) -> Result<Logstream, Error> {
 
     // Set up the multilogger
     let mut multilogger = MultiLogger::new()
-        // Add regular env_logger to output to stderr
-        .with_logger(Box::new(
-            env_logger::builder()
-                .format_timestamp(None)
-                .filter_level(args.verbosity)
-                .build(),
-        ))
         // Add logstream to send logs to the log server
         .with_logger(logstream.make_logger_with_level(LevelFilter::Trace))
         // Set the global filter for reqwest to debug
         .with_global_filter("reqwest", LevelFilter::Debug)
         // Set the global filter for goblin to off
         .with_global_filter("goblin", LevelFilter::Off);
+
+    // Attempt to use the systemd journal if stderr is directly connected it, and otherwise fall
+    // back to env_logger.
+    if systemd_journal_logger::connected_to_journal()
+        && let Ok(journal_logger) = systemd_journal_logger::JournalLog::new()
+    {
+        multilogger.add_logger(Box::new(
+            journal_logger.with_extra_fields(vec![("VERSION", trident::TRIDENT_VERSION)]),
+        ));
+    } else {
+        multilogger.add_logger(Box::new(
+            env_logger::builder()
+                .format_timestamp(None)
+                .filter_level(args.verbosity)
+                .build(),
+        ));
+    }
 
     // Add background logger if we're running a command that needs it
     if matches!(
