@@ -43,7 +43,7 @@ func FindLocalIpForTargetIp(target string) (string, error) {
 	return addrs[0].IPNet.IP.String(), nil
 }
 
-// AutoDetectNatInterface attempts to find the default interface on the host.
+// FindDefaultOutboundInterface attempts to find the default interface on the host.
 func FindDefaultOutboundInterface() (netlink.Link, error) {
 	// Strategy:
 	// 1. Enumerate IPv4 routes and look for the default route (Dst == nil).
