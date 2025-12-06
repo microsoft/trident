@@ -35,10 +35,10 @@ stages:
             displayName: Matrix of Trident configurations for E2E Tests
 
   # TODO: enable once storm tests are ready
-  # - template: test_execution_template.yml
-  #   parameters:
-  #     hardwareType: "VM"
-  #     runtimeType: "HOST"
+  - template: test_execution_template.yml
+    parameters:
+      hardwareType: "VM"
+      runtimeType: "HOST"
 
   # - template: test_execution_template.yml
   #   parameters:
@@ -49,8 +49,10 @@ stages:
   #   parameters:
   #     hardwareType: "BM"
   #     runtimeType: "HOST"
+  #     maxParallel: 1
 
   # - template: test_execution_template.yml
   #   parameters:
   #     hardwareType: "BM"
   #     runtimeType: "CONTAINER"
+  #     maxParallel: 1

@@ -36,6 +36,7 @@ require (
 )
 
 require (
+	github.com/Jeffail/gabs/v2 v2.7.0
 	github.com/VictorLowther/simplexml v0.0.0-20180716164440-0bff93621230 // indirect
 	github.com/VictorLowther/soap v0.0.0-20150314151524-8e36fca84b22 // indirect
 	github.com/alecthomas/kong v1.8.1

@@ -15,6 +15,10 @@ parameters:
     type: boolean
     default: false
 
+  - name: maxParallel
+    type: string
+    default: null
+
 stages:
   - stage: E2ETesting_${{ parameters.hardwareType }}_${{ parameters.runtimeType }}
     displayName: E2E ${{ parameters.hardwareType }} ${{ parameters.runtimeType }} Testing
@@ -50,6 +54,8 @@ stages:
 
         strategy:
           matrix: $[ variables['matrixJson'] ]
+          ${{ if and(parameters.maxParallel, ne(parameters.maxParallel, 'null'), ne(parameters.maxParallel, ''), ne(parameters.maxParallel, 0)) }}:
+            maxParallel: ${{ parameters.maxParallel }}
 
         condition: ne(variables['matrixJson'], '{}')
         variables:
@@ -81,6 +87,14 @@ stages:
                 value: false
 
         steps:
+          - bash: |
+              if [ ${{ variables['tridentConfigurationName'] }} == 'split' ]; then
+                splitInstallerIsoName="trident-split-installer"
+                echo "setting variable.installerISOName to $splitInstallerIsoName"
+                echo "##vso[task.setvariable variable=installerISOName]$splitInstallerIsoName"
+              fi
+            displayName: Special handle for split test
+
           # Download all test images
           - template: ../testing_common/download-test-images.yml
             parameters:
@@ -92,5 +106,9 @@ stages:
           - bash: |
               set -eux
 
-              ./bin/storm-trident run "$(scenario)"
+              mkdir -p $(ob_outputDirectory)
+
+              ./bin/storm-trident run "$(scenario)" -- \
+                  --pipeline-run \
+                  --iso "./artifacts/iso/$(installerISOName).iso"
             displayName: "🧪 Run E2E Test"

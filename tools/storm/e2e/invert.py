@@ -35,6 +35,24 @@ header = """\
 # Scenarios not listed in this file will not be run in any ring.
 """
 
+# While on development, only allow these configurations:
+ALLOWED_CONFIGS = ["base"]
+ALLOWED_HARDWARES = ["vm"]
+ALLOWED_RUNTIMES = ["host"]
+
+# Special settings to merge into specific configurations
+SPECIAL_SETTINGS = {
+    "rerun": {
+        "maxExpectedFailures": 1,
+    },
+    "memory-constraint-combined": {
+        "maxExpectedFailures": 1,
+    },
+    "health-checks-install": {
+        "ignorePhonehomeFailures": True,
+    },
+}
+
 
 def main():
     repo_root = Path(__file__).parent.parent.parent.parent
@@ -75,10 +93,18 @@ def main():
                     pl_rename = pl_renames.get(pl)
 
                     if pl_rename is None:
-                        print(
-                            f"Warning: Unknown pipeline type '{pl}' for scenario '{name}', hardware '{hw}', runtime '{rt}'. Skipping.",
-                            file=sys.stderr,
-                        )
+                        if pl != "validation":
+                            print(
+                                f"Warning: Unknown pipeline type '{pl}' for scenario '{name}', hardware '{hw}', runtime '{rt}'. Skipping.",
+                                file=sys.stderr,
+                            )
+                        continue
+
+                    if name not in ALLOWED_CONFIGS:
+                        continue
+                    if hw_rename not in ALLOWED_HARDWARES:
+                        continue
+                    if rt not in ALLOWED_RUNTIMES:
                         continue
 
                     # Build inverted structure
@@ -93,6 +119,16 @@ def main():
                 # Only keep the earliest ring
                 rts[rt] = min(pls, key=lambda x: pl_order.index(x))
 
+    # Apply special settings
+    for name, settings in SPECIAL_SETTINGS.items():
+        if name not in inverted:
+            continue
+        for k, v in settings.items():
+            inverted[name][k] = v
+
+    # Re-sort configs by name
+    inverted = dict(sorted(inverted.items()))
+
     output_yaml_file = Path(__file__).parent / "configurations" / "configurations.yaml"
 
     formatted_header = header.format(
@@ -102,7 +138,7 @@ def main():
     with open(output_yaml_file, "w") as f:
         f.write(formatted_header)
         f.write("\n")
-        yaml.dump(inverted, f)
+        yaml.dump(inverted, f, sort_keys=False)
     print(f"Wrote inverted test configurations to {output_yaml_file}", file=sys.stderr)
 
 

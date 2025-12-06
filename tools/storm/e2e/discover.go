@@ -96,7 +96,7 @@ func produceScenariosFromConfig(name string, conf scenarioConfig, hostConfig map
 			}
 
 			// Produce the scenario for this hardware/runtime/ring combination
-			scenario, err := produceScenario(name, hostConfig, hw, rt, ring)
+			scenario, err := produceScenario(name, hostConfig, conf.Parameters, hw, rt, ring)
 			if err != nil {
 				return nil, err
 			}
@@ -122,9 +122,10 @@ func produceScenariosFromConfig(name string, conf scenarioConfig, hostConfig map
 func produceScenario(
 	name string,
 	config map[string]interface{},
+	configParams scenario.TridentE2EHostConfigParams,
 	hardware scenario.HardwareType,
 	runtime scenario.RuntimeType,
-	lowest_ring testrings.TestRing,
+	lowestRing testrings.TestRing,
 ) (*scenario.TridentE2EScenario, error) {
 	// Get the list of all target rings for this scenario. This is the list of
 	// rings from the lowest declared ring up to the highest existing ring.
@@ -132,7 +133,7 @@ func produceScenario(
 	// ['ci', 'pre', 'full-validation'].
 	//
 	// If the lowest ring is 'none' or empty string, an empty list is returned.
-	rings, err := lowest_ring.GetTargetList()
+	rings, err := lowestRing.GetTargetList()
 	if err != nil {
 		return nil, err
 	}
@@ -154,6 +155,7 @@ func produceScenario(
 		fmt.Sprintf("%s_%s-%s", name, hardware, runtime),
 		tags,
 		config,
+		configParams,
 		hardware,
 		runtime,
 		rings,
@@ -164,8 +166,11 @@ func produceScenario(
 type configs map[string]scenarioConfig
 
 type scenarioConfig struct {
+	// Ring configuration
 	Bm runtimeConfig `yaml:"bm"`
 	Vm runtimeConfig `yaml:"vm"`
+
+	Parameters scenario.TridentE2EHostConfigParams `yaml:",inline"`
 }
 
 type runtimeConfig struct {

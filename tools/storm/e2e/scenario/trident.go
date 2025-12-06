@@ -4,30 +4,99 @@ import (
 	"fmt"
 	"tridenttools/storm/e2e/testrings"
 
+	"github.com/Jeffail/gabs/v2"
 	"github.com/microsoft/storm"
-
-	"github.com/sirupsen/logrus"
+	"gopkg.in/yaml.v3"
 )
 
-type TridentE2EScenario struct {
-	storm.BaseScenario
-	name      string
-	tags      []string
-	config    map[string]interface{}
-	hardware  HardwareType
-	runtime   RuntimeType
-	testRings testrings.TestRingSet
+const (
+	defaultNetlaunchListenPort = 4000
+)
+
+type TridentE2EHostConfigParams struct {
+	// Maximum expected failures for this scenario
+	MaxExpectedFailures uint `yaml:"maxExpectedFailures"`
+
+	// Ignore Trident Phonehome failures
+	IgnorePhonehomeFailures bool `yaml:"ignorePhonehomeFailures"`
+
+	// Whether this configuration uses a UKI-based image.
+	IsUki bool `yaml:"isUki"`
 }
 
-func NewTridentE2EScenario(name string, tags []string, config map[string]interface{}, hardware HardwareType, runtime RuntimeType, testRings testrings.TestRingSet) *TridentE2EScenario {
-	return &TridentE2EScenario{
-		name:      name,
-		tags:      tags,
-		config:    config,
-		hardware:  hardware,
-		runtime:   runtime,
-		testRings: testRings,
+type TridentE2EScenario struct {
+	// Configuration variables
+
+	// Base scenario from the Storm framework
+	storm.BaseScenario
+	// Name of the scenario
+	name string
+	// Tags associated with the scenario
+	tags []string
+	// Hardware and runtime types for this scenario
+	hardware HardwareType
+	runtime  RuntimeType
+	// Test rings that this scenario should be run in
+	testRings testrings.TestRingSet
+
+	// Host configuration for this scenario
+	config *gabs.Container
+	// Parameters specific to this host configuration
+	configParams TridentE2EHostConfigParams
+
+	// Storm scenario arguments
+	args struct {
+		IsoPath         string `name:"iso" help:"Path to the ISO to use for OS installation." required:"true"`
+		PipelineRun     bool   `name:"pipeline-run" help:"Indicates whether the scenario is being run in a pipeline context. This will, among other things, install dependencies."`
+		TestImageDir    string `short:"i" name:"test-image-dir" help:"Directory containing the test images to use for OS installation." default:"./artifacts/test-image"`
+		LogstreamFile   string `name:"logstream-file" help:"File to write logstream to." default:"logstream-full.log"`
+		TracestreamFile string `name:"tracestream-file" help:"File to write tracestream to."`
+		CertFile        string `name:"signing-cert" help:"Path to certificate file to inject into VM EFI variables."`
+		DumpSshKeyFile  string `name:"dump-ssh-key" help:"If set, the SSH private key used for VM access will be dumped to the specified file."`
 	}
+
+	// Runtime variables
+
+	// Stores the SSH private key for VM access
+	sshPrivateKey string
+
+	// Stores information about the test host once it has been set up
+	testHost testHostInfo
+}
+
+func NewTridentE2EScenario(
+	name string,
+	tags []string,
+	config map[string]interface{},
+	configParams TridentE2EHostConfigParams,
+	hardware HardwareType,
+	runtime RuntimeType,
+	testRings testrings.TestRingSet,
+) *TridentE2EScenario {
+	return &TridentE2EScenario{
+		name:         name,
+		tags:         tags,
+		config:       gabs.Wrap(config),
+		configParams: configParams,
+		hardware:     hardware,
+		runtime:      runtime,
+		testRings:    testRings,
+	}
+}
+
+func (s *TridentE2EScenario) Args() any {
+	return &s.args
+}
+
+func (s *TridentE2EScenario) Cleanup(storm.SetupCleanupContext) error {
+	if s.testHost != nil {
+		err := s.testHost.Cleanup()
+		if err != nil {
+			return fmt.Errorf("failed to clean up test host: %w", err)
+		}
+	}
+
+	return nil
 }
 
 func (s *TridentE2EScenario) TestRings() testrings.TestRingSet {
@@ -51,19 +120,18 @@ func (s *TridentE2EScenario) RuntimeType() RuntimeType {
 }
 
 func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {
-	r.RegisterTestCase("run", s.Run)
+	r.RegisterTestCase("install-vm-deps", s.installVmDependencies)
+	r.RegisterTestCase("prepare-hc", s.prepareHostConfig)
+	r.RegisterTestCase("setup-vm", s.setupTestHost)
+	r.RegisterTestCase("install-os", s.installOs)
 	return nil
 }
 
-func (s TridentE2EScenario) Run(tc storm.TestCase) error {
-	logrus.Infof("Hello from '%s'!", s.Name())
+func (s *TridentE2EScenario) renderHostConfiguration() (string, error) {
+	out, err := yaml.Marshal(s.config.Data())
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal host configuration to YAML: %w", err)
+	}
 
-	logrus.Infof("Hardware Type: %s", s.hardware)
-	logrus.Infof("Runtime Type: %s", s.runtime)
-	logrus.Infof("Configuration: ")
-	fmt.Println(s.config)
-
-	// TODO: Implement the actual scenario logic here
-
-	return nil
+	return string(out), nil
 }
