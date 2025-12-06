@@ -27,7 +27,7 @@ use trident_api::{
         ESP_EFI_DIRECTORY, ESP_MOUNT_POINT_PATH,
     },
     error::{InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt},
-    status::AbVolumeSelection,
+    status::{AbVolumeSelection, ServicingType},
 };
 
 use crate::{
@@ -289,7 +289,7 @@ fn encrypt_and_open_device(
 ///
 /// Returns a tuple containing two vectors:
 /// - uki_binaries: Paths to the UKI binaries,
-/// - bootloader_binaries: Paths to the bootloader binaries (shim and systemd-boot).
+/// - bootloader_binaries: Paths to the bootloader binaries.
 pub fn get_binary_paths_pcrlock(
     ctx: &EngineContext,
     pcrs: BitFlags<Pcr>,
@@ -304,15 +304,19 @@ pub fn get_binary_paths_pcrlock(
     let esp_path = container::get_host_relative_path(PathBuf::from(ESP_MOUNT_POINT_PATH))
         .unstructured("Failed to get host-relative ESP mount path")?;
 
-    // If servicing state is ManualRollbackStaged, then this logic is being called during staging of a
-    // TODO
+    // If executing a manual rollback, set manual_rollback flag to true so that UKI and bootloader
+    // paths for the rollback OS are also constructed
+    let manual_rollback = match ctx.servicing_type {
+        ServicingType::ManualRollback => true,
+        _ => false,
+    };
 
     // If either PCR 4 or PCR 11 is requested, construct UKI paths
-    let uki_binaries = get_uki_paths(&esp_path, mount_path)?;
+    let uki_binaries = get_uki_paths(&esp_path, mount_path, manual_rollback)?;
 
     // If PCR 4 is requested, construct bootloader paths
     let bootloader_binaries = if pcrs.contains(Pcr::Pcr4) {
-        get_bootloader_paths(ctx, &esp_path, mount_path)?
+        get_bootloader_paths(ctx, &esp_path, mount_path, manual_rollback)?
     } else {
         vec![]
     };
@@ -336,13 +340,18 @@ pub fn get_binary_paths_pcrlock(
     Ok((uki_binaries, bootloader_binaries))
 }
 
-/// Returns paths of the UKI binaries for the current boot and if mount_path is provided, for the
-/// future boot, i.e. update image, as required for the generation of .pcrlock files.
+/// Returns paths of the UKI binaries required for the generation of .pcrlock files.
 ///
-/// If `mount_path` is provided, it means that this func is called during staging of an A/B update,
-/// so the UKI binary for the update image is requested. Otherwise, this logic is called on boot
-/// validation, and so we're re-generating the pcrlock policy for the current boot only.
-fn get_uki_paths(esp_path: &Path, mount_path: Option<&Path>) -> Result<Vec<PathBuf>, Error> {
+/// 1. If `mount_path` is provided, func called during staging of an A/B update, so UKI binaries
+///     for both current and future boot are returned.
+/// 3. If `manual_rollback` is set to true, func called during the staging of a manual rollback, so
+///     UKI binaries for both current and rollback boot are returned.
+/// 2. Otherwise, func called during boot validation, so return UKI binary for current boot only.
+fn get_uki_paths(
+    esp_path: &Path,
+    mount_path: Option<&Path>,
+    manual_rollback: bool,
+) -> Result<Vec<PathBuf>, Error> {
     let mut uki_binaries: Vec<PathBuf> = Vec::new();
 
     // If mount_path is null, this logic is called on boot validation, when active volume is
@@ -364,6 +373,7 @@ fn get_uki_paths(esp_path: &Path, mount_path: Option<&Path>) -> Result<Vec<PathB
 
     // If this is done during staging of manual rollback, we also construct the rollback UKI binary
     // path
+    // TODO!
     if manual_rollback {}
 
     debug!("Paths of UKI binaries required for pcrlock encryption:");
@@ -374,17 +384,20 @@ fn get_uki_paths(esp_path: &Path, mount_path: Option<&Path>) -> Result<Vec<PathB
     Ok(uki_binaries)
 }
 
-/// Returns paths of the bootloader binaries for the current boot and if mount_path is provided,
-/// for the target OS, as required for the generation of .pcrlock files. Bootloaders include shim
-/// and systemd-boot EFI executables.
+/// Returns paths of the bootloader binaries required for the generation of .pcrlock files.
+/// Bootloaders include primary, i.e. shim, and secondary, i.e. systemd-boot EFI executables.
 ///
-/// If `mount_path` is provided, it means that this func is called during staging of an A/B update,
-/// so the bootloader binary for the target OS is requested. Otherwise, this logic is called on
-/// boot validation, and so we're re-generating the pcrlock policy for the current boot only.
+/// 1. If `mount_path` is provided, func called during staging of an A/B update, so bootloader
+///     binaries for both current and future boot are returned.
+/// 3. If `manual_rollback` is set to true, func called during the staging of a manual rollback, so
+///     bootloader binaries for both current and rollback boot are returned.
+/// 2. Otherwise, func called during boot validation, so return bootloader binaries for current
+///     boot only.
 fn get_bootloader_paths(
     ctx: &EngineContext,
     esp_path: &Path,
     mount_path: Option<&Path>,
+    manual_rollback: bool,
 ) -> Result<Vec<PathBuf>, Error> {
     let mut bootloader_binaries: Vec<PathBuf> = Vec::new();
 
@@ -429,6 +442,11 @@ fn get_bootloader_paths(
         let systemd_boot_update = join_relative(esp_dir_path, systemd_boot_update_relative);
         bootloader_binaries.push(systemd_boot_update);
     }
+
+    // If this is done during staging of manual rollback, we also construct the rollback UKI binary
+    // path
+    // TODO!
+    if manual_rollback {}
 
     debug!("Paths of bootloader binaries required for pcrlock encryption:");
     for (i, path) in bootloader_binaries.iter().enumerate() {
