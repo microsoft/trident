@@ -64,7 +64,7 @@ func RunNetlaunch(config *NetLaunchConfig) error {
 		log.Warn("No announce IP specified. Attempting to find local IP to announce based on BMC IP.")
 		announceIp, err = netfinder.FindLocalIpForTargetIp(config.Netlaunch.Bmc.Ip)
 		if err != nil {
-			return fmt.Errorf("failed to find local IP for BMC: %v", err)
+			return fmt.Errorf("failed to find local IP for BMC: %w", err)
 		}
 	} else {
 		// If we have no BMC, find the default outbound IP.
