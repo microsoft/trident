@@ -39,6 +39,19 @@ pub fn to_operations(allowed_operations: &[AllowedOperation]) -> Operations {
     ops
 }
 
+/// The operations that Trident is allowed to perform
+#[derive(clap::ValueEnum, Copy, Clone, Debug, Eq, PartialEq)]
+pub enum RollbackShowOperation {
+    /// Show the next available rollback type. 'ab' if an
+    /// A/B update will be rolled back, 'runtime' if a runtime update
+    /// will be rolled back, or 'none' if no rollback is possible.
+    Validation,
+    /// Show the next available rollback Host Configuration.
+    Target,
+    /// Show the full list of available rollbacks.
+    Chain,
+}
+
 #[derive(Subcommand, Debug)]
 pub enum Commands {
     /// Initiate an install of Azure Linux
@@ -176,6 +189,33 @@ pub enum Commands {
         history_path: Option<PathBuf>,
     },
 
+    /// Manually rollback to previous state
+    Rollback {
+        /// Declare expectation that rollback undoes a runtime update
+        #[arg(long, conflicts_with = "ab")]
+        runtime: bool,
+
+        /// Declare expectation that rollback undoes an A/B update
+        #[arg(long, conflicts_with = "runtime")]
+        ab: bool,
+
+        /// Comma-separated list of operations that Trident will be allowed to perform
+        #[clap(long, value_delimiter = ',', num_args = 0.., default_value = "stage,finalize")]
+        allowed_operations: Vec<AllowedOperation>,
+
+        /// Show available rollback points
+        #[clap(long)]
+        show: Option<RollbackShowOperation>,
+
+        /// Path to save the resulting Host Status
+        #[clap(short, long)]
+        status: Option<PathBuf>,
+
+        /// Path to save an eventual fatal error
+        #[clap(short, long)]
+        error: Option<PathBuf>,
+    },
+
     #[cfg(feature = "dangerous-options")]
     StreamImage {
         /// URL of the image to stream
@@ -212,6 +252,7 @@ impl Commands {
             Commands::OfflineInitialize { .. } => "offline-initialize",
             #[cfg(feature = "dangerous-options")]
             Commands::StreamImage { .. } => "stream-image",
+            Commands::Rollback { .. } => "rollback",
         }
     }
 }

@@ -166,8 +166,12 @@ pub fn set_boot_next_and_update_boot_order(
             // have boot entries start disappearing again.
             update_boot_order(entry_numbers, &BootOrderPosition::Last)
                 .structured(ServicingError::UpdateBootOrder)?;
-        } else if ctx.servicing_type == ServicingType::CleanInstall && !use_virtdeploy_workaround {
-            // During clean install, immediately set the bootorder to use the new entry.
+        } else if matches!(
+            ctx.servicing_type,
+            ServicingType::CleanInstall | ServicingType::ManualRollback
+        ) && !use_virtdeploy_workaround
+        {
+            // During clean install or manual rollback, immediately set the bootorder to use the new entry.
             update_boot_order(entry_numbers, &BootOrderPosition::First)
                 .structured(ServicingError::UpdateBootOrder)?;
         }
