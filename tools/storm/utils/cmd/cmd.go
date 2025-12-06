@@ -21,8 +21,8 @@ func Run(name string, arg ...string) error {
 	return Cmd(name, arg...).Run()
 }
 
-// Output runs the command and returns its combined standard output, regardless
-// of exit code.
+// Output runs the command and returns its standard output, regardless of exit
+// code.
 func Output(name string, arg ...string) (string, error) {
 	return Cmd(name, arg...).Output()
 }
@@ -61,7 +61,7 @@ func (c *CommandRunner) Run() error {
 	return err
 }
 
-// Output runs the command and returns its combined standard output.
+// Output runs the command and returns its standard output.
 // Output is returned in all cases, but error is also returned to indicate success or failure (i.e., exit code is not ignored).
 func (c *CommandRunner) Output() (string, error) {
 	p, err := c.run()
