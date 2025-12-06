@@ -125,7 +125,7 @@ func produceScenario(
 	configParams scenario.TridentE2EHostConfigParams,
 	hardware scenario.HardwareType,
 	runtime scenario.RuntimeType,
-	lowest_ring testrings.TestRing,
+	lowestRing testrings.TestRing,
 ) (*scenario.TridentE2EScenario, error) {
 	// Get the list of all target rings for this scenario. This is the list of
 	// rings from the lowest declared ring up to the highest existing ring.
@@ -133,7 +133,7 @@ func produceScenario(
 	// ['ci', 'pre', 'full-validation'].
 	//
 	// If the lowest ring is 'none' or empty string, an empty list is returned.
-	rings, err := lowest_ring.GetTargetList()
+	rings, err := lowestRing.GetTargetList()
 	if err != nil {
 		return nil, err
 	}
