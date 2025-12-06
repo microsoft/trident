@@ -19,7 +19,7 @@ func FindLocalIpForTargetIp(target string) (string, error) {
 
 	routes, err := netlink.RouteGet(ip)
 	if err != nil {
-		return "", fmt.Errorf("failed to get routes: %v", err)
+		return "", fmt.Errorf("failed to get routes: %w", err)
 	}
 
 	if len(routes) == 0 {
@@ -28,12 +28,12 @@ func FindLocalIpForTargetIp(target string) (string, error) {
 
 	link, err := netlink.LinkByIndex(routes[0].LinkIndex)
 	if err != nil {
-		return "", fmt.Errorf("failed to get link by index: %v", err)
+		return "", fmt.Errorf("failed to get link by index: %w", err)
 	}
 
 	addrs, err := netlink.AddrList(link, netlink.FAMILY_V4)
 	if err != nil {
-		return "", fmt.Errorf("failed to get addresses: %v", err)
+		return "", fmt.Errorf("failed to get addresses: %w", err)
 	}
 
 	if len(addrs) == 0 {
@@ -43,7 +43,8 @@ func FindLocalIpForTargetIp(target string) (string, error) {
 	return addrs[0].IPNet.IP.String(), nil
 }
 
-// AutoDetectNatInterface attempts to find the default interface on the host.
+// FindDefaultOutboundInterface attempts to find the default outbound interface
+// on the host.
 func FindDefaultOutboundInterface() (netlink.Link, error) {
 	// Strategy:
 	// 1. Enumerate IPv4 routes and look for the default route (Dst == nil).

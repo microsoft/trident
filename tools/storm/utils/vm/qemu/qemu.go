@@ -114,7 +114,7 @@ func getLibvirtDomainByname(vmName string) (lv *libvirt.Libvirt, domain libvirt.
 	uri, _ := url.Parse(string(libvirt.QEMUSession))
 	lv, err = libvirt.ConnectToURI(uri)
 	if err != nil {
-		return lv, domain, fmt.Errorf("failed to connect: %v", err)
+		return lv, domain, fmt.Errorf("failed to connect: %w", err)
 	}
 
 	domain, err = lv.DomainLookupByName(vmName)
@@ -236,7 +236,7 @@ func (cfg QemuConfig) createQemuVM(name string, bootImage string, useVirtInstall
 		uri, _ := url.Parse(string(libvirt.QEMUSession))
 		lv, err := libvirt.ConnectToURI(uri)
 		if err != nil {
-			return fmt.Errorf("failed to connect: %v", err)
+			return fmt.Errorf("failed to connect: %w", err)
 		}
 
 		loaderPath := "/usr/share/OVMF/OVMF_CODE.secboot.fd"

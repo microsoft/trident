@@ -64,14 +64,14 @@ func RunNetlaunch(config *NetLaunchConfig) error {
 		log.Warn("No announce IP specified. Attempting to find local IP to announce based on BMC IP.")
 		announceIp, err = netfinder.FindLocalIpForTargetIp(config.Netlaunch.Bmc.Ip)
 		if err != nil {
-			return fmt.Errorf("failed to find local IP for BMC: %v", err)
+			return fmt.Errorf("failed to find local IP for BMC: %w", err)
 		}
 	} else {
 		// If we have no BMC, find the default outbound IP.
 		log.Warn("No announce IP specified. Attempting to find default outbound IP to announce.")
 		announceIp, err = netfinder.FindDefaultOutboundIp()
 		if err != nil {
-			return fmt.Errorf("failed to find default outbound IP: %v", err)
+			return fmt.Errorf("failed to find default outbound IP: %w", err)
 		}
 	}
 
@@ -92,7 +92,7 @@ func RunNetlaunch(config *NetLaunchConfig) error {
 		log.Info("Using Trident config file: ", config.HostConfigFile)
 		tridentConfigContents, err := os.ReadFile(config.HostConfigFile)
 		if err != nil {
-			return fmt.Errorf("failed to read Trident config: %v", err)
+			return fmt.Errorf("failed to read Trident config: %w", err)
 		}
 
 		// Replace NETLAUNCH_HOST_ADDRESS with the address of the netlaunch server
@@ -101,7 +101,7 @@ func RunNetlaunch(config *NetLaunchConfig) error {
 		trident := make(map[string]interface{})
 		err = yaml.UnmarshalStrict([]byte(tridentConfigContentsStr), &trident)
 		if err != nil {
-			return fmt.Errorf("failed to unmarshal Trident config: %v", err)
+			return fmt.Errorf("failed to unmarshal Trident config: %w", err)
 		}
 
 		if _, ok := trident["trident"]; !ok {
@@ -112,19 +112,19 @@ func RunNetlaunch(config *NetLaunchConfig) error {
 
 		tridentConfig, err := yaml.Marshal(trident)
 		if err != nil {
-			return fmt.Errorf("failed to marshal Trident config: %v", err)
+			return fmt.Errorf("failed to marshal Trident config: %w", err)
 		}
 
 		err = isopatcher.PatchFile(iso, "/etc/trident/config.yaml", tridentConfig)
 		if err != nil {
-			return fmt.Errorf("failed to patch Trident config into ISO: %v", err)
+			return fmt.Errorf("failed to patch Trident config into ISO: %w", err)
 		}
 
 		if config.Iso.PreTridentScript != nil {
 			log.Info("Patching in pre-trident script!")
 			err = isopatcher.PatchFile(iso, "/trident_cdrom/pre-trident-script.sh", []byte(*config.Iso.PreTridentScript))
 			if err != nil {
-				return fmt.Errorf("failed to patch pre-trident script into ISO: %v", err)
+				return fmt.Errorf("failed to patch pre-trident script into ISO: %w", err)
 			}
 		}
 
@@ -132,7 +132,7 @@ func RunNetlaunch(config *NetLaunchConfig) error {
 			log.Info("Patching Trident service override!")
 			err = isopatcher.PatchFile(iso, "/trident_cdrom/trident-override.conf", []byte(*config.Iso.ServiceOverride))
 			if err != nil {
-				return fmt.Errorf("failed to patch service override into ISO: %v", err)
+				return fmt.Errorf("failed to patch service override into ISO: %w", err)
 			}
 		}
 
@@ -160,14 +160,14 @@ func RunNetlaunch(config *NetLaunchConfig) error {
 		// Set up listening for logstream
 		logstreamFull, err := phonehome.SetupLogstream(config.LogstreamFile)
 		if err != nil {
-			return fmt.Errorf("failed to setup logstream: %v", err)
+			return fmt.Errorf("failed to setup logstream: %w", err)
 		}
 		defer logstreamFull.Close()
 
 		// Set up listening for tracestream
 		traceFile, err := phonehome.SetupTraceStream(config.TracestreamFile)
 		if err != nil {
-			return fmt.Errorf("failed to setup tracestream: %v", err)
+			return fmt.Errorf("failed to setup tracestream: %w", err)
 		}
 		defer traceFile.Close()
 
@@ -200,7 +200,7 @@ func RunNetlaunch(config *NetLaunchConfig) error {
 		if config.Netlaunch.Bmc != nil && config.Netlaunch.Bmc.SerialOverSsh != nil {
 			serial, err := config.Netlaunch.Bmc.ListenForSerialOutput()
 			if err != nil {
-				return fmt.Errorf("failed to open serial over SSH session: %v", err)
+				return fmt.Errorf("failed to open serial over SSH session: %w", err)
 			}
 			defer serial.Close()
 		}
@@ -225,27 +225,27 @@ func RunNetlaunch(config *NetLaunchConfig) error {
 		log.Info("Connecting to BMC")
 		client.Registry.Drivers = client.Registry.For("gofish")
 		if err := client.Open(context.Background()); err != nil {
-			return fmt.Errorf("failed to open connection to BMC: %v", err)
+			return fmt.Errorf("failed to open connection to BMC: %w", err)
 		}
 
 		log.Info("Shutting down machine")
 		if _, err = client.SetPowerState(ctx, "off"); err != nil {
-			return fmt.Errorf("failed to turn off machine: %v", err)
+			return fmt.Errorf("failed to turn off machine: %w", err)
 		}
 
 		log.WithField("url", iso_location).Info("Setting virtual media to ISO")
 		if _, err = client.SetVirtualMedia(ctx, string(redfish.CDMediaType), iso_location); err != nil {
-			return fmt.Errorf("failed to set virtual media: %v", err)
+			return fmt.Errorf("failed to set virtual media: %w", err)
 		}
 
 		log.Info("Setting boot media")
 		if _, err = client.SetBootDevice(ctx, "cdrom", false, true); err != nil {
-			return fmt.Errorf("failed to set boot media: %v", err)
+			return fmt.Errorf("failed to set boot media: %w", err)
 		}
 
 		log.Info("Turning on machine")
 		if _, err = client.SetPowerState(ctx, "on"); err != nil {
-			return fmt.Errorf("failed to turn on machine: %v", err)
+			return fmt.Errorf("failed to turn on machine: %w", err)
 		}
 	}
 
@@ -277,21 +277,21 @@ func startLocalVm(localVmUuidStr string, isoLocation string, secureBoot bool, si
 	// TODO: Parse the UUID directly when reading the config file
 	vmUuid, err := uuid.Parse(localVmUuidStr)
 	if err != nil {
-		return fmt.Errorf("failed to parse LocalVmUuid as UUID: %v", err)
+		return fmt.Errorf("failed to parse LocalVmUuid as UUID: %w", err)
 	}
 
 	vm, err := stormutils.InitializeVm(vmUuid)
 	if err != nil {
-		return fmt.Errorf("failed to initialize VM: %v", err)
+		return fmt.Errorf("failed to initialize VM: %w", err)
 	}
 	defer vm.Disconnect()
 
 	if err = vm.SetFirmwareVars(isoLocation, secureBoot, signingCert); err != nil {
-		return fmt.Errorf("failed to set UEFI variables: %v", err)
+		return fmt.Errorf("failed to set UEFI variables: %w", err)
 	}
 
 	if err = vm.Start(); err != nil {
-		return fmt.Errorf("failed to start VM: %v", err)
+		return fmt.Errorf("failed to start VM: %w", err)
 	}
 
 	return nil
