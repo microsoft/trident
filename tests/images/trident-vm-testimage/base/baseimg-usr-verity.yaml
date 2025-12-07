@@ -167,3 +167,4 @@ scripts:
 
 previewFeatures:
   - uki
+  - dracutDebug
