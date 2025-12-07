@@ -131,9 +131,15 @@ func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfi
 
 		if vmConfig.VMConfig.Platform == stormvmconfig.PlatformQEMU {
 			if _, err := os.Stat(vmConfig.QemuConfig.SerialLog); err == nil {
-				if err := exec.Command("truncate", "-s", "0", vmConfig.QemuConfig.SerialLog).Run(); err != nil {
+				lsOutput, err := exec.Command("ls", "-l", vmConfig.QemuConfig.SerialLog).CombinedOutput()
+				logrus.Tracef("Pre-truncate log info [%v]:\n%s", err, lsOutput)
+				truncateOutput, err := exec.Command("truncate", "-s", "0", vmConfig.QemuConfig.SerialLog).CombinedOutput()
+				if err != nil {
 					return fmt.Errorf("failed to truncate serial log file: %w", err)
 				}
+				logrus.Tracef("Truncate:\n%s", truncateOutput)
+				lsOutput, err = exec.Command("ls", "-l", vmConfig.QemuConfig.SerialLog).CombinedOutput()
+				logrus.Tracef("Post-truncate log info [%v]:\n%s", err, lsOutput)
 				dfOutput, err := exec.Command("df", "-h").Output()
 				if err != nil {
 					return fmt.Errorf("failed to check disk space: %w", err)
