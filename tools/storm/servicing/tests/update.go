@@ -140,6 +140,8 @@ func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfi
 				logrus.Tracef("Truncate:\n%s", truncateOutput)
 				lsOutput, err = exec.Command("ls", "-l", vmConfig.QemuConfig.SerialLog).CombinedOutput()
 				logrus.Tracef("Post-truncate log info [%v]:\n%s", err, lsOutput)
+				lsOutput, err = exec.Command("ls", "-l", "./serial.log").CombinedOutput()
+				logrus.Tracef("Post-truncate log info [%v]:\n%s", err, lsOutput)
 				dfOutput, err := exec.Command("df", "-h").Output()
 				if err != nil {
 					return fmt.Errorf("failed to check disk space: %w", err)
