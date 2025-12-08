@@ -143,6 +143,8 @@ os:
       destination: /etc/systemd/network/99-dhcp-eth0.network
     - source: files/sudoers-wheel
       destination: /etc/sudoers.d/wheel
+    - source: files/dracut.conf
+      destination: /etc/dracut.conf
 
   services:
     enable:
