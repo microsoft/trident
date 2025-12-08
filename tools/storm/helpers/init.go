@@ -11,4 +11,5 @@ var TRIDENT_HELPERS = []storm.Helper{
 	&DisplayLogsHelper{},
 	&RebuildRaidHelper{},
 	&WaitForLoginHelper{},
+	&RuntimeUpdateHelper{},
 }
