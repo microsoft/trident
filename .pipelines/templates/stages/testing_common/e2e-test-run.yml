@@ -174,13 +174,13 @@ steps:
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - ${{ if eq(parameters.deploymentEnvironment, 'virtualMachine') }}:
-    - bash: |
-        set -eux
-        ./bin/storm-trident script capture-screenshot \
-            --screenshot-filename "update-b.png" \
-            --artifacts-folder "$(ob_outputDirectory)"
-      displayName: "📷 Capture screenshot: stage and finalize A/B update into target OS B"
-      condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
+      - bash: |
+          set -eux
+          ./bin/storm-trident script capture-screenshot \
+              --screenshot-filename "update-b.png" \
+              --artifacts-folder "$(ob_outputDirectory)"
+        displayName: "📷 Capture screenshot: stage and finalize A/B update into target OS B"
+        condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
 
   - bash: |
       set -eux
@@ -324,13 +324,13 @@ steps:
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - ${{ if eq(parameters.deploymentEnvironment, 'virtualMachine') }}:
-    - bash: |
-        set -eux
-        ./bin/storm-trident script capture-screenshot \
-            --screenshot-filename "update-a.png" \
-            --artifacts-folder "$(ob_outputDirectory)"
-      displayName: "📷 Capture screenshot: stage and finalize A/B update into target OS A"
-      condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
+      - bash: |
+          set -eux
+          ./bin/storm-trident script capture-screenshot \
+              --screenshot-filename "update-a.png" \
+              --artifacts-folder "$(ob_outputDirectory)"
+        displayName: "📷 Capture screenshot: stage and finalize A/B update into target OS A"
+        condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
 
   - bash: |
       set -eux
@@ -398,7 +398,8 @@ steps:
   #  - daily
   #  - validation
   #  - weekly
-  - ${{ if or(eq(parameters.buildPurpose, 'daily'), eq(parameters.buildPurpose, 'validation'), eq(parameters.buildPurpose, 'weekly')) }}:
+  #  - post_merge
+  - ${{ if or(eq(parameters.buildPurpose, 'daily'), eq(parameters.buildPurpose, 'validation'), eq(parameters.buildPurpose, 'weekly'), eq(parameters.buildPurpose, 'post_merge')) }}:
       - template: e2e-ab-update-stage-finalize-test-run.yml
         parameters:
           buildPurpose: ${{ parameters.buildPurpose }}
