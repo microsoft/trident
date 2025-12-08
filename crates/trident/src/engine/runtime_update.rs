@@ -62,7 +62,6 @@ pub(crate) fn stage_update(
         // Update spec inside the Host Status with the new Host Configuration
         // (stored in ctx.spec).
         hs.spec = ctx.spec;
-        // Update spec_old to the previous spec (ctx.spec_old == hs.spec)
         hs.spec_old = ctx.spec_old;
     })?;
     #[cfg(feature = "grpc-dangerous")]
