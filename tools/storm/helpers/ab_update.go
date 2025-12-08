@@ -422,6 +422,7 @@ func updateExtensions(osConfig map[string]interface{}) error {
 		// Update the extension configuration
 		extension["url"] = newUrl
 		extension["sha384"] = newHash
+		delete(extension, "path")
 	}
 
 	return nil
