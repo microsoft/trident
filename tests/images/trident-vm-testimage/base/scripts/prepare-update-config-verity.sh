@@ -26,6 +26,7 @@ fi
 cat <<EOF >> $CONFIG_PATH
 internalParams:
   allowUnusedFilesystems: true
+  dracutDebug: true
 EOF
 
 if [ "$1" == "uki" ]; then

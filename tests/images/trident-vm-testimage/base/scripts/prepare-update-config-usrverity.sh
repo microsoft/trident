@@ -6,4 +6,6 @@ cat <<EOF >> $CONFIG_PATH
 image:
   url: $DOWNLOAD_URL_PREFIX/usrverity.cosi
   sha384: ignored
+internalParams:
+  dracutDebug: true
 EOF

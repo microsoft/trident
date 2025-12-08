@@ -164,7 +164,14 @@ scripts:
       arguments:
         - uki
     - path: scripts/duid-type-to-link-layer.sh
+    - content: |
+        set -eux
+
+        echo 'bcf'
+
+        cat /usr/bin/dracut | grep "unset NPATH"
+        sed -i 's|unset NPATH|unset NPATH;echo "--------- bcf: system info ---------";ls -lR /dev/disk;lsblk;blkid;cat /etc/fstab;echo "--------- bcf: system info ---------"|' /usr/bin/dracut
+        cat /usr/bin/dracut | grep "unset NPATH"
 
 previewFeatures:
   - uki
-  - dracutDebug
