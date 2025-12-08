@@ -340,7 +340,7 @@ func (h *AbUpdateHelper) triggerTridentUpdate(tc storm.TestCase) error {
 		}
 
 		if out.Status == 0 && strings.Contains(out.Stderr, "Staging of A/B update succeeded") {
-			logrus.Infof("Staging of update 'AbUpdate' succeeded")
+			logrus.Infof("Staging of A/B update succeeded")
 			break
 		}
 
