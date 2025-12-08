@@ -110,7 +110,6 @@ impl Subsystem for ExtensionsSubsystem {
         {
             return Ok(ServicingType::RuntimeUpdate);
         }
-
         Ok(ServicingType::NoActiveServicing)
     }
 
