@@ -398,7 +398,8 @@ steps:
   #  - daily
   #  - validation
   #  - weekly
-  - ${{ if or(eq(parameters.buildPurpose, 'daily'), eq(parameters.buildPurpose, 'validation'), eq(parameters.buildPurpose, 'weekly')) }}:
+  #  - post_merge
+  - ${{ if or(eq(parameters.buildPurpose, 'daily'), eq(parameters.buildPurpose, 'validation'), eq(parameters.buildPurpose, 'weekly'), eq(parameters.buildPurpose, 'post_merge')) }}:
       - template: e2e-ab-update-stage-finalize-test-run.yml
         parameters:
           buildPurpose: ${{ parameters.buildPurpose }}
