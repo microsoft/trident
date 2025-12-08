@@ -119,6 +119,7 @@ stages:
               platform: qemu
               flavor: qemu-grub
               skipExtensionTesting: false
+              skipRuntimeUpdateTesting: false
       - ${{ if eq(parameters.includeQemu, true) }}:
           - template: testing-template.yml
             parameters:
@@ -129,6 +130,7 @@ stages:
               # qemu image is grub + root verity. in this setup, Image Customizer cannot add
               # an extension to the servicing qcow2
               skipExtensionTesting: true
+              skipRuntimeUpdateTesting: false
       - ${{ if eq(parameters.includeUKI, true) }}:
           - template: testing-template.yml
             parameters:
@@ -137,3 +139,4 @@ stages:
               platform: qemu
               flavor: uki
               skipExtensionTesting: false
+              skipRuntimeUpdateTesting: false
