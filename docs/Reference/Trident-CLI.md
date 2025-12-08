@@ -155,6 +155,9 @@ Options:
   -v, --verbosity <VERBOSITY>
           Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
           [default: DEBUG]
+      --runtime
+          Boolean indicating that a runtime update is expected and an
+          A/B update should result in a fatal error
   -s, --status <STATUS>
           Path to save the resulting Host Status
   -e, --error <ERROR>
@@ -181,6 +184,11 @@ Possible values:
 - `finalize`
 
 Default: `stage,finalize`
+
+
+#### <span>--runtime &lt;RUNTIME&gt;</span>
+
+Boolean indicating that a runtime update is expected and an A/B update should result in a fatal error
 
 
 #### <span>--status &lt;STATUS&gt;</span>

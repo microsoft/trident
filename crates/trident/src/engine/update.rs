@@ -24,6 +24,7 @@ pub(crate) fn update(
     host_config: &HostConfiguration,
     state: &mut DataStore,
     allowed_operations: &Operations,
+    expect_runtime: bool,
     image: OsImage,
     #[cfg(feature = "grpc-dangerous")] sender: &mut Option<GrpcSender>,
 ) -> Result<ExitKind, TridentError> {
@@ -86,6 +87,11 @@ pub(crate) fn update(
         }
         ServicingType::RuntimeUpdate => {}
         ServicingType::AbUpdate => {
+            if expect_runtime {
+                return Err(TridentError::new(
+                    InvalidInputError::AbUpdateRuntimeFlagMismatch,
+                ));
+            }
             // Execute pre-servicing scripts
             HooksSubsystem::new_for_local_scripts().execute_pre_servicing_scripts(&ctx)?;
         }

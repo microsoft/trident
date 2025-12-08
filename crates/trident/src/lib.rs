@@ -262,7 +262,7 @@ impl Trident {
             if let Some((host_config, allowed_operations, sender)) = receiver.blocking_recv() {
                 self.host_config = Some(host_config);
                 if let ExitKind::NeedsReboot =
-                    self.update(datastore, allowed_operations, &mut Some(sender))?
+                    self.update(datastore, allowed_operations, false, &mut Some(sender))?
                 {
                     reboot().message("Failed to reboot after grpc update")?;
                 }
@@ -549,6 +549,7 @@ impl Trident {
         &mut self,
         datastore: &mut DataStore,
         allowed_operations: Operations,
+        runtime: bool,
         #[cfg(feature = "grpc-dangerous")] sender: &mut Option<GrpcSender>,
     ) -> Result<ExitKind, TridentError> {
         let mut host_config = self
@@ -585,7 +586,7 @@ impl Trident {
                 debug!("Host Configuration has been updated");
                 // If allowed operations include 'stage', start update
                 if allowed_operations.has_stage() {
-                    engine::update(&host_config, datastore, &allowed_operations, image, #[cfg(feature = "grpc-dangerous")] sender).message("Failed to execute an update")
+                    engine::update(&host_config, datastore, &allowed_operations, runtime, image, #[cfg(feature = "grpc-dangerous")] sender).message("Failed to execute an update")
                 } else {
                     warn!("Host Configuration has been updated but allowed operations do not include 'stage'. Add 'stage' and re-run to stage the update");
                     Ok(ExitKind::Done)
@@ -631,7 +632,7 @@ impl Trident {
                     ServicingState::AbUpdateFinalized | ServicingState::Provisioned => {
                         // Need to either re-execute the failed update OR inform the user that no update
                         // is needed.
-                        engine::update(&host_config, datastore, &allowed_operations, image, #[cfg(feature = "grpc-dangerous")] sender).message("Failed to update host")
+                        engine::update(&host_config, datastore, &allowed_operations, runtime, image, #[cfg(feature = "grpc-dangerous")] sender).message("Failed to update host")
                     }
                     servicing_state => {
                         Err(TridentError::new(InternalError::UnexpectedServicingState {

@@ -196,10 +196,12 @@ fn run_trident(
                     ),
                     Commands::Update {
                         ref allowed_operations,
+                        runtime,
                         ..
                     } => trident.update(
                         &mut datastore,
                         cli::to_operations(allowed_operations),
+                        runtime,
                         #[cfg(feature = "grpc-dangerous")]
                         &mut None,
                     ),
