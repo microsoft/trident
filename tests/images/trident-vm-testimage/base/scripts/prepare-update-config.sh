@@ -6,6 +6,4 @@ cat <<EOF >> $CONFIG_PATH
 image:
   url: $DOWNLOAD_URL_PREFIX/regular.cosi
   sha384: ignored
-internalParams:
-  noTransition: true
 EOF
