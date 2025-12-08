@@ -14,7 +14,6 @@ use crate::engine::EngineContext;
 impl EngineContext {
     pub(crate) fn ab_update_required(&self) -> Result<bool, TridentError> {
         debug!("Checking OS image to determine if an A/B update is required");
-        // Otherwise, continue checking OS images
         match (&self.spec_old.image, &self.spec.image) {
             // If OS image is not requested in the new spec, no update is needed.
             (None, None) => Ok(false),
