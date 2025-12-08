@@ -5,8 +5,7 @@ use tempfile::NamedTempFile;
 
 use trident_api::error::{ReportError, ServicingError, TridentError};
 
-use crate::{dependencies::Dependency, exe::RunAndCheck};
-use std::process::Command;
+use crate::dependencies::Dependency;
 
 /// Verity workaround script
 ///
@@ -52,27 +51,6 @@ pub fn execute(debug: bool) -> Result<(), TridentError> {
             .run_and_check()
             .structured(ServicingError::RegenerateInitrd)
     } else {
-        let _ = Command::new("cat")
-            .arg("/etc/fstab")
-            .run_and_check()
-            .structured(ServicingError::RegenerateInitrd);
-        _ = Command::new("ls")
-            .arg("-lR")
-            .arg("/dev/disk")
-            .run_and_check()
-            .structured(ServicingError::RegenerateInitrd);
-        _ = Dependency::Lsblk
-            .cmd()
-            .arg("--json")
-            .arg("--output-all")
-            .arg("--bytes")
-            .output_and_check()
-            .structured(ServicingError::RegenerateInitrd);
-        _ = Dependency::Blkid
-            .cmd()
-            .output_and_check()
-            .structured(ServicingError::RegenerateInitrd);
-
         run_dracut(debug).structured(ServicingError::RegenerateInitrd)
     }
 }
