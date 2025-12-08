@@ -256,6 +256,38 @@ func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfi
 			logrus.Tracef("Finalize output for iteration %d:\n%s\n%v", i, combinedFinalizeOutput, finalizeErr)
 		}
 
+		finalizeLogLocalTmpFile, err := os.CreateTemp("", "finalized-trident-full")
+		if err != nil {
+			return fmt.Errorf("failed to create temp finalizing log file: %w", err)
+		}
+		finalizeLogLocalTmpPath := finalizeLogLocalTmpFile.Name()
+		defer os.Remove(finalizeLogLocalTmpPath)
+
+		err = stormssh.ScpDownloadFile(vmConfig.VMConfig, vmIP, "/var/log/trident-full.log", finalizeLogLocalTmpPath)
+		if err != nil {
+			return fmt.Errorf("failed to download staged trident log: %w", err)
+		}
+
+		if testConfig.OutputPath != "" {
+			logrus.Tracef("Download finalizing trident logs for iteration %d", i)
+			finalizeLogPath := filepath.Join(testConfig.OutputPath, fmt.Sprintf("%s-finalized-trident-full.log", fmt.Sprintf("%03d", i)))
+			if err := exec.Command("cp", finalizeLogLocalTmpPath, finalizeLogPath).Run(); err != nil {
+				return fmt.Errorf("failed to copy finalized trident log to output path: %w", err)
+			}
+			if err := os.Chmod(finalizeLogPath, 0644); err != nil {
+				logrus.Errorf("failed to change permissions for finalized trident log: %w", err)
+			}
+			if lsOut, err := exec.Command("ls", "-lh", finalizeLogPath).Output(); err == nil {
+				logrus.Tracef("Finalized trident log details for iteration %d:\n%s", i, lsOut)
+			}
+		}
+
+		logrus.Tracef("Rebooting OS on VM")
+		rebootOutput, rebootErr := stormssh.SshCommandCombinedOutput(vmConfig.VMConfig, vmIP, fmt.Sprintf("sudo shutdown -r 0"))
+		if testConfig.Verbose {
+			logrus.Tracef("Reboot output for iteration %d:\n%s\n%v", i, rebootOutput, rebootErr)
+		}
+
 		logrus.Tracef("Wait for VM to come back up after finalize reboot")
 		if vmConfig.VMConfig.Platform == stormvmconfig.PlatformQEMU {
 			err := vmConfig.QemuConfig.WaitForLogin(vmConfig.VMConfig.Name, testConfig.OutputPath, testConfig.Verbose, i)
