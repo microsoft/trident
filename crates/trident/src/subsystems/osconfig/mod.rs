@@ -90,6 +90,17 @@ impl Subsystem for OsConfigSubsystem {
         REQUIRES_REBOOT
     }
 
+    fn select_servicing_type(&self, ctx: &EngineContext) -> Result<ServicingType, TridentError> {
+        if ctx.spec.os != ctx.spec_old.os {
+            if runtime_update_sufficient(ctx) {
+                return Ok(ServicingType::RuntimeUpdate);
+            } else {
+                return Ok(ServicingType::AbUpdate);
+            }
+        }
+        Ok(ServicingType::NoActiveServicing)
+    }
+
     fn validate_host_config(&self, ctx: &EngineContext) -> Result<(), TridentError> {
         // If the os-modifier binary is required but not present, return an error.
         if os_config_requires_os_modifier(ctx) && !Path::new(OS_MODIFIER_BINARY_PATH).exists() {
