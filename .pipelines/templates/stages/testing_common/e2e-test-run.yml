@@ -446,7 +446,7 @@ steps:
   - bash: |
       set -eux
       python3 -u -m pytest \
-          -m ${{ parameters.updateScenarioTestName }} \
+          -m encryption \
           --capture=no \
           --junit-xml=${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_${{ parameters.updateScenarioTargetOs }}_${{ parameters.updateScenarioName }}_$(System.JobAttempt).junit.xml \
           --host ${{ parameters.hostIp }} \
