@@ -428,3 +428,32 @@ steps:
           --deployment-environment "${{ parameters.deploymentEnvironment }}"
     displayName: "Test Trident rebuild-raid"
     timeoutInMinutes: 15
+
+  # For 'combined' tests, trigger a rollback and test encryption
+  - bash: |
+      set -eux
+      # To allow storm to access VM serial logs, need sudo.
+      sudo $(Build.SourcesDirectory)/bin/storm-trident helper rollback -a \
+          --log-dir "$(ob_outputDirectory)" \
+          "${{ parameters.sshKeyPath }}" \
+          "${{ parameters.hostIp }}" \
+          "${{ parameters.userName }}" \
+          "${{ parameters.runtimeEnv }}" \
+          --deployment-environment "${{ parameters.deploymentEnvironment }}"
+    displayName: "Test Trident rollback"
+    timeoutInMinutes: 15
+    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'), eq(parameters.tridentConfigurationName, 'combined'))
+  - bash: |
+      set -eux
+      python3 -u -m pytest \
+          -m ${{ parameters.updateScenarioTestName }} \
+          --capture=no \
+          --junit-xml=${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_${{ parameters.updateScenarioTargetOs }}_${{ parameters.updateScenarioName }}_$(System.JobAttempt).junit.xml \
+          --host ${{ parameters.hostIp }} \
+          --runtime-env ${{ parameters.runtimeEnv }} \
+          --configuration ${{ parameters.tridentConfigPath }} \
+          --ab-active-volume ${{ parameters.expectActiveVolume }}
+    timeoutInMinutes: 5
+    workingDirectory: $(Build.SourcesDirectory)/tests/e2e_tests
+    displayName: "🔬${{ parameters.updateEmoji }} Run Trident E2E tests after A/B update into target OS ${{ parameters.updateScenarioTargetOs }} testing ${{ parameters.updateScenarioName }}"
+    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'), eq(parameters.tridentConfigurationName, 'combined'))
