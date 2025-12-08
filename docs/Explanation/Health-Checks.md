@@ -52,7 +52,16 @@ health:
 
 [Systemd checks](../Reference/Host-Configuration/API-Reference/SystemdCheck.md)
 can also be defined to ensure that critical systemd services are running after
-servicing. For example, to ensure that `kubelet.service` and `docker.service`
+servicing. If a specified service is found to be in an unsuccessful state, it
+will be requeried every 100 ms until the timeout is reached. If the timeout
+expires and the service is still unsuccessful, an error is returned. If 0 is
+specified, the service will be checked once and the check will return immediately.
+
+Note: Once the service is detected as running, the check completes without any
+further waiting. If the service crashes shortly afterward, this will not be
+detected.
+
+For example, to ensure that `kubelet.service` and `docker.service`
 are running within 15 seconds of `trident commit` being called for both clean
 install and A/B update servicing types:
 
