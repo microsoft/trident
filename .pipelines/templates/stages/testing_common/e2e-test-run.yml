@@ -448,11 +448,18 @@ steps:
       python3 -u -m pytest \
           -m encryption \
           --capture=no \
-          --junit-xml=${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_${{ parameters.updateScenarioTargetOs }}_${{ parameters.updateScenarioName }}_$(System.JobAttempt).junit.xml \
+          --junit-xml=${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_rollback_$(TARGET_OS)_${{ parameters.updateScenarioName }}_$(System.JobAttempt).junit.xml \
           --host ${{ parameters.hostIp }} \
           --runtime-env ${{ parameters.runtimeEnv }} \
           --configuration ${{ parameters.tridentConfigPath }} \
-          --ab-active-volume ${{ parameters.expectActiveVolume }}
+          --ab-active-volume $(EXPECTED_VOLUME)
+    env:
+      ${{ if or(eq(parameters.buildPurpose, 'daily'), eq(parameters.buildPurpose, 'validation'), eq(parameters.buildPurpose, 'weekly')) }}:
+        EXPECTED_VOLUME: "volume-a"
+        TARGET_OS: "A"
+      ${{ else }}:
+        EXPECTED_VOLUME: "volume-b"
+        TARGET_OS: "B"
     timeoutInMinutes: 5
     workingDirectory: $(Build.SourcesDirectory)/tests/e2e_tests
     displayName: "🔬${{ parameters.updateEmoji }} Run Trident E2E tests after A/B update into target OS ${{ parameters.updateScenarioTargetOs }} testing ${{ parameters.updateScenarioName }}"
