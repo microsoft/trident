@@ -30,7 +30,6 @@ impl Subsystem for NetworkSubsystem {
         if ctx.spec.os.netplan != ctx.spec_old.os.netplan {
             return Ok(ServicingType::RuntimeUpdate);
         }
-
         Ok(ServicingType::NoActiveServicing)
     }
 
