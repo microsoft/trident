@@ -282,6 +282,9 @@ APIs, include inline in this document. For complex APIs, link bidirectionally
 between the two documents.
 -->
 
+The full gRPC API specification is available in the PR:
+[microsoft/trident#386: engineering: Harpoon gRPC Protobuf](https://github.com/microsoft/trident/pull/386)
+
 # Testing and Metrics
 
 <!-- (DELETE ME)
