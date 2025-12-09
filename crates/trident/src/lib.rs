@@ -632,7 +632,7 @@ impl Trident {
                     ServicingState::AbUpdateFinalized | ServicingState::Provisioned => {
                         // Need to either re-execute the failed update OR inform the user that no update
                         // is needed.
-                        engine::update(&host_config, datastore, &allowed_operations, runtime, image, #[cfg(feature = "grpc-dangerous")] sender).message("Failed to update host")
+                        engine::update(&host_config, datastore, &allowed_operations, runtime, image, #[cfg(feature = "grpc-dangerous")] sender).message("Failed to execute an update")
                     }
                     servicing_state => {
                         Err(TridentError::new(InternalError::UnexpectedServicingState {
