@@ -38,7 +38,7 @@ URLs may have one of the following four schemes: `http://`, `https://`, `file://
 
 ### `path` (optional)
 
-The absolute path of the extension image in the target OS.
+The absolute path of the extension image in the target OS. File names must match the file extension of the 'extension-release' file in the sysext or confext. In addition, file name must end with '.raw'.
 
 By default, sysexts are placed in /var/lib/extensions/. Trident supports placing sysexts in:
 
