@@ -442,7 +442,7 @@ steps:
           --deployment-environment "${{ parameters.deploymentEnvironment }}"
     displayName: "Test Trident rollback"
     timeoutInMinutes: 15
-    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'), eq(variables['TRIDENT_CONFIGURATION_NAME'], 'combined'))
+    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
   - bash: |
       set -eux
       python3 -u -m pytest \
@@ -463,4 +463,4 @@ steps:
     timeoutInMinutes: 5
     workingDirectory: $(Build.SourcesDirectory)/tests/e2e_tests
     displayName: "Run Trident E2E tests after rollback into target OS $(TARGET_OS)"
-    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'), eq(variables['TRIDENT_CONFIGURATION_NAME'], 'combined'))
+    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
