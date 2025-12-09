@@ -127,8 +127,8 @@ Once a connection is received, systemd will forward the file descriptor of the
 incoming connection to the new process’s file descriptor #3 and let the child
 process know about this by setting the environment variables:
 
-- LISTEN_FDS[int]: number of sockets forwarded to the service.
-- LISTEN_FD_NAMES[string]: Comma-separated list of names of the sockets
+- `LISTEN_FDS` [int]: number of sockets forwarded to the service.
+- `LISTEN_FD_NAMES` [string]: Comma-separated list of names of the sockets
   forwarded to the service.
 
 When using the default settings, systemd will start a single instance of the
