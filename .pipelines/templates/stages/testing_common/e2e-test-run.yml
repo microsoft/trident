@@ -442,7 +442,7 @@ steps:
           --deployment-environment "${{ parameters.deploymentEnvironment }}"
     displayName: "Test Trident rollback"
     timeoutInMinutes: 15
-    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'), eq(parameters.tridentConfigurationName, 'combined'))
+    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'), eq(variables['TRIDENT_CONFIGURATION_NAME'], 'combined'))
   - bash: |
       set -eux
       python3 -u -m pytest \
