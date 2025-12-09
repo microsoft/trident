@@ -432,6 +432,13 @@ steps:
   # For 'combined' tests, trigger a rollback and test encryption
   - bash: |
       set -eux
+      # If there is a netlisten process, kill it so there is no port clash in the instance
+      if pgrep netlisten > /dev/null; then pkill netlisten; fi
+
+      ./bin/netlisten -m $(Build.SourcesDirectory)/trident-rollback-metrics.jsonl \
+          -p ${{ parameters.netlistenPort }} \
+          -s "${{ parameters.artifactsDirectory }}" > ./rollback.log 2>&1 &
+
       # To allow storm to access VM serial logs, need sudo.
       sudo $(Build.SourcesDirectory)/bin/storm-trident helper manual-rollback -a \
           --log-dir "$(ob_outputDirectory)" \
