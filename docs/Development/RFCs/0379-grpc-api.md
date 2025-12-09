@@ -73,8 +73,7 @@ sequenceDiagram
     participant Trident
     participant LocalFS
 
-    Agent->>PhonehomeServer: Invoke via CLI
-    PhonehomeServer->>Trident: Invoke via CLI
+    Agent->>Trident: Invoke via CLI
 
     rect rgba(200,200,200,0.4)
     note left of Trident: Internal Interfaces<br/>(HTTP)
@@ -88,6 +87,63 @@ sequenceDiagram
 
     Trident->>Agent: Raw std(out/err) + exit code
 ```
+
+Because the Phonehome server is currently an internal-only interface, a calling
+agent only has the raw output of the trident process to know what Trident is
+doing. It may also access the full log, which is structured, but this has proven
+to be challenging in some scenarios as the file may not always be easily
+accessible. For errors, the agent needs to parse the logs or use the dedicated
+“get last-error” subcommand, although this does not seem to be a common
+practice.
+
+## Systemd Socket Activation
+
+Socket activation is a foundational feature of systemd. In a traditional
+approach, a daemon would need to be already running and listening to process an
+incoming request, with socket activation, systemd can listen on a specific
+socket and only start a service once a request is received.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Client as Client
+    participant Systemd as systemd
+    participant Daemon as Daemon Service
+
+    loop
+        Client->>Systemd: Open connection
+        Systemd->>Systemd: Duplicate connection file descriptor
+        Systemd->>Daemon: Activate
+        activate Daemon
+        note left of Daemon: ENV: LISTEN_FDS=1<br/>FD copy mapped to FD3
+        Daemon-->>Client: Request [over fwd'd FD]
+        Client-->>Daemon: Response [over fwd'd FD]
+        note over Daemon: Service may stay online<br/>or exit to free resources
+        deactivate Daemon
+    end
+```
+
+Once a connection is received, systemd will forward the file descriptor of the
+incoming connection to the new process’s file descriptor #3 and let the child
+process know about this by setting the environment variables:
+
+- LISTEN_FDS[int]: number of sockets forwarded to the service.
+- LISTEN_FD_NAMES[string]: Comma-separated list of names of the sockets
+  forwarded to the service.
+
+When using the default settings, systemd will start a single instance of the
+service and the process is expected to deal with the challenges of handling
+multiple incoming connections.
+
+When using Unix sockets, systemd will create, own, and control the socket file[^1].
+It allows for setting specific permissions and ownership of the socket file.
+This can be useful for security as the caller may not need to be the root user,
+but any specific user or member of a particular group. For example, the
+ownership and mode “root:trident 660” would allow for any user in the group
+“trident” to invoke trident, without the user requiring sudo or root access.
+
+[^1]: Network sockets do not have an associated file in the same way, so these
+    concepts of ownership do not apply there.
 
 # Scope
 
@@ -153,15 +209,66 @@ agent).
 
 ## Harpoon API (HAPI)
 
-The Harpoon API (dev name, it will eventually just be the tridentd gRPC API) is
-the only way in which tridentd will take instructions. The reason for this
+The Harpoon API (dev name, it will eventually just be the `tridentd` gRPC API)
+is the only way in which `tridentd` will take instructions. The reason for this
 self-imposed limitation is to decrease the number of entry points and code paths
 that can invoke Trident and grow our confidence that the core logic is working
 correctly. If this is the case, then client code should become relatively
-trivial and interchangeable. The Harpoon API will be defined as a protobuf file
-that is accessible to customers. We may ship it as a standalone RPM or simply
-provide it along with a release. The goal is to make it trivially simple for a
-customer to pick up the trident daemon RPM and set up a client for it.
+trivial and interchangeable. 
+
+The Harpoon API will be defined as a protobuf file that is accessible to
+customers. We may ship it as a standalone RPM or simply provide it along with a
+release. The goal is to make it trivially simple for a customer to pick up the
+trident daemon RPM and set up a client for it.
+
+```mermaid
+sequenceDiagram
+    participant Agent
+    participant Trident
+    participant LocalFS
+
+    rect rgba(200,200,200,0.4)
+        note left of Trident: Harpoon API
+        Agent-->>+Trident: gRPC Request
+        Trident-->>Agent: Structured logs
+        Trident-->>Agent: Structured metrics
+        Trident-->>Agent: Structured error/result
+    end
+
+    Trident->>-LocalFS: Structured logs
+```
+
+## `tridentd` Runtime Daemon
+
+`tridentd` would support two modes of execution:
+
+1.	Systemd socket activated: Tridentd runs as a systemd service activated by a socket.
+2.	Manual: Tridentd can also be executed directly.
+
+Most scenarios would use option #1, that way trident can be always ready but
+only running when needed. For specific scenarios, such as running in a
+container, tridentd can be executed directly and receive a path to the socket
+file to create or use the default:
+
+```text
+/run/trident/listen.sock
+```
+
+## Security Model
+
+Trident is a very powerful agent; therefore, access to it should be extremely
+limited. Today, Trident’s approach to this issue is to invariably enforce that
+it be run with root privileges. For another process to be able to start Trident,
+it must already be running as root or have sudo privilege.
+
+`tridentd` will have similar restrictions: it can only be started with root
+privileges and will produce an error otherwise.
+
+However, the proposed gRPC interface exposed over a Unix socket opens a new door
+to interact with Trident. Fortunately, the socket is a file subject to standard
+linux access permissions. Regardless of who creates the socket file, systemd or
+`tridentd` itself, it will always belong to the root user and be configured to
+block all read/write attempts from other non-root users.
 
 
 # Public API Design
@@ -182,6 +289,40 @@ Document how the feature will be tested - list out each test we need to write,
 capturing any relevant test environments and test infrastructure changes that
 might be needed. Also capture how we will monitor the feature.
 -->
+
+## E2E Test Infrastructure Changes
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Client as Client (Netlaunch)
+    box lightblue TestVM
+        participant Proxy
+        participant Trident
+    end
+    loop Dial Retry Loop
+        Proxy --x Client: Dial TCP (fail)
+    end
+    note over Client: Start Listening
+    activate Client
+    Proxy-->>Client: Dial TCP (success)
+    Client-->>Proxy: Accept connection
+    Proxy-->>Client: Initiate TLS
+    Client-->>Client: Validate Proxy's Cert
+    Client-->>Proxy: Accept TLS
+    Proxy-->Proxy: Validate Client's Cert
+    note over Client,Proxy: TLS Established
+    Proxy->>Trident: Dial Unix
+    activate Trident
+    Trident->>Proxy: Accept connection
+    note over Proxy: Start raw data forwarding
+    Client-->>Proxy: gRPC Request
+    Proxy->>Trident: gRPC Request
+    Trident->>Proxy: gRPC Response
+    Proxy-->>Client: gRPC Response
+    deactivate Trident
+    deactivate Client
+```
 
 # Servicing
 
