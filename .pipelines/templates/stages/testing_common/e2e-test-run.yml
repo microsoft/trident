@@ -433,7 +433,7 @@ steps:
   - bash: |
       set -eux
       # To allow storm to access VM serial logs, need sudo.
-      sudo $(Build.SourcesDirectory)/bin/storm-trident helper rollback -a \
+      sudo $(Build.SourcesDirectory)/bin/storm-trident helper manual-rollback -a \
           --log-dir "$(ob_outputDirectory)" \
           "${{ parameters.sshKeyPath }}" \
           "${{ parameters.hostIp }}" \
