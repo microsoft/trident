@@ -3,6 +3,7 @@ import pytest
 import json
 
 from base_test import get_host_status
+from pathlib import Path
 
 pytestmark = [pytest.mark.extensions]
 
@@ -37,12 +38,12 @@ def test_extensions(
 
             for ext in extConfig:
                 # Verify that the path exists on the target OS
-                path = ext["path"]
+                path = Path(ext["path"])
                 result = connection.run(f"test -e {path}", warn=True)
                 assert result.ok, f"{extType} path does not exist: {path}"
 
                 # Extract extension name from path
-                ext_name = path.split("/")[-1].rsplit(".", 1)[0]
+                ext_name = path.stem
                 assert (
                     ext_name in active_exts
                 ), f"{extType} '{ext_name}' not found in 'systemd-{extType} status'"
