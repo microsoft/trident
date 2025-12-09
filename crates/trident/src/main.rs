@@ -261,8 +261,8 @@ fn setup_logging(args: &Cli) -> Result<Logstream, Error> {
 
     // Attempt to use the systemd journal if stderr is directly connected it, and otherwise fall
     // back to env_logger.
-    if systemd_journal_logger::connected_to_journal()
-        && let Ok(journal_logger) = systemd_journal_logger::JournalLog::new()
+    if let Some(Ok(journal_logger)) = systemd_journal_logger::connected_to_journal()
+        .then(systemd_journal_logger::JournalLog::new)
     {
         multilogger.add_logger(Box::new(
             journal_logger.with_extra_fields(vec![("VERSION", trident::TRIDENT_VERSION)]),
