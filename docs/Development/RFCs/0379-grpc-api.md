@@ -627,5 +627,5 @@ Describe any future work that could build on this proposal.
   be rust and it could allow us to easily run it in most Linux systems.
 - Trident could eventually be configured to act as a client when establishing
   the connection to the orchestrator, so that a central orchestrator could
-  manage multiple Trident instances remotely without necessarilly knowing how to
+  manage multiple Trident instances remotely without necessarily knowing how to
   reach out to them.
