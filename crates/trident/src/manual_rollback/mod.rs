@@ -63,7 +63,7 @@ pub fn print_requires_reboot(datastore: &mut DataStore) -> Result<ExitKind, Trid
 }
 
 pub fn print_show(
-    datastore: &mut DataStore,
+    datastore: &DataStore,
     show_operation: RollbackShowOperation,
 ) -> Result<ExitKind, TridentError> {
     // Get all HostStatus entries from the datastore.
