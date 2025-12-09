@@ -79,7 +79,7 @@ pub(crate) fn read_extension_release(
             // Check that path in Host Configuration is valid.
             ensure!(
                 path.ends_with(format!("{name}.raw")),
-                format!("{ext_type} at '{}' has invalid path: '{}'. File name must match the file extension of the {ext_type}'s extension-release file.", ext.url, path.display())
+                format!("{ext_type} at '{}' has invalid path: '{}'. Path must end with '{name}.raw' because the extension-release file is named 'extension-release.{name}'.", ext.url, path.display())
             );
             path.clone()
         }
