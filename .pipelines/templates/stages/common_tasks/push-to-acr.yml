@@ -28,8 +28,6 @@ steps:
 
       if [ "${{ parameters.config }}" == 'extensions' ]; then
         ./bin/storm-trident script build-extension-images --build-sysexts --num-clones 2
-      elif [ "${{ parameters.config }}" == 'root-verity' ]; then
-        ./bin/storm-trident script build-extension-images --build-sysexts --build-confexts --num-clones 2
       else
         echo "Skipping step. Configuration is '${{ parameters.config }}'."
         exit 0
@@ -41,7 +39,7 @@ steps:
 
   - bash: |
       set -eux
-      if [ "${{ parameters.config }}" != 'misc' ] && [ "${{ parameters.config }}" != 'extensions' ] && [ "${{ parameters.config }}" != 'root-verity' ]; then
+      if [ "${{ parameters.config }}" != 'misc' ] && [ "${{ parameters.config }}" != 'extensions' ]; then
         echo "Skipping step. Configuration is '${{ parameters.config }}'."
         exit 0
       fi
@@ -87,29 +85,6 @@ steps:
             --file-paths $(Build.SourcesDirectory)/test-sysext-2.raw \
             --tag-var-name TAG_BASE \
             --repo-var-name SYSEXT_REPO
-
-        elif [ "${{ parameters.config }}" == 'root-verity' ]; then
-          ./bin/storm-trident script acr-push \
-            --config ${{ parameters.config }} \
-            --deployment-environment ${{ parameters.deploymentEnvironment }} \
-            --acr-name $(ACR_NAME) \
-            --repo-name sysext-${{ parameters.runtimeEnvironment }} \
-            --build-id $(Build.BuildId) \
-            --file-paths $(Build.SourcesDirectory)/test-sysext-1.raw \
-            --file-paths $(Build.SourcesDirectory)/test-sysext-2.raw \
-            --tag-var-name TAG_BASE \
-            --repo-var-name SYSEXT_REPO
-            
-          ./bin/storm-trident script acr-push \
-            --config ${{ parameters.config }} \
-            --deployment-environment ${{ parameters.deploymentEnvironment }} \
-            --acr-name $(ACR_NAME) \
-            --repo-name confext-${{ parameters.runtimeEnvironment }} \
-            --build-id $(Build.BuildId) \
-            --file-paths $(Build.SourcesDirectory)/test-confext-1.raw \
-            --file-paths $(Build.SourcesDirectory)/test-confext-2.raw \
-            --tag-var-name TAG_BASE \
-            --repo-var-name CONFEXT_REPO
 
         else
           echo "Skipping step. Configuration is '${{ parameters.config }}'."

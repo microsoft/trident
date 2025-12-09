@@ -44,6 +44,10 @@ are not currently supported in Azure Linux 3.0 (systemd v255). It is important
 to note that configuring confexts will result in `/etc` becoming read-only. This
 can be problematic if anything requires writing to `/etc`.
 
+Note: confext servicing is incompatible with root-verity since Trident's
+root-verity servicing creates an overlay over `/etc`, preventing
+`systemd-confext` from successfully merging confexts on the target OS.
+
 ### SELinux
 
 Servicing of confexts is not currently compatible with SELinux in systemd 255,

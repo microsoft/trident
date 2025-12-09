@@ -967,31 +967,19 @@ mod functional_test {
 
     #[functional_test]
     fn test_populate_extensions_existing_success() {
-        // Create temporary test locations; note that 'populate' function does
-        // not check the validity of the location as this happens in static and
-        // dynamic validation.
-        let temp_file1 = NamedTempFile::new()
-            .unwrap()
-            .into_temp_path()
-            .keep()
-            .unwrap();
-        let temp_file2 = NamedTempFile::new()
-            .unwrap()
-            .into_temp_path()
-            .keep()
-            .unwrap();
+        let staging_dir = TempDir::new().unwrap();
 
         // Create test extension images
         let test_inputs = [
             (
-                Some(temp_file1),
+                Some(staging_dir.path().join("my_sysext.raw")),
                 "my_sysext",
                 ExtensionType::Sysext,
                 "ID=_any\nSYSEXT_ID=my_sysext",
                 false,
             ),
             (
-                Some(temp_file2),
+                Some(staging_dir.path().join("my_confext.raw")),
                 "my_confext",
                 ExtensionType::Confext,
                 "ID=_any\nCONFEXT_ID=my_confext",
