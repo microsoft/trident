@@ -143,8 +143,8 @@ pub enum InternalError {
 pub enum InvalidInputError {
     #[error(
         "Determined that an A/B update is required, but Trident was run with --runtime flag \
-        indicating runtime update was expected. Edit Host Configuration or re-run without the \
-        --runtime flag."
+        indicating runtime update was expected. Returning fatal error to avoid unexpected reboot. \
+        Edit Host Configuration or re-run without the --runtime flag."
     )]
     AbUpdateRuntimeFlagMismatch,
 
