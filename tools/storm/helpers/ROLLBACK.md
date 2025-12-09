@@ -9,23 +9,11 @@ Choose one of the following modes by setting the `FALLBACK_MODE` variable in the
 ``` bash
 
 ## Build RPMs, Images, and tools
-# TEST_NAME="base"
-TEST_NAME="combined"
-
 TEST_IMAGES_FOLDER="../test-images"
 
-# IMAGE_NAME="trident-testimage"
-# IMAGE_NAME="trident-verity-testimage"
+TEST_NAME="combined"
 IMAGE_NAME="trident-usrverity-testimage"
-
-COSI_NAME="regular"
-if [ "$IMAGE_NAME" == "trident-usrverity-testimage" ]; then
-    COSI_NAME="usrverity"
-fi
-if [ "$IMAGE_NAME" == "trident-verity-testimage" ]; then
-    COSI_NAME="verity"
-fi
-
+COSI_NAME="usrverity"
 
 # Build Trident RPMs
 sudo rm -rf bin/trident-rpms.tar.gz
@@ -41,6 +29,7 @@ sudo mv $TEST_IMAGES_FOLDER/build/${IMAGE_NAME}_0.cosi artifacts/test-image/$COS
 sudo mv $TEST_IMAGES_FOLDER/build/${IMAGE_NAME}_1.cosi artifacts/test-image/${COSI_NAME}_v2.cosi
 sudo mv $TEST_IMAGES_FOLDER/build/ca_cert.pem artifacts/test-image/ca_cert.pem
 
+## Build netlaunch and netlisten
 make tools/netlaunch
 make tools/netlisten
 
@@ -50,19 +39,17 @@ cp tests/e2e_tests/trident_configurations/$TEST_NAME/trident-config.yaml input/t
 sed -i "s|sshPublicKeys: \[\]|sshPublicKeys: \[\"$(cat ~/.ssh/id_rsa.pub)\"\]|" input/trident.yaml
 sed -i 's|/dev/disk/by-path/pci-0000:00:1f.2-ata-2|/dev/sda|' input/trident.yaml
 sed -i 's|/dev/disk/by-path/pci-0000:00:1f.2-ata-3|/dev/sdb|' input/trident.yaml
-
 ./bin/trident validate ./input/trident.yaml
 echo "Valid host configuration? $?"
-
 
 ## Create test VM and run initial image installation
 make tools/virt-deploy
 ./tools/virt-deploy create --mem 24 --disks 32,32
 
-
+# Build storm
 make bin/storm-trident
 
-## Run update and validate
+## Run clean install using netlaunch
 sudo chown $USER:$USER ./artifacts/test-image/ca_cert.pem
 ./bin/netlaunch \
     --iso ./bin/trident-mos.iso \
@@ -77,7 +64,6 @@ sudo chown $USER:$USER ./artifacts/test-image/ca_cert.pem
     --secure-boot \
     --signing-cert ./artifacts/test-image/ca_cert.pem
 
-
 # Get VM IP address
 VM_IP=$(virsh domifaddr virtdeploy-vm-0 | grep ipv4 | awk '{print $4}' |  cut -d "/" -f1)
 echo "VM_IP: $VM_IP"
@@ -91,6 +77,7 @@ echo "NETLAUNCH_PORT: $NETLAUNCH_PORT"
 SSH_KEY="$HOME/.ssh/id_rsa"
 echo "Using SSH Key: $SSH_KEY"
 
+# A/B update
 ./bin/storm-trident helper ab-update -w \
     "$SSH_KEY" \
     "$VM_IP" \
@@ -101,12 +88,13 @@ echo "Using SSH Key: $SSH_KEY"
     --stage-ab-update \
     --finalize-ab-update
 
+# Start netlisten to provide phone home receiver
+./bin/netlisten --port $NETLAUNCH_PORT --servefolder artifacts/test-image > ./update.log 2>&1 &
 
+# Test rollback
 ./bin/storm-trident helper manual-rollback -w \
     "$SSH_KEY" \
     "$VM_IP" \
     "testing-user" \
-    "host" \
-    --stage-ab-update \
-    --finalize-ab-update
+    "host"
 ```
