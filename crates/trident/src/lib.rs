@@ -740,7 +740,6 @@ impl Trident {
         expected_runtime_rollback: bool,
         expected_ab_rollback: bool,
         allowed_operations: Operations,
-        show_operation: Option<RollbackShowOperation>,
     ) -> Result<ExitKind, TridentError> {
         // If host's servicing state is *Finalized or *HealthCheckFailed, need to
         // re-evaluate the current state of the host.
@@ -752,12 +751,6 @@ impl Trident {
         ) {
             info!("Not in Provisioned or ManualRollbackStaged state, cannot rollback");
             return Ok(ExitKind::Done);
-        }
-
-        if let Some(show_op) = show_operation {
-            let result = manual_rollback::print_show(datastore, show_op)
-                .message("Failed to query for --show")?;
-            return Ok(result);
         }
 
         let rollback_result = self.execute_and_record_error(datastore, |datastore| {
@@ -780,5 +773,33 @@ impl Trident {
         }
 
         rollback_result
+    }
+
+    /// Handle a manual rollback request. Either print information about
+    /// available rollbacks, or execute a rollback.
+    pub fn rollback_show(
+        datastore_path: &Path,
+        show_operation: Option<RollbackShowOperation>,
+    ) -> Result<ExitKind, TridentError> {
+        let datastore = DataStore::open(datastore_path).message("Failed to open datastore")?;
+
+        // If host's servicing state is *Finalized or *HealthCheckFailed, need to
+        // re-evaluate the current state of the host.
+        if !matches!(
+            datastore.host_status().servicing_state,
+            ServicingState::Provisioned
+                | ServicingState::ManualRollbackStaged
+                | ServicingState::ManualRollbackFinalized
+        ) {
+            info!("Not in Provisioned or ManualRollbackStaged state, cannot rollback");
+            return Ok(ExitKind::Done);
+        }
+
+        if let Some(show_op) = show_operation {
+            let result = manual_rollback::print_show(&datastore, show_op)
+                .message("Failed to query for --show")?;
+            return Ok(result);
+        }
+        Ok(ExitKind::Done)
     }
 }

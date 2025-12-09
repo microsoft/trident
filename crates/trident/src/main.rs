@@ -76,6 +76,13 @@ fn run_trident(
                 .map(|()| ExitKind::Done);
         }
 
+        Commands::Rollback { show, .. } => {
+            if show.is_some() {
+                return Trident::rollback_show(&load_agent_config()?.datastore, *show)
+                    .message("Failed to query for --show");
+            }
+        }
+
         Commands::StartNetwork { config } => {
             // Lock the streams if we're starting the network
             // We have no network yet, so we can't send logs or traces anywhere
@@ -209,14 +216,12 @@ fn run_trident(
                         runtime,
                         ab,
                         ref allowed_operations,
-                        show,
                         ..
                     } => trident.rollback(
                         &mut datastore,
                         runtime,
                         ab,
                         cli::to_operations(allowed_operations),
-                        show,
                     ),
                     Commands::Listen { .. } => {
                         trident.listen(&mut datastore).map(|()| ExitKind::Done)
