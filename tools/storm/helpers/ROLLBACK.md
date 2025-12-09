@@ -89,7 +89,7 @@ echo "Using SSH Key: $SSH_KEY"
     --finalize-ab-update
 
 # Start netlisten to provide phone home receiver
-./bin/netlisten --port $NETLAUNCH_PORT --servefolder artifacts/test-image > ./update.log 2>&1 &
+./bin/netlisten --port $NETLAUNCH_PORT --servefolder artifacts/test-image > ./rollback.log 2>&1 &
 
 # Test rollback
 ./bin/storm-trident helper manual-rollback -w \
