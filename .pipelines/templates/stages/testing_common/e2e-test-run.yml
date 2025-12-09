@@ -463,4 +463,4 @@ steps:
     timeoutInMinutes: 5
     workingDirectory: $(Build.SourcesDirectory)/tests/e2e_tests
     displayName: "Run Trident E2E tests after rollback into target OS $(TARGET_OS)"
-    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'), eq(parameters.tridentConfigurationName, 'combined'))
+    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'), eq(variables['TRIDENT_CONFIGURATION_NAME'], 'combined'))
