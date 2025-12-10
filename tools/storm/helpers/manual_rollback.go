@@ -1,6 +1,9 @@
 package helpers
 
 import (
+	"encoding/json"
+	"fmt"
+	"strings"
 	stormenv "tridenttools/storm/utils/env"
 	stormsshcheck "tridenttools/storm/utils/ssh/check"
 	stormsshclient "tridenttools/storm/utils/ssh/client"
@@ -41,8 +44,20 @@ func (h *ManualRollbackHelper) rollback(tc storm.TestCase) error {
 	}
 	defer client.Close()
 
+	// Get current configuration
+	output, err := stormtrident.InvokeTrident(h.args.Env, client, []string{}, "get configuration")
+	if err != nil {
+		logrus.Errorf("Failed to invoke Trident: %v", err)
+		return err
+	}
+	if err := output.Check(); err != nil {
+		logrus.Errorf("Trident 'get configuration' stderr:\n%s", output.Stderr)
+		return err
+	}
+	logrus.Tracef("Trident 'get configuration' output:\n%s", output.Stdout)
+
 	// Check for available rollbacks
-	output, err := stormtrident.InvokeTrident(h.args.Env, client, []string{}, "rollback --show chain")
+	output, err = stormtrident.InvokeTrident(h.args.Env, client, []string{}, "rollback --show chain")
 	if err != nil {
 		logrus.Errorf("Failed to invoke Trident: %v", err)
 		return err
@@ -51,6 +66,15 @@ func (h *ManualRollbackHelper) rollback(tc storm.TestCase) error {
 		logrus.Errorf("Trident 'rollback --show chain' stderr:\n%s", output.Stderr)
 		return err
 	}
+	var availableRollbacks []map[string]interface{}
+	err = json.Unmarshal([]byte(strings.TrimSpace(output.Stdout)), &availableRollbacks)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal available rollbacks: %w", err)
+	}
+	if len(availableRollbacks) != 1 {
+		return fmt.Errorf("available rollbacks mismatch: expected 1, got %d", len(availableRollbacks))
+	}
+	logrus.Tracef("Available rollbacks confirmed, found: '%d'", len(availableRollbacks))
 
 	// Execute rollback
 	output, err = stormtrident.InvokeTrident(h.args.Env, client, []string{}, "rollback -v trace")

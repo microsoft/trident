@@ -300,6 +300,9 @@ func doUpdateTest(
 		// an error should end the test
 		return fmt.Errorf("failed to update: %w", err)
 	}
+	if strings.Contains(updateOutput, "No update servicing required") {
+		return fmt.Errorf("no update was performed")
+	}
 	logrus.Tracef("`trident update` invoked on VM")
 
 	if expectReboot {
