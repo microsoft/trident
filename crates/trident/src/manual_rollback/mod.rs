@@ -60,7 +60,7 @@ pub fn print_requires_reboot(datastore: &mut DataStore) -> Result<ExitKind, Trid
         .get_requires_reboot_output()
         .structured(ServicingError::ManualRollback)
         .message("Failed to query for --requires-reboot")?;
-    println!("{}", requires_reboot_output);
+    println!("{requires_reboot_output}");
     Ok(ExitKind::Done)
 }
 
@@ -103,7 +103,7 @@ pub fn print_show(
                     serde_json::to_string(&first_rollback_host_status.host_status.spec)
                         .structured(ServicingError::ManualRollback)
                         .message("Failed to serialize first rollback HostStatus spec")?;
-                println!("{}", target_output);
+                println!("{target_output}");
             } else {
                 info!("No available rollbacks to show target for");
                 println!("{{}}");
@@ -114,7 +114,7 @@ pub fn print_show(
                 .get_rollback_chain_json()
                 .structured(ServicingError::ManualRollback)
                 .message("Failed to query for --show=chain")?;
-            println!("{}", available_rollbacks_output);
+            println!("{available_rollbacks_output}");
         }
     }
     Ok(ExitKind::Done)
@@ -193,7 +193,7 @@ pub fn execute_rollback(
             }
             state => {
                 return Err(TridentError::new(InvalidInputError::InvalidRollbackState {
-                    reason: format!("in unexpected state: {:?}", state),
+                    reason: format!("in unexpected state: {state:?}"),
                 }));
             }
         }
@@ -222,7 +222,7 @@ pub fn execute_rollback(
                 }
                 state => {
                     return Err(TridentError::new(InvalidInputError::InvalidRollbackState {
-                        reason: format!("in unexpected state: {:?}", state),
+                        reason: format!("in unexpected state: {state:?}"),
                     }));
                 }
             }
@@ -362,8 +362,7 @@ impl ManualRollbackContext {
             semver::Version::parse(minimum_rollback_trident_version).map_err(|e| {
                 TridentError::new(InvalidInputError::InvalidRollbackExpectation {
                     reason: format!(
-                        "Failed to parse minimum rollback Trident version '{}': {}",
-                        minimum_rollback_trident_version, e
+                        "Failed to parse minimum rollback Trident version '{minimum_rollback_trident_version}': {e}",
                     ),
                 })
             })?;
