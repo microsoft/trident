@@ -28,6 +28,7 @@ use grpc::GrpcSender;
 
 pub mod cli;
 mod datastore;
+pub mod diagnostics;
 mod engine;
 mod health;
 mod io_utils;
@@ -85,7 +86,7 @@ pub const TRIDENT_METRICS_FILE_PATH: &str = "/var/log/trident-metrics.jsonl";
 const SAFETY_OVERRIDE_CHECK_PATH: &str = "/override-trident-safety-check";
 
 /// Temporary location of the datastore for multiboot install scenarios.
-const TEMPORARY_DATASTORE_PATH: &str = "/tmp/trident-datastore.sqlite";
+pub const TEMPORARY_DATASTORE_PATH: &str = "/tmp/trident-datastore.sqlite";
 
 #[must_use]
 pub enum ExitKind {
@@ -715,6 +716,11 @@ impl Trident {
             }
         }
 
+        Ok(())
+    }
+
+    pub fn diagnose(output_path: &Path) -> Result<(), TridentError> {
+        diagnostics::generate_and_bundle(output_path)?;
         Ok(())
     }
 }
