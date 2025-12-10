@@ -261,65 +261,35 @@ fn commit_finalized_on_expected_root(
         };
         esp::set_uefi_fallback_contents(ctx, current_servicing_state, &root_path)
             .structured(ServicingError::SetUpUefiFallback)?;
-    }
 
-    // If this is a UKI image, then we need to re-generate pcrlock policy to include the PCRs
-    // selected by the user for the current boot only.
-    // If it's virtdeploy, after confirming that we have booted into the correct image, we need
-    // to update the `BootOrder` to boot from the correct image next time.
-    let use_virtdeploy_workaround = virt::is_virtdeploy()
-        || ctx
-            .spec
-            .internal_params
-            .get_flag(VIRTDEPLOY_BOOT_ORDER_WORKAROUND);
+        // If we have encrypted volumes and this is a UKI image, then we need to re-generate pcrlock
+        // policy for the current boot only.
+        if let Some(ref encryption) = ctx.spec.storage.encryption {
+            if ctx.is_uki()? {
+                debug!("Regenerating pcrlock policy for current boot");
 
-    // Persist the boot order change
-    if current_servicing_state == ServicingState::AbUpdateFinalized || use_virtdeploy_workaround {
-        bootentries::persist_boot_order().message("Failed to persist boot order after reboot")?;
-    }
+                // Get the PCRs from Host Configuration
+                let pcrs = encryption
+                    .pcrs
+                    .iter()
+                    .fold(BitFlags::empty(), |acc, &pcr| acc | BitFlags::from(pcr));
 
-    // In UKI mode, set systemd-boot's default boot option to the currently running one.
-    if ctx.is_uki()? {
-        efivar::set_default_to_current().message("Failed to set default boot entry to current")?;
-    }
+                // Get UKI and bootloader binaries for .pcrlock file generation
+                let (uki_binaries, bootloader_binaries) =
+                    encryption::get_binary_paths_pcrlock(ctx, pcrs, None)
+                        .structured(ServicingError::GetBinaryPathsForPcrlockEncryption)?;
 
-    // Commit must finish configuring UEFI fallback as configured
-    let root_path = if container::is_running_in_container()
-        .message("Failed to check if Trident is running in a container")?
-    {
-        container::get_host_root_path().message("Failed to get host root path")?
-    } else {
-        PathBuf::from(ROOT_MOUNT_POINT_PATH)
-    };
-    esp::set_uefi_fallback_contents(ctx, current_servicing_state, &root_path)
-        .structured(ServicingError::SetUpUefiFallback)?;
-
-    // If we have encrypted volumes and this is a UKI image, then we need to re-generate pcrlock
-    // policy for the current boot only.
-    if let Some(ref encryption) = ctx.spec.storage.encryption {
-        if ctx.is_uki()? {
-            debug!("Regenerating pcrlock policy for current boot");
-
-            // Get the PCRs from Host Configuration
-            let pcrs = encryption
-                .pcrs
-                .iter()
-                .fold(BitFlags::empty(), |acc, &pcr| acc | BitFlags::from(pcr));
-
-            // Get UKI and bootloader binaries for .pcrlock file generation
-            let (uki_binaries, bootloader_binaries) =
-                encryption::get_binary_paths_pcrlock(ctx, pcrs, None)
-                    .structured(ServicingError::GetBinaryPathsForPcrlockEncryption)?;
-
-            // Generate a pcrlock policy
-            pcrlock::generate_pcrlock_policy(pcrs, uki_binaries, bootloader_binaries)?;
-        } else {
-            debug!(
-                "Target OS image is a grub image, \
+                // Generate a pcrlock policy
+                pcrlock::generate_pcrlock_policy(pcrs, uki_binaries, bootloader_binaries)?;
+            } else {
+                debug!(
+                    "Target OS image is a grub image, \
                 so skipping re-generating pcrlock policy for current boot"
-            );
+                );
+            }
         }
     }
+
     match datastore.host_status().servicing_state {
         ServicingState::CleanInstallFinalized => {
             info!("Clean install of target OS succeeded");
