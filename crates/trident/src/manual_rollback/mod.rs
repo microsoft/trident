@@ -181,7 +181,7 @@ pub fn execute_rollback(
     // Perform staging if operation is allowed
     if allowed_operations.has_stage() {
         match current_servicing_state {
-            ServicingState::Provisioned => {
+            ServicingState::ManualRollbackStaged | ServicingState::Provisioned => {
                 if datastore.host_status().last_error.is_some() {
                     return Err(TridentError::new(InvalidInputError::InvalidRollbackState {
                         reason: "in Provisioned state but has a last error set".to_string(),
