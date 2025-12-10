@@ -113,7 +113,7 @@ pub enum Commands {
         #[clap(short, long)]
         config: Option<PathBuf>,
 
-        /// Path to save the resulting HostStatus
+        /// Path to save the resulting Host Status
         #[clap(short, long)]
         status: Option<PathBuf>,
 
@@ -187,7 +187,7 @@ pub enum Commands {
         #[clap(long)]
         hash: String,
 
-        /// Path to save the resulting HostStatus
+        /// Path to save the resulting Host Status
         #[clap(short, long)]
         status: Option<PathBuf>,
 
