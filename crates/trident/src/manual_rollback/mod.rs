@@ -153,7 +153,7 @@ pub fn execute_rollback(
             }
             state => {
                 return Err(TridentError::new(InvalidInputError::InvalidRollbackState {
-                    reason: format!("in unexpected state: {:?}", state),
+                    reason: format!("in unexpected state: {state:?}"),
                 }));
             }
         }
@@ -187,7 +187,7 @@ pub fn execute_rollback(
                 }
                 state => {
                     return Err(TridentError::new(InvalidInputError::InvalidRollbackState {
-                        reason: format!("in unexpected state: {:?}", state),
+                        reason: format!("in unexpected state: {state:?}"),
                     }));
                 }
             }
@@ -405,8 +405,7 @@ impl ManualRollbackContext {
             semver::Version::parse(minimum_rollback_trident_version).map_err(|e| {
                 TridentError::new(InvalidInputError::InvalidRollbackExpectation {
                     reason: format!(
-                        "Failed to parse minimum rollback Trident version '{}': {}",
-                        minimum_rollback_trident_version, e
+                        "Failed to parse minimum rollback Trident version '{minimum_rollback_trident_version}': {e}",
                     ),
                 })
             })?;
