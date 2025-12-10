@@ -1,4 +1,8 @@
-use std::{fs, path::Path};
+use std::{
+    fs::{self, Permissions},
+    os::unix::fs::PermissionsExt,
+    path::Path,
+};
 
 use anyhow::{Context, Error};
 use const_format::formatcp;
@@ -20,7 +24,9 @@ pub const NETPLAN_BACKUP_FILE: &str = formatcp!("{NETPLAN_BACKUP_DIR}{TRIDENT_NE
 pub fn write(value: &NetworkConfig) -> Result<(), Error> {
     debug!("Writing netplan config to {}", TRIDENT_NETPLAN_FILE);
     fs::write(TRIDENT_NETPLAN_FILE, render_netplan_yaml(value)?)
-        .with_context(|| format!("Failed to write netplan config to {TRIDENT_NETPLAN_FILE}"))
+        .with_context(|| format!("Failed to write netplan config to {TRIDENT_NETPLAN_FILE}"))?;
+    fs::set_permissions(TRIDENT_NETPLAN_FILE, Permissions::from_mode(0o600))
+        .with_context(|| format!("Failed to set permissions on {TRIDENT_NETPLAN_FILE}"))
 }
 
 /// Executes `netplan generate`.
