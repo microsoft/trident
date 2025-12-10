@@ -66,6 +66,7 @@ func (h *ManualRollbackHelper) rollback(tc storm.TestCase) error {
 		logrus.Errorf("Trident 'rollback --show chain' stderr:\n%s", output.Stderr)
 		return err
 	}
+	logrus.Tracef("Trident 'rollback --show chain' output:\n%s", output.Stdout)
 	var availableRollbacks []map[string]interface{}
 	err = json.Unmarshal([]byte(strings.TrimSpace(output.Stdout)), &availableRollbacks)
 	if err != nil {
