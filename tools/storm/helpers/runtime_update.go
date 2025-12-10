@@ -102,6 +102,8 @@ func (h *RuntimeUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 
 	// Delete the storage section from the config, not needed for runtime update
 	delete(h.config, "storage")
+	// Remove any scripts
+	delete(h.config, "scripts")
 
 	// Retrieve the old netplan configuration
 	osConfig, ok := h.config["os"].(map[string]interface{})
