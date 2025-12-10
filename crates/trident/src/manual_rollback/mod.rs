@@ -286,10 +286,35 @@ fn stage_rollback(
     if available_rollbacks[rollback_index].requires_reboot {
         info!("Staging rollback that requires reboot");
 
-        // TODO: Update pcrlock policy if needed
+        // If we have encrypted volumes and this is a UKI image, then we need to re-generate pcrlock
+        // policy to include both the current boot and the rollback boot.
+        if let Some(ref encryption) = engine_context.spec.storage.encryption {
+            // TODO: Handle any pcr-lock encryption related changes needed
+            if engine_context.is_uki()? {
+                debug!("Regenerating pcrlock policy to include rollback boot");
+
+                // Get the PCRs from Host Configuration
+                let pcrs = encryption
+                    .pcrs
+                    .iter()
+                    .fold(BitFlags::empty(), |acc, &pcr| acc | BitFlags::from(pcr));
+
+                // Get UKI and bootloader binaries for .pcrlock file generation
+                let (uki_binaries, bootloader_binaries) =
+                    encryption::get_binary_paths_pcrlock(engine_context, pcrs, None)
+                        .structured(ServicingError::GetBinaryPathsForPcrlockEncryption)?;
+
+                // Generate a pcrlock policy
+                pcrlock::generate_pcrlock_policy(pcrs, uki_binaries, bootloader_binaries)?;
+            } else {
+                debug!(
+                    "Rollback OS is a grub image, \
+                so skipping re-generating pcrlock policy for manual rollback"
+                );
+            }
+        }
     } else {
         info!("Staging rollback that does not require reboot");
-
         // TODO: Invoke subsystem runtime rollbacks if part of stage
     }
 
@@ -346,34 +371,6 @@ fn finalize_rollback(
         &root_path,
     )
     .structured(ServicingError::SetUpUefiFallback)?;
-
-    // If we have encrypted volumes and this is a UKI image, then we need to re-generate pcrlock
-    // policy to include both the current boot and the rollback boot.
-    if let Some(ref encryption) = engine_context.spec.storage.encryption {
-        // TODO: Handle any pcr-lock encryption related changes needed
-        if engine_context.is_uki()? {
-            debug!("Regenerating pcrlock policy to include rollback boot");
-
-            // Get the PCRs from Host Configuration
-            let pcrs = encryption
-                .pcrs
-                .iter()
-                .fold(BitFlags::empty(), |acc, &pcr| acc | BitFlags::from(pcr));
-
-            // Get UKI and bootloader binaries for .pcrlock file generation
-            let (uki_binaries, bootloader_binaries) =
-                encryption::get_binary_paths_pcrlock(engine_context, pcrs, None)
-                    .structured(ServicingError::GetBinaryPathsForPcrlockEncryption)?;
-
-            // Generate a pcrlock policy
-            pcrlock::generate_pcrlock_policy(pcrs, uki_binaries, bootloader_binaries)?;
-        } else {
-            debug!(
-                "Rollback OS is a grub image, \
-                so skipping re-generating pcrlock policy for manual rollback"
-            );
-        }
-    }
 
     datastore.with_host_status(|host_status| {
         host_status.spec = engine_context.spec.clone();
