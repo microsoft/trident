@@ -202,6 +202,9 @@ stages:
           micVersion: ${{ parameters.micVersion }}
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
+  # Build Sysext and Confext images
+  - template: stages/build_image/build-ext-image.yml
+
   # dom0 is failing for not known reasons ... comment out for now to unblock, longterm this may
   # be removed from Trident pipelines alltogether in favor of being only test-images
   # - ${{ if or(eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e')) }}:

@@ -1,0 +1,66 @@
+stages:
+  - stage: BuildTestExtensionImages
+    displayName: Build Test Sysext and Confext Images
+
+    jobs:
+      - job: BuildTridentTestImg
+        displayName: Build
+        timeoutInMinutes: 20
+        pool:
+          type: linux
+
+        variables:
+          ob_outputDirectory: $(Pipeline.Workspace)/s/output
+          ob_artifactBaseName: ${{ parameters.imageName }}
+          BASEIMG_AZURE_LINUX_VERSION: "3.0"
+
+        steps:
+          - bash: |
+              set -eux
+              ./bin/storm-trident script build-extension-images --build-sysexts --num-clones 3
+
+            displayName: "Build test sysext and confext images"
+            workingDirectory: $(Build.SourcesDirectory)
+            retryCountOnTaskFailure: 3
+
+          - bash: |
+              set -eux
+              VERSION="1.2.2"
+              curl -LO "https://github.com/oras-project/oras/releases/download/v${VERSION}/oras_${VERSION}_linux_amd64.tar.gz"
+              mkdir -p oras-install/
+              tar -zxf oras_${VERSION}_*.tar.gz -C oras-install/
+              sudo mv oras-install/oras /usr/local/bin/
+              rm -rf oras_${VERSION}_*.tar.gz oras-install/
+            displayName: "Install ORAS"
+            retryCountOnTaskFailure: 3
+
+          - task: AzureCLI@2
+            inputs:
+              azureSubscription: trident-dev-acr-write-umi-ECF
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -eux
+
+                ./bin/storm-trident script acr-push \
+                  --acr-name $(ACR_NAME) \
+                  --repo-name sysext \
+                  --build-id $(Build.BuildId) \
+                  --file-paths $(Build.SourcesDirectory)/test-sysext-1.raw \
+                  --file-paths $(Build.SourcesDirectory)/test-sysext-2.raw \
+                  --file-paths $(Build.SourcesDirectory)/test-sysext-3.raw \
+                  --tag-var-name TAG_BASE \
+                  --repo-var-name SYSEXT_REPO
+
+                ./bin/storm-trident script acr-push \
+                  --acr-name $(ACR_NAME) \
+                  --repo-name confext \
+                  --build-id $(Build.BuildId) \
+                  --file-paths $(Build.SourcesDirectory)/test-confext-1.raw \
+                  --file-paths $(Build.SourcesDirectory)/test-confext-2.raw \
+                  --file-paths $(Build.SourcesDirectory)/test-confext-3.raw \
+                  --tag-var-name TAG_BASE \
+                  --repo-var-name CONFEXT_REPO
+
+            displayName: "Push to ACR"
+            retryCountOnTaskFailure: 3
