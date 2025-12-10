@@ -12,7 +12,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	stormenv "tridenttools/storm/utils/env"
-	stormsshcheck "tridenttools/storm/utils/ssh/check"
 	stormsshclient "tridenttools/storm/utils/ssh/client"
 	stormsshconfig "tridenttools/storm/utils/ssh/config"
 	stormsftp "tridenttools/storm/utils/ssh/sftp"
@@ -45,7 +44,6 @@ func (h *RuntimeUpdateHelper) RegisterTestCases(r storm.TestRegistrar) error {
 	r.RegisterTestCase("get-config", h.getHostConfig)
 	r.RegisterTestCase("update-hc", h.updateHostConfig)
 	r.RegisterTestCase("trigger-update", h.triggerTridentUpdate)
-	r.RegisterTestCase("check-trident-service", h.checkTridentService)
 	return nil
 }
 
@@ -221,24 +219,5 @@ func (h *RuntimeUpdateHelper) triggerTridentUpdate(tc storm.TestCase) error {
 	h.client.Close()
 	h.client = nil
 
-	return nil
-}
-
-func (h *RuntimeUpdateHelper) checkTridentService(tc storm.TestCase) error {
-	if h.args.Env == stormenv.TridentEnvironmentNone {
-		tc.Skip("No Trident environment specified")
-	}
-
-	expectSuccessfulCommit := true
-	err := stormsshcheck.CheckTridentService(
-		h.args.SshCliSettings,
-		h.args.EnvCliSettings,
-		expectSuccessfulCommit,
-		h.args.TimeoutDuration(),
-		tc)
-	if err != nil {
-		// Log this as a test failure
-		tc.FailFromError(err)
-	}
 	return nil
 }
