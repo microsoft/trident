@@ -1,4 +1,4 @@
-use std::{panic, path::PathBuf, process::ExitCode};
+use std::{fs, panic, path::PathBuf, process::ExitCode};
 
 use anyhow::{Context, Error};
 use clap::Parser;
@@ -213,7 +213,7 @@ fn run_trident(
                     _ => Err(TridentError::internal("Invalid command")),
                 };
 
-                // return HostStatus if requested
+                // Return Host Status if requested
                 if status.is_some() {
                     if let Err(e) = Trident::get(&agent_config.datastore, status, GetKind::Status)
                         .message("Failed to retrieve Host Status")
@@ -222,14 +222,12 @@ fn run_trident(
                     }
                 }
 
-                // return error if requested
+                // Return error if requested
                 if let Some(error_path) = error.as_ref() {
                     if let Err(e) = &res {
-                        // error fails to serialize, tracked by https://dev.azure.com/mariner-org/ECF/_workitems/edit/7420/
-                        if let Err(e2) = std::fs::write(
-                            error_path,
-                            serde_yaml::to_string(&e).unwrap_or("".into()),
-                        ) {
+                        if let Err(e2) =
+                            fs::write(error_path, serde_yaml::to_string(&e).unwrap_or("".into()))
+                        {
                             error!("Failed to write error to file: {e2}");
                         }
                     }
