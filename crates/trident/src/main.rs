@@ -259,7 +259,7 @@ fn setup_logging(args: &Cli) -> Result<Logstream, Error> {
         // Set the global filter for goblin to off
         .with_global_filter("goblin", LevelFilter::Off);
 
-    // Attempt to use the systemd journal if stderr is directly connected it, and otherwise fall
+    // Attempt to use the systemd journal if stderr is directly connected to it, and otherwise fall
     // back to env_logger.
     if let Some(Ok(journal_logger)) =
         systemd_journal_logger::connected_to_journal().then(systemd_journal_logger::JournalLog::new)
