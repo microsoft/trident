@@ -8,10 +8,10 @@ use log::LevelFilter;
 
 use trident_api::config::{Operation, Operations};
 
-use crate::TRIDENT_VERSION;
+use crate::TRIDENT_CLI_VERSION;
 
 #[derive(Parser, Debug)]
-#[clap(version = TRIDENT_VERSION)]
+#[clap(version = TRIDENT_CLI_VERSION)]
 pub struct Cli {
     /// Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
     #[arg(global = true, short, long, default_value_t = LevelFilter::Debug)]
@@ -28,6 +28,7 @@ pub enum AllowedOperation {
     Finalize,
 }
 
+#[allow(unused)]
 pub fn to_operations(allowed_operations: &[AllowedOperation]) -> Operations {
     let mut ops = Operations::empty();
     for op in allowed_operations {

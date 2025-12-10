@@ -2,25 +2,25 @@ use std::{fs, path::PathBuf, process::ExitCode};
 
 use anyhow::Error;
 use clap::Parser;
-use log::{error, info, LevelFilter};
+use log::{error, info};
 
 mod cli;
-mod offline_init;
-mod validation;
 
-use cli::{Cli, Commands, GetKind};
+use cli::Cli;
 use trident_api::{
     constants::{AGENT_CONFIG_PATH, TRIDENT_DATASTORE_PATH_DEFAULT},
-    error::{InvalidInputError, TridentError, TridentResultExt},
+    error::TridentError,
 };
 
 /// Trident CLI version
 pub const TRIDENT_CLI_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+#[allow(unused)]
 struct AgentConfig {
     datastore: PathBuf,
 }
 
+#[allow(unused)]
 fn load_agent_config() -> Result<AgentConfig, TridentError> {
     let mut config = AgentConfig {
         datastore: TRIDENT_DATASTORE_PATH_DEFAULT.into(),
@@ -37,7 +37,7 @@ fn load_agent_config() -> Result<AgentConfig, TridentError> {
     Ok(config)
 }
 
-fn run_trident_cli(args: &Cli) -> Result<(), TridentError> {
+fn run_trident_cli(_args: &Cli) -> Result<(), TridentError> {
     // Log version
     info!("Trident CLI version: {}", TRIDENT_CLI_VERSION);
 
