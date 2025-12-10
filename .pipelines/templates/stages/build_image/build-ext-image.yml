@@ -1,6 +1,7 @@
 stages:
   - stage: BuildTestExtensionImages
     displayName: Build Test Sysext and Confext Images
+    dependsOn: BuildingTools
 
     jobs:
       - job: BuildTridentTestImg
