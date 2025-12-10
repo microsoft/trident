@@ -229,22 +229,21 @@ func RollbackTest(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 	return nil
 }
 
-func createNetplanHostConfigSection(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmconfig.AllVMConfig, dummyDeviceNumber int) ([]map[string]interface{}, error) {
+func createNetplanHostConfigSection(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmconfig.AllVMConfig, dummyDeviceNumber int) (map[string]interface{}, error) {
 	dummyDevices := map[string]interface{}{}
 	if dummyDeviceNumber > 0 {
 		dummyDevices[fmt.Sprintf("dummy%v", dummyDeviceNumber)] = map[string]interface{}{
 			"addresses": []string{fmt.Sprintf("192.168.%d.123/24", 100+dummyDeviceNumber)},
 		}
 	}
-	return []map[string]interface{}{
-		{
-			"dummyDevices": dummyDevices,
-			"ethernets": map[string]interface{}{
-				"vmeths": map[string]interface{}{
-					"dhcp4": true,
-					"match": map[string]interface{}{
-						"name": "vmeth*",
-					},
+	return map[string]interface{}{
+		"version":       2,
+		"dummy-devices": dummyDevices,
+		"ethernets": map[string]interface{}{
+			"vmeths": map[string]interface{}{
+				"dhcp4": true,
+				"match": map[string]interface{}{
+					"name": "vmeth*",
 				},
 			},
 		},
@@ -300,7 +299,7 @@ func validateOs(
 	if err := validateExtension(testConfig, vmConfig, vmIP, extensionVersion); err != nil {
 		return fmt.Errorf("failed to validate extension: %w", err)
 	}
-	if err := validateNetplan(testConfig, vmConfig, vmIP, extensionVersion); err != nil {
+	if err := validateNetplan(testConfig, vmConfig, vmIP, netplanVersion); err != nil {
 		return fmt.Errorf("failed to validate netplan: %w", err)
 	}
 	return validateRollbacksAvailable(testConfig, vmConfig, vmIP, expectedAvailableRollbacks, expectedFirstRollbackNeedsReboot)
@@ -333,7 +332,7 @@ func doUpdateTest(
 	if err != nil {
 		return fmt.Errorf("failed to write host config file locally: %w", err)
 	}
-	logrus.Tracef("Putting updated Host Configuration on VM")
+	logrus.Tracef("Putting updated Host Configuration on VM:\n%s", string(hostConfigBytes))
 	err = stormssh.ScpUploadFile(vmConfig.VMConfig, vmIP, localTmpFile.Name(), vmHostConfigPath)
 	if err != nil {
 		return fmt.Errorf("failed to put updated Host Configuration on VM (%w)", err)
@@ -341,15 +340,18 @@ func doUpdateTest(
 	logrus.Tracef("Host Configuration put on VM")
 	// Invoke trident update
 	logrus.Tracef("Invoking `trident update` on VM")
-	updateOutput, err := stormssh.SshCommandCombinedOutput(vmConfig.VMConfig, vmIP, fmt.Sprintf("sudo trident update %s", vmHostConfigPath))
+	updateOutput, err := stormssh.SshCommandCombinedOutput(vmConfig.VMConfig, vmIP, fmt.Sprintf("sudo trident -v trace update %s", vmHostConfigPath))
 	logrus.Tracef("Update output (%v):\n%s", err, updateOutput)
-	if !expectReboot && err != nil {
-		// Ignore error from ssh if reboot was expected, but otherwise
-		// an error should end the test
+	if strings.Contains(updateOutput, "Trident failed due to a servicing error") {
 		return fmt.Errorf("failed to update: %w", err)
 	}
 	if strings.Contains(updateOutput, "No update servicing required") {
 		return fmt.Errorf("no update was performed")
+	}
+	if !expectReboot && err != nil {
+		// Ignore error from ssh if reboot was expected, but otherwise
+		// an error should end the test
+		return fmt.Errorf("failed to update: %w", err)
 	}
 	logrus.Tracef("`trident update` invoked on VM")
 
@@ -583,6 +585,7 @@ func validateNetplan(
 			if err == nil {
 				return fmt.Errorf("dummy devices are unexpectedly still available:\n%s", netplanTestOutput)
 			}
+			logrus.Tracef("Netplan version confirmed, found NO dummy* interfaces: \n%s", netplanTestOutput)
 		}
 	}
 	return nil

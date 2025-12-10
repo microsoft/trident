@@ -127,6 +127,7 @@ os:
       - trident
       - veritysetup
       - vim
+      - netplan
 
   additionalFiles:
       # Early boot one shot service to activate secondary rw /etc overlay
