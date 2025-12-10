@@ -61,4 +61,5 @@ sudo ./bin/storm-trident run rollback -w --verbose \
     --ssh-private-key-path ./artifacts/id_rsa \
     --ssh-public-key-path ./artifacts/id_rsa.pub \
     $SKIP_FLAGS
+
  ```

@@ -109,6 +109,7 @@ os:
       - trident-service
       - veritysetup
       - vim
+      - netplan
     remove:
       - grub2-efi-binary
 
