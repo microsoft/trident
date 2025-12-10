@@ -283,8 +283,8 @@ fn encrypt_and_open_device(
 /// Returns paths of UKI and bootloader binaries that `systemd-pcrlock` tool should seal to.
 ///
 /// 1. While staging an A/B update, during encryption provisioning, returns binaries used for the
-///     current boot, i.e. servicing OS, as well as binaries that will be used in the future boot,
-///     i.e. target OS.
+///    current boot, i.e. servicing OS, as well as binaries that will be used in the future boot,
+///    i.e. target OS.
 /// 2. During boot validation, returns binaries used for the current boot only.
 /// 3. During the staging of a manual rollback, returns binaries used for the current boot, as well
 ///    as binaries that will be used in the future boot, i.e. rollback OS.
@@ -308,10 +308,7 @@ pub fn get_binary_paths_pcrlock(
 
     // If executing a manual rollback, set manual_rollback flag to true so that UKI and bootloader
     // paths for the rollback OS are also constructed
-    let manual_rollback = match ctx.servicing_type {
-        ServicingType::ManualRollback => true,
-        _ => false,
-    };
+    let manual_rollback = matches!(ctx.servicing_type, ServicingType::ManualRollback);
 
     // If either PCR 4 or PCR 11 is requested, construct UKI paths
     let uki_binaries = get_uki_paths(&esp_path, mount_path, manual_rollback)?;
@@ -345,9 +342,9 @@ pub fn get_binary_paths_pcrlock(
 /// Returns paths of the UKI binaries required for the generation of .pcrlock files.
 ///
 /// 1. If `mount_path` is provided, func called during staging of an A/B update, so UKI binaries
-///     for both current and future boot are returned.
+///    for both current and future boot are returned.
 /// 3. If `manual_rollback` is set to true, func called during the staging of a manual rollback, so
-///     UKI binaries for both current and rollback boot are returned.
+///    UKI binaries for both current and rollback boot are returned.
 /// 2. Otherwise, func called during boot validation, so return UKI binary for current boot only.
 fn get_uki_paths(
     esp_path: &Path,
@@ -392,11 +389,11 @@ fn get_uki_paths(
 /// Bootloaders include primary, i.e. shim, and secondary, i.e. systemd-boot EFI executables.
 ///
 /// 1. If `mount_path` is provided, func called during staging of an A/B update, so bootloader
-///     binaries for both current and future boot are returned.
+///    binaries for both current and future boot are returned.
 /// 3. If `manual_rollback` is set to true, func called during the staging of a manual rollback, so
-///     bootloader binaries for both current and rollback boot are returned.
+///    bootloader binaries for both current and rollback boot are returned.
 /// 2. Otherwise, func called during boot validation, so return bootloader binaries for current
-///     boot only.
+///    boot only.
 fn get_bootloader_paths(
     ctx: &EngineContext,
     esp_path: &Path,
@@ -606,9 +603,8 @@ mod functional_test {
 
         let expected_paths = vec![esp_uki_path.join(current_entry)];
         assert_eq!(
-            get_uki_paths(&esp_path, None).unwrap(),
-            expected_paths,
-            false
+            get_uki_paths(&esp_path, None, false).unwrap(),
+            expected_paths
         );
 
         // Test case #2: mount_path provided, so two paths are returned, i.e. current entry and
