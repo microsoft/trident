@@ -6,6 +6,7 @@ default-members = [
 
 members = [
     "crates/trident",
+    "crates/trident_cli",
     "crates/trident_api",
     "crates/osutils",
     "crates/docbuilder",
