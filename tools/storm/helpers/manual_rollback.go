@@ -11,6 +11,7 @@ import (
 
 	"github.com/microsoft/storm"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v3"
 )
 
@@ -78,16 +79,19 @@ func (h *ManualRollbackHelper) rollback(tc storm.TestCase) error {
 	logrus.Tracef("Available rollbacks confirmed, found: '%d'", len(availableRollbacks))
 
 	// Execute rollback
-	output, err = stormtrident.InvokeTrident(h.args.Env, client, h.args.EnvVars, "rollback -v trace")
+	out, err := stormtrident.InvokeTrident(h.args.Env, client, h.args.EnvVars, "rollback -v trace")
 	if err != nil {
-		logrus.Errorf("Failed to invoke Trident: %v", err)
-		return err
+		if err, ok := err.(*ssh.ExitMissingError); ok && strings.Contains(out.Stderr, "Rebooting system") {
+			// The connection closed without an exit code, and the output contains "Rebooting system".
+			// This indicates that the host has rebooted.
+			logrus.Infof("Host rebooted successfully")
+		} else {
+			// Some unknown error occurred.
+			logrus.Errorf("Failed to invoke Trident: %s; %s", err, out.Report())
+			return fmt.Errorf("failed to invoke Trident: %w", err)
+		}
 	}
-	if err := output.Check(); err != nil {
-		logrus.Errorf("Trident 'rollback' stderr:\n%s", output.Stderr)
-		return err
-	}
-	logrus.Infof("Trident 'rollback' succeeded:\n%s", output.Stdout)
+	logrus.Infof("Trident 'rollback' succeeded:\n%s", out.Stdout)
 
 	if !h.args.ExpectRuntimeRollback {
 		err := stormsshcheck.CheckTridentService(

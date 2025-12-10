@@ -438,7 +438,7 @@ pub fn replace_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
             let orig_file_name_string = orig_file_name.to_string_lossy();
             // Skip files that end with .new
             if !orig_file_name_string.ends_with(".new") {
-                let new_file_name = format!("{}.old", orig_file_name_string);
+                let new_file_name = format!("{orig_file_name_string}.old");
                 let to_path = to_dir.join(new_file_name);
                 fs::rename(orig_path.path(), &to_path).context(format!(
                     "Failed to rename pre-existing file '{}' to '{}'",
