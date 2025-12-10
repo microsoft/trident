@@ -15,7 +15,7 @@ impl FrontMatter {
     pub(super) fn render(&self) -> String {
         let mut fm = String::from("---\n");
         for (key, value) in &self.fields {
-            fm.push_str(&format!("{}: {}\n", key, value));
+            fm.push_str(&format!("{key}: {value}\n"));
         }
         fm.push_str("---\n\n");
         fm
