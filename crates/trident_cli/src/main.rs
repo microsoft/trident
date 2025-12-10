@@ -42,7 +42,7 @@ fn run_trident_cli(_args: &Cli) -> Result<(), TridentError> {
     info!("Trident CLI version: {}", TRIDENT_CLI_VERSION);
 
     // TODO: Handle CLI commands
-    return Ok(());
+    Ok(())
 }
 
 fn setup_logging(args: &Cli) -> Result<(), Error> {

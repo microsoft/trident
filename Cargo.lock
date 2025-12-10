@@ -3377,6 +3377,7 @@ dependencies = [
  "serde",
  "serde_yaml",
  "trident_api",
+ "url",
  "uuid",
 ]
 
