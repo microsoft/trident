@@ -69,6 +69,36 @@ impl Subsystem for NetworkSubsystem {
         }
         Ok(())
     }
+
+    fn rollback(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
+        match ctx.spec_old.os.netplan.as_ref() {
+            Some(config) => {
+                debug!("Rolling back to previous network config");
+                netplan::write(config).structured(ServicingError::WriteNetplanConfig)?;
+                netplan::generate().structured(ServicingError::GenerateNetplanConfig)?;
+
+                // We need to disable cloud-init's network configuration when
+                // Trident is configuring the network, otherwise cloud-init may
+                // deploy additional configurations that are undesired and may
+                // conflict with or otherwise affect Trident's network setup.
+                disable_cloud_init_networking(CLOUD_INIT_CONFIG_DIR)?;
+
+                // Apply Netplan config immediately since there is no reboot in
+                // a runtime update.
+                if ctx.servicing_type == ServicingType::RuntimeUpdate {
+                    netplan::apply().structured(ServicingError::ApplyNetplanConfig)?;
+                }
+            }
+            None => {
+                debug!("Network config not provided in old Host Configuration");
+                if ctx.spec.os.netplan.is_some() {
+                    debug!("Removing current network config");
+                    netplan::remove().structured(ServicingError::RemoveNetplanConfig)?;
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 fn disable_cloud_init_networking(config_dir: impl AsRef<Path>) -> Result<(), TridentError> {

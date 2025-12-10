@@ -156,8 +156,13 @@ impl Subsystem for ExtensionsSubsystem {
 
         // Determine which images need to be removed and which should be added.
         // Copy extension images to their proper locations.
-        self.set_up_extensions(mount_path, ctx.servicing_type)
-            .structured(InternalError::SetUpExtensionImages)?;
+        self.set_up_extensions(
+            mount_path,
+            ctx.servicing_type,
+            &self.extensions_old,
+            &self.extensions,
+        )
+        .structured(InternalError::SetUpExtensionImages)?;
 
         // Delete staging directory.
         self.reset_staging_dir()?;
@@ -192,8 +197,13 @@ impl Subsystem for ExtensionsSubsystem {
 
         // Determine which images need to be removed and which should be added.
         // Copy extension images to their proper locations.
-        self.set_up_extensions(Path::new(ROOT_MOUNT_POINT_PATH), ctx.servicing_type)
-            .structured(InternalError::SetUpExtensionImages)?;
+        self.set_up_extensions(
+            Path::new(ROOT_MOUNT_POINT_PATH),
+            ctx.servicing_type,
+            &self.extensions_old,
+            &self.extensions,
+        )
+        .structured(InternalError::SetUpExtensionImages)?;
 
         // Activate sysexts and confexts on the OS.
         if ctx.spec.os.sysexts != ctx.spec_old.os.sysexts {
@@ -263,6 +273,54 @@ impl Subsystem for ExtensionsSubsystem {
         // Clean-up staging directory. Recursively remove all contents of
         // staging directory as well as the directory itself.
         self.reset_staging_dir()?;
+        Ok(())
+    }
+
+    fn rollback(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
+        // If rollback is attempted outside of a runtime update, we need to
+        // re-populate the subsystem's state.
+        if self.extensions.is_empty() && self.extensions_old.is_empty() {
+            self.staging_dir = PathBuf::from(EXTENSION_IMAGE_STAGING_DIRECTORY);
+            trace!(
+                "Defining staging directory for extension images at '{}'",
+                self.staging_dir.display()
+            );
+            // In this call to populate_extensions(), all extension images
+            // should already be downloaded to the staging directory.
+            self.populate_extensions(ctx)
+                .structured(InternalError::PopulateExtensionImages)?;
+        }
+
+        // Ensure that desired target directories exist on the target OS.
+        self.create_directories(Path::new(ROOT_MOUNT_POINT_PATH))
+            .structured(ServicingError::CreateExtensionImageDirectories)?;
+
+        // Call 'set_up_extensions' using self.extensions as the set of "old"
+        // extensions and self.extensions_old as the set of "new" extensions.
+        self.set_up_extensions(
+            Path::new(ROOT_MOUNT_POINT_PATH),
+            ctx.servicing_type,
+            &self.extensions,
+            &self.extensions_old,
+        )
+        .structured(InternalError::SetUpExtensionImages)?;
+
+        // Activate sysexts and confexts on the OS.
+        if ctx.spec.os.sysexts != ctx.spec_old.os.sysexts {
+            Dependency::SystemdSysext
+                .cmd()
+                .arg("refresh")
+                .run_and_check()
+                .message("Failed to refresh sysexts on the OS")?;
+        }
+        if ctx.spec.os.confexts != ctx.spec_old.os.confexts {
+            Dependency::SystemdConfext
+                .cmd()
+                .arg("refresh")
+                .run_and_check()
+                .message("Failed to refresh confexts on the OS")?;
+        }
+
         Ok(())
     }
 }
@@ -469,16 +527,16 @@ impl ExtensionsSubsystem {
         &self,
         mount_path: &Path,
         servicing_type: ServicingType,
+        old_extensions: &[ExtensionData],
+        new_extensions: &[ExtensionData],
     ) -> Result<(), Error> {
-        let old_exts_hashmap: HashMap<_, _> = self
-            .extensions_old
+        let old_exts_hashmap: HashMap<_, _> = old_extensions
             .iter()
             .map(|ext| ((ext.id.clone(), ext.ext_type.clone()), ext))
             .collect();
         let old_exts_ids: HashSet<_> = old_exts_hashmap.keys().cloned().collect();
 
-        let new_exts_hashmap: HashMap<_, _> = self
-            .extensions
+        let new_exts_hashmap: HashMap<_, _> = new_extensions
             .iter()
             .map(|ext| ((ext.id.clone(), ext.ext_type.clone()), ext))
             .collect();
@@ -1119,7 +1177,12 @@ mod functional_test {
 
         // Run set_up_extensions
         subsystem
-            .set_up_extensions(mount_path.path(), ServicingType::CleanInstall)
+            .set_up_extensions(
+                mount_path.path(),
+                ServicingType::CleanInstall,
+                &subsystem.extensions_old,
+                &subsystem.extensions,
+            )
             .unwrap();
 
         // Verify the extension was copied to the target location
@@ -1186,7 +1249,12 @@ mod functional_test {
 
         // Run set_up_extensions
         subsystem
-            .set_up_extensions(mount_path.path(), ServicingType::CleanInstall)
+            .set_up_extensions(
+                mount_path.path(),
+                ServicingType::CleanInstall,
+                &subsystem.extensions_old,
+                &subsystem.extensions,
+            )
             .unwrap();
 
         // Verify the extensions were copied to their target locations
@@ -1239,7 +1307,12 @@ mod functional_test {
         subsystem.create_directories(mount_path.path()).unwrap();
         // Run set_up_extensions with A/B update (should NOT remove old extensions)
         subsystem
-            .set_up_extensions(mount_path.path(), ServicingType::AbUpdate)
+            .set_up_extensions(
+                mount_path.path(),
+                ServicingType::AbUpdate,
+                &subsystem.extensions_old,
+                &subsystem.extensions,
+            )
             .unwrap();
         // Verify the extension still exists
         assert!(
@@ -1251,7 +1324,12 @@ mod functional_test {
 
         // Run set_up_extensions with RuntimeUpdate (should remove old extensions)
         subsystem
-            .set_up_extensions(mount_path.path(), ServicingType::RuntimeUpdate)
+            .set_up_extensions(
+                mount_path.path(),
+                ServicingType::RuntimeUpdate,
+                &subsystem.extensions_old,
+                &subsystem.extensions,
+            )
             .unwrap();
         // Verify the extension was removed
         assert!(!old_ext.path().exists(), "Old extension should be removed");
@@ -1310,7 +1388,12 @@ mod functional_test {
         subsystem.create_directories(mount_path.path()).unwrap();
         // Run set_up_extensions; A/B update
         subsystem
-            .set_up_extensions(mount_path.path(), ServicingType::AbUpdate)
+            .set_up_extensions(
+                mount_path.path(),
+                ServicingType::AbUpdate,
+                &subsystem.extensions_old,
+                &subsystem.extensions,
+            )
             .unwrap();
 
         // Verify old extension was NOT removed, since servicing type is A/B update
@@ -1377,7 +1460,12 @@ mod functional_test {
         subsystem.create_directories(mount_path.path()).unwrap();
         // Run set_up_extensions; runtime update
         subsystem
-            .set_up_extensions(mount_path.path(), ServicingType::RuntimeUpdate)
+            .set_up_extensions(
+                mount_path.path(),
+                ServicingType::RuntimeUpdate,
+                &subsystem.extensions_old,
+                &subsystem.extensions,
+            )
             .unwrap();
 
         // Verify old extension was removed, since servicing type is not A/B
@@ -1448,7 +1536,12 @@ mod functional_test {
         subsystem.create_directories(mount_path.path()).unwrap();
         // Run set_up_extensions
         subsystem
-            .set_up_extensions(mount_path.path(), ServicingType::AbUpdate)
+            .set_up_extensions(
+                mount_path.path(),
+                ServicingType::AbUpdate,
+                &subsystem.extensions_old,
+                &subsystem.extensions,
+            )
             .unwrap();
 
         // Verify old extension was not removed. Since old extension exists on a
@@ -1514,7 +1607,12 @@ mod functional_test {
         subsystem.create_directories(mount_path.path()).unwrap();
         // Run set_up_extensions
         subsystem
-            .set_up_extensions(mount_path.path(), ServicingType::RuntimeUpdate)
+            .set_up_extensions(
+                mount_path.path(),
+                ServicingType::RuntimeUpdate,
+                &subsystem.extensions_old,
+                &subsystem.extensions,
+            )
             .unwrap();
 
         // Verify old extension was removed. Since servicing OS == target OS,

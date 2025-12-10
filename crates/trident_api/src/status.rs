@@ -102,6 +102,10 @@ pub enum ServicingState {
     Provisioned,
     /// A/B update has been completed, the host booted into the target OS but the health checks failed.
     AbUpdateHealthCheckFailed,
+    /// Rollback of a runtime update failed. Rollback was triggered by either a)
+    /// a failure during the Finalize operation of a runtime update, or b) a
+    /// health checks failing.
+    RuntimeUpdateRollbackFailed,
 }
 
 /// A/B volume selection. Determines which set of volumes are currently

@@ -5,9 +5,10 @@ use log::{debug, error, info, warn};
 
 use osutils::{osmodifier::OSModifierConfig, path};
 use trident_api::{
-    config::{ManagementOs, SshMode},
+    config::{ManagementOs, Services, SshMode},
     constants::internal_params::DISABLE_HOSTNAME_CARRY_OVER,
     error::{ExecutionEnvironmentMisconfigurationError, ReportError, ServicingError, TridentError},
+    is_default,
     status::ServicingType,
 };
 
@@ -142,9 +143,7 @@ impl Subsystem for OsConfigSubsystem {
 
     #[tracing::instrument(name = "osconfig_configuration", skip_all)]
     fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
-        if ctx.servicing_type != ServicingType::CleanInstall
-            && ctx.servicing_type != ServicingType::AbUpdate
-        {
+        if ctx.servicing_type != ServicingType::NoActiveServicing {
             debug!(
                 "Skipping step 'Configure' for subsystem '{}' during servicing type '{:?}'",
                 self.name(),
@@ -237,6 +236,36 @@ impl Subsystem for OsConfigSubsystem {
             .call_os_modifier(Path::new(OS_MODIFIER_NEWROOT_PATH))
             .structured(ServicingError::RunOsModifier)?;
 
+        Ok(())
+    }
+
+    fn rollback(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
+        if ctx.is_uki()? && ctx.storage_graph.root_fs_is_verity() {
+            error!(
+                "Skipping rollback of OS configuration changes because UKI root-verity is in use."
+            );
+            return Ok(());
+        }
+
+        let mut os_modifier_config = OSModifierConfig::default();
+        let mut services = Services::default();
+
+        if !ctx.spec.os.sysexts.is_empty() && ctx.spec_old.os.sysexts.is_empty() {
+            debug!("Disabling {SYSTEMD_SYSEXT} service");
+            services.disable.push(SYSTEMD_SYSEXT.to_string());
+        }
+
+        if !ctx.spec.os.confexts.is_empty() && ctx.spec_old.os.confexts.is_empty() {
+            debug!("Disabling {SYSTEMD_CONFEXT} service");
+            services.disable.push(SYSTEMD_CONFEXT.to_string());
+        }
+
+        if !is_default(&services) {
+            os_modifier_config.services = Some(services);
+            os_modifier_config
+                .call_os_modifier(Path::new(OS_MODIFIER_NEWROOT_PATH))
+                .structured(ServicingError::RunOsModifier)?;
+        }
         Ok(())
     }
 }

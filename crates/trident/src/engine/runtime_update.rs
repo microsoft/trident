@@ -1,12 +1,12 @@
 use std::time::Instant;
 
-use log::{debug, info, warn};
+use log::{debug, error, info, warn};
 #[cfg(feature = "grpc-dangerous")]
 use tokio::sync::mpsc;
 
 use osutils::efivar;
 use trident_api::{
-    error::TridentError,
+    error::{InternalError, TridentError},
     status::{ServicingState, ServicingType},
 };
 
@@ -15,7 +15,7 @@ use crate::grpc;
 use crate::{
     datastore::DataStore,
     engine::{self, EngineContext},
-    monitor_metrics, ExitKind,
+    health, monitor_metrics, ExitKind,
 };
 
 use super::Subsystem;
@@ -116,16 +116,34 @@ pub(crate) fn finalize_update(
     };
 
     // Note: provision() is not called during runtime updates.
-    engine::configure(subsystems, &ctx)?;
+    let res = engine::configure(subsystems, &ctx);
+    if let Err(e) = res {
+        engine::rollback(subsystems, &ctx, Some(e))?;
+    }
 
     // Update the Host Configuration with information produced and stored in the
     // subsystems. Currently, this step is used only to update the final paths
     // of sysexts and confexts configured in the extensions subsystem.
-    engine::update_host_configuration(subsystems, &mut ctx)?;
+    let res = engine::update_host_configuration(subsystems, &mut ctx);
+    if let Err(e) = res {
+        engine::rollback(subsystems, &ctx, Some(e))?;
+    }
     // Turn ctx into an immutable variable.
     let ctx = ctx;
 
-    engine::clean_up(subsystems, &ctx)?;
+    let res = engine::clean_up(subsystems, &ctx);
+    if let Err(e) = res {
+        engine::rollback(subsystems, &ctx, Some(e))?;
+    }
+
+    // Run health checks
+    match health::execute_health_checks(&ctx) {
+        Ok(()) => {}
+        Err(e) => {
+            error!("Health check(s) failure: {e:?}");
+            engine::rollback(subsystems, &ctx, Some(e))?;
+        }
+    }
 
     debug!(
         "Updating host's servicing state to '{:?}'",

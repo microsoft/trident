@@ -139,6 +139,11 @@ pub(crate) trait Subsystem: Send {
     fn clean_up(&self, _ctx: &EngineContext) -> Result<(), TridentError> {
         Ok(())
     }
+
+    /// Roll back the operations of the subsystem.
+    fn rollback(&mut self, _ctx: &EngineContext) -> Result<(), TridentError> {
+        Ok(())
+    }
 }
 
 lazy_static::lazy_static! {
@@ -454,6 +459,36 @@ fn clean_up(subsystems: &[Box<dyn Subsystem>], ctx: &EngineContext) -> Result<()
         }
     }
     debug!("Finished step 'Clean Up'");
+    Ok(())
+}
+
+fn rollback(
+    subsystems: &mut [Box<dyn Subsystem>],
+    ctx: &EngineContext,
+    trigger_error: Option<TridentError>,
+) -> Result<(), TridentError> {
+    if let Some(err) = trigger_error {
+        debug!("Rollback triggered by error: {err:?}");
+    }
+    info!("Starting step 'Rollback'");
+    for subsystem in subsystems {
+        if subsystem.runs_on_servicing_type(ctx) {
+            debug!(
+                "Starting step 'Rollback' for subsystem '{}'",
+                subsystem.name()
+            );
+            subsystem.rollback(ctx).message(format!(
+                "Step 'Rollback' failed for subsystem '{}'",
+                subsystem.name()
+            ))?;
+        } else {
+            trace!(
+                "Skipping step 'Rollback' for subsystem '{}'",
+                subsystem.name()
+            );
+        }
+    }
+    debug!("Finished step 'Rollback'");
     Ok(())
 }
 
