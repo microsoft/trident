@@ -288,6 +288,7 @@ fn setup_logging(
             | Commands::Update { .. }
             | Commands::Commit { .. }
             | Commands::RebuildRaid { .. }
+            | Commands::Rollback { .. }
     ) {
         multilogger.add_logger(BackgroundLog::new(TRIDENT_BACKGROUND_LOG_PATH).into_logger());
     }
@@ -312,6 +313,7 @@ fn setup_tracing(args: &Cli) -> Result<TraceStream, Error> {
             | Commands::Update { .. }
             | Commands::Commit { .. }
             | Commands::RebuildRaid { .. }
+            | Commands::Rollback { .. }
     ) {
         // Set up the trace sender
         let trace_sender = tracestream
