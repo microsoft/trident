@@ -7,13 +7,14 @@
 Choose one of the following modes by setting the `FALLBACK_MODE` variable in the script below:
 
 ``` bash
-
 ## Build RPMs, Images, and tools
 TEST_IMAGES_FOLDER="../test-images"
 
 TEST_NAME="combined"
 IMAGE_NAME="trident-usrverity-testimage"
 COSI_NAME="usrverity"
+
+SSH_KEY="$HOME/.ssh/id_rsa"
 
 # Build Trident RPMs
 sudo rm -rf bin/trident-rpms.tar.gz
@@ -74,7 +75,6 @@ echo "NETLAUNCH_PORT: $NETLAUNCH_PORT"
 # Start netlisten to serve update image
 ./bin/netlisten --port $NETLAUNCH_PORT --servefolder artifacts/test-image > ./update.log 2>&1 &
 # Run AB update with forced rollback using storm-trident
-SSH_KEY="$HOME/.ssh/id_rsa"
 echo "Using SSH Key: $SSH_KEY"
 
 # A/B update
