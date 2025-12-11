@@ -2,7 +2,6 @@ package tests
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -463,14 +462,14 @@ func validateRollbacksAvailable(
 	if !testConfig.SkipManualRollbacks {
 		logrus.Tracef("Checking number of available rollbacks, expecting '%d'", expectedAvailableRollbacks)
 
-		availableRollbacksOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo trident rollback --show chain")
+		availableRollbacksOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo trident get rollback-chain")
 		if err != nil {
-			return fmt.Errorf("'rollback --show chain' failed to from VM: %v", err)
+			return fmt.Errorf("'get rollback-chain' failed to from VM: %v", err)
 		}
-		logrus.Tracef("Reported 'rollback --show chain':\n%s", availableRollbacksOutput)
+		logrus.Tracef("Reported 'get rollback-chain':\n%s", availableRollbacksOutput)
 
 		var availableRollbacks []map[string]interface{}
-		err = json.Unmarshal([]byte(strings.TrimSpace(availableRollbacksOutput)), &availableRollbacks)
+		err = yaml.Unmarshal([]byte(strings.TrimSpace(availableRollbacksOutput)), &availableRollbacks)
 		if err != nil {
 			return fmt.Errorf("failed to unmarshal available rollbacks: %w", err)
 		}
@@ -491,41 +490,41 @@ func validateRollbacksAvailable(
 			}
 		}
 
-		rollbackShowValidationOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo trident rollback --show validation")
+		rollbackShowValidationOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo trident rollback --dry-run")
 		if err != nil {
-			return fmt.Errorf("'rollback --show validation' failed to from VM: %v", err)
+			return fmt.Errorf("'rollback --dry-run' failed to from VM: %v", err)
 		}
-		logrus.Tracef("Reported 'rollback --show validation':\n%s", rollbackShowValidationOutput)
+		logrus.Tracef("Reported 'rollback --dry-run':\n%s", rollbackShowValidationOutput)
 		if expectedAvailableRollbacks > 0 {
 			if expectedFirstRollbackNeedsReboot {
 				if strings.TrimSpace(rollbackShowValidationOutput) != "ab" {
-					return fmt.Errorf("expected 'ab' from 'rollback --show validation', got: %s", rollbackShowValidationOutput)
+					return fmt.Errorf("expected 'ab' from 'rollback --dry-run', got: %s", rollbackShowValidationOutput)
 				}
 			} else {
 				if strings.TrimSpace(rollbackShowValidationOutput) != "runtime" {
-					return fmt.Errorf("expected 'runtime' from 'rollback --show validation', got: %s", rollbackShowValidationOutput)
+					return fmt.Errorf("expected 'runtime' from 'rollback --dry-run', got: %s", rollbackShowValidationOutput)
 				}
 			}
 		} else {
 			if strings.TrimSpace(rollbackShowValidationOutput) != "none" {
-				return fmt.Errorf("expected 'none' from 'rollback --show validation', got: %s", rollbackShowValidationOutput)
+				return fmt.Errorf("expected 'none' from 'rollback --dry-run', got: %s", rollbackShowValidationOutput)
 			}
 		}
 
-		rollbackShowTargetOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo trident rollback --show target")
+		rollbackShowTargetOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo trident get rollback-target")
 		if err != nil {
-			return fmt.Errorf("'rollback --show target' failed to from VM: %v", err)
+			return fmt.Errorf("'get rollback-target' failed to from VM: %v", err)
 		}
-		logrus.Tracef("Reported 'rollback --show target':\n%s", rollbackShowTargetOutput)
+		logrus.Tracef("Reported 'get rollback-target':\n%s", rollbackShowTargetOutput)
 		if expectedAvailableRollbacks > 0 {
 			if expectedFirstRollbackNeedsReboot {
 				if strings.TrimSpace(rollbackShowTargetOutput) == "{}" {
-					return fmt.Errorf("expected Host Configuration from 'rollback --show target', got: %s", rollbackShowTargetOutput)
+					return fmt.Errorf("expected Host Configuration from 'get rollback-target', got: %s", rollbackShowTargetOutput)
 				}
 			}
 		} else {
 			if strings.TrimSpace(rollbackShowTargetOutput) != "{}" {
-				return fmt.Errorf("expected '{}' from 'rollback --show target', got: %s", rollbackShowTargetOutput)
+				return fmt.Errorf("expected '{}' from 'get rollback-target', got: %s", rollbackShowTargetOutput)
 			}
 		}
 	}
