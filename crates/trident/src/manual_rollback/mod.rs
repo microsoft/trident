@@ -82,71 +82,6 @@ pub fn get_rollback_info(datastore: &DataStore, kind: GetKind) -> Result<String,
     Err(TridentError::new(ServicingError::ManualRollback))
 }
 
-/// Get requested rollback.
-fn get_requested_rollback_info(
-    available_rollbacks: &[RollbackDetail],
-    invoke_if_next_is_runtime: bool,
-    invoke_available_ab: bool,
-) -> Result<(Option<usize>, String), TridentError> {
-    if available_rollbacks.is_empty() {
-        info!("No available rollbacks to perform");
-        return Ok((None, "none".to_string()));
-    }
-
-    let rollback_index = match (invoke_if_next_is_runtime, invoke_available_ab) {
-        (false, false) => {
-            // No expectations specified, proceed with first
-            0
-        }
-        (true, false) => {
-            // Expecting runtime rollback as first
-            if available_rollbacks[0].requires_reboot {
-                return Err(TridentError::new(
-                    InvalidInputError::InvalidRollbackExpectation {
-                        reason:
-                            "expected to undo a runtime update but rollback will undo an A/B update"
-                                .to_string(),
-                    },
-                ));
-            }
-            0
-        }
-        (false, true) => {
-            // Find first A/B rollback along with its index
-            let Some((index, _)) = available_rollbacks
-                .iter()
-                .enumerate()
-                .find(|(_, r)| r.requires_reboot)
-            else {
-                return Err(TridentError::new(
-                    InvalidInputError::InvalidRollbackExpectation {
-                        reason: "expected to undo an A/B update but no A/B rollback is available"
-                            .to_string(),
-                    },
-                ));
-            };
-            index
-        }
-        (true, true) => {
-            return Err(TridentError::new(
-                InvalidInputError::InvalidRollbackExpectation {
-                    reason: "conflicting expectations: cannot expect to undo both a runtime update and an A/B update"
-                        .to_string(),
-                },
-            ));
-        }
-    };
-
-    Ok((
-        Some(rollback_index),
-        if available_rollbacks[rollback_index].requires_reboot {
-            "ab".to_string()
-        } else {
-            "runtime".to_string()
-        },
-    ))
-}
-
 /// Handle manual rollback operations.
 pub fn execute_rollback(
     datastore: &mut DataStore,
@@ -274,6 +209,72 @@ pub fn execute_rollback(
     Ok(ExitKind::Done)
 }
 
+/// Get requested rollback.
+fn get_requested_rollback_info(
+    available_rollbacks: &[RollbackDetail],
+    invoke_if_next_is_runtime: bool,
+    invoke_available_ab: bool,
+) -> Result<(Option<usize>, String), TridentError> {
+    if available_rollbacks.is_empty() {
+        info!("No available rollbacks to perform");
+        return Ok((None, "none".to_string()));
+    }
+
+    let rollback_index = match (invoke_if_next_is_runtime, invoke_available_ab) {
+        (false, false) => {
+            // No expectations specified, proceed with first
+            0
+        }
+        (true, false) => {
+            // Expecting runtime rollback as first
+            if available_rollbacks[0].requires_reboot {
+                return Err(TridentError::new(
+                    InvalidInputError::InvalidRollbackExpectation {
+                        reason:
+                            "expected to undo a runtime update but rollback will undo an A/B update"
+                                .to_string(),
+                    },
+                ));
+            }
+            0
+        }
+        (false, true) => {
+            // Find first A/B rollback along with its index
+            let Some((index, _)) = available_rollbacks
+                .iter()
+                .enumerate()
+                .find(|(_, r)| r.requires_reboot)
+            else {
+                return Err(TridentError::new(
+                    InvalidInputError::InvalidRollbackExpectation {
+                        reason: "expected to undo an A/B update but no A/B rollback is available"
+                            .to_string(),
+                    },
+                ));
+            };
+            index
+        }
+        (true, true) => {
+            return Err(TridentError::new(
+                InvalidInputError::InvalidRollbackExpectation {
+                    reason: "conflicting expectations: cannot expect to undo both a runtime update and an A/B update"
+                        .to_string(),
+                },
+            ));
+        }
+    };
+
+    Ok((
+        Some(rollback_index),
+        if available_rollbacks[rollback_index].requires_reboot {
+            "ab".to_string()
+        } else {
+            "runtime".to_string()
+        },
+    ))
+}
+
+/// Stage manual rollback.
 fn stage_rollback(
     datastore: &mut DataStore,
     engine_context: &EngineContext,
@@ -282,24 +283,12 @@ fn stage_rollback(
 ) -> Result<(), TridentError> {
     if available_rollbacks[rollback_index].requires_reboot {
         info!("Staging rollback that requires reboot");
-        // Update pcrlock policy if needed
 
-        // Is this needed?
-        //
-        // // If A/B rollback was requested and the index is >0, account for any skipped runtime rollbacks
-        // available_rollbacks.iter().take(rollback_index).try_for_each(|detail| {
-        //     info!(
-        //         "Skipping runtime update rollback at index {} in favor of available A/B rollback {}",
-        //         detail.host_status_index, available_rollbacks[rollback_index].host_status_index
-        //     );
-        //     datastore.with_host_status(|host_status| {
-        //         host_status.spec = detail.host_status.spec.clone();
-        //         host_status.servicing_state = ServicingState::ManualRollbackSkippedRuntimeRollback;
-        //     })
-        // })
-        // .message("Failed to skip runtime update rollbacks")?;
+        // TODO: Update pcrlock policy if needed
     } else {
         info!("Staging rollback that does not require reboot");
+
+        // TODO: Invoke subsystem runtime rollbacks if part of stage
     }
 
     // Mark the HostStatus as ManualRollbackStaged
@@ -311,6 +300,7 @@ fn stage_rollback(
     Ok(())
 }
 
+// Finalize manual rollback.
 fn finalize_rollback(
     datastore: &mut DataStore,
     engine_context: &EngineContext,
@@ -318,7 +308,8 @@ fn finalize_rollback(
 ) -> Result<ExitKind, TridentError> {
     if !ab_rollback {
         trace!("Manual rollback does not require reboot");
-        // TODO: implement runtime update rollback
+
+        // TODO: invoke subsystem runtime rollbacks if part of finalize
 
         datastore.with_host_status(|host_status| {
             host_status.spec = engine_context.spec.clone();
