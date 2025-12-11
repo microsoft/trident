@@ -110,31 +110,42 @@ impl CosiMetadata {
                 bail!("Bootloader metadata is required for COSI version >= 1.1, but not provided");
             };
 
-            match &bootloader.bootloader_type {
-                BootloaderType::Grub => {
-                    // Validate that for grub, there are no systemd-boot entries
-                    if bootloader.systemd_boot.is_some() {
-                        bail!("Bootloader type 'grub' cannot have systemd-boot entries");
-                    }
+            match (&bootloader.bootloader_type, &bootloader.systemd_boot) {
+                // Grub with systemd-boot entries is invalid
+                (BootloaderType::Grub, Some(_)) => {
+                    bail!("Bootloader type 'grub' cannot have systemd-boot entries");
                 }
-                BootloaderType::SystemdBoot => {
-                    // Validate that for systemd, there is exactly 1 entry and it is uki
-                    if bootloader.systemd_boot.is_none()
-                        || bootloader.systemd_boot.as_ref().unwrap().entries.len() != 1
-                    {
-                        bail!("Bootloader type 'systemd-boot' must have exactly one entry");
-                    }
-                    let entry = &bootloader.systemd_boot.as_ref().unwrap().entries[0];
-                    if entry.boot_type != SystemdBootLoaderType::UkiStandalone {
+
+                // Systemd-boot without entries is invalid
+                (BootloaderType::SystemdBoot, None) => {
+                    bail!("Bootloader type 'systemd-boot' requires systemd-boot entries");
+                }
+
+                // Systemd-boot with not exactly 1 uki entry is invalid for this version of Trident
+                (BootloaderType::SystemdBoot, Some(systemd_boot))
+                    if systemd_boot.entries.len() != 1 =>
+                {
+                    bail!("Bootloader type 'systemd-boot' must have exactly one entry");
+                }
+
+                // Validate that systemd-boot only has uki-standalone entry type for this version of Trident
+                (BootloaderType::SystemdBoot, Some(systemd_boot)) => {
+                    let entry_type = &systemd_boot.entries[0].boot_type;
+                    if *entry_type != SystemdBootloaderType::UkiStandalone {
                         bail!(
-                            "Unsupported boot entry type for 'systemd-boot': {}",
-                            entry.boot_type
+                            "Bootloader type 'systemd-boot' only supports 'uki-standalone' entry type, found: {}",
+                            entry_type
                         );
                     }
                 }
-                BootloaderType::Unknown(bootloader_type) => {
+
+                // Unknown bootloader type is invalid
+                (BootloaderType::Unknown(bootloader_type), _) => {
                     bail!("Unsupported bootloader type: {}", bootloader_type);
                 }
+
+                // Valid combination
+                _ => {}
             }
         }
 
@@ -152,7 +163,7 @@ impl CosiMetadata {
 
         sdb.entries
             .iter()
-            .any(|entry| entry.boot_type == SystemdBootLoaderType::UkiStandalone)
+            .any(|entry| entry.boot_type == SystemdBootloaderType::UkiStandalone)
     }
 
     /// Returns the ESP filesystem image.
@@ -190,6 +201,21 @@ impl CosiMetadata {
 pub(crate) struct MetadataVersion {
     pub major: u32,
     pub minor: u32,
+}
+
+impl PartialOrd for MetadataVersion {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for MetadataVersion {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match self.major.cmp(&other.major) {
+            Ordering::Equal => self.minor.cmp(&other.minor),
+            ord => ord,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
@@ -322,7 +348,7 @@ pub(crate) struct SystemdBoot {
 pub(crate) struct BootloaderEntry {
     #[allow(dead_code)]
     #[serde(rename = "type")]
-    pub boot_type: SystemdBootLoaderType,
+    pub boot_type: SystemdBootloaderType,
 
     #[allow(dead_code)]
     pub kernel: String,
@@ -335,7 +361,7 @@ pub(crate) struct BootloaderEntry {
 }
 
 #[derive(Debug, Deserialize, Clone, Eq, PartialEq, Display)]
-pub(crate) enum SystemdBootLoaderType {
+pub(crate) enum SystemdBootloaderType {
     #[serde(rename = "uki-standalone")]
     #[strum(to_string = "uki-standalone")]
     UkiStandalone,
@@ -351,21 +377,6 @@ pub(crate) enum SystemdBootLoaderType {
     #[serde(untagged)]
     #[strum(to_string = "{0}")]
     Unknown(String),
-}
-
-impl PartialOrd for MetadataVersion {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for MetadataVersion {
-    fn cmp(&self, other: &Self) -> Ordering {
-        match self.major.cmp(&other.major) {
-            Ordering::Equal => self.minor.cmp(&other.minor),
-            ord => ord,
-        }
-    }
 }
 
 #[cfg(test)]
