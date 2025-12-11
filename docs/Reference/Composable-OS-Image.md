@@ -161,7 +161,7 @@ contents of the image as well as fields from the partition table.
 | `originalSize`     | number | 1.2      | Yes (since 1.2) | Size of the image prior to any FS shrinking. Should be at least `uncompressedSize`.       |
 | `partUuid`         | string | 1.2      | Yes (since 1.2) | Original partition UUID.                                                                  |
 | `partLabel`        | string | 1.2      | Yes (since 1.2) | Original partition label (may be empty).                                                  |
-| `partNumber`       | number | 1.2      | Yes (since 1.2) | The index where the partition originally appeared on disk (0-indexed).                    |
+| `partNumber`       | number | 1.2      | Yes (since 1.2) | The index where the partition originally appeared on disk (1-indexed).                    |
 | `sha384`           | string | 1.0      | Yes (since 1.1) | SHA-384 hash of the compressed hash image.                                                |
 
 ##### `OsArchitecture` Enum
