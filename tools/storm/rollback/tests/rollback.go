@@ -491,24 +491,24 @@ func validateRollbacksAvailable(
 			}
 		}
 
-		rollbackShowValidationOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo trident rollback --dry-run")
+		rollbackShowValidationOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo trident rollback --check")
 		if err != nil {
-			return fmt.Errorf("'rollback --dry-run' failed to from VM: %v", err)
+			return fmt.Errorf("'rollback --check' failed to from VM: %v", err)
 		}
-		logrus.Tracef("Reported 'rollback --dry-run':\n%s", rollbackShowValidationOutput)
+		logrus.Tracef("Reported 'rollback --check':\n%s", rollbackShowValidationOutput)
 		if expectedAvailableRollbacks > 0 {
 			if expectedFirstRollbackNeedsReboot {
 				if strings.TrimSpace(rollbackShowValidationOutput) != "ab" {
-					return fmt.Errorf("expected 'ab' from 'rollback --dry-run', got: %s", rollbackShowValidationOutput)
+					return fmt.Errorf("expected 'ab' from 'rollback --check', got: %s", rollbackShowValidationOutput)
 				}
 			} else {
 				if strings.TrimSpace(rollbackShowValidationOutput) != "runtime" {
-					return fmt.Errorf("expected 'runtime' from 'rollback --dry-run', got: %s", rollbackShowValidationOutput)
+					return fmt.Errorf("expected 'runtime' from 'rollback --check', got: %s", rollbackShowValidationOutput)
 				}
 			}
 		} else {
 			if strings.TrimSpace(rollbackShowValidationOutput) != "none" {
-				return fmt.Errorf("expected 'none' from 'rollback --dry-run', got: %s", rollbackShowValidationOutput)
+				return fmt.Errorf("expected 'none' from 'rollback --check', got: %s", rollbackShowValidationOutput)
 			}
 		}
 
