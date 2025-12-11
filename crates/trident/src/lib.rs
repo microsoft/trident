@@ -55,7 +55,6 @@ pub use logging::{
 pub use orchestrate::OrchestratorConnection;
 
 use crate::{
-    cli::RollbackShowOperation,
     engine::{ab_update, runtime_update, SUBSYSTEMS},
     osimage::OsImage,
 };
@@ -703,10 +702,8 @@ impl Trident {
         output_path: &Option<PathBuf>,
         kind: GetKind,
     ) -> Result<(), TridentError> {
-        let host_status = DataStore::open(datastore_path)
-            .message("Failed to open datastore")?
-            .host_status()
-            .clone();
+        let datastore = DataStore::open(datastore_path).message("Failed to open datastore")?;
+        let host_status = datastore.host_status().clone();
 
         let yaml = match kind {
             GetKind::Configuration => serde_yaml::to_string(&host_status.spec)
@@ -715,6 +712,9 @@ impl Trident {
                 .structured(InternalError::SerializeHostStatus)?,
             GetKind::LastError => serde_yaml::to_string(&host_status.last_error)
                 .structured(InternalError::SerializeError)?,
+            GetKind::RollbackTarget | GetKind::RollbackChain => {
+                manual_rollback::get_rollback_info(&datastore, kind)?
+            }
         };
 
         match output_path {
@@ -737,8 +737,9 @@ impl Trident {
     pub fn rollback(
         &mut self,
         datastore: &mut DataStore,
-        expected_runtime_rollback: bool,
-        expected_ab_rollback: bool,
+        dry_run: bool,
+        invoke_if_next_is_runtime: bool,
+        invoke_available_ab: bool,
         allowed_operations: Operations,
     ) -> Result<ExitKind, TridentError> {
         // If host's servicing state is *Finalized or *HealthCheckFailed, need to
@@ -756,8 +757,9 @@ impl Trident {
         let rollback_result = self.execute_and_record_error(datastore, |datastore| {
             manual_rollback::execute_rollback(
                 datastore,
-                expected_runtime_rollback,
-                expected_ab_rollback,
+                dry_run,
+                invoke_if_next_is_runtime,
+                invoke_available_ab,
                 &allowed_operations,
             )
             .message("Failed to rollback")
@@ -773,33 +775,5 @@ impl Trident {
         }
 
         rollback_result
-    }
-
-    /// Handle a manual rollback request. Either print information about
-    /// available rollbacks, or execute a rollback.
-    pub fn rollback_show(
-        datastore_path: &Path,
-        show_operation: Option<RollbackShowOperation>,
-    ) -> Result<ExitKind, TridentError> {
-        let datastore = DataStore::open(datastore_path).message("Failed to open datastore")?;
-
-        // If host's servicing state is *Finalized or *HealthCheckFailed, need to
-        // re-evaluate the current state of the host.
-        if !matches!(
-            datastore.host_status().servicing_state,
-            ServicingState::Provisioned
-                | ServicingState::ManualRollbackStaged
-                | ServicingState::ManualRollbackFinalized
-        ) {
-            info!("Not in Provisioned or ManualRollbackStaged state, cannot rollback");
-            return Ok(ExitKind::Done);
-        }
-
-        if let Some(show_op) = show_operation {
-            let result = manual_rollback::print_show(&datastore, show_op)
-                .message("Failed to query for --show")?;
-            return Ok(result);
-        }
-        Ok(ExitKind::Done)
     }
 }
