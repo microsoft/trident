@@ -376,6 +376,10 @@ A string that represents the type of the systemd-boot entry.
 
 ## Changelog
 
+### Revision 1.2
+
+- Added `partitions` field to the root object.
+
 ### Revision 1.1
 
 - Added `bootloader` field to the root object.
