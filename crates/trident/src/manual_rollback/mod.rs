@@ -524,22 +524,27 @@ impl ManualRollbackContext {
                             i,
                             instance.active_volume
                         );
+                        let last_error_exists = hs.last_error.is_some();
                         // Prepend the last Provisioned index to the previously active volume's available
                         // rollbacks.
-                        match (trident_is_too_old, instance.active_volume) {
-                            (false, Some(AbVolumeSelection::VolumeA)) => {
+                        match (
+                            last_error_exists,
+                            trident_is_too_old,
+                            instance.active_volume,
+                        ) {
+                            (false, false, Some(AbVolumeSelection::VolumeA)) => {
                                 instance
                                     .volume_a_available_rollbacks
                                     .insert(0, host_status_context);
                             }
-                            (false, Some(AbVolumeSelection::VolumeB)) => {
+                            (false, false, Some(AbVolumeSelection::VolumeB)) => {
                                 instance
                                     .volume_b_available_rollbacks
                                     .insert(0, host_status_context);
                             }
                             // Do not add an available rollback if there is no active volume
-                            // or if the Trident version is too old
-                            (true, _) | (false, None) => {}
+                            // or if the Trident version is too old or if last_error is set
+                            (true, _, _) | (false, true, _) | (false, false, None) => {}
                         }
                     }
                 }
@@ -557,9 +562,7 @@ impl ManualRollbackContext {
                 );
                 needs_reboot = matches!(
                     hs.servicing_state,
-                    ServicingState::AbUpdateFinalized
-                        | ServicingState::AbUpdateFinalized
-                        | ServicingState::AbUpdateHealthCheckFailed
+                    ServicingState::AbUpdateFinalized | ServicingState::AbUpdateFinalized
                 );
                 trace!(
                     "Detected servicing state {:?} at index {}: rollback={}, needs_reboot={}",
@@ -675,11 +678,22 @@ mod tests {
         active_volume: Option<AbVolumeSelection>,
         servicing_state: ServicingState,
         old_version: &str,
+        error: Option<String>,
     ) -> HostStatus {
+        let mut last_error: Option<serde_yaml::Value> = None;
+        if let Some(error) = error {
+            last_error = Some(
+                serde_yaml::to_value(hashmap! {
+                    "message".to_string() => error,
+                })
+                .unwrap(),
+            );
+        }
         HostStatus {
             ab_active_volume: active_volume,
             servicing_state,
             trident_version: old_version.to_string(),
+            last_error,
             ..Default::default()
         }
     }
@@ -690,7 +704,30 @@ mod tests {
         old_version: &str,
     ) -> HostStatusTest {
         HostStatusTest {
-            host_status: host_status(active_volume, ServicingState::Provisioned, old_version),
+            host_status: host_status(
+                active_volume,
+                ServicingState::Provisioned,
+                old_version,
+                None,
+            ),
+            expected_requires_reboot,
+            expected_available_rollbacks,
+        }
+    }
+    fn prov_e(
+        active_volume: Option<AbVolumeSelection>,
+        expected_requires_reboot: bool,
+        expected_available_rollbacks: Vec<usize>,
+        old_version: &str,
+        error: Option<String>,
+    ) -> HostStatusTest {
+        HostStatusTest {
+            host_status: host_status(
+                active_volume,
+                ServicingState::Provisioned,
+                old_version,
+                error,
+            ),
             expected_requires_reboot,
             expected_available_rollbacks,
         }
@@ -701,7 +738,7 @@ mod tests {
         old_version: &str,
     ) -> HostStatusTest {
         HostStatusTest {
-            host_status: host_status(active_volume, servicing_state, old_version),
+            host_status: host_status(active_volume, servicing_state, old_version, None),
             expected_requires_reboot: false,
             expected_available_rollbacks: vec![],
         }
@@ -728,53 +765,70 @@ mod tests {
             .filter(|hst| hst.host_status.servicing_state == ServicingState::Provisioned)
             .last()
             .unwrap();
-        trace!(
-            "{}: {:?}, expected_requires_reboot: {}, expected_available_rollbacks: {:?}",
-            test_description,
-            final_state.host_status.servicing_state,
+        rollback_context_testing_for_expected(
+            host_status_test_list,
+            final_state.expected_available_rollbacks.clone(),
             final_state.expected_requires_reboot,
-            final_state.expected_available_rollbacks
+            test_description,
+        );
+    }
+    fn rollback_context_testing_for_expected(
+        host_status_test_list: &[HostStatusTest],
+        expected_available_rollbacks: Vec<usize>,
+        expected_requires_reboot: bool,
+        test_description: &str,
+    ) {
+        let context = create_rollback_context_for_testing(host_status_test_list);
+        trace!(
+            "{}: expected_requires_reboot: {}, expected_available_rollbacks: {:?}",
+            test_description,
+            expected_requires_reboot,
+            expected_available_rollbacks
         );
         assert_eq!(
             context.get_requires_reboot().unwrap(),
-            final_state.expected_requires_reboot
+            expected_requires_reboot
         );
         let serialized_output = serde_yaml::from_str::<Vec<RollbackDetail>>(
             &context.get_rollback_chain_yaml().unwrap(),
         )
         .unwrap();
-        assert_eq!(
-            serialized_output.len(),
-            final_state.expected_available_rollbacks.len()
-        )
+        assert_eq!(serialized_output.len(), expected_available_rollbacks.len())
     }
 
-    const VOLUME_A: Option<AbVolumeSelection> = Some(AbVolumeSelection::VolumeA);
-    const VOLUME_B: Option<AbVolumeSelection> = Some(AbVolumeSelection::VolumeB);
+    const VOL_A: Option<AbVolumeSelection> = Some(AbVolumeSelection::VolumeA);
+    const VOL_B: Option<AbVolumeSelection> = Some(AbVolumeSelection::VolumeB);
     const NONE: &str = "";
     const OLD: &str = "0.19.0";
     const MIN: &str = MINIMUM_ROLLBACK_TRIDENT_VERSION;
     const NEW: &str = TRIDENT_VERSION;
+    const CI_FINAL: ServicingState = ServicingState::CleanInstallFinalized;
+    const RU_STAGE: ServicingState = ServicingState::RuntimeUpdateStaged;
+    const AB_STAGE: ServicingState = ServicingState::AbUpdateStaged;
+    const AB_FINAL: ServicingState = ServicingState::AbUpdateFinalized;
+    const AB_HC_FAIL: ServicingState = ServicingState::AbUpdateHealthCheckFailed;
+    const MR_STAGE: ServicingState = ServicingState::ManualRollbackStaged;
+    const MR_FINAL: ServicingState = ServicingState::ManualRollbackFinalized;
 
     #[test]
     fn test_rollback_context() {
         let host_status_list = vec![
-            inter(None, ServicingState::CleanInstallFinalized, MIN),
-            inter(None, ServicingState::CleanInstallFinalized, MIN),
-            prov(VOLUME_A, false, vec![], MIN),
-            inter(VOLUME_A, ServicingState::RuntimeUpdateStaged, MIN),
-            prov(VOLUME_A, false, vec![2], MIN),
-            inter(VOLUME_A, ServicingState::RuntimeUpdateStaged, MIN),
-            prov(VOLUME_A, false, vec![4, 2], MIN),
-            inter(VOLUME_A, ServicingState::AbUpdateStaged, MIN),
-            inter(VOLUME_A, ServicingState::AbUpdateFinalized, MIN),
-            prov(VOLUME_B, true, vec![6, 4, 2], MIN),
-            inter(VOLUME_B, ServicingState::AbUpdateStaged, MIN),
-            inter(VOLUME_B, ServicingState::AbUpdateFinalized, MIN),
-            prov(VOLUME_A, true, vec![9], MIN),
-            inter(VOLUME_A, ServicingState::ManualRollbackStaged, MIN),
-            inter(VOLUME_A, ServicingState::ManualRollbackFinalized, MIN),
-            prov(VOLUME_B, false, vec![], MIN),
+            inter(None, CI_FINAL, MIN),
+            inter(None, CI_FINAL, MIN),
+            prov(VOL_A, false, vec![], MIN),
+            inter(VOL_A, RU_STAGE, MIN),
+            prov(VOL_A, false, vec![2], MIN),
+            inter(VOL_A, RU_STAGE, MIN),
+            prov(VOL_A, false, vec![4, 2], MIN),
+            inter(VOL_A, AB_STAGE, MIN),
+            inter(VOL_A, AB_FINAL, MIN),
+            prov(VOL_B, true, vec![6, 4, 2], MIN),
+            inter(VOL_B, AB_STAGE, MIN),
+            inter(VOL_B, AB_FINAL, MIN),
+            prov(VOL_A, true, vec![9], MIN),
+            inter(VOL_A, MR_STAGE, MIN),
+            inter(VOL_A, MR_FINAL, MIN),
+            prov(VOL_B, false, vec![], MIN),
         ];
         for (i, hs) in host_status_list.iter().enumerate() {
             trace!(
@@ -790,17 +844,17 @@ mod tests {
     #[test]
     fn test_runtime_rollback_context_mid_rollback() {
         let host_status_list = vec![
-            inter(None, ServicingState::CleanInstallFinalized, MIN),
-            inter(None, ServicingState::CleanInstallFinalized, MIN),
-            prov(VOLUME_A, false, vec![], MIN),
-            inter(VOLUME_A, ServicingState::RuntimeUpdateStaged, MIN),
-            prov(VOLUME_A, false, vec![2], MIN),
-            inter(VOLUME_A, ServicingState::RuntimeUpdateStaged, MIN),
-            prov(VOLUME_A, false, vec![4, 2], MIN),
-            inter(VOLUME_A, ServicingState::RuntimeUpdateStaged, MIN),
-            prov(VOLUME_A, false, vec![6, 4, 2], MIN),
-            inter(VOLUME_A, ServicingState::ManualRollbackStaged, MIN),
-            inter(VOLUME_A, ServicingState::ManualRollbackFinalized, MIN),
+            inter(None, CI_FINAL, MIN),
+            inter(None, CI_FINAL, MIN),
+            prov(VOL_A, false, vec![], MIN),
+            inter(VOL_A, RU_STAGE, MIN),
+            prov(VOL_A, false, vec![2], MIN),
+            inter(VOL_A, RU_STAGE, MIN),
+            prov(VOL_A, false, vec![4, 2], MIN),
+            inter(VOL_A, RU_STAGE, MIN),
+            prov(VOL_A, false, vec![6, 4, 2], MIN),
+            inter(VOL_A, MR_STAGE, MIN),
+            inter(VOL_A, MR_FINAL, MIN),
         ];
         rollback_context_testing(
             &host_status_list,
@@ -811,20 +865,20 @@ mod tests {
     #[test]
     fn test_ab_rollback_context_mid_rollback() {
         let host_status_list = vec![
-            inter(None, ServicingState::CleanInstallFinalized, MIN),
-            inter(None, ServicingState::CleanInstallFinalized, MIN),
-            prov(VOLUME_A, false, vec![], MIN),
-            inter(VOLUME_A, ServicingState::AbUpdateStaged, MIN),
-            inter(VOLUME_A, ServicingState::AbUpdateFinalized, MIN),
-            prov(VOLUME_B, true, vec![2], MIN),
-            inter(VOLUME_B, ServicingState::AbUpdateStaged, MIN),
-            inter(VOLUME_B, ServicingState::AbUpdateFinalized, MIN),
-            prov(VOLUME_A, true, vec![5], MIN),
-            inter(VOLUME_A, ServicingState::AbUpdateStaged, MIN),
-            inter(VOLUME_A, ServicingState::AbUpdateFinalized, MIN),
-            prov(VOLUME_B, true, vec![8], MIN),
-            inter(VOLUME_A, ServicingState::ManualRollbackStaged, MIN),
-            inter(VOLUME_A, ServicingState::ManualRollbackFinalized, MIN),
+            inter(None, CI_FINAL, MIN),
+            inter(None, CI_FINAL, MIN),
+            prov(VOL_A, false, vec![], MIN),
+            inter(VOL_A, AB_STAGE, MIN),
+            inter(VOL_A, AB_FINAL, MIN),
+            prov(VOL_B, true, vec![2], MIN),
+            inter(VOL_B, AB_STAGE, MIN),
+            inter(VOL_B, AB_FINAL, MIN),
+            prov(VOL_A, true, vec![5], MIN),
+            inter(VOL_A, AB_STAGE, MIN),
+            inter(VOL_A, AB_FINAL, MIN),
+            prov(VOL_B, true, vec![8], MIN),
+            inter(VOL_A, MR_STAGE, MIN),
+            inter(VOL_A, MR_FINAL, MIN),
         ];
         rollback_context_testing(
             &host_status_list,
@@ -835,9 +889,9 @@ mod tests {
     #[test]
     fn test_offline_init_context() {
         let host_status_list = vec![
-            prov(VOLUME_A, false, vec![], MIN),
-            prov(VOLUME_A, false, vec![], MIN),
-            prov(VOLUME_A, false, vec![], MIN),
+            prov(VOL_A, false, vec![], MIN),
+            prov(VOL_A, false, vec![], MIN),
+            prov(VOL_A, false, vec![], MIN),
         ];
         rollback_context_testing(&host_status_list, "Offline init initial state");
     }
@@ -845,12 +899,12 @@ mod tests {
     #[test]
     fn test_offline_init_and_ab_update_context() {
         let host_status_list = vec![
-            prov(VOLUME_A, false, vec![], MIN),
-            prov(VOLUME_A, false, vec![], MIN),
-            prov(VOLUME_A, false, vec![], MIN),
-            inter(VOLUME_A, ServicingState::AbUpdateStaged, MIN),
-            inter(VOLUME_A, ServicingState::AbUpdateFinalized, MIN),
-            prov(VOLUME_B, true, vec![2], MIN),
+            prov(VOL_A, false, vec![], MIN),
+            prov(VOL_A, false, vec![], MIN),
+            prov(VOL_A, false, vec![], MIN),
+            inter(VOL_A, AB_STAGE, MIN),
+            inter(VOL_A, AB_FINAL, MIN),
+            prov(VOL_B, true, vec![2], MIN),
         ];
         rollback_context_testing(&host_status_list, "Offline init and a/b update");
     }
@@ -858,9 +912,9 @@ mod tests {
     #[test]
     fn test_clean_install_context() {
         let host_status_list = vec![
-            inter(None, ServicingState::CleanInstallFinalized, MIN),
-            inter(None, ServicingState::CleanInstallFinalized, MIN),
-            prov(VOLUME_A, false, vec![], MIN),
+            inter(None, CI_FINAL, MIN),
+            inter(None, CI_FINAL, MIN),
+            prov(VOL_A, false, vec![], MIN),
         ];
         rollback_context_testing(&host_status_list, "Clean install initial state");
     }
@@ -868,12 +922,12 @@ mod tests {
     #[test]
     fn test_clean_install_and_ab_update_context() {
         let host_status_list = vec![
-            inter(None, ServicingState::CleanInstallFinalized, MIN),
-            inter(None, ServicingState::CleanInstallFinalized, MIN),
-            prov(VOLUME_A, false, vec![], MIN),
-            inter(VOLUME_A, ServicingState::AbUpdateStaged, MIN),
-            inter(VOLUME_A, ServicingState::AbUpdateFinalized, MIN),
-            prov(VOLUME_B, true, vec![2], MIN),
+            inter(None, CI_FINAL, MIN),
+            inter(None, CI_FINAL, MIN),
+            prov(VOL_A, false, vec![], MIN),
+            inter(VOL_A, AB_STAGE, MIN),
+            inter(VOL_A, AB_FINAL, MIN),
+            prov(VOL_B, true, vec![2], MIN),
         ];
         rollback_context_testing(&host_status_list, "Clean install and a/b update");
     }
@@ -881,12 +935,12 @@ mod tests {
     #[test]
     fn test_with_old_trident_context() {
         let host_status_list = vec![
-            inter(None, ServicingState::CleanInstallFinalized, OLD),
-            inter(None, ServicingState::CleanInstallFinalized, OLD),
-            prov(VOLUME_A, false, vec![], OLD),
-            inter(VOLUME_A, ServicingState::AbUpdateStaged, OLD),
-            inter(VOLUME_A, ServicingState::AbUpdateFinalized, OLD),
-            prov(VOLUME_B, false, vec![], OLD),
+            inter(None, CI_FINAL, OLD),
+            inter(None, CI_FINAL, OLD),
+            prov(VOL_A, false, vec![], OLD),
+            inter(VOL_A, AB_STAGE, OLD),
+            inter(VOL_A, AB_FINAL, OLD),
+            prov(VOL_B, false, vec![], OLD),
         ];
         rollback_context_testing(&host_status_list, "Old Trident versions");
     }
@@ -894,12 +948,12 @@ mod tests {
     #[test]
     fn test_with_no_trident_context() {
         let host_status_list = vec![
-            inter(None, ServicingState::CleanInstallFinalized, NONE),
-            inter(None, ServicingState::CleanInstallFinalized, NONE),
-            prov(VOLUME_A, false, vec![], NONE),
-            inter(VOLUME_A, ServicingState::AbUpdateStaged, NONE),
-            inter(VOLUME_A, ServicingState::AbUpdateFinalized, NONE),
-            prov(VOLUME_B, false, vec![], NONE),
+            inter(None, CI_FINAL, NONE),
+            inter(None, CI_FINAL, NONE),
+            prov(VOL_A, false, vec![], NONE),
+            inter(VOL_A, AB_STAGE, NONE),
+            inter(VOL_A, AB_FINAL, NONE),
+            prov(VOL_B, false, vec![], NONE),
         ];
         rollback_context_testing(&host_status_list, "No Trident versions");
     }
@@ -907,17 +961,17 @@ mod tests {
     #[test]
     fn test_with_mixed_trident_context() {
         let host_status_list = vec![
-            inter(None, ServicingState::CleanInstallFinalized, NONE),
-            inter(None, ServicingState::CleanInstallFinalized, NONE),
-            prov(VOLUME_A, false, vec![], NONE),
-            inter(VOLUME_A, ServicingState::RuntimeUpdateStaged, NONE),
-            prov(VOLUME_A, false, vec![], NONE),
-            inter(VOLUME_A, ServicingState::RuntimeUpdateStaged, OLD),
-            prov(VOLUME_A, false, vec![], OLD),
-            inter(VOLUME_A, ServicingState::RuntimeUpdateStaged, MIN),
-            prov(VOLUME_A, false, vec![6], MIN),
-            inter(VOLUME_A, ServicingState::RuntimeUpdateStaged, NEW),
-            prov(VOLUME_A, false, vec![8, 6], NEW),
+            inter(None, CI_FINAL, NONE),
+            inter(None, CI_FINAL, NONE),
+            prov(VOL_A, false, vec![], NONE),
+            inter(VOL_A, RU_STAGE, NONE),
+            prov(VOL_A, false, vec![], NONE),
+            inter(VOL_A, RU_STAGE, OLD),
+            prov(VOL_A, false, vec![], OLD),
+            inter(VOL_A, RU_STAGE, MIN),
+            prov(VOL_A, false, vec![6], MIN),
+            inter(VOL_A, RU_STAGE, NEW),
+            prov(VOL_A, false, vec![8, 6], NEW),
         ];
         rollback_context_testing(
             &host_status_list,
@@ -928,21 +982,21 @@ mod tests {
     #[test]
     fn test_ab_rollback_skipping_runtime_rollbacks() {
         let host_status_list = vec![
-            inter(None, ServicingState::CleanInstallFinalized, MIN),
-            inter(None, ServicingState::CleanInstallFinalized, MIN),
-            prov(VOLUME_A, false, vec![], MIN),
-            inter(VOLUME_A, ServicingState::AbUpdateStaged, MIN),
-            inter(VOLUME_A, ServicingState::AbUpdateFinalized, MIN),
-            prov(VOLUME_B, true, vec![2], MIN),
-            inter(VOLUME_B, ServicingState::RuntimeUpdateStaged, MIN),
-            prov(VOLUME_B, false, vec![5, 2], MIN),
-            inter(VOLUME_B, ServicingState::RuntimeUpdateStaged, MIN),
-            prov(VOLUME_B, false, vec![7, 5, 2], MIN),
+            inter(None, CI_FINAL, MIN),
+            inter(None, CI_FINAL, MIN),
+            prov(VOL_A, false, vec![], MIN),
+            inter(VOL_A, AB_STAGE, MIN),
+            inter(VOL_A, AB_FINAL, MIN),
+            prov(VOL_B, true, vec![2], MIN),
+            inter(VOL_B, RU_STAGE, MIN),
+            prov(VOL_B, false, vec![5, 2], MIN),
+            inter(VOL_B, RU_STAGE, MIN),
+            prov(VOL_B, false, vec![7, 5, 2], MIN),
             // Manual Rollback of the available a/b update skips
             // 2 runtime updates
-            inter(VOLUME_B, ServicingState::ManualRollbackStaged, MIN),
-            inter(VOLUME_B, ServicingState::ManualRollbackFinalized, MIN),
-            prov(VOLUME_A, false, vec![], MIN),
+            inter(VOL_B, MR_STAGE, MIN),
+            inter(VOL_B, MR_FINAL, MIN),
+            prov(VOL_A, false, vec![], MIN),
         ];
         rollback_context_testing(
             &host_status_list,
@@ -951,11 +1005,47 @@ mod tests {
     }
 
     #[test]
+    fn test_ab_staged_final_state() {
+        let host_status_list = vec![
+            inter(None, CI_FINAL, MIN),
+            inter(None, CI_FINAL, MIN),
+            prov(VOL_A, false, vec![], MIN),
+            inter(VOL_A, AB_STAGE, MIN),
+            inter(VOL_A, AB_FINAL, MIN),
+            prov(VOL_B, true, vec![2], MIN),
+            inter(VOL_B, AB_STAGE, MIN),
+        ];
+        rollback_context_testing_for_expected(
+            &host_status_list,
+            vec![],
+            false,
+            "Validate a/b update stage as final state",
+        );
+    }
+
+    #[test]
+    fn test_ab_update_health_check_failed() {
+        let host_status_list = vec![
+            inter(None, CI_FINAL, MIN),
+            inter(None, CI_FINAL, MIN),
+            prov(VOL_A, false, vec![], MIN),
+            inter(VOL_A, AB_STAGE, MIN),
+            inter(VOL_A, AB_FINAL, MIN),
+            prov(VOL_B, true, vec![2], MIN),
+            inter(VOL_B, AB_STAGE, MIN),
+            inter(VOL_B, AB_FINAL, MIN),
+            inter(VOL_B, AB_HC_FAIL, MIN),
+            prov_e(VOL_B, false, vec![], MIN, Some("failure".to_string())),
+        ];
+        rollback_context_testing(&host_status_list, "Validate a/b update health check failed");
+    }
+
+    #[test]
     fn test_dry_run() {
         let mut host_status_list = vec![
-            inter(None, ServicingState::CleanInstallFinalized, MIN),
-            inter(None, ServicingState::CleanInstallFinalized, MIN),
-            prov(VOLUME_A, false, vec![], MIN),
+            inter(None, CI_FINAL, MIN),
+            inter(None, CI_FINAL, MIN),
+            prov(VOL_A, false, vec![], MIN),
         ];
         let context = create_rollback_context_for_testing(&host_status_list);
         // if nothing is requested and there are no rollbacks, none is returned
@@ -978,11 +1068,11 @@ mod tests {
         assert_eq!(dry_run_string, "none");
 
         // Add some operations to datastore
-        host_status_list.push(inter(VOLUME_A, ServicingState::AbUpdateStaged, MIN));
-        host_status_list.push(inter(VOLUME_A, ServicingState::AbUpdateFinalized, MIN));
-        host_status_list.push(prov(VOLUME_B, true, vec![2], MIN));
-        host_status_list.push(inter(VOLUME_B, ServicingState::RuntimeUpdateStaged, MIN));
-        host_status_list.push(prov(VOLUME_B, false, vec![5, 2], MIN));
+        host_status_list.push(inter(VOL_A, AB_STAGE, MIN));
+        host_status_list.push(inter(VOL_A, AB_FINAL, MIN));
+        host_status_list.push(prov(VOL_B, true, vec![2], MIN));
+        host_status_list.push(inter(VOL_B, RU_STAGE, MIN));
+        host_status_list.push(prov(VOL_B, false, vec![5, 2], MIN));
         let context = create_rollback_context_for_testing(&host_status_list);
         // if runtime rollback is requested and it is the next rollback, return the index of the runtime rollback and 'runtime'
         let (index, dry_run_string) =
@@ -1003,9 +1093,9 @@ mod tests {
         );
 
         // Add an A/B update to database
-        host_status_list.push(inter(VOLUME_B, ServicingState::AbUpdateStaged, MIN));
-        host_status_list.push(inter(VOLUME_B, ServicingState::AbUpdateFinalized, MIN));
-        host_status_list.push(prov(VOLUME_B, true, vec![2], MIN));
+        host_status_list.push(inter(VOL_B, AB_STAGE, MIN));
+        host_status_list.push(inter(VOL_B, AB_FINAL, MIN));
+        host_status_list.push(prov(VOL_B, true, vec![2], MIN));
         let context = create_rollback_context_for_testing(&host_status_list);
         // if runtime rollback is requested and it is not the next rollback, return an error
         assert!(
