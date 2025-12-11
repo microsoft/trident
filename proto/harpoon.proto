@@ -24,7 +24,7 @@ service TridentService {
 
     // Check root validates that the host booted using the expected root
     // filesystem.
-    rpc CheckRoot(ValidateRequest) returns (stream ServicingResponse);
+    rpc CheckRoot(CheckRootRequest) returns (stream ServicingResponse);
 
     // Attempts to commit a finalized update.
     rpc CommitUpdate(CommitRequest) returns (stream ServicingResponse);
@@ -168,7 +168,10 @@ message GetActiveVolumeResponse {
     ABVolumeState active_volume = 1;
 }
 
-message ValidateRequest {}
+message ValidateRequest {
+    // The configuration to be validated.
+    string config = 1;
+}
 
 message ValidateResponse {
     // Indicates if the configuration is valid.
@@ -193,6 +196,8 @@ message ServicingTypeResponse {
     // The type of servicing required.
     ServicingType servicing_type = 1;
 }
+
+message CheckRootRequest {}
 
 message CommitRequest {}
 
