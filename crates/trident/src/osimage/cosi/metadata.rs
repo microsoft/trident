@@ -193,7 +193,7 @@ pub(crate) struct MetadataVersion {
 }
 
 #[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct Image {
     #[serde(rename = "image")]
     pub file: ImageFile,
@@ -217,7 +217,7 @@ impl Image {
 }
 
 #[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct ImageFile {
     pub path: PathBuf,
 
@@ -232,7 +232,7 @@ pub(crate) struct ImageFile {
 }
 
 #[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct VerityMetadata {
     #[serde(rename = "image")]
     pub file: ImageFile,
@@ -241,7 +241,7 @@ pub(crate) struct VerityMetadata {
 }
 
 #[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct OsPackage {
     #[allow(dead_code)]
     pub name: String,
@@ -288,7 +288,7 @@ where
 }
 
 #[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct Bootloader {
     #[allow(dead_code)]
     #[serde(rename = "type")]
@@ -311,14 +311,14 @@ pub(crate) enum BootloaderType {
 }
 
 #[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct SystemdBoot {
     #[allow(dead_code)]
     pub entries: Vec<BootloaderEntry>,
 }
 
 #[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct BootloaderEntry {
     #[allow(dead_code)]
     #[serde(rename = "type")]
