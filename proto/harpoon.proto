@@ -6,195 +6,201 @@ import "google/protobuf/timestamp.proto";
 
 // TridentService provides methods for managing Trident servicing operations
 service TridentService {
-    // Install performs a Trident installation operation.
-    rpc Install(ServicingRequest) returns (stream ServicingResponse);
+  // Install performs a Trident installation operation.
+  rpc Install(ServicingRequest) returns (stream ServicingResponse);
 
-    // InstallStage and InstallFinalize perform the staged and finalized parts
-    // of a Trident installation operation.
-    rpc InstallStage(StagingRequest) returns (stream ServicingResponse);
-    rpc InstallFinalize(FinalizeRequest) returns (stream ServicingResponse);
+  // InstallStage perform the stage part of a Trident installation operation.
+  rpc InstallStage(StagingRequest) returns (stream ServicingResponse);
 
-    // Update perform a Trident update operation.
-    rpc Update(ServicingRequest) returns (stream ServicingResponse);
+  // InstallFinalize performs the finalize part of a Trident installation
+  // operation.
+  rpc InstallFinalize(FinalizeRequest) returns (stream ServicingResponse);
 
-    // UpdateStage and UpdateFinalize perform the staged and finalized parts of
-    // a Trident update operation.
-    rpc UpdateStage(StagingRequest) returns (stream ServicingResponse);
-    rpc UpdateFinalize(FinalizeRequest) returns (stream ServicingResponse);
+  // Update performs a Trident update operation.
+  rpc Update(ServicingRequest) returns (stream ServicingResponse);
 
-    // Check root validates that the host booted using the expected root
-    // filesystem.
-    rpc CheckRoot(CheckRootRequest) returns (stream ServicingResponse);
+  // UpdateStage performs the stage part of a Trident update operation.
+  rpc UpdateStage(StagingRequest) returns (stream ServicingResponse);
 
-    // Attempts to commit a finalized update.
-    rpc CommitUpdate(CommitRequest) returns (stream ServicingResponse);
+  // UpdateFinalize performs the finalize part of a Trident update operation.
+  rpc UpdateFinalize(FinalizeRequest) returns (stream ServicingResponse);
 
-    // Stream image to the target device.
-    rpc StreamImage(StreamImageRequest) returns (stream ServicingResponse);
+  // Check root validates that the host booted using the expected root
+  // filesystem.
+  rpc CheckRoot(CheckRootRequest) returns (stream ServicingResponse);
 
-    // RebuildRaid performs a RAID rebuild operation to restore a degraded RAID
-    // array on new disks.
-    rpc RebuildRaid(RebuildRaidRequest) returns (stream ServicingResponse);
+  // Attempts to commit a finalized update.
+  rpc CommitUpdate(CommitRequest) returns (stream ServicingResponse);
 
-    // Validates a Host Configuration file.
-    rpc ValidateHostConfig(ValidateRequest) returns (ValidateResponse);
+  // Stream image to the target device.
+  rpc StreamImage(StreamImageRequest) returns (stream ServicingResponse);
 
-    // Returns the servicing type required to apply the given Host Configuration.
-    rpc GetServicingType(ServicingTypeRequest) returns (ServicingTypeResponse);
+  // RebuildRaid performs a RAID rebuild operation to restore a degraded RAID
+  // array on new disks.
+  rpc RebuildRaid(RebuildRaidRequest) returns (stream ServicingResponse);
 
-    // Get the last provisioned configuration, if any.
-    rpc GetCurrentConfig(GetConfigRequest) returns (GetConfigResponse);
+  // Validates a Host Configuration file.
+  rpc ValidateHostConfig(ValidateRequest) returns (ValidateResponse);
 
-    // Get the active servicing configuration, if any.
-    rpc GetServicingConfig(GetConfigRequest) returns (GetConfigResponse);
+  // Returns the servicing type required to apply the given Host Configuration.
+  rpc GetServicingType(ServicingTypeRequest) returns (ServicingTypeResponse);
 
-    // Get the last error encountered during the last servicing, if any.
-    rpc GetLastError(GetLastErrorRequest) returns (GetLastErrorResponse);
+  // Get the last provisioned configuration, if any.
+  rpc GetCurrentConfig(GetConfigRequest) returns (GetConfigResponse);
 
-    // Get the current servicing state.
-    rpc GetServicingState(GetServicingStateRequest) returns (GetServicingStateResponse);
+  // Get the active servicing configuration, if any.
+  rpc GetServicingConfig(GetConfigRequest) returns (GetConfigResponse);
 
-    // Get the currently active volume (A or B).
-    rpc GetActiveVolume(GetActiveVolumeRequest) returns (GetActiveVolumeResponse);
+  // Get the last error encountered during the last servicing, if any.
+  rpc GetLastError(GetLastErrorRequest) returns (GetLastErrorResponse);
+
+  // Get the current servicing state.
+  rpc GetServicingState(GetServicingStateRequest) returns (GetServicingStateResponse);
+
+  // Get the currently active volume (A or B).
+  rpc GetActiveVolume(GetActiveVolumeRequest) returns (GetActiveVolumeResponse);
 }
 
 message StagingRequest {
-    // The configuration to be used for staging.
-    string config = 1;
+  // The target Host Configuration.
+  string config = 1;
 }
 
 message FinalizeRequest {
-    // Indicates if the orchestrator handles the reboot process.
-    bool orchestratorHandlesReboot = 1;
+  // Indicates if the orchestrator handles the reboot process.
+  bool orchestrator_handles_reboot = 1;
 }
 
 message ServicingRequest {
-    // The staging parameters for the servicing operation.
-    StagingRequest staging = 1;
-    // The finalize parameters for the servicing operation.
-    FinalizeRequest finalize = 2;
+  // The staging parameters for the servicing operation.
+  StagingRequest  staging  = 1;
+  // The finalize parameters for the servicing operation.
+  FinalizeRequest finalize = 2;
 }
 
 // Rust log levels
 enum LogLevel {
-    ERROR = 0;
-    WARN = 1;
-    INFO = 2;
-    DEBUG = 3;
-    TRACE = 4;
+  ERROR = 0;
+  WARN  = 1;
+  INFO  = 2;
+  DEBUG = 3;
+  TRACE = 4;
 }
 
 message Log {
-    // Level of the log message.
-    LogLevel level = 1;
-    // Body of the log message.
-    string message = 2;
-    // Target of the log message.
-    string target = 3;
-    // Module where the log message originated.
-    string module = 4;
-    // Location where the log message was generated.
-    FileLocation location = 5;
+  // Level of the log message.
+  LogLevel     level    = 1;
+  // Body of the log message.
+  string       message  = 2;
+  // Target of the log message.
+  string       target   = 3;
+  // Module where the log message originated.
+  string       module   = 4;
+  // Location where the log message was generated.
+  FileLocation location = 5;
 }
 
 // Represents the final status of a servicing operation.
 enum StatusCode {
-    SUCCESS = 0;
-    FAILURE = 1;
+  SUCCESS = 0;
+  FAILURE = 1;
 }
 
 message FinalStatus {
-    // Final status of the servicing operation.
-    StatusCode status = 1;
-    // Message associated with the final status.
-    string message = 2;
-    // Whether a reboot is required to complete the servicing operation.
-    bool reboot_required = 3;
+  // Final status of the servicing operation.
+  StatusCode status          = 1;
+  // Message associated with the final status.
+  string     message         = 2;
+  // Whether a reboot is required to complete the servicing operation.
+  bool       reboot_required = 3;
 }
 
 message ServicingResponse {
-    // Timestamp of the response message.
-    google.protobuf.Timestamp timestamp = 1;
-    // Body of the response message.
-    oneof response {
-        // A log message from the servicing operation.
-        Log log = 2;
-        // A final status message from the servicing operation.
-        FinalStatus final_status = 3;
-    }
+  // Timestamp of the response message.
+  google.protobuf.Timestamp timestamp    = 1;
+  // Body of the response message.
+  oneof response {
+    // A log message from the servicing operation.
+    Log                       log          = 2;
+    // A final status message from the servicing operation.
+    FinalStatus               final_status = 3;
+  }
 }
 
 message GetConfigRequest {}
 
 message GetConfigResponse {
-    // The configuration content as a string.
-    optional string config = 1;
+  // The Host Configuration content as a string.
+  optional string config = 1;
 }
 
 message GetLastErrorRequest {}
 
 message GetLastErrorResponse {
-    // The last error encountered during servicing.
-    optional TridentError error = 1;
+  // The last error encountered during servicing.
+  optional TridentError error = 1;
 }
 
 message GetServicingStateRequest {}
 
 // Mapped to existing Trident servicing states
 enum ServicingState {
-    NOT_PROVISIONED = 0;
-    INSTALL_STAGED = 1;
-    UPDATE_STAGED = 2;
-    INSTALL_FINALIZED = 3;
-    UPDATE_FINALIZED = 4;
-    PROVISIONED = 5;
+  NOT_PROVISIONED   = 0;
+  INSTALL_STAGED    = 1;
+  UPDATE_STAGED     = 2;
+  INSTALL_FINALIZED = 3;
+  UPDATE_FINALIZED  = 4;
+  PROVISIONED       = 5;
 }
 
 message GetServicingStateResponse {
-    // The current servicing state of Trident.
-    ServicingState state = 1;
+  // The current servicing state of Trident.
+  ServicingState state = 1;
 }
 
 message GetActiveVolumeRequest {}
 
-
 // Represents the active volume in a dual-volume setup.
 enum ABVolumeState {
-    A = 0;
-    B = 1;
+  A = 0;
+  B = 1;
 }
 
 message GetActiveVolumeResponse {
-    ABVolumeState active_volume = 1;
+  ABVolumeState active_volume = 1;
 }
 
 message ValidateRequest {
-    // The configuration to be validated.
-    string config = 1;
+  // The configuration to be validated.
+  string config = 1;
 }
 
 message ValidateResponse {
-    // Indicates if the configuration is valid.
-    bool valid = 1;
-    // Message providing details about validation errors.
-    optional string message = 2;
+  // Indicates if the configuration is valid.
+  bool            valid   = 1;
+  // Message providing details about validation errors.
+  optional string message = 2;
 }
 
 enum ServicingType {
-    // No servicing is currently in progress nor required.
-    NO_ACTIVE_SERVICING = 0;
-    // Update that can be applied without necessitating a reboot.
-    RUNTIME_UPDATE = 1;
-    // Update that requires switching to a different root partition and rebooting.
-    AB_UPDATE = 2;
-    // Clean install of the target OS.
-    CLEAN_INSTALL = 3;
+  // No servicing is currently in progress nor required.
+  NO_ACTIVE_SERVICING = 0;
+  // Update that can be applied without necessitating a reboot.
+  RUNTIME_UPDATE      = 1;
+  // Update that requires switching to a different root partition and rebooting.
+  AB_UPDATE           = 2;
+  // Clean install of the target OS.
+  CLEAN_INSTALL       = 3;
 }
 
-message ServicingTypeRequest {}
+message ServicingTypeRequest {
+  // The target Host Configuration.
+  string config = 1;
+}
+
 message ServicingTypeResponse {
-    // The type of servicing required.
-    ServicingType servicing_type = 1;
+  // The type of servicing required.
+  ServicingType servicing_type = 1;
 }
 
 message CheckRootRequest {}
@@ -202,31 +208,31 @@ message CheckRootRequest {}
 message CommitRequest {}
 
 message RebuildRaidRequest {
-    // The configuration to be used for RAID rebuild.
-    string config = 1;
+  // The Host Configuration to be used for RAID rebuild.
+  string config = 1;
 }
 
 message StreamImageRequest {
-    // Path to the image file to be streamed
-    string image_path = 1;
-    // Hash of the image file for integrity verification
-    string image_hash = 2; 
+  // Path to the image file to be streamed
+  string image_path = 1;
+  // Hash of the image file for integrity verification
+  string image_hash = 2;
 }
 
 message TridentError {
-    // Error kind
-    string kind = 1;
-    // Error subkind
-    string subkind = 2;
-    // Error message
-    string message = 3;
-    // Location in the file where the error occurred
-    FileLocation location = 4; 
+  // Error kind
+  string       kind     = 1;
+  // Error subkind
+  string       subkind  = 2;
+  // Error message
+  string       message  = 3;
+  // Location in the file where the error occurred
+  FileLocation location = 4;
 }
 
 message FileLocation {
-    // Path to the file
-    string path = 1;
-    // Line number in the file
-    uint32 line = 2;
+  // Path to the file
+  string path = 1;
+  // Line number in the file
+  uint32 line = 2;
 }
