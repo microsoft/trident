@@ -162,13 +162,13 @@ device on top of a data device.
 
 `Partition` objects hold the data necessary to recreate partition tables. They provide a mapping
 between each image file and its original partition information. Starting in 1.2, each `ImageFile` in
-the COSI MUST have a corresponding `Partition` object.
+the COSI MUST have a corresponding `Partition` object. The correspondence between an `ImageFile` and a `Partition` object is established by matching their `path` fields: a `Partition` object corresponds to the `ImageFile` whose `path` field is identical.
 
 | Field          | Type   | Added in | Required        | Description                                                                               |
 | -------------- | ------ | -------- | --------------- | ----------------------------------------------------------------------------------------- |
 | `path`         | string | 1.2      | Yes             | Absolute path of the compressed image file inside the tarball. MUST start with `images/`. |
-| `originalSize` | number | 1.2      | Yes             | Size of the image prior to any FS shrinking. SHOULD be at least `uncompressedSize`.       |
-| `partUuid`     | string | 1.2      | Yes             | The partition UUID. Not to be confused with the partition type UUUD.                      |
+| `originalSize` | number | 1.2      | Yes             | Size of the partition before any filesystem shrinking. SHOULD be at least as large as the `uncompressedSize` field of the corresponding `ImageFile` object (matched by `path`). |
+| `partUuid`     | string | 1.2      | Yes             | The partition UUID. Not to be confused with the partition type UUID.                      |
 | `label`        | string | 1.2      | Yes             | Partition label (GPT partition name, may be an empty string).                             |
 | `number`       | number | 1.2      | Yes             | The index where the partition originally appeared on disk (1-indexed).                    |
 
