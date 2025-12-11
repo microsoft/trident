@@ -1,6 +1,8 @@
 package env
 
-import "fmt"
+import (
+	"fmt"
+)
 
 type TridentEnvironment string
 

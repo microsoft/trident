@@ -26,6 +26,13 @@ impl Subsystem for NetworkSubsystem {
         RUNS_ON_ALL
     }
 
+    fn select_servicing_type(&self, ctx: &EngineContext) -> Result<ServicingType, TridentError> {
+        if ctx.spec.os.netplan != ctx.spec_old.os.netplan {
+            return Ok(ServicingType::RuntimeUpdate);
+        }
+        Ok(ServicingType::NoActiveServicing)
+    }
+
     fn prepare(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
         if ctx.servicing_type == ServicingType::RuntimeUpdate
             && ctx.spec.os.netplan != ctx.spec_old.os.netplan

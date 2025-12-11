@@ -3,6 +3,7 @@ import pytest
 import json
 
 from base_test import get_host_status
+from pathlib import Path
 
 pytestmark = [pytest.mark.extensions]
 
@@ -20,17 +21,29 @@ def test_extensions(
         if configExtType in osConfig:
             extConfig = osConfig[configExtType]
             result = connection.run(
-                f"sudo systemd-{extType} list --json=pretty --no-pager", warn=True
+                f"sudo systemd-{extType} status --json=pretty --no-pager", warn=True
             )
-            assert result.ok, f"failed to run 'systemd-{extType} list': {result.stderr}"
-            ext_list = json.loads(result.stdout)
+            assert (
+                result.ok
+            ), f"failed to run 'systemd-{extType} status': {result.stderr}"
+            status_output = json.loads(result.stdout)
+
+            # Extract all active extension names from all hierarchies (/opt and
+            # /usr for sysexts, or /etc for confexts)
+            active_exts = []
+            for hierarchy in status_output:
+                extensions = hierarchy.get("extensions")
+                if isinstance(extensions, list):
+                    active_exts.extend(extensions)
 
             for ext in extConfig:
                 # Verify that the path exists on the target OS
-                path = ext["path"]
+                path = Path(ext["path"])
                 result = connection.run(f"test -e {path}", warn=True)
                 assert result.ok, f"{extType} path does not exist: {path}"
 
-                # Extract filename from path and check if it's in systemd-*ext list
-                found = any(e.get("path") == path for e in ext_list)
-                assert found, f"{extType} at {path} not found in systemd-{extType} list"
+                # Extract extension name from path
+                ext_name = path.stem
+                assert (
+                    ext_name in active_exts
+                ), f"{extType} '{ext_name}' not found in 'systemd-{extType} status'"

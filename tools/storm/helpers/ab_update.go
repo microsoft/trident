@@ -339,8 +339,8 @@ func (h *AbUpdateHelper) triggerTridentUpdate(tc storm.TestCase) error {
 			}
 		}
 
-		if out.Status == 0 && strings.Contains(out.Stderr, "Staging of update 'AbUpdate' succeeded") {
-			logrus.Infof("Staging of update 'AbUpdate' succeeded")
+		if out.Status == 0 && strings.Contains(out.Stderr, "Staging of A/B update succeeded") {
+			logrus.Infof("Staging of A/B update succeeded")
 			break
 		}
 
@@ -413,6 +413,13 @@ func updateExtensions(osConfig map[string]interface{}) error {
 		trimmedUrl := strings.TrimSuffix(oldUrl, ".1")
 		newUrl := fmt.Sprintf("%s.2", trimmedUrl)
 
+		// Update path from version 1 to 2
+		oldPath, ok := extension["path"].(string)
+		if !ok || !strings.HasSuffix(oldPath, "-1.raw") {
+			continue
+		}
+		newPath := strings.TrimSuffix(oldPath, "-1.raw") + "-2.raw"
+
 		// Calculate new hash
 		newHash, err := pullImageAndCalculateSha384(newUrl)
 		if err != nil {
@@ -422,6 +429,7 @@ func updateExtensions(osConfig map[string]interface{}) error {
 		// Update the extension configuration
 		extension["url"] = newUrl
 		extension["sha384"] = newHash
+		extension["path"] = newPath
 	}
 
 	return nil

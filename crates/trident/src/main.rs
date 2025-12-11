@@ -1,4 +1,4 @@
-use std::{panic, path::PathBuf, process::ExitCode};
+use std::{fs, panic, path::PathBuf, process::ExitCode};
 
 use anyhow::{Context, Error};
 use clap::Parser;
@@ -213,7 +213,7 @@ fn run_trident(
                     _ => Err(TridentError::internal("Invalid command")),
                 };
 
-                // return HostStatus if requested
+                // Return Host Status if requested
                 if status.is_some() {
                     if let Err(e) = Trident::get(&agent_config.datastore, status, GetKind::Status)
                         .message("Failed to retrieve Host Status")
@@ -222,14 +222,12 @@ fn run_trident(
                     }
                 }
 
-                // return error if requested
+                // Return error if requested
                 if let Some(error_path) = error.as_ref() {
                     if let Err(e) = &res {
-                        // error fails to serialize, tracked by https://dev.azure.com/mariner-org/ECF/_workitems/edit/7420/
-                        if let Err(e2) = std::fs::write(
-                            error_path,
-                            serde_yaml::to_string(&e).unwrap_or("".into()),
-                        ) {
+                        if let Err(e2) =
+                            fs::write(error_path, serde_yaml::to_string(&e).unwrap_or("".into()))
+                        {
                             error!("Failed to write error to file: {e2}");
                         }
                     }
@@ -252,19 +250,29 @@ fn setup_logging(args: &Cli) -> Result<Logstream, Error> {
 
     // Set up the multilogger
     let mut multilogger = MultiLogger::new()
-        // Add regular env_logger to output to stderr
-        .with_logger(Box::new(
-            env_logger::builder()
-                .format_timestamp(None)
-                .filter_level(args.verbosity)
-                .build(),
-        ))
         // Add logstream to send logs to the log server
         .with_logger(logstream.make_logger_with_level(LevelFilter::Trace))
         // Set the global filter for reqwest to debug
         .with_global_filter("reqwest", LevelFilter::Debug)
         // Set the global filter for goblin to off
         .with_global_filter("goblin", LevelFilter::Off);
+
+    // Attempt to use the systemd journal if stderr is directly connected to it, and otherwise fall
+    // back to env_logger.
+    if let Some(Ok(journal_logger)) =
+        systemd_journal_logger::connected_to_journal().then(systemd_journal_logger::JournalLog::new)
+    {
+        multilogger.add_logger(Box::new(
+            journal_logger.with_extra_fields(vec![("VERSION", trident::TRIDENT_VERSION)]),
+        ));
+    } else {
+        multilogger.add_logger(Box::new(
+            env_logger::builder()
+                .format_timestamp(None)
+                .filter_level(args.verbosity)
+                .build(),
+        ));
+    }
 
     // Add background logger if we're running a command that needs it
     if matches!(

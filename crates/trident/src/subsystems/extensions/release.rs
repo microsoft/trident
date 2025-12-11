@@ -75,7 +75,14 @@ pub(crate) fn read_extension_release(
         })?
         .to_string();
     let path = match &ext.path {
-        Some(path) => path.clone(),
+        Some(path) => {
+            // Check that path in Host Configuration is valid.
+            ensure!(
+                path.ends_with(format!("{name}.raw")),
+                format!("{ext_type} at '{}' has invalid path: '{}'. Path must end with '{name}.raw' because the extension-release file is named 'extension-release.{name}'.", ext.url, path.display())
+            );
+            path.clone()
+        }
         None => match ext_type {
             ExtensionType::Sysext => {
                 PathBuf::from(DEFAULT_SYSEXT_DIRECTORY).join(format!("{name}.raw"))
