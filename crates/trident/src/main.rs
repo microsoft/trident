@@ -206,14 +206,14 @@ fn run_trident(
                     ),
                     Commands::Commit { .. } => trident.commit(&mut datastore),
                     Commands::Rollback {
-                        dry_run,
+                        check,
                         runtime,
                         ab,
                         ref allowed_operations,
                         ..
                     } => trident.rollback(
                         &mut datastore,
-                        dry_run,
+                        check,
                         runtime,
                         ab,
                         cli::to_operations(allowed_operations),

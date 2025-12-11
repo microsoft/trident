@@ -391,7 +391,8 @@ Argument summary:
 ```
 Arguments:
   [KIND]  What data to retrieve [default: status] [possible values:
-          configuration, status, last-error]
+          configuration, status, last-error, rollback-chain,
+          rollback-target]
 
 Options:
   -o, --outfile <OUTFILE>
@@ -413,6 +414,8 @@ Possible values:
 - `configuration`
 - `status`
 - `last-error`
+- `rollback-chain`
+- `rollback-target`
 
 Default: `status`
 
@@ -564,20 +567,20 @@ Argument summary:
 
 ```
 Options:
-      --runtime
-          Declare expectation that rollback undoes a runtime update
+      --check
+          Check operation that would be performed
   -v, --verbosity <VERBOSITY>
           Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
           [default: DEBUG]
+      --runtime
+          Invoke rollback only if next available rollback is runtime
+          rollback
       --ab
-          Declare expectation that rollback undoes an A/B update
+          Invoke available A/B rollback
       --allowed-operations [<ALLOWED_OPERATIONS>...]
           Comma-separated list of operations that Trident will be
           allowed to perform [default: stage,finalize] [possible
           values: stage, finalize]
-      --show <SHOW>
-          Show available rollback points [possible values: validation,
-          target, chain]
   -s, --status <STATUS>
           Path to save the resulting Host Status
   -e, --error <ERROR>
@@ -587,9 +590,14 @@ Options:
 
 ### Argument Details
 
+#### <span>--check &lt;CHECK&gt;</span>
+
+Check operation that would be performed
+
+
 #### <span>--runtime &lt;RUNTIME&gt;</span>
 
-Declare expectation that rollback undoes a runtime update
+Invoke rollback only if next available rollback is runtime rollback
 
 Conflicts with:
 
@@ -598,7 +606,7 @@ Conflicts with:
 
 #### <span>--ab &lt;AB&gt;</span>
 
-Declare expectation that rollback undoes an A/B update
+Invoke available A/B rollback
 
 Conflicts with:
 
@@ -615,17 +623,6 @@ Possible values:
 - `finalize`
 
 Default: `stage,finalize`
-
-
-#### <span>--show &lt;SHOW&gt;</span>
-
-Show available rollback points
-
-Possible values:
-
-- `validation`: Show the next available rollback type. 'ab' if an A/B update will be rolled back, 'runtime' if a runtime update will be rolled back, or 'none' if no rollback is possible 
-- `target`: Show the next available rollback Host Configuration 
-- `chain`: Show the full list of available rollbacks 
 
 
 #### <span>--status &lt;STATUS&gt;</span>
