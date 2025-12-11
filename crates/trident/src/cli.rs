@@ -168,9 +168,9 @@ pub enum Commands {
 
     /// Manually rollback to previous state
     Rollback {
-        /// Run a dry-run for rollback, return operation that would be performed
+        /// Check operation that would be performed
         #[arg(long)]
-        dry_run: bool,
+        check: bool,
 
         /// Invoke rollback only if next available rollback is runtime rollback
         #[arg(long, conflicts_with = "ab")]
