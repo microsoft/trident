@@ -85,7 +85,7 @@ pub fn get_rollback_info(datastore: &DataStore, kind: GetKind) -> Result<String,
 /// Handle manual rollback operations.
 pub fn execute_rollback(
     datastore: &mut DataStore,
-    dry_run: bool,
+    check: bool,
     invoke_if_next_is_runtime: bool,
     invoke_available_ab: bool,
     allowed_operations: &Operations,
@@ -105,13 +105,13 @@ pub fn execute_rollback(
         .structured(ServicingError::ManualRollback)
         .message("Failed to get available rollbacks")?;
 
-    let (rollback_index, dry_run_string) = get_requested_rollback_info(
+    let (rollback_index, check_string) = get_requested_rollback_info(
         &available_rollbacks,
         invoke_if_next_is_runtime,
         invoke_available_ab,
     )?;
-    if dry_run {
-        println!("{}", dry_run_string);
+    if check {
+        println!("{}", check_string);
         return Ok(ExitKind::Done);
     }
 
@@ -1041,7 +1041,7 @@ mod tests {
     }
 
     #[test]
-    fn test_dry_run() {
+    fn test_check() {
         let mut host_status_list = vec![
             inter(None, CI_FINAL, MIN),
             inter(None, CI_FINAL, MIN),
@@ -1049,23 +1049,23 @@ mod tests {
         ];
         let context = create_rollback_context_for_testing(&host_status_list);
         // if nothing is requested and there are no rollbacks, none is returned
-        let (index, dry_run_string) =
+        let (index, check_string) =
             get_requested_rollback_info(&context.get_rollback_chain().unwrap(), false, false)
                 .unwrap();
         assert!(index.is_none());
-        assert_eq!(dry_run_string, "none");
+        assert_eq!(check_string, "none");
         // if both ab and runtime rollback is requested simultaneously, error is returned
-        let (index, dry_run_string) =
+        let (index, check_string) =
             get_requested_rollback_info(&context.get_rollback_chain().unwrap(), true, false)
                 .unwrap();
         assert!(index.is_none());
-        assert_eq!(dry_run_string, "none");
+        assert_eq!(check_string, "none");
         // if both ab and runtime rollback is requested simultaneously, error is returned
-        let (index, dry_run_string) =
+        let (index, check_string) =
             get_requested_rollback_info(&context.get_rollback_chain().unwrap(), false, true)
                 .unwrap();
         assert!(index.is_none());
-        assert_eq!(dry_run_string, "none");
+        assert_eq!(check_string, "none");
 
         // Add some operations to datastore
         host_status_list.push(inter(VOL_A, AB_STAGE, MIN));
@@ -1075,17 +1075,17 @@ mod tests {
         host_status_list.push(prov(VOL_B, false, vec![5, 2], MIN));
         let context = create_rollback_context_for_testing(&host_status_list);
         // if runtime rollback is requested and it is the next rollback, return the index of the runtime rollback and 'runtime'
-        let (index, dry_run_string) =
+        let (index, check_string) =
             get_requested_rollback_info(&context.get_rollback_chain().unwrap(), false, false)
                 .unwrap();
         assert_eq!(index, Some(0));
-        assert_eq!(dry_run_string, "runtime");
+        assert_eq!(check_string, "runtime");
         // if ab rollback is requested and it is not the next rollback, return the index of the ab rollback and 'ab'
-        let (index, dry_run_string) =
+        let (index, check_string) =
             get_requested_rollback_info(&context.get_rollback_chain().unwrap(), false, true)
                 .unwrap();
         assert_eq!(index, Some(1));
-        assert_eq!(dry_run_string, "ab");
+        assert_eq!(check_string, "ab");
         // if both ab and runtime rollback is requested simultaneously, error is returned
         assert!(
             get_requested_rollback_info(&context.get_rollback_chain().unwrap(), true, true)

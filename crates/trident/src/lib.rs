@@ -682,7 +682,7 @@ impl Trident {
     pub fn rollback(
         &mut self,
         datastore: &mut DataStore,
-        dry_run: bool,
+        check: bool,
         invoke_if_next_is_runtime: bool,
         invoke_available_ab: bool,
         allowed_operations: Operations,
@@ -702,7 +702,7 @@ impl Trident {
         let rollback_result = self.execute_and_record_error(datastore, |datastore| {
             manual_rollback::execute_rollback(
                 datastore,
-                dry_run,
+                check,
                 invoke_if_next_is_runtime,
                 invoke_available_ab,
                 &allowed_operations,
