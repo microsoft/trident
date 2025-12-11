@@ -100,6 +100,7 @@ The metadata file MUST contain a JSON object with the following fields:
 | `osArch`     | [OsArchitecture](#osarchitecture-enum) | 1.0      | Yes (since 1.0) | The architecture of the OS.                      |
 | `osRelease`  | string                                 | 1.0      | Yes (since 1.0) | The contents of `/etc/os-release` verbatim.      |
 | `images`     | [Filesystem](#filesystem-object)[]     | 1.0      | Yes (since 1.0) | Filesystem metadata.                             |
+| `partitions` | [Partition](#partition-object)[]       | 1.2      | Yes (since 1.2) | Partition metadata.                              |
 | `osPackages` | [OsPackage](#ospackage-object)[]       | 1.0      | Yes (since 1.1) | The list of packages installed in the OS.        |
 | `bootloader` | [Bootloader](#bootloader-object)       | 1.1      | Yes (since 1.1) | Information about the bootloader used by the OS. |
 | `id`         | UUID (string, case insensitive)        | 1.0      | No              | A unique identifier for the COSI file.           |
@@ -150,19 +151,26 @@ device on top of a data device.
 
 ##### `ImageFile` Object
 
-Image files represent a disk partition. They carry information both about the
-contents of the image as well as fields from the partition table.
-
 | Field              | Type   | Added in | Required        | Description                                                                               |
 | ------------------ | ------ | -------- | --------------- | ----------------------------------------------------------------------------------------- |
 | `path`             | string | 1.0      | Yes (since 1.0) | Absolute path of the compressed image file inside the tarball. MUST start with `images/`. |
 | `compressedSize`   | number | 1.0      | Yes (since 1.0) | Size of the compressed image in bytes.                                                    |
 | `uncompressedSize` | number | 1.0      | Yes (since 1.0) | Size of the raw uncompressed image in bytes.                                              |
-| `originalSize`     | number | 1.2      | Yes (since 1.2) | Size of the image prior to any FS shrinking. Should be at least `uncompressedSize`.       |
-| `partUuid`         | string | 1.2      | Yes (since 1.2) | Original partition UUID.                                                                  |
-| `partLabel`        | string | 1.2      | Yes (since 1.2) | Original partition label (may be empty).                                                  |
-| `partNumber`       | number | 1.2      | Yes (since 1.2) | The index where the partition originally appeared on disk (1-indexed).                    |
 | `sha384`           | string | 1.0      | Yes (since 1.1) | SHA-384 hash of the compressed hash image.                                                |
+
+##### `Partition` Object
+
+`Partition` objects hold the data necessary to recreate partition tables. They provide a mapping
+between each image file and its original partition information. Starting in 1.2, each `ImageFile` in
+the COSI MUST have a corresponding `Partition` object.
+
+| Field          | Type   | Added in | Required        | Description                                                                               |
+| -------------- | ------ | -------- | --------------- | ----------------------------------------------------------------------------------------- |
+| `path`         | string | 1.2      | Yes             | Absolute path of the compressed image file inside the tarball. MUST start with `images/`. |
+| `originalSize` | number | 1.2      | Yes             | Size of the image prior to any FS shrinking. SHOULD be at least `uncompressedSize`.       |
+| `partUuid`     | string | 1.2      | Yes             | The partition UUID. Not to be confused with the partition type UUUD.                      |
+| `label`        | string | 1.2      | Yes             | Partition label (GPT partition name, may be an empty string).                             |
+| `number`       | number | 1.2      | Yes             | The index where the partition originally appeared on disk (1-indexed).                    |
 
 ##### `OsArchitecture` Enum
 
