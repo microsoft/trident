@@ -9,6 +9,7 @@ title: COSI Spec
 
 | Revision            | Spec Date  |
 | ------------------- | ---------- |
+| [1.2](#revision-12) | 2025-12-10 |
 | [1.1](#revision-11) | 2025-05-08 |
 | [1.0](#revision-10) | 2024-10-09 |
 
@@ -149,11 +150,18 @@ device on top of a data device.
 
 ##### `ImageFile` Object
 
+Image files represent a disk partition. They carry information both about the
+contents of the image as well as fields from the partition table.
+
 | Field              | Type   | Added in | Required        | Description                                                                               |
 | ------------------ | ------ | -------- | --------------- | ----------------------------------------------------------------------------------------- |
 | `path`             | string | 1.0      | Yes (since 1.0) | Absolute path of the compressed image file inside the tarball. MUST start with `images/`. |
 | `compressedSize`   | number | 1.0      | Yes (since 1.0) | Size of the compressed image in bytes.                                                    |
 | `uncompressedSize` | number | 1.0      | Yes (since 1.0) | Size of the raw uncompressed image in bytes.                                              |
+| `originalSize`     | number | 1.2      | Yes (since 1.2) | Size of the image prior to any FS shrinking. Should be at least `uncompressedSize`.       |
+| `partUuid`         | string | 1.2      | Yes (since 1.2) | Original partition UUID.                                                                  |
+| `partLabel`        | string | 1.2      | Yes (since 1.2) | Original partition label (may be empty).                                                  |
+| `partNumber`       | number | 1.2      | Yes (since 1.2) | The index where the partition originally appeared on disk (0-indexed).                    |
 | `sha384`           | string | 1.0      | Yes (since 1.1) | SHA-384 hash of the compressed hash image.                                                |
 
 ##### `OsArchitecture` Enum
