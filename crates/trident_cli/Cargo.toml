@@ -1,25 +1,27 @@
 [package]
 name = "trident_cli"
-version = "0.21.0"
-edition = "2021"
+version = "0.1.0"
+edition = "2024"
 publish = false
 rust-version = "1.85.0"
 license = "MIT"
-
-[[bin]]
-name = "trident_cli"
-path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0.94"
 clap = { version = "4.4.18", features = ["derive"] }
 env_logger = "0.11.5"
 log = "0.4.22"
+prost = { version = "0.13.4" }
+tokio = { version = "1.43.1", features = ["rt-multi-thread"] }
+tonic = { version = "0.12.3" }
 url = "2.5.4"
 
 # Local dependencies
 trident_api = { path = "../trident_api" }
 osutils = { path = "../osutils" }
+
+[build-dependencies]
+tonic-build = { version = "0.12.3" }
 
 [features]
 dangerous-options = ["trident_api/dangerous-options"]

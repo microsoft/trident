@@ -1,8 +1,6 @@
 syntax = "proto3";
 
-package trident.v1;
-
-option go_package = "harpoon2/tridentapipb";
+package harpoon.v1;
 
 import "google/protobuf/timestamp.proto";
 
