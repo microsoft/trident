@@ -2,7 +2,7 @@
 
 - Date: 2025-09-22
 - RFC PR: [microsoft/trident#379](https://github.com/microsoft/trident/pull/379)
-- Issue: [microsoft/trident#0000](https://github.com/microsoft/trident/issues/0000)
+- Issue: [microsoft/trident#392](https://github.com/microsoft/trident/issues/392)
 
 ## Summary
 
@@ -11,7 +11,7 @@ various reporting features that have been built over time primarily for
 debugging purposes. The CLI is great for user interaction and simple automation,
 but as complexity around Trident grows, the CLI can become cumbersome. This
 document proposes a new standard gRPC-based API for more advanced bi-directional
-communication with Trident meant to be used by complex orchestrators. 
+communication with Trident meant to be used by complex orchestrators.
 
 ## Motivation and Goals
 
@@ -27,27 +27,30 @@ required.
 
 ### CLI Interface Limitations
 
-While the existing binary and CLI interface is sufficient for many use cases,
-invoking Trident as a binary directly comes with some limitations because it
-will generally mean it starts as a child process of the agent, which requires
-the agent to already be running in the proper environment and permission level.
-This is not a big problem for agents already running as root, but following the
-principle of least privilege, it may be undesirable to have Trident’s caller
-also running as root, since this process may have more networking needs. If the
-agent is not running as root, then it becomes challenging to execute Trident; we
-currently have no good answer for how to achieve this. It is possible to start
-trident via a systemd service, but that also requires enough privilege to invoke
-and makes obtaining the logs and result less direct.
+While the existing binary and CLI interface distributed via RPM are sufficient
+for many use cases, invoking Trident as a binary directly comes with some
+limitations because it starts as a child process of the agent, inheriting all
+its environment and permissions. This imposes a requirement on the agent to
+already be running in the proper environment and permission level. However, most
+agents will frequently not need all the capabilities needed by Trident.
+
+If the agent is not running as root, then it becomes challenging to execute
+Trident; we currently have no good answer for how to achieve this. It is
+possible to start Trident via a systemd service, but that also requires enough
+privilege to invoke and makes obtaining the logs and result less direct.
 
 Running Trident via the CLI also means that passing any big blob of data, such
 as a Host Configuration file, needs to happen via the filesystem, which adds an
-extra layer of complication. In simple scenarios, this is trivial, but in
+extra layer of complexity. In simple scenarios, this is trivial, but in
 complex deployments it means the file must be placed carefully so as not to
 place it in a read-only location, or an ephemeral one.
 
-Running Trident when it is distributed as a sysext is functionally equivalent to
-distributing it as a regular RPM package in terms of how it is invoked, with the
-extra advantage that its easier to service.
+Any complex interaction with Trident, such as a flow requiring reading status,
+performing an update, and then reading the result, requires multiple invocations
+of the binary and parsing of the output which adds complexity to the
+orchestrator and increases the chances of errors.
+
+#### Containerized Environments
 
 Running Trident in a containerized environment may alleviate many of these
 limitation because it is possible to create a privileged container with
@@ -58,13 +61,20 @@ Running Trident in a container mildly complicates the process of providing a
 Host Configuration file, generally requiring another volume mount to the host.
 Containerized runtimes for Trident also increase the complexity of crafting
 precise SELinux policies to allow Trident to operate correctly, which may be a
-deterrent for some use cases.
+deterrent to use a container in some use cases.
+
+#### System Extensions (sysext)
+
+Running Trident when it is distributed as a sysext is functionally equivalent to
+distributing it as a regular RPM package in terms of how it is invoked, with the
+extra advantage that its easier to service.
 
 ### Structured Observability and Reporting
 
-Another motivation for this proposal is to establish an official programmatic and structured
-mechanism for getting information out of Trident. Currently, an agent executing Trident
-as a child process can only get unstructured stdout/stderr output and an exit code.
+Another motivation for this proposal is to establish an official programmatic
+and structured mechanism for getting information out of Trident. Currently, an
+agent executing Trident as a child process can only get unstructured
+stdout/stderr output and an exit code.
 
 ```mermaid
 sequenceDiagram
@@ -89,18 +99,17 @@ sequenceDiagram
 ```
 
 Because the Phonehome server is currently an internal-only interface, a calling
-agent only has the raw output of the trident process to know what Trident is
-doing. It may also access the full log, which is structured, but this has proven
-to be challenging in some scenarios as the file may not always be easily
-accessible. For errors, the agent needs to parse the logs or use the dedicated
-“get last-error” subcommand, although this does not seem to be a common
-practice.
+agent only has the raw output of the Trident process to know what it is doing.
+It may also access the full log, which is structured, but this has proven to be
+challenging in some scenarios as the file may not always be easily accessible.
+For errors, the agent needs to parse the logs or use the dedicated `get
+last-error` subcommand, although this does not seem to be a common practice.
 
 ### Systemd Socket Activation
 
 Socket activation is a foundational feature of systemd. In a traditional
 approach, a daemon would need to be already running and listening to process an
-incoming request, with socket activation, systemd can listen on a specific
+incoming request. With socket activation, systemd can listen on a specific
 socket and only start a service once a request is received.
 
 ```mermaid
@@ -159,22 +168,19 @@ ownership and mode “root:trident 660” would allow for any user in the group
 6. Replace remote reporting mechanisms (phonehome, logstream, and tracestream)
    with new API.
 
-
-
 ### Out of Scope
 
 - Trident servicing. (It is briefly discussed but not a main topic of this
   document)
-- Rust/Go Trident gRPC client SDK (See 
+- Rust/Go Trident gRPC client SDK (See
   [Future Possibilities](#future-possibilities))
 - Specific recommendations for customers (Left for future documentation effort)
-- Any variation of Trident as a gRPC client. (See 
+- Any variation of Trident as a gRPC client. (See
   [Future Possibilities](#future-possibilities))
 - Streaming images through gRPC.
 - Remote access. It is discussed for internal testing purposes but not a main
   topic of this document. (See [Future Possibilities](#future-possibilities))
 - Additional authorization mechanisms.
-
 
 ### Exit Criteria
 
@@ -184,28 +190,21 @@ ownership and mode “root:trident 660” would allow for any user in the group
 - Remote reporting mechanisms are replaced by the new API.
 - Systemd unit files updated to use new API.
 
-
 ## Dependencies
 
 N/A
 
 ## Implementation
 
-<!-- (DELETE ME)
-Describe the technical design and implementation plan for the proposed change.
-This should include architectural diagrams, API draft and examples, and
-relevant code snippets to better explain your design.
--->
-
 ### Structure Refactor
 
 The current trident binary will be split into two separate binaries:
 
-![](0379-grpc-api/refactor.png "Refactor Diagram")
+![Refactor Diagram](0379-grpc-api/refactor.png "Refactor Diagram")
 
 All the existing features and interfaces would be preserved, but functionality
-will be split between two binaries: trident(the cli) and tridentd (the actual
-agent).
+will be split between two binaries: `trident` (the cli) and `tridentd` (the
+actual agent).
 
 ### Harpoon API (HAPI)
 
@@ -214,12 +213,12 @@ is the only way in which `tridentd` will take instructions. The reason for this
 self-imposed limitation is to decrease the number of entry points and code paths
 that can invoke Trident and grow our confidence that the core logic is working
 correctly. If this is the case, then client code should become relatively
-trivial and interchangeable. 
+trivial and interchangeable with other clients.
 
 The Harpoon API will be defined as a protobuf file that is accessible to
 customers. We may ship it as a standalone RPM or simply provide it along with a
 release. The goal is to make it trivially simple for a customer to pick up the
-trident daemon RPM and set up a client for it.
+Trident daemon RPM and set up a client for it.
 
 ```mermaid
 sequenceDiagram
@@ -242,10 +241,11 @@ sequenceDiagram
 
 `tridentd` would support two modes of execution:
 
-1.	Systemd socket activated: Tridentd runs as a systemd service activated by a socket.
-2.	Manual: Tridentd can also be executed directly.
+1. Systemd socket activation: `tridentd` runs as a systemd service activated by
+   a socket.
+2. Manual: `tridentd` can also be executed directly.
 
-Most scenarios would use option #1, that way trident can be always ready but
+Most scenarios would use option #1, that way Trident can be always ready but
 only running when needed. For specific scenarios, such as running in a
 container, tridentd can be executed directly and receive a path to the socket
 file to create or use the default:
@@ -266,7 +266,7 @@ privileges and will produce an error otherwise.
 
 However, the proposed gRPC interface exposed over a Unix socket opens a new door
 to interact with Trident. Fortunately, the socket is a file subject to standard
-linux access permissions. Regardless of who creates the socket file, systemd or
+Linux access permissions. Regardless of who creates the socket file, systemd or
 `tridentd` itself, it will always belong to the root user and be configured to
 block all read/write attempts from other non-root users.
 
@@ -279,7 +279,7 @@ executed by systemd, and if so, listen on the file descriptor. After the request
 is finished, `tridentd` will stand by for a specific period (TBD, 5 minutes?)
 and shut down gracefully if no other connections are received. The shutdown
 timer is reset after every connection finishes. This graceful shutdown is meant
-to free resources as calls into trident should generally look like infrequent
+to free resources as calls into Trident should generally look like infrequent
 groups of sequential calls in short succession. There is no need for Trident to
 stay active in between updates.
 
@@ -292,10 +292,10 @@ receive live updates again.
 
 #### Connection Management
 
-The daemon can be invoked in two ways: 
+The daemon can be invoked in two ways:
 
-1.	As a systemd service linked to a systemd socket.
-2.	Direct binary execution e.g. `bash –c 'trident'` or `exec("trident", ...)`
+1. As a systemd service linked to a systemd socket.
+2. Direct binary execution e.g. `bash –c 'tridentd'` or `exec("tridentd", ...)`
 
 To properly support both invocation types, management of incoming connections
 will be internal to the daemon.
@@ -307,8 +307,9 @@ operations, such as `update` or `install`, will lock in write mode, effectively
 enforcing a maximum of 1 connection at a time to avoid activities happening in
 parallel.
 
-Furthermore, listening on a socket that only one instance can hold at a time
-enforces that at most ONE instance of `tridentd` be operating at the same time.
+Forcing Trident to hold exclusive ownership of a specific socket file also acts
+as a connection lock because it guarantees that only one instance of `tridentd`
+can be running at a time.
 
 #### Servicing Lock
 
@@ -328,24 +329,23 @@ For security and compartmentalization reasons, Trident should only listen on
 local Unix sockets with very restricted permissions. This should significantly
 simplify Trident's security model.
 
-
-Remote access could still be achieved in two ways:
+Remote access could still be achieved in three ways:
 
 - **SSH socket forwarding**: A remote client would need SSH access to a local user
   with access to the local socket.
 - **Reverse Proxy**: A remote client could establish a connection via a reverse
   proxy running on the host which forwards incoming TCP connections to the local
   Unix socket connection.
-- **Reverse-connect Proxy**: (RCP) This is an agent running on the host that tries
+- **Reverse-Connect Proxy**: (RCP) This is an agent running on the host that tries
   to open a connection to some external endpoint. Once the connection is
   established, it acts as a regular reverse proxy by forwarding incoming data
-  from the remote connection to the local endpoint. (See more in 
+  from the remote connection to the local endpoint. (See more in
   [E2E Test Infrastructure Changes](#e2e-test-infrastructure-changes))
 
 #### Proposed Code Architecture
 
 To reduce the number of changes needed, most of the core logic would remain
-as-is. The outer layers will need some adjustments to get called by the gRPC
+as is. The outer layers will need some adjustments to get called by the gRPC
 methods as opposed to the existing main/CLI structure.
 
 ![Server Architecture](0379-grpc-api/server_arch.svg "Server Architecture")
@@ -384,13 +384,13 @@ actions:
   installation process.
 - **Network initialization**: setup network in live/unconfigured/early-state
   scenarios.
-- **Commit**: used on boot to commit an AB update.
+- **Commit**: used on boot to commit an A/B update.
 
 These will continue to exist by invoking the Trident CLI, but their use may
 dwindle.
 
-
 ## Running in a Container
+
 The current way Trident runs inside of a container is quite simple; Trident is
 the entry point of the container, and all arguments get passed directly to
 Trident.
@@ -419,25 +419,10 @@ itself while also getting the advantages of running directly in the host.
 
 ## Public API Design
 
-<!-- (DELETE ME)
-If your feature includes an external facing API, produce an API Design document
-with details and sample usage. Include a summary of the feature, example usage
-covering all optional features, and the API specification. Highlight any
-differences if the API is meant to be compatible with existing APIs. For simple
-APIs, include inline in this document. For complex APIs, link bidirectionally
-between the two documents.
--->
-
 The full gRPC API specification is available in the PR:
 [microsoft/trident#386: engineering: Harpoon gRPC Protobuf](https://github.com/microsoft/trident/pull/386)
 
 ## Testing and Metrics
-
-<!-- (DELETE ME)
-Document how the feature will be tested - list out each test we need to write,
-capturing any relevant test environments and test infrastructure changes that
-might be needed. Also capture how we will monitor the feature.
--->
 
 ### Unit Testing
 
@@ -449,22 +434,21 @@ able to test the server’s interfaces by setting up a mock front end.
 Furthermore, the server interfaces will ultimately be utilized during end-to-end
 testing as well.
 
-
 ### E2E Test Infrastructure Changes
 
 The feature will require some changes to our infrastructure to properly support
 it. Notably, most of our current infrastructure currently depends on the
-phonehome/logstream features as well as executing trident as a regular binary.
-In the initial stages of development will keep this intact. Until the full stack
+phonehome/logstream features as well as executing Trident as a regular binary.
+In the initial stages of development we will keep this intact. Until the full stack
 can be replaced, CLI invocation and logstream will remain in use. See
-Development Plan for more details.
+[Implementation Plan](#implementation-plan) for more details.
 
 Phonehome is so important to us because it is the only mechanism we have to know
 when the test host has started and what its IP address is. Phonehome give us
 this because our test images start Trident on boot, which will then start the
 phonehome process. The gRPC makes Trident totally passive, meaning we need a new
 component to start this active connection. The proposed component to do this is
-a reverse-connect proxy (see Local vs. Remote Access). 
+a reverse-connect proxy (see Local vs. Remote Access).
 
 The reverse-connect proxy (RCP) is a lightweight service running on the test
 host that will read the target IP address injected by netlaunch into the ISO and
@@ -476,7 +460,6 @@ established, and the RCP begins forwarding all incoming data over to Trident’s
 local Unix socket. This way, we get the outgoing signal from the test host that
 we were depending on, and we also now have a mechanism for netlaunch to
 communicate directly with Trident.
-
 
 ```mermaid
 ---
@@ -527,27 +510,13 @@ sequenceDiagram
 - Unit tests for server’s gRPC interface.
 - Usage in E2E tests, potentially with multiple clients.
 
-
 ## Servicing
 
-<!-- (DELETE ME)
-When applicable, discuss how the new feature will be introduced into the
-customer environments.
-
-Elaborate on any impacts to backwards and forwards compatibility, and any 
-mitigations.
--->
-
 The changes should be fully transparent for CLI users. Future updates to add
-features to Trident will change to the protobuf file in a backwards compatible
+features to Trident will change the protobuf file in a backwards compatible
 manner. Breaking changes may be evaluated as part of major Trident releases.
 
 ## Implementation Plan
-
-<!-- (DELETE ME)
-[OPTIONAL]
-When needed or appropriate, outline a phased implementation plan for the proposal.
--->
 
 1. Merge API Protos.
 2. Create a new CLI crate implementing gRPC client. (with UTs)
@@ -555,21 +524,17 @@ When needed or appropriate, outline a phased implementation plan for the proposa
 4. Create a new trident subcommand to start daemon. (with UTs)
 5. Refactor Trident so that the gRPC server can perform servicing operations.
 6. Merge new systemd unit files.
-3. Update container tests to use the wrapper strategy from Running in a Container.
-7. Rename trident binary to tridentd, deprecate existing CLI from tridentd. Start using the new trident CLI binary.
-8. Merge reverse-connect proxy (RCP) (see Local vs. Remote Access)
-9. Update Netlaunch to use RCP.
-10. Migrate all tests to Netlaunch+RCP.
-11. Deprecate phonehome & logstream.
-
+7. Update container tests to use the wrapper strategy from Running in a Container.
+8. Rename trident binary to tridentd, deprecate existing CLI from tridentd.
+   Start using the new trident CLI binary.
+9. Merge reverse-connect proxy (RCP) (see Local vs. Remote Access)
+10. Update Netlaunch to use RCP.
+11. Migrate all tests to Netlaunch+RCP.
+12. Deprecate phonehome & logstream.
 
 ## Counter-Arguments
 
 ### Drawbacks
-
-<!-- (DELETE ME)
-Explain any reasons why this shoul *not* be implemented.
--->
 
 1. Complexity: Introducing a gRPC API adds complexity to the Trident codebase,
    which may increase maintenance overhead.
@@ -590,11 +555,6 @@ Explain any reasons why this shoul *not* be implemented.
 
 ### Alternatives
 
-<!-- (DELETE ME)
-Describe alternative designs or approaches considered. Explain why the proposed design was chosen
-over these alternatives.
--->
-
 - Pure CLI: (current) Continue using Trident as a CLI-only tool. This approach has
   limitations as described in the Motivation section.
 - HTTP: Implement an HTTP REST API instead of gRPC. This approach would be more
@@ -609,21 +569,9 @@ over these alternatives.
 
 ## Open Questions
 
-<!-- (DELETE ME)
-[OPTIONAL]
-List any open questions that need to be resolved before the proposal can be
-implemented. Ideally these would be addressed and resolved during the RFC
-review process.
--->
-
 ## Future Possibilities
 
-<!-- (DELETE ME)
-[OPTIONAL]
-Describe any future work that could build on this proposal.
--->
-
-- Trident CLI could become a portable go-base binary, there is no need for it to
+- Trident CLI could become a portable Go-based binary, there is no need for it to
   be rust and it could allow us to easily run it in most Linux systems.
 - Trident could eventually be configured to act as a client when establishing
   the connection to the orchestrator, so that a central orchestrator could
