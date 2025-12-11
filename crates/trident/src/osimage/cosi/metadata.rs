@@ -121,21 +121,25 @@ impl CosiMetadata {
                     bail!("Bootloader type 'systemd-boot' requires systemd-boot entries");
                 }
 
-                // Systemd-boot with not exactly 1 uki entry is invalid for this version of Trident
-                (BootloaderType::SystemdBoot, Some(systemd_boot))
-                    if systemd_boot.entries.len() != 1 =>
-                {
-                    bail!("Bootloader type 'systemd-boot' must have exactly one entry");
-                }
-
-                // Validate that systemd-boot only has uki-standalone entry type for this version of Trident
+                // Systemd-boot with not exactly 1 UKI entry is invalid for this version of Trident
                 (BootloaderType::SystemdBoot, Some(systemd_boot)) => {
-                    let entry_type = &systemd_boot.entries[0].boot_type;
-                    if *entry_type != SystemdBootloaderType::UkiStandalone {
-                        bail!(
+                    match systemd_boot.entries.as_slice() {
+                        // No entries is invalid
+                        [] => bail!("Bootloader type 'systemd-boot' must not be empty"),
+                        
+                        // More than one entry, is not allowed in this version of trident.
+                        [_, _, ..] => {
+                            bail!("Multiple bootloader entries are not supported for bootloader type 'systemd-boot' in this version of Trident");
+                        }
+
+                        // One entry of type other than uki-standalone is invalid
+                        [entry] if !entry.boot_type.eq(&SystemdBootloaderType::UkiStandalone) => bail!(
                             "Bootloader type 'systemd-boot' only supports 'uki-standalone' entry type, found: {}",
-                            entry_type
-                        );
+                            entry.boot_type
+                        ),
+
+                        // Exactly one uki-standalone entry is valid
+                        [ _ ] => {}
                     }
                 }
 
