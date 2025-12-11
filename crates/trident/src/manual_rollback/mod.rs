@@ -31,7 +31,7 @@ use trident_api::{
 use uuid::Uuid;
 
 use crate::{
-    cli::RollbackShowOperation,
+    cli::GetKind,
     container,
     datastore::{self, DataStore},
     engine::{
@@ -44,28 +44,8 @@ use crate::{
 };
 
 const MINIMUM_ROLLBACK_TRIDENT_VERSION: &str = "0.21.0";
-/// Print whether the next manual rollback requires a reboot.
-pub fn print_requires_reboot(datastore: &mut DataStore) -> Result<ExitKind, TridentError> {
-    // Get all HostStatus entries from the datastore.
-    let host_statuses = datastore
-        .get_host_statuses()
-        .message("Failed to get datastore HostStatus entries")?;
-    // Create ManualRollback context from HostStatus entries.
-    let context = ManualRollbackContext::new(&host_statuses)
-        .message("Failed to create manual rollback context")?;
-
-    let requires_reboot_output = context
-        .get_requires_reboot_output()
-        .structured(ServicingError::ManualRollback)
-        .message("Failed to query for --requires-reboot")?;
-    println!("{}", requires_reboot_output);
-    Ok(ExitKind::Done)
-}
-
-pub fn print_show(
-    datastore: &DataStore,
-    show_operation: RollbackShowOperation,
-) -> Result<ExitKind, TridentError> {
+/// Print rollback info for 'trident get'.
+pub fn get_rollback_info(datastore: &DataStore, kind: GetKind) -> Result<String, TridentError> {
     // Get all HostStatus entries from the datastore.
     let host_statuses = datastore
         .get_host_statuses()
@@ -78,51 +58,101 @@ pub fn print_show(
         .structured(ServicingError::ManualRollback)
         .message("Failed to get available rollbacks")?;
 
-    match show_operation {
-        RollbackShowOperation::Validation => {
-            if let Some(first_rollback_host_status) = rollback_chain.first() {
-                if first_rollback_host_status.requires_reboot {
-                    info!("Next available rollback is A/B update rollback requiring reboot");
-                    println!("ab");
-                } else {
-                    info!(
-                        "Next available rollback is runtime update rollback not requiring reboot"
-                    );
-                    println!("runtime");
-                }
-            } else {
-                info!("No available rollbacks to show validation for");
-                println!("none");
-            }
-        }
-        RollbackShowOperation::Target => {
+    match kind {
+        GetKind::RollbackTarget => {
             if let Some(first_rollback_host_status) = rollback_chain.first() {
                 let target_output =
-                    serde_json::to_string(&first_rollback_host_status.host_status.spec)
+                    serde_yaml::to_string(&first_rollback_host_status.host_status.spec)
                         .structured(ServicingError::ManualRollback)
                         .message("Failed to serialize first rollback HostStatus spec")?;
-                println!("{}", target_output);
+                return Ok(target_output);
             } else {
                 info!("No available rollbacks to show target for");
-                println!("{{}}");
+                return Ok("{}".to_string());
             }
         }
-        RollbackShowOperation::Chain => {
-            let available_rollbacks_output = context
-                .get_rollback_chain_json()
+        GetKind::RollbackChain => {
+            return context
+                .get_rollback_chain_yaml()
                 .structured(ServicingError::ManualRollback)
-                .message("Failed to query for --show=chain")?;
-            println!("{}", available_rollbacks_output);
+                .message("Failed to query for 'get rollback-chain'");
         }
+        _ => {}
     }
-    Ok(ExitKind::Done)
+    Err(TridentError::new(ServicingError::ManualRollback))
+}
+
+/// Get requested rollback.
+fn get_requested_rollback_info(
+    available_rollbacks: &[RollbackDetail],
+    invoke_if_next_is_runtime: bool,
+    invoke_available_ab: bool,
+) -> Result<(Option<usize>, String), TridentError> {
+    if available_rollbacks.is_empty() {
+        info!("No available rollbacks to perform");
+        return Ok((None, "none".to_string()));
+    }
+
+    let rollback_index = match (invoke_if_next_is_runtime, invoke_available_ab) {
+        (false, false) => {
+            // No expectations specified, proceed with first
+            0
+        }
+        (true, false) => {
+            // Expecting runtime rollback as first
+            if available_rollbacks[0].requires_reboot {
+                return Err(TridentError::new(
+                    InvalidInputError::InvalidRollbackExpectation {
+                        reason:
+                            "expected to undo a runtime update but rollback will undo an A/B update"
+                                .to_string(),
+                    },
+                ));
+            }
+            0
+        }
+        (false, true) => {
+            // Find first A/B rollback along with its index
+            let Some((index, _)) = available_rollbacks
+                .iter()
+                .enumerate()
+                .find(|(_, r)| r.requires_reboot)
+            else {
+                return Err(TridentError::new(
+                    InvalidInputError::InvalidRollbackExpectation {
+                        reason: "expected to undo an A/B update but no A/B rollback is available"
+                            .to_string(),
+                    },
+                ));
+            };
+            index
+        }
+        (true, true) => {
+            return Err(TridentError::new(
+                InvalidInputError::InvalidRollbackExpectation {
+                    reason: "conflicting expectations: cannot expect to undo both a runtime update and an A/B update"
+                        .to_string(),
+                },
+            ));
+        }
+    };
+
+    Ok((
+        Some(rollback_index),
+        if available_rollbacks[rollback_index].requires_reboot {
+            "ab".to_string()
+        } else {
+            "runtime".to_string()
+        },
+    ))
 }
 
 /// Handle manual rollback operations.
 pub fn execute_rollback(
     datastore: &mut DataStore,
-    expected_runtime_rollback: bool,
-    expected_ab_rollback: bool,
+    dry_run: bool,
+    invoke_if_next_is_runtime: bool,
+    invoke_available_ab: bool,
     allowed_operations: &Operations,
 ) -> Result<ExitKind, TridentError> {
     let current_servicing_state = datastore.host_status().servicing_state;
@@ -139,34 +169,29 @@ pub fn execute_rollback(
         .get_rollback_chain()
         .structured(ServicingError::ManualRollback)
         .message("Failed to get available rollbacks")?;
-    if available_rollbacks.is_empty() {
-        info!("No available rollbacks to perform");
+
+    let (rollback_index, dry_run_string) = get_requested_rollback_info(
+        &available_rollbacks,
+        invoke_if_next_is_runtime,
+        invoke_available_ab,
+    )?;
+    if dry_run {
+        println!("{}", dry_run_string);
         return Ok(ExitKind::Done);
     }
 
-    let first_rollback = &available_rollbacks[0];
-    if expected_runtime_rollback && first_rollback.requires_reboot {
-        return Err(TridentError::new(
-            InvalidInputError::InvalidRollbackExpectation {
-                reason: "expected to undo a runtime update but rollback will undo an A/B update"
-                    .to_string(),
-            },
-        ));
-    }
-    if expected_ab_rollback && !first_rollback.requires_reboot {
-        return Err(TridentError::new(
-            InvalidInputError::InvalidRollbackExpectation {
-                reason: "expected to undo an A/B update but rollback will undo a runtime update"
-                    .to_string(),
-            },
-        ));
-    }
+    let rollback_index = match rollback_index {
+        Some(index) => index,
+        None => {
+            info!("No available rollbacks to perform");
+            return Ok(ExitKind::Done);
+        }
+    };
 
-    let mut first_rollback_host_config = first_rollback.host_status.spec.clone();
     let mut skip_finalize_state_check = false;
 
     let mut engine_context = EngineContext {
-        spec: first_rollback.host_status.spec.clone(),
+        spec: available_rollbacks[rollback_index].host_status.spec.clone(),
         spec_old: datastore.host_status().spec.clone(),
         servicing_type: ServicingType::ManualRollback,
         partition_paths: datastore.host_status().partition_paths.clone(),
@@ -196,8 +221,13 @@ pub fn execute_rollback(
             }
         }
 
-        stage_rollback(datastore, &engine_context, first_rollback.requires_reboot)
-            .message("Failed to stage manual rollback")?;
+        stage_rollback(
+            datastore,
+            &engine_context,
+            &available_rollbacks,
+            rollback_index,
+        )
+        .message("Failed to stage manual rollback")?;
 
         if !allowed_operations.has_finalize() {
             // Persist the Trident background log and metrics file. Otherwise, the
@@ -225,9 +255,12 @@ pub fn execute_rollback(
                 }
             }
         }
-        let finalize_result =
-            finalize_rollback(datastore, &engine_context, first_rollback.requires_reboot)
-                .message("Failed to stage manual rollback");
+        let finalize_result = finalize_rollback(
+            datastore,
+            &engine_context,
+            available_rollbacks[rollback_index].requires_reboot,
+        )
+        .message("Failed to stage manual rollback");
         // Persist the Trident background log and metrics file. Otherwise, the
         // staging logs would be lost.
         engine::persist_background_log_and_metrics(
@@ -244,27 +277,46 @@ pub fn execute_rollback(
 fn stage_rollback(
     datastore: &mut DataStore,
     engine_context: &EngineContext,
-    requires_reboot: bool,
+    available_rollbacks: &[RollbackDetail],
+    rollback_index: usize,
 ) -> Result<(), TridentError> {
-    if requires_reboot {
+    if available_rollbacks[rollback_index].requires_reboot {
         info!("Staging rollback that requires reboot");
+        // Update pcrlock policy if needed
+
+        // Is this needed?
+        //
+        // // If A/B rollback was requested and the index is >0, account for any skipped runtime rollbacks
+        // available_rollbacks.iter().take(rollback_index).try_for_each(|detail| {
+        //     info!(
+        //         "Skipping runtime update rollback at index {} in favor of available A/B rollback {}",
+        //         detail.host_status_index, available_rollbacks[rollback_index].host_status_index
+        //     );
+        //     datastore.with_host_status(|host_status| {
+        //         host_status.spec = detail.host_status.spec.clone();
+        //         host_status.servicing_state = ServicingState::ManualRollbackSkippedRuntimeRollback;
+        //     })
+        // })
+        // .message("Failed to skip runtime update rollbacks")?;
     } else {
         info!("Staging rollback that does not require reboot");
     }
 
+    // Mark the HostStatus as ManualRollbackStaged
     datastore.with_host_status(|host_status| {
         host_status.spec = engine_context.spec.clone();
         host_status.servicing_state = ServicingState::ManualRollbackStaged;
     })?;
+
     Ok(())
 }
 
 fn finalize_rollback(
     datastore: &mut DataStore,
     engine_context: &EngineContext,
-    requires_reboot: bool,
+    ab_rollback: bool,
 ) -> Result<ExitKind, TridentError> {
-    if !requires_reboot {
+    if !ab_rollback {
         trace!("Manual rollback does not require reboot");
         // TODO: implement runtime update rollback
 
@@ -429,25 +481,48 @@ impl ManualRollbackContext {
                         requires_reboot: needs_reboot,
                     };
                     if rollback {
-                        if let Some((first_rollback, first_rollback_volume)) =
-                            instance.get_first_rollback()
-                        {
-                            trace!(
-                                "Rollback detected at index {} for active volume {:?}",
-                                i,
-                                instance.active_volume
-                            );
-                            match first_rollback_volume {
-                                AbVolumeSelection::VolumeA => {
+                        let active_volume_changed = hs.ab_active_volume != instance.active_volume;
+                        // If the active volume changed, then
+                        //   1. we can remove all of the available rollbacks for the previously active volume
+                        //   2. we can remove the first available rollback for the newly active volume
+                        if active_volume_changed {
+                            match instance.active_volume {
+                                Some(AbVolumeSelection::VolumeA) => {
+                                    instance.volume_a_available_rollbacks = Vec::new();
+                                }
+                                Some(AbVolumeSelection::VolumeB) => {
+                                    instance.volume_b_available_rollbacks = Vec::new();
+                                }
+                                None => {}
+                            }
+                            match hs.ab_active_volume {
+                                Some(AbVolumeSelection::VolumeA) => {
                                     if !instance.volume_a_available_rollbacks.is_empty() {
                                         instance.volume_a_available_rollbacks.remove(0);
                                     }
                                 }
-                                AbVolumeSelection::VolumeB => {
+                                Some(AbVolumeSelection::VolumeB) => {
                                     if !instance.volume_b_available_rollbacks.is_empty() {
                                         instance.volume_b_available_rollbacks.remove(0);
                                     }
                                 }
+                                None => {}
+                            }
+                        } else {
+                            // If the active volume did not change, then a runtime rollback was performed
+                            // and we can remove the first available rollback for the active volume
+                            match instance.active_volume {
+                                Some(AbVolumeSelection::VolumeA) => {
+                                    if !instance.volume_a_available_rollbacks.is_empty() {
+                                        instance.volume_a_available_rollbacks.remove(0);
+                                    }
+                                }
+                                Some(AbVolumeSelection::VolumeB) => {
+                                    if !instance.volume_b_available_rollbacks.is_empty() {
+                                        instance.volume_b_available_rollbacks.remove(0);
+                                    }
+                                }
+                                None => {}
                             }
                         }
                     } else if host_status_context.host_status_index
@@ -572,12 +647,6 @@ impl ManualRollbackContext {
         ))
     }
 
-    fn get_requires_reboot_output(&self) -> Result<String, Error> {
-        let requires_reboot = self.get_requires_reboot()?;
-        info!("Rollback requires reboot: {}", requires_reboot);
-        Ok(requires_reboot.to_string())
-    }
-
     fn get_rollback_chain(&self) -> Result<Vec<RollbackDetail>, Error> {
         let mut contexts = self
             .volume_a_available_rollbacks
@@ -590,12 +659,12 @@ impl ManualRollbackContext {
         Ok(contexts)
     }
 
-    fn get_rollback_chain_json(&self) -> Result<String, Error> {
+    fn get_rollback_chain_yaml(&self) -> Result<String, Error> {
         let contexts = self.get_rollback_chain()?;
-        let full_json =
-            serde_json::to_string(&contexts).context("Failed to serialize rollback contexts")?;
-        info!("Available rollbacks:\n{}", full_json);
-        Ok(full_json)
+        let full_yaml =
+            serde_yaml::to_string(&contexts).context("Failed to serialize rollback contexts")?;
+        info!("Available rollbacks:\n{}", full_yaml);
+        Ok(full_yaml)
     }
 }
 
@@ -647,363 +716,310 @@ mod tests {
         }
     }
 
+    fn create_rollback_context_for_testing(
+        host_status_test_list: &[HostStatusTest],
+    ) -> ManualRollbackContext {
+        let final_state = host_status_test_list
+            .iter()
+            .filter(|hst| hst.host_status.servicing_state == ServicingState::Provisioned)
+            .last()
+            .unwrap();
+        let host_statuses = host_status_test_list
+            .iter()
+            .map(|hst| hst.host_status.clone())
+            .collect::<Vec<_>>();
+        ManualRollbackContext::new(&host_statuses).unwrap()
+    }
+    fn rollback_context_testing(host_status_test_list: &[HostStatusTest], test_description: &str) {
+        let context = create_rollback_context_for_testing(host_status_test_list);
+        let final_state = host_status_test_list
+            .iter()
+            .filter(|hst| hst.host_status.servicing_state == ServicingState::Provisioned)
+            .last()
+            .unwrap();
+        trace!(
+            "{}: {:?}, expected_requires_reboot: {}, expected_available_rollbacks: {:?}",
+            test_description,
+            final_state.host_status.servicing_state,
+            final_state.expected_requires_reboot,
+            final_state.expected_available_rollbacks
+        );
+        assert_eq!(
+            context.get_requires_reboot().unwrap(),
+            final_state.expected_requires_reboot
+        );
+        let serialized_output = serde_yaml::from_str::<Vec<RollbackDetail>>(
+            &context.get_rollback_chain_yaml().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            serialized_output.len(),
+            final_state.expected_available_rollbacks.len()
+        )
+    }
+
+    const VOLUME_A: Option<AbVolumeSelection> = Some(AbVolumeSelection::VolumeA);
+    const VOLUME_B: Option<AbVolumeSelection> = Some(AbVolumeSelection::VolumeB);
+    const NONE: &str = "";
+    const OLD: &str = "0.19.0";
+    const MIN: &str = MINIMUM_ROLLBACK_TRIDENT_VERSION;
+    const NEW: &str = TRIDENT_VERSION;
+
     #[test]
     fn test_rollback_context() {
-        let volume_a = Some(AbVolumeSelection::VolumeA);
-        let volume_b = Some(AbVolumeSelection::VolumeB);
-        let min = MINIMUM_ROLLBACK_TRIDENT_VERSION;
         let host_status_list = vec![
-            inter(None, ServicingState::CleanInstallFinalized, min),
-            inter(None, ServicingState::CleanInstallFinalized, min),
-            prov(volume_a, false, vec![], min),
-            inter(volume_a, ServicingState::RuntimeUpdateStaged, min),
-            prov(volume_a, false, vec![2], min),
-            inter(volume_a, ServicingState::RuntimeUpdateStaged, min),
-            prov(volume_a, false, vec![4, 2], min),
-            inter(volume_a, ServicingState::AbUpdateStaged, min),
-            inter(volume_a, ServicingState::AbUpdateFinalized, min),
-            prov(volume_b, true, vec![6, 4, 2], min),
-            inter(volume_b, ServicingState::AbUpdateStaged, min),
-            inter(volume_b, ServicingState::AbUpdateFinalized, min),
-            prov(volume_a, true, vec![9], min),
-            inter(volume_a, ServicingState::ManualRollbackStaged, min),
-            inter(volume_a, ServicingState::ManualRollbackFinalized, min),
-            prov(volume_b, false, vec![], min),
+            inter(None, ServicingState::CleanInstallFinalized, MIN),
+            inter(None, ServicingState::CleanInstallFinalized, MIN),
+            prov(VOLUME_A, false, vec![], MIN),
+            inter(VOLUME_A, ServicingState::RuntimeUpdateStaged, MIN),
+            prov(VOLUME_A, false, vec![2], MIN),
+            inter(VOLUME_A, ServicingState::RuntimeUpdateStaged, MIN),
+            prov(VOLUME_A, false, vec![4, 2], MIN),
+            inter(VOLUME_A, ServicingState::AbUpdateStaged, MIN),
+            inter(VOLUME_A, ServicingState::AbUpdateFinalized, MIN),
+            prov(VOLUME_B, true, vec![6, 4, 2], MIN),
+            inter(VOLUME_B, ServicingState::AbUpdateStaged, MIN),
+            inter(VOLUME_B, ServicingState::AbUpdateFinalized, MIN),
+            prov(VOLUME_A, true, vec![9], MIN),
+            inter(VOLUME_A, ServicingState::ManualRollbackStaged, MIN),
+            inter(VOLUME_A, ServicingState::ManualRollbackFinalized, MIN),
+            prov(VOLUME_B, false, vec![], MIN),
         ];
         for (i, hs) in host_status_list.iter().enumerate() {
-            if hs.host_status.servicing_state != ServicingState::Provisioned {
-                continue;
-            }
-            let host_status_list = host_status_list
-                .iter()
-                .take(i + 1)
-                .map(|hst| hst.host_status.clone())
-                .collect::<Vec<_>>();
-            let context = ManualRollbackContext::new(&host_status_list).unwrap();
             trace!(
                 "HS: {:?}, expected_requires_reboot: {}, expected_available_rollbacks: {:?}",
                 hs.host_status.servicing_state,
                 hs.expected_requires_reboot,
                 hs.expected_available_rollbacks
             );
-            assert_eq!(
-                context.get_requires_reboot_output().unwrap(),
-                hs.expected_requires_reboot.to_string()
-            );
-            let serialized_output = serde_yaml::from_str::<Vec<RollbackDetail>>(
-                &context.get_rollback_chain_json().unwrap(),
-            )
-            .unwrap();
-            assert_eq!(
-                serialized_output.len(),
-                hs.expected_available_rollbacks.len()
-            )
+            rollback_context_testing(&host_status_list, "Test rolling context at each step");
         }
     }
 
     #[test]
     fn test_runtime_rollback_context_mid_rollback() {
-        let volume_a = Some(AbVolumeSelection::VolumeA);
-        let volume_b = Some(AbVolumeSelection::VolumeB);
-        let min = MINIMUM_ROLLBACK_TRIDENT_VERSION;
         let host_status_list = vec![
-            inter(None, ServicingState::CleanInstallFinalized, min),
-            inter(None, ServicingState::CleanInstallFinalized, min),
-            prov(volume_a, false, vec![], min),
-            inter(volume_a, ServicingState::RuntimeUpdateStaged, min),
-            prov(volume_a, false, vec![2], min),
-            inter(volume_a, ServicingState::RuntimeUpdateStaged, min),
-            prov(volume_a, false, vec![4, 2], min),
-            inter(volume_a, ServicingState::RuntimeUpdateStaged, min),
-            prov(volume_a, false, vec![6, 4, 2], min),
-            inter(volume_a, ServicingState::ManualRollbackStaged, min),
-            inter(volume_a, ServicingState::ManualRollbackFinalized, min),
+            inter(None, ServicingState::CleanInstallFinalized, MIN),
+            inter(None, ServicingState::CleanInstallFinalized, MIN),
+            prov(VOLUME_A, false, vec![], MIN),
+            inter(VOLUME_A, ServicingState::RuntimeUpdateStaged, MIN),
+            prov(VOLUME_A, false, vec![2], MIN),
+            inter(VOLUME_A, ServicingState::RuntimeUpdateStaged, MIN),
+            prov(VOLUME_A, false, vec![4, 2], MIN),
+            inter(VOLUME_A, ServicingState::RuntimeUpdateStaged, MIN),
+            prov(VOLUME_A, false, vec![6, 4, 2], MIN),
+            inter(VOLUME_A, ServicingState::ManualRollbackStaged, MIN),
+            inter(VOLUME_A, ServicingState::ManualRollbackFinalized, MIN),
         ];
-        let host_status_list = host_status_list
-            .iter()
-            .take(host_status_list.len() + 1)
-            .map(|hst| hst.host_status.clone())
-            .collect::<Vec<_>>();
-        let context = ManualRollbackContext::new(&host_status_list).unwrap();
-        trace!(
-            "Validate runtime update rollback, create context in manual-rollback-finalized state"
+        rollback_context_testing(
+            &host_status_list,
+            "Clean install with ab updates and mid runtime rollback",
         );
-        // Manual rollback undoing a runtime update does not require reboot
-        assert_eq!(
-            context.get_requires_reboot_output().unwrap(),
-            false.to_string()
-        );
-        let serialized_output = serde_yaml::from_str::<Vec<RollbackDetail>>(
-            &context.get_rollback_chain_json().unwrap(),
-        )
-        .unwrap();
-        // Pre manual rollback, there were 3 runtime updates to rollback
-        assert_eq!(serialized_output.len(), 3)
     }
 
     #[test]
     fn test_ab_rollback_context_mid_rollback() {
-        let volume_a = Some(AbVolumeSelection::VolumeA);
-        let volume_b = Some(AbVolumeSelection::VolumeB);
-        let min = MINIMUM_ROLLBACK_TRIDENT_VERSION;
         let host_status_list = vec![
-            inter(None, ServicingState::CleanInstallFinalized, min),
-            inter(None, ServicingState::CleanInstallFinalized, min),
-            prov(volume_a, false, vec![], min),
-            inter(volume_a, ServicingState::AbUpdateStaged, min),
-            inter(volume_a, ServicingState::AbUpdateFinalized, min),
-            prov(volume_b, true, vec![2], min),
-            inter(volume_b, ServicingState::AbUpdateStaged, min),
-            inter(volume_b, ServicingState::AbUpdateFinalized, min),
-            prov(volume_a, true, vec![5], min),
-            inter(volume_a, ServicingState::AbUpdateStaged, min),
-            inter(volume_a, ServicingState::AbUpdateFinalized, min),
-            prov(volume_b, true, vec![8], min),
-            inter(volume_a, ServicingState::ManualRollbackStaged, min),
-            inter(volume_a, ServicingState::ManualRollbackFinalized, min),
+            inter(None, ServicingState::CleanInstallFinalized, MIN),
+            inter(None, ServicingState::CleanInstallFinalized, MIN),
+            prov(VOLUME_A, false, vec![], MIN),
+            inter(VOLUME_A, ServicingState::AbUpdateStaged, MIN),
+            inter(VOLUME_A, ServicingState::AbUpdateFinalized, MIN),
+            prov(VOLUME_B, true, vec![2], MIN),
+            inter(VOLUME_B, ServicingState::AbUpdateStaged, MIN),
+            inter(VOLUME_B, ServicingState::AbUpdateFinalized, MIN),
+            prov(VOLUME_A, true, vec![5], MIN),
+            inter(VOLUME_A, ServicingState::AbUpdateStaged, MIN),
+            inter(VOLUME_A, ServicingState::AbUpdateFinalized, MIN),
+            prov(VOLUME_B, true, vec![8], MIN),
+            inter(VOLUME_A, ServicingState::ManualRollbackStaged, MIN),
+            inter(VOLUME_A, ServicingState::ManualRollbackFinalized, MIN),
         ];
-        let host_status_list = host_status_list
-            .iter()
-            .take(host_status_list.len() + 1)
-            .map(|hst| hst.host_status.clone())
-            .collect::<Vec<_>>();
-        let context = ManualRollbackContext::new(&host_status_list).unwrap();
-        trace!(
-            "Validate runtime update rollback, create context in manual-rollback-finalized state"
+        rollback_context_testing(
+            &host_status_list,
+            "Clean install with ab updates and mid runtime rollback",
         );
-        // Manual rollback undoing a runtime update does not require reboot
-        assert_eq!(
-            context.get_requires_reboot_output().unwrap(),
-            true.to_string()
-        );
-        let serialized_output = serde_yaml::from_str::<Vec<RollbackDetail>>(
-            &context.get_rollback_chain_json().unwrap(),
-        )
-        .unwrap();
-        // Pre a/b rollback, there was 1 runtime update to rollback
-        assert_eq!(serialized_output.len(), 1)
     }
 
     #[test]
     fn test_offline_init_context() {
-        let volume_a = Some(AbVolumeSelection::VolumeA);
-        let volume_b = Some(AbVolumeSelection::VolumeB);
-        let min = MINIMUM_ROLLBACK_TRIDENT_VERSION;
         let host_status_list = vec![
-            prov(volume_a, false, vec![], min),
-            prov(volume_a, false, vec![], min),
-            prov(volume_a, false, vec![], min),
+            prov(VOLUME_A, false, vec![], MIN),
+            prov(VOLUME_A, false, vec![], MIN),
+            prov(VOLUME_A, false, vec![], MIN),
         ];
-        let host_status_list = host_status_list
-            .iter()
-            .take(host_status_list.len() + 1)
-            .map(|hst| hst.host_status.clone())
-            .collect::<Vec<_>>();
-        let context = ManualRollbackContext::new(&host_status_list).unwrap();
-        trace!("Validate create context for offline-init initial state");
-        // There should be NO available rollbacks, as there hasn't been any updates yet
-        assert_eq!(
-            context.get_requires_reboot_output().unwrap(),
-            false.to_string()
-        );
-        let serialized_output = serde_yaml::from_str::<Vec<RollbackDetail>>(
-            &context.get_rollback_chain_json().unwrap(),
-        )
-        .unwrap();
-        // Only offline-init has run, so there should be 0 updates to rollback
-        assert_eq!(serialized_output.len(), 0)
+        rollback_context_testing(&host_status_list, "Offline init initial state");
     }
 
     #[test]
     fn test_offline_init_and_ab_update_context() {
-        let volume_a = Some(AbVolumeSelection::VolumeA);
-        let volume_b = Some(AbVolumeSelection::VolumeB);
-        let min = MINIMUM_ROLLBACK_TRIDENT_VERSION;
         let host_status_list = vec![
-            prov(volume_a, false, vec![], min),
-            prov(volume_a, false, vec![], min),
-            prov(volume_a, false, vec![], min),
-            inter(volume_a, ServicingState::AbUpdateStaged, min),
-            inter(volume_a, ServicingState::AbUpdateFinalized, min),
-            prov(volume_b, true, vec![2], min),
+            prov(VOLUME_A, false, vec![], MIN),
+            prov(VOLUME_A, false, vec![], MIN),
+            prov(VOLUME_A, false, vec![], MIN),
+            inter(VOLUME_A, ServicingState::AbUpdateStaged, MIN),
+            inter(VOLUME_A, ServicingState::AbUpdateFinalized, MIN),
+            prov(VOLUME_B, true, vec![2], MIN),
         ];
-        let host_status_list = host_status_list
-            .iter()
-            .take(host_status_list.len() + 1)
-            .map(|hst| hst.host_status.clone())
-            .collect::<Vec<_>>();
-        let context = ManualRollbackContext::new(&host_status_list).unwrap();
-        trace!("Validate create context for offline-init initial state");
-        // There should be 1 available rollback
-        assert_eq!(
-            context.get_requires_reboot_output().unwrap(),
-            true.to_string()
-        );
-        let serialized_output = serde_yaml::from_str::<Vec<RollbackDetail>>(
-            &context.get_rollback_chain_json().unwrap(),
-        )
-        .unwrap();
-        assert_eq!(serialized_output.len(), 1)
+        rollback_context_testing(&host_status_list, "Offline init and a/b update");
     }
 
     #[test]
     fn test_clean_install_context() {
-        let volume_a = Some(AbVolumeSelection::VolumeA);
-        let volume_b = Some(AbVolumeSelection::VolumeB);
-        let min = MINIMUM_ROLLBACK_TRIDENT_VERSION;
         let host_status_list = vec![
-            inter(None, ServicingState::CleanInstallFinalized, min),
-            inter(None, ServicingState::CleanInstallFinalized, min),
-            prov(volume_a, false, vec![], min),
+            inter(None, ServicingState::CleanInstallFinalized, MIN),
+            inter(None, ServicingState::CleanInstallFinalized, MIN),
+            prov(VOLUME_A, false, vec![], MIN),
         ];
-        let host_status_list = host_status_list
-            .iter()
-            .take(host_status_list.len() + 1)
-            .map(|hst| hst.host_status.clone())
-            .collect::<Vec<_>>();
-        let context = ManualRollbackContext::new(&host_status_list).unwrap();
-        // There should be 0 available rollbacks
-        assert_eq!(
-            context.get_requires_reboot_output().unwrap(),
-            false.to_string()
-        );
-        let serialized_output = serde_yaml::from_str::<Vec<RollbackDetail>>(
-            &context.get_rollback_chain_json().unwrap(),
-        )
-        .unwrap();
-        assert_eq!(serialized_output.len(), 0)
+        rollback_context_testing(&host_status_list, "Clean install initial state");
     }
 
     #[test]
     fn test_clean_install_and_ab_update_context() {
-        let volume_a = Some(AbVolumeSelection::VolumeA);
-        let volume_b = Some(AbVolumeSelection::VolumeB);
-        let min = MINIMUM_ROLLBACK_TRIDENT_VERSION;
         let host_status_list = vec![
-            inter(None, ServicingState::CleanInstallFinalized, min),
-            inter(None, ServicingState::CleanInstallFinalized, min),
-            prov(volume_a, false, vec![], min),
-            inter(volume_a, ServicingState::AbUpdateStaged, min),
-            inter(volume_a, ServicingState::AbUpdateFinalized, min),
-            prov(volume_b, true, vec![2], min),
+            inter(None, ServicingState::CleanInstallFinalized, MIN),
+            inter(None, ServicingState::CleanInstallFinalized, MIN),
+            prov(VOLUME_A, false, vec![], MIN),
+            inter(VOLUME_A, ServicingState::AbUpdateStaged, MIN),
+            inter(VOLUME_A, ServicingState::AbUpdateFinalized, MIN),
+            prov(VOLUME_B, true, vec![2], MIN),
         ];
-        let host_status_list = host_status_list
-            .iter()
-            .take(host_status_list.len() + 1)
-            .map(|hst| hst.host_status.clone())
-            .collect::<Vec<_>>();
-        let context = ManualRollbackContext::new(&host_status_list).unwrap();
-        // There should be 1 available rollbacks for an ab update
-        assert_eq!(
-            context.get_requires_reboot_output().unwrap(),
-            true.to_string()
-        );
-        let serialized_output = serde_yaml::from_str::<Vec<RollbackDetail>>(
-            &context.get_rollback_chain_json().unwrap(),
-        )
-        .unwrap();
-        assert_eq!(serialized_output.len(), 1)
+        rollback_context_testing(&host_status_list, "Clean install and a/b update");
     }
 
     #[test]
     fn test_with_old_trident_context() {
-        let volume_a = Some(AbVolumeSelection::VolumeA);
-        let volume_b = Some(AbVolumeSelection::VolumeB);
-        let old = "0.19.0";
         let host_status_list = vec![
-            inter(None, ServicingState::CleanInstallFinalized, old),
-            inter(None, ServicingState::CleanInstallFinalized, old),
-            prov(volume_a, false, vec![], old),
-            inter(volume_a, ServicingState::AbUpdateStaged, old),
-            inter(volume_a, ServicingState::AbUpdateFinalized, old),
-            prov(volume_b, true, vec![2], old),
+            inter(None, ServicingState::CleanInstallFinalized, OLD),
+            inter(None, ServicingState::CleanInstallFinalized, OLD),
+            prov(VOLUME_A, false, vec![], OLD),
+            inter(VOLUME_A, ServicingState::AbUpdateStaged, OLD),
+            inter(VOLUME_A, ServicingState::AbUpdateFinalized, OLD),
+            prov(VOLUME_B, false, vec![], OLD),
         ];
-        let host_status_list = host_status_list
-            .iter()
-            .take(host_status_list.len() + 1)
-            .map(|hst| hst.host_status.clone())
-            .collect::<Vec<_>>();
-        let context = ManualRollbackContext::new(&host_status_list).unwrap();
-        // There should be 0 available rollbacks
-        assert_eq!(
-            context.get_requires_reboot_output().unwrap(),
-            false.to_string()
-        );
-        let serialized_output = serde_yaml::from_str::<Vec<RollbackDetail>>(
-            &context.get_rollback_chain_json().unwrap(),
-        )
-        .unwrap();
-        assert_eq!(serialized_output.len(), 0)
+        rollback_context_testing(&host_status_list, "Old Trident versions");
     }
 
     #[test]
     fn test_with_no_trident_context() {
-        let volume_a = Some(AbVolumeSelection::VolumeA);
-        let volume_b = Some(AbVolumeSelection::VolumeB);
-        let none = "";
         let host_status_list = vec![
-            inter(None, ServicingState::CleanInstallFinalized, none),
-            inter(None, ServicingState::CleanInstallFinalized, none),
-            prov(volume_a, false, vec![], none),
-            inter(volume_a, ServicingState::AbUpdateStaged, none),
-            inter(volume_a, ServicingState::AbUpdateFinalized, none),
-            prov(volume_b, true, vec![2], none),
+            inter(None, ServicingState::CleanInstallFinalized, NONE),
+            inter(None, ServicingState::CleanInstallFinalized, NONE),
+            prov(VOLUME_A, false, vec![], NONE),
+            inter(VOLUME_A, ServicingState::AbUpdateStaged, NONE),
+            inter(VOLUME_A, ServicingState::AbUpdateFinalized, NONE),
+            prov(VOLUME_B, false, vec![], NONE),
         ];
-        let host_status_list = host_status_list
-            .iter()
-            .take(host_status_list.len() + 1)
-            .map(|hst| hst.host_status.clone())
-            .collect::<Vec<_>>();
-        let context = ManualRollbackContext::new(&host_status_list).unwrap();
-        // There should be 0 available rollbacks
-        assert_eq!(
-            context.get_requires_reboot_output().unwrap(),
-            false.to_string()
-        );
-        let serialized_output = serde_yaml::from_str::<Vec<RollbackDetail>>(
-            &context.get_rollback_chain_json().unwrap(),
-        )
-        .unwrap();
-        assert_eq!(serialized_output.len(), 0)
+        rollback_context_testing(&host_status_list, "No Trident versions");
     }
 
     #[test]
     fn test_with_mixed_trident_context() {
-        let volume_a = Some(AbVolumeSelection::VolumeA);
-        let volume_b = Some(AbVolumeSelection::VolumeB);
-        let new = TRIDENT_VERSION;
-        let min = MINIMUM_ROLLBACK_TRIDENT_VERSION;
-        let old = "0.19.0";
-        let none = "";
-
         let host_status_list = vec![
-            inter(None, ServicingState::CleanInstallFinalized, none),
-            inter(None, ServicingState::CleanInstallFinalized, none),
-            prov(volume_a, false, vec![], none),
-            inter(volume_a, ServicingState::RuntimeUpdateStaged, none),
-            prov(volume_a, false, vec![], none),
-            inter(volume_a, ServicingState::RuntimeUpdateStaged, old),
-            prov(volume_a, false, vec![], old),
-            inter(volume_a, ServicingState::RuntimeUpdateStaged, min),
-            prov(volume_a, false, vec![6], min),
-            inter(volume_a, ServicingState::RuntimeUpdateStaged, new),
-            prov(volume_a, false, vec![8], new),
+            inter(None, ServicingState::CleanInstallFinalized, NONE),
+            inter(None, ServicingState::CleanInstallFinalized, NONE),
+            prov(VOLUME_A, false, vec![], NONE),
+            inter(VOLUME_A, ServicingState::RuntimeUpdateStaged, NONE),
+            prov(VOLUME_A, false, vec![], NONE),
+            inter(VOLUME_A, ServicingState::RuntimeUpdateStaged, OLD),
+            prov(VOLUME_A, false, vec![], OLD),
+            inter(VOLUME_A, ServicingState::RuntimeUpdateStaged, MIN),
+            prov(VOLUME_A, false, vec![6], MIN),
+            inter(VOLUME_A, ServicingState::RuntimeUpdateStaged, NEW),
+            prov(VOLUME_A, false, vec![8, 6], NEW),
         ];
-        let host_status_list = host_status_list
-            .iter()
-            .take(host_status_list.len() + 1)
-            .map(|hst| hst.host_status.clone())
-            .collect::<Vec<_>>();
-        let context = ManualRollbackContext::new(&host_status_list).unwrap();
-        // There should be 2 available rollbacks, both runtime updates
-        assert_eq!(
-            context.get_requires_reboot_output().unwrap(),
-            false.to_string()
+        rollback_context_testing(
+            &host_status_list,
+            "Mixed Trident versions: none, old, min, new",
         );
-        let serialized_output = serde_yaml::from_str::<Vec<RollbackDetail>>(
-            &context.get_rollback_chain_json().unwrap(),
-        )
-        .unwrap();
-        assert_eq!(serialized_output.len(), 2)
+    }
+
+    #[test]
+    fn test_ab_rollback_skipping_runtime_rollbacks() {
+        let host_status_list = vec![
+            inter(None, ServicingState::CleanInstallFinalized, MIN),
+            inter(None, ServicingState::CleanInstallFinalized, MIN),
+            prov(VOLUME_A, false, vec![], MIN),
+            inter(VOLUME_A, ServicingState::AbUpdateStaged, MIN),
+            inter(VOLUME_A, ServicingState::AbUpdateFinalized, MIN),
+            prov(VOLUME_B, true, vec![2], MIN),
+            inter(VOLUME_B, ServicingState::RuntimeUpdateStaged, MIN),
+            prov(VOLUME_B, false, vec![5, 2], MIN),
+            inter(VOLUME_B, ServicingState::RuntimeUpdateStaged, MIN),
+            prov(VOLUME_B, false, vec![7, 5, 2], MIN),
+            // Manual Rollback of the available a/b update skips
+            // 2 runtime updates
+            inter(VOLUME_B, ServicingState::ManualRollbackStaged, MIN),
+            inter(VOLUME_B, ServicingState::ManualRollbackFinalized, MIN),
+            prov(VOLUME_A, false, vec![], MIN),
+        ];
+        rollback_context_testing(
+            &host_status_list,
+            "Validate a/b update rollback that skips runtime rollbacks",
+        );
+    }
+
+    #[test]
+    fn test_dry_run() {
+        let mut host_status_list = vec![
+            inter(None, ServicingState::CleanInstallFinalized, MIN),
+            inter(None, ServicingState::CleanInstallFinalized, MIN),
+            prov(VOLUME_A, false, vec![], MIN),
+        ];
+        let context = create_rollback_context_for_testing(&host_status_list);
+        // if nothing is requested and there are no rollbacks, none is returned
+        let (index, dry_run_string) =
+            get_requested_rollback_info(&context.get_rollback_chain().unwrap(), false, false)
+                .unwrap();
+        assert!(index.is_none());
+        assert_eq!(dry_run_string, "none");
+        // if both ab and runtime rollback is requested simultaneously, error is returned
+        let (index, dry_run_string) =
+            get_requested_rollback_info(&context.get_rollback_chain().unwrap(), true, false)
+                .unwrap();
+        assert!(index.is_none());
+        assert_eq!(dry_run_string, "none");
+        // if both ab and runtime rollback is requested simultaneously, error is returned
+        let (index, dry_run_string) =
+            get_requested_rollback_info(&context.get_rollback_chain().unwrap(), false, true)
+                .unwrap();
+        assert!(index.is_none());
+        assert_eq!(dry_run_string, "none");
+
+        // Add some operations to datastore
+        host_status_list.push(inter(VOLUME_A, ServicingState::AbUpdateStaged, MIN));
+        host_status_list.push(inter(VOLUME_A, ServicingState::AbUpdateFinalized, MIN));
+        host_status_list.push(prov(VOLUME_B, true, vec![2], MIN));
+        host_status_list.push(inter(VOLUME_B, ServicingState::RuntimeUpdateStaged, MIN));
+        host_status_list.push(prov(VOLUME_B, false, vec![5, 2], MIN));
+        let context = create_rollback_context_for_testing(&host_status_list);
+        // if runtime rollback is requested and it is the next rollback, return the index of the runtime rollback and 'runtime'
+        let (index, dry_run_string) =
+            get_requested_rollback_info(&context.get_rollback_chain().unwrap(), false, false)
+                .unwrap();
+        assert_eq!(index, Some(0));
+        assert_eq!(dry_run_string, "runtime");
+        // if ab rollback is requested and it is not the next rollback, return the index of the ab rollback and 'ab'
+        let (index, dry_run_string) =
+            get_requested_rollback_info(&context.get_rollback_chain().unwrap(), false, true)
+                .unwrap();
+        assert_eq!(index, Some(1));
+        assert_eq!(dry_run_string, "ab");
+        // if both ab and runtime rollback is requested simultaneously, error is returned
+        assert!(
+            get_requested_rollback_info(&context.get_rollback_chain().unwrap(), true, true)
+                .is_err()
+        );
+
+        // Add an A/B update to database
+        host_status_list.push(inter(VOLUME_B, ServicingState::AbUpdateStaged, MIN));
+        host_status_list.push(inter(VOLUME_B, ServicingState::AbUpdateFinalized, MIN));
+        host_status_list.push(prov(VOLUME_B, true, vec![2], MIN));
+        let context = create_rollback_context_for_testing(&host_status_list);
+        // if runtime rollback is requested and it is not the next rollback, return an error
+        assert!(
+            get_requested_rollback_info(&context.get_rollback_chain().unwrap(), true, false)
+                .is_err()
+        );
     }
 }

@@ -435,9 +435,20 @@ steps:
       # If there is a netlisten process, kill it so there is no port clash in the instance
       if pgrep netlisten > /dev/null; then pkill netlisten; fi
 
-      ./bin/netlisten -m $(Build.SourcesDirectory)/trident-rollback-metrics.jsonl \
+      NETLISTEN_CONFIG_ARGS=""
+      if [ -n "${{ parameters.netlistenConfigFile }}" ]; then
+        NETLISTEN_CONFIG_ARGS="--config ${{ parameters.netlistenConfigFile }}"
+      fi
+
+      ./bin/netlisten --force-color $NETLISTEN_CONFIG_ARGS \
+          -m $(Build.SourcesDirectory)/trident-rollback-metrics.jsonl \
           -p ${{ parameters.netlistenPort }} \
           -s "${{ parameters.artifactsDirectory }}" > ./rollback.log 2>&1 &
+
+      PROXY_ARG=""
+      if [ -n "${{ parameters.httpsProxy }}" ]; then
+        PROXY_ARG="--env-vars HTTPS_PROXY=${{ parameters.httpsProxy }}"
+      fi
 
       # To allow storm to access VM serial logs, need sudo.
       sudo $(Build.SourcesDirectory)/bin/storm-trident helper manual-rollback -a \
@@ -446,7 +457,9 @@ steps:
           "${{ parameters.hostIp }}" \
           "${{ parameters.userName }}" \
           "${{ parameters.runtimeEnv }}" \
-          --deployment-environment "${{ parameters.deploymentEnvironment }}"
+          --deployment-environment "${{ parameters.deploymentEnvironment }}" \
+          $PROXY_ARG
+
     displayName: "Test Trident rollback"
     timeoutInMinutes: 15
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
