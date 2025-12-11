@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	stormrollbackconfig "tridenttools/storm/rollback/utils/config"
@@ -571,20 +572,34 @@ func validateNetplan(
 	if !testConfig.SkipNetplanRuntimeTesting {
 		if netplanVersion > 0 {
 			logrus.Tracef("Checking netplan version, expected: '%d'", netplanVersion)
-			netplanTestCommand := fmt.Sprintf("ip link show dummy%d", netplanVersion)
-			netplanTestOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, netplanTestCommand)
+			netplanConfigContents, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo cat /etc/netplan/99-trident.yaml")
 			if err != nil {
-				return fmt.Errorf("failed to check netplan on VM (%w):\n%s", err, netplanTestOutput)
+				return fmt.Errorf("failed to read netplan config from VM image: %w", err)
 			}
-			logrus.Tracef("Netplan version confirmed, found '%d': %s", netplanVersion, netplanTestOutput)
+			logrus.Tracef("Netplan config contents:\n%s", string(netplanConfigContents))
+
+			// Search for "dummy[0-9]:" in netplan config
+			expectedDummyDevice := fmt.Sprintf("dummy%d:", netplanVersion)
+			regexPattern := regexp.MustCompile("dummy[0-9]:")
+			matches := regexPattern.FindSubmatch([]byte(netplanConfigContents))
+			if len(matches) == 0 {
+				return fmt.Errorf("netplan config does not contain any dummy devices")
+			}
+			for _, match := range matches {
+				matchStr := string(match)
+				if matchStr != expectedDummyDevice {
+					return fmt.Errorf("netplan config contains unexpected version, found dummy device: %s", matchStr)
+				}
+			}
+			logrus.Tracef("netplan version mismatch: expected dummy%d, got config:\n%s", netplanVersion, string(netplanConfigContents))
+
 		} else {
-			logrus.Tracef("Checking that dummy devices are not present")
-			netplanTestCommand := "ip link show | grep dummy"
-			netplanTestOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, netplanTestCommand)
+			logrus.Tracef("Checking that netplan config is absent")
+			netplanConfigContents, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo cat /etc/netplan/99-trident.yaml")
 			if err == nil {
-				return fmt.Errorf("dummy devices are unexpectedly still available:\n%s", netplanTestOutput)
+				return fmt.Errorf("netplan config unexpectedly found: %s", string(netplanConfigContents))
 			}
-			logrus.Tracef("Netplan version confirmed, found NO dummy* interfaces: \n%s", netplanTestOutput)
+			logrus.Tracef("Verified that netplan config is absent")
 		}
 	}
 	return nil
