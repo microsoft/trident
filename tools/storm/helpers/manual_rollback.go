@@ -90,6 +90,13 @@ func (h *ManualRollbackHelper) rollback(tc storm.TestCase) error {
 	}
 	logrus.Infof("Trident 'rollback --allowed-operations stage' output:\n%s", out.Stdout)
 
+	// Get trident-full.log contents after rollback staging
+	contents, err := stormsshclient.CommandOutput(client, "sudo cat /var/log/trident-full.log")
+	if err != nil {
+		return fmt.Errorf("failed to read new Host Config file: %w", err)
+	}
+	logrus.Debugf("Trident 'rollback stage' background log contents:\n%s", contents)
+
 	out, err = stormtrident.InvokeTrident(h.args.Env, client, h.args.EnvVars, "rollback -v trace --allowed-operations finalize")
 	if err != nil {
 		if err, ok := err.(*ssh.ExitMissingError); ok && strings.Contains(out.Stderr, "Rebooting system") {
@@ -103,13 +110,6 @@ func (h *ManualRollbackHelper) rollback(tc storm.TestCase) error {
 		}
 	}
 	logrus.Infof("Trident 'rollback' succeeded:\n%s", out.Stdout)
-
-	// Get trident-full.log contents after rollback staging
-	contents, err := stormsshclient.CommandOutput(client, "sudo cat /var/log/trident-full.log")
-	if err != nil {
-		return fmt.Errorf("failed to read new Host Config file: %w", err)
-	}
-	logrus.Debugf("Trident 'rollback stage' background log contents:\n%s", contents)
 
 	if !h.args.ExpectRuntimeRollback {
 		err := stormsshcheck.CheckTridentService(
