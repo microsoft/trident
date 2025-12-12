@@ -78,7 +78,7 @@ impl ExtensionsSubsystem {
 }
 
 fn extensions_match(internal_exts: &[&ExtensionData], hc_exts: &[Extension]) -> bool {
-    if internal_exts.len() == hc_exts.len() {
+    if internal_exts.len() != hc_exts.len() {
         return false;
     }
 
