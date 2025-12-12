@@ -160,23 +160,25 @@ impl Subsystem for OsConfigSubsystem {
             return Ok(());
         }
 
-        if (ctx.servicing_type == ServicingType::AbUpdate
-            || ctx.servicing_type == ServicingType::CleanInstall)
-            && os_config_requires_os_modifier(ctx)
-        {
-            return self.configure_for_reboot(ctx);
-        } else if ctx.servicing_type == ServicingType::RuntimeUpdate
-            && runtime_update_os_config_requires_os_modifier(ctx)
-        {
-            return self.configure_for_no_reboot(ctx);
-        } else {
-            debug!(
-                "Skipping step 'Configure' for subsystem '{}' as OS modifier is not required",
-                self.name()
-            );
+        match ctx.servicing_type {
+            ServicingType::AbUpdate | ServicingType::CleanInstall
+                if os_config_requires_os_modifier(ctx) =>
+            {
+                self.configure_for_reboot(ctx)
+            }
+            ServicingType::NoActiveServicing
+                if runtime_update_os_config_requires_os_modifier(ctx) =>
+            {
+                self.configure_runtime_update(ctx)
+            }
+            _ => {
+                debug!(
+                    "Skipping step 'Configure' for subsystem '{}' as OS modifier is not required",
+                    self.name()
+                );
+                return Ok(());
+            }
         }
-
-        Ok(())
     }
 }
 
@@ -258,9 +260,8 @@ impl OsConfigSubsystem {
             .structured(ServicingError::RunOsModifier)
     }
 
-    /// Build OS Modifier configuration and call OS Modifier on servicing types
-    /// that do *not* require a reboot (runtime update).
-    fn configure_for_no_reboot(&self, ctx: &EngineContext) -> Result<(), TridentError> {
+    /// Build OS Modifier configuration and call OS Modifier on runtime update.
+    fn configure_runtime_update(&self, ctx: &EngineContext) -> Result<(), TridentError> {
         let mut services = Services::default();
 
         // Enable systemd-sysext and systemd-confext services if necessary.
