@@ -142,9 +142,7 @@ impl Subsystem for OsConfigSubsystem {
 
     #[tracing::instrument(name = "osconfig_configuration", skip_all)]
     fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
-        if ctx.servicing_type != ServicingType::CleanInstall
-            && ctx.servicing_type != ServicingType::AbUpdate
-        {
+        if ctx.servicing_type == ServicingType::NoActiveServicing {
             debug!(
                 "Skipping step 'Configure' for subsystem '{}' during servicing type '{:?}'",
                 self.name(),
