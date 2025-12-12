@@ -84,10 +84,35 @@ pub fn get_rollback_info(datastore: &DataStore, kind: GetKind) -> Result<String,
     Err(TridentError::new(ServicingError::ManualRollback))
 }
 
+/// Check rollback availability and type.
+pub fn check_rollback(
+    datastore: &DataStore,
+    invoke_if_next_is_runtime: bool,
+    invoke_available_ab: bool,
+) -> Result<(), TridentError> {
+    // Get all HostStatus entries from the datastore.
+    let host_statuses = datastore
+        .get_host_statuses()
+        .message("Failed to get datastore HostStatus entries")?;
+    // Create ManualRollback context from HostStatus entries.
+    let rollback_context = ManualRollbackContext::new(&host_statuses)
+        .message("Failed to create manual rollback context")?;
+    let available_rollbacks = rollback_context
+        .get_rollback_chain()
+        .structured(ServicingError::ManualRollback)
+        .message("Failed to get available rollbacks")?;
+    let (_rollback_index, check_string) = get_requested_rollback_info(
+        &available_rollbacks,
+        invoke_if_next_is_runtime,
+        invoke_available_ab,
+    )?;
+    println!("{check_string}");
+    Ok(())
+}
+
 /// Handle manual rollback operations.
 pub fn execute_rollback(
     datastore: &mut DataStore,
-    check: bool,
     invoke_if_next_is_runtime: bool,
     invoke_available_ab: bool,
     allowed_operations: &Operations,
@@ -112,10 +137,6 @@ pub fn execute_rollback(
         invoke_if_next_is_runtime,
         invoke_available_ab,
     )?;
-    if check {
-        println!("{}", check_string);
-        return Ok(ExitKind::Done);
-    }
 
     let rollback_index = match rollback_index {
         Some(index) => index,
@@ -427,6 +448,8 @@ impl ManualRollbackContext {
             last_initial_consecutive_provisioned_state = i as i32;
         }
 
+        let mut auto_rollback = false;
+        let mut last_provisioned = false;
         let mut rollback = false;
         let mut needs_reboot = false;
         let mut active_index = -1;
@@ -487,13 +510,19 @@ impl ManualRollbackContext {
                 // ignoring the first Provisioned state, where there can be no rollback),
                 // update the available rollbacks depending on whether the last action
                 // was a rollback or not
-                if active_index != -1 {
+                if !last_provisioned && active_index != -1 {
                     let host_status_context = RollbackDetail {
                         host_status: host_statuses[active_index as usize].clone(),
                         host_status_index: active_index,
                         requires_reboot: needs_reboot,
                     };
-                    if rollback {
+                    if auto_rollback {
+                        trace!(
+                            "Auto-rollback detected at index {} for active volume {:?}",
+                            i,
+                            instance.active_volume
+                        );
+                    } else if rollback {
                         let active_volume_changed = hs.ab_active_volume != instance.active_volume;
                         // If the active volume changed, then
                         //   1. we can remove all of the available rollbacks for the previously active volume
@@ -575,7 +604,11 @@ impl ManualRollbackContext {
                 active_index = i as i32;
                 needs_reboot = false;
                 // Reset the loop's rollback tracking
-                rollback = false
+                rollback = false;
+                // Reset the loop's auto-rollback tracking
+                auto_rollback = false;
+                // Last state seen was Provisioned: guard against sequential 'duplicate' Provisioned states
+                last_provisioned = true;
             } else {
                 // Check each non-Provisioned state to see if it represents a rollback action
                 rollback = matches!(
@@ -586,12 +619,20 @@ impl ManualRollbackContext {
                     hs.servicing_state,
                     ServicingState::AbUpdateFinalized | ServicingState::AbUpdateFinalized
                 );
+                if matches!(
+                    hs.servicing_state,
+                    ServicingState::AbUpdateHealthCheckFailed
+                ) {
+                    auto_rollback = true;
+                }
+                last_provisioned = false;
                 trace!(
-                    "Detected servicing state {:?} at index {}: rollback={}, needs_reboot={}",
+                    "Detected servicing state {:?} at index {}: rollback={}, needs_reboot={}, auto_rollback={}z",
                     hs.servicing_state,
                     i,
                     rollback,
-                    needs_reboot
+                    needs_reboot,
+                    auto_rollback
                 )
             }
         }
@@ -761,6 +802,18 @@ mod tests {
     ) -> HostStatusTest {
         HostStatusTest {
             host_status: host_status(active_volume, servicing_state, old_version, None),
+            expected_requires_reboot: false,
+            expected_available_rollbacks: vec![],
+        }
+    }
+    fn inter_e(
+        active_volume: Option<AbVolumeSelection>,
+        servicing_state: ServicingState,
+        old_version: &str,
+        error: Option<String>,
+    ) -> HostStatusTest {
+        HostStatusTest {
+            host_status: host_status(active_volume, servicing_state, old_version, error),
             expected_requires_reboot: false,
             expected_available_rollbacks: vec![],
         }
@@ -1043,6 +1096,28 @@ mod tests {
             false,
             "Validate a/b update stage as final state",
         );
+    }
+
+    #[test]
+    fn test_e2e_rollback() {
+        let host_status_list = vec![
+            inter(VOL_A, CI_FINAL, MIN),
+            prov(VOL_A, false, vec![], MIN),
+            inter(VOL_A, AB_STAGE, MIN),
+            inter(VOL_A, AB_FINAL, MIN),
+            prov(VOL_B, true, vec![1], MIN),
+            inter(VOL_B, AB_STAGE, MIN),
+            inter(VOL_B, AB_FINAL, MIN),
+            inter_e(VOL_B, AB_HC_FAIL, MIN, Some("failure".to_string())),
+            inter(VOL_B, AB_HC_FAIL, MIN),
+            prov(VOL_B, false, vec![], MIN),
+            prov_e(VOL_B, false, vec![], MIN, Some("failure".to_string())),
+            prov(VOL_B, false, vec![], MIN),
+            inter(VOL_B, AB_STAGE, MIN),
+            inter(VOL_B, AB_FINAL, MIN),
+            prov(VOL_A, true, vec![10], MIN),
+        ];
+        rollback_context_testing(&host_status_list, "E2E rollback scenario");
     }
 
     #[test]
