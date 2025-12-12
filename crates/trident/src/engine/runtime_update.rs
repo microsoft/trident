@@ -15,7 +15,7 @@ use crate::grpc;
 use crate::{
     datastore::DataStore,
     engine::{self, EngineContext},
-    monitor_metrics, ExitKind,
+    health, monitor_metrics, ExitKind,
 };
 
 use super::Subsystem;
@@ -88,12 +88,23 @@ pub(crate) fn stage_update(
 pub(crate) fn finalize_update(
     subsystems: &mut [Box<dyn Subsystem>],
     state: &mut DataStore,
+    rollback: bool,
     update_start_time: Option<Instant>,
     #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
 ) -> Result<ExitKind, TridentError> {
-    info!("Finalizing runtime update");
+    let target_spec;
+    let old_spec;
+    if !rollback {
+        info!("Finalizing runtime update");
+        target_spec = state.host_status().spec.clone();
+        old_spec = state.host_status().spec_old.clone();
+    } else {
+        info!("Attempting auto-rollback of runtime update");
+        target_spec = state.host_status().spec_old.clone();
+        old_spec = state.host_status().spec.clone();
+    }
 
     if state.host_status().servicing_state != ServicingState::RuntimeUpdateStaged {
         return Err(TridentError::internal(
@@ -102,8 +113,8 @@ pub(crate) fn finalize_update(
     }
 
     let mut ctx = EngineContext {
-        spec: state.host_status().spec.clone(),
-        spec_old: state.host_status().spec_old.clone(),
+        spec: target_spec,
+        spec_old: old_spec,
         servicing_type: ServicingType::RuntimeUpdate,
         ab_active_volume: state.host_status().ab_active_volume,
         partition_paths: state.host_status().partition_paths.clone(),
@@ -126,6 +137,12 @@ pub(crate) fn finalize_update(
     let ctx = ctx;
 
     engine::clean_up(subsystems, &ctx)?;
+
+    // Run health checks if we are performing a runtime update (skip if we are
+    // rolling back)
+    if !rollback {
+        health::execute_health_checks(&ctx)?;
+    }
 
     debug!(
         "Updating host's servicing state to '{:?}'",
