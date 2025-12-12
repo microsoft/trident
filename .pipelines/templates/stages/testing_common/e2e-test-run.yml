@@ -452,12 +452,10 @@ steps:
 
       # To allow storm to access VM serial logs, need sudo.
       sudo $(Build.SourcesDirectory)/bin/storm-trident helper manual-rollback -a \
-          --log-dir "$(ob_outputDirectory)" \
           "${{ parameters.sshKeyPath }}" \
           "${{ parameters.hostIp }}" \
           "${{ parameters.userName }}" \
           "${{ parameters.runtimeEnv }}" \
-          --deployment-environment "${{ parameters.deploymentEnvironment }}" \
           $PROXY_ARG
 
     displayName: "Test Trident rollback"
