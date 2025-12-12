@@ -5,14 +5,15 @@ use log::{debug, error, info, warn};
 
 use osutils::{osmodifier::OSModifierConfig, path};
 use trident_api::{
-    config::{ManagementOs, SshMode},
+    config::{ManagementOs, Services, SshMode},
     constants::internal_params::DISABLE_HOSTNAME_CARRY_OVER,
     error::{ExecutionEnvironmentMisconfigurationError, ReportError, ServicingError, TridentError},
+    is_default,
     status::ServicingType,
 };
 
 use crate::{
-    engine::{EngineContext, Subsystem, REQUIRES_REBOOT, RUNS_ON_ALL},
+    engine::{EngineContext, Subsystem, RUNS_ON_ALL},
     OS_MODIFIER_BINARY_PATH, OS_MODIFIER_NEWROOT_PATH,
 };
 
@@ -30,7 +31,8 @@ const SYSTEMD_SYSEXT: &str = "systemd-sysext";
 /// SystemD service for merging confexts.
 const SYSTEMD_CONFEXT: &str = "systemd-confext";
 
-/// Returns whether the given OS configuration requires the os-modifier binary to be present.
+/// Returns whether the given OS configuration requires the os-modifier binary
+/// to be present on an A/B update or clean install.
 fn os_config_requires_os_modifier(ctx: &EngineContext) -> bool {
     let os_config = &ctx.spec.os;
     !os_config.users.is_empty()
@@ -39,7 +41,18 @@ fn os_config_requires_os_modifier(ctx: &EngineContext) -> bool {
         || !os_config.services.enable.is_empty()
         || !os_config.services.disable.is_empty()
         || !os_config.kernel_command_line.extra_command_line.is_empty()
+        || !os_config.sysexts.is_empty()
+        || !os_config.confexts.is_empty()
         || should_carry_over_hostname(ctx)
+}
+
+/// Returns whether the given OS configuration requires the os-modifier binary
+/// to be present on a runtime update.
+fn runtime_update_os_config_requires_os_modifier(ctx: &EngineContext) -> bool {
+    let new_os_config = &ctx.spec.os;
+    let old_os_config = &ctx.spec_old.os;
+    new_os_config.sysexts != old_os_config.sysexts
+        || new_os_config.confexts != old_os_config.confexts
 }
 
 /// Returns whether the given MOS configuration requires the os-modifier binary to be present.
@@ -83,11 +96,8 @@ impl Subsystem for OsConfigSubsystem {
         "os-config"
     }
 
-    fn runs_on(&self, ctx: &EngineContext) -> &[ServicingType] {
-        if runtime_update_sufficient(ctx) {
-            return RUNS_ON_ALL;
-        }
-        REQUIRES_REBOOT
+    fn runs_on(&self, _ctx: &EngineContext) -> &[ServicingType] {
+        RUNS_ON_ALL
     }
 
     fn select_servicing_type(&self, ctx: &EngineContext) -> Result<ServicingType, TridentError> {
@@ -142,9 +152,7 @@ impl Subsystem for OsConfigSubsystem {
 
     #[tracing::instrument(name = "osconfig_configuration", skip_all)]
     fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
-        if ctx.servicing_type != ServicingType::CleanInstall
-            && ctx.servicing_type != ServicingType::AbUpdate
-        {
+        if ctx.servicing_type == ServicingType::NoActiveServicing {
             debug!(
                 "Skipping step 'Configure' for subsystem '{}' during servicing type '{:?}'",
                 self.name(),
@@ -153,17 +161,35 @@ impl Subsystem for OsConfigSubsystem {
             return Ok(());
         }
 
-        if !os_config_requires_os_modifier(ctx) {
-            debug!(
-                "Skipping step 'Configure' for subsystem '{}' as OS modifier is not required",
-                self.name()
-            );
-            return Ok(());
-        } else if ctx.is_uki()? && ctx.storage_graph.root_fs_is_verity() {
+        if ctx.is_uki()? && ctx.storage_graph.root_fs_is_verity() {
             error!("Skipping OS configuration changes requested in Host Configuration because UKI root-verity is in use.");
             return Ok(());
         }
 
+        if (ctx.servicing_type == ServicingType::AbUpdate
+            || ctx.servicing_type == ServicingType::CleanInstall)
+            && os_config_requires_os_modifier(ctx)
+        {
+            return self.configure_for_reboot(ctx);
+        } else if ctx.servicing_type == ServicingType::RuntimeUpdate
+            && runtime_update_os_config_requires_os_modifier(ctx)
+        {
+            return self.configure_for_no_reboot(ctx);
+        } else {
+            debug!(
+                "Skipping step 'Configure' for subsystem '{}' as OS modifier is not required",
+                self.name()
+            );
+        }
+
+        Ok(())
+    }
+}
+
+impl OsConfigSubsystem {
+    /// Build OS Modifier configuration and call OS Modifier on servicing types
+    /// that require a reboot (A/B update or clean install).
+    fn configure_for_reboot(&self, ctx: &EngineContext) -> Result<(), TridentError> {
         let mut os_modifier_config = OSModifierConfig::default();
 
         if !ctx.spec.os.users.is_empty() {
@@ -235,8 +261,36 @@ impl Subsystem for OsConfigSubsystem {
 
         os_modifier_config
             .call_os_modifier(Path::new(OS_MODIFIER_NEWROOT_PATH))
-            .structured(ServicingError::RunOsModifier)?;
+            .structured(ServicingError::RunOsModifier)
+    }
 
+    /// Build OS Modifier configuration and call OS Modifier on servicing types
+    /// that do *not* require a reboot (runtime update).
+    fn configure_for_no_reboot(&self, ctx: &EngineContext) -> Result<(), TridentError> {
+        let mut services = Services::default();
+
+        // Enable systemd-sysext and systemd-confext services if necessary.
+        // Note: these services are not disabled, even if there are no sysexts or
+        // confexts in the OS config, to mitigate side-effects on extension
+        // images that are not tracked by Trident.
+        if !ctx.spec.os.sysexts.is_empty() {
+            debug!("Enabling {SYSTEMD_SYSEXT} service");
+            services.enable.push(SYSTEMD_SYSEXT.to_string());
+        }
+        if !ctx.spec.os.confexts.is_empty() {
+            debug!("Enabling {SYSTEMD_CONFEXT} service");
+            services.enable.push(SYSTEMD_CONFEXT.to_string());
+        }
+
+        if !is_default(&services) {
+            let os_modifier_config = OSModifierConfig {
+                services: Some(services),
+                ..Default::default()
+            };
+            return os_modifier_config
+                .call_os_modifier(Path::new(OS_MODIFIER_BINARY_PATH))
+                .structured(ServicingError::RunOsModifier);
+        }
         Ok(())
     }
 }
