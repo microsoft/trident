@@ -772,7 +772,7 @@ mod tests {
         let final_state = host_status_test_list
             .iter()
             .filter(|hst| hst.host_status.servicing_state == ServicingState::Provisioned)
-            .last()
+            .next_back()
             .unwrap();
         let host_statuses = host_status_test_list
             .iter()
@@ -785,7 +785,7 @@ mod tests {
         let final_state = host_status_test_list
             .iter()
             .filter(|hst| hst.host_status.servicing_state == ServicingState::Provisioned)
-            .last()
+            .next_back()
             .unwrap();
         rollback_context_testing_for_expected(
             host_status_test_list,
