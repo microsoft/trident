@@ -74,6 +74,12 @@ pub enum Commands {
         #[clap(long, value_delimiter = ',', num_args = 0.., default_value = "stage,finalize")]
         allowed_operations: Vec<AllowedOperation>,
 
+        /// Boolean indicating that a runtime update is expected. If Trident
+        /// determines that an A/B update is required, it will issue a fatal
+        /// error to avoid an unexpected reboot
+        #[clap(long)]
+        runtime: bool,
+
         /// Path to save the resulting Host Status
         #[clap(short, long)]
         status: Option<PathBuf>,

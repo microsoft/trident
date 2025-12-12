@@ -141,6 +141,13 @@ pub enum InternalError {
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum InvalidInputError {
+    #[error(
+        "Determined that an A/B update is required, but Trident was run with --runtime flag \
+        indicating runtime update was expected. Returning fatal error to avoid unexpected reboot. \
+        Edit Host Configuration or re-run without the --runtime flag."
+    )]
+    AbUpdateRuntimeFlagMismatch,
+
     #[error("Allowed operations must be passed via command line, not in Host Configuration")]
     AllowedOperationsInHostConfiguration,
 

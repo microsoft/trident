@@ -155,6 +155,10 @@ Options:
   -v, --verbosity <VERBOSITY>
           Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
           [default: DEBUG]
+      --runtime
+          Boolean indicating that a runtime update is expected. If
+          Trident determines that an A/B update is required, it will
+          issue a fatal error to avoid an unexpected reboot
   -s, --status <STATUS>
           Path to save the resulting Host Status
   -e, --error <ERROR>
@@ -181,6 +185,11 @@ Possible values:
 - `finalize`
 
 Default: `stage,finalize`
+
+
+#### <span>--runtime &lt;RUNTIME&gt;</span>
+
+Boolean indicating that a runtime update is expected. If Trident determines that an A/B update is required, it will issue a fatal error to avoid an unexpected reboot
 
 
 #### <span>--status &lt;STATUS&gt;</span>
