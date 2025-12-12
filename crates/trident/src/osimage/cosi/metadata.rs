@@ -126,29 +126,28 @@ impl CosiMetadata {
                     match systemd_boot.entries.as_slice() {
                         // No entries is invalid
                         [] => bail!("Bootloader type 'systemd-boot' must not be empty"),
-                        
-                        // More than one entry, is not allowed in this version of Trident.
-                        [_, _, ..] => {
-                            bail!("Multiple bootloader entries are not supported for bootloader type 'systemd-boot' in this version of Trident");
-                        }
 
-                        // One entry of type other than uki-standalone is invalid
-                        [entry] if !entry.boot_type.eq(&SystemdBootloaderType::UkiStandalone) => bail!(
-                            "Bootloader type 'systemd-boot' only supports 'uki-standalone' entry type, found: {}",
-                            entry.boot_type
+                        // First entry MUST be of type 'uki-standalone'
+                        [entry, ..] if !entry.boot_type.eq(&SystemdBootloaderType::UkiStandalone) => log::warn!(
+                            "First entry of bootloader type 'systemd-boot' is not of type 'uki-standalone'"
                         ),
 
-                        // Exactly one uki-standalone entry is valid
-                        [ _ ] => {}
+                        // Having more than one entry is warned about, only the first is used in this version of Trident.
+                        [_, rest @..] if !rest.is_empty() => log::warn!(
+                            "Bootloader type 'systemd-boot' has more than one entry, only the first entry will be used"
+                        ),
+
+                        // Everything else is OK
+                        _ => {}
                     }
                 }
 
-                // Unknown bootloader type is invalid
+                // Unknown bootloader type is warned about, it may cause issues down the line
                 (BootloaderType::Unknown(bootloader_type), _) => {
-                    bail!("Unsupported bootloader type: {}", bootloader_type);
+                    log::warn!("Unknown bootloader type: {}", bootloader_type)
                 }
 
-                // Valid combination
+                // Everything else is OK
                 _ => {}
             }
         }
@@ -156,6 +155,9 @@ impl CosiMetadata {
         Ok(())
     }
 
+    // Returns whether the COSI metadata describes a standalone-UKI-based
+    // bootloader. In this version of Trident, only the FIRST entry is
+    // considered.
     pub(crate) fn is_uki(&self) -> bool {
         let Some(bootloader) = &self.bootloader else {
             return false;
@@ -165,9 +167,11 @@ impl CosiMetadata {
             return false;
         };
 
-        sdb.entries
-            .iter()
-            .any(|entry| entry.boot_type == SystemdBootloaderType::UkiStandalone)
+        let Some(first_entry) = sdb.entries.first() else {
+            return false;
+        };
+
+        first_entry.boot_type == SystemdBootloaderType::UkiStandalone
     }
 
     /// Returns the ESP filesystem image.
