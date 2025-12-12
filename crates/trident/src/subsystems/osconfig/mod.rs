@@ -51,8 +51,11 @@ fn os_config_requires_os_modifier(ctx: &EngineContext) -> bool {
 fn runtime_update_os_config_requires_os_modifier(ctx: &EngineContext) -> bool {
     let new_os_config = &ctx.spec.os;
     let old_os_config = &ctx.spec_old.os;
-    new_os_config.sysexts != old_os_config.sysexts
-        || new_os_config.confexts != old_os_config.confexts
+    // If sysexts or confexts are newly configured (i.e. they were not
+    // previously specified in the old Host Configuration), we should enable
+    // systemd-sysext or systemd-confext with OS Modifier.
+    (!new_os_config.sysexts.is_empty() && old_os_config.sysexts.is_empty())
+        || (!new_os_config.confexts.is_empty() && old_os_config.confexts.is_empty())
 }
 
 /// Returns whether the given MOS configuration requires the os-modifier binary to be present.
@@ -378,13 +381,17 @@ impl Subsystem for MosConfigSubsystem {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use trident_api::{
         config::{
-            HostConfiguration, KernelCommandLine, ManagementOs, Module, Os, Password, Selinux,
-            Services, UefiFallbackMode, User,
+            Extension, HostConfiguration, KernelCommandLine, ManagementOs, Module, Os, Password,
+            Selinux, Services, UefiFallbackMode, User,
         },
+        primitives::hash::Sha384Hash,
         status::ServicingType,
     };
+    use url::Url;
 
     use crate::engine::EngineContext;
 
@@ -449,12 +456,104 @@ mod tests {
         assert!(os_config_requires_os_modifier(&ctx));
 
         ctx = mk_ctx();
+        ctx.spec.os.sysexts = vec![Extension {
+            url: Url::parse("https://example.com/test.raw").unwrap(),
+            sha384: Sha384Hash::from("a".repeat(96)),
+            path: Some(PathBuf::from("/var/lib/extensions/test.raw")),
+        }];
+        assert!(os_config_requires_os_modifier(&ctx));
+
+        ctx = mk_ctx();
+        ctx.spec.os.confexts = vec![Extension {
+            url: Url::parse("https://example.com/test.raw").unwrap(),
+            sha384: Sha384Hash::from("a".repeat(96)),
+            path: Some(PathBuf::from("/var/lib/confexts/test.raw")),
+        }];
+        assert!(os_config_requires_os_modifier(&ctx));
+
+        ctx = mk_ctx();
         ctx.servicing_type = ServicingType::AbUpdate;
         assert!(os_config_requires_os_modifier(&ctx));
         ctx.spec.internal_params = serde_yaml::from_str("disableHostnameCarryOver: true").unwrap();
         assert!(!os_config_requires_os_modifier(&ctx));
+    }
 
-        // TODO(15251): Add case for sysexts and confexts
+    #[test]
+    fn test_runtime_update_os_config_requires_os_modifier() {
+        use super::runtime_update_os_config_requires_os_modifier;
+
+        // Manually create an empty EngineContext struct. This is the same as
+        // EngineContext::default(), but this way it will break if the struct
+        // changes in the future, forcing us to update this test.
+        let mk_ctx = || EngineContext {
+            spec: HostConfiguration {
+                os: Os {
+                    netplan: None,
+                    selinux: Selinux::default(),
+                    users: vec![],
+                    additional_files: vec![],
+                    hostname: None,
+                    modules: vec![],
+                    services: Services::default(),
+                    kernel_command_line: KernelCommandLine::default(),
+                    sysexts: vec![],
+                    confexts: vec![],
+                    uefi_fallback: UefiFallbackMode::default(),
+                },
+                ..Default::default()
+            },
+            spec_old: HostConfiguration {
+                os: Os {
+                    netplan: None,
+                    selinux: Selinux::default(),
+                    users: vec![],
+                    additional_files: vec![],
+                    hostname: None,
+                    modules: vec![],
+                    services: Services::default(),
+                    kernel_command_line: KernelCommandLine::default(),
+                    sysexts: vec![],
+                    confexts: vec![],
+                    uefi_fallback: UefiFallbackMode::default(),
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut ctx = mk_ctx();
+        assert!(!runtime_update_os_config_requires_os_modifier(&ctx));
+
+        ctx = mk_ctx();
+        ctx.spec.os.sysexts = vec![Extension {
+            url: Url::parse("https://example.com/test.raw").unwrap(),
+            sha384: Sha384Hash::from("a".repeat(96)),
+            path: Some(PathBuf::from("/var/lib/extensions/test.raw")),
+        }];
+        ctx.spec_old.os.sysexts = vec![Extension {
+            url: Url::parse("https://example.com/test.raw").unwrap(),
+            sha384: Sha384Hash::from("a".repeat(96)),
+            path: Some(PathBuf::from("/var/lib/extensions/test.raw")),
+        }];
+        // No change to the sysexts so OS Modifier not required
+        assert!(!runtime_update_os_config_requires_os_modifier(&ctx));
+
+        ctx = mk_ctx();
+        ctx.spec_old.os.sysexts = vec![Extension {
+            url: Url::parse("https://example.com/test.raw").unwrap(),
+            sha384: Sha384Hash::from("a".repeat(96)),
+            path: Some(PathBuf::from("/var/lib/extensions/test.raw")),
+        }];
+        // Sysext removed in new spec so OS Modifier is not required
+        assert!(!runtime_update_os_config_requires_os_modifier(&ctx));
+
+        ctx.spec.os.sysexts = vec![Extension {
+            url: Url::parse("https://example.com/test.raw").unwrap(),
+            sha384: Sha384Hash::from("a".repeat(96)),
+            path: Some(PathBuf::from("/var/lib/extensions/test.raw")),
+        }];
+        ctx.spec_old.os.sysexts = vec![];
+        // Sysexts newly added so OS Modifier is required
+        assert!(runtime_update_os_config_requires_os_modifier(&ctx));
     }
 
     #[test]
