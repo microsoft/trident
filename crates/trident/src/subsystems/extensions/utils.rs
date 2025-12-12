@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{ensure, Context, Error};
 
@@ -75,12 +78,14 @@ impl ExtensionsSubsystem {
 }
 
 fn extensions_match(internal_exts: &[&ExtensionData], hc_exts: &[Extension]) -> bool {
-    internal_exts.len() == hc_exts.len()
-        && internal_exts.iter().all(|internal_ext| {
-            hc_exts
-                .iter()
-                .any(|hc_ext| hc_ext.sha384 == internal_ext.sha384)
-        })
+    if internal_exts.len() == hc_exts.len() {
+        return false;
+    }
+
+    let hc_hashes: HashSet<_> = hc_exts.iter().map(|e| &e.sha384).collect();
+    internal_exts
+        .iter()
+        .all(|ext| hc_hashes.contains(&ext.sha384))
 }
 
 /// Mounts the extension image.
