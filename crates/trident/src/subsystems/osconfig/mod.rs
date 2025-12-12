@@ -31,31 +31,35 @@ const SYSTEMD_SYSEXT: &str = "systemd-sysext";
 /// SystemD service for merging confexts.
 const SYSTEMD_CONFEXT: &str = "systemd-confext";
 
-/// Returns whether the given OS configuration requires the os-modifier binary
-/// to be present on an A/B update or clean install.
-fn os_config_requires_os_modifier(ctx: &EngineContext) -> bool {
-    let os_config = &ctx.spec.os;
-    !os_config.users.is_empty()
-        || os_config.hostname.is_some()
-        || !os_config.modules.is_empty()
-        || !os_config.services.enable.is_empty()
-        || !os_config.services.disable.is_empty()
-        || !os_config.kernel_command_line.extra_command_line.is_empty()
-        || !os_config.sysexts.is_empty()
-        || !os_config.confexts.is_empty()
-        || should_carry_over_hostname(ctx)
-}
-
-/// Returns whether the given OS configuration requires the os-modifier binary
-/// to be present on a runtime update.
-fn runtime_update_os_config_requires_os_modifier(ctx: &EngineContext) -> bool {
+/// Returns whether the given OS configuration requires changes to be made to
+/// the OS.
+fn os_changes_required(ctx: &EngineContext) -> bool {
     let new_os_config = &ctx.spec.os;
     let old_os_config = &ctx.spec_old.os;
-    // If sysexts or confexts are newly configured (i.e. they were not
-    // previously specified in the old Host Configuration), we should enable
-    // systemd-sysext or systemd-confext with OS Modifier.
-    (!new_os_config.sysexts.is_empty() && old_os_config.sysexts.is_empty())
-        || (!new_os_config.confexts.is_empty() && old_os_config.confexts.is_empty())
+    match ctx.servicing_type {
+        ServicingType::CleanInstall | ServicingType::AbUpdate => {
+            !new_os_config.users.is_empty()
+                || new_os_config.hostname.is_some()
+                || !new_os_config.modules.is_empty()
+                || !new_os_config.services.enable.is_empty()
+                || !new_os_config.services.disable.is_empty()
+                || !new_os_config
+                    .kernel_command_line
+                    .extra_command_line
+                    .is_empty()
+                || !new_os_config.sysexts.is_empty()
+                || !new_os_config.confexts.is_empty()
+                || should_carry_over_hostname(ctx)
+        }
+        ServicingType::RuntimeUpdate => {
+            // If sysexts or confexts are newly configured (i.e. they were not
+            // previously specified in the old Host Configuration), we should enable
+            // systemd-sysext or systemd-confext with OS Modifier.
+            (!new_os_config.sysexts.is_empty() && old_os_config.sysexts.is_empty())
+                || (!new_os_config.confexts.is_empty() && old_os_config.confexts.is_empty())
+        }
+        ServicingType::NoActiveServicing => false,
+    }
 }
 
 /// Returns whether the given MOS configuration requires the os-modifier binary to be present.
@@ -116,7 +120,7 @@ impl Subsystem for OsConfigSubsystem {
 
     fn validate_host_config(&self, ctx: &EngineContext) -> Result<(), TridentError> {
         // If the os-modifier binary is required but not present, return an error.
-        if os_config_requires_os_modifier(ctx) && !Path::new(OS_MODIFIER_BINARY_PATH).exists() {
+        if os_changes_required(ctx) && !Path::new(OS_MODIFIER_BINARY_PATH).exists() {
             return Err(TridentError::new(
                 ExecutionEnvironmentMisconfigurationError::FindOSModifierBinary {
                     binary_path: OS_MODIFIER_BINARY_PATH.to_string(),
@@ -161,14 +165,10 @@ impl Subsystem for OsConfigSubsystem {
         }
 
         match ctx.servicing_type {
-            ServicingType::AbUpdate | ServicingType::CleanInstall
-                if os_config_requires_os_modifier(ctx) =>
-            {
+            ServicingType::AbUpdate | ServicingType::CleanInstall if os_changes_required(ctx) => {
                 self.configure_for_reboot(ctx)
             }
-            ServicingType::NoActiveServicing
-                if runtime_update_os_config_requires_os_modifier(ctx) =>
-            {
+            ServicingType::RuntimeUpdate if os_changes_required(ctx) => {
                 self.configure_runtime_update(ctx)
             }
             _ => {
@@ -388,13 +388,14 @@ mod tests {
     use crate::engine::EngineContext;
 
     #[test]
-    fn test_os_config_requires_os_modifier() {
-        use super::os_config_requires_os_modifier;
+    fn test_os_changes_required_reboot() {
+        use super::os_changes_required;
 
         // Manually create an empty EngineContext struct. This is the same as
         // EngineContext::default(), but this way it will break if the struct
         // changes in the future, forcing us to update this test.
         let mk_ctx = || EngineContext {
+            servicing_type: ServicingType::CleanInstall,
             spec: HostConfiguration {
                 os: Os {
                     netplan: None,
@@ -414,38 +415,38 @@ mod tests {
             ..Default::default()
         };
         let mut ctx = mk_ctx();
-        assert!(!os_config_requires_os_modifier(&ctx));
+        assert!(!os_changes_required(&ctx));
 
         ctx.spec.os.users.push(User {
             name: "test".to_string(),
             password: Password::Locked,
             ..Default::default()
         });
-        assert!(os_config_requires_os_modifier(&ctx));
+        assert!(os_changes_required(&ctx));
 
         ctx = mk_ctx();
         ctx.spec.os.hostname = Some("test".to_string());
-        assert!(os_config_requires_os_modifier(&ctx));
+        assert!(os_changes_required(&ctx));
 
         ctx = mk_ctx();
         ctx.spec.os.modules.push(Module {
             name: "test".to_string(),
             ..Default::default()
         });
-        assert!(os_config_requires_os_modifier(&ctx));
+        assert!(os_changes_required(&ctx));
 
         ctx = mk_ctx();
         ctx.spec.os.services = Services {
             enable: vec!["enabled-test".to_string()],
             disable: vec!["disabled-test".to_string()],
         };
-        assert!(os_config_requires_os_modifier(&ctx));
+        assert!(os_changes_required(&ctx));
 
         ctx = mk_ctx();
         ctx.spec.os.kernel_command_line = KernelCommandLine {
             extra_command_line: vec!["test".to_string()],
         };
-        assert!(os_config_requires_os_modifier(&ctx));
+        assert!(os_changes_required(&ctx));
 
         ctx = mk_ctx();
         ctx.spec.os.sysexts = vec![Extension {
@@ -453,7 +454,7 @@ mod tests {
             sha384: Sha384Hash::from("a".repeat(96)),
             path: Some(PathBuf::from("/var/lib/extensions/test.raw")),
         }];
-        assert!(os_config_requires_os_modifier(&ctx));
+        assert!(os_changes_required(&ctx));
 
         ctx = mk_ctx();
         ctx.spec.os.confexts = vec![Extension {
@@ -461,23 +462,24 @@ mod tests {
             sha384: Sha384Hash::from("a".repeat(96)),
             path: Some(PathBuf::from("/var/lib/confexts/test.raw")),
         }];
-        assert!(os_config_requires_os_modifier(&ctx));
+        assert!(os_changes_required(&ctx));
 
         ctx = mk_ctx();
         ctx.servicing_type = ServicingType::AbUpdate;
-        assert!(os_config_requires_os_modifier(&ctx));
+        assert!(os_changes_required(&ctx));
         ctx.spec.internal_params = serde_yaml::from_str("disableHostnameCarryOver: true").unwrap();
-        assert!(!os_config_requires_os_modifier(&ctx));
+        assert!(!os_changes_required(&ctx));
     }
 
     #[test]
-    fn test_runtime_update_os_config_requires_os_modifier() {
-        use super::runtime_update_os_config_requires_os_modifier;
+    fn test_os_changes_required_runtime_update_sysexts() {
+        use super::os_changes_required;
 
         // Manually create an empty EngineContext struct. This is the same as
         // EngineContext::default(), but this way it will break if the struct
         // changes in the future, forcing us to update this test.
         let mk_ctx = || EngineContext {
+            servicing_type: ServicingType::RuntimeUpdate,
             spec: HostConfiguration {
                 os: Os {
                     netplan: None,
@@ -513,7 +515,7 @@ mod tests {
             ..Default::default()
         };
         let mut ctx = mk_ctx();
-        assert!(!runtime_update_os_config_requires_os_modifier(&ctx));
+        assert!(!os_changes_required(&ctx));
 
         ctx = mk_ctx();
         ctx.spec.os.sysexts = vec![Extension {
@@ -527,7 +529,7 @@ mod tests {
             path: Some(PathBuf::from("/var/lib/extensions/test.raw")),
         }];
         // No change to the sysexts so OS Modifier not required
-        assert!(!runtime_update_os_config_requires_os_modifier(&ctx));
+        assert!(!os_changes_required(&ctx));
 
         ctx = mk_ctx();
         ctx.spec_old.os.sysexts = vec![Extension {
@@ -536,7 +538,7 @@ mod tests {
             path: Some(PathBuf::from("/var/lib/extensions/test.raw")),
         }];
         // Sysext removed in new spec so OS Modifier is not required
-        assert!(!runtime_update_os_config_requires_os_modifier(&ctx));
+        assert!(!os_changes_required(&ctx));
 
         ctx.spec.os.sysexts = vec![Extension {
             url: Url::parse("https://example.com/test.raw").unwrap(),
@@ -545,7 +547,86 @@ mod tests {
         }];
         ctx.spec_old.os.sysexts = vec![];
         // Sysexts newly added so OS Modifier is required
-        assert!(runtime_update_os_config_requires_os_modifier(&ctx));
+        assert!(os_changes_required(&ctx));
+    }
+
+    #[test]
+    fn test_os_changes_required_runtime_update_confexts() {
+        use super::os_changes_required;
+
+        // Manually create an empty EngineContext struct. This is the same as
+        // EngineContext::default(), but this way it will break if the struct
+        // changes in the future, forcing us to update this test.
+        let mk_ctx = || EngineContext {
+            servicing_type: ServicingType::RuntimeUpdate,
+            spec: HostConfiguration {
+                os: Os {
+                    netplan: None,
+                    selinux: Selinux::default(),
+                    users: vec![],
+                    additional_files: vec![],
+                    hostname: None,
+                    modules: vec![],
+                    services: Services::default(),
+                    kernel_command_line: KernelCommandLine::default(),
+                    sysexts: vec![],
+                    confexts: vec![],
+                    uefi_fallback: UefiFallbackMode::default(),
+                },
+                ..Default::default()
+            },
+            spec_old: HostConfiguration {
+                os: Os {
+                    netplan: None,
+                    selinux: Selinux::default(),
+                    users: vec![],
+                    additional_files: vec![],
+                    hostname: None,
+                    modules: vec![],
+                    services: Services::default(),
+                    kernel_command_line: KernelCommandLine::default(),
+                    sysexts: vec![],
+                    confexts: vec![],
+                    uefi_fallback: UefiFallbackMode::default(),
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut ctx = mk_ctx();
+        assert!(!os_changes_required(&ctx));
+
+        ctx = mk_ctx();
+        ctx.spec.os.confexts = vec![Extension {
+            url: Url::parse("https://example.com/test.raw").unwrap(),
+            sha384: Sha384Hash::from("a".repeat(96)),
+            path: Some(PathBuf::from("/var/lib/confexts/test.raw")),
+        }];
+        ctx.spec_old.os.confexts = vec![Extension {
+            url: Url::parse("https://example.com/test.raw").unwrap(),
+            sha384: Sha384Hash::from("a".repeat(96)),
+            path: Some(PathBuf::from("/var/lib/confexts/test.raw")),
+        }];
+        // No change to the confexts so OS Modifier not required
+        assert!(!os_changes_required(&ctx));
+
+        ctx = mk_ctx();
+        ctx.spec_old.os.confexts = vec![Extension {
+            url: Url::parse("https://example.com/test.raw").unwrap(),
+            sha384: Sha384Hash::from("a".repeat(96)),
+            path: Some(PathBuf::from("/var/lib/confexts/test.raw")),
+        }];
+        // Sysext removed in new spec so OS Modifier is not required
+        assert!(!os_changes_required(&ctx));
+
+        ctx.spec.os.confexts = vec![Extension {
+            url: Url::parse("https://example.com/test.raw").unwrap(),
+            sha384: Sha384Hash::from("a".repeat(96)),
+            path: Some(PathBuf::from("/var/lib/confexts/test.raw")),
+        }];
+        ctx.spec_old.os.confexts = vec![];
+        // confexts newly added so OS Modifier is required
+        assert!(os_changes_required(&ctx));
     }
 
     #[test]
@@ -601,7 +682,7 @@ mod functional_test {
             is_uki: Some(false),
             ..Default::default()
         };
-        assert!(os_config_requires_os_modifier(&ctx));
+        assert!(os_changes_required(&ctx));
 
         fs::write(OS_MODIFIER_NEWROOT_PATH, b"").unwrap();
         let _mount = MountBuilder::default()
@@ -642,7 +723,7 @@ mod functional_test {
             is_uki: Some(false),
             ..Default::default()
         };
-        assert!(os_config_requires_os_modifier(&ctx));
+        assert!(os_changes_required(&ctx));
 
         fs::write(OS_MODIFIER_NEWROOT_PATH, b"").unwrap();
         let _mount = MountBuilder::default()
