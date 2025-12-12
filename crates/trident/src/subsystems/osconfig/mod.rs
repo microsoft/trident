@@ -155,15 +155,6 @@ impl Subsystem for OsConfigSubsystem {
 
     #[tracing::instrument(name = "osconfig_configuration", skip_all)]
     fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
-        if ctx.servicing_type == ServicingType::NoActiveServicing {
-            debug!(
-                "Skipping step 'Configure' for subsystem '{}' during servicing type '{:?}'",
-                self.name(),
-                ctx.servicing_type
-            );
-            return Ok(());
-        }
-
         if ctx.is_uki()? && ctx.storage_graph.root_fs_is_verity() {
             error!("Skipping OS configuration changes requested in Host Configuration because UKI root-verity is in use.");
             return Ok(());
