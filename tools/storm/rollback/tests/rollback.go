@@ -491,7 +491,7 @@ func validateRollbacksAvailable(
 			}
 		}
 
-		rollbackShowValidationOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo trident rollback --check")
+		rollbackShowValidationOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "trident rollback --check")
 		if err != nil {
 			return fmt.Errorf("'rollback --check' failed to from VM: %v", err)
 		}

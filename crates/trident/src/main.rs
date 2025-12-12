@@ -7,8 +7,8 @@ use log::{error, info, LevelFilter, Log};
 use trident::{
     agentconfig::AgentConfig,
     cli::{self, Cli, Commands, GetKind},
-    offline_init, validation, BackgroundLog, DataStore, ExitKind, LogFilter, LogForwarder,
-    Logstream, MultiLogger, TraceStream, Trident, TRIDENT_BACKGROUND_LOG_PATH,
+    manual_rollback, offline_init, validation, BackgroundLog, DataStore, ExitKind, LogFilter,
+    LogForwarder, Logstream, MultiLogger, TraceStream, Trident, TRIDENT_BACKGROUND_LOG_PATH,
 };
 use trident_api::{
     config::HostConfigurationSource,
@@ -54,6 +54,19 @@ fn run_trident(
             return Trident::get(AgentConfig::load()?.datastore_path(), outfile, *kind)
                 .message("Failed to retrieve Host Status")
                 .map(|()| ExitKind::Done);
+        }
+
+        // Handle manual rollback check here so root is not required for --check
+        Commands::Rollback {
+            check, ab, runtime, ..
+        } => {
+            if *check {
+                let datastore = DataStore::open_or_create(&load_agent_config()?.datastore)
+                    .message("Failed to open datastore")?;
+                return manual_rollback::check_rollback(&datastore, *ab, *runtime)
+                    .message("Failed to check manual rollback availability")
+                    .map(|()| ExitKind::Done);
+            }
         }
 
         Commands::StartNetwork { config } => {
@@ -178,14 +191,12 @@ fn run_trident(
                     } => trident.update(&mut datastore, cli::to_operations(allowed_operations)),
                     Commands::Commit { .. } => trident.commit(&mut datastore),
                     Commands::Rollback {
-                        check,
                         runtime,
                         ab,
                         ref allowed_operations,
                         ..
                     } => trident.rollback(
                         &mut datastore,
-                        check,
                         runtime,
                         ab,
                         cli::to_operations(allowed_operations),
