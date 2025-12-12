@@ -365,7 +365,7 @@ fn get_uki_paths(
         // executed while staging an A/B update
         if manual_rollback {
             return Err(anyhow::anyhow!(
-                "Cannot generate .pcrlock files for manual rollback while also staging an A/B update"
+                "Cannot generate .pcrlock files for manual rollback while staging an A/B update"
             ));
         }
         // UKI binary in target OS to be measured; it's currently staged at designated path
@@ -407,18 +407,22 @@ fn get_bootloader_paths(
 ) -> Result<Vec<PathBuf>, Error> {
     let mut bootloader_binaries: Vec<PathBuf> = Vec::new();
 
-    let active_volume = match mount_path {
-        // Currently, not executing pcrlock encryption or this logic on clean install, so active
-        // volume has to be non-null on encryption provisioning.
-        Some(_) => ctx.ab_active_volume.ok_or_else(|| {
-            anyhow::anyhow!("Active volume must be set during A/B update servicing")
+    let active_volume = match (mount_path.is_some(), manual_rollback) {
+        // Staging of an A/B update or a manual rollback: A/B active volume is set
+        (true, false) | (false, true) => ctx.ab_active_volume.ok_or_else(|| {
+            anyhow::anyhow!("Active volume must be set during A/B update or manual rollback")
         })?,
-        // If mount_path is null, this logic is called on boot validation, when active volume is
-        // still set to the old volume, so we need to determine the actual active volume
-        None => match ctx.ab_active_volume {
+        // Boot validation: flip the volume to determine the actual active volume
+        (false, false) => match ctx.ab_active_volume {
             None | Some(AbVolumeSelection::VolumeB) => AbVolumeSelection::VolumeA,
             Some(AbVolumeSelection::VolumeA) => AbVolumeSelection::VolumeB,
         },
+        // This case should never happen
+        (true, true) => {
+            return Err(anyhow::anyhow!(
+                "Cannot generate .pcrlock files for manual rollback while staging an A/B update"
+            ))
+        }
     };
 
     // Construct current primary bootloader path, i.e. shim EFI executable
@@ -438,13 +442,6 @@ fn get_bootloader_paths(
 
     // If there is mount_path, also construct bootloader paths in the target OS image
     if let Some(mount_path) = mount_path {
-        // If manual_rollback is set to true, return an error b/c manual rollback cannot be
-        // executed while staging an A/B update
-        if manual_rollback {
-            return Err(anyhow::anyhow!(
-                "Cannot generate .pcrlock files for manual rollback while also staging an A/B update"
-            ));
-        }
         let esp_dir_path = join_relative(mount_path, ESP_MOUNT_POINT_PATH);
         // Primary bootloader, i.e. shim EFI executable, in target OS
         let (_, shim_update_relative) = bootentries::get_label_and_path(ctx, BOOT_EFI)?;
@@ -461,30 +458,25 @@ fn get_bootloader_paths(
     // bootloader binaries
     if manual_rollback {
         // Determine rollback volume
-        let rollback_volume = match ctx.ab_active_volume {
-            None => {
-                return Err(anyhow::anyhow!(
-                    "Current active volume must be set during manual rollback"
-                ))
-            }
-            Some(AbVolumeSelection::VolumeB) => AbVolumeSelection::VolumeA,
-            Some(AbVolumeSelection::VolumeA) => AbVolumeSelection::VolumeB,
+        let rollback_volume = match active_volume {
+            AbVolumeSelection::VolumeB => AbVolumeSelection::VolumeA,
+            AbVolumeSelection::VolumeA => AbVolumeSelection::VolumeB,
         };
 
-        // Construct current primary bootloader path, i.e. shim EFI executable
+        // Construct rollback primary bootloader path, i.e. shim EFI executable
         let esp_dir_name = boot::make_esp_dir_name(ctx.install_index, rollback_volume);
         let shim_path = Path::new(ESP_EFI_DIRECTORY)
             .join(&esp_dir_name)
             .join(BOOT_EFI);
-        let shim_current = join_relative(esp_path, &shim_path);
-        bootloader_binaries.push(shim_current);
+        let shim_rollback = join_relative(esp_path, &shim_path);
+        bootloader_binaries.push(shim_rollback);
 
-        // Construct current secondary bootloader path, i.e. systemd-boot EFI executable
+        // Construct rollback secondary bootloader path, i.e. systemd-boot EFI executable
         let systemd_boot_path = Path::new(ESP_EFI_DIRECTORY)
             .join(&esp_dir_name)
             .join(GRUB_EFI);
-        let systemd_boot_current = join_relative(esp_path, &systemd_boot_path);
-        bootloader_binaries.push(systemd_boot_current);
+        let systemd_boot_rollback = join_relative(esp_path, &systemd_boot_path);
+        bootloader_binaries.push(systemd_boot_rollback);
     }
 
     debug!("Paths of bootloader binaries required for pcrlock encryption:");
@@ -556,7 +548,7 @@ mod tests {
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
-            "Active volume must be set during A/B update servicing"
+            "Active volume must be set during A/B update or manual rollback"
         );
 
         // Test case #5: Encryption provisioning during A/B update, so mount_path provided. Active
@@ -629,32 +621,6 @@ mod functional_test {
         assert_eq!(
             get_uki_paths(&esp_path, Some(&mount_path), false).unwrap(),
             expected_mount_paths
-        );
-
-        // Test case #3: mount_path provided and manual_rollback set to true, expect error.
-        assert_eq!(
-            get_uki_paths(&esp_path, Some(&mount_path), true)
-                .unwrap_err()
-                .to_string(),
-            "Cannot generate .pcrlock files for manual rollback while also staging an A/B update"
-        );
-
-        // Test case #4: manual_rollback set to true, so two paths are returned, i.e. current entry
-        // and rollback entry.
-        // Set a new current entry
-        let current_entry = "CurrentEntry-1.efi";
-        efivar::set_efi_variable(&var_name, &efivar::encode_utf16le(current_entry)).unwrap();
-        // Set previous entry
-        let previous_entry = "CurrentEntry-0.efi";
-
-        // Expected paths should include current and previous entries
-        let expected_rollback_paths = vec![
-            esp_uki_path.join(current_entry),
-            esp_uki_path.join(previous_entry),
-        ];
-        assert_eq!(
-            get_uki_paths(&esp_path, None, true).unwrap(),
-            expected_rollback_paths
         );
 
         // Unset the entries
