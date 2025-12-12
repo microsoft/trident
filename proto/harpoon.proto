@@ -48,7 +48,7 @@ service TridentService {
   // Get the last provisioned configuration, if any.
   rpc GetCurrentConfig(GetConfigRequest) returns (GetConfigResponse);
 
-  // Get the active servicing configuration, if any.
+  // GetServicingConfig gets the active servicing configuration, if any.
   rpc GetServicingConfig(GetConfigRequest) returns (GetConfigResponse);
 
   // Get the last error encountered during the last servicing, if any.
