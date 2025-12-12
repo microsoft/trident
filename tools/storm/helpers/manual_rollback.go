@@ -2,11 +2,13 @@ package helpers
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	stormenv "tridenttools/storm/utils/env"
 	stormsshcheck "tridenttools/storm/utils/ssh/check"
 	stormsshclient "tridenttools/storm/utils/ssh/client"
 	stormsshconfig "tridenttools/storm/utils/ssh/config"
+	stormsftp "tridenttools/storm/utils/ssh/sftp"
 	stormtrident "tridenttools/storm/utils/trident"
 
 	"github.com/microsoft/storm"
@@ -73,10 +75,17 @@ func (h *ManualRollbackHelper) rollback(tc storm.TestCase) error {
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal available rollbacks: %w", err)
 	}
-	if len(availableRollbacks) != 1 {
-		return fmt.Errorf("available rollbacks mismatch: expected 1, got %d", len(availableRollbacks))
+	logrus.Infof("Available rollbacks: '%d'", len(availableRollbacks))
+
+	tmpRollbackChainFile, err := os.CreateTemp("", "rollback-chain")
+	if err != nil {
+		return fmt.Errorf("failed to create local rollback chain file: %w", err)
 	}
-	logrus.Infof("Available rollbacks confirmed, found: '%d'", len(availableRollbacks))
+	os.WriteFile(tmpRollbackChainFile.Name(), []byte(output.Stdout), 0644)
+	tc.ArtifactBroker().PublishLogFile("rollback_chain.yaml", tmpRollbackChainFile.Name())
+
+	// Get pre-rollback datastore
+	copyRemoteFileToArtifacts(client, "/var/lib/trident/datastore.sqlite", "pre-rollback-datastore.sqlite", tc)
 
 	// Execute rollback
 	out, err := stormtrident.InvokeTrident(h.args.Env, client, h.args.EnvVars, "rollback -v trace --allowed-operations stage")
@@ -88,14 +97,8 @@ func (h *ManualRollbackHelper) rollback(tc storm.TestCase) error {
 		logrus.Errorf("Trident 'rollback --allowed-operations stage' stderr:\n%s", out.Stderr)
 		return err
 	}
-	logrus.Infof("Trident 'rollback --allowed-operations stage' output:\n%s", out.Stdout)
-
 	// Get trident-full.log contents after rollback staging
-	contents, err := stormsshclient.CommandOutput(client, "sudo cat /var/log/trident-full.log")
-	if err != nil {
-		return fmt.Errorf("failed to read new Host Config file: %w", err)
-	}
-	logrus.Debugf("Trident 'rollback stage' background log contents:\n%s", contents)
+	copyRemoteFileToArtifacts(client, "/var/log/trident-full.log", "rollback-staging.log", tc)
 
 	out, err = stormtrident.InvokeTrident(h.args.Env, client, h.args.EnvVars, "rollback -v trace --allowed-operations finalize")
 	if err != nil {
@@ -137,5 +140,14 @@ func (h *ManualRollbackHelper) rollback(tc storm.TestCase) error {
 		return err
 	}
 
+	return nil
+}
+
+func copyRemoteFileToArtifacts(client *ssh.Client, remotePath string, artifactName string, tc storm.TestCase) error {
+	localPath, err := stormsftp.DownloadRemoteFile(client, remotePath, "")
+	if err != nil {
+		return fmt.Errorf("failed to download remote file (%s): %w", remotePath, err)
+	}
+	tc.ArtifactBroker().PublishLogFile(artifactName, localPath)
 	return nil
 }
