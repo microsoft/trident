@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use log::{debug, info, warn};
+use log::{debug, info, trace, warn};
 #[cfg(feature = "grpc-dangerous")]
 use tokio::sync::mpsc;
 
@@ -82,13 +82,19 @@ pub(crate) fn stage_update(
 /// Finalizes a runtime update. Takes in 3-4 arguments:
 /// - subsystems: A mutable reference to the list of subsystems.
 /// - state: A mutable reference to the DataStore.
+/// - reverse_specs: A boolean indicating whether spec and spec_old in the
+///   EngineContext should be reversed. This is used for auto-rollback of
+///   runtime updates.
+/// - run_health_checks: A boolean indicating whether health checks should be
+///   performed before exiting.
 /// - update_start_time: Optional, the time at which the update staging began.
 /// - sender: Optional mutable reference to the gRPC sender.
 #[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", ServicingType::RuntimeUpdate)))]
 pub(crate) fn finalize_update(
     subsystems: &mut [Box<dyn Subsystem>],
     state: &mut DataStore,
-    rollback: bool,
+    reverse_specs: bool,
+    run_health_checks: bool,
     update_start_time: Option<Instant>,
     #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
@@ -96,12 +102,13 @@ pub(crate) fn finalize_update(
 ) -> Result<ExitKind, TridentError> {
     let target_spec;
     let old_spec;
-    if !rollback {
-        info!("Finalizing runtime update");
+    if !reverse_specs {
+        info!("Starting rollback of runtime update");
+        trace!("Reversing spec and spec_old");
         target_spec = state.host_status().spec.clone();
         old_spec = state.host_status().spec_old.clone();
     } else {
-        info!("Attempting auto-rollback of runtime update");
+        info!("Starting rollback of runtime update");
         target_spec = state.host_status().spec_old.clone();
         old_spec = state.host_status().spec.clone();
     }
@@ -140,7 +147,7 @@ pub(crate) fn finalize_update(
 
     // Run health checks if we are performing a runtime update (skip if we are
     // rolling back)
-    if !rollback {
+    if !run_health_checks {
         health::execute_health_checks(&ctx)?;
     }
 

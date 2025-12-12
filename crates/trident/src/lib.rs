@@ -619,6 +619,7 @@ impl Trident {
                                 &mut subsystems,
                                 datastore,
                                 false,
+                                true,
                                 None,
                                 #[cfg(feature = "grpc-dangerous")]
                                 sender,
@@ -631,6 +632,7 @@ impl Trident {
                                     &mut subsystems,
                                     datastore,
                                     true,
+                                    false,
                                     None,
                                     #[cfg(feature = "grpc-dangerous")]
                                     sender,

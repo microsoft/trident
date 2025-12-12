@@ -169,6 +169,7 @@ pub(crate) fn update(
                     &mut subsystems,
                     state,
                     false,
+                    true,
                     Some(update_start_time),
                     #[cfg(feature = "grpc-dangerous")]
                     sender,
@@ -181,6 +182,7 @@ pub(crate) fn update(
                         &mut subsystems,
                         state,
                         true,
+                        false,
                         Some(update_start_time),
                         #[cfg(feature = "grpc-dangerous")]
                         sender,
