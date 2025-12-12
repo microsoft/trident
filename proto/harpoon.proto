@@ -6,74 +6,79 @@ import "google/protobuf/timestamp.proto";
 
 // TridentService provides methods for managing Trident servicing operations
 service TridentService {
-  // Install performs a Trident installation operation.
+  // Install performs an OS installation.
   rpc Install(ServicingRequest) returns (stream ServicingResponse);
 
-  // InstallStage perform the stage part of a Trident installation operation.
-  rpc InstallStage(StagingRequest) returns (stream ServicingResponse);
+  // InstallStage performs the stage operation of an OS installation.
+  rpc InstallStage(StageRequest) returns (stream ServicingResponse);
 
-  // InstallFinalize performs the finalize part of a Trident installation
-  // operation.
+  // InstallFinalize performs the finalize operation of an OS installation.
   rpc InstallFinalize(FinalizeRequest) returns (stream ServicingResponse);
 
-  // Update performs a Trident update operation.
+  // Update performs an OS update.
   rpc Update(ServicingRequest) returns (stream ServicingResponse);
 
-  // UpdateStage performs the stage part of a Trident update operation.
-  rpc UpdateStage(StagingRequest) returns (stream ServicingResponse);
+  // UpdateStage performs the stage operation of an OS update.
+  rpc UpdateStage(StageRequest) returns (stream ServicingResponse);
 
-  // UpdateFinalize performs the finalize part of a Trident update operation.
+  // UpdateFinalize performs the finalize operation of an OS update.
   rpc UpdateFinalize(FinalizeRequest) returns (stream ServicingResponse);
 
-  // Check root validates that the host booted using the expected root
+  // CheckRoot validates that the host booted using the expected root
   // filesystem.
   rpc CheckRoot(CheckRootRequest) returns (stream ServicingResponse);
 
-  // Attempts to commit a finalized update.
+  // CommitUpdate attempts to commit a finalized update.
   rpc CommitUpdate(CommitRequest) returns (stream ServicingResponse);
 
-  // Stream image to the target device.
+  // StreamImage streams an OS image to the target device.
   rpc StreamImage(StreamImageRequest) returns (stream ServicingResponse);
 
   // RebuildRaid performs a RAID rebuild operation to restore a degraded RAID
   // array on new disks.
   rpc RebuildRaid(RebuildRaidRequest) returns (stream ServicingResponse);
 
-  // Validates a Host Configuration file.
-  rpc ValidateHostConfig(ValidateRequest) returns (ValidateResponse);
+  // ValidateHostConfiguration performs static validation of a Host Configuration.
+  rpc ValidateHostConfiguration(ValidateHostConfigurationRequest) returns (ValidateHostConfigurationResponse);
 
-  // Returns the servicing type required to apply the given Host Configuration.
-  rpc GetServicingType(ServicingTypeRequest) returns (ServicingTypeResponse);
+  // GetServicingType returns the servicing type that would be required to apply
+  // the given Host Configuration.
+  rpc GetRequiredServicingType(GetRequiredServicingTypeRequest) returns (GetRequiredServicingTypeResponse);
 
-  // Get the last provisioned configuration, if any.
-  rpc GetCurrentConfig(GetConfigRequest) returns (GetConfigResponse);
+  // GetProvisionedConfig returns the currently provisioned configuration, if any.
+  rpc GetProvisionedConfig(GetConfigRequest) returns (GetConfigResponse);
 
-  // GetServicingConfig gets the active servicing configuration, if any.
+  // GetServicingConfig returns the active servicing configuration, if any.
   rpc GetServicingConfig(GetConfigRequest) returns (GetConfigResponse);
 
-  // Get the last error encountered during the last servicing, if any.
+  // GetLastError returns the last error encountered during the last servicing,
+  // if any.
   rpc GetLastError(GetLastErrorRequest) returns (GetLastErrorResponse);
 
-  // Get the current servicing state.
+  // GetServicingState returns the current servicing state.
   rpc GetServicingState(GetServicingStateRequest) returns (GetServicingStateResponse);
 
-  // Get the currently active volume (A or B).
+  // GetActiveVolume returns the currently active volume (A or B).
   rpc GetActiveVolume(GetActiveVolumeRequest) returns (GetActiveVolumeResponse);
 }
 
-message StagingRequest {
+message StageRequest {
   // The target Host Configuration.
   string config = 1;
 }
 
 message FinalizeRequest {
-  // Indicates if the orchestrator handles the reboot process.
+  // Indicates whether the orchestrator will handle any required reboots of the
+  // system. When set to false, Trident will perform any necessary reboots
+  // itself. When set to true, Trident will complete the servicing operation
+  // without rebooting, and will expect the orchestrator to reboot the system
+  // immediately after finalization, when requested.
   bool orchestrator_handles_reboot = 1;
 }
 
 message ServicingRequest {
   // The staging parameters for the servicing operation.
-  StagingRequest  staging  = 1;
+  StageRequest    stage    = 1;
   // The finalize parameters for the servicing operation.
   FinalizeRequest finalize = 2;
 }
@@ -170,12 +175,12 @@ message GetActiveVolumeResponse {
   ABVolumeState active_volume = 1;
 }
 
-message ValidateRequest {
-  // The configuration to be validated.
+message ValidateHostConfigurationRequest {
+  // The Host Configuration to be validated.
   string config = 1;
 }
 
-message ValidateResponse {
+message ValidateHostConfigurationResponse {
   // Indicates if the configuration is valid.
   bool            valid   = 1;
   // Message providing details about validation errors.
@@ -183,7 +188,7 @@ message ValidateResponse {
 }
 
 enum ServicingType {
-  // No servicing is currently in progress nor required.
+  // No servicing is currently in progress or not required.
   NO_ACTIVE_SERVICING = 0;
   // Update that can be applied without necessitating a reboot.
   RUNTIME_UPDATE      = 1;
@@ -193,12 +198,12 @@ enum ServicingType {
   CLEAN_INSTALL       = 3;
 }
 
-message ServicingTypeRequest {
+message GetRequiredServicingTypeRequest {
   // The target Host Configuration.
   string config = 1;
 }
 
-message ServicingTypeResponse {
+message GetRequiredServicingTypeResponse {
   // The type of servicing required.
   ServicingType servicing_type = 1;
 }
@@ -213,26 +218,26 @@ message RebuildRaidRequest {
 }
 
 message StreamImageRequest {
-  // Path to the image file to be streamed
+  // Path to the image file to be streamed.
   string image_path = 1;
-  // Hash of the image file for integrity verification
+  // Hash of the image file for integrity verification.
   string image_hash = 2;
 }
 
 message TridentError {
-  // Error kind
+  // Error kind.
   string       kind     = 1;
-  // Error subkind
+  // Error subkind.
   string       subkind  = 2;
-  // Error message
+  // Error message.
   string       message  = 3;
-  // Location in the file where the error occurred
+  // Location in the file where the error occurred.
   FileLocation location = 4;
 }
 
 message FileLocation {
-  // Path to the file
+  // Path to the file.
   string path = 1;
-  // Line number in the file
+  // Line number in the file.
   uint32 line = 2;
 }
