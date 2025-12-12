@@ -48,7 +48,7 @@ sudo rm artifacts/trident-vm-*-testimage.qcow2 artifacts/trident-vm-*-testimage.
 make artifacts/$TEST_IMAGE_NAME.cosi
 make artifacts/$TEST_IMAGE_NAME.qcow2
 
-SKIP_FLAGS="--skip-runtime-updates"
+SKIP_FLAGS=""
 if [ "$TEST_IMAGE_NAME" == "trident-vm-grub-verity-testimage" ]; then
   # skip extension testing
   SKIP_FLAGS="$SKIP_FLAGS --skip-extension-testing"

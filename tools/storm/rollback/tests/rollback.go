@@ -58,13 +58,6 @@ func RollbackTest(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 		return fmt.Errorf("failed to validate OS state after update: %w", err)
 	}
 
-	logrus.Tracef("Start file server (netlisten) on test runner")
-	fileServerStartedChannel := make(chan bool)
-	go stormnetlisten.StartNetListenAndWait(ctx, testConfig.FileServerPort, testConfig.ArtifactsDir, "logstream-full-rollback.log", fileServerStartedChannel)
-	logrus.Tracef("Waiting for file server (netlisten) to start")
-	<-fileServerStartedChannel
-	logrus.Tracef("File server (netlisten) started")
-
 	// Set up SSH proxy for file server on VM
 	{
 		logrus.Tracef("Setting up SSH proxy ports for file server on VM")
@@ -120,7 +113,7 @@ func RollbackTest(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 	// Perform A/B update and do validation
 	expectedVolume = getOtherVolume(expectedVolume)
 	expectedAvailableRollbacks = 1
-	err = doUpdateTest(testConfig, vmConfig, vmIP, hostConfig, netplanVersion, extensionVersion, expectedVolume, expectedAvailableRollbacks, true)
+	err = doUpdateTest(ctx, testConfig, vmConfig, vmIP, hostConfig, netplanVersion, extensionVersion, expectedVolume, expectedAvailableRollbacks, true)
 	if err != nil {
 		return fmt.Errorf("failed to perform first A/B update test: %w", err)
 	}
@@ -157,7 +150,7 @@ func RollbackTest(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 		}
 		// Perform runtime update and do validation
 		expectedAvailableRollbacks = 2
-		err = doUpdateTest(testConfig, vmConfig, vmIP, hostConfig, netplanVersion, extensionVersion, expectedVolume, expectedAvailableRollbacks, false)
+		err = doUpdateTest(ctx, testConfig, vmConfig, vmIP, hostConfig, netplanVersion, extensionVersion, expectedVolume, expectedAvailableRollbacks, false)
 		if err != nil {
 			return fmt.Errorf("failed to perform first runtime update test: %w", err)
 		}
@@ -172,7 +165,7 @@ func RollbackTest(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 		extensionVersion = -1
 		netplanVersion = -1
 		expectedAvailableRollbacks = 3
-		err = doUpdateTest(testConfig, vmConfig, vmIP, hostConfig, netplanVersion, extensionVersion, expectedVolume, expectedAvailableRollbacks, false)
+		err = doUpdateTest(ctx, testConfig, vmConfig, vmIP, hostConfig, netplanVersion, extensionVersion, expectedVolume, expectedAvailableRollbacks, false)
 		if err != nil {
 			return fmt.Errorf("failed to perform second runtime update test: %w", err)
 		}
@@ -186,7 +179,7 @@ func RollbackTest(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 			extensionVersion = 3
 			netplanVersion = 2
 			expectedAvailableRollbacks = 2
-			err = doRollbackTest(testConfig, vmConfig, vmIP, netplanVersion, extensionVersion, expectedVolume, expectedAvailableRollbacks, false, false, false)
+			err = doRollbackTest(ctx, testConfig, vmConfig, vmIP, netplanVersion, extensionVersion, expectedVolume, expectedAvailableRollbacks, false, false, false)
 			if err != nil {
 				return fmt.Errorf("failed to perform first rollback test: %w", err)
 			}
@@ -199,7 +192,7 @@ func RollbackTest(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 			extensionVersion = 2
 			netplanVersion = 1
 			expectedAvailableRollbacks = 1
-			err = doRollbackTest(testConfig, vmConfig, vmIP, netplanVersion, extensionVersion, expectedVolume, expectedAvailableRollbacks, false, true, false)
+			err = doRollbackTest(ctx, testConfig, vmConfig, vmIP, netplanVersion, extensionVersion, expectedVolume, expectedAvailableRollbacks, false, true, false)
 			if err != nil {
 				return fmt.Errorf("failed to perform second rollback test: %w", err)
 			}
@@ -216,7 +209,7 @@ func RollbackTest(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 		extensionVersion = 1
 		netplanVersion = -1
 		expectedAvailableRollbacks = 0
-		err = doRollbackTest(testConfig, vmConfig, vmIP, netplanVersion, extensionVersion, expectedVolume, expectedAvailableRollbacks, true, false, true)
+		err = doRollbackTest(ctx, testConfig, vmConfig, vmIP, netplanVersion, extensionVersion, expectedVolume, expectedAvailableRollbacks, true, false, true)
 		if err != nil {
 			return fmt.Errorf("failed to perform last rollback test: %w", err)
 		}
@@ -306,6 +299,7 @@ func validateOs(
 }
 
 func doUpdateTest(
+	ctx context.Context,
 	testConfig stormrollbackconfig.TestConfig,
 	vmConfig stormvmconfig.AllVMConfig,
 	vmIP string,
@@ -316,6 +310,16 @@ func doUpdateTest(
 	expectedAvailableRollbacks int,
 	expectReboot bool,
 ) error {
+	// Kill any running update servers
+	stormnetlisten.KillUpdateServer(testConfig.FileServerPort)
+
+	logrus.Tracef("Start file server (netlisten) on test runner")
+	fileServerStartedChannel := make(chan bool)
+	go stormnetlisten.StartNetListenAndWait(ctx, testConfig.FileServerPort, testConfig.ArtifactsDir, "logstream-full-rollback.log", fileServerStartedChannel)
+	logrus.Tracef("Waiting for file server (netlisten) to start")
+	<-fileServerStartedChannel
+	logrus.Tracef("File server (netlisten) started")
+
 	// Put Host Configuration on VM
 	vmHostConfigPath := "/tmp/host_config.yaml"
 
@@ -384,6 +388,7 @@ func doUpdateTest(
 }
 
 func doRollbackTest(
+	ctx context.Context,
 	testConfig stormrollbackconfig.TestConfig,
 	vmConfig stormvmconfig.AllVMConfig,
 	vmIP string,
@@ -395,6 +400,16 @@ func doRollbackTest(
 	expectedNextRollbackNeedsReboot bool,
 	needManualCommit bool,
 ) error {
+	// Kill any running update servers
+	stormnetlisten.KillUpdateServer(testConfig.FileServerPort)
+
+	logrus.Tracef("Start file server (netlisten) on test runner")
+	fileServerStartedChannel := make(chan bool)
+	go stormnetlisten.StartNetListenAndWait(ctx, testConfig.FileServerPort, testConfig.ArtifactsDir, "logstream-full-rollback.log", fileServerStartedChannel)
+	logrus.Tracef("Waiting for file server (netlisten) to start")
+	<-fileServerStartedChannel
+	logrus.Tracef("File server (netlisten) started")
+
 	// Invoke trident rollback
 	logrus.Tracef("Invoking `trident rollback` on VM")
 	updateOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo trident rollback")
@@ -491,7 +506,7 @@ func validateRollbacksAvailable(
 			}
 		}
 
-		rollbackShowValidationOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo trident rollback --check")
+		rollbackShowValidationOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "trident rollback --check")
 		if err != nil {
 			return fmt.Errorf("'rollback --check' failed to from VM: %v", err)
 		}

@@ -5,6 +5,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     str::FromStr,
+    time::Instant,
 };
 
 use anyhow::{bail, Context, Error};
@@ -30,6 +31,8 @@ use trident_api::{
 };
 use uuid::Uuid;
 
+#[cfg(feature = "grpc-dangerous")]
+use crate::grpc::{self, GrpcSender};
 use crate::{
     cli::GetKind,
     container,
@@ -37,7 +40,7 @@ use crate::{
     engine::{
         self,
         boot::{self, uki, ESP_EXTRACTION_DIRECTORY},
-        bootentries, rollback, EngineContext, REQUIRES_REBOOT,
+        bootentries, rollback, runtime_update, EngineContext, REQUIRES_REBOOT, SUBSYSTEMS,
     },
     subsystems::esp,
     ExitKind, OsImage,
@@ -82,13 +85,39 @@ pub fn get_rollback_info(datastore: &DataStore, kind: GetKind) -> Result<String,
     Err(TridentError::new(ServicingError::ManualRollback))
 }
 
+/// Check rollback availability and type.
+pub fn check_rollback(
+    datastore: &DataStore,
+    invoke_if_next_is_runtime: bool,
+    invoke_available_ab: bool,
+) -> Result<(), TridentError> {
+    // Get all HostStatus entries from the datastore.
+    let host_statuses = datastore
+        .get_host_statuses()
+        .message("Failed to get datastore HostStatus entries")?;
+    // Create ManualRollback context from HostStatus entries.
+    let rollback_context = ManualRollbackContext::new(&host_statuses)
+        .message("Failed to create manual rollback context")?;
+    let available_rollbacks = rollback_context
+        .get_rollback_chain()
+        .structured(ServicingError::ManualRollback)
+        .message("Failed to get available rollbacks")?;
+    let (_rollback_index, check_string) = get_requested_rollback_info(
+        &available_rollbacks,
+        invoke_if_next_is_runtime,
+        invoke_available_ab,
+    )?;
+    println!("{check_string}");
+    Ok(())
+}
+
 /// Handle manual rollback operations.
 pub fn execute_rollback(
     datastore: &mut DataStore,
-    check: bool,
     invoke_if_next_is_runtime: bool,
     invoke_available_ab: bool,
     allowed_operations: &Operations,
+    #[cfg(feature = "grpc-dangerous")] sender: &mut Option<GrpcSender>,
 ) -> Result<ExitKind, TridentError> {
     let current_servicing_state = datastore.host_status().servicing_state;
 
@@ -110,10 +139,6 @@ pub fn execute_rollback(
         invoke_if_next_is_runtime,
         invoke_available_ab,
     )?;
-    if check {
-        println!("{}", check_string);
-        return Ok(ExitKind::Done);
-    }
 
     let rollback_index = match rollback_index {
         Some(index) => index,
@@ -161,6 +186,8 @@ pub fn execute_rollback(
             &engine_context,
             &available_rollbacks,
             rollback_index,
+            #[cfg(feature = "grpc-dangerous")]
+            sender,
         )
         .message("Failed to stage manual rollback")?;
 
@@ -194,6 +221,8 @@ pub fn execute_rollback(
             datastore,
             &engine_context,
             available_rollbacks[rollback_index].requires_reboot,
+            #[cfg(feature = "grpc-dangerous")]
+            sender,
         )
         .message("Failed to stage manual rollback");
         // Persist the Trident background log and metrics file. Otherwise, the
@@ -280,6 +309,7 @@ fn stage_rollback(
     engine_context: &EngineContext,
     available_rollbacks: &[RollbackDetail],
     rollback_index: usize,
+    #[cfg(feature = "grpc-dangerous")] sender: &mut Option<GrpcSender>,
 ) -> Result<(), TridentError> {
     if available_rollbacks[rollback_index].requires_reboot {
         info!("Staging rollback that requires reboot");
@@ -287,8 +317,7 @@ fn stage_rollback(
         // TODO: Update pcrlock policy if needed
     } else {
         info!("Staging rollback that does not require reboot");
-
-        // TODO: Invoke subsystem runtime rollbacks if part of stage
+        // no-op for runtime update rollback
     }
 
     // Mark the HostStatus as ManualRollbackStaged
@@ -296,6 +325,8 @@ fn stage_rollback(
         host_status.spec = engine_context.spec.clone();
         host_status.servicing_state = ServicingState::ManualRollbackStaged;
     })?;
+    #[cfg(feature = "grpc-dangerous")]
+    grpc::send_host_status_state(sender, datastore)?;
 
     Ok(())
 }
@@ -305,17 +336,29 @@ fn finalize_rollback(
     datastore: &mut DataStore,
     engine_context: &EngineContext,
     ab_rollback: bool,
+    #[cfg(feature = "grpc-dangerous")] sender: &mut Option<GrpcSender>,
 ) -> Result<ExitKind, TridentError> {
     if !ab_rollback {
         trace!("Manual rollback does not require reboot");
 
-        // TODO: invoke subsystem runtime rollbacks if part of finalize
+        let mut subsystems = SUBSYSTEMS.lock().unwrap();
+        runtime_update::finalize_update(
+            &mut subsystems,
+            datastore,
+            false, // rollback spec is what we want, old-spec is what currently is ... no need to reverse
+            true,  // run health checks if the exist ... though there will be no auto-rollback here
+            Some(Instant::now()),
+            #[cfg(feature = "grpc-dangerous")]
+            sender,
+        );
 
         datastore.with_host_status(|host_status| {
             host_status.spec = engine_context.spec.clone();
             host_status.spec_old = Default::default();
             host_status.servicing_state = ServicingState::Provisioned;
         })?;
+        #[cfg(feature = "grpc-dangerous")]
+        grpc::send_host_status_state(sender, datastore)?;
         return Ok(ExitKind::Done);
     }
 
@@ -405,6 +448,8 @@ impl ManualRollbackContext {
             last_initial_consecutive_provisioned_state = i as i32;
         }
 
+        let mut auto_rollback = false;
+        let mut last_provisioned = false;
         let mut rollback = false;
         let mut needs_reboot = false;
         let mut active_index = -1;
@@ -465,13 +510,19 @@ impl ManualRollbackContext {
                 // ignoring the first Provisioned state, where there can be no rollback),
                 // update the available rollbacks depending on whether the last action
                 // was a rollback or not
-                if active_index != -1 {
+                if !last_provisioned && active_index != -1 {
                     let host_status_context = RollbackDetail {
                         host_status: host_statuses[active_index as usize].clone(),
                         host_status_index: active_index,
                         requires_reboot: needs_reboot,
                     };
-                    if rollback {
+                    if auto_rollback {
+                        trace!(
+                            "Auto-rollback detected at index {} for active volume {:?}",
+                            i,
+                            instance.active_volume
+                        );
+                    } else if rollback {
                         let active_volume_changed = hs.ab_active_volume != instance.active_volume;
                         // If the active volume changed, then
                         //   1. we can remove all of the available rollbacks for the previously active volume
@@ -553,7 +604,11 @@ impl ManualRollbackContext {
                 active_index = i as i32;
                 needs_reboot = false;
                 // Reset the loop's rollback tracking
-                rollback = false
+                rollback = false;
+                // Reset the loop's auto-rollback tracking
+                auto_rollback = false;
+                // Last state seen was Provisioned: guard against sequential 'duplicate' Provisioned states
+                last_provisioned = true;
             } else {
                 // Check each non-Provisioned state to see if it represents a rollback action
                 rollback = matches!(
@@ -564,12 +619,20 @@ impl ManualRollbackContext {
                     hs.servicing_state,
                     ServicingState::AbUpdateFinalized | ServicingState::AbUpdateFinalized
                 );
+                if matches!(
+                    hs.servicing_state,
+                    ServicingState::AbUpdateHealthCheckFailed
+                ) {
+                    auto_rollback = true;
+                }
+                last_provisioned = false;
                 trace!(
-                    "Detected servicing state {:?} at index {}: rollback={}, needs_reboot={}",
+                    "Detected servicing state {:?} at index {}: rollback={}, needs_reboot={}, auto_rollback={}z",
                     hs.servicing_state,
                     i,
                     rollback,
-                    needs_reboot
+                    needs_reboot,
+                    auto_rollback
                 )
             }
         }
@@ -743,6 +806,18 @@ mod tests {
             expected_available_rollbacks: vec![],
         }
     }
+    fn inter_e(
+        active_volume: Option<AbVolumeSelection>,
+        servicing_state: ServicingState,
+        old_version: &str,
+        error: Option<String>,
+    ) -> HostStatusTest {
+        HostStatusTest {
+            host_status: host_status(active_volume, servicing_state, old_version, error),
+            expected_requires_reboot: false,
+            expected_available_rollbacks: vec![],
+        }
+    }
 
     fn create_rollback_context_for_testing(
         host_status_test_list: &[HostStatusTest],
@@ -750,7 +825,7 @@ mod tests {
         let final_state = host_status_test_list
             .iter()
             .filter(|hst| hst.host_status.servicing_state == ServicingState::Provisioned)
-            .last()
+            .next_back()
             .unwrap();
         let host_statuses = host_status_test_list
             .iter()
@@ -763,7 +838,7 @@ mod tests {
         let final_state = host_status_test_list
             .iter()
             .filter(|hst| hst.host_status.servicing_state == ServicingState::Provisioned)
-            .last()
+            .next_back()
             .unwrap();
         rollback_context_testing_for_expected(
             host_status_test_list,
@@ -1021,6 +1096,28 @@ mod tests {
             false,
             "Validate a/b update stage as final state",
         );
+    }
+
+    #[test]
+    fn test_e2e_rollback() {
+        let host_status_list = vec![
+            inter(VOL_A, CI_FINAL, MIN),
+            prov(VOL_A, false, vec![], MIN),
+            inter(VOL_A, AB_STAGE, MIN),
+            inter(VOL_A, AB_FINAL, MIN),
+            prov(VOL_B, true, vec![1], MIN),
+            inter(VOL_B, AB_STAGE, MIN),
+            inter(VOL_B, AB_FINAL, MIN),
+            inter_e(VOL_B, AB_HC_FAIL, MIN, Some("failure".to_string())),
+            inter(VOL_B, AB_HC_FAIL, MIN),
+            prov(VOL_B, false, vec![], MIN),
+            prov_e(VOL_B, false, vec![], MIN, Some("failure".to_string())),
+            prov(VOL_B, false, vec![], MIN),
+            inter(VOL_B, AB_STAGE, MIN),
+            inter(VOL_B, AB_FINAL, MIN),
+            prov(VOL_A, true, vec![10], MIN),
+        ];
+        rollback_context_testing(&host_status_list, "E2E rollback scenario");
     }
 
     #[test]

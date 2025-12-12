@@ -93,8 +93,17 @@ echo "Using SSH Key: $SSH_KEY"
 
 # Test rollback
 ./bin/storm-trident helper manual-rollback -w \
+    --log-dir /tmp/foo \
     "$SSH_KEY" \
     "$VM_IP" \
     "testing-user" \
     "host"
+
+# # Manual rollback
+# VM_IP=$(virsh domifaddr virtdeploy-vm-0 | grep ipv4 | awk '{print $4}' |  cut -d "/" -f1)
+# echo "ManualRollback --allowed-operations stage ===> $VM_IP"
+# ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa testing-user@$VM_IP "sudo trident rollback -v trace --allowed-operations stage"
+# echo "ManualRollback --allowed-operations finalize ===> $VM_IP"
+# ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa testing-user@$VM_IP "sudo trident rollback -v trace --allowed-operations finalize"
+
 ```

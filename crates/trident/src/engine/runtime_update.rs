@@ -103,21 +103,20 @@ pub(crate) fn finalize_update(
     let target_spec;
     let old_spec;
     if !reverse_specs {
-        info!("Starting rollback of runtime update");
-        trace!("Reversing spec and spec_old");
         target_spec = state.host_status().spec.clone();
         old_spec = state.host_status().spec_old.clone();
     } else {
-        info!("Starting rollback of runtime update");
+        trace!("Reversing spec and spec_old");
         target_spec = state.host_status().spec_old.clone();
         old_spec = state.host_status().spec.clone();
     }
+    info!("Starting rollback of runtime update");
 
-    if state.host_status().servicing_state != ServicingState::RuntimeUpdateStaged {
-        return Err(TridentError::internal(
-            "Runtime update must be staged before calling finalize",
-        ));
-    }
+    // if state.host_status().servicing_state != ServicingState::RuntimeUpdateStaged {
+    //     return Err(TridentError::internal(
+    //         "Runtime update must be staged before calling finalize",
+    //     ));
+    // }
 
     let mut ctx = EngineContext {
         spec: target_spec,
@@ -133,9 +132,11 @@ pub(crate) fn finalize_update(
         filesystems: Vec::new(), // Left empty since not needed for finalizing runtime update.
     };
 
+    info!("Calling subsystem configure for runtime update finalize");
     // Note: provision() is not called during runtime updates.
     engine::configure(subsystems, &ctx)?;
 
+    info!("Updating host configuration for runtime update finalize");
     // Update the Host Configuration with information produced and stored in the
     // subsystems. Currently, this step is used only to update the final paths
     // of sysexts and confexts configured in the extensions subsystem.
@@ -143,11 +144,13 @@ pub(crate) fn finalize_update(
     // Turn ctx into an immutable variable.
     let ctx = ctx;
 
+    info!("Calling subsystem clean_up for runtime update finalize");
     engine::clean_up(subsystems, &ctx)?;
 
     // Run health checks if we are performing a runtime update (skip if we are
     // rolling back)
     if !run_health_checks {
+        info!("Calling health checks for runtime update finalize");
         health::execute_health_checks(&ctx)?;
     }
 

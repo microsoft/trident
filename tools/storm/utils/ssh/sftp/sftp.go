@@ -2,6 +2,7 @@ package sftp
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
@@ -72,4 +73,35 @@ func NewSftpSudoClient(client *ssh.Client, opts ...sftp.ClientOption) (*SftpSudo
 		Client: sftpClient,
 		inner:  session,
 	}, nil
+}
+
+func DownloadRemoteFile(client *ssh.Client, remotePath string, localPath string) (string, error) {
+	var localFile *os.File
+	var err error
+	if localPath == "" {
+		localFile, err = os.CreateTemp("", "sftp-*")
+		if err != nil {
+			return "", fmt.Errorf("failed to create local tmp file: %w", err)
+		}
+		localPath = localFile.Name()
+	} else {
+		localFile, err = os.Open(localPath)
+		if err != nil {
+			return "", fmt.Errorf("failed to create local file (%s): %w", localPath, err)
+		}
+	}
+	sftpClient, err := NewSftpSudoClient(client)
+	if err != nil {
+		return "", fmt.Errorf("failed to create SudoSFTP client: %w", err)
+	}
+	defer sftpClient.Close()
+	remoteDatastoreFile, err := sftpClient.Open(remotePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to open remote file (%s): %w", remotePath, err)
+	}
+	_, err = remoteDatastoreFile.WriteTo(localFile)
+	if err != nil {
+		return "", fmt.Errorf("failed to copy remote  file to local: %w", err)
+	}
+	return localPath, nil
 }

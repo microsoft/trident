@@ -461,8 +461,17 @@ steps:
           $PROXY_ARG
 
     displayName: "Test Trident rollback"
-    timeoutInMinutes: 15
+    timeoutInMinutes: 5
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
+  - bash: |
+      set -eux
+      # sudo is needed to read qemu VM serial logs, `-a` is needed with sudo
+      sudo ./bin/storm-trident helper display-logs -a \
+          --netlisten-config "${{ parameters.netlistenConfigFile }}" \
+          --serial-log-artifact-file-name "rollback-target-os-A-serial.log" \
+          --artifacts-folder "$(ob_outputDirectory)"
+    displayName: "Trident rollback deployment logs"
+    condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
   - bash: |
       set -eux
       python3 -u -m pytest \
