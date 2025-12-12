@@ -142,9 +142,7 @@ impl Subsystem for OsConfigSubsystem {
 
     #[tracing::instrument(name = "osconfig_configuration", skip_all)]
     fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
-        if ctx.servicing_type != ServicingType::AbUpdate
-            || ctx.servicing_type != ServicingType::CleanInstall
-        {
+        if ctx.servicing_type == ServicingType::NoActiveServicing {
             debug!(
                 "Skipping step 'Configure' for subsystem '{}' during servicing type '{:?}'",
                 self.name(),
@@ -233,9 +231,15 @@ impl Subsystem for OsConfigSubsystem {
             os_modifier_config.selinux = Some(ctx.spec.os.selinux.clone());
         }
 
-        os_modifier_config
-            .call_os_modifier(Path::new(OS_MODIFIER_NEWROOT_PATH))
-            .structured(ServicingError::RunOsModifier)?;
+        if ctx.servicing_type == ServicingType::RuntimeUpdate {
+            os_modifier_config
+                .call_os_modifier(Path::new(OS_MODIFIER_BINARY_PATH))
+                .structured(ServicingError::RunOsModifier)?;
+        } else {
+            os_modifier_config
+                .call_os_modifier(Path::new(OS_MODIFIER_NEWROOT_PATH))
+                .structured(ServicingError::RunOsModifier)?;
+        }
 
         Ok(())
     }
