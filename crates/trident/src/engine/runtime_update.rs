@@ -103,12 +103,12 @@ pub(crate) fn finalize_update(
     let target_spec;
     let old_spec;
     if !reverse_specs {
-        info!("Starting rollback of runtime update");
-        trace!("Reversing spec and spec_old");
+        info!("Finalizing runtime update");
         target_spec = state.host_status().spec.clone();
         old_spec = state.host_status().spec_old.clone();
     } else {
         info!("Starting rollback of runtime update");
+        trace!("Reversing spec and spec_old");
         target_spec = state.host_status().spec_old.clone();
         old_spec = state.host_status().spec.clone();
     }
