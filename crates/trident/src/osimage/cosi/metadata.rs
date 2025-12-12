@@ -127,7 +127,7 @@ impl CosiMetadata {
                         // No entries is invalid
                         [] => bail!("Bootloader type 'systemd-boot' must not be empty"),
                         
-                        // More than one entry, is not allowed in this version of trident.
+                        // More than one entry, is not allowed in this version of Trident.
                         [_, _, ..] => {
                             bail!("Multiple bootloader entries are not supported for bootloader type 'systemd-boot' in this version of Trident");
                         }
