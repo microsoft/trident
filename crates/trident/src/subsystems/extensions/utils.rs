@@ -5,7 +5,9 @@ use anyhow::{ensure, Context, Error};
 use osutils::{container, dependencies::Dependency};
 use trident_api::{config::Extension, error::TridentResultExt, primitives::hash::Sha384Hash};
 
-use super::ExtensionsSubsystem;
+use crate::engine::EngineContext;
+
+use super::{ExtensionData, ExtensionType, ExtensionsSubsystem};
 
 impl ExtensionsSubsystem {
     /// Returns the path of an extension from the old Host Configuration that
@@ -51,6 +53,34 @@ impl ExtensionsSubsystem {
 
         Ok(None)
     }
+
+    /// Returns `true` if the subsystem's internal state of extension images
+    /// matches that in the Engine Context. Returns `false` if any discrepancies
+    /// are found.
+    pub(crate) fn internal_state_matches_engine_ctx(&self, ctx: &EngineContext) -> bool {
+        let (sysexts_new, confexts_new): (Vec<_>, Vec<_>) = self
+            .extensions
+            .iter()
+            .partition(|e| e.ext_type == ExtensionType::Sysext);
+        let (sysexts_old, confexts_old): (Vec<_>, Vec<_>) = self
+            .extensions_old
+            .iter()
+            .partition(|e| e.ext_type == ExtensionType::Sysext);
+
+        extensions_match(&sysexts_new, &ctx.spec.os.sysexts)
+            && extensions_match(&confexts_new, &ctx.spec.os.confexts)
+            && extensions_match(&sysexts_old, &ctx.spec_old.os.sysexts)
+            && extensions_match(&confexts_old, &ctx.spec_old.os.confexts)
+    }
+}
+
+fn extensions_match(internal_exts: &[&ExtensionData], hc_exts: &[Extension]) -> bool {
+    internal_exts.len() == hc_exts.len()
+        && internal_exts.iter().all(|internal_ext| {
+            hc_exts
+                .iter()
+                .any(|hc_ext| hc_ext.sha384 == internal_ext.sha384)
+        })
 }
 
 /// Mounts the extension image.
@@ -171,6 +201,229 @@ mod tests {
                 .unwrap(),
             None
         );
+    }
+
+    #[test]
+    fn test_extensions_match_success() {
+        // Test Case 1: Both empty
+        assert!(extensions_match(&[], &[]));
+
+        let hash1 = Sha384Hash::from("a".repeat(96));
+        let hash2 = Sha384Hash::from("b".repeat(96));
+
+        let internal_exts = vec![
+            ExtensionData {
+                id: "ext1".to_string(),
+                name: "ext1".to_string(),
+                sha384: hash1.clone(),
+                path: PathBuf::from("/var/lib/extensions/ext1.raw"),
+                temp_path: PathBuf::from("/tmp/ext1.raw"),
+                ext_type: ExtensionType::Sysext,
+            },
+            ExtensionData {
+                id: "ext2".to_string(),
+                name: "ext2".to_string(),
+                sha384: hash2.clone(),
+                path: PathBuf::from("/var/lib/extensions/ext2.raw"),
+                temp_path: PathBuf::from("/tmp/ext2.raw"),
+                ext_type: ExtensionType::Sysext,
+            },
+        ];
+
+        let hc_exts = vec![
+            Extension {
+                url: Url::parse("https://example.com/ext1.raw").unwrap(),
+                sha384: hash1,
+                path: Some(PathBuf::from("/var/lib/extensions/ext1.raw")),
+            },
+            Extension {
+                url: Url::parse("https://example.com/ext2.raw").unwrap(),
+                sha384: hash2,
+                path: Some(PathBuf::from("/var/lib/extensions/ext2.raw")),
+            },
+        ];
+
+        let internal_refs: Vec<_> = internal_exts.iter().collect();
+        assert!(extensions_match(&internal_refs, &hc_exts));
+    }
+
+    #[test]
+    fn test_extensions_match_missing_extension() {
+        let hash1 = Sha384Hash::from("a".repeat(96));
+        let hash2 = Sha384Hash::from("b".repeat(96));
+
+        let internal_exts = [ExtensionData {
+            id: "ext1".to_string(),
+            name: "ext1".to_string(),
+            sha384: hash1.clone(),
+            path: PathBuf::from("/var/lib/extensions/ext1.raw"),
+            temp_path: PathBuf::from("/tmp/ext1.raw"),
+            ext_type: ExtensionType::Sysext,
+        }];
+
+        let hc_exts = vec![
+            Extension {
+                url: Url::parse("https://example.com/ext1.raw").unwrap(),
+                sha384: hash1,
+                path: Some(PathBuf::from("/var/lib/extensions/ext1.raw")),
+            },
+            Extension {
+                url: Url::parse("https://example.com/ext2.raw").unwrap(),
+                sha384: hash2,
+                path: Some(PathBuf::from("/var/lib/extensions/ext2.raw")),
+            },
+        ];
+
+        let internal_refs: Vec<_> = internal_exts.iter().collect();
+        assert!(!extensions_match(&internal_refs, &hc_exts));
+    }
+
+    #[test]
+    fn test_internal_state_matches_engine_ctx_match() {
+        let hash1 = Sha384Hash::from("a".repeat(96));
+        let hash2 = Sha384Hash::from("b".repeat(96));
+        let hash3 = Sha384Hash::from("c".repeat(96));
+        let hash4 = Sha384Hash::from("d".repeat(96));
+
+        let subsystem = ExtensionsSubsystem {
+            extensions: vec![
+                ExtensionData {
+                    id: "sysext1".to_string(),
+                    name: "sysext1".to_string(),
+                    sha384: hash1.clone(),
+                    path: PathBuf::from("/var/lib/extensions/sysext1.raw"),
+                    temp_path: PathBuf::from("/tmp/sysext1.raw"),
+                    ext_type: ExtensionType::Sysext,
+                },
+                ExtensionData {
+                    id: "confext1".to_string(),
+                    name: "confext1".to_string(),
+                    sha384: hash2.clone(),
+                    path: PathBuf::from("/var/lib/confexts/confext1.raw"),
+                    temp_path: PathBuf::from("/tmp/confext1.raw"),
+                    ext_type: ExtensionType::Confext,
+                },
+            ],
+            extensions_old: vec![
+                ExtensionData {
+                    id: "sysext_old".to_string(),
+                    name: "sysext_old".to_string(),
+                    sha384: hash3.clone(),
+                    path: PathBuf::from("/var/lib/extensions/sysext_old.raw"),
+                    temp_path: PathBuf::from("/tmp/sysext_old.raw"),
+                    ext_type: ExtensionType::Sysext,
+                },
+                ExtensionData {
+                    id: "confext_old".to_string(),
+                    name: "confext_old".to_string(),
+                    sha384: hash4.clone(),
+                    path: PathBuf::from("/var/lib/confexts/confext_old.raw"),
+                    temp_path: PathBuf::from("/tmp/confext_old.raw"),
+                    ext_type: ExtensionType::Confext,
+                },
+            ],
+            staging_dir: PathBuf::from("/tmp/staging"),
+        };
+
+        let mut ctx = EngineContext::default();
+        ctx.spec.os.sysexts = vec![Extension {
+            url: Url::parse("https://example.com/sysext1.raw").unwrap(),
+            sha384: hash1,
+            path: Some(PathBuf::from("/var/lib/extensions/sysext1.raw")),
+        }];
+        ctx.spec.os.confexts = vec![Extension {
+            url: Url::parse("https://example.com/confext1.raw").unwrap(),
+            sha384: hash2,
+            path: Some(PathBuf::from("/var/lib/confexts/confext1.raw")),
+        }];
+        ctx.spec_old.os.sysexts = vec![Extension {
+            url: Url::parse("https://example.com/sysext_old.raw").unwrap(),
+            sha384: hash3,
+            path: Some(PathBuf::from("/var/lib/extensions/sysext_old.raw")),
+        }];
+        ctx.spec_old.os.confexts = vec![Extension {
+            url: Url::parse("https://example.com/confext_old.raw").unwrap(),
+            sha384: hash4,
+            path: Some(PathBuf::from("/var/lib/confexts/confext_old.raw")),
+        }];
+
+        assert!(subsystem.internal_state_matches_engine_ctx(&ctx));
+    }
+
+    #[test]
+    fn test_internal_state_matches_engine_ctx_mismatch() {
+        // Subsystem is empty, i.e. if Finalize is separate from Stage and
+        // internal state resets.
+        let subsystem = ExtensionsSubsystem {
+            extensions: vec![],
+            extensions_old: vec![],
+            staging_dir: PathBuf::from("/tmp/staging"),
+        };
+
+        let mut ctx = EngineContext::default();
+        ctx.spec.os.sysexts = vec![
+            Extension {
+                url: Url::parse("https://example.com/sysext1.raw").unwrap(),
+                sha384: Sha384Hash::from("a".repeat(96)),
+                path: Some(PathBuf::from("/var/lib/extensions/sysext1.raw")),
+            },
+            Extension {
+                url: Url::parse("https://example.com/sysext2.raw").unwrap(),
+                sha384: Sha384Hash::from("b".repeat(96)),
+                path: Some(PathBuf::from("/var/lib/extensions/sysext2.raw")),
+            },
+        ];
+
+        assert!(!subsystem.internal_state_matches_engine_ctx(&ctx));
+    }
+
+    #[test]
+    fn test_internal_state_matches_engine_ctx_hash_mismatch() {
+        // Old and new sysexts are swapped, i.e. in auto-rollback scenario.
+        let hash1 = Sha384Hash::from("a".repeat(96));
+        let hash2 = Sha384Hash::from("b".repeat(96));
+
+        let subsystem = ExtensionsSubsystem {
+            extensions: vec![ExtensionData {
+                id: "sysext1".to_string(),
+                name: "sysext1".to_string(),
+                sha384: hash1.clone(),
+                path: PathBuf::from("/var/lib/extensions/sysext1.raw"),
+                temp_path: PathBuf::from("/tmp/sysext1.raw"),
+                ext_type: ExtensionType::Sysext,
+            }],
+            extensions_old: vec![ExtensionData {
+                id: "sysext2".to_string(),
+                name: "sysext2".to_string(),
+                sha384: hash2.clone(),
+                path: PathBuf::from("/var/lib/extensions/sysext2.raw"),
+                temp_path: PathBuf::from("/tmp/sysext2.raw"),
+                ext_type: ExtensionType::Sysext,
+            }],
+            staging_dir: PathBuf::from("/tmp/staging"),
+        };
+
+        let mut ctx = EngineContext::default();
+        ctx.spec.os.sysexts = vec![Extension {
+            url: Url::parse("https://example.com/sysext2.raw").unwrap(),
+            sha384: hash2,
+            path: Some(PathBuf::from("/var/lib/extensions/sysext2.raw")),
+        }];
+        ctx.spec_old.os.sysexts = vec![Extension {
+            url: Url::parse("https://example.com/sysext1.raw").unwrap(),
+            sha384: hash1,
+            path: Some(PathBuf::from("/var/lib/extensions/sysext1.raw")),
+        }];
+
+        assert!(!subsystem.internal_state_matches_engine_ctx(&ctx));
+    }
+
+    #[test]
+    fn test_internal_state_matches_engine_ctx_empty() {
+        let subsystem = ExtensionsSubsystem::default();
+        let ctx = EngineContext::default();
+
+        assert!(subsystem.internal_state_matches_engine_ctx(&ctx));
     }
 }
 
