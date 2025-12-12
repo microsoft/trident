@@ -55,7 +55,7 @@ func (h *ManualRollbackHelper) rollback(tc storm.TestCase) error {
 		logrus.Errorf("Trident 'get configuration' stderr:\n%s", output.Stderr)
 		return err
 	}
-	logrus.Tracef("Trident 'get configuration' output:\n%s", output.Stdout)
+	logrus.Infof("Trident 'get configuration' output:\n%s", output.Stdout)
 
 	// Check for available rollbacks
 	output, err = stormtrident.InvokeTrident(h.args.Env, client, []string{}, "get rollback-chain")
@@ -67,7 +67,7 @@ func (h *ManualRollbackHelper) rollback(tc storm.TestCase) error {
 		logrus.Errorf("Trident 'get rollback-chain' stderr:\n%s", output.Stderr)
 		return err
 	}
-	logrus.Tracef("Trident 'get rollback-chain' output:\n%s", output.Stdout)
+	logrus.Infof("Trident 'get rollback-chain' output:\n%s", output.Stdout)
 	var availableRollbacks []map[string]interface{}
 	err = yaml.Unmarshal([]byte(strings.TrimSpace(output.Stdout)), &availableRollbacks)
 	if err != nil {
@@ -76,10 +76,21 @@ func (h *ManualRollbackHelper) rollback(tc storm.TestCase) error {
 	if len(availableRollbacks) != 1 {
 		return fmt.Errorf("available rollbacks mismatch: expected 1, got %d", len(availableRollbacks))
 	}
-	logrus.Tracef("Available rollbacks confirmed, found: '%d'", len(availableRollbacks))
+	logrus.Infof("Available rollbacks confirmed, found: '%d'", len(availableRollbacks))
 
 	// Execute rollback
-	out, err := stormtrident.InvokeTrident(h.args.Env, client, h.args.EnvVars, "rollback -v trace")
+	out, err := stormtrident.InvokeTrident(h.args.Env, client, h.args.EnvVars, "rollback -v trace --allowed-operations stage")
+	if err != nil {
+		logrus.Errorf("Failed to invoke Trident: %v", err)
+		return err
+	}
+	if err := out.Check(); err != nil {
+		logrus.Errorf("Trident 'rollback --allowed-operations stage' stderr:\n%s", out.Stderr)
+		return err
+	}
+	logrus.Infof("Trident 'rollback --allowed-operations stage' output:\n%s", out.Stdout)
+
+	out, err = stormtrident.InvokeTrident(h.args.Env, client, h.args.EnvVars, "rollback -v trace --allowed-operations finalize")
 	if err != nil {
 		if err, ok := err.(*ssh.ExitMissingError); ok && strings.Contains(out.Stderr, "Rebooting system") {
 			// The connection closed without an exit code, and the output contains "Rebooting system".
@@ -92,6 +103,13 @@ func (h *ManualRollbackHelper) rollback(tc storm.TestCase) error {
 		}
 	}
 	logrus.Infof("Trident 'rollback' succeeded:\n%s", out.Stdout)
+
+	// Get trident-full.log contents after rollback staging
+	contents, err := stormsshclient.CommandOutput(client, "sudo cat /var/log/trident-full.log")
+	if err != nil {
+		return fmt.Errorf("failed to read new Host Config file: %w", err)
+	}
+	logrus.Debugf("Trident 'rollback stage' background log contents:\n%s", contents)
 
 	if !h.args.ExpectRuntimeRollback {
 		err := stormsshcheck.CheckTridentService(
