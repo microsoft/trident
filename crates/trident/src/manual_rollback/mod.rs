@@ -323,6 +323,7 @@ fn stage_rollback(
     // Mark the HostStatus as ManualRollbackStaged
     datastore.with_host_status(|host_status| {
         host_status.spec = engine_context.spec.clone();
+        host_status.spec_old = engine_context.spec_old.clone();
         host_status.servicing_state = ServicingState::ManualRollbackStaged;
     })?;
     #[cfg(feature = "grpc-dangerous")]
