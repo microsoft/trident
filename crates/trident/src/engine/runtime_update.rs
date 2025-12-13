@@ -112,11 +112,14 @@ pub(crate) fn finalize_update(
     }
     info!("Starting rollback of runtime update");
 
-    // if state.host_status().servicing_state != ServicingState::RuntimeUpdateStaged {
-    //     return Err(TridentError::internal(
-    //         "Runtime update must be staged before calling finalize",
-    //     ));
-    // }
+    if !matches!(
+        state.host_status().servicing_state,
+        ServicingState::RuntimeUpdateStaged | ServicingState::ManualRollbackStaged
+    ) {
+        return Err(TridentError::internal(
+            "Runtime update or manual rollback must be staged before calling finalize",
+        ));
+    }
 
     let mut ctx = EngineContext {
         spec: target_spec,
