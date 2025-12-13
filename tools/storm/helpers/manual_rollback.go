@@ -148,6 +148,9 @@ func (h *ManualRollbackHelper) rollback(tc storm.TestCase) error {
 		return err
 	}
 
+	// Get trident-full.log contents after rollback reboot
+	copyRemoteFileToArtifacts(client, "/var/log/trident-full.log", "rollback-commit.log", tc)
+
 	return nil
 }
 
