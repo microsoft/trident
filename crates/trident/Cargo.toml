@@ -50,7 +50,6 @@ systemd-journal-logger = "2.2.2"
 tar = "0.4.43"
 tempfile = "3.14.0"
 tera = "1.20.0"
-tokio = { version = "1.43.1", features = ["rt-multi-thread"] }
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["json"] }
 url = { version = "2.5.4", features = ["serde"] }
@@ -60,6 +59,19 @@ zstd = "0.13.3"
 sysdefs = { path = "../sysdefs" }
 osutils = { path = "../osutils" }
 trident_api = { path = "../trident_api" }
+
+# gRPC API Dependencies
+hyper = "1.0"
+hyper-util = { version = "0.1.17", features = ["tokio"] }
+prost = "0.14.1"
+prost-types = "0.14.1"
+tokio = { version = "1.47.1", features = ["full"] }
+tokio-stream = { version = "0.1.17", features = ["net"] }
+tokio-util = "0.7.16"
+tonic = "0.14.2"
+tonic-middleware = "0.4.0"
+tonic-prost = "0.14.2"
+tower = "0.5.2"
 
 # Optional dependencies used by functional tests
 indoc = { version = "2.0.5", optional = true }
