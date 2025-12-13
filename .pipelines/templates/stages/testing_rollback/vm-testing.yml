@@ -118,13 +118,6 @@ stages:
               verboseLogging: ${{ parameters.verboseLogging }}
               platform: qemu
               flavor: qemu-grub
-              # For qemu w/ root-verity
-              #   * extensions cannot be added to qcow2 is not supported
-              #   * netplan runtime changes cannot be made to config file on verity rootfs
-              #   * without extensions and netplan, runtime updates will service nothing
-              skipExtensionTesting: true
-              skipRuntimeUpdateTesting: true
-              SkipNetplanRuntimeTesting: true
       - ${{ if eq(parameters.includeQemu, true) }}:
           - template: testing-template.yml
             parameters:
@@ -132,10 +125,13 @@ stages:
               verboseLogging: ${{ parameters.verboseLogging }}
               platform: qemu
               flavor: qemu
-              # qemu image is grub + root verity. in this setup, Image Customizer cannot add
-              # an extension to the servicing qcow2
+              # For qemu w/ root-verity
+              #   * extensions cannot be added to qcow2 is not supported
+              #   * netplan runtime changes cannot be made to config file on verity rootfs
+              #   * without extensions and netplan, runtime updates will service nothing
               skipExtensionTesting: true
-              skipRuntimeUpdateTesting: false
+              skipRuntimeUpdateTesting: true
+              SkipNetplanRuntimeTesting: true
       - ${{ if eq(parameters.includeUKI, true) }}:
           - template: testing-template.yml
             parameters:
@@ -143,5 +139,3 @@ stages:
               verboseLogging: ${{ parameters.verboseLogging }}
               platform: qemu
               flavor: uki
-              skipExtensionTesting: false
-              skipRuntimeUpdateTesting: false
