@@ -111,7 +111,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
         | (true, ServicingState::ManualRollbackFinalized) => {
             // For *Finalized states, when booting from the expected
             // root, finish the commit process
-            info!("Host successfully booted from updated target OS image");
+            info!("Host successfully booted from target OS image");
             return commit_finalized_on_expected_root(
                 &ctx,
                 datastore,
@@ -216,7 +216,7 @@ fn commit_finalized_on_expected_root(
 ) -> Result<BootValidationResult, TridentError> {
     if matches!(
         servicing_type,
-        ServicingType::CleanInstall | ServicingType::AbUpdate
+        ServicingType::CleanInstall | ServicingType::AbUpdate | ServicingType::ManualRollback
     ) {
         // Run health checks to ensure the system is in the desired state
         let health_check_status =
