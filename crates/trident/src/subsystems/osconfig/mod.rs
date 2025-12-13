@@ -616,7 +616,7 @@ mod tests {
             sha384: Sha384Hash::from("a".repeat(96)),
             path: Some(PathBuf::from("/var/lib/confexts/test.raw")),
         }];
-        // Sysext removed in new spec so OS Modifier is not required
+        // Confext removed in new spec so OS Modifier is not required
         assert!(!os_changes_required(&ctx));
 
         ctx.spec.os.confexts = vec![Extension {
@@ -625,7 +625,7 @@ mod tests {
             path: Some(PathBuf::from("/var/lib/confexts/test.raw")),
         }];
         ctx.spec_old.os.confexts = vec![];
-        // confexts newly added so OS Modifier is required
+        // Confexts newly added so OS Modifier is required
         assert!(os_changes_required(&ctx));
     }
 
