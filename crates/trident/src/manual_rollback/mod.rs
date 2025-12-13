@@ -322,7 +322,7 @@ fn stage_rollback(
 
                 // Get UKI and bootloader binaries for .pcrlock file generation
                 let (uki_binaries, bootloader_binaries) =
-                    encryption::get_binary_paths_pcrlock(engine_context, pcrs, None)
+                    encryption::get_binary_paths_pcrlock(engine_context, pcrs, None, true)
                         .structured(ServicingError::GetBinaryPathsForPcrlockEncryption)?;
 
                 // Generate a pcrlock policy
