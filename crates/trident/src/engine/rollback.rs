@@ -276,7 +276,7 @@ fn commit_finalized_on_expected_root(
 
                 // Get UKI and bootloader binaries for .pcrlock file generation
                 let (uki_binaries, bootloader_binaries) =
-                    encryption::get_binary_paths_pcrlock(ctx, pcrs, None)
+                    encryption::get_binary_paths_pcrlock(ctx, pcrs, None, false)
                         .structured(ServicingError::GetBinaryPathsForPcrlockEncryption)?;
 
                 // Generate a pcrlock policy
