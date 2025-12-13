@@ -481,11 +481,11 @@ steps:
         python3 -u -m pytest \
           -m encryption \
           --capture=no \
-          --junit-xml=${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_rollback_$(TARGET_OS)_$(System.JobAttempt).junit.xml \
+          --junit-xml=${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_rollback_${TARGET_OS}_$(System.JobAttempt).junit.xml \
           --host ${{ parameters.hostIp }} \
           --runtime-env ${{ parameters.runtimeEnv }} \
           --configuration ${{ parameters.tridentConfigPath }} \
-          --ab-active-volume $(EXPECTED_VOLUME)
+          --ab-active-volume ${EXPECTED_VOLUME}
       fi
     env:
       ${{ if or(eq(parameters.buildPurpose, 'daily'), eq(parameters.buildPurpose, 'validation'), eq(parameters.buildPurpose, 'weekly')) }}:
