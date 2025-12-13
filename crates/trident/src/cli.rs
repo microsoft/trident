@@ -176,6 +176,33 @@ pub enum Commands {
         history_path: Option<PathBuf>,
     },
 
+    /// Manually rollback to previous state
+    Rollback {
+        /// Check operation that would be performed
+        #[arg(long)]
+        check: bool,
+
+        /// Invoke rollback only if next available rollback is runtime rollback
+        #[arg(long, conflicts_with = "ab")]
+        runtime: bool,
+
+        /// Invoke available A/B rollback
+        #[arg(long, conflicts_with = "runtime")]
+        ab: bool,
+
+        /// Comma-separated list of operations that Trident will be allowed to perform
+        #[clap(long, value_delimiter = ',', num_args = 0.., default_value = "stage,finalize")]
+        allowed_operations: Vec<AllowedOperation>,
+
+        /// Path to save the resulting Host Status
+        #[clap(short, long)]
+        status: Option<PathBuf>,
+
+        /// Path to save an eventual fatal error
+        #[clap(short, long)]
+        error: Option<PathBuf>,
+    },
+
     #[cfg(feature = "dangerous-options")]
     StreamImage {
         /// URL of the image to stream
@@ -212,6 +239,7 @@ impl Commands {
             Commands::OfflineInitialize { .. } => "offline-initialize",
             #[cfg(feature = "dangerous-options")]
             Commands::StreamImage { .. } => "stream-image",
+            Commands::Rollback { .. } => "rollback",
         }
     }
 }
@@ -227,4 +255,6 @@ pub enum GetKind {
     Configuration,
     Status,
     LastError,
+    RollbackChain,
+    RollbackTarget,
 }

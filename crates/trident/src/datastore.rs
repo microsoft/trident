@@ -2,12 +2,15 @@ use std::{fs, path::Path};
 
 use log::debug;
 
+use sqlite::State;
 use trident_api::{
     error::{
         DatastoreError, InternalError, ReportError, ServicingError, TridentError, TridentResultExt,
     },
     status::{decode_host_status, HostStatus},
 };
+
+use crate::TRIDENT_VERSION;
 
 pub struct DataStore {
     db: Option<sqlite::Connection>,
@@ -75,6 +78,38 @@ impl DataStore {
         })
     }
 
+    /// Retrieve all HostStatus entries from the datastore.
+    pub(crate) fn get_host_statuses(&self) -> Result<Vec<HostStatus>, TridentError> {
+        let mut all_rows_data: Vec<HostStatus> = Vec::new();
+
+        // Read all HostStatus entries from the datastore, parse them into
+        // HostStatus structs, and return a slice of them.
+        let mut query_statement = self
+            .db
+            .as_ref()
+            .unwrap()
+            .prepare("SELECT contents FROM hoststatus ORDER BY id DESC")
+            .structured(ServicingError::Datastore {
+                inner: DatastoreError::InitializeDatastore,
+            })?;
+
+        while let Ok(State::Row) = query_statement.next() {
+            let host_status_yaml =
+                query_statement
+                    .read::<String, _>(0)
+                    .structured(ServicingError::Datastore {
+                        inner: DatastoreError::InitializeDatastore,
+                    })?;
+            let host_status =
+                serde_yaml::from_str(&host_status_yaml).structured(ServicingError::Datastore {
+                    inner: DatastoreError::InitializeDatastore,
+                })?;
+            all_rows_data.insert(0, host_status);
+        }
+
+        Ok(all_rows_data)
+    }
+
     pub(crate) fn is_persistent(&self) -> bool {
         !self.temporary
     }
@@ -101,6 +136,7 @@ impl DataStore {
         if self.temporary {
             let persistent_db = Self::make_datastore(path)?;
             self.host_status.is_management_os = false;
+            self.host_status.trident_version = TRIDENT_VERSION.to_string();
             Self::write_host_status(&persistent_db, self.host_status())?;
 
             self.db = Some(persistent_db);
@@ -114,13 +150,15 @@ impl DataStore {
         db: &sqlite::Connection,
         host_status: &HostStatus,
     ) -> Result<(), TridentError> {
+        let mut local_host_status = host_status.clone();
+        local_host_status.trident_version = TRIDENT_VERSION.to_string();
         let mut statement = db
             .prepare("INSERT INTO hoststatus (contents) VALUES (?)")
             .structured(ServicingError::from(DatastoreError::WriteToDatastore))?;
         statement
             .bind((
                 1,
-                &*serde_yaml::to_string(host_status)
+                &*serde_yaml::to_string(&local_host_status)
                     .structured(InternalError::SerializeHostStatus)?,
             ))
             .structured(ServicingError::from(DatastoreError::WriteToDatastore))?;
