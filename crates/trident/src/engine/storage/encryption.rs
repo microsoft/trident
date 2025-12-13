@@ -27,7 +27,7 @@ use trident_api::{
         ESP_EFI_DIRECTORY, ESP_MOUNT_POINT_PATH,
     },
     error::{InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt},
-    status::{AbVolumeSelection, ServicingType},
+    status::AbVolumeSelection,
 };
 
 use crate::{
@@ -296,6 +296,7 @@ pub fn get_binary_paths_pcrlock(
     ctx: &EngineContext,
     pcrs: BitFlags<Pcr>,
     mount_path: Option<&Path>,
+    staging_rollback: bool,
 ) -> Result<(Vec<PathBuf>, Vec<PathBuf>), Error> {
     // If neither PCR 4 nor 11 are requested, no binaries are needed
     if !pcrs.contains(Pcr::Pcr4) && !pcrs.contains(Pcr::Pcr11) {
@@ -306,16 +307,12 @@ pub fn get_binary_paths_pcrlock(
     let esp_path = container::get_host_relative_path(PathBuf::from(ESP_MOUNT_POINT_PATH))
         .unstructured("Failed to get host-relative ESP mount path")?;
 
-    // If executing a manual rollback, set manual_rollback flag to true so that UKI and bootloader
-    // paths for the rollback OS are also constructed
-    let manual_rollback = matches!(ctx.servicing_type, ServicingType::ManualRollback);
-
     // If either PCR 4 or PCR 11 is requested, construct UKI paths
-    let uki_binaries = get_uki_paths(&esp_path, mount_path, manual_rollback)?;
+    let uki_binaries = get_uki_paths(&esp_path, mount_path, staging_rollback)?;
 
     // If PCR 4 is requested, construct bootloader paths
     let bootloader_binaries = if pcrs.contains(Pcr::Pcr4) {
-        get_bootloader_paths(ctx, &esp_path, mount_path, manual_rollback)?
+        get_bootloader_paths(ctx, &esp_path, mount_path, staging_rollback)?
     } else {
         vec![]
     };
@@ -343,13 +340,13 @@ pub fn get_binary_paths_pcrlock(
 ///
 /// 1. If `mount_path` is provided, func called during staging of an A/B update, so UKI binaries
 ///    for both current and future boot are returned.
-/// 3. If `manual_rollback` is set to true, func called during the staging of a manual rollback, so
-///    UKI binaries for both current and rollback boot are returned.
-/// 2. Otherwise, func called during boot validation, so return UKI binary for current boot only.
+/// 3. If `staging_rollback` is set to true, func called during the staging of a rollback, so UKI
+///    binaries for both current and rollback boot are returned.
+/// 2. Otherwise, func called during commit, so return UKI binary for current boot only.
 fn get_uki_paths(
     esp_path: &Path,
     mount_path: Option<&Path>,
-    manual_rollback: bool,
+    staging_rollback: bool,
 ) -> Result<Vec<PathBuf>, Error> {
     let mut uki_binaries: Vec<PathBuf> = Vec::new();
 
@@ -363,20 +360,15 @@ fn get_uki_paths(
     // During staging of A/B update, i.e. update image is mounted at mount_path, also construct the
     // update UKI binary path
     if mount_path.is_some() {
-        // If manual_rollback is set to true, return an error b/c manual rollback cannot be
-        // executed while staging an A/B update
-        if manual_rollback {
-            return Err(anyhow::anyhow!(
-                "Cannot generate .pcrlock files for manual rollback while staging an A/B update"
-            ));
-        }
+        debug!("Constructing UKI binary path for target OS image during A/B update staging");
         // UKI binary in target OS to be measured; it's currently staged at designated path
         let uki_update = esp_uki_directory.join(TMP_UKI_NAME);
         uki_binaries.push(uki_update.clone());
     }
 
-    // During staging of manual rollback, also construct the rollback UKI binary path
-    if manual_rollback {
+    // During staging of rollback, also construct the rollback UKI binary path
+    if staging_rollback {
+        debug!("Constructing UKI binary path for rollback OS during rollback staging");
         // Fetch previous boot entry
         let uki_filename =
             efivar::read_previous_var().unstructured("Failed to read previous boot entry")?;
@@ -397,7 +389,7 @@ fn get_uki_paths(
 ///
 /// 1. If `mount_path` is provided, func called during staging of an A/B update, so bootloader
 ///    binaries for both current and future boot are returned.
-/// 3. If `manual_rollback` is set to true, func called during the staging of a manual rollback, so
+/// 3. If `staging_rollback` is set to true, func called during the staging of a rollback, so
 ///    bootloader binaries for both current and rollback boot are returned.
 /// 2. Otherwise, func called during boot validation, so return bootloader binaries for current
 ///    boot only.
@@ -405,11 +397,11 @@ fn get_bootloader_paths(
     ctx: &EngineContext,
     esp_path: &Path,
     mount_path: Option<&Path>,
-    manual_rollback: bool,
+    staging_rollback: bool,
 ) -> Result<Vec<PathBuf>, Error> {
     let mut bootloader_binaries: Vec<PathBuf> = Vec::new();
 
-    let active_volume = match (mount_path.is_some(), manual_rollback) {
+    let active_volume = match (mount_path.is_some(), staging_rollback) {
         // Staging of an A/B update or a manual rollback: A/B active volume is set
         (true, false) | (false, true) => ctx.ab_active_volume.ok_or_else(|| {
             anyhow::anyhow!("Active volume must be set during A/B update or manual rollback")
@@ -444,6 +436,7 @@ fn get_bootloader_paths(
 
     // If there is mount_path, also construct bootloader paths in the target OS image
     if let Some(mount_path) = mount_path {
+        debug!("Constructing bootloader binaries for target OS image during A/B update staging");
         let esp_dir_path = join_relative(mount_path, ESP_MOUNT_POINT_PATH);
         // Primary bootloader, i.e. shim EFI executable, in target OS
         let (_, shim_update_relative) = bootentries::get_label_and_path(ctx, BOOT_EFI)?;
@@ -456,9 +449,10 @@ fn get_bootloader_paths(
         bootloader_binaries.push(systemd_boot_update);
     }
 
-    // If this is done during staging of manual rollback, we also construct paths to rollback
-    // bootloader binaries
-    if manual_rollback {
+    // If this is done during staging of rollback, we also construct paths to rollback bootloader
+    // binaries
+    if staging_rollback {
+        debug!("Constructing bootloader binaries for rollback OS during rollback staging");
         // Determine rollback volume
         let rollback_volume = match active_volume {
             AbVolumeSelection::VolumeB => AbVolumeSelection::VolumeA,
@@ -663,7 +657,7 @@ mod functional_test {
         // Test case #1: Neither PCR 4 nor 11 requested, so should return two empty vectors.
         let pcrs_none = BitFlags::empty();
         assert_eq!(
-            get_binary_paths_pcrlock(&ctx, pcrs_none, None).unwrap(),
+            get_binary_paths_pcrlock(&ctx, pcrs_none, None, false).unwrap(),
             (vec![], vec![])
         );
 
@@ -686,7 +680,7 @@ mod functional_test {
                 .join("\n")
         );
         assert_eq!(
-            get_binary_paths_pcrlock(&ctx, pcrs, None)
+            get_binary_paths_pcrlock(&ctx, pcrs, None, false)
                 .unwrap_err()
                 .to_string(),
             expected_error_message
@@ -695,14 +689,14 @@ mod functional_test {
         // Test case #3: All files exist, should return correct vectors.
         create_test_files(&expected_paths);
         assert_eq!(
-            get_binary_paths_pcrlock(&ctx, pcrs, None).unwrap(),
+            get_binary_paths_pcrlock(&ctx, pcrs, None, false).unwrap(),
             (vec![uki_path.clone()], expected_paths_a.clone())
         );
 
         // Test case #4: Only PCR 11 is requested, so should return only UKI paths.
         let pcrs_11 = BitFlags::from(Pcr::Pcr11);
         assert_eq!(
-            get_binary_paths_pcrlock(&ctx, pcrs_11, None).unwrap(),
+            get_binary_paths_pcrlock(&ctx, pcrs_11, None, false).unwrap(),
             (vec![uki_path.clone()], vec![])
         );
 
@@ -727,7 +721,7 @@ mod functional_test {
         create_test_files(&expected_paths_mnt);
 
         assert_eq!(
-            get_binary_paths_pcrlock(&ctx, pcrs, Some(&mount_path)).unwrap(),
+            get_binary_paths_pcrlock(&ctx, pcrs, Some(&mount_path), false).unwrap(),
             (expected_uki, expected_bootloader)
         );
 
