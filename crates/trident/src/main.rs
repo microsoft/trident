@@ -138,7 +138,6 @@ fn run_trident(
             Commands::Install { status, error, .. }
             | Commands::Update { status, error, .. }
             | Commands::Commit { status, error }
-            | Commands::Listen { status, error }
             | Commands::RebuildRaid { status, error, .. } => {
                 let config_path = match &args.command {
                     Commands::Update { config, .. } | Commands::Install { config, .. } => {
@@ -191,22 +190,12 @@ fn run_trident(
                         &mut datastore,
                         cli::to_operations(allowed_operations),
                         multiboot,
-                        #[cfg(feature = "grpc-dangerous")]
-                        &mut None,
                     ),
                     Commands::Update {
                         ref allowed_operations,
                         ..
-                    } => trident.update(
-                        &mut datastore,
-                        cli::to_operations(allowed_operations),
-                        #[cfg(feature = "grpc-dangerous")]
-                        &mut None,
-                    ),
+                    } => trident.update(&mut datastore, cli::to_operations(allowed_operations)),
                     Commands::Commit { .. } => trident.commit(&mut datastore),
-                    Commands::Listen { .. } => {
-                        trident.listen(&mut datastore).map(|()| ExitKind::Done)
-                    }
                     Commands::RebuildRaid { .. } => trident
                         .rebuild_raid(&mut datastore)
                         .map(|()| ExitKind::Done),
