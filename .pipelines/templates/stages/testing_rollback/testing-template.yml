@@ -48,6 +48,11 @@ parameters:
     type: string
     default: "false"
 
+  - name: SkipNetplanRuntimeTesting
+    displayName: "Skip netplan runtime testing"
+    type: string
+    default: "false"
+
 jobs:
   - job: RollbackTesting_${{ replace(parameters.flavor, '-', '_') }}
     displayName: Rollback Testing - ${{ parameters.flavor }}
@@ -134,6 +139,10 @@ jobs:
           if [ "${{ parameters.skipExtensionTesting }}" == "true" ]; then
             # Allow testing for non-extension scenarios
             STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --skip-extension-testing"
+          fi
+          if [ "${{ parameters.SkipNetplanRuntimeTesting }}" == "true" ]; then
+            # skip netplan runtime testing
+            STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --skip-netplan-runtime-testing"
           fi
 
           sudo ./bin/storm-trident run rollback -a $STORM_DYNAMIC_FLAGS \
