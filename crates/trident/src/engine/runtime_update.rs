@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use log::{debug, info, warn};
+use log::{debug, info, trace, warn};
 #[cfg(feature = "grpc-dangerous")]
 use tokio::sync::mpsc;
 
@@ -15,12 +15,12 @@ use crate::grpc;
 use crate::{
     datastore::DataStore,
     engine::{self, EngineContext},
-    monitor_metrics, ExitKind,
+    health, monitor_metrics, ExitKind,
 };
 
 use super::Subsystem;
 
-/// Stages a runtime update. Takes in 3-4 arguments:
+/// Stages a runtime update. Takes in 5-6 arguments:
 /// - subsystems: A mutable reference to the list of subsystems.
 /// - ctx: EngineContext.
 /// - state: A mutable reference to the DataStore.
@@ -82,18 +82,36 @@ pub(crate) fn stage_update(
 /// Finalizes a runtime update. Takes in 3-4 arguments:
 /// - subsystems: A mutable reference to the list of subsystems.
 /// - state: A mutable reference to the DataStore.
+/// - reverse_specs: A boolean indicating whether spec and spec_old in the
+///   EngineContext should be reversed. This is used for auto-rollback of
+///   runtime updates.
+/// - run_health_checks: A boolean indicating whether health checks should be
+///   performed before exiting.
 /// - update_start_time: Optional, the time at which the update staging began.
 /// - sender: Optional mutable reference to the gRPC sender.
 #[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", ServicingType::RuntimeUpdate)))]
 pub(crate) fn finalize_update(
     subsystems: &mut [Box<dyn Subsystem>],
     state: &mut DataStore,
+    reverse_specs: bool,
+    run_health_checks: bool,
     update_start_time: Option<Instant>,
     #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
 ) -> Result<ExitKind, TridentError> {
-    info!("Finalizing runtime update");
+    let target_spec;
+    let old_spec;
+    if !reverse_specs {
+        info!("Finalizing runtime update");
+        target_spec = state.host_status().spec.clone();
+        old_spec = state.host_status().spec_old.clone();
+    } else {
+        info!("Starting rollback of runtime update");
+        trace!("Reversing spec and spec_old");
+        target_spec = state.host_status().spec_old.clone();
+        old_spec = state.host_status().spec.clone();
+    }
 
     if state.host_status().servicing_state != ServicingState::RuntimeUpdateStaged {
         return Err(TridentError::internal(
@@ -102,8 +120,8 @@ pub(crate) fn finalize_update(
     }
 
     let mut ctx = EngineContext {
-        spec: state.host_status().spec.clone(),
-        spec_old: state.host_status().spec_old.clone(),
+        spec: target_spec,
+        spec_old: old_spec,
         servicing_type: ServicingType::RuntimeUpdate,
         ab_active_volume: state.host_status().ab_active_volume,
         partition_paths: state.host_status().partition_paths.clone(),
@@ -126,6 +144,12 @@ pub(crate) fn finalize_update(
     let ctx = ctx;
 
     engine::clean_up(subsystems, &ctx)?;
+
+    // Run health checks if we are performing a runtime update (skip if we are
+    // rolling back)
+    if run_health_checks {
+        health::execute_health_checks(&ctx)?;
+    }
 
     debug!(
         "Updating host's servicing state to '{:?}'",

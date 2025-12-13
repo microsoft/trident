@@ -53,7 +53,9 @@ impl Check {
     /// Returns true if the check should be executed on this servicing type.
     pub fn should_run(&self, servicing_type: ServicingType) -> bool {
         match servicing_type {
-            ServicingType::CleanInstall | ServicingType::AbUpdate => { /* valid */ }
+            ServicingType::CleanInstall
+            | ServicingType::AbUpdate
+            | ServicingType::RuntimeUpdate => { /* valid */ }
             _ => return false,
         }
         match self {
