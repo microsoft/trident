@@ -6,6 +6,13 @@ pub(super) mod logstream;
 pub(super) mod multilog;
 pub(super) mod tracestream;
 
+// TODO: Fully enable as part of #399.
+#[cfg(test)]
+pub(super) mod filter;
+// TODO: Fully enable as part of #399.
+#[cfg(test)]
+pub(super) mod logfwd;
+
 #[derive(Debug, Serialize, Deserialize)]
 struct LogEntry {
     pub level: Level,

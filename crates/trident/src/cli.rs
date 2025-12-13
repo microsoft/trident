@@ -94,17 +94,6 @@ pub enum Commands {
         error: Option<PathBuf>,
     },
 
-    #[clap(hide(true))]
-    Listen {
-        /// Path to save the resulting Host Status
-        #[clap(short, long)]
-        status: Option<PathBuf>,
-
-        /// Path to save an eventual fatal error
-        #[clap(short, long)]
-        error: Option<PathBuf>,
-    },
-
     /// Rebuild software RAID arrays managed by Trident
     #[clap(name = "rebuild-raid")]
     RebuildRaid {
@@ -202,7 +191,6 @@ impl Commands {
             Commands::Install { .. } => "install",
             Commands::Update { .. } => "update",
             Commands::Commit { .. } => "commit",
-            Commands::Listen { .. } => "listen",
             Commands::RebuildRaid { .. } => "rebuild-raid",
             Commands::StartNetwork { .. } => "start-network",
             Commands::Get { .. } => "get",
