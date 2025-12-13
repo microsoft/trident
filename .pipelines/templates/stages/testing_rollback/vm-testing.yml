@@ -118,8 +118,13 @@ stages:
               verboseLogging: ${{ parameters.verboseLogging }}
               platform: qemu
               flavor: qemu-grub
-              skipExtensionTesting: false
-              skipRuntimeUpdateTesting: false
+              # For qemu w/ root-verity
+              #   * extensions cannot be added to qcow2 is not supported
+              #   * netplan runtime changes cannot be made to config file on verity rootfs
+              #   * without extensions and netplan, runtime updates will service nothing
+              skipExtensionTesting: true
+              skipRuntimeUpdateTesting: true
+              SkipNetplanRuntimeTesting: true
       - ${{ if eq(parameters.includeQemu, true) }}:
           - template: testing-template.yml
             parameters:
