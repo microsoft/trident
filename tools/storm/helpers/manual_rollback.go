@@ -129,6 +129,14 @@ func (h *ManualRollbackHelper) rollback(tc storm.TestCase) error {
 		}
 	}
 
+	// Recreate ssh client after reboot
+	client.Close()
+	client, err = stormsshclient.OpenSshClient(h.args.SshCliSettings)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
 	// Verify rollback success
 	output, err = stormtrident.InvokeTrident(h.args.Env, client, []string{}, "get status")
 	if err != nil {
