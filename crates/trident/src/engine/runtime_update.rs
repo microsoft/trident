@@ -20,7 +20,7 @@ use crate::{
 
 use super::Subsystem;
 
-/// Stages a runtime update. Takes in 3-4 arguments:
+/// Stages a runtime update. Takes in 5-6 arguments:
 /// - subsystems: A mutable reference to the list of subsystems.
 /// - ctx: EngineContext.
 /// - state: A mutable reference to the DataStore.
@@ -147,7 +147,7 @@ pub(crate) fn finalize_update(
 
     // Run health checks if we are performing a runtime update (skip if we are
     // rolling back)
-    if !run_health_checks {
+    if run_health_checks {
         health::execute_health_checks(&ctx)?;
     }
 
