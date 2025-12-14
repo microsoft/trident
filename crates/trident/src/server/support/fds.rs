@@ -1,5 +1,5 @@
 use std::{
-    env,
+    env::{self, VarError},
     os::{
         fd::{AsRawFd, BorrowedFd, OwnedFd, RawFd},
         unix::net::UnixListener as StdUnixListener,
@@ -8,6 +8,7 @@ use std::{
 
 use anyhow::{bail, Context, Error};
 use nix::{
+    errno::Errno,
     fcntl,
     sys::socket::{self, AddressFamily, SockaddrLike, SockaddrStorage},
 };
@@ -16,6 +17,15 @@ use tokio::net::UnixListener;
 /// The starting file descriptor number for systemd socket activation.
 const SD_LISTEN_FDS_START: RawFd = 3;
 
+/// The name of the environment variable provided by systemd indicating the
+/// number of sockets the service is expected to listen on.
+const SD_LISTEN_FDS_ENV: &str = "LISTEN_FDS";
+
+/// The name of the environment variable provided by systemd indicating the
+/// names of the sockets the service is expected to listen on.
+const SD_LISTEN_FDNAMES_ENV: &str = "LISTEN_FDNAMES";
+
+/// Creates a Tokio UnixListener from the given OwnedFd.
 pub fn get_listener_from_fd(fd: OwnedFd) -> Result<UnixListener, Error> {
     log::info!(
         "Creating UnixListener from file descriptor {}",
@@ -34,53 +44,46 @@ pub fn get_listener_from_fd(fd: OwnedFd) -> Result<UnixListener, Error> {
     Ok(listener)
 }
 
+/// Retrieves the list of Unix socket file descriptors and their associated
+/// names provided by systemd socket activation.
 pub fn get_sd_fd_socket_data() -> Result<Vec<(OwnedFd, String)>, Error> {
-    // Try to parse LISTEN_FDS and LISTEN_FDNAMES environment variables.
-    let listen_fds = env::var("LISTEN_FDS").unwrap_or_else(|_| "0".to_string());
-    let listen_fds: i32 = listen_fds
-        .parse()
-        .map_err(|_| anyhow::anyhow!("LISTEN_FDS is not a valid integer"))?;
-
-    let listen_fds_names: Vec<String> = env::var("LISTEN_FDNAMES")
-        .unwrap_or_default()
-        .split(',')
-        .filter(|s| !s.is_empty())
-        .map(String::from)
-        .collect();
-
-    log::trace!(
-        "LISTEN_FDS: {}, LISTEN_FDNAMES: '{:?}'",
-        listen_fds,
-        listen_fds_names
-    );
-
-    if listen_fds < 0 {
-        bail!("LISTEN_FDS is negative");
-    }
-
-    if listen_fds != listen_fds_names.len() as i32 {
-        bail!("LISTEN_FDS does not match number of names in LISTEN_FDNAMES");
-    }
+    let listen_fds_names = read_systemd_socket_activation_env()?;
 
     // Collect the valid Unix socket FDs.
     let mut result = Vec::new();
     for (i, name) in listen_fds_names.iter().enumerate() {
         // Initialize the raw FD number.
-        let raw_fd = SD_LISTEN_FDS_START + i as RawFd;
+        let raw_fd = {
+            #[cfg(not(test))]
+            {
+                // When running normally, start from SD_LISTEN_FDS_START
+                SD_LISTEN_FDS_START
+            }
+
+            #[cfg(test)]
+            {
+                // In tests, we cannot guarantee that FDs starting from 3 are available,
+                // so we use a thread-local variable to override the starting FD.
+                tests::TEST_FD_START.with(|start| *start.borrow())
+            }
+        } + i as RawFd;
 
         // This is safe because we know the raw_fd is greater or equal to 3
-        // (negative is bad). We need to check if the fd is valid before taking
-        // ownership, otherwise we might close an invalid fd.
+        // (negative is bad). We need to check if the fd is valid (open) before
+        // taking ownership, otherwise we might close an invalid fd.
         let borrowed = unsafe { BorrowedFd::borrow_raw(raw_fd) };
 
         // Check if the fd is valid by getting its flags
-        fcntl::fcntl(borrowed, fcntl::F_GETFD).with_context(|| {
+        check_file_descriptor_validity(borrowed).with_context(|| {
             format!(
                 "File descriptor {}[{}] provided by systemd might be invalid: failed to get flags",
                 name, raw_fd
             )
         })?;
 
+        // Enforce that the fd is a Unix socket to avoid surprises later on like
+        // inadvertently listening on a network socket due to a bad config
+        // change.
         if !is_unix_socket(borrowed.as_raw_fd()) {
             bail!(
                 "File descriptor {}[{}] provided by systemd is not a Unix socket",
@@ -93,7 +96,7 @@ pub fn get_sd_fd_socket_data() -> Result<Vec<(OwnedFd, String)>, Error> {
         // because we have verified the fd is valid.
         let owned = borrowed.try_clone_to_owned().with_context(|| {
             format!(
-                "Failed to clone FD File descriptor {}[{}] provided by systemd",
+                "Failed to clone file descriptor {}[{}] provided by systemd",
                 name, raw_fd
             )
         })?;
@@ -110,13 +113,243 @@ pub fn get_sd_fd_socket_data() -> Result<Vec<(OwnedFd, String)>, Error> {
     Ok(result)
 }
 
+fn read_systemd_socket_activation_env() -> Result<Vec<String>, Error> {
+    // Try to parse LISTEN_FDS and LISTEN_FDNAMES environment variables.
+    let listen_fds = get_env_var(SD_LISTEN_FDS_ENV).unwrap_or_else(|_| "0".to_string());
+    let listen_fds: i32 = listen_fds
+        .parse()
+        .map_err(|_| anyhow::anyhow!("'{SD_LISTEN_FDS_ENV}' is not a valid integer"))?;
+
+    let listen_fds_names: Vec<String> = get_env_var(SD_LISTEN_FDNAMES_ENV)
+        .unwrap_or_default()
+        .split(',')
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .collect();
+
+    log::trace!(
+        "Systemd socket activation: '{SD_LISTEN_FDS_ENV}': {listen_fds}, \
+        '{SD_LISTEN_FDNAMES_ENV}': \"{listen_fds_names:?}\"",
+    );
+
+    if listen_fds < 0 {
+        bail!("'{SD_LISTEN_FDS_ENV}' is negative");
+    }
+
+    if listen_fds != listen_fds_names.len() as i32 {
+        bail!("'{SD_LISTEN_FDS_ENV}' does not match number of names in '{SD_LISTEN_FDNAMES_ENV}'");
+    }
+
+    Ok(listen_fds_names)
+}
+
+/// A test-friendly version of `env::var` that reads from a thread-local
+/// map of environment variables when running tests.
+fn get_env_var(key: &str) -> Result<String, VarError> {
+    #[cfg(not(test))]
+    {
+        env::var(key)
+    }
+
+    #[cfg(test)]
+    {
+        tests::TEST_ENV_VARS.with(|env| env.borrow().get(key).cloned().ok_or(VarError::NotPresent))
+    }
+}
+
+/// Checks if the given file descriptor corresponds to a Unix socket.
 fn is_unix_socket(fd: RawFd) -> bool {
     matches!(get_addr_family(fd), Some(AddressFamily::Unix))
 }
 
+/// Gets the address family of the socket associated with the given file
+/// descriptor.
 fn get_addr_family(fd: RawFd) -> Option<AddressFamily> {
     match socket::getsockname::<SockaddrStorage>(fd) {
         Ok(addr) => addr.family(),
         Err(_) => None,
+    }
+}
+
+/// Checks whether a socket is valid by getting its status flags.
+fn check_file_descriptor_validity(fd: BorrowedFd) -> Result<(), Errno> {
+    fcntl::fcntl(fd, fcntl::F_GETFL).map(|_| ())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::{
+        cell::RefCell,
+        collections::HashMap,
+        fs::File,
+        os::{fd::AsFd, unix::net::UnixListener as StdUnixListener},
+    };
+
+    use tempfile::tempdir;
+    use tokio::net::UnixListener;
+
+    /// Thread-local storage for test environment variables.
+    thread_local! {
+        /// Used to mock environment variables in tests.
+        pub(super) static TEST_ENV_VARS: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
+
+        /// Used to override SD_LISTEN_FDS_START in tests.
+        pub(super) static TEST_FD_START: RefCell<RawFd> = const { RefCell::new(0) };
+    }
+
+    /// Sets a test environment variable in the thread-local storage.
+    fn set_test_env_var(key: &str, value: &str) {
+        TEST_ENV_VARS.with(|env| {
+            env.borrow_mut().insert(key.to_string(), value.to_string());
+        });
+    }
+
+    /// Clears all test environment variables in the thread-local storage.
+    fn clear_test_env_vars() {
+        TEST_ENV_VARS.with(|env| {
+            env.borrow_mut().clear();
+        });
+    }
+
+    #[tokio::test]
+    async fn test_get_listener_from_fd() {
+        let dir = tempdir().unwrap();
+        let socket_path = dir.path().join("test_socket");
+        let std_listener = StdUnixListener::bind(&socket_path).unwrap();
+        let owned_fd = OwnedFd::from(std_listener);
+
+        let listener = get_listener_from_fd(owned_fd).unwrap();
+        assert_eq!(
+            listener.local_addr().unwrap().as_pathname(),
+            Some(socket_path.as_path())
+        );
+    }
+
+    #[test]
+    fn test_is_unix_socket() {
+        // Try with a Unix socket
+        let dir = tempdir().unwrap();
+        let socket_path = dir.path().join("test_socket");
+        let std_listener = StdUnixListener::bind(&socket_path).unwrap();
+        let raw_fd = std_listener.as_raw_fd();
+
+        assert!(is_unix_socket(raw_fd));
+
+        // Try with a non-socket fd (e.g., a file)
+        let file = File::create(dir.path().join("test_file")).unwrap();
+        let raw_fd = file.as_raw_fd();
+        assert!(!is_unix_socket(raw_fd));
+    }
+
+    #[test]
+    fn test_get_addr_family() {
+        let dir = tempdir().unwrap();
+        let socket_path = dir.path().join("test_socket");
+        let std_listener = StdUnixListener::bind(&socket_path).unwrap();
+        let raw_fd = std_listener.as_raw_fd();
+
+        let family = get_addr_family(raw_fd).unwrap();
+        assert_eq!(family, AddressFamily::Unix);
+    }
+
+    #[test]
+    fn test_read_systemd_socket_activation_env() {
+        set_test_env_var(SD_LISTEN_FDS_ENV, "2");
+        set_test_env_var(SD_LISTEN_FDNAMES_ENV, "socket1,socket2");
+        let names = read_systemd_socket_activation_env().unwrap();
+        assert_eq!(names, vec!["socket1".to_string(), "socket2".to_string()]);
+    }
+
+    #[test]
+    fn test_read_systemd_socket_activation_env_empty() {
+        set_test_env_var(SD_LISTEN_FDS_ENV, "0");
+        set_test_env_var(SD_LISTEN_FDNAMES_ENV, "");
+        let names = read_systemd_socket_activation_env().unwrap();
+        assert_eq!(names, Vec::<String>::new());
+
+        clear_test_env_vars();
+
+        let names = read_systemd_socket_activation_env().unwrap();
+        assert_eq!(names, Vec::<String>::new());
+    }
+
+    #[test]
+    fn test_read_systemd_socket_activation_env_mismatch() {
+        set_test_env_var(SD_LISTEN_FDS_ENV, "2");
+        set_test_env_var(SD_LISTEN_FDNAMES_ENV, "socket1");
+        let err = read_systemd_socket_activation_env().unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("does not match number of names in"));
+    }
+
+    #[test]
+    fn test_read_systemd_socket_activation_env_invalid() {
+        // Negative LISTEN_FDS
+        set_test_env_var(SD_LISTEN_FDS_ENV, "-1");
+        set_test_env_var(SD_LISTEN_FDNAMES_ENV, "socket1");
+        let err = read_systemd_socket_activation_env().unwrap_err();
+        assert!(err.to_string().contains("'LISTEN_FDS' is negative"));
+
+        // Non-integer LISTEN_FDS
+        set_test_env_var(SD_LISTEN_FDS_ENV, "abc");
+        let err = read_systemd_socket_activation_env().unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("'LISTEN_FDS' is not a valid integer"));
+    }
+
+    #[test]
+    fn test_get_sd_fd_socket_data() {
+        // No env vars set
+        clear_test_env_vars();
+        let result = get_sd_fd_socket_data().unwrap();
+        assert!(result.is_empty());
+
+        // Set env vars for 1 socket
+        set_test_env_var(SD_LISTEN_FDS_ENV, "1");
+        set_test_env_var(SD_LISTEN_FDNAMES_ENV, "test_socket");
+
+        // Create a Unix socket to occupy the fd
+        let dir = tempdir().unwrap();
+        let socket_path = dir.path().join("test_socket");
+        let std_listener = StdUnixListener::bind(&socket_path).unwrap();
+
+        TEST_FD_START.set(std_listener.as_raw_fd());
+        let mut fds = get_sd_fd_socket_data().unwrap();
+        assert_eq!(fds.len(), 1);
+
+        // Assert the two fds refer to the same socket
+        let (fd, name) = fds.pop().unwrap();
+        assert_eq!(name, "test_socket".to_string());
+        let socket_listener = StdUnixListener::from(fd);
+        assert_eq!(
+            socket_listener.local_addr().unwrap().as_pathname(),
+            Some(socket_path.as_path())
+        );
+    }
+
+    #[test]
+    fn test_check_file_descriptor_validity() {
+        // Check with a valid socket fd
+        let dir = tempdir().unwrap();
+        let socket_path = dir.path().join("test_socket");
+        let std_listener = StdUnixListener::bind(&socket_path).unwrap();
+        let borrowed_fd = std_listener.as_fd();
+
+        check_file_descriptor_validity(borrowed_fd).unwrap();
+
+        // Check with a valid file fd
+        let file = File::create(dir.path().join("test_file")).unwrap();
+        let borrowed_fd = file.as_fd();
+
+        check_file_descriptor_validity(borrowed_fd).unwrap();
+
+        // Check with an invalid fd
+        let invalid_fd = unsafe { BorrowedFd::borrow_raw(424242) };
+        let err = check_file_descriptor_validity(invalid_fd).unwrap_err();
+        assert_eq!(err, Errno::EBADF);
     }
 }
