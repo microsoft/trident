@@ -20,7 +20,6 @@ use super::Subsystem;
 /// - subsystems: A mutable reference to the list of subsystems.
 /// - ctx: EngineContext.
 /// - state: A mutable reference to the DataStore.
-/// - sender: Optional mutable reference to the gRPC sender.
 #[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", ServicingType::RuntimeUpdate)))]
 pub(crate) fn stage_update(
     subsystems: &mut [Box<dyn Subsystem>],
@@ -74,7 +73,6 @@ pub(crate) fn stage_update(
 /// - subsystems: A mutable reference to the list of subsystems.
 /// - state: A mutable reference to the DataStore.
 /// - update_start_time: Optional, the time at which the update staging began.
-/// - sender: Optional mutable reference to the gRPC sender.
 #[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", ServicingType::RuntimeUpdate)))]
 pub(crate) fn finalize_update(
     subsystems: &mut [Box<dyn Subsystem>],
