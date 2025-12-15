@@ -72,7 +72,6 @@ pytest_gen = { path = "../pytest_gen", optional = true }
 pytest = { path = "../pytest", optional = true }
 
 [build-dependencies]
-tonic-build = { version = "0.12.3", optional = true }
 osutils = { path = "../osutils" }
 
 [dev-dependencies]

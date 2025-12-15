@@ -152,7 +152,6 @@ fn clean_install_safety_check(
 /// - subsystems: A mutable reference to the list of subsystems.
 /// - state: A mutable reference to the DataStore.
 /// - host_config: A reference to the HostConfiguration.
-/// - sender: Optional mutable reference to the gRPC sender.
 ///
 /// On success, returns a NewrootMount.
 #[tracing::instrument(skip_all)]
@@ -269,7 +268,6 @@ fn stage_clean_install(
 /// - state: A mutable reference to the DataStore.
 /// - new_root_path: New root device path. If None, a new root is created and mounted.
 /// - clean_install_start_time: Optional instant when clean install started.
-/// - sender: Optional mutable reference to the gRPC sender.
 #[tracing::instrument(skip_all)]
 pub(crate) fn finalize_clean_install(
     state: &mut DataStore,
