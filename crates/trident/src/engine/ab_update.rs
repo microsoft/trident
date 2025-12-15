@@ -27,7 +27,6 @@ use super::Subsystem;
 /// - subsystems: A mutable reference to the list of subsystems.
 /// - ctx: EngineContext.
 /// - state: A mutable reference to the DataStore.
-/// - sender: Optional mutable reference to the gRPC sender.
 ///
 /// On success, returns an Option<NewrootMount>; This is not null only for A/B updates.
 #[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", ctx.servicing_type)))]
@@ -128,7 +127,6 @@ pub(super) fn stage_update(
 /// Finalizes an update. Takes in 2-3 arguments:
 /// - state: A mutable reference to the DataStore.
 /// - update_start_time: The time at which the update began staging.
-/// - sender: Optional mutable reference to the gRPC sender.
 #[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", ServicingType::AbUpdate)))]
 pub(crate) fn finalize_update(
     state: &mut DataStore,

@@ -62,13 +62,13 @@ osutils = { path = "../osutils" }
 trident_api = { path = "../trident_api" }
 
 # gRPC API Dependencies
-hyper = "1.0"
-hyper-util = { version = "0.1.17", features = ["tokio"] }
+hyper = "1.8.1"
+hyper-util = { version = "0.1.19", features = ["tokio"] }
 prost = "0.14.1"
 prost-types = "0.14.1"
-tokio = { version = "1.47.1", features = ["full"] }
+tokio = { version = "1.48.0", features = ["full"] }
 tokio-stream = { version = "0.1.17", features = ["net"] }
-tokio-util = "0.7.16"
+tokio-util = "0.7.17"
 tonic = "0.14.2"
 tonic-middleware = "0.4.0"
 tonic-prost = "0.14.2"
@@ -83,7 +83,6 @@ pytest_gen = { path = "../pytest_gen", optional = true }
 pytest = { path = "../pytest", optional = true }
 
 [build-dependencies]
-tonic-build = { version = "0.12.3", optional = true }
 osutils = { path = "../osutils" }
 
 [dev-dependencies]
