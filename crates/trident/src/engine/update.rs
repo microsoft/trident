@@ -186,7 +186,10 @@ pub(crate) fn update(
                         Some(update_start_time),
                         #[cfg(feature = "grpc-dangerous")]
                         sender,
-                    );
+                    )
+                    .message(format!(
+                        "Auto-rollback was triggered by runtime update failure: {e:?}"
+                    ));
                 }
                 finalize_result
             }

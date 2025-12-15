@@ -636,7 +636,9 @@ impl Trident {
                                     None,
                                     #[cfg(feature = "grpc-dangerous")]
                                     sender,
-                                );
+                                ).message(format!(
+                                    "Auto-rollback was triggered by runtime update failure: {e:?}"
+                                ));
                             }
                             finalize_result
                         } else {
