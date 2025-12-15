@@ -40,18 +40,22 @@ reqwest = { version = "0.12.9", default-features = false, features = [
 serde = { version = "1.0.215", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9.34"
+sha2 = "0.10.8"
 sqlite = "0.36.1"
 strum = "0.26.3"
 strum_macros = "0.26.4"
 sys-mount = { version = "3.0.1", default-features = false } # Disable loop device feature
 sysinfo = "0.30.13"
+systemd-journal-logger = "2.2.2"
 tar = "0.4.43"
 tempfile = "3.14.0"
+tera = "1.20.0"
 tokio = { version = "1.43.1", features = ["rt-multi-thread"] }
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["json"] }
 url = { version = "2.5.4", features = ["serde"] }
 uuid = { version = "1.11.0", features = ["v4", "serde"] }
+zstd = "0.13.3"
 
 sysdefs = { path = "../sysdefs" }
 osutils = { path = "../osutils" }
@@ -62,18 +66,10 @@ indoc = { version = "2.0.5", optional = true }
 inventory = { version = "0.3.15", optional = true }
 pytest_gen = { path = "../pytest_gen", optional = true }
 
-# Optional dependencies used for grpc
+# Optional dependencies
 pytest = { path = "../pytest", optional = true }
-prost = { version = "0.13.4", optional = true }
-tonic = { version = "0.12.3", optional = true }
-tokio-stream = { version = "0.1.17", optional = true }
-sha2 = "0.10.8"
-zstd = "0.13.3"
-tera = "1.20.0"
-systemd-journal-logger = "2.2.2"
 
 [build-dependencies]
-tonic-build = { version = "0.12.3", optional = true }
 osutils = { path = "../osutils" }
 
 [dev-dependencies]
@@ -95,4 +91,3 @@ functional-test = [
     "inventory",
 ]
 pytest-generator = ["pytest", "osutils/pytest-generator"]
-grpc-dangerous = ["prost", "tonic", "tokio-stream", "tonic-build"]
