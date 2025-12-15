@@ -22,6 +22,14 @@ func (ht HardwareType) ToString() string {
 	return string(ht)
 }
 
+func (ht HardwareType) IsVM() bool {
+	return ht == HardwareTypeVM
+}
+
+func (ht HardwareType) IsBM() bool {
+	return ht == HardwareTypeBM
+}
+
 func HardwareTypes() []HardwareType {
 	return []HardwareType{HardwareTypeBM, HardwareTypeVM}
 }

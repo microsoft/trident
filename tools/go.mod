@@ -4,8 +4,7 @@ go 1.24.0
 
 toolchain go1.24.2
 
-// Deal with CVE-2024-45338, CVE-2025-22870, CVE-2025-22872
-replace golang.org/x/net => golang.org/x/net v0.39.0
+replace github.com/microsoft/storm => ../../storm
 
 require (
 	github.com/bmc-toolbox/bmclib/v2 v2.0.1-0.20230530141715-da28e42c453f

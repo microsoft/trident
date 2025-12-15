@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/digitalocean/go-libvirt"
+	"libvirt.org/go/libvirtxml"
 )
 
 type VirtDeployConfig struct {
@@ -72,6 +73,9 @@ type VirtDeployVM struct {
 	// NVRAM file and path
 	nvramFile string
 	nvramPath string
+
+	// Final domain definition at creation time
+	domainDefinition libvirtxml.Domain
 
 	// User-configurable fields
 

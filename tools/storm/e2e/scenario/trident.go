@@ -25,34 +25,37 @@ type TridentE2EHostConfigParams struct {
 }
 
 type TridentE2EScenario struct {
-	// Configuration variables
-
-	// Base scenario from the Storm framework
+	// Base scenario from the Storm framework to fulfill the interface.
 	storm.BaseScenario
+
+	// Configuration variables. All these fields are guaranteed to be set by the
+	// constructor.
+
 	// Name of the scenario
 	name string
 	// Tags associated with the scenario
 	tags []string
-	// Hardware and runtime types for this scenario
+	// Hardware type of the scenario
 	hardware HardwareType
-	runtime  RuntimeType
+	// Runtime type of the scenario
+	runtime RuntimeType
 	// Test rings that this scenario should be run in
 	testRings testrings.TestRingSet
-
 	// Host configuration for this scenario
 	config *gabs.Container
 	// Parameters specific to this host configuration
 	configParams TridentE2EHostConfigParams
 
-	// Storm scenario arguments
+	// Storm scenario arguments, populated when the scenario is executed.
 	args struct {
-		IsoPath         string `name:"iso" help:"Path to the ISO to use for OS installation." required:"true"`
-		PipelineRun     bool   `name:"pipeline-run" help:"Indicates whether the scenario is being run in a pipeline context. This will, among other things, install dependencies."`
-		TestImageDir    string `short:"i" name:"test-image-dir" help:"Directory containing the test images to use for OS installation." default:"./artifacts/test-image"`
-		LogstreamFile   string `name:"logstream-file" help:"File to write logstream to." default:"logstream-full.log"`
-		TracestreamFile string `name:"tracestream-file" help:"File to write tracestream to."`
-		CertFile        string `name:"signing-cert" help:"Path to certificate file to inject into VM EFI variables."`
-		DumpSshKeyFile  string `name:"dump-ssh-key" help:"If set, the SSH private key used for VM access will be dumped to the specified file."`
+		IsoPath               string `name:"iso" help:"Path to the ISO to use for OS installation." required:"true"`
+		PipelineRun           bool   `name:"pipeline-run" help:"Indicates whether the scenario is being run in a pipeline context. This will, among other things, install dependencies."`
+		TestImageDir          string `short:"i" name:"test-image-dir" help:"Directory containing the test images to use for OS installation." default:"./artifacts/test-image"`
+		LogstreamFile         string `name:"logstream-file" help:"File to write logstream to." default:"logstream-full.log"`
+		TracestreamFile       string `name:"tracestream-file" help:"File to write tracestream to."`
+		CertFile              string `name:"signing-cert" help:"Path to certificate file to inject into VM EFI variables."`
+		DumpSshKeyFile        string `name:"dump-ssh-key" help:"If set, the SSH private key used for VM access will be dumped to the specified file."`
+		VmWaitForLoginTimeout int    `name:"vm-wait-for-login-timeout" help:"Time in seconds to wait for the VM to reach login prompt." default:"600"`
 	}
 
 	// Runtime variables
@@ -120,10 +123,17 @@ func (s *TridentE2EScenario) RuntimeType() RuntimeType {
 }
 
 func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {
-	r.RegisterTestCase("install-vm-deps", s.installVmDependencies)
+	if s.hardware.IsVM() {
+		r.RegisterTestCase("install-vm-deps", s.installVmDependencies)
+	}
+
 	r.RegisterTestCase("prepare-hc", s.prepareHostConfig)
-	r.RegisterTestCase("setup-vm", s.setupTestHost)
+	r.RegisterTestCase("setup-test-host", s.setupTestHost)
 	r.RegisterTestCase("install-os", s.installOs)
+
+	if s.hardware.IsVM() {
+		r.RegisterTestCase("wait-for-login", s.waitForLoginVm)
+	}
 	return nil
 }
 

@@ -2,10 +2,12 @@
 package file
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"time"
 )
 
 func FindFile(dir, pattern string) (string, error) {
@@ -31,4 +33,23 @@ func FindFile(dir, pattern string) (string, error) {
 		return "", fmt.Errorf("multiple files found: %v", matchingFiles)
 	}
 	return matchingFiles[0], nil
+}
+
+func WaitForFileToExist(ctx context.Context, filePath string) error {
+	for {
+		if _, err := os.Stat(filePath); err == nil {
+			return nil
+		}
+
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		// Sleep for a short duration before checking again
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
 }

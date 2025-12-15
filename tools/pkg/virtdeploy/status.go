@@ -1,6 +1,10 @@
 package virtdeploy
 
-import "github.com/google/uuid"
+import (
+	"github.com/digitalocean/go-libvirt"
+	"github.com/google/uuid"
+	"libvirt.org/go/libvirtxml"
+)
 
 type VirtDeployStatus struct {
 	// Namespace in which the resources were created
@@ -28,4 +32,11 @@ type VirtDeployVMStatus struct {
 
 	// Path to the VM's NVRAM file on the host
 	NvramPath string `json:"nvramPath"`
+
+	// Full XML definition of the libvirt domain at creation time.
+	Definition libvirtxml.Domain `json:"-"`
+}
+
+func (v *VirtDeployVMStatus) LibvirtUUID() libvirt.UUID {
+	return libvirt.UUID(v.Uuid)
 }

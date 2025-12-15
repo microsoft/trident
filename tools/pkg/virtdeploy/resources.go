@@ -236,6 +236,7 @@ func (rc *virtDeployResourceConfig) construct() (*VirtDeployStatus, error) {
 			MACAddress: vm.mac.String(),
 			Uuid:       uuid.UUID(vm.domain.UUID),
 			NvramPath:  vm.nvramPath,
+			Definition: vm.domainDefinition,
 		}
 	}
 
@@ -551,10 +552,14 @@ func (rc *virtDeployResourceConfig) setupVm(vm *VirtDeployVM) error {
 		vm.cdroms[i].device = fmt.Sprintf("sd%c", 'z'-i) // /dev/sdz, /dev/sdy, etc.
 	}
 
-	// Turn the configuration into XML
-	domainXML, err := vm.asXml(rc.network, rc.nvramPool)
+	// Generate the final domain definition, and store it in the VM struct
+	domain := vm.intoLibvirtStruct(rc.network, rc.nvramPool)
+	vm.domainDefinition = domain
+
+	// Marshal the domain definition to XML for libvirt
+	domainXML, err := domain.Marshal()
 	if err != nil {
-		return fmt.Errorf("generate domain XML: %w", err)
+		return fmt.Errorf("failed to marshal domain XML: %w", err)
 	}
 
 	log.Tracef("Defining domain with XML:\n%s", domainXML)
