@@ -20,7 +20,7 @@ use crate::{
 
 use super::Subsystem;
 
-/// Stages a runtime update. Takes in 5-6 arguments:
+/// Stages a runtime update. Takes in 3-4 arguments:
 /// - subsystems: A mutable reference to the list of subsystems.
 /// - ctx: EngineContext.
 /// - state: A mutable reference to the DataStore.
@@ -79,7 +79,7 @@ pub(crate) fn stage_update(
     Ok(())
 }
 
-/// Finalizes a runtime update. Takes in 3-4 arguments:
+/// Finalizes a runtime update. Takes in 5-6 arguments:
 /// - subsystems: A mutable reference to the list of subsystems.
 /// - state: A mutable reference to the DataStore.
 /// - reverse_specs: A boolean indicating whether spec and spec_old in the
