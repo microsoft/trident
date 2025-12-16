@@ -600,13 +600,19 @@ impl ManualRollbackContext {
                     } else if host_status_context.host_status_index
                         >= last_initial_consecutive_provisioned_state
                     {
-                        trace!(
-                            "New Provisioned state detected at index {} for active volume {:?}",
-                            i,
-                            instance.active_volume
-                        );
                         let last_error_exists = hs.last_error.is_some();
                         let encryption_configured = hs.spec.storage.encryption.is_some();
+                        let active_volume_changed = hs.ab_active_volume != instance.active_volume;
+                        let encryption_with_volume_change =
+                            encryption_configured && active_volume_changed;
+                        trace!(
+                            "New Provisioned state detected at index {} for active volume {:?}, last_error_exists={}, trident_is_too_old={}, encryption_with_volume_change={}",
+                            i,
+                            instance.active_volume,
+                            last_error_exists,
+                            trident_is_too_old,
+                            encryption_with_volume_change
+                        );
                         // Prepend the last Provisioned index to the previously active volume's available
                         // rollbacks.
                         //
@@ -614,11 +620,11 @@ impl ManualRollbackContext {
                         //   1. The Trident version is too old to support manual rollback
                         //   2. If a last_error is set on the HostStatus
                         //   3. FOR NOW: if encryption is configured, as we do not yet support
-                        //      manual rollback with encryption
+                        //      manual rollback of ab update with encryption
                         match (
                             last_error_exists,
                             trident_is_too_old,
-                            encryption_configured,
+                            encryption_with_volume_change,
                             instance.active_volume,
                         ) {
                             (false, false, false, Some(AbVolumeSelection::VolumeA)) => {
@@ -952,7 +958,7 @@ mod tests {
             context.get_requires_reboot().unwrap(),
             expected_requires_reboot
         );
-        let serialized_output = serde_yaml::from_str::<Vec<RollbackDetail>>(
+        let serialized_output = serde_yaml::from_str::<Vec<serde_yaml::Value>>(
             &context.get_rollback_chain_yaml().unwrap(),
         )
         .unwrap();
@@ -1236,6 +1242,18 @@ mod tests {
             prov_enc(VOL_B, false, vec![], MIN),
         ];
         rollback_context_testing(&host_status_list, "Validate a/b update with encryption");
+    }
+
+    #[test]
+    fn test_runtime_update_encryption() {
+        let host_status_list = vec![
+            inter_enc(None, CI_FINAL, MIN),
+            inter_enc(None, CI_FINAL, MIN),
+            prov_enc(VOL_A, false, vec![], MIN),
+            inter_enc(VOL_A, RU_STAGE, MIN),
+            prov_enc(VOL_A, false, vec![2], MIN),
+        ];
+        rollback_context_testing(&host_status_list, "Validate runtime update with encryption");
     }
 
     #[test]
