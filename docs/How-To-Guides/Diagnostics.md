@@ -16,6 +16,13 @@ This creates a compressed bundle containing:
 - Current and historical logs (see [View Trident's Background Log](./View-Trident's-Background-Log.md))
 - Datastore files
 
+### Optional Flags
+
+For more comprehensive diagnostics, you can include additional information:
+
+- `--full`: Includes the complete system journal from the current boot, including kernel messages (`dmesg`). Useful for diagnosing system-level issues.
+- `--selinux`: Includes the SELinux audit log (`/var/log/audit/audit.log`). Useful for diagnosing SELinux policy denials.
+
 **Note**: If you encounter an "access denied" error, SELinux may be preventing Trident from writing to that location. Use `/tmp` as shown above.
 
 ## Extract and Review the Bundle
@@ -28,11 +35,34 @@ cd trident-diagnostics
 ```
 
 The bundle contains:
-- `report.json` - System metadata and diagnostics summary
-- `datastore.sqlite` - Trident datastore (and variants if present)
+
+**Report file:**
+- `report.json` - Comprehensive diagnostics report including:
+  - Timestamp and Trident version
+  - Host description (container/VM detection, virtualization type, platform info)
+  - Block device and mount information
+  - Health check status (health check systemd services)
+  - TPM 2.0 pcrlock log
+  - Trident service status and journal
+  - Host status
+
+**Log files:**
 - `logs/trident-full.log` - Current execution log
 - `logs/trident-metrics.jsonl` - Current metrics
-- `logs/historical/` - Logs from past servicing operations
+- `logs/historical/` - Logs and metrics from past servicing operations
+
+**Datastore files:**
+- `datastore.sqlite` - Default Trident datastore
+- `datastore-tmp.sqlite` - Temporary datastore (if present)
+- `datastore-configured.sqlite` - Configured datastore (if present)
+
+**System configuration:**
+- `files/fstab` - File system mount configuration (`/etc/fstab`)
+- `tpm/pcrlock.json` - TPM 2.0 pcrlock policy (if available)
+
+**Optional files (when flags are specified):**
+- `full-journal` - Full system journal (with `--full`)
+- `selinux/audit.log` - SELinux audit log (with `--selinux`)
 
 ## Share the Bundle for Support
 
