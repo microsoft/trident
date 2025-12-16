@@ -5,9 +5,10 @@ use std::{
 
 use anyhow::Error;
 use log::{debug, info, warn};
-use osutils::lsblk;
+use osutils::{dependencies::Dependency, findmnt, lsblk, pcrlock};
 use serde::{Deserialize, Serialize};
 use trident_api::{
+    config::{Check, Health},
     error::{InternalError, ReportError, TridentError},
     status::HostStatus,
 };
@@ -22,7 +23,7 @@ const DMI_SYS_VENDOR_FILE: &str = "/sys/class/dmi/id/sys_vendor";
 const DMI_PRODUCT_NAME_FILE: &str = "/sys/class/dmi/id/product_name";
 
 /// The diagnostics report contains all collected information
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct DiagnosticsReport {
     /// Timestamp when the report was generated
     pub timestamp: String,
@@ -36,7 +37,7 @@ pub struct DiagnosticsReport {
     pub collected_files: Option<Vec<FileMetadata>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct HostDescription {
     /// Whether running in a container
     pub is_container: bool,
@@ -46,8 +47,36 @@ pub struct HostDescription {
     pub virt_type: String,
     /// Platform information
     pub platform_info: std::collections::BTreeMap<String, serde_json::Value>,
-    /// Disk information
-    pub disk_info: Option<Vec<lsblk::BlockDevice>>,
+    /// Block device information
+    pub blockdev_info: Option<Vec<lsblk::BlockDevice>>,
+    /// File system information (from FindMnt)
+    pub mount_info: Option<findmnt::FindMnt>,
+    /// Status of systemd services from configured health checks
+    pub health_check_status: Option<Vec<SystemdServiceStatus>>,
+    /// TPM 2.0 pcrlock log output
+    pub pcrlock_log: Option<pcrlock::LogOutput>,
+    /// Trident service status and journal
+    pub trident_service: TridentServiceDiagnostics,
+}
+
+/// Status information for a systemd service from a health check
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SystemdServiceStatus {
+    /// Name of the systemd service
+    pub service: String,
+    /// Whether the service is active/running
+    pub is_active: bool,
+    /// Output from systemctl status
+    pub status_output: String,
+}
+
+/// Diagnostics for the trident.service systemd unit
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TridentServiceDiagnostics {
+    /// Output from systemctl status trident.service
+    pub status: String,
+    /// Output from journalctl -u trident.service
+    pub journal: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,15 +92,12 @@ pub struct FileMetadata {
 fn collect_report() -> Result<DiagnosticsReport, TridentError> {
     info!("Collecting diagnostics information");
 
-    let timestamp = chrono::Utc::now().to_rfc3339();
-    let version = TRIDENT_VERSION.to_string();
-
-    let host_description = collect_host_description();
     let host_status = collect_host_status();
+    let host_description = collect_host_description(host_status.as_ref());
 
     Ok(DiagnosticsReport {
-        timestamp,
-        version,
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        version: TRIDENT_VERSION.to_string(),
         host_description,
         host_status,
         collected_files: None,
@@ -103,22 +129,73 @@ fn get_datastore_paths() -> DatastorePaths {
     }
 }
 
-fn collect_host_description() -> HostDescription {
+fn collect_host_description(host_status: Option<&HostStatus>) -> HostDescription {
     let is_container = osutils::container::is_running_in_container().unwrap_or_else(|e| {
         warn!("Container environment detection failed: {:?}", e);
         false
     });
     let platform_info = logging::tracestream::PLATFORM_INFO.clone();
     let (is_virtual, virt_type) = get_virtualization_info();
-    let disk_info = lsblk::list().ok();
+    let blockdev_info = lsblk::list()
+        .map_err(|e| warn!("Failed to collect block device info: {:?}", e))
+        .ok();
+    let mount_info = findmnt::FindMnt::run()
+        .map_err(|e| warn!("Failed to collect mount info: {:?}", e))
+        .ok();
+    let health_check_status = host_status.map(|hs| collect_health_check_status(&hs.spec.health));
+    let pcrlock_log = collect_pcrlock_log();
+    let trident_service = collect_trident_service_diagnostics();
 
     HostDescription {
         is_container,
         is_virtual,
         virt_type,
         platform_info,
-        disk_info,
+        blockdev_info,
+        mount_info,
+        health_check_status,
+        pcrlock_log,
+        trident_service,
     }
+}
+
+fn collect_pcrlock_log() -> Option<pcrlock::LogOutput> {
+    match pcrlock::log_parsed() {
+        Ok(log) => Some(log),
+        Err(e) => {
+            warn!("Failed to collect pcrlock log: {:?}", e);
+            None
+        }
+    }
+}
+
+fn collect_trident_service_diagnostics() -> TridentServiceDiagnostics {
+    let service_status = collect_service_status("trident.service");
+
+    let journal = Dependency::Journalctl
+        .cmd()
+        .args(["--no-pager", "-u", "trident.service"])
+        .output()
+        .map(|out| out.output_report())
+        .unwrap_or_else(|e| format!("Failed to run journalctl: {e}"));
+
+    TridentServiceDiagnostics {
+        status: service_status.map_or(
+            "Failed to collect trident.service status".to_string(),
+            |s| s.status_output,
+        ),
+        journal,
+    }
+}
+
+fn collect_full_journal() -> Option<String> {
+    Dependency::Journalctl
+        .cmd()
+        .args(["--no-pager"])
+        .output()
+        .map(|out| out.output_report())
+        .map_err(|e| warn!("Failed to collect full journal: {e}"))
+        .ok()
 }
 
 fn collect_host_status() -> Option<HostStatus> {
@@ -144,6 +221,55 @@ fn collect_host_status() -> Option<HostStatus> {
     }
     debug!("No valid datastore found to collect host status");
     None
+}
+
+fn collect_health_check_status(health: &Health) -> Vec<SystemdServiceStatus> {
+    // Get all health check systemd service names
+    let services: Vec<_> = health
+        .checks
+        .iter()
+        .filter_map(|check| match check {
+            Check::SystemdCheck(sc) => Some(sc.systemd_services.iter()),
+            Check::Script(_) => None,
+        })
+        .flatten()
+        .collect();
+
+    if services.is_empty() {
+        debug!("No systemd health checks configured");
+    }
+
+    let statuses: Vec<_> = services
+        .iter()
+        .filter_map(|service| collect_service_status(service))
+        .collect();
+
+    statuses
+}
+
+fn collect_service_status(service: &str) -> Option<SystemdServiceStatus> {
+    let output = Dependency::Systemctl
+        .cmd()
+        .env("SYSTEMD_IGNORE_CHROOT", "true")
+        .arg("status")
+        .arg(service)
+        .output();
+
+    match output {
+        Ok(out) => {
+            let is_active = out.success();
+            let status_output = out.output_report();
+            Some(SystemdServiceStatus {
+                service: service.to_string(),
+                is_active,
+                status_output,
+            })
+        }
+        Err(e) => {
+            warn!("Failed to collect status for {}: {:?}", service, e);
+            None
+        }
+    }
 }
 
 fn get_virtualization_info() -> (bool, String) {
@@ -174,6 +300,7 @@ fn create_support_bundle(
     report: &mut DiagnosticsReport,
     output_path: &Path,
     files_to_collect: Vec<FileToCollect>,
+    full_dump: bool,
 ) -> Result<PathBuf, Error> {
     let mut collected_files = Vec::new();
     let file = osutils::files::create_file(output_path)?;
@@ -205,6 +332,32 @@ fn create_support_bundle(
         }
     }
 
+    // Collect and write full journal directly to tarball if requested
+    if full_dump {
+        if let Some(journal_content) = collect_full_journal() {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(journal_content.len() as u64);
+            header.set_mode(0o644);
+            header.set_mtime(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
+            );
+            header.set_cksum();
+            tar.append_data(
+                &mut header,
+                format!("{}/full-journal", DIAGNOSTICS_BUNDLE_PREFIX),
+                journal_content.as_bytes(),
+            )?;
+            collected_files.push(FileMetadata {
+                path: "full-journal".to_string(),
+                size_bytes: journal_content.len() as u64,
+                description: "Full system journal from current boot".to_string(),
+            });
+        }
+    }
+
     report.collected_files = Some(collected_files);
     let report_json = serde_json::to_string_pretty(report)?;
 
@@ -229,7 +382,11 @@ fn create_support_bundle(
     Ok(output_path.to_path_buf())
 }
 
-pub(crate) fn generate_and_bundle(output_path: &Path) -> Result<(), TridentError> {
+pub(crate) fn generate_and_bundle(
+    output_path: &Path,
+    full_dump: bool,
+    selinux: bool,
+) -> Result<(), TridentError> {
     let mut report = collect_report()?;
 
     let mut files_to_collect = vec![
@@ -254,7 +411,9 @@ pub(crate) fn generate_and_bundle(output_path: &Path) -> Result<(), TridentError
         if let Ok(entries) = fs::read_dir(log_dir) {
             for entry in entries.flatten() {
                 if let Ok(file_name) = entry.file_name().into_string() {
-                    if file_name.starts_with("trident-") && file_name.ends_with(".log") {
+                    if file_name.starts_with("trident-")
+                        && (file_name.ends_with(".log") || file_name.ends_with(".jsonl"))
+                    {
                         let desc = if file_name.contains("metrics") {
                             "Historical Trident metrics from past servicing".to_string()
                         } else {
@@ -291,7 +450,27 @@ pub(crate) fn generate_and_bundle(output_path: &Path) -> Result<(), TridentError
         });
     }
 
-    let bundle_path = create_support_bundle(&mut report, output_path, files_to_collect)
+    files_to_collect.push(FileToCollect {
+        src: PathBuf::from("/etc/fstab"),
+        tar_path: "files/fstab".to_string(),
+        desc: "File system mount configuration (/etc/fstab)".to_string(),
+    });
+
+    files_to_collect.push(FileToCollect {
+        src: PathBuf::from(pcrlock::PCRLOCK_POLICY_JSON_PATH),
+        tar_path: "tpm/pcrlock.json".to_string(),
+        desc: "TPM 2.0 pcrlock policy (pcrlock.json)".to_string(),
+    });
+
+    if selinux {
+        files_to_collect.push(FileToCollect {
+            src: PathBuf::from("/var/log/audit/audit.log"),
+            tar_path: "selinux/audit.log".to_string(),
+            desc: "SELinux audit log".to_string(),
+        });
+    }
+
+    let bundle_path = create_support_bundle(&mut report, output_path, files_to_collect, full_dump)
         .structured(InternalError::DiagnosticBundleGeneration)?;
     info!("Diagnostics bundle created: {}", bundle_path.display());
     Ok(())
@@ -338,7 +517,14 @@ mod tests {
                 is_virtual: false,
                 virt_type: "none".to_string(),
                 platform_info: std::collections::BTreeMap::new(),
-                disk_info: None,
+                blockdev_info: None,
+                mount_info: None,
+                health_check_status: None,
+                pcrlock_log: None,
+                trident_service: TridentServiceDiagnostics {
+                    status: String::new(),
+                    journal: String::new(),
+                },
             },
             host_status: None,
             collected_files: None,
@@ -346,7 +532,7 @@ mod tests {
 
         // Create support bundle
         let bundle_path = output_dir.path().join("test-bundle.tar.zst");
-        let result = create_support_bundle(&mut report, &bundle_path, files_to_collect);
+        let result = create_support_bundle(&mut report, &bundle_path, files_to_collect, false);
         assert!(result.is_ok(), "Should create bundle successfully");
 
         // Verify bundle exists and is not empty
@@ -406,7 +592,7 @@ mod tests {
     #[test]
     fn test_bundle_report_json() {
         // Create a complete report with fields populated
-        let original_report = DiagnosticsReport {
+        let mut report = DiagnosticsReport {
             timestamp: "2025-01-15T12:00:00Z".to_string(),
             version: "1.2.3".to_string(),
             host_description: HostDescription {
@@ -419,7 +605,14 @@ mod tests {
                     map.insert("memory".to_string(), serde_json::json!(8192));
                     map
                 },
-                disk_info: Some(vec![]),
+                blockdev_info: Some(vec![]),
+                mount_info: None,
+                health_check_status: None,
+                pcrlock_log: None,
+                trident_service: TridentServiceDiagnostics {
+                    status: String::new(),
+                    journal: String::new(),
+                },
             },
             host_status: None,
             collected_files: None,
@@ -429,8 +622,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let bundle_path = temp_dir.path().join("roundtrip.tar.zst");
 
-        let mut report_copy = original_report.clone();
-        create_support_bundle(&mut report_copy, &bundle_path, vec![]).unwrap();
+        create_support_bundle(&mut report, &bundle_path, vec![], false).unwrap();
 
         // Extract and read back report.json
         let extract_dir = temp_dir.path().join("extracted");
@@ -450,21 +642,12 @@ mod tests {
 
         let read_report: DiagnosticsReport = serde_json::from_str(&report_json).unwrap();
 
-        // Verify all fields match
-        assert_eq!(read_report.timestamp, original_report.timestamp);
-        assert_eq!(read_report.version, original_report.version);
-        assert_eq!(
-            read_report.host_description.is_container,
-            original_report.host_description.is_container
-        );
-        assert_eq!(
-            read_report.host_description.is_virtual,
-            original_report.host_description.is_virtual
-        );
-        assert_eq!(
-            read_report.host_description.virt_type,
-            original_report.host_description.virt_type
-        );
+        // Verify all fields match expected values
+        assert_eq!(read_report.timestamp, "2025-01-15T12:00:00Z");
+        assert_eq!(read_report.version, "1.2.3");
+        assert!(read_report.host_description.is_container);
+        assert!(read_report.host_description.is_virtual);
+        assert_eq!(read_report.host_description.virt_type, "kvm");
         assert_eq!(read_report.host_description.platform_info.len(), 2);
         assert_eq!(
             read_report
@@ -482,7 +665,7 @@ mod tests {
                 .unwrap(),
             &serde_json::json!(8192)
         );
-        assert!(read_report.host_description.disk_info.is_some());
+        assert!(read_report.host_description.mount_info.is_none());
     }
 }
 
@@ -501,7 +684,7 @@ mod functional_test {
         let temp_dir = tempdir().unwrap();
         let bundle_path = temp_dir.path().join("test-diagnostics.tar.zst");
 
-        let result = generate_and_bundle(&bundle_path);
+        let result = generate_and_bundle(&bundle_path, false, false);
         assert!(
             result.is_ok(),
             "Should generate bundle successfully: {:?}",
@@ -556,18 +739,41 @@ mod functional_test {
 
         // Verify disk info is populated
         assert!(
-            report.host_description.disk_info.is_some(),
+            report.host_description.blockdev_info.is_some(),
             "Disk info should be present"
         );
 
-        let disk_info = report.host_description.disk_info.as_ref().unwrap();
+        let blockdev_info = report.host_description.blockdev_info.as_ref().unwrap();
         assert!(
-            disk_info.iter().any(|d| d.name == "sda"),
+            blockdev_info.iter().any(|d| d.name == "sda"),
             "Should have sda in disk info"
         );
         assert!(
-            disk_info.iter().any(|d| d.name == "sdb"),
+            blockdev_info.iter().any(|d| d.name == "sdb"),
             "Should have sdb in disk info"
+        );
+
+        // Test with full_dump=true to verify journal collection
+        let bundle_path_full = temp_dir.path().join("test-diagnostics-full.tar.zst");
+        generate_and_bundle(&bundle_path_full, true, false).expect("Should generate full bundle");
+
+        let extract_dir_full = temp_dir.path().join("extracted-full");
+        std::fs::create_dir(&extract_dir_full).unwrap();
+        let file = std::fs::File::open(&bundle_path_full).unwrap();
+        let decoder = zstd::Decoder::new(file).unwrap();
+        let mut archive = tar::Archive::new(decoder);
+        archive.unpack(&extract_dir_full).unwrap();
+
+        let journal_path = extract_dir_full
+            .join(DIAGNOSTICS_BUNDLE_PREFIX)
+            .join("full-journal");
+        assert!(
+            journal_path.exists(),
+            "full-journal should exist when --full is passed"
+        );
+        assert!(
+            !std::fs::read_to_string(&journal_path).unwrap().is_empty(),
+            "full-journal should have content"
         );
     }
 }

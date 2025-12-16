@@ -666,8 +666,8 @@ impl Trident {
         Ok(())
     }
 
-    pub fn diagnose(output_path: &Path) -> Result<(), TridentError> {
-        diagnostics::generate_and_bundle(output_path)?;
+    pub fn diagnose(output_path: &Path, full: bool, selinux: bool) -> Result<(), TridentError> {
+        diagnostics::generate_and_bundle(output_path, full, selinux)?;
         Ok(())
     }
 }

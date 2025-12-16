@@ -7,7 +7,7 @@ use std::{
 use anyhow::{bail, Context, Error, Result};
 use enumflags2::BitFlags;
 use log::{debug, error, trace, warn};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 
 use sysdefs::tpm2::Pcr;
@@ -228,24 +228,24 @@ fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
 }
 
 /// Represents a single log entry from the 'systemd-pcrlock log' output.
-#[derive(Debug, Deserialize, Clone)]
-struct LogEntry {
-    pcr: Pcr,
-    pcrname: Option<String>,
-    event: Option<String>,
-    sha256: Option<Sha256Hash>,
-    component: Option<String>,
-    description: Option<String>,
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct LogEntry {
+    pub pcr: Pcr,
+    pub pcrname: Option<String>,
+    pub event: Option<String>,
+    pub sha256: Option<Sha256Hash>,
+    pub component: Option<String>,
+    pub description: Option<String>,
 }
 
 /// Represents the output of the 'systemd-pcrlock log' command.
-#[derive(Debug, Deserialize, Clone)]
-struct LogOutput {
-    log: Vec<LogEntry>,
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct LogOutput {
+    pub log: Vec<LogEntry>,
 }
 
 /// Parses the output of the 'systemd-pcrlock log' command as a LogOutput object.
-fn log_parsed() -> Result<LogOutput, Error> {
+pub fn log_parsed() -> Result<LogOutput, Error> {
     let output = Dependency::SystemdPcrlock
         .cmd()
         .arg("log")

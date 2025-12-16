@@ -140,6 +140,12 @@ pub enum Commands {
         /// Path where the support bundle will be saved
         #[clap(short, long)]
         output: PathBuf,
+        /// Include full system journal and dmesg output
+        #[clap(long)]
+        full: bool,
+        /// Include SELinux audit log
+        #[clap(long)]
+        selinux: bool,
     },
 
     /// Validate the provided Host Configuration
