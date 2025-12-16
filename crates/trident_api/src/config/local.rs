@@ -24,14 +24,6 @@ impl std::fmt::Display for HostConfigurationSource {
     }
 }
 
-/// GrpcConfiguration is the configuration for the gRPC server.
-#[derive(Serialize, Deserialize, Debug, Default, Clone)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct GrpcConfiguration {
-    /// Port for the gRPC server (defaults to 50051 if not set).
-    pub listen_port: Option<u16>,
-}
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "kebab-case", transparent)]
 pub struct Operations(pub HashSet<Operation>);
