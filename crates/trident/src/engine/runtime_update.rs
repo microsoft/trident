@@ -1,8 +1,6 @@
 use std::time::Instant;
 
-use log::{debug, info, trace, warn};
-#[cfg(feature = "grpc-dangerous")]
-use tokio::sync::mpsc;
+use log::{debug, info, warn};
 
 use osutils::efivar;
 use trident_api::{
@@ -10,8 +8,6 @@ use trident_api::{
     status::{ServicingState, ServicingType},
 };
 
-#[cfg(feature = "grpc-dangerous")]
-use crate::grpc;
 use crate::{
     datastore::DataStore,
     engine::{self, EngineContext},
@@ -24,15 +20,11 @@ use super::Subsystem;
 /// - subsystems: A mutable reference to the list of subsystems.
 /// - ctx: EngineContext.
 /// - state: A mutable reference to the DataStore.
-/// - sender: Optional mutable reference to the gRPC sender.
 #[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", ServicingType::RuntimeUpdate)))]
 pub(crate) fn stage_update(
     subsystems: &mut [Box<dyn Subsystem>],
     ctx: EngineContext,
     state: &mut DataStore,
-    #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
-        mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
-    >,
 ) -> Result<(), TridentError> {
     if ctx.servicing_type != ServicingType::RuntimeUpdate {
         return Err(TridentError::internal(
@@ -64,8 +56,6 @@ pub(crate) fn stage_update(
         hs.spec = ctx.spec;
         hs.spec_old = ctx.spec_old;
     })?;
-    #[cfg(feature = "grpc-dangerous")]
-    grpc::send_host_status_state(sender, state)?;
 
     if let Some(mut monitor) = monitor {
         // If the monitor was created successfully, stop it after execution
@@ -88,7 +78,6 @@ pub(crate) fn stage_update(
 /// - run_health_checks: A boolean indicating whether health checks should be
 ///   performed before exiting.
 /// - update_start_time: Optional, the time at which the update staging began.
-/// - sender: Optional mutable reference to the gRPC sender.
 #[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", ServicingType::RuntimeUpdate)))]
 pub(crate) fn finalize_update(
     subsystems: &mut [Box<dyn Subsystem>],
@@ -96,9 +85,6 @@ pub(crate) fn finalize_update(
     reverse_specs: bool,
     run_health_checks: bool,
     update_start_time: Option<Instant>,
-    #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
-        mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
-    >,
 ) -> Result<ExitKind, TridentError> {
     let target_spec;
     let old_spec;
@@ -160,8 +146,6 @@ pub(crate) fn finalize_update(
         hs.spec = ctx.spec; // Update spec after call to engine::update_host_configuration()
         hs.spec_old = Default::default(); // Clear spec_old now that state is Provisioned
     })?;
-    #[cfg(feature = "grpc-dangerous")]
-    grpc::send_host_status_state(sender, state)?;
     state.close();
 
     // Metric for update time in seconds
