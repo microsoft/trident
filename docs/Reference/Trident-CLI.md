@@ -404,6 +404,10 @@ Argument summary:
 Options:
   -o, --output <OUTPUT>
           Path where the support bundle will be saved
+      --full
+          Include full system journal and dmesg output
+      --selinux
+          Include SELinux audit log
   -v, --verbosity <VERBOSITY>
           Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
           [default: DEBUG]
@@ -576,5 +580,3 @@ Commands:
   help                Print this message or the help of the given
                           subcommand(s)
 ```
-
-
