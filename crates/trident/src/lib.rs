@@ -615,7 +615,7 @@ impl Trident {
                         debug!("There is a runtime update staged on the host");
                         if allowed_operations.has_finalize() {
                             let mut subsystems = SUBSYSTEMS.lock().unwrap();
-                            let finalize_result = runtime_update::finalize_update(
+                            runtime_update::finalize_update(
                                 &mut subsystems,
                                 datastore,
                                 false,
@@ -624,23 +624,7 @@ impl Trident {
                                 #[cfg(feature = "grpc-dangerous")]
                                 sender,
                             )
-                            .message("Failed to finalize runtime update");
-                            if let Err(e) = finalize_result {
-                                error!("Runtime update finalize failed with message: {e:?}");
-                                // Attempt an auto-rollback
-                                return runtime_update::finalize_update(
-                                    &mut subsystems,
-                                    datastore,
-                                    true,
-                                    false,
-                                    None,
-                                    #[cfg(feature = "grpc-dangerous")]
-                                    sender,
-                                ).message(format!(
-                                    "Auto-rollback was triggered by runtime update failure: {e:?}"
-                                ));
-                            }
-                            finalize_result
+                            .message("Failed to finalize runtime update")
                         } else {
                             warn!("There is a runtime update staged on the host, but allowed operations do not include 'finalize'. Add 'finalize' and re-run to finalize the runtime update");
                             Ok(ExitKind::Done)
