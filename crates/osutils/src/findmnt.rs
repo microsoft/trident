@@ -68,7 +68,7 @@ use std::{
 };
 
 use anyhow::Context;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use sysdefs::filesystems::KernelFilesystemType;
 use trident_api::{config::MountOptions, constants::ROOT_MOUNT_POINT_PATH};
@@ -81,10 +81,11 @@ pub const PROPAGATION_UNBINDABLE: &str = "unbindable";
 /// String with a comma-separated list of columns to be used with `findmnt
 /// --json -o` to output the columns that can be deserialized into a
 /// `MountpointMetadata` structure.
-pub const FINDMNT_COLUMNS: &str = "id,target,source,fsroot,fstype,options,propagation";
+pub const FINDMNT_COLUMNS: &str =
+    "id,target,source,fsroot,fstype,options,propagation,size,used,avail,use%";
 
 /// Represents the output of `findmnt --json` as a Rust structure.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct FindMnt {
     pub filesystems: Vec<MountpointMetadata>,
 }
@@ -93,7 +94,7 @@ pub struct FindMnt {
 /// in `FINDMNT_COLUMNS`. The `children` field contains all mounts under this
 /// filesystem and it is added automatically by `findmnt` when the `--json` flag
 /// is used.
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub struct MountpointMetadata {
     /// Mount ID.
@@ -120,6 +121,19 @@ pub struct MountpointMetadata {
 
     /// Propagation type.
     pub propagation: String,
+
+    /// Filesystem size in bytes.
+    pub size: Option<String>,
+
+    /// Used space in bytes.
+    pub used: Option<String>,
+
+    /// Available space in bytes.
+    pub avail: Option<String>,
+
+    /// Filesystem use percentage.
+    #[serde(rename = "use%")]
+    pub use_percent: Option<String>,
 
     /// Mounts under this filesystem.
     #[serde(default)]
