@@ -1,12 +1,17 @@
 use std::{
-    collections::HashSet,
+    collections::HashMap,
     path::{Path, PathBuf},
 };
 
 use anyhow::{ensure, Context, Error};
 
 use osutils::{container, dependencies::Dependency};
-use trident_api::{config::Extension, error::TridentResultExt, primitives::hash::Sha384Hash};
+use trident_api::{
+    config::Extension,
+    constants::{DEFAULT_CONFEXT_DIRECTORY, DEFAULT_SYSEXT_DIRECTORY},
+    error::TridentResultExt,
+    primitives::hash::Sha384Hash,
+};
 
 use crate::engine::EngineContext;
 
@@ -82,10 +87,27 @@ fn extensions_match(internal_exts: &[&ExtensionData], hc_exts: &[Extension]) -> 
         return false;
     }
 
-    let hc_hashes: HashSet<_> = hc_exts.iter().map(|e| &e.sha384).collect();
-    internal_exts
+    let internal_exts_map: HashMap<_, _> = internal_exts
         .iter()
-        .all(|ext| hc_hashes.contains(&ext.sha384))
+        .map(|e| (&e.sha384, (&e.path, &e.ext_type)))
+        .collect();
+    // Iterate through all extensions in the Host Configuration and ensure that
+    // each extension images matches a corresponding extension image on SHA384
+    // hash and path.
+    hc_exts.iter().all(|ext| {
+        internal_exts_map
+            .get(&ext.sha384)
+            .is_some_and(|(internal_path, ext_type)| match &ext.path {
+                Some(hc_path) => *internal_path == hc_path,
+                None => {
+                    let default_dir = match ext_type {
+                        ExtensionType::Confext => DEFAULT_CONFEXT_DIRECTORY,
+                        ExtensionType::Sysext => DEFAULT_SYSEXT_DIRECTORY,
+                    };
+                    internal_path.starts_with(default_dir)
+                }
+            })
+    })
 }
 
 /// Mounts the extension image.
