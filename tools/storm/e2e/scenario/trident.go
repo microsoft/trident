@@ -132,7 +132,7 @@ func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {
 	r.RegisterTestCase("install-os", s.installOs)
 
 	if s.hardware.IsVM() {
-		r.RegisterTestCase("wait-for-login", s.waitForLoginVm)
+		r.RegisterTestCase("install-serial-login", s.waitForLoginVm)
 	}
 	return nil
 }

@@ -2,6 +2,7 @@ package scenario
 
 import (
 	"bufio"
+	"bytes"
 	"container/ring"
 	"context"
 	"errors"
@@ -44,18 +45,14 @@ func (s *TridentE2EScenario) waitForLoginVm(tc storm.TestCase) error {
 	// 	return err
 	// }
 
-	file, err := os.CreateTemp("", "")
-	if err != nil {
-		return fmt.Errorf("failed to create temporary file for serial log output: %w", err)
-	}
-	defer os.Remove(file.Name())
+	var buf bytes.Buffer
 
-	err = waitForVmSerialLogLogin(tc, vmSerialLog, time.Duration(s.args.VmWaitForLoginTimeout)*time.Second, file)
+	err = waitForVmSerialLogLogin(tc, vmSerialLog, time.Duration(s.args.VmWaitForLoginTimeout)*time.Second, &buf)
 	if err != nil {
 		return err
 	}
 
-	tc.ArtifactBroker().PublishArtifact("wait-for-login", file.Name())
+	tc.ArtifactBroker().PublishArtifactData(fmt.Sprintf("%s/serial.log", tc.Name()), buf.Bytes())
 
 	return nil
 }
