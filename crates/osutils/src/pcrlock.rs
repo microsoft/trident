@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::{bail, Context, Error, Result};
 use enumflags2::BitFlags;
-use log::{debug, trace, warn};
+use log::{debug, error, trace, warn};
 use serde::Deserialize;
 use tempfile::NamedTempFile;
 
@@ -154,25 +154,16 @@ fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
 
     // If any requested PCRs are missing from the policy, return an error
     if !missing_pcrs.is_empty() {
-        // error!(
-        //     "Some requested PCRs are missing from the generated pcrlock policy: '{:?}'",
-        //     missing_pcrs
-        //         .iter()
-        //         .map(|pcr| pcr.to_num())
-        //         .collect::<Vec<_>>()
-        // );
-        // return Err(anyhow::anyhow!(
-        //     "Failed to generate a new TPM 2.0 access policy"
-        // ));
-
-        // TODO: REMOVE BEFORE MERGING
-        warn!(
+        error!(
             "Some requested PCRs are missing from the generated pcrlock policy: '{:?}'",
             missing_pcrs
                 .iter()
                 .map(|pcr| pcr.to_num())
                 .collect::<Vec<_>>()
         );
+        return Err(anyhow::anyhow!(
+            "Failed to generate a new TPM 2.0 access policy"
+        ));
     }
 
     Ok(())
@@ -314,17 +305,12 @@ fn unrecognized_log_entries(
 /// Runs `systemd-pcrlock make-policy` command to predict the PCR state for future boots and then
 /// generate a TPM 2.0 access policy, stored in a TPM 2.0 NV index. The prediction and info about
 /// the used TPM 2.0 and its NV index are written to PCRLOCK_POLICY_JSON_PATH.
-fn make_policy(_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
-    // debug!(
-    //     "Running 'systemd-pcrlock make-policy' command to make a new pcrlock policy \
-    //     with the following PCRs: {:?}",
-    //     pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
-    // );
-
-    // TODO: REMOVE BEFORE MERGING
-    // Overwrite PCRs in the HC and only use PCR 7 for testing purposes
-    debug!("Overwriting requested PCRs to only use PCR 7 for testing purposes");
-    let pcrs = Pcr::Pcr7.into();
+fn make_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
+    debug!(
+        "Running 'systemd-pcrlock make-policy' command to make a new pcrlock policy \
+        with the following PCRs: {:?}",
+        pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
+    );
 
     // Run command directly since pcrlock may write to stderr even when a pcrlock policy is
     // successfully generated

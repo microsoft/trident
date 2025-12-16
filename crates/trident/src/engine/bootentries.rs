@@ -114,7 +114,10 @@ pub fn create_and_update_boot_variables(
     set_boot_next_and_update_boot_order(ctx, added_entry_numbers)?;
 
     if uki::is_staged(esp_path) {
-        let oneshot = ctx.servicing_type != ServicingType::CleanInstall;
+        let oneshot = !matches!(
+            ctx.servicing_type,
+            ServicingType::CleanInstall | ServicingType::ManualRollback
+        );
         uki::update_uki_boot_order(ctx, esp_path, oneshot)?;
     }
 
