@@ -535,6 +535,7 @@ impl ManualRollbackContext {
                     i,
                     hs.ab_active_volume
                 );
+
                 // If we entered a Provisioned state from a Provisioned state (so
                 // ignoring the first Provisioned state, where there can be no rollback),
                 // update the available rollbacks depending on whether the last action
@@ -605,26 +606,36 @@ impl ManualRollbackContext {
                             instance.active_volume
                         );
                         let last_error_exists = hs.last_error.is_some();
+                        let encryption_configured = hs.spec.storage.encryption.is_some();
                         // Prepend the last Provisioned index to the previously active volume's available
                         // rollbacks.
+                        //
+                        // There are a set of reasons to not add an available rollback:
+                        //   1. The Trident version is too old to support manual rollback
+                        //   2. If a last_error is set on the HostStatus
+                        //   3. FOR NOW: if encryption is configured, as we do not yet support
+                        //      manual rollback with encryption
                         match (
                             last_error_exists,
                             trident_is_too_old,
+                            encryption_configured,
                             instance.active_volume,
                         ) {
-                            (false, false, Some(AbVolumeSelection::VolumeA)) => {
+                            (false, false, false, Some(AbVolumeSelection::VolumeA)) => {
                                 instance
                                     .volume_a_available_rollbacks
                                     .insert(0, host_status_context);
                             }
-                            (false, false, Some(AbVolumeSelection::VolumeB)) => {
+                            (false, false, false, Some(AbVolumeSelection::VolumeB)) => {
                                 instance
                                     .volume_b_available_rollbacks
                                     .insert(0, host_status_context);
                             }
-                            // Do not add an available rollback if there is no active volume
-                            // or if the Trident version is too old or if last_error is set
-                            (true, _, _) | (false, true, _) | (false, false, None) => {}
+                            // Do not add an available rollback for the following conditions
+                            (true, _, _, _)
+                            | (false, true, _, _)
+                            | (false, false, true, _)
+                            | (false, false, false, None) => {}
                         }
                     }
                 }
@@ -758,6 +769,7 @@ impl ManualRollbackContext {
 mod tests {
     use crate::TRIDENT_VERSION;
     use osutils::mdadm::create;
+    use sysdefs::tpm2::Pcr;
 
     use super::*;
 
@@ -782,7 +794,22 @@ mod tests {
                 .unwrap(),
             );
         }
+        let host_config = trident_api::config::HostConfiguration {
+            storage: trident_api::config::Storage {
+                encryption: if encryption {
+                    Some(trident_api::config::Encryption {
+                        pcrs: vec![Pcr::Pcr4, Pcr::Pcr7, Pcr::Pcr11],
+                        ..Default::default()
+                    })
+                } else {
+                    None
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
         HostStatus {
+            spec: host_config,
             ab_active_volume: active_volume,
             servicing_state,
             trident_version: old_version.to_string(),
@@ -1206,7 +1233,7 @@ mod tests {
             prov_enc(VOL_A, false, vec![], MIN),
             inter_enc(VOL_A, AB_STAGE, MIN),
             inter_enc(VOL_A, AB_FINAL, MIN),
-            prov_enc(VOL_B, true, vec![], MIN),
+            prov_enc(VOL_B, false, vec![], MIN),
         ];
         rollback_context_testing(&host_status_list, "Validate a/b update with encryption");
     }
