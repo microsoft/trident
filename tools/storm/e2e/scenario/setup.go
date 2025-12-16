@@ -156,10 +156,15 @@ func (t *testHostVirtDeploy) VmName() string {
 }
 
 func (t *testHostVirtDeploy) VmXml() *libvirtxml.Domain {
-	return &t.vm.Definition
+	return t.vm.Definition
 }
 
 func (t *testHostVirtDeploy) SerialLogPath() (string, error) {
+	if t.vm.Definition == nil {
+		// Should never happen, but guard just in case
+		return "", fmt.Errorf("VM definition is nil")
+	}
+
 	for _, console := range t.vm.Definition.Devices.Consoles {
 		if console.Log != nil {
 			logrus.Debugf("VM serial log file path: %s", console.Log.File)
@@ -167,5 +172,5 @@ func (t *testHostVirtDeploy) SerialLogPath() (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("failed to find VM serial log path")
+	return "", fmt.Errorf("failed to find a serial device with a log backend in VM definition %s", t.vm.Name)
 }

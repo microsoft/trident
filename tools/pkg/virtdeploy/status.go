@@ -34,7 +34,7 @@ type VirtDeployVMStatus struct {
 	NvramPath string `json:"nvramPath"`
 
 	// Full XML definition of the libvirt domain at creation time.
-	Definition libvirtxml.Domain `json:"-"`
+	Definition *libvirtxml.Domain `json:"-"`
 }
 
 func (v *VirtDeployVMStatus) LibvirtUUID() libvirt.UUID {

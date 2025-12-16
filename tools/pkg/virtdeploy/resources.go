@@ -9,6 +9,7 @@ import (
 	"github.com/digitalocean/go-libvirt"
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
+	"libvirt.org/go/libvirtxml"
 )
 
 const (
@@ -553,13 +554,9 @@ func (rc *virtDeployResourceConfig) setupVm(vm *VirtDeployVM) error {
 	}
 
 	// Generate the final domain definition, and store it in the VM struct
-	domain := vm.intoLibvirtStruct(rc.network, rc.nvramPool)
-	vm.domainDefinition = domain
-
-	// Marshal the domain definition to XML for libvirt
-	domainXML, err := domain.Marshal()
+	domainXML, err := vm.asXml(rc.network, rc.nvramPool)
 	if err != nil {
-		return fmt.Errorf("failed to marshal domain XML: %w", err)
+		return fmt.Errorf("failed to produce domain XML: %w", err)
 	}
 
 	log.Tracef("Defining domain with XML:\n%s", domainXML)
@@ -568,6 +565,23 @@ func (rc *virtDeployResourceConfig) setupVm(vm *VirtDeployVM) error {
 	vm.domain, err = rc.lv.DomainDefineXMLFlags(domainXML, libvirt.DomainDefineValidate)
 	if err != nil {
 		return fmt.Errorf("define domain: %w", err)
+	}
+
+	// Get the full domain XML definition from libvirt to store in the VM struct
+	// for status reporting. This ensures we have the final definition as
+	// libvirt sees it. We use the DomainGetXMLDesc method with 0 flags to get
+	// the full XML. The previous domainXML variable may not include all
+	// auto-generated fields.
+	rXml, err := rc.lv.DomainGetXMLDesc(vm.domain, 0)
+	if err != nil {
+		return fmt.Errorf("get domain XML description: %w", err)
+	}
+
+	// Initialize empty struct and unmarshal the XML into it
+	vm.domainDefinition = &libvirtxml.Domain{}
+	err = vm.domainDefinition.Unmarshal(rXml)
+	if err != nil {
+		return fmt.Errorf("unmarshal domain XML description: %w", err)
 	}
 
 	log.Infof("Created domain '%s'", vm.name)

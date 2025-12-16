@@ -11,7 +11,7 @@ import (
 // It translates the earlier XML template into structured Go objects.
 // Some low-level address/controller elements are omitted for brevity; libvirt
 // will auto-assign them. Extend if deterministic addressing is required.
-func (vm *VirtDeployVM) intoLibvirtStruct(network *virtDeployNetwork, nvramPool storagePool) libvirtxml.Domain {
+func (vm *VirtDeployVM) asXml(network *virtDeployNetwork, nvramPool storagePool) (string, error) {
 	// Build disks (regular volumes)
 	disks := make([]libvirtxml.DomainDisk, 0, len(vm.volumes)+len(vm.cdroms))
 	for i, vol := range vm.volumes {
@@ -201,11 +201,16 @@ func (vm *VirtDeployVM) intoLibvirtStruct(network *virtDeployNetwork, nvramPool 
 					},
 				},
 				Target: &libvirtxml.DomainSerialTarget{Port: new(uint)},
-				Log:    &libvirtxml.DomainChardevLog{File: fmt.Sprintf("/tmp/%s-serial0.log", vm.name), Append: "off"},
+				Log:    &libvirtxml.DomainChardevLog{File: fmt.Sprintf("/tmp/%s-serial.log", vm.name), Append: "off"},
 			}},
 			TPMs: tpms,
 		},
 	}
 
-	return dom
+	domainXML, err := dom.Marshal()
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal domain XML: %w", err)
+	}
+
+	return domainXML, nil
 }
