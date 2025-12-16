@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use log::{debug, info, warn};
+use log::{debug, info, trace, warn};
 
 use osutils::efivar;
 use trident_api::{
@@ -69,7 +69,7 @@ pub(crate) fn stage_update(
     Ok(())
 }
 
-/// Finalizes a runtime update. Takes in 5-6 arguments:
+/// Finalizes a runtime update. Takes in 5 arguments:
 /// - subsystems: A mutable reference to the list of subsystems.
 /// - state: A mutable reference to the DataStore.
 /// - reverse_specs: A boolean indicating whether spec and spec_old in the
