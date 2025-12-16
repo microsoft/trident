@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/microsoft/storm"
+	"github.com/microsoft/storm/pkg/storm/utils"
 	"github.com/sirupsen/logrus"
 
 	fileutils "tridenttools/storm/utils/file"
@@ -134,8 +135,7 @@ func waitForVmSerialLogLogin(tc storm.TestCase, vmSerialLog string, timeout time
 			ring = ring.Next()
 
 			// Output the line to the provided writer
-			out.Write([]byte(lineBuffer + "\n"))
-
+			out.Write([]byte(utils.RemoveAllANSI(lineBuffer) + "\n"))
 			// New line, reset line buffer
 			lineBuffer = ""
 		} else {
