@@ -28,8 +28,8 @@ service TridentService {
   // filesystem.
   rpc CheckRoot(CheckRootRequest) returns (stream ServicingResponse);
 
-  // CommitUpdate attempts to commit a finalized update.
-  rpc CommitUpdate(CommitRequest) returns (stream ServicingResponse);
+  // Commit attempts the commit operation to finalize a servicing.
+  rpc Commit(CommitRequest) returns (stream ServicingResponse);
 
   // StreamImage streams an OS image to the target device.
   rpc StreamImage(StreamImageRequest) returns (stream ServicingResponse);
@@ -113,22 +113,26 @@ enum StatusCode {
 
 message FinalStatus {
   // Final status of the servicing operation.
-  StatusCode status          = 1;
+  StatusCode            status          = 1;
   // Message associated with the final status.
-  string     message         = 2;
+  optional TridentError error           = 2;
   // Whether a reboot is required to complete the servicing operation.
-  bool       reboot_required = 3;
+  bool                  reboot_required = 3;
 }
+
+message Start {}
 
 message ServicingResponse {
   // Timestamp of the response message.
   google.protobuf.Timestamp timestamp    = 1;
   // Body of the response message.
   oneof response {
+    // A start message indicating the beginning of the servicing operation.
+    Start                     start        = 2;
     // A log message from the servicing operation.
-    Log                       log          = 2;
+    Log                       log          = 3;
     // A final status message from the servicing operation.
-    FinalStatus               final_status = 3;
+    FinalStatus               final_status = 4;
   }
 }
 
@@ -167,8 +171,9 @@ message GetActiveVolumeRequest {}
 
 // Represents the active volume in a dual-volume setup.
 enum ABVolumeState {
-  A = 0;
-  B = 1;
+  NONE = 0;
+  A    = 1;
+  B    = 2;
 }
 
 message GetActiveVolumeResponse {
@@ -226,13 +231,36 @@ message StreamImageRequest {
 
 message TridentError {
   // Error kind.
-  string       kind     = 1;
+  TridentErrorKind kind     = 1;
   // Error subkind.
-  string       subkind  = 2;
+  string           subkind  = 2;
   // Error message.
-  string       message  = 3;
+  string           message  = 3;
   // Location in the file where the error occurred.
-  FileLocation location = 4;
+  FileLocation     location = 4;
+}
+
+// Major kinds of Trident errors.
+enum TridentErrorKind {
+  // Identifies errors that occur when the execution environment is
+  // misconfigured.
+  EXECUTION_ENVIRONMENT_MISCONFIGURATION = 0;
+  // Identifies errors that are related to health checks.
+  HEALTH_CHECKS                          = 1;
+  // Identifies errors that occur when Trident fails to initialize.
+  INITIALIZATION                         = 2;
+  // Identifies errors that occur due to an internal bug or failure in Trident.
+  INTERNAL                               = 3;
+  // Identifies errors that occur when the user provides invalid input.
+  INVALID_INPUT                          = 4;
+  // Identifies errors that occur during servicing and require further user
+  // investigation, to determine whether the error occurred due to an internal
+  // failure in Trident, a failure in one of its dependencies, or a system
+  // misconfiguration.
+  SERVICING                              = 5;
+  // Identifies errors that occur when clean install or update fail due to the
+  // current configuration of the host.
+  UNSUPPORTED_CONFIGURATION              = 6;
 }
 
 message FileLocation {
