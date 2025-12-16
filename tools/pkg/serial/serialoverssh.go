@@ -186,7 +186,7 @@ func NewSerialOverSshSession(config SerialOverSSHSettings) (*SerialOverSshSessio
 				return answers, nil
 			}),
 		},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // CodeQL [SM03565] This is test code, not production code
 		Timeout:         time.Second * 15,
 	}
 
