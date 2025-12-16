@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use log::{debug, info, warn};
+use log::{debug, error, info, warn};
 
 use trident_api::{
     config::{HostConfiguration, Operations},
@@ -145,14 +145,29 @@ pub(crate) fn update(
                 );
                 Ok(ExitKind::Done)
             } else {
-                runtime_update::finalize_update(
+                let finalize_result = runtime_update::finalize_update(
                     &mut subsystems,
                     state,
                     false,
                     true,
                     Some(update_start_time),
                 )
-                .message("Failed to finalize runtime update")
+                .message("Failed to finalize runtime update");
+                if let Err(e) = finalize_result {
+                    error!("Runtime update finalize failed with message: {e:?}");
+                    // Attempt an auto-rollback
+                    return runtime_update::finalize_update(
+                        &mut subsystems,
+                        state,
+                        true,
+                        false,
+                        Some(update_start_time),
+                    )
+                    .message(format!(
+                        "Auto-rollback was triggered by runtime update failure: {e:?}"
+                    ));
+                }
+                finalize_result
             }
         }
         ServicingType::CleanInstall => Err(TridentError::new(
