@@ -51,7 +51,7 @@ func (s *TridentE2EScenario) installOs(tc storm.TestCase) error {
 		MaxPhonehomeFailures: s.configParams.MaxExpectedFailures,
 	}
 
-	nlErr := netlaunch.RunNetlaunch(&config)
+	nlErr := netlaunch.RunNetlaunch(tc.Context(), &config)
 	if nlErr != nil {
 		// If this is a phonehome error, log the details and fail the test case
 		// immediately.
