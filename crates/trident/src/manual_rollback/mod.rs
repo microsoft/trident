@@ -12,9 +12,17 @@ use enumflags2::BitFlags;
 use log::{debug, info, trace};
 use maplit::hashmap;
 use serde::{Deserialize, Serialize};
+use tempfile::NamedTempFile;
 use uuid::Uuid;
 
-use osutils::{efivar, lsblk, pcrlock};
+use osutils::{
+    efivar,
+    filesystems::MountFileSystemType,
+    lsblk,
+    mount::{self, MountGuard},
+    path::join_relative,
+    pcrlock::{self, PCRLOCK_POLICY_JSON_PATH},
+};
 use trident_api::{
     config::{
         AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, HostConfiguration,
@@ -25,7 +33,10 @@ use trident_api::{
         internal_params::ENABLE_UKI_SUPPORT, EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY,
         ESP_RELATIVE_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH,
     },
-    error::{InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt},
+    error::{
+        InternalError, InvalidInputError, ReportError, ServicingError, TridentError,
+        TridentResultExt,
+    },
     status::{decode_host_status, AbVolumeSelection, HostStatus, ServicingState, ServicingType},
     BlockDeviceId,
 };
@@ -38,8 +49,8 @@ use crate::{
         self,
         boot::{self, uki, ESP_EXTRACTION_DIRECTORY},
         bootentries, rollback,
-        storage::encryption,
-        EngineContext, REQUIRES_REBOOT,
+        storage::{self, encryption, verity},
+        EngineContext, NewrootMount, REQUIRES_REBOOT,
     },
     subsystems::esp,
     ExitKind, OsImage,
@@ -55,33 +66,41 @@ pub fn get_rollback_info(datastore: &DataStore, kind: GetKind) -> Result<String,
     // Create ManualRollback context from HostStatus entries.
     let context = ManualRollbackContext::new(&host_statuses)
         .message("Failed to create manual rollback context")?;
-    let rollback_chain = context
-        .get_rollback_chain()
-        .structured(ServicingError::ManualRollback)
-        .message("Failed to get available rollbacks")?;
+    let rollback_chain =
+        context
+            .get_rollback_chain()
+            .structured(ServicingError::ManualRollback {
+                message: "Failed to get available rollbacks",
+            })?;
 
     match kind {
         GetKind::RollbackTarget => {
             if let Some(first_rollback_host_status) = rollback_chain.first() {
                 let target_output =
                     serde_yaml::to_string(&first_rollback_host_status.host_status.spec)
-                        .structured(ServicingError::ManualRollback)
-                        .message("Failed to serialize first rollback HostStatus spec")?;
-                return Ok(target_output);
+                        .structured(ServicingError::ManualRollback {
+                            message: "Failed to serialize first rollback HostStatus spec",
+                        })?;
+                Ok(target_output)
             } else {
                 info!("No available rollbacks to show target for");
-                return Ok("{}".to_string());
+                Ok("{}".to_string())
             }
         }
         GetKind::RollbackChain => {
-            return context
+            context
                 .get_rollback_chain_yaml()
-                .structured(ServicingError::ManualRollback)
-                .message("Failed to query for 'get rollback-chain'");
+                .structured(ServicingError::ManualRollback {
+                    message: "Failed to query rollback chain",
+                })
         }
-        _ => {}
+        _ => {
+            info!("Unsupported GetKind for manual rollback query: {:?}", kind);
+            Err(TridentError::new(ServicingError::ManualRollback {
+                message: "unsupported get kind for manual rollback",
+            }))
+        }
     }
-    Err(TridentError::new(ServicingError::ManualRollback))
 }
 
 /// Check rollback availability and type.
@@ -97,10 +116,12 @@ pub fn check_rollback(
     // Create ManualRollback context from HostStatus entries.
     let rollback_context = ManualRollbackContext::new(&host_statuses)
         .message("Failed to create manual rollback context")?;
-    let available_rollbacks = rollback_context
-        .get_rollback_chain()
-        .structured(ServicingError::ManualRollback)
-        .message("Failed to get available rollbacks")?;
+    let available_rollbacks =
+        rollback_context
+            .get_rollback_chain()
+            .structured(ServicingError::ManualRollback {
+                message: "Failed to get available rollbacks",
+            })?;
     let (_rollback_index, check_string) = get_requested_rollback_info(
         &available_rollbacks,
         invoke_if_next_is_runtime,
@@ -127,10 +148,12 @@ pub fn execute_rollback(
     let rollback_context = ManualRollbackContext::new(&host_statuses)
         .message("Failed to create manual rollback context")?;
 
-    let available_rollbacks = rollback_context
-        .get_rollback_chain()
-        .structured(ServicingError::ManualRollback)
-        .message("Failed to get available rollbacks")?;
+    let available_rollbacks =
+        rollback_context
+            .get_rollback_chain()
+            .structured(ServicingError::ManualRollback {
+                message: "Failed to get available rollbacks",
+            })?;
 
     let (rollback_index, check_string) = get_requested_rollback_info(
         &available_rollbacks,
@@ -310,23 +333,29 @@ fn stage_rollback(
         // If we have encrypted volumes and this is a UKI image, then we need to re-generate pcrlock
         // policy to include both the current boot and the rollback boot.
         if let Some(ref encryption) = engine_context.spec.storage.encryption {
-            // TODO: Handle any pcr-lock encryption related changes needed
+            // TODO: We know how to update the pcrlock policy in the servicing OS, but are
+            // not able to do so for the target OS yet.
             if engine_context.is_uki()? {
-                debug!("Regenerating pcrlock policy to include rollback boot");
+                return Err(TridentError::new(ServicingError::ManualRollback {
+                    message: "Cannot update pcrlock policy for UKI images during manual rollback",
+                }));
+                // debug!("Regenerating pcrlock policy to include rollback boot");
 
-                // Get the PCRs from Host Configuration
-                let pcrs = encryption
-                    .pcrs
-                    .iter()
-                    .fold(BitFlags::empty(), |acc, &pcr| acc | BitFlags::from(pcr));
+                // // Get the PCRs from Host Configuration
+                // let pcrs = encryption
+                //     .pcrs
+                //     .iter()
+                //     .fold(BitFlags::empty(), |acc, &pcr| acc | BitFlags::from(pcr));
 
-                // Get UKI and bootloader binaries for .pcrlock file generation
-                let (uki_binaries, bootloader_binaries) =
-                    encryption::get_binary_paths_pcrlock(engine_context, pcrs, None, true)
-                        .structured(ServicingError::GetBinaryPathsForPcrlockEncryption)?;
+                // // Get UKI and bootloader binaries for .pcrlock file generation
+                // let (uki_binaries, bootloader_binaries) =
+                //     encryption::get_binary_paths_pcrlock(engine_context, pcrs, None, true)
+                //         .structured(ServicingError::GetBinaryPathsForPcrlockEncryption)?;
 
-                // Generate a pcrlock policy
-                pcrlock::generate_pcrlock_policy(pcrs, uki_binaries, bootloader_binaries)?;
+                // // Generate a pcrlock policy
+                // pcrlock::generate_pcrlock_policy(pcrs, uki_binaries, bootloader_binaries)?;
+
+                // // Update the rollback OS pcrlock.json file
             } else {
                 debug!(
                     "Rollback OS is a grub image, \
@@ -742,6 +771,7 @@ mod tests {
         servicing_state: ServicingState,
         old_version: &str,
         error: Option<String>,
+        encryption: bool,
     ) -> HostStatus {
         let mut last_error: Option<serde_yaml::Value> = None;
         if let Some(error) = error {
@@ -772,6 +802,7 @@ mod tests {
                 ServicingState::Provisioned,
                 old_version,
                 None,
+                false,
             ),
             expected_requires_reboot,
             expected_available_rollbacks,
@@ -790,6 +821,25 @@ mod tests {
                 ServicingState::Provisioned,
                 old_version,
                 error,
+                false,
+            ),
+            expected_requires_reboot,
+            expected_available_rollbacks,
+        }
+    }
+    fn prov_enc(
+        active_volume: Option<AbVolumeSelection>,
+        expected_requires_reboot: bool,
+        expected_available_rollbacks: Vec<usize>,
+        old_version: &str,
+    ) -> HostStatusTest {
+        HostStatusTest {
+            host_status: host_status(
+                active_volume,
+                ServicingState::Provisioned,
+                old_version,
+                None,
+                true,
             ),
             expected_requires_reboot,
             expected_available_rollbacks,
@@ -801,7 +851,7 @@ mod tests {
         old_version: &str,
     ) -> HostStatusTest {
         HostStatusTest {
-            host_status: host_status(active_volume, servicing_state, old_version, None),
+            host_status: host_status(active_volume, servicing_state, old_version, None, false),
             expected_requires_reboot: false,
             expected_available_rollbacks: vec![],
         }
@@ -813,7 +863,18 @@ mod tests {
         error: Option<String>,
     ) -> HostStatusTest {
         HostStatusTest {
-            host_status: host_status(active_volume, servicing_state, old_version, error),
+            host_status: host_status(active_volume, servicing_state, old_version, error, false),
+            expected_requires_reboot: false,
+            expected_available_rollbacks: vec![],
+        }
+    }
+    fn inter_enc(
+        active_volume: Option<AbVolumeSelection>,
+        servicing_state: ServicingState,
+        old_version: &str,
+    ) -> HostStatusTest {
+        HostStatusTest {
+            host_status: host_status(active_volume, servicing_state, old_version, None, true),
             expected_requires_reboot: false,
             expected_available_rollbacks: vec![],
         }
@@ -1135,6 +1196,19 @@ mod tests {
             prov_e(VOL_B, false, vec![], MIN, Some("failure".to_string())),
         ];
         rollback_context_testing(&host_status_list, "Validate a/b update health check failed");
+    }
+
+    #[test]
+    fn test_ab_update_encryption() {
+        let host_status_list = vec![
+            inter_enc(None, CI_FINAL, MIN),
+            inter_enc(None, CI_FINAL, MIN),
+            prov_enc(VOL_A, false, vec![], MIN),
+            inter_enc(VOL_A, AB_STAGE, MIN),
+            inter_enc(VOL_A, AB_FINAL, MIN),
+            prov_enc(VOL_B, true, vec![], MIN),
+        ];
+        rollback_context_testing(&host_status_list, "Validate a/b update with encryption");
     }
 
     #[test]
