@@ -18,11 +18,6 @@ Multiboot](../Explanation/Multiboot.md) for more information.
 
 ## Update Command
 
-The Host Configuration contains a description of the machine's disks,
-partitions, filesystems, and other details. It will be compared to the existing
-state of the machine to find the differences and determine what actions need to
-be taken to bring the machine to the desired state.
-
 Trident automatically selects the appropriate servicing type between an [A/B
 update](../Reference/Glossary.md#ab-update) and a [runtime
 update](../Reference/Glossary.md#runtime-update) based on which configurations
@@ -32,6 +27,11 @@ will perform a runtime update. Otherwise, Trident will trigger an A/B update to
 provision a new root filesystem.
 
 ## Trident Subsystems
+
+The Host Configuration contains a description of the machine's disks,
+partitions, filesystems, and other details. It will be compared to the existing
+state of the machine to find the differences and determine what actions need to
+be taken to bring the machine to the desired state.
 
 Several Trident [subsystems](../Reference/Glossary.md#subsystem) have been
 implemented to handle different aspects of the Host Configuration. Each
