@@ -5,6 +5,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     str::FromStr,
+    time::Instant,
 };
 
 use anyhow::{bail, Context, Error};
@@ -48,9 +49,9 @@ use crate::{
     engine::{
         self,
         boot::{self, uki, ESP_EXTRACTION_DIRECTORY},
-        bootentries, rollback,
+        bootentries, rollback, runtime_update,
         storage::{self, encryption, verity},
-        EngineContext, NewrootMount, REQUIRES_REBOOT,
+        EngineContext, NewrootMount, REQUIRES_REBOOT, SUBSYSTEMS,
     },
     subsystems::esp,
     ExitKind, OsImage,
@@ -365,15 +366,15 @@ fn stage_rollback(
         }
     } else {
         info!("Staging rollback that does not require reboot");
-        // TODO: Invoke subsystem runtime rollbacks if part of stage
+        // noop
     }
 
     // Mark the HostStatus as ManualRollbackStaged
     datastore.with_host_status(|host_status| {
         host_status.spec = engine_context.spec.clone();
+        host_status.spec_old = engine_context.spec_old.clone();
         host_status.servicing_state = ServicingState::ManualRollbackStaged;
     })?;
-
     Ok(())
 }
 
@@ -386,7 +387,9 @@ fn finalize_rollback(
     if !ab_rollback {
         trace!("Manual rollback does not require reboot");
 
-        // TODO: invoke subsystem runtime rollbacks if part of finalize
+        let mut subsystems = SUBSYSTEMS.lock().unwrap();
+        runtime_update::rollback(&mut subsystems, datastore, Some(Instant::now()))
+            .message("failed to rollback runtime update")?;
 
         datastore.with_host_status(|host_status| {
             host_status.spec = engine_context.spec.clone();
