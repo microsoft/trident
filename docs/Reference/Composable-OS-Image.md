@@ -160,17 +160,25 @@ device on top of a data device.
 
 ##### `Partition` Object
 
-`Partition` objects hold the data necessary to recreate partition tables. They provide a mapping
-between each image file and its original partition information. Starting in 1.2, each `ImageFile` in
-the COSI MUST have a corresponding `Partition` object. The correspondence between an `ImageFile` and a `Partition` object is established by matching their `path` fields: a `Partition` object corresponds to the `ImageFile` whose `path` field is identical.
+`Partition` objects hold the data necessary to recreate partition tables. They
+provide a mapping between each image file and its original partition
+information. Starting in 1.2, each `ImageFile` in the COSI MUST have a
+corresponding `Partition` object. The correspondence between an `ImageFile` and
+a `Partition` object is established by matching their `path` fields: a
+`Partition` object corresponds to the `ImageFile` whose `path` field is
+identical.
+
+The order of `Partition` objects in the `partitions` array is unspecified since
+the `number` field indicates the original ordering.
 
 | Field          | Type   | Added in | Required        | Description                                                                               |
 | -------------- | ------ | -------- | --------------- | ----------------------------------------------------------------------------------------- |
-| `path`         | string | 1.2      | Yes (since 1.2) | Absolute path of the compressed image file inside the tarball. MUST start with `images/`. |
+| `path`         | string | 1.2      | No              | Absolute path of the compressed image file inside the tarball. MUST start with `images/`. |
 | `originalSize` | number | 1.2      | Yes (since 1.2) | Size of the partition before any filesystem shrinking. SHOULD be at least as large as the `uncompressedSize` field of the corresponding `ImageFile` object (matched by `path`). |
-| `partUuid`     | string | 1.2      | Yes (since 1.2) | The partition UUID. Not to be confused with the partition type UUID.                      |
+| `partType`     | UUID (string, case insensitive) | 1.2      | Yes (since 1.2) | The partition type UUID.                                         |
+| `partUuid`     | UUID (string, case insensitive) | 1.2      | Yes (since 1.2) | The partition UUID.                                              |
 | `label`        | string | 1.2      | Yes (since 1.2) | Partition label (GPT partition name, may be an empty string).                             |
-| `number`       | number | 1.2      | Yes (since 1.2) | The index where the partition originally appeared on disk (1-indexed).                    |
+| `number`       | number | 1.2      | Yes (since 1.2) | The index where the partition originally appeared in the partition table (1-indexed).     |
 
 ##### `OsArchitecture` Enum
 
