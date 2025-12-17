@@ -46,15 +46,13 @@ effect immediately on the running OS.
 
 ## Rollback Support
 
-Runtime updates support automatic rollback if health checks fail. If any
-operation during Finalize fails or if a Health Check fails, an automatic
-rollback occurs reverting the OS back to the state of the previous Host
-Configuration.
+If an operation during 'Finalize' produces an error or if a health check fails,
+an automatic rollback occurs reverting the OS back to the state of the previous
+Host Configuration.
 
 ## Separate Stage and Finalize
 
-Like other Trident operations, runtime updates support separating the stage and
-finalize operations using the
+Runtime updates may be separated into stage and finalize operations using the
 [`--allowed-operations`](../Reference/Trident-CLI.md#--allowed_operations-allowed_operations-1)
 flag:
 
