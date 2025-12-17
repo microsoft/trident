@@ -4,6 +4,7 @@ use std::{
 };
 
 use anyhow::Error;
+use harpoon::ServicingRequest;
 use prost_types::Timestamp;
 use tokio::{
     sync::{
@@ -15,34 +16,40 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 use tonic::{async_trait, Request, Response, Status};
 
+use harpoon::{
+    servicing_response::Response as ResponseType, trident_service_server::TridentService,
+    CheckRootRequest, CommitRequest, FileLocation, FinalStatus, FinalizeRequest,
+    GetActiveVolumeRequest, GetActiveVolumeResponse, GetConfigRequest, GetConfigResponse,
+    GetLastErrorRequest, GetLastErrorResponse, GetRequiredServicingTypeRequest,
+    GetRequiredServicingTypeResponse, GetServicingStateRequest, GetServicingStateResponse, Log,
+    RebuildRaidRequest, ServicingResponse, StageRequest, Start, StreamImageRequest,
+    ValidateHostConfigurationRequest, ValidateHostConfigurationResponse,
+};
+use trident_api::error::TridentError;
+
 use crate::{
-    // TODO: Enable once #396 is closed.
-    // app_proto::{
-    //     DoProcessRequest, Log, ReadRequest, ReadResponse, ServicingResponse, Start,
-    //     app_service_server::AppService, servicing_response::Body,
-    // },
     logging::logfwd::LogForwarder,
     server::{activitytracker::ActivityTracker, support::stream::StreamWithLock},
+    ExitKind,
 };
 
 mod servicingmgr;
 
 use servicingmgr::ServicingManager;
 
-pub(super) struct AppServer {
+pub(super) struct TridentHarpoonServer {
     log_forwarder: LogForwarder,
     tracker: ActivityTracker,
     servicing_manager: ServicingManager,
     rwlock: Arc<RwLock<u32>>,
 }
 
-// TODO: Enable once #396 is closed.
-// /// This is the stream type for all servicing responses.
-// type ServicingResponseStream = StreamWithLock<Result<ServicingResponse, Status>, u32>;
+/// This is the stream type for all servicing responses.
+type ServicingResponseStream = StreamWithLock<Result<ServicingResponse, Status>, u32>;
 
-impl AppServer {
+impl TridentHarpoonServer {
     pub(super) fn new(log_forwarder: LogForwarder, tracker: ActivityTracker) -> Self {
-        AppServer {
+        TridentHarpoonServer {
             log_forwarder,
             tracker,
             servicing_manager: ServicingManager::new(),
@@ -50,7 +57,6 @@ impl AppServer {
         }
     }
 
-    /* TODO: Enable once #396 is closed.
     /// Sets up log forwarding from the internal log forwarder to the gRPC
     /// streaming response. Internally spawns a task that listens for log records
     /// and sends them over the provided gRPC channel.
@@ -63,7 +69,7 @@ impl AppServer {
         let (log_tx, mut log_rx) = mpsc::unbounded_channel();
 
         // Set the sender in the log forwarder
-        if let Err(_) = self.log_forwarder.set_sender(log_tx) {
+        if self.log_forwarder.set_sender(log_tx).is_err() {
             log::error!("Failed to set log forwarder sender channel");
             return Err(Status::internal("Failed to set log forwarder"));
         }
@@ -83,18 +89,17 @@ impl AppServer {
                             break;
                         };
 
-                        let log_message = format!(
-                            "[{}][{}][{}] {}",
-                            log_record.level,
-                            log_record.timestamp.to_rfc3339(),
-                            log_record.module,
-                            log_record.message,
-                        );
-
                         if let Err(err) = grpc_log_tx.send(Ok(ServicingResponse {
                             timestamp: Some(Timestamp::from(SystemTime::now())),
-                            body: Some(Body::Log(Log {
-                                message: log_message,
+                            response: Some(ResponseType::Log(Log {
+                                message:log_record.message,
+                                level: log_record.level as i32,
+                                target: log_record.target,
+                                module: log_record.module,
+                                location: Some(FileLocation {
+                                    path: log_record.file,
+                                    line: log_record.line,
+                                }),
                             })),
                         })) {
                             log::error!("Failed to send log message in streaming response: {}", err);
@@ -112,7 +117,6 @@ impl AppServer {
         // Return the handle and cancellation token
         Ok((handle, log_token))
     }
-    */
 
     /// Tries to acquire a read lock on the server's RwLock. If the lock
     /// cannot be acquired, returns a gRPC Status indicating that the server is
@@ -134,7 +138,6 @@ impl AppServer {
         })
     }
 
-    /* TODO: Enable once #396 is closed.
     /// Handles a servicing request by acquiring the necessary locks,
     /// setting up log forwarding, and spawning the provided servicing task.
     fn servicing_request<F>(
@@ -143,47 +146,71 @@ impl AppServer {
         f: F,
     ) -> Result<Response<ServicingResponseStream>, Status>
     where
-        F: FnOnce() -> Result<(), Error> + Send + 'static,
+        F: FnOnce() -> Result<ExitKind, TridentError> + Send + 'static,
     {
         log::info!("Received servicing request '{}'", name);
-        let guard = self.try_acquire_write_lock()?;
-        let (tx, rx) = mpsc::unbounded_channel();
-        let (log_fwd_handle, log_fwd_token) = self.setup_log_forwarding(tx.clone())?;
-        if let Err(err) = tx.send(Ok(ServicingResponse {
-            timestamp: Some(Timestamp::from(SystemTime::now())),
-            body: Some(Body::Start(Start {})),
-        })) {
-            log::error!("Failed to send start response: {}", err);
-            return Err(Status::internal("Failed to start processing"));
-        }
 
+        // Try to acquire the connection lock in write mode
+        let guard = self.try_acquire_write_lock()?;
+
+        // Create the gRPC response channel
+        let (tx, rx) = mpsc::unbounded_channel();
+
+        // Set up log forwarding. Logs will be sent over the gRPC channel.
+        let (log_fwd_handle, log_fwd_token) = self.setup_log_forwarding(tx.clone())?;
+
+        // Try to acquire the servicing lock
         let Some(servicing_guard) = self.servicing_manager.try_lock_servicing() else {
             log::warn!("Request '{}' blocked because servicing is active", name);
             return Err(Status::unavailable("Servicing is active"));
         };
 
+        // All prerequisites are met, send start response
+        if let Err(err) = tx.send(Ok(ServicingResponse {
+            timestamp: Some(Timestamp::from(SystemTime::now())),
+            response: Some(ResponseType::Start(Start {})),
+        })) {
+            log::error!("Failed to send start response: {}", err);
+            return Err(Status::internal("Failed to start processing"));
+        }
+
+        // Create a clone of the activity tracker to move into the task
         let tracker_clone = self.tracker.clone();
+
+        // Spawn the servicing task
         tokio::spawn(async move {
-            let control =
+            // Spawn the servicing task and await its completion
+            let final_status =
                 ServicingManager::spawn_servicing_task(servicing_guard, tracker_clone, f).await;
 
+            // Stop log forwarding
+            log_fwd_token.cancel();
+
+            // Await the log forwarding task to finish to ensure all relevant
+            // logs have been sent.
+            if let Err(err) = log_fwd_handle.await {
+                log::error!("Log forwarder task failed: {}", err);
+            }
+
+            // Send the final status response
             if let Err(err) = tx.send(Ok(ServicingResponse {
                 timestamp: Some(Timestamp::from(SystemTime::now())),
-                body: Some(Body::Control(control)),
+                response: Some(ResponseType::FinalStatus(final_status)),
             })) {
                 log::error!("Failed to send control response: {}", err);
             }
 
-            log_fwd_token.cancel();
-            if let Err(err) = log_fwd_handle.await {
-                log::error!("Log forwarder task failed: {}", err);
-            }
+            // Close the gRPC channel by dropping the sender. Only two senders
+            // exist: this one and the one in the log forwarder, which has
+            // already been stopped.
+            drop(tx);
+
             log::info!("Request '{}' completed", name);
         });
 
+        // Return the streaming response with the lock guard
         Ok(Response::new(StreamWithLock::new(rx, guard)))
     }
-    */
 
     /// Handles a reading request by acquiring the necessary locks and
     /// executing the provided function.
@@ -192,12 +219,16 @@ impl AppServer {
         F: FnOnce() -> Result<R, Error> + Send + 'static,
         R: Send + 'static,
     {
+        // Try to acquire the connection lock in read mode
         let _guard = self.try_acquire_read_lock()?;
+
+        // Try to acquire the servicing read lock
         let Some(_servicing_guard) = self.servicing_manager.try_lock_reading() else {
             log::warn!("read_data request blocked because servicing is active");
             return Err(Status::unavailable("Servicing is active"));
         };
 
+        // Execute the reading function
         match f() {
             Ok(result) => Ok(Response::new(result)),
             Err(err) => {
@@ -208,32 +239,179 @@ impl AppServer {
     }
 }
 
-/* TODO: Enable once #396 is closed.
 /// Implements the gRPC AppService for the Trident server.
 #[async_trait]
-impl AppService for AppServer {
-    async fn read_data(
+impl TridentService for TridentHarpoonServer {
+    // /// Sample data read method
+    // ///
+    // /// TODO: Remove once real methods are implemented.
+    // async fn read_data(
+    //     &self,
+    //     _request: Request<ReadRequest>,
+    // ) -> Result<Response<ReadResponse>, Status> {
+    //     self.reading_request("read_data", || {
+    //         let value = servicing::some_reading_operation("hello from server")?;
+    //         Ok(ReadResponse { output: value })
+    //     })
+    // }
+
+    // /// Sample servicing method
+    // ///
+    // /// TODO: Remove once real methods are implemented.
+    // type DoProcessStream = ServicingResponseStream;
+    // async fn do_process(
+    //     &self,
+    //     request: Request<DoProcessRequest>,
+    // ) -> Result<Response<Self::DoProcessStream>, Status> {
+    //     let process_req = request.into_inner();
+    //     self.servicing_request("do_process", move || {
+    //         servicing::some_servicing_operation(
+    //             process_req.count,
+    //             Duration::from_millis(process_req.interval_ms.into()),
+    //         )
+    //     })
+    // }
+
+    type InstallStream = ServicingResponseStream;
+    async fn install(
         &self,
-        _request: Request<ReadRequest>,
-    ) -> Result<Response<ReadResponse>, Status> {
-        self.reading_request("read_data", || {
-            let value = servicing::some_reading_operation("hello from server")?;
-            Ok(ReadResponse { output: value })
-        })
+        _request: Request<ServicingRequest>,
+    ) -> Result<Response<Self::InstallStream>, Status> {
+        Err(Status::unimplemented("install not yet implemented"))
     }
 
-    type DoProcessStream = ServicingResponseStream;
-    async fn do_process(
+    type InstallStageStream = ServicingResponseStream;
+    async fn install_stage(
         &self,
-        request: Request<DoProcessRequest>,
-    ) -> Result<Response<Self::DoProcessStream>, Status> {
-        let process_req = request.into_inner();
-        self.servicing_request("do_process", move || {
-            servicing::some_servicing_operation(
-                process_req.count,
-                Duration::from_millis(process_req.interval_ms.into()),
-            )
-        })
+        _request: Request<StageRequest>,
+    ) -> Result<Response<Self::InstallStageStream>, Status> {
+        Err(Status::unimplemented("install_stage not yet implemented"))
+    }
+
+    type InstallFinalizeStream = ServicingResponseStream;
+    async fn install_finalize(
+        &self,
+        _request: Request<FinalizeRequest>,
+    ) -> Result<Response<Self::InstallFinalizeStream>, Status> {
+        Err(Status::unimplemented(
+            "install_finalize not yet implemented",
+        ))
+    }
+
+    type UpdateStream = ServicingResponseStream;
+    async fn update(
+        &self,
+        _request: Request<ServicingRequest>,
+    ) -> Result<Response<Self::UpdateStream>, Status> {
+        Err(Status::unimplemented("update not yet implemented"))
+    }
+
+    type UpdateStageStream = ServicingResponseStream;
+    async fn update_stage(
+        &self,
+        _request: Request<StageRequest>,
+    ) -> Result<Response<Self::UpdateStageStream>, Status> {
+        Err(Status::unimplemented("update_stage not yet implemented"))
+    }
+
+    type UpdateFinalizeStream = ServicingResponseStream;
+    async fn update_finalize(
+        &self,
+        _request: Request<FinalizeRequest>,
+    ) -> Result<Response<Self::UpdateFinalizeStream>, Status> {
+        Err(Status::unimplemented("update_finalize not yet implemented"))
+    }
+
+    type CheckRootStream = ServicingResponseStream;
+    async fn check_root(
+        &self,
+        _request: Request<CheckRootRequest>,
+    ) -> Result<Response<Self::CheckRootStream>, Status> {
+        Err(Status::unimplemented("check_root not yet implemented"))
+    }
+
+    type CommitStream = ServicingResponseStream;
+    async fn commit(
+        &self,
+        _request: Request<CommitRequest>,
+    ) -> Result<Response<Self::CommitStream>, Status> {
+        Err(Status::unimplemented("commit not yet implemented"))
+    }
+
+    type StreamImageStream = ServicingResponseStream;
+    async fn stream_image(
+        &self,
+        _request: Request<StreamImageRequest>,
+    ) -> Result<Response<Self::StreamImageStream>, Status> {
+        Err(Status::unimplemented("stream_image not yet implemented"))
+    }
+
+    type RebuildRaidStream = ServicingResponseStream;
+    async fn rebuild_raid(
+        &self,
+        _request: Request<RebuildRaidRequest>,
+    ) -> Result<Response<Self::RebuildRaidStream>, Status> {
+        Err(Status::unimplemented("rebuild_raid not yet implemented"))
+    }
+
+    async fn validate_host_configuration(
+        &self,
+        _request: Request<ValidateHostConfigurationRequest>,
+    ) -> Result<Response<ValidateHostConfigurationResponse>, Status> {
+        Err(Status::unimplemented(
+            "validate_host_configuration not yet implemented",
+        ))
+    }
+
+    async fn get_required_servicing_type(
+        &self,
+        _request: Request<GetRequiredServicingTypeRequest>,
+    ) -> Result<Response<GetRequiredServicingTypeResponse>, Status> {
+        Err(Status::unimplemented(
+            "get_required_servicing_type not yet implemented",
+        ))
+    }
+
+    async fn get_provisioned_config(
+        &self,
+        _request: Request<GetConfigRequest>,
+    ) -> Result<Response<GetConfigResponse>, Status> {
+        Err(Status::unimplemented(
+            "get_provisioned_config not yet implemented",
+        ))
+    }
+
+    async fn get_servicing_config(
+        &self,
+        _request: Request<GetConfigRequest>,
+    ) -> Result<Response<GetConfigResponse>, Status> {
+        Err(Status::unimplemented(
+            "get_servicing_config not yet implemented",
+        ))
+    }
+
+    async fn get_last_error(
+        &self,
+        _request: Request<GetLastErrorRequest>,
+    ) -> Result<Response<GetLastErrorResponse>, Status> {
+        Err(Status::unimplemented("get_last_error not yet implemented"))
+    }
+
+    async fn get_servicing_state(
+        &self,
+        _request: Request<GetServicingStateRequest>,
+    ) -> Result<Response<GetServicingStateResponse>, Status> {
+        Err(Status::unimplemented(
+            "get_servicing_state not yet implemented",
+        ))
+    }
+
+    async fn get_active_volume(
+        &self,
+        _request: Request<GetActiveVolumeRequest>,
+    ) -> Result<Response<GetActiveVolumeResponse>, Status> {
+        Err(Status::unimplemented(
+            "get_active_volume not yet implemented",
+        ))
     }
 }
-*/

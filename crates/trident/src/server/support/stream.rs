@@ -17,7 +17,7 @@ pub struct StreamWithLock<T, U: Unpin> {
 }
 
 impl<T, U: Unpin> StreamWithLock<T, U> {
-    fn new(inner: UnboundedReceiver<T>, _rwlock: OwnedRwLockWriteGuard<U>) -> Self {
+    pub fn new(inner: UnboundedReceiver<T>, _rwlock: OwnedRwLockWriteGuard<U>) -> Self {
         Self { inner, _rwlock }
     }
 }

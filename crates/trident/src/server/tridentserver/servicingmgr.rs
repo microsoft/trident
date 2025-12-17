@@ -5,9 +5,10 @@ use tokio::{
     task::JoinError,
 };
 
-// TODO: Enable once #396 is closed.
-// use crate::{app_proto::Control};
-use crate::server::activitytracker::ActivityTracker;
+use harpoon::{FinalStatus, StatusCode};
+use trident_api::error::TridentError;
+
+use crate::{server::activitytracker::ActivityTracker, ExitKind};
 
 type ServicingLockGuard = OwnedRwLockWriteGuard<()>;
 type ServicingReadGuard = OwnedRwLockReadGuard<()>;
@@ -41,31 +42,39 @@ impl ServicingManager {
     // TODO: Enable once #396 is closed to turn `Control` into the final struct
     // representing the final result of a servicing operation.
 
-    // pub(crate) async fn spawn_servicing_task<F>(
-    //     _guard: ServicingLockGuard,
-    //     tracker: ActivityTracker,
-    //     f: F,
-    // ) -> Control
-    // where
-    //     F: FnOnce() -> Result<(), Error> + Send + 'static,
-    // {
-    //     match Self::spawn_servicing_blocking_task(tracker, f).await {
-    //         Ok(r) => match r {
-    //             Ok(_) => Control {
-    //                 status: 0,
-    //                 message: "Servicing operation completed successfully".to_string(),
-    //             },
-    //             Err(e) => Control {
-    //                 status: 1,
-    //                 message: "Servicing operation failed: ".to_string() + &e.to_string(),
-    //             },
-    //         },
-    //         Err(e) => Control {
-    //             status: -1,
-    //             message: "Servicing failed to complete: ".to_string() + &e.to_string(),
-    //         },
-    //     }
-    // }
+    pub(crate) async fn spawn_servicing_task<F>(
+        _guard: ServicingLockGuard,
+        tracker: ActivityTracker,
+        f: F,
+    ) -> FinalStatus
+    where
+        F: FnOnce() -> Result<ExitKind, TridentError> + Send + 'static,
+    {
+        match Self::spawn_servicing_blocking_task(tracker, f).await {
+            Ok(r) => match r {
+                Ok(exit_kind) => FinalStatus {
+                    status: StatusCode::Success.into(),
+                    error: None,
+                    reboot_required: match exit_kind {
+                        ExitKind::Done => false,
+                        ExitKind::NeedsReboot => true,
+                    },
+                },
+                Err(e) => FinalStatus {
+                    status: StatusCode::Failure.into(),
+                    // TODO: convert trident error to harpoon error
+                    error: None,
+                    reboot_required: false,
+                },
+            },
+            Err(e) => FinalStatus {
+                status: StatusCode::Failure.into(),
+                // TODO: create an internal trident error and convert to harpoon error
+                error: None,
+                reboot_required: false,
+            },
+        }
+    }
 
     async fn spawn_servicing_blocking_task<F, R>(
         tracker: ActivityTracker,
