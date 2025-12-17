@@ -119,7 +119,16 @@ pub(crate) fn rollback(
                 update_start_time,
             )
         }
-        // TODO: Add case for manual rollback
+        ServicingState::ManualRollbackStaged => {
+            info!("Starting manual rollback of runtime update");
+            finalize_or_rollback_runtime_update(
+                subsystems,
+                state,
+                false, // reverse_specs: false, do not reverse spec and spec_old in the Host Status for manual rollback
+                true,  // run_health_checks: true, run health checks on manual rollback
+                update_start_time,
+            )
+        }
         _ => Ok(ExitKind::Done),
     }
 }
@@ -142,7 +151,10 @@ fn finalize_or_rollback_runtime_update(
         old_spec = state.host_status().spec.clone();
     }
 
-    if state.host_status().servicing_state != ServicingState::RuntimeUpdateStaged {
+    if !matches!(
+        state.host_status().servicing_state,
+        ServicingState::RuntimeUpdateStaged | ServicingState::ManualRollbackStaged,
+    ) {
         return Err(TridentError::internal(
             "Runtime update must be staged before calling finalize",
         ));
