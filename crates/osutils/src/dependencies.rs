@@ -1,7 +1,7 @@
 use std::{
     borrow::Cow,
     ffi::{OsStr, OsString},
-    io,
+    fmt, io,
     os::unix::process::ExitStatusExt,
     path::PathBuf,
     process::{Command as StdCommand, Output},
@@ -121,6 +121,8 @@ pub enum Dependency {
     SystemdConfext,
     #[strum(serialize = "systemd-cryptenroll")]
     SystemdCryptenroll,
+    #[strum(serialize = "systemd-cryptsetup")]
+    SystemdCryptsetup,
     #[strum(serialize = "systemd-firstboot")]
     SystemdFirstboot,
     #[strum(serialize = "systemd-pcrlock")]
@@ -149,8 +151,8 @@ pub enum Dependency {
     False,
 }
 
-impl std::fmt::Display for Dependency {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for Dependency {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.into())
     }
 }
