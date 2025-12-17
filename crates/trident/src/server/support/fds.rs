@@ -81,17 +81,6 @@ pub fn get_sd_fd_socket_data() -> Result<Vec<(OwnedFd, String)>, Error> {
             )
         })?;
 
-        // Enforce that the fd is a Unix socket to avoid surprises later on like
-        // inadvertently listening on a network socket due to a bad config
-        // change.
-        if !is_unix_socket(borrowed.as_raw_fd()) {
-            bail!(
-                "File descriptor {}[{}] provided by systemd is not a Unix socket",
-                name,
-                raw_fd
-            );
-        }
-
         // Get ownership by creating an OwnedFd from the raw_fd. This is safe
         // because we have verified the fd is valid.
         let owned = borrowed.try_clone_to_owned().with_context(|| {
@@ -158,7 +147,7 @@ fn get_env_var(key: &str) -> Result<String, VarError> {
 }
 
 /// Checks if the given file descriptor corresponds to a Unix socket.
-fn is_unix_socket(fd: RawFd) -> bool {
+pub fn is_unix_socket(fd: RawFd) -> bool {
     matches!(get_addr_family(fd), Some(AddressFamily::Unix))
 }
 

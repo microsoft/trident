@@ -5,11 +5,11 @@ use tokio::{
     net::UnixListener,
     signal::unix::{self, SignalKind},
 };
+use tokio_stream::wrappers::UnixListenerStream;
+use tonic::transport::Server;
+use tonic_middleware::MiddlewareFor;
 
-// TODO: Enable once #396 is closed.
-// use tokio_stream::wrappers::UnixListenerStream;
-// use tonic::transport::Server;
-// use tonic_middleware::MiddlewareFor;
+use harpoon::trident_service_server::TridentServiceServer;
 
 use crate::{
     logging::logfwd::LogForwarder,
@@ -20,8 +20,7 @@ mod activitytracker;
 mod support;
 mod tridentserver;
 
-// TODO: Enable once #396 is closed.
-// use tridentserver::AppServer;
+use tridentserver::TridentHarpoonServer;
 
 /// Default path for the Trident Unix domain socket. This is used when Trident
 /// itself creates the socket when invoked directly, and not as part of a
@@ -47,30 +46,28 @@ pub async fn server_main(log_fwd: LogForwarder) -> AnyhowRes<()> {
     let mut sigterm =
         unix::signal(SignalKind::terminate()).context("Failed to set up SIGTERM handler")?;
 
-    // TODO: Enable once #396 is closed.
-    // let app_server = AppServer::new(log_fwd, activity_tracker.clone());
+    let app_server = TridentHarpoonServer::new(log_fwd, activity_tracker.clone());
 
-    // TODO: Enable once #396 is closed.
-    // Server::builder()
-    //     .add_service(MiddlewareFor::new(
-    //         AppServiceServer::new(app_server),
-    //         activity_tracker.middleware(),
-    //     ))
-    //     .serve_with_incoming_shutdown(UnixListenerStream::new(listener), async {
-    //         tokio::select! {
-    //             _ = shutdown_rx.recv() => {
-    //                 log::info!("Shutdown signal received");
-    //             }
-    //             _ = tokio::signal::ctrl_c() => {
-    //                 log::info!("Ctrl-C received, shutting down");
-    //             }
-    //             _ = sigterm.recv() => {
-    //                 log::info!("SIGTERM received, shutting down");
-    //             }
-    //         }
-    //     })
-    //     .await
-    //     .context("gRPC server failed")?;
+    Server::builder()
+        .add_service(MiddlewareFor::new(
+            TridentServiceServer::new(app_server),
+            activity_tracker.middleware(),
+        ))
+        .serve_with_incoming_shutdown(UnixListenerStream::new(listener), async {
+            tokio::select! {
+                _ = shutdown_rx.recv() => {
+                    log::info!("Shutdown signal received");
+                }
+                _ = tokio::signal::ctrl_c() => {
+                    log::info!("Ctrl-C received, shutting down");
+                }
+                _ = sigterm.recv() => {
+                    log::info!("SIGTERM received, shutting down");
+                }
+            }
+        })
+        .await
+        .context("gRPC server failed")?;
 
     // Cancel activity monitoring
     monitor_token.cancel();
@@ -93,6 +90,17 @@ fn set_up_listener() -> AnyhowRes<UnixListener> {
 
     // Use the systemd-passed socket if available, otherwise bind to default path
     let listener = if let Some((sd_listener_fd, fd_name)) = sd_listener_fds.into_iter().next() {
+        // Enforce that the fd is a Unix socket to avoid surprises later on like
+        // inadvertently listening on a network socket due to a bad config
+        // change.
+        if !fds::is_unix_socket(sd_listener_fd.as_raw_fd()) {
+            bail!(
+                "File descriptor {}[{}] provided by systemd is not a Unix socket",
+                fd_name,
+                sd_listener_fd.as_raw_fd()
+            );
+        }
+
         log::debug!(
             "Activated by systemd socket: listening on file descriptor: {}[{}]",
             fd_name,
@@ -101,7 +109,12 @@ fn set_up_listener() -> AnyhowRes<UnixListener> {
         fds::get_listener_from_fd(sd_listener_fd)?
     } else {
         log::debug!("No systemd socket activation detected, binding to default socket path");
-        UnixListener::bind(DEFAULT_TRIDENT_SOCKET_PATH).context("Failed to bind UnixListener")?
+        UnixListener::bind(DEFAULT_TRIDENT_SOCKET_PATH).with_context(|| {
+            format!(
+                "Failed to bind UnixListener to {}",
+                DEFAULT_TRIDENT_SOCKET_PATH
+            )
+        })?
     };
 
     Ok(listener)
