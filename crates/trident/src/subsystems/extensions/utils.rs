@@ -92,7 +92,7 @@ fn extensions_match(internal_exts: &[&ExtensionData], hc_exts: &[Extension]) -> 
         .map(|e| (&e.sha384, (&e.path, &e.ext_type)))
         .collect();
     // Iterate through all extensions in the Host Configuration and ensure that
-    // each extension images matches a corresponding extension image on SHA384
+    // each extension image matches a corresponding extension image on SHA384
     // hash and path.
     hc_exts.iter().all(|ext| {
         internal_exts_map
