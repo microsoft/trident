@@ -343,13 +343,16 @@ fn make_policy(pcrs: BitFlags<Pcr>, pcrlock_policy_path: &Path) -> Result<(), Er
         .cmd()
         .arg("make-policy")
         .arg(to_pcr_arg(pcrs))
-        .arg(format!("--policy={}", pcrlock_policy_path.display()))
+        // TODO: In v255, expected arg `--policy` is ignored and instead, `--pcrlock=` is
+        // respected. This issue has been fixed in v258:
+        // https://github.com/systemd/systemd/issues/38506.
+        .arg(format!("--pcrlock={}", pcrlock_policy_path.display()))
         .output_and_stderr_and_check()
         .context("Failed to execute 'systemd-pcrlock make-policy' command")?;
 
     // Log both outputs
     debug!(
-        "Output of 'systemd-pcrlock make-policy --policy={} --pcr={}':\nSTDOUT:\n{}\nSTDERR:\n{}",
+        "Output of 'systemd-pcrlock make-policy --pcrlock={} {}':\nSTDOUT:\n{}\nSTDERR:\n{}",
         pcrlock_policy_path.display(),
         to_pcr_arg(pcrs),
         stdout_str,
@@ -364,8 +367,10 @@ fn make_policy(pcrs: BitFlags<Pcr>, pcrlock_policy_path: &Path) -> Result<(), Er
     if !output_str.contains("Calculated new PCR policy") || !output_str.contains("Updated NV index")
     {
         warn!(
-            "The 'systemd-pcrlock make-policy' command did not update the PCR policy as expected. \
+            "The 'systemd-pcrlock make-policy --pcrlock={} {}' command did not update the PCR policy as expected. \
             Output:\n{}",
+            pcrlock_policy_path.display(),
+            to_pcr_arg(pcrs),
             output_str
         );
     }
