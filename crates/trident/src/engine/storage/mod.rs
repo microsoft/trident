@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use log::{debug, info, trace, warn};
 
 use osutils::{e2fsck, lsblk};

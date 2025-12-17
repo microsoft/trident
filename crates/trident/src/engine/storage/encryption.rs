@@ -17,7 +17,7 @@ use osutils::{
     encryption::{self, KeySlotType},
     lsblk::{self, BlockDeviceType},
     path::join_relative,
-    pcrlock::{self, PCRLOCK_POLICY_JSON},
+    pcrlock,
 };
 use sysdefs::tpm2::Pcr;
 use trident_api::{
@@ -31,7 +31,7 @@ use trident_api::{
 };
 
 use crate::{
-    bootentries, datastore,
+    bootentries,
     engine::{
         boot::{self, uki},
         storage::encryption::uki::{TMP_UKI_NAME, UKI_DIRECTORY},
@@ -119,7 +119,7 @@ pub(super) fn create_encrypted_devices(ctx: &EngineContext) -> Result<(), Triden
 
         // If this is for a grub ROS, seal against the value of PCR 7; if this is for a UKI ROS,
         // seal against a "bootstrapping" pcrlock policy that exclusively contains PCR 0.
-        let pcr = if ctx.is_uki()? {
+        let (pcr, pcrlock_policy_path) = if ctx.is_uki()? {
             debug!("Target OS image is a UKI image, so sealing against a pcrlock policy of PCR 0");
 
             // Construct full path to pcrlock policy JSON file
@@ -138,14 +138,17 @@ pub(super) fn create_encrypted_devices(ctx: &EngineContext) -> Result<(), Triden
                 vec![],
                 vec![],
             )?;
-            None
+            (None, Some(pcrlock_policy_path))
         } else {
             debug!("Target OS image is a grub image, so sealing against PCR 7");
-            Some(
-                encryption
-                    .pcrs
-                    .iter()
-                    .fold(BitFlags::empty(), |acc, &pcr| acc | BitFlags::from(pcr)),
+            (
+                Some(
+                    encryption
+                        .pcrs
+                        .iter()
+                        .fold(BitFlags::empty(), |acc, &pcr| acc | BitFlags::from(pcr)),
+                ),
+                None,
             )
         };
 
@@ -196,6 +199,7 @@ pub(super) fn create_encrypted_devices(ctx: &EngineContext) -> Result<(), Triden
                 &key_file_path,
                 encryption_type,
                 pcr,
+                pcrlock_policy_path.as_deref(),
             )
             .structured(ServicingError::EncryptBlockDevice {
                 device_path: device_path.to_string_lossy().to_string(),
@@ -246,6 +250,7 @@ fn encrypt_and_open_device(
     key_file: &Path,
     encryption_type: EncryptionType,
     pcr: Option<BitFlags<Pcr>>,
+    pcrlock_policy_path: Option<&Path>,
 ) -> Result<(), Error> {
     match encryption_type {
         EncryptionType::Reencrypt => {
@@ -276,7 +281,7 @@ fn encrypt_and_open_device(
     );
 
     // Enroll the TPM 2.0 device for the underlying device
-    encryption::systemd_cryptenroll(key_file, device_path, pcr)?;
+    encryption::systemd_cryptenroll(key_file, device_path, pcr, pcrlock_policy_path)?;
 
     debug!(
         "Opening underlying encrypted device '{}' as '{}'",
@@ -284,7 +289,7 @@ fn encrypt_and_open_device(
         device_name
     );
 
-    encryption::cryptsetup_open(key_file, device_path, device_name)?;
+    encryption::cryptsetup_open(key_file, device_path, device_name, pcrlock_policy_path)?;
 
     Ok(())
 }

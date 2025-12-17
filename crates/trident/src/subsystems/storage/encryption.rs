@@ -7,10 +7,7 @@ use std::{
 use enumflags2::BitFlags;
 use log::{debug, info, trace};
 
-use osutils::{
-    container, efivar, encryption as osutils_encryption, files, path,
-    pcrlock::{self, PCRLOCK_POLICY_JSON},
-};
+use osutils::{container, efivar, encryption as osutils_encryption, files, path, pcrlock};
 use sysdefs::tpm2::Pcr;
 use trident_api::{
     config::{
@@ -177,6 +174,10 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
             }
         };
 
+        // Construct full path to pcrlock policy JSON file
+        let pcrlock_policy_path = pcrlock::construct_pcrlock_path(&ctx.spec.trident.datastore_path)
+            .structured(ServicingError::ConstructPcrlockPolicyPath)?;
+
         // If updated PCRs are specified, re-generate pcrlock policy
         if let Some(pcrs) = updated_pcrs {
             debug!(
@@ -188,11 +189,6 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                 engine_encryption::get_binary_paths_pcrlock(ctx, pcrs, Some(mount_path))
                     .structured(ServicingError::GetBinaryPathsForPcrlockEncryption)?;
 
-            // Construct full path to pcrlock policy JSON file
-            let pcrlock_policy_path =
-                pcrlock::construct_pcrlock_path(&ctx.spec.trident.datastore_path)
-                    .structured(ServicingError::ConstructPcrlockPolicyPath)?;
-
             // Re-generate pcrlock policy
             pcrlock::generate_pcrlock_policy(
                 pcrs,
@@ -203,16 +199,16 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
         }
 
         // If a pcrlock policy JSON file exists, copy it to the update volume
-        if Path::new(PCRLOCK_POLICY_JSON).exists() {
-            let pcrlock_json_copy = path::join_relative(mount_path, PCRLOCK_POLICY_JSON);
+        if pcrlock_policy_path.exists() {
+            let pcrlock_json_copy = path::join_relative(mount_path, &pcrlock_policy_path);
             debug!(
                 "Copying pcrlock policy JSON from path '{}' to update volume at path '{}'",
-                PCRLOCK_POLICY_JSON,
+                pcrlock_policy_path.display(),
                 pcrlock_json_copy.display()
             );
-            fs::copy(PCRLOCK_POLICY_JSON, pcrlock_json_copy.clone()).structured(
+            fs::copy(&pcrlock_policy_path, pcrlock_json_copy.clone()).structured(
                 ServicingError::CopyPcrlockPolicyJson {
-                    path: PCRLOCK_POLICY_JSON.to_string(),
+                    path: pcrlock_policy_path.display().to_string(),
                     destination: pcrlock_json_copy.display().to_string(),
                 },
             )?;
