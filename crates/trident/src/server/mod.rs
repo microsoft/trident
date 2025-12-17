@@ -71,6 +71,14 @@ pub async fn server_main(log_fwd: LogForwarder) -> AnyhowRes<()> {
     monitor_token.cancel();
 
     log::info!("Server shut down gracefully");
+
+    // NOTE:
+    //
+    // Any active servicing operation will exist in its own standalone thread,
+    // so it will continue running until completion or error even after the
+    // server has shut down. This is intentional, as we want servicing
+    // operations to complete even if the server is no longer reachable.
+
     Ok(())
 }
 
