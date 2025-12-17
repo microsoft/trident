@@ -21,9 +21,7 @@ url = "2.5.4"
 # Local dependencies
 trident_api = { path = "../trident_api" }
 osutils = { path = "../osutils" }
-
-[build-dependencies]
-tonic-prost-build = "0.14.2"
+harpoon = { path = "../harpoon" }
 
 [features]
 dangerous-options = ["trident_api/dangerous-options"]

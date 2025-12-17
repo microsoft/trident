@@ -995,6 +995,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "harpoon"
+version = "0.1.0"
+dependencies = [
+ "tonic",
+ "tonic-prost-build",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3404,6 +3412,7 @@ dependencies = [
  "anyhow",
  "clap",
  "env_logger 0.11.5",
+ "harpoon",
  "log",
  "osutils",
  "prost",
@@ -3411,7 +3420,6 @@ dependencies = [
  "tokio",
  "tonic",
  "tonic-prost",
- "tonic-prost-build",
  "trident_api",
  "url",
 ]

@@ -15,10 +15,6 @@ pub const TRIDENT_VERSION: &str = match option_env!("TRIDENT_VERSION") {
     None => env!("CARGO_PKG_VERSION"),
 };
 
-pub mod protobufs {
-    tonic::include_proto!("harpoon.v1");
-}
-
 fn run_trident_cli(_args: &Cli) -> Result<(), TridentError> {
     // Log version
     info!("Trident CLI version: {}", TRIDENT_VERSION);
