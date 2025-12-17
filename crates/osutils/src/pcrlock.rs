@@ -783,19 +783,22 @@ mod functional_test {
     use super::*;
 
     use pytest_gen::functional_test;
+    use trident_api::constants::TRIDENT_DATASTORE_PATH_DEFAULT;
 
     #[functional_test(feature = "helpers")]
     fn test_generate_tpm2_access_policy() {
         // Test case #0. Since no .pcrlock files have been generated yet, only 0-valued PCRs can be
         // used to generate a TPM 2.0 access policy.
         let zero_pcrs = Pcr::Pcr11 | Pcr::Pcr12 | Pcr::Pcr13;
-        generate_tpm2_access_policy(zero_pcrs).unwrap();
+        let pcrlock_policy_path =
+            construct_pcrlock_path(Path::new(TRIDENT_DATASTORE_PATH_DEFAULT)).unwrap();
+        generate_tpm2_access_policy(zero_pcrs, &pcrlock_policy_path).unwrap();
 
         // Test case #1. Try to generate a TPM 2.0 access policy with all PCRs; should return an
         // error since no .pcrlock files have been generated yet.
         let pcrs = BitFlags::<Pcr>::all();
         assert_eq!(
-            generate_tpm2_access_policy(pcrs)
+            generate_tpm2_access_policy(pcrs, &pcrlock_policy_path)
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
@@ -803,6 +806,6 @@ mod functional_test {
         );
 
         // Clean up the generated pcrlock policy
-        fs::remove_file(PCRLOCK_POLICY_JSON).unwrap();
+        remove_policy(&pcrlock_policy_path).unwrap();
     }
 }
