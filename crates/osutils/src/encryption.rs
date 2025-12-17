@@ -8,7 +8,7 @@ use anyhow::{Context, Error};
 use enumflags2::BitFlags;
 use log::debug;
 
-use crate::{dependencies::Dependency, pcrlock::PCRLOCK_POLICY_JSON_PATH};
+use crate::{dependencies::Dependency, pcrlock::PCRLOCK_POLICY_JSON};
 use sysdefs::tpm2::Pcr;
 use trident_api::constants::LUKS_HEADER_SIZE_IN_MIB;
 
@@ -51,7 +51,7 @@ pub fn systemd_cryptenroll(
     if let Some(pcrs) = pcrs {
         cmd.arg(to_tpm2_pcrs_arg(pcrs));
     } else {
-        cmd.arg(format!("--tpm2-pcrlock={PCRLOCK_POLICY_JSON_PATH}"));
+        cmd.arg(format!("--tpm2-pcrlock={PCRLOCK_POLICY_JSON}"));
     }
 
     cmd.run_and_check().context(format!(

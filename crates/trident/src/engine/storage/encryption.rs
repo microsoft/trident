@@ -17,7 +17,7 @@ use osutils::{
     encryption::{self, KeySlotType},
     lsblk::{self, BlockDeviceType},
     path::join_relative,
-    pcrlock,
+    pcrlock::{self, PCRLOCK_POLICY_JSON},
 };
 use sysdefs::tpm2::Pcr;
 use trident_api::{
@@ -31,7 +31,7 @@ use trident_api::{
 };
 
 use crate::{
-    bootentries,
+    bootentries, datastore,
     engine::{
         boot::{self, uki},
         storage::encryption::uki::{TMP_UKI_NAME, UKI_DIRECTORY},
@@ -122,11 +122,22 @@ pub(super) fn create_encrypted_devices(ctx: &EngineContext) -> Result<(), Triden
         let pcr = if ctx.is_uki()? {
             debug!("Target OS image is a UKI image, so sealing against a pcrlock policy of PCR 0");
 
+            // Construct full path to pcrlock policy JSON file
+            let pcrlock_policy_path =
+                pcrlock::construct_pcrlock_path(&ctx.spec.trident.datastore_path)
+                    .structured(ServicingError::ConstructPcrlockPolicyPath)?;
+
             // Remove any pre-existing policy
-            pcrlock::remove_policy().structured(ServicingError::RemovePcrlockPolicy)?;
+            pcrlock::remove_policy(&pcrlock_policy_path)
+                .structured(ServicingError::RemovePcrlockPolicy)?;
 
             // Generate a pcrlock policy for the first time
-            pcrlock::generate_pcrlock_policy(BitFlags::from(Pcr::Pcr0), vec![], vec![])?;
+            pcrlock::generate_pcrlock_policy(
+                BitFlags::from(Pcr::Pcr0),
+                &pcrlock_policy_path,
+                vec![],
+                vec![],
+            )?;
             None
         } else {
             debug!("Target OS image is a grub image, so sealing against PCR 7");

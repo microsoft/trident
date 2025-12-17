@@ -9,7 +9,7 @@ use log::{debug, info, trace};
 
 use osutils::{
     container, efivar, encryption as osutils_encryption, files, path,
-    pcrlock::{self, PCRLOCK_POLICY_JSON_PATH},
+    pcrlock::{self, PCRLOCK_POLICY_JSON},
 };
 use sysdefs::tpm2::Pcr;
 use trident_api::{
@@ -188,21 +188,31 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                 engine_encryption::get_binary_paths_pcrlock(ctx, pcrs, Some(mount_path))
                     .structured(ServicingError::GetBinaryPathsForPcrlockEncryption)?;
 
+            // Construct full path to pcrlock policy JSON file
+            let pcrlock_policy_path =
+                pcrlock::construct_pcrlock_path(&ctx.spec.trident.datastore_path)
+                    .structured(ServicingError::ConstructPcrlockPolicyPath)?;
+
             // Re-generate pcrlock policy
-            pcrlock::generate_pcrlock_policy(pcrs, uki_binaries, bootloader_binaries)?;
+            pcrlock::generate_pcrlock_policy(
+                pcrs,
+                &pcrlock_policy_path,
+                uki_binaries,
+                bootloader_binaries,
+            )?;
         }
 
         // If a pcrlock policy JSON file exists, copy it to the update volume
-        if Path::new(PCRLOCK_POLICY_JSON_PATH).exists() {
-            let pcrlock_json_copy = path::join_relative(mount_path, PCRLOCK_POLICY_JSON_PATH);
+        if Path::new(PCRLOCK_POLICY_JSON).exists() {
+            let pcrlock_json_copy = path::join_relative(mount_path, PCRLOCK_POLICY_JSON);
             debug!(
                 "Copying pcrlock policy JSON from path '{}' to update volume at path '{}'",
-                PCRLOCK_POLICY_JSON_PATH,
+                PCRLOCK_POLICY_JSON,
                 pcrlock_json_copy.display()
             );
-            fs::copy(PCRLOCK_POLICY_JSON_PATH, pcrlock_json_copy.clone()).structured(
+            fs::copy(PCRLOCK_POLICY_JSON, pcrlock_json_copy.clone()).structured(
                 ServicingError::CopyPcrlockPolicyJson {
-                    path: PCRLOCK_POLICY_JSON_PATH.to_string(),
+                    path: PCRLOCK_POLICY_JSON.to_string(),
                     destination: pcrlock_json_copy.display().to_string(),
                 },
             )?;

@@ -370,6 +370,9 @@ pub enum ServicingError {
         explanation: String,
     },
 
+    #[error("Failed to construct pcrlock policy path in directory adjacent to the datastore")]
+    ConstructPcrlockPolicyPath,
+
     #[error("Failed to create extension image directories on target OS")]
     CreateExtensionImageDirectories,
 
