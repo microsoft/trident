@@ -22,7 +22,7 @@ Runtime updates currently support the following configurations:
   (netplan)**](../Reference/Host-Configuration/API-Reference/Os.md#netplan-optional):
 
 If any other part of the Host Configuration has changed, Trident will begin an
-[A/B update](./A-B-Updates.md) instead of a runtime update.
+[A/B update](../Reference/Glossary.md#ab-update) instead of a runtime update.
 
 ## How Runtime Updates Work
 
