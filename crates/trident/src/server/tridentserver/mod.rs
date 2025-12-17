@@ -9,7 +9,7 @@ use prost_types::Timestamp;
 use tokio::{
     sync::{
         mpsc::{self, UnboundedSender},
-        OwnedRwLockWriteGuard, RwLock,
+        OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock,
     },
     task::JoinHandle,
 };
@@ -92,7 +92,7 @@ impl TridentHarpoonServer {
                         if let Err(err) = grpc_log_tx.send(Ok(ServicingResponse {
                             timestamp: Some(Timestamp::from(SystemTime::now())),
                             response: Some(ResponseType::Log(Log {
-                                message:log_record.message,
+                                message: log_record.message,
                                 level: log_record.level as i32,
                                 target: log_record.target,
                                 module: log_record.module,
@@ -121,8 +121,8 @@ impl TridentHarpoonServer {
     /// Tries to acquire a read lock on the server's RwLock. If the lock
     /// cannot be acquired, returns a gRPC Status indicating that the server is
     /// busy.
-    fn try_acquire_read_lock(&self) -> Result<OwnedRwLockWriteGuard<u32>, Status> {
-        self.rwlock.clone().try_write_owned().map_err(|_| {
+    fn try_acquire_read_lock(&self) -> Result<OwnedRwLockReadGuard<u32>, Status> {
+        self.rwlock.clone().try_read_owned().map_err(|_| {
             log::warn!("Trident is busy, cannot acquire read lock");
             Status::unavailable("Trident is busy")
         })

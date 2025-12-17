@@ -94,7 +94,8 @@ impl ActivityTracker {
 
     /// Monitors activity events and manages shutdown timer When inactivity is
     /// detected and there are no active connections or servicing, starts a
-    /// 10-second timer to trigger server shutdown.
+    /// countdown timer with the provided timeout duration to trigger server
+    /// shutdown.
     fn monitor_activity(
         self,
         token: CancellationToken,

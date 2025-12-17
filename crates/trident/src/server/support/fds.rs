@@ -68,9 +68,9 @@ pub fn get_sd_fd_socket_data() -> Result<Vec<(OwnedFd, String)>, Error> {
             }
         } + i as RawFd;
 
-        // This is safe because we know the raw_fd is greater or equal to 3
-        // (negative is bad). We need to check if the fd is valid (open) before
-        // taking ownership, otherwise we might close an invalid fd.
+        // Safety: we know the raw_fd is greater or equal to 3 (negative is bad)
+        // in cfg(not(test)) cases. We need to check if the fd is valid (open)
+        // before taking ownership, otherwise we might close an invalid fd.
         let borrowed = unsafe { BorrowedFd::borrow_raw(raw_fd) };
 
         // Check if the fd is valid by getting its flags

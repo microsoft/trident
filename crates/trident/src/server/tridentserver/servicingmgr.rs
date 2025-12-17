@@ -67,7 +67,7 @@ impl ServicingManager {
                     reboot_required: false,
                 },
             },
-            Err(e) => FinalStatus {
+            Err(_e) => FinalStatus {
                 status: StatusCode::Failure.into(),
                 // TODO: create an internal trident error and convert to harpoon error
                 error: None,
