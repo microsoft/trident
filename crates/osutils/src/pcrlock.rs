@@ -36,6 +36,9 @@ pub(crate) const PCRLOCK_DIR: &str = "/var/lib/pcrlock.d";
 /// datastore.
 const PCRLOCK_POLICY_JSON: &str = "pcrlock.json";
 
+/// Default path to the pcrlock policy JSON.
+const PCRLOCK_POLICY_JSON_DEFAULT: &str = "/var/lib/systemd/pcrlock.json";
+
 /// `/var/lib/pcrlock.d/630-boot-loader-code-shim.pcrlock.d`, where `lock-pe` measures the shim
 ///  bootloader binary, i.e. `/EFI/AZL{A/B}/bootx64.efi`, as recorded into PCR 4 following
 ///  Microsoft's Authenticode hash spec,
@@ -374,6 +377,15 @@ fn make_policy(pcrs: BitFlags<Pcr>, pcrlock_policy_path: &Path) -> Result<(), Er
             output_str
         );
     }
+
+    // Copy pcrlock policy JSON to PCRLOCK_POLICY_JSON_DEFAULT_PATH because that is what
+    // cryptsetup expects
+    debug!(
+        "Copying generated pcrlock policy JSON from '{}' to default location at '{}'",
+        pcrlock_policy_path.display(),
+        PCRLOCK_POLICY_JSON_DEFAULT
+    );
+    fs::copy(pcrlock_policy_path, PCRLOCK_POLICY_JSON_DEFAULT)?;
 
     Ok(())
 }

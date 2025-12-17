@@ -52,6 +52,8 @@ pub fn systemd_cryptenroll(
     if let Some(pcrs) = pcrs {
         cmd.arg(to_tpm2_pcrs_arg(pcrs));
     } else if let Some(pcrlock_policy_path) = pcrlock_policy_path {
+        // TODO: need to check container path existence?
+
         cmd.arg(format!("--tpm2-pcrlock={}", pcrlock_policy_path.display()));
     }
 
@@ -178,7 +180,6 @@ pub fn cryptsetup_open(
     key_file: impl AsRef<Path>,
     device_path: impl AsRef<Path>,
     device_name: &str,
-    pcrlock_policy_path: Option<&Path>,
 ) -> Result<(), Error> {
     debug!(
         "Opening underlying encrypted device '{}' as '{}'",
@@ -186,23 +187,19 @@ pub fn cryptsetup_open(
         device_name
     );
 
-    let mut cmd = Dependency::Cryptsetup.cmd();
-    cmd.arg("luksOpen")
+    Dependency::Cryptsetup
+        .cmd()
+        .arg("luksOpen")
         .arg("--key-file")
         .arg(key_file.as_ref().as_os_str())
         .arg(device_path.as_ref().as_os_str())
-        .arg(device_name);
-
-    // If provided, specify custom pcrlock policy path
-    if let Some(pcrlock_policy_path) = pcrlock_policy_path {
-        cmd.arg(format!("--tpm2-pcrlock={}", pcrlock_policy_path.display()));
-    }
-
-    cmd.run_and_check().context(format!(
-        "Failed to open underlying encrypted device '{}' as '{}'",
-        device_path.as_ref().display(),
-        device_name
-    ))
+        .arg(device_name)
+        .run_and_check()
+        .context(format!(
+            "Failed to open underlying encrypted device '{}' as '{}'",
+            device_path.as_ref().display(),
+            device_name
+        ))
 }
 
 /// Runs `cryptsetup luksClose` to close the given LUKS2 device.
@@ -443,13 +440,7 @@ mod functional_test {
         .unwrap();
 
         // Open the encrypted volume, to make the block device available
-        cryptsetup_open(
-            key_file_path,
-            &partition1.node,
-            ENCRYPTED_VOLUME_NAME,
-            Some(&pcrlock_policy_path),
-        )
-        .unwrap();
+        cryptsetup_open(key_file_path, &partition1.node, ENCRYPTED_VOLUME_NAME).unwrap();
 
         // Format the unlocked volume with ext4
         mkfs::run(Path::new(ENCRYPTED_VOLUME_PATH), MkfsFileSystemType::Ext4).unwrap();
@@ -498,13 +489,7 @@ mod functional_test {
         cryptsetup_close(ENCRYPTED_VOLUME_NAME).unwrap();
 
         // Re-open the encrypted volume
-        cryptsetup_open(
-            key_file_path,
-            &partition1.node,
-            ENCRYPTED_VOLUME_NAME,
-            Some(&pcrlock_policy_path),
-        )
-        .unwrap();
+        cryptsetup_open(key_file_path, &partition1.node, ENCRYPTED_VOLUME_NAME).unwrap();
 
         // Re-mount the encrypted volume
         Dependency::Mount
@@ -605,13 +590,7 @@ mod functional_test {
         .unwrap();
 
         // Open the encrypted volume, to make the block device available
-        cryptsetup_open(
-            key_file_path,
-            &partition1.node,
-            ENCRYPTED_VOLUME_NAME,
-            Some(&pcrlock_policy_path),
-        )
-        .unwrap();
+        cryptsetup_open(key_file_path, &partition1.node, ENCRYPTED_VOLUME_NAME).unwrap();
 
         // Verify the test data exists at the expected offset
         let mut decrypted_device = OpenOptions::new()

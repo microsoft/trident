@@ -289,7 +289,7 @@ fn encrypt_and_open_device(
         device_name
     );
 
-    encryption::cryptsetup_open(key_file, device_path, device_name, pcrlock_policy_path)?;
+    encryption::cryptsetup_open(key_file, device_path, device_name)?;
 
     Ok(())
 }
