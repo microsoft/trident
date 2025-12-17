@@ -195,10 +195,7 @@ pub fn cryptsetup_open(
 
     // If provided, specify custom pcrlock policy path
     if let Some(pcrlock_policy_path) = pcrlock_policy_path {
-        cmd.arg(format!(
-            "--pcrlock-policy={}",
-            pcrlock_policy_path.display()
-        ));
+        cmd.arg(format!("--tpm2-pcrlock={}", pcrlock_policy_path.display()));
     }
 
     cmd.run_and_check().context(format!(
