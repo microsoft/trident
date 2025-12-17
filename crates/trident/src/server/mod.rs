@@ -46,11 +46,9 @@ pub async fn server_main(log_fwd: LogForwarder) -> AnyhowRes<()> {
     let mut sigterm =
         unix::signal(SignalKind::terminate()).context("Failed to set up SIGTERM handler")?;
 
-    let app_server = TridentHarpoonServer::new(log_fwd, activity_tracker.clone());
-
     Server::builder()
         .add_service(MiddlewareFor::new(
-            TridentServiceServer::new(app_server),
+            TridentServiceServer::new(TridentHarpoonServer::new(log_fwd, activity_tracker.clone())),
             activity_tracker.middleware(),
         ))
         .serve_with_incoming_shutdown(UnixListenerStream::new(listener), async {
