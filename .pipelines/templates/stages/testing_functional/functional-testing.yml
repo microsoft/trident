@@ -89,9 +89,15 @@ stages:
               # Proactively try to fix any possible issue from previous task failure
               sudo dpkg --configure -a
 
-              sudo apt install -y protobuf-compiler clang bc
               sudo apt remove python3-openssl
               pip install pytest assertpy paramiko pyopenssl
+
+              # Install updated protoc version
+              curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v25.1/protoc-25.1-linux-x86_64.zip
+              sudo unzip -o protoc-25.1-linux-x86_64.zip -d /usr/local bin/protoc
+              sudo unzip -o protoc-25.1-linux-x86_64.zip -d /usr/local 'include/*'
+              sudo chmod +x /usr/local/bin/protoc
+              rm protoc-25.1-linux-x86_64.zip
             displayName: Install dependencies
             retryCountOnTaskFailure: 3
 
