@@ -1,4 +1,4 @@
-//!! Harpoon gRPC definitions.
+//! Harpoon gRPC definitions.
 //!
 //! This module contains the gRPC definitions for Harpoon, generated from the
 //! `harpoon.proto` file using Tonic.
