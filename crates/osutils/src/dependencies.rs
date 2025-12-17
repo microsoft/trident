@@ -261,6 +261,12 @@ impl Command {
         self.output()?.check_output()
     }
 
+    pub fn output_and_stderr_and_check(&self) -> Result<(String, String), Box<DependencyError>> {
+        let output = self.output()?;
+        let stdout = output.check_output()?;
+        Ok((stdout, output.error_output()))
+    }
+
     pub fn raw_output_and_check(&self) -> Result<Output, Box<DependencyError>> {
         self.output()?.check_raw_output()
     }

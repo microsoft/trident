@@ -253,8 +253,19 @@ fn commit_finalized_on_expected_root(
                 encryption::get_binary_paths_pcrlock(ctx, pcrs, None)
                     .structured(ServicingError::GetBinaryPathsForPcrlockEncryption)?;
 
+            // Construct full path to pcrlock policy JSON file
+            let pcrlock_policy_path = pcrlock::construct_pcrlock_path(
+                &datastore.host_status().spec.trident.datastore_path,
+            )
+            .structured(ServicingError::ConstructPcrlockPolicyPath)?;
+
             // Generate a pcrlock policy
-            pcrlock::generate_pcrlock_policy(pcrs, uki_binaries, bootloader_binaries)?;
+            pcrlock::generate_pcrlock_policy(
+                pcrs,
+                &pcrlock_policy_path,
+                uki_binaries,
+                bootloader_binaries,
+            )?;
         } else {
             debug!(
                 "Target OS image is a grub image, \
