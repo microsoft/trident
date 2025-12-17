@@ -566,19 +566,15 @@ impl Trident {
                             let finalize_result = runtime_update::finalize_update(
                                 &mut subsystems,
                                 datastore,
-                                false,
-                                true,
                                 None,
                             )
                             .message("Failed to finalize runtime update");
                             if let Err(e) = finalize_result {
                                 error!("Runtime update finalize failed with message: {e:?}");
                                 // Attempt an auto-rollback
-                                return runtime_update::finalize_update(
+                                return runtime_update::rollback(
                                             &mut subsystems,
                                             datastore,
-                                            false,
-                                            true,
                                             None,
                                         )
                                 .message(format!(

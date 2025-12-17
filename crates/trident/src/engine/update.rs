@@ -148,19 +148,15 @@ pub(crate) fn update(
                 let finalize_result = runtime_update::finalize_update(
                     &mut subsystems,
                     state,
-                    false,
-                    true,
                     Some(update_start_time),
                 )
                 .message("Failed to finalize runtime update");
                 if let Err(e) = finalize_result {
                     error!("Runtime update finalize failed with message: {e:?}");
                     // Attempt an auto-rollback
-                    return runtime_update::finalize_update(
+                    return runtime_update::rollback(
                         &mut subsystems,
                         state,
-                        true,
-                        false,
                         Some(update_start_time),
                     )
                     .message(format!(

@@ -69,17 +69,53 @@ pub(crate) fn stage_update(
     Ok(())
 }
 
-/// Finalizes a runtime update. Takes in 5 arguments:
+/// Finalizes a runtime update. Takes in 3 arguments:
 /// - subsystems: A mutable reference to the list of subsystems.
 /// - state: A mutable reference to the DataStore.
-/// - reverse_specs: A boolean indicating whether spec and spec_old in the
-///   EngineContext should be reversed. This is used for auto-rollback of
-///   runtime updates.
-/// - run_health_checks: A boolean indicating whether health checks should be
-///   performed before exiting.
 /// - update_start_time: Optional, the time at which the update staging began.
 #[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", ServicingType::RuntimeUpdate)))]
 pub(crate) fn finalize_update(
+    subsystems: &mut [Box<dyn Subsystem>],
+    state: &mut DataStore,
+    update_start_time: Option<Instant>,
+) -> Result<ExitKind, TridentError> {
+    info!("Finalizing runtime update");
+    finalize_or_rollback_runtime_update(
+        subsystems,
+        state,
+        false, // reverse_specs: false
+        true,  // run_health_checks: true
+        update_start_time,
+    )
+}
+
+/// Rolls back a runtime update, used for both auto-rollback and manual
+/// rollback. Takes in 3 arguments:
+/// - subsystems: A mutable reference to the list of subsystems.
+/// - state: A mutable reference to the DataStore.
+/// - update_start_time: Optional, the time at which the update staging began.
+pub(crate) fn rollback(
+    subsystems: &mut [Box<dyn Subsystem>],
+    state: &mut DataStore,
+    update_start_time: Option<Instant>,
+) -> Result<ExitKind, TridentError> {
+    match state.host_status().servicing_state {
+        ServicingState::RuntimeUpdateStaged => {
+            info!("Starting auto-rollback of runtime update");
+            finalize_or_rollback_runtime_update(
+                subsystems,
+                state,
+                true, // reverse_specs: true, reverse spec and spec_old in the Host Status for auto-rollback
+                false, // run_health_checks: false, do not re-run health checks on auto-rollback
+                update_start_time,
+            )
+        }
+        // TODO: Add case for manual rollback
+        _ => Ok(ExitKind::Done),
+    }
+}
+
+fn finalize_or_rollback_runtime_update(
     subsystems: &mut [Box<dyn Subsystem>],
     state: &mut DataStore,
     reverse_specs: bool,
@@ -89,11 +125,9 @@ pub(crate) fn finalize_update(
     let target_spec;
     let old_spec;
     if !reverse_specs {
-        info!("Finalizing runtime update");
         target_spec = state.host_status().spec.clone();
         old_spec = state.host_status().spec_old.clone();
     } else {
-        info!("Starting rollback of runtime update");
         trace!("Reversing spec and spec_old");
         target_spec = state.host_status().spec_old.clone();
         old_spec = state.host_status().spec.clone();
