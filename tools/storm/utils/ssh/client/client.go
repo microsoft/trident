@@ -28,7 +28,7 @@ func OpenSshClient(settings stormsshconfig.SshCliSettings) (*ssh.Client, error) 
 		Auth: []ssh.AuthMethod{
 			ssh.PublicKeys(signer),
 		},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // CodeQL [SM03565] This is test code, not production code
 		Timeout:         time.Second * time.Duration(settings.Timeout),
 	}
 
