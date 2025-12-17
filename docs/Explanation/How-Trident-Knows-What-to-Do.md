@@ -23,13 +23,13 @@ partitions, filesystems, and other details. It will be compared to the existing
 state of the machine to find the differences and determine what actions need to
 be taken to bring the machine to the desired state.
 
-With the `update` command, Trident automatically selects the appropriate
-servicing type based on which configurations have changed in the Host
-Configuration. If only [sysexts, confexts, or netplan
+Trident automatically selects the appropriate servicing type between an [A/B
+update](../Reference/Glossary.md#ab-update) and a [runtime
+update](../Reference/Glossary.md#runtime-update) based on which configurations
+have changed in the Host Configuration. If only [sysexts, confexts, or netplan
 configuration](../Reference/Glossary.md#runtime-update) have changed, Trident
-will perform a [runtime update](../Reference/Glossary.md#runtime-update).
-Otherwise, Trident will trigger an [A/B
-update](../Reference/Glossary.md#ab-update) to provision a new root filesystem.
+will perform a runtime update. Otherwise, Trident will trigger an A/B update to
+provision a new root filesystem.
 
 ## Trident Subsystems
 
