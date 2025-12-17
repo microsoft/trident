@@ -1,10 +1,10 @@
 use std::time::Instant;
 
-use log::{debug, info, trace, warn};
+use log::{debug, error, info, trace, warn};
 
 use osutils::efivar;
 use trident_api::{
-    error::TridentError,
+    error::{TridentError, TridentResultExt},
     status::{ServicingState, ServicingType},
 };
 
@@ -80,13 +80,22 @@ pub(crate) fn finalize_update(
     update_start_time: Option<Instant>,
 ) -> Result<ExitKind, TridentError> {
     info!("Finalizing runtime update");
-    finalize_or_rollback_runtime_update(
+    let finalize_result = finalize_or_rollback_runtime_update(
         subsystems,
         state,
         false, // reverse_specs: false
         true,  // run_health_checks: true
         update_start_time,
     )
+    .message("Failed to finalize runtime update");
+    if let Err(e) = finalize_result {
+        error!("Runtime update finalize failed with message:\n{e:?}");
+        // Attempt an auto-rollback
+        return rollback(subsystems, state, update_start_time).message(format!(
+            "Auto-rollback was triggered by runtime update failure:\n{e:?}"
+        ));
+    }
+    finalize_result
 }
 
 /// Rolls back a runtime update, used for both auto-rollback and manual
