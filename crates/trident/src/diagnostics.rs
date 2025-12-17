@@ -1,12 +1,17 @@
+use anyhow::{anyhow, Error};
+use chrono::Utc;
+use log::{debug, info};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::{
+    collections::BTreeMap,
     fs::{self},
     path::{Path, PathBuf},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
-use anyhow::Error;
-use log::{debug, info, warn};
-use osutils::{dependencies::Dependency, findmnt, lsblk, pcrlock};
-use serde::{Deserialize, Serialize};
+use lsblk::BlockDevice;
+use osutils::{dependencies::Dependency, findmnt::FindMnt, lsblk, pcrlock, pcrlock::LogOutput};
 use trident_api::{
     config::{Check, Health},
     error::{InternalError, ReportError, TridentError},
@@ -22,7 +27,6 @@ const DIAGNOSTICS_BUNDLE_PREFIX: &str = "trident-diagnostics";
 const DMI_SYS_VENDOR_FILE: &str = "/sys/class/dmi/id/sys_vendor";
 const DMI_PRODUCT_NAME_FILE: &str = "/sys/class/dmi/id/product_name";
 
-/// The diagnostics report contains all collected information
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DiagnosticsReport {
     /// Timestamp when the report was generated
@@ -35,6 +39,8 @@ pub struct DiagnosticsReport {
     pub host_status: Option<HostStatus>,
     /// Collected files metadata
     pub collected_files: Option<Vec<FileMetadata>>,
+    /// Collection failures that occurred during diagnostics gathering
+    pub collection_failures: Vec<CollectionFailure>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -44,17 +50,17 @@ pub struct HostDescription {
     /// Whether running on a VM
     pub is_virtual: bool,
     /// Virtualization type (kvm, vmware, hyperv, etc.)
-    pub virt_type: String,
+    pub virt_type: Option<String>,
     /// Platform information
-    pub platform_info: std::collections::BTreeMap<String, serde_json::Value>,
+    pub platform_info: BTreeMap<String, Value>,
     /// Block device information
-    pub blockdev_info: Option<Vec<lsblk::BlockDevice>>,
+    pub blockdev_info: Option<Vec<BlockDevice>>,
     /// File system information (from FindMnt)
-    pub mount_info: Option<findmnt::FindMnt>,
+    pub mount_info: Option<FindMnt>,
     /// Status of systemd services from configured health checks
     pub health_check_status: Option<Vec<SystemdServiceStatus>>,
     /// TPM 2.0 pcrlock log output
-    pub pcrlock_log: Option<pcrlock::LogOutput>,
+    pub pcrlock_log: Option<LogOutput>,
     /// Trident service status and journal
     pub trident_service: TridentServiceDiagnostics,
 }
@@ -74,34 +80,55 @@ pub struct SystemdServiceStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TridentServiceDiagnostics {
     /// Output from systemctl status trident.service
-    pub status: String,
+    pub status: Option<String>,
     /// Output from journalctl -u trident.service
-    pub journal: String,
+    pub journal: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileMetadata {
     /// Relative path in the support bundle
-    pub path: String,
+    pub path: PathBuf,
     /// Size in bytes
     pub size_bytes: u64,
     /// Description of what this file contains
     pub description: String,
 }
 
-fn collect_report() -> Result<DiagnosticsReport, TridentError> {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CollectionFailure {
+    /// What was being collected when the failure occurred
+    pub item: String,
+    /// The error message describing what went wrong
+    pub error: String,
+}
+
+fn record_failure(
+    failures: &mut Vec<CollectionFailure>,
+    item: impl Into<String>,
+    error: &impl std::fmt::Debug,
+) {
+    failures.push(CollectionFailure {
+        item: item.into(),
+        error: format!("{:?}", error),
+    });
+}
+
+fn collect_report() -> DiagnosticsReport {
     info!("Collecting diagnostics information");
 
-    let host_status = collect_host_status();
-    let host_description = collect_host_description(host_status.as_ref());
+    let mut failures = Vec::new();
+    let host_status = collect_host_status(&mut failures);
+    let host_description = collect_host_description(host_status.as_ref(), &mut failures);
 
-    Ok(DiagnosticsReport {
-        timestamp: chrono::Utc::now().to_rfc3339(),
+    DiagnosticsReport {
+        timestamp: Utc::now().to_rfc3339(),
         version: TRIDENT_VERSION.to_string(),
         host_description,
         host_status,
         collected_files: None,
-    })
+        collection_failures: failures,
+    }
 }
 
 struct DatastorePaths {
@@ -129,22 +156,27 @@ fn get_datastore_paths() -> DatastorePaths {
     }
 }
 
-fn collect_host_description(host_status: Option<&HostStatus>) -> HostDescription {
+fn collect_host_description(
+    host_status: Option<&HostStatus>,
+    failures: &mut Vec<CollectionFailure>,
+) -> HostDescription {
     let is_container = osutils::container::is_running_in_container().unwrap_or_else(|e| {
-        warn!("Container environment detection failed: {:?}", e);
+        record_failure(failures, "container environment detection", &e);
         false
     });
     let platform_info = logging::tracestream::PLATFORM_INFO.clone();
-    let (is_virtual, virt_type) = get_virtualization_info();
+    let virt_type = get_virtualization_info(failures);
+    let is_virtual = virt_type.is_some();
     let blockdev_info = lsblk::list()
-        .map_err(|e| warn!("Failed to collect block device info: {:?}", e))
+        .map_err(|e| record_failure(failures, "block device info", &e))
         .ok();
-    let mount_info = findmnt::FindMnt::run()
-        .map_err(|e| warn!("Failed to collect mount info: {:?}", e))
+    let mount_info = FindMnt::run()
+        .map_err(|e| record_failure(failures, "mount info", &e))
         .ok();
-    let health_check_status = host_status.map(|hs| collect_health_check_status(&hs.spec.health));
-    let pcrlock_log = collect_pcrlock_log();
-    let trident_service = collect_trident_service_diagnostics();
+    let health_check_status =
+        host_status.map(|hs| collect_health_check_status(&hs.spec.health, failures));
+    let pcrlock_log = collect_pcrlock_log(failures);
+    let trident_service = collect_trident_service_diagnostics(failures);
 
     HostDescription {
         is_container,
@@ -159,46 +191,43 @@ fn collect_host_description(host_status: Option<&HostStatus>) -> HostDescription
     }
 }
 
-fn collect_pcrlock_log() -> Option<pcrlock::LogOutput> {
+fn collect_pcrlock_log(failures: &mut Vec<CollectionFailure>) -> Option<LogOutput> {
     match pcrlock::log_parsed() {
         Ok(log) => Some(log),
         Err(e) => {
-            warn!("Failed to collect pcrlock log: {:?}", e);
+            record_failure(failures, "pcrlock log", &e);
             None
         }
     }
 }
 
-fn collect_trident_service_diagnostics() -> TridentServiceDiagnostics {
-    let service_status = collect_service_status("trident.service");
+fn collect_trident_service_diagnostics(
+    failures: &mut Vec<CollectionFailure>,
+) -> TridentServiceDiagnostics {
+    let status = collect_service_status("trident.service", failures).map(|s| s.status_output);
 
     let journal = Dependency::Journalctl
         .cmd()
         .args(["--no-pager", "-u", "trident.service"])
         .output()
         .map(|out| out.output_report())
-        .unwrap_or_else(|e| format!("Failed to run journalctl: {e}"));
+        .map_err(|e| record_failure(failures, "trident.service journal", &e))
+        .ok();
 
-    TridentServiceDiagnostics {
-        status: service_status.map_or(
-            "Failed to collect trident.service status".to_string(),
-            |s| s.status_output,
-        ),
-        journal,
-    }
+    TridentServiceDiagnostics { status, journal }
 }
 
-fn collect_full_journal() -> Option<String> {
+fn collect_full_journal(failures: &mut Vec<CollectionFailure>) -> Option<String> {
     Dependency::Journalctl
         .cmd()
         .args(["--no-pager"])
         .output()
         .map(|out| out.output_report())
-        .map_err(|e| warn!("Failed to collect full journal: {e}"))
+        .map_err(|e| record_failure(failures, "full journal", &e))
         .ok()
 }
 
-fn collect_host_status() -> Option<HostStatus> {
+fn collect_host_status(failures: &mut Vec<CollectionFailure>) -> Option<HostStatus> {
     let paths = get_datastore_paths();
 
     let candidates = [
@@ -209,21 +238,20 @@ fn collect_host_status() -> Option<HostStatus> {
 
     for path in candidates.into_iter().flatten() {
         if path.exists() {
-            match DataStore::open(path) {
-                Ok(datastore) => {
-                    return Some(datastore.host_status().clone());
-                }
-                Err(e) => {
-                    warn!("Failed to open datastore at {}: {:?}", path.display(), e);
-                }
+            if let Ok(datastore) = DataStore::open(path) {
+                return Some(datastore.host_status().clone());
             }
         }
     }
-    debug!("No valid datastore found to collect host status");
+
+    record_failure(failures, "host status", &anyhow!("no datastore found"));
     None
 }
 
-fn collect_health_check_status(health: &Health) -> Vec<SystemdServiceStatus> {
+fn collect_health_check_status(
+    health: &Health,
+    failures: &mut Vec<CollectionFailure>,
+) -> Vec<SystemdServiceStatus> {
     // Get all health check systemd service names
     let services: Vec<_> = health
         .checks
@@ -241,13 +269,16 @@ fn collect_health_check_status(health: &Health) -> Vec<SystemdServiceStatus> {
 
     let statuses: Vec<_> = services
         .iter()
-        .filter_map(|service| collect_service_status(service))
+        .filter_map(|service| collect_service_status(service, failures))
         .collect();
 
     statuses
 }
 
-fn collect_service_status(service: &str) -> Option<SystemdServiceStatus> {
+fn collect_service_status(
+    service: &str,
+    failures: &mut Vec<CollectionFailure>,
+) -> Option<SystemdServiceStatus> {
     let output = Dependency::Systemctl
         .cmd()
         .env("SYSTEMD_IGNORE_CHROOT", "true")
@@ -266,32 +297,45 @@ fn collect_service_status(service: &str) -> Option<SystemdServiceStatus> {
             })
         }
         Err(e) => {
-            warn!("Failed to collect status for {}: {:?}", service, e);
+            record_failure(failures, format!("service status for {}", service), &e);
             None
         }
     }
 }
 
-fn get_virtualization_info() -> (bool, String) {
-    if let Ok(content) = fs::read_to_string(DMI_SYS_VENDOR_FILE) {
-        let vendor = content.trim().to_lowercase();
-        if vendor.contains("qemu") {
-            return (true, "qemu".to_string());
+fn get_virtualization_info(failures: &mut Vec<CollectionFailure>) -> Option<String> {
+    let content = match fs::read_to_string(DMI_SYS_VENDOR_FILE) {
+        Ok(c) => c,
+        Err(e) => {
+            record_failure(failures, "virtualization info (dmi_sys vendor)", &e);
+            return None;
         }
-        if let Ok(product) = fs::read_to_string(DMI_PRODUCT_NAME_FILE) {
-            let product = product.trim().to_lowercase();
-            if vendor.contains("microsoft corporation") && product.contains("virtual machine") {
-                return (true, "hyperv".to_string());
-            }
-        }
+    };
+
+    let vendor = content.trim().to_lowercase();
+    if vendor.contains("qemu") {
+        return Some("qemu".to_string());
     }
 
-    (false, "none detected".to_string())
+    let product = match fs::read_to_string(DMI_PRODUCT_NAME_FILE) {
+        Ok(p) => p,
+        Err(e) => {
+            record_failure(failures, "virtualization info (dmi_sys product)", &e);
+            return None;
+        }
+    };
+
+    let product = product.trim().to_lowercase();
+    if vendor.contains("microsoft corporation") && product.contains("virtual machine") {
+        return Some("hyperv".to_string());
+    }
+
+    None
 }
 
 struct FileToCollect {
     src: PathBuf,
-    tar_path: String,
+    tar_path: PathBuf,
     desc: String,
 }
 
@@ -301,7 +345,7 @@ fn create_support_bundle(
     output_path: &Path,
     files_to_collect: Vec<FileToCollect>,
     full_dump: bool,
-) -> Result<PathBuf, Error> {
+) -> Result<(), Error> {
     let mut collected_files = Vec::new();
     let file = osutils::files::create_file(output_path)?;
     let encoder = zstd::Encoder::new(file, 0)?;
@@ -311,11 +355,16 @@ fn create_support_bundle(
         if let Ok(meta) = fs::metadata(&file_to_collect.src) {
             if let Err(e) = tar.append_path_with_name(
                 &file_to_collect.src,
-                format!("{}/{}", DIAGNOSTICS_BUNDLE_PREFIX, file_to_collect.tar_path),
+                format!(
+                    "{}/{}",
+                    DIAGNOSTICS_BUNDLE_PREFIX,
+                    file_to_collect.tar_path.display()
+                ),
             ) {
-                warn!(
-                    "Failed to add {} to diagnostics bundle: {}",
-                    file_to_collect.tar_path, e
+                record_failure(
+                    &mut report.collection_failures,
+                    format!("file {}", file_to_collect.tar_path.display()),
+                    &e,
                 );
                 continue; // Skip this file
             }
@@ -325,22 +374,23 @@ fn create_support_bundle(
                 description: file_to_collect.desc,
             });
         } else {
-            debug!(
-                "File {} does not exist, skipping",
-                file_to_collect.src.display()
+            record_failure(
+                &mut report.collection_failures,
+                format!("file {}", file_to_collect.src.display()),
+                &anyhow!("file does not exist"),
             );
         }
     }
 
     // Collect and write full journal directly to tarball if requested
     if full_dump {
-        if let Some(journal_content) = collect_full_journal() {
+        if let Some(journal_content) = collect_full_journal(&mut report.collection_failures) {
             let mut header = tar::Header::new_gnu();
             header.set_size(journal_content.len() as u64);
             header.set_mode(0o644);
             header.set_mtime(
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs(),
             );
@@ -351,7 +401,7 @@ fn create_support_bundle(
                 journal_content.as_bytes(),
             )?;
             collected_files.push(FileMetadata {
-                path: "full-journal".to_string(),
+                path: PathBuf::from("full-journal"),
                 size_bytes: journal_content.len() as u64,
                 description: "Full system journal from current boot".to_string(),
             });
@@ -365,8 +415,8 @@ fn create_support_bundle(
     report_file_header.set_size(report_json.len() as u64);
     report_file_header.set_mode(0o644);
     report_file_header.set_mtime(
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs(),
     );
@@ -379,7 +429,7 @@ fn create_support_bundle(
 
     tar.into_inner()?.finish()?;
 
-    Ok(output_path.to_path_buf())
+    Ok(())
 }
 
 pub(crate) fn generate_and_bundle(
@@ -387,17 +437,17 @@ pub(crate) fn generate_and_bundle(
     full_dump: bool,
     selinux: bool,
 ) -> Result<(), TridentError> {
-    let mut report = collect_report()?;
+    let mut report = collect_report();
 
     let mut files_to_collect = vec![
         FileToCollect {
             src: PathBuf::from(TRIDENT_BACKGROUND_LOG_PATH),
-            tar_path: "logs/trident-full.log".to_string(),
+            tar_path: PathBuf::from("logs/trident-full.log"),
             desc: "Trident execution log".to_string(),
         },
         FileToCollect {
             src: PathBuf::from(TRIDENT_METRICS_FILE_PATH),
-            tar_path: "logs/trident-metrics.jsonl".to_string(),
+            tar_path: PathBuf::from("logs/trident-metrics.jsonl"),
             desc: "Trident metrics".to_string(),
         },
     ];
@@ -421,7 +471,7 @@ pub(crate) fn generate_and_bundle(
                         };
                         files_to_collect.push(FileToCollect {
                             src: entry.path(),
-                            tar_path: format!("logs/historical/{}", file_name),
+                            tar_path: PathBuf::from("logs/historical").join(&file_name),
                             desc,
                         });
                     }
@@ -434,45 +484,45 @@ pub(crate) fn generate_and_bundle(
     let paths = get_datastore_paths();
     files_to_collect.push(FileToCollect {
         src: paths.default,
-        tar_path: "datastore.sqlite".to_string(),
+        tar_path: PathBuf::from("datastore.sqlite"),
         desc: "Default datastore".to_string(),
     });
     files_to_collect.push(FileToCollect {
         src: paths.temporary,
-        tar_path: "datastore-tmp.sqlite".to_string(),
+        tar_path: PathBuf::from("datastore-tmp.sqlite"),
         desc: "Temporary datastore".to_string(),
     });
     if let Some(configured) = paths.configured {
         files_to_collect.push(FileToCollect {
             src: configured,
-            tar_path: "datastore-configured.sqlite".to_string(),
+            tar_path: PathBuf::from("datastore-configured.sqlite"),
             desc: "Configured datastore".to_string(),
         });
     }
 
     files_to_collect.push(FileToCollect {
         src: PathBuf::from("/etc/fstab"),
-        tar_path: "files/fstab".to_string(),
+        tar_path: PathBuf::from("files/fstab"),
         desc: "File system mount configuration (/etc/fstab)".to_string(),
     });
 
     files_to_collect.push(FileToCollect {
         src: PathBuf::from(pcrlock::PCRLOCK_POLICY_JSON_PATH),
-        tar_path: "tpm/pcrlock.json".to_string(),
+        tar_path: PathBuf::from("tpm/pcrlock.json"),
         desc: "TPM 2.0 pcrlock policy (pcrlock.json)".to_string(),
     });
 
     if selinux {
         files_to_collect.push(FileToCollect {
             src: PathBuf::from("/var/log/audit/audit.log"),
-            tar_path: "selinux/audit.log".to_string(),
+            tar_path: PathBuf::from("selinux/audit.log"),
             desc: "SELinux audit log".to_string(),
         });
     }
 
-    let bundle_path = create_support_bundle(&mut report, output_path, files_to_collect, full_dump)
+    create_support_bundle(&mut report, output_path, files_to_collect, full_dump)
         .structured(InternalError::DiagnosticBundleGeneration)?;
-    info!("Diagnostics bundle created: {}", bundle_path.display());
+    info!("Diagnostics bundle created: {}", output_path.display());
     Ok(())
 }
 
@@ -498,36 +548,37 @@ mod tests {
         let files_to_collect = vec![
             FileToCollect {
                 src: file1_path,
-                tar_path: "subdir/file1".to_string(),
+                tar_path: PathBuf::from("subdir/file1"),
                 desc: "First file".to_string(),
             },
             FileToCollect {
                 src: file2_path,
-                tar_path: "file2".to_string(),
+                tar_path: PathBuf::from("file2"),
                 desc: "Second file".to_string(),
             },
         ];
 
         // Create initial report
         let mut report = DiagnosticsReport {
-            timestamp: chrono::Utc::now().to_rfc3339(),
+            timestamp: Utc::now().to_rfc3339(),
             version: "test-version".to_string(),
             host_description: HostDescription {
                 is_container: false,
                 is_virtual: false,
-                virt_type: "none".to_string(),
-                platform_info: std::collections::BTreeMap::new(),
+                virt_type: Some("none".to_string()),
+                platform_info: BTreeMap::new(),
                 blockdev_info: None,
                 mount_info: None,
                 health_check_status: None,
                 pcrlock_log: None,
                 trident_service: TridentServiceDiagnostics {
-                    status: String::new(),
-                    journal: String::new(),
+                    status: None,
+                    journal: None,
                 },
             },
             host_status: None,
             collected_files: None,
+            collection_failures: Vec::new(),
         };
 
         // Create support bundle
@@ -545,8 +596,8 @@ mod tests {
         // Verify report has collected files metadata
         let collected = report.collected_files.as_ref().unwrap();
         assert_eq!(collected.len(), 2, "Should have 2 collected files");
-        assert_eq!(collected[0].path, "subdir/file1");
-        assert_eq!(collected[1].path, "file2");
+        assert_eq!(collected[0].path, PathBuf::from("subdir/file1"));
+        assert_eq!(collected[1].path, PathBuf::from("file2"));
 
         // Extract and verify bundle contents
         let extract_dir = output_dir.path().join("extracted");
@@ -583,24 +634,24 @@ mod tests {
         let extracted_report: DiagnosticsReport = serde_json::from_str(&report_content).unwrap();
         let collected = extracted_report.collected_files.as_ref().unwrap();
         assert_eq!(collected.len(), 2);
-        assert_eq!(collected[0].path, "subdir/file1");
+        assert_eq!(collected[0].path, PathBuf::from("subdir/file1"));
         assert_eq!(collected[0].description, "First file");
-        assert_eq!(collected[1].path, "file2");
+        assert_eq!(collected[1].path, PathBuf::from("file2"));
         assert_eq!(collected[1].description, "Second file");
     }
 
     #[test]
     fn test_bundle_report_json() {
-        // Create a complete report with fields populated
+        // Create a complete report with fields populated, including collection failures
         let mut report = DiagnosticsReport {
             timestamp: "2025-01-15T12:00:00Z".to_string(),
             version: "1.2.3".to_string(),
             host_description: HostDescription {
                 is_container: true,
                 is_virtual: true,
-                virt_type: "kvm".to_string(),
+                virt_type: Some("kvm".to_string()),
                 platform_info: {
-                    let mut map = std::collections::BTreeMap::new();
+                    let mut map = BTreeMap::new();
                     map.insert("cpu".to_string(), serde_json::json!("x86_64"));
                     map.insert("memory".to_string(), serde_json::json!(8192));
                     map
@@ -610,12 +661,16 @@ mod tests {
                 health_check_status: None,
                 pcrlock_log: None,
                 trident_service: TridentServiceDiagnostics {
-                    status: String::new(),
-                    journal: String::new(),
+                    status: None,
+                    journal: None,
                 },
             },
             host_status: None,
             collected_files: None,
+            collection_failures: vec![CollectionFailure {
+                item: "pcrlock log".to_string(),
+                error: "pcrlock not configured".to_string(),
+            }],
         };
 
         // Create bundle
@@ -647,7 +702,10 @@ mod tests {
         assert_eq!(read_report.version, "1.2.3");
         assert!(read_report.host_description.is_container);
         assert!(read_report.host_description.is_virtual);
-        assert_eq!(read_report.host_description.virt_type, "kvm");
+        assert_eq!(
+            read_report.host_description.virt_type,
+            Some("kvm".to_string())
+        );
         assert_eq!(read_report.host_description.platform_info.len(), 2);
         assert_eq!(
             read_report
@@ -666,6 +724,22 @@ mod tests {
             &serde_json::json!(8192)
         );
         assert!(read_report.host_description.mount_info.is_none());
+
+        // Verify collection_failures survived roundtrip
+        assert_eq!(read_report.collection_failures.len(), 1);
+        assert_eq!(read_report.collection_failures[0].item, "pcrlock log");
+    }
+
+    #[test]
+    fn test_record_failure() {
+        let mut failures = Vec::new();
+
+        let io_error = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "access denied");
+        record_failure(&mut failures, "test file", &io_error);
+
+        assert_eq!(failures.len(), 1);
+        assert_eq!(failures[0].item, "test file");
+        assert!(failures[0].error.contains("PermissionDenied"));
     }
 }
 
@@ -729,7 +803,8 @@ mod functional_test {
             "Should detect as virtual machine"
         );
         assert_eq!(
-            report.host_description.virt_type, "qemu",
+            report.host_description.virt_type,
+            Some("qemu".to_string()),
             "Should detect QEMU virtualization"
         );
         assert!(

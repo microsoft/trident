@@ -45,6 +45,7 @@ The bundle contains:
   - TPM 2.0 pcrlock log
   - Trident service status and journal
   - Host status
+  - Collection failures (see below)
 
 **Log files:**
 - `logs/trident-full.log` - Current execution log
@@ -63,6 +64,10 @@ The bundle contains:
 **Optional files (when flags are specified):**
 - `full-journal` - Full system journal (with `--full`)
 - `selinux/audit.log` - SELinux audit log (with `--selinux`)
+
+## Collection Failures
+
+The `report.json` includes a `collection_failures` list of items that could not be collected. Some failures are expected depending on system configuration (e.g., no pcrlock on systems without TPM 2.0).
 
 ## Share the Bundle for Support
 
