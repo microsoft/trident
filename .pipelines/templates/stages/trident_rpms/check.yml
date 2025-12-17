@@ -1,5 +1,5 @@
 steps:
-  - script: sudo tdnf install -y protobuf protobuf-c openssl-devel clang-devel
+  - script: sudo tdnf install -y protobuf protobuf-c openssl-devel clang-devel protobuf-devel
     displayName: Install native dependencies
     retryCountOnTaskFailure: 3
 

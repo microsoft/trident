@@ -7,7 +7,7 @@ parameters:
     type: number
 
 steps:
-  - script: sudo tdnf install -y protobuf protobuf-c openssl-devel clang-devel rust
+  - script: sudo tdnf install -y protobuf protobuf-c openssl-devel clang-devel rust protobuf-devel
     displayName: Install native dependencies
     retryCountOnTaskFailure: 3
 
