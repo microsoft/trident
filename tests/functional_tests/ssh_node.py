@@ -7,6 +7,9 @@ from threading import Thread
 from typing import Any, Dict, List, Optional, Union
 
 from assertpy.assertpy import AssertionBuilder, assert_that  # type: ignore
+
+# CodeQL [SM04242] Paramiko is used exclusively in testing, not in production. We can suppress this
+# warning as the Trident releases are not affected.
 from paramiko import SSHClient
 from paramiko.channel import ChannelFile, ChannelStderrFile
 
