@@ -140,6 +140,15 @@ impl TridentHarpoonServer {
 
     /// Handles a servicing request by acquiring the necessary locks,
     /// setting up log forwarding, and spawning the provided servicing task.
+    ///
+    /// On success, returns a gRPC streaming response (`Response<ServicingResponseStream>`)
+    /// that yields log messages and the final result of the servicing task.
+    ///
+    /// If the required read/write locks cannot be acquired (for example, when the
+    /// server is busy), this returns an error `Status` such as `Status::unavailable`.
+    /// It may also return other error `Status` values if log forwarding or task
+    /// setup fails. In all error cases, no servicing task is spawned and no stream
+    /// of responses is produced.
     fn servicing_request<F>(
         &self,
         name: &'static str,
