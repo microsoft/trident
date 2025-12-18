@@ -1,4 +1,4 @@
-#! /usr/bin/env python3
+#!/usr/bin/env python3
 
 """
 scripts/sync-rust-deps.py
@@ -26,7 +26,6 @@ from pathlib import Path
 from typing import List, Dict, Optional, Set
 from enum import Enum
 from semver import Version
-from dataclasses import dataclass
 
 TRIDENT_ROOT = Path(__file__).parent.parent
 
@@ -160,7 +159,9 @@ class CargoFile:
                         new_entry["features"] = features
 
                 # Preserve default-features if set and differs from root
-                if default_features := entry.get("default-features", None):
+                if (
+                    default_features := entry.get("default-features", None)
+                ) is not None:
                     if dep.default_features != default_features:
                         new_entry["default-features"] = default_features
 
