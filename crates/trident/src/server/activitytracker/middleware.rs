@@ -43,7 +43,8 @@ where
     }
 }
 
-/// Wrapper around Body that tracks when the stream is dropped
+/// Wrapper around Body that tracks when the response body is dropped,
+/// signaling the end of the connection/request lifecycle.
 struct TrackedBody {
     inner: Body,
     tracker: ActivityTracker,
