@@ -1,6 +1,7 @@
-use std::{os::fd::AsRawFd, time::Duration};
+use std::{fs, os::fd::AsRawFd, path::Path, time::Duration};
 
 use anyhow::{bail, Context, Result as AnyhowRes};
+use nix::sys::stat::Mode;
 use tokio::{
     net::UnixListener,
     signal::unix::{self, SignalKind},
@@ -115,12 +116,7 @@ fn set_up_listener() -> AnyhowRes<UnixListener> {
         fds::get_listener_from_fd(sd_listener_fd)?
     } else {
         log::debug!("No systemd socket activation detected, binding to default socket path");
-        UnixListener::bind(DEFAULT_TRIDENT_SOCKET_PATH).with_context(|| {
-            format!(
-                "Failed to bind UnixListener to {}",
-                DEFAULT_TRIDENT_SOCKET_PATH
-            )
-        })?
+        fds::create_unix_socket(DEFAULT_TRIDENT_SOCKET_PATH, Mode::from_bits_truncate(0o600))?
     };
 
     Ok(listener)

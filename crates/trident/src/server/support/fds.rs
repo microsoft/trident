@@ -1,16 +1,21 @@
 use std::{
     env::{self, VarError},
+    fs::{self, Permissions},
     os::{
         fd::{AsRawFd, BorrowedFd, OwnedFd, RawFd},
-        unix::net::UnixListener as StdUnixListener,
+        unix::{fs::PermissionsExt, net::UnixListener as StdUnixListener},
     },
+    path::Path,
 };
 
 use anyhow::{bail, Context, Error};
 use nix::{
     errno::Errno,
     fcntl,
-    sys::socket::{self, AddressFamily, SockaddrLike, SockaddrStorage},
+    sys::{
+        socket::{self, AddressFamily, SockaddrLike, SockaddrStorage},
+        stat::{self, Mode},
+    },
 };
 use tokio::net::UnixListener;
 
@@ -163,6 +168,58 @@ fn get_addr_family(fd: RawFd) -> Option<AddressFamily> {
 /// Checks whether a socket is valid by getting its status flags.
 fn check_file_descriptor_validity(fd: BorrowedFd) -> Result<(), Errno> {
     fcntl::fcntl(fd, fcntl::F_GETFL).map(|_| ())
+}
+
+/// Creates a UnixListener at the specified path with the given permissions,
+/// removing any existing socket file if necessary.
+pub(crate) fn create_unix_socket(
+    path: impl AsRef<Path>,
+    mode: Mode,
+) -> Result<UnixListener, Error> {
+    // Remove existing socket file if it exists
+    if path.as_ref().exists() {
+        fs::remove_file(&path).with_context(|| {
+            format!(
+                "Failed to remove existing socket file at {}",
+                path.as_ref().display()
+            )
+        })?;
+    }
+
+    // Ensure the socket is created with the given mode by temporarily setting
+    // the process umask.
+    //
+    // The resulting mode is roughly: 0o777 & !umask. To get `mode`, we set
+    // `umask = (!mode) & 0o777`. (Mask to permission bits to avoid toggling
+    // unrelated flag bits in nix::stat::Mode.)
+    struct UmaskGuard(Mode);
+    impl Drop for UmaskGuard {
+        fn drop(&mut self) {
+            stat::umask(self.0);
+        }
+    }
+
+    let perm_bits = Mode::from_bits_truncate(0o777);
+    let mask = (!mode) & perm_bits;
+    let old = stat::umask(mask);
+    let listener = {
+        let _guard = UmaskGuard(old);
+        UnixListener::bind(path.as_ref()).with_context(|| {
+            format!("Failed to bind UnixListener to {}", path.as_ref().display())
+        })?
+    };
+
+    // Set exact permissions as an extra guarantee (e.g. if umask math changes
+    // elsewhere). This should not broaden permissions because umask restricted
+    // them at creation time.
+    fs::set_permissions(path.as_ref(), Permissions::from_mode(mode.bits())).with_context(|| {
+        format!(
+            "Failed to set permissions on socket file at {}",
+            path.as_ref().display()
+        )
+    })?;
+
+    Ok(listener)
 }
 
 #[cfg(test)]
@@ -340,5 +397,27 @@ mod tests {
         let invalid_fd = unsafe { BorrowedFd::borrow_raw(424242) };
         let err = check_file_descriptor_validity(invalid_fd).unwrap_err();
         assert_eq!(err, Errno::EBADF);
+    }
+
+    #[tokio::test]
+    async fn test_create_unix_socket_sets_mode() {
+        let dir = tempdir().unwrap();
+        let socket_path = dir.path().join("test_socket_mode");
+
+        let test_mode = |desired_mode: u32| {
+            // Create a dummy file to ensure removal works
+            let _dummy = File::create(&socket_path).unwrap();
+            let mode = Mode::from_bits_truncate(desired_mode);
+            let _listener = create_unix_socket(&socket_path, mode).unwrap();
+
+            let meta = fs::symlink_metadata(&socket_path).unwrap();
+            let actual = meta.permissions().mode() & 0o777;
+            assert_eq!(actual, desired_mode);
+        };
+
+        test_mode(0o600);
+        test_mode(0o700);
+        test_mode(0o660);
+        test_mode(0o666);
     }
 }
