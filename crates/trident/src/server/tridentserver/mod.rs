@@ -212,8 +212,19 @@ impl TridentHarpoonServer {
         Ok(Response::new(StreamWithLock::new(rx, guard)))
     }
 
-    /// Handles a reading request by acquiring the necessary locks and
+    /// Handles a read-only request by acquiring the necessary locks and
     /// executing the provided function.
+    ///
+    /// This helper:
+    /// - Tries to acquire the connection lock in read mode.
+    /// - Tries to acquire the servicing read lock, returning
+    ///   [`Status::unavailable`] if servicing is currently active.
+    /// - Executes the provided function `f` once the locks are held.
+    ///
+    /// On success, this returns `Ok(Response::new(result))`, where `result` is
+    /// the value produced by `f`. If `f` returns an error, the error is logged
+    /// and converted into a [`Status::internal`] error. Failures to acquire the
+    /// underlying locks are returned as appropriate [`Status`] errors.
     fn reading_request<F, R>(&self, name: &'static str, f: F) -> Result<Response<R>, Status>
     where
         F: FnOnce() -> Result<R, Error> + Send + 'static,
