@@ -1,447 +1,23 @@
-#![allow(unused)]
-
-use std::{
-    collections::{HashMap, HashSet},
-    fs,
-    path::{Path, PathBuf},
-    str::FromStr,
-    time::Instant,
-};
-
-use anyhow::{bail, Context, Error};
-use enumflags2::BitFlags;
-use log::{debug, info, trace};
-use maplit::hashmap;
+use anyhow::{Context, Error};
+use log::{info, trace};
 use serde::{Deserialize, Serialize};
-use tempfile::NamedTempFile;
-use uuid::Uuid;
 
-use osutils::{
-    efivar,
-    filesystems::MountFileSystemType,
-    lsblk,
-    mount::{self, MountGuard},
-    path::join_relative,
-    pcrlock::{self, PCRLOCK_POLICY_JSON_PATH},
-};
 use trident_api::{
-    config::{
-        AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, HostConfiguration,
-        MountOptions, MountPoint, Operations, Partition, PartitionSize, PartitionTableType,
-        PartitionType, VerityCorruptionOption, VerityDevice,
-    },
-    constants::{
-        internal_params::ENABLE_UKI_SUPPORT, EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY,
-        ESP_RELATIVE_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH,
-    },
-    error::{
-        InternalError, InvalidInputError, ReportError, ServicingError, TridentError,
-        TridentResultExt,
-    },
-    status::{decode_host_status, AbVolumeSelection, HostStatus, ServicingState, ServicingType},
-    BlockDeviceId,
-};
-
-use crate::{
-    cli::GetKind,
-    container,
-    datastore::{self, DataStore},
-    engine::{
-        self,
-        boot::{self, uki, ESP_EXTRACTION_DIRECTORY},
-        bootentries, rollback, runtime_update,
-        storage::{self, encryption, verity},
-        EngineContext, NewrootMount, REQUIRES_REBOOT, SUBSYSTEMS,
-    },
-    subsystems::esp,
-    ExitKind, OsImage,
+    error::{InvalidInputError, TridentError},
+    status::{AbVolumeSelection, HostStatus, ServicingState, ServicingType},
 };
 
 const MINIMUM_ROLLBACK_TRIDENT_VERSION: &str = "0.21.0";
-/// Print rollback info for 'trident get'.
-pub fn get_rollback_info(datastore: &DataStore, kind: GetKind) -> Result<String, TridentError> {
-    // Get all HostStatus entries from the datastore.
-    let host_statuses = datastore
-        .get_host_statuses()
-        .message("Failed to get datastore HostStatus entries")?;
-    // Create ManualRollback context from HostStatus entries.
-    let context = ManualRollbackContext::new(&host_statuses)
-        .message("Failed to create manual rollback context")?;
-    let rollback_chain =
-        context
-            .get_rollback_chain()
-            .structured(ServicingError::ManualRollback {
-                message: "Failed to get available rollbacks",
-            })?;
-
-    match kind {
-        GetKind::RollbackTarget => {
-            if let Some(first_rollback_host_status) = rollback_chain.first() {
-                let target_output =
-                    serde_yaml::to_string(&first_rollback_host_status.host_status.spec)
-                        .structured(ServicingError::ManualRollback {
-                            message: "Failed to serialize first rollback HostStatus spec",
-                        })?;
-                Ok(target_output)
-            } else {
-                info!("No available rollbacks to show target for");
-                Ok("{}".to_string())
-            }
-        }
-        GetKind::RollbackChain => {
-            context
-                .get_rollback_chain_yaml()
-                .structured(ServicingError::ManualRollback {
-                    message: "Failed to query rollback chain",
-                })
-        }
-        _ => {
-            info!("Unsupported GetKind for manual rollback query: {:?}", kind);
-            Err(TridentError::new(ServicingError::ManualRollback {
-                message: "unsupported get kind for manual rollback",
-            }))
-        }
-    }
-}
-
-/// Check rollback availability and type.
-pub fn check_rollback(
-    datastore: &DataStore,
-    invoke_if_next_is_runtime: bool,
-    invoke_available_ab: bool,
-) -> Result<(), TridentError> {
-    // Get all HostStatus entries from the datastore.
-    let host_statuses = datastore
-        .get_host_statuses()
-        .message("Failed to get datastore HostStatus entries")?;
-    // Create ManualRollback context from HostStatus entries.
-    let rollback_context = ManualRollbackContext::new(&host_statuses)
-        .message("Failed to create manual rollback context")?;
-    let available_rollbacks =
-        rollback_context
-            .get_rollback_chain()
-            .structured(ServicingError::ManualRollback {
-                message: "Failed to get available rollbacks",
-            })?;
-    let (_rollback_index, check_string) = get_requested_rollback_info(
-        &available_rollbacks,
-        invoke_if_next_is_runtime,
-        invoke_available_ab,
-    )?;
-    println!("{check_string}");
-    Ok(())
-}
-
-/// Handle manual rollback operations.
-pub fn execute_rollback(
-    datastore: &mut DataStore,
-    invoke_if_next_is_runtime: bool,
-    invoke_available_ab: bool,
-    allowed_operations: &Operations,
-) -> Result<ExitKind, TridentError> {
-    let current_servicing_state = datastore.host_status().servicing_state;
-
-    // Get all HostStatus entries from the datastore.
-    let host_statuses = datastore
-        .get_host_statuses()
-        .message("Failed to get datastore HostStatus entries")?;
-    // Create ManualRollback context from HostStatus entries.
-    let rollback_context = ManualRollbackContext::new(&host_statuses)
-        .message("Failed to create manual rollback context")?;
-
-    let available_rollbacks =
-        rollback_context
-            .get_rollback_chain()
-            .structured(ServicingError::ManualRollback {
-                message: "Failed to get available rollbacks",
-            })?;
-
-    let (rollback_index, check_string) = get_requested_rollback_info(
-        &available_rollbacks,
-        invoke_if_next_is_runtime,
-        invoke_available_ab,
-    )?;
-
-    let rollback_index = match rollback_index {
-        Some(index) => index,
-        None => {
-            info!("No available rollbacks to perform");
-            return Ok(ExitKind::Done);
-        }
-    };
-
-    let mut skip_finalize_state_check = false;
-
-    let mut engine_context = EngineContext {
-        spec: available_rollbacks[rollback_index].host_status.spec.clone(),
-        spec_old: datastore.host_status().spec.clone(),
-        servicing_type: ServicingType::ManualRollback,
-        partition_paths: datastore.host_status().partition_paths.clone(),
-        ab_active_volume: datastore.host_status().ab_active_volume,
-        disk_uuids: datastore.host_status().disk_uuids.clone(),
-        install_index: datastore.host_status().install_index,
-        is_uki: Some(efivar::current_var_is_uki()),
-        image: None,
-        storage_graph: engine::build_storage_graph(&datastore.host_status().spec.storage)?, // Build storage graph
-        filesystems: Vec::new(), // Will be populated after dynamic validation
-    };
-    // Perform staging if operation is allowed
-    if allowed_operations.has_stage() {
-        match current_servicing_state {
-            ServicingState::ManualRollbackStaged | ServicingState::Provisioned => {
-                if datastore.host_status().last_error.is_some() {
-                    return Err(TridentError::new(InvalidInputError::InvalidRollbackState {
-                        reason: "in Provisioned state but has a last error set".to_string(),
-                    }));
-                }
-                // OK to proceed
-            }
-            state => {
-                return Err(TridentError::new(InvalidInputError::InvalidRollbackState {
-                    reason: format!("in unexpected state: {state:?}"),
-                }));
-            }
-        }
-
-        stage_rollback(
-            datastore,
-            &engine_context,
-            &available_rollbacks,
-            rollback_index,
-        )
-        .message("Failed to stage manual rollback")?;
-
-        if !allowed_operations.has_finalize() {
-            // Persist the Trident background log and metrics file. Otherwise, the
-            // staging logs would be lost.
-            engine::persist_background_log_and_metrics(
-                &datastore.host_status().spec.trident.datastore_path,
-                None,
-                datastore.host_status().servicing_state,
-            );
-        }
-        // If only staging, skip finalize state check
-        skip_finalize_state_check = true;
-    }
-    // Perform finalize if operation is allowed
-    if allowed_operations.has_finalize() {
-        if !skip_finalize_state_check {
-            match current_servicing_state {
-                ServicingState::ManualRollbackStaged | ServicingState::ManualRollbackFinalized => {
-                    // OK to proceed
-                }
-                state => {
-                    return Err(TridentError::new(InvalidInputError::InvalidRollbackState {
-                        reason: format!("in unexpected state: {state:?}"),
-                    }));
-                }
-            }
-        }
-        let finalize_result = finalize_rollback(
-            datastore,
-            &engine_context,
-            available_rollbacks[rollback_index].requires_reboot,
-        )
-        .message("Failed to stage manual rollback");
-        // Persist the Trident background log and metrics file. Otherwise, the
-        // staging logs would be lost.
-        engine::persist_background_log_and_metrics(
-            &datastore.host_status().spec.trident.datastore_path,
-            None,
-            datastore.host_status().servicing_state,
-        );
-
-        return finalize_result;
-    }
-    Ok(ExitKind::Done)
-}
-
-/// Get requested rollback.
-fn get_requested_rollback_info(
-    available_rollbacks: &[RollbackDetail],
-    invoke_if_next_is_runtime: bool,
-    invoke_available_ab: bool,
-) -> Result<(Option<usize>, String), TridentError> {
-    if available_rollbacks.is_empty() {
-        info!("No available rollbacks to perform");
-        return Ok((None, "none".to_string()));
-    }
-
-    let rollback_index = match (invoke_if_next_is_runtime, invoke_available_ab) {
-        (false, false) => {
-            // No expectations specified, proceed with first
-            0
-        }
-        (true, false) => {
-            // Expecting runtime rollback as first
-            if available_rollbacks[0].requires_reboot {
-                return Err(TridentError::new(
-                    InvalidInputError::InvalidRollbackExpectation {
-                        reason:
-                            "expected to undo a runtime update but rollback will undo an A/B update"
-                                .to_string(),
-                    },
-                ));
-            }
-            0
-        }
-        (false, true) => {
-            // Find first A/B rollback along with its index
-            let Some((index, _)) = available_rollbacks
-                .iter()
-                .enumerate()
-                .find(|(_, r)| r.requires_reboot)
-            else {
-                return Err(TridentError::new(
-                    InvalidInputError::InvalidRollbackExpectation {
-                        reason: "expected to undo an A/B update but no A/B rollback is available"
-                            .to_string(),
-                    },
-                ));
-            };
-            index
-        }
-        (true, true) => {
-            return Err(TridentError::new(
-                InvalidInputError::InvalidRollbackExpectation {
-                    reason: "conflicting expectations: cannot expect to undo both a runtime update and an A/B update"
-                        .to_string(),
-                },
-            ));
-        }
-    };
-
-    Ok((
-        Some(rollback_index),
-        if available_rollbacks[rollback_index].requires_reboot {
-            "ab".to_string()
-        } else {
-            "runtime".to_string()
-        },
-    ))
-}
-
-/// Stage manual rollback.
-fn stage_rollback(
-    datastore: &mut DataStore,
-    engine_context: &EngineContext,
-    available_rollbacks: &[RollbackDetail],
-    rollback_index: usize,
-) -> Result<(), TridentError> {
-    if available_rollbacks[rollback_index].requires_reboot {
-        info!("Staging rollback that requires reboot");
-
-        // If we have encrypted volumes and this is a UKI image, then we need to re-generate pcrlock
-        // policy to include both the current boot and the rollback boot.
-        if let Some(ref encryption) = engine_context.spec.storage.encryption {
-            // TODO: We know how to update the pcrlock policy in the servicing OS, but are
-            // not able to do so for the target OS yet.
-            if engine_context.is_uki()? {
-                return Err(TridentError::new(ServicingError::ManualRollback {
-                    message: "Cannot update pcrlock policy for UKI images during manual rollback",
-                }));
-                // debug!("Regenerating pcrlock policy to include rollback boot");
-
-                // // Get the PCRs from Host Configuration
-                // let pcrs = encryption
-                //     .pcrs
-                //     .iter()
-                //     .fold(BitFlags::empty(), |acc, &pcr| acc | BitFlags::from(pcr));
-
-                // // Get UKI and bootloader binaries for .pcrlock file generation
-                // let (uki_binaries, bootloader_binaries) =
-                //     encryption::get_binary_paths_pcrlock(engine_context, pcrs, None, true)
-                //         .structured(ServicingError::GetBinaryPathsForPcrlockEncryption)?;
-
-                // // Generate a pcrlock policy
-                // pcrlock::generate_pcrlock_policy(pcrs, uki_binaries, bootloader_binaries)?;
-
-                // // Update the rollback OS pcrlock.json file
-            } else {
-                debug!(
-                    "Rollback OS is a grub image, \
-                so skipping re-generating pcrlock policy for manual rollback"
-                );
-            }
-        }
-    } else {
-        info!("Staging rollback that does not require reboot");
-        // noop
-    }
-
-    // Mark the HostStatus as ManualRollbackStaged
-    datastore.with_host_status(|host_status| {
-        host_status.spec = engine_context.spec.clone();
-        host_status.spec_old = engine_context.spec_old.clone();
-        host_status.servicing_state = ServicingState::ManualRollbackStaged;
-    })?;
-    Ok(())
-}
-
-// Finalize manual rollback.
-fn finalize_rollback(
-    datastore: &mut DataStore,
-    engine_context: &EngineContext,
-    ab_rollback: bool,
-) -> Result<ExitKind, TridentError> {
-    if !ab_rollback {
-        trace!("Manual rollback does not require reboot");
-
-        let mut subsystems = SUBSYSTEMS.lock().unwrap();
-        runtime_update::rollback(&mut subsystems, datastore, Some(Instant::now()))
-            .message("failed to rollback runtime update")?;
-
-        datastore.with_host_status(|host_status| {
-            host_status.spec = engine_context.spec.clone();
-            host_status.spec_old = Default::default();
-            host_status.servicing_state = ServicingState::Provisioned;
-        })?;
-        return Ok(ExitKind::Done);
-    }
-
-    trace!("Manual rollback requires reboot");
-
-    let root_path = if container::is_running_in_container()
-        .message("Failed to check if Trident is running in a container")?
-    {
-        container::get_host_root_path().message("Failed to get host root path")?
-    } else {
-        PathBuf::from(ROOT_MOUNT_POINT_PATH)
-    };
-    let esp_path = Path::join(&root_path, ESP_RELATIVE_MOUNT_POINT_PATH);
-
-    // In UKI, use the LoaderEntries variable to get the previous boot entry and set it as current
-    if engine_context.is_uki()? {
-        efivar::set_default_to_previous()
-            .message("Failed to set default boot entry to previous")?;
-    }
-    // Reconfigure UEFI boot-order to point at inactive volume
-    bootentries::create_and_update_boot_variables(engine_context, &esp_path)?;
-    // Analogous to how UEFI variables are configured.
-    esp::set_uefi_fallback_contents(
-        engine_context,
-        ServicingState::ManualRollbackStaged,
-        &root_path,
-    )
-    .structured(ServicingError::SetUpUefiFallback)?;
-
-    datastore.with_host_status(|host_status| {
-        host_status.spec = engine_context.spec.clone();
-        host_status.servicing_state = ServicingState::ManualRollbackFinalized;
-    })?;
-
-    Ok(ExitKind::NeedsReboot)
-}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct RollbackDetail {
-    requires_reboot: bool,
-    host_status: HostStatus,
+pub struct RollbackDetail {
+    pub requires_reboot: bool,
+    pub host_status: HostStatus,
     #[serde(skip)]
     host_status_index: i32,
 }
-struct ManualRollbackContext {
+pub struct ManualRollbackContext {
     volume_a_available_rollbacks: Vec<RollbackDetail>,
     volume_b_available_rollbacks: Vec<RollbackDetail>,
     active_volume: Option<AbVolumeSelection>,
@@ -449,13 +25,12 @@ struct ManualRollbackContext {
     rollback_volume: Option<AbVolumeSelection>,
 }
 impl ManualRollbackContext {
-    fn new(host_statuses: &[HostStatus]) -> Result<Self, TridentError> {
-        let minimum_rollback_trident_version = "0.21.0";
+    pub fn new(host_statuses: &[HostStatus]) -> Result<Self, TridentError> {
         let minimum_rollback_trident_semver =
-            semver::Version::parse(minimum_rollback_trident_version).map_err(|e| {
+            semver::Version::parse(MINIMUM_ROLLBACK_TRIDENT_VERSION).map_err(|e| {
                 TridentError::new(InvalidInputError::InvalidRollbackExpectation {
                     reason: format!(
-                        "Failed to parse minimum rollback Trident version '{minimum_rollback_trident_version}': {e}",
+                        "Failed to parse minimum rollback Trident version '{MINIMUM_ROLLBACK_TRIDENT_VERSION}': {e}",
                     ),
                 })
             })?;
@@ -664,10 +239,7 @@ impl ManualRollbackContext {
                     hs.servicing_state,
                     ServicingState::ManualRollbackStaged | ServicingState::ManualRollbackFinalized
                 );
-                needs_reboot = matches!(
-                    hs.servicing_state,
-                    ServicingState::AbUpdateFinalized | ServicingState::AbUpdateFinalized
-                );
+                needs_reboot = matches!(hs.servicing_state, ServicingState::AbUpdateFinalized);
                 if matches!(
                     hs.servicing_state,
                     ServicingState::AbUpdateHealthCheckFailed
@@ -712,12 +284,24 @@ impl ManualRollbackContext {
         Ok(instance)
     }
 
-    fn get_first_rollback_host_status(&self) -> Result<Option<HostStatus>, Error> {
-        self.get_rollback_chain()
-            .context("Failed to get available rollbacks")?
+    pub fn get_rollback_chain(&self) -> Result<Vec<RollbackDetail>, Error> {
+        let mut contexts = self
+            .volume_a_available_rollbacks
+            .clone()
             .into_iter()
-            .next()
-            .map_or_else(|| Ok(None), |detail| Ok(Some(detail.host_status.clone())))
+            .chain(self.volume_b_available_rollbacks.clone())
+            .collect::<Vec<_>>();
+        contexts.sort_by(|a, b| b.host_status_index.cmp(&a.host_status_index));
+        info!("Available rollback count: {}", contexts.len());
+        Ok(contexts)
+    }
+
+    pub fn get_rollback_chain_yaml(&self) -> Result<String, Error> {
+        let contexts = self.get_rollback_chain()?;
+        let full_yaml =
+            serde_yaml::to_string(&contexts).context("Failed to serialize rollback contexts")?;
+        info!("Available rollbacks:\n{}", full_yaml);
+        Ok(full_yaml)
     }
 
     fn get_first_rollback(&self) -> Option<(i32, AbVolumeSelection)> {
@@ -745,42 +329,84 @@ impl ManualRollbackContext {
         trace!(" No available rollbacks detected");
         None
     }
+}
 
-    fn get_requires_reboot(&self) -> Result<bool, Error> {
-        Ok(matches!(
-            self.rollback_action,
-            Some(ServicingType::AbUpdate)
-        ))
+/// Get requested rollback.
+pub fn get_requested_rollback_info(
+    available_rollbacks: &[RollbackDetail],
+    invoke_if_next_is_runtime: bool,
+    invoke_available_ab: bool,
+) -> Result<(Option<usize>, String), TridentError> {
+    if available_rollbacks.is_empty() {
+        info!("No available rollbacks to perform");
+        return Ok((None, "none".to_string()));
     }
 
-    fn get_rollback_chain(&self) -> Result<Vec<RollbackDetail>, Error> {
-        let mut contexts = self
-            .volume_a_available_rollbacks
-            .clone()
-            .into_iter()
-            .chain(self.volume_b_available_rollbacks.clone())
-            .collect::<Vec<_>>();
-        contexts.sort_by(|a, b| b.host_status_index.cmp(&a.host_status_index));
-        info!("Available rollback count: {}", contexts.len());
-        Ok(contexts)
-    }
+    let rollback_index = match (invoke_if_next_is_runtime, invoke_available_ab) {
+        (false, false) => {
+            // No expectations specified, proceed with first
+            0
+        }
+        (true, false) => {
+            // Expecting runtime rollback as first
+            if available_rollbacks[0].requires_reboot {
+                return Err(TridentError::new(
+                    InvalidInputError::InvalidRollbackExpectation {
+                        reason:
+                            "expected to undo a runtime update but rollback will undo an A/B update"
+                                .to_string(),
+                    },
+                ));
+            }
+            0
+        }
+        (false, true) => {
+            // Find first A/B rollback along with its index
+            let Some((index, _)) = available_rollbacks
+                .iter()
+                .enumerate()
+                .find(|(_, r)| r.requires_reboot)
+            else {
+                return Err(TridentError::new(
+                    InvalidInputError::InvalidRollbackExpectation {
+                        reason: "expected to undo an A/B update but no A/B rollback is available"
+                            .to_string(),
+                    },
+                ));
+            };
+            index
+        }
+        (true, true) => {
+            return Err(TridentError::new(
+                InvalidInputError::InvalidRollbackExpectation {
+                    reason: "conflicting expectations: cannot expect to undo both a runtime update and an A/B update"
+                        .to_string(),
+                },
+            ));
+        }
+    };
 
-    fn get_rollback_chain_yaml(&self) -> Result<String, Error> {
-        let contexts = self.get_rollback_chain()?;
-        let full_yaml =
-            serde_yaml::to_string(&contexts).context("Failed to serialize rollback contexts")?;
-        info!("Available rollbacks:\n{}", full_yaml);
-        Ok(full_yaml)
-    }
+    Ok((
+        Some(rollback_index),
+        if available_rollbacks[rollback_index].requires_reboot {
+            "ab".to_string()
+        } else {
+            "runtime".to_string()
+        },
+    ))
 }
 
 #[cfg(test)]
 mod tests {
     use crate::TRIDENT_VERSION;
-    use osutils::mdadm::create;
+    use maplit::hashmap;
     use sysdefs::tpm2::Pcr;
 
     use super::*;
+
+    fn get_requires_reboot(ctx: &ManualRollbackContext) -> bool {
+        matches!(ctx.rollback_action, Some(ServicingType::AbUpdate))
+    }
 
     struct HostStatusTest {
         host_status: HostStatus,
@@ -919,11 +545,6 @@ mod tests {
     fn create_rollback_context_for_testing(
         host_status_test_list: &[HostStatusTest],
     ) -> ManualRollbackContext {
-        let final_state = host_status_test_list
-            .iter()
-            .filter(|hst| hst.host_status.servicing_state == ServicingState::Provisioned)
-            .next_back()
-            .unwrap();
         let host_statuses = host_status_test_list
             .iter()
             .map(|hst| hst.host_status.clone())
@@ -931,7 +552,6 @@ mod tests {
         ManualRollbackContext::new(&host_statuses).unwrap()
     }
     fn rollback_context_testing(host_status_test_list: &[HostStatusTest], test_description: &str) {
-        let context = create_rollback_context_for_testing(host_status_test_list);
         let final_state = host_status_test_list
             .iter()
             .filter(|hst| hst.host_status.servicing_state == ServicingState::Provisioned)
@@ -957,10 +577,7 @@ mod tests {
             expected_requires_reboot,
             expected_available_rollbacks
         );
-        assert_eq!(
-            context.get_requires_reboot().unwrap(),
-            expected_requires_reboot
-        );
+        assert_eq!(get_requires_reboot(&context), expected_requires_reboot);
         let serialized_output = serde_yaml::from_str::<Vec<serde_yaml::Value>>(
             &context.get_rollback_chain_yaml().unwrap(),
         )
@@ -1002,7 +619,7 @@ mod tests {
             inter(VOL_A, MR_FINAL, MIN),
             prov(VOL_B, false, vec![], MIN),
         ];
-        for (i, hs) in host_status_list.iter().enumerate() {
+        for hs in host_status_list.iter() {
             trace!(
                 "HS: {:?}, expected_requires_reboot: {}, expected_available_rollbacks: {:?}",
                 hs.host_status.servicing_state,

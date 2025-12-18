@@ -29,7 +29,7 @@ mod engine;
 mod health;
 mod io_utils;
 mod logging;
-pub mod manual_rollback;
+mod manual_rollback_utils;
 mod monitor_metrics;
 pub mod offline_init;
 mod orchestrate;
@@ -41,7 +41,7 @@ pub mod validation;
 use engine::{rollback, storage::rebuild};
 
 pub use datastore::DataStore;
-pub use engine::{provisioning_network, reboot};
+pub use engine::{manual_rollback, provisioning_network, reboot};
 pub use logging::{
     background_log::BackgroundLog, logstream::Logstream, multilog::MultiLogger,
     tracestream::TraceStream,
