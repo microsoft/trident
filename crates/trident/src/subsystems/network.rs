@@ -35,16 +35,17 @@ impl Subsystem for NetworkSubsystem {
 
     #[tracing::instrument(name = "network_configuration", skip_all)]
     fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
-        if ctx.servicing_type == ServicingType::RuntimeUpdate
-            && ctx.spec.os.netplan == ctx.spec_old.os.netplan
-        {
-            debug!("Skipping step 'configure' because Netplan configuration has not changed and servicing type is {:?}", ctx.servicing_type);
-            return Ok(());
+        if ctx.servicing_type == ServicingType::RuntimeUpdate {
+            if ctx.spec.os.netplan == ctx.spec_old.os.netplan {
+                debug!("Skipping step 'configure' because Netplan configuration has not changed and servicing type is {:?}", ctx.servicing_type);
+                return Ok(());
+            } else {
+                // Remove old configuration
+                debug!("Backing up and removing old config");
+                netplan::backup().structured(ServicingError::BackupNetplanConfig)?;
+                netplan::remove().structured(ServicingError::RemoveNetplanConfig)?;
+            }
         }
-        // Remove old configuration
-        debug!("Backing up and removing old config");
-        netplan::backup().structured(ServicingError::BackupNetplanConfig)?;
-        netplan::remove().structured(ServicingError::RemoveNetplanConfig)?;
 
         match ctx.spec.os.netplan.as_ref() {
             Some(config) => {
@@ -71,8 +72,10 @@ impl Subsystem for NetworkSubsystem {
         Ok(())
     }
 
-    fn clean_up(&self, _ctx: &EngineContext) -> Result<(), TridentError> {
-        netplan::cleanup_backup().structured(ServicingError::CleanupNetplanBackup)?;
+    fn clean_up(&self, ctx: &EngineContext) -> Result<(), TridentError> {
+        if ctx.servicing_type == ServicingType::RuntimeUpdate {
+            netplan::cleanup_backup().structured(ServicingError::CleanupNetplanBackup)?;
+        }
         Ok(())
     }
 }
