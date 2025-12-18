@@ -156,14 +156,14 @@ impl TridentHarpoonServer {
         // Create the gRPC response channel
         let (tx, rx) = mpsc::unbounded_channel();
 
-        // Set up log forwarding. Logs will be sent over the gRPC channel.
-        let (log_fwd_handle, log_fwd_token) = self.setup_log_forwarding(tx.clone())?;
-
         // Try to acquire the servicing lock
         let Some(servicing_guard) = self.servicing_manager.try_lock_servicing() else {
             log::warn!("Request '{}' blocked because servicing is active", name);
             return Err(Status::unavailable("Servicing is active"));
         };
+
+        // Set up log forwarding. Logs will be sent over the gRPC channel.
+        let (log_fwd_handle, log_fwd_token) = self.setup_log_forwarding(tx.clone())?;
 
         // All prerequisites are met, send start response
         if let Err(err) = tx.send(Ok(ServicingResponse {
