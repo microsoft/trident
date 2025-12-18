@@ -1,5 +1,23 @@
 #! /usr/bin/env python3
 
+"""
+scripts.sync-rust-deps
+
+Synchronize Rust dependencies across all Cargo.toml files in the workspace. by
+merging versions and features into the root Cargo.toml workspace section, and
+updating all member Cargo.toml files to reference the root versions.
+
+When multiple versions of the same dependency are found, the latest version is
+kept, and features are merged.
+
+When workspace cargo files have different settings for `features` or
+`default-features`, those settings are preserved when switching to workspace
+dependencies.
+
+All other settings are preserved as well, except for `version`, which is always
+taken from the root Cargo.toml.
+"""
+
 import tomlkit
 import json
 import copy
