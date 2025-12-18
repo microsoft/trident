@@ -2,6 +2,16 @@ use std::time::Duration;
 
 use tokio::sync::oneshot;
 
+/// A one-shot timer that executes a closure after a given duration.
+///
+/// `Timer::new` spawns a background task that sleeps for the specified
+/// `duration` and then runs the provided closure `f` once.
+///
+/// To prevent the closure from running, call [`Timer::cancel`] before the
+/// duration elapses. If the `Timer` is dropped without calling
+/// [`Timer::cancel`], the spawned task is **not** cancelled and will
+/// continue to run until the duration expires, at which point the closure
+/// will be executed.
 pub struct Timer {
     tx: oneshot::Sender<()>,
 }
