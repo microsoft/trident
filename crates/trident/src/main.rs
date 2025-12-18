@@ -151,7 +151,6 @@ fn run_trident(
             Commands::Install { status, error, .. }
             | Commands::Update { status, error, .. }
             | Commands::Commit { status, error }
-            | Commands::Listen { status, error }
             | Commands::RebuildRaid { status, error, .. }
             | Commands::Rollback { status, error, .. } => {
                 let config_path = match &args.command {
@@ -222,9 +221,6 @@ fn run_trident(
                         ab,
                         cli::to_operations(allowed_operations),
                     ),
-                    Commands::Listen { .. } => {
-                        trident.listen(&mut datastore).map(|()| ExitKind::Done)
-                    }
                     Commands::RebuildRaid { .. } => trident
                         .rebuild_raid(&mut datastore)
                         .map(|()| ExitKind::Done),
