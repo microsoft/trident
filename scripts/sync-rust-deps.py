@@ -26,7 +26,6 @@ from pathlib import Path
 from typing import List, Dict, Optional, Set
 from enum import Enum
 from semver import Version
-from tomlkit.items import Table
 from dataclasses import dataclass
 
 TRIDENT_ROOT = Path(__file__).parent.parent
@@ -47,12 +46,10 @@ class Dependency:
             self.options = {}
             self.features = None
             self.default_features = None
-            self.optional = None
         elif isinstance(value, dict):
             self.version = value.get("version", "")
             self.features = value.get("features", None)
             self.default_features = value.get("default-features", None)
-            self.optional = value.get("optional", None)
             self.options = {
                 k: v
                 for k, v in value.items()
@@ -70,7 +67,10 @@ class Dependency:
         return (
             self.name == value.name
             and self.version == value.version
-            and self.options.get("features") == value.options.get("features")
+            and (
+                (set(self.features) if self.features is not None else set())
+                == (set(value.features) if value.features is not None else set())
+            )
         )
 
     def __hash__(self):
@@ -78,7 +78,10 @@ class Dependency:
             (
                 self.name,
                 self.version,
-                json.dumps(self.options.get("features"), sort_keys=True),
+                json.dumps(
+                    set(self.features) if self.features is not None else set(),
+                    sort_keys=True,
+                ),
             )
         )
 
@@ -115,12 +118,6 @@ class Dependency:
             return options_table
         else:
             return self.version
-
-
-@dataclass
-class DependencyInstance:
-    dep: Dependency
-    count: int
 
 
 class CargoFile:
@@ -160,12 +157,12 @@ class CargoFile:
                 # dependency
                 if features := entry.get("features", None):
                     if dep.features != features:
-                        entry["features"] = features
+                        new_entry["features"] = features
 
                 # Preserve default-features if set and differs from root
                 if default_features := entry.get("default-features", None):
                     if dep.default_features != default_features:
-                        entry["default-features"] = default_features
+                        new_entry["default-features"] = default_features
 
                 # Preserve everything else
                 skip = set(["workspace", "version", "features", "default-features"])
@@ -261,7 +258,7 @@ class CargoRepository:
             k: merge_dependency_options(v) for k, v in dependencies.items()
         }
 
-        # Create a dict to collect all collected dep names. Fill it up with
+        # Create a dict to collect all dep names. Fill it up with
         # existing deps from root Cargo.toml
         deps: Dict[str, Dependency] = {
             dep.name: dep
