@@ -37,7 +37,7 @@ pub(crate) const PCRLOCK_DIR: &str = "/var/lib/pcrlock.d";
 const PCRLOCK_POLICY_JSON: &str = "pcrlock.json";
 
 /// Default path to the pcrlock policy JSON.
-const PCRLOCK_POLICY_JSON_DEFAULT: &str = "/var/lib/systemd/pcrlock.json";
+pub const PCRLOCK_POLICY_JSON_DEFAULT: &str = "/var/lib/systemd/pcrlock.json";
 
 /// `/var/lib/pcrlock.d/630-boot-loader-code-shim.pcrlock.d`, where `lock-pe` measures the shim
 ///  bootloader binary, i.e. `/EFI/AZL{A/B}/bootx64.efi`, as recorded into PCR 4 following
