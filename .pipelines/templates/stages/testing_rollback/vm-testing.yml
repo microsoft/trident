@@ -125,8 +125,8 @@ stages:
               verboseLogging: ${{ parameters.verboseLogging }}
               platform: qemu
               flavor: qemu
-              # For qemu w/ root-verity
-              #   * extensions cannot be added to qcow2 is not supported
+              # For qemu w/ root-verity, only test rollback of A/B update because:
+              #   * extensions cannot be added to qcow2; IC cannot modify verity volume
               #   * netplan runtime changes cannot be made to config file on verity rootfs
               #   * without extensions and netplan, runtime updates will service nothing
               skipExtensionTesting: true
