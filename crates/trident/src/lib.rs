@@ -607,17 +607,9 @@ impl Trident {
         }
 
         let rollback_result = self.execute_and_record_error(datastore, |datastore| {
-            let result = rollback::validate_boot(datastore).message(
+            rollback::validate_boot(datastore).message(
                 "Failed to validate that firmware correctly booted from updated target OS image",
-            );
-            // Persist the Trident background log and metrics file.
-            engine::persist_background_log_and_metrics(
-                &datastore.host_status().spec.trident.datastore_path,
-                None,
-                datastore.host_status().servicing_state,
-            );
-
-            result
+            )
         });
 
         if rollback_result.is_ok() {
