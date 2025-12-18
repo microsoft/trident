@@ -76,7 +76,7 @@ class Dependency:
                 self.name,
                 self.version,
                 json.dumps(
-                    self.feature_set(),
+                    sorted(self.feature_set()),
                     sort_keys=True,
                 ),
             )
