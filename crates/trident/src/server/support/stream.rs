@@ -7,7 +7,7 @@ use tokio::sync::{mpsc::UnboundedReceiver, OwnedRwLockWriteGuard};
 use tokio_stream::Stream;
 
 /// A wrapper around UnboundedReceiver that implements Stream and holds a
-/// RwLockWriteGuard that is dropped when the stream is closed.
+/// RwLockWriteGuard that is dropped when the stream is dropped.
 ///
 /// It is equivalent to tokio_stream::wrappers::UnboundedReceiverStream but with
 /// an added lock guard.
