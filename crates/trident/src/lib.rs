@@ -30,7 +30,7 @@ mod engine;
 mod health;
 mod io_utils;
 mod logging;
-pub mod manual_rollback;
+mod manual_rollback_utils;
 mod monitor_metrics;
 pub mod offline_init;
 mod orchestrate;
@@ -42,7 +42,7 @@ pub mod validation;
 
 pub use crate::{
     datastore::DataStore,
-    engine::{provisioning_network, reboot},
+    engine::{manual_rollback, provisioning_network, reboot},
     logging::{
         background_log::BackgroundLog, filter::LogFilter, logfwd::LogForwarder,
         logstream::Logstream, multilog::MultiLogger, tracestream::TraceStream,
