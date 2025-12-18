@@ -43,7 +43,7 @@ impl Subsystem for NetworkSubsystem {
         }
         // Remove old configuration
         debug!("Backing up and removing old config");
-        netplan::backup().structured(ServicingError::RemoveNetplanConfig)?;
+        netplan::backup().structured(ServicingError::BackupNetplanConfig)?;
         netplan::remove().structured(ServicingError::RemoveNetplanConfig)?;
 
         match ctx.spec.os.netplan.as_ref() {

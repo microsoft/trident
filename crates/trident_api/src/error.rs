@@ -312,6 +312,9 @@ pub enum ServicingError {
     #[error("Failed to apply Netplan config")]
     ApplyNetplanConfig,
 
+    #[error("Failed to back up Netplan config")]
+    BackupNetplanConfig,
+
     #[error("Failed to bind encryption to pcrlock policy")]
     BindEncryptionToPcrlockPolicy,
 
