@@ -219,12 +219,14 @@ impl TridentHarpoonServer {
         F: FnOnce() -> Result<R, Error> + Send + 'static,
         R: Send + 'static,
     {
-        // Try to acquire the connection lock in read mode
+        // Try to acquire the connection lock in read mode. We hold a reference
+        // to the lock guard to ensure it lives through the duration of the
+        // request.
         let _guard = self.try_acquire_read_lock()?;
 
         // Try to acquire the servicing read lock
         let Some(_servicing_guard) = self.servicing_manager.try_lock_reading() else {
-            log::warn!("read_data request blocked because servicing is active");
+            log::warn!("'{}' request blocked because servicing is active", name);
             return Err(Status::unavailable("Servicing is active"));
         };
 
@@ -239,7 +241,7 @@ impl TridentHarpoonServer {
     }
 }
 
-/// Implements the gRPC AppService for the Trident server.
+/// Implements the gRPC TridentService for the TridentHarpoonServer struct.
 #[async_trait]
 impl TridentService for TridentHarpoonServer {
     // /// Sample data read method
