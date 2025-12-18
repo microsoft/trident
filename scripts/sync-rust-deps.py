@@ -1,9 +1,9 @@
 #! /usr/bin/env python3
 
 """
-scripts.sync-rust-deps
+scripts/sync-rust-deps.py
 
-Synchronize Rust dependencies across all Cargo.toml files in the workspace. by
+Synchronize Rust dependencies across all Cargo.toml files in the workspace by
 merging versions and features into the root Cargo.toml workspace section, and
 updating all member Cargo.toml files to reference the root versions.
 
