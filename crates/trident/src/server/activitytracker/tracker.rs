@@ -89,7 +89,12 @@ impl ActivityTracker {
     }
 
     fn notify_event(&self, event_type: EventType) {
-        let _ = self.event_tx.send(event_type);
+        if let Err(err) = self.event_tx.send(event_type) {
+            log::warn!(
+                "ActivityTracker failed to send event notification (receiver may be dropped): {}",
+                err
+            );
+        }
     }
 
     /// Monitors activity events and manages shutdown timer When inactivity is
