@@ -70,7 +70,7 @@ sudo trident update config.yaml --allowed-operations finalize
 ```
 
 Separating `stage` from `finalize` allows you to handle the often more
-time-consuming download extension images in advance, allowing you to quickly
+time-consuming download of extension images in advance. Then, you can quickly
 apply the update later by running only `finalize`.
 
 ## Known Issues
