@@ -92,7 +92,12 @@ pub fn generate_pcrlock_policy(
     Ok(())
 }
 
-pub fn construct_pcrlock_path(datastore_path: &Path) -> Result<PathBuf, Error> {
+/// Constructs the full path to the pcrlock policy JSON file, located in the directory adjacent
+/// to the datastore.
+pub fn construct_pcrlock_path(
+    datastore_path: &Path,
+    newroot_path: Option<&Path>,
+) -> Result<PathBuf, Error> {
     // Fetch the directory path from the full datastore path
     let Some(datastore_dir) = datastore_path.parent() else {
         bail!(
@@ -102,11 +107,16 @@ pub fn construct_pcrlock_path(datastore_path: &Path) -> Result<PathBuf, Error> {
     };
 
     // Construct full path to pcrlock policy JSON file
-    let pcrlock_policy_path = datastore_dir.join(PCRLOCK_POLICY_JSON);
+    let pcrlock_policy_path = if let Some(new_root) = newroot_path {
+        path::join_relative(new_root, datastore_dir).join(PCRLOCK_POLICY_JSON)
+    } else {
+        datastore_dir.join(PCRLOCK_POLICY_JSON)
+    };
     trace!(
         "Constructed full pcrlock policy JSON path at '{}'",
         pcrlock_policy_path.display()
     );
+
     Ok(pcrlock_policy_path)
 }
 
@@ -808,7 +818,7 @@ mod functional_test {
         // used to generate a TPM 2.0 access policy.
         let zero_pcrs = Pcr::Pcr11 | Pcr::Pcr12 | Pcr::Pcr13;
         let pcrlock_policy_path =
-            construct_pcrlock_path(Path::new(TRIDENT_DATASTORE_PATH_DEFAULT)).unwrap();
+            construct_pcrlock_path(Path::new(TRIDENT_DATASTORE_PATH_DEFAULT), None).unwrap();
         generate_tpm2_access_policy(zero_pcrs, &pcrlock_policy_path).unwrap();
 
         // Test case #1. Try to generate a TPM 2.0 access policy with all PCRs; should return an
