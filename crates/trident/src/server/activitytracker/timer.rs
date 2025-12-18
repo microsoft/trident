@@ -8,10 +8,9 @@ use tokio::sync::oneshot;
 /// `duration` and then runs the provided closure `f` once.
 ///
 /// To prevent the closure from running, call [`Timer::cancel`] before the
-/// duration elapses. If the `Timer` is dropped without calling
-/// [`Timer::cancel`], the spawned task is **not** cancelled and will
-/// continue to run until the duration expires, at which point the closure
-/// will be executed.
+/// duration elapses. Dropping the [`Timer`] before the duration expires also
+/// cancels it (equivalent to calling [`Timer::cancel`]), so the closure will
+/// not be executed in that case.
 pub struct Timer {
     tx: oneshot::Sender<()>,
 }
