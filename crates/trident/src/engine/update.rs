@@ -146,7 +146,6 @@ pub(crate) fn update(
                 Ok(ExitKind::Done)
             } else {
                 runtime_update::finalize_update(&mut subsystems, state, Some(update_start_time))
-                    .message("Failed to finalize runtime update")
             }
         }
         ServicingType::CleanInstall => Err(TridentError::new(

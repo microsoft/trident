@@ -89,9 +89,18 @@ stages:
               # Proactively try to fix any possible issue from previous task failure
               sudo dpkg --configure -a
 
-              sudo apt install -y protobuf-compiler clang bc
+              sudo apt install -y clang bc unzip
               sudo apt remove python3-openssl
               pip install pytest assertpy paramiko pyopenssl
+
+              # The version of protoc in Ubuntu 22 is too old for our needs.
+              # Install a recent version of protoc following the instructions
+              # from their docs at https://protobuf.dev/installation/
+              PROTOC_VERSION=33.2
+              PROTOC_FILE="protoc-${PROTOC_VERSION}-linux-x86_64.zip"
+              curl -LO "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_FILE}"
+              sudo unzip -o $PROTOC_FILE -d /usr/local
+              rm -f $PROTOC_FILE
             displayName: Install dependencies
             retryCountOnTaskFailure: 3
 
