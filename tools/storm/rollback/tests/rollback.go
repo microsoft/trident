@@ -591,14 +591,33 @@ func validateNetplan(
 					return fmt.Errorf("netplan config contains unexpected version, found dummy device: %s", matchStr)
 				}
 			}
-			logrus.Tracef("netplan version mismatch: expected dummy%d, got config:\n%s", netplanVersion, string(netplanConfigContents))
 
+			// Search interfaces for expected dummy device
+			interfacesOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "ip a")
+			if err != nil {
+				return fmt.Errorf("failed to get interfaces from VM image: %w", err)
+			}
+			if !strings.Contains(interfacesOutput, expectedDummyDevice) {
+				return fmt.Errorf("netplan config does not contain expected dummy device in interfaces: %s", expectedDummyDevice)
+			}
+
+			logrus.Tracef("Netplan version confirmed, found: '%d'", netplanVersion)
 		} else {
 			logrus.Tracef("Checking that netplan config is absent")
 			netplanConfigContents, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo cat /etc/netplan/99-trident.yaml")
 			if err == nil {
 				return fmt.Errorf("netplan config unexpectedly found: %s", string(netplanConfigContents))
 			}
+
+			// Search interfaces for unexpected dummy device
+			interfacesOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "ip a")
+			if err != nil {
+				return fmt.Errorf("failed to get interfaces from VM image: %w", err)
+			}
+			if strings.Contains(interfacesOutput, "dummy") {
+				return fmt.Errorf("dummy interface unexpectedly found: %s", string(interfacesOutput))
+			}
+
 			logrus.Tracef("Verified that netplan config is absent")
 		}
 	}
