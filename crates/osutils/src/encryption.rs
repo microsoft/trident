@@ -52,8 +52,7 @@ pub fn systemd_cryptenroll(
     if let Some(pcrs) = pcrs {
         cmd.arg(to_tpm2_pcrs_arg(pcrs));
     } else if let Some(pcrlock_policy_path) = pcrlock_policy_path {
-        // TODO: need to check container path existence?
-
+        // TODO: ADJUST PATH FOR CONTAINER!
         cmd.arg(format!("--tpm2-pcrlock={}", pcrlock_policy_path.display()));
     }
 

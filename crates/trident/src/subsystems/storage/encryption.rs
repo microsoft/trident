@@ -247,7 +247,7 @@ pub fn configure(ctx: &EngineContext) -> Result<(), TridentError> {
                     pcrlock::construct_pcrlock_path(&ctx.spec.trident.datastore_path, None)
                         .structured(ServicingError::ConstructPcrlockPolicyPath)?;
                 format!(
-                    "luks,tpm2-device=auto,tpm2-pcrlock={}",
+                    "luks,tpm2-device=auto,tpm2-pcrlck={}",
                     pcrlock_policy_path.display()
                 )
             } else {
