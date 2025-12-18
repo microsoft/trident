@@ -28,6 +28,7 @@ pub enum AllowedOperation {
     Finalize,
 }
 
+#[allow(unused)]
 pub fn to_operations(allowed_operations: &[AllowedOperation]) -> Operations {
     let mut ops = Operations::empty();
     for op in allowed_operations {
@@ -94,6 +95,17 @@ pub enum Commands {
         error: Option<PathBuf>,
     },
 
+    #[clap(hide(true))]
+    Listen {
+        /// Path to save the resulting Host Status
+        #[clap(short, long)]
+        status: Option<PathBuf>,
+
+        /// Path to save an eventual fatal error
+        #[clap(short, long)]
+        error: Option<PathBuf>,
+    },
+
     /// Rebuild software RAID arrays managed by Trident
     #[clap(name = "rebuild-raid")]
     RebuildRaid {
@@ -101,7 +113,7 @@ pub enum Commands {
         #[clap(short, long)]
         config: Option<PathBuf>,
 
-        /// Path to save the resulting HostStatus
+        /// Path to save the resulting Host Status
         #[clap(short, long)]
         status: Option<PathBuf>,
 
@@ -165,33 +177,6 @@ pub enum Commands {
         history_path: Option<PathBuf>,
     },
 
-    /// Manually rollback to previous state
-    Rollback {
-        /// Check operation that would be performed
-        #[arg(long)]
-        check: bool,
-
-        /// Invoke rollback only if next available rollback is runtime rollback
-        #[arg(long, conflicts_with = "ab")]
-        runtime: bool,
-
-        /// Invoke available A/B rollback
-        #[arg(long, conflicts_with = "runtime")]
-        ab: bool,
-
-        /// Comma-separated list of operations that Trident will be allowed to perform
-        #[clap(long, value_delimiter = ',', num_args = 0.., default_value = "stage,finalize")]
-        allowed_operations: Vec<AllowedOperation>,
-
-        /// Path to save the resulting Host Status
-        #[clap(short, long)]
-        status: Option<PathBuf>,
-
-        /// Path to save an eventual fatal error
-        #[clap(short, long)]
-        error: Option<PathBuf>,
-    },
-
     #[cfg(feature = "dangerous-options")]
     StreamImage {
         /// URL of the image to stream
@@ -202,7 +187,7 @@ pub enum Commands {
         #[clap(long)]
         hash: String,
 
-        /// Path to save the resulting HostStatus
+        /// Path to save the resulting Host Status
         #[clap(short, long)]
         status: Option<PathBuf>,
 
@@ -218,6 +203,7 @@ impl Commands {
             Commands::Install { .. } => "install",
             Commands::Update { .. } => "update",
             Commands::Commit { .. } => "commit",
+            Commands::Listen { .. } => "listen",
             Commands::RebuildRaid { .. } => "rebuild-raid",
             Commands::StartNetwork { .. } => "start-network",
             Commands::Get { .. } => "get",
@@ -227,7 +213,6 @@ impl Commands {
             Commands::OfflineInitialize { .. } => "offline-initialize",
             #[cfg(feature = "dangerous-options")]
             Commands::StreamImage { .. } => "stream-image",
-            Commands::Rollback { .. } => "rollback",
         }
     }
 }
@@ -243,6 +228,4 @@ pub enum GetKind {
     Configuration,
     Status,
     LastError,
-    RollbackChain,
-    RollbackTarget,
 }

@@ -172,14 +172,17 @@ impl Subsystem for ExtensionsSubsystem {
             return Ok(());
         }
 
-        // If Finalize is called separately from Stage during a runtime update,
-        // we need to re-populate the subsystem's state.
-        if self.extensions.is_empty() && self.extensions_old.is_empty() {
+        // If the subsystem's internal state does not match the extension images
+        // in the Engine Context (i.e. Finalize is called separately from Stage
+        // or auto-rollback), we need to re-populate the subsystem's state.
+        if !self.internal_state_matches_engine_ctx(ctx) {
             self.staging_dir = PathBuf::from(EXTENSION_IMAGE_STAGING_DIRECTORY);
             trace!(
                 "Defining staging directory for extension images at '{}'",
                 self.staging_dir.display()
             );
+            self.extensions = vec![];
+            self.extensions_old = vec![];
             // In this call to populate_extensions(), all extension images
             // should already be downloaded to the staging directory.
             self.populate_extensions(ctx)

@@ -38,8 +38,8 @@ pub(super) fn create_block_devices(ctx: &mut EngineContext) -> Result<(), Triden
     close_pre_existing_devices(ctx).message("Closing pre-existing block devices failed")?;
 
     partitioning::create_partitions(ctx).structured(ServicingError::CreatePartitions)?;
-    raid::create_sw_raid(ctx, &ctx.spec).structured(ServicingError::CreateRaid)?;
-    encryption::create_encrypted_devices(ctx, &ctx.spec)
+    raid::create_sw_raid(ctx).structured(ServicingError::CreateRaid)?;
+    encryption::create_encrypted_devices(ctx)
         .message("Failed to create and open encrypted devices")?;
 
     Ok(())

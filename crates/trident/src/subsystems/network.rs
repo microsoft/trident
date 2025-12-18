@@ -45,6 +45,12 @@ impl Subsystem for NetworkSubsystem {
 
     #[tracing::instrument(name = "network_configuration", skip_all)]
     fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
+        if ctx.servicing_type == ServicingType::RuntimeUpdate
+            && ctx.spec.os.netplan == ctx.spec_old.os.netplan
+        {
+            debug!("Skipping step 'configure' because Netplan configuration has not changed and servicing type is {:?}", ctx.servicing_type);
+            return Ok(());
+        }
         match ctx.spec.os.netplan.as_ref() {
             Some(config) => {
                 debug!("Configuring network");

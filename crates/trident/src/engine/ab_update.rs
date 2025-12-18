@@ -1,8 +1,6 @@
 use std::{path::PathBuf, time::Instant};
 
 use log::{debug, info, warn};
-#[cfg(feature = "grpc-dangerous")]
-use tokio::sync::mpsc;
 
 use osutils::{chroot, container};
 use trident_api::{
@@ -11,8 +9,6 @@ use trident_api::{
     status::{HostStatus, ServicingState, ServicingType},
 };
 
-#[cfg(feature = "grpc-dangerous")]
-use crate::grpc;
 use crate::{
     datastore::DataStore,
     engine::{
@@ -31,7 +27,6 @@ use super::Subsystem;
 /// - subsystems: A mutable reference to the list of subsystems.
 /// - ctx: EngineContext.
 /// - state: A mutable reference to the DataStore.
-/// - sender: Optional mutable reference to the gRPC sender.
 ///
 /// On success, returns an Option<NewrootMount>; This is not null only for A/B updates.
 #[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", ctx.servicing_type)))]
@@ -39,9 +34,6 @@ pub(super) fn stage_update(
     subsystems: &mut [Box<dyn Subsystem>],
     mut ctx: EngineContext,
     state: &mut DataStore,
-    #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
-        mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
-    >,
 ) -> Result<(), TridentError> {
     if ctx.servicing_type != ServicingType::AbUpdate {
         return Err(TridentError::internal(
@@ -120,8 +112,6 @@ pub(super) fn stage_update(
             trident_version: Default::default(),
         };
     })?;
-    #[cfg(feature = "grpc-dangerous")]
-    grpc::send_host_status_state(sender, state)?;
 
     if let Some(mut monitor) = monitor {
         // If the monitor was created successfully, stop it after execution
@@ -138,14 +128,10 @@ pub(super) fn stage_update(
 /// Finalizes an update. Takes in 2-3 arguments:
 /// - state: A mutable reference to the DataStore.
 /// - update_start_time: The time at which the update began staging.
-/// - sender: Optional mutable reference to the gRPC sender.
 #[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", ServicingType::AbUpdate)))]
 pub(crate) fn finalize_update(
     state: &mut DataStore,
     update_start_time: Option<Instant>,
-    #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
-        mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
-    >,
 ) -> Result<ExitKind, TridentError> {
     info!("Finalizing A/B update");
 
@@ -182,8 +168,6 @@ pub(crate) fn finalize_update(
         ServicingState::AbUpdateFinalized
     );
     state.with_host_status(|status| status.servicing_state = ServicingState::AbUpdateFinalized)?;
-    #[cfg(feature = "grpc-dangerous")]
-    grpc::send_host_status_state(sender, state)?;
     state.close();
 
     // Metric for update time in seconds

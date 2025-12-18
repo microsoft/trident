@@ -1,15 +1,15 @@
 [workspace]
 resolver = "2"
-default-members = [
-    "crates/trident",
-]
+default-members = ["crates/trident"]
 
 members = [
     "crates/trident",
+    "crates/trident_cli",
     "crates/trident_api",
     "crates/osutils",
     "crates/docbuilder",
     "crates/pytest",
     "crates/pytest_gen",
     "crates/sysdefs",
+    "crates/harpoon",
 ]

@@ -45,7 +45,6 @@ Options:
 - [install](#install)
 - [update](#update)
 - [commit](#commit)
-- [listen](#listen)
 - [rebuild-raid](#rebuild-raid)
 - [start-network](#start-network)
 - [get](#get)
@@ -210,47 +209,6 @@ Usage:
 
 ```
 trident commit [OPTIONS]
-```
-
-Argument summary:
-
-```
-Options:
-  -s, --status <STATUS>
-          Path to save the resulting Host Status
-  -v, --verbosity <VERBOSITY>
-          Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
-          [default: DEBUG]
-  -e, --error <ERROR>
-          Path to save an eventual fatal error
-```
-
-
-### Argument Details
-
-#### <span>--status &lt;STATUS&gt;</span>
-
-Path to save the resulting Host Status
-
-
-#### <span>--error &lt;ERROR&gt;</span>
-
-Path to save an eventual fatal error
-
-
-#### <span>--verbosity &lt;VERBOSITY&gt;</span>
-
-Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
-
-Default: `DEBUG`
-
-
-## listen
-
-Usage:
-
-```
-trident listen [OPTIONS]
 ```
 
 Argument summary:

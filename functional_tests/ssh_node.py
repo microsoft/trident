@@ -7,9 +7,6 @@ from threading import Thread
 from typing import Any, Dict, List, Optional, Union
 
 from assertpy.assertpy import AssertionBuilder, assert_that  # type: ignore
-
-# CodeQL [SM04242] Paramiko is used exclusively in testing, not in production. We can suppress this
-# warning as the Trident releases are not affected.
 from paramiko import SSHClient
 from paramiko.channel import ChannelFile, ChannelStderrFile
 
@@ -270,6 +267,7 @@ class SshNode:
         cwd: Optional[PurePath] = None,
         timeout: int = 600,
         update_envs: Optional[Dict[str, str]] = None,
+        encoding: str = "",
         expected_exit_code: Optional[int] = None,
         expected_exit_code_failure_message: str = "",
     ) -> SshExecutableResult:
@@ -283,6 +281,7 @@ class SshNode:
             no_debug_log=no_debug_log,
             cwd=cwd,
             update_envs=update_envs,
+            encoding=encoding,
         ) as process:
             return process.wait_result(
                 timeout=timeout,
@@ -301,6 +300,7 @@ class SshNode:
         no_debug_log: bool = False,
         cwd: Optional[PurePath] = None,
         update_envs: Optional[Dict[str, str]] = None,
+        encoding: str = "",
     ) -> SshProcess:
         if not shell:
             # SSH runs all commands in shell sessions.

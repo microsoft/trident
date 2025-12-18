@@ -11,7 +11,7 @@ use nix::unistd::Uid;
 
 use osutils::{block_devices, container, dependencies::Dependency};
 use trident_api::{
-    config::{GrpcConfiguration, HostConfiguration, HostConfigurationSource, Operations},
+    config::{HostConfiguration, HostConfigurationSource, Operations},
     constants::internal_params::{
         HTTP_CONNECTION_TIMEOUT_SECONDS, ORCHESTRATOR_CONNECTION_TIMEOUT_SECONDS,
         WAIT_FOR_SYSTEMD_NETWORKD,
@@ -22,9 +22,6 @@ use trident_api::{
     },
     status::{ServicingState, ServicingType},
 };
-
-#[cfg(feature = "grpc-dangerous")]
-use grpc::GrpcSender;
 
 pub mod cli;
 mod datastore;
@@ -40,9 +37,6 @@ pub mod osimage;
 pub mod stream;
 mod subsystems;
 pub mod validation;
-
-#[cfg(feature = "grpc-dangerous")]
-mod grpc;
 
 use engine::{rollback, storage::rebuild};
 
@@ -99,12 +93,6 @@ pub enum ExitKind {
 pub struct Trident {
     host_config: Option<HostConfiguration>,
     orchestrator: Option<OrchestratorConnection>,
-
-    #[cfg_attr(not(feature = "grpc-dangerous"), allow(unused))]
-    grpc: Option<GrpcConfiguration>,
-
-    #[cfg_attr(not(feature = "grpc-dangerous"), allow(unused))]
-    server_runtime: Option<tokio::runtime::Runtime>,
 }
 
 impl Trident {
@@ -206,8 +194,6 @@ impl Trident {
         Ok(Self {
             host_config,
             orchestrator,
-            server_runtime: None,
-            grpc: None,
         })
     }
 
@@ -249,30 +235,6 @@ impl Trident {
 
         info!("Starting network");
         provisioning_network::start(&host_config).structured(ServicingError::StartNetwork)?;
-
-        Ok(())
-    }
-
-    /// Listen for incoming commands from an orchestrator, and execute the first one.
-    pub fn listen(&mut self, datastore: &mut DataStore) -> Result<(), TridentError> {
-        #[cfg(feature = "grpc-dangerous")]
-        if let Some(grpc) = &self.grpc {
-            let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
-            self.server_runtime = Some(grpc::start(grpc, self.orchestrator.as_ref(), sender)?);
-
-            if let Some((host_config, allowed_operations, sender)) = receiver.blocking_recv() {
-                self.host_config = Some(host_config);
-                if let ExitKind::NeedsReboot =
-                    self.update(datastore, allowed_operations, &mut Some(sender))?
-                {
-                    reboot().message("Failed to reboot after grpc update")?;
-                }
-            }
-        }
-
-        // Avoid unused variable warning if grpc-dangerous is not enabled
-        #[cfg(not(feature = "grpc-dangerous"))]
-        let _ = datastore;
 
         Ok(())
     }
@@ -418,7 +380,6 @@ impl Trident {
         datastore: &mut DataStore,
         allowed_operations: Operations,
         multiboot: bool,
-        #[cfg(feature = "grpc-dangerous")] sender: &mut Option<GrpcSender>,
     ) -> Result<ExitKind, TridentError> {
         let mut host_config = self
             .host_config
@@ -482,8 +443,6 @@ impl Trident {
                         &allowed_operations,
                         multiboot,
                         image,
-                        #[cfg(feature = "grpc-dangerous")]
-                        sender,
                     )
                     .message("Failed to execute a clean install")
                 } else {
@@ -503,14 +462,8 @@ impl Trident {
                         // clean install, if requested.
                         debug!("There is a clean install staged on the host");
                         if allowed_operations.has_finalize() {
-                            engine::finalize_clean_install(
-                                datastore,
-                                None,
-                                None,
-                                #[cfg(feature = "grpc-dangerous")]
-                                sender,
-                            )
-                            .message("Failed to finalize clean install")
+                            engine::finalize_clean_install(datastore, None, None)
+                                .message("Failed to finalize clean install")
                         } else {
                             debug!(
                                 "There is a clean install staged on the host, but allowed \
@@ -530,8 +483,6 @@ impl Trident {
                             &allowed_operations,
                             multiboot,
                             image,
-                            #[cfg(feature = "grpc-dangerous")]
-                            sender,
                         )
                         .message("Failed to execute a clean install")
                     }
@@ -550,7 +501,6 @@ impl Trident {
         &mut self,
         datastore: &mut DataStore,
         allowed_operations: Operations,
-        #[cfg(feature = "grpc-dangerous")] sender: &mut Option<GrpcSender>,
     ) -> Result<ExitKind, TridentError> {
         let mut host_config = self
             .host_config
@@ -586,7 +536,7 @@ impl Trident {
                 debug!("Host Configuration has been updated");
                 // If allowed operations include 'stage', start update
                 if allowed_operations.has_stage() {
-                    engine::update(&host_config, datastore, &allowed_operations, image, #[cfg(feature = "grpc-dangerous")] sender).message("Failed to execute an update")
+                    engine::update(&host_config, datastore, &allowed_operations, image).message("Failed to execute an update")
                 } else {
                     warn!("Host Configuration has been updated but allowed operations do not include 'stage'. Add 'stage' and re-run to stage the update");
                     Ok(ExitKind::Done)
@@ -602,8 +552,6 @@ impl Trident {
                             ab_update::finalize_update(
                                 datastore,
                                 None,
-                                #[cfg(feature = "grpc-dangerous")]
-                                sender,
                             )
                             .message("Failed to finalize A/B update")
                         } else {
@@ -620,10 +568,7 @@ impl Trident {
                                 &mut subsystems,
                                 datastore,
                                 None,
-                                #[cfg(feature = "grpc-dangerous")]
-                                sender,
                             )
-                            .message("Failed to finalize runtime update")
                         } else {
                             warn!("There is a runtime update staged on the host, but allowed operations do not include 'finalize'. Add 'finalize' and re-run to finalize the runtime update");
                             Ok(ExitKind::Done)
@@ -632,7 +577,7 @@ impl Trident {
                     ServicingState::AbUpdateFinalized | ServicingState::Provisioned => {
                         // Need to either re-execute the failed update OR inform the user that no update
                         // is needed.
-                        engine::update(&host_config, datastore, &allowed_operations, image, #[cfg(feature = "grpc-dangerous")] sender).message("Failed to update host")
+                        engine::update(&host_config, datastore, &allowed_operations, image).message("Failed to update host")
                     }
                     servicing_state => {
                         Err(TridentError::new(InternalError::UnexpectedServicingState {

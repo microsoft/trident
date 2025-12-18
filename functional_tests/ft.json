@@ -1,0 +1,1353 @@
+{
+  "osutils": {
+    "submodules": {
+      "encryption": {
+        "submodules": {
+          "functional_test": {
+            "test_cases": {
+              "test_cryptsetup_reencrypt": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              },
+              "test_cryptsetup_luksformat": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "overlay": {
+        "submodules": {
+          "functional_test": {
+            "test_cases": {
+              "test_ephemeral_overlay_mount_unmount": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              },
+              "test_ephemeral_overlay_mount_fails_on_missing_target": {
+                "markers": [
+                  "functional",
+                  "negative",
+                  "helpers"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "repart": {
+        "submodules": {
+          "functional_test": {
+            "test_cases": {
+              "test_execute_fails_on_missing_block_device": {
+                "markers": [
+                  "functional",
+                  "negative",
+                  "helpers"
+                ]
+              },
+              "test_execute_unique_ptuuid": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              },
+              "test_execute_fails_on_non_block_device": {
+                "markers": [
+                  "functional",
+                  "negative",
+                  "helpers"
+                ]
+              },
+              "test_execute_and_resulting_layout": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              },
+              "test_execute_fails_if_partition_size_too_large": {
+                "markers": [
+                  "functional",
+                  "negative",
+                  "helpers"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "veritysetup": {
+        "submodules": {
+          "functional_test": {
+            "test_cases": {
+              "test_fail_close_on_missing_devices": {
+                "markers": [
+                  "functional",
+                  "negative",
+                  "helpers"
+                ]
+              },
+              "test_status_inactive_on_missing_device": {
+                "markers": [
+                  "functional",
+                  "negative",
+                  "helpers"
+                ]
+              },
+              "test_fail_on_missing_or_malformed_devices": {
+                "markers": [
+                  "functional",
+                  "negative",
+                  "helpers"
+                ]
+              },
+              "test_open_and_close": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "pcrlock": {
+        "submodules": {
+          "functional_test": {
+            "test_cases": {
+              "test_generate_tpm2_access_policy": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "block_devices": {
+        "submodules": {
+          "functional_test": {
+            "test_cases": {
+              "test_get_root_device_path": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "core"
+                ]
+              },
+              "test_unmount_all_mount_points": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "core"
+                ]
+              },
+              "test_get_disk_for_partition": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "core"
+                ]
+              },
+              "test_partx_update_failure": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "core"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "chroot": {
+        "submodules": {
+          "functional_test": {
+            "test_cases": {
+              "test_enter_chroot_fail_nonexistent_dir": {
+                "markers": [
+                  "functional",
+                  "negative",
+                  "helpers"
+                ]
+              },
+              "test_enter_chroot_fail_to_mount_special_dir": {
+                "markers": [
+                  "functional",
+                  "negative",
+                  "helpers"
+                ]
+              },
+              "test_enter_and_exit_chroot": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              },
+              "test_enter_update_chroot": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "resize2fs": {
+        "submodules": {
+          "functional_test": {
+            "test_cases": {
+              "test_resize2fs_ext3_run": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              },
+              "test_resize2fs_ext2_run": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              },
+              "test_resize2fs_run_negative": {
+                "markers": [
+                  "functional",
+                  "negative",
+                  "helpers"
+                ]
+              },
+              "test_resize2fs_ext4_run": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "sfdisk": {
+        "submodules": {
+          "functional_test": {
+            "test_cases": {
+              "test_get": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "findmnt": {
+        "submodules": {
+          "functional_tests": {
+            "test_cases": {
+              "test_findmnt_run": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              },
+              "test_findmnt_real": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "lsblk": {
+        "submodules": {
+          "functional_test": {
+            "test_cases": {
+              "test_list_success": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              },
+              "test_find_disk_success": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              },
+              "test_find_partitions_success": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              },
+              "test_get_fail_on_missing_file": {
+                "markers": [
+                  "functional",
+                  "negative",
+                  "helpers"
+                ]
+              },
+              "test_get_success": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              },
+              "test_get_fail_on_non_block_file": {
+                "markers": [
+                  "functional",
+                  "negative",
+                  "helpers"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "tune2fs": {
+        "submodules": {
+          "functional_test": {
+            "test_cases": {
+              "test_tune2fs_run_negative": {
+                "markers": [
+                  "functional",
+                  "negative",
+                  "helpers"
+                ]
+              },
+              "test_tune2fs_run": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "lsof": {
+        "submodules": {
+          "functional_test": {
+            "test_cases": {
+              "test_run_detects_open_files": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "blkid": {
+        "submodules": {
+          "functional_test": {
+            "test_cases": {
+              "test_run_fail_on_non_block_file": {
+                "markers": [
+                  "functional",
+                  "negative",
+                  "helpers"
+                ]
+              },
+              "test_get_filesystem_uuid_raw_success": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              },
+              "test_get_partition_label_success": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              },
+              "test_get_filesystem_uuid_raw_fail_on_missing_file": {
+                "markers": [
+                  "functional",
+                  "negative",
+                  "helpers"
+                ]
+              },
+              "test_get_filesystem_uuid_success": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              },
+              "test_run_fail_on_missing_file": {
+                "markers": [
+                  "functional",
+                  "negative",
+                  "helpers"
+                ]
+              },
+              "test_run_success": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              },
+              "test_get_filesystem_uuid_fail_on_vfat": {
+                "markers": [
+                  "functional",
+                  "negative",
+                  "helpers"
+                ]
+              },
+              "test_get_partition_label_fail_on_missing_file": {
+                "markers": [
+                  "functional",
+                  "negative",
+                  "helpers"
+                ]
+              },
+              "test_get_filesystem_uuid_fail_on_missing_file": {
+                "markers": [
+                  "functional",
+                  "negative",
+                  "helpers"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "mkinitrd": {
+        "submodules": {
+          "functional_test": {
+            "test_cases": {
+              "test_regenerate_initrd": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "core"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "mdadm": {
+        "submodules": {
+          "functional_test": {
+            "test_cases": {
+              "test_raid_stop_failure": {
+                "markers": [
+                  "functional",
+                  "negative",
+                  "helpers"
+                ]
+              },
+              "test_raid_add_failure": {
+                "markers": [
+                  "functional",
+                  "negative",
+                  "helpers"
+                ]
+              },
+              "test_raid_detail_failure": {
+                "markers": [
+                  "functional",
+                  "negative",
+                  "helpers"
+                ]
+              },
+              "test_raid_remove_failure": {
+                "markers": [
+                  "functional",
+                  "negative",
+                  "helpers"
+                ]
+              },
+              "test_raid_fail_failure": {
+                "markers": [
+                  "functional",
+                  "negative",
+                  "helpers"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "mkfs": {
+        "submodules": {
+          "functional_test": {
+            "test_cases": {
+              "test_run_fail": {
+                "markers": [
+                  "functional",
+                  "negative",
+                  "helpers"
+                ]
+              },
+              "test_run_pass": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              },
+              "test_supported_filesystems": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              },
+              "test_create_ntfs": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "e2fsck": {
+        "submodules": {
+          "functional_test": {
+            "test_cases": {
+              "test_e2fsck_run": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              },
+              "test_e2fsck_run_negative": {
+                "markers": [
+                  "functional",
+                  "negative",
+                  "helpers"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "efivar": {
+        "submodules": {
+          "functional_test": {
+            "test_cases": {
+              "test_set_oneshot": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              },
+              "test_set_default_to_current": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              },
+              "test_set_default": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "swap": {
+        "submodules": {
+          "functional_test": {
+            "test_cases": {
+              "test_run_fail": {
+                "markers": [
+                  "functional",
+                  "negative",
+                  "helpers"
+                ]
+              },
+              "test_run_pass": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "mountpoint": {
+        "submodules": {
+          "functional_test": {
+            "test_cases": {
+              "test_check_is_mountpoint": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "udevadm": {
+        "submodules": {
+          "functional_test": {
+            "test_cases": {
+              "test_settle": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              },
+              "test_trigger": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "efibootmgr": {
+        "submodules": {
+          "functional_test": {
+            "test_cases": {
+              "test_multiple_boot_entries": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              },
+              "test_create_boot_entry_fail": {
+                "markers": [
+                  "functional",
+                  "negative",
+                  "helpers"
+                ]
+              },
+              "test_update_boot_order_after_deleting_multiple_boot_entries": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              },
+              "test_efi_bootmgr_pass": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              },
+              "test_efi_bootmgr_delete_boot_next_fail": {
+                "markers": [
+                  "functional",
+                  "negative",
+                  "helpers"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "mount": {
+        "submodules": {
+          "functional_test": {
+            "test_cases": {
+              "test_readonly_mount": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              },
+              "test_umount_failure": {
+                "markers": [
+                  "functional",
+                  "negative",
+                  "helpers"
+                ]
+              },
+              "test_mount_failure": {
+                "markers": [
+                  "functional",
+                  "negative",
+                  "helpers"
+                ]
+              },
+              "test_mount_and_umount": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              },
+              "test_recursive_unmount": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "container": {
+        "submodules": {
+          "functional_test": {
+            "test_cases": {
+              "test_get_host_root_path_in_simulated_container": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              },
+              "test_is_running_in_container": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "helpers"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "trident": {
+    "submodules": {
+      "datastore": {
+        "submodules": {
+          "functional_test": {
+            "test_cases": {
+              "test_open_temporary_persist_reopen": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "core"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "subsystems": {
+        "submodules": {
+          "storage": {
+            "submodules": {
+              "osimage": {
+                "submodules": {
+                  "functional_test": {
+                    "test_cases": {
+                      "test_validate_filesystem_uniqueness_update": {
+                        "markers": [
+                          "functional",
+                          "positive",
+                          "core"
+                        ]
+                      }
+                    }
+                  }
+                }
+              },
+              "verity": {
+                "submodules": {
+                  "functional_test": {
+                    "test_cases": {
+                      "test_create_machine_id": {
+                        "markers": [
+                          "functional",
+                          "positive",
+                          "core"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "osconfig": {
+            "submodules": {
+              "functional_test": {
+                "test_cases": {
+                  "test_os_config_configure_hostname_ab_update": {
+                    "markers": [
+                      "functional",
+                      "positive",
+                      "helpers"
+                    ]
+                  },
+                  "test_os_config_configure_hostname_clean_install": {
+                    "markers": [
+                      "functional",
+                      "positive",
+                      "helpers"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "engine": {
+        "submodules": {
+          "functional_test": {
+            "test_cases": {
+              "test_persist_background_log_and_metrics_success": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "core"
+                ]
+              },
+              "test_persist_background_log_and_metrics_failure": {
+                "markers": [
+                  "functional",
+                  "negative",
+                  "helpers"
+                ]
+              }
+            }
+          },
+          "boot": {
+            "submodules": {
+              "grub": {
+                "submodules": {
+                  "functional_test": {
+                    "test_cases": {
+                      "test_update_grub_root_path_empty": {
+                        "markers": [
+                          "functional",
+                          "positive",
+                          "helpers"
+                        ]
+                      },
+                      "test_update_grub_root_abvolume": {
+                        "markers": [
+                          "functional",
+                          "positive",
+                          "helpers"
+                        ]
+                      },
+                      "test_update_grub_root_uuid_empty": {
+                        "markers": [
+                          "functional",
+                          "positive",
+                          "helpers"
+                        ]
+                      },
+                      "test_update_grub_root_raided": {
+                        "markers": [
+                          "functional",
+                          "positive",
+                          "helpers"
+                        ]
+                      },
+                      "test_update_grub_root_standalone_partition": {
+                        "markers": [
+                          "functional",
+                          "positive",
+                          "helpers"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "bootentries": {
+            "submodules": {
+              "functional_test": {
+                "test_cases": {
+                  "test_set_bootentries_after_reboot_for_qemu": {
+                    "markers": [
+                      "functional",
+                      "positive",
+                      "helpers"
+                    ]
+                  },
+                  "test_get_esp_device_info_raided_esp": {
+                    "markers": [
+                      "functional",
+                      "positive",
+                      "core"
+                    ]
+                  },
+                  "test_create_and_get_boot_entry_order_after_rebuilding_b_a_boot_order": {
+                    "markers": [
+                      "functional",
+                      "positive",
+                      "core"
+                    ]
+                  },
+                  "test_first_or_last_boot_order_when_update_success": {
+                    "markers": [
+                      "functional",
+                      "positive",
+                      "helpers"
+                    ]
+                  },
+                  "test_create_bootentries_after_rebuilding_active_volume_b": {
+                    "markers": [
+                      "functional",
+                      "positive",
+                      "core"
+                    ]
+                  },
+                  "test_create_and_get_boot_entry_order_after_rebuilding_a_b_boot_order": {
+                    "markers": [
+                      "functional",
+                      "positive",
+                      "core"
+                    ]
+                  },
+                  "test_update_boot_order": {
+                    "markers": [
+                      "functional",
+                      "positive",
+                      "helpers"
+                    ]
+                  },
+                  "test_create_bootentries_after_rebuilding_active_volume_a": {
+                    "markers": [
+                      "functional",
+                      "positive",
+                      "core"
+                    ]
+                  },
+                  "test_first_or_last_boot_order_skip_boot_order_update": {
+                    "markers": [
+                      "functional",
+                      "positive",
+                      "helpers"
+                    ]
+                  },
+                  "test_get_esp_device_info": {
+                    "markers": [
+                      "functional",
+                      "positive",
+                      "core"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "storage": {
+            "submodules": {
+              "partitioning": {
+                "submodules": {
+                  "functional_test": {
+                    "test_cases": {
+                      "test_adopt_bad_partitions": {
+                        "markers": [
+                          "functional",
+                          "negative",
+                          "core"
+                        ]
+                      },
+                      "test_create_partitions": {
+                        "markers": [
+                          "functional",
+                          "positive",
+                          "core"
+                        ]
+                      },
+                      "test_adopt_partitions": {
+                        "markers": [
+                          "functional",
+                          "positive",
+                          "core"
+                        ]
+                      },
+                      "test_wait_for_part_symlink": {
+                        "markers": [
+                          "functional",
+                          "positive",
+                          "core"
+                        ]
+                      }
+                    }
+                  }
+                }
+              },
+              "rebuild": {
+                "submodules": {
+                  "functional_test": {
+                    "test_cases": {
+                      "test_validate_rebuild_raid_raidrecovery_failure": {
+                        "markers": [
+                          "functional",
+                          "positive",
+                          "core"
+                        ]
+                      },
+                      "test_rebuild_raid_success": {
+                        "markers": [
+                          "functional",
+                          "positive",
+                          "core"
+                        ]
+                      },
+                      "test_validate_rebuild_raid_validation_failure": {
+                        "markers": [
+                          "functional",
+                          "positive",
+                          "core"
+                        ]
+                      }
+                    }
+                  }
+                }
+              },
+              "raid": {
+                "submodules": {
+                  "functional_test": {
+                    "test_cases": {
+                      "test_raid_creation_without_sync_timeout": {
+                        "markers": [
+                          "functional",
+                          "positive",
+                          "core"
+                        ]
+                      },
+                      "test_raid_create_failure": {
+                        "markers": [
+                          "functional",
+                          "negative",
+                          "helpers"
+                        ]
+                      },
+                      "test_raid_create_add_fail_remove": {
+                        "markers": [
+                          "functional",
+                          "positive",
+                          "helpers"
+                        ]
+                      },
+                      "test_raid_create_success": {
+                        "markers": [
+                          "functional",
+                          "positive",
+                          "core"
+                        ]
+                      },
+                      "test_raid_add_fail_remove_rerun": {
+                        "markers": [
+                          "functional",
+                          "positive",
+                          "helpers"
+                        ]
+                      },
+                      "test_raid_create_one_partition_failure": {
+                        "markers": [
+                          "functional",
+                          "negative",
+                          "helpers"
+                        ]
+                      },
+                      "test_raid_creation_with_sync_timeout": {
+                        "markers": [
+                          "functional",
+                          "positive",
+                          "core"
+                        ]
+                      },
+                      "test_raid_creation_failure_unequal_partitions": {
+                        "markers": [
+                          "functional",
+                          "negative",
+                          "helpers"
+                        ]
+                      },
+                      "test_raid_creation_with_sync_timeout_failing": {
+                        "markers": [
+                          "functional",
+                          "negative",
+                          "core"
+                        ]
+                      }
+                    }
+                  }
+                }
+              },
+              "filesystem": {
+                "submodules": {
+                  "functional_test": {
+                    "test_cases": {
+                      "test_create_filesystem_on_block_device_negative": {
+                        "markers": [
+                          "functional",
+                          "negative",
+                          "helpers"
+                        ]
+                      },
+                      "test_create_filesystem_on_block_device": {
+                        "markers": [
+                          "functional",
+                          "positive",
+                          "helpers"
+                        ]
+                      }
+                    }
+                  }
+                }
+              },
+              "verity": {
+                "submodules": {
+                  "functional_test": {
+                    "test_cases": {
+                      "test_stop_pre_existing_verity_devices": {
+                        "markers": [
+                          "functional",
+                          "positive",
+                          "core"
+                        ]
+                      },
+                      "test_setup_verity_devices": {
+                        "markers": [
+                          "functional",
+                          "positive",
+                          "core"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "newroot": {
+            "submodules": {
+              "functional_test": {
+                "test_cases": {
+                  "test_mount_newroot_tmpfs": {
+                    "markers": [
+                      "functional",
+                      "positive",
+                      "engine"
+                    ]
+                  },
+                  "test_prepare_mount_directory_ro": {
+                    "markers": [
+                      "functional",
+                      "negative",
+                      "engine"
+                    ]
+                  },
+                  "test_newroot_mount_drop": {
+                    "markers": [
+                      "functional",
+                      "positive",
+                      "engine"
+                    ]
+                  },
+                  "test_mount_with_populated_dir_failure": {
+                    "markers": [
+                      "functional",
+                      "negative",
+                      "engine"
+                    ]
+                  },
+                  "test_umount_failure": {
+                    "markers": [
+                      "functional",
+                      "negative",
+                      "engine"
+                    ]
+                  },
+                  "test_mount_failure": {
+                    "markers": [
+                      "functional",
+                      "negative",
+                      "engine"
+                    ]
+                  },
+                  "test_mount_and_umount": {
+                    "markers": [
+                      "functional",
+                      "positive",
+                      "engine"
+                    ]
+                  },
+                  "test_mount_newroot_partitions_ntfs": {
+                    "markers": [
+                      "functional",
+                      "positive",
+                      "engine"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "etc_overlay": {
+            "submodules": {
+              "functional_test": {
+                "test_cases": {
+                  "test_setup_etc_overlay_success": {
+                    "markers": [
+                      "functional",
+                      "positive",
+                      "core"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "rollback": {
+            "submodules": {
+              "functional_test": {
+                "test_cases": {
+                  "test_validate_ab_active_volume_internal": {
+                    "markers": [
+                      "functional",
+                      "positive",
+                      "core"
+                    ]
+                  },
+                  "test_construct_by_partuuid_path": {
+                    "markers": [
+                      "functional",
+                      "positive",
+                      "core"
+                    ]
+                  },
+                  "test_get_verity_data_device_path": {
+                    "markers": [
+                      "functional",
+                      "positive",
+                      "core"
+                    ]
+                  },
+                  "test_validate_ab_active_volume_internal_verity": {
+                    "markers": [
+                      "functional",
+                      "positive",
+                      "core"
+                    ]
+                  },
+                  "test_compare_root_device_paths": {
+                    "markers": [
+                      "functional",
+                      "positive",
+                      "core"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "logging": {
+        "submodules": {
+          "tracestream": {
+            "submodules": {
+              "functional_test": {
+                "test_cases": {
+                  "test_populate_additional_fields": {
+                    "markers": [
+                      "functional",
+                      "positive",
+                      "core"
+                    ]
+                  },
+                  "test_populate_platform_info": {
+                    "markers": [
+                      "functional",
+                      "positive",
+                      "core"
+                    ]
+                  },
+                  "test_tracestream_write_span_metric_to_file": {
+                    "markers": [
+                      "functional",
+                      "positive",
+                      "core"
+                    ]
+                  },
+                  "test_tracestream_write_metric_event_to_file": {
+                    "markers": [
+                      "functional",
+                      "positive",
+                      "core"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "monitor_metrics": {
+        "submodules": {
+          "functional_test": {
+            "test_cases": {
+              "test_monitor_metrics": {
+                "markers": [
+                  "functional",
+                  "positive",
+                  "core"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
