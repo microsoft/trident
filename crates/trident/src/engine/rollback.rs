@@ -256,6 +256,7 @@ fn commit_finalized_on_expected_root(
             // Construct full path to pcrlock policy JSON file
             let pcrlock_policy_path = pcrlock::construct_pcrlock_path(
                 &datastore.host_status().spec.trident.datastore_path,
+                None,
             )
             .structured(ServicingError::ConstructPcrlockPolicyPath)?;
 

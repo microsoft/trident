@@ -175,8 +175,9 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
         };
 
         // Construct full path to pcrlock policy JSON file
-        let pcrlock_policy_path = pcrlock::construct_pcrlock_path(&ctx.spec.trident.datastore_path)
-            .structured(ServicingError::ConstructPcrlockPolicyPath)?;
+        let pcrlock_policy_path =
+            pcrlock::construct_pcrlock_path(&ctx.spec.trident.datastore_path, None)
+                .structured(ServicingError::ConstructPcrlockPolicyPath)?;
 
         // If updated PCRs are specified, re-generate pcrlock policy
         if let Some(pcrs) = updated_pcrs {
@@ -243,7 +244,7 @@ pub fn configure(ctx: &EngineContext) -> Result<(), TridentError> {
             let options = if ctx.is_uki()? {
                 // Construct full path to pcrlock policy JSON file
                 let pcrlock_policy_path =
-                    pcrlock::construct_pcrlock_path(&ctx.spec.trident.datastore_path)
+                    pcrlock::construct_pcrlock_path(&ctx.spec.trident.datastore_path, None)
                         .structured(ServicingError::ConstructPcrlockPolicyPath)?;
                 format!(
                     "luks,tpm2-device=auto,tpm2-pcrlock={}",

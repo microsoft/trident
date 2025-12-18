@@ -427,7 +427,8 @@ mod functional_test {
         // Generate a pcrlock policy that only includes PCR 0
         let pcrs = BitFlags::from(Pcr::Pcr0);
         let pcrlock_policy_path =
-            pcrlock::construct_pcrlock_path(Path::new(TRIDENT_DATASTORE_PATH_DEFAULT)).unwrap();
+            pcrlock::construct_pcrlock_path(Path::new(TRIDENT_DATASTORE_PATH_DEFAULT), None)
+                .unwrap();
         pcrlock::generate_pcrlock_policy(pcrs, &pcrlock_policy_path, vec![], vec![]).unwrap();
 
         // Run `systemd-cryptenroll` on the partition
@@ -577,7 +578,8 @@ mod functional_test {
         // Generate a pcrlock policy that only includes PCR 0
         let pcrs = BitFlags::from(Pcr::Pcr0);
         let pcrlock_policy_path =
-            pcrlock::construct_pcrlock_path(Path::new(TRIDENT_DATASTORE_PATH_DEFAULT)).unwrap();
+            pcrlock::construct_pcrlock_path(Path::new(TRIDENT_DATASTORE_PATH_DEFAULT), None)
+                .unwrap();
         pcrlock::generate_pcrlock_policy(pcrs, &pcrlock_policy_path, vec![], vec![]).unwrap();
 
         // Run `systemd-cryptenroll` on the partition

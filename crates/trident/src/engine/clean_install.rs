@@ -1,4 +1,5 @@
 use std::{
+    fs,
     path::{Path, PathBuf},
     sync::MutexGuard,
     time::Instant,
@@ -11,6 +12,7 @@ use osutils::{
     installation_media::{self, BootType},
     mount, mountpoint,
     path::join_relative,
+    pcrlock,
 };
 use trident_api::{
     config::{HostConfiguration, Operations},
@@ -346,6 +348,30 @@ pub(crate) fn finalize_clean_install(
         Some(new_root.path()),
         state.host_status().servicing_state,
     );
+
+    // If needed, persist the pcrlock policy JSON
+    let pcrlock_policy_path =
+        pcrlock::construct_pcrlock_path(&state.host_status().spec.trident.datastore_path, None)
+            .structured(ServicingError::ConstructPcrlockPolicyPath)?;
+    if pcrlock_policy_path.exists() {
+        let target_pcrlock_policy_path = pcrlock::construct_pcrlock_path(
+            &state.host_status().spec.trident.datastore_path,
+            Some(new_root.path()),
+        )
+        .structured(ServicingError::ConstructPcrlockPolicyPath)?;
+
+        debug!(
+            "Persisting pcrlock policy JSON at '{}' to new root at '{}'",
+            pcrlock_policy_path.display(),
+            target_pcrlock_policy_path.display()
+        );
+        fs::copy(&pcrlock_policy_path, &target_pcrlock_policy_path).structured(
+            ServicingError::PersistPcrlockPolicy {
+                path: pcrlock_policy_path.to_string_lossy().to_string(),
+                destination: target_pcrlock_policy_path.to_string_lossy().to_string(),
+            },
+        )?;
+    }
 
     if let Err(e) = new_root.unmount_all() {
         error!("Failed to unmount new root: {e:?}");

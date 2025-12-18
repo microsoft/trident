@@ -548,6 +548,9 @@ pub enum ServicingError {
     #[error("Failed to parse non-Unicode path '{path}'")]
     PathIsNotUnicode { path: String },
 
+    #[error("Failed to persist pcrlock policy from '{path}' to '{destination}'")]
+    PersistPcrlockPolicy { path: String, destination: String },
+
     #[error("Failed to do a read operation with efibootmgr")]
     ReadEfibootmgr,
 

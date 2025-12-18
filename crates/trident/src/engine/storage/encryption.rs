@@ -124,7 +124,7 @@ pub(super) fn create_encrypted_devices(ctx: &EngineContext) -> Result<(), Triden
 
             // Construct full path to pcrlock policy JSON file
             let pcrlock_policy_path =
-                pcrlock::construct_pcrlock_path(&ctx.spec.trident.datastore_path)
+                pcrlock::construct_pcrlock_path(&ctx.spec.trident.datastore_path, None)
                     .structured(ServicingError::ConstructPcrlockPolicyPath)?;
 
             // Remove any pre-existing policy
