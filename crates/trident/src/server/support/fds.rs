@@ -405,6 +405,8 @@ mod tests {
         let socket_path = dir.path().join("test_socket_mode");
 
         let test_mode = |desired_mode: u32| {
+            let dir = tempdir().unwrap();
+            let socket_path = dir.path().join("test_socket_mode");
             // Create a dummy file to ensure removal works
             let _dummy = File::create(&socket_path).unwrap();
             let mode = Mode::from_bits_truncate(desired_mode);

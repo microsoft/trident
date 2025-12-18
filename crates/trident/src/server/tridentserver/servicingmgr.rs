@@ -39,9 +39,6 @@ impl ServicingManager {
         self.servicing_lock.clone().try_read_owned().ok()
     }
 
-    // TODO: Enable once #396 is closed to turn `Control` into the final struct
-    // representing the final result of a servicing operation.
-
     pub(crate) async fn spawn_servicing_task<F>(
         _guard: ServicingLockGuard,
         tracker: ActivityTracker,
