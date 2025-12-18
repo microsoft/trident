@@ -41,11 +41,11 @@ pub(super) struct TridentHarpoonServer {
     log_forwarder: LogForwarder,
     tracker: ActivityTracker,
     servicing_manager: ServicingManager,
-    rwlock: Arc<RwLock<u32>>,
+    rwlock: Arc<RwLock<()>>,
 }
 
 /// This is the stream type for all servicing responses.
-type ServicingResponseStream = StreamWithLock<Result<ServicingResponse, Status>, u32>;
+type ServicingResponseStream = StreamWithLock<Result<ServicingResponse, Status>, ()>;
 
 impl TridentHarpoonServer {
     pub(super) fn new(log_forwarder: LogForwarder, tracker: ActivityTracker) -> Self {
@@ -53,7 +53,7 @@ impl TridentHarpoonServer {
             log_forwarder,
             tracker,
             servicing_manager: ServicingManager::new(),
-            rwlock: Arc::new(RwLock::new(0)),
+            rwlock: Arc::new(RwLock::new(())),
         }
     }
 
@@ -121,7 +121,7 @@ impl TridentHarpoonServer {
     /// Tries to acquire a read lock on the server's RwLock. If the lock
     /// cannot be acquired, returns a gRPC Status indicating that the server is
     /// busy.
-    fn try_acquire_read_lock(&self) -> Result<OwnedRwLockReadGuard<u32>, Status> {
+    fn try_acquire_read_lock(&self) -> Result<OwnedRwLockReadGuard<()>, Status> {
         self.rwlock.clone().try_read_owned().map_err(|_| {
             log::warn!("Trident is busy, cannot acquire read lock");
             Status::unavailable("Trident is busy")
@@ -131,7 +131,7 @@ impl TridentHarpoonServer {
     /// Tries to acquire a write lock on the server's RwLock. If the lock
     /// cannot be acquired, returns a gRPC Status indicating that the server is
     /// busy.
-    fn try_acquire_write_lock(&self) -> Result<OwnedRwLockWriteGuard<u32>, Status> {
+    fn try_acquire_write_lock(&self) -> Result<OwnedRwLockWriteGuard<()>, Status> {
         self.rwlock.clone().try_write_owned().map_err(|_| {
             log::warn!("Trident is busy, cannot acquire write lock");
             Status::unavailable("Trident is busy")
