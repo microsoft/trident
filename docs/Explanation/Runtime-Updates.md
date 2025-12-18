@@ -43,7 +43,7 @@ runtime-updateable components:
 
 3. **Health Checks**: If health checks are configured in the Host Configuration,
    Trident runs them to verify that the update was successful. Ensure that
-   health checks are configured to run on runtime updates by specifiying
+   health checks are configured to run on runtime updates by specifying
    `runtime-update` after `runsOn`.
 
 Unlike A/B updates, runtime updates do not require a reboot. The changes take
@@ -51,7 +51,7 @@ effect immediately on the OS.
 
 ## Rollback Support
 
-If an operation during 'Finalize' produces an error or if a health check fails,
+If an operation during **Finalize** produces an error or if a health check fails,
 an automatic rollback occurs, reverting the OS back to the state of the previous
 Host Configuration.
 
