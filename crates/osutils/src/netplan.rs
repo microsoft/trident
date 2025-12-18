@@ -76,7 +76,7 @@ pub fn backup() -> Result<(), Error> {
     Ok(())
 }
 
-/// Clean up netplan back-up directory.
+/// Clean up netplan backup directory.
 pub fn cleanup_backup() -> Result<(), Error> {
     if fs::exists(NETPLAN_BACKUP_DIR)? {
         fs::remove_dir_all(NETPLAN_BACKUP_DIR)?;
