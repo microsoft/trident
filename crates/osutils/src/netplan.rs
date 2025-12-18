@@ -53,7 +53,7 @@ fn render_netplan_yaml(value: &NetworkConfig) -> Result<String, Error> {
         .context("Failed to render netplan yaml")
 }
 
-/// Generates backup copy of current netplan config and returns the path to it.
+/// Backs up the current netplan config.
 pub fn backup() -> Result<(), Error> {
     debug!("Backing up current state of netplan config");
     if let Some(parent) = Path::new(NETPLAN_BACKUP_FILE).parent() {
