@@ -2,12 +2,14 @@
 
 import tomlkit
 import json
+import copy
 
 from pathlib import Path
-from typing import List, Dict, Set
+from typing import List, Dict, Optional, Set
 from enum import Enum
 from semver import Version
 from tomlkit.items import Table
+from dataclasses import dataclass
 
 TRIDENT_ROOT = Path(__file__).parent.parent
 
@@ -26,12 +28,25 @@ class Dependency:
             self.version = value
             self.options = {}
             self.features = None
+            self.default_features = None
+            self.optional = None
         elif isinstance(value, dict):
             self.version = value.get("version", "")
             self.features = value.get("features", None)
+            self.default_features = value.get("default-features", None)
+            self.optional = value.get("optional", None)
             self.options = {
-                k: v for k, v in value.items() if k != "version" and k != "features"
+                k: v
+                for k, v in value.items()
+                if k != "version" and k != "features" and k != "default-features"
             }
+        else:
+            raise ValueError("Invalid dependency value type: " + str(type(value)))
+        try:
+            self.semver = Version.parse(self.version, optional_minor_and_patch=True)
+        except ValueError:
+            # Internal dependencies don't have a version we can parse. Default to 0.0.0
+            self.semver = Version(0, 0, 0)
 
     def __eq__(self, value):
         return (
@@ -55,7 +70,7 @@ class Dependency:
     def __lt__(self, other):
         if self.name != other.name:
             return self.name < other.name
-        return Version.parse(self.version) < Version.parse(other.version)
+        return self.semver < other.semver
 
     def __options(self) -> Dict[str, object]:
         return self.options if self.options is not None else {}
@@ -67,16 +82,27 @@ class Dependency:
         return bool(self.__options().get("path"))
 
     def to_toml_root(self) -> object:
-        if self.options:
+        values = {
+            "version": self.version,
+        }
+        if self.features is not None:
+            values["features"] = self.features
+        if self.default_features is not None:
+            values["default-features"] = self.default_features
+
+        if len(values) > 1:
             options_table = tomlkit.inline_table()
-            options_table.add("version", self.version)
-            for k, v in self.options.items():
-                if k in ["optional"]:
-                    continue
+            for k, v in values.items():
                 options_table.add(k, v)
             return options_table
         else:
             return self.version
+
+
+@dataclass
+class DependencyInstance:
+    dep: Dependency
+    count: int
 
 
 class CargoFile:
@@ -85,20 +111,84 @@ class CargoFile:
         with open(path, "r") as f:
             self.toml = tomlkit.parse(f.read())
 
-    def scan_dependencies(self, dep_type: DependencyType) -> List[Dependency]:
+    def scan_dependencies(
+        self, dep_type: DependencyType, is_workspace: bool = False
+    ) -> List[Dependency]:
+        toml = (
+            self.toml
+            if not is_workspace
+            else self.toml.setdefault("workspace", tomlkit.table())
+        )
         return [
             Dependency(name, entry)
-            for name, entry in self.toml.get(dep_type.value, {}).items()
+            for name, entry in toml.get(dep_type.value, {}).items()
         ]
 
-    def set_dependencies_to_workspace(self, names: Set[str], dep_type: DependencyType):
-        for name in names:
-            if name in self.toml.get(dep_type.value, {}):
-                self.toml[dep_type.value][name] = {"workspace": True}
+    def set_dependencies_to_workspace(
+        self, dependencies: List[Dependency], dep_type: DependencyType
+    ):
+        for dep in dependencies:
+            entry = self.toml.get(dep_type.value, {}).get(dep.name, None)
+            if entry is None:
+                continue
+            print(f"Setting {dep.name} to workspace in {self.path}")
+            new_entry = tomlkit.inline_table()
+            new_entry.add("workspace", True)
+            if isinstance(entry, str):
+                # All done :)
+                pass
+            else:
+                # Preserve features if they exist and differ from the root
+                # dependency
+                if features := entry.get("features", None):
+                    if dep.features != features:
+                        entry["features"] = features
+
+                # Preserve default-features if set and differs from root
+                if default_features := entry.get("default-features", None):
+                    if dep.default_features != default_features:
+                        entry["default-features"] = default_features
+
+                # Preserve everything else
+                skip = set(["workspace", "version", "features", "default-features"])
+                for k, v in entry.items():
+                    if k in skip:
+                        continue
+                    new_entry.add(k, v)
+            self.toml[dep_type.value][dep.name] = new_entry
 
     def save(self):
         with open(self.path, "w") as f:
             f.write(tomlkit.dumps(self.toml))
+
+
+def merge_dependency_options(dependencies: List[Dependency]) -> Dependency:
+    features: Set[str] = set()
+    default_features: Optional[bool] = None
+
+    for dep in dependencies:
+        if dep.features:
+            features.update(dep.features)
+        if dep.default_features is not None and dep.default_features is False:
+            default_features = False
+
+    latest = dependencies[0]
+    for dep in dependencies[1:]:
+        if dep.semver > latest.semver:
+            latest = dep
+    merged = copy.deepcopy(latest)
+    if features:
+        merged.features = sorted(list(features))
+    if default_features is not None:
+        merged.default_features = default_features
+
+    print(f"Merged dependency {merged.name} to version {merged.version}", end="")
+    if merged.features:
+        print(f" with features {merged.features}", end="")
+    if default_features is not None:
+        print(f" and default-features={merged.default_features}", end="")
+    print("")
+    return merged
 
 
 class CargoRepository:
@@ -114,15 +204,17 @@ class CargoRepository:
             cargo_files.append(CargoFile(member_path))
         return cargo_files
 
-    def scan_dependencies(self, dep_type: DependencyType):
-        dependencies: Dict[Dependency, int] = {}
+    def scan_dependencies(
+        self, dep_type: DependencyType
+    ) -> Dict[str, List[Dependency]]:
+        dependencies: Dict[str, List[Dependency]] = {}
         for cargo_file in self.cargo_files:
             deps = cargo_file.scan_dependencies(dep_type)
             for dep in deps:
                 if dep.is_workspace() or dep.is_path():
                     continue
-                dependencies.setdefault(dep, 0)
-                dependencies[dep] += 1
+                dependencies.setdefault(dep.name, [])
+                dependencies[dep.name].append(dep)
         return dependencies
 
     def save_all(self):
@@ -132,53 +224,61 @@ class CargoRepository:
 
     def sync_dependencies(self, dep_type: DependencyType):
         dependencies = self.scan_dependencies(dep_type)
-        # Filter dependencies that appear more than once
-        dependencies = [k for k, v in dependencies.items() if v > 1]
         # Merge into root Cargo.toml
-        self.merge_root_dependencies(dependencies, dep_type)
+        root_deps = self.merge_root_dependencies(dependencies)
         # Update all Cargo.toml files to reference the root version
         for cargo_file in self.cargo_files:
-            cargo_file.set_dependencies_to_workspace(
-                {dep.name for dep in dependencies}, dep_type
-            )
+            cargo_file.set_dependencies_to_workspace(root_deps, dep_type)
 
     def merge_root_dependencies(
-        self, dependencies: List[Dependency], dep_type: DependencyType
-    ):
-        # For each dependency, make sure we have just one name, keeping the
-        # latest version, and merging feature lists, also preserve
-        # "default-features = false"
+        self,
+        dependencies: Dict[str, List[Dependency]],
+    ) -> List[Dependency]:
+        # The root Cargo.toml only supports regular dependencies, all workspaces
+        # pull from this list, regardless of the dependency type.
+        dep_type = DependencyType.REGULAR
 
-        # Create a dict to collect all collected dep names.
-        deps: Dict[str, Dependency] = {}
+        # For each dependency, make sure we have just one entry per name:
+        dependencies: Dict[str, Dependency] = {
+            k: merge_dependency_options(v) for k, v in dependencies.items()
+        }
 
-        # Ingest all existing dependencies from root Cargo.toml and collect them
-        # into the deps dict.
-        for dep in self.root.scan_dependencies(dep_type):
-            deps[dep.name] = dep
+        # Create a dict to collect all collected dep names. Fill it up with
+        # existing deps from root Cargo.toml
+        deps: Dict[str, Dependency] = {
+            dep.name: dep
+            for dep in self.root.scan_dependencies(dep_type, is_workspace=True)
+        }
 
-        # Now go
-        for dep in dependencies:
+        # Now go over the collected dependencies and add them to the deps dict,
+        # keeping only the latest version if multiple versions are found.
+        for dep in dependencies.values():
             if dep.name not in deps:
                 deps[dep.name] = dep
             else:
                 # Keep the latest version
                 existing_dep = deps[dep.name]
-                latest_dep = max(existing_dep, dep)
+                keeping = merge_dependency_options([existing_dep, dep])
                 print(
-                    f"Found multiple versions of {dep.name}: {existing_dep.version} and {dep.version}, keeping {latest_dep.version}"
+                    f"Found multiple versions of {dep.name}: {existing_dep.version} and {dep.version}, keeping {keeping.version}"
                 )
-                deps[dep.name] = latest_dep
-        dependencies = sorted(list(deps.values()))
+                deps[dep.name] = keeping
+        dependencies: List[Dependency] = sorted(list(deps.values()))
 
         print(
             f"Merging {len(dependencies)} dependencies into {self.root.path.name} [{dep_type.value}]"
         )
 
-        dep_table = self.root.toml.get(dep_type.value, tomlkit.table())
+        dep_table = self.root.toml.setdefault("workspace", tomlkit.table()).setdefault(
+            dep_type.value, tomlkit.table()
+        )
         for dep in dependencies:
-            dep_table.add(dep.name, dep.to_toml_root())
-        self.toml[dep_type.value] = dep_table
+            if dep.name in dep_table:
+                dep_table[dep.name] = dep.to_toml_root()
+            else:
+                dep_table.append(dep.name, dep.to_toml_root())
+
+        return dependencies
 
 
 def main():
