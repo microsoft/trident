@@ -121,8 +121,6 @@ pub enum Dependency {
     SystemdConfext,
     #[strum(serialize = "systemd-cryptenroll")]
     SystemdCryptenroll,
-    #[strum(serialize = "systemd-cryptsetup")]
-    SystemdCryptsetup,
     #[strum(serialize = "systemd-firstboot")]
     SystemdFirstboot,
     #[strum(serialize = "systemd-pcrlock")]
