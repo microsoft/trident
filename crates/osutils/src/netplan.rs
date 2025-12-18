@@ -56,6 +56,9 @@ fn render_netplan_yaml(value: &NetworkConfig) -> Result<String, Error> {
 /// Backs up the current netplan config.
 pub fn backup() -> Result<(), Error> {
     debug!("Backing up current state of netplan config");
+    // Ensure backup directory is empty beforehand.
+    cleanup_backup()?;
+    // Re-create the directory.
     if let Some(parent) = Path::new(NETPLAN_BACKUP_FILE).parent() {
         fs::create_dir_all(parent).with_context(|| {
             format!(
@@ -64,10 +67,19 @@ pub fn backup() -> Result<(), Error> {
             )
         })?;
     }
+    // Copy over existing netplan config if it exists.
     if fs::exists(TRIDENT_NETPLAN_FILE)? {
         fs::copy(TRIDENT_NETPLAN_FILE, NETPLAN_BACKUP_FILE).with_context(|| {
             format!("Failed to back up netplan config from {TRIDENT_NETPLAN_FILE}")
         })?;
+    }
+    Ok(())
+}
+
+/// Clean up netplan back-up directory.
+pub fn cleanup_backup() -> Result<(), Error> {
+    if fs::exists(NETPLAN_BACKUP_DIR)? {
+        fs::remove_dir_all(NETPLAN_BACKUP_DIR)?;
     }
     Ok(())
 }

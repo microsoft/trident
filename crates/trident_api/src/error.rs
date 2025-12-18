@@ -342,6 +342,9 @@ pub enum ServicingError {
         expected_device_path: String,
     },
 
+    #[error("Failed to clean up back up Netplan config")]
+    CleanupNetplanBackup,
+
     #[error("Failed to clean up pre-existing LUKS2-encrypted volumes")]
     CleanupEncryption,
 

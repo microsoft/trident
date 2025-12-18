@@ -70,6 +70,11 @@ impl Subsystem for NetworkSubsystem {
         }
         Ok(())
     }
+
+    fn clean_up(&self, _ctx: &EngineContext) -> Result<(), TridentError> {
+        netplan::cleanup_backup().structured(ServicingError::CleanupNetplanBackup)?;
+        Ok(())
+    }
 }
 
 fn disable_cloud_init_networking(config_dir: impl AsRef<Path>) -> Result<(), TridentError> {
