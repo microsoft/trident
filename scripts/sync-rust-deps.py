@@ -67,10 +67,7 @@ class Dependency:
         return (
             self.name == value.name
             and self.version == value.version
-            and (
-                (set(self.features) if self.features is not None else set())
-                == (set(value.features) if value.features is not None else set())
-            )
+            and self.feature_set() == value.feature_set()
         )
 
     def __hash__(self):
@@ -79,7 +76,7 @@ class Dependency:
                 self.name,
                 self.version,
                 json.dumps(
-                    set(self.features) if self.features is not None else set(),
+                    self.feature_set(),
                     sort_keys=True,
                 ),
             )
@@ -101,6 +98,9 @@ class Dependency:
 
     def is_path(self) -> bool:
         return bool(self.__options().get("path"))
+
+    def feature_set(self) -> Set[str]:
+        return set(self.features) if self.features is not None else set()
 
     def to_toml_root(self) -> object:
         values = {
@@ -153,10 +153,10 @@ class CargoFile:
                 # All done :)
                 pass
             else:
-                # Preserve features if they exist and differ from the root
-                # dependency
+                # Preserve features if they differ from root
                 if features := entry.get("features", None):
-                    if dep.features != features:
+                    curr_feature_set = set(features)
+                    if curr_feature_set != dep.feature_set():
                         new_entry["features"] = features
 
                 # Preserve default-features if set and differs from root
