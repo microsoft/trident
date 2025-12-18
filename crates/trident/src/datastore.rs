@@ -150,15 +150,16 @@ impl DataStore {
         db: &sqlite::Connection,
         host_status: &HostStatus,
     ) -> Result<(), TridentError> {
-        let mut local_host_status = host_status.clone();
-        local_host_status.trident_version = TRIDENT_VERSION.to_string();
+        // Create a mutable copy of the Host Status to add Trident version before writing.
+        let mut host_status_with_trident_version = host_status.clone();
+        host_status_with_trident_version.trident_version = TRIDENT_VERSION.to_string();
         let mut statement = db
             .prepare("INSERT INTO hoststatus (contents) VALUES (?)")
             .structured(ServicingError::from(DatastoreError::WriteToDatastore))?;
         statement
             .bind((
                 1,
-                &*serde_yaml::to_string(&local_host_status)
+                &*serde_yaml::to_string(&host_status_with_trident_version)
                     .structured(InternalError::SerializeHostStatus)?,
             ))
             .structured(ServicingError::from(DatastoreError::WriteToDatastore))?;
