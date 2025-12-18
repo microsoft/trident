@@ -38,16 +38,16 @@ runtime-updateable components:
 2. **Finalize**: Trident activates the changes:
    - For sysexts and confexts, downloaded extension images from **Stage** are
      moved to their final location and Trident calls `systemd-sysext refresh` or
-     `systemd-confext refresh` to merge the new extensions into the running OS.
+     `systemd-confext refresh` to merge the new extensions into the OS.
    - For network configuration, Trident applies the new Netplan settings.
 
 3. **Health Checks**: If health checks are configured in the Host Configuration,
-   Trident runs them to verify the update was successful. Ensure that the health
-   check is configured to run on runtime updates by specifiying `runtime-update`
-   after `runsOn`.
+   Trident runs them to verify that the update was successful. Ensure that
+   health checks are configured to run on runtime updates by specifiying
+   `runtime-update` after `runsOn`.
 
 Unlike A/B updates, runtime updates do not require a reboot. The changes take
-effect immediately on the running OS.
+effect immediately on the OS.
 
 ## Rollback Support
 
