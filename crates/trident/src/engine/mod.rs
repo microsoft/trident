@@ -168,7 +168,7 @@ lazy_static::lazy_static! {
 ///
 /// In case of clean install, the files are persisted to the datastore path in the new root, so
 /// newroot_path is provided.
-pub fn persist_background_log_and_metrics(
+fn persist_background_log_and_metrics(
     datastore_path: &Path,
     newroot_path: Option<&Path>,
     servicing_state: ServicingState,
