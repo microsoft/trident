@@ -4,10 +4,14 @@ use anyhow::Error;
 use clap::Parser;
 use log::{error, info};
 
-mod cli;
+pub mod cli;
+pub mod client;
 
 use cli::Cli;
-use trident_api::error::TridentError;
+use trident_api::error::TridentError as ApiTridentError;
+
+// Include generated gRPC code
+tonic::include_proto!("harpoon.v1");
 
 /// Trident version as provided by environment variables at build time
 pub const TRIDENT_VERSION: &str = match option_env!("TRIDENT_VERSION") {
@@ -15,11 +19,29 @@ pub const TRIDENT_VERSION: &str = match option_env!("TRIDENT_VERSION") {
     None => env!("CARGO_PKG_VERSION"),
 };
 
-fn run_trident_cli(_args: &Cli) -> Result<(), TridentError> {
+#[tokio::main]
+async fn run_trident_cli(args: &Cli) -> Result<(), ApiTridentError> {
     // Log version
     info!("Trident CLI version: {}", TRIDENT_VERSION);
 
-    // TODO: Handle CLI commands
+    // Create gRPC client
+    let mut client = client::TridentClient::new("http://localhost:3322")
+        .await
+        .map_err(|e| {
+            ApiTridentError::with_source(
+                trident_api::error::InternalError::Internal("Failed to create gRPC client"),
+                e,
+            )
+        })?;
+
+    // Handle CLI commands
+    client.handle_command(&args.command).await.map_err(|e| {
+        ApiTridentError::with_source(
+            trident_api::error::InternalError::Internal("Command failed"),
+            e,
+        )
+    })?;
+
     Ok(())
 }
 

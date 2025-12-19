@@ -3420,9 +3420,11 @@ dependencies = [
  "osutils",
  "prost",
  "prost-types",
+ "tempfile",
  "tokio",
  "tonic",
  "tonic-prost",
+ "tonic-prost-build",
  "trident_api",
  "url",
 ]
