@@ -1,7 +1,7 @@
 use std::{cmp::Ordering, collections::HashSet, path::PathBuf};
 
 use anyhow::{bail, ensure, Error};
-use log::trace;
+use log::{trace, warn};
 use serde::{Deserialize, Deserializer};
 use strum_macros::Display;
 use uuid::Uuid;
@@ -128,12 +128,12 @@ impl CosiMetadata {
                         [] => bail!("Bootloader type 'systemd-boot' must not be empty"),
 
                         // First entry MUST be of type 'uki-standalone'
-                        [entry, ..] if !entry.boot_type.eq(&SystemdBootloaderType::UkiStandalone) => log::warn!(
+                        [entry, ..] if !entry.boot_type.eq(&SystemdBootloaderType::UkiStandalone) => warn!(
                             "First entry of bootloader type 'systemd-boot' is not of type 'uki-standalone'"
                         ),
 
                         // Having more than one entry is warned about, only the first is used in this version of Trident.
-                        [_, rest @..] if !rest.is_empty() => log::warn!(
+                        [_, rest @..] if !rest.is_empty() => warn!(
                             "Bootloader type 'systemd-boot' has more than one entry, only the first entry will be used"
                         ),
 
