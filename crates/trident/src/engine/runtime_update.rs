@@ -1,21 +1,17 @@
 use std::time::Instant;
 
-use log::{debug, info, warn};
-#[cfg(feature = "grpc-dangerous")]
-use tokio::sync::mpsc;
+use log::{debug, error, info, trace, warn};
 
 use osutils::efivar;
 use trident_api::{
-    error::TridentError,
+    error::{TridentError, TridentResultExt},
     status::{ServicingState, ServicingType},
 };
 
-#[cfg(feature = "grpc-dangerous")]
-use crate::grpc;
 use crate::{
     datastore::DataStore,
     engine::{self, EngineContext},
-    monitor_metrics, ExitKind,
+    health, monitor_metrics, ExitKind,
 };
 
 use super::Subsystem;
@@ -24,15 +20,11 @@ use super::Subsystem;
 /// - subsystems: A mutable reference to the list of subsystems.
 /// - ctx: EngineContext.
 /// - state: A mutable reference to the DataStore.
-/// - sender: Optional mutable reference to the gRPC sender.
 #[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", ServicingType::RuntimeUpdate)))]
 pub(crate) fn stage_update(
     subsystems: &mut [Box<dyn Subsystem>],
     ctx: EngineContext,
     state: &mut DataStore,
-    #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
-        mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
-    >,
 ) -> Result<(), TridentError> {
     if ctx.servicing_type != ServicingType::RuntimeUpdate {
         return Err(TridentError::internal(
@@ -64,8 +56,6 @@ pub(crate) fn stage_update(
         hs.spec = ctx.spec;
         hs.spec_old = ctx.spec_old;
     })?;
-    #[cfg(feature = "grpc-dangerous")]
-    grpc::send_host_status_state(sender, state)?;
 
     if let Some(mut monitor) = monitor {
         // If the monitor was created successfully, stop it after execution
@@ -79,21 +69,78 @@ pub(crate) fn stage_update(
     Ok(())
 }
 
-/// Finalizes a runtime update. Takes in 3-4 arguments:
+/// Finalizes a runtime update. Takes in 3 arguments:
 /// - subsystems: A mutable reference to the list of subsystems.
 /// - state: A mutable reference to the DataStore.
 /// - update_start_time: Optional, the time at which the update staging began.
-/// - sender: Optional mutable reference to the gRPC sender.
 #[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", ServicingType::RuntimeUpdate)))]
 pub(crate) fn finalize_update(
     subsystems: &mut [Box<dyn Subsystem>],
     state: &mut DataStore,
     update_start_time: Option<Instant>,
-    #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
-        mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
-    >,
 ) -> Result<ExitKind, TridentError> {
     info!("Finalizing runtime update");
+    let finalize_result = finalize_or_rollback_runtime_update(
+        subsystems,
+        state,
+        false, // reverse_specs: false
+        true,  // run_health_checks: true
+        update_start_time,
+    )
+    .message("Failed to finalize runtime update");
+    if let Err(e) = finalize_result {
+        error!("Runtime update finalize failed with message:\n{e:?}");
+        // Attempt an auto-rollback
+        return rollback(subsystems, state, update_start_time).message(format!(
+            "Auto-rollback was triggered by runtime update failure:\n{e:?}"
+        ));
+    }
+    finalize_result
+}
+
+/// Rolls back a runtime update, used for both auto-rollback and manual
+/// rollback. Takes in 3 arguments:
+/// - subsystems: A mutable reference to the list of subsystems.
+/// - state: A mutable reference to the DataStore.
+/// - update_start_time: Optional, the time at which the update staging began.
+pub(crate) fn rollback(
+    subsystems: &mut [Box<dyn Subsystem>],
+    state: &mut DataStore,
+    update_start_time: Option<Instant>,
+) -> Result<ExitKind, TridentError> {
+    match state.host_status().servicing_state {
+        ServicingState::RuntimeUpdateStaged => {
+            info!("Starting auto-rollback of runtime update");
+            finalize_or_rollback_runtime_update(
+                subsystems,
+                state,
+                true, // reverse_specs: true, reverse spec and spec_old in the Host Status for auto-rollback
+                false, // run_health_checks: false, do not re-run health checks on auto-rollback
+                update_start_time,
+            )
+        }
+        // TODO: Add case for manual rollback
+        _ => Ok(ExitKind::Done),
+    }
+}
+
+fn finalize_or_rollback_runtime_update(
+    subsystems: &mut [Box<dyn Subsystem>],
+    state: &mut DataStore,
+    reverse_specs: bool,
+    run_health_checks: bool,
+    update_start_time: Option<Instant>,
+) -> Result<ExitKind, TridentError> {
+    let target_spec;
+    let old_spec;
+    if !reverse_specs {
+        target_spec = state.host_status().spec.clone();
+        old_spec = state.host_status().spec_old.clone();
+    } else {
+        trace!("Reversing spec and spec_old");
+        target_spec = state.host_status().spec_old.clone();
+        old_spec = state.host_status().spec.clone();
+    }
 
     if state.host_status().servicing_state != ServicingState::RuntimeUpdateStaged {
         return Err(TridentError::internal(
@@ -102,8 +149,8 @@ pub(crate) fn finalize_update(
     }
 
     let mut ctx = EngineContext {
-        spec: state.host_status().spec.clone(),
-        spec_old: state.host_status().spec_old.clone(),
+        spec: target_spec,
+        spec_old: old_spec,
         servicing_type: ServicingType::RuntimeUpdate,
         ab_active_volume: state.host_status().ab_active_volume,
         partition_paths: state.host_status().partition_paths.clone(),
@@ -127,6 +174,12 @@ pub(crate) fn finalize_update(
 
     engine::clean_up(subsystems, &ctx)?;
 
+    // Run health checks if we are performing a runtime update (skip if we are
+    // rolling back)
+    if run_health_checks {
+        health::execute_health_checks(&ctx)?;
+    }
+
     debug!(
         "Updating host's servicing state to '{:?}'",
         ServicingState::Provisioned
@@ -136,8 +189,6 @@ pub(crate) fn finalize_update(
         hs.spec = ctx.spec; // Update spec after call to engine::update_host_configuration()
         hs.spec_old = Default::default(); // Clear spec_old now that state is Provisioned
     })?;
-    #[cfg(feature = "grpc-dangerous")]
-    grpc::send_host_status_state(sender, state)?;
     state.close();
 
     // Metric for update time in seconds

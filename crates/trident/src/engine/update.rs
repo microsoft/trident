@@ -9,8 +9,6 @@ use trident_api::{
     status::{ServicingState, ServicingType},
 };
 
-#[cfg(feature = "grpc-dangerous")]
-use crate::GrpcSender;
 use crate::{
     datastore::DataStore,
     engine::{self, ab_update, rollback, runtime_update, EngineContext, SUBSYSTEMS},
@@ -25,7 +23,6 @@ pub(crate) fn update(
     state: &mut DataStore,
     allowed_operations: &Operations,
     image: OsImage,
-    #[cfg(feature = "grpc-dangerous")] sender: &mut Option<GrpcSender>,
 ) -> Result<ExitKind, TridentError> {
     info!("Starting update");
     let mut subsystems = SUBSYSTEMS.lock().unwrap();
@@ -111,14 +108,8 @@ pub(crate) fn update(
     match servicing_type {
         ServicingType::AbUpdate => {
             // Stage update.
-            ab_update::stage_update(
-                &mut subsystems,
-                ctx,
-                state,
-                #[cfg(feature = "grpc-dangerous")]
-                sender,
-            )
-            .message("Failed to stage A/B update")?;
+            ab_update::stage_update(&mut subsystems, ctx, state)
+                .message("Failed to stage A/B update")?;
 
             // Determine if finalize is required or not.
             if !allowed_operations.has_finalize() {
@@ -133,25 +124,14 @@ pub(crate) fn update(
                 );
                 Ok(ExitKind::Done)
             } else {
-                ab_update::finalize_update(
-                    state,
-                    Some(update_start_time),
-                    #[cfg(feature = "grpc-dangerous")]
-                    sender,
-                )
-                .message("Failed to finalize A/B update")
+                ab_update::finalize_update(state, Some(update_start_time))
+                    .message("Failed to finalize A/B update")
             }
         }
         ServicingType::RuntimeUpdate => {
             // Stage update.
-            runtime_update::stage_update(
-                &mut subsystems,
-                ctx,
-                state,
-                #[cfg(feature = "grpc-dangerous")]
-                sender,
-            )
-            .message("Failed to stage runtime update")?;
+            runtime_update::stage_update(&mut subsystems, ctx, state)
+                .message("Failed to stage runtime update")?;
 
             // Determine if finalize is required or not.
             if !allowed_operations.has_finalize() {
@@ -165,14 +145,7 @@ pub(crate) fn update(
                 );
                 Ok(ExitKind::Done)
             } else {
-                runtime_update::finalize_update(
-                    &mut subsystems,
-                    state,
-                    Some(update_start_time),
-                    #[cfg(feature = "grpc-dangerous")]
-                    sender,
-                )
-                .message("Failed to finalize runtime update")
+                runtime_update::finalize_update(&mut subsystems, state, Some(update_start_time))
             }
         }
         ServicingType::CleanInstall => Err(TridentError::new(

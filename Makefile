@@ -88,7 +88,7 @@ format:
 test: .cargo/config
 	cargo test --all --no-fail-fast
 
-COVERAGE_EXCLUDED_FILES_REGEX='crates/docbuilder|crates/pytest|crates/setsail'
+COVERAGE_EXCLUDED_FILES_REGEX='crates/docbuilder|crates/pytest|crates/setsail|target|/mnt/vss'
 
 .PHONY: coverage
 coverage: .cargo/config coverage-llvm

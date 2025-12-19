@@ -4,6 +4,7 @@ Copyright © 2023 Microsoft Corporation
 package main
 
 import (
+	"context"
 	"tridenttools/pkg/netlaunch"
 	"tridenttools/pkg/phonehome"
 
@@ -90,7 +91,10 @@ var rootCmd = &cobra.Command{
 		config.WaitForProvisioning = waitForProvisioned
 		config.MaxPhonehomeFailures = maxFailures
 
-		err := netlaunch.RunNetlaunch(&config)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		err := netlaunch.RunNetlaunch(ctx, &config)
 
 		// Get an exit code based on the error and log it
 		var exitCode int = phonehome.GetExitCodeFromErrorAndLog(err)
