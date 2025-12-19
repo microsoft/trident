@@ -175,7 +175,7 @@ fn check_file_descriptor_validity(fd: BorrowedFd) -> Result<(), Errno> {
 }
 
 /// Creates a UnixListener at the specified path with the given permissions.
-/// 
+///
 /// No attempt is made to delete any existing socket file at the given path;
 /// this function will blindly try to bind to the path, which will fail if a
 /// file already exists there, if there are insufficient permissions, or if
