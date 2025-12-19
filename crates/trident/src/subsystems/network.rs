@@ -33,24 +33,20 @@ impl Subsystem for NetworkSubsystem {
         Ok(ServicingType::NoActiveServicing)
     }
 
-    fn prepare(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
-        if ctx.servicing_type == ServicingType::RuntimeUpdate
-            && ctx.spec.os.netplan != ctx.spec_old.os.netplan
-        {
-            // Remove old configuration
-            netplan::remove().structured(ServicingError::RemoveNetplanConfig)?;
-        }
-        Ok(())
-    }
-
     #[tracing::instrument(name = "network_configuration", skip_all)]
     fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
-        if ctx.servicing_type == ServicingType::RuntimeUpdate
-            && ctx.spec.os.netplan == ctx.spec_old.os.netplan
-        {
-            debug!("Skipping step 'configure' because Netplan configuration has not changed and servicing type is {:?}", ctx.servicing_type);
-            return Ok(());
+        if ctx.servicing_type == ServicingType::RuntimeUpdate {
+            if ctx.spec.os.netplan == ctx.spec_old.os.netplan {
+                debug!("Skipping step 'configure' because Netplan configuration has not changed and servicing type is {:?}", ctx.servicing_type);
+                return Ok(());
+            } else {
+                // Remove old configuration
+                debug!("Backing up and removing old config");
+                netplan::backup().structured(ServicingError::BackupNetplanConfig)?;
+                netplan::remove().structured(ServicingError::RemoveNetplanConfig)?;
+            }
         }
+
         match ctx.spec.os.netplan.as_ref() {
             Some(config) => {
                 debug!("Configuring network");
@@ -62,16 +58,23 @@ impl Subsystem for NetworkSubsystem {
                 // deploy additional configurations that are undesired and may
                 // conflict with or otherwise affect Trident's network setup.
                 disable_cloud_init_networking(CLOUD_INIT_CONFIG_DIR)?;
-
-                // Apply Netplan config immediately since there is no reboot in
-                // a runtime update.
-                if ctx.servicing_type == ServicingType::RuntimeUpdate {
-                    netplan::apply().structured(ServicingError::ApplyNetplanConfig)?;
-                }
             }
             None => {
                 debug!("Network config not provided");
             }
+        }
+
+        // Apply Netplan config immediately since there is no reboot in
+        // a runtime update.
+        if ctx.servicing_type == ServicingType::RuntimeUpdate {
+            netplan::apply().structured(ServicingError::ApplyNetplanConfig)?;
+        }
+        Ok(())
+    }
+
+    fn clean_up(&self, ctx: &EngineContext) -> Result<(), TridentError> {
+        if ctx.servicing_type == ServicingType::RuntimeUpdate {
+            netplan::cleanup_backup().structured(ServicingError::CleanupNetplanBackup)?;
         }
         Ok(())
     }
