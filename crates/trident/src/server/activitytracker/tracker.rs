@@ -11,7 +11,8 @@ use tokio_util::sync::CancellationToken;
 
 use super::{middleware::ActivityTrackerMiddleware, timer::Timer};
 
-// Activity Tracker
+// Tracks active connections and servicing operations, sending inactivity events that can
+// trigger an automatic shutdown after a configurable period with no activity.
 #[derive(Clone)]
 pub(crate) struct ActivityTracker {
     active_connections: Arc<AtomicUsize>,
