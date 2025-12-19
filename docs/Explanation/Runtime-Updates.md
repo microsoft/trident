@@ -18,11 +18,11 @@ only runtime-updateable components have changed in the Host Configuration.
 Runtime updates currently support the following configurations:
 
 - [**System Extensions
-  (sysexts)**](../Reference/Host-Configuration/API-Reference/Os.md#sysexts-optional):
+  (sysexts)**](../Reference/Host-Configuration/API-Reference/Os.md#sysexts-optional)
 - [**Configuration Extensions
-  (confexts)**](../Reference/Host-Configuration/API-Reference/Os.md#confexts-optional):
+  (confexts)**](../Reference/Host-Configuration/API-Reference/Os.md#confexts-optional)
 - [**Network Configuration
-  (netplan)**](../Reference/Host-Configuration/API-Reference/Os.md#netplan-optional):
+  (netplan)**](../Reference/Host-Configuration/API-Reference/Os.md#netplan-optional)
 
 If any other part of the Host Configuration has changed, Trident will begin an
 [A/B update](../Reference/Glossary.md#ab-update) instead of a runtime update.
@@ -51,9 +51,10 @@ effect immediately on the OS.
 
 ## Rollback Support
 
-If an operation during **Finalize** produces an error or if a health check fails,
-an automatic rollback occurs, reverting the OS back to the state of the previous
-Host Configuration.
+If an operation during **Finalize** produces an error or if a health check
+fails, an automatic rollback occurs, reverting the OS back to the state of the
+previous Host Configuration. The error or health check failure can be found with
+`trident get last-error`.
 
 ## Separate Stage and Finalize
 
