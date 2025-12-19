@@ -1,6 +1,6 @@
 use std::{
     sync::{
-        atomic::{AtomicBool, AtomicUsize},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
     },
     time::Duration,
@@ -53,41 +53,34 @@ impl ActivityTracker {
 
     pub(crate) fn on_connection_start(&self) {
         trace!("Connection started.");
-        self.active_connections
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.active_connections.fetch_add(1, Ordering::SeqCst);
         self.notify_event(EventType::NewActivity);
     }
 
     pub(crate) fn on_connection_end(&self) {
         trace!("Connection ended.");
-        self.active_connections
-            .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        self.active_connections.fetch_sub(1, Ordering::SeqCst);
         self.notify_event(EventType::Inactivity);
     }
 
     pub(crate) fn on_servicing_started(&self) {
         trace!("Servicing started.");
-        self.active_servicing
-            .store(true, std::sync::atomic::Ordering::SeqCst);
+        self.active_servicing.store(true, Ordering::SeqCst);
         self.notify_event(EventType::NewActivity);
     }
 
     pub(crate) fn on_servicing_ended(&self) {
         trace!("Servicing ended.");
-        self.active_servicing
-            .store(false, std::sync::atomic::Ordering::SeqCst);
+        self.active_servicing.store(false, Ordering::SeqCst);
         self.notify_event(EventType::Inactivity);
     }
 
     pub(crate) fn has_active_connections(&self) -> bool {
-        self.active_connections
-            .load(std::sync::atomic::Ordering::SeqCst)
-            > 0
+        self.active_connections.load(Ordering::SeqCst) > 0
     }
 
     pub(crate) fn is_servicing_active(&self) -> bool {
-        self.active_servicing
-            .load(std::sync::atomic::Ordering::SeqCst)
+        self.active_servicing.load(Ordering::SeqCst)
     }
 
     fn notify_event(&self, event_type: EventType) {
