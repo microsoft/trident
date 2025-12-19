@@ -3,6 +3,7 @@
 ## Scope
 - Only comment on issues that are **specific to the diff** (avoid generic best-practice reminders).
 - Avoid repeating the same point across multiple files. If one example demonstrates a pattern, mention it once and reference the pattern.
+- **ALWAYS check previous reviews** before commenting. Do NOT repeat points that have already been made in previous reviews if they have been acknowledged, dismissed, or closed.
 
 ## What to focus on (in priority order)
 1) Correctness and logic bugs
