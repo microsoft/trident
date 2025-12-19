@@ -111,7 +111,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
         | (true, ServicingState::ManualRollbackFinalized) => {
             // For *Finalized states, when booting from the expected
             // root, finish the commit process
-            info!("Host successfully booted from updated target OS image");
+            info!("Host successfully booted from target OS image");
             return commit_finalized_on_expected_root(
                 &ctx,
                 datastore,
@@ -216,7 +216,7 @@ fn commit_finalized_on_expected_root(
 ) -> Result<BootValidationResult, TridentError> {
     if matches!(
         servicing_type,
-        ServicingType::CleanInstall | ServicingType::AbUpdate
+        ServicingType::CleanInstall | ServicingType::AbUpdate | ServicingType::ManualRollback
     ) {
         // Run health checks to ensure the system is in the desired state
         let health_check_status =
@@ -261,34 +261,35 @@ fn commit_finalized_on_expected_root(
         };
         esp::set_uefi_fallback_contents(ctx, current_servicing_state, &root_path)
             .structured(ServicingError::SetUpUefiFallback)?;
-    }
 
-    // If this is a UKI image, then we need to re-generate pcrlock policy to include the PCRs
-    // selected by the user for the current boot only.
-    if let Some(ref encryption) = ctx.spec.storage.encryption {
-        if ctx.is_uki()? {
-            debug!("Regenerating pcrlock policy for current boot");
+        // If we have encrypted volumes and this is a UKI image, then we need to re-generate pcrlock
+        // policy for the current boot only.
+        if let Some(ref encryption) = ctx.spec.storage.encryption {
+            if ctx.is_uki()? {
+                debug!("Regenerating pcrlock policy for current boot");
 
-            // Get the PCRs from Host Configuration
-            let pcrs = encryption
-                .pcrs
-                .iter()
-                .fold(BitFlags::empty(), |acc, &pcr| acc | BitFlags::from(pcr));
+                // Get the PCRs from Host Configuration
+                let pcrs = encryption
+                    .pcrs
+                    .iter()
+                    .fold(BitFlags::empty(), |acc, &pcr| acc | BitFlags::from(pcr));
 
-            // Get UKI and bootloader binaries for .pcrlock file generation
-            let (uki_binaries, bootloader_binaries) =
-                encryption::get_binary_paths_pcrlock(ctx, pcrs, None)
-                    .structured(ServicingError::GetBinaryPathsForPcrlockEncryption)?;
+                // Get UKI and bootloader binaries for .pcrlock file generation
+                let (uki_binaries, bootloader_binaries) =
+                    encryption::get_binary_paths_pcrlock(ctx, pcrs, None, false)
+                        .structured(ServicingError::GetBinaryPathsForPcrlockEncryption)?;
 
-            // Generate a pcrlock policy
-            pcrlock::generate_pcrlock_policy(pcrs, uki_binaries, bootloader_binaries)?;
-        } else {
-            debug!(
-                "Target OS image is a grub image, \
+                // Generate a pcrlock policy
+                pcrlock::generate_pcrlock_policy(pcrs, uki_binaries, bootloader_binaries)?;
+            } else {
+                debug!(
+                    "Target OS image is a grub image, \
                 so skipping re-generating pcrlock policy for current boot"
-            );
+                );
+            }
         }
     }
+
     match datastore.host_status().servicing_state {
         ServicingState::CleanInstallFinalized => {
             info!("Clean install of target OS succeeded");

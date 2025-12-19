@@ -8,12 +8,13 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
+use enumflags2::BitFlags;
 use log::{debug, info, trace};
-use serde::{Deserialize, Serialize};
-
 use maplit::hashmap;
-use osutils::{efivar, lsblk};
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
+use osutils::{efivar, lsblk, pcrlock};
 use trident_api::{
     config::{
         AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, HostConfiguration,
@@ -28,7 +29,6 @@ use trident_api::{
     status::{decode_host_status, AbVolumeSelection, HostStatus, ServicingState, ServicingType},
     BlockDeviceId,
 };
-use uuid::Uuid;
 
 use crate::{
     cli::RollbackShowOperation,
@@ -37,7 +37,9 @@ use crate::{
     engine::{
         self,
         boot::{self, uki, ESP_EXTRACTION_DIRECTORY},
-        bootentries, rollback, EngineContext, REQUIRES_REBOOT,
+        bootentries, rollback,
+        storage::encryption,
+        EngineContext, REQUIRES_REBOOT,
     },
     subsystems::esp,
     ExitKind, OsImage,
@@ -58,7 +60,7 @@ pub fn print_requires_reboot(datastore: &mut DataStore) -> Result<ExitKind, Trid
         .get_requires_reboot_output()
         .structured(ServicingError::ManualRollback)
         .message("Failed to query for --requires-reboot")?;
-    println!("{}", requires_reboot_output);
+    println!("{requires_reboot_output}");
     Ok(ExitKind::Done)
 }
 
@@ -101,7 +103,7 @@ pub fn print_show(
                     serde_json::to_string(&first_rollback_host_status.host_status.spec)
                         .structured(ServicingError::ManualRollback)
                         .message("Failed to serialize first rollback HostStatus spec")?;
-                println!("{}", target_output);
+                println!("{target_output}");
             } else {
                 info!("No available rollbacks to show target for");
                 println!("{{}}");
@@ -112,7 +114,7 @@ pub fn print_show(
                 .get_rollback_chain_json()
                 .structured(ServicingError::ManualRollback)
                 .message("Failed to query for --show=chain")?;
-            println!("{}", available_rollbacks_output);
+            println!("{available_rollbacks_output}");
         }
     }
     Ok(ExitKind::Done)
@@ -191,7 +193,7 @@ pub fn execute_rollback(
             }
             state => {
                 return Err(TridentError::new(InvalidInputError::InvalidRollbackState {
-                    reason: format!("in unexpected state: {:?}", state),
+                    reason: format!("in unexpected state: {state:?}"),
                 }));
             }
         }
@@ -220,7 +222,7 @@ pub fn execute_rollback(
                 }
                 state => {
                     return Err(TridentError::new(InvalidInputError::InvalidRollbackState {
-                        reason: format!("in unexpected state: {:?}", state),
+                        reason: format!("in unexpected state: {state:?}"),
                     }));
                 }
             }
@@ -247,9 +249,37 @@ fn stage_rollback(
     requires_reboot: bool,
 ) -> Result<(), TridentError> {
     if requires_reboot {
-        info!("Staging rollback that requires reboot");
+        info!("Staging a manual rollback that requires reboot");
+
+        // If we have encrypted volumes and this is a UKI image, then we need to re-generate pcrlock
+        // policy to include both the current boot and the rollback boot.
+        if let Some(ref encryption) = engine_context.spec.storage.encryption {
+            // TODO: Handle any pcr-lock encryption related changes needed
+            if engine_context.is_uki()? {
+                debug!("Regenerating pcrlock policy to include rollback boot");
+
+                // Get the PCRs from Host Configuration
+                let pcrs = encryption
+                    .pcrs
+                    .iter()
+                    .fold(BitFlags::empty(), |acc, &pcr| acc | BitFlags::from(pcr));
+
+                // Get UKI and bootloader binaries for .pcrlock file generation
+                let (uki_binaries, bootloader_binaries) =
+                    encryption::get_binary_paths_pcrlock(engine_context, pcrs, None, true)
+                        .structured(ServicingError::GetBinaryPathsForPcrlockEncryption)?;
+
+                // Generate a pcrlock policy
+                pcrlock::generate_pcrlock_policy(pcrs, uki_binaries, bootloader_binaries)?;
+            } else {
+                debug!(
+                    "Rollback OS is a grub image, \
+                so skipping re-generating pcrlock policy for manual rollback"
+                );
+            }
+        }
     } else {
-        info!("Staging rollback that does not require reboot");
+        info!("Staging a manual rollback that does not require reboot");
     }
 
     datastore.with_host_status(|host_status| {
@@ -302,10 +332,6 @@ fn finalize_rollback(
     )
     .structured(ServicingError::SetUpUefiFallback)?;
 
-    if let Some(ref encryption) = engine_context.spec.storage.encryption {
-        // TODO: Handle any pcr-lock encryption related changes needed
-    }
-
     datastore.with_host_status(|host_status| {
         host_status.spec = engine_context.spec.clone();
         host_status.servicing_state = ServicingState::ManualRollbackFinalized;
@@ -336,8 +362,7 @@ impl ManualRollbackContext {
             semver::Version::parse(minimum_rollback_trident_version).map_err(|e| {
                 TridentError::new(InvalidInputError::InvalidRollbackExpectation {
                     reason: format!(
-                        "Failed to parse minimum rollback Trident version '{}': {}",
-                        minimum_rollback_trident_version, e
+                        "Failed to parse minimum rollback Trident version '{minimum_rollback_trident_version}': {e}",
                     ),
                 })
             })?;
