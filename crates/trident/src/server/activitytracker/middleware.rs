@@ -45,7 +45,7 @@ where
 
 /// Wrapper around `Body` that tracks when this response body is dropped,
 /// signaling the end of this request's response lifecycle (not necessarily
-/// the underlying TCP connection, e.g. with HTTP/2 multiplexing).
+/// the underlying connection).
 struct TrackedBody {
     inner: Body,
     tracker: ActivityTracker,

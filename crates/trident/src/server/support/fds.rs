@@ -174,8 +174,12 @@ fn check_file_descriptor_validity(fd: BorrowedFd) -> Result<(), Errno> {
     fcntl::fcntl(fd, fcntl::F_GETFL).map(|_| ())
 }
 
-/// Creates a UnixListener at the specified path with the given permissions,
-/// removing any existing socket file if necessary.
+/// Creates a UnixListener at the specified path with the given permissions.
+/// 
+/// No attempt is made to delete any existing socket file at the given path;
+/// this function will blindly try to bind to the path, which will fail if a
+/// file already exists there, if there are insufficient permissions, or if
+/// another instance of the server is already listening on that socket.
 ///
 /// THREAD SAFETY: This function is not thread-safe with respect to other
 /// invocations that may create or delete the same socket file concurrently. It
