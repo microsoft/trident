@@ -23,6 +23,12 @@ trident_api = { path = "../trident_api" }
 osutils = { path = "../osutils" }
 harpoon = { path = "../harpoon" }
 
+[dev-dependencies]
+tempfile = {workspace = true}
+
+[build-dependencies]
+tonic-prost-build = {workspace = true}
+
 [features]
 dangerous-options = ["trident_api/dangerous-options"]
 pytest-generator = []
