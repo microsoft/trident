@@ -1,6 +1,7 @@
 use std::{fs, os::fd::AsRawFd, path::Path, time::Duration};
 
 use anyhow::{bail, Context, Result as AnyhowRes};
+use log::{debug, info};
 use nix::sys::stat::Mode;
 use tokio::{
     net::UnixListener,
@@ -34,9 +35,9 @@ const DEFAULT_TRIDENT_SOCKET_PATH: &str = "/var/run/trident.sock";
 const DEFAULT_INACTIVITY_TIMEOUT_SECS: u64 = 300;
 
 pub async fn server_main(log_fwd: LogForwarder) -> AnyhowRes<()> {
-    log::info!("Starting gRPC server");
+    info!("Starting gRPC server");
     let listener = set_up_listener()?;
-    log::debug!("Trident listening on socket: {:?}", listener.local_addr()?);
+    debug!("Trident listening on socket: {:?}", listener.local_addr()?);
 
     // Set up activity tracker. This will monitor for inactivity and trigger
     // shutdown when the timeout is reached.
@@ -55,13 +56,13 @@ pub async fn server_main(log_fwd: LogForwarder) -> AnyhowRes<()> {
         .serve_with_incoming_shutdown(UnixListenerStream::new(listener), async {
             tokio::select! {
                 _ = shutdown_rx.recv() => {
-                    log::info!("Shutdown signal received");
+                    info!("Shutdown signal received");
                 }
                 _ = tokio::signal::ctrl_c() => {
-                    log::info!("Ctrl-C received, shutting down");
+                    info!("Ctrl-C received, shutting down");
                 }
                 _ = sigterm.recv() => {
-                    log::info!("SIGTERM received, shutting down");
+                    info!("SIGTERM received, shutting down");
                 }
             }
         })
@@ -71,7 +72,7 @@ pub async fn server_main(log_fwd: LogForwarder) -> AnyhowRes<()> {
     // Cancel activity monitoring
     monitor_token.cancel();
 
-    log::info!("Server shut down gracefully");
+    info!("Server shut down gracefully");
 
     // NOTE:
     //
@@ -108,14 +109,14 @@ fn set_up_listener() -> AnyhowRes<UnixListener> {
             );
         }
 
-        log::debug!(
+        debug!(
             "Activated by systemd socket: listening on file descriptor: {}[{}]",
             fd_name,
             sd_listener_fd.as_raw_fd(),
         );
         fds::get_listener_from_fd(sd_listener_fd)?
     } else {
-        log::debug!("No systemd socket activation detected, binding to default socket path");
+        debug!("No systemd socket activation detected, binding to default socket path");
         fds::create_unix_socket(DEFAULT_TRIDENT_SOCKET_PATH, Mode::from_bits_truncate(0o600))?
     };
 

@@ -1,6 +1,9 @@
 use std::time::Duration;
 
-use tokio::sync::oneshot;
+use tokio::{
+    sync::oneshot::{self, Sender},
+    time,
+};
 
 /// A one-shot timer that executes a closure after a given duration.
 ///
@@ -12,7 +15,7 @@ use tokio::sync::oneshot;
 /// cancels it (equivalent to calling [`Timer::cancel`]), so the closure will
 /// not be executed in that case.
 pub struct Timer {
-    tx: oneshot::Sender<()>,
+    tx: Sender<()>,
 }
 
 impl Timer {
@@ -23,7 +26,7 @@ impl Timer {
         let (tx, rx) = oneshot::channel();
         tokio::spawn(async move {
             tokio::select! {
-                _ = tokio::time::sleep(duration) => {
+                _ = time::sleep(duration) => {
                     (f)();
                 }
                 _ = rx => {
@@ -43,7 +46,7 @@ impl Timer {
 mod tests {
     use super::*;
 
-    use tokio::{sync::mpsc, time};
+    use tokio::sync::mpsc;
 
     #[tokio::test]
     async fn test_timer_executes_function() {

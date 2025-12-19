@@ -5,6 +5,7 @@ use std::{
 
 use anyhow::Error;
 use harpoon::ServicingRequest;
+use log::{debug, error, info, warn};
 use prost_types::Timestamp;
 use tokio::{
     sync::{
@@ -70,7 +71,7 @@ impl TridentHarpoonServer {
 
         // Set the sender in the log forwarder
         if self.log_forwarder.set_sender(log_tx).is_err() {
-            log::error!("Failed to set log forwarder sender channel");
+            error!("Failed to set log forwarder sender channel");
             return Err(Status::internal("Failed to set log forwarder"));
         }
 
@@ -102,7 +103,7 @@ impl TridentHarpoonServer {
                                 }),
                             })),
                         })) {
-                            log::error!("Failed to send log message in streaming response: {}", err);
+                            error!("Failed to send log message in streaming response: {}", err);
                             break;
                         }
                     }
@@ -110,7 +111,7 @@ impl TridentHarpoonServer {
             }
 
             log_forwarder_clone.clear_sender().unwrap_or_else(|err| {
-                log::error!("Failed to clear log forwarder sender channel: {}", err);
+                error!("Failed to clear log forwarder sender channel: {}", err);
             });
         });
 
@@ -123,7 +124,7 @@ impl TridentHarpoonServer {
     /// busy.
     fn try_acquire_read_lock(&self) -> Result<OwnedRwLockReadGuard<()>, Status> {
         self.rwlock.clone().try_read_owned().map_err(|_| {
-            log::warn!("Trident is busy, cannot acquire read lock");
+            warn!("Trident is busy, cannot acquire read connection lock");
             Status::unavailable("Trident is busy")
         })
     }
@@ -133,7 +134,7 @@ impl TridentHarpoonServer {
     /// busy.
     fn try_acquire_write_lock(&self) -> Result<OwnedRwLockWriteGuard<()>, Status> {
         self.rwlock.clone().try_write_owned().map_err(|_| {
-            log::warn!("Trident is busy, cannot acquire write lock");
+            warn!("Trident is busy, cannot acquire write connection lock");
             Status::unavailable("Trident is busy")
         })
     }
@@ -157,7 +158,7 @@ impl TridentHarpoonServer {
     where
         F: FnOnce() -> Result<ExitKind, TridentError> + Send + 'static,
     {
-        log::info!("Received servicing request '{}'", name);
+        info!("Received servicing request '{}'", name);
 
         // Try to acquire the connection lock in write mode
         let guard = self.try_acquire_write_lock()?;
@@ -167,7 +168,7 @@ impl TridentHarpoonServer {
 
         // Try to acquire the servicing lock
         let Some(servicing_guard) = self.servicing_manager.try_lock_servicing() else {
-            log::warn!("Request '{}' blocked because servicing is active", name);
+            warn!("Request '{}' blocked because servicing is active", name);
             return Err(Status::unavailable("Servicing is active"));
         };
 
@@ -179,7 +180,7 @@ impl TridentHarpoonServer {
             timestamp: Some(Timestamp::from(SystemTime::now())),
             response: Some(ResponseType::Start(Start {})),
         })) {
-            log::error!("Failed to send start response: {}", err);
+            error!("Failed to send start response: {}", err);
             return Err(Status::internal("Failed to start processing"));
         }
 
@@ -198,7 +199,7 @@ impl TridentHarpoonServer {
             // Await the log forwarding task to finish to ensure all relevant
             // logs have been sent.
             if let Err(err) = log_fwd_handle.await {
-                log::error!("Log forwarder task failed: {}", err);
+                error!("Log forwarder task failed: {}", err);
             }
 
             // Send the final status response
@@ -206,7 +207,7 @@ impl TridentHarpoonServer {
                 timestamp: Some(Timestamp::from(SystemTime::now())),
                 response: Some(ResponseType::FinalStatus(final_status)),
             })) {
-                log::error!("Failed to send control response: {}", err);
+                error!("Failed to send control response: {}", err);
             }
 
             // Close the gRPC channel by dropping the sender. Only two senders
@@ -214,7 +215,7 @@ impl TridentHarpoonServer {
             // already been stopped.
             drop(tx);
 
-            log::info!("Request '{}' completed", name);
+            info!("Request '{}' completed", name);
         });
 
         // Return the streaming response with the lock guard
@@ -239,6 +240,7 @@ impl TridentHarpoonServer {
         F: FnOnce() -> Result<R, Error> + Send + 'static,
         R: Send + 'static,
     {
+        info!("Received read request '{}'", name);
         // Try to acquire the connection lock in read mode. We hold a reference
         // to the lock guard to ensure it lives through the duration of the
         // request.
@@ -246,7 +248,10 @@ impl TridentHarpoonServer {
 
         // Try to acquire the servicing read lock
         let Some(_servicing_guard) = self.servicing_manager.try_lock_reading() else {
-            log::warn!("'{}' request blocked because servicing is active", name);
+            warn!(
+                "Read request '{}' blocked because servicing is active",
+                name
+            );
             return Err(Status::unavailable("Servicing is active"));
         };
 
@@ -254,8 +259,12 @@ impl TridentHarpoonServer {
         match f() {
             Ok(result) => Ok(Response::new(result)),
             Err(err) => {
-                log::error!("Reading request failed: {}", err);
-                Err(Status::internal(format!("Reading request failed: {}", err)))
+                error!("Reading request '{}' failed: {}", name, err);
+                // TODO: Map specific errors to appropriate Status codes
+                Err(Status::internal(format!(
+                    "Reading request '{}' failed: {}",
+                    name, err
+                )))
             }
         }
     }

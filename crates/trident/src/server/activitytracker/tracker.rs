@@ -6,6 +6,7 @@ use std::{
     time::Duration,
 };
 
+use log::{debug, error, info, trace, warn};
 use tokio::sync::mpsc::{self, Receiver, Sender, UnboundedReceiver, UnboundedSender};
 use tokio_util::sync::CancellationToken;
 
@@ -51,28 +52,28 @@ impl ActivityTracker {
     }
 
     pub(crate) fn on_connection_start(&self) {
-        log::trace!("Connection started.");
+        trace!("Connection started.");
         self.active_connections
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         self.notify_event(EventType::NewActivity);
     }
 
     pub(crate) fn on_connection_end(&self) {
-        log::trace!("Connection ended.");
+        trace!("Connection ended.");
         self.active_connections
             .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
         self.notify_event(EventType::Inactivity);
     }
 
     pub(crate) fn on_servicing_started(&self) {
-        log::trace!("Servicing started.");
+        trace!("Servicing started.");
         self.active_servicing
             .store(true, std::sync::atomic::Ordering::SeqCst);
         self.notify_event(EventType::NewActivity);
     }
 
     pub(crate) fn on_servicing_ended(&self) {
-        log::trace!("Servicing ended.");
+        trace!("Servicing ended.");
         self.active_servicing
             .store(false, std::sync::atomic::Ordering::SeqCst);
         self.notify_event(EventType::Inactivity);
@@ -91,7 +92,7 @@ impl ActivityTracker {
 
     fn notify_event(&self, event_type: EventType) {
         if let Err(err) = self.event_tx.send(event_type) {
-            log::warn!(
+            warn!(
                 "ActivityTracker failed to send event notification (receiver may be dropped): {}",
                 err
             );
@@ -119,7 +120,7 @@ impl ActivityTracker {
 
                     // Handle activity event
                     event_type = event_rx.recv() => {
-                        log::trace!("Activity event received: {:?}", event_type);
+                        trace!("Activity event received: {:?}", event_type);
                         match event_type {
                             Some(EventType::NewActivity) => {
                                 // Cancel any existing timer
@@ -131,7 +132,7 @@ impl ActivityTracker {
                                     continue;
                                 }
 
-                                log::info!("No active connections or servicing. Starting shutdown timer...");
+                                info!("No active connections or servicing. Starting shutdown timer...");
 
                                 // Cancel any existing timer
                                 if let Some(t) = timer.take() { t.cancel() }
@@ -139,15 +140,15 @@ impl ActivityTracker {
                                 // Start a new timer
                                 let shutdown_tx_clone = shutdown_tx.clone();
                                 timer.replace(Timer::new(timeout, move || {
-                                    log::info!("Shutdown timer expired. Shutting down server...");
+                                    info!("Shutdown timer expired. Shutting down server...");
                                     if shutdown_tx_clone.try_send(()).is_err() {
-                                        log::error!("Failed to send shutdown signal");
+                                        error!("Failed to send shutdown signal");
                                     }
                                 }));
 
                             }
                             None => {
-                                log::warn!("Event channel closed unexpectedly.");
+                                warn!("Event channel closed unexpectedly.");
                                 break;
                             }
                         }

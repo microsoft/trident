@@ -9,6 +9,7 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
+use log::trace;
 use nix::{
     errno::Errno,
     fcntl,
@@ -32,7 +33,7 @@ const SD_LISTEN_FDNAMES_ENV: &str = "LISTEN_FDNAMES";
 
 /// Creates a Tokio UnixListener from the given OwnedFd.
 pub fn get_listener_from_fd(fd: OwnedFd) -> Result<UnixListener, Error> {
-    log::info!(
+    trace!(
         "Creating UnixListener from file descriptor {}",
         fd.as_raw_fd()
     );
@@ -95,7 +96,7 @@ pub fn get_sd_fd_socket_data() -> Result<Vec<(OwnedFd, String)>, Error> {
             )
         })?;
 
-        log::trace!(
+        trace!(
             "File descriptor {}[{}] provided by systemd is a valid Unix socket",
             name,
             raw_fd
@@ -121,7 +122,7 @@ fn read_systemd_socket_activation_env() -> Result<Vec<String>, Error> {
         .map(String::from)
         .collect();
 
-    log::trace!(
+    trace!(
         "Systemd socket activation: '{SD_LISTEN_FDS_ENV}': {listen_fds}, \
         '{SD_LISTEN_FDNAMES_ENV}': \"{listen_fds_names:?}\"",
     );
