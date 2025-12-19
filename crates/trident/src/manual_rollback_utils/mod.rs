@@ -205,12 +205,12 @@ impl ManualRollbackContext {
                             encryption_with_volume_change,
                             instance.active_volume,
                         ) {
-                            (false, false, false, Some(AbVolumeSelection::VolumeA)) => {
+                            (false, false, _, Some(AbVolumeSelection::VolumeA)) => {
                                 instance
                                     .volume_a_available_rollbacks
                                     .insert(0, host_status_context);
                             }
-                            (false, false, false, Some(AbVolumeSelection::VolumeB)) => {
+                            (false, false, _, Some(AbVolumeSelection::VolumeB)) => {
                                 instance
                                     .volume_b_available_rollbacks
                                     .insert(0, host_status_context);
@@ -859,7 +859,7 @@ mod tests {
             prov_enc(VOL_A, false, vec![], MIN),
             inter_enc(VOL_A, AB_STAGE, MIN),
             inter_enc(VOL_A, AB_FINAL, MIN),
-            prov_enc(VOL_B, false, vec![], MIN),
+            prov_enc(VOL_B, true, vec![2], MIN),
         ];
         rollback_context_testing(&host_status_list, "Validate a/b update with encryption");
     }
