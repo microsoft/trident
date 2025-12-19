@@ -213,21 +213,6 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                     destination: pcrlock_json_copy.display().to_string(),
                 },
             )?;
-
-            // TODO: Remove
-            // Also copy to PCRLOCK_POLICY_JSON_DEFAULT to see if that fixes decryption
-            let pcrlock_json_default_copy =
-                path::join_relative(mount_path, pcrlock::PCRLOCK_POLICY_JSON_DEFAULT);
-            debug!(
-                "Also copying pcrlock policy JSON to default path '{}' on update volume",
-                pcrlock_json_default_copy.display()
-            );
-            fs::copy(&pcrlock_policy_path, pcrlock_json_default_copy.clone()).structured(
-                ServicingError::CopyPcrlockPolicyJson {
-                    path: pcrlock_policy_path.display().to_string(),
-                    destination: pcrlock_json_default_copy.display().to_string(),
-                },
-            )?;
         }
     }
 
@@ -262,7 +247,7 @@ pub fn configure(ctx: &EngineContext) -> Result<(), TridentError> {
                     pcrlock::construct_pcrlock_path(&ctx.spec.trident.datastore_path, None)
                         .structured(ServicingError::ConstructPcrlockPolicyPath)?;
                 format!(
-                    "luks,tpm2-device=auto,tpm2-pcrlck={}",
+                    "luks,tpm2-device=auto,tpm2-pcrlock={}",
                     pcrlock_policy_path.display()
                 )
             } else {
