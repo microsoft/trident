@@ -34,9 +34,19 @@ where
         self.tracker.on_connection_start();
 
         // Call the service and wrap the response body with our tracker
-        let (parts, body) = service.call(req).await?.into_parts();
-        let tracked_body = TrackedBody::new(body, self.tracker.clone());
-        let response = Response::from_parts(parts, Body::new(tracked_body));
+        let result = service.call(req).await;
+        let response = match result {
+            Ok(response) => {
+                let (parts, body) = response.into_parts();
+                let tracked_body = TrackedBody::new(body, self.tracker.clone());
+                Response::from_parts(parts, Body::new(tracked_body))
+            }
+            Err(err) => {
+                // Ensure we decrement the active connection count on error.
+                self.tracker.on_connection_end();
+                return Err(err);
+            }
+        };
 
         Ok(response)
     }
