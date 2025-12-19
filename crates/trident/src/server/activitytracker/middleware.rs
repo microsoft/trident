@@ -30,25 +30,25 @@ where
     S::Future: Send,
 {
     async fn call(&self, req: Request<Body>, mut service: S) -> Result<Response<Body>, S::Error> {
-        // Inform the tracker of new activity
+        // Inform the tracker of new activity.
         self.tracker.on_connection_start();
 
-        // Call the service and wrap the response body with our tracker
-        let result = service.call(req).await;
-        let response = match result {
+        // Call the service.
+        match service.call(req).await {
             Ok(response) => {
+                // On successful response, wrap the body to track when it's dropped.
                 let (parts, body) = response.into_parts();
-                let tracked_body = TrackedBody::new(body, self.tracker.clone());
-                Response::from_parts(parts, Body::new(tracked_body))
+                Ok(Response::from_parts(
+                    parts,
+                    Body::new(TrackedBody::new(body, self.tracker.clone())),
+                ))
             }
             Err(err) => {
                 // Ensure we decrement the active connection count on error.
                 self.tracker.on_connection_end();
-                return Err(err);
+                Err(err)
             }
-        };
-
-        Ok(response)
+        }
     }
 }
 
