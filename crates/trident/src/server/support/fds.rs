@@ -172,6 +172,19 @@ fn check_file_descriptor_validity(fd: BorrowedFd) -> Result<(), Errno> {
 
 /// Creates a UnixListener at the specified path with the given permissions,
 /// removing any existing socket file if necessary.
+///
+/// THREAD SAFETY: This function is not thread-safe with respect to other
+/// invocations that may create or delete the same socket file concurrently. It
+/// is the caller's responsibility to ensure that concurrent invocations do not
+/// interfere with each other.
+///
+/// The function internally uses a temporary umask change to ensure the socket
+/// is created with the exact desired permissions from the start. Umask changes
+/// are process-wide, so concurrent calls to this function from different
+/// threads may interfere with each other, potentially leading to incorrect
+/// socket permissions at creation. The function will double-check and set the
+/// permissions after creation as an extra safeguard, but this does not fully
+/// eliminate the risk of race conditions during socket creation.
 pub(crate) fn create_unix_socket(
     path: impl AsRef<Path>,
     mode: Mode,
