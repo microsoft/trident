@@ -29,6 +29,7 @@ mod engine;
 mod health;
 mod io_utils;
 mod logging;
+mod manual_rollback_utils;
 mod monitor_metrics;
 pub mod offline_init;
 mod orchestrate;
@@ -40,7 +41,7 @@ pub mod validation;
 use engine::{rollback, storage::rebuild};
 
 pub use datastore::DataStore;
-pub use engine::{provisioning_network, reboot};
+pub use engine::{manual_rollback, provisioning_network, reboot};
 pub use logging::{
     background_log::BackgroundLog, logstream::Logstream, multilog::MultiLogger,
     tracestream::TraceStream,
@@ -596,8 +597,12 @@ impl Trident {
             ServicingState::CleanInstallFinalized
                 | ServicingState::AbUpdateFinalized
                 | ServicingState::AbUpdateHealthCheckFailed
+                | ServicingState::ManualRollbackFinalized
         ) {
-            info!("No servicing in progress, skipping commit");
+            info!(
+                "No servicing in progress ({:?}), skipping commit",
+                datastore.host_status().servicing_state
+            );
             return Ok(ExitKind::Done);
         }
 
@@ -634,10 +639,8 @@ impl Trident {
         output_path: &Option<PathBuf>,
         kind: GetKind,
     ) -> Result<(), TridentError> {
-        let host_status = DataStore::open(datastore_path)
-            .message("Failed to open datastore")?
-            .host_status()
-            .clone();
+        let datastore = DataStore::open(datastore_path).message("Failed to open datastore")?;
+        let host_status = datastore.host_status().clone();
 
         let yaml = match kind {
             GetKind::Configuration => serde_yaml::to_string(&host_status.spec)
@@ -646,6 +649,9 @@ impl Trident {
                 .structured(InternalError::SerializeHostStatus)?,
             GetKind::LastError => serde_yaml::to_string(&host_status.last_error)
                 .structured(InternalError::SerializeError)?,
+            GetKind::RollbackTarget | GetKind::RollbackChain => {
+                manual_rollback::get_rollback_info(&datastore, kind)?
+            }
         };
 
         match output_path {
@@ -661,5 +667,48 @@ impl Trident {
         }
 
         Ok(())
+    }
+
+    /// Handle a manual rollback request. Either print information about
+    /// available rollbacks, or execute a rollback.
+    pub fn rollback(
+        &mut self,
+        datastore: &mut DataStore,
+        invoke_if_next_is_runtime: bool,
+        invoke_available_ab: bool,
+        allowed_operations: Operations,
+    ) -> Result<ExitKind, TridentError> {
+        // If host's servicing state is *Finalized or *HealthCheckFailed, need to
+        // re-evaluate the current state of the host.
+        if !matches!(
+            datastore.host_status().servicing_state,
+            ServicingState::Provisioned
+                | ServicingState::ManualRollbackStaged
+                | ServicingState::ManualRollbackFinalized
+        ) {
+            info!("Not in Provisioned or ManualRollbackStaged state, cannot rollback");
+            return Ok(ExitKind::Done);
+        }
+
+        let rollback_result = self.execute_and_record_error(datastore, |datastore| {
+            manual_rollback::execute_rollback(
+                datastore,
+                invoke_if_next_is_runtime,
+                invoke_available_ab,
+                &allowed_operations,
+            )
+            .message("Failed to rollback")
+        });
+
+        if rollback_result.is_ok() {
+            if let Some(ref orchestrator) = self.orchestrator {
+                orchestrator.report_success(Some(
+                    serde_yaml::to_string(&datastore.host_status())
+                        .unwrap_or("Failed to serialize Host Status".into()),
+                ))
+            }
+        }
+
+        rollback_result
     }
 }
