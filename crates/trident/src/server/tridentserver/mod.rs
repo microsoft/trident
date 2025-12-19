@@ -255,6 +255,7 @@ impl TridentHarpoonServer {
         };
 
         // Execute the reading function
+        // TODO: Execute in a blocking task to avoid blocking the async runtime
         match f() {
             Ok(result) => Ok(Response::new(result)),
             Err(err) => {
