@@ -17,7 +17,7 @@ use osutils::{
     encryption::{self, KeySlotType},
     lsblk::{self, BlockDeviceType},
     path::join_relative,
-    pcrlock,
+    pcrlock::{self, PCRLOCK_POLICY_JSON_DEFAULT},
 };
 use sysdefs::tpm2::Pcr;
 use trident_api::{
@@ -290,6 +290,13 @@ fn encrypt_and_open_device(
     );
 
     encryption::cryptsetup_open(key_file, device_path, device_name)?;
+    // TODO: test
+    // If exists, remove file at PCRLOCK_POLICY_JSON_DEFAULT
+    if Path::new(PCRLOCK_POLICY_JSON_DEFAULT).exists() {
+        fs::remove_file(PCRLOCK_POLICY_JSON_DEFAULT).context(format!(
+            "Failed to remove existing pcrlock policy file at '{PCRLOCK_POLICY_JSON_DEFAULT}'"
+        ))?;
+    }
 
     Ok(())
 }
