@@ -74,9 +74,12 @@ pub fn get_sd_fd_socket_data() -> Result<Vec<(OwnedFd, String)>, Error> {
             }
         } + i as RawFd;
 
-        // Safety: we know the raw_fd is greater or equal to 3 (negative is bad)
-        // in cfg(not(test)) cases. We need to check if the fd is valid (open)
-        // before taking ownership, otherwise we might close an invalid fd.
+        // Safety: In non-test builds, `raw_fd` is derived from systemd's socket-activation
+        // contract (`LISTEN_FDS`), which guarantees that descriptors starting at
+        // SD_LISTEN_FDS_START are valid, open FDs owned by this process. In tests,
+        // `tests::TEST_FD_START` is set up to point at valid FDs under our control.
+        // We also immediately validate the descriptor via `check_file_descriptor_validity`
+        // before cloning it to an `OwnedFd`, so we never take ownership of an invalid FD.
         let borrowed = unsafe { BorrowedFd::borrow_raw(raw_fd) };
 
         // Check if the fd is valid by getting its flags
