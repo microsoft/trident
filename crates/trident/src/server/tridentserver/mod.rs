@@ -4,7 +4,6 @@ use std::{
 };
 
 use anyhow::Error;
-use harpoon::ServicingRequest;
 use log::{debug, error, info, warn};
 use prost_types::Timestamp;
 use tokio::{
@@ -23,8 +22,8 @@ use harpoon::{
     GetActiveVolumeRequest, GetActiveVolumeResponse, GetConfigRequest, GetConfigResponse,
     GetLastErrorRequest, GetLastErrorResponse, GetRequiredServicingTypeRequest,
     GetRequiredServicingTypeResponse, GetServicingStateRequest, GetServicingStateResponse, Log,
-    RebuildRaidRequest, ServicingResponse, StageRequest, Start, StreamImageRequest,
-    ValidateHostConfigurationRequest, ValidateHostConfigurationResponse,
+    RebuildRaidRequest, ServicingRequest, ServicingResponse, StageRequest, Start,
+    StreamImageRequest, ValidateHostConfigurationRequest, ValidateHostConfigurationResponse,
 };
 use trident_api::error::TridentError;
 
