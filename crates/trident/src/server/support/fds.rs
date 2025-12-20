@@ -155,7 +155,16 @@ fn get_env_var(key: &str) -> Result<String, VarError> {
     }
 }
 
-/// Checks if the given file descriptor corresponds to a Unix socket.
+/// Checks if the given file descriptor corresponds to a Unix domain socket.
+///
+/// Returns `true` if the file descriptor refers to a socket whose address
+/// family is [`AddressFamily::Unix`].
+///
+/// Returns `false` if the file descriptor does not refer to a Unix socket.
+/// This includes cases where:
+/// - the file descriptor is not a socket,
+/// - the file descriptor is invalid, or
+/// - [`socket::getsockname`] fails for any other reason.
 pub fn is_unix_socket(fd: RawFd) -> bool {
     matches!(get_addr_family(fd), Some(AddressFamily::Unix))
 }
