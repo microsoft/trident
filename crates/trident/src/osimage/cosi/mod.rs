@@ -22,6 +22,7 @@ use crate::io_utils::{
 
 mod error;
 mod metadata;
+mod validation;
 
 use metadata::{CosiMetadata, CosiMetadataVersion, ImageFile, MetadataVersion};
 
