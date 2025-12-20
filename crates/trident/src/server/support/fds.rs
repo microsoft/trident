@@ -199,7 +199,7 @@ fn get_addr_family(fd: RawFd) -> Option<AddressFamily> {
     }
 }
 
-/// Checks whether a socket is valid by getting its status flags.
+/// Checks whether a file descriptor is valid by getting its status flags.
 fn check_file_descriptor_validity(fd: BorrowedFd) -> Result<(), Errno> {
     fcntl::fcntl(fd, fcntl::F_GETFL).map(|_| ())
 }
