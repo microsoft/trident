@@ -52,6 +52,27 @@ pub fn get_listener_from_fd(fd: OwnedFd) -> Result<UnixListener, Error> {
 
 /// Retrieves the list of Unix socket file descriptors and their associated
 /// names provided by systemd socket activation.
+///
+/// This function inspects the `LISTEN_FDS` and `LISTEN_FDNAMES` environment
+/// variables as defined by systemd socket activation and builds a list of
+/// Unix listening sockets together with their logical names.
+///
+/// # Validation and error handling
+///
+/// * If the socket-activation environment variables are not present, the
+///   function returns an empty vector.
+/// * If `LISTEN_FDS` or `LISTEN_FDNAMES` are malformed, inconsistent with
+///   each other, or cannot be parsed, the function returns an error.
+/// * For each expected file descriptor, the function verifies that it refers
+///   to a valid, open Unix domain socket in listening mode. If any descriptor
+///   is invalid, not a Unix domain socket, not in listening state, or cannot
+///   be inspected or used as required, the function returns an error rather
+///   than silently ignoring the problem.
+///
+/// On success, each element of the returned vector contains an `OwnedFd`
+/// corresponding to a validated listening Unix socket and the associated
+/// name taken from `LISTEN_FDNAMES`, ordered by file descriptor starting at
+/// `SD_LISTEN_FDS_START`.
 pub fn get_sd_fd_socket_data() -> Result<Vec<(OwnedFd, String)>, Error> {
     let listen_fds_names = read_systemd_socket_activation_env()?;
 
