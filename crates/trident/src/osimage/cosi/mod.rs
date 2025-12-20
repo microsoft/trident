@@ -20,6 +20,7 @@ use crate::io_utils::{
     hashing_reader::{HashingReader, HashingReader384},
 };
 
+mod error;
 mod metadata;
 
 use metadata::{CosiMetadata, CosiMetadataVersion, ImageFile, MetadataVersion};
