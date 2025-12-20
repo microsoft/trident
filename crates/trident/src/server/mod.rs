@@ -94,7 +94,7 @@ fn set_up_listener() -> AnyhowRes<UnixListener> {
 
     // If more than one socket fd is passed, bail out.
     if sd_listener_fds.len() > 1 {
-        bail!("unexpected: more than one connection passed in LISTEN_FDS");
+        bail!("unexpected: more than one socket passed in LISTEN_FDS");
     }
 
     // Use the systemd-passed socket if available, otherwise bind to default path
