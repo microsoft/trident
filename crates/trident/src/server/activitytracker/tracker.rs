@@ -59,7 +59,13 @@ impl ActivityTracker {
 
     pub(crate) fn on_connection_end(&self) {
         trace!("Connection ended.");
-        self.active_connections.fetch_sub(1, Ordering::SeqCst);
+        // `fetch_sub` would underflow and wrap to `usize::MAX` if called when the
+        // counter is already 0. Use a saturating update instead.
+        let _ =
+            self.active_connections
+                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |current| {
+                    Some(current.saturating_sub(1))
+                });
         self.notify_event(EventType::Inactivity);
     }
 
@@ -156,6 +162,20 @@ impl ActivityTracker {
 mod tests {
     use super::*;
     use tokio::time;
+
+    #[tokio::test]
+    async fn test_activity_tracker_saturating_connection_end() {
+        let (tracker, _shutdown_rx, _token) = ActivityTracker::new(Duration::from_millis(100));
+
+        // Ending a connection when none are active should not underflow to usize::MAX.
+        tracker.on_connection_end();
+        tracker.on_connection_end();
+        tracker.on_connection_end();
+        tracker.on_connection_end();
+        assert!(!tracker.has_active_connections());
+
+        assert_eq!(tracker.active_connections.load(Ordering::SeqCst), 0);
+    }
 
     #[tokio::test]
     async fn test_activity_tracker_shutdown_on_inactivity() {

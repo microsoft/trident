@@ -34,6 +34,16 @@ const DEFAULT_TRIDENT_SOCKET_PATH: &str = "/var/run/trident.sock";
 /// this duration, the server will shut down gracefully automatically.
 const DEFAULT_INACTIVITY_TIMEOUT_SECS: u64 = 300;
 
+/// Main entry point for the Trident gRPC server.
+///
+/// This function sets up the server, including the listener, activity tracker,
+/// and signal handlers, and starts serving incoming requests.
+///
+/// Any active servicing operation will run on a blocking task thread from
+/// Tokio's blocking thread pool, so it will continue running until completion
+/// or error even after the server has shut down. This is intentional, as we
+/// want servicing operations to complete even if the server is no longer
+/// reachable.
 pub async fn server_main(log_fwd: LogForwarder) -> AnyhowRes<()> {
     info!("Starting gRPC server");
     let listener = set_up_listener()?;
