@@ -58,8 +58,33 @@ impl TridentHarpoonServer {
     }
 
     /// Sets up log forwarding from the internal log forwarder to the gRPC
-    /// streaming response. Internally spawns a task that listens for log records
-    /// and sends them over the provided gRPC channel.
+    /// streaming response.
+    ///
+    /// Internally spawns a background task that listens for log records from
+    /// the internal [`LogForwarder`] and sends them over the provided gRPC
+    /// channel as [`ServicingResponse`] messages. On success, this function
+    /// returns a [`JoinHandle`] for the spawned task together with a
+    /// [`CancellationToken`] that can be used by the caller to request
+    /// shutdown of the forwarding task.
+    ///
+    /// # Errors
+    ///
+    /// Returns an internal gRPC [`Status`] error if the log forwarder sender
+    /// channel cannot be installed (i.e. if
+    /// [`LogForwarder::set_sender`](crate::LogForwarder::set_sender) returns
+    /// an error). In that case, no background task is spawned and no log
+    /// records will be forwarded for this stream.
+    ///
+    /// # Task lifecycle
+    ///
+    /// The spawned task runs until one of the following occurs:
+    /// * The provided cancellation token is cancelled.
+    /// * The internal log channel is closed and `recv` returns `None`.
+    /// * Sending a log record on `grpc_log_tx` fails.
+    ///
+    /// When the task terminates for any reason, it attempts to clear the
+    /// sender from the internal [`LogForwarder`] so that subsequent streams
+    /// can install their own sender if needed.
     fn setup_log_forwarding(
         &self,
         grpc_log_tx: UnboundedSender<Result<ServicingResponse, Status>>,
