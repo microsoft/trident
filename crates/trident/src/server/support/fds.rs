@@ -434,8 +434,12 @@ mod tests {
 
         check_file_descriptor_validity(borrowed_fd).unwrap();
 
-        // Check with an invalid fd
-        let invalid_fd = unsafe { BorrowedFd::borrow_raw(424242) };
+        // Check with an invalid fd: use a closed file descriptor to ensure invalidity
+        let temp_file = File::create(dir.path().join("temp_fd")).unwrap();
+        let raw_fd = temp_file.as_raw_fd();
+        drop(temp_file);
+
+        let invalid_fd = unsafe { BorrowedFd::borrow_raw(raw_fd) };
         let err = check_file_descriptor_validity(invalid_fd).unwrap_err();
         assert_eq!(err, Errno::EBADF);
     }
