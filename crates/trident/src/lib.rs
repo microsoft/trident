@@ -568,7 +568,6 @@ impl Trident {
                                 datastore,
                                 None,
                             )
-                            .message("Failed to finalize runtime update")
                         } else {
                             warn!("There is a runtime update staged on the host, but allowed operations do not include 'finalize'. Add 'finalize' and re-run to finalize the runtime update");
                             Ok(ExitKind::Done)

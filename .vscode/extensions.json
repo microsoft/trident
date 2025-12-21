@@ -1,5 +1,24 @@
 {
     "recommendations": [
+        "bierner.markdown-mermaid",
+        "chanhx.crabviz",
+        "DavidAnson.vscode-markdownlint",
+        "dnut.rewrap-revived",
+        "DrBlury.protobuf-vsc",
+        "eamodio.gitlens",
+        "github.vscode-github-actions",
+        "GitHub.vscode-pull-request-github",
+        "golang.go",
+        "marvhen.reflow-markdown",
+        "mhutchie.git-graph",
+        "ms-azure-devops.azure-pipelines",
         "ms-python.black-formatter",
+        "redhat.vscode-yaml",
+        "rust-lang.rust-analyzer",
+        "ryanluker.vscode-coverage-gutters",
+        "samuelcolvin.jinjahtml",
+        "streetsidesoftware.code-spell-checker",
+        "tamasfe.even-better-toml",
+        "unifiedjs.vscode-mdx"
     ]
 }

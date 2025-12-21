@@ -22,7 +22,7 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-func RunNetlaunch(config *NetLaunchConfig) error {
+func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 	// Read the ISO
 	iso, err := os.ReadFile(config.IsoPath)
 	if err != nil {
@@ -46,9 +46,6 @@ func RunNetlaunch(config *NetLaunchConfig) error {
 	// Do we expect Trident to reach back? If so we need to listen to it.
 	// If we have a specified port, we assume that the intent is that Trident will reach back.
 	enable_phonehome_listening := config.ListenPort != 0
-
-	terminateCtx, terminateFunc := context.WithCancel(context.Background())
-	defer terminateFunc()
 
 	result := make(chan phonehome.PhoneHomeResult)
 	server := &http.Server{}
@@ -86,6 +83,10 @@ func RunNetlaunch(config *NetLaunchConfig) error {
 			log.WithField("address", address).Info("BMC has requested the ISO!")
 		})
 	}
+
+	// Create a context that we can use to terminate the phonehome listening
+	terminateCtx, terminateFunc := context.WithCancel(ctx)
+	defer terminateFunc()
 
 	// If we have a Trident config file, we need to patch it into the ISO.
 	if len(config.HostConfigFile) != 0 {
@@ -219,32 +220,32 @@ func RunNetlaunch(config *NetLaunchConfig) error {
 			bmclib.WithRedfishPort(port),
 		)
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		bmcCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 		defer cancel()
 
 		log.Info("Connecting to BMC")
 		client.Registry.Drivers = client.Registry.For("gofish")
-		if err := client.Open(context.Background()); err != nil {
+		if err := client.Open(bmcCtx); err != nil {
 			return fmt.Errorf("failed to open connection to BMC: %w", err)
 		}
 
 		log.Info("Shutting down machine")
-		if _, err = client.SetPowerState(ctx, "off"); err != nil {
+		if _, err = client.SetPowerState(bmcCtx, "off"); err != nil {
 			return fmt.Errorf("failed to turn off machine: %w", err)
 		}
 
 		log.WithField("url", iso_location).Info("Setting virtual media to ISO")
-		if _, err = client.SetVirtualMedia(ctx, string(redfish.CDMediaType), iso_location); err != nil {
+		if _, err = client.SetVirtualMedia(bmcCtx, string(redfish.CDMediaType), iso_location); err != nil {
 			return fmt.Errorf("failed to set virtual media: %w", err)
 		}
 
 		log.Info("Setting boot media")
-		if _, err = client.SetBootDevice(ctx, "cdrom", false, true); err != nil {
+		if _, err = client.SetBootDevice(bmcCtx, "cdrom", false, true); err != nil {
 			return fmt.Errorf("failed to set boot media: %w", err)
 		}
 
 		log.Info("Turning on machine")
-		if _, err = client.SetPowerState(ctx, "on"); err != nil {
+		if _, err = client.SetPowerState(bmcCtx, "on"); err != nil {
 			return fmt.Errorf("failed to turn on machine: %w", err)
 		}
 	}
@@ -258,7 +259,7 @@ func RunNetlaunch(config *NetLaunchConfig) error {
 	// Wait for something to happen
 	exitError := phonehome.ListenLoop(terminateCtx, result, config.WaitForProvisioning, config.MaxPhonehomeFailures)
 
-	err = server.Shutdown(context.Background())
+	err = server.Shutdown(ctx)
 	if err != nil {
 		log.WithError(err).Errorln("failed to shutdown server")
 	}

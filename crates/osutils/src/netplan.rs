@@ -1,6 +1,7 @@
-use std::fs;
+use std::{fs, path::Path};
 
 use anyhow::{Context, Error};
+use const_format::formatcp;
 use log::debug;
 
 use netplan_types::NetworkConfig;
@@ -9,6 +10,11 @@ use crate::dependencies::Dependency;
 
 /// Path to Trident's netplan config file.
 pub const TRIDENT_NETPLAN_FILE: &str = "/etc/netplan/99-trident.yaml";
+
+/// Path to Trident's temporary backup directory, passed to 'netplan apply'.
+pub const NETPLAN_BACKUP_DIR: &str = "/tmp/netplan_state_backup";
+/// Path to Trident's temporary backup of the netplan config file.
+pub const NETPLAN_BACKUP_FILE: &str = formatcp!("{NETPLAN_BACKUP_DIR}{TRIDENT_NETPLAN_FILE}");
 
 /// Writes the given network configuration to Trident's netplan config file.
 pub fn write(value: &NetworkConfig) -> Result<(), Error> {
@@ -27,7 +33,12 @@ pub fn generate() -> Result<(), Error> {
 /// Executes `netplan apply`.
 pub fn apply() -> Result<(), Error> {
     debug!("Applying netplan config");
-    Dependency::Netplan.cmd().arg("apply").run_and_check()?;
+    Dependency::Netplan
+        .cmd()
+        .arg("apply")
+        .arg("--state")
+        .arg(NETPLAN_BACKUP_DIR)
+        .run_and_check()?;
     Ok(())
 }
 
@@ -40,6 +51,37 @@ fn render_netplan_yaml(value: &NetworkConfig) -> Result<String, Error> {
 
     serde_yaml::to_string(&NetplanConfig { network: value })
         .context("Failed to render netplan yaml")
+}
+
+/// Backs up the current netplan config.
+pub fn backup() -> Result<(), Error> {
+    debug!("Backing up current state of netplan config");
+    // Ensure backup directory is empty beforehand.
+    cleanup_backup()?;
+    // Re-create the directory.
+    if let Some(parent) = Path::new(NETPLAN_BACKUP_FILE).parent() {
+        fs::create_dir_all(parent).with_context(|| {
+            format!(
+                "Failed to create netplan config backup directory at '{}'",
+                parent.display()
+            )
+        })?;
+    }
+    // Copy over existing netplan config if it exists.
+    if fs::exists(TRIDENT_NETPLAN_FILE)? {
+        fs::copy(TRIDENT_NETPLAN_FILE, NETPLAN_BACKUP_FILE).with_context(|| {
+            format!("Failed to back up netplan config from {TRIDENT_NETPLAN_FILE}")
+        })?;
+    }
+    Ok(())
+}
+
+/// Clean up netplan backup directory.
+pub fn cleanup_backup() -> Result<(), Error> {
+    if fs::exists(NETPLAN_BACKUP_DIR)? {
+        fs::remove_dir_all(NETPLAN_BACKUP_DIR)?;
+    }
+    Ok(())
 }
 
 /// Remove Trident's netplan config file.

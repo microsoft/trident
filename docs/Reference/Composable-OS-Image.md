@@ -9,6 +9,7 @@ title: COSI Spec
 
 | Revision            | Spec Date  |
 | ------------------- | ---------- |
+| [1.2](#revision-12) | 2025-12-10 |
 | [1.1](#revision-11) | 2025-05-08 |
 | [1.0](#revision-10) | 2024-10-09 |
 
@@ -99,6 +100,7 @@ The metadata file MUST contain a JSON object with the following fields:
 | `osArch`     | [OsArchitecture](#osarchitecture-enum) | 1.0      | Yes (since 1.0) | The architecture of the OS.                      |
 | `osRelease`  | string                                 | 1.0      | Yes (since 1.0) | The contents of `/etc/os-release` verbatim.      |
 | `images`     | [Filesystem](#filesystem-object)[]     | 1.0      | Yes (since 1.0) | Filesystem metadata.                             |
+| `partitions` | [Partition](#partition-object)[]       | 1.2      | Yes (since 1.2) | Partition metadata.                              |
 | `osPackages` | [OsPackage](#ospackage-object)[]       | 1.0      | Yes (since 1.1) | The list of packages installed in the OS.        |
 | `bootloader` | [Bootloader](#bootloader-object)       | 1.1      | Yes (since 1.1) | Information about the bootloader used by the OS. |
 | `id`         | UUID (string, case insensitive)        | 1.0      | No              | A unique identifier for the COSI file.           |
@@ -155,6 +157,28 @@ device on top of a data device.
 | `compressedSize`   | number | 1.0      | Yes (since 1.0) | Size of the compressed image in bytes.                                                    |
 | `uncompressedSize` | number | 1.0      | Yes (since 1.0) | Size of the raw uncompressed image in bytes.                                              |
 | `sha384`           | string | 1.0      | Yes (since 1.1) | SHA-384 hash of the compressed hash image.                                                |
+
+##### `Partition` Object
+
+`Partition` objects hold the data necessary to recreate partition tables. They
+provide a mapping between each image file and its original partition
+information. Starting in 1.2, each `ImageFile` in the COSI MUST have a
+corresponding `Partition` object. The correspondence between an `ImageFile` and
+a `Partition` object is established by matching their `path` fields: a
+`Partition` object corresponds to the `ImageFile` whose `path` field is
+identical.
+
+The order of `Partition` objects in the `partitions` array is unspecified since
+the `number` field indicates the original ordering.
+
+| Field          | Type   | Added in | Required        | Description                                                                               |
+| -------------- | ------ | -------- | --------------- | ----------------------------------------------------------------------------------------- |
+| `path`         | string | 1.2      | No              | Absolute path of the compressed image file inside the tarball. MUST start with `images/`. |
+| `originalSize` | number | 1.2      | Yes (since 1.2) | Size of the partition before any filesystem shrinking. SHOULD be at least as large as the `uncompressedSize` field of the corresponding `ImageFile` object (matched by `path`). |
+| `partType`     | UUID (string, case insensitive) | 1.2      | Yes (since 1.2) | The partition type UUID.                                         |
+| `partUuid`     | UUID (string, case insensitive) | 1.2      | Yes (since 1.2) | The partition UUID.                                              |
+| `label`        | string | 1.2      | Yes (since 1.2) | Partition label (GPT partition name, may be an empty string).                             |
+| `number`       | number | 1.2      | Yes (since 1.2) | The index where the partition originally appeared in the partition table (1-indexed).     |
 
 ##### `OsArchitecture` Enum
 
@@ -359,6 +383,10 @@ A string that represents the type of the systemd-boot entry.
 ```
 
 ## Changelog
+
+### Revision 1.2
+
+- Added `partitions` field to the root object.
 
 ### Revision 1.1
 

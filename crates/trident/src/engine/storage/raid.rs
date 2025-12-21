@@ -1,6 +1,5 @@
 use std::{
     collections::HashSet,
-    fs,
     path::{Path, PathBuf},
     thread::sleep,
     time::{Duration, Instant},
@@ -9,7 +8,7 @@ use std::{
 use anyhow::{anyhow, bail, Context, Error};
 use log::{debug, info, trace, warn};
 
-use osutils::{block_devices, dependencies::Dependency, mdadm, udevadm};
+use osutils::{block_devices, dependencies::Dependency, files, mdadm, udevadm};
 use trident_api::{
     config::{HostConfiguration, SoftwareRaidArray},
     constants::MDSTAT_PATH,
@@ -57,21 +56,6 @@ fn get_device_paths(ctx: &EngineContext, devices: &[BlockDeviceId]) -> Result<Ve
                 .context(format!("Failed to get block device path for '{device_id}'"))
         })
         .collect()
-}
-
-#[tracing::instrument(name = "raid_configuration", skip_all)]
-pub(super) fn configure(ctx: &EngineContext) -> Result<(), Error> {
-    if !ctx.spec.storage.raid.software.is_empty() {
-        let output = mdadm::examine().context("Failed to examine RAID arrays")?;
-        let mdadm_config_file_path = "/etc/mdadm/mdadm.conf";
-        debug!("Creating mdadm config file '{}'", mdadm_config_file_path);
-        trace!("Contents:\n{}", output);
-        osutils::files::create_file(mdadm_config_file_path)
-            .context("Failed to create mdadm config file")?;
-        fs::write(Path::new(mdadm_config_file_path), output)
-            .context("Failed to write mdadm config file")?;
-    }
-    Ok(())
 }
 
 pub(super) fn get_raid_disks(raid_array: &Path) -> Result<HashSet<PathBuf>, Error> {
@@ -183,23 +167,20 @@ pub(super) fn stop_pre_existing_raid_arrays(host_config: &HostConfiguration) -> 
     Ok(())
 }
 
-#[tracing::instrument(name = "raid_creation", fields(num_raid_arrays = host_config.storage.raid.software.len()), skip_all)]
-pub(super) fn create_sw_raid(
-    ctx: &EngineContext,
-    host_config: &HostConfiguration,
-) -> Result<(), Error> {
-    if !host_config.storage.raid.software.is_empty() {
+#[tracing::instrument(name = "raid_creation", fields(num_raid_arrays = ctx.spec.storage.raid.software.len()), skip_all)]
+pub(super) fn create_sw_raid(ctx: &EngineContext) -> Result<(), Error> {
+    if !ctx.spec.storage.raid.software.is_empty() {
         if !Dependency::Mdadm.exists() {
             bail!("Failed to create software RAID. Mdadm is required for RAID");
         }
-        for software_raid_config in &host_config.storage.raid.software {
+        for software_raid_config in &ctx.spec.storage.raid.software {
             create_sw_raid_array(ctx, software_raid_config).context(format!(
                 "RAID creation failed for '{}'",
                 software_raid_config.name
             ))?;
         }
 
-        if let Some(sync_timeout) = host_config.storage.raid.sync_timeout {
+        if let Some(sync_timeout) = ctx.spec.storage.raid.sync_timeout {
             wait_for_raid_sync(ctx, sync_timeout).context("Failed to wait for RAID sync")?;
         }
 
@@ -239,7 +220,7 @@ fn wait_for_raid_sync(ctx: &EngineContext, sync_timeout: u64) -> Result<(), Erro
     info!("Waiting for RAID arrays to sync");
 
     let start_time = Instant::now();
-    let sync_timeout_secs = std::time::Duration::from_secs(sync_timeout);
+    let sync_timeout_secs = Duration::from_secs(sync_timeout);
 
     // Exponential backoff for sleep duration
     let mut sleep_duration = Duration::from_secs(5);
@@ -273,7 +254,7 @@ fn wait_for_raid_sync(ctx: &EngineContext, sync_timeout: u64) -> Result<(), Erro
             .iter_mut()
             .filter(|(_, sync_status)| *sync_status != "idle")
             .for_each(|(raid_device, sync_status)| {
-                if let Ok(sync_action) = osutils::files::read_file_trim(&PathBuf::from(format!(
+                if let Ok(sync_action) = files::read_file_trim(&PathBuf::from(format!(
                     "/sys/devices/virtual/block/{raid_device}/md/sync_action"
                 ))) {
                     sync_status.clone_from(&sync_action);
@@ -305,7 +286,7 @@ fn wait_for_raid_sync(ctx: &EngineContext, sync_timeout: u64) -> Result<(), Erro
         );
 
         // Log the current RAID sync status
-        let mdstat_output = osutils::files::read_file_trim(&PathBuf::from(MDSTAT_PATH))
+        let mdstat_output = files::read_file_trim(&PathBuf::from(MDSTAT_PATH))
             .context(format!("Failed to read {MDSTAT_PATH}"))?;
         trace!("RAID sync status:\n{}", mdstat_output);
 
@@ -559,7 +540,7 @@ mod functional_test {
 
         partitioning::create_partitions(&mut ctx).unwrap();
 
-        create_sw_raid(&ctx, spec).unwrap();
+        create_sw_raid(&ctx).unwrap();
 
         // Clean up the RAID array
         stop_pre_existing_raid_arrays(spec).unwrap();
@@ -609,7 +590,7 @@ mod functional_test {
 
         partitioning::create_partitions(&mut ctx).unwrap();
 
-        create_sw_raid(&ctx, spec).unwrap();
+        create_sw_raid(&ctx).unwrap();
 
         // Clean up the RAID arrays
         stop_pre_existing_raid_arrays(spec).unwrap();
@@ -660,7 +641,7 @@ mod functional_test {
         partitioning::create_partitions(&mut ctx).unwrap();
 
         assert_eq!(
-            create_sw_raid(&ctx, spec).unwrap_err().to_string(),
+            create_sw_raid(&ctx).unwrap_err().to_string(),
             "Failed to wait for RAID sync"
         );
 

@@ -9,12 +9,15 @@ mod cli;
 use cli::Cli;
 use trident_api::error::TridentError;
 
-/// Trident CLI version
-pub const TRIDENT_CLI_VERSION: &str = env!("CARGO_PKG_VERSION");
+/// Trident version as provided by environment variables at build time
+pub const TRIDENT_VERSION: &str = match option_env!("TRIDENT_VERSION") {
+    Some(v) => v,
+    None => env!("CARGO_PKG_VERSION"),
+};
 
 fn run_trident_cli(_args: &Cli) -> Result<(), TridentError> {
     // Log version
-    info!("Trident CLI version: {}", TRIDENT_CLI_VERSION);
+    info!("Trident CLI version: {}", TRIDENT_VERSION);
 
     // TODO: Handle CLI commands
     Ok(())
