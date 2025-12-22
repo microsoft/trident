@@ -213,6 +213,13 @@ pub(super) fn create_encrypted_devices(ctx: &EngineContext) -> Result<(), Triden
             if Path::new(PCRLOCK_POLICY_JSON_DEFAULT).exists() {
                 fs::remove_file(PCRLOCK_POLICY_JSON_DEFAULT)
                     .structured(ServicingError::RemoveDefaultPcrlockPolicyJson)?;
+
+                // Validate that the file has been removed
+                if Path::new(PCRLOCK_POLICY_JSON_DEFAULT).exists() {
+                    return Err(TridentError::new(
+                        ServicingError::RemoveDefaultPcrlockPolicyJson,
+                    ));
+                }
             }
 
             // If the key file was randomly generated and NOT provided by the user as a
