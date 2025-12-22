@@ -220,6 +220,10 @@ pub(super) fn create_encrypted_devices(ctx: &EngineContext) -> Result<(), Triden
                         ServicingError::RemoveDefaultPcrlockPolicyJson,
                     ));
                 }
+                debug!(
+                    "Removed default pcrlock policy JSON file at '{}'",
+                    PCRLOCK_POLICY_JSON_DEFAULT
+                );
             }
 
             // If the key file was randomly generated and NOT provided by the user as a
