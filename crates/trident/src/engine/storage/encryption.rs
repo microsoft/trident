@@ -208,24 +208,6 @@ pub(super) fn create_encrypted_devices(ctx: &EngineContext) -> Result<(), Triden
                 encrypted_volume: ev.id.clone(),
             })?;
 
-            // TODO: test
-            // If exists, remove file at PCRLOCK_POLICY_JSON_DEFAULT
-            if Path::new(PCRLOCK_POLICY_JSON_DEFAULT).exists() {
-                fs::remove_file(PCRLOCK_POLICY_JSON_DEFAULT)
-                    .structured(ServicingError::RemoveDefaultPcrlockPolicyJson)?;
-
-                // Validate that the file has been removed
-                if Path::new(PCRLOCK_POLICY_JSON_DEFAULT).exists() {
-                    return Err(TridentError::new(
-                        ServicingError::RemoveDefaultPcrlockPolicyJson,
-                    ));
-                }
-                debug!(
-                    "Removed default pcrlock policy JSON file at '{}'",
-                    PCRLOCK_POLICY_JSON_DEFAULT
-                );
-            }
-
             // If the key file was randomly generated and NOT provided by the user as a
             // recovery key, remove the password key slot from the encrypted volume, as it's
             // not needed, for security
@@ -243,6 +225,25 @@ pub(super) fn create_encrypted_devices(ctx: &EngineContext) -> Result<(), Triden
                 })?;
             }
         }
+
+        // TODO: test
+        // If exists, remove file at PCRLOCK_POLICY_JSON_DEFAULT
+        if Path::new(PCRLOCK_POLICY_JSON_DEFAULT).exists() {
+            fs::remove_file(PCRLOCK_POLICY_JSON_DEFAULT)
+                .structured(ServicingError::RemoveDefaultPcrlockPolicyJson)?;
+
+            // Validate that the file has been removed
+            if Path::new(PCRLOCK_POLICY_JSON_DEFAULT).exists() {
+                return Err(TridentError::new(
+                    ServicingError::RemoveDefaultPcrlockPolicyJson,
+                ));
+            }
+            debug!(
+                "Removed default pcrlock policy JSON file at '{}'",
+                PCRLOCK_POLICY_JSON_DEFAULT
+            );
+        }
+
         tracing::Span::current().record("total_partition_size_bytes", total_partition_size_bytes);
     }
 
