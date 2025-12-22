@@ -71,7 +71,7 @@ impl CosiMetadata {
 
                 // Unknown bootloader type is warned about, it may cause issues down the line
                 (BootloaderType::Unknown(bootloader_type), _) => {
-                    log::warn!("Unknown bootloader type: {}", bootloader_type)
+                    warn!("Unknown bootloader type: {}", bootloader_type)
                 }
 
                 // Everything else is OK
