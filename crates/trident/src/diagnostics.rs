@@ -1,14 +1,15 @@
-use anyhow::{anyhow, Error};
-use chrono::Utc;
-use log::{debug, info};
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::{
     collections::BTreeMap,
     fs::{self},
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
+
+use anyhow::{anyhow, Error};
+use chrono::Utc;
+use log::{debug, info};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use lsblk::BlockDevice;
 use osutils::{dependencies::Dependency, findmnt::FindMnt, lsblk, pcrlock, pcrlock::LogOutput};
@@ -28,79 +29,85 @@ const DMI_SYS_VENDOR_FILE: &str = "/sys/class/dmi/id/sys_vendor";
 const DMI_PRODUCT_NAME_FILE: &str = "/sys/class/dmi/id/product_name";
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct DiagnosticsReport {
+#[serde(rename_all = "camelCase")]
+struct DiagnosticsReport {
     /// Timestamp when the report was generated
-    pub timestamp: String,
+    timestamp: String,
     /// Trident version
-    pub version: String,
+    version: String,
     /// Host description (VM/baremetal)
-    pub host_description: HostDescription,
+    host_description: HostDescription,
     /// Host status from the datastore
-    pub host_status: Option<HostStatus>,
+    host_status: Option<HostStatus>,
     /// Collected files metadata
-    pub collected_files: Option<Vec<FileMetadata>>,
+    collected_files: Option<Vec<FileMetadata>>,
     /// Collection failures that occurred during diagnostics gathering
-    pub collection_failures: Vec<CollectionFailure>,
+    collection_failures: Vec<CollectionFailure>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct HostDescription {
+#[serde(rename_all = "camelCase")]
+struct HostDescription {
     /// Whether running in a container
-    pub is_container: bool,
+    is_container: bool,
     /// Whether running on a VM
-    pub is_virtual: bool,
+    is_virtual: bool,
     /// Virtualization type (kvm, vmware, hyperv, etc.)
-    pub virt_type: Option<String>,
+    virt_type: Option<String>,
     /// Platform information
-    pub platform_info: BTreeMap<String, Value>,
+    platform_info: BTreeMap<String, Value>,
     /// Block device information
-    pub blockdev_info: Option<Vec<BlockDevice>>,
+    blockdev_info: Option<Vec<BlockDevice>>,
     /// File system information (from FindMnt)
-    pub mount_info: Option<FindMnt>,
+    mount_info: Option<FindMnt>,
     /// Status of systemd services from configured health checks
-    pub health_check_status: Option<Vec<SystemdServiceStatus>>,
+    health_check_status: Option<Vec<SystemdServiceStatus>>,
     /// TPM 2.0 pcrlock log output
-    pub pcrlock_log: Option<LogOutput>,
+    pcrlock_log: Option<LogOutput>,
     /// Trident service status and journal
-    pub trident_service: TridentServiceDiagnostics,
+    trident_service: TridentServiceDiagnostics,
 }
 
 /// Status information for a systemd service from a health check
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SystemdServiceStatus {
+#[serde(rename_all = "camelCase")]
+struct SystemdServiceStatus {
     /// Name of the systemd service
-    pub service: String,
+    service: String,
     /// Whether the service is active/running
-    pub is_active: bool,
+    is_active: bool,
     /// Output from systemctl status
-    pub status_output: String,
+    status_output: String,
 }
 
 /// Diagnostics for the trident.service systemd unit
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TridentServiceDiagnostics {
+#[serde(rename_all = "camelCase")]
+struct TridentServiceDiagnostics {
     /// Output from systemctl status trident.service
-    pub status: Option<String>,
+    status: Option<String>,
     /// Output from journalctl -u trident.service
-    pub journal: Option<String>,
+    journal: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FileMetadata {
+#[serde(rename_all = "camelCase")]
+struct FileMetadata {
     /// Relative path in the support bundle
-    pub path: PathBuf,
+    path: PathBuf,
     /// Size in bytes
-    pub size_bytes: u64,
+    size_bytes: u64,
     /// Description of what this file contains
-    pub description: String,
+    description: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CollectionFailure {
+#[serde(rename_all = "camelCase")]
+struct CollectionFailure {
     /// What was being collected when the failure occurred
-    pub item: String,
+    item: String,
     /// The error message describing what went wrong
-    pub error: String,
+    error: String,
 }
 
 fn record_failure(
@@ -339,6 +346,68 @@ struct FileToCollect {
     desc: String,
 }
 
+impl FileToCollect {
+    fn new(src: impl Into<PathBuf>, tar_path: impl Into<PathBuf>, desc: impl Into<String>) -> Self {
+        Self {
+            src: src.into(),
+            tar_path: tar_path.into(),
+            desc: desc.into(),
+        }
+    }
+}
+
+fn collect_historical_logs(report: &mut DiagnosticsReport) -> Vec<FileToCollect> {
+    let Some(host_status) = report.host_status.as_ref() else {
+        return Vec::new(); // If no host status we've already recorded the failure
+    };
+
+    let Some(log_dir) = host_status.spec.trident.datastore_path.parent() else {
+        record_failure(
+            &mut report.collection_failures,
+            "historical logs",
+            &anyhow!(
+                "unexpected datastore path when collecting historical logs {})",
+                host_status.spec.trident.datastore_path.display()
+            ),
+        );
+        return Vec::new();
+    };
+
+    let entries = match fs::read_dir(log_dir) {
+        Ok(entries) => entries,
+        Err(e) => {
+            record_failure(
+                &mut report.collection_failures,
+                format!("historical logs directory {}", log_dir.display()),
+                &e,
+            );
+            return Vec::new();
+        }
+    };
+
+    entries
+        .flatten()
+        .filter_map(|entry| {
+            entry
+                .file_name()
+                .into_string()
+                .ok()
+                .map(|name| (entry.path(), name))
+        })
+        .filter(|(_, name)| {
+            name.starts_with("trident-") && (name.ends_with(".log") || name.ends_with(".jsonl"))
+        })
+        .map(|(path, name)| {
+            let desc = if name.contains("metrics") {
+                "Historical Trident metrics from past servicing"
+            } else {
+                "Historical Trident log from past servicing"
+            };
+            FileToCollect::new(path, PathBuf::from("logs/historical").join(&name), desc)
+        })
+        .collect()
+}
+
 /// Package the diagnostics report and associated files into a compressed tarball
 fn create_support_bundle(
     report: &mut DiagnosticsReport,
@@ -439,88 +508,63 @@ pub(crate) fn generate_and_bundle(
 ) -> Result<(), TridentError> {
     let mut report = collect_report();
 
-    let mut files_to_collect = vec![
-        FileToCollect {
-            src: PathBuf::from(TRIDENT_BACKGROUND_LOG_PATH),
-            tar_path: PathBuf::from("logs/trident-full.log"),
-            desc: "Trident execution log".to_string(),
-        },
-        FileToCollect {
-            src: PathBuf::from(TRIDENT_METRICS_FILE_PATH),
-            tar_path: PathBuf::from("logs/trident-metrics.jsonl"),
-            desc: "Trident metrics".to_string(),
-        },
+    let mut files = vec![
+        FileToCollect::new(
+            TRIDENT_BACKGROUND_LOG_PATH,
+            "logs/trident-full.log",
+            "Execution log",
+        ),
+        FileToCollect::new(
+            TRIDENT_METRICS_FILE_PATH,
+            "logs/trident-metrics.jsonl",
+            "Metrics",
+        ),
     ];
 
     // Collect historical metrics and logs from the datastore directory
-    if let Some(log_dir) = report
-        .host_status
-        .as_ref()
-        .and_then(|hs| hs.spec.trident.datastore_path.parent())
-    {
-        if let Ok(entries) = fs::read_dir(log_dir) {
-            for entry in entries.flatten() {
-                if let Ok(file_name) = entry.file_name().into_string() {
-                    if file_name.starts_with("trident-")
-                        && (file_name.ends_with(".log") || file_name.ends_with(".jsonl"))
-                    {
-                        let desc = if file_name.contains("metrics") {
-                            "Historical Trident metrics from past servicing".to_string()
-                        } else {
-                            "Historical Trident log from past servicing".to_string()
-                        };
-                        files_to_collect.push(FileToCollect {
-                            src: entry.path(),
-                            tar_path: PathBuf::from("logs/historical").join(&file_name),
-                            desc,
-                        });
-                    }
-                }
-            }
-        }
-    }
+    files.extend(collect_historical_logs(&mut report));
 
     // Collect datastores
     let paths = get_datastore_paths();
-    files_to_collect.push(FileToCollect {
-        src: paths.default,
-        tar_path: PathBuf::from("datastore.sqlite"),
-        desc: "Default datastore".to_string(),
-    });
-    files_to_collect.push(FileToCollect {
-        src: paths.temporary,
-        tar_path: PathBuf::from("datastore-tmp.sqlite"),
-        desc: "Temporary datastore".to_string(),
-    });
+    files.push(FileToCollect::new(
+        paths.default,
+        "datastore.sqlite",
+        "Default datastore",
+    ));
+    files.push(FileToCollect::new(
+        paths.temporary,
+        "datastore-tmp.sqlite",
+        "Temporary datastore",
+    ));
     if let Some(configured) = paths.configured {
-        files_to_collect.push(FileToCollect {
-            src: configured,
-            tar_path: PathBuf::from("datastore-configured.sqlite"),
-            desc: "Configured datastore".to_string(),
-        });
+        files.push(FileToCollect::new(
+            configured,
+            "datastore-configured.sqlite",
+            "Configured datastore",
+        ));
     }
 
-    files_to_collect.push(FileToCollect {
-        src: PathBuf::from("/etc/fstab"),
-        tar_path: PathBuf::from("files/fstab"),
-        desc: "File system mount configuration (/etc/fstab)".to_string(),
-    });
+    files.push(FileToCollect::new(
+        "/etc/fstab",
+        "files/fstab",
+        "File system mount configuration (/etc/fstab)",
+    ));
 
-    files_to_collect.push(FileToCollect {
-        src: PathBuf::from(pcrlock::PCRLOCK_POLICY_JSON_PATH),
-        tar_path: PathBuf::from("tpm/pcrlock.json"),
-        desc: "TPM 2.0 pcrlock policy (pcrlock.json)".to_string(),
-    });
+    files.push(FileToCollect::new(
+        pcrlock::PCRLOCK_POLICY_JSON_PATH,
+        "tpm/pcrlock.json",
+        "TPM 2.0 pcrlock policy (pcrlock.json)",
+    ));
 
     if selinux {
-        files_to_collect.push(FileToCollect {
-            src: PathBuf::from("/var/log/audit/audit.log"),
-            tar_path: PathBuf::from("selinux/audit.log"),
-            desc: "SELinux audit log".to_string(),
-        });
+        files.push(FileToCollect::new(
+            "/var/log/audit/audit.log",
+            "selinux/audit.log",
+            "SELinux audit log",
+        ));
     }
 
-    create_support_bundle(&mut report, output_path, files_to_collect, full_dump)
+    create_support_bundle(&mut report, output_path, files, full_dump)
         .structured(InternalError::DiagnosticBundleGeneration)?;
     info!("Diagnostics bundle created: {}", output_path.display());
     Ok(())
@@ -528,8 +572,9 @@ pub(crate) fn generate_and_bundle(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use tempfile::tempdir;
+
+    use super::*;
 
     #[test]
     fn test_create_support_bundle() {
@@ -546,16 +591,8 @@ mod tests {
 
         // Create files to collect
         let files_to_collect = vec![
-            FileToCollect {
-                src: file1_path,
-                tar_path: PathBuf::from("subdir/file1"),
-                desc: "First file".to_string(),
-            },
-            FileToCollect {
-                src: file2_path,
-                tar_path: PathBuf::from("file2"),
-                desc: "Second file".to_string(),
-            },
+            FileToCollect::new(file1_path, "subdir/file1", "First file"),
+            FileToCollect::new(file2_path, "file2", "Second file"),
         ];
 
         // Create initial report
@@ -746,11 +783,11 @@ mod tests {
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
-    use super::*;
+    use tempfile::tempdir;
 
     use pytest_gen::functional_test;
 
-    use tempfile::tempdir;
+    use super::*;
 
     #[functional_test]
     fn test_generate_and_bundle() {
