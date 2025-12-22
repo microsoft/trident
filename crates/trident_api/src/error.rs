@@ -578,6 +578,11 @@ pub enum ServicingError {
     #[error("Failed to remove crypttab at path '{crypttab_path}'")]
     RemoveCrypttab { crypttab_path: String },
 
+    #[error(
+        "Failed to remove default pcrlock policy JSON file at '/var/lib/systemd/pcrlock.json'"
+    )]
+    RemoveDefaultPcrlockPolicyJson,
+
     #[error("Failed to remove Netplan config")]
     RemoveNetplanConfig,
 

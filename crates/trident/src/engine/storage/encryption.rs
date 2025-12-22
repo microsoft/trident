@@ -208,6 +208,13 @@ pub(super) fn create_encrypted_devices(ctx: &EngineContext) -> Result<(), Triden
                 encrypted_volume: ev.id.clone(),
             })?;
 
+            // TODO: test
+            // If exists, remove file at PCRLOCK_POLICY_JSON_DEFAULT
+            if Path::new(PCRLOCK_POLICY_JSON_DEFAULT).exists() {
+                fs::remove_file(PCRLOCK_POLICY_JSON_DEFAULT)
+                    .structured(ServicingError::RemoveDefaultPcrlockPolicyJson)?;
+            }
+
             // If the key file was randomly generated and NOT provided by the user as a
             // recovery key, remove the password key slot from the encrypted volume, as it's
             // not needed, for security
@@ -290,13 +297,6 @@ fn encrypt_and_open_device(
     );
 
     encryption::cryptsetup_open(key_file, device_path, device_name)?;
-    // TODO: test
-    // If exists, remove file at PCRLOCK_POLICY_JSON_DEFAULT
-    if Path::new(PCRLOCK_POLICY_JSON_DEFAULT).exists() {
-        fs::remove_file(PCRLOCK_POLICY_JSON_DEFAULT).context(format!(
-            "Failed to remove existing pcrlock policy file at '{PCRLOCK_POLICY_JSON_DEFAULT}'"
-        ))?;
-    }
 
     Ok(())
 }
