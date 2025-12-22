@@ -97,7 +97,7 @@ func VerifyBundleContents(bundlePath string) error {
 		return fmt.Errorf("failed to parse report.json: %w", err)
 	}
 
-	requiredReportFields := []string{"host_status", "host_description", "collected_files"}
+	requiredReportFields := []string{"hostStatus", "hostDescription", "collectedFiles"}
 	var missingReportFields []string
 	for _, field := range requiredReportFields {
 		if _, ok := report[field]; !ok {
