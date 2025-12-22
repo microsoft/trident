@@ -47,6 +47,9 @@ type testVmHostInfo interface {
 
 	// Retrieves the serial log file path of the VM.
 	SerialLogPath() (string, error)
+
+	// Returns the libvirt DOMAIN object for the VM.
+	LvDomain() libvirt.Domain
 }
 
 func (s *TridentE2EScenario) setupTestHost(tc storm.TestCase) error {
@@ -145,6 +148,10 @@ func (t *testHostVirtDeploy) VmInfo() testVmHostInfo {
 
 func (t *testHostVirtDeploy) Lv() *libvirt.Libvirt {
 	return t.lv
+}
+
+func (t *testHostVirtDeploy) LvDomain() libvirt.Domain {
+	return t.vm.Domain
 }
 
 func (t *testHostVirtDeploy) VmUuid() uuid.UUID {

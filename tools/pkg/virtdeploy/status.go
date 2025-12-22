@@ -35,6 +35,9 @@ type VirtDeployVMStatus struct {
 
 	// Full XML definition of the libvirt domain at creation time.
 	Definition *libvirtxml.Domain `json:"-"`
+
+	// Underlying libvirt Domain object
+	Domain libvirt.Domain `json:"-"`
 }
 
 func (v *VirtDeployVMStatus) LibvirtUUID() libvirt.UUID {

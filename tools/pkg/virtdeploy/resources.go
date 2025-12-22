@@ -238,6 +238,7 @@ func (rc *virtDeployResourceConfig) construct() (*VirtDeployStatus, error) {
 			Uuid:       uuid.UUID(vm.domain.UUID),
 			NvramPath:  vm.nvramPath,
 			Definition: vm.domainDefinition,
+			Domain:     vm.domain,
 		}
 	}
 
