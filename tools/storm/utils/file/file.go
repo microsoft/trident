@@ -3,7 +3,9 @@ package file
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -52,4 +54,15 @@ func WaitForFileToExist(ctx context.Context, filePath string) error {
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
+}
+
+func FileExists(filePath string) (bool, error) {
+	_, err := os.Stat(filePath)
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	return false, err
 }

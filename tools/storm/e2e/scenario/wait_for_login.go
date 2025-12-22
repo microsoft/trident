@@ -2,59 +2,104 @@ package scenario
 
 import (
 	"bufio"
-	"bytes"
 	"container/ring"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/microsoft/storm"
 	"github.com/microsoft/storm/pkg/storm/utils"
 	"github.com/sirupsen/logrus"
 
+	"tridenttools/pkg/ref"
+	"tridenttools/storm/utils/file"
 	fileutils "tridenttools/storm/utils/file"
 )
 
-// Watch VM serial log and wait for login prompt to appear.
-func (s *TridentE2EScenario) waitForLoginVm(tc storm.TestCase) error {
-	// Double check that this is a VM scenario
+// spawnVMSerialLogger starts the VM serial logger for the test host IF it is a
+// VM, and logs the output. This function will attempt to delete any
+// pre-existing log file before starting the logger to ensure a clean log, so IT
+// MUST BE CALLED BEFORE THE VM IS STARTED.
+//
+// The output of the serial logger will be written to the provided
+// io.WriteCloser. The WriteCloser will be closed when the logger exits.
+//
+// If the hardware type is not VM, this function is a no-op and returns nil.
+//
+// If an error occurs while starting the logger, that error is returned.
+//
+// The returned channel can be used to wait for the logger to finish by waiting
+// on it for a value. The channel will be closed once the logger has finished.
+// If the logger doesn't run (because the hardware type is not VM), the channel will be
+//
+// The logger will run until the context is cancelled or the login prompt is
+// detected.
+func (s *TridentE2EScenario) spawnVMSerialMonitor(ctx context.Context, output io.WriteCloser) (<-chan bool, error) {
+	doneChannel := make(chan bool)
+	var wg sync.WaitGroup
+
+	// On exit, wait for the waitgroup to finish and then send a value on the
+	// done channel and close it.
+	defer func() {
+		go func() {
+			wg.Wait()
+			doneChannel <- true
+			close(doneChannel)
+		}()
+	}()
+
+	// Only spawn the VM serial logger if the hardware type is VM. Otherwise, do
+	// nothing.
 	if s.hardware != HardwareTypeVM {
-		tc.Skip("not a VM test scenario")
+		return doneChannel, nil
 	}
 
+	// Get VM info
 	vmInfo := s.testHost.VmInfo()
-	if vmInfo == nil {
-		return fmt.Errorf("test host VM info is nil")
+	if ref.IsNilInterface(vmInfo) {
+		return doneChannel, fmt.Errorf("vm host info not set")
 	}
 
-	vmSerialLog, err := vmInfo.SerialLogPath()
+	serialLogPath, err := vmInfo.SerialLogPath()
 	if err != nil {
-		tc.Error(err)
+		return doneChannel, fmt.Errorf("failed to get serial log path: %w", err)
 	}
 
-	// Wait for login prompt in the serial log
-	logrus.Infof("Waiting for login prompt in VM serial log...")
-
-	// err := stormutils.WaitForLoginMessageInSerialLog(vmSerialLog, true, 1, fmt.Sprintf("%s/serial.log", h.args.ArtifactsFolder), time.Minute*5)
-	// if err != nil {
-	// 	tc.FailFromError(err)
-	// 	return err
-	// }
-
-	var buf bytes.Buffer
-
-	err = waitForVmSerialLogLogin(tc, vmSerialLog, time.Duration(s.args.VmWaitForLoginTimeout)*time.Second, &buf)
+	exists, err := file.FileExists(serialLogPath)
 	if err != nil {
-		return err
+		return doneChannel, fmt.Errorf("failed to check if serial log file exists: %w", err)
+	}
+	if exists {
+		// Delete pre-existing serial log file to ensure a clean log
+		err := os.Remove(serialLogPath)
+		if err != nil {
+			return doneChannel, fmt.Errorf("failed to delete pre-existing VM serial log file: %w", err)
+		}
 	}
 
-	tc.ArtifactBroker().PublishArtifactData(fmt.Sprintf("%s/serial.log", tc.Name()), buf.Bytes())
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer output.Close()
+		err := waitForVmSerialLogLogin(ctx, serialLogPath, output)
+		if err != nil {
+			if errors.Is(err, fs.ErrPermission) {
+				err = fmt.Errorf("permission denied when accessing VM serial log file (are you missing sudo?): %w", err)
+			}
+			errStr := fmt.Sprintf("VM serial log monitor ended with error: %v", err)
+			logrus.Error(errStr)
+			output.Write([]byte(fmt.Sprintf("ERROR: %s", errStr)))
+		} else {
+			logrus.Infof("VM serial log monitor ended successfully")
+		}
+	}()
 
-	return nil
+	return doneChannel, nil
 }
 
 // Wait for the VM serial log file to be created.
@@ -67,13 +112,9 @@ func (s *TridentE2EScenario) waitForLoginVm(tc storm.TestCase) error {
 //
 // If the login prompt never appears, this indicates a problem with the VM booting
 // and the test case will be marked as failed.
-func waitForVmSerialLogLogin(tc storm.TestCase, vmSerialLog string, timeout time.Duration, out io.Writer) error {
-	// Create a context that timeouts after VmWaitForLoginTimeout seconds
-	ctx, cancel := context.WithTimeout(tc.Context(), timeout)
-	defer cancel()
-
+func waitForVmSerialLogLogin(ctx context.Context, vmSerialLog string, out io.Writer) error {
 	// Create a ring buffer to hold the last 10 lines of the serial log
-	ringSize := 20
+	ringSize := 25
 	ring := ring.New(ringSize)
 
 	// Wait for serial log file to exist
@@ -82,6 +123,8 @@ func waitForVmSerialLogLogin(tc storm.TestCase, vmSerialLog string, timeout time
 		// If the file was never created there is an infra error
 		return fmt.Errorf("failed to find VM serial log file: %w", err)
 	}
+
+	logrus.WithField("serialLog", vmSerialLog).Debugf("Serial log file found, starting serial monitor...")
 
 	// Open serial log file for reading
 	file, err := os.Open(vmSerialLog)
@@ -95,7 +138,7 @@ func waitForVmSerialLogLogin(tc storm.TestCase, vmSerialLog string, timeout time
 	for {
 		if ctx.Err() != nil {
 			// Print the last 10 lines of the serial log before timing out
-			logrus.Errorf("Last {} lines of VM serial log before timeout:\n", ringSize, func() string {
+			logrus.Errorf("VM serial monitor was cancelled. Last %d lines of VM serial log before timeout:\n%s", ringSize, func() string {
 				var sb strings.Builder
 				ring.Do(func(p interface{}) {
 					if p != nil {
@@ -105,7 +148,7 @@ func waitForVmSerialLogLogin(tc storm.TestCase, vmSerialLog string, timeout time
 				return sb.String()
 			}())
 
-			tc.Fail("timed out waiting for login prompt in serial log")
+			return ctx.Err()
 		}
 
 		// Check if the current line contains the login prompt, and return if it does
@@ -122,7 +165,7 @@ func waitForVmSerialLogLogin(tc storm.TestCase, vmSerialLog string, timeout time
 			time.Sleep(100 * time.Millisecond)
 			continue
 		} else if err != nil {
-			tc.Error(fmt.Errorf("failed to read from serial log: %w", err))
+			return fmt.Errorf("failed to read from serial log file: %w", err)
 		}
 
 		runeStr := string(readRune)
