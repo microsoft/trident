@@ -3371,6 +3371,7 @@ dependencies = [
  "tar",
  "tempfile",
  "tera",
+ "thiserror 1.0.69",
  "tokio",
  "tracing",
  "tracing-subscriber",
