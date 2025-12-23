@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/digitalocean/go-libvirt"
-	"github.com/microsoft/storm/pkg/storm/utils"
+	stormutils "github.com/microsoft/storm/pkg/storm/utils"
 	"github.com/sirupsen/logrus"
 
 	"tridenttools/pkg/ref"
@@ -151,6 +151,18 @@ func waitForVmSerialLogLoginLibvirt(ctx context.Context, lv *libvirt.Libvirt, do
 	pr.Close()
 	pw.Close()
 
+	// Even after we close all of this, the DomainOpenConsole goroutine may
+	// still be running because it doesn't take in a context, and only seems to
+	// register the channel closing when it tries to write, so we need to force
+	// the VM to write something to the console to induce the error from the
+	// pipe being closed. We do this by sending a quick tap of the ENTER key.
+	// Value `28` is KEY_ENTER, 1 ms duration. Source:
+	// https://github.com/torvalds/linux/blob/master/include/uapi/linux/input-event-codes.h
+	tapErr := lv.DomainSendKey(dom, uint32(libvirt.KeycodeSetLinux), 1, []uint32{28}, 0)
+	if tapErr != nil {
+		logrus.Warnf("failed to send ENTER key to VM to unblock serial monitor: %v", tapErr)
+	}
+
 	// Wait for DomainOpenConsole goroutine to exit
 	wg.Wait()
 
@@ -216,7 +228,7 @@ func readerLoop(ctx context.Context, in io.Reader, errCh <-chan error, out io.Wr
 			ring = ring.Next()
 
 			// Output the line to the provided writer
-			out.Write([]byte(utils.RemoveAllANSI(lineBuffer) + "\n"))
+			out.Write([]byte(stormutils.RemoveAllANSI(lineBuffer) + "\n"))
 			// New line, reset line buffer
 			lineBuffer = ""
 		} else {
