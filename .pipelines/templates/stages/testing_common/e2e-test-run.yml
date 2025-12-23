@@ -111,6 +111,44 @@ steps:
       displayNameSpecifier: "clean install of target OS"
       artifactName: "junit_for_trident_clean_install"
 
+  # Run runtime update in OS A
+  - bash: |
+      set -eux
+      # If there is a netlisten process, kill it so there is no port clash in the instance
+      if pgrep netlisten > /dev/null; then pkill netlisten; fi
+
+      NETLISTEN_CONFIG_ARGS=""
+      if [ -n "${{ parameters.netlistenConfigFile }}" ]; then
+        NETLISTEN_CONFIG_ARGS="--config ${{ parameters.netlistenConfigFile }}"
+      fi
+
+      ./bin/netlisten --force-color $NETLISTEN_CONFIG_ARGS \
+          -m $(Build.SourcesDirectory)/trident-ab-update-metrics-target-os-A.jsonl \
+          --full-logstream ./logstream-full.log \
+          -s "${{ parameters.artifactsDirectory }}" \
+          -p ${{ parameters.netlistenPort }} > ./stage-finalize-runtime-update-os-B.log 2>&1 &
+
+      PROXY_ARG=""
+      if [ -n "${{ parameters.httpsProxy }}" ]; then
+        PROXY_ARG="--env-vars HTTPS_PROXY=${{ parameters.httpsProxy }}"
+      fi
+
+      echo "Running script to stage and finalize runtime update..."
+      ./bin/storm-trident helper runtime-update \
+          "${{ parameters.sshKeyPath }}" \
+          "${{ parameters.hostIp }}" \
+          "${{ parameters.userName }}" \
+          "${{ parameters.runtimeEnv }}" \
+          --trident-config $(tridentConfigFile) \
+          --stage-runtime-update \
+          --finalize-runtime-update \
+          $PROXY_ARG
+
+    timeoutInMinutes: 15
+    workingDirectory: $(Build.SourcesDirectory)
+    displayName: "🔄 Stage and finalize runtime update in OS B"
+    condition: succeeded()
+
   # Check if Trident config requires A/B update testing.
   # If it does, initialize the variables for active volume and image version.
   - bash: |
@@ -278,44 +316,6 @@ steps:
       netlistenPort: ${{ parameters.netlistenPort }}
       netlistenConfigFile: ${{ parameters.netlistenConfigFile }}
       httpsProxy: ${{ parameters.httpsProxy }}
-
-  # Run runtime update in OS B
-  - bash: |
-      set -eux
-      # If there is a netlisten process, kill it so there is no port clash in the instance
-      if pgrep netlisten > /dev/null; then pkill netlisten; fi
-
-      NETLISTEN_CONFIG_ARGS=""
-      if [ -n "${{ parameters.netlistenConfigFile }}" ]; then
-        NETLISTEN_CONFIG_ARGS="--config ${{ parameters.netlistenConfigFile }}"
-      fi
-
-      ./bin/netlisten --force-color $NETLISTEN_CONFIG_ARGS \
-          -m $(Build.SourcesDirectory)/trident-ab-update-metrics-target-os-A.jsonl \
-          --full-logstream ./logstream-full.log \
-          -s "${{ parameters.artifactsDirectory }}" \
-          -p ${{ parameters.netlistenPort }} > ./stage-finalize-runtime-update-os-B.log 2>&1 &
-
-      PROXY_ARG=""
-      if [ -n "${{ parameters.httpsProxy }}" ]; then
-        PROXY_ARG="--env-vars HTTPS_PROXY=${{ parameters.httpsProxy }}"
-      fi
-
-      echo "Running script to stage and finalize runtime update..."
-      ./bin/storm-trident helper runtime-update \
-          "${{ parameters.sshKeyPath }}" \
-          "${{ parameters.hostIp }}" \
-          "${{ parameters.userName }}" \
-          "${{ parameters.runtimeEnv }}" \
-          --trident-config $(tridentConfigFile) \
-          --stage-runtime-update \
-          --finalize-runtime-update \
-          $PROXY_ARG
-
-    timeoutInMinutes: 15
-    workingDirectory: $(Build.SourcesDirectory)
-    displayName: "🔄 Stage and finalize runtime update in OS B"
-    condition: succeeded()
 
   # Run A/B update from servicing OS B into target OS A.
   - bash: |
