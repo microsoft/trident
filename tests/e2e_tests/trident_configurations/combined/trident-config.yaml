@@ -158,7 +158,7 @@ storage:
       source: new
       mountPoint:
         path: /web
-        options: defaults,nofail,x-systemd.device-timeout=4,x-systemd.requires=var-lib-trident.mount,x-systemd.after=var-lib-trident.mount
+        options: defaults,x-systemd.device-timeout=4,x-systemd.requires=var-lib-trident.mount,x-systemd.after=var-lib-trident.mount
     - deviceId: trident
       source: new
       mountPoint: /var/lib/trident
