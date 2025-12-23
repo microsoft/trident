@@ -18,6 +18,8 @@ stages:
         steps:
           - bash: |
               set -eux
+              ls
+              ls ..
               ./bin/storm-trident script build-extension-images --build-sysexts --num-clones 3
 
             displayName: "Build test sysext and confext images"
