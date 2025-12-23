@@ -1,3 +1,8 @@
+parameters:
+  - name: toolsDirectory
+    type: string
+    default: "$(Build.SourcesDirectory)/bin"
+
 stages:
   - stage: BuildTestExtensionImages
     displayName: Build Test Sysext and Confext Images
@@ -16,10 +21,20 @@ stages:
           BASEIMG_AZURE_LINUX_VERSION: "3.0"
 
         steps:
+          - task: DownloadPipelineArtifact@2
+            displayName: "Download go-tools"
+            inputs:
+              buildType: current
+              artifactName: "go-tools"
+              patterns: |
+                storm-trident
+              targetPath: "${{ parameters.toolsDirectory }}"
+
           - bash: |
               set -eux
               ls
-              ls ..
+              # Set tools to be executable
+              chmod +x ${{ parameters.toolsDirectory }}/storm-trident
               ./bin/storm-trident script build-extension-images --build-sysexts --num-clones 3
 
             displayName: "Build test sysext and confext images"
