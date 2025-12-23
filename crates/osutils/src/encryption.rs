@@ -8,7 +8,7 @@ use anyhow::{Context, Error};
 use enumflags2::BitFlags;
 use log::debug;
 
-use crate::{dependencies::Dependency, pcrlock::PCRLOCK_POLICY_JSON_PATH};
+use crate::dependencies::Dependency;
 use sysdefs::tpm2::Pcr;
 use trident_api::constants::LUKS_HEADER_SIZE_IN_MIB;
 
@@ -34,6 +34,7 @@ pub fn systemd_cryptenroll(
     key_file: impl AsRef<Path>,
     device_path: impl AsRef<Path>,
     pcrs: Option<BitFlags<Pcr>>,
+    pcrlock_policy_path: Option<&Path>,
 ) -> Result<(), Error> {
     debug!(
         "Enrolling TPM 2.0 device for underlying encrypted volume '{}'",
@@ -50,8 +51,9 @@ pub fn systemd_cryptenroll(
     // against a pcrlock policy.
     if let Some(pcrs) = pcrs {
         cmd.arg(to_tpm2_pcrs_arg(pcrs));
-    } else {
-        cmd.arg(format!("--tpm2-pcrlock={PCRLOCK_POLICY_JSON_PATH}"));
+    } else if let Some(pcrlock_policy_path) = pcrlock_policy_path {
+        // TODO: ADJUST PATH FOR CONTAINER!
+        cmd.arg(format!("--tpm2-pcrlock={}", pcrlock_policy_path.display()));
     }
 
     cmd.run_and_check().context(format!(
@@ -178,6 +180,12 @@ pub fn cryptsetup_open(
     device_path: impl AsRef<Path>,
     device_name: &str,
 ) -> Result<(), Error> {
+    debug!(
+        "Opening underlying encrypted device '{}' as '{}'",
+        device_path.as_ref().display(),
+        device_name
+    );
+
     Dependency::Cryptsetup
         .cmd()
         .arg("luksOpen")
@@ -337,6 +345,7 @@ mod functional_test {
 
     use pytest_gen::functional_test;
     use sysdefs::partition_types::DiscoverablePartitionType;
+    use trident_api::constants::TRIDENT_DATASTORE_PATH_DEFAULT;
 
     use crate::{
         filesystems::MkfsFileSystemType,
@@ -416,10 +425,19 @@ mod functional_test {
         copy_static_pcrlock_files();
         // Generate a pcrlock policy that only includes PCR 0
         let pcrs = BitFlags::from(Pcr::Pcr0);
-        pcrlock::generate_pcrlock_policy(pcrs, vec![], vec![]).unwrap();
+        let pcrlock_policy_path =
+            pcrlock::construct_pcrlock_path(Path::new(TRIDENT_DATASTORE_PATH_DEFAULT), None)
+                .unwrap();
+        pcrlock::generate_pcrlock_policy(pcrs, &pcrlock_policy_path, vec![], vec![]).unwrap();
 
         // Run `systemd-cryptenroll` on the partition
-        systemd_cryptenroll(key_file_path, &partition1.node, None).unwrap();
+        systemd_cryptenroll(
+            key_file_path,
+            &partition1.node,
+            None,
+            Some(&pcrlock_policy_path),
+        )
+        .unwrap();
 
         // Open the encrypted volume, to make the block device available
         cryptsetup_open(key_file_path, &partition1.node, ENCRYPTED_VOLUME_NAME).unwrap();
@@ -558,10 +576,19 @@ mod functional_test {
         copy_static_pcrlock_files();
         // Generate a pcrlock policy that only includes PCR 0
         let pcrs = BitFlags::from(Pcr::Pcr0);
-        pcrlock::generate_pcrlock_policy(pcrs, vec![], vec![]).unwrap();
+        let pcrlock_policy_path =
+            pcrlock::construct_pcrlock_path(Path::new(TRIDENT_DATASTORE_PATH_DEFAULT), None)
+                .unwrap();
+        pcrlock::generate_pcrlock_policy(pcrs, &pcrlock_policy_path, vec![], vec![]).unwrap();
 
         // Run `systemd-cryptenroll` on the partition
-        systemd_cryptenroll(key_file_path, &partition1.node, None).unwrap();
+        systemd_cryptenroll(
+            key_file_path,
+            &partition1.node,
+            None,
+            Some(&pcrlock_policy_path),
+        )
+        .unwrap();
 
         // Open the encrypted volume, to make the block device available
         cryptsetup_open(key_file_path, &partition1.node, ENCRYPTED_VOLUME_NAME).unwrap();

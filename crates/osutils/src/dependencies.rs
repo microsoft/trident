@@ -1,7 +1,7 @@
 use std::{
     borrow::Cow,
     ffi::{OsStr, OsString},
-    io,
+    fmt, io,
     os::unix::process::ExitStatusExt,
     path::PathBuf,
     process::{Command as StdCommand, Output},
@@ -149,8 +149,8 @@ pub enum Dependency {
     False,
 }
 
-impl std::fmt::Display for Dependency {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for Dependency {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.into())
     }
 }
@@ -259,6 +259,12 @@ impl Command {
 
     pub fn output_and_check(&self) -> Result<String, Box<DependencyError>> {
         self.output()?.check_output()
+    }
+
+    pub fn output_and_stderr_and_check(&self) -> Result<(String, String), Box<DependencyError>> {
+        let output = self.output()?;
+        let stdout = output.check_output()?;
+        Ok((stdout, output.error_output()))
     }
 
     pub fn raw_output_and_check(&self) -> Result<Output, Box<DependencyError>> {

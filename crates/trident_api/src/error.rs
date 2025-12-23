@@ -363,6 +363,9 @@ pub enum ServicingError {
         explanation: String,
     },
 
+    #[error("Failed to construct pcrlock policy path in directory adjacent to the datastore")]
+    ConstructPcrlockPolicyPath,
+
     #[error("Failed to create extension image directories on target OS")]
     CreateExtensionImageDirectories,
 
@@ -538,6 +541,9 @@ pub enum ServicingError {
     #[error("Failed to parse non-Unicode path '{path}'")]
     PathIsNotUnicode { path: String },
 
+    #[error("Failed to persist pcrlock policy from '{path}' to '{destination}'")]
+    PersistPcrlockPolicy { path: String, destination: String },
+
     #[error("Failed to do a read operation with efibootmgr")]
     ReadEfibootmgr,
 
@@ -564,6 +570,11 @@ pub enum ServicingError {
 
     #[error("Failed to remove crypttab at path '{crypttab_path}'")]
     RemoveCrypttab { crypttab_path: String },
+
+    #[error(
+        "Failed to remove default pcrlock policy JSON file at '/var/lib/systemd/pcrlock.json'"
+    )]
+    RemoveDefaultPcrlockPolicyJson,
 
     #[error("Failed to remove Netplan config")]
     RemoveNetplanConfig,

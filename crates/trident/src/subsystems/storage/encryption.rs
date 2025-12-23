@@ -7,10 +7,7 @@ use std::{
 use enumflags2::BitFlags;
 use log::{debug, info, trace};
 
-use osutils::{
-    container, efivar, encryption as osutils_encryption, files, path,
-    pcrlock::{self, PCRLOCK_POLICY_JSON_PATH},
-};
+use osutils::{container, efivar, encryption as osutils_encryption, files, path, pcrlock};
 use sysdefs::tpm2::Pcr;
 use trident_api::{
     config::{
@@ -177,6 +174,11 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
             }
         };
 
+        // Construct full path to pcrlock policy JSON file
+        let pcrlock_policy_path =
+            pcrlock::construct_pcrlock_path(&ctx.spec.trident.datastore_path, None)
+                .structured(ServicingError::ConstructPcrlockPolicyPath)?;
+
         // If updated PCRs are specified, re-generate pcrlock policy
         if let Some(pcrs) = updated_pcrs {
             debug!(
@@ -189,20 +191,25 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                     .structured(ServicingError::GetBinaryPathsForPcrlockEncryption)?;
 
             // Re-generate pcrlock policy
-            pcrlock::generate_pcrlock_policy(pcrs, uki_binaries, bootloader_binaries)?;
+            pcrlock::generate_pcrlock_policy(
+                pcrs,
+                &pcrlock_policy_path,
+                uki_binaries,
+                bootloader_binaries,
+            )?;
         }
 
         // If a pcrlock policy JSON file exists, copy it to the update volume
-        if Path::new(PCRLOCK_POLICY_JSON_PATH).exists() {
-            let pcrlock_json_copy = path::join_relative(mount_path, PCRLOCK_POLICY_JSON_PATH);
+        if pcrlock_policy_path.exists() {
+            let pcrlock_json_copy = path::join_relative(mount_path, &pcrlock_policy_path);
             debug!(
                 "Copying pcrlock policy JSON from path '{}' to update volume at path '{}'",
-                PCRLOCK_POLICY_JSON_PATH,
+                pcrlock_policy_path.display(),
                 pcrlock_json_copy.display()
             );
-            fs::copy(PCRLOCK_POLICY_JSON_PATH, pcrlock_json_copy.clone()).structured(
+            fs::copy(&pcrlock_policy_path, pcrlock_json_copy.clone()).structured(
                 ServicingError::CopyPcrlockPolicyJson {
-                    path: PCRLOCK_POLICY_JSON_PATH.to_string(),
+                    path: pcrlock_policy_path.display().to_string(),
                     destination: pcrlock_json_copy.display().to_string(),
                 },
             )?;
@@ -217,54 +224,67 @@ pub fn configure(ctx: &EngineContext) -> Result<(), TridentError> {
     let path = PathBuf::from(CRYPTTAB_PATH);
     let mut contents = String::new();
 
-    let Some(ref encryption) = ctx.spec.storage.encryption else {
-        return Ok(());
-    };
-
-    for ev in encryption.volumes.iter() {
-        let backing_partition =
-            ctx.get_first_backing_partition(&ev.device_id)
-                .structured(InvalidInputError::from(
+    if let Some(ref encryption) = ctx.spec.storage.encryption {
+        for ev in encryption.volumes.iter() {
+            let backing_partition = ctx.get_first_backing_partition(&ev.device_id).structured(
+                InvalidInputError::from(
                     HostConfigurationStaticValidationError::EncryptedVolumeNotPartitionOrRaid {
                         encrypted_volume: ev.id.clone(),
                     },
-                ))?;
-        let device_path = &ctx.get_block_device_path(&ev.device_id).structured(
-            ServicingError::FindEncryptedVolumeBlockDevice {
-                device_id: ev.device_id.clone(),
-                encrypted_volume: ev.id.clone(),
-            },
-        )?;
+                ),
+            )?;
+            let device_path = &ctx.get_block_device_path(&ev.device_id).structured(
+                ServicingError::FindEncryptedVolumeBlockDevice {
+                    device_id: ev.device_id.clone(),
+                    encrypted_volume: ev.id.clone(),
+                },
+            )?;
 
-        // An encrypted swap device is special-cased in the crypttab due to the unique nature and
-        // requirements of swap spaces in a Linux system. Since it often contains sensitive data
-        // temporarily stored in RAM, encrypting it is crucial for security. However, unlike the
-        // regular partitions, which use TPM 2.0 devices for passwordless startup, systemd
-        // completely wipes the swap device and formats it on each system startup.
-        //
-        // For systemd to do this, it needs a key, and here in the crypttab, the swap device is
-        // configured with a randomly generated key from `/dev/random`. This is the most reliable
-        // way to generate a truly random key on Linux systems.
-        //
-        // The default cipher (aes-cbc-essiv:sha256) and key size (256) are not used here, to
-        // enhance the security posture of the swap space and align it with the rest of the
-        // encrypted devices.
-        if backing_partition.partition_type == PartitionType::Swap {
-            contents.push_str(&format!(
-                "{}\t{}\t{}\tluks,swap,cipher={},size={}\n",
-                ev.device_name,
-                device_path.display(),
-                osutils_encryption::DEV_RANDOM_PATH,
-                osutils_encryption::CIPHER,
-                osutils_encryption::KEY_SIZE
-            ));
-        } else {
-            contents.push_str(&format!(
-                "{}\t{}\t{}\tluks,tpm2-device=auto\n",
-                ev.device_name,
-                device_path.display(),
-                "none"
-            ));
+            // Build options
+            let options = if ctx.is_uki()? {
+                // Construct full path to pcrlock policy JSON file
+                let pcrlock_policy_path =
+                    pcrlock::construct_pcrlock_path(&ctx.spec.trident.datastore_path, None)
+                        .structured(ServicingError::ConstructPcrlockPolicyPath)?;
+                format!(
+                    "luks,tpm2-device=auto,tpm2-pcrlock={}",
+                    pcrlock_policy_path.display()
+                )
+            } else {
+                "luks,tpm2-device=auto".to_string()
+            };
+
+            // An encrypted swap device is special-cased in the crypttab due to the unique nature and
+            // requirements of swap spaces in a Linux system. Since it often contains sensitive data
+            // temporarily stored in RAM, encrypting it is crucial for security. However, unlike the
+            // regular partitions, which use TPM 2.0 devices for passwordless startup, systemd
+            // completely wipes the swap device and formats it on each system startup.
+            //
+            // For systemd to do this, it needs a key, and here in the crypttab, the swap device is
+            // configured with a randomly generated key from `/dev/random`. This is the most reliable
+            // way to generate a truly random key on Linux systems.
+            //
+            // The default cipher (aes-cbc-essiv:sha256) and key size (256) are not used here, to
+            // enhance the security posture of the swap space and align it with the rest of the
+            // encrypted devices.
+            if backing_partition.partition_type == PartitionType::Swap {
+                contents.push_str(&format!(
+                    "{}\t{}\t{}\tluks,swap,cipher={},size={}\n",
+                    ev.device_name,
+                    device_path.display(),
+                    osutils_encryption::DEV_RANDOM_PATH,
+                    osutils_encryption::CIPHER,
+                    osutils_encryption::KEY_SIZE
+                ));
+            } else {
+                contents.push_str(&format!(
+                    "{}\t{}\t{}\t{}\n",
+                    ev.device_name,
+                    device_path.display(),
+                    "none",
+                    options
+                ));
+            }
         }
     }
 
