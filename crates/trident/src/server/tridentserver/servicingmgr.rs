@@ -94,14 +94,16 @@ impl ServicingManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use std::time::Duration;
+
     use tokio::time;
 
     #[tokio::test]
     async fn test_servicing_manager_new() {
         let manager = ServicingManager::new();
         // Manager should be created successfully
-        assert!(format!("{:?}", manager).contains("ServicingManager"));
+        assert!(format!("{manager:?}").contains("ServicingManager"));
     }
 
     #[tokio::test]

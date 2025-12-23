@@ -127,7 +127,9 @@ fn set_up_listener() -> AnyhowRes<UnixListener> {
         );
         fds::get_listener_from_fd(sd_listener_fd)?
     } else {
-        debug!("No systemd socket activation detected, binding to default socket path");
+        debug!(
+            "No systemd socket activation detected, binding to default socket path: {DEFAULT_TRIDENT_SOCKET_PATH}"
+        );
         fds::create_unix_socket(DEFAULT_TRIDENT_SOCKET_PATH, Mode::from_bits_truncate(0o600))?
     };
 
