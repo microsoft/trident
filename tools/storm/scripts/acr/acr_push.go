@@ -13,7 +13,7 @@ import (
 
 // Define AcrPushScript
 type AcrPushScript struct {
-	Config                string   `help:"Trident configuration's name (e.g., 'extensions')" enum:"misc,extensions"`
+	Config                string   `help:"Trident configuration's name (e.g., 'extensions')" enum:"misc,extensions,none" default:"none"`
 	DeploymentEnvironment string   `help:"Deployment environment (virtualMachine or bareMetal)" enum:"virtualMachine,bareMetal"`
 	AcrName               string   `required:"" help:"Azure Container Registry name"`
 	RepoName              string   `required:"" help:"Repository name in ACR"`
