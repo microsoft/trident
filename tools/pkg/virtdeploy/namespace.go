@@ -23,10 +23,6 @@ func (n namespace) nvramPoolName() string {
 	return string(n) + "-nvram-pool"
 }
 
-func (n namespace) serialPoolName() string {
-	return string(n) + "-serial-pool"
-}
-
 func (n namespace) vmName(index int) string {
 	return string(n) + "-vm-" + fmt.Sprintf("%d", index)
 }

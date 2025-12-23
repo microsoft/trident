@@ -201,16 +201,15 @@ func (vm *VirtDeployVM) asXml(network *virtDeployNetwork, nvramPool storagePool)
 					},
 				},
 				Target: &libvirtxml.DomainSerialTarget{Port: new(uint)},
-				Log:    &libvirtxml.DomainChardevLog{File: fmt.Sprintf("/tmp/%s-serial.log", vm.name), Append: "off"},
+				Log:    &libvirtxml.DomainChardevLog{File: fmt.Sprintf("/tmp/%s-serial0.log", vm.name), Append: "off"},
 			}},
 			TPMs: tpms,
 		},
 	}
 
-	domainXML, err := dom.Marshal()
+	xml, err := dom.Marshal()
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal domain XML: %w", err)
+		return "", fmt.Errorf("marshal domain to XML: %w", err)
 	}
-
-	return domainXML, nil
+	return xml, nil
 }
