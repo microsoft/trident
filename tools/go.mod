@@ -4,8 +4,6 @@ go 1.24.0
 
 toolchain go1.24.2
 
-replace github.com/microsoft/storm => ../../storm
-
 require (
 	github.com/bmc-toolbox/bmclib/v2 v2.0.1-0.20230530141715-da28e42c453f
 	github.com/digitalocean/go-libvirt v0.0.0-20250512231903-57024326652b
