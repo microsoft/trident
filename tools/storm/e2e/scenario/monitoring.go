@@ -199,7 +199,7 @@ func readerLoop(ctx context.Context, in io.Reader, errCh <-chan error, out io.Wr
 				err = fmt.Errorf("libvirt console stream ended with error: %w", err)
 			}
 			logrus.Infof("Libvirt console stream ended")
-			return nil
+			return err
 		default:
 			// Continue reading
 		}
@@ -228,7 +228,11 @@ func readerLoop(ctx context.Context, in io.Reader, errCh <-chan error, out io.Wr
 			ring = ring.Next()
 
 			// Output the line to the provided writer
-			out.Write([]byte(stormutils.RemoveAllANSI(lineBuffer) + "\n"))
+			_, err := out.Write([]byte(stormutils.RemoveAllANSI(lineBuffer) + "\n"))
+			if err != nil {
+				return fmt.Errorf("failed to write serial log output: %w", err)
+			}
+
 			// New line, reset line buffer
 			lineBuffer = ""
 		} else {
