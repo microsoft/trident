@@ -87,10 +87,10 @@ func (s *TridentE2EScenario) installOs(tc storm.TestCase) error {
 	// serial monitor to get to the login prompt.
 	select {
 	case <-time.After(time.Minute):
-		log.Infof("Waited 1 minute for serial monitor to reach login prompt")
+		log.Infof("Waited 1 minute for serial monitor to reach login prompt, cancelling monitor.")
 		cancel()
 	case <-monWaitChan:
-		return nil
+		// Monitor exited on its own
 	}
 
 	return nil
