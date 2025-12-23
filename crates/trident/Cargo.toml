@@ -29,7 +29,7 @@ oci-client = { workspace = true }
 procfs = { workspace = true }
 rayon = { workspace = true }
 regex = { workspace = true }
-reqwest = { workspace = true }                            # "http2" is enabled by default but causes a (false positive) CG alert
+reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
@@ -37,7 +37,7 @@ sha2 = { workspace = true }
 sqlite = { workspace = true }
 strum = { workspace = true }
 strum_macros = { workspace = true }
-sys-mount = { workspace = true }                          # Disable loop device feature
+sys-mount = { workspace = true }
 sysinfo = { workspace = true }
 systemd-journal-logger = { workspace = true }
 tar = { workspace = true }
@@ -50,12 +50,20 @@ url = { workspace = true }
 uuid = { workspace = true }
 zstd = { workspace = true }
 
+# gRPC API Dependencies
+hyper = { workspace = true }
+prost-types = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+tokio-util = { workspace = true }
+tonic = { workspace = true }
+tonic-middleware = { workspace = true }
+
+# Local Crate Dependencies
 sysdefs = { path = "../sysdefs" }
 osutils = { path = "../osutils" }
 trident_api = { path = "../trident_api" }
-
-# gRPC API Dependencies
-tokio = { workspace = true, features = ["full"] }
+harpoon = { path = "../harpoon" }
 
 # Optional dependencies used by functional tests
 indoc = { workspace = true, optional = true }
@@ -72,9 +80,10 @@ osutils = { path = "../osutils" }
 indoc = { workspace = true }
 maplit = { workspace = true }
 mockito = { workspace = true }
-osutils = { path = "../osutils", features = ["test-utilities"] }
 sha2 = { workspace = true }
+tower = { workspace = true }
 
+osutils = { path = "../osutils", features = ["test-utilities"] }
 
 [features]
 dangerous-options = ["trident_api/dangerous-options", "docker_credential"]

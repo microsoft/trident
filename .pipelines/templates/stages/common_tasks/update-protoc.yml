@@ -1,0 +1,20 @@
+parameters:
+  - name: protocVersion
+    type: string
+    default: "33.2"
+  - name: protocArch
+    type: string
+    default: "x86_64"
+
+steps:
+  - script: |
+      # The version of protoc in Ubuntu 22 is too old for our needs.
+      # Install a recent version of protoc following the instructions
+      # from their docs at https://protobuf.dev/installation/
+
+      PROTOC_FILE="protoc-${{ parameters.protocVersion }}-linux-${{ parameters.protocArch }}.zip"
+      curl -LO "https://github.com/protocolbuffers/protobuf/releases/download/v${{ parameters.protocVersion }}/${PROTOC_FILE}"
+      sudo unzip -o $PROTOC_FILE -d /usr/local
+      rm -f $PROTOC_FILE
+    displayName: Install Updated Protoc (${{ parameters.protocVersion }})
+    retryCountOnTaskFailure: 3

@@ -46,10 +46,11 @@ stages:
               # Proactively try to fix any possible issue from previous task failure
               sudo dpkg --configure -a
 
-              sudo apt install -y protobuf-compiler clang bc
+              sudo apt install -y clang bc
             displayName: Install native dependencies
             retryCountOnTaskFailure: 3
 
+          - template: ../common_tasks/update-protoc.yml
           - template: ../common_tasks/rustup.yml
           - template: ../common_tasks/cargo-auth.yml
 
