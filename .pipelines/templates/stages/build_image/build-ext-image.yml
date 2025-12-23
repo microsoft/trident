@@ -17,7 +17,7 @@ stages:
 
         variables:
           ob_outputDirectory: $(Pipeline.Workspace)/s/output
-          ob_artifactBaseName: ${{ parameters.imageName }}
+          ob_artifactBaseName: none
           BASEIMG_AZURE_LINUX_VERSION: "3.0"
 
         steps:
