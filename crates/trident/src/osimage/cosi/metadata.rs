@@ -1,8 +1,9 @@
-use std::{collections::HashSet, path::PathBuf};
+use std::{cmp::Ordering, fmt::Display, path::PathBuf};
 
-use anyhow::{bail, ensure, Error};
+use anyhow::{ensure, Error};
 use log::trace;
 use serde::{Deserialize, Deserializer};
+use strum_macros::Display;
 use uuid::Uuid;
 
 use osutils::osrelease::OsRelease;
@@ -16,6 +17,27 @@ use trident_api::primitives::hash::Sha384Hash;
 use crate::osimage::OsImageFileSystemType;
 
 use super::CosiEntry;
+
+/// Enum of known COSI metadata versions up to the current implementation.
+pub(super) enum KnownMetadataVersion {
+    /// Base version of the COSI metadata specification.
+    #[allow(dead_code)]
+    V1_0,
+
+    /// COSI metadata specification version 1.1.
+    ///
+    /// Introduces bootloader metadata.
+    V1_1,
+}
+
+impl KnownMetadataVersion {
+    pub(super) fn as_version(&self) -> MetadataVersion {
+        match self {
+            KnownMetadataVersion::V1_0 => MetadataVersion { major: 1, minor: 0 },
+            KnownMetadataVersion::V1_1 => MetadataVersion { major: 1, minor: 1 },
+        }
+    }
+}
 
 /// COSI metadata version reader.
 ///
@@ -72,66 +94,23 @@ pub(crate) struct CosiMetadata {
 }
 
 impl CosiMetadata {
-    /// Validates the COSI metadata.
-    pub(super) fn validate(&self) -> Result<(), Error> {
-        // Ensure that all mount points are unique.
-        let mut mount_points = HashSet::new();
-        for image in &self.images {
-            if !mount_points.insert(&image.mount_point) {
-                bail!("Duplicate mount point: '{}'", image.mount_point.display());
-            }
-        }
-
-        // Validate bootloader
-        match &self.bootloader {
-            Some(Bootloader {
-                bootloader_type,
-                systemd_boot,
-            }) => {
-                match &**bootloader_type {
-                    "grub" => {
-                        // Validate that for grub, there are no systemd-boot entries
-                        if systemd_boot.is_some() {
-                            bail!("Bootloader type 'grub' cannot have systemd-boot entries");
-                        }
-                    }
-                    "systemd-boot" => {
-                        // Validate that for systemd, there is exactly 1 entry and it is uki
-                        if systemd_boot.is_none()
-                            || systemd_boot.as_ref().unwrap().entries.len() != 1
-                        {
-                            bail!("Bootloader type 'systemd-boot' must have exactly one entry");
-                        }
-                        let entry = &systemd_boot.as_ref().unwrap().entries[0];
-                        if entry.boot_type != "uki-standalone" {
-                            bail!(
-                                "Unsupported boot entry type for 'systemd-boot': {}",
-                                entry.boot_type
-                            );
-                        }
-                    }
-                    _ => bail!("Unsupported bootloader type: {}", bootloader_type),
-                }
-            }
-            None => {
-                if self.version.major > 1 || (self.version.major == 1 && self.version.minor > 0) {
-                    bail!("Bootloader is required for COSI version >= 1.1, but not provided");
-                }
-            }
-        }
-
-        Ok(())
-    }
-
+    // Returns whether the COSI metadata describes a standalone-UKI-based
+    // bootloader. In this version of Trident, only the FIRST entry is
+    // considered.
     pub(crate) fn is_uki(&self) -> bool {
-        match &self.bootloader {
-            Some(bootloader) => bootloader.systemd_boot.iter().any(|sb| {
-                sb.entries
-                    .iter()
-                    .any(|entry| entry.boot_type == "uki-standalone")
-            }),
-            None => false,
-        }
+        let Some(bootloader) = &self.bootloader else {
+            return false;
+        };
+
+        let Some(sdb) = &bootloader.systemd_boot else {
+            return false;
+        };
+
+        let Some(first_entry) = sdb.entries.first() else {
+            return false;
+        };
+
+        first_entry.boot_type == SystemdBootloaderType::UkiStandalone
     }
 
     /// Returns the ESP filesystem image.
@@ -165,14 +144,35 @@ impl CosiMetadata {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub(crate) struct MetadataVersion {
     pub major: u32,
     pub minor: u32,
 }
 
+impl PartialOrd for MetadataVersion {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for MetadataVersion {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match self.major.cmp(&other.major) {
+            Ordering::Equal => self.minor.cmp(&other.minor),
+            ord => ord,
+        }
+    }
+}
+
+impl Display for MetadataVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{}", self.major, self.minor)
+    }
+}
+
 #[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct Image {
     #[serde(rename = "image")]
     pub file: ImageFile,
@@ -196,7 +196,7 @@ impl Image {
 }
 
 #[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct ImageFile {
     pub path: PathBuf,
 
@@ -211,7 +211,7 @@ pub(crate) struct ImageFile {
 }
 
 #[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct VerityMetadata {
     #[serde(rename = "image")]
     pub file: ImageFile,
@@ -220,7 +220,7 @@ pub(crate) struct VerityMetadata {
 }
 
 #[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct OsPackage {
     #[allow(dead_code)]
     pub name: String,
@@ -267,29 +267,41 @@ where
 }
 
 #[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct Bootloader {
     #[allow(dead_code)]
     #[serde(rename = "type")]
-    pub bootloader_type: String,
+    pub bootloader_type: BootloaderType,
 
     #[allow(dead_code)]
     pub systemd_boot: Option<SystemdBoot>,
 }
 
 #[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) enum BootloaderType {
+    #[serde(rename = "systemd-boot")]
+    SystemdBoot,
+
+    #[serde(rename = "grub")]
+    Grub,
+
+    #[serde(untagged)]
+    Unknown(String),
+}
+
+#[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct SystemdBoot {
     #[allow(dead_code)]
     pub entries: Vec<BootloaderEntry>,
 }
 
 #[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct BootloaderEntry {
     #[allow(dead_code)]
     #[serde(rename = "type")]
-    pub boot_type: String,
+    pub boot_type: SystemdBootloaderType,
 
     #[allow(dead_code)]
     pub kernel: String,
@@ -301,9 +313,31 @@ pub(crate) struct BootloaderEntry {
     pub cmdline: String,
 }
 
+#[derive(Debug, Deserialize, Clone, Eq, PartialEq, Display)]
+pub(crate) enum SystemdBootloaderType {
+    #[serde(rename = "uki-standalone")]
+    #[strum(to_string = "uki-standalone")]
+    UkiStandalone,
+
+    #[serde(rename = "uki-config")]
+    #[strum(to_string = "uki-config")]
+    UkiConfig,
+
+    #[serde(rename = "config")]
+    #[strum(to_string = "config")]
+    Config,
+
+    #[serde(untagged)]
+    #[strum(to_string = "{0}")]
+    Unknown(String),
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::{json, Value};
+
+    const SAMPLE_SHA384: &str = "1d0f284efe3edea4b9ca3bd514fa134b17eae361ccc7a1eefeff801b9bd6604e01f21f6bf249ef030599f0c218f2ba8c";
 
     #[test]
     fn test_metadata_version_deserialization() {
@@ -531,5 +565,155 @@ mod tests {
         }
         "#;
         let _none_os_package: OsPackage = serde_json::from_str(none_os_package_json).unwrap();
+    }
+
+    #[test]
+    fn test_extraneous_fields_deserialization() {
+        // Ensure that unknown fields are ignored by serde for all objects we deserialize.
+        // This helps with forward-compatibility when the COSI spec adds new fields.
+        let metadata_with_extras = json!({
+            "version": "1.1",
+            "osArch": "amd64",
+            "osRelease": "ID=azurelinux\nVERSION_ID=3.0\n",
+            "images": [
+                {
+                    "image": {
+                        "path": "/path/to/image1",
+                        "compressedSize": 100,
+                        "uncompressedSize": 200,
+                        "sha384": SAMPLE_SHA384,
+                        "unknownImageField": {"nested": true}
+                    },
+                    "mountPoint": "/mnt",
+                    "fsType": "ext4",
+                    "fsUuid": "550e8400-e29b-41d4-a716-446655440000",
+                    "partType": "linux-generic",
+                    "verity": {
+                        "image": {
+                            "path": "/path/to/verity1",
+                            "compressedSize": 50,
+                            "uncompressedSize": 100,
+                            "sha384": SAMPLE_SHA384,
+                            "unknownVerityImageField": 123
+                        },
+                        "roothash": "abcd",
+                        "unknownVerityField": "ignored"
+                    },
+                    "unknownImageObjField": [1, 2, 3]
+                }
+            ],
+            "osPackages": [
+                {
+                    "name": "bash",
+                    "version": "1.0.0",
+                    "release": "1",
+                    "arch": "noarch",
+                    "unknownOsPackageField": "ignored"
+                }
+            ],
+            "bootloader": {
+                "type": "systemd-boot",
+                "systemdBoot": {
+                    "entries": [
+                        {
+                            "type": "uki-standalone",
+                            "kernel": "vmlinuz",
+                            "path": "EFI/Linux/uki.efi",
+                            "cmdline": "quiet",
+                            "unknownBootEntryField": {"k": "v"}
+                        }
+                    ],
+                    "unknownSystemdBootField": true
+                },
+                "unknownBootloaderField": "ignored"
+            },
+            "hostConfigurationTemplate": "ignored",
+            "unknownTopLevelField": {"future": "field"}
+        });
+
+        // This unwrap ensures deserialization succeeds even with extra fields.
+        // The validate call ensures we don't accidentally construct a shape that can't be used.
+        let metadata: CosiMetadata = serde_json::from_value(metadata_with_extras).unwrap();
+        metadata.validate().unwrap();
+    }
+
+    #[test]
+    fn test_is_uki() {
+        fn parse(value: Value) -> CosiMetadata {
+            serde_json::from_value(value).unwrap()
+        }
+
+        // Base COSI metadata (v1.1) with a standalone UKI as the first systemd-boot entry.
+        let base = json!({
+            "version": "1.1",
+            "osArch": "amd64",
+            "osRelease": "ID=azurelinux\nVERSION_ID=3.0\n",
+            "images": [],
+            "osPackages": [
+                {
+                    "name": "bash",
+                    "version": "1.0.0",
+                    "release": "1",
+                    "arch": "noarch"
+                }
+            ],
+            "bootloader": {
+                "type": "systemd-boot",
+                "systemdBoot": {
+                    "entries": [
+                        {
+                            "type": "uki-standalone",
+                            "kernel": "vmlinuz",
+                            "path": "EFI/Linux/uki.efi",
+                            "cmdline": "quiet"
+                        }
+                    ]
+                }
+            }
+        });
+
+        assert!(parse(base.clone()).is_uki());
+
+        // No bootloader => false.
+        let mut no_bootloader = base.clone();
+        no_bootloader.as_object_mut().unwrap().remove("bootloader");
+        assert!(!parse(no_bootloader).is_uki());
+
+        // No systemdBoot section => false.
+        let mut no_systemd_boot = base.clone();
+        no_systemd_boot["bootloader"]
+            .as_object_mut()
+            .unwrap()
+            .remove("systemdBoot");
+        assert!(!parse(no_systemd_boot).is_uki());
+
+        // Empty entries => false.
+        let mut empty_entries = base.clone();
+        empty_entries["bootloader"]["systemdBoot"]["entries"] = json!([]);
+        assert!(!parse(empty_entries).is_uki());
+
+        // First entry is not uki-standalone => false.
+        let mut first_not_uki = base.clone();
+        first_not_uki["bootloader"]["systemdBoot"]["entries"][0]["type"] = json!("config");
+        assert!(!parse(first_not_uki).is_uki());
+
+        // Only the FIRST entry is considered.
+        // If first is not uki-standalone but later entries are, result is still false.
+        let mut second_is_uki = base.clone();
+        second_is_uki["bootloader"]["systemdBoot"]["entries"] = json!([
+            {
+                "type": "config",
+                "kernel": "vmlinuz",
+                "path": "EFI/Linux/other.efi",
+                "cmdline": "quiet"
+            },
+            {
+                "type": "uki-standalone",
+                "kernel": "vmlinuz",
+                "path": "EFI/Linux/uki.efi",
+                "cmdline": "quiet"
+            }
+        ]);
+        assert!(!parse(second_is_uki).is_uki());
     }
 }

@@ -1,9 +1,6 @@
 use std::{
     fs, mem,
-    os::{
-        fd::{IntoRawFd, RawFd},
-        unix,
-    },
+    os::{fd::OwnedFd, unix},
     path::Path,
     thread,
     time::Duration,
@@ -18,7 +15,7 @@ use trident_api::error::{ReportError, ServicingError, TridentError, TridentResul
 ///
 /// Note: Dropping this object does *not* exit the chroot. You must call `exit()` manually.
 pub struct Chroot {
-    rootfd: RawFd,
+    rootfd: OwnedFd,
     mounts: Vec<UnmountDrop<Mount>>,
 }
 impl Chroot {
@@ -61,7 +58,7 @@ impl Chroot {
         debug!("Entering chroot");
         let rootfd = fs::File::open("/")
             .structured(ServicingError::EnterChroot)?
-            .into_raw_fd();
+            .into();
         unix::fs::chroot(path).structured(ServicingError::EnterChroot)?;
         std::env::set_current_dir("/").structured(ServicingError::EnterChroot)?;
 
