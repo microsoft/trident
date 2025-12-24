@@ -1,5 +1,5 @@
 use std::{
-    env::{self, VarError},
+    env::VarError,
     fs::{self, Permissions},
     os::{
         fd::{AsRawFd, BorrowedFd, OwnedFd, RawFd},
@@ -21,6 +21,7 @@ use nix::{
 use tokio::net::UnixListener;
 
 /// The starting file descriptor number for systemd socket activation.
+#[cfg_attr(test, allow(dead_code))]
 const SD_LISTEN_FDS_START: RawFd = 3;
 
 /// The name of the environment variable provided by systemd indicating the
@@ -167,7 +168,8 @@ fn read_systemd_socket_activation_env() -> Result<Vec<String>, Error> {
 fn get_env_var(key: &str) -> Result<String, VarError> {
     #[cfg(not(test))]
     {
-        env::var(key)
+        // Using full module path to avoid not-used-import errors due to flags.
+        std::env::var(key)
     }
 
     #[cfg(test)]
@@ -275,9 +277,8 @@ mod tests {
     };
 
     use tempfile::tempdir;
-    use tokio::net::UnixListener;
 
-    /// Thread-local storage for test environment variables.
+    // Thread-local storage for test environment variables.
     thread_local! {
         /// Used to mock environment variables in tests.
         pub(super) static TEST_ENV_VARS: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
@@ -446,9 +447,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_unix_socket_sets_mode() {
-        let dir = tempdir().unwrap();
-        let socket_path = dir.path().join("test_socket_mode");
-
         let test_mode = |desired_mode: u32| {
             let dir = tempdir().unwrap();
             let socket_path = dir.path().join("test_socket_mode");

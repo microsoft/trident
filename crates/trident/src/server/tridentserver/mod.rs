@@ -1,10 +1,6 @@
-use std::{
-    sync::Arc,
-    time::{Duration, SystemTime},
-};
+use std::{sync::Arc, time::SystemTime};
 
-use anyhow::Error;
-use log::{debug, error, info, warn};
+use log::{error, info, warn};
 use prost_types::Timestamp;
 use tokio::{
     sync::{
@@ -18,14 +14,14 @@ use tonic::{async_trait, Request, Response, Status};
 
 use harpoon::{
     servicing_response::Response as ResponseType, trident_service_server::TridentService,
-    CheckRootRequest, CommitRequest, FileLocation, FinalStatus, FinalizeRequest,
-    GetActiveVolumeRequest, GetActiveVolumeResponse, GetConfigRequest, GetConfigResponse,
-    GetLastErrorRequest, GetLastErrorResponse, GetRequiredServicingTypeRequest,
-    GetRequiredServicingTypeResponse, GetServicingStateRequest, GetServicingStateResponse, Log,
-    RebuildRaidRequest, ServicingRequest, ServicingResponse, StageRequest, Start,
-    StreamImageRequest, ValidateHostConfigurationRequest, ValidateHostConfigurationResponse,
+    CheckRootRequest, CommitRequest, FileLocation, FinalizeRequest, GetActiveVolumeRequest,
+    GetActiveVolumeResponse, GetConfigRequest, GetConfigResponse, GetLastErrorRequest,
+    GetLastErrorResponse, GetRequiredServicingTypeRequest, GetRequiredServicingTypeResponse,
+    GetServicingStateRequest, GetServicingStateResponse, Log, RebuildRaidRequest, ServicingRequest,
+    ServicingResponse, StageRequest, Start, StreamImageRequest, ValidateHostConfigurationRequest,
+    ValidateHostConfigurationResponse,
 };
-use trident_api::error::TridentError;
+use trident_api::error::{InternalError, TridentError};
 
 use crate::{
     logging::logfwd::LogForwarder,
@@ -261,7 +257,7 @@ impl TridentHarpoonServer {
     /// underlying locks are returned as appropriate [`Status`] errors.
     fn reading_request<F, R>(&self, name: &'static str, f: F) -> Result<Response<R>, Status>
     where
-        F: FnOnce() -> Result<R, Error> + Send + 'static,
+        F: FnOnce() -> Result<R, TridentError> + Send + 'static,
         R: Send + 'static,
     {
         info!("Received read request '{}'", name);
@@ -284,10 +280,10 @@ impl TridentHarpoonServer {
         match f() {
             Ok(result) => Ok(Response::new(result)),
             Err(err) => {
-                error!("Reading request '{}' failed: {}", name, err);
+                error!("Reading request '{}' failed: {:?}", name, err);
                 // TODO: Map specific errors to appropriate Status codes
                 Err(Status::internal(format!(
-                    "Reading request '{}' failed: {}",
+                    "Reading request '{}' failed: {:?}",
                     name, err
                 )))
             }
@@ -333,7 +329,11 @@ impl TridentService for TridentHarpoonServer {
         &self,
         _request: Request<ServicingRequest>,
     ) -> Result<Response<Self::InstallStream>, Status> {
-        Err(Status::unimplemented("install not yet implemented"))
+        self.servicing_request("install", || {
+            Err(TridentError::new(InternalError::Internal(
+                "Not implemented: install",
+            )))
+        })
     }
 
     type InstallStageStream = ServicingResponseStream;
@@ -341,7 +341,11 @@ impl TridentService for TridentHarpoonServer {
         &self,
         _request: Request<StageRequest>,
     ) -> Result<Response<Self::InstallStageStream>, Status> {
-        Err(Status::unimplemented("install_stage not yet implemented"))
+        self.servicing_request("install_stage", || {
+            Err(TridentError::new(InternalError::Internal(
+                "Not implemented: install_stage",
+            )))
+        })
     }
 
     type InstallFinalizeStream = ServicingResponseStream;
@@ -349,9 +353,11 @@ impl TridentService for TridentHarpoonServer {
         &self,
         _request: Request<FinalizeRequest>,
     ) -> Result<Response<Self::InstallFinalizeStream>, Status> {
-        Err(Status::unimplemented(
-            "install_finalize not yet implemented",
-        ))
+        self.servicing_request("install_finalize", || {
+            Err(TridentError::new(InternalError::Internal(
+                "Not implemented: install_finalize",
+            )))
+        })
     }
 
     type UpdateStream = ServicingResponseStream;
@@ -359,7 +365,11 @@ impl TridentService for TridentHarpoonServer {
         &self,
         _request: Request<ServicingRequest>,
     ) -> Result<Response<Self::UpdateStream>, Status> {
-        Err(Status::unimplemented("update not yet implemented"))
+        self.servicing_request("update", || {
+            Err(TridentError::new(InternalError::Internal(
+                "Not implemented: update",
+            )))
+        })
     }
 
     type UpdateStageStream = ServicingResponseStream;
@@ -367,7 +377,11 @@ impl TridentService for TridentHarpoonServer {
         &self,
         _request: Request<StageRequest>,
     ) -> Result<Response<Self::UpdateStageStream>, Status> {
-        Err(Status::unimplemented("update_stage not yet implemented"))
+        self.servicing_request("update_stage", || {
+            Err(TridentError::new(InternalError::Internal(
+                "Not implemented: update_stage",
+            )))
+        })
     }
 
     type UpdateFinalizeStream = ServicingResponseStream;
@@ -375,7 +389,11 @@ impl TridentService for TridentHarpoonServer {
         &self,
         _request: Request<FinalizeRequest>,
     ) -> Result<Response<Self::UpdateFinalizeStream>, Status> {
-        Err(Status::unimplemented("update_finalize not yet implemented"))
+        self.servicing_request("update_finalize", || {
+            Err(TridentError::new(InternalError::Internal(
+                "Not implemented: update_finalize",
+            )))
+        })
     }
 
     type CheckRootStream = ServicingResponseStream;
@@ -383,7 +401,11 @@ impl TridentService for TridentHarpoonServer {
         &self,
         _request: Request<CheckRootRequest>,
     ) -> Result<Response<Self::CheckRootStream>, Status> {
-        Err(Status::unimplemented("check_root not yet implemented"))
+        self.servicing_request("check_root", || {
+            Err(TridentError::new(InternalError::Internal(
+                "Not implemented: check_root",
+            )))
+        })
     }
 
     type CommitStream = ServicingResponseStream;
@@ -391,7 +413,11 @@ impl TridentService for TridentHarpoonServer {
         &self,
         _request: Request<CommitRequest>,
     ) -> Result<Response<Self::CommitStream>, Status> {
-        Err(Status::unimplemented("commit not yet implemented"))
+        self.servicing_request("commit", || {
+            Err(TridentError::new(InternalError::Internal(
+                "Not implemented: commit",
+            )))
+        })
     }
 
     type StreamImageStream = ServicingResponseStream;
@@ -399,7 +425,11 @@ impl TridentService for TridentHarpoonServer {
         &self,
         _request: Request<StreamImageRequest>,
     ) -> Result<Response<Self::StreamImageStream>, Status> {
-        Err(Status::unimplemented("stream_image not yet implemented"))
+        self.servicing_request("stream_image", || {
+            Err(TridentError::new(InternalError::Internal(
+                "Not implemented: stream_image",
+            )))
+        })
     }
 
     type RebuildRaidStream = ServicingResponseStream;
@@ -407,67 +437,87 @@ impl TridentService for TridentHarpoonServer {
         &self,
         _request: Request<RebuildRaidRequest>,
     ) -> Result<Response<Self::RebuildRaidStream>, Status> {
-        Err(Status::unimplemented("rebuild_raid not yet implemented"))
+        self.servicing_request("rebuild_raid", || {
+            Err(TridentError::new(InternalError::Internal(
+                "Not implemented: rebuild_raid",
+            )))
+        })
     }
 
     async fn validate_host_configuration(
         &self,
         _request: Request<ValidateHostConfigurationRequest>,
     ) -> Result<Response<ValidateHostConfigurationResponse>, Status> {
-        Err(Status::unimplemented(
-            "validate_host_configuration not yet implemented",
-        ))
+        self.reading_request("validate_host_configuration", || {
+            Err(TridentError::new(InternalError::Internal(
+                "Not implemented: validate_host_configuration",
+            )))
+        })
     }
 
     async fn get_required_servicing_type(
         &self,
         _request: Request<GetRequiredServicingTypeRequest>,
     ) -> Result<Response<GetRequiredServicingTypeResponse>, Status> {
-        Err(Status::unimplemented(
-            "get_required_servicing_type not yet implemented",
-        ))
+        self.reading_request("get_required_servicing_type", || {
+            Err(TridentError::new(InternalError::Internal(
+                "Not implemented: get_required_servicing_type",
+            )))
+        })
     }
 
     async fn get_provisioned_config(
         &self,
         _request: Request<GetConfigRequest>,
     ) -> Result<Response<GetConfigResponse>, Status> {
-        Err(Status::unimplemented(
-            "get_provisioned_config not yet implemented",
-        ))
+        self.reading_request("get_provisioned_config", || {
+            Err(TridentError::new(InternalError::Internal(
+                "Not implemented: get_provisioned_config",
+            )))
+        })
     }
 
     async fn get_servicing_config(
         &self,
         _request: Request<GetConfigRequest>,
     ) -> Result<Response<GetConfigResponse>, Status> {
-        Err(Status::unimplemented(
-            "get_servicing_config not yet implemented",
-        ))
+        self.reading_request("get_servicing_config", || {
+            Err(TridentError::new(InternalError::Internal(
+                "Not implemented: get_servicing_config",
+            )))
+        })
     }
 
     async fn get_last_error(
         &self,
         _request: Request<GetLastErrorRequest>,
     ) -> Result<Response<GetLastErrorResponse>, Status> {
-        Err(Status::unimplemented("get_last_error not yet implemented"))
+        self.reading_request("get_last_error", || {
+            Err(TridentError::new(InternalError::Internal(
+                "Not implemented: get_last_error",
+            )))
+        })
     }
 
     async fn get_servicing_state(
         &self,
         _request: Request<GetServicingStateRequest>,
     ) -> Result<Response<GetServicingStateResponse>, Status> {
-        Err(Status::unimplemented(
-            "get_servicing_state not yet implemented",
-        ))
+        self.reading_request("get_servicing_state", || {
+            Err(TridentError::new(InternalError::Internal(
+                "Not implemented: get_servicing_state",
+            )))
+        })
     }
 
     async fn get_active_volume(
         &self,
         _request: Request<GetActiveVolumeRequest>,
     ) -> Result<Response<GetActiveVolumeResponse>, Status> {
-        Err(Status::unimplemented(
-            "get_active_volume not yet implemented",
-        ))
+        self.reading_request("get_active_volume", || {
+            Err(TridentError::new(InternalError::Internal(
+                "Not implemented: get_active_volume",
+            )))
+        })
     }
 }

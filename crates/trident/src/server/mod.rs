@@ -1,4 +1,4 @@
-use std::{fs, os::fd::AsRawFd, path::Path, time::Duration};
+use std::{os::fd::AsRawFd, path::Path, time::Duration};
 
 use anyhow::{bail, Context, Result as AnyhowRes};
 use log::{debug, info};
@@ -27,12 +27,12 @@ use tridentserver::TridentHarpoonServer;
 /// Default path for the Trident Unix domain socket. This is used when Trident
 /// itself creates the socket when invoked directly, and not as part of a
 /// systemd socket invocation.
-const DEFAULT_TRIDENT_SOCKET_PATH: &str = "/var/run/trident.sock";
+pub const DEFAULT_TRIDENT_SOCKET_PATH: &str = "/var/run/trident.sock";
 
 /// Default inactivity timeout in seconds for the ActivityTracker. When fully
 /// inactive, meaning there are no ongoing requests or active connections, for
 /// this duration, the server will shut down gracefully automatically.
-const DEFAULT_INACTIVITY_TIMEOUT_SECS: u64 = 300;
+pub const DEFAULT_INACTIVITY_TIMEOUT: &str = "300s"; // 5 minutes
 
 /// Main entry point for the Trident gRPC server.
 ///
@@ -44,15 +44,18 @@ const DEFAULT_INACTIVITY_TIMEOUT_SECS: u64 = 300;
 /// or error even after the server has shut down. This is intentional, as we
 /// want servicing operations to complete even if the server is no longer
 /// reachable.
-pub async fn server_main(log_fwd: LogForwarder) -> AnyhowRes<()> {
+pub async fn server_main(
+    log_fwd: LogForwarder,
+    shutdown_timeout: Duration,
+    default_socket_path: impl AsRef<Path>,
+) -> AnyhowRes<()> {
     info!("Starting gRPC server");
-    let listener = set_up_listener()?;
+    let listener = set_up_listener(default_socket_path)?;
     debug!("Trident listening on socket: {:?}", listener.local_addr()?);
 
     // Set up activity tracker. This will monitor for inactivity and trigger
     // shutdown when the timeout is reached.
-    let (activity_tracker, mut shutdown_rx, monitor_token) =
-        ActivityTracker::new(Duration::from_secs(DEFAULT_INACTIVITY_TIMEOUT_SECS));
+    let (activity_tracker, mut shutdown_rx, monitor_token) = ActivityTracker::new(shutdown_timeout);
 
     // Set up signal handler for SIGTERM
     let mut sigterm =
@@ -97,7 +100,7 @@ pub async fn server_main(log_fwd: LogForwarder) -> AnyhowRes<()> {
 
 /// Sets up the UnixListener for the server, either from a systemd-passed
 /// file descriptor or by binding to the default socket path.
-fn set_up_listener() -> AnyhowRes<UnixListener> {
+fn set_up_listener(default_socket_path: impl AsRef<Path>) -> AnyhowRes<UnixListener> {
     // Check for systemd socket activation
     let sd_listener_fds = fds::get_sd_fd_socket_data()
         .context("Failed to get socket data from systemd environment variables")?;
@@ -128,9 +131,10 @@ fn set_up_listener() -> AnyhowRes<UnixListener> {
         fds::get_listener_from_fd(sd_listener_fd)?
     } else {
         debug!(
-            "No systemd socket activation detected, binding to default socket path: {DEFAULT_TRIDENT_SOCKET_PATH}"
+            "No systemd socket activation detected, binding to default socket path: {}",
+            default_socket_path.as_ref().display()
         );
-        fds::create_unix_socket(DEFAULT_TRIDENT_SOCKET_PATH, Mode::from_bits_truncate(0o600))?
+        fds::create_unix_socket(default_socket_path, Mode::from_bits_truncate(0o600))?
     };
 
     Ok(listener)

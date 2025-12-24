@@ -6,7 +6,7 @@ use tokio::{
 };
 
 use harpoon::{FinalStatus, StatusCode};
-use trident_api::error::{InvalidInputError, TridentError};
+use trident_api::error::TridentError;
 
 use crate::{server::activitytracker::ActivityTracker, ExitKind};
 
@@ -57,7 +57,7 @@ impl ServicingManager {
                         ExitKind::NeedsReboot => true,
                     },
                 },
-                Err(e) => FinalStatus {
+                Err(_e) => FinalStatus {
                     status: StatusCode::Failure.into(),
                     // TODO: convert trident error to harpoon error
                     error: None,
@@ -98,6 +98,8 @@ mod tests {
     use std::time::Duration;
 
     use tokio::time;
+
+    use trident_api::error::InvalidInputError;
 
     #[tokio::test]
     async fn test_servicing_manager_new() {
