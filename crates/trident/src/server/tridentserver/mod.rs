@@ -213,6 +213,12 @@ impl TridentHarpoonServer {
             let final_status =
                 ServicingManager::spawn_servicing_task(servicing_guard, tracker_clone, f).await;
 
+            if let Some(ref err) = final_status.error {
+                error!("Servicing request '{}' failed: {}", name, err.message);
+            } else {
+                info!("Servicing request '{}' completed successfully", name);
+            }
+
             // Stop log forwarding
             log_fwd_token.cancel();
 

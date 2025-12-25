@@ -4,7 +4,6 @@ use anyhow::{Context, Error};
 use clap::Parser;
 use log::{error, info, LevelFilter, Log};
 
-use tokio::runtime::Builder;
 use trident::{
     cli::{self, Cli, Commands, GetKind},
     offline_init, validation, BackgroundLog, DataStore, ExitKind, LogFilter, LogForwarder,
@@ -248,7 +247,10 @@ fn setup_logging(
         // Set the global filter for reqwest to debug
         .with_global_filter("reqwest", LevelFilter::Debug)
         // Set the global filter for goblin to off
-        .with_global_filter("goblin", LevelFilter::Off);
+        .with_global_filter("goblin", LevelFilter::Off)
+        // Filter out debug logs from h2
+        .with_global_filter("tracing::span", LevelFilter::Error)
+        .with_global_filter("h2", LevelFilter::Error);
 
     // Attempt to use the systemd journal if stderr is directly connected to it, and otherwise fall
     // back to env_logger.
@@ -334,7 +336,9 @@ fn main() -> ExitCode {
         let logstream = setup_logging(
             &args,
             [LogFilter::new(log_forwarder.new_logger())
-                .with_global_filter("trident::server", LevelFilter::Error)
+                .with_global_filter("trident::server", LevelFilter::Off)
+                .with_global_filter("tonic", LevelFilter::Error)
+                .with_global_filter("h2", LevelFilter::Error)
                 .into_logger() as Box<dyn Log>]
             .into_iter(),
         );
@@ -343,20 +347,7 @@ fn main() -> ExitCode {
             return ExitCode::from(1);
         }
 
-        let Ok(runtime) = Builder::new_multi_thread().enable_all().build() else {
-            error!("Failed to create Tokio runtime");
-            return ExitCode::from(1);
-        };
-        runtime.block_on(async {
-            if let Err(e) =
-                trident::server_main(log_forwarder, *inactivity_timeout, &socket_path).await
-            {
-                error!("Daemon failed: {e:?}");
-                return ExitCode::from(2);
-            }
-
-            ExitCode::SUCCESS
-        })
+        trident::server_main(log_forwarder, *inactivity_timeout, socket_path)
     } else {
         // Initialize the loggers
         let logstream = setup_logging(&args, iter::empty());
