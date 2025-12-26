@@ -310,7 +310,10 @@ mod tests {
         cell::RefCell,
         collections::HashMap,
         fs::File,
-        os::{fd::AsFd, unix::net::UnixListener as StdUnixListener},
+        os::{
+            fd::{AsFd, AsRawFd},
+            unix::net::UnixListener as StdUnixListener,
+        },
     };
 
     use tempfile::tempdir;
