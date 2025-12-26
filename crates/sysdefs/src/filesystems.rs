@@ -2,7 +2,7 @@ use serde::{de::value::Error, forward_to_deserialize_any, Deserialize, Deseriali
 use strum_macros::{EnumIs, EnumIter, EnumTryAs, IntoStaticStr};
 
 /// Superset of all filesystem types recognized by the kernel.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, EnumIs, EnumTryAs)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, EnumIs, EnumTryAs)]
 #[serde(untagged)]
 pub enum KernelFilesystemType {
     Real(RealFilesystemType),
@@ -105,7 +105,7 @@ impl RealFilesystemType {
 ///
 /// Essentially, things you might see in `/proc/filesystems` WITH the `nodev`
 /// attribute.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, IntoStaticStr, EnumIter)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, IntoStaticStr, EnumIter)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
 pub enum NodevFilesystemType {

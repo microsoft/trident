@@ -130,6 +130,23 @@ pub enum Commands {
         outfile: Option<PathBuf>,
     },
 
+    /// Generate diagnostic information and create a support bundle
+    ///
+    /// This command collects diagnostic information including logs, and
+    ///  system information. The output is packaged as a compressed tarball
+    ///  that can be shared for troubleshooting.
+    Diagnose {
+        /// Path where the support bundle will be saved
+        #[clap(short, long)]
+        output: PathBuf,
+        /// Include full system journal and dmesg output
+        #[clap(long)]
+        full: bool,
+        /// Include SELinux audit log
+        #[clap(long)]
+        selinux: bool,
+    },
+
     /// Validate the provided Host Configuration
     ///
     /// When no options are provided, the default Trident Configuration is
@@ -194,6 +211,7 @@ impl Commands {
             Commands::RebuildRaid { .. } => "rebuild-raid",
             Commands::StartNetwork { .. } => "start-network",
             Commands::Get { .. } => "get",
+            Commands::Diagnose { .. } => "diagnose",
             Commands::Validate { .. } => "validate",
             #[cfg(feature = "pytest-generator")]
             Commands::Pytest => "pytest",
