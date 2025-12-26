@@ -28,7 +28,7 @@ use grpc::GrpcSender;
 
 pub mod cli;
 mod datastore;
-pub mod diagnostics;
+mod diagnostics;
 mod engine;
 mod health;
 mod io_utils;
