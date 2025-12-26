@@ -1,15 +1,19 @@
 use std::{
-    env::{self, VarError},
+    env::VarError,
     fs::{self, Permissions},
+    io::ErrorKind,
     os::{
-        fd::{AsRawFd, BorrowedFd, OwnedFd, RawFd},
-        unix::{fs::PermissionsExt, net::UnixListener as StdUnixListener},
+        fd::{BorrowedFd, OwnedFd, RawFd},
+        unix::{
+            fs::{FileTypeExt, PermissionsExt},
+            net::UnixListener as StdUnixListener,
+        },
     },
-    path::Path,
+    path::{self, Path, PathBuf},
 };
 
 use anyhow::{bail, Context, Error};
-use log::trace;
+use log::{trace, warn};
 use nix::{
     errno::Errno,
     fcntl,
@@ -18,9 +22,9 @@ use nix::{
         stat::{self, Mode},
     },
 };
-use tokio::net::UnixListener;
 
 /// The starting file descriptor number for systemd socket activation.
+#[cfg_attr(test, allow(dead_code))]
 const SD_LISTEN_FDS_START: RawFd = 3;
 
 /// The name of the environment variable provided by systemd indicating the
@@ -30,25 +34,6 @@ const SD_LISTEN_FDS_ENV: &str = "LISTEN_FDS";
 /// The name of the environment variable provided by systemd indicating the
 /// names of the sockets the service is expected to listen on.
 const SD_LISTEN_FDNAMES_ENV: &str = "LISTEN_FDNAMES";
-
-/// Creates a Tokio UnixListener from the given OwnedFd.
-pub fn get_listener_from_fd(fd: OwnedFd) -> Result<UnixListener, Error> {
-    trace!(
-        "Creating UnixListener from file descriptor {}",
-        fd.as_raw_fd()
-    );
-
-    let std_listener = StdUnixListener::from(fd);
-
-    std_listener
-        .set_nonblocking(true)
-        .context("Failed to set non-blocking mode on StdUnixListener")?;
-
-    let listener = UnixListener::from_std(std_listener)
-        .context("Failed to create UnixListener from StdUnixListener")?;
-
-    Ok(listener)
-}
 
 /// Retrieves the list of Unix socket file descriptors and their associated
 /// names provided by systemd socket activation.
@@ -167,7 +152,8 @@ fn read_systemd_socket_activation_env() -> Result<Vec<String>, Error> {
 fn get_env_var(key: &str) -> Result<String, VarError> {
     #[cfg(not(test))]
     {
-        env::var(key)
+        // Using full module path to avoid not-used-import errors due to flags.
+        std::env::var(key)
     }
 
     #[cfg(test)]
@@ -224,9 +210,9 @@ fn check_file_descriptor_validity(fd: BorrowedFd) -> Result<(), Errno> {
 /// permissions after creation as an extra safeguard, but this does not fully
 /// eliminate the risk of race conditions during socket creation.
 pub(crate) fn create_unix_socket(
-    path: impl AsRef<Path>,
+    socket_path: impl AsRef<Path>,
     mode: Mode,
-) -> Result<UnixListener, Error> {
+) -> Result<StdUnixListener, Error> {
     // Ensure the socket is created with the given mode by temporarily setting
     // the process umask.
     //
@@ -240,27 +226,80 @@ pub(crate) fn create_unix_socket(
         }
     }
 
+    let abs_path = path::absolute(socket_path.as_ref()).with_context(|| {
+        format!(
+            "Failed to get absolute path for {}",
+            socket_path.as_ref().display()
+        )
+    })?;
+
     let perm_bits = Mode::from_bits_truncate(0o777);
     let mask = (!mode) & perm_bits;
     let old = stat::umask(mask);
     let listener = {
         let _guard = UmaskGuard(old);
-        UnixListener::bind(path.as_ref()).with_context(|| {
-            format!("Failed to bind UnixListener to {}", path.as_ref().display())
-        })?
+        StdUnixListener::bind(&abs_path)
+            .with_context(|| format!("Failed to bind UnixListener to {}", abs_path.display()))?
     };
 
     // Set exact permissions as an extra guarantee (e.g. if umask math changes
     // elsewhere). This should not broaden permissions because umask restricted
     // them at creation time.
-    fs::set_permissions(path.as_ref(), Permissions::from_mode(mode.bits())).with_context(|| {
+    fs::set_permissions(&abs_path, Permissions::from_mode(mode.bits())).with_context(|| {
         format!(
             "Failed to set permissions on socket file at {}",
-            path.as_ref().display()
+            abs_path.display()
         )
     })?;
 
     Ok(listener)
+}
+
+/// Helper struct to clean up a Unix socket file on drop.
+pub(crate) struct UnixSocketCleanup {
+    path: Option<PathBuf>,
+}
+
+impl UnixSocketCleanup {
+    pub fn new(path: PathBuf) -> Self {
+        Self { path: Some(path) }
+    }
+
+    pub fn empty() -> Self {
+        Self { path: None }
+    }
+
+    fn cleanup(&mut self) -> Result<(), Error> {
+        let Some(path) = self.path.take() else {
+            return Ok(());
+        };
+
+        match fs::symlink_metadata(&path) {
+            Ok(meta) => {
+                if !meta.file_type().is_socket() {
+                    warn!("Not removing socket path {}: not a socket", path.display());
+                    return Ok(());
+                }
+
+                trace!("Removing socket file {}", path.display());
+                fs::remove_file(&path)
+                    .with_context(|| format!("Failed to remove socket file {}", path.display()))?;
+                Ok(())
+            }
+            Err(e) if e.kind() == ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e).with_context(|| {
+                format!("Failed to stat socket file {} for cleanup", path.display())
+            }),
+        }
+    }
+}
+
+impl Drop for UnixSocketCleanup {
+    fn drop(&mut self) {
+        if let Err(e) = self.cleanup() {
+            warn!("Failed to remove unix socket file on shutdown: {:#}", e);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -271,13 +310,15 @@ mod tests {
         cell::RefCell,
         collections::HashMap,
         fs::File,
-        os::{fd::AsFd, unix::net::UnixListener as StdUnixListener},
+        os::{
+            fd::{AsFd, AsRawFd},
+            unix::net::UnixListener as StdUnixListener,
+        },
     };
 
     use tempfile::tempdir;
-    use tokio::net::UnixListener;
 
-    /// Thread-local storage for test environment variables.
+    // Thread-local storage for test environment variables.
     thread_local! {
         /// Used to mock environment variables in tests.
         pub(super) static TEST_ENV_VARS: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
@@ -298,20 +339,6 @@ mod tests {
         TEST_ENV_VARS.with(|env| {
             env.borrow_mut().clear();
         });
-    }
-
-    #[tokio::test]
-    async fn test_get_listener_from_fd() {
-        let dir = tempdir().unwrap();
-        let socket_path = dir.path().join("test_socket");
-        let std_listener = StdUnixListener::bind(&socket_path).unwrap();
-        let owned_fd = OwnedFd::from(std_listener);
-
-        let listener = get_listener_from_fd(owned_fd).unwrap();
-        assert_eq!(
-            listener.local_addr().unwrap().as_pathname(),
-            Some(socket_path.as_path())
-        );
     }
 
     #[test]
@@ -446,9 +473,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_unix_socket_sets_mode() {
-        let dir = tempdir().unwrap();
-        let socket_path = dir.path().join("test_socket_mode");
-
         let test_mode = |desired_mode: u32| {
             let dir = tempdir().unwrap();
             let socket_path = dir.path().join("test_socket_mode");
@@ -465,5 +489,33 @@ mod tests {
         test_mode(0o700);
         test_mode(0o660);
         test_mode(0o666);
+    }
+
+    #[test]
+    fn test_unix_socket_cleanup_removes_socket_file() {
+        let dir = tempdir().unwrap();
+        let socket_path = dir.path().join("trident_test.sock");
+
+        let listener = StdUnixListener::bind(&socket_path).unwrap();
+        assert!(socket_path.exists());
+        drop(listener);
+
+        let cleanup = UnixSocketCleanup::new(socket_path.clone());
+        drop(cleanup);
+
+        assert!(!socket_path.exists());
+    }
+
+    #[test]
+    fn test_unix_socket_cleanup_does_not_remove_regular_file() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("not_a_socket");
+        File::create(&file_path).unwrap();
+        assert!(file_path.exists());
+
+        let cleanup = UnixSocketCleanup::new(file_path.clone());
+        drop(cleanup);
+
+        assert!(file_path.exists());
     }
 }

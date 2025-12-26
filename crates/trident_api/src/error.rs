@@ -9,6 +9,10 @@ use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 use url::Url;
 
+use harpoon::{
+    FileLocation, TridentError as HarpoonTridentError, TridentErrorKind as HarpoonTridentErrorKind,
+};
+
 use crate::{
     config::{HostConfigurationDynamicValidationError, HostConfigurationStaticValidationError},
     primitives::bytes::ByteCount,
@@ -786,6 +790,20 @@ impl TridentError {
     pub fn kind(&self) -> &ErrorKind {
         &self.0.kind
     }
+
+    /// Returns the name of the error sub-kind as a &str.
+    pub fn subkind(&self) -> Option<&'static str> {
+        match &self.kind() {
+            ErrorKind::ExecutionEnvironmentMisconfiguration(e) => serde_variant::to_variant_name(e),
+            ErrorKind::HealthChecks(e) => serde_variant::to_variant_name(e),
+            ErrorKind::Initialization(e) => serde_variant::to_variant_name(e),
+            ErrorKind::Internal(e) => serde_variant::to_variant_name(e),
+            ErrorKind::InvalidInput(e) => serde_variant::to_variant_name(e),
+            ErrorKind::Servicing(e) => serde_variant::to_variant_name(e),
+            ErrorKind::UnsupportedConfiguration(e) => serde_variant::to_variant_name(e),
+        }
+        .ok()
+    }
 }
 
 pub trait ReportError<T, K> {
@@ -949,6 +967,38 @@ fn stringify_iterable(iterable: impl Iterator<Item = impl AsRef<str>>) -> String
         .map(|s| s.as_ref())
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+impl From<&TridentError> for HarpoonTridentError {
+    fn from(e: &TridentError) -> Self {
+        HarpoonTridentError {
+            kind: HarpoonTridentErrorKind::from(e.kind()) as i32,
+            subkind: e.subkind().unwrap_or("unknown").to_string(),
+            message: format!("{:?}", e),
+            location: Some(FileLocation {
+                path: e.0.location.file().to_string(),
+                line: e.0.location.line(),
+            }),
+        }
+    }
+}
+
+impl From<&ErrorKind> for HarpoonTridentErrorKind {
+    fn from(kind: &ErrorKind) -> Self {
+        match kind {
+            ErrorKind::ExecutionEnvironmentMisconfiguration(_) => {
+                HarpoonTridentErrorKind::ExecutionEnvironmentMisconfiguration
+            }
+            ErrorKind::HealthChecks(_) => HarpoonTridentErrorKind::HealthChecks,
+            ErrorKind::Initialization(_) => HarpoonTridentErrorKind::Initialization,
+            ErrorKind::Internal(_) => HarpoonTridentErrorKind::Internal,
+            ErrorKind::InvalidInput(_) => HarpoonTridentErrorKind::InvalidInput,
+            ErrorKind::Servicing(_) => HarpoonTridentErrorKind::Servicing,
+            ErrorKind::UnsupportedConfiguration(_) => {
+                HarpoonTridentErrorKind::UnsupportedConfiguration
+            }
+        }
+    }
 }
 
 #[cfg(test)]

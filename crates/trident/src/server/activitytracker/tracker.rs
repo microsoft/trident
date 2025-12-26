@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use log::{debug, error, info, trace, warn};
+use log::{error, info, trace, warn};
 use tokio::sync::mpsc::{self, Receiver, Sender, UnboundedReceiver, UnboundedSender};
 use tokio_util::sync::CancellationToken;
 

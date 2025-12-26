@@ -6,35 +6,37 @@ publish = false
 license = "MIT"
 
 [dependencies]
-anyhow = {workspace = true}
-bitflags = {workspace = true}
-const_format = {workspace = true}
-lazy_static = {workspace = true}
-log = {workspace = true}
-maplit = {workspace = true}
-netplan-types = {workspace = true}
-petgraph = {workspace = true}
-regex = {workspace = true}
-semver = {workspace = true}
-serde = {workspace = true}
-serde_yaml = {workspace = true}
-strum = {workspace = true}
-strum_macros = {workspace = true}
-thiserror = {workspace = true}
-url = {workspace = true}
-uuid = {workspace = true}
+anyhow = { workspace = true }
+bitflags = { workspace = true }
+const_format = { workspace = true }
+lazy_static = { workspace = true }
+log = { workspace = true }
+maplit = { workspace = true }
+netplan-types = { workspace = true }
+petgraph = { workspace = true }
+regex = { workspace = true }
+semver = { workspace = true }
+serde = { workspace = true }
+serde_variant = { workspace = true }
+serde_yaml = { workspace = true }
+strum = { workspace = true }
+strum_macros = { workspace = true }
+thiserror = { workspace = true }
+url = { workspace = true }
+uuid = { workspace = true }
 
 # Optional dependencies
-documented = {workspace = true, optional = true}
-indoc = {workspace = true, optional = true}
-schemars = {workspace = true, optional = true}
-serde_json = {workspace = true, optional = true}
+documented = { workspace = true, optional = true }
+indoc = { workspace = true, optional = true }
+schemars = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
 
 sysdefs = { path = "../sysdefs" }
+harpoon = { path = "../harpoon" }
 
 [dev-dependencies]
-indoc = {workspace = true}
-maplit = {workspace = true}
+indoc = { workspace = true }
+maplit = { workspace = true }
 
 [features]
 # Enables sysupdate-specific configurations

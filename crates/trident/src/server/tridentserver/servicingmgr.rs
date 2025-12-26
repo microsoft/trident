@@ -1,12 +1,13 @@
 use std::{fmt::Debug, sync::Arc};
 
+use log::error;
 use tokio::{
     sync::{OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock},
     task::JoinError,
 };
 
-use harpoon::{FinalStatus, StatusCode};
-use trident_api::error::{InvalidInputError, TridentError};
+use harpoon::{FinalStatus, StatusCode, TridentError as HarpoonTridentError};
+use trident_api::error::TridentError;
 
 use crate::{server::activitytracker::ActivityTracker, ExitKind};
 
@@ -59,17 +60,19 @@ impl ServicingManager {
                 },
                 Err(e) => FinalStatus {
                     status: StatusCode::Failure.into(),
-                    // TODO: convert trident error to harpoon error
-                    error: None,
+                    error: Some(HarpoonTridentError::from(&e)),
                     reboot_required: false,
                 },
             },
-            Err(_e) => FinalStatus {
-                status: StatusCode::Failure.into(),
-                // TODO: create an internal trident error and convert to harpoon error
-                error: None,
-                reboot_required: false,
-            },
+            Err(e) => {
+                error!("Servicing task join error: {:?}", e);
+                FinalStatus {
+                    status: StatusCode::Failure.into(),
+                    // TODO: create an internal trident error and convert to harpoon error
+                    error: None,
+                    reboot_required: false,
+                }
+            }
         }
     }
 
@@ -98,6 +101,8 @@ mod tests {
     use std::time::Duration;
 
     use tokio::time;
+
+    use trident_api::error::InvalidInputError;
 
     #[tokio::test]
     async fn test_servicing_manager_new() {
