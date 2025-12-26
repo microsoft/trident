@@ -187,7 +187,7 @@ pub enum Commands {
 
     #[clap(hide(true))]
     Daemon {
-        /// Inactivity timeout in seconds. The server will shut down
+        /// Inactivity timeout. The server will shut down
         /// automatically after being inactive for this duration. Setting it to
         /// 0 disables automatic shutdown. Supports human-readable durations,
         /// e.g., "5m", "1h30m", "300s".
