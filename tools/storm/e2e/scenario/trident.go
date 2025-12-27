@@ -3,6 +3,7 @@ package scenario
 import (
 	"fmt"
 	"tridenttools/storm/e2e/testrings"
+	"tridenttools/storm/utils/trident"
 
 	"github.com/Jeffail/gabs/v2"
 	"github.com/microsoft/storm"
@@ -38,7 +39,7 @@ type TridentE2EScenario struct {
 	// Hardware type of the scenario
 	hardware HardwareType
 	// Runtime type of the scenario
-	runtime RuntimeType
+	runtime trident.RuntimeType
 	// Test rings that this scenario should be run in
 	testRings testrings.TestRingSet
 	// Host configuration for this scenario
@@ -73,7 +74,7 @@ func NewTridentE2EScenario(
 	config map[string]interface{},
 	configParams TridentE2EHostConfigParams,
 	hardware HardwareType,
-	runtime RuntimeType,
+	runtime trident.RuntimeType,
 	testRings testrings.TestRingSet,
 ) *TridentE2EScenario {
 	return &TridentE2EScenario{
@@ -118,7 +119,7 @@ func (s *TridentE2EScenario) HardwareType() HardwareType {
 	return s.hardware
 }
 
-func (s *TridentE2EScenario) RuntimeType() RuntimeType {
+func (s *TridentE2EScenario) RuntimeType() trident.RuntimeType {
 	return s.runtime
 }
 
@@ -130,6 +131,7 @@ func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {
 	r.RegisterTestCase("prepare-hc", s.prepareHostConfig)
 	r.RegisterTestCase("setup-test-host", s.setupTestHost)
 	r.RegisterTestCase("install-os", s.installOs)
+	r.RegisterTestCase("check-trident-ssh", s.checkTridentViaSsh)
 	return nil
 }
 
@@ -141,3 +143,13 @@ func (s *TridentE2EScenario) renderHostConfiguration() (string, error) {
 
 	return string(out), nil
 }
+
+// func (s *TridentE2EScenario) getSshCliSettings() stormsshconfig.SshCliSettings {
+// 	return stormsshconfig.SshCliSettings{
+// 		Host:           s.testHost.IPAddress(),
+// 		Port:           22,
+// 		User:           testingUsername,
+// 		PrivateKeyData: []byte(s.sshPrivateKey),
+// 		Timeout:        10,
+// 	}
+// }

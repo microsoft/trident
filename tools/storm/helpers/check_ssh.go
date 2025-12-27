@@ -5,15 +5,15 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	stormenv "tridenttools/storm/utils/env"
 	stormsshcheck "tridenttools/storm/utils/ssh/check"
 	stormsshconfig "tridenttools/storm/utils/ssh/config"
+	"tridenttools/storm/utils/trident"
 )
 
 type CheckSshHelper struct {
 	args struct {
 		stormsshconfig.SshCliSettings `embed:""`
-		stormenv.EnvCliSettings       `embed:""`
+		trident.RuntimeCliSettings    `embed:""`
 		ExpectFailedCommit            bool `help:"Controls whether this test treats failed commits as successful." default:"false"`
 	}
 }
@@ -35,7 +35,7 @@ func (h *CheckSshHelper) checkTridentServiceWithSsh(tc storm.TestCase) error {
 	expectSuccessfulCommit := !h.args.ExpectFailedCommit
 	err := stormsshcheck.CheckTridentService(
 		h.args.SshCliSettings,
-		h.args.EnvCliSettings,
+		h.args.TridentRuntimeType,
 		expectSuccessfulCommit,
 		h.args.TimeoutDuration(),
 		tc,

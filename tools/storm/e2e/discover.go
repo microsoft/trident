@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"tridenttools/storm/e2e/scenario"
 	"tridenttools/storm/e2e/testrings"
+	"tridenttools/storm/utils/trident"
 
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
@@ -85,13 +86,13 @@ func produceScenariosFromConfig(name string, conf scenarioConfig, hostConfig map
 		}
 
 		// Iterate over all runtime types
-		for _, rt := range scenario.RuntimeTypes() {
+		for _, rt := range trident.RuntimeTypes() {
 			// For the current runtime type, get the corresponding test ring from the runtime configuration
 			var ring testrings.TestRing
 			switch rt {
-			case scenario.RuntimeTypeHost:
+			case trident.RuntimeTypeHost:
 				ring = currentRtConfig.Host
-			case scenario.RuntimeTypeContainer:
+			case trident.RuntimeTypeContainer:
 				ring = currentRtConfig.Container
 			}
 
@@ -124,7 +125,7 @@ func produceScenario(
 	config map[string]interface{},
 	configParams scenario.TridentE2EHostConfigParams,
 	hardware scenario.HardwareType,
-	runtime scenario.RuntimeType,
+	runtime trident.RuntimeType,
 	lowestRing testrings.TestRing,
 ) (*scenario.TridentE2EScenario, error) {
 	// Get the list of all target rings for this scenario. This is the list of

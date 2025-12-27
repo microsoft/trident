@@ -8,6 +8,7 @@ import (
 	"tridenttools/storm/e2e/scenario"
 	"tridenttools/storm/e2e/testrings"
 	"tridenttools/storm/utils"
+	"tridenttools/storm/utils/trident"
 
 	"github.com/microsoft/storm/pkg/storm/core"
 )
@@ -29,7 +30,7 @@ func (s *TridentE2EScenarioMatrix) Run(suite core.SuiteContext) error {
 
 	// Iterate over all hardware and runtime types to generate the corresponding matrices
 	for _, hw := range scenario.HardwareTypes() {
-		for _, rt := range scenario.RuntimeTypes() {
+		for _, rt := range trident.RuntimeTypes() {
 
 			// Get all matching scenarios for this hardware/runtime/testring combination
 			matchingScenarios := GetScenariosByHardwareAndRuntime(suite, hw, rt, s.TestRing)
@@ -61,7 +62,7 @@ func (s *TridentE2EScenarioMatrix) Run(suite core.SuiteContext) error {
 
 // This function returns all e2e test scenarios that match the given hardware type,
 // runtime type, and are enabled at the provided test ring.
-func GetScenariosByHardwareAndRuntime(suite core.SuiteContext, hardware scenario.HardwareType, runtime scenario.RuntimeType, testRing testrings.TestRing) []string {
+func GetScenariosByHardwareAndRuntime(suite core.SuiteContext, hardware scenario.HardwareType, runtime trident.RuntimeType, testRing testrings.TestRing) []string {
 	// Get all scenarios from the suite
 	scenarios := suite.Scenarios()
 	outputScenarios := []string{}
@@ -112,7 +113,7 @@ func GetScenariosByHardwareAndRuntime(suite core.SuiteContext, hardware scenario
 // ```
 //
 // Note: the example is indented for readability; the actual output is not indented.
-func (s *TridentE2EScenarioMatrix) GenerateMatrix(matchingScenarios []string, hardware scenario.HardwareType, runtime scenario.RuntimeType) (string, error) {
+func (s *TridentE2EScenarioMatrix) GenerateMatrix(matchingScenarios []string, hardware scenario.HardwareType, runtime trident.RuntimeType) (string, error) {
 	output := make(outputMatrix)
 	for _, scenarioName := range matchingScenarios {
 		entry := matrixEntry{

@@ -1,16 +1,5 @@
 package scenario
 
-type RuntimeType string
-
-const (
-	RuntimeTypeHost      RuntimeType = "host"
-	RuntimeTypeContainer RuntimeType = "container"
-)
-
-func (rt RuntimeType) ToString() string {
-	return string(rt)
-}
-
 type HardwareType string
 
 const (
@@ -32,8 +21,4 @@ func (ht HardwareType) IsBM() bool {
 
 func HardwareTypes() []HardwareType {
 	return []HardwareType{HardwareTypeBM, HardwareTypeVM}
-}
-
-func RuntimeTypes() []RuntimeType {
-	return []RuntimeType{RuntimeTypeHost, RuntimeTypeContainer}
 }

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"tridenttools/storm/utils/ssh/keys"
+	"tridenttools/storm/utils/trident"
 
 	"github.com/microsoft/storm"
 )
@@ -51,7 +52,7 @@ func (s *TridentE2EScenario) prepareHostConfig(tc storm.TestCase) error {
 	}
 
 	// If this is a container runtime, add the trident-container.tar.gz file to additional files.
-	if s.runtime == RuntimeTypeContainer {
+	if s.runtime == trident.RuntimeTypeContainer {
 		containerAdditionalFile := map[string]string{
 			"source":      "/var/lib/trident/trident-container.tar.gz",
 			"destination": "/var/lib/trident/trident-container.tar.gz",

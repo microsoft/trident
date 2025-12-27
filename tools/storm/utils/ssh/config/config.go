@@ -7,6 +7,8 @@ import (
 )
 
 type SshCliSettings struct {
+	// Raw Private Key Data; if set, this takes precedence over PrivateKeyPath.
+	PrivateKeyData []byte `kong:"-"`
 	PrivateKeyPath string `arg:"" help:"Path to the SSH key file" type:"existingfile"`
 	Host           string `arg:"" help:"Host to check SSH connection"`
 	User           string `arg:"" help:"User to use for SSH connection"`
