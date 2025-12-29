@@ -187,9 +187,8 @@ pub enum Commands {
 
     #[clap(hide(true))]
     Daemon {
-        /// Inactivity timeout. The server will shut down
-        /// automatically after being inactive for this duration. Setting it to
-        /// 0 disables automatic shutdown. Supports human-readable durations,
+        /// Inactivity timeout. The server will shut down automatically after
+        /// being inactive for this duration. Supports human-readable durations,
         /// e.g., "5m", "1h30m", "300s".
         #[clap(long, value_parser = humantime::parse_duration, default_value = crate::server::DEFAULT_INACTIVITY_TIMEOUT)]
         inactivity_timeout: Duration,
