@@ -2,7 +2,9 @@ package scenario
 
 import (
 	"fmt"
+	"time"
 	"tridenttools/storm/e2e/testrings"
+	"tridenttools/storm/utils/sshutils"
 	"tridenttools/storm/utils/trident"
 
 	"github.com/Jeffail/gabs/v2"
@@ -62,7 +64,7 @@ type TridentE2EScenario struct {
 	// Runtime variables
 
 	// Stores the SSH private key for VM access
-	sshPrivateKey string
+	sshPrivateKey []byte
 
 	// Stores information about the test host once it has been set up
 	testHost testHostInfo
@@ -144,12 +146,12 @@ func (s *TridentE2EScenario) renderHostConfiguration() (string, error) {
 	return string(out), nil
 }
 
-// func (s *TridentE2EScenario) getSshCliSettings() stormsshconfig.SshCliSettings {
-// 	return stormsshconfig.SshCliSettings{
-// 		Host:           s.testHost.IPAddress(),
-// 		Port:           22,
-// 		User:           testingUsername,
-// 		PrivateKeyData: []byte(s.sshPrivateKey),
-// 		Timeout:        10,
-// 	}
-// }
+func (s *TridentE2EScenario) sshClientConfig() sshutils.SshClientConfig {
+	return sshutils.SshClientConfig{
+		Host:       s.testHost.IPAddress().String(),
+		Port:       22,
+		User:       testingUsername,
+		PrivateKey: s.sshPrivateKey,
+		Timeout:    time.Duration(3) * time.Minute,
+	}
+}

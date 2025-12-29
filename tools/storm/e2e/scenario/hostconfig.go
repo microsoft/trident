@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"tridenttools/storm/utils/ssh/keys"
+	"tridenttools/storm/utils/sshutils"
 	"tridenttools/storm/utils/trident"
 
 	"github.com/microsoft/storm"
@@ -16,11 +16,11 @@ const (
 
 func (s *TridentE2EScenario) prepareHostConfig(tc storm.TestCase) error {
 	// Generate an SSH key pair for VM access, store the private key for later use
-	private, public, err := keys.GenerateRsaKeyPair(2048)
+	private, public, err := sshutils.GenerateRsaKeyPair(2048)
 	if err != nil {
 		return fmt.Errorf("failed to generate RSA key pair for e2e: %w", err)
 	}
-	s.sshPrivateKey = string(private)
+	s.sshPrivateKey = private
 
 	// Dump the private key to a file if requested
 	if s.args.DumpSshKeyFile != "" {
