@@ -242,9 +242,7 @@ fn setup_logging(args: &Cli) -> Result<Logstream, Error> {
         // Add logstream to send logs to the log server
         .with_logger(logstream.make_logger_with_level(LevelFilter::Trace))
         // Set the global filter for reqwest to debug
-        .with_global_filter("reqwest", LevelFilter::Debug)
-        // Set the global filter for goblin to off
-        .with_global_filter("goblin", LevelFilter::Off);
+        .with_global_filter("reqwest", LevelFilter::Debug);
 
     // Attempt to use the systemd journal if stderr is directly connected to it, and otherwise fall
     // back to env_logger.
