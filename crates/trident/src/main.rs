@@ -246,9 +246,7 @@ fn setup_logging(
         .with_logger(logstream.make_logger_with_level(LevelFilter::Trace))
         // Set the global filter for reqwest to debug
         .with_global_filter("reqwest", LevelFilter::Debug)
-        // Set the global filter for goblin to off
-        .with_global_filter("goblin", LevelFilter::Off)
-        // Filter out debug logs from h2
+        // Filter out debug logs from h2, some of which have target "tracing::span"
         .with_global_filter("tracing::span", LevelFilter::Error)
         .with_global_filter("h2", LevelFilter::Error);
 
