@@ -199,7 +199,7 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 		}
 	} else {
 		if config.Netlaunch.Bmc != nil && config.Netlaunch.Bmc.SerialOverSsh != nil {
-			serial, err := config.Netlaunch.Bmc.ListenForSerialOutput()
+			serial, err := config.Netlaunch.Bmc.ListenForSerialOutput(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to open serial over SSH session: %w", err)
 			}

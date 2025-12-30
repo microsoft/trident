@@ -125,6 +125,10 @@ func (s *TridentE2EScenario) RuntimeType() trident.RuntimeType {
 	return s.runtime
 }
 
+func (s *TridentE2EScenario) HasABUpdate() bool {
+	return s.config.Exists("storage", "abUpdate")
+}
+
 func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {
 	if s.hardware.IsVM() {
 		r.RegisterTestCase("install-vm-deps", s.installVmDependencies)
@@ -134,6 +138,10 @@ func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {
 	r.RegisterTestCase("setup-test-host", s.setupTestHost)
 	r.RegisterTestCase("install-os", s.installOs)
 	r.RegisterTestCase("check-trident-ssh", s.checkTridentViaSsh)
+
+	if s.HasABUpdate() {
+		r.RegisterTestCase("ab-update-1", s.doAbUpdate)
+	}
 	return nil
 }
 

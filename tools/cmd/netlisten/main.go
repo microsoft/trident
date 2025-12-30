@@ -79,6 +79,14 @@ var rootCmd = &cobra.Command{
 			cancel() // Cancel the context when a signal is received
 		}()
 
+		// Load config
+		config := &netlaunch.NetLaunchConfig{
+			ListenPort:      listen_port,
+			ServeDirectory:  serveFolder,
+			TracestreamFile: traceFile,
+			LogstreamFile:   backgroundLogstreamFull,
+		}
+
 		address := fmt.Sprintf("0.0.0.0:%d", listen_port)
 		listen, err := net.Listen("tcp4", address)
 		if err != nil {

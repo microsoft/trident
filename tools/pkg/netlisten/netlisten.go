@@ -1,0 +1,74 @@
+package netlisten
+
+import (
+	"context"
+	"fmt"
+	"net"
+	"net/http"
+	"tridenttools/pkg/netlaunch"
+	"tridenttools/pkg/phonehome"
+
+	"github.com/sirupsen/logrus"
+)
+
+func RunNetlisten(ctx context.Context, config *netlaunch.NetLaunchConfig) error {
+	address := fmt.Sprintf("0.0.0.0:%d", config.ListenPort)
+	listen, err := net.Listen("tcp4", address)
+	if err != nil {
+		return fmt.Errorf("failed to open port listening on %s: %w", address, err)
+	}
+
+	// Set up listening
+	result := make(chan phonehome.PhoneHomeResult)
+	server := &http.Server{}
+
+	// Set up listening for phonehome
+	phonehome.SetupPhoneHomeServer(result, "")
+	// Set up listening for logstream
+	logstreamFull, err := phonehome.SetupLogstream(config.LogstreamFile)
+	if err != nil {
+		return fmt.Errorf("failed to set up logstream: %w", err)
+	}
+	defer logstreamFull.Close()
+
+	// Set up listening for tracestream
+	traceFile, err := phonehome.SetupTraceStream(config.TracestreamFile)
+	if err != nil {
+		return fmt.Errorf("failed to set up trace stream: %w", err)
+	}
+	defer traceFile.Close()
+
+	if len(config.ServeDirectory) != 0 {
+		http.Handle("/files/", http.StripPrefix("/files/", http.FileServer(http.Dir(config.ServeDirectory))))
+	}
+
+	// If serial over SSH is configured, listen for serial output.
+	if config.Netlaunch.Bmc != nil && config.Netlaunch.Bmc.SerialOverSsh != nil {
+		serial, err := config.Netlaunch.Bmc.ListenForSerialOutput(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to open serial over SSH session: %w", err)
+		}
+		defer serial.Close()
+	}
+
+	// Start the HTTP server
+	go server.Serve(listen)
+	logrus.WithField("address", listen.Addr().String()).Info("Listening...")
+
+	logrus.Info("Waiting for phone home...")
+
+	// Wait for done signal.
+	phonehomeErr := phonehome.ListenLoop(ctx, result, config.WaitForProvisioning, config.MaxPhonehomeFailures)
+
+	err = server.Shutdown(ctx)
+	if err != nil {
+		logrus.WithError(err).Errorln("failed to shutdown server")
+	}
+
+	if phonehomeErr != nil {
+		logrus.WithError(phonehomeErr).Errorln("phonehome returned an error")
+		return phonehomeErr
+	}
+
+	return nil
+}
