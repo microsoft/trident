@@ -25,7 +25,7 @@ service TridentService {
   rpc UpdateFinalize(FinalizeRequest) returns (stream ServicingResponse);
 
   // CheckRollback checks what type of rollback would be performed.
-  rpc CheckRollback(CheckRollbackRequest) returns (stream CheckRollbackResponse);
+  rpc CheckRollback(CheckRollbackRequest) returns (CheckRollbackResponse);
 
   // Rollback performs a rollback.
   rpc Rollback(RollbackServicingRequest) returns (stream ServicingResponse);
