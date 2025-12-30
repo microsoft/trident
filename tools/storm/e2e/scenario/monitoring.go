@@ -37,7 +37,9 @@ import (
 // The monitor will run until the context is cancelled or the login prompt is
 // detected.
 func (s *TridentE2EScenario) spawnVMSerialMonitor(ctx context.Context, output io.WriteCloser) (<-chan bool, error) {
-	doneChannel := make(chan bool)
+	// Channel to signal when the monitor is done. Buffered with size 1 to avoid
+	// deadlocks when we exit early and send a message to it immediately.
+	doneChannel := make(chan bool, 1)
 	var wg sync.WaitGroup
 
 	// Only spawn the VM serial logger if the hardware type is VM. Otherwise, do
