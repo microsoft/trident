@@ -60,7 +60,7 @@ func (s *TridentE2EScenario) installOs(tc storm.TestCase) error {
 	// Start VM serial monitor (only runs if hardware is VM)
 	monWaitChan, monErr := s.spawnVMSerialMonitor(timeoutCtx, tc.ArtifactBroker().StreamArtifactData("install/serial.log"))
 	if monErr != nil {
-		log.Errorf("Failed to start VM serial monitor")
+		return fmt.Errorf("failed to start VM serial monitor: %w", monErr)
 	}
 
 	nlErr := netlaunch.RunNetlaunch(timeoutCtx, &config)

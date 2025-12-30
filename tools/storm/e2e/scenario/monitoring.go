@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"strings"
 	"sync"
 	"time"
@@ -69,9 +68,6 @@ func (s *TridentE2EScenario) spawnVMSerialMonitor(ctx context.Context, output io
 		defer output.Close()
 		err := waitForVmSerialLogLoginLibvirt(ctx, vmInfo.Lv(), vmInfo.LvDomain(), output)
 		if err != nil {
-			if errors.Is(err, fs.ErrPermission) {
-				err = fmt.Errorf("permission denied when accessing VM serial log file (are you missing sudo?): %w", err)
-			}
 			errStr := fmt.Sprintf("VM serial log monitor ended with error: %v", err)
 			logrus.Error(errStr)
 
@@ -170,7 +166,7 @@ func readerLoop(ctx context.Context, in io.Reader, errCh <-chan error, out io.Wr
 	ring := ring.New(ringSize)
 
 	reader := bufio.NewReader(in)
-	lineBuffer := ""
+	var lineBuffBuilder strings.Builder
 	for {
 		// Check for context cancellation
 		if ctx.Err() != nil {
@@ -201,7 +197,8 @@ func readerLoop(ctx context.Context, in io.Reader, errCh <-chan error, out io.Wr
 		}
 
 		// Check if the current line contains the login prompt, and return if it does
-		if strings.Contains(lineBuffer, "login:") && !strings.Contains(lineBuffer, "mos") {
+		if strings.Contains(lineBuffBuilder.String(), "login:") &&
+			!strings.Contains(lineBuffBuilder.String(), "mos") {
 			logrus.Infof("Login prompt found in VM serial log")
 			return nil
 		}
@@ -220,20 +217,20 @@ func readerLoop(ctx context.Context, in io.Reader, errCh <-chan error, out io.Wr
 		runeStr := string(readRune)
 		if runeStr == "\n" {
 			// Store the line in the ring buffer
-			ring.Value = lineBuffer
+			ring.Value = lineBuffBuilder.String()
 			ring = ring.Next()
 
 			// Output the line to the provided writer
-			_, err := out.Write([]byte(stormutils.RemoveAllANSI(lineBuffer) + "\n"))
+			_, err := out.Write([]byte(stormutils.RemoveAllANSI(lineBuffBuilder.String()) + "\n"))
 			if err != nil {
 				return fmt.Errorf("failed to write serial log output: %w", err)
 			}
 
 			// New line, reset line buffer
-			lineBuffer = ""
+			lineBuffBuilder.Reset()
 		} else {
-			// Append rune to line buffer
-			lineBuffer += runeStr
+			// Append rune to line buffer, this operation always succeeds.
+			lineBuffBuilder.WriteRune(readRune)
 		}
 	}
 }
