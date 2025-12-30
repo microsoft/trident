@@ -39,18 +39,18 @@ func (s *TridentE2EScenario) installOs(tc storm.TestCase) error {
 
 	config := netlaunch.NetLaunchConfig{
 		NetCommonConfig: netlaunch.NetCommonConfig{
+			ListenPort:           defaultNetlaunchListenPort,
 			LogstreamFile:        s.args.LogstreamFile,
 			TracestreamFile:      traceStreamFile,
 			ServeDirectory:       s.args.TestImageDir,
-			WaitForProvisioning:  true,
 			MaxPhonehomeFailures: s.configParams.MaxExpectedFailures,
 		},
-		Netlaunch:        connConfig,
-		IsoPath:          s.args.IsoPath,
-		ListenPort:       defaultNetlaunchListenPort,
-		HostConfigFile:   tempHostConfigFilePath,
-		CertificateFile:  s.args.CertFile,
-		EnableSecureBoot: true,
+		Netlaunch:           connConfig,
+		IsoPath:             s.args.IsoPath,
+		WaitForProvisioning: true,
+		HostConfigFile:      tempHostConfigFilePath,
+		CertificateFile:     s.args.CertFile,
+		EnableSecureBoot:    true,
 	}
 
 	nlErr := netlaunch.RunNetlaunch(tc.Context(), &config)
