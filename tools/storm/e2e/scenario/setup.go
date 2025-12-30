@@ -33,19 +33,19 @@ type testHostInfo interface {
 }
 
 type testVmHostInfo interface {
-	// Retrieve the libvirt connection instance.
+	// Returns the libvirt connection instance.
 	Lv() *libvirt.Libvirt
 
-	// Retrieve the VM UUID.
+	// Returns the VM UUID.
 	VmUuid() uuid.UUID
 
-	// Retrieve the name of the VM.
+	// Returns the name of the VM.
 	VmName() string
 
-	// Retrieves the XML definition of the VM.
+	// Returns the XML definition of the VM.
 	VmXml() *libvirtxml.Domain
 
-	// Retrieves the serial log file path of the VM.
+	// Returns the serial log file path of the VM.
 	SerialLogPath() (string, error)
 
 	// Returns the libvirt DOMAIN object for the VM.
