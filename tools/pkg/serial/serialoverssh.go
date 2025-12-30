@@ -56,7 +56,7 @@ func (s *SerialOverSshSession) Close() {
 	}
 }
 
-func (s *SerialOverSshSession) start(comPort string) error {
+func (s *SerialOverSshSession) start(ctx context.Context, comPort string) error {
 	command := fmt.Sprintf("console %s", comPort)
 
 	// Open the Stdout, Stderr, and Stdin pipes
@@ -91,7 +91,7 @@ func (s *SerialOverSshSession) start(comPort string) error {
 	errbuf := bufio.NewReader(stderr_p)
 
 	// Context for canceling the goroutines
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
 	s.cancel = &cancel
 
 	// Channel to collect the output from the serial console
@@ -172,7 +172,7 @@ func (s *SerialOverSshSession) start(comPort string) error {
 	return nil
 }
 
-func NewSerialOverSshSession(config SerialOverSSHSettings) (*SerialOverSshSession, error) {
+func NewSerialOverSshSession(ctx context.Context, config SerialOverSSHSettings) (*SerialOverSshSession, error) {
 	ssh_config := &ssh.ClientConfig{
 		User: config.Username,
 		Auth: []ssh.AuthMethod{
@@ -221,7 +221,7 @@ func NewSerialOverSshSession(config SerialOverSSHSettings) (*SerialOverSshSessio
 	sshOverSerial.file = outfile
 	log.WithField("output", outfile.Name()).Debug("Serial: Writing output to file")
 
-	err = sshOverSerial.start(config.ComPort)
+	err = sshOverSerial.start(ctx, config.ComPort)
 	if err != nil {
 		sshOverSerial.Close()
 		log.WithError(err).Error("Serial: Failed to start serial console")

@@ -119,6 +119,10 @@ func (s *TridentE2EScenario) RuntimeType() RuntimeType {
 	return s.runtime
 }
 
+func (s *TridentE2EScenario) HasABUpdate() bool {
+	return s.config.Exists("storage", "abUpdate")
+}
+
 func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {
 	r.RegisterTestCase("install-vm-deps", s.installVmDependencies)
 	r.RegisterTestCase("prepare-hc", s.prepareHostConfig)
