@@ -37,7 +37,7 @@ func (s *TridentE2EScenarioMatrix) Run(suite core.SuiteContext) error {
 			slices.Sort(matchingScenarios)
 
 			// Generate the matrix JSON
-			matrixJson, err := s.GenerateMatrix(matchingScenarios, hw, rt)
+			matrixJson, err := s.GenerateMatrix(matchingScenarios, hw, rt, s.TestRing)
 			if err != nil {
 				return fmt.Errorf("failed to generate matrix for hardware '%s' and runtime '%s': %w", hw, rt, err)
 			}
@@ -62,7 +62,12 @@ func (s *TridentE2EScenarioMatrix) Run(suite core.SuiteContext) error {
 
 // This function returns all e2e test scenarios that match the given hardware type,
 // runtime type, and are enabled at the provided test ring.
-func GetScenariosByHardwareAndRuntime(suite core.SuiteContext, hardware scenario.HardwareType, runtime trident.RuntimeType, testRing testrings.TestRing) []string {
+func GetScenariosByHardwareAndRuntime(
+	suite core.SuiteContext,
+	hardware scenario.HardwareType,
+	runtime trident.RuntimeType,
+	testRing testrings.TestRing,
+) []string {
 	// Get all scenarios from the suite
 	scenarios := suite.Scenarios()
 	outputScenarios := []string{}
@@ -113,13 +118,19 @@ func GetScenariosByHardwareAndRuntime(suite core.SuiteContext, hardware scenario
 // ```
 //
 // Note: the example is indented for readability; the actual output is not indented.
-func (s *TridentE2EScenarioMatrix) GenerateMatrix(matchingScenarios []string, hardware scenario.HardwareType, runtime trident.RuntimeType) (string, error) {
+func (s *TridentE2EScenarioMatrix) GenerateMatrix(
+	matchingScenarios []string,
+	hardware scenario.HardwareType,
+	runtime trident.RuntimeType,
+	testRing testrings.TestRing,
+) (string, error) {
 	output := make(outputMatrix)
 	for _, scenarioName := range matchingScenarios {
 		entry := matrixEntry{
 			Scenario: scenarioName,
-			Hardware: string(hardware),
-			Runtime:  string(runtime),
+			Hardware: hardware.ToString(),
+			Runtime:  runtime.ToString(),
+			TestRing: testRing.ToString(),
 		}
 		output[scenarioName] = entry
 	}
@@ -135,7 +146,8 @@ func (s *TridentE2EScenarioMatrix) GenerateMatrix(matchingScenarios []string, ha
 type outputMatrix map[string]matrixEntry
 
 type matrixEntry struct {
-	Scenario string `json:"scenario"`
-	Hardware string `json:"hardware"`
-	Runtime  string `json:"runtime"`
+	Scenario string `json:"SCENARIO"`
+	Hardware string `json:"HARDWARE"`
+	Runtime  string `json:"RUNTIME"`
+	TestRing string `json:"TEST_RING"`
 }

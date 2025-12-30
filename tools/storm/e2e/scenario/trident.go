@@ -1,6 +1,7 @@
 package scenario
 
 import (
+	"context"
 	"fmt"
 	"time"
 	"tridenttools/storm/e2e/testrings"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/Jeffail/gabs/v2"
 	"github.com/microsoft/storm"
+	"golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v3"
 )
 
@@ -51,14 +53,15 @@ type TridentE2EScenario struct {
 
 	// Storm scenario arguments, populated when the scenario is executed.
 	args struct {
-		IsoPath               string `name:"iso" help:"Path to the ISO to use for OS installation." required:"true"`
-		PipelineRun           bool   `name:"pipeline-run" help:"Indicates whether the scenario is being run in a pipeline context. This will, among other things, install dependencies."`
-		TestImageDir          string `short:"i" name:"test-image-dir" help:"Directory containing the test images to use for OS installation." default:"./artifacts/test-image"`
-		LogstreamFile         string `name:"logstream-file" help:"File to write logstream to." default:"logstream-full.log"`
-		TracestreamFile       string `name:"tracestream-file" help:"File to write tracestream to."`
-		CertFile              string `name:"signing-cert" help:"Path to certificate file to inject into VM EFI variables."`
-		DumpSshKeyFile        string `name:"dump-ssh-key" help:"If set, the SSH private key used for VM access will be dumped to the specified file."`
-		VmWaitForLoginTimeout int    `name:"vm-wait-for-login-timeout" help:"Time in seconds to wait for the VM to reach login prompt." default:"600"`
+		IsoPath               string             `name:"iso" help:"Path to the ISO to use for OS installation." required:"true"`
+		PipelineRun           bool               `name:"pipeline-run" help:"Indicates whether the scenario is being run in a pipeline context. This will, among other things, install dependencies."`
+		TestImageDir          string             `short:"i" name:"test-image-dir" help:"Directory containing the test images to use for OS installation." default:"./artifacts/test-image"`
+		LogstreamFile         string             `name:"logstream-file" help:"File to write logstream to." default:"logstream-full.log"`
+		TracestreamFile       string             `name:"tracestream-file" help:"File to write tracestream to."`
+		CertFile              string             `name:"signing-cert" help:"Path to certificate file to inject into VM EFI variables."`
+		DumpSshKeyFile        string             `name:"dump-ssh-key" help:"If set, the SSH private key used for VM access will be dumped to the specified file."`
+		VmWaitForLoginTimeout int                `name:"vm-wait-for-login-timeout" help:"Time in seconds to wait for the VM to reach login prompt." default:"600"`
+		TestRing              testrings.TestRing `name:"test-ring" help:"The test ring in which this scenario is being executed. Defaults to lowest ring for this scenario." env:"TEST_RING"`
 	}
 
 	// Runtime variables
@@ -68,6 +71,9 @@ type TridentE2EScenario struct {
 
 	// Stores information about the test host once it has been set up
 	testHost testHostInfo
+
+	// Stores an open ssh.Client to the test host
+	sshClient *ssh.Client
 }
 
 func NewTridentE2EScenario(
@@ -95,6 +101,11 @@ func (s *TridentE2EScenario) Args() any {
 }
 
 func (s *TridentE2EScenario) Cleanup(storm.SetupCleanupContext) error {
+	if s.sshClient != nil {
+		s.sshClient.Close()
+		s.sshClient = nil
+	}
+
 	if s.testHost != nil {
 		err := s.testHost.Cleanup()
 		if err != nil {
@@ -140,7 +151,7 @@ func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {
 	r.RegisterTestCase("check-trident-ssh", s.checkTridentViaSsh)
 
 	if s.HasABUpdate() {
-		r.RegisterTestCase("ab-update-1", s.doAbUpdate)
+		s.AddAbUpdateTests(r, "ab-update-1")
 	}
 	return nil
 }
@@ -154,12 +165,40 @@ func (s *TridentE2EScenario) renderHostConfiguration() (string, error) {
 	return string(out), nil
 }
 
-func (s *TridentE2EScenario) sshClientConfig() sshutils.SshClientConfig {
-	return sshutils.SshClientConfig{
+// populateSshClient ensures that `s.sshClient` is populated with a valid SSH client
+// connected to the test host. If there is already an open client, it checks if
+// it's still valid; if not, it opens a new client.
+func (s *TridentE2EScenario) populateSshClient(ctx context.Context) error {
+	if s.sshClient != nil {
+		// There is already an open client, check if it's still valid.
+		session, err := s.sshClient.NewSession()
+		if err == nil {
+			session.Close()
+			// Still valid
+			return nil
+		}
+
+		// Not valid anymore, close it.
+		s.sshClient.Close()
+		s.sshClient = nil
+	}
+
+	// If we got here we need to open a new client.
+
+	config := sshutils.SshClientConfig{
 		Host:       s.testHost.IPAddress().String(),
 		Port:       22,
 		User:       testingUsername,
 		PrivateKey: s.sshPrivateKey,
 		Timeout:    time.Duration(3) * time.Minute,
 	}
+
+	client, err := sshutils.CreateSshClientWithRedial(ctx, time.Second, config)
+	if err != nil {
+		return fmt.Errorf("failed to create SSH client to test host: %w", err)
+	}
+
+	s.sshClient = client
+
+	return nil
 }
