@@ -965,17 +965,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "goblin"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e961b33649994dcf69303af6b3a332c1228549e604d455d61ec5d2ab5e68d3a"
-dependencies = [
- "log",
- "plain",
- "scroll",
-]
-
-[[package]]
 name = "h2"
 version = "0.4.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1567,6 +1556,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "78ca9ab1a0babb1e7d5695e3530886289c18cf2f87ec19a575a0abdce112e3a3"
 
 [[package]]
+name = "memoffset"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "488016bfae457b036d996092f6cb448677611ce4449e970ceaf42695203f218a"
+dependencies = [
+ "autocfg",
+]
+
+[[package]]
 name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1658,6 +1656,7 @@ dependencies = [
  "cfg-if",
  "cfg_aliases",
  "libc",
+ "memoffset",
 ]
 
 [[package]]
@@ -1832,7 +1831,6 @@ dependencies = [
  "duct",
  "enumflags2",
  "glob",
- "goblin",
  "hex",
  "hostname",
  "indoc",
@@ -2049,12 +2047,6 @@ name = "pkg-config"
 version = "0.3.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "953ec861398dccce10c670dfeaf3ec4911ca479e9c02154b3a215178c5f566f2"
-
-[[package]]
-name = "plain"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
 
 [[package]]
 name = "ppv-lite86"
@@ -2526,26 +2518,6 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
-
-[[package]]
-name = "scroll"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1257cd4248b4132760d6524d6dda4e053bc648c9070b960929bf50cfb1e7add"
-dependencies = [
- "scroll_derive",
-]
-
-[[package]]
-name = "scroll_derive"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22fc4f90c27b57691bbaf11d8ecc7cfbfe98a4da6dbe60226115d322aa80c06e"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
 
 [[package]]
 name = "security-framework"
@@ -3197,6 +3169,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "tonic-middleware"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bd592855b0a0f96103af076c7523c5c51b75090ee31ff178cc7c024c06ac3566"
+dependencies = [
+ "async-trait",
+ "futures-util",
+ "tonic",
+ "tower",
+]
+
+[[package]]
 name = "tonic-prost"
 version = "0.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3340,6 +3324,8 @@ dependencies = [
  "enumflags2",
  "env_logger 0.11.5",
  "glob",
+ "harpoon",
+ "hyper",
  "indoc",
  "inventory",
  "lazy_static",
@@ -3352,6 +3338,7 @@ dependencies = [
  "oci-client",
  "osutils",
  "procfs",
+ "prost-types",
  "pytest",
  "pytest_gen",
  "rayon",
@@ -3371,7 +3358,13 @@ dependencies = [
  "tar",
  "tempfile",
  "tera",
+ "thiserror 1.0.69",
  "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tonic",
+ "tonic-middleware",
+ "tower",
  "tracing",
  "tracing-subscriber",
  "trident_api",

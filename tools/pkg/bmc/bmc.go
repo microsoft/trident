@@ -5,9 +5,11 @@ package bmc
 
 import (
 	"context"
-	"tridenttools/pkg/serial"
+	"fmt"
 
 	log "github.com/sirupsen/logrus"
+
+	"tridenttools/pkg/serial"
 )
 
 type Bmc struct {
@@ -25,6 +27,10 @@ type Bmc struct {
 // ListenForSerialOutput sets up a serial over SSH session in a background
 // goroutine and returns a handle to it.
 func (b *Bmc) ListenForSerialOutput(ctx context.Context) (*serial.SerialOverSshSession, error) {
+	if b.SerialOverSsh == nil {
+		return nil, fmt.Errorf("serial over SSH is not configured")
+	}
+
 	serial, err := serial.NewSerialOverSshSession(ctx, serial.SerialOverSSHSettings{
 		Host:     b.Ip,
 		Port:     b.SerialOverSsh.SshPort,

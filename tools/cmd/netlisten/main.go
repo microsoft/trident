@@ -24,23 +24,21 @@ Then start the provisioning using the patched Trident config file.
 package main
 
 import (
-	"fmt"
-	"net"
+	"context"
+	"os"
 	"os/signal"
 	"syscall"
-	"tridenttools/pkg/netlaunch"
-	"tridenttools/pkg/phonehome"
-
-	"context"
-	"net/http"
-	"os"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
+	"tridenttools/pkg/netlaunch"
+	"tridenttools/pkg/netlisten"
+	"tridenttools/pkg/phonehome"
 )
 
-var listen_port uint16
+var listenPort uint16
 var serveFolder string
 var forceColor bool
 var backgroundLogstreamFull string
@@ -51,7 +49,7 @@ var rootCmd = &cobra.Command{
 	Use:   "netlisten",
 	Short: "Trident Phonehome Server",
 	PreRun: func(cmd *cobra.Command, args []string) {
-		if listen_port == 0 {
+		if listenPort == 0 {
 			log.Fatal("A port must be specified")
 		}
 
@@ -80,92 +78,40 @@ var rootCmd = &cobra.Command{
 		}()
 
 		// Load config
-		config := &netlaunch.NetLaunchConfig{
-			ListenPort:      listen_port,
-			ServeDirectory:  serveFolder,
-			TracestreamFile: traceFile,
-			LogstreamFile:   backgroundLogstreamFull,
-		}
-
-		address := fmt.Sprintf("0.0.0.0:%d", listen_port)
-		listen, err := net.Listen("tcp4", address)
-		if err != nil {
-			log.WithError(err).Fatalf("failed to open port listening on %s", address)
-		}
-
-		// Set up listening
-		result := make(chan phonehome.PhoneHomeResult)
-		server := &http.Server{}
-
-		// Set up listening for phonehome
-		phonehome.SetupPhoneHomeServer(result, "")
-		// Set up listening for logstream
-		logstreamFull, err := phonehome.SetupLogstream(backgroundLogstreamFull)
-		if err != nil {
-			log.WithError(err).Fatalf("failed to set up logstream")
-		}
-		defer logstreamFull.Close()
-
-		// Set up listening for tracestream
-		traceFile, err := phonehome.SetupTraceStream(traceFile)
-		if err != nil {
-			log.WithError(err).Fatalf("failed to set up trace stream")
-		}
-		defer traceFile.Close()
-
-		if len(serveFolder) != 0 {
-			http.Handle("/files/", http.StripPrefix("/files/", http.FileServer(http.Dir(serveFolder))))
-		}
+		config := netlaunch.NetListenConfig{}
 
 		if netlistenConfigFile != "" {
-			go func() {
-				viper.SetConfigType("yaml")
-				viper.SetConfigFile(netlistenConfigFile)
-				if err := viper.ReadInConfig(); err != nil {
-					log.WithError(err).Fatal("failed to read configuration file")
-				}
+			viper.SetConfigType("yaml")
+			viper.SetConfigFile(netlistenConfigFile)
 
-				config := netlaunch.NetListenConfig{}
-				if err := viper.UnmarshalExact(&config); err != nil {
-					log.WithError(err).Fatal("could not unmarshal configuration")
-				}
-				if config.Netlisten.Bmc != nil && config.Netlisten.Bmc.SerialOverSsh != nil {
-					serial, err := config.Netlisten.Bmc.ListenForSerialOutput()
-					if err != nil {
-						log.WithError(err).Fatalf("Failed to open serial over SSH session")
-					}
-					defer serial.Close()
+			if err := viper.ReadInConfig(); err != nil {
+				log.WithError(err).Fatal("failed to read configuration file")
+			}
 
-					// Wait for context cancellation
-					<-ctx.Done()
-				}
-			}()
+			if err := viper.UnmarshalExact(&config); err != nil {
+				log.WithError(err).Fatal("could not unmarshal configuration")
+			}
 		}
 
-		// Start the HTTP server
-		go server.Serve(listen)
-		log.WithField("address", listen.Addr().String()).Info("Listening...")
-
-		log.Info("Waiting for phone home...")
-
-		// Wait for done signal.
+		config.ListenPort = listenPort
+		config.LogstreamFile = backgroundLogstreamFull
+		config.TracestreamFile = traceFile
+		config.ServeDirectory = serveFolder
 		// HACK: Ignore the first failure from phonehome to support the 'rerun'
-		// E2E test.
-		phonehomeErr := phonehome.ListenLoop(ctx, result, false, 1)
+		// E2E test. (preserved from previous implementation)
+		config.MaxPhonehomeFailures = 1
+
+		err := netlisten.RunNetlisten(ctx, &config)
 
 		// Get an exit code based on the error and log it
-		var exitCode int = phonehome.GetExitCodeFromErrorAndLog(phonehomeErr)
-
-		log.Info("Shutting down server...")
-		server.Shutdown(context.Background())
-		log.Info("Server shut down")
+		var exitCode int = phonehome.GetExitCodeFromErrorAndLog(err)
 
 		os.Exit(exitCode)
 	},
 }
 
 func init() {
-	rootCmd.PersistentFlags().Uint16VarP(&listen_port, "port", "p", 0, "Port to listen on for logstream & phonehome. Random if not specified.")
+	rootCmd.PersistentFlags().Uint16VarP(&listenPort, "port", "p", 0, "Port to listen on for logstream & phonehome. Random if not specified.")
 	rootCmd.PersistentFlags().StringVarP(&serveFolder, "servefolder", "s", "", "Optional folder to serve files from at /files")
 	rootCmd.PersistentFlags().BoolVarP(&forceColor, "force-color", "", false, "Force colored output.")
 	rootCmd.PersistentFlags().StringVarP(&backgroundLogstreamFull, "full-logstream", "b", "logstream-full.log", "File to write full logstream output to.")

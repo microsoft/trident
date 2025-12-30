@@ -37,6 +37,11 @@ pub mod stream;
 mod subsystems;
 pub mod validation;
 
+// TODO: Fully enable as part of #399.
+#[cfg(test)]
+#[allow(dead_code, unused)]
+mod server;
+
 use engine::{rollback, storage::rebuild};
 
 pub use datastore::DataStore;

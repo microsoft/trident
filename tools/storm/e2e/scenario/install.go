@@ -41,17 +41,19 @@ func (s *TridentE2EScenario) installOs(tc storm.TestCase) error {
 	log.Infof("Using host config:\n%s", string(hc))
 
 	config := netlaunch.NetLaunchConfig{
-		Netlaunch:            connConfig,
-		IsoPath:              s.args.IsoPath,
-		ListenPort:           defaultNetlaunchListenPort,
-		HostConfigFile:       tempHostConfigFilePath,
-		LogstreamFile:        s.args.LogstreamFile,
-		TracestreamFile:      traceStreamFile,
-		ServeDirectory:       s.args.TestImageDir,
-		CertificateFile:      s.args.CertFile,
-		EnableSecureBoot:     true,
-		WaitForProvisioning:  true,
-		MaxPhonehomeFailures: s.configParams.MaxExpectedFailures,
+		NetCommonConfig: netlaunch.NetCommonConfig{
+			ListenPort:           defaultNetlaunchListenPort,
+			LogstreamFile:        s.args.LogstreamFile,
+			TracestreamFile:      traceStreamFile,
+			ServeDirectory:       s.args.TestImageDir,
+			MaxPhonehomeFailures: s.configParams.MaxExpectedFailures,
+		},
+		Netlaunch:           connConfig,
+		IsoPath:             s.args.IsoPath,
+		WaitForProvisioning: true,
+		HostConfigFile:      tempHostConfigFilePath,
+		CertificateFile:     s.args.CertFile,
+		EnableSecureBoot:    true,
 	}
 
 	timeoutCtx, cancel := context.WithTimeout(tc.Context(), time.Duration(10)*time.Minute)

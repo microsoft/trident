@@ -11,7 +11,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func RunNetlisten(ctx context.Context, config *netlaunch.NetLaunchConfig) error {
+func RunNetlisten(ctx context.Context, config *netlaunch.NetListenConfig) error {
 	address := fmt.Sprintf("0.0.0.0:%d", config.ListenPort)
 	listen, err := net.Listen("tcp4", address)
 	if err != nil {
@@ -43,8 +43,8 @@ func RunNetlisten(ctx context.Context, config *netlaunch.NetLaunchConfig) error 
 	}
 
 	// If serial over SSH is configured, listen for serial output.
-	if config.Netlaunch.Bmc != nil && config.Netlaunch.Bmc.SerialOverSsh != nil {
-		serial, err := config.Netlaunch.Bmc.ListenForSerialOutput(ctx)
+	if config.Netlisten.Bmc != nil && config.Netlisten.Bmc.SerialOverSsh != nil {
+		serial, err := config.Netlisten.Bmc.ListenForSerialOutput(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to open serial over SSH session: %w", err)
 		}
@@ -58,11 +58,15 @@ func RunNetlisten(ctx context.Context, config *netlaunch.NetLaunchConfig) error 
 	logrus.Info("Waiting for phone home...")
 
 	// Wait for done signal.
-	phonehomeErr := phonehome.ListenLoop(ctx, result, config.WaitForProvisioning, config.MaxPhonehomeFailures)
+	phonehomeErr := phonehome.ListenLoop(ctx, result, false, config.MaxPhonehomeFailures)
 
 	err = server.Shutdown(ctx)
 	if err != nil {
-		logrus.WithError(err).Errorln("failed to shutdown server")
+		if ctx.Err() != nil {
+			logrus.Infoln("server shutdown due to context cancellation")
+		} else {
+			logrus.WithError(err).Errorln("failed to shutdown server")
+		}
 	}
 
 	if phonehomeErr != nil {

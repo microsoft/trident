@@ -18,6 +18,7 @@ COPY .cargo/config ./.cargo/config
 COPY Cargo.toml .
 COPY Cargo.lock .
 COPY crates/ ./crates/
+COPY proto/ ./proto/
 
 ARG TRIDENT_VERSION=dev-build
 ARG RPM_VER=0.1.0
