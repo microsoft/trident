@@ -78,10 +78,10 @@ fn run_trident(
 
         Commands::Diagnose {
             output,
-            full,
+            journal,
             selinux,
         } => {
-            return Trident::diagnose(output, *full, *selinux)
+            return Trident::diagnose(output, *journal, *selinux)
                 .message("Failed to generate diagnostics")
                 .map(|()| ExitKind::Done);
         }

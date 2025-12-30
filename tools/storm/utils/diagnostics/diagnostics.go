@@ -120,7 +120,7 @@ func CheckDiagnostics(client *ssh.Client, env stormenv.TridentEnvironment, envVa
 	}
 
 	logrus.Infof("Running trident diagnostics with output file: %s", bundlePath)
-	out, err := stormtrident.InvokeTrident(env, client, envVars, fmt.Sprintf("diagnose --output %s --full --selinux", bundlePath))
+	out, err := stormtrident.InvokeTrident(env, client, envVars, fmt.Sprintf("diagnose --output %s --journal --selinux", bundlePath))
 	if err != nil {
 		return fmt.Errorf("failed to invoke trident diagnostics: %w", err)
 	}
