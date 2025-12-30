@@ -58,6 +58,10 @@ pub struct HostStatus {
     /// Whether this HostStatus is stored on the management OS.
     #[serde(default, skip_serializing_if = "is_default")]
     pub is_management_os: bool,
+
+    /// Version of Trident that last updated this HostStatus.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub trident_version: String,
 }
 
 /// Servicing type is the type of servicing that the Trident agent is executing on the host.
@@ -73,6 +77,8 @@ pub enum ServicingType {
     AbUpdate = 2,
     /// Clean install of the target OS image when the host is booted from the provisioning OS.
     CleanInstall = 3,
+    /// Manual Rollback of the target OS image to a previously deployed state.
+    ManualRollback = 4,
 }
 
 /// Servicing state describes the progress of the servicing that the Trident agent is executing on
@@ -89,6 +95,8 @@ pub enum ServicingState {
     CleanInstallStaged,
     /// A/B update has been staged. The new target OS images have been deployed onto block devices.
     AbUpdateStaged,
+    /// Manual rollback has been staged.
+    ManualRollbackStaged,
     /// Runtime update has been staged.
     RuntimeUpdateStaged,
     /// Clean install has been finalized, i.e., UEFI variables have been set, so that firmware boots
@@ -97,11 +105,15 @@ pub enum ServicingState {
     /// A/B update has been finalized. For the next boot, the firmware will boot from the updated
     /// target OS image.
     AbUpdateFinalized,
+    /// Manual rollback has been finalized.
+    ManualRollbackFinalized,
     /// Servicing has been completed, and the host successfully booted from the updated target OS
     /// image. Trident is ready to begin a new servicing.
     Provisioned,
     /// A/B update has been completed, the host booted into the target OS but the health checks failed.
     AbUpdateHealthCheckFailed,
+    // /// Manual rollback has skipped a runtime rollback to execute an earlier A/B rollback.
+    // ManualRollbackSkippedRuntimeRollback,
 }
 
 /// A/B volume selection. Determines which set of volumes are currently

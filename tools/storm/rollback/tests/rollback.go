@@ -2,11 +2,11 @@ package tests
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	stormrollbackconfig "tridenttools/storm/rollback/utils/config"
@@ -52,7 +52,8 @@ func RollbackTest(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 	expectedVolume := testConfig.ExpectedVolume
 	expectedAvailableRollbacks := 0
 	extensionVersion := 1
-	err = validateOs(testConfig, vmConfig, vmIP, extensionVersion, expectedVolume, expectedAvailableRollbacks, false)
+	netplanVersion := -1
+	err = validateOs(testConfig, vmConfig, vmIP, netplanVersion, extensionVersion, expectedVolume, expectedAvailableRollbacks, false)
 	if err != nil {
 		return fmt.Errorf("failed to validate OS state after update: %w", err)
 	}
@@ -76,6 +77,8 @@ func RollbackTest(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 
 	// Construct Host Configuration for test
 	hostConfig := make(map[string]interface{})
+	// Ensure OS section exists
+	hostConfig["os"] = map[string]interface{}{}
 	if testConfig.DebugPassword != "" {
 		logrus.Tracef("Adding debug password to Host Configuration")
 		hostConfig["scripts"] = map[string]interface{}{
@@ -94,22 +97,30 @@ func RollbackTest(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 	}
 
 	// Update Host Configuration for A/B update using extension version 2
-	extensionVersion = 2
 	hostConfig["image"] = map[string]interface{}{
 		"url":    fmt.Sprintf("http://localhost:%d/files/%s", testConfig.FileServerPort, cosiFileName),
 		"sha384": "ignored",
 	}
 	if !testConfig.SkipExtensionTesting {
+		extensionVersion = 2
 		sysextConfig, err := createSysextHostConfigSection(testConfig, vmConfig, extensionVersion)
 		if err != nil {
 			return fmt.Errorf("failed to create sysext host config section: %w", err)
 		}
-		hostConfig["os"] = sysextConfig
+		hostConfig["os"].(map[string]interface{})["sysexts"] = sysextConfig
+	}
+	if !testConfig.SkipNetplanRuntimeTesting {
+		netplanVersion = 1
+		netplanConfig, err := createNetplanHostConfigSection(testConfig, vmConfig, netplanVersion)
+		if err != nil {
+			return fmt.Errorf("failed to create netplan host config section: %w", err)
+		}
+		hostConfig["os"].(map[string]interface{})["netplan"] = netplanConfig
 	}
 	// Perform A/B update and do validation
 	expectedVolume = getOtherVolume(expectedVolume)
 	expectedAvailableRollbacks = 1
-	err = doUpdateTest(testConfig, vmConfig, vmIP, hostConfig, extensionVersion, expectedVolume, expectedAvailableRollbacks, true)
+	err = doUpdateTest(testConfig, vmConfig, vmIP, hostConfig, netplanVersion, extensionVersion, expectedVolume, expectedAvailableRollbacks, true)
 	if err != nil {
 		return fmt.Errorf("failed to perform first A/B update test: %w", err)
 	}
@@ -134,11 +145,19 @@ func RollbackTest(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 			if err != nil {
 				return fmt.Errorf("failed to create sysext host config section: %w", err)
 			}
-			hostConfig["os"] = sysextConfig
+			hostConfig["os"].(map[string]interface{})["sysexts"] = sysextConfig
+		}
+		if !testConfig.SkipNetplanRuntimeTesting {
+			netplanVersion = 2
+			netplanConfig, err := createNetplanHostConfigSection(testConfig, vmConfig, netplanVersion)
+			if err != nil {
+				return fmt.Errorf("failed to create netplan host config section: %w", err)
+			}
+			hostConfig["os"].(map[string]interface{})["netplan"] = netplanConfig
 		}
 		// Perform runtime update and do validation
 		expectedAvailableRollbacks = 2
-		err = doUpdateTest(testConfig, vmConfig, vmIP, hostConfig, extensionVersion, expectedVolume, expectedAvailableRollbacks, false)
+		err = doUpdateTest(testConfig, vmConfig, vmIP, hostConfig, netplanVersion, extensionVersion, expectedVolume, expectedAvailableRollbacks, false)
 		if err != nil {
 			return fmt.Errorf("failed to perform first runtime update test: %w", err)
 		}
@@ -151,8 +170,9 @@ func RollbackTest(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 		hostConfig["os"] = map[string]interface{}{}
 		// Perform runtime update and do validation
 		extensionVersion = -1
+		netplanVersion = -1
 		expectedAvailableRollbacks = 3
-		err = doUpdateTest(testConfig, vmConfig, vmIP, hostConfig, extensionVersion, expectedVolume, expectedAvailableRollbacks, false)
+		err = doUpdateTest(testConfig, vmConfig, vmIP, hostConfig, netplanVersion, extensionVersion, expectedVolume, expectedAvailableRollbacks, false)
 		if err != nil {
 			return fmt.Errorf("failed to perform second runtime update test: %w", err)
 		}
@@ -164,8 +184,9 @@ func RollbackTest(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 		if !testConfig.SkipManualRollbacks {
 			// Invoke rollback and expect extension 3
 			extensionVersion = 3
+			netplanVersion = 2
 			expectedAvailableRollbacks = 2
-			err = doRollbackTest(testConfig, vmConfig, vmIP, extensionVersion, expectedVolume, expectedAvailableRollbacks, false, false, false)
+			err = doRollbackTest(testConfig, vmConfig, vmIP, netplanVersion, extensionVersion, expectedVolume, expectedAvailableRollbacks, false, false, false)
 			if err != nil {
 				return fmt.Errorf("failed to perform first rollback test: %w", err)
 			}
@@ -176,8 +197,9 @@ func RollbackTest(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 
 			// Invoke rollback and expect extension 2
 			extensionVersion = 2
+			netplanVersion = 1
 			expectedAvailableRollbacks = 1
-			err = doRollbackTest(testConfig, vmConfig, vmIP, extensionVersion, expectedVolume, expectedAvailableRollbacks, false, true, false)
+			err = doRollbackTest(testConfig, vmConfig, vmIP, netplanVersion, extensionVersion, expectedVolume, expectedAvailableRollbacks, false, true, false)
 			if err != nil {
 				return fmt.Errorf("failed to perform second rollback test: %w", err)
 			}
@@ -192,8 +214,9 @@ func RollbackTest(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 		// Invoke rollback and expect extension 1
 		expectedVolume = getOtherVolume(expectedVolume)
 		extensionVersion = 1
+		netplanVersion = -1
 		expectedAvailableRollbacks = 0
-		err = doRollbackTest(testConfig, vmConfig, vmIP, extensionVersion, expectedVolume, expectedAvailableRollbacks, true, false, true)
+		err = doRollbackTest(testConfig, vmConfig, vmIP, netplanVersion, extensionVersion, expectedVolume, expectedAvailableRollbacks, true, false, true)
 		if err != nil {
 			return fmt.Errorf("failed to perform last rollback test: %w", err)
 		}
@@ -206,7 +229,28 @@ func RollbackTest(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 	return nil
 }
 
-func createSysextHostConfigSection(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmconfig.AllVMConfig, extensionVersion int) (map[string]interface{}, error) {
+func createNetplanHostConfigSection(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmconfig.AllVMConfig, dummyDeviceNumber int) (map[string]interface{}, error) {
+	dummyDevices := map[string]interface{}{}
+	if dummyDeviceNumber > 0 {
+		dummyDevices[fmt.Sprintf("dummy%v", dummyDeviceNumber)] = map[string]interface{}{
+			"addresses": []string{fmt.Sprintf("192.168.%d.123/24", 100+dummyDeviceNumber)},
+		}
+	}
+	return map[string]interface{}{
+		"version":       2,
+		"dummy-devices": dummyDevices,
+		"ethernets": map[string]interface{}{
+			"vmeths": map[string]interface{}{
+				"dhcp4": true,
+				"match": map[string]interface{}{
+					"name": "vmeth*",
+				},
+			},
+		},
+	}, nil
+}
+
+func createSysextHostConfigSection(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmconfig.AllVMConfig, extensionVersion int) ([]map[string]interface{}, error) {
 	// Find existing image file
 	extensionFileName := fmt.Sprintf("%s-%d.raw", testConfig.ExtensionName, extensionVersion)
 	extensionFile, err := stormfile.FindFile(testConfig.ArtifactsDir, fmt.Sprintf("^%s$", extensionFileName))
@@ -221,12 +265,10 @@ func createSysextHostConfigSection(testConfig stormrollbackconfig.TestConfig, vm
 		return nil, fmt.Errorf("failed to calculate sha384: %w", err)
 	}
 
-	return map[string]interface{}{
-		"sysexts": []map[string]interface{}{
-			{
-				"url":    fmt.Sprintf("http://localhost:%d/files/%s", testConfig.FileServerPort, extensionFileName),
-				"sha384": sha384,
-			},
+	return []map[string]interface{}{
+		{
+			"url":    fmt.Sprintf("http://localhost:%d/files/%s", testConfig.FileServerPort, extensionFileName),
+			"sha384": sha384,
 		},
 	}, nil
 }
@@ -242,6 +284,7 @@ func validateOs(
 	testConfig stormrollbackconfig.TestConfig,
 	vmConfig stormvmconfig.AllVMConfig,
 	vmIP string,
+	netplanVersion int,
 	extensionVersion int,
 	expectedVolume string,
 	expectedAvailableRollbacks int,
@@ -253,60 +296,13 @@ func validateOs(
 	if checkActiveVolumeErr != nil {
 		return fmt.Errorf("failed to validate active volume: %w", checkActiveVolumeErr)
 	}
-	if !testConfig.SkipExtensionTesting {
-		if extensionVersion > 0 {
-			logrus.Tracef("Checking extension version, expected: '%d'", extensionVersion)
-			extensionTestCommand := "test-extension.sh"
-			extensionTestOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, extensionTestCommand)
-			if err != nil {
-				return fmt.Errorf("failed to check extension on VM (%w):\n%s", err, extensionTestOutput)
-			}
-			extensionTestOutput = strings.TrimSpace(extensionTestOutput)
-			if extensionTestOutput != fmt.Sprintf("%d", extensionVersion) {
-				return fmt.Errorf("extension version mismatch: expected %d, got %s", extensionVersion, extensionTestOutput)
-			}
-			logrus.Tracef("Extension version confirmed, found: '%d'", extensionVersion)
-		} else {
-			logrus.Tracef("Checking that extension is not present")
-			extensionTestCommand := "test-extension.sh"
-			extensionTestOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, extensionTestCommand)
-			if err == nil {
-				return fmt.Errorf("extension is unexpectedly still available:\n%s", extensionTestOutput)
-			}
-		}
+	if err := validateExtension(testConfig, vmConfig, vmIP, extensionVersion); err != nil {
+		return fmt.Errorf("failed to validate extension: %w", err)
 	}
-	if !testConfig.SkipManualRollbacks {
-		logrus.Tracef("Checking number of available rollbacks, expecting '%d'", expectedAvailableRollbacks)
-
-		availableRollbacksOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo trident rollback --show-available")
-		if err != nil {
-			return fmt.Errorf("failed to get available rollbacks from VM: %v", err)
-		}
-		logrus.Tracef("Reported available rollbacks:\n%s", availableRollbacksOutput)
-
-		var availableRollbacks []map[string]interface{}
-		err = json.Unmarshal([]byte(strings.TrimSpace(availableRollbacksOutput)), &availableRollbacks)
-		if err != nil {
-			return fmt.Errorf("failed to unmarshal available rollbacks: %w", err)
-		}
-
-		if len(availableRollbacks) != expectedAvailableRollbacks {
-			return fmt.Errorf("available rollbacks mismatch: expected %d, got %d", expectedAvailableRollbacks, len(availableRollbacks))
-		}
-		logrus.Tracef("Available rollbacks confirmed, found: '%d'", expectedAvailableRollbacks)
-
-		if expectedAvailableRollbacks > 0 {
-			firstRollback := availableRollbacks[0]
-			needsReboot, ok := firstRollback["requiresReboot"].(bool)
-			if !ok {
-				return fmt.Errorf("failed to parse requiresReboot from available rollback")
-			}
-			if needsReboot != expectedFirstRollbackNeedsReboot {
-				return fmt.Errorf("first available rollback requiresReboot mismatch: expected %v, got %v", expectedFirstRollbackNeedsReboot, needsReboot)
-			}
-		}
+	if err := validateNetplan(testConfig, vmConfig, vmIP, netplanVersion); err != nil {
+		return fmt.Errorf("failed to validate netplan: %w", err)
 	}
-	return nil
+	return validateRollbacksAvailable(testConfig, vmConfig, vmIP, expectedAvailableRollbacks, expectedFirstRollbackNeedsReboot)
 }
 
 func doUpdateTest(
@@ -314,6 +310,7 @@ func doUpdateTest(
 	vmConfig stormvmconfig.AllVMConfig,
 	vmIP string,
 	hostConfig map[string]interface{},
+	netplanVersion int,
 	extensionVersion int,
 	expectedVolume string,
 	expectedAvailableRollbacks int,
@@ -335,7 +332,7 @@ func doUpdateTest(
 	if err != nil {
 		return fmt.Errorf("failed to write host config file locally: %w", err)
 	}
-	logrus.Tracef("Putting updated Host Configuration on VM")
+	logrus.Tracef("Putting updated Host Configuration on VM:\n%s", string(hostConfigBytes))
 	err = stormssh.ScpUploadFile(vmConfig.VMConfig, vmIP, localTmpFile.Name(), vmHostConfigPath)
 	if err != nil {
 		return fmt.Errorf("failed to put updated Host Configuration on VM (%w)", err)
@@ -343,8 +340,14 @@ func doUpdateTest(
 	logrus.Tracef("Host Configuration put on VM")
 	// Invoke trident update
 	logrus.Tracef("Invoking `trident update` on VM")
-	updateOutput, err := stormssh.SshCommandCombinedOutput(vmConfig.VMConfig, vmIP, fmt.Sprintf("sudo trident update %s", vmHostConfigPath))
+	updateOutput, err := stormssh.SshCommandCombinedOutput(vmConfig.VMConfig, vmIP, fmt.Sprintf("sudo trident -v trace update %s", vmHostConfigPath))
 	logrus.Tracef("Update output (%v):\n%s", err, updateOutput)
+	if strings.Contains(updateOutput, "Trident failed due to a servicing error") {
+		return fmt.Errorf("failed to update: %w", err)
+	}
+	if strings.Contains(updateOutput, "No update servicing required") {
+		return fmt.Errorf("no update was performed")
+	}
 	if !expectReboot && err != nil {
 		// Ignore error from ssh if reboot was expected, but otherwise
 		// an error should end the test
@@ -373,7 +376,7 @@ func doUpdateTest(
 	logrus.Infof("VM IP remains the same after update: %s", vmIP)
 
 	// Validate OS state
-	err = validateOs(testConfig, vmConfig, vmIP, extensionVersion, expectedVolume, expectedAvailableRollbacks, expectReboot)
+	err = validateOs(testConfig, vmConfig, vmIP, netplanVersion, extensionVersion, expectedVolume, expectedAvailableRollbacks, expectReboot)
 	if err != nil {
 		return fmt.Errorf("failed to validate OS state after update: %w", err)
 	}
@@ -384,6 +387,7 @@ func doRollbackTest(
 	testConfig stormrollbackconfig.TestConfig,
 	vmConfig stormvmconfig.AllVMConfig,
 	vmIP string,
+	netplanVersion int,
 	extensionVersion int,
 	expectedVolume string,
 	expectedAvailableRollbacks int,
@@ -423,7 +427,7 @@ func doRollbackTest(
 	}
 
 	// Validate OS state
-	err = validateOs(testConfig, vmConfig, vmIP, extensionVersion, expectedVolume, expectedAvailableRollbacks, expectedNextRollbackNeedsReboot)
+	err = validateOs(testConfig, vmConfig, vmIP, netplanVersion, extensionVersion, expectedVolume, expectedAvailableRollbacks, expectedNextRollbackNeedsReboot)
 	if err != nil {
 		return fmt.Errorf("failed to validate OS state after update: %w", err)
 	}
@@ -445,6 +449,177 @@ func saveSerialAndTruncate(testConfig stormrollbackconfig.TestConfig, vmName str
 	logrus.Tracef("Truncate serial log output (%v):\n%s", err, string(output))
 	if err != nil {
 		return fmt.Errorf("failed to truncate serial log: %w", err)
+	}
+	return nil
+}
+
+func validateRollbacksAvailable(
+	testConfig stormrollbackconfig.TestConfig,
+	vmConfig stormvmconfig.AllVMConfig,
+	vmIP string,
+	expectedAvailableRollbacks int,
+	expectedFirstRollbackNeedsReboot bool,
+) error {
+	if !testConfig.SkipManualRollbacks {
+		logrus.Tracef("Checking number of available rollbacks, expecting '%d'", expectedAvailableRollbacks)
+
+		availableRollbacksOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo trident get rollback-chain")
+		if err != nil {
+			return fmt.Errorf("'get rollback-chain' failed to from VM: %v", err)
+		}
+		logrus.Tracef("Reported 'get rollback-chain':\n%s", availableRollbacksOutput)
+
+		var availableRollbacks []map[string]interface{}
+		err = yaml.Unmarshal([]byte(strings.TrimSpace(availableRollbacksOutput)), &availableRollbacks)
+		if err != nil {
+			return fmt.Errorf("failed to unmarshal available rollbacks: %w", err)
+		}
+
+		if len(availableRollbacks) != expectedAvailableRollbacks {
+			return fmt.Errorf("available rollbacks mismatch: expected %d, got %d", expectedAvailableRollbacks, len(availableRollbacks))
+		}
+		logrus.Tracef("Available rollbacks confirmed, found: '%d'", expectedAvailableRollbacks)
+
+		if expectedAvailableRollbacks > 0 {
+			firstRollback := availableRollbacks[0]
+			needsReboot, ok := firstRollback["requiresReboot"].(bool)
+			if !ok {
+				return fmt.Errorf("failed to parse requiresReboot from available rollback")
+			}
+			if needsReboot != expectedFirstRollbackNeedsReboot {
+				return fmt.Errorf("first available rollback requiresReboot mismatch: expected %v, got %v", expectedFirstRollbackNeedsReboot, needsReboot)
+			}
+		}
+
+		rollbackShowValidationOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "trident rollback --check")
+		if err != nil {
+			return fmt.Errorf("'rollback --check' failed to from VM: %v", err)
+		}
+		logrus.Tracef("Reported 'rollback --check':\n%s", rollbackShowValidationOutput)
+		if expectedAvailableRollbacks > 0 {
+			if expectedFirstRollbackNeedsReboot {
+				if strings.TrimSpace(rollbackShowValidationOutput) != "ab" {
+					return fmt.Errorf("expected 'ab' from 'rollback --check', got: %s", rollbackShowValidationOutput)
+				}
+			} else {
+				if strings.TrimSpace(rollbackShowValidationOutput) != "runtime" {
+					return fmt.Errorf("expected 'runtime' from 'rollback --check', got: %s", rollbackShowValidationOutput)
+				}
+			}
+		} else {
+			if strings.TrimSpace(rollbackShowValidationOutput) != "none" {
+				return fmt.Errorf("expected 'none' from 'rollback --check', got: %s", rollbackShowValidationOutput)
+			}
+		}
+
+		rollbackShowTargetOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo trident get rollback-target")
+		if err != nil {
+			return fmt.Errorf("'get rollback-target' failed to from VM: %v", err)
+		}
+		logrus.Tracef("Reported 'get rollback-target':\n%s", rollbackShowTargetOutput)
+		if expectedAvailableRollbacks > 0 {
+			if expectedFirstRollbackNeedsReboot {
+				if strings.TrimSpace(rollbackShowTargetOutput) == "{}" {
+					return fmt.Errorf("expected Host Configuration from 'get rollback-target', got: %s", rollbackShowTargetOutput)
+				}
+			}
+		} else {
+			if strings.TrimSpace(rollbackShowTargetOutput) != "{}" {
+				return fmt.Errorf("expected '{}' from 'get rollback-target', got: %s", rollbackShowTargetOutput)
+			}
+		}
+	}
+	return nil
+}
+
+func validateExtension(
+	testConfig stormrollbackconfig.TestConfig,
+	vmConfig stormvmconfig.AllVMConfig,
+	vmIP string,
+	extensionVersion int,
+) error {
+	if !testConfig.SkipExtensionTesting {
+		if extensionVersion > 0 {
+			logrus.Tracef("Checking extension version, expected: '%d'", extensionVersion)
+			extensionTestCommand := "test-extension.sh"
+			extensionTestOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, extensionTestCommand)
+			if err != nil {
+				return fmt.Errorf("failed to check extension on VM (%w):\n%s", err, extensionTestOutput)
+			}
+			extensionTestOutput = strings.TrimSpace(extensionTestOutput)
+			if extensionTestOutput != fmt.Sprintf("%d", extensionVersion) {
+				return fmt.Errorf("extension version mismatch: expected %d, got %s", extensionVersion, extensionTestOutput)
+			}
+			logrus.Tracef("Extension version confirmed, found: '%d'", extensionVersion)
+		} else {
+			logrus.Tracef("Checking that extension is not present")
+			extensionTestCommand := "test-extension.sh"
+			extensionTestOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, extensionTestCommand)
+			if err == nil {
+				return fmt.Errorf("extension is unexpectedly still available:\n%s", extensionTestOutput)
+			}
+		}
+	}
+	return nil
+}
+
+func validateNetplan(
+	testConfig stormrollbackconfig.TestConfig,
+	vmConfig stormvmconfig.AllVMConfig,
+	vmIP string,
+	netplanVersion int,
+) error {
+	if !testConfig.SkipNetplanRuntimeTesting {
+		if netplanVersion > 0 {
+			logrus.Tracef("Checking netplan version, expected: '%d'", netplanVersion)
+			netplanConfigContents, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo cat /etc/netplan/99-trident.yaml")
+			if err != nil {
+				return fmt.Errorf("failed to read netplan config from VM image: %w", err)
+			}
+			logrus.Tracef("Netplan config contents:\n%s", string(netplanConfigContents))
+
+			// Search for "dummy[0-9]:" in netplan config
+			expectedDummyDevice := fmt.Sprintf("dummy%d:", netplanVersion)
+			regexPattern := regexp.MustCompile("dummy[0-9]:")
+			matches := regexPattern.FindSubmatch([]byte(netplanConfigContents))
+			if len(matches) == 0 {
+				return fmt.Errorf("netplan config does not contain any dummy devices")
+			}
+			for _, match := range matches {
+				matchStr := string(match)
+				if matchStr != expectedDummyDevice {
+					return fmt.Errorf("netplan config contains unexpected version, found dummy device: %s", matchStr)
+				}
+			}
+
+			// Search interfaces for expected dummy device
+			interfacesOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "ip a")
+			if err != nil {
+				return fmt.Errorf("failed to get interfaces from VM image: %w", err)
+			}
+			if !strings.Contains(interfacesOutput, expectedDummyDevice) {
+				return fmt.Errorf("netplan config does not contain expected dummy device in interfaces: %s", expectedDummyDevice)
+			}
+
+			logrus.Tracef("Netplan version confirmed, found: '%d'", netplanVersion)
+		} else {
+			logrus.Tracef("Checking that netplan config is absent")
+			netplanConfigContents, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo cat /etc/netplan/99-trident.yaml")
+			if err == nil {
+				return fmt.Errorf("netplan config unexpectedly found: %s", string(netplanConfigContents))
+			}
+
+			// Search interfaces for unexpected dummy device
+			interfacesOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "ip a")
+			if err != nil {
+				return fmt.Errorf("failed to get interfaces from VM image: %w", err)
+			}
+			if strings.Contains(interfacesOutput, "dummy") {
+				return fmt.Errorf("dummy interface unexpectedly found: %s", string(interfacesOutput))
+			}
+
+			logrus.Tracef("Verified that netplan config is absent")
+		}
 	}
 	return nil
 }
