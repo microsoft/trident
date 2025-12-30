@@ -14,10 +14,12 @@ use tonic::{async_trait, Request, Response, Status};
 
 use harpoon::{
     servicing_response::Response as ResponseType, trident_service_server::TridentService,
-    CheckRootRequest, CommitRequest, FileLocation, FinalizeRequest, GetActiveVolumeRequest,
-    GetActiveVolumeResponse, GetConfigRequest, GetConfigResponse, GetLastErrorRequest,
-    GetLastErrorResponse, GetRequiredServicingTypeRequest, GetRequiredServicingTypeResponse,
-    GetServicingStateRequest, GetServicingStateResponse, Log, RebuildRaidRequest, ServicingRequest,
+    CheckRollbackRequest, CheckRollbackResponse, CheckRootRequest, CommitRequest, FileLocation,
+    FinalizeRequest, GetActiveVolumeRequest, GetActiveVolumeResponse, GetConfigRequest,
+    GetConfigResponse, GetLastErrorRequest, GetLastErrorResponse, GetRequiredServicingTypeRequest,
+    GetRequiredServicingTypeResponse, GetRollbackChainRequest, GetRollbackTargetRequest,
+    GetServicingStateRequest, GetServicingStateResponse, Log, RebuildRaidRequest,
+    RollbackFinalizeRequest, RollbackServicingRequest, RollbackStageRequest, ServicingRequest,
     ServicingResponse, StageRequest, Start, StreamImageRequest, ValidateHostConfigurationRequest,
     ValidateHostConfigurationResponse,
 };
@@ -523,6 +525,75 @@ impl TridentService for TridentHarpoonServer {
         self.reading_request("get_active_volume", || {
             Err(TridentError::new(InternalError::Internal(
                 "Not implemented: get_active_volume",
+            )))
+        })
+    }
+
+    async fn check_rollback(
+        &self,
+        _request: Request<CheckRollbackRequest>,
+    ) -> Result<Response<CheckRollbackResponse>, Status> {
+        self.reading_request("check_rollback", || {
+            Err(TridentError::new(InternalError::Internal(
+                "Not implemented: check_rollback",
+            )))
+        })
+    }
+
+    type RollbackStream = ServicingResponseStream;
+    async fn rollback(
+        &self,
+        _request: Request<RollbackServicingRequest>,
+    ) -> Result<Response<Self::RollbackStream>, Status> {
+        self.servicing_request("rollback", || {
+            Err(TridentError::new(InternalError::Internal(
+                "Not implemented: rollback",
+            )))
+        })
+    }
+
+    type RollbackStageStream = ServicingResponseStream;
+    async fn rollback_stage(
+        &self,
+        _request: Request<RollbackStageRequest>,
+    ) -> Result<Response<Self::RollbackStageStream>, Status> {
+        self.servicing_request("rollback_stage", || {
+            Err(TridentError::new(InternalError::Internal(
+                "Not implemented: rollback_stage",
+            )))
+        })
+    }
+
+    type RollbackFinalizeStream = ServicingResponseStream;
+    async fn rollback_finalize(
+        &self,
+        _request: Request<RollbackFinalizeRequest>,
+    ) -> Result<Response<Self::RollbackFinalizeStream>, Status> {
+        self.servicing_request("rollback_finalize", || {
+            Err(TridentError::new(InternalError::Internal(
+                "Not implemented: rollback_finalize",
+            )))
+        })
+    }
+
+    async fn get_rollback_chain(
+        &self,
+        _request: Request<GetRollbackChainRequest>,
+    ) -> Result<Response<harpoon::GetRollbackChainResponse>, Status> {
+        self.reading_request("get_rollback_chain", || {
+            Err(TridentError::new(InternalError::Internal(
+                "Not implemented: get_rollback_chain",
+            )))
+        })
+    }
+
+    async fn get_rollback_target(
+        &self,
+        _request: Request<GetRollbackTargetRequest>,
+    ) -> Result<Response<harpoon::GetRollbackTargetResponse>, Status> {
+        self.reading_request("get_rollback_target", || {
+            Err(TridentError::new(InternalError::Internal(
+                "Not implemented: get_rollback_target",
             )))
         })
     }
