@@ -1,6 +1,7 @@
 use std::{
     fmt::{Display, Formatter, Result as FmtResult},
     path::PathBuf,
+    time::Duration,
 };
 
 use clap::{Parser, Subcommand};
@@ -183,6 +184,20 @@ pub enum Commands {
         #[clap(short, long)]
         error: Option<PathBuf>,
     },
+
+    #[clap(hide(true))]
+    Daemon {
+        /// Inactivity timeout. The server will shut down automatically after
+        /// being inactive for this duration. Supports human-readable durations,
+        /// e.g., "5m", "1h30m", "300s".
+        #[clap(long, value_parser = humantime::parse_duration, default_value = crate::server::DEFAULT_INACTIVITY_TIMEOUT)]
+        inactivity_timeout: Duration,
+
+        /// Path to the UNIX socket to listen on when not running in systemd
+        /// socket-activated mode.
+        #[clap(long, default_value = crate::server::DEFAULT_TRIDENT_SOCKET_PATH)]
+        socket_path: PathBuf,
+    },
 }
 
 impl Commands {
@@ -200,6 +215,7 @@ impl Commands {
             Commands::OfflineInitialize { .. } => "offline-initialize",
             #[cfg(feature = "dangerous-options")]
             Commands::StreamImage { .. } => "stream-image",
+            Commands::Daemon { .. } => "daemon",
         }
     }
 }
