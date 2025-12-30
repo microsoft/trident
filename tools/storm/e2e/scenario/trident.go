@@ -74,6 +74,9 @@ type TridentE2EScenario struct {
 
 	// Stores an open ssh.Client to the test host
 	sshClient *ssh.Client
+
+	// Version of the image, used for AB update tests
+	version uint
 }
 
 func NewTridentE2EScenario(
