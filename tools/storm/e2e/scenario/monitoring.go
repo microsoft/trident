@@ -20,22 +20,22 @@ import (
 	ioutils "tridenttools/storm/utils/io"
 )
 
-// spawnVMSerialLogger starts the VM serial logger for the test host IF it is a
+// spawnVMSerialMonitor starts the VM serial monitor for the test host IF it is a
 // VM.
 //
-// The output of the serial logger will be written live to the provided
-// io.WriteCloser. The WriteCloser will be closed when the logger exits.
+// The output of the serial monitor will be written live to the provided
+// io.WriteCloser. The WriteCloser will be closed when the monitor exits.
 //
 // If the hardware type is not VM, this function is a no-op and returns nil.
 //
-// If an error occurs while starting the logger, that error is returned.
+// If an error occurs while starting the monitor, that error is returned.
 //
-// The returned channel can be used to wait for the logger to finish by waiting
-// on it for a value. The channel will be closed once the logger has finished.
-// If the logger doesn't run (because the hardware type is not VM), the channel
+// The returned channel can be used to wait for the monitor to finish by waiting
+// on it for a value. The channel will be closed once the monitor has finished.
+// If the monitor doesn't run (because the hardware type is not VM), the channel
 // will receive a value immediately.
 //
-// The logger will run until the context is cancelled or the login prompt is
+// The monitor will run until the context is cancelled or the login prompt is
 // detected.
 func (s *TridentE2EScenario) spawnVMSerialMonitor(ctx context.Context, output io.WriteCloser) (<-chan bool, error) {
 	doneChannel := make(chan bool)
@@ -74,6 +74,8 @@ func (s *TridentE2EScenario) spawnVMSerialMonitor(ctx context.Context, output io
 			}
 			errStr := fmt.Sprintf("VM serial log monitor ended with error: %v", err)
 			logrus.Error(errStr)
+
+			// Best effort write to output
 			output.Write([]byte(fmt.Sprintf("ERROR: %s", errStr)))
 		} else {
 			logrus.Infof("VM serial log monitor ended successfully")
@@ -84,11 +86,8 @@ func (s *TridentE2EScenario) spawnVMSerialMonitor(ctx context.Context, output io
 }
 
 func waitForVmSerialLogLoginLibvirt(ctx context.Context, lv *libvirt.Libvirt, dom libvirt.Domain, out io.Writer) error {
-
 	pr, pw := io.Pipe()
-
 	consoleCtx, consoleCancel := context.WithCancel(ctx)
-
 	var wg sync.WaitGroup
 
 	// Spawn DomainOpenConsole in a goroutine because it's a blocking call.
@@ -104,18 +103,15 @@ func waitForVmSerialLogLoginLibvirt(ctx context.Context, lv *libvirt.Libvirt, do
 				return
 			}
 
-			// Try to open the console.
+			// Try to open the console. This is a blocking call that only
+			// returns when the console is closed or an error occurs. It writes
+			// to the provided writer in the background.
 			err := lv.DomainOpenConsole(dom, nil, wN, 0)
-			if err == nil {
-				// DomainOpenConsole returned without error, exit the goroutine.
-				if wN.Active {
-					// Data was written, this is expected.
-					return
-				} else {
-					// No data was written, this is unexpected. Log a warning.
-					time.Sleep(100 * time.Millisecond)
-					continue
-				}
+			if err == nil && wN.Active() {
+				// DomainOpenConsole returned without error and data was
+				// written, this is an expected outcome when the console closed
+				// naturally.
+				return
 			}
 
 			if consoleCtx.Err() != nil {
@@ -124,7 +120,7 @@ func waitForVmSerialLogLoginLibvirt(ctx context.Context, lv *libvirt.Libvirt, do
 				return
 			}
 
-			if !wN.Active {
+			if !wN.Active() {
 				// No data has been written yet, so this is likely a
 				// transient error such as the domain not being fully
 				// started yet. Retry silently.
