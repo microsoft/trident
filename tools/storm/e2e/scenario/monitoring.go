@@ -40,19 +40,12 @@ func (s *TridentE2EScenario) spawnVMSerialMonitor(ctx context.Context, output io
 	doneChannel := make(chan bool)
 	var wg sync.WaitGroup
 
-	// On exit, wait for the waitgroup to finish and then send a value on the
-	// done channel and close it.
-	defer func() {
-		go func() {
-			wg.Wait()
-			doneChannel <- true
-			close(doneChannel)
-		}()
-	}()
-
 	// Only spawn the VM serial logger if the hardware type is VM. Otherwise, do
 	// nothing.
 	if s.hardware != HardwareTypeVM {
+		// Immediately signal that the monitor is done
+		doneChannel <- true
+		close(doneChannel)
 		return doneChannel, nil
 	}
 
@@ -61,6 +54,16 @@ func (s *TridentE2EScenario) spawnVMSerialMonitor(ctx context.Context, output io
 	if ref.IsNilInterface(vmInfo) {
 		return doneChannel, fmt.Errorf("vm host info not set")
 	}
+
+	// On exit, start a goroutine to wait for the waitgroup to finish and then
+	// send a value on the done channel and close it.
+	defer func() {
+		go func() {
+			wg.Wait()
+			doneChannel <- true
+			close(doneChannel)
+		}()
+	}()
 
 	wg.Add(1)
 	go func() {
