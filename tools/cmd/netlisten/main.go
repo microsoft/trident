@@ -24,18 +24,18 @@ Then start the provisioning using the patched Trident config file.
 package main
 
 import (
-	"os/signal"
-	"syscall"
-	"tridenttools/pkg/netlaunch"
-	"tridenttools/pkg/netlisten"
-	"tridenttools/pkg/phonehome"
-
 	"context"
 	"os"
+	"os/signal"
+	"syscall"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
+	"tridenttools/pkg/netlaunch"
+	"tridenttools/pkg/netlisten"
+	"tridenttools/pkg/phonehome"
 )
 
 var listenPort uint16
