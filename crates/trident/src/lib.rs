@@ -51,7 +51,6 @@ pub use crate::{
 };
 
 use crate::{
-    cli::RollbackShowOperation,
     engine::{ab_update, rollback, runtime_update, storage::rebuild, SUBSYSTEMS},
     osimage::OsImage,
 };
