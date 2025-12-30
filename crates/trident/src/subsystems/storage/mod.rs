@@ -25,6 +25,8 @@ mod osimage;
 mod raid;
 mod verity;
 
+pub use fstab::DEFAULT_FSTAB_PATH;
+
 const ENCRYPTION_SUBSYSTEM_NAME: &str = "encryption";
 const OSIMAGE_SUBSYSTEM_NAME: &str = "osimage";
 

@@ -1,32 +1,48 @@
 use std::{
     collections::BTreeMap,
-    fs::{self},
+    fs,
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use anyhow::{anyhow, Error};
+use anyhow::{anyhow, Context, Error};
 use chrono::Utc;
 use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use lsblk::BlockDevice;
-use osutils::{dependencies::Dependency, findmnt::FindMnt, lsblk, pcrlock, pcrlock::LogOutput};
+use osutils::{
+    dependencies::Dependency,
+    files,
+    findmnt::FindMnt,
+    lsblk,
+    pcrlock::{self, LogOutput},
+};
 use trident_api::{
     config::{Check, Health},
+    constants::{AGENT_CONFIG_PATH, TRIDENT_DATASTORE_PATH_DEFAULT},
     error::{InternalError, ReportError, TridentError},
     status::HostStatus,
 };
 
 use crate::{
-    datastore::DataStore, logging, TRIDENT_BACKGROUND_LOG_PATH, TRIDENT_METRICS_FILE_PATH,
+    datastore::DataStore, logging, subsystems::storage::DEFAULT_FSTAB_PATH,
+    TEMPORARY_DATASTORE_PATH, TRIDENT_BACKGROUND_LOG_PATH, TRIDENT_METRICS_FILE_PATH,
     TRIDENT_VERSION,
 };
 
+/// Name of the top-level directory in the diagnostics tarball
 const DIAGNOSTICS_BUNDLE_PREFIX: &str = "trident-diagnostics";
+
+/// Path to DMI file with vendor information
 const DMI_SYS_VENDOR_FILE: &str = "/sys/class/dmi/id/sys_vendor";
+
+/// Path to DMI file with product name
 const DMI_PRODUCT_NAME_FILE: &str = "/sys/class/dmi/id/product_name";
+
+/// Name of the trident systemd service
+const TRIDENT_SERVICE_NAME: &str = "trident.service";
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -35,13 +51,13 @@ struct DiagnosticsReport {
     timestamp: String,
     /// Trident version
     version: String,
-    /// Host description (VM/baremetal)
+    /// Information about Trident's host system
     host_description: HostDescription,
     /// Host status from the datastore
     host_status: Option<HostStatus>,
-    /// Collected files metadata
-    collected_files: Option<Vec<FileMetadata>>,
-    /// Collection failures that occurred during diagnostics gathering
+    /// Metadata for each file included in the tarball
+    collected_files: Vec<FileMetadata>,
+    /// Failures that occurred during the collection of diagnostics
     collection_failures: Vec<CollectionFailure>,
 }
 
@@ -54,7 +70,7 @@ struct HostDescription {
     is_virtual: bool,
     /// Virtualization type (kvm, vmware, hyperv, etc.)
     virt_type: Option<String>,
-    /// Platform information
+    /// System info, e.g. Kernel version, OS release, total_memory...
     platform_info: BTreeMap<String, Value>,
     /// Block device information
     blockdev_info: Option<Vec<BlockDevice>>,
@@ -121,6 +137,7 @@ fn record_failure(
     });
 }
 
+/// Collect diagnostics information about the host system
 fn collect_report() -> DiagnosticsReport {
     info!("Collecting diagnostics information");
 
@@ -133,7 +150,7 @@ fn collect_report() -> DiagnosticsReport {
         version: TRIDENT_VERSION.to_string(),
         host_description,
         host_status,
-        collected_files: None,
+        collected_files: Vec::new(),
         collection_failures: failures,
     }
 }
@@ -145,9 +162,7 @@ struct DatastorePaths {
 }
 
 fn get_datastore_paths() -> DatastorePaths {
-    use trident_api::constants::{AGENT_CONFIG_PATH, TRIDENT_DATASTORE_PATH_DEFAULT};
-
-    let configured = std::fs::read_to_string(AGENT_CONFIG_PATH)
+    let configured = fs::read_to_string(AGENT_CONFIG_PATH)
         .ok()
         .and_then(|contents| {
             contents.lines().find_map(|line| {
@@ -158,7 +173,7 @@ fn get_datastore_paths() -> DatastorePaths {
 
     DatastorePaths {
         default: PathBuf::from(TRIDENT_DATASTORE_PATH_DEFAULT),
-        temporary: PathBuf::from(crate::TEMPORARY_DATASTORE_PATH),
+        temporary: PathBuf::from(TEMPORARY_DATASTORE_PATH),
         configured,
     }
 }
@@ -199,6 +214,7 @@ fn collect_host_description(
 }
 
 fn collect_pcrlock_log(failures: &mut Vec<CollectionFailure>) -> Option<LogOutput> {
+    debug!("Collecting pcrlock log");
     match pcrlock::log_parsed() {
         Ok(log) => Some(log),
         Err(e) => {
@@ -211,30 +227,31 @@ fn collect_pcrlock_log(failures: &mut Vec<CollectionFailure>) -> Option<LogOutpu
 fn collect_trident_service_diagnostics(
     failures: &mut Vec<CollectionFailure>,
 ) -> TridentServiceDiagnostics {
-    let status = collect_service_status("trident.service", failures).map(|s| s.status_output);
+    debug!("Collecting trident service diagnostics");
+    let status = collect_service_status(TRIDENT_SERVICE_NAME, failures).map(|s| s.status_output);
 
     let journal = Dependency::Journalctl
         .cmd()
-        .args(["--no-pager", "-u", "trident.service"])
-        .output()
-        .map(|out| out.output_report())
-        .map_err(|e| record_failure(failures, "trident.service journal", &e))
+        .args(["--no-pager", "-u", TRIDENT_SERVICE_NAME])
+        .output_and_check()
+        .map_err(|e| record_failure(failures, format!("{} journal", TRIDENT_SERVICE_NAME), &e))
         .ok();
 
     TridentServiceDiagnostics { status, journal }
 }
 
 fn collect_full_journal(failures: &mut Vec<CollectionFailure>) -> Option<String> {
+    debug!("Collecting full journal");
     Dependency::Journalctl
         .cmd()
         .args(["--no-pager"])
-        .output()
-        .map(|out| out.output_report())
+        .output_and_check()
         .map_err(|e| record_failure(failures, "full journal", &e))
         .ok()
 }
 
 fn collect_host_status(failures: &mut Vec<CollectionFailure>) -> Option<HostStatus> {
+    debug!("Collecting host status from datastore");
     let paths = get_datastore_paths();
 
     let candidates = [
@@ -259,6 +276,7 @@ fn collect_health_check_status(
     health: &Health,
     failures: &mut Vec<CollectionFailure>,
 ) -> Vec<SystemdServiceStatus> {
+    debug!("Collecting systemd health check status");
     // Get all health check systemd service names
     let services: Vec<_> = health
         .checks
@@ -311,6 +329,7 @@ fn collect_service_status(
 }
 
 fn get_virtualization_info(failures: &mut Vec<CollectionFailure>) -> Option<String> {
+    debug!("Collecting virtualization info");
     let content = match fs::read_to_string(DMI_SYS_VENDOR_FILE) {
         Ok(c) => c,
         Err(e) => {
@@ -356,9 +375,10 @@ impl FileToCollect {
     }
 }
 
-fn collect_historical_logs(report: &mut DiagnosticsReport) -> Vec<FileToCollect> {
+fn collect_historical_logs(report: &mut DiagnosticsReport) -> Option<Vec<FileToCollect>> {
+    debug!("Collecting historical logs");
     let Some(host_status) = report.host_status.as_ref() else {
-        return Vec::new(); // If no host status we've already recorded the failure
+        return None; // If no host status we've already recorded the failure
     };
 
     let Some(log_dir) = host_status.spec.trident.datastore_path.parent() else {
@@ -370,7 +390,7 @@ fn collect_historical_logs(report: &mut DiagnosticsReport) -> Vec<FileToCollect>
                 host_status.spec.trident.datastore_path.display()
             ),
         );
-        return Vec::new();
+        return None;
     };
 
     let entries = match fs::read_dir(log_dir) {
@@ -381,7 +401,7 @@ fn collect_historical_logs(report: &mut DiagnosticsReport) -> Vec<FileToCollect>
                 format!("historical logs directory {}", log_dir.display()),
                 &e,
             );
-            return Vec::new();
+            return None;
         }
     };
 
@@ -398,26 +418,44 @@ fn collect_historical_logs(report: &mut DiagnosticsReport) -> Vec<FileToCollect>
             name.starts_with("trident-") && (name.ends_with(".log") || name.ends_with(".jsonl"))
         })
         .map(|(path, name)| {
-            let desc = if name.contains("metrics") {
-                "Historical Trident metrics from past servicing"
-            } else {
-                "Historical Trident log from past servicing"
-            };
+            let desc = parse_historical_log_description(&name);
             FileToCollect::new(path, PathBuf::from("logs/historical").join(&name), desc)
         })
-        .collect()
+        .collect::<Vec<_>>()
+        .into()
 }
 
-/// Package the diagnostics report and associated files into a compressed tarball
-fn create_support_bundle(
+/// Parse historical log filename to extract servicing type and timestamp for description.
+/// Examples:
+///   trident-CleanInstallFinalized-20251230T183618Z.log
+///   trident-metrics-CleanInstallFinalized-20251230T183618Z.jsonl
+fn parse_historical_log_description(name: &str) -> String {
+    let (base, prefix) = if name.contains("metrics") {
+        ("Historical Trident metrics", "trident-metrics-")
+    } else {
+        ("Historical Trident log", "trident-")
+    };
+
+    name.strip_prefix(prefix)
+        .and_then(|s| s.strip_suffix(".log").or_else(|| s.strip_suffix(".jsonl")))
+        .and_then(|s| s.rsplit_once('-'))
+        .map(|(svc, ts)| format!("{} from {} at {}", base, svc, ts))
+        .unwrap_or_else(|| format!("{} from past servicing", base))
+}
+
+/// Package the diagnostics report and associated files into a compressed tarball.
+fn create_diagnostics_tarball(
     report: &mut DiagnosticsReport,
     output_path: &Path,
     files_to_collect: Vec<FileToCollect>,
-    full_dump: bool,
+    collect_journal: bool,
 ) -> Result<(), Error> {
+    debug!("Creating diagnostics tarball at {}", output_path.display());
     let mut collected_files = Vec::new();
-    let file = osutils::files::create_file(output_path)?;
-    let encoder = zstd::Encoder::new(file, 0)?;
+    let file =
+        files::create_file(output_path).context("failed to create diagnostics bundle file")?;
+    let encoder =
+        zstd::Encoder::new(file, 0).context("failed to create zstd encoder for tarball")?;
     let mut tar = tar::Builder::new(encoder);
 
     for file_to_collect in files_to_collect {
@@ -452,23 +490,10 @@ fn create_support_bundle(
     }
 
     // Collect and write full journal directly to tarball if requested
-    if full_dump {
+    if collect_journal {
         if let Some(journal_content) = collect_full_journal(&mut report.collection_failures) {
-            let mut header = tar::Header::new_gnu();
-            header.set_size(journal_content.len() as u64);
-            header.set_mode(0o644);
-            header.set_mtime(
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs(),
-            );
-            header.set_cksum();
-            tar.append_data(
-                &mut header,
-                format!("{}/full-journal", DIAGNOSTICS_BUNDLE_PREFIX),
-                journal_content.as_bytes(),
-            )?;
+            write_to_tar(&mut tar, "full-journal", journal_content.as_bytes())
+                .context("failed to write journal to tarball")?;
             collected_files.push(FileMetadata {
                 path: PathBuf::from("full-journal"),
                 size_bytes: journal_content.len() as u64,
@@ -477,35 +502,56 @@ fn create_support_bundle(
         }
     }
 
-    report.collected_files = Some(collected_files);
-    let report_json = serde_json::to_string_pretty(report)?;
+    report.collected_files = collected_files;
+    let report_json =
+        serde_json::to_string_pretty(report).context("failed to serialize diagnostics report")?;
+    write_to_tar(&mut tar, "report.json", report_json.as_bytes())
+        .context("failed to write report.json to tarball")?;
 
-    let mut report_file_header = tar::Header::new_gnu();
-    report_file_header.set_size(report_json.len() as u64);
-    report_file_header.set_mode(0o644);
-    report_file_header.set_mtime(
+    tar.into_inner()
+        .context("failed to finalize tar archive")?
+        .finish()
+        .context("failed to finish zstd compression")?;
+
+    Ok(())
+}
+
+/// Append in-memory data to the tarball with proper header setup.
+fn write_to_tar<W: std::io::Write>(
+    tar: &mut tar::Builder<W>,
+    path: &str,
+    data: &[u8],
+) -> Result<(), Error> {
+    let mut header = tar::Header::new_gnu();
+    header.set_size(data.len() as u64);
+    header.set_mode(0o644);
+    header.set_mtime(
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs(),
     );
-    report_file_header.set_cksum();
+    header.set_cksum();
     tar.append_data(
-        &mut report_file_header,
-        format!("{}/report.json", DIAGNOSTICS_BUNDLE_PREFIX),
-        report_json.as_bytes(),
+        &mut header,
+        format!("{}/{}", DIAGNOSTICS_BUNDLE_PREFIX, path),
+        data,
     )?;
-
-    tar.into_inner()?.finish()?;
-
     Ok(())
 }
 
+/// Generate a diagnostics bundle (tarball) at the specified output path.
+///
+/// `collect_journal` is true, include the full system journal; `collect_selinux` is true, include the SELinux audit log.
 pub(crate) fn generate_and_bundle(
     output_path: &Path,
-    full_dump: bool,
-    selinux: bool,
+    collect_journal: bool,
+    collect_selinux: bool,
 ) -> Result<(), TridentError> {
+    debug!(
+        "Generating diagnostics bundle (journal={}, selinux={})",
+        collect_journal, collect_selinux
+    );
     let mut report = collect_report();
 
     let mut files = vec![
@@ -522,7 +568,7 @@ pub(crate) fn generate_and_bundle(
     ];
 
     // Collect historical metrics and logs from the datastore directory
-    files.extend(collect_historical_logs(&mut report));
+    files.extend(collect_historical_logs(&mut report).unwrap_or_default());
 
     // Collect datastores
     let paths = get_datastore_paths();
@@ -545,9 +591,15 @@ pub(crate) fn generate_and_bundle(
     }
 
     files.push(FileToCollect::new(
-        "/etc/fstab",
+        DEFAULT_FSTAB_PATH,
         "files/fstab",
         "File system mount configuration (/etc/fstab)",
+    ));
+
+    files.push(FileToCollect::new(
+        AGENT_CONFIG_PATH,
+        "files/config.yaml",
+        "Trident agent configuration",
     ));
 
     files.push(FileToCollect::new(
@@ -556,7 +608,7 @@ pub(crate) fn generate_and_bundle(
         "TPM 2.0 pcrlock policy (pcrlock.json)",
     ));
 
-    if selinux {
+    if collect_selinux {
         files.push(FileToCollect::new(
             "/var/log/audit/audit.log",
             "selinux/audit.log",
@@ -564,8 +616,9 @@ pub(crate) fn generate_and_bundle(
         ));
     }
 
-    create_support_bundle(&mut report, output_path, files, full_dump)
-        .structured(InternalError::DiagnosticBundleGeneration)?;
+    create_diagnostics_tarball(&mut report, output_path, files, collect_journal).structured(
+        InternalError::GenerateDiagnosticsBundle(output_path.display().to_string()),
+    )?;
     info!("Diagnostics bundle created: {}", output_path.display());
     Ok(())
 }
@@ -614,13 +667,13 @@ mod tests {
                 },
             },
             host_status: None,
-            collected_files: None,
+            collected_files: Vec::new(),
             collection_failures: Vec::new(),
         };
 
         // Create support bundle
         let bundle_path = output_dir.path().join("test-bundle.tar.zst");
-        let result = create_support_bundle(&mut report, &bundle_path, files_to_collect, false);
+        let result = create_diagnostics_tarball(&mut report, &bundle_path, files_to_collect, false);
         assert!(result.is_ok(), "Should create bundle successfully");
 
         // Verify bundle exists and is not empty
@@ -631,8 +684,12 @@ mod tests {
         );
 
         // Verify report has collected files metadata
-        let collected = report.collected_files.as_ref().unwrap();
-        assert_eq!(collected.len(), 2, "Should have 2 collected files");
+        assert_eq!(
+            report.collected_files.len(),
+            2,
+            "Should have 2 collected files"
+        );
+        let collected = &report.collected_files;
         assert_eq!(collected[0].path, PathBuf::from("subdir/file1"));
         assert_eq!(collected[1].path, PathBuf::from("file2"));
 
@@ -669,8 +726,8 @@ mod tests {
             .join("report.json");
         let report_content = std::fs::read_to_string(&report_json_path).unwrap();
         let extracted_report: DiagnosticsReport = serde_json::from_str(&report_content).unwrap();
-        let collected = extracted_report.collected_files.as_ref().unwrap();
-        assert_eq!(collected.len(), 2);
+        assert_eq!(extracted_report.collected_files.len(), 2);
+        let collected = &extracted_report.collected_files;
         assert_eq!(collected[0].path, PathBuf::from("subdir/file1"));
         assert_eq!(collected[0].description, "First file");
         assert_eq!(collected[1].path, PathBuf::from("file2"));
@@ -703,7 +760,7 @@ mod tests {
                 },
             },
             host_status: None,
-            collected_files: None,
+            collected_files: Vec::new(),
             collection_failures: vec![CollectionFailure {
                 item: "pcrlock log".to_string(),
                 error: "pcrlock not configured".to_string(),
@@ -714,7 +771,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let bundle_path = temp_dir.path().join("roundtrip.tar.zst");
 
-        create_support_bundle(&mut report, &bundle_path, vec![], false).unwrap();
+        create_diagnostics_tarball(&mut report, &bundle_path, vec![], false).unwrap();
 
         // Extract and read back report.json
         let extract_dir = temp_dir.path().join("extracted");
@@ -881,7 +938,7 @@ mod functional_test {
             .join("full-journal");
         assert!(
             journal_path.exists(),
-            "full-journal should exist when --full is passed"
+            "full-journal should exist when --journal is passed"
         );
         assert!(
             !std::fs::read_to_string(&journal_path).unwrap().is_empty(),

@@ -234,6 +234,16 @@ You can connect from your host machine as follows:
 ssh tutorial-user@<system-ip-address>
 ```
 
+## Collecting Diagnostics
+
+If you need to report an issue or share system state for support, generate a diagnostics bundle:
+
+```bash
+ssh tutorial-user@<system-ip-address> sudo trident diagnose --output /tmp/trident-diagnostics.tar.zst
+```
+
+See [Generate a Diagnostics Bundle](../How-To-Guides/Diagnostics.md) for details.
+
 ## Appendix: Virtual Machine Setup
 
 For testing purposes, you can use virtual machines to experience Trident's clean

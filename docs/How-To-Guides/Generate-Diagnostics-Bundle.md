@@ -20,7 +20,7 @@ This creates a compressed bundle containing:
 
 For more comprehensive diagnostics, you can include additional information:
 
-- `--full`: Includes the complete system journal from the current boot, including kernel messages (`dmesg`). Useful for diagnosing system-level issues.
+- `--journal`: Includes the complete system journal from the current boot, including kernel messages (`dmesg`). Useful for diagnosing system-level issues.
 - `--selinux`: Includes the SELinux audit log (`/var/log/audit/audit.log`). Useful for diagnosing SELinux policy denials.
 
 **Note**: If you encounter an "access denied" error, SELinux may be preventing Trident from writing to that location. Use `/tmp` as shown above.
@@ -62,7 +62,7 @@ The bundle contains:
 - `tpm/pcrlock.json` - TPM 2.0 pcrlock policy (if available)
 
 **Optional files (when flags are specified):**
-- `full-journal` - Full system journal (with `--full`)
+- `full-journal` - Full system journal (with `--journal`)
 - `selinux/audit.log` - SELinux audit log (with `--selinux`)
 
 ## Collection Failures

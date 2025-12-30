@@ -13,7 +13,7 @@ use crate::engine::{filesystem::FileSystemData, EngineContext};
 
 use super::verity;
 
-pub(super) const DEFAULT_FSTAB_PATH: &str = "/etc/fstab";
+pub const DEFAULT_FSTAB_PATH: &str = "/etc/fstab";
 
 const DISABLED_REASON_VERITY: &str = "Mounting is handled by veritysetup generator";
 

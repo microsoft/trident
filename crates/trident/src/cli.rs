@@ -131,7 +131,7 @@ pub enum Commands {
         outfile: Option<PathBuf>,
     },
 
-    /// Generate diagnostic information and create a support bundle
+    /// Generate diagnostic information and create a support bundle.
     ///
     /// This command collects diagnostic information including logs, and
     ///  system information. The output is packaged as a compressed tarball
@@ -140,10 +140,12 @@ pub enum Commands {
         /// Path where the support bundle will be saved
         #[clap(short, long)]
         output: PathBuf,
-        /// Include full system journal and dmesg output
+
+        /// Whether to include full system journal and dmesg output
         #[clap(long)]
-        full: bool,
-        /// Include SELinux audit log
+        journal: bool,
+
+        /// Whether to include SELinux audit log
         #[clap(long)]
         selinux: bool,
     },
