@@ -54,6 +54,7 @@ func (s *TridentE2EScenario) spawnVMSerialMonitor(ctx context.Context, output io
 	// Get VM info
 	vmInfo := s.testHost.VmInfo()
 	if ref.IsNilInterface(vmInfo) {
+		close(doneChannel)
 		return doneChannel, fmt.Errorf("vm host info not set")
 	}
 
