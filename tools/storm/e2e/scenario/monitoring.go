@@ -173,7 +173,7 @@ func readerLoop(ctx context.Context, in io.Reader, errCh <-chan error, out io.Wr
 	for {
 		// Check for context cancellation
 		if ctx.Err() != nil {
-			// Print the last 10 lines of the serial log before timing out
+			// Print the last `ringSize` lines of the serial log before timing out
 			logrus.Errorf("VM serial monitor was cancelled. Last %d lines of VM serial log before timeout:\n%s", ringSize, func() string {
 				var sb strings.Builder
 				ring.Do(func(p interface{}) {
